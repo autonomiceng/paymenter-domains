@@ -16,8 +16,15 @@ final class CartCheckoutRefresh
         Livewire::listen('mount', static function ($component) use ($admission): void {
             if ($component::class !== Cart::class) { return; }
             try {
-                $held = session()->get(self::shownKey(), []);
+                $held = session()->get(self::shownKey().'.lines', session()->get(self::shownKey(), []));
+                $review = session()->get(self::shownKey().'.review');
                 $admission->refresh();
+                // A new price may extend the review; the customer's own term/quantity edit invalidates it.
+                $choices = static fn (array $lines) => array_map(static fn (array $line) => [$line['plan_id'], $line['quantity']], $lines);
+                if (is_array($review) && ($review['shown'] ?? null) === $held
+                    && $choices($held) === $choices(self::snapshot(self::shown()))) {
+                    CartNotice::restore($component, $review['notice'] ?? null);
+                }
                 $was = self::changedAmounts($held);
                 if ($was) { self::changed($component, self::cartTotal(), $was); }
             }
@@ -32,9 +39,15 @@ final class CartCheckoutRefresh
             if ($component::class !== Cart::class) { return; }
             \Livewire\store($component)->set('domains.offers', $memo['domains_offers'] ?? null);
             \Livewire\store($component)->set('domains.shown', $memo['domains_shown'] ?? null);
+            CartNotice::restore($component, $memo['domains_notice'] ?? null);
         });
         Livewire::listen('call', static function ($component, $method, $params, $context, $returnEarly) use ($admission): void {
-            if ($component::class !== Cart::class || $method !== 'checkout') { return; }
+            if ($component::class !== Cart::class) { return; }
+            if (in_array($method, ['applyCoupon', 'removeCoupon', 'updateQuantity', 'removeProduct'], true)) {
+                \Livewire\store($component)->set('domains.customer_edit', true);
+                CartNotice::clear($component);
+            }
+            if ($method !== 'checkout') { return; }
             OrderContact::clear();
             if (!\Illuminate\Support\Facades\Auth::check()) { return; }
             try {
@@ -53,6 +66,10 @@ final class CartCheckoutRefresh
                     foreach (self::shown() as $id => $now) { if (isset($held[$id]) && $held[$id] !== $now) { $was[$id] = $held[$id]; } }
                     self::changed($component, $total, $was);
                     OrderContact::clear(); $returnEarly();
+                } else {
+                    // This click accepts the quote that the page displayed, including a retained review notice.
+                    CartNotice::clear($component);
+                    session()->forget(self::shownKey().'.review');
                 }
             } catch (ContactValidation $e) {
                 foreach (OwnerFormValidation::contact($e)->messages('', registrar:$tld->registrar_key ?? 'enom') as $field => $message) { $component->addError($field, $message); }
@@ -63,8 +80,25 @@ final class CartCheckoutRefresh
             } catch (\Throwable $e) { OrderContact::clear(); self::unavailable($component, $e); $returnEarly(); }
         });
         // Themes without the notice include keep the toast, with the same words.
-        Livewire::listen('render', static function ($component) {
+        Livewire::listen('render', static function ($component) use ($admission) {
             if ($component::class !== Cart::class) { return null; }
+            // Native line prices are dynamic on every render, not just checkout. Never advance the
+            // signed/session shown amount silently when an unrelated Livewire update races publication.
+            $held = (array) \Livewire\store($component)->get('domains.shown');
+            if ($held) {
+                try {
+                    $beforeOffers = (array) \Livewire\store($component)->get('domains.offers');
+                    $changed = static fn () => \Livewire\store($component)->get('domains.customer_edit')
+                        ? self::changedOffers($held, $beforeOffers, $admission->offers()) : self::changedShown($held);
+                    $was = $changed();
+                    if ($was) {
+                        $admission->refresh();
+                        $was = $changed();
+                        if ($was) { self::changed($component, self::cartTotal(), $was); }
+                    }
+                } catch (CartLinesRemoved $e) { self::show($component, self::cartTotal()); self::removed($component, $e); }
+                catch (\Throwable $e) { self::unavailable($component, $e); }
+            }
             return static function ($html) use ($component) {
                 $notice = CartNotice::get($component);
                 if ($notice && !preg_match('/<[a-z][^>]*\s'.CartNotice::MARKER.'(?=[\s=>])/i', $html)) { $component->notify($notice['toast'], $notice['type']); }
@@ -77,7 +111,15 @@ final class CartCheckoutRefresh
             $context->addMemo('domains_offers', $offers);
             try { $shown = self::shown(); } catch (\Throwable) { $shown = null; }
             $context->addMemo('domains_shown', $shown);
-            if ($shown !== null) { session()->put(self::shownKey(), self::snapshot($shown)); }
+            if ($shown !== null) {
+                $lines = self::snapshot($shown);
+                session()->put(self::shownKey().'.lines', $lines);
+                $notice = CartNotice::get($component);
+                $review = ($notice['title'] ?? null) === 'Your cart changed' ? ['notice' => $notice, 'shown' => $lines] : null;
+                $context->addMemo('domains_notice', $review['notice'] ?? null);
+                if ($review) { session()->put(self::shownKey().'.review', $review); }
+                else { session()->forget(self::shownKey().'.review'); }
+            }
             OrderContact::clear();
         });
     }
@@ -103,6 +145,11 @@ final class CartCheckoutRefresh
 
     private static function priceNotice(Cart $component, array $was, ?CartLinesRemoved $removed = null): void
     {
+        $previous = CartNotice::get($component);
+        if (($previous['title'] ?? null) === 'Your cart changed') {
+            // Keep pending details for unchanged lines; a new change replaces that line's old amount.
+            $was = array_replace(array_intersect_key($previous['was'] ?? [], self::shown()), $was);
+        }
         $text = ($removed ? $removed->getMessage().' ' : '').'Review the total, then check out again.';
         CartNotice::set($component, 'Your cart changed', $text,
             'Your cart changed. '.$text, 'warning', $removed?->names ?? [], $was);
@@ -118,6 +165,27 @@ final class CartCheckoutRefresh
     private static function shown(): array
     {
         return NativeCart::items()->mapWithKeys(fn ($item) => [$item->id => number_format($item->price->total * $item->quantity, 2, '.', '')])->all();
+    }
+
+    private static function changedShown(array $held): array
+    {
+        $was = [];
+        foreach (self::shown() as $id => $amount) {
+            if (isset($held[$id]) && $held[$id] !== $amount) { $was[$id] = $held[$id]; }
+        }
+        return $was;
+    }
+
+    /** Published domain retail is independent of coupon/quantity edits to displayed amounts. */
+    private static function changedOffers(array $held, array $before, array $offers): array
+    {
+        $before = array_column($before, null, 0); $was = [];
+        foreach ($offers as $offer) {
+            $old = $before[$offer[0]] ?? null;
+            if ($old && array_slice($old, 0, 3) === array_slice($offer, 0, 3)
+                && $old[3] !== $offer[3] && isset($held[$offer[0]])) { $was[$offer[0]] = $held[$offer[0]]; }
+        }
+        return $was;
     }
 
     /** Session reloads may follow the customer's own Edit, which retains the line id. */

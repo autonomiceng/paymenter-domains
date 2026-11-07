@@ -50,7 +50,8 @@
     "tests/ote-order-window-test.php",
     "tests/ote-collection-shapes-test.php",
     "tests/owned-style-test.php",
-    "tests/renewal-ready-copy-test.php"
+    "tests/renewal-ready-copy-test.php",
+    "tests/test_gitleaks_policy.py"
   ],
   "native": [
     "tests/offer-queued-trigger-test.php",
@@ -548,7 +549,11 @@
     "tests/staff-catalogue-demo-tag-test.php",
     "tests/default-pricing-switched-target-test.php",
     "tests/default-pricing-retry-test.php",
-    "tests/default-pricing-switched-fee-target-test.php"
+    "tests/default-pricing-switched-fee-target-test.php",
+    "tests/renewal-dialog-cancel-test.php",
+    "tests/cart-session-price-test.php",
+    "tests/cart-review-lines-test.php",
+    "tests/test_installed_demo_c_dialogs-test.php"
   ],
   "ui": [],
   "runner": [

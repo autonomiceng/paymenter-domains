@@ -186,10 +186,6 @@
     .domains table.domains-tbl.domains-stackable, .domains .domains-stackable tbody { display: block; }
     .domains .domains-stackable thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
     .domains .domains-list thead { display: none; }
-    .domains .domains-dns-inventory td { min-width: 0; overflow-wrap: anywhere; }
-    .domains .domains-dns-inventory td[data-label] { display: grid; grid-template-columns: 4rem minmax(0, 1fr); gap: .75rem; }
-    .domains .domains-dns-inventory td[data-label]::before { grid-column: 1; }
-    .domains .domains-dns-inventory tr { grid-template-columns: minmax(0, 1fr); }
     .domains .domains-stackable tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .375rem .75rem; padding: .875rem 1rem; border-bottom: 1px solid var(--e-line); }
     .domains .domains-stackable tbody tr:last-child { border-bottom: 0; }
     .domains .domains-stackable td { display: block; padding: 0; border: 0; }
@@ -197,6 +193,12 @@
     .domains .domains-stackable td[data-label]::before { content: attr(data-label) " "; color: var(--e-muted); font-size: .75rem; }
     .domains .domains-stackable .domains-cell-wide { grid-column: 1 / -1; }
     .domains .domains-stackable .domains-end { text-align: left; }
+    .domains .domains-dns-inventory td { min-width: 0; overflow-wrap: anywhere; }
+    .domains .domains-dns-inventory td[data-label] { display: grid; grid-template-columns: 4rem minmax(0, 1fr); gap: .75rem; text-align: right; }
+    .domains .domains-dns-inventory td[data-label]::before { grid-column: 1; text-align: left; }
+    .domains .domains-dns-inventory td[data-label="Host"] { display: block; text-align: left; font-weight: 600; }
+    .domains .domains-dns-inventory td[data-label="Host"]::before { content: none; }
+    .domains .domains-dns-inventory tr { grid-template-columns: minmax(0, 1fr); background: var(--e-panel); }
     .domains .domains-head-actions { flex-wrap: nowrap; gap: .5rem; }
     .domains .domains-head-actions .domains-btn { min-width: 0; padding-inline: .625rem; font-size: .8125rem; }
     .domains .domains-list td[data-label] { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: .5rem; }
@@ -271,7 +273,7 @@
     .domains .domains-result__price:empty { display: none; }
     .domains .domains-result__action { width: 7.5rem; grid-column: 2; grid-row: 2 / span 2; align-self: center; min-width: 7.5rem; }
     /* Without a price the note moves up into row 3, so no empty track is left. */
-    .domains .domains-result:has(> .domains-result__price:empty) .domains-result__action { grid-row: 2; }
+    .domains .domains-result:has(> .domains-result__price:empty):not(:has(.domains-term-rows)) .domains-result__action { grid-row: 2; }
 }
 
 /* Price list */
@@ -457,7 +459,11 @@
 .domains .domains-confirm__facts dt { font-size: .8125rem; color: var(--e-muted); }
 .domains .domains-confirm__facts dd { margin: .125rem 0 0; }
 .domains .domains-confirm__facts dd span { display: block; font-weight: 600; }
-.domains .domains-confirm .domains-buttons { margin-top: 1.25rem; }
+.domains .domains-confirm .domains-buttons { margin-top: 1.25rem; justify-content:flex-end; }
+.domains .domains-dialog-sheet { padding:0; border-radius:.375rem; }
+.domains .domains-dialog-sheet > h3 { padding:1rem 1.25rem; border-bottom:1px solid var(--e-line); }
+.domains .domains-dialog-sheet .domains-card>div { padding:.75rem 1.25rem; }
+.domains .domains-dialog-sheet .domains-buttons { padding:1rem 1.25rem; border-top:1px solid var(--e-line); }
 @media (prefers-reduced-motion: no-preference) { .domains .domains-confirm:modal { animation: domains-confirm-in .15s ease-out; } }
 @keyframes domains-confirm-in { from { opacity: 0; transform: translateY(.5rem); } }
 /* Help popovers and the help page */
@@ -557,6 +563,24 @@
     .domains .domains-sheet .domains-card > div { grid-template-columns: minmax(0, 1fr); padding: .5rem 1rem; }
     .domains .domains-sheet .domains-btn--block { width: calc(100% - 2rem); margin-inline: 1rem; }
     .domains .domains-row__a .domains-a { min-height: 2.75rem; }
+}
+.domains-total{display:block;font-size:1.5rem;font-weight:600;line-height:1.25;font-variant-numeric:tabular-nums}
+/* Labeled term choices share the sheet's quiet label/value rhythm. */
+.domains .domains-term-rows{display:grid;gap:.5rem;margin:0}
+.domains .domains-term-rows>div{display:grid;grid-template-columns:7rem minmax(0,1fr);align-items:center;gap:.75rem}
+.domains .domains-term-rows dt{color:var(--e-muted)}
+.domains .domains-term-rows dd{min-width:0;margin:0;text-align:right}
+.domains .domains-term-rows .domains-result__price{grid-column:auto;grid-row:auto;text-align:right}
+.domains .domains-result__price:empty{display:none}
+.domains .domains-result:has(.domains-term-rows){grid-template-columns:minmax(0,1fr) auto}
+.domains .domains-result:has(.domains-term-rows) .domains-result__name{grid-column:1 / -1}
+.domains .domains-result:has(.domains-term-rows) .domains-result__status{grid-column:1 / -1;grid-row:2}
+.domains .domains-result:has(.domains-term-rows) .domains-result__action{grid-column:1 / -1;grid-row:3;width:100%;min-width:0}
+.domains .domains-result:has(.domains-term-rows) .domains-result__action form{display:grid;gap:.75rem}
+.domains .domains-result:has(.domains-term-rows) .domains-btn{justify-self:end;width:auto}
+@media(max-width:639px){
+    .domains .domains-dialog-sheet .domains-card>div{display:grid;grid-template-columns:minmax(0,1fr);gap:.25rem}
+    .domains .domains-dialog-sheet .domains-card dd{text-align:left}
 }
 </style>
 @endonce

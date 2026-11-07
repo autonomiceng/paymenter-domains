@@ -1,5 +1,21 @@
 @if ($prices)
-<div class="domains-tablewrap" role="region" aria-label="Registration term totals" tabindex="0"><table class="domains-tbl"><thead><tr><th>Term</th><th>Customer total</th><th>Registrar cost</th></tr></thead><tbody>
-@foreach ($prices as $price)<tr><td>{{ $price['term'] }} {{ $price['term'] === 1 ? 'year' : 'years' }}</td><td class="domains-money">{{ $price['current'] !== null && $price['synced'] ? '$'.$price['current'] : 'Missing — Sync prices' }}</td><td class="domains-money">{{ $price['cost'] !== null && $price['synced'] ? '$'.number_format((float)$price['cost'],2,'.','') : 'Missing — Sync prices' }}</td></tr>@endforeach
-</tbody></table></div>
+@php
+    // Compact only consecutive missing terms. Each evidenced total keeps its own row.
+    $groups=[];
+    foreach($prices as $price){
+        $missing=($price['current']===null&&$price['cost']===null);
+        $last=array_key_last($groups);
+        if($missing&&$last!==null&&$groups[$last]['missing']&&$groups[$last]['end']+1===$price['term']){$groups[$last]['end']=$price['term'];}
+        else{$groups[]=['start'=>$price['term'],'end'=>$price['term'],'missing'=>$missing,'price'=>$price];}
+    }
+@endphp
+<div class="domains-sec"><h3 class="domains-h3">Registration</h3><dl class="domains-card">
+@foreach ($groups as $group)
+@php $price=$group['price']; @endphp
+<div><dt>{{ $group['start'] }}{{ $group['end']!==$group['start'] ? ' to '.$group['end'] : '' }} {{ $group['end']===1 ? 'year' : 'years' }}</dt><dd>
+@if ($group['missing'])<span>Missing</span><span class="domains-sub">Sync prices to read these term totals.</span>
+@else<strong>Customer total {{ $price['current']===null ? 'Missing' : '$'.$price['current'] }}</strong><span class="domains-sub">Registrar cost {{ $price['cost']===null ? 'Missing' : '$'.number_format((float)$price['cost'],2,'.','') }}.@if (!$price['synced'] && $price['cost']!==null) Out of date. Sync prices to refresh this cost.@endif</span>@endif
+</dd></div>
+@endforeach
+</dl></div>
 @endif

@@ -1,0 +1,51 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Reviewed source inventory path and SHA-256 pairs"
+condition = "AND"
+targetRules = ["generic-api-key"]
+paths = ['''^scripts/conversion/source\.json$''']
+regexTarget = "match"
+regexes = [
+  '''^EnomApi\.php":"74195992b7bf3452f7e2b8f793158b1a300224de84064f752d1d49fcbf8dc720"$''',
+  '''^FormKeys\.php":"294857b1b4e629f29a92794538889733245b01e7cc0ee53f30c0180111ab1d10"$''',
+  '''^form\-key\.blade\.php":"82368c64a0918471ddce0da5023e0e1e1f7ea573bde0e5514c7d69006787d052"$''',
+  '''^EnomApi\.php":"283bb5af2e558e4d2882ec0f69fe1a62c35b51445cbce7f9f317c740dec3033f"$''',
+  '''^EnomApi\.php":"5ef84dd7ec8a84c9863c397aa173f3b4e21e0f3f92b1a49822c1283682eae969"$''',
+]
+
+[[allowlists]]
+description = "Reviewed source inventory path and SHA-256 pairs"
+condition = "AND"
+targetRules = ["generic-api-key", "discord-api-token"]
+paths = ['''^tests/fixtures/native\-identity\-files\.json$''']
+regexTarget = "match"
+regexes = [
+  '''^ApiResource\.php":\ "51a22e5f3d27a75bf1fdc5b18422635477026c1beeb904f1fc888d6b77dd931a"$''',
+  '''^ManageApis\.php":\ "00545a9268938a6ca239f2da21b5e9b32c23e9d248fdedbdc6af65b4d6318909"$''',
+  '''^OauthClientResource\.php":\ "e3c2cb5f7a88b130e61f042a8fb4a5ace6eb55303e2e996b205aeeb0146ebccd"$''',
+  '''^CreateOauthClient\.php":\ "5d83321d89d7fff53583e6b02103418301732592c74f92c14ae68fdf02782cf6"$''',
+  '''^EditOauthClient\.php":\ "b129011073ace25b551195e061ec7b11c68df3af42c5604c4bd7cca16c7bd106"$''',
+  '''^ListOauthClients\.php":\ "9c0ed63de9109eea89d28d935160b96a98233085a3277384577d68b6a054f025"$''',
+  '''^PasswordReset\.php":\ "d16e0e61c9cbb05954833b6e5ececdbf9577d76c07ca3f93961b1a5c15f99319"$''',
+  '''^ApiController\.php":\ "86796b64c7113ae50f0f411f4496406d64b7002b3b8ad2d2fbf21bee20ae8d21"$''',
+  '''^AdminApi\.php":\ "6b17585cbeea5861aaf878060ecb5fe695eb7052efdb9c65f780580700ff0d44"$''',
+  '''^AdminApiRequest\.php":\ "10f9b418266f59d1a44d8c35c1fedc29f1c01c0f607b2feae643f7548448b3fe"$''',
+  '''^UserAuthListener\.php":\ "53b532c6f8ea4bb698a3c91ab72a993880171dcf9d0ee4766f2fb6272e203bc5"$''',
+  '''^ApiKey\.php":\ "8d99a495d801c31a442369eb093435e5830f2df14d50e73897028490b1e6787b"$''',
+  '''^OauthClient\.php":\ "21d000762519f1ea22e88b4a9fb801ed8cd98d61de2825190756fe987a110023"$''',
+  '''^UserAuthenticationLog\.php":\ "2b0872241540bd10e41f72058930e3161184885fd558598bc304f5a195ca9727"$''',
+  '''^ApiKeyPolicy\.php":\ "77fafeee004cff1d67702e1686b72939f1d1541706adf3dc64633ee20371a519"$''',
+  '''^OauthClientPolicy\.php":\ "c4fc79cc86aa83fa7564bb1c4373a2b514c74b98ccec86c99900521bc80c4aa0"$''',
+  '''^auth\.php":\ "7d05165853fe24349a5711dbbb9494970bd4efe3dbb25910396419afd7ff1e56"$''',
+  '''^2024_09_13_193832_create_oauth_auth_codes_table\.php":\ "0d3b134e36faa3bc555773a89872b3c3d379f207357f6f66f63c81d039acce35"$''',
+  '''^2024_09_13_193833_create_oauth_access_tokens_table\.php":\ "b86120e036671c02eff3fd0857e5fe4698aa410b03b8eb4addbec3449e7ae18c"$''',
+  '''^2024_09_13_193834_create_oauth_refresh_tokens_table\.php":\ "09a2853433a722f175bb35564576ff1717fc8c54cc6a1e9e7589884098e9a071"$''',
+  '''^2024_09_13_193835_create_oauth_clients_table\.php":\ "99052f0365677ea2c1198340798a17af9f7c480485eee1ddc3b272c6594ade76"$''',
+  '''^2024_09_13_193836_create_oauth_personal_access_clients_table\.php":\ "edbe327943bb43203da94a6457c1313348e78551ab130fce8141203437e2ec06"$''',
+  '''^2025_06_04_132119_create_api_keys_table\.php":\ "d8d0be22606ea493d8273807d8b70681361c0a6bacadb87864224144d3b9c53f"$''',
+  '''^2025_12_15_205656_drop_remember_token_from_users\.php":\ "91b722cd4b16f22f9e069a287c83e0b0870ebcb374a98f5b6258f6cd3a7dee84"$''',
+  '''^api\.php":\ "dc18a0ca894997e5204b2d7ee364eb3bc13e36d3266e605d8da6ff5abb1b7f88"$''',
+  '''^DiscordNotifications\.php":\ "3dbcdb61693516f0292a33ec337eb3829b6798c8de7f89f9e433c297b91de050"$''',
+]
