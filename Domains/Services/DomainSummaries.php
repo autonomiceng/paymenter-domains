@@ -122,7 +122,7 @@ final class DomainSummaries
                 }
                 $signals['partial']=$signals['dns']['stale']||$signals['website']['stale']||$signals['email']['stale'];
                 $keys=DnsSignalLabels::projection($signals);$states=[];
-                if($kind==='managed' && in_array($id,$setupIds,true)){$states[]='domain.dns.not_configured';}$expiry=null;$precision=null;$source=null;$order=[];$due=null;$price=null;$off=false;$reminderOff=false;$projected=false;$invoiceMissing=false;$invoicePaid=false;$issue=null;$waits=null;
+                if($kind==='managed' && in_array($id,$setupIds,true)){$states[]='domain.dns.not_configured';}$expiry=null;$precision=null;$source=null;$order=[];$due=null;$price=null;$off=false;$reminderOff=false;$projected=false;$invoiceMissing=false;$invoicePaid=false;$invoiceReview=false;$issue=null;$waits=null;
                 if ($kind==='watch') {
                     $registryRows=$registry[$id]??collect();$r=$registryRows->first();$good=$registryRows->firstWhere('result','facts');$j=$jobs->firstWhere('kind','expiry');$match=$r && ($registryStamp=$c->stamp($kind,$id,'registry')) && hash_equals($registryStamp,$r->facts['presentation_stamp']??'');
                     $until=$r?->valid_until;if ($r && WatchRegistryChecks::urgent($r->facts['expiry']??null,$now)) { $until=min((int)$until,$r->started_at+43200); }
@@ -154,14 +154,10 @@ final class DomainSummaries
                     $cycle=($cycles[$id]??collect())->first(fn($o)=>(int)$o->authority_generation===(int)$t->authority_generation && (int)$o->service_id===(int)$t->service_id && (int)$o->server_id===(int)$t->server_id && $o->registrar_key===$t->registrar_key && $o->account_fingerprint===$t->account_fingerprint && $o->base_expires_at?->format('Y-m-d')===$expiry);
                     if (!$off && $expiry) {
                         if ($cycle && !RenewalCycles::closedEarly($cycle)) { $inv=$invoices[$cycle->invoice_id]??null;$item=$items[$cycle->invoice_item_id]??null;
-                            if (isset($cycle->policy['account_complimentary'])) {
-                                // Informational zero receipts use their issue date and may later have an offset line.
-                                try { $receipt=DomainBilling::existingInvoice($cycle,['domain'=>$t,'invoices'=>$invoices,'items'=>$items,'transactions'=>$transactions]);$due=$receipt->due_at?->format('Y-m-d'); } catch (\Throwable) {}
-                            } else {
-                            try { if ($inv && $item && (int)$item->invoice_id===(int)$inv->id && in_array($inv->status,['pending','paid'],true) && $inv->currency_code===$cycle->currency && $item->reference_id===null && $item->reference_type===null && (string)$item->quantity==='1' && PricingRule::minor((string)$item->price)===PricingRule::minor((string)$cycle->amount) && $inv->due_at?->format('Y-m-d')===($cycle->policy['calendar']['due']??null)) { $due=$inv->due_at->format('Y-m-d'); } } catch (\Throwable) {}
-                            }
-                            $invoiceMissing=$due===null;
-                            $invoicePaid=!$invoiceMissing && $inv?->status==='paid' && in_array($cycle->state,['awaiting_payment','queued','running','pending','succeeded'],true); }
+                            // List and detail validate every member of the issued renewal invoice.
+                            try { $inv=DomainBilling::existingInvoice($cycle,['domain'=>$t,'invoices'=>$invoices,'items'=>$items,'transactions'=>$transactions]);$due=$inv->due_at?->format('Y-m-d'); } catch (\Throwable) { $invoiceReview=true; }
+                            $invoiceMissing=$due===null && !$invoiceReview;
+                            $invoicePaid=!$invoiceReview && !$invoiceMissing && $inv?->status==='paid' && in_array($cycle->state,['awaiting_payment','queued','running','pending','succeeded'],true); }
                         else { try { $projected=true;$timing=BillingCalendar::timing($servers[$t->server_id]->settings);$dates=BillingCalendar::dates($t->provider_expires_at->toDateTimeImmutable(),$timing['issue'],$timing['due']);$due=$dates['due'];$issue=$dates['issue'];$invoiceMissing=$issue<gmdate('Y-m-d',$now); } catch (\Throwable) {} }
                     }
                     $order=$pending||!$op?[]:OwnedDomains::order($t,$op,$invoices->get($op->invoice_id),OwnedDomains::closed($s->status,in_array($s->id,[...$cancels,...$intents],true)));
@@ -191,7 +187,7 @@ final class DomainSummaries
                 foreach ($c->related($kind,$id) as $s) { if (!$c->validSource($s)) { continue; }$h=$c->services[$s->service_id];$p=$c->products[$h->product_id];
                     $related[]=['id'=>(int)$h->id,'label'=>$p->name,'url'=>route('services.show',$h->id)];$hosts[]=$s->hostname; }
                 $out[$kind.':'.$id]=new DomainSummary($kind==='watch'?$t->canonical_name:$t->domain,$kind==='watch'?$t->display_name:null,$kind,$registration,$keys,$signals['website']['value'],$signals['email']['value'],array_values(array_unique($states)),DomainSummaryStrings::all(),$expiry,$precision,$source,$fresh,$due,$price,$related,array_values(array_unique($hosts)),['detail'=>$url,'preferences'=>($kind==='watch' && $t->state==='active' && $stamp)||($kind==='managed' && !$pending && isset($c->configs[$id]) && $c->services[$t->service_id]->status==='active' && $expiry>gmdate('Y-m-d',$now))?route('domains.checks.show',['kind'=>$kind,'id'=>$id]):null,'invoiceHistory'=>$kind==='managed' && $pending?route('invoices'):null,'compareTransfer'=>config('domains.watch_transfer.enabled',false) && $kind==='watch' && $t->state==='active' && $t->registration==='external' && $factsCurrent && WatchTransferPolicy::window(substr($expiry??'',0,10),$now) && !in_array('watch.redemption',$states,true) && array_filter($transferEndings,fn($ending)=>str_ends_with($t->canonical_name,'.'.$ending))?route('domains.watch.transfer',$id):null,'support'=>Missing::supportUrl()],$off,$lastKnown,max(0,count($c->related($kind,$id))-3),$noticeKeys,$noticeDates,$reminderOff,$projected,$kind==='managed' && in_array($t->server_id,$testServers),$nameserverFact?->toArray(),$status,$reason,DemoData::is($t),
-                    $expiry?intdiv(strtotime(substr($expiry,0,10).' 00:00:00 UTC')-strtotime(gmdate('Y-m-d',$now).' 00:00:00 UTC'),86400):null,$invoiceMissing,$waits,$issue,$order,$kind==='managed'&&$op&&UnpaidAcquisitionProof::terminal($op,$t)&&RequestFacts::neverPaid($op),$dnsPreviouslyMatched,$invoicePaid);
+                    $expiry?intdiv(strtotime(substr($expiry,0,10).' 00:00:00 UTC')-strtotime(gmdate('Y-m-d',$now).' 00:00:00 UTC'),86400):null,$invoiceMissing,$waits,$issue,$order,$kind==='managed'&&$op&&UnpaidAcquisitionProof::terminal($op,$t)&&RequestFacts::neverPaid($op),$dnsPreviouslyMatched,$invoicePaid,$invoiceReview);
             }
         }
         return $out;
