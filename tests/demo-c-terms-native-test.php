@@ -4,33 +4,36 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';
 require_once __DIR__.'/Support/FakeRegistrar.php';
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Catalogue\{Capabilities, CallerPorts, Cost, Facts, OfferState, Pricing, Retail, Writer};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{Capabilities, CallerPorts, Cost, Facts, OfferState, Pricing, Retail, TermSupport, Writer};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CostUnit, Environment};
 use Paymenter\Extensions\Servers\Domains\Models\{Price, Tld};
 use Paymenter\Extensions\Servers\Domains\Services\Installation;
 (new Installation)->install();
-$now = new DateTimeImmutable('2026-11-04T12:00:00+00:00');
+$now = new DateTimeImmutable('2026-11-06T12:00:00+00:00');
 $clock = new \Paymenter\Extensions\Servers\Domains\Tests\FakeClock($now);
 $proof = ['source' => 'synthetic_registry', 'version' => 'rule-1', 'reviewed_at' => '2026-11-01T00:00:00+00:00', 'valid_until' => '2026-12-01T00:00:00+00:00'];
 $evidence = ['term_evidence' => ['format' => 1, 'entries' => ['renew' => [2 => $proof + ['terms' => [2], 'price_unit' => 'term_total', 'rule' => 'exact-term-1']]]],
     'renewal_families' => ['format' => 1, 'entries' => ['ordinary' => $proof + ['terms' => [2], 'price_unit' => 'term_total', 'rule' => 'renew-family-1',
         'states' => ['Active'], 'expiry_precision' => 'date', 'horizon_years' => 10, 'safe_boundary' => 'utc-two-days']]]];
-$facts = new Facts(['register' => [1], 'renew' => [1], 'transfer' => [1]], [], true, false, false, 'synthetic',
+$baseFacts = new Facts(['register' => [1], 'renew' => [1], 'transfer' => [1]], [], true, false, false, 'synthetic',
     new DateTimeImmutable('2026-11-01T00:00:00+00:00'), new DateTimeImmutable('2026-12-01T00:00:00+00:00'), $evidence);
 $observe = static fn (string $action, int $term, string $total) => OfferState::json(OfferState::encodeCost(new Cost($action, $term, true, $total,
-    CostUnit::TermTotal, 'synthetic_quote', new DateTimeImmutable('2026-11-04T11:00:00+00:00'), new DateTimeImmutable('2026-11-04T13:00:00+00:00'))));
+    CostUnit::TermTotal, 'synthetic_quote', new DateTimeImmutable('2026-11-06T11:00:00+00:00'), new DateTimeImmutable('2026-11-06T13:00:00+00:00'))));
 $ports = (new ReflectionClass(CallerPorts::class))->newInstanceWithoutConstructor();
 $caps = new Capabilities($ports, $clock, static fn () => null);
 foreach ([Environment::Test, Environment::Live] as $environment) {
 foreach (['enom', 'namesilo'] as $registrar) {
     $server = App\Models\Server::create(['name' => 'Synthetic '.$registrar, 'type' => 'server', 'extension' => 'Domains', 'enabled' => true]);
     $binding = new AccountBinding($registrar, $server->id, $environment, str_repeat($registrar === 'enom' ? 'e' : 'n', 64));
+    $caseEvidence = $registrar === 'enom' && $environment === Environment::Test
+        ? TermSupport::evidence($binding, 'com') : $evidence;
+    $facts = TermSupport::attach('com', $baseFacts, $caseEvidence);
     $row = ['server_id' => $server->id, 'registrar_key' => $registrar, 'account_fingerprint' => $binding->fingerprint];
     DB::table('domains_tlds')->insert($row + ['tld' => 'com', 'catalogue_converted' => true, 'catalogue_revision' => 1,
         'catalogue_intent' => OfferState::json(['sell' => false]), 'catalogue_facts' => OfferState::encodeFacts($facts), 'created_at' => $now, 'updated_at' => $now]);
     foreach ([['renew', 1, '14.0000'], ['renew', 2, '24.0000'], ['register', 2, '21.0000']] as [$action, $term, $total]) {
         DB::table('domains_prices')->insert($row + ['tld' => 'com', 'action' => $action, 'term' => $term, 'currency' => 'USD', 'unit' => 'term_total',
-            'source' => 'synthetic_quote', 'observed_at' => '2026-11-04 11:00:00', 'catalogue_observation' => $observe($action, $term, $total), 'created_at' => $now, 'updated_at' => $now]);
+            'source' => 'synthetic_quote', 'observed_at' => '2026-11-06 11:00:00', 'catalogue_observation' => $observe($action, $term, $total), 'created_at' => $now, 'updated_at' => $now]);
     }
     $tld = Tld::where('server_id', $server->id)->where('tld', 'com')->sole();
     $prices = Price::where(['server_id' => $server->id, 'tld' => 'com', 'action' => 'renew'])->orderBy('id')->get();
@@ -45,7 +48,7 @@ foreach (['enom', 'namesilo'] as $registrar) {
     // Staff Off (sell false) is sales intent; holder renewal terms and the retained annual path do not depend on it.
     same($terms, $caps->renewalTerms($binding, $tld, $prices, new DateTimeImmutable('2027-11-20T00:00:00+00:00')), $registrar.': reads are repeatable');
     $ready = $caps->termReadiness($binding, 'com');
-    same([range(1, 10), $held, 'reviewed'],
+    same([range(1, 10), $held, $registrar === 'enom' && $environment === Environment::Live ? 'annual_only' : 'reviewed'],
         [array_keys($ready['renew']), $ready['renew'][2]['reason'], $ready['families']['ordinary']['state']], $registrar.': staff readiness');
     // A row from another account or a changed TLD binding refuses instead of mixing evidence.
     $foreign = clone $prices->first(); $foreign->account_fingerprint = str_repeat('f', 64);
@@ -99,7 +102,7 @@ foreach (['enom', 'namesilo'] as $registrar) {
     $command = new \Paymenter\Extensions\Servers\Domains\Catalogue\FactsObserved($binding, 'com', $facts);
     same(true, $mutate->invoke($writer, $command, $target, $prices, $now), $registrar.': metadata refresh changes facts');
     DB::table('domains_tlds')->where('id', $target->id)->update(['catalogue_facts' => $target->catalogue_facts]);
-    same($evidence, OfferState::facts($target->fresh()->catalogue_facts)->expansion,
+    same($caseEvidence, OfferState::facts($target->fresh()->catalogue_facts)->expansion,
         $registrar.': metadata writer preserves reviewed term and family evidence');
     $bulk = new \Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding, 'com', [
         new Cost('renew', 1, true, '15.0000', CostUnit::TermTotal,
@@ -107,7 +110,7 @@ foreach (['enom', 'namesilo'] as $registrar) {
     same(true, $mutate->invoke($writer, $bulk, $target, $prices, $now), $registrar.': bulk refresh changes cost');
     DB::table('domains_tlds')->where('id', $target->id)->update(['catalogue_facts' => $target->catalogue_facts]);
     $saved = OfferState::facts($target->fresh()->catalogue_facts);
-    same([[1], $evidence, $facts->observedAt->format(DATE_ATOM)], [$saved->terms['renew'], $saved->expansion, $saved->observedAt->format(DATE_ATOM)],
+    same([[1], $caseEvidence, $facts->observedAt->format(DATE_ATOM)], [$saved->terms['renew'], $saved->expansion, $saved->observedAt->format(DATE_ATOM)],
         $registrar.': bulk writer preserves reviewed evidence and metadata age while deriving annual support');
 }
 }

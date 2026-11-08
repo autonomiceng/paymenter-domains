@@ -58,6 +58,29 @@ same(true,TermSupport::renewal('enom','com',$facts,$costs,$clock->now()->modify(
 same(false,TermSupport::renewal('enom','com',$facts,$costs,$clock->now()->modify('+1 year'),$clock->now(),environment:Environment::Live)[2]['available'],'Live longer terms remain held');
 $before=count($GLOBALS['catalogueCalls']);$scheduler->requestFacts($b,'com');$worker->accountTurn($server->id);
 same($before,count($GLOBALS['catalogueCalls']),'Current evidence retains its normal freshness without repeated reads');
+// Customer and staff consumers reject a changed approval before refresh, including an unsold TLD.
+$caps = new \Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities($ports, $clock, static fn() => null);
+$t = Tld::where('server_id', $server->id)->where('tld', 'com')->sole();
+$original = $t->catalogue_facts; $intent = $t->catalogue_intent;
+DB::table('domains_tlds')->where('id', $t->id)->update(['catalogue_intent' => OfferState::json(['sell' => false])]);
+$prices = DB::table('domains_prices')->where('server_id', $server->id)->get();
+$before = count($GLOBALS['catalogueCalls']);
+foreach (['term_evidence', 'renewal_families'] as $key) {
+    $changed = OfferState::decode($original);
+    if ($key === 'term_evidence') { $changed[$key]['entries']['renew'][2]['version'] = 'withdrawn-approval'; }
+    else { $changed[$key]['entries']['ordinary']['valid_until'] = '2028-11-05T00:00:00+00:00'; }
+    DB::table('domains_tlds')->where('id', $t->id)->update(['catalogue_facts' => OfferState::json($changed)]);
+    $terms = $caps->renewalTerms($b, $t->fresh(), $prices, $clock->now()->modify('+1 year'));
+    same([false, 'unknown_facts'], [$terms[2]['available'], $terms[2]['reason']], 'Customer rejects superseded approval before facts refresh: '.$key);
+    same(true, $terms[1]['available'], 'Superseded longer approval preserves annual renewal');
+    $readiness = $caps->termReadiness($b, 'com');
+    same([false, 'unknown_facts'], [$readiness['renew'][2]['available'], $readiness['renew'][2]['reason']], 'Staff rejects superseded approval before facts refresh: '.$key);
+    same('annual_only', $readiness['families']['ordinary']['state'], 'Superseded family cannot appear reviewed');
+}
+DB::table('domains_tlds')->where('id', $t->id)->update(['catalogue_facts' => $original, 'catalogue_intent' => $intent]);
+same(true, $caps->renewalTerms($b, $t->fresh(), $prices, $clock->now()->modify('+1 year'))[2]['available'], 'Current approval restores customer longer terms');
+same(true, $caps->termReadiness($b, 'com')['renew'][2]['available'], 'Current approval restores staff longer terms');
+same($before, count($GLOBALS['catalogueCalls']), 'Approval validation performs no provider reads');
 // A changed reviewed version is stale too; repeated normal hints must preserve a failed read's backoff.
 $stale=OfferState::decode(Tld::where('server_id',$server->id)->where('tld','com')->sole()->catalogue_facts);
 $stale['term_evidence']['entries']['renew'][2]['version']='previous-reviewed-version';

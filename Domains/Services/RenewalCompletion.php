@@ -13,22 +13,26 @@ final readonly class RenewalCompletion
     public function run(int $id): Operation
     {
         OperationClaims::outside(); $op = Operation::findOrFail($id);
-        if (!$this->eligible($op)) { return $op; }
+        if (!$this->eligible($op) || self::capturedChargeHeld($op)) { return $op; }
         $check = new RegistrarCheck($this->clock);
         return $check->finish(EntryDeadline::run($this->clock, fn ($deadline) => $this->runEntered($id, $deadline, $check), RenewalAdmission::READ_SECONDS));
     }
     private function runEntered(int $id, \DateTimeImmutable $deadline, RegistrarCheck $check): Operation
     {
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
-        $capture = DB::transaction(function () use ($seed, $id) {
+        $capture = DB::transaction(function () use ($seed, $id, $check) {
             $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
-            if (!$op || !$this->eligible($op)) { return null; }
+            if (!$op || !$this->eligible($op) || self::capturedChargeHeld($op)) { return null; }
             $policy = $op->policy; $policy['renewal_execution'] = ['staff_alert' => true, 'reason' => ($op->policy['renewal_polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT ? 'poll_limit_reached' : 'original_attempt_unresolved', 'refundable_later' => false];
             $op->update(['state' => $op->state === 'running' ? 'uncertain' : $op->state, 'lease_expires_at' => null, 'policy' => $policy]);
             try {
                 $this->bindings->requireReadableLocked($l['server'], $l['account']); RenewalFunding::requireCurrent($op, $l, true);
                 $attempt = ReconciliationEvidence::attempt($op, $l['domain'], AccountBindings::binding($l['account']));
-                if ($attempt->replyLost() && !$attempt->historyAcceptance?->covers($attempt, $this->clock->now())) { return null; }
+                if ($attempt->replyLost() && !$attempt->historyAcceptance?->covers($attempt, $this->clock->now())) {
+                    $check->awaitingAnswer = $attempt->binding->registrarKey === 'enom' ? 'Enom' : 'NameSilo';
+                    $check->answerAfter = (new \DateTimeImmutable($op->attempt['dispatch_attempted_at']))->modify('+24 hours')->getTimestamp();
+                    return null;
+                }
                 if (($op->policy['renewal_polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT) { return null; }
                 return [$attempt, HoldingLocks::take($l['domain'])['stamp']];
             } catch (\Throwable) { return null; }
@@ -109,6 +113,13 @@ final readonly class RenewalCompletion
             $policy['renewal_polls']=0;$policy['renewal_execution']=['staff_alert'=>true,'reason'=>'resumed','refundable_later'=>false];
             $op->update(['policy'=>$policy]);RegistrarCheck::resumed($op,$this->clock->now()->getTimestamp());$review->record($l);return $op;
         });
+    }
+    /** Captured financial proof needs review; an audited resume permits one fresh bounded observation. */
+    public static function capturedChargeHeld(Operation $op): bool
+    {
+        return in_array($op->safe_code, ['actual_charge_changed', 'actual_cost_overrun'], true)
+            && is_array($op->attempt['reconciliation'] ?? null)
+            && ($op->policy['renewal_execution']['reason'] ?? null) !== 'resumed';
     }
     private function eligible(Operation $op): bool
     {

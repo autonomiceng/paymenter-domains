@@ -26,9 +26,9 @@ same(null,$row->transfer,'The real query has no transfer intent override');
 $fields=$edit->invoke($page,$row);$transfer=collect($fields)->first(fn($f)=>method_exists($f,'getName')&&$f->getName()==='transfer');
 same('Leave as is (Off)',$transfer->getOptions()['keep'],'Default pricing does not replace saved transfer Off');
 $rows=Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::termReadiness($binding,'com');
-// Without reviewed family evidence, Ordinary remains annual; Grace keeps its own review line.
-same(['Early renewal','1 year','Longer terms are not reviewed yet.'],$rows[1],
-    'Ordinary retains annual renewal and its unreviewed-family explanation');
+// Missing current approval keeps Ordinary annual until fresh facts; Grace retains its separate review line.
+same(['Early renewal','1 year','Current terms are not saved yet. Review the registrar terms. Where the registrar supports it, the scheduled check fills them.'],$rows[1],
+    'Ordinary retains annual renewal and explains missing current approval');
 same(['Grace renewal','Off','Review registry rules and safe deadlines before enabling grace renewal.'],$rows[3],'Grace keeps its review explanation');
 same(1,substr_count(view('domains::admin.term-readiness',['readiness'=>$rows])->render(),'safe deadlines'),'The Terms dialog says the grace review once');
 // Ordinary and Grace keep separate explanations.

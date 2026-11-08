@@ -19,7 +19,7 @@ $management=static function(array $more=[]):array {
     foreach(['nameservers'=>'Nameservers','dns'=>'DNS records','glue'=>'Glue records','ds'=>'DNSSEC','lock'=>'Transfer lock','privacy'=>'WHOIS privacy','contacts'=>'Contacts','auth_code_email'=>'Auth code','auto_renew_off'=>'Renewal settings']as$cap=>$label){
         $m[$cap]=['label'=>$label,'url'=>'/domains/1/manage/'.$cap,'actions'=>[$cap=>'/domains/1/manage/'.$cap]];
     }
-    $m['nameservers']+=['max'=>12,'defaults'=>true,'defaultServers'=>['ns1.hosting.example','ns2.hosting.example'],'current'=>['ns1.host.example','ns2.host.example']];
+    $m['nameservers']+=['registrar'=>'Enom','max'=>12,'defaults'=>true,'defaultServers'=>['ns1.hosting.example','ns2.hosting.example'],'current'=>['ns1.host.example','ns2.host.example']];
     $m['dns']+=['records'=>[['name'=>'@','type'=>'A','address'=>'192.0.2.1'],['name'=>'www','type'=>'CNAME','address'=>'@']],'digest'=>str_repeat('b',64),'recordCheckHeld'=>false];
     $m['glue']+=['records'=>[],'recordCheckHeld'=>false];$m['glue']['actions']=['glue_add'=>'/domains/1/manage/glue_add'];
     $m['ds']+=['records'=>[],'recordCheckHeld'=>false];$m['ds']['actions']=['ds_add'=>'/domains/1/manage/ds_add','ds_delete'=>'/domains/1/manage/ds_delete'];
@@ -49,7 +49,9 @@ same(1,$dom->query('//nav[contains(@class,"domains-crumb")]/a[@href="'.route('do
 same(1,$dom->query('//h1[contains(@class,"domains-mono")][starts-with(normalize-space(.),"'.$name.'")]')->length,'Name is the mono h1');
 same(1,$dom->query('//div[contains(@class,"domains-ph")]//span[contains(@class,"domains-pill")]')->length,'One pill in the header');
 foreach(['Domain help</a>','class="domains-tabs','>Overview<','Contact support to change','Historical invoices','Next renewal','Scroll sideways','Renewal settings','registrar auto-renew','Save nameservers','Use default nameservers','Transfer code','transfer code','Domain privacy','—']as$gone){expect(!str_contains($html,$gone),'Removed: '.$gone);}
-foreach(['Enom','NameSilo','enom','namesilo']as$registrar){expect(!str_contains(strip_tags($html),$registrar),'No registrar name: '.$registrar);}
+same(['Registrar: Enom.'],array_map($norm,iterator_to_array($dom->query('//dialog[@id="edit-nameservers"]/form/p[starts-with(normalize-space(.),"Registrar:")]'))),'The nameserver editor quietly names its saved registrar once');
+$outsideEditors=storefrontDom($html);foreach(iterator_to_array($outsideEditors->query('//dialog'))as$dialog){$dialog->parentNode->removeChild($dialog);}
+foreach(['Enom','NameSilo','enom','namesilo']as$registrar){expect(!str_contains($outsideEditors->document->textContent,$registrar),'No registrar name outside editors: '.$registrar);}
 expect(!preg_match('/unavailable/i',strip_tags($html)),'No unavailable wording');
 
 // As the approved mock: Renewal then Settings on the sheet, History in the rail.
@@ -90,7 +92,7 @@ foreach(['nameservers'=>'nameservers','dns'=>'dns-records','glue'=>'glue-records
 // Editors open in a dialog; without script the link opens it on the server.
 same(1,$dom->query('//li[@id="nameservers"]//a[@data-dialog-open][@href="/domains/1?edit=nameservers#edit-nameservers"]')->length,'Change opens the editor');
 same(1,$dom->query('//li[@id="nameservers"]//dialog[@id="edit-nameservers"][not(@open)]//textarea[@name="nameservers"]')->length,'Editor dialog closed by default');
-foreach(['Nameservers, one per line','2 to 12, like ns1.example.com.','Use the default nameservers','>Save<','Change nameservers?','If the new nameservers aren’t set up, your website and email stop working.']as$t){expect(str_contains($html,$t),'Nameservers dialog: '.$t);}
+foreach(['Nameservers, one per line','2 to 12, like ns1.example.com.','Use site default nameservers','>Save<','Change nameservers?','If the new nameservers aren’t set up, your website and email stop working.']as$t){expect(str_contains($html,$t),'Nameservers dialog: '.$t);}
 foreach(['Turn off transfer lock?','Anyone with the auth code can then move '.$name.' to another registrar.']as$t){expect(str_contains($html,$t),'Lock dialog: '.$t);}
 same(1,$dom->query('//li[@id="lock"]//form[@data-confirm]//dialog[not(@open)]//button[@name="confirmed"][normalize-space(.)="Turn off"]')->length,'Lock off confirms in a dialog');
 foreach(['Email the auth code?','We’ll email it to the owner.']as$t){expect(str_contains($html,$t),'Auth code dialog: '.$t);}
@@ -261,6 +263,10 @@ same(0,$dom->query('//div[contains(@class,"domains-notice")]')->length,'Test mod
 same(false,DomainPage::notice($domain())!==null,'No notice for an active domain');
 same('Changes are on hold: DNS, nameservers and contacts are Off. Contact us to turn them on.',DomainPage::notice($domain(['changesUnavailable'=>true,'changesRefused'=>Paymenter\Extensions\Servers\Domains\Services\DomainManagement::SWITCH_OFF]),'/tickets/create')['text']??null,'Customers read the same reason and their next step');
 same('Changes are on hold until we finish checking an earlier request. There’s nothing you need to do.',DomainPage::notice($domain(['changesUnavailable'=>true,'changesRefused'=>7]),'/tickets/create')['text']??null,'A request in the way says who acts');
+// The notice already says there is nothing to do, so the renewal row under review does not say it again (demo R18b).
+$dom=storefrontDom($render($d=$domain(['changesUnavailable'=>true,'changesRefused'=>7,'renewNow'=>['status'=>'review']]),$summary($d)));
+same('Under review Renewal being checked.',$card($dom,'Next invoice'),'Renewal under review leaves the no-action line to the notice');
+$text=$dom->document->textContent;same(1,substr_count($text,'nothing you need to do')+substr_count($text,'No action needed'),'No-action reassurance once per page');
 same('Changes to this domain are on hold right now. Try again later.',DomainPage::notice($domain(['changesUnavailable'=>true]),'/tickets/create')['text']??null,'No known cause stays general');
 $expired=DomainPage::notice($domain(['statusReason'=>\Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus::LATE]),'/tickets/create');
 same(['This domain has expired. Contact support to check whether it can still be renewed.','Contact support','/tickets/create'],[$expired['text'],$expired['action']['label'],$expired['action']['url']],'An expired domain says what to do next, with the way to do it');

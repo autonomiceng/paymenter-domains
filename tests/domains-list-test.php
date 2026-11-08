@@ -68,6 +68,7 @@ $rows=[
     'test-expiring.example'=>[$dto('test-expiring.example','managed',['testEnvironment'=>true,'expiry'=>'2026-11-02','daysLeft'=>1,'renewalInvoiceMissing'=>true,'statusState'=>'active']),'Nov 2, 2026 In 1 day','On Next invoice: Missing Not issued yet Contact support','Test'],
     'watch-expired.example'=>[$dto('watch-expired.example','watch',['demo'=>true,'expiry'=>'2026-10-21','daysLeft'=>-2,'relatedServices'=>$hosting,'relatedOverflow'=>1,'statusState'=>'watch.expired','statusReason'=>'Renew at your registrar']),'Oct 21, 2026','At your registrar','Demo'],
     'watch-unknown.example'=>[$dto('watch-unknown.example','watch',['relatedServices'=>array_slice($hosting,0,1)]),'Missing Check at your registrar','At your registrar',null],
+    'renewal-review.example'=>[$dto('renewal-review.example','managed',['expiry'=>'2029-11-05','daysLeft'=>1095,'renewalPrice'=>'$10.99','statusState'=>'active','renewalInvoiceReview'=>true]),'Nov 5, 2029','On Next invoice: Under review',null],
 ];
 $page=new LengthAwarePaginator(array_column($rows,0),count($rows),25);
 $html=view('domains::index',['domains'=>$page,'filterCounts'=>[''=>count($rows),'active'=>2,'under_review'=>1,'expired'=>1]])->render(); $dom=storefrontDom($html);
@@ -85,6 +86,8 @@ foreach (array_keys($rows) as $i=>$name) {
     same($expires,$cell($dom,$row,'Expires'),'Expires cell: '.$name);
     same($renewal,$cell($dom,$row,'Renewal invoices'),'Renewal cell: '.$name);
 }
+// The row says what the domain page says while we check a renewal, in the same blue.
+same(['Under review'],array_map($norm,iterator_to_array($dom->query('//tbody/tr[6]/td[@data-label="Renewal invoices"]//*[contains(@class,"domains-tone-info")]'))),'Renewal under review is blue on the list');
 same('Hosting: Starter hosting and 2 more',$norm($dom->query('//tbody/tr[4]/td[1]/*[contains(@class,"domains-cell-sub")]')->item(0)),'Hosting sub line counts every other service');
 same('Hosting: Starter hosting',$norm($dom->query('//tbody/tr[5]/td[1]/*[contains(@class,"domains-cell-sub")]')->item(0)),'Hosting sub line names one service');
 same(0,$dom->query('//tbody/tr[1]/td[1]/*[contains(@class,"domains-cell-sub")]')->length,'Registered domain without hosting has no sub line');
