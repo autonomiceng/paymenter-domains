@@ -9,15 +9,11 @@ use Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns;
 
 storefrontViews();
 $norm=static fn(string $html)=>preg_replace('/\s+/',' ',trim(html_entity_decode(strip_tags($html),ENT_QUOTES|ENT_HTML5)));
-$owned=static fn(string $reason,string $renewal,?string $refundTo=null)=>new OwnedDomain('rejected.example','Failed','bad',null,$renewal,null,['show'=>'/domains/1'],[],[],[],[],false,statusReason:$reason,refundTo:$refundTo);
-// Where a refund goes follows the paid rows: a gateway that can return a payment gets it back, anything else becomes account credit.
-$receipt=Gateway::create(['extension'=>'MoneyReceipt','name'=>'Money receipt fixture','type'=>'gateway','enabled'=>true]);
-$row=static fn(?Gateway $gateway,string $amount='10.99',InvoiceTransactionStatus $status=InvoiceTransactionStatus::Succeeded)=>(new InvoiceTransaction)->forceFill(['amount'=>$amount,'status'=>$status])->setRelation('gateway',$gateway);
-same([null,null,'credit','original','split'],[ReceiptReturns::destination([]),ReceiptReturns::destination([$row($receipt,'10.99',InvoiceTransactionStatus::Failed),$row(null,'0.00')]),ReceiptReturns::destination([$row(null)]),ReceiptReturns::destination([$row($receipt)]),ReceiptReturns::destination([$row($receipt),$row(null,'5.00')])],'Refund destination follows the paid rows');
-
-$money=['original'=>'Any refund goes back to your original payment method.','credit'=>'Any refund goes to your account credit.',
+$owned=static fn(string $reason,string $renewal,?string $refundTo=null)=>new OwnedDomain(...['rejected.example','Failed','bad',null,$renewal,null,['show'=>'/domains/1'],[],[],[],[],false,'statusReason'=>$reason,...($refundTo===null?[]:['refundTo'=>$refundTo])]);
+// Start with the existing no-payment DTO shape, before any newly added return helper.
+$money=[null=>'', 'original'=>'Any refund goes back to your original payment method.','credit'=>'Any refund goes to your account credit.',
     'split'=>'Any refund goes back to your original payment method where it can, and to your account credit otherwise.',
-    'credited'=>'We added what you paid to account credit.','returned'=>'We are returning what you paid to your original payment method.',null=>''];
+    'credited'=>'We added what you paid to account credit.','returned'=>'We are returning what you paid to your original payment method.'];
 foreach(['Registration did not finish'=>['Not registered',''],'Transfer did not finish'=>['Not transferred','The domain stays at your current registrar. ']] as $reason=>[$value,$lead]){
     foreach($money as $to=>$sentence){
         $to=$to===''?null:$to;$note=trim($lead.$sentence);
@@ -30,4 +26,10 @@ foreach(['Registration did not finish'=>['Not registered',''],'Transfer did not 
 }
 // A domain still waiting for its first expiry keeps the existing Missing line.
 same(true,DomainPage::expires(new OwnedDomain('waiting.example','Active','ok',null,'',null,['show'=>'/domains/1'],[],[],[],[],false),null,'/tickets/create')['missing'],'Other missing expiries are unchanged');
+// Where a refund goes follows the paid rows: a gateway that can return a payment gets it back, anything else becomes account credit.
+$receipt=Gateway::create(['extension'=>'MoneyReceipt','name'=>'Money receipt fixture','type'=>'gateway','enabled'=>true]);
+$row=static fn(?Gateway $gateway,string $amount='10.99',InvoiceTransactionStatus $status=InvoiceTransactionStatus::Succeeded)=>(new InvoiceTransaction)->forceFill(['amount'=>$amount,'status'=>$status])->setRelation('gateway',$gateway);
+same([null,null,'credit','original','split'],[ReceiptReturns::destination([]),ReceiptReturns::destination([$row($receipt,'10.99',InvoiceTransactionStatus::Failed),$row(null,'0.00')]),ReceiptReturns::destination([$row(null)]),ReceiptReturns::destination([$row($receipt)]),ReceiptReturns::destination([$row($receipt),$row(null,'5.00')])],'Refund destination follows the paid rows');
+
+
 $nativeSuccessful=true;echo "Rejected registration page checked.\n";

@@ -23,6 +23,7 @@ $purchaseRefusal='<interface-response><RRPCode>541</RRPCode><RRPText>Data manage
 $negative=$new('saved-response.example.com'); $virgin=$negative->getRawOriginal();
 $refunds=new \Paymenter\Extensions\Servers\Domains\Services\Refunds($clock);
 // Error evidence survives the real driver, sealed finish and later recovery without authorizing a replay or credit.
+$diagnostics=[];
 foreach (['refusal','contradictory','lost'] as $case) {
     $calls=[];
     $wire=static function($origin,$command,$parameters,$timeout) use (&$calls,$case,$purchaseRefusal): string {
@@ -40,7 +41,7 @@ foreach (['refusal','contradictory','lost'] as $case) {
         $result->attempt['send_state']],'Purchase error/lost reply retains uncertain sent authority: '.$case);
     $expected=match($case){'lost'=>null,'contradictory'=>['code'=>'541','text'=>'Validation error. Failed to create order.'],
         default=>['code'=>'545','text'=>'Error 545 - Name server does not exist']};
-    same($expected,$result->attempt['evidence']['registrarReply']??null,'Bounded original Purchase reply retained: '.$case);
+    $diagnostics[] = [$case, $expected, $result->attempt['evidence']['registrarReply'] ?? null];
     same(null,$refunds->creditRejected($result->id),'Ambiguous reply cannot enter the credit path');
     commerceReject(fn()=>\Paymenter\Extensions\Servers\Domains\Services\RefundProof::requireReturnable($result,$result->domain));
     $saved=$result->fresh()->attempt;
@@ -96,6 +97,11 @@ same('registration_rejected',$result->domain->fresh()->status,'Existing credit r
 expect(\Paymenter\Extensions\Servers\Domains\Services\OperationTerminalProof::safe($result->fresh(),$result->domain->fresh()),'Terminal provider proof stays bound to its original holding');
 \Paymenter\Extensions\Servers\Domains\Services\DomainReservations::releaseTerminal($result->domain->domain);
 same(null,$result->domain->fresh()->reservation_name,'Only completed refusal and credit can release the name');
+
+// Check the terminal outcome before diagnostics, so the old behavior fails on its unresolved paid order.
+foreach ($diagnostics as [$case, $expected, $reply]) {
+    same($expected, $reply, 'Bounded original Purchase reply retained: '.$case);
+}
 
 $nativeSuccessful=true;
 
