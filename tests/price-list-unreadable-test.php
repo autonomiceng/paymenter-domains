@@ -71,18 +71,18 @@ foreach($cases as $case){
         foreach([5,9,13] as $offset){same(['Left out','Left out','Left out','Left out: '.lcfirst($reason)],array_slice($record,$offset,4),'Omitted amounts never invent saved prices');}
         same(['Left out','Left out'],array_slice($record,17),'Unreadable formula and fee are explicit');
     }
-    $page=Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful()->set('account',WhatYouSell::ALL)->assertSee('Left out')->assertSee('left out:')->assertDontSee('Some TLDs are left out')->assertSee('To fix, use Default pricing at the top of this page.');
+    $page=Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful()->set('account',WhatYouSell::ALL)->filterTable('for_sale',false)->assertSee('Left out')->assertSee('so these have no price:')->assertDontSee('Some TLDs are left out')->assertSee('Fix it in Default pricing at the top of this page.');
     $html=$page->html();
     $dom=new DOMDocument;@$dom->loadHTML($html);$xpath=new DOMXPath($dom);
     $warningText=$xpath->evaluate('normalize-space(//*[@data-price-omission])');
     $labels=array_values(array_unique(array_column($matrix['skipped'],'tld')));
-    same($reason.'. '.count($labels).' TLDs left out: '.implode(', ',$labels).'. To fix, use Default pricing at the top of this page.',$warningText,'Warning gives the exact grouped count, TLDs and repair location');
+    same(($cause==='card_fee'?"The card fee can't be read":$reason).', so these have no price: '.implode(', ',$labels).'. Fix it in Default pricing at the top of this page.',$warningText,'Warning names the cause, every grouped TLD and repair location');
     same(count($labels),(int)$xpath->evaluate('count(//*[@data-price-omission]//*[@data-omitted-tld])'),'Page identifies every omitted TLD once');
     $page->assertCountTableRecords(count($matrix['rows'])+count($matrix['skipped']));
     expect((int)$xpath->evaluate('count(//*[@data-price-omission]/ancestor::*[contains(concat(" ",normalize-space(@class)," ")," fi-sc-callout ") and contains(@class,"fi-color-warning")])')===1,'Unreadable prices appear in an amber callout');
     expect((int)$xpath->evaluate('count(//*[@data-price-omission]/following::*[contains(concat(" ",normalize-space(@class)," ")," fi-ta-header-toolbar ")])')>0,'Omission alert is above the toolbar');
     expect(!str_contains($html,'Prices in USD for')&&!str_contains($html,'Saved prices in USD for'),'No repeated currency/years note between toolbar and rows');
-    $page->set('account',$t->server_id)->filterTable('show','default')->assertSee('No prices to show. Some TLDs are left out.');
+    $page->set('account',$t->server_id)->filterTable('show','default')->assertSee('No prices to show. See the note above.');
     same($settingsBefore,$rawSettings(),'Service, page and CSV preserve raw settings bytes, including corrupt ciphertext');
     same($before,DB::table('domains_prices')->orderBy('id')->get()->toJson(),'Each corrupt case preserves saved prices and revisions');
     $watch=false;App\Models\Setting::whereNull('settingable_type')->where('key',$key)->delete();if($key===PricingRules::KEY){saveDefaultRule(PricingRule::DEFAULT);}
@@ -93,7 +93,7 @@ $matrix=$service->read();same([$custom->id],array_column($matrix['skipped'],'id'
 // One left-out TLD among readable rows is not why an amount filter is empty.
 Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful()->set('account',$custom->server_id)->filterTable('show','below_cost')->assertSee('No TLDs match')->assertDontSee('see above')->assertDontSee('use Sync prices');
 same('custom_rule',$matrix['skipped'][0]['cause'],'Custom failure retains its own repair cause');
-$page=Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful()->set('account',WhatYouSell::ALL)->assertSee("custom pricing can't be read.",false)->assertSee('To fix, open the .org TLD page and use Edit prices.');
+$page=Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful()->set('account',WhatYouSell::ALL)->filterTable('for_sale',false)->assertSee("custom pricing can't be read.",false)->assertSee('Open .org and use Edit prices.');
 $dom=new DOMDocument;@$dom->loadHTML($page->html());$xpath=new DOMXPath($dom);
 same('Open .org',$xpath->evaluate('normalize-space(//a[@href="'.\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource::getUrl('view',['record'=>$custom->id]).'"][ancestor::*[contains(@class,"fi-sc-callout")]])'),'Single-TLD omission alert opens its saved TLD');
 $record=collect($page->instance()->getTableRecords()->items())->firstWhere('tld','org');
@@ -104,7 +104,7 @@ $watch=false;
 // As above, let the page prepare this account before watching read-only rendering.
 Livewire::actingAs($u)->test(WhatYouSell::class,['account'=>$healthy->server_id]);
 $setting(CardFee::KEY,[],false);$watch=true;
-$feePage=Livewire::actingAs($u)->test(WhatYouSell::class,['account'=>$healthy->server_id])->assertSuccessful();
+$feePage=Livewire::actingAs($u)->test(WhatYouSell::class,['account'=>$healthy->server_id])->filterTable('for_sale',false)->assertSuccessful();
 $dom=new DOMDocument;@$dom->loadHTML($feePage->html());$xpath=new DOMXPath($dom);
 $links=$xpath->query('//*[@data-price-omission]/ancestor::*[contains(concat(" ",normalize-space(@class)," ")," fi-sc-callout ")]//a');
 same(['tlds'=>['.com'],'links'=>[]],
