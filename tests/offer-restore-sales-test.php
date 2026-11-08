@@ -35,5 +35,5 @@ same('This account is set up to sell .com for 1 or 3 years. Pick only those, or 
 same('Transfers are not set up for .com on this account. Change sales under What you sell. Turn off Transfers. Nothing was saved.',$refusal('Acquisition acceptance unavailable.',['transfer'=>true]),'Unsupported transfers are named');
 same('To turn sales back on, tick the box to confirm this account is set up for them. Check What you sell. Nothing was saved.',$refusal('Explicit restoration required.'),'Confirmation guidance');
 same('Customers still own .com domains here, so renewals must stay on. Nothing was saved.',$refusal('Retained holders require annual renewal support.'),'Holder renewal guidance');
-same('Prices for .com are missing or out of date. Use Sync prices on the TLD list, then try again. Nothing was saved.',$refusal('Catalogue publication evidence changed.'),'Stale price guidance');
+same('Prices for .com are missing or out of date. See the last successful refresh and next due on the TLD page. Sync prices is an optional retry. Nothing was saved.',$refusal('Catalogue publication evidence changed.'),'Stale price guidance');
 $set([]);$nativeSuccessful=true;
