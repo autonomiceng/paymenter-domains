@@ -42,7 +42,7 @@ foreach(['terms','disabled','inheritance'] as $case){
         if(Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed()->setting($t->fresh(),'enabled')){$errors[]='Inherited TLD ignores a later account Off default';}
     }else{
         if($t->fresh()->getRawOriginal()!==$before){$errors[]='Registrar dispatch changed invalid '.$case.' intent';}
-        if($case==='terms'&&$t->fresh()->getRawOriginal()===$before){$page->assertNotified('Change recorded');}
+        if($case==='terms'&&$t->fresh()->getRawOriginal()===$before){$page->assertNotified('Change refused');}
     }
 }
 DB::table('extensions')->where('id',$other->server_id)->update(['enabled'=>true]);
