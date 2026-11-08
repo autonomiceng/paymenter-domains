@@ -7,7 +7,7 @@ expect(is_file(__DIR__.'/../Domains/Services/ComplimentaryAccounts.php'),'Accoun
 require __DIR__.'/Support/transfer-fixture.php';
 use App\Models\Role;
 use Paymenter\Extensions\Servers\Domains\Services\{ComplimentaryAccounts,ComplimentaryCosts,PricingRule};
-$staff=commerceUser();$staff->update(['role_id'=>Role::create(['name'=>'Account funding','permissions'=>['admin.domains.manage','admin.domains.fund']])->id]);
+$staff=commerceUser();$staff->update(['role_id'=>Role::create(['name'=>'Account funding','permissions'=>['admin.domains.manage','admin.domains.fund','admin.domains.costs']])->id]);
 ComplimentaryAccounts::set($user->id,$staff,true,'Complimentary transfers',$clock);
 foreach([0,1] as $i){
     $state->calls=[];$op=$newTransfer(placeholderComFixtureName('comp-transfer-'.$i.'-placeholder.com'),$i,false);

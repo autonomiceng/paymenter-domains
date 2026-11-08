@@ -8,7 +8,7 @@ require __DIR__.'/Support/renewal-execution.php';
 use App\Models\{Invoice,Role};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Services\{ComplimentaryAccounts,ComplimentaryCosts,ComplimentaryInvoices,HoldingLocks,RenewalFunding};
-$staff=commerceUser();$role=Role::create(['name'=>'Complimentary funding','permissions'=>['admin.domains.manage','admin.domains.fund']]);$staff->update(['role_id'=>$role->id]);
+$staff=commerceUser();$role=Role::create(['name'=>'Complimentary funding','permissions'=>['admin.domains.manage','admin.domains.fund','admin.domains.costs']]);$staff->update(['role_id'=>$role->id]);
 $enable=fn()=>ComplimentaryAccounts::set($user->id,$staff,true,'Staff account gift',$clock);
 $disable=fn()=>ComplimentaryAccounts::set($user->id,$staff,false,'Gift ended',$clock);
 [$op,$d,$b,$invoice]=$makeRenewal(placeholderComFixtureName('account-renew-placeholder.com'),false,1,false,$enable);
@@ -30,7 +30,7 @@ $clock->instant=new DateTimeImmutable('2028-09-27T12:00:00Z');activeCommerceFact
 $next=$billing->invoice($d->id,$user);same('pending',$next->status,'After switch off the next term asks for payment');expect((float)$next->total>0,'Next term charges standard pricing');
 [$over,$heldDomain,$binding]=$makeRenewal(placeholderComFixtureName('account-cost-cap-placeholder.com'),false,1,false,$enable);
 $state->price='8.01';$writes=$state->writes;same('held',$runRenewal($over,$binding)->state,'Registrar cost increase stops the complimentary send');same($writes,$state->writes,'Cost-cap stop pays nothing');
-same('Needs approval: registrar cost $8.01 is above the usual $8.00. Ask staff with domain management and funding permissions to approve this cost. Nothing is charged until approval.',ComplimentaryCosts::message($over->fresh()),'Staff see exact approval amounts');
+same('Needs approval: registrar cost $8.01 is above the usual $8.00. Ask staff with domain cost, management and funding permissions to approve this cost. Nothing is charged until approval.',ComplimentaryCosts::message($over->fresh()),'Staff see exact approval amounts');
 commerceReject(fn()=>ComplimentaryCosts::approve($over->id,$user,'8.01','Approved',$clock));
 commerceReject(fn()=>ComplimentaryCosts::approve($over->id,$staff,'8.02','Stale quote',$clock));
 ComplimentaryCosts::approve($over->id,$staff,$over->fresh()->policy['complimentary_cost_review']['amount'],'Reviewed registrar increase',$clock);

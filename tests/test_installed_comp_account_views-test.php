@@ -39,7 +39,7 @@ foreach([['complimentary',$compReason],['paid_invoice',$paidReason]] as [$basis,
 $costManagedHtml=$managed->html();
 $fundOnly=staffUser([Staff::VIEW,Staff::COSTS,'admin.domains.fund']);
 $limited=Livewire::actingAs($fundOnly)->test(ViewDomain::class,['record'=>$d->id]);
-$limited->assertSee('Ask staff with domain management and funding permissions to approve this cost. Nothing is charged until approval.')->assertActionHidden('approveComplimentaryCost');
+$limited->assertSee('Ask staff with domain cost, management and funding permissions to approve this cost. Nothing is charged until approval.')->assertActionHidden('approveComplimentaryCost');
 $limited->assertSee($compReason)->assertDontSee('Cancel and add credit');
 $costFundOnlyHtml=$limited->html();
 $policy=$op->fresh()->policy;unset($policy['complimentary_cost_review']);$op->refresh()->update(['state'=>'queued','safe_code'=>null,'policy'=>$policy]);
