@@ -153,7 +153,7 @@ final class DomainSummaries
                     if($t->price_mode==='complimentary'){$price=ComplimentaryAccounts::LABEL;}
                     $cycle=($cycles[$id]??collect())->first(fn($o)=>(int)$o->authority_generation===(int)$t->authority_generation && (int)$o->service_id===(int)$t->service_id && (int)$o->server_id===(int)$t->server_id && $o->registrar_key===$t->registrar_key && $o->account_fingerprint===$t->account_fingerprint && $o->base_expires_at?->format('Y-m-d')===$expiry);
                     if (!$off && $expiry) {
-                        if ($cycle && !RenewalCycles::closedEarly($cycle)) { $inv=$invoices[$cycle->invoice_id]??null;$item=$items[$cycle->invoice_item_id]??null;
+                        if ($cycle && !RenewalCycles::closedEarly($cycle)) { $inv=$invoices[$cycle->invoice_id]??null;
                             // List and detail validate every member of the issued renewal invoice.
                             try { $inv=DomainBilling::existingInvoice($cycle,['domain'=>$t,'invoices'=>$invoices,'items'=>$items,'transactions'=>$transactions]);$due=$inv->due_at?->format('Y-m-d'); } catch (\Throwable) { $invoiceReview=true; }
                             $invoiceMissing=$due===null && !$invoiceReview;
@@ -175,8 +175,7 @@ final class DomainSummaries
                 try { $episode=$episode?json_decode(Crypt::decryptString($episode->data),true,64,JSON_THROW_ON_ERROR):[]; if (!is_array($episode) || !is_array($episode['portal']??[]) || array_filter($episode['portal']??[],fn($v)=>!is_array($v) || array_filter($v,fn($key)=>!is_string($key)))) { $episode=[]; } } catch (\Throwable) { $episode=[]; }
                 $noticeKeys=($episode['target']??null)===[$kind,(int)$id]?array_values(array_unique(array_merge(...array_values($episode['portal']??[[]])))):[];$noticeDates=[];$dnsPreviouslyMatched=in_array('ns_changed',$noticeKeys,true) && ($episode['dns']['previously_matched']??false)===true;
                 if ($expected==='platform' && !$signals['dns']['stale'] && $signals['dns']['value']==='external') {
-                    // A confirmed current observation is enough to describe the mismatch.
-                    // Portal facts must not wait for the separately admitted notice planner.
+                    // Describe the current observation; only notices wait for a second sample.
                     $states[]='watch.ns_changed';
                     $noticeDates['dns']=(int)($episode['dns']['episode']??$delegation?->started_at);
                 }
