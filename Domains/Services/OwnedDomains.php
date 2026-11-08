@@ -265,7 +265,7 @@ final readonly class OwnedDomains
         $renewNow = $this->renewNow($d, $forms);
         if ($adopted) {
             if (isset($renewNow['invoice'])) { $renewalInvoice = ['state' => 'pending', 'due' => $renewalDue]; }
-            elseif (isset($renewNow['status'])) { $renewalInvoice = ['state' => $renewNow['status'], ...array_intersect_key($renewNow, ['goes' => true])]; }
+            elseif (isset($renewNow['status'])) { $renewalInvoice = ['state' => $renewNow['status'], ...array_intersect_key($renewNow, ['goes' => true,'check'=>true])]; }
         }
         if ($adopted && $renewal === 'On' && $renewalInvoice === [] && $d->provider_expires_at) {
             try {
@@ -378,11 +378,13 @@ final readonly class OwnedDomains
             ->where(fn ($q) => $q->whereLike('operation_key', $key, caseSensitive: true)->orWhereLike('operation_key', $key.':replacement:%', caseSensitive: true))
             ->orderByDesc('id')->first();
         if (!$cycle) { return null; }
+        $check=RegistrarCheck::forCustomer($cycle);
+        $review=['status'=>'review',...(($check['tone']??null)==='info'?['check'=>$check]:[])];
         $l = self::renewalLedger($d, collect([$cycle]));
         if ($cycle->safe_code !== 'renewal_cancelled_unpaid' && !RenewalReplacements::reviewed($cycle, $d)) {
             $invoice = $l['invoices']->firstWhere('id', $cycle->invoice_id);
             if ($invoice?->status === 'cancelled' && (int) $invoice->user_id === (int) $d->user_id) { return ['status' => 'cancelled']; }
-            try { $invoice = DomainBilling::existingInvoice($cycle, $l); } catch (\Throwable) { return ['status' => 'review']; }
+            try { $invoice = DomainBilling::existingInvoice($cycle, $l); } catch (\Throwable) { return $review; }
             if ($invoice->status === 'pending' && RenewalCycles::expiredInvoice($cycle, $now ?? app(Clock::class)->now())) {
                 return ['status' => RenewalCycles::canRetireUnpaid($cycle, $l) ? 'cancelled' : 'review'];
             }
@@ -390,7 +392,7 @@ final readonly class OwnedDomains
                 'pending' => ['invoice' => route('invoices.show', $invoice)],
                 'paid' => ['status' => 'paid', ...self::goes($cycle)],
                 'closed' => ['status' => 'closed'],
-                default => ['status' => 'review'] };
+                default => $review };
         }
         // A retired or refunded debt permits a replacement only when billing's cycle proof holds.
         try {

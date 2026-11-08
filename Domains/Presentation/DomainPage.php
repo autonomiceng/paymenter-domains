@@ -32,6 +32,7 @@ final class DomainPage
         $contact = $support ? ['label' => 'Contact support', 'url' => $support] : null;
         $order = $d->order['state'] ?? null; $word = ($d->order['kind'] ?? null) === 'transfer' ? 'transfer' : 'registration';
         $notice = match (true) {
+            isset($d->renewalInvoice['check']) => ['tone'=>'info','text'=>$d->renewalInvoice['check']['body'],'action'=>$contact],
             $d->syncPaused => self::ours('Sync paused: the demo registrar is off. Nameservers show when it resumes.', $contact),
             $d->setupPending => self::ours('We’re confirming this domain. Changes and renewals start after that. If it expires soon, let us know.', $contact),
             $order === 'unpaid' => ['tone' => 'warn', 'text' => 'This order isn’t paid yet. Pay the invoice to start the '.$word.'.', 'action' => ['label' => 'Pay invoice', 'url' => $d->order['invoice'], 'button' => true]],
