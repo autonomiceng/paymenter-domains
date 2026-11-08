@@ -36,6 +36,8 @@ class ViewDomain extends ViewRecord
     private ?array $edits = null;
     private ?array $facts = null;
     private ?array $domainStatus = null;
+    #[\Livewire\Attributes\Locked]
+    public string $complimentaryCostStamp='';
     public function getTitle(): string { Staff::requireView(); return (string)$this->getRecord()->domain; }
     public function getHeading(): HtmlString
     {
@@ -85,8 +87,13 @@ class ViewDomain extends ViewRecord
         return Action::make('approveComplimentaryCost')->label('Approve registrar cost')->color('danger')
             ->visible($op!==null)->modalHeading('Approve registrar cost')->modalDescription($message)
             ->schema([\Filament\Forms\Components\TextInput::make('reason')->label('Reason')->required()->maxLength(500)])
-            ->action(function(array $data)use($op):void {
+            ->mountUsing(function(?Schema $schema)use($op,$d):void {
+                $this->complimentaryCostStamp=\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::stamp($op,$d);
+                $schema?->fill();
+            })
+            ->action(function(array $data)use($op,$d):void {
                 try{
+                    if(!hash_equals($this->complimentaryCostStamp,\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::stamp($op,$d))){throw new \DomainException('The reviewed registrar cost changed.');}
                     \Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::approve($op->id,Auth::user(),$op->policy['complimentary_cost_review']['amount'],$data['reason'],app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class));
                     \Filament\Notifications\Notification::make()->success()->title('Registrar cost approved')->send();
                 }catch(\Throwable){\Filament\Notifications\Notification::make()->danger()->title('Could not approve registrar cost')->body('Reload the domain and check the current registrar cost and hold.')->send();}
