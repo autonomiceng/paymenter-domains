@@ -5,6 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Presentation;
 /**
  * Customer data only. No models, binding, operation keys, provider IDs or financial evidence.
  * status, tone, statusReason: the DomainStatus label, client tone and reason line (see StatusPill).
+ * rejectedAcquisition: register or transfer when acquisition ended without the domain, independent of cancelled/payment-return wording.
  * expiry: registrar-reported registration expiry (Y-m-d), null when unconfirmed.
  * renewalDue: due date (Y-m-d) of the exact retained pending renewal invoice, not expiry
  * or a projected renewal date; null when no matching issued invoice is confirmed.
