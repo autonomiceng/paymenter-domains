@@ -34,7 +34,7 @@ foreach(['register','transfer']as$action){
     $unsafe=$op->fresh();$retained=$unsafe->getRawOriginal();
     $page=Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation::class,['record'=>$op->id]);
     $page->assertActionHidden('credit')->assertSee('Close order is unavailable');
-    $page->callAction('credit',['reason'=>'Review invalid closure']);
+    $page->call('mountAction','credit',[],[]);
     same($retained,$op->fresh()->getRawOriginal(),'Hidden closure cannot alter refusal evidence');same($money,$nativeMoney(),'Unsafe closure moves no funds');
     DB::table('domains_operations')->where('id',$op->id)->update($virgin);
     FundsWaits::sweep($account,$now->modify('+3 days'));$closed=$op->fresh();

@@ -69,10 +69,10 @@
 <span class="domains-row__v">@include('domains::partials.status-pill', ['pill'=>['label'=>'Off','tone'=>'muted']])<span class="domains-sub">{{ $section['reason'] }}</span> @if (isset($section['family']))@include('domains::partials.record-family-status',['family'=>$section['family']])@endif</span>
 <span class="domains-row__a"><button class="domains-btn domains-btn--secondary" type="button" aria-disabled="true" disabled>Add DS record</button></span>
 @elseif ($section['unavailable'] ?? false)
-@php $total = $records === null ? null : count($records) + count($section['fixed'] ?? []); @endphp
+@php $total = isset($section['inventory']) ? count($section['inventory']) : ($records === null ? null : count($records) + count($section['fixed'] ?? [])); @endphp
 <span class="domains-row__v">@if ($total === null)<span class="domains-muted">Not available</span>@else{{ $total }} {{ $total === 1 ? 'record' : 'records' }}@if ($asOf($section['asOf'] ?? null))<span class="domains-sub">As of @include('domains::partials.moment', ['at' => $section['asOf']])</span>@endif @endif <span class="domains-sub">{{ \Paymenter\Extensions\Servers\Domains\Services\OwnedDomains::DNS_OFF }}</span></span>
 @elseif (in_array($cap, ['dns', 'srv']))
-@php $total = $records === null ? 0 : count($records) + count($section['fixed'] ?? []); @endphp
+@php $total = isset($section['inventory']) ? count($section['inventory']) : ($records === null ? 0 : count($records) + count($section['fixed'] ?? [])); @endphp
 <span class="domains-row__v">@if ($records === null && $familyState === 'unknown')@elseif ($records === null && ($section['family']['state'] ?? null) === 'unknown')<span class="domains-muted">Checking records</span>@elseif ($records === null)@if ($initial)@include('domains::partials.status-pill', ['pill'=>['label'=>'Checking','tone'=>'info']])@else @include('domains::partials.missing', ['cause' => $waits, 'calm' => $waits === null, 'fix' => null, 'stack' => true])@endif@else{{ $total }} {{ $total === 1 ? 'record' : 'records' }}@if ($asOf($section['asOf'] ?? null))<span class="domains-sub">As of @include('domains::partials.moment', ['at' => $section['asOf']])</span>@endif@endif</span>
 @if ($records !== null && $section['actions'])
 <span class="domains-row__a"><a class="domains-a" data-dialog-open href="{{ $editUrl }}" aria-label="Edit {{ $label }}">Edit</a></span>

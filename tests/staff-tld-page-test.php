@@ -134,7 +134,7 @@ foreach([[Staff::VIEW],[Staff::VIEW,Staff::POLICY],[Staff::VIEW,Review::permissi
     $reader=staffUser($rights);Auth::setUser($reader);
     $canChange=in_array(Staff::POLICY,$rights,true)&&in_array(Review::permission('seller'),$rights,true);
     $missing=Livewire::actingAs($reader)->test(ViewTld::class,['record'=>$silo->id])->assertSuccessful();
-    if($canChange){$missing->assertActionVisible('seller')->assertSee(ViewTld::CHOOSE_SELLER);}
+    if($canChange){$missing->assertActionVisible('seller')->assertSee(ViewTld::CHOOSE_SELLER_HEAD);}
     else{$missing->assertActionHidden('seller')->assertDontSee(ViewTld::CHOOSE_SELLER)->assertSee('Ask staff who can change the registrar.');}
 }
 DB::table('domains_sales_policies')->where('tld','com')->update(['server_id'=>$enom->server_id]);
