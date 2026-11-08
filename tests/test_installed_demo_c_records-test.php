@@ -61,7 +61,7 @@ $pendingPage=new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(n
 $pendingHtml=view('domains::partials.owner-management',['domain'=>$pendingPage])->render();$check(str_contains($pendingHtml,'data-ds-state')&&str_contains($pendingHtml,'Nothing was sent.'),'Partial family metadata preserves pending DS status');
 // The family presentation can restrict a current read, but cannot revoke existing controls without one.
 $existing=[];foreach(['nameservers','contacts','dns','srv','glue','ds'] as $kind){$existing[$kind]=['label'=>$kind,'actions'=>[$kind=>'/domains/1/manage/'.$kind],'url'=>'/domains/1/manage/'.$kind,'records'=>[],'fixed'=>[]];}
-$existing['nameservers']+=['current'=>['ns1.example.net','ns2.example.net'],'max'=>13,'defaults'=>false];
+$existing['nameservers']+=['current'=>['ns1.example.net','ns2.example.net'],'max'=>13,'defaults'=>false,'registrar'=>'NameSilo'];
 $existing['dns']=[...$section,'url'=>'/domains/1/dns'];
 $editable=new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(...[...get_object_vars($owned),'management'=>$existing]);
 foreach(['never_read','wrong_identity','failed_read'] as $case){

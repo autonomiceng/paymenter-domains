@@ -21,8 +21,8 @@ $op->update(['state'=>'held','safe_code'=>'registrar_price_increased','policy'=>
 // One native server-side table build shares a fresh permission snapshot across all row/cell callbacks.
 Auth::setUser($actor);$render=Livewire::actingAs($actor)->test(ListOperations::class);$table=$render->instance()->getTable();
 \Illuminate\Support\Facades\DB::flushQueryLog();\Illuminate\Support\Facades\DB::enableQueryLog();
-for($row=0;$row<25;$row++){$table->getColumn('note')->record($op->fresh())->getState();}
-$grantQueries=array_filter(\Illuminate\Support\Facades\DB::getQueryLog(),fn($q)=>str_contains($q['query'],'"roles"'));
+for($row=0;$row<25;$row++){$probe=clone $op;$probe->id=10000+$row;$table->getColumn('note')->record($probe)->getState();}
+$grantQueries=array_filter(\Illuminate\Support\Facades\DB::getQueryLog(),fn($q)=>str_contains(strtolower($q['query']),'roles'));
 \Illuminate\Support\Facades\DB::disableQueryLog();expect(count($grantQueries)<=2,'Table row reasons share one fresh full-grant snapshot');unset($render,$table);
 $failures=[];
 $cases=['view'=>[Staff::VIEW],'fund'=>[Staff::VIEW,'admin.domains.fund'],

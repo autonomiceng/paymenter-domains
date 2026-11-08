@@ -169,7 +169,7 @@ same(false,isset(DomainFacts::for($cases['past expiry'][0]->fresh())['Next invoi
 $d=$row('active',null,null,null,730); $paid=Invoice::withoutEvents(fn()=>Invoice::create(['user_id'=>$d->user_id,'currency_code'=>'USD','status'=>'paid','due_at'=>now()]));
 $stopped=$request($d,'renew','queued',[...$sent($d),'invoice_id'=>$paid->id]); $members['active'][]=$d->id;
 Account::where('server_id',$stopped->server_id)->update(['processing_enabled'=>false]);
-same('Not sent. Orders are off for this account. Turn Orders on in Registrars.',DomainFacts::status($d->fresh())['step'],'Queued renewal says Orders are off on the domain');
+same('Not sent. Orders are off for this account. Turn Orders on in Registrars.',DomainFacts::status($d->fresh())['step'],'Queued renewal says Orders are off on the domain: '.DomainFacts::status($d->fresh())['step']);
 same('Not sent. Orders are off for this account.',RequestFacts::reason($stopped->fresh()),'Queued renewal says Orders are off on the request');
 Account::where('server_id',$stopped->server_id)->update(['processing_enabled'=>true]);
 // An inspection closes only what is proven cleared, and the alert never flips while a fix moves along.
