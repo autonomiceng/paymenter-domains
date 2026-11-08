@@ -17,6 +17,13 @@ $actor=staffUser($all)->load('role');
     static fn()=>ComplimentaryAccounts::set($user->id,$actor,true,'Complimentary account',$clock));
 $op->update(['state'=>'held','safe_code'=>'registrar_price_increased','policy'=>[...$op->policy,
     'complimentary_cost_review'=>['amount'=>'8.01','usual'=>'8.00']]]);
+
+// One native server-side table build shares a fresh permission snapshot across all row/cell callbacks.
+Auth::setUser($actor);$render=Livewire::actingAs($actor)->test(ListOperations::class);$table=$render->instance()->getTable();
+\Illuminate\Support\Facades\DB::flushQueryLog();\Illuminate\Support\Facades\DB::enableQueryLog();
+for($row=0;$row<25;$row++){$table->getColumn('note')->record($op->fresh())->getState();}
+$grantQueries=array_filter(\Illuminate\Support\Facades\DB::getQueryLog(),fn($q)=>str_contains($q['query'],'"roles"'));
+\Illuminate\Support\Facades\DB::disableQueryLog();expect(count($grantQueries)<=2,'Table row reasons share one fresh full-grant snapshot');unset($render,$table);
 $failures=[];
 $cases=['view'=>[Staff::VIEW],'fund'=>[Staff::VIEW,'admin.domains.fund'],
     'manage and fund'=>[Staff::VIEW,'admin.domains.manage','admin.domains.fund'],

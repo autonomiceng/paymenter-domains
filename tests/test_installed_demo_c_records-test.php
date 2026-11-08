@@ -19,6 +19,14 @@ $record=['identity'=>ObservationRecords::identity($d),'at'=>'2026-11-04T09:00:00
     'settings'=>['nameservers'=>['state'=>'complete','facts'=>['nameservers'=>['ns1.example.net','ns2.example.net']]],'contacts'=>['state'=>'unknown','facts'=>[]],'flags'=>['state'=>'complete','facts'=>[]]]];
 $d->observation=['records'=>$record];$before=$d->getRawOriginal();$state=RecordFamilies::read($d,$now);
 $families=array_column($state['rows'],'state','kind');
+foreach([[null,false,true,2],[null,null,null,0],[false,false,false,3]]as[$privacy,$locked,$auto,$expected]){
+ $flagsRecord=$record;$flagsRecord['settings']['flags']=['state'=>'partial','facts'=>['privacy'=>$privacy,'locked'=>$locked,'provider_auto_renew'=>$auto]];
+ $probe=clone $d;$probe->observation=['records'=>$flagsRecord];$rows=RecordFamilies::read($probe,$now)['rows'];
+ $same($expected,collect($rows)->firstWhere('kind','flags')['count'],'Null flags are absent; false is an observed setting');
+}
+$nsHtml=view('domains::partials.nameserver-list',['servers'=>['ns10.example.net','ns2.example.net','ns1.example.net']])->render();
+$nsDom=storefrontDom($nsHtml);$same(['ns1.example.net','ns2.example.net','ns10.example.net'],array_map(fn($n)=>$n->textContent,iterator_to_array($nsDom->query('//span[contains(@class,"domains-mono")]'))),'Nameservers have stable natural presentation order');
+
 $same(['complete','unsupported','unknown','partial'],[$families['dns'],$families['srv'],$families['ds'],$families['glue']],'Each record family keeps its own state');
 $check($state['stale'],'Older than one day is stale');
 $owned=new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(name:$d->domain,status:'Active',tone:'ok',expiry:'2027-11-20',renewal:'On',renewalPrice:'$14.00',actions:['show'=>'/domains/1'],progress:[],setup:[],transfer:[],management:[],testEnvironment:false);
