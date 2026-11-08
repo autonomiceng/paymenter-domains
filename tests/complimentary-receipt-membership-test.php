@@ -15,7 +15,7 @@ $disable=fn()=>ComplimentaryAccounts::set($user->id,$staff,false,'Gift ended',$c
 same(['complimentary','queued','0.00','paid',0.0,0],[$op->funding_basis,$op->state,$op->amount,$invoice->status,(float)$invoice->total,$invoice->transactions()->count()],'Renewal is complimentary with a paid zero receipt');
 $runRenewal($op,$b);[$engine,$writer,$completion]=$compose($b);$state->expiry='2028-10-18';$state->after='2028-10-18';$state->charge='8.00';
 same('succeeded',$completion->run($op->id)->state,'Real provider proof completes the zero receipt');
-require dirname(__DIR__).'/Domains/routes/owned.php';
+require __DIR__.'/Support/owner-pages.php';
 $presenter=new \Paymenter\Extensions\Servers\Domains\Services\NativePresenter(new \Paymenter\Extensions\Servers\Domains\Services\OwnedDomains($clock,new \Paymenter\Extensions\Servers\Domains\Services\OwnerPorts),$native,new \Paymenter\Extensions\Servers\Domains\Services\HolderPricing($prices));
 $read=fn()=>$presenter->invoice($user,$invoice->id);
 expect(isset($read()[$op->invoice_item_id]),'Completed complimentary receipt remains a domain invoice line');

@@ -52,8 +52,8 @@ $check('complimentary transfer receives missing-code and deadline notices',funct
     app()->instance(\Paymenter\Extensions\Servers\Domains\Services\RuntimeDispatch::class,new \Paymenter\Extensions\Servers\Domains\Services\RuntimeDispatch($clock));
     $runtime=new \Paymenter\Extensions\Servers\Domains\Services\RuntimeWork($clock,new \Paymenter\Extensions\Servers\Domains\Services\RuntimePorts);
     $runtime->service($transfer->service_id);$transfer->refresh();
-    $fixed=$transfer->policy['paid_at'];$clock->instant=$clock->now()->modify('+1 minute');$runtime->service($transfer->service_id);
-    same($fixed,$transfer->fresh()->policy['paid_at'],'Repeated runtime recovery cannot reset the fixed input deadline');
+    $beforeRuntime=$clock->instant;$fixed=$transfer->policy['paid_at'];$clock->instant=$clock->now()->modify('+1 minute');$runtime->service($transfer->service_id);
+    same($fixed,$transfer->fresh()->policy['paid_at'],'Repeated runtime recovery cannot reset the fixed input deadline');$clock->instant=$beforeRuntime;
     foreach([['+1 day','domains_transfer_code_paid'],['+24 days','domains_transfer_code_reminder']] as [$offset,$template]){
         $plan=DB::transaction(function()use($transfer,$clock,$offset){$alerts=[];return TransferNotifications::plan(HoldingLocks::take($transfer->domain),$clock->now()->modify($offset),$alerts);});
         same($template,$plan['template']??null,'Missing-code mail is planned at '.$offset);

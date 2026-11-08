@@ -10,7 +10,8 @@ $staff=commerceUser();$staff->update(['role_id'=>App\Models\Role::create(['name'
 ComplimentaryAccounts::set($user->id,$staff,true,'Cover test terms',$clock);
 foreach(['register','transfer']as$action){
     $cart=commerceCart($user);$name=placeholderComFixtureName('comp-atomic-'.$action.'-placeholder.com');
-    commerceAdd($cart,$native->product($tlds[0],$action),$name);commerceCheckout($user,$cart)->assertHasNoErrors();
+    commerceAdd($cart,$native->product($tlds[0],$action),$name);commerceCheckout($user,$cart)->assertHasNoErrors()->assertRedirect();
+    echo 'Checkout complete: '.$action."\n";
     $op=Domain::where('domain',$name)->sole()->operations()->sole();
     $op->update(['state'=>'held','safe_code'=>'registrar_balance_insufficient','policy'=>[...$op->policy,'funds_wait_at'=>$now->format(DATE_ATOM)]]);
     $account=Account::where('server_id',$op->server_id)->sole();$before=[$op->getRawOriginal(),$op->domain->getRawOriginal(),$nativeMoney()];
