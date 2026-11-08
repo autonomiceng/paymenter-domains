@@ -35,4 +35,12 @@ $catalogue=StaffCatalogue::routed();$current=$t->fresh();
 same([false,true,false],array_map(fn($key)=>$catalogue->setting($current,$key),['register','renew','transfer']),'Stop selling keeps renewals');
 same(false,$offer('register')->available,'Stop selling ends registrations');
 $page->assertActionVisible('start_selling')->assertActionHidden('stop_selling');
+// Visibility and dispatch both use the current native staff grant.
+$viewer=staffUser([Staff::VIEW]);
+Livewire::actingAs($viewer)->test(ViewTld::class,['record'=>$t->id])->assertActionHidden('start_selling')->assertActionHidden('stop_selling');
+$page=Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->mountAction('start_selling');
+$before=$t->fresh()->catalogue_intent;
+$actor->role->update(['permissions'=>[Staff::VIEW]]);$actor->unsetRelation('role');Auth::setUser($actor);
+$page->callMountedAction()->assertNotified('Change refused');
+same($before,$t->fresh()->catalogue_intent,'Revoking the grant after mount refuses the native dispatch');
 echo "TLD start and stop sales passed.\n";$nativeSuccessful=true;

@@ -12,5 +12,5 @@ $long=array_values(array_filter($rows,static fn($row)=>$row['action']==='registe
 same(1,count($long),'The native edit form has an exact three-year registration row');
 expect($long[0]['current']!==null&&$long[0]['new']!==null,'Price preview uses the first registration year and renewal input');
 same($long[0]['current'],$long[0]['new'],'Unchanged rule preview agrees with the published multi-year retail');
-Livewire\Livewire::actingAs(Illuminate\Support\Facades\Auth::user())->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewTld::class,['record'=>$tlds[0]->id])->mountAction('override')->assertSee('First registration year (USD)');
+Livewire\Livewire::actingAs(Illuminate\Support\Facades\Auth::user())->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewTld::class,['record'=>$tlds[0]->id])->mountAction('override')->setActionData(['pricing'=>'custom','mode'=>'fixed'])->call('$refresh')->assertSee('First registration year (USD)');
 $nativeSuccessful=true;echo "Native multi-year retail preview agrees with publication.\n";

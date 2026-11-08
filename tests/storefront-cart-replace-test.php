@@ -71,7 +71,7 @@ same('3', $dom->query('//form//select[@name="term"]/option[@selected]')->item(0)
 $dom = storefrontDom($check($second, ['replace' => '999999'])->getData(true)['html']);
 same(1, $dom->query('//form//input[@type="hidden"][@name="replace"][@value="999999"]')->length, 'A line that left the cart still replaces, never adds');
 $dom = storefrontDom($check($second, ['replace' => 'x'])->getData(true)['html']);
-same(1, $dom->query('//form//button[normalize-space()="Register"]')->length, 'A junk replace value is plain Register');
+same(1, $dom->query('//form//button[normalize-space()="Add to cart"]')->length, 'A junk replace value is the ordinary Add to cart action');
 
 // A refused replacement stays in replace mode with the line's term, so the retry below cannot add a second name.
 $search = route('domains.domains.search', ['name' => $second, 'replace' => $line->id]);
