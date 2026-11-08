@@ -115,6 +115,7 @@ $newer=clone $d;$saved=$newer->observation;$saved['records']=$record;
 $saved['record_reads']=[['identity'=>ObservationRecords::identity($newer),'action'=>'dns','operation_key'=>'newer-dns','sequence'=>1,'at'=>'2026-11-05T10:00:00+00:00','facts'=>['records'=>[['name'=>'@','type'=>'A','address'=>'192.0.2.99','mx_pref'=>10,'ttl'=>300],['name'=>'www','type'=>'A','address'=>'192.0.2.100','mx_pref'=>10,'ttl'=>300]]]]];$newer->observation=$saved;
 $latest=RecordFamilies::owner($editable,RecordFamilies::read($newer,$now));
 $same('192.0.2.99',$latest->management['dns']['inventory'][0]['address']??null,'Visible inventory uses the newer confirmed DNS readback');
+app('view')->share('keys',array_fill_keys(Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerActionController::ACTIONS,str_repeat('a',64)));
 $latestDom=storefrontDom(view('domains::partials.owner-management',['domain'=>$latest])->render());
 expect(str_contains($latestDom->query('//li[@id="dns"]/span[@class="domains-row__v"]')->item(0)?->textContent??'','2 records'),'Current two-record editor count remains visible beside older one-record family evidence');
 $stoppedFacts=$failedFacts;$stoppedFacts['read_stopped']=true;$stoppedFacts['read_attempts']=5;$stoppedFacts['read_failed_at']='2026-11-05T10:00:00+00:00';$stoppedFacts['read_code']='read_failed';$stoppedFacts['read_cause']=\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::STOPPED_CAUSE;

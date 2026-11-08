@@ -21,9 +21,10 @@ final class ManagementNameservers
             $ports->forDomain($d)->validate('nameservers',['nameservers'=>$servers],$d->domain);
             return ['servers'=>$servers,'error'=>null];
         } catch(\Throwable $error) {
-            if(\Illuminate\Support\Facades\Cache::add('domains-dns-default-unavailable:'.$d->account_fingerprint,true,60)){
+            try{if(\Illuminate\Support\Facades\Cache::add('domains-dns-default-unavailable:'.$d->account_fingerprint,true,60)){
                 \Illuminate\Support\Facades\Log::warning('Domains site DNS default unavailable.',['exception_class'=>$error::class]);
             }
+            }catch(\Throwable){/* Diagnostics must not disable custom editing. */}
             return ['servers'=>[],'error'=>'We could not read the site default nameservers. Enter your own nameservers, or try again later.'];
         }
     }

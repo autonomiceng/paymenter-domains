@@ -241,7 +241,7 @@ final class StaffCatalogue
             $d=OfferState::decode($accounts[$t->server_id]->catalogue_defaults);$unreadable=false;
             try{
                 $raw=OfferState::decode($t->catalogue_intent);
-                new Intent(...array_intersect_key($raw,array_flip(['sell','longest','transfers','stops'])));
+                OfferState::intent($t,$d);
                 $own=Pricing::hasOwn($t);
             }catch(\Throwable){$raw=[];$own=!$t->use_default_rule;$unreadable=true;}
             $invalidRule=$unreadable;
@@ -324,7 +324,7 @@ final class StaffCatalogue
     {
         abort_unless(Staff::requireView()->costs,403);$out=[];$state=self::pricingState();
         foreach($tlds as $t){
-            try{$raw=OfferState::decode($t->catalogue_intent);new Intent(...array_intersect_key($raw,array_flip(['sell','longest','transfers','stops'])));$unreadable=false;}
+            try{$raw=OfferState::decode($t->catalogue_intent);OfferState::intent($t,$d);$unreadable=false;}
             catch(\Throwable){$unreadable=true;}
             if(self::pricingCause($t,$state,$unreadable)!==null){$out[]=$t->server_id.':'.$t->tld;}
         }
