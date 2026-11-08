@@ -60,7 +60,10 @@ final readonly class ManagedPublicReconciliation
                 // Due watches get the first turn; preserve oldest-first order within each family.
                 $candidates=[...$managed,...$watched];
                 usort($candidates,fn($a,$b)=>[!isset($a['watch_id']),$a['due_at'],$a['sort_id']]<=>[!isset($b['watch_id']),$b['due_at'],$b['sort_id']]);
-                foreach(array_slice($candidates,0,2)as$hint) { unset($hint['due_at'],$hint['sort_id']);$out[]=$hint; }
+                $turn=array_slice($candidates,0,2);
+                // After 15 minutes overdue, the oldest managed read gets one slot; watches keep the other.
+                if($watched->count()===2 && $managed->isNotEmpty() && $managed->first()['due_at']<=$now-900){$turn[1]=$managed->first();}
+                foreach($turn as$hint) { unset($hint['due_at'],$hint['sort_id']);$out[]=$hint; }
             }
             if ($owners->isNotEmpty()) { DB::table(PublicDnsQuota::TABLE)->where('id',1)->update(['dispatch_cursor'=>$owners->last()]); }
             return $out;
