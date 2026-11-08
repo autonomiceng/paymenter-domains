@@ -121,7 +121,7 @@ same('busy',$check(false)['status'],'A transfer-only seller keeps Retry when no 
 app()->forgetInstance(Paymenter\Extensions\Servers\Domains\Services\Runtime::class);
 app()->forgetInstance(Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class);
 // Plain reader exceptions must not impersonate typed public eligibility reasons.
-$state->exceptionAfterCalls=$state->calls-1;$state->exception=new DomainException('premium');$public->states=['active'];
+$state->exception=new DomainException('premium');$public->states=['active'];
 $failures=[];$spoof=$check();same(1,$state->plainThrown,'The actual bound reader throws the plain exception');if($spoof['status']!=='transfer_unconfirmed'||!str_contains($spoof['html'],'data-domains-retry')||str_contains($spoof['html'],'premium domains')){$failures[]='Plain provider exception must stay unconfirmed with Retry';}
 unset($state->exception);
 $user=commerceUser();$product=$native->product($tlds[0],'register');

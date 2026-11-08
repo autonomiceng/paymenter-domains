@@ -16,7 +16,6 @@ function storefrontTransferReader(object $state): Paymenter\Extensions\Servers\D
         }
     };
     $registry->register('enom', ['token'], $verifier, static function ($binding, $credentials) use ($wire, $state) {
-        if (isset($state->exception) && $state->calls > $state->exceptionAfterCalls) { throw $state->exception; }
         if ($state->fail) { throw new RuntimeException('Enom account-private-key vendor diagnostic'); }
         return new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver(
             new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Client($binding, $credentials['token'], 'synthetic', $wire), ['com']);
