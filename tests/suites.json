@@ -792,7 +792,8 @@
     "tests/template-recovery-test.php",
     "tests/watch-discovery-hints-test.php",
     "tests/adoption-missing-template-test.php",
-    "tests/template-explicit-default-test.php"
+    "tests/template-explicit-default-test.php",
+    "tests/owner-default-confirm-test.php"
   ],
   "ui": [],
   "runner": [
