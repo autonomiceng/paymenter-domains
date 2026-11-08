@@ -31,4 +31,13 @@ same('rejected',$op->fresh()->state,'Elapsed unsent complimentary renewal closes
 same('paid',$invoice->fresh()->status,'The zero receipt stays Paid at cutoff');
 same($before,$nativeMoney(),'Cutoff returns no money and invents no payment');
 \Paymenter\Extensions\Servers\Domains\Services\FundsWaits::sweep($account,$clock->now());same($before,$nativeMoney(),'Repeat cutoff is money-idempotent');
+require __DIR__.'/Support/owner-pages.php';
+$dto=$owners->present($d->fresh());$next=Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::nextInvoice($dto,null,'/support');
+same('Renewal did not finish',$next['value']??null,'Closed complimentary renewal is an outcome, not a pending check');
+expect(isset($next['action'])&&!str_contains(json_encode($next),'nothing you need to do'),'Closed renewal offers support');
+$summary=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,'managed',$d->id,$clock->now()->getTimestamp());
+expect($summary!==null,'Native list summary exists');$row=Paymenter\Extensions\Servers\Domains\Presentation\DomainListRow::renewal($summary);
+expect(str_contains(json_encode($row),'Renewal did not finish')&&!str_contains(json_encode($row),'Under review'),'List and page share the closed outcome');
+$html=view('domains::partials.owner-renew',['domain'=>$dto,'summary'=>$summary,'support'=>'/support'])->render();expect(str_contains($html,'Renewal did not finish')&&!str_contains($html,'Renewal being checked'),'Native owner Blade uses the terminal renewal outcome');
+same($before,$nativeMoney(),'Rendering preserves Paid zero receipt and money history');same(0,$state->writes,'Closed renewal sends nothing');
 echo "Complimentary renewal cutoff preserves Paid receipt\n";$nativeSuccessful=true;
