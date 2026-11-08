@@ -85,7 +85,7 @@ foreach([['register',1],['register',3],['transfer',1]] as [$action,$term]){
     commerceReject(fn()=>$offer->price());
 }
 $writer->run($review('remove_override',$t->id),[],$late);$clock->instant=$now;
-same('Costs are missing. Use Sync prices on the TLD list, then save again. Nothing was changed.',
+same('Exact registrar costs are missing. See the last successful refresh and next due on the TLD page. Sync prices is an optional retry. Nothing was changed.',
     SettingsActions::refusal(new DomainException('Costs required before publication.'),'override'),'Plain missing-cost refusal');
 
 // Saving the account default publishes every TLD that follows it and names the ones it could not publish.
