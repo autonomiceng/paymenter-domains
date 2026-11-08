@@ -20,4 +20,13 @@ same("ns3.example.net\nns4.example.net",$r->input('nameservers'),'The resolved c
 expect(!$r->request->has('confirmed'),'Fresh fill clears the incoming confirmation');
 same(422,$response->getStatusCode(),'A fresh fill returns the actual confirmation page');
 expect(str_contains($response->getContent(),'ns3.example.net')&&str_contains($response->getContent(),'confirm-nameservers'),'The native response renders the reviewed hosts');
+// An unexpected database failure is not an unconfigured default and must not disable custom editing.
+$failDefault=true;DB::connection()->beforeExecuting(static function($sql,$bindings)use(&$failDefault):void{
+ if($failDefault&&str_starts_with(strtolower($sql),'select')&&in_array(SiteDnsDefault::KEY,$bindings,true)){throw new RuntimeException('Synthetic private lookup diagnostic');}
+});
+$dto=$owners->present($d->fresh());$section=$dto->management['nameservers'];
+expect(($section['defaultError']??null)!==null,'Unexpected default lookup has distinct safe presentation');
+expect(isset($section['actions']['nameservers'])&&$section['defaultServers']===[],'Custom nameserver editing survives failed default lookup without fallback');
+expect(!str_contains(json_encode($section),'Synthetic private'),'Lookup diagnostic never enters customer facts');
+$failDefault=false;
 $nativeSuccessful=true;echo "Current site default requires a fresh explicit confirmation.\n";
