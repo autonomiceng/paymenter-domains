@@ -14,7 +14,7 @@ try{
   $list=\Livewire\Livewire::actingAs($manager)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\ListWatches::class);
   expect(str_contains($column($list,'note')->record($watch)->getState(),'Expires in '.$expected.' days.'),'List expiry uses the same clock before and after UTC midnight');
   $detail=\Livewire\Livewire::actingAs($manager)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\ViewWatch::class,['record'=>$id]);
-  $detail->assertSee('Expires in '.$expected.' days.');
+  $detail->assertSee('Expires in '.$expected.' days');
  }
 }finally{app()->instance($clockKey,$originalClock);}
 $nativeSuccessful=true;echo "Staff expiry has one clock across UTC midnight.\n";

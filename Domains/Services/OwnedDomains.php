@@ -364,6 +364,7 @@ final readonly class OwnedDomains
     public static function issuedState(Operation $cycle, Invoice $invoice, ?Domain $domain = null): string
     {
         return match (true) {
+            $invoice->status === 'cancelled' => 'cancelled',
             $cycle->state === 'awaiting_payment' && $invoice->status === 'pending' => 'pending',
             $domain !== null && $cycle->funding_basis === 'complimentary' && FundsWaits::closedRenewal($cycle, $domain) => 'closed',
             $invoice->status === 'paid' && in_array($cycle->state, ['awaiting_payment', 'queued', 'running', 'pending', 'succeeded'], true) => 'paid',
@@ -382,9 +383,7 @@ final readonly class OwnedDomains
         $review=['status'=>'review',...(($check['tone']??null)==='info'?['check'=>$check]:[])];
         $l = self::renewalLedger($d, collect([$cycle]));
         if ($cycle->safe_code !== 'renewal_cancelled_unpaid' && !RenewalReplacements::reviewed($cycle, $d)) {
-            $invoice = $l['invoices']->firstWhere('id', $cycle->invoice_id);
-            if ($invoice?->status === 'cancelled' && (int) $invoice->user_id === (int) $d->user_id) { return ['status' => 'cancelled']; }
-            try { $invoice = DomainBilling::existingInvoice($cycle, $l); } catch (\Throwable) { return $review; }
+            try { $invoice = DomainBilling::existingInvoice($cycle, $l, allowCancelled: true); } catch (\Throwable) { return $review; }
             if ($invoice->status === 'pending' && RenewalCycles::expiredInvoice($cycle, $now ?? app(Clock::class)->now())) {
                 return ['status' => RenewalCycles::canRetireUnpaid($cycle, $l) ? 'cancelled' : 'review'];
             }
@@ -392,6 +391,7 @@ final readonly class OwnedDomains
                 'pending' => ['invoice' => route('invoices.show', $invoice)],
                 'paid' => ['status' => 'paid', ...self::goes($cycle)],
                 'closed' => ['status' => 'closed'],
+                'cancelled' => ['status' => 'cancelled'],
                 default => $review };
         }
         // A retired or refunded debt permits a replacement only when billing's cycle proof holds.

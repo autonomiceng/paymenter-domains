@@ -156,7 +156,7 @@ final class DomainBilling
     }
 
     /** Validate retained debt without changing the invoice or operation. Writers pass their locked rows. */
-    public static function existingInvoice(Operation $op, array $l, ?int $years = null): Invoice
+    public static function existingInvoice(Operation $op, array $l, ?int $years = null, bool $allowCancelled = false): Invoice
     {
         if(isset($op->policy['account_complimentary'])){
             if($years!==null&&$years!==(int)$op->term){throw new \DomainException('Complimentary term is fixed.');}
@@ -166,7 +166,7 @@ final class DomainBilling
         if (!$invoice || !$item || !$invoice->due_at || !$op->base_expires_at || !$op->expected_expires_at || $l['items']->where('invoice_id', $op->invoice_id)->count() !== 1 || $op->action !== 'renew' || $op->funding_basis !== 'paid_invoice' || ($years !== null && (int) $op->term !== $years)
             || $op->service_id !== $d->service_id || $op->server_id !== $d->server_id || $op->registrar_key !== $d->registrar_key
             || $op->account_fingerprint !== $d->account_fingerprint || $op->authority_generation !== $d->authority_generation
-            || $invoice->status === Invoice::STATUS_CANCELLED || (int) $invoice->user_id !== (int) $d->user_id || $invoice->currency_code !== 'USD'
+            || (!$allowCancelled && $invoice->status === Invoice::STATUS_CANCELLED) || (int) $invoice->user_id !== (int) $d->user_id || $invoice->currency_code !== 'USD'
             || (int) $item->invoice_id !== (int) $invoice->id || $item->reference_type !== null || $item->reference_id !== null
             || (string) $item->quantity !== '1' || PricingRule::minor($item->price) !== PricingRule::minor($op->amount)
             || PricingRule::minor($op->amount) <= 0 || $op->currency !== 'USD'
