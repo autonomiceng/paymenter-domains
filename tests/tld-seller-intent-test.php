@@ -13,7 +13,7 @@ extract(commerceFixture(true,registrars:['enom']));staffSalesFixture();tldPanel(
 app()->instance(StaffSettingsWrites::class,new StaffSettingsWrites($native,$sellers,$bindings));
 $t=$tlds[0];$actor=staffUser(array_keys(Staff::permissions()));Auth::setUser($actor);$errors=[];
 $raw=$t->fresh()->catalogue_intent;$facts=$t->fresh()->catalogue_facts;
-$submit=static function()use($actor,$t){return Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->mountAction('seller')->setActionData(['seller'=>$t->server_id,'register'=>true,'transfer'=>false]);};
+$submit=static function()use($actor,$t){return Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->mountAction('seller')->setActionData(['seller'=>$t->server_id,'register'=>true,'transfer'=>false,'reason'=>'Choose this registrar for new orders']);};
 foreach(['terms','disabled','inheritance'] as $case){
     DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_intent'=>$raw,'catalogue_facts'=>$facts]);
     DB::table('extensions')->where('id',$t->server_id)->update(['enabled'=>true]);
@@ -25,11 +25,17 @@ foreach(['terms','disabled','inheritance'] as $case){
     $page=$submit();$before=$t->fresh()->getRawOriginal();
     if($case==='disabled'){DB::table('extensions')->where('id',$t->server_id)->update(['enabled'=>false]);}
     $page->callMountedAction()->assertSuccessful();
+    if($case==='disabled'){
+        $review=Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::class;$commands=Paymenter\Extensions\Servers\Domains\Catalogue\StaffCommands::class;
+        $r=new $review($actor->id,$t->server_id,$t->id,'seller',$review::ticket($actor->id,$t->server_id,$t->id,'seller',$commands::stamp($t->server_id,$t->id)),'Choose this registrar for new orders');
+        try{(new $commands(new Paymenter\Extensions\Servers\Domains\Catalogue\Writer(new Paymenter\Extensions\Servers\Domains\Catalogue\Projection($native),$clock,static fn()=>null,static fn()=>true),$bindings,static fn()=>null))->run($r,['seller'=>$t->server_id,'register'=>true,'transfer'=>false]);$errors[]='Fresh disabled-account dispatch accepted';}
+        catch(DomainException $e){same('Seller account off.',$e->getMessage(),'Dispatch refuses the disabled account under writer locks');}
+    }
     if($case==='inheritance'){
         if((OfferState::decode($t->fresh()->catalogue_intent)['sell']??null)!==null){$errors[]='Registrar choice pins an inherited Sell default';}
     }else{
         if($t->fresh()->getRawOriginal()!==$before){$errors[]='Registrar dispatch changed invalid '.$case.' intent';}
-        if($t->fresh()->getRawOriginal()===$before){$page->assertNotified('Change refused');}
+        if($case==='terms'&&$t->fresh()->getRawOriginal()===$before){$page->assertNotified('Change recorded');}
     }
 }
 DB::table('extensions')->where('id',$t->server_id)->update(['enabled'=>true]);
