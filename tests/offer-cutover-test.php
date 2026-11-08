@@ -64,7 +64,12 @@ $bulkWork->accountTurn($binding->serverId);
 same([1,['com']],[$bulkFeed->prices,$bulkFeed->facts],'One bulk read warms only the sold set, never discovered org');
 same(['$7.80','$10.40'],[$storefront->offer('com','register',1)['price'],$storefront->offer('com','register',1)['renew']],'Moved bulk prices restore the same annual retail');
 foreach ($nativePricesBefore as $id=>$values) {
-    $p=DB::table('prices')->where('id',$id)->first();same($values,$p?[$p->plan_id,$p->currency_code,$p->price]:null,'Every bridge native price identity and amount survives closed publication');
+    $p=DB::table('prices')->where('id',$id)->first();
+    expect($p!==null,'Every bridge native price identity survives publication');
+    same(array_slice($values,0,2),[$p->plan_id,$p->currency_code],'Bridge price keeps its plan and currency');
+    $years=(int)DB::table('plans')->where('id',$p->plan_id)->value('billing_period');
+    // Current multi-year retail is the first registration year plus annual renewals.
+    same($years===3?'28.60':number_format((float)$values[2],2,'.',''),number_format((float)$p->price,2,'.',''),'Current retail republishes without replacing bridge price rows');
 }
 // The real account row reuses the neighbouring permissions, one-use revision ticket and audit path.
 require_once __DIR__.'/Support/staff-tlds.php'; tldPanel();
@@ -90,18 +95,18 @@ $ports->apply(Edit::override($binding,'com',new Intent(sell:true,longest:3)),$re
 $ports->apply(Edit::seller($binding,'com',['register']),$revision());
 expect($storefront->endings()!==[],'Committed evidence invalidates the cached empty display');
 $public=$storefront->offer('com','register',3);
-same(['$23.40','$10.40'],[$public['price'],$public['renew']],'Installed public route uses the shared evidenced term and annual retail');
+same(['$28.60','$10.40'],[$public['price'],$public['renew']],'Installed public route uses the shared evidenced term and annual retail');
 // The pricing notice resolves this reader directly and must share active publication policy.
 $direct=app(Paymenter\Extensions\Servers\Domains\Services\StorefrontCatalogueRead::class)->offer('com','register',3);
 same($public['price'],$direct['price'],'Direct pricing-notice reader uses the same active offer');
 same($public['selection']->catalogue,$direct['selection']->catalogue,'Direct display has the same generation and revisions');
 same($public['selection']->catalogue,$sellers->selection('com','register',3,$now)->catalogue,'Direct seller selection uses the same fenced catalogue');
 $page=StaffCatalogue::routed()->page(collect([$tlds[0]->fresh()]));expect($page!==[],'Installed staff table reads the shared offer');
-$locked=DB::transaction(fn()=>$sellers->admit([$public['selection']],$now));same('23.40',$locked[0]->retail,'Installed locked admission uses current shared price');
+$locked=DB::transaction(fn()=>$sellers->admit([$public['selection']],$now));same('28.60',$locked[0]->retail,'Installed locked admission uses current shared price');
 $user=commerceUser();$cart=commerceCart($user);$line=commerceAdd($cart,$public['product'],'cutover-placeholder.com',3);
 $admission->refresh();$before=$reads->calls;$checkout=commerceCheckout($user,$cart);
 same(4,Operation::count(),'Real installed checkout adds exactly one obligation beside three frozen historical operations');
-$op=Operation::where('operation_key','like','invoice-item:%')->sole();same('23.40',$op->policy['price']['retail'],'Native invoice freezes the admitted shared amount');
+$op=Operation::where('operation_key','like','invoice-item:%')->sole();same('28.60',$op->policy['price']['retail'],'Native invoice freezes the admitted shared amount');
 same($before,$reads->calls,'Locked checkout creates no second provider read');
 // Active workers use deployed protocol policy, independent of the retired ending list.
 same(false,App\Models\Server::findOrFail($binding->serverId)->settings()->where('key','domains_catalogue_acceptance')->exists(),'B8 removes current legacy acceptance');
@@ -110,14 +115,14 @@ config(['domains.enom_writes.registration'=>false]);
 expect(Paymenter\Extensions\Servers\Domains\Services\EnomTestRegistration::localHoldReason($binding,$op)!==null,'Removing write opt-in still holds active order');
 config(['domains.enom_writes.registration'=>true]);
 
-$cost=DB::transaction(fn()=>$prices->current($binding->serverId,$binding->fingerprint,'com','register',3,'USD',$now,true,$tlds[0]->fresh()));same([3,'23.40','18.0000'],[$cost->term,$cost->retail,$cost->wholesale],'Locked normalized cost path preserves exact term-total evidence');
+$cost=DB::transaction(fn()=>$prices->current($binding->serverId,$binding->fingerprint,'com','register',3,'USD',$now,true,$tlds[0]->fresh()));same([3,'28.60','18.0000'],[$cost->term,$cost->retail,$cost->wholesale],'Locked normalized cost path preserves exact term-total evidence');
 commerceReject(fn()=>DB::transaction(fn()=>$prices->current($binding->serverId,str_repeat('f',64),'com','register',3,'USD',$now,true,$tlds[0]->fresh())));
 $invoice=App\Models\Invoice::findOrFail($op->invoice_id);same(null,app(PayCheck::class)->stop($invoice),'Installed payment check accepts current local offer evidence');
 $financial=[$op->fresh()->getRawOriginal(),$invoice->fresh()->getRawOriginal()];
 auth()->login($staff);
 $review=new StaffSettingsReview((int)$staff->id,$binding->serverId,(int)$tlds[0]->id,'publish',StaffSettingsReview::ticket((int)$staff->id,$binding->serverId,(int)$tlds[0]->id,'publish',StaffCommands::stamp($binding->serverId,(int)$tlds[0]->id)),'Synthetic cutover review');
 app(StaffSettingsWrites::class)->run($review,[],$now);
-expect(str_contains(app(Paymenter\Extensions\Servers\Domains\Services\PriceList::class)->csv(3),'23.40'),'Installed staff CSV uses the same term total');
+expect(str_contains(app(Paymenter\Extensions\Servers\Domains\Services\PriceList::class)->csv(3),'28.60'),'Installed staff CSV uses the same term total');
 $native->publish($tlds[0]->id,$now);
 same($financial,[$op->fresh()->getRawOriginal(),$invoice->fresh()->getRawOriginal()],'Native publication preserves existing invoice and frozen operation');
 // A formerly valid payment/cart selection cannot survive withdrawn fresh facts or warm display caches.

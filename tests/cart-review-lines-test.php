@@ -22,14 +22,14 @@ $publish=static function($b,string $ending,string $markup,int $term=1)use($ports
     $ports->apply(Edit::override($b,$ending,new Intent(sell:true,longest:$term,transfers:true),[...PricingRule::DEFAULT,'markup'=>$markup]),$rev);
 };
 $publish($binding,'com','50.00',3);$page=$open();
-same(['23.40'],array_values(CartNotice::get($page->instance())['was']),'First review records the old .com total');
+same(['28.60'],array_values(CartNotice::get($page->instance())['was']),'First review records the old .com total');
 $publish($secondBinding,'net','50.00');$page=$open();
-same(['23.40','6.50'],array_values(CartNotice::get($page->instance())['was']),'A second publication retains unchanged lines from the pending review');
+same(['28.60','6.50'],array_values(CartNotice::get($page->instance())['was']),'A second publication retains unchanged lines from the pending review');
 $page=$open();
-same(['23.40','6.50'],array_values(CartNotice::get($page->instance())['was']),'Reload retains both pending line changes');
+same(['28.60','6.50'],array_values(CartNotice::get($page->instance())['was']),'Reload retains both pending line changes');
 // A later change to the same line strikes its latest displayed total.
 $publish($binding,'com','70.00',3);$page=$open();
-same(['27.00','6.50'],array_values(CartNotice::get($page->instance())['was']),'Changed lines use their latest displayed total while other review details survive');
+same(['33.00','6.50'],array_values(CartNotice::get($page->instance())['was']),'Changed lines use their latest displayed total while other review details survive');
 // Native Edit keeps the line id but invalidates the previous review snapshot.
 Illuminate\Support\Once::flush();app('request')->cookies->set('cart',$cart->ulid);
 App\Classes\Cart::add($product,$product->plans()->where('billing_period',1)->sole(),[],['domain'=>'review-lines-placeholder.com'],1,$line->id);
