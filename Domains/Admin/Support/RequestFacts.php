@@ -146,10 +146,10 @@ final class RequestFacts
     { return $account&&!$account->processing_enabled&&$reason!=='pre_send_interrupted'; }
     /** The one reason for a request, on every page: for a request stopped here what is true now, else the saved reason.
      * Lists call this per row, so they pass $ordersOff: a queued row is only stopped while Orders are off, and held rows are rare. */
-    public static function reason(Operation $op, bool $ordersOff=true): ?string
+    public static function reason(Operation $op, bool $ordersOff=true, ?StaffGrants $grants=null): ?string
     {
-        try { return ($op->state==='held'||$op->state==='queued'&&$ordersOff?self::readyMessage($op):null)??Labels::requestStatus($op)['reason']; }
-        catch (\Throwable) { return Labels::requestStatus($op)['reason']; }
+        try { return ($op->state==='held'||$op->state==='queued'&&$ordersOff?self::readyMessage($op):null)??Labels::requestStatus($op,grants:$grants)['reason']; }
+        catch (\Throwable) { return Labels::requestStatus($op,grants:$grants)['reason']; }
     }
     /** A request's status, in the customer's words. Orders off stop all queued work, so a queued request whose account has them off is held
      * for staff: it reads as held (RequestStatus::READS_AS), the same word as its domain and the Status filter. With its domain (passed, or loaded with the row) a change reads as
@@ -163,11 +163,11 @@ final class RequestFacts
         return RequestStatus::readsAs($op->state,$op->safe_code,$ordersOff)==='held'
             && ($op->action==='register' || ($op->action==='transfer' && $op->state==='held' && $op->safe_code===self::HELD_TRANSFER_CODE));
     }
-    public static function status(Operation $op, bool $ordersOff=true, ?Domain $d=null): array
+    public static function status(Operation $op, bool $ordersOff=true, ?Domain $d=null, ?StaffGrants $grants=null): array
     {
         $d??=$op->relationLoaded('domain')?$op->domain:null;
         $off=$ordersOff&&$op->state==='queued'&&OperationQueries::ordersOff($op);
-        $status=[...Labels::requestStatus($op,$off),'reason'=>self::reason($op,$ordersOff)];
+        $status=[...Labels::requestStatus($op,$off,$grants),'reason'=>self::reason($op,$ordersOff,$grants)];
         try { $key=$d?ManagementProgress::statusKey($op,$d,$off):null; } catch (\Throwable) { $key=null; }
         if ($key!==null) { [$status['label'],$status['tone']]=RequestStatus::SET[$key]; }
         return self::heldAcquisition($op,$off) ? [...$status,'label'=>'On hold','tone'=>'warning'] : $status;

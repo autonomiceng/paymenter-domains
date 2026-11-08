@@ -42,7 +42,7 @@ class OperationResource extends Resource
     public static function getNavigationBadgeColor(): string { return 'warning'; }
     public static function table(Table $table): Table
     {
-        Staff::requireView();
+        $grants=Staff::requireView();
         $statuses=array_map(fn($status)=>$status[0],RequestFacts::STATUSES); $servers=\App\Models\Server::pluck('name','id')->all();
         $off=Account::where('processing_enabled',false)->pluck('server_id')->all();
         EmptyTable::apply($table,'No registrar requests','Requests show here when a customer orders a domain.','No requests match');
@@ -51,10 +51,10 @@ class OperationResource extends Resource
                 ->suffix(fn(Operation $record)=>self::demo($record)?DemoData::tag(inline:true):null),
             OneLine::apply(TextColumn::make('domain.domain')->label('Domain')->searchable()->fontFamily('mono'),OneLine::NAME),
             TextColumn::make('action')->label('Type')->formatStateUsing(fn($state)=>Labels::action($state)),
-            TextColumn::make('state')->label('Status')->badge()->color(fn($record)=>RequestFacts::status($record,in_array($record->server_id,$off))['tone'])
-                ->extraAttributes(fn($record)=>StatusMark::attributes(RequestFacts::status($record,in_array($record->server_id,$off))['tone'],'request-'.$record->id))
-                ->formatStateUsing(fn($record)=>RequestFacts::status($record,in_array($record->server_id,$off))['label']),
-            OneLine::apply(TextColumn::make('note')->label('Note')->color('gray')->state(fn($record)=>RequestFacts::reason($record,in_array($record->server_id,$off))),OneLine::NOTE),
+            TextColumn::make('state')->label('Status')->badge()->color(fn($record)=>RequestFacts::status($record,in_array($record->server_id,$off),grants:$grants)['tone'])
+                ->extraAttributes(fn($record)=>StatusMark::attributes(RequestFacts::status($record,in_array($record->server_id,$off),grants:$grants)['tone'],'request-'.$record->id))
+                ->formatStateUsing(fn($record)=>RequestFacts::status($record,in_array($record->server_id,$off),grants:$grants)['label']),
+            OneLine::apply(TextColumn::make('note')->label('Note')->color('gray')->state(fn($record)=>RequestFacts::reason($record,in_array($record->server_id,$off),$grants)),OneLine::NOTE),
             TextColumn::make('created_at')->label('Created')->formatStateUsing(fn($state)=>\Paymenter\Extensions\Servers\Domains\Admin\Support\Sheet::moment($state->getTimestamp()))->sortable()->visibleFrom('lg'),
             OneLine::apply(TextColumn::make('server_id')->label('Registrar account')->visibleFrom('xl')->formatStateUsing(fn($state)=>$servers[$state]??Missing::LABEL)
                 ->color(fn($state)=>isset($servers[$state])?null:Missing::COLOR)->description(fn($record)=>isset($servers[$record->server_id])?null:'Registrar account not found. Check Registrars.')),

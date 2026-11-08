@@ -21,11 +21,11 @@ final class Labels
         };
     }
     /** Saved request status and cause. RequestFacts::reason adds what is true now. $ordersOff: Orders are off for this request's account. */
-    public static function requestStatus(\Paymenter\Extensions\Servers\Domains\Models\Operation $op, bool $ordersOff=false): array
+    public static function requestStatus(\Paymenter\Extensions\Servers\Domains\Models\Operation $op, bool $ordersOff=false, ?StaffGrants $grants=null): array
     {
         $status=\Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus::for(\Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus::readsAs($op->state,$op->safe_code,$ordersOff));
         if (($due=\Paymenter\Extensions\Servers\Domains\Services\RenewalCycles::early($op))!==null) { $status['reason']=\Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus::earlyRenewal($due); }
-        if ($op->safe_code!==null && isset(\Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus::STATES[$op->state])) { $status['reason']=self::operationReason($op); }
+        if ($op->safe_code!==null && isset(\Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus::STATES[$op->state])) { $status['reason']=self::operationReason($op,$grants); }
         return $status;
     }
     public static function action(?string $value): string
@@ -38,7 +38,7 @@ final class Labels
             'ds_add'=>'Add DNSSEC record','ds_delete'=>'Remove DNSSEC record','glue_add'=>'Add glue record',
             'glue_update'=>'Change glue record','glue_delete'=>'Remove glue record'][$value] ?? 'Other';
     }
-    public static function operationReason(\Paymenter\Extensions\Servers\Domains\Models\Operation $op): ?string
+    public static function operationReason(\Paymenter\Extensions\Servers\Domains\Models\Operation $op, ?StaffGrants $grants=null): ?string
     {
         if (($late=\Paymenter\Extensions\Servers\Domains\Services\RenewalCycles::lateNote($op))!==null) { return $late; }
         if(RequestFacts::quietRegistrationDns($op)){
@@ -65,8 +65,8 @@ final class Labels
         }
         // The domain page notice names one step for this hold. The reason names the same one, not Cancel or Release hold.
         if ($op->funding_basis==='complimentary'&&$op->safe_code==='registrar_price_increased') {
-            $costs=Staff::can(Staff::COSTS);
-            try { $need=\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::need($op,$costs&&Staff::can('admin.domains.fund')&&Staff::can('admin.domains.manage')); }
+            $grants??=Staff::requireView();$costs=$grants->costs;
+            try { $need=\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::need($op,$grants->approveCosts); }
             catch (\Throwable) { return DomainFacts::UNREADABLE; }
             if ($need!==null) { return $costs?$need:'Needs approval: registrar price increased. Ask staff with access to domain costs to review it.'; }
         }
