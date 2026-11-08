@@ -26,6 +26,12 @@ final class Sheet
             Group::make($rail)->columnSpan(1)->extraAttributes(['class'=>'domains-rail']),
         ])->columns(['default'=>1,'xl'=>3])->columnSpanFull()->extraAttributes(['class'=>'domains-split']);
     }
+    /** A sheet with nothing beside it: one column, so no empty rail space. @param list<Component> $sheet */
+    public static function single(array $sheet,?string $key=null): Group
+    {
+        return Group::make([Group::make($sheet)->key($key)->extraAttributes(['class'=>'domains-sheet'])])
+            ->columnSpanFull()->extraAttributes(['class'=>'domains-split domains-split-single']);
+    }
     /** @param list<Component> $rows @param list<Action|Component> $after Beside the title. */
     public static function section(string $title,array $rows,string|Htmlable|null $note=null,?string $key=null,array $after=[]): Section
     {

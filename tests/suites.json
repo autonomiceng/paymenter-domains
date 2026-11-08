@@ -770,7 +770,8 @@
     "tests/adoption-retired-template-test.php",
     "tests/dns-negative-health-test.php",
     "tests/watch-option-a-test.php",
-    "tests/watch-enrollment-claim-test.php"
+    "tests/watch-enrollment-claim-test.php",
+    "tests/template-propagation-test.php"
   ],
   "ui": [],
   "runner": [

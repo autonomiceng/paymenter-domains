@@ -37,6 +37,9 @@ final readonly class DnsReading
     public function safeCode(): ?string
     {
         if ($this->result() === 'complete') { return null; }
+        // A valid negative NS reply leaves routing unknown, but the DNS exchange succeeded.
+        if ($this->kind === 'delegation' && count($this->queries) === 1 && $this->queries[0]['type'] === 'NS'
+            && $this->queries[0]['state'] === 'negative') { return 'nameservers_missing'; }
         foreach (['deadline','resolver_failed','invalid_answer','ambiguous_empty','read_unavailable'] as $code) {
             foreach ($this->queries as $q) { if ($q['state'] === 'unknown' && $q['code'] === $code) { return $code; } }
         }

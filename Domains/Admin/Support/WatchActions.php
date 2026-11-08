@@ -7,6 +7,7 @@ use Filament\Actions\{Action,ActionGroup};
 use Filament\Forms\Components\{Select,Textarea,TextInput};
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Fieldset;
+use Filament\Support\Enums\Width;
 use Illuminate\Support\Facades\Auth;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\{RoutingProfileResource,WatchResource};
 use Paymenter\Extensions\Servers\Domains\Models\{WatchName,WatchProductMap,WatchProfile};
@@ -17,6 +18,8 @@ final class WatchActions
     /** Audit reasons for writes that ask no question; the history shows the event once. */
     private const REASONS=['pause'=>'Monitoring paused','resume'=>'Monitoring resumed','read'=>'Check requested','profile'=>'DNS template changed'];
     private const DONE=['pause'=>'Monitoring paused','resume'=>'Monitoring resumed'];
+    /** The DNS template form says this once, for every box. */
+    public const ONE_PER_LINE='Enter one value per line.';
     public static function action(string $kind,int $id,int $revision,string $action,string $label,array $fields=[]): Action
     {
         $a=Action::make($action)->label($label)->visible(fn()=>Staff::can(Writes::VIEW)&&Staff::can(Writes::MANAGE));
@@ -24,7 +27,7 @@ final class WatchActions
         if($action==='read'){$a->tooltip('Monitoring uses 0 registrar reads per domain per day.');}
         return $a->action(function(array $data,array $arguments,$livewire)use($kind,$id,$revision,$action):void {
                 $id=(int)($arguments['map']??$id);$revision=(int)($arguments['revision']??$revision);
-                $reason=match($action){'note'=>(string)($data['note']??''),'retire'=>(string)($data['reason']??''),'save'=>$kind==='mapping'?'Domain field chosen':'DNS template saved','enable'=>'DNS template turned on',default=>self::REASONS[$action]};
+                $reason=match($action){'note'=>(string)($data['note']??''),'save'=>$kind==='mapping'?'Domain field chosen':'DNS template saved','enable'=>'DNS template turned on','disable'=>'DNS template turned off','delete'=>'DNS template deleted',default=>self::REASONS[$action]};
                 try{(new Writes())->run(Auth::user(),$kind,$id,$action,Writes::ticket((int)Auth::id(),$kind,$id,$revision,$action),$reason,$data+$arguments);}
                 catch(\DomainException|\InvalidArgumentException|\Illuminate\Database\QueryException|\Illuminate\Database\Eloquent\ModelNotFoundException $e){
                     if($action==='read' && $e instanceof \DomainException && $e->getMessage()==='A check was recently requested. Try again later.'){$livewire->waitForCheck();}
@@ -36,8 +39,13 @@ final class WatchActions
                         ->body('This takes up to about six minutes. This page updates by itself.')->persistent()->send();
                     return;
                 }
-                Notification::make()->success()->title(self::DONE[$action]??'Saved')->send();
-                $livewire->redirect(match($kind){'watch'=>WatchResource::getUrl('view',['record'=>$id]),'profile'=>$id?RoutingProfileResource::getUrl('view',['record'=>$id]):RoutingProfileResource::getUrl(),default=>WatchResource::getUrl()});
+                $done=$kind==='profile'?match($action){'save'=>$id?'DNS template saved':'DNS template added','enable'=>'DNS template turned on','disable'=>'DNS template turned off','delete'=>'DNS template deleted'}:(self::DONE[$action]??'Saved');
+                Notification::make()->success()->title($done)->send();
+                if($kind==='profile' && $action!=='delete'){
+                    if($id){$livewire->refreshTemplate();}
+                    return;
+                }
+                $livewire->redirect(match($kind){'watch'=>WatchResource::getUrl('view',['record'=>$id]),'profile'=>RoutingProfileResource::getUrl(),default=>WatchResource::getUrl()});
             });
     }
     /** Write errors in page words. */
@@ -55,7 +63,8 @@ final class WatchActions
             default=>$e->getMessage()};
     }
     private static function templates(): array{return WatchProfile::where('enabled',true)->orderBy('name')->pluck('name','id')->all();}
-    /** Header buttons and the More menu for a monitored domain. Linked names belong to a registration and have none. */
+    /** Header buttons and the More menu for a monitored domain. Linked names belong to a registration and have none.
+     * Pause and Resume are the one reversible pair; a domain stops only when its hosting service ends, so staff have no Stop. */
     public static function watch(WatchName $w,int $revision): array
     {
         if(!in_array($w->state,['active','paused'],true)){return [];}$id=(int)$w->id;$can=fn(string $state)=>fn()=>$w->state===$state && Staff::can(Writes::VIEW)&&Staff::can(Writes::MANAGE);
@@ -64,9 +73,7 @@ final class WatchActions
         $more=[self::action('watch',$id,$revision,'profile','Change DNS template',[
                 Select::make('profile')->label('DNS template')->options(fn()=>self::templates())->default($w->ns_profile_id)->required(),
                 Select::make('expected_dns')->label('Expected nameservers')->options(['platform'=>WatchFindings::company(),'external'=>'Other'])->default($w->expected_dns)])->modalDescription('Future checks compare against this DNS template.')->modalSubmitActionLabel('Save'),
-            self::action('watch',$id,$revision,'note','Add note',[Textarea::make('note')->label('Note')->required()->minLength(5)->maxLength(500)->rows(3)->rules(['regex:'.StaffReason::SINGLE_LINE])])->modalSubmitActionLabel('Add note'),
-            self::action('watch',$id,$revision,'retire','Stop monitoring',[Textarea::make('reason')->label('Reason')->required()->minLength(5)->maxLength(500)->rows(2)->rules(['regex:'.StaffReason::SINGLE_LINE])])
-                ->color('danger')->requiresConfirmation()->modalHeading('Stop monitoring?')->modalDescription("Checks and alerts stop. The domain won't be added again automatically.")->modalSubmitActionLabel('Stop monitoring')];
+            self::action('watch',$id,$revision,'note','Add note',[Textarea::make('note')->label('Note')->required()->minLength(5)->maxLength(500)->rows(3)->rules(['regex:'.StaffReason::SINGLE_LINE])])->modalSubmitActionLabel('Add note')];
         return [...$main,ActionGroup::make($more)->label('More')->button()->color('gray')];
     }
     /** "Check now" for Missing check-time hints; hidden unless the domain is monitored. */
@@ -74,9 +81,35 @@ final class WatchActions
     {return self::action('watch',(int)$w->id,$revision,'read','Check now')->name('check')->visible(fn()=>$w->state==='active' && Staff::can(Writes::VIEW)&&Staff::can(Writes::MANAGE));}
     public static function enable(WatchProfile $row,int $revision): Action
     {
-        return self::action('profile',(int)$row->id,$revision,'enable','Turn on')->modalSubmitActionLabel('Turn on')
-            ->disabled($row->readProfile()===null)->tooltip($row->readProfile()===null?WatchFacts::TEMPLATE_UNAVAILABLE:null)
+        return self::action('profile',(int)$row->id,$revision,'enable','Turn on')->view('domains::admin.template-switch')
+            ->arguments(['on'=>false])->requiresConfirmation()->modalHeading('Turn on DNS template?')
+            ->modalDescription('Monitoring can check domains against these records. New domains keep their current template.')
+            ->modalSubmitActionLabel('Turn on')->disabled($row->readProfile()===null)
             ->visible(fn()=>!$row->enabled && Staff::can(Writes::VIEW)&&Staff::can(Writes::MANAGE));
+    }
+    /** Blocked switches keep the same dimming and reason as the shared blocked button. */
+    private static function templateGuard(Action $action,?string $reason): Action
+    {
+        return $reason?$action->tooltip($reason)->livewireClickHandlerEnabled(false)
+            ->extraAttributes(['aria-disabled'=>'true','aria-label'=>'Monitoring. '.$reason,'class'=>'domains-blocked']):$action;
+    }
+    public static function disable(WatchProfile $row,int $revision): Action
+    {
+        $reason=\Paymenter\Extensions\Servers\Domains\Services\DnsTemplateUsage::refusal((int)$row->id);
+        return self::templateGuard(self::action('profile',(int)$row->id,$revision,'disable','Turn off')->view('domains::admin.template-switch')
+            ->arguments(['on'=>true,'blocked'=>$reason!==null])->requiresConfirmation()->modalHeading('Turn off DNS template?')
+            ->modalDescription('Monitoring will no longer use this template. Saved records stay here.')
+            ->modalSubmitActionLabel('Turn off')->visible(fn()=>$row->enabled && Staff::can(Writes::VIEW)&&Staff::can(Writes::MANAGE)),$reason);
+    }
+    public static function deleteTemplate(WatchProfile $row,int $revision): Action
+    {
+        $reason=\Paymenter\Extensions\Servers\Domains\Services\DnsTemplateUsage::refusal((int)$row->id);
+        if($reason){return Sheet::blocked('delete','Delete','DNS template',$reason)->color('danger')
+            ->action(fn()=>Notification::make()->warning()->title($reason)->send())
+            ->visible(fn()=>Staff::can(Writes::VIEW)&&Staff::can(Writes::MANAGE));}
+        return self::action('profile',(int)$row->id,$revision,'delete','Delete')->color('danger')->outlined()
+            ->requiresConfirmation()->modalHeading('Delete DNS template?')->modalDescription('The saved nameservers and records will be deleted. This cannot be undone.')
+            ->modalSubmitActionLabel('Delete');
     }
     /** The one control on a hosting product line. The revision is the one the page loaded, so a stale page changes nothing. */
     public static function productSwitch(): Action
@@ -100,12 +133,13 @@ final class WatchActions
     public static function configuration(?WatchProfile $row,int $revision=0): Action
     {
         if($row&&$row->readProfile()===null){return self::action('profile',(int)$row->id,$revision,'save','Edit')->color('gray')->disabled()->tooltip(WatchFacts::TEMPLATE_UNAVAILABLE);}
-        $lines=fn(string $name,string $label,array $value)=>Textarea::make($name)->label($label)->default(implode("\n",$value))->helperText('One per line.')->maxLength(8192)->rows(2);
+        // A short form: one note says one value per line, and the record groups are headed, not boxed.
+        $lines=fn(string $name,string $label,array $value)=>Textarea::make($name)->label($label)->default(implode("\n",$value))->maxLength(8192)->rows(2);
         $fields=[TextInput::make('name')->label('Name')->default($row?->name)->required()->maxLength(128),$lines('nameservers','Nameservers',$row?->nameservers??[])];
         foreach(['website_endpoints'=>'Website','email_endpoints'=>'Email'] as $key=>$label){$value=$row?->$key??[];
-            $fields[]=Fieldset::make($label.' records')->columns(1)->schema([$lines($key,$label.' hostnames',$value['exact']??[]),$lines($key.'_suffix',$label.' hostname suffixes',$value['suffix']??[]),$lines($key.'_ips',$label.' IP addresses',$value['ips']??[])]);}
-        $note='Future checks use these records. Monitoring stays on if this template is on.';
-        $action=self::action('profile',(int)($row?->id??0),$row?$revision:0,'save',$row?'Edit':'Add DNS template',$fields)->modalSubmitActionLabel('Save');
-        return $row?$action->color('gray')->modalDescription($note):$action;
+            $fields[]=Fieldset::make($label.' records')->contained(false)->columns(1)->schema([$lines($key,'Hostnames',$value['exact']??[]),$lines($key.'_suffix','Hostname suffixes',$value['suffix']??[]),$lines($key.'_ips','IP addresses',$value['ips']??[])]);}
+        $note=($row?'Future checks use these records. Monitoring stays on if this template is on. ':'').self::ONE_PER_LINE;
+        return self::action('profile',(int)($row?->id??0),$row?$revision:0,'save',$row?'Edit':'Add DNS template',$fields)->modalHeading($row?'Edit DNS template':'Add DNS template')
+            ->modalDescription($note)->modalWidth(Width::Medium)->modalSubmitActionLabel('Save')->color($row?'gray':'primary');
     }
 }

@@ -82,7 +82,7 @@ class MonitoringSettings extends Page
             Sheet::split([Sheet::section('Monitoring',[
                 Sheet::row(MissingEntry::apply(TextEntry::make('site_dns')->label('Site DNS default')->state($refusal?Missing::LABEL:($default?->name??Missing::LABEL)),cause:$refusal??null)->belowContent($default?implode(', ',$default->nameservers):null)),
                 Sheet::row(TextEntry::make('registrar_refresh')->label('Registrar refresh')->state('Daily')->belowContent('Daily refresh reads domain facts. Use Sync now on a domain to read DNS, SRV, DS and glue records. Unsupported families remain unsupported.')),
-                Sheet::row(TextEntry::make('public_checks')->label('Public DNS checks')->state('Daily')->belowContent('Nameservers are checked more often. Failed checks retry by themselves.')),
+                Sheet::row(TextEntry::make('public_checks')->label('Public DNS checks')->state('Nameservers at least every 6 hours, records daily')->belowContent('Failed checks retry by themselves.')),
                 Sheet::row(TextEntry::make('read_failures')->label('Registrar read failures')->state('No separate alert switch')->belowContent('Shown on the domain page, beside Resume sync. There is no email alert for them.')),
                 Sheet::row(TextEntry::make('evidence')->label('Evidence')->state('Separate checks')->belowContent(\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::EVIDENCE))]),Sheet::section('DNS resolver',[Sheet::row(MissingEntry::apply($resolver,$fix,$forced?null:$reason)),
                 Sheet::row(TextEntry::make('bootstrap')->label('Resolver IP address')->state($endpoint?->ip))->visible($endpoint!==null)])],[]),
