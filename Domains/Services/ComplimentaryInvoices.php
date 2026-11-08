@@ -7,9 +7,9 @@ use Paymenter\Extensions\Servers\Domains\Models\Operation;
 /** Informational receipts, never native payment events or registrar funding grants. */
 final class ComplimentaryInvoices
 {
-    public static function create(int $user,string $description,?int $service=null):InvoiceItem
+    public static function create(int $user,string $description,?int $service=null,?string $due=null):InvoiceItem
     {
-        $invoice=new Invoice(['user_id'=>$user,'currency_code'=>'USD','status'=>'pending','due_at'=>now()]);
+        $invoice=new Invoice(['user_id'=>$user,'currency_code'=>'USD','status'=>'pending','due_at'=>$due??now()]);
         $invoice->send_create_email=false;$invoice->save();
         return $invoice->items()->create(['description'=>mb_substr($description,0,190).': complimentary, registrar cost awaiting confirmation','price'=>'0.00','quantity'=>1,
             'reference_type'=>$service===null?null:(new \App\Models\Service)->getMorphClass(),'reference_id'=>$service]);

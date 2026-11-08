@@ -19,7 +19,7 @@ final class AccountComplimentaryRenewals
         $auth=['actor'=>$a['actor'],'reason'=>'account_complimentary','generation'=>$d->authority_generation,'expiry'=>$d->provider_expires_at->format('Y-m-d'),
             'years'=>$years,'cap'=>$cap,'at'=>$clock->now()->format(DATE_ATOM)];
         $d->update(['renewal_policy'=>[...$d->renewal_policy,'complimentary'=>$auth]]);
-        $item=ComplimentaryInvoices::create((int)$d->user_id,$d->domain.' renewal, '.$years.' '.($years===1?'year':'years'));
+        $item=ComplimentaryInvoices::create((int)$d->user_id,$d->domain.' renewal, '.$years.' '.($years===1?'year':'years'),due:$calendar['due']);
         $invoice=$item->invoice;
         Operation::create(['domain_id'=>$d->id,'service_id'=>$s->id,'server_id'=>$d->server_id,'registrar_key'=>$d->registrar_key,
             'account_fingerprint'=>$d->account_fingerprint,'authority_generation'=>$d->authority_generation,'operation_key'=>$key,'action'=>'renew','term'=>$years,
