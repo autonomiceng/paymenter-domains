@@ -48,9 +48,10 @@ final class OperationTerminalProof
             && (
                 ($op->action === 'transfer' && ($a['terminal'] ?? null) === ['operation_key' => $op->operation_key, 'generation' => $op->authority_generation]
                     && !array_diff(array_keys($a), ['claim_key', 'seal', 'send_state', 'terminal', 'disposition', 'rejection_basis','test_call_refusals','capacity_deferrals'])
-                    &&(array_key_exists('test_call_refusals',$a)?(OperationClaims::testCallRefusalUnsent($op)||OperationClaims::testCallRefusalTerminal($op)):OperationClaims::localDeferrals($a))) || $op->action === 'register' || ($op->action === 'renew' && ($a['terminal']['operation_key'] ?? null) === $op->operation_key
+                    &&OperationClaims::localDeferrals($a)) || $op->action === 'register' || ($op->action === 'renew' && ($a['terminal']['operation_key'] ?? null) === $op->operation_key
                 && ($a['terminal']['generation'] ?? null) === $op->authority_generation
                 && in_array($op->safe_code,['renewal_cancelled_unpaid',FundsWaits::RENEWAL_CLOSED],true) && ($a['terminal']['invoice_id'] ?? null) === $op->invoice_id))
+            && (!array_key_exists('test_call_refusals',$a)||OperationClaims::testCallRefusalUnsent($op)||OperationClaims::testCallRefusalTerminal($op))
             && ($a['disposition'] ?? null) === 'rejected' && ($a['rejection_basis'] ?? null) === 'definitely_unsent'
             && ($a['send_state'] ?? null) === 'definitely_unsent' && ($a['seal'] ?? null) === 'absent'
             && !array_intersect(array_keys($a), ['execution', 'dispatch_attempted_at', 'provider_reference', 'evidence', 'registration'])
