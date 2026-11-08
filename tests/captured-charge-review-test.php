@@ -61,12 +61,19 @@ foreach(['changed'=>['20.00','actual_charge_changed'],'overrun'=>['16.00','actua
  $state->charge='16.01';Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('resume_reads');$observe();
  $fresh=$op->fresh();same(3,count($fresh->policy['captured_charge_observations']),'Each audited read has one retained outcome');
  $row=$fresh->policy['captured_charge_observations'][2];same([$staff->id,$fresh->operation_key,$fresh->account_fingerprint],[$row['actor_id'],$row['operation_key'],$row['fingerprint']],'Observation binds the audited actor and current original attempt');
+ $d->refresh()->update(['renewal_policy'=>[...$d->renewal_policy,'owner_auto_renew'=>false]]);
  $page=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertActionVisible('approve_charge')->assertSee('The registrar already charged this order');
  // Current permission loss is checked at submit, not taken from the mounted confirmation.
  $page->mountAction('approve_charge')->setActionData(['reason'=>'Review the same incurred registrar charge']);$before=[$fresh->getRawOriginal(),$d->fresh()->getRawOriginal()];
  $role->update(['permissions'=>array_values(array_diff($rights,['admin.domains.costs']))]);
  $page->callMountedAction();same($before,[$op->fresh()->getRawOriginal(),$d->fresh()->getRawOriginal()],'Revoked cost access cannot approve');
  Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertActionHidden('approve_charge')->assertDontSee('16.01')->assertDontSee('16.02');$role->update(['permissions'=>$rights]);
+ // Foreign captured proof cannot turn current observations into approval authority.
+ $rawAttempt=$op->fresh()->getRawOriginal('attempt');$foreign=$op->fresh()->attempt;$foreign['reconciliation']['fingerprint']=str_repeat('f',64);
+ DB::table('domains_operations')->where('id',$op->id)->update(['attempt'=>\Illuminate\Support\Facades\Crypt::encryptString(json_encode($foreign))]);
+ $wrong=$op->fresh();$key=\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::ticket($staff->id,$d->id,$op->id,'approve_charge',\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::stamp($wrong,$d->fresh()),$clock);$before=$wrong->getRawOriginal();
+ try{(new \Paymenter\Extensions\Servers\Domains\Services\StaffOperations($clock))->run($staff,$d->id,$op->id,'approve_charge',$key,'Review foreign captured evidence');expect(false,'Foreign proof must refuse');}catch(DomainException){}
+ same($before,$op->fresh()->getRawOriginal(),'Foreign proof approval changes nothing');DB::table('domains_operations')->where('id',$op->id)->update(['attempt'=>$rawAttempt]);
  // A mounted old approval is stale after another audited observation.
  $stale=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->mountAction('approve_charge')->setActionData(['reason'=>'Approve stale charge review']);
  Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('resume_reads');$observe();$unchanged=$op->fresh()->getRawOriginal();
@@ -75,7 +82,7 @@ foreach(['changed'=>['20.00','actual_charge_changed'],'overrun'=>['16.00','actua
  $page=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('approve_charge',['reason'=>'Approve the same incurred charge after review'])->assertHasNoActionErrors()->assertNotified('Captured charge approved')->assertActionHidden('approve_charge');
  $done=$op->fresh();same(['succeeded','2029-10-18'],[$done->state,$d->fresh()->provider_expires_at->format('Y-m-d')],'Approval completes only the proved expiry');
  same([$attempt,$cost,$amount],[$done->attempt,$done->cost,$done->amount],'Approval never rewrites frozen proof, actual cost or customer amount');
- expect($d->fresh()->renewal_policy['automatic_spend_paused'],'Approval does not clear any future spending pause');same('paid',App\Models\Invoice::findOrFail($done->invoice_id)->status,'The zero receipt remains Paid');
+ expect($d->fresh()->renewal_policy['automatic_spend_paused']&&$d->fresh()->renewal_policy['owner_auto_renew']===false,'Approval does not clear any future spending pause or owner preference');same('paid',App\Models\Invoice::findOrFail($done->invoice_id)->status,'The zero receipt remains Paid');
  $before=[$done->getRawOriginal(),$d->fresh()->getRawOriginal()];
  try{(new \Paymenter\Extensions\Servers\Domains\Services\StaffOperations($clock))->run($staff,$d->id,$op->id,'approve_charge',$ticket,'Replay old captured approval');expect(false,'Old approval must refuse');}catch(DomainException){}
  same($before,[$op->fresh()->getRawOriginal(),$d->fresh()->getRawOriginal()],'Replay preserves the completed debt and anchor');
@@ -88,4 +95,9 @@ expect($failures===[],implode('; ',$failures));
 [$paid,$d,$b,$invoice]=$makeRenewal(placeholderComFixtureName('captured-paid-control-placeholder.com'),true,2,beforeBill:$review);
 [$engine,$writer,$completion]=$compose($b);$state->years=2;$state->after='2029-10-18';$state->charge='16.00';same('pending',$engine->run($paid->id,$writer)->state,'Paid exact two-year send');$state->expiry='2029-10-18';
 $done=$completion->run($paid->id);same(['succeeded',2,'2029-10-18'],[$done->state,$state->lastWrite[1]['NumYears'],$d->fresh()->provider_expires_at->format('Y-m-d')],'Exact paid charge completes the real native invoice');same($paid->amount,$invoice->items()->sole()->price,'Original retail total stays frozen');
+// The ordinary exact-charge complimentary path remains independent of excess-charge approval.
+config(['domains.enom_identity.environment'=>null]);[$seed,$d,$b]=$makeRenewal(placeholderComFixtureName('captured-comp-control-placeholder.com'),false);$cycles->retireUnpaid($seed->id);$clock->instant=new DateTimeImmutable('2027-09-27T12:00:00Z');$review($d);
+$comp=$cycles->complimentary($d->id,$staff,2,new Money('16.00','USD'),'staff_reviewed');$clock->instant=new DateTimeImmutable('2027-10-18T11:59:00Z');config(['domains.enom_identity.environment'=>'test']);Cache::flush();
+[$engine,$writer,$completion]=$compose($b);$state->years=2;$state->after='2029-10-18';$state->charge='16.00';same('pending',$engine->run($comp->id,$writer)->state,'Complimentary exact two-year send');$state->expiry='2029-10-18';
+same(['succeeded','2029-10-18','0.00'],[$completion->run($comp->id)->state,$d->fresh()->provider_expires_at->format('Y-m-d'),$comp->amount],'Exact complimentary charge completes without the approval action');
 echo "Native captured-charge observation and audited approval passed\n";$nativeSuccessful=true;
