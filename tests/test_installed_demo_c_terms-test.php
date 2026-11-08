@@ -26,19 +26,23 @@ same(null,$row->transfer,'The real query has no transfer intent override');
 $fields=$edit->invoke($page,$row);$transfer=collect($fields)->first(fn($f)=>method_exists($f,'getName')&&$f->getName()==='transfer');
 same('Leave as is (Off)',$transfer->getOptions()['keep'],'Default pricing does not replace saved transfer Off');
 $rows=Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::termReadiness($binding,'com');
-// Main retains the exact-term refusal on Ordinary; the grace review line still shows once under Grace.
-same(['Early renewal','1 year','Longer renewals need an accepted exact-term quote.'],$rows[1],
-    'Ordinary retains annual renewal and its exact-term refusal');
+// Without reviewed family evidence, Ordinary remains annual; Grace keeps its own review line.
+same(['Early renewal','1 year','Longer terms are not reviewed yet.'],$rows[1],
+    'Ordinary retains annual renewal and its unreviewed-family explanation');
 same(['Grace renewal','Off','Review registry rules and safe deadlines before enabling grace renewal.'],$rows[3],'Grace keeps its review explanation');
 same(1,substr_count(view('domains::admin.term-readiness',['readiness'=>$rows])->render(),'safe deadlines'),'The Terms dialog says the grace review once');
-// Family readiness has its own Ordinary explanation; it does not override the exact-quote precedence above.
+// Ordinary and Grace keep separate explanations.
 $ordinary=Capabilities::routed()->termReadiness($binding,'com')['families']['ordinary'];
 same(['state'=>'annual_only','reason'=>'family_unreviewed','terms'=>[1]],$ordinary,'Ordinary family is unreviewed and annual-only');
 same('Longer terms are not reviewed yet.',
     Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::termReason($ordinary['reason']),
     'Unreviewed Ordinary family keeps its own explanation rather than the Grace review');
 $accountHtml=Livewire\Livewire::actingAs($actor)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$binding->serverId])->html();
-expect(str_contains($accountHtml,'Selected TLD terms')&&str_contains($accountHtml,'Scheduled renewals'),'Account sheet renders family readiness, not only the source rows');
+$accountText=storefrontDom($accountHtml)->evaluate('string(//body)');
+foreach(['Selected TLD terms','1 of 1 read','Scheduled renewals','1 year'] as $text){
+    expect(str_contains($accountText,$text),'Account sheet renders current term readiness: '.$text);
+}
+expect(!str_contains($accountText,'Supported terms'),'Account sheet does not revive the replaced readiness label');
 $r10Failures=[];$r10Check=static function(bool $ok,string $message)use(&$r10Failures):void{if(!$ok){$r10Failures[]=$message;}};
 // More than ten unsold alphabetic entries must not hide the sold .com.
 for($i=0;$i<11;$i++){
@@ -46,8 +50,9 @@ for($i=0;$i<11;$i++){
     $unsold->catalogue_intent=OfferState::json(['sell'=>false]);$unsold->save();
 }
 $accountRows=Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::renewals($binding->serverId);
-$r10Check($accountRows[4]['label']==='.com','Sold TLD readiness precedes the alphabetic unsold catalogue');
-$r10Check(count(array_filter($accountRows,fn($r)=>$r['label']==='.com'))===1,'One compact row per TLD');
+$selected=array_values(array_filter($accountRows,fn($r)=>$r['label']==='Selected TLD terms'));
+$r10Check(count($selected)===1&&$selected[0]['value']==='1 of 1 read','Unsold alphabetic catalogue does not change the complete selected TLD summary');
+$r10Check(count(array_filter($accountRows,fn($r)=>str_starts_with($r['label'],'.aaa')))===0,'Unsold TLDs do not add account readiness rows');
 same('1 to 10 years',Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::termYears(range(1,10)),'Contiguous term range is compact');
 $editAction=(new WhatYouSell)->table(Filament\Tables\Table::make(new WhatYouSell))->getBulkActions()[0];
 same('3xl',$editAction->getModalWidth(),'Terms dialog has room for compact price and renewal rows');
@@ -91,7 +96,7 @@ $r10Check($priceQueries<=$smallQueries+4,'Ten-row preview skips offer evaluation
 $originalFacts=$t->fresh()->catalogue_facts;$annual=OfferState::decode($originalFacts);$annual['terms']['register']=[1];
 DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>OfferState::json($annual)]);
 $annualRows=Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::renewals($binding->serverId);
-$r10Check(collect($annualRows)->contains(fn($r)=>$r['label']==='.com'&&$r['value']==='1 year'),'Confirmed annual terms keep a plain TLD label');
+$r10Check(collect($annualRows)->contains(fn($r)=>$r['label']==='Selected TLD terms'&&$r['value']==='1 of 1 read'),'Confirmed annual terms count as complete selected TLD readiness');
 DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>null]);
 $missingRows=Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::renewals($binding->serverId);
 $r10Check(collect($missingRows)->contains(fn($r)=>$r['label']==='Unknown term range .aaaa.pro'&&$r['value']==='Missing'),'Missing registrar facts are labeled unknown');
