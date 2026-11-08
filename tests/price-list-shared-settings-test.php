@@ -30,7 +30,7 @@ foreach([
         same($cause==='card_fee'?[]:[$custom->id],array_column($matrix['rows'],'id'),'A custom rule does not depend on an unreadable default');
         same([$cause],array_column($matrix['warnings'],'cause'),'One grouped warning retains the existing repair cause');
         $omitted=$source->omissions(Tld::orderBy('id')->get());same(count($expected),count($omitted),'Off-page omissions use the same settings validation');
-        Livewire::actingAs($actor)->test(WhatYouSell::class)->assertSuccessful()->assertSee('Prices left out')->assertSee('To fix, use Default pricing at the top of this page.');
+        Livewire::actingAs($actor)->test(WhatYouSell::class)->filterTable('for_sale',false)->assertSuccessful()->assertSee('Prices left out')->assertSee('To fix, use Default pricing at the top of this page.');
         same($raw,DB::table('settings')->orderBy('id')->get()->toJson(),'Recovery reads retain corrupt settings bytes');same($before,$snapshot(),'Recovery reads change no prices, intent or finance');
     }finally{if($saved){DB::table('settings')->where('id',$saved->id)->update((array)$saved);}else{DB::table('settings')->whereNull('settingable_type')->where('key',$key)->delete();}}
 }
