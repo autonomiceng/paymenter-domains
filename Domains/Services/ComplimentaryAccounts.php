@@ -10,10 +10,13 @@ use Paymenter\Extensions\Servers\Domains\Models\Domain;
 final class ComplimentaryAccounts
 {
     public const LABEL='Complimentary';
-    public static function current(int $user):?array
+    /** $lock requires the caller's existing native user lock; use a current read inside that transaction. */
+    public static function current(int $user,bool $lock=false):?array
     {
+        if($lock&&DB::transactionLevel()<1){throw new \LogicException('Current funding requires the owner transaction.');}
         if(!Schema::hasTable('domains_complimentary_accounts')){return null;}
-        $row=DB::table('domains_complimentary_accounts')->where('user_id',$user)->orderByDesc('id')->first();
+        $query=DB::table('domains_complimentary_accounts')->where('user_id',$user)->orderByDesc('id');
+        $row=($lock?$query->lockForUpdate():$query)->first();
         return $row?['id'=>(int)$row->id,'user_id'=>(int)$row->user_id,'enabled'=>(bool)$row->enabled,'actor'=>(int)$row->actor_id,'reason'=>$row->reason,'at'=>$row->created_at]:null;
     }
     /** $seen is the setting row id the staff confirm showed (0 when never set); a different latest row refuses, so no one overwrites a change they did not see. */
@@ -43,9 +46,9 @@ final class ComplimentaryAccounts
         try{\Illuminate\Support\Facades\Event::dispatch(new \OwenIt\Auditing\Events\AuditCustom($customer));}
         finally{$customer->isCustomEvent=false;$customer->auditCustomNew=null;$customer->auditCustomOld=null;}
     }
-    public static function authorization(int $user):?array
+    public static function authorization(int $user,bool $lock=false):?array
     {
-        $a=self::current($user);return ($a['enabled']??false)?$a:null;
+        $a=self::current($user,$lock);return ($a['enabled']??false)?$a:null;
     }
     /** Issued grants survive switch-off; prove their exact retained audit row, never a caller boolean. */
     public static function require(array $a,int $user):void
