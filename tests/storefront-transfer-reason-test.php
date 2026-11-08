@@ -119,10 +119,10 @@ same('busy',$check(false)['status'],'A transfer-only seller keeps Retry when no 
 app()->forgetInstance(Paymenter\Extensions\Servers\Domains\Services\Runtime::class);
 app()->forgetInstance(Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class);
 // Plain reader exceptions must not impersonate typed public eligibility reasons.
-$state->exceptionAfterCalls=$state->calls;$state->exception=new DomainException('premium');$public->states=['active'];
+$state->exceptionAfterCalls=$state->calls-1;$state->exception=new DomainException('premium');$public->states=['active'];
 $failures=[];$spoof=$check();if($spoof['status']!=='transfer_unconfirmed'||!str_contains($spoof['html'],'data-domains-retry')||str_contains($spoof['html'],'premium domains')){$failures[]='Plain provider exception must stay unconfirmed with Retry';}
 unset($state->exception);
-$product=$native->product($tlds[0],'register');
+$user=commerceUser();$product=$native->product($tlds[0],'register');
 $order=App\Models\Order::create(['user_id'=>$user->id,'currency_code'=>'USD','status'=>'pending']);
 $service=App\Models\Service::withoutEvents(fn()=>App\Models\Service::create(['order_id'=>$order->id,'user_id'=>$user->id,'product_id'=>$product->id,'plan_id'=>$product->plans()->where('billing_period',1)->sole()->id,'price'=>10,'quantity'=>1,'currency_code'=>'USD','status'=>'pending']));
 Paymenter\Extensions\Servers\Domains\Models\Domain::create(['domain'=>'transfer-placeholder.com','sld'=>'transfer-placeholder','tld'=>'com','reservation_name'=>'transfer-placeholder.com','user_id'=>$user->id,'service_id'=>$service->id,'server_id'=>$tlds[0]->server_id,'registrar_key'=>'enom','account_fingerprint'=>$tlds[0]->account_fingerprint,'authority_generation'=>1,'status'=>'needs_review']);
