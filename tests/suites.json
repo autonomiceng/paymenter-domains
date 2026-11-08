@@ -740,7 +740,9 @@
     "tests/complimentary-adoption-mode-test.php",
     "tests/complimentary-receipt-membership-test.php",
     "tests/complimentary-renewal-cutoff-test.php",
-    "tests/complimentary-funds-atomic-test.php"
+    "tests/complimentary-funds-atomic-test.php",
+    "tests/registration-enom-refusal-test.php",
+    "tests/registration-enom-explicit-ns-test.php"
   ],
   "ui": [],
   "runner": [

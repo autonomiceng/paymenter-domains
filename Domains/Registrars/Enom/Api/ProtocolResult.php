@@ -7,16 +7,20 @@ namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api;
 final class ProtocolResult implements \JsonSerializable
 {
     private static ?\WeakMap $facts = null;
+    private static ?\WeakMap $replies = null;
     public function __construct(public readonly string $status, public readonly ?string $code = null,
-        #[\SensitiveParameter] array $data = [], public readonly ?int $responseBytes = null)
+        #[\SensitiveParameter] array $data = [], public readonly ?int $responseBytes = null, ?\Paymenter\Extensions\Servers\Domains\Data\RegistrarReply $registrarReply = null)
     {
         if (!in_array($status, ['success', 'rejected', 'unknown'], true)
             || ($code !== null && !preg_match('/^(?:[0-9]{1,6}|[a-z][a-z_]{0,63})$/D', $code))) {
             throw new \InvalidArgumentException('Invalid protocol result.');
         }
         $facts = self::$facts ??= new \WeakMap;
-        $facts[$this] = $status === 'success' ? $data : [];
+        $refusal=\Paymenter\Extensions\Servers\Domains\Data\RegistrationRefusal::envelope($data['purchase_refusal']??null);
+        $facts[$this] = $status === 'success' ? $data : ($status==='rejected'&&$refusal!==null?['purchase_refusal'=>$refusal]:[]);
+        $replies = self::$replies ??= new \WeakMap; $replies[$this] = $registrarReply;
     }
+    public function registrarReply(): ?\Paymenter\Extensions\Servers\Domains\Data\RegistrarReply { return self::$replies[$this]; }
     public function value(string $path, mixed $default = null): mixed
     {
         $value = self::$facts[$this];

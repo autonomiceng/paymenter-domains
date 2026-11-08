@@ -9,7 +9,7 @@ final class RefundProof
     /** Sent transfer settlement is separate from definitely-unsent proof and grants no retry authority. */
     public static function requireReturnable(Operation $op,Domain $d): void
     {
-        if(TransferRejections::proved($op,$d)){return;}
+        if(TransferRejections::proved($op,$d)||RegistrationRefusals::proved($op,$d)){return;}
         self::requireUnsent($op,$d);
     }
     public static function requireUnsent(Operation $op, Domain $d): void
