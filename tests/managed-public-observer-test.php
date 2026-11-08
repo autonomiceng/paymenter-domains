@@ -7,7 +7,8 @@ use Paymenter\Extensions\Servers\Domains\Dns\{DnsQuery,DnsAnswer,PublicSignalsTa
 use Paymenter\Extensions\Servers\Domains\Models\{ManagedPublicObservation,ManagedPublicConfig,WatchName,WatchSource};
 use Paymenter\Extensions\Servers\Domains\Services\{ManagedPublicSignals,PublicSignalsProjection,ManagedPublicWorkSchema};
 extract(managedFixture(true));$id=(int)$d->id;$uid=(int)$owner->id;$now=$time->now;
-// Installation uses wall time; align the otherwise unused shared window with the fixture clock.
+// Seed an unused shared window when absent, then align it with the fixture clock.
+\Paymenter\Extensions\Servers\Domains\Services\PublicDnsQuota::seed($now);
 $pool=DB::table(\Paymenter\Extensions\Servers\Domains\Services\PublicDnsQuota::TABLE)->where('id',1);
 same(0,(int)(clone $pool)->value('used'),'The observer starts without public quota consumption');
 same([],json_decode((clone $pool)->value('active'),true),'The observer starts without active public checks');
