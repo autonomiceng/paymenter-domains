@@ -28,7 +28,7 @@ final class StaffReviewHistory
                 'recheck'=>$phase==='read_failed'?'Status check failed':($phase==='read_requested'?'Status check requested':(isset($entry['check'])?\Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::words($entry['check'])['title']:'Status check finished')),
                 'resume_reads'=>'Status checks restarted', 'resume_observation'=>'Sync resumed',
                 'disposition'=>'Request closed', 'refund'=>'Cancelled',
-                'credit'=>'Refund checked', 'replacement'=>'Renewal invoice reissued', 'engine_hold'=>'Back on hold',
+                'credit'=>$op->funding_basis==='complimentary'?'Order closed':'Refund checked', 'replacement'=>'Renewal invoice reissued', 'engine_hold'=>'Back on hold',
                 default=>'Staff action',
             };
             $date=null; $at=$entry['at']??null;

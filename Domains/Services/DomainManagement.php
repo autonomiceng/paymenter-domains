@@ -229,6 +229,7 @@ final class DomainManagement
                     $history=$op->attempt['management_deferrals']??[];$defer=($op->attempt['seal']??null)==='absent'&&($error instanceof ReadDeferred||$error instanceof WriteHeld&&$error->reason==='write_rate_limited')&&count($history)<5;
                     $op->update(['state'=>($op->attempt['seal']??null)==='sealed'?'uncertain':($defer?'queued':'held'),'safe_code'=>$defer?'management_deferred':'management_unconfirmed','lease_expires_at'=>null,
                         'attempt'=>[...$op->attempt,...($defer?['management_deferrals'=>[...$history,$this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format(DATE_ATOM)]]:[])]]);
+                    ManagementEvidence::finishExhausted($op,$this->clock->now());
                 }
                 return $op ?? throw new \DomainException('Management unavailable.');
             });

@@ -150,6 +150,7 @@ final class Labels
             'registration_correction_required'=>'Not sent: contact details need fixing','registration_evidence_required'=>'Not sent: contact details need fixing',
             'transfer_setup_review_required'=>'Not sent: registrar account not set up','contacts_closed_unsent'=>'Cancelled before sending',
             'renewal_cancelled_unpaid'=>'Renewal cancelled: not paid','management_retired'=>'Cancelled',
+            'management_preparation_failed'=>RequestStatus::UNSENT.' Preparation failed. The customer can try again.',
             'management_unconfirmed'=>RequestStatus::UNCONFIRMED,'management_provider_refused'=>\Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus::REFUSED.' The customer can try again.',
             'management_deferred'=>null,'readback_confirmed'=>null,
             'auth_email_accepted'=>'Auth code email sent','actual_charge_changed'=>'Registrar charged a different amount',
