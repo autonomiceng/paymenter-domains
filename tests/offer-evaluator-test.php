@@ -93,10 +93,10 @@ foreach (['enom', 'namesilo'] as $registrar) {
     $unavailable($make(['facts' => $twoFacts, 'intent' => new Intent(defaultLongest: 2)]), 'unknown_price', $two);
     $exact = $cost('register', 2, '10.0000', CostUnit::Annual);
     same('20.0000', $exact->total, $registrar.': explicit annual rate normalizes to exact-term total');
-    $twoOffer = $make(['feed' => new FeedObserved($binding, 'com', [$exact, $cost('renew', 1, '8.0000')]), 'facts' => $twoFacts,
-        'intent' => new Intent(defaultLongest: 1, longest: 2, maxAnnualCost: '10.0000'), 'retail' => ['register:2' => '26.00', 'renew:1' => '10.40']]);
+    $twoOffer = $make(['feed' => new FeedObserved($binding, 'com', [$exact, $cost('register', 1, '10.0000'), $cost('renew', 1, '8.0000')]), 'facts' => $twoFacts,
+        'intent' => new Intent(defaultLongest: 1, longest: 2, maxAnnualCost: '10.0000'), 'retail' => ['register:1' => '13.00', 'register:2' => '26.00', 'renew:1' => '10.40']]);
     same(true, $evaluator->evaluate($twoOffer, $two, Context::Locked, $now)->available, $registrar.': explicit longest override and inclusive cost limit');
-    $raised = new Snapshot(new FeedObserved($binding, 'com', [$cost('register', 2, '20.0001'), $cost('renew', 1, '8.0000')]),
+    $raised = new Snapshot(new FeedObserved($binding, 'com', [$cost('register', 2, '20.0001'), $cost('register', 1, '10.0000'), $cost('renew', 1, '8.0000')]),
         $twoFacts, $twoOffer->intent, $revision, $revision, $twoOffer->retail, $binding, accountReady: true);
     $unavailable($raised, 'cost_limit', $two);
     same(true, $evaluator->evaluate($twoOffer, $two, Context::Public, $now)->available, $registrar.': cost fall re-enables without changing intent');

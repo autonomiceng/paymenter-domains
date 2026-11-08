@@ -162,6 +162,9 @@ $ports->apply(Edit::override($binding, 'net', new Intent(sell: true, longest: 10
     [...PricingRule::DEFAULT, 'markup' => '0.00']), $revision());
 $user = commerceUser(); $cart = commerceCart($user);
 commerceAdd($cart, $native->product($tlds[0], 'register'), 'refresh-price.net', 2);
+$page = Livewire\Livewire::actingAs($user)->withCookies(['cart' => $cart->ulid])
+    ->test(App\Livewire\Cart::class)->set('use_credits', false);
+same('28.98', number_format((float) $page->get('total')->total, 2, '.', ''), 'Customer initially sees the published total');
 $wire = new class implements \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Transport {
     public array $calls = [];
     public function send($environment, $command, array $parameters, string $uid, string $token, int $timeoutMs): string
@@ -196,9 +199,9 @@ $expire(['register:2', 'renew:1']); Cache::flush();
 Illuminate\Support\Once::flush(); $admission->refresh();
 same([[10, 1], [10, 2], [16, 1], [10, 1]], $wire->calls, 'Full refresh quotes selected cost and both annual inputs');
 same('32.98', number_format((float) App\Classes\Cart::get()->items->sole()->price->total, 2, '.', ''), 'Cart combines both refreshed annual sell prices');
-// Native mount can already have cached its daily total; review must precede the refreshed charge.
+// An already mounted customer page must review repricing before the refreshed charge.
 $orders = Order::count();
-$page = commerceCheckout($user, $cart); $page->assertHasNoErrors();
+$page->call('checkout', ['contact' => commerceOrderContact($user), 'save_account' => false]); $page->assertHasNoErrors();
 same($orders, Order::count(), 'A changed native total must stop checkout before creating an invoice');
 $notice = collect($page->effects['dispatches'] ?? [])->firstWhere('name', 'notify')['params'][0]['message'] ?? '';
 expect(str_contains($notice, 'Review the total'), 'Refreshed invoice requires the visible new total: '.$notice);

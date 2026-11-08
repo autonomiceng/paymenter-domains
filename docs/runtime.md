@@ -115,3 +115,5 @@ A processed order number unlocks exact readback only. A confirmed no-order/no-ch
 answer returns the original payment once. The encrypted request evidence and account
 audit retain who recorded the answer, its support case and the original attempt hash.
 Neither answer authorizes resending the original request.
+
+Registration retail uses the first registration year plus the annual renewal retail for each additional year. Each annual input is rounded before summing; the independently quoted selected-term registrar cost still bounds the sale. Installation republishes older retail rules locally, preserving native plan and price identities, observation ages and issued invoices. `domains:price-match --json` reports eligible catalogue terms and native price mismatches without repairs or registrar reads. Mismatched terms stay hidden; warning failures cannot withdraw healthy terms or fail a completed feed turn.
