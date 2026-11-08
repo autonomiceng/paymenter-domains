@@ -102,8 +102,10 @@ $wire = new class implements Paymenter\Extensions\Servers\Domains\Registrars\Eno
         return '<interface-response><Command>'.$command->value.'</Command><ErrCount>0</ErrCount><Done>true</Done><Domains><Domain><Name>transfer-placeholder.com</Name><RRPCode>211</RRPCode><IsPremium>0</IsPremium><IsPlatinum>0</IsPlatinum><IsEAP>0</IsEAP><Properties><Transferable>true</Transferable><MinRegYear>2</MinRegYear></Properties></Domain></Domains></interface-response>';
     }
 };
-$registry->registerBoundReader($b,static fn($binding,$credentials)=>new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver(
-    new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Client($binding,$credentials['token'],'synthetic',$wire),['com']));
+$registry->registerBoundReader($b,static function($binding,$credentials)use($wire,$state){
+    if(isset($state->exception)){$state->plainThrown=($state->plainThrown??0)+1;throw $state->exception;}
+    return new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver(new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Client($binding,$credentials['token'],'synthetic',$wire),['com']);
+});
 $q = new Paymenter\Extensions\Servers\Domains\Catalogue\Query($b,['com'],'register');
 $ports->apply(Paymenter\Extensions\Servers\Domains\Catalogue\Edit::seller($b,'com',['transfer']),$ports->readOffers($q,Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
 foreach ([true,false] as $transferMode) {
@@ -120,7 +122,7 @@ app()->forgetInstance(Paymenter\Extensions\Servers\Domains\Services\Runtime::cla
 app()->forgetInstance(Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class);
 // Plain reader exceptions must not impersonate typed public eligibility reasons.
 $state->exceptionAfterCalls=$state->calls-1;$state->exception=new DomainException('premium');$public->states=['active'];
-$failures=[];$spoof=$check();if($spoof['status']!=='transfer_unconfirmed'||!str_contains($spoof['html'],'data-domains-retry')||str_contains($spoof['html'],'premium domains')){$failures[]='Plain provider exception must stay unconfirmed with Retry';}
+$failures=[];$spoof=$check();same(1,$state->plainThrown,'The actual bound reader throws the plain exception');if($spoof['status']!=='transfer_unconfirmed'||!str_contains($spoof['html'],'data-domains-retry')||str_contains($spoof['html'],'premium domains')){$failures[]='Plain provider exception must stay unconfirmed with Retry';}
 unset($state->exception);
 $user=commerceUser();$product=$native->product($tlds[0],'register');
 $order=App\Models\Order::create(['user_id'=>$user->id,'currency_code'=>'USD','status'=>'pending']);
