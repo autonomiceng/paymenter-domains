@@ -54,7 +54,7 @@ final class DomainListRow
     public static function renewal(DomainSummary $s): array
     {
         if ($s->kind === 'watch') { return ['value' => 'At your registrar', 'note' => null, 'invoiceMissing' => false, 'invoiceCause' => null, 'invoiceFix' => null]; }
-        if ($s->expiry===null && in_array($s->statusState,['registration_rejected','transfer_rejected','cancelled'],true)) { return ['value'=>'','note'=>null,'invoiceMissing'=>false,'invoiceCause'=>null,'invoiceFix'=>null]; }
+        if ($s->expiry===null && (in_array($s->statusState,['registration_rejected','transfer_rejected','cancelled'],true)||in_array($s->order['state']??null,['failed','cancelled'],true))) { return ['value'=>'','note'=>null,'invoiceMissing'=>false,'invoiceCause'=>null,'invoiceFix'=>null]; }
         if ($s->renewalOffShown() && !$s->renewalInvoicePaid && !$s->renewalInvoiceReview && !$s->renewalInvoiceCancelled) {
             return ['value' => 'Off', 'note' => $s->expiry ? 'Cancels '.CarbonImmutable::parse(substr($s->expiry, 0, 10), 'UTC')->format('M j, Y') : null, 'invoiceMissing' => false, 'invoiceCause' => null, 'invoiceFix' => null];
         }
