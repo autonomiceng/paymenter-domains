@@ -14,6 +14,9 @@ $attempt = $op->fresh()->attempt;
 $money = nativeFinancialSnapshot($op->fresh());
 $reads = count($state->calls);
 $writes = $state->writes;
+// A pre-existing lost reply exposes the existing wait/support step before any worker creates status_check.
+$beforeCheck=RegistrarCheck::forCustomer($op->fresh());
+same('Renewal pending',$beforeCheck['title'],'Old unresolved renewal projects its original-dispatch deadline without a worker');
 $result = $completion->run($op->id);
 same('awaiting_answer', $result->policy['status_check']['outcome'], 'Unrecoverable renewal names the staff registrar-answer action');
 same('Enom', $result->policy['status_check']['registrar'], 'Staff action names the bound registrar');

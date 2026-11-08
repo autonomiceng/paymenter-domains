@@ -315,4 +315,12 @@ same(['On hold','warning'],[DomainFacts::status($pol)['label'],DomainFacts::stat
 same(['Under review','info'],array_slice(array_values(\Paymenter\Extensions\Servers\Domains\Presentation\StatusPill::of('registration_held')),0,2),'Customer domain stays Under review in blue');
 expect(\Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::status(Operation::query(),['on_hold'])->whereKey($polOp->id)->exists(),'Staff On hold filter includes registration hold');
 expect(!\Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::status(Operation::query(),['under_review'])->whereKey($polOp->id)->exists(),'Staff Under review filter excludes registration hold');
+// A transfer held by staff uses the same status/filter and retained actor as a registration hold.
+$staffTransfer=$row('transfer_pending','transfer','held','staff_review_required');$heldOp=$staffTransfer->operations()->sole();
+$heldOp->update(['policy'=>['staff_actions'=>[['action'=>'hold','phase'=>'completed','actor_name'=>'Saved Operator','at'=>date(DATE_ATOM)]]]]);
+$heldOp=$heldOp->fresh();
+same('On hold',RequestFacts::status($heldOp)['label'],'Staff-held transfer shares On hold');
+expect(\Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::status(Operation::query(),['on_hold'])->whereKey($heldOp->id)->exists(),'Held-transfer filter matches presentation');
+same('Put on hold by Saved Operator',Labels::requestStatus($heldOp)['reason'],'Retained hold names its recorded actor');
+Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$staffTransfer->id])->assertSee('On hold')->assertSee('Saved Operator');
 $nativeSuccessful=true; echo "Staff domain status: customer words and one next step per row.\n";
