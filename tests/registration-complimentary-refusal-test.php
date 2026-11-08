@@ -38,6 +38,7 @@ $money=static fn()=>array_map(static fn($table)=>DB::table($table)->orderBy('id'
 $before=$money();
 // A missing native service is not a complimentary credit obligation in either selector.
 $nativeService=$op->service_id;DB::table('domains_operations')->where('id',$op->id)->update(['service_id'=>999999]);
+DB::table('domains_domains')->where('id',$op->domain_id)->update(['service_id'=>999999]);
 $missing=$op->fresh();
 same(false,Paymenter\Extensions\Servers\Domains\Services\RefundCandidates::query(Paymenter\Extensions\Servers\Domains\Models\Operation::whereKey($op->id))->exists(),'Missing native service is absent from discovery');
 $missingMatches=Paymenter\Extensions\Servers\Domains\Services\RefundCandidates::matches($missing,$missing->funding);
@@ -46,6 +47,7 @@ $details=Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\
 if(!$missingMatches){$details->assertDontSee('No credit added');}
 expect(!Paymenter\Extensions\Servers\Domains\Admin\Support\DomainQueries::creditReview(Paymenter\Extensions\Servers\Domains\Models\Domain::whereKey($op->domain_id))->exists(),'Missing service leaves the real credit-review filter');
 DB::table('domains_operations')->where('id',$op->id)->update(['service_id'=>$nativeService]);
+DB::table('domains_domains')->where('id',$op->domain_id)->update(['service_id'=>$nativeService]);
 same(false,$missingMatches,'Missing native service also has no staff credit obligation');
 $runtime->tick();
 same('cancelled',Service::findOrFail($op->service_id)->status,'Ordinary runtime discovery and refund dispatch close the proved complimentary refusal');

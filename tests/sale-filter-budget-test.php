@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 extract(commerceFixture(true,registrars:['enom']));staffSalesFixture();tldPanel();pinStaffClock($now);
 $actor=staffUser(array_keys(Staff::permissions()));Auth::setUser($actor);$t=$tlds[0];
 $b=AccountBindings::binding(Account::where('server_id',$t->server_id)->sole());$source=StaffCatalogue::routed();
-$base=$t->fresh()->getRawOriginal();unset($base['id']);$prices=DB::table('domains_prices')->where('server_id',$b->serverId)->get();$policy=(array)DB::table('domains_sales_policies')->where('tld','com')->sole();
+$base=$t->fresh()->getRawOriginal();unset($base['id']);$prices=DB::table('domains_prices')->where('server_id',$b->serverId)->get();$policy=(array)DB::table('domains_sales_policies')->where('tld','com')->sole();unset($policy['id']);
 for($i=1;$i<1000;$i++){
     $name='ending'.base_convert((string)($i+1000),10,36);DB::table('domains_tlds')->insert([...$base,'tld'=>$name]);
     foreach($prices as $price){$row=(array)$price;unset($row['id']);DB::table('domains_prices')->insert([...$row,'tld'=>$name]);}
