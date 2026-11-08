@@ -720,7 +720,9 @@
     "tests/test_installed_comp_account_transfer-test.php",
     "tests/test_installed_comp_account_recovery-test.php",
     "tests/site-dns-refresh-test.php",
-    "tests/complimentary-status-grants-test.php"
+    "tests/complimentary-status-grants-test.php",
+    "tests/test_installed_customer_renewal_options-test.php",
+    "tests/test_installed_standard_renewal_summary-test.php"
   ],
   "ui": [],
   "runner": [
