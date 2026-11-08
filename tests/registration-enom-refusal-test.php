@@ -24,7 +24,7 @@ $negative=$new('saved-response.example.com'); $virgin=$negative->getRawOriginal(
 $refunds=new \Paymenter\Extensions\Servers\Domains\Services\Refunds($clock);
 // Error evidence survives the real driver, sealed finish and later recovery without authorizing a replay or credit.
 $diagnostics=[];
-$badCounts=['missing_errors_count','empty_errors_count','absent_count','incomplete','missing_response','zero_count','invalid_count'];
+$badCounts=['missing_errors_count','empty_errors_count','absent_count','incomplete','missing_response','zero_count','invalid_count','padded_errcount','nested_contact_control','contact_list','contact_attributes','contact_text'];
 foreach ([...$badCounts,'refusal','contradictory','lost'] as $case) {
     $calls=[];
     $wire=static function($origin,$command,$parameters,$timeout) use (&$calls,$case,$purchaseRefusal): string {
@@ -34,6 +34,8 @@ foreach ([...$badCounts,'refusal','contradictory','lost'] as $case) {
             $reply=preg_replace('#<errors>.*?</errors>#s',$case==='empty_errors_count'?'<errors/>':'',$purchaseRefusal);
             return str_replace('<ErrCount>1</ErrCount>','<ErrCount>'.($case==='empty_errors_count'?'3':'2').'</ErrCount>',$reply);
         }
+        if($case==='padded_errcount'){return str_replace('<ErrCount>1</ErrCount>','<ErrCount>01</ErrCount>',$purchaseRefusal);}
+        if(str_starts_with($case,'contact_')||$case==='nested_contact_control'){return preg_replace('#<Contacts>.*?</Contacts>#s',match($case){'nested_contact_control'=>'<Contacts><ErrCount>5</ErrCount></Contacts>','contact_list'=>'<Contacts><RegistrantEmailAddress>PRIVATE-ONE</RegistrantEmailAddress><RegistrantEmailAddress>PRIVATE-TWO</RegistrantEmailAddress></Contacts>','contact_attributes'=>'<Contacts id="1"><RegistrantEmailAddress>PRIVATE-CONTACT</RegistrantEmailAddress></Contacts>',default=>'<Contacts>PRIVATE-CONTACT</Contacts>'},$purchaseRefusal);}
         if($case==='absent_count'){return str_replace('<ResponseCount>1</ResponseCount>','',$purchaseRefusal);}
         if($case==='missing_response'){return preg_replace('#<responses>.*?</responses>#s','',$purchaseRefusal);}
         if(in_array($case,['incomplete','zero_count','invalid_count'],true)){
@@ -55,7 +57,7 @@ foreach ([...$badCounts,'refusal','contradictory','lost'] as $case) {
     same(['uncertain','sealed',$case==='lost'?null:'unknown','possibly_sent'],[$result->state,$result->attempt['seal'],$result->attempt['execution']['disposition']??null,
         $result->attempt['send_state']],'Purchase error/lost reply retains uncertain sent authority: '.$case);
     $expected=match($case){'lost'=>null,
-        'missing_errors_count','empty_errors_count'=>['code'=>'541','text'=>'Validation error; failed to add; order(s)'],'contradictory','absent_count','incomplete','missing_response','zero_count','invalid_count'=>['code'=>'541','text'=>'Validation error. Failed to create order.'],
+        'missing_errors_count','empty_errors_count'=>['code'=>'541','text'=>'Validation error; failed to add; order(s)'],'padded_errcount','nested_contact_control','contact_list','contact_attributes','contact_text','contradictory','absent_count','incomplete','missing_response','zero_count','invalid_count'=>['code'=>'541','text'=>'Validation error. Failed to create order.'],
         default=>['code'=>'545','text'=>'Error 545 - Name server does not exist']};
     $diagnostics[] = [$case, $expected, $result->attempt['evidence']['registrarReply'] ?? null];
     same(null,$refunds->creditRejected($result->id),'Ambiguous reply cannot enter the credit path');
