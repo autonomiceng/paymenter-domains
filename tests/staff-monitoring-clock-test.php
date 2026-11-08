@@ -3,7 +3,7 @@
 declare(strict_types=1);
 require __DIR__.'/Support/staff-monitoring.php';
 $clockKey=\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class;$originalClock=app($clockKey);
-$testClock=new \Paymenter\Extensions\Servers\Domains\Tests\FakeClock(new DateTimeImmutable(gmdate('Y-m-d').'T23:59:59Z'));
+$testClock=new class(new DateTimeImmutable(gmdate('Y-m-d').'T23:59:59Z')) implements \Paymenter\Extensions\Servers\Domains\Contracts\Clock { public function __construct(public DateTimeImmutable $instant){} public function now():DateTimeImmutable{return $this->instant;} };
 app()->instance($clockKey,$testClock);
 try{
  extract($checked());$expectedDate=$expiry;

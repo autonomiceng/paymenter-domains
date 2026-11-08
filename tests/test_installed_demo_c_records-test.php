@@ -32,7 +32,7 @@ $check($state['stale'],'Older than one day is stale');
 $owned=new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(name:$d->domain,status:'Active',tone:'ok',expiry:'2027-11-20',renewal:'On',renewalPrice:'$14.00',actions:['show'=>'/domains/1'],progress:[],setup:[],transfer:[],management:[],testEnvironment:false);
 $page=RecordFamilies::owner($owned,$state);
 $html=view('domains::partials.owner-management',['domain'=>$page])->render();
-foreach(['Complete','Partial','Missing','Unsupported','CAA','3600','Read-only','Checked'] as $text){$check(str_contains($html,$text),'Customer sees '.$text);}
+foreach(['Partial','Missing','Unsupported','CAA','3600','Read-only','Checked'] as $text){$check(str_contains($html,$text),'Customer sees '.$text);}
 $check(str_contains($html,'aria-label="DNS records"')&&str_contains($html,'TTL'),'CAA is in the DNS records table');
 $caaDom=storefrontDom($html);
 $same(1,$caaDom->query('//tr[td[normalize-space(.)="CAA"]]')->length,'The real DNS table contains the CAA row');
@@ -77,11 +77,11 @@ foreach(['never_read','wrong_identity','failed_read'] as $case){
     $same(1,$ownerDom->query('//form[@action="/domains/1/dns"]')->length,$case.' keeps the supplied DNS editor on the owner page');
 }
 $partial=RecordFamilies::owner($editable,RecordFamilies::read($d,$now));$same([],$partial->management['contacts']['actions'],'A current partial contact read still holds whole-list editing');
-// r16: a complete family says its count beside the label; the value doesn't say it again.
+// A complete family shows its count once and retains the independent check time.
 $countDom=storefrontDom(view('domains::partials.owner-management',['domain'=>$partial,'caps'=>['dns'],'keys'=>['dns'=>str_repeat('b',64)]])->render());
 $countSub=trim($countDom->query('//li[@id="dns"]/span[@class="domains-row__l"]/span[@class="domains-sub"]')->item(0)?->textContent??'');
 $countValue=trim($countDom->query('//li[@id="dns"]/span[@class="domains-row__v"]')->item(0)?->textContent??'');
-$same([1,''],[preg_match('/^\d+ records? checked\./',$countSub),$countValue],'DNS says its record count once: '.json_encode([$countSub,$countValue]));
+$same([true,'1 record'],[str_starts_with($countSub,'Checked '),$countValue],'DNS says its record count once and keeps the check time: '.json_encode([$countSub,$countValue]));
 // customer-layout: as in the 390 mock, the "?" sits right after its label, before the status, and Edit sits beside the status.
 $same(1,$countDom->query('//li[@id="dns"]/span[@class="domains-row__l"]/span[@data-record-family]/preceding-sibling::span[@data-help]')->length,'The ? sits with its label, before the status');
 $same(1,$countDom->query('//li[@id="dns"]/span[@class="domains-row__a"]/a[normalize-space()="Edit"]')->length,'The DNS row has its Edit action');

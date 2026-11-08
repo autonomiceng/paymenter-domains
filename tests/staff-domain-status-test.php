@@ -304,7 +304,7 @@ $columns=$page->instance()->getTable()->getColumns(); $records=$page->instance()
 foreach ([$offTransfer,$offChange] as $d) {
     $op=$d->operations()->sole(); $line=RequestFacts::status($op); $status=DomainFacts::status($d->fresh());
     same('Under review',$line['label'],'The request reads its domain\'s word');
-    $read=['Under review',rtrim((string)$line['reason'],'.').'. Check request #'.$op->id.'.'];
+    $read=['Under review',rtrim((string)$line['reason'],'.').'.'.($op->state==='queued'?RequestFacts::ordersStep($line['reason']):' Check request #'.$op->id.'.')];
     same($read,[$status['label'],DomainFacts::statusLine($status)],'The heading keeps the customer word, then the request');
     same($read,[$columns['status']->record($records[$d->id])->getState(),$columns['note']->record($records[$d->id])->getState()],'The list reads as its request');
 }
