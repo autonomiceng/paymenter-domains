@@ -11,6 +11,8 @@ use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Dns;
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 final readonly class OwnedDomains
 {
+    /** Legacy registrar-reset evidence only; management forms use the saved site DNS choice. */
+    public const DEFAULT_NAMESERVERS=['dns1.name-services.com','dns2.name-services.com','dns3.name-services.com','dns4.name-services.com','dns5.name-services.com'];
     /** Owner and staff see the same reason and next step while records can't be changed here. */
     public const DNS_OFF='You can’t change DNS records here yet. Contact support for a change.';
     /** History change label for each management request action. */

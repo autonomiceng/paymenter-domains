@@ -78,7 +78,7 @@ same(['label'=>'Redemption','tone'=>'bad','reason'=>'Restore at your registrar']
 same(['label'=>'Expired','tone'=>'bad','reason'=>'Renew at your registrar'],StatusPill::summary($watch(['watch.expired','watch.ns_changed'])),'Expiry outranks a nameserver change');
 same('Action required',StatusPill::summary($watch(['watch.ns_changed']))['label'],'A monitored domain off our nameservers asks the customer to act');
 // Detail pages carry no other pills: management sections, notices and check details are plain text.
-$m=['nameservers'=>['label'=>'Nameservers','url'=>'/n','actions'=>['nameservers'=>'/n'],'max'=>12,'defaults'=>true,'current'=>['ns1.example.net','ns2.example.net'],'defaultServers'=>OwnedDomains::DEFAULT_NAMESERVERS],
+$m=['nameservers'=>['label'=>'Nameservers','url'=>'/n','actions'=>['nameservers'=>'/n'],'max'=>12,'defaults'=>true,'current'=>['ns1.example.net','ns2.example.net'],'registrar'=>'Enom','defaultServers'=>['ns1.site.example.org','ns2.site.example.org']],
     'lock'=>['label'=>'Transfer lock','url'=>'/l','actions'=>['lock'=>'/l']],'privacy'=>['label'=>'Domain privacy','url'=>'/p','free'=>true,'price'=>null,'actions'=>['privacy_enable'=>'/e','privacy_disable'=>'/x']]];
 $full=new OwnedDomain('full.example','Active','ok',$later,'On','$14.00',['show'=>'/domains/1'],[],['contacts'=>false,'required'=>false],[],$m,true,autoRenew:['url'=>'/a','enabled'=>true]);
 same(['Active'],$pills(storefrontDom(view('domains::show',['domain'=>$full,'summary'=>$summary('full.example',['domain.active','adopt.provenance','adopt.renewal_off'])])->render())),'Managed detail with every section still shows one pill');

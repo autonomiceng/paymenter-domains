@@ -29,13 +29,14 @@ same($siteServers,array_map(fn($n)=>$n->textContent,iterator_to_array($confirm->
 same(1,$confirm->query('//dialog[@id="confirm-nameservers"]/p[normalize-space()="Registrar: '.$registrar.'."]')->length,'Confirmation identifies the bound registrar once');
 // Changing the saved profile while confirmation is open cannot change the submitted list.
 $siteProfile->nameservers=['ns1.changed.example.org','ns2.changed.example.org'];$siteProfile->saveQuietly();
-$nsSave=static function(array $hosts,array $extra=[])use($post,$controller,$d,$management,$driver,$free,$state,$ms):void {
+$wireState=$free?$ms:$state;
+$nsSave=static function(array $hosts,array $extra=[])use($post,$controller,$d,$management,$driver,$free,$wireState):void {
     $controller->manage($post('nameservers',['nameservers'=>implode("\n",$hosts),...$extra]),$d->id,'nameservers');
     $saved=$d->operations()->where('action','nameservers')->latest('id')->firstOrFail();
     same(['nameservers'=>$hosts],$saved->payload,'The UI freezes ordinary explicit nameservers, never a registrar reset');
     Cache::forget('domains-write-slot:'.$d->account_fingerprint);
     same('succeeded',$management->run($saved->id,$driver)->state,'Explicit nameservers pass the native engine and synthetic readback');
-    $calls=$free?$ms->calls:$state->calls;$command=$free?'changeNameServers':'ModifyNS';
+    $calls=$wireState->calls;$command=$free?'changeNameServers':'ModifyNS';
     $writes=array_values(array_filter($calls,fn($call)=>$call[0]===$command));$args=end($writes)[1];
     same($hosts,array_values(array_filter($args,fn($key)=>preg_match($free?'/^ns[0-9]+$/D':'/^NS[0-9]+$/D',$key),ARRAY_FILTER_USE_KEY)),'Registrar receives exactly the confirmed nameservers');
     expect(!isset($args['UseDNS']),'The UI never sends UseDNS=default');
