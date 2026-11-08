@@ -7,6 +7,8 @@ require __DIR__.'/Support/native-commerce.php';
 require __DIR__.'/Support/storefront.php';
 require __DIR__.'/Support/storefront-reader.php';
 use Illuminate\Http\Request;
+use Paymenter\Extensions\Servers\Domains\Contracts\RegistrarDriver;
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,AttemptEvidence,Capabilities,DriverResult,Query,ReconciliationResult,RequestContext};
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\{OwnedTransferController, StorefrontController};
 use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
 use Paymenter\Extensions\Servers\Domains\Services\{Rdap, TransferPrecheck};
@@ -103,8 +105,19 @@ $wire = new class implements Paymenter\Extensions\Servers\Domains\Registrars\Eno
     }
 };
 $registry->registerBoundReader($b,static function($binding,$credentials)use($wire,$state){
-    if(isset($state->exception)){$state->plainThrown=($state->plainThrown??0)+1;throw $state->exception;}
-    return new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver(new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Client($binding,$credentials['token'],'synthetic',$wire),['com']);
+    $driver=new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver(new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Client($binding,$credentials['token'],'synthetic',$wire),['com']);
+    return new class($driver,$state) implements RegistrarDriver {
+        public function __construct(private RegistrarDriver $driver,private object $state){}
+        public function binding():AccountBinding{return $this->driver->binding();}
+        public function accountCapabilities(RequestContext $c):Capabilities{return $this->driver->accountCapabilities($c);}
+        public function balance(RequestContext $c):DriverResult{return $this->driver->balance($c);}
+        public function quote(Query $q,RequestContext $c):DriverResult{return $this->driver->quote($q,$c);}
+        public function availability(Query $q,RequestContext $c):DriverResult{if(isset($this->state->exception)){$this->state->plainThrown=($this->state->plainThrown??0)+1;throw $this->state->exception;}return $this->driver->availability($q,$c);}
+        public function readDomain(string $n,RequestContext $c):DriverResult{return $this->driver->readDomain($n,$c);}
+        public function readRenewalDomain(string $n,RequestContext $c):DriverResult{return $this->driver->readRenewalDomain($n,$c);}
+        public function renewalAssessment(Query $q,RequestContext $c):DriverResult{return $this->driver->renewalAssessment($q,$c);}
+        public function reconcile(AttemptEvidence $a,RequestContext $c):ReconciliationResult{return $this->driver->reconcile($a,$c);}
+    };
 });
 $q = new Paymenter\Extensions\Servers\Domains\Catalogue\Query($b,['com'],'register');
 $ports->apply(Paymenter\Extensions\Servers\Domains\Catalogue\Edit::seller($b,'com',['transfer']),$ports->readOffers($q,Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
