@@ -15,7 +15,7 @@ $saved=$query()->value('catalogue_observation');$errors=[];
 foreach(['{','{"action":"renew","term":"bad"}'] as $broken){
     $query()->update(['catalogue_observation'=>$broken]);
     try{
-        $page=Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$good->id])->mountAction('seller')->assertSuccessful();
+        $page=Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$good->id])->mountAction('seller')->call('$refresh')->assertSuccessful();
         $schema=$page->instance()->getSchema($page->instance()->getMountedActionSchemaName());$select=$schema->getComponentByStatePath('seller');$options=$select->getOptions();
         expect($select->isOptionDisabled($bad->server_id,$options[$bad->server_id]),'Unreadable renewal is not usable seller evidence');
         expect(!$select->isOptionDisabled($good->server_id,$options[$good->server_id]),'A malformed sibling does not disable healthy choice');
