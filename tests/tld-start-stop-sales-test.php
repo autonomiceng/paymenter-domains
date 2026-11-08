@@ -41,6 +41,7 @@ Livewire::actingAs($viewer)->test(ViewTld::class,['record'=>$t->id])->assertActi
 $page=Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->mountAction('start_selling');
 $before=$t->fresh()->catalogue_intent;
 $actor->role->update(['permissions'=>[Staff::VIEW]]);$actor->unsetRelation('role');Auth::setUser($actor);
-$page->callMountedAction()->assertActionHidden('start_selling');
+$page->callMountedAction();
 same($before,$t->fresh()->catalogue_intent,'Revoking the grant after mount refuses the native dispatch');
+Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->assertActionHidden('start_selling')->assertActionHidden('stop_selling');
 echo "TLD start and stop sales passed.\n";$nativeSuccessful=true;
