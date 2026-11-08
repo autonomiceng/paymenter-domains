@@ -310,7 +310,7 @@ $ended=DomainFacts::head($active->fresh(),DomainFacts::status($active->fresh()),
 same('gray',$ended['tone'],'An ended domain keeps its own tone');
 expect(!str_contains((string)$ended['step'],'Sync'),'An ended domain has no sync step');
 expect($value($active,'Last sync')!=='Read stopped','An ended domain does not ask for a resume');
-Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$active->id])->assertDontSee('Resume sync')->assertDontSee('Stopped until resumed')->assertDontSee('Next registrar read:')->assertDontSee('No read queued.')->assertDontSee('Sync this domain.')->assertDontSee('Registrar records are waiting for an update.');
+Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$active->id])->assertDontSee('Resume sync')->assertDontSee('Stopped until resumed')->assertDontSee('Next registrar read:')->assertDontSee('No read queued.')->assertDontSee('Sync this domain.')->assertDontSee('Registrar records are waiting for an update.')->assertSee('Registrar records');
 // Retained failure evidence is history even after the domain ends; it never schedules another read.
 $history=\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::read($active->fresh(),app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now());
 $history['failed_family']='dns';$history['staff_hold']='Saved registrar failure.';$history['at']='2026-10-20T15:05:00+00:00';

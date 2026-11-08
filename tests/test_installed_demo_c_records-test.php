@@ -112,9 +112,14 @@ $failedFacts=RecordFamilies::read($failed,$now);
 $same($record['at'],$failedFacts['caa_at'],'Retained nonempty CAA is marked historical after a failed primary read');
 // The same confirmed readback drives both the editor and its visible inventory.
 $newer=clone $d;$saved=$newer->observation;$saved['records']=$record;
-$saved['record_reads']=[['identity'=>ObservationRecords::identity($newer),'action'=>'dns','operation_key'=>'newer-dns','sequence'=>1,'at'=>'2026-11-05T10:00:00+00:00','facts'=>['records'=>[['name'=>'@','type'=>'A','address'=>'192.0.2.99','mx_pref'=>10,'ttl'=>300]]]]];$newer->observation=$saved;
+$saved['record_reads']=[['identity'=>ObservationRecords::identity($newer),'action'=>'dns','operation_key'=>'newer-dns','sequence'=>1,'at'=>'2026-11-05T10:00:00+00:00','facts'=>['records'=>[['name'=>'@','type'=>'A','address'=>'192.0.2.99','mx_pref'=>10,'ttl'=>300],['name'=>'www','type'=>'A','address'=>'192.0.2.100','mx_pref'=>10,'ttl'=>300]]]]];$newer->observation=$saved;
 $latest=RecordFamilies::owner($editable,RecordFamilies::read($newer,$now));
 $same('192.0.2.99',$latest->management['dns']['inventory'][0]['address']??null,'Visible inventory uses the newer confirmed DNS readback');
+$latestDom=storefrontDom(view('domains::partials.owner-management',['domain'=>$latest])->render());
+expect(str_contains($latestDom->query('//li[@id="dns"]/span[@class="domains-row__v"]')->item(0)?->textContent??'','2 records'),'Current two-record editor count remains visible beside older one-record family evidence');
+$stoppedFacts=$failedFacts;$stoppedFacts['read_stopped']=true;$stoppedFacts['read_attempts']=5;$stoppedFacts['read_failed_at']='2026-11-05T10:00:00+00:00';$stoppedFacts['read_code']='read_failed';$stoppedFacts['read_cause']=\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::STOPPED_CAUSE;
+$stoppedText=preg_replace('/\s+/',' ',strip_tags(view('domains::partials.record-families',['recordFamilies'=>$stoppedFacts,'staff'=>true])->render()));
+expect(str_contains($stoppedText,'Stopped after 5 attempts. Last failure:'),'Stopped attempt and retained failure time have a visible separator');
 expect($failures===[],implode("; ",$failures));
 // Enom partial glue is a bounded known-host check, not a promise of enumeration.
 $enom=clone $d;$enom->registrar_key='enom';$r=$record;$r['capability_revision']='enom-records-1';$r['identity']=ObservationRecords::identity($enom);$r['families']['glue']['candidates']=['ns1.orbit-example.com','ns2.orbit-example.com'];$enom->observation=['records'=>$r];
