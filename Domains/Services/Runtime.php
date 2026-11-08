@@ -88,6 +88,18 @@ final class Runtime
             $product=(int)$map->product_id;
             \Illuminate\Support\Facades\DB::afterCommit(fn()=>app(WatchDiscoveryWork::class)->hint($product));
         });
+        Event::listen('eloquent.saved: '.\Paymenter\Extensions\Servers\Domains\Models\Domain::class,static function($domain):void {
+            if(!$domain->wasRecentlyCreated && !$domain->wasChanged(['status','service_id','user_id','server_id','authority_generation','confirmed_revision','provider_expires_at'])){return;}
+            $id=(int)$domain->id;$owner=(int)$domain->user_id;
+            \Illuminate\Support\Facades\DB::afterCommit(fn()=>app(WatchWork::class)->enrollManaged($id,$owner));
+        });
+        foreach([\Paymenter\Extensions\Servers\Domains\Models\WatchName::class,\Paymenter\Extensions\Servers\Domains\Models\WatchSource::class] as $model){
+            Event::listen('eloquent.saved: '.$model,static function($row):void {
+                $id=$row instanceof \Paymenter\Extensions\Servers\Domains\Models\WatchName?(int)$row->id:(int)$row->watch_id;
+                $owner=(int)$row->user_id;
+                \Illuminate\Support\Facades\DB::afterCommit(fn()=>app(WatchWork::class)->enrollWatch($id,$owner));
+            });
+        }
         Schedule::call(static function():void {\Paymenter\Extensions\Servers\Domains\Jobs\RunRuntime::dispatch();})->name('domains-runtime')->everyMinute()->withoutOverlapping(15)->onOneServer();
         Schedule::call(static function():void {
             if(app(PublicSuffixList::class)->scheduledAttemptDue()){\Paymenter\Extensions\Servers\Domains\Jobs\UpdatePublicSuffixList::dispatch();}

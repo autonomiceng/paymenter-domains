@@ -126,7 +126,6 @@ class StaffSettingsWrites
         $r->local(function()use($r,$data,$now):void{
             $s=Server::whereKey($r->serverId)->lockForUpdate()->firstOrFail();$a=Account::where('server_id',$s->id)->lockForUpdate()->firstOrFail();$t=$r->tldId?Tld::whereKey($r->tldId)->lockForUpdate()->firstOrFail():null;
             if($t&&($t->registrar_key!==$a->registrar_key||$t->account_fingerprint!==$a->account_fingerprint)){throw new \DomainException('TLD binding mismatch.');}
-            if($r->action==='new_domain_dns'){NewDomainDns::saveLocked($a,$data['dns_template']??null);return;}
             if($r->action==='history'){
                 HistoryAcceptances::revokeLocked(AccountBindings::binding($a),\Paymenter\Extensions\Servers\Domains\Data\Action::from((string)($data['history_action']??'')));return;
             }

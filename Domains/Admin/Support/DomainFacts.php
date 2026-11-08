@@ -80,7 +80,7 @@ final class DomainFacts
         if ($registered) {
             $expiry=$d->provider_expires_at?->format('Y-m-d');
             if ($pending) { $expiry??=is_string($policy['conversion_source_expiry']??null)?$policy['conversion_source_expiry']:null; }
-            $f['Expires']=self::fact($expiry?gmdate('M j, Y',strtotime($expiry.' 00:00:00 UTC')):null,sub:$expiry?null:self::unread($d,$sync),
+            $f['Expires']=self::fact($expiry?gmdate('M j, Y',strtotime($expiry.' 00:00:00 UTC')):null,sub:$expiry?null:($pending?self::unread($d,$sync):'No confirmed expiry saved. Check the domain at the registrar.'),
                 help:$pending&&$expiry?'From the old record. Not synced yet.':null);
         }
         $registrar=['enom'=>'Enom','namesilo'=>'NameSilo'][$d->registrar_key]??null;
@@ -168,7 +168,7 @@ final class DomainFacts
         if ($invoice) { $f['Open invoice']=self::fact('Invoice #'.$invoice->id,sub:'Awaiting payment',url:self::invoiceUrl((int)$invoice->id)); }
         // The older top rows must describe the same failed read as the family inventory.
         if($registered && ($problem=self::readProblem($d))!==null){
-            foreach(['Expires','In registrar account','Contacts','Nameservers','Transfer lock','WHOIS privacy','Registrar auto-renew','DNS records'] as $label){
+            foreach(['In registrar account','Nameservers','Transfer lock','WHOIS privacy','Registrar auto-renew','DNS records'] as $label){
                 if(isset($f[$label]) && ($f[$label]['value']===null || $f[$label]['value']==='Not read yet')){$f[$label]['value']=null;$f[$label]['sub']=$problem;}
             }
             if(isset($f['Last sync'])){$f['Last sync']['sub']=$problem;}

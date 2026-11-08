@@ -43,13 +43,13 @@ expect(str_contains($long,'&lt;script&gt;unsafe&lt;/script&gt;') && !str_contain
 $session->forget(['watch_saved','errors']);
 $text=static fn(string $html)=>trim(preg_replace('/\s+/',' ',strip_tags($html)));$norm=static fn($n)=>trim(preg_replace('/\s+/',' ',$n->textContent));
 $state=static function(array $states,string $kind='watch',array $with=[])use($data){$status=Paymenter\Extensions\Servers\Domains\Services\DomainStates::watch($states,'2027-01-15',true);
-    return new Paymenter\Extensions\Servers\Domains\Presentation\DomainSummary(...[...get_object_vars($data['summary']),'kind'=>$kind,'stateKeys'=>$states,'noticeDates'=>['dns'=>1800000000],'statusState'=>$status[0]??null,'statusReason'=>$status[1]??null,'relatedServices'=>[],'relatedOverflow'=>0,...$with]);};
+    return new Paymenter\Extensions\Servers\Domains\Presentation\DomainSummary(...[...get_object_vars($data['summary']),'kind'=>$kind,'stateKeys'=>$states,'dnsPreviouslyMatched'=>true,'noticeDates'=>['dns'=>1800000000],'statusState'=>$status[0]??null,'statusReason'=>$status[1]??null,'relatedServices'=>[],'relatedOverflow'=>0,...$with]);};
 $on=['account'=>['enabled'=>true,'revision'=>3],'target'=>['enabled'=>true,'revision'=>4]];
 $page=static fn(array $states,array $notices=[],array $portal=[],array $with=[],bool $editable=true,?array $preferences=null)=>view('domains::watch-notices',[...$data,'name'=>'example.com','summary'=>$state($states,'watch',$with),'notices'=>$notices,'portal'=>$portal,'editable'=>$editable,'preferences'=>$preferences??$on])->render();
 $li=static function(string $html,string $id)use($norm){$x=storefrontDom($html);$q=fn(string $path)=>array_map($norm,iterator_to_array($x->query('//li[@id="'.$id.'"]/'.$path)));return [$q('span[contains(@class,"domains-row__l")]')[0]??null,$q('span[contains(@class,"domains-row__v")]')[0]??null,$q('span[contains(@class,"domains-row__a")]/*')];};
 $card=static fn(string $html,string $term)=>array_map($norm,iterator_to_array(storefrontDom($html)->query('//aside//dt[starts-with(normalize-space(.),"'.$term.'")]/following-sibling::dd[1]')))[0]??null;
 $notice=static fn(string $html)=>array_map($norm,iterator_to_array(storefrontDom($html)->query('//div[contains(@class,"domains-notice")]')));
-$row=static fn(string $kind,string $date='January 15, 2027')=>[['kind'=>$kind,'company'=>'Example Hosting','date'=>$date]];
+$row=static fn(string $kind,string $date='January 15, 2027')=>[['kind'=>$kind,'company'=>'Example Hosting','date'=>$date,'previously_matched'=>true]];
 $plain=$page([],[],[],['nameservers'=>['nameservers'=>['ns1.example.net','ns2.example.net'],'at'=>'2027-01-10T08:00:00Z'],'expiry'=>'2027-06-01','daysLeft'=>200,'relatedServices'=>[['label'=>'Web A','url'=>'/services/1'],['label'=>'Web B','url'=>'/services/2']],'urls'=>['compareTransfer'=>'/domains/checks/watch/1/transfer','support'=>'/tickets/create']]);$dom=storefrontDom($plain);
 same('Domains / example.com',$norm($dom->query('//nav[contains(@class,"domains-crumb")]')->item(0)),'Breadcrumb names the domain');
 same('Hosting: Web A and 1 more',$norm($dom->query('//*[contains(@class,"domains-ph__sub")]')->item(0)),'Header names its hosting service');same('/services/1',$dom->query('//*[contains(@class,"domains-ph__sub")]/a/@href')->item(0)?->value,'Hosting service is a link');
@@ -90,6 +90,8 @@ same(['Nameservers changed Jan 15, 2027','Nameservers back to Example Hosting Ja
 same(null,storefrontDom($page([],[],[],['urls'=>[]]))->query('//aside//a[contains(@class,"domains-btn")]')->item(0),'No transfer offer, no button');
 $owned=new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain($data['name'],'Active','ok','2027-01-15','On','$14.00',['show'=>'/domains/1'],[],['contacts'=>false,'required'=>false],[],[],true);
 same(1,substr_count($text(view('domains::show',['domain'=>$owned,'summary'=>$state(['domain.active','watch.ns_changed'],'managed'),'keys'=>[]])->render()),'stopped using Example Hosting nameservers'),'Domain detail page states a nameserver change once');
+$initial=\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::notice($owned,null,$state(['watch.ns_changed'],'managed',['dnsPreviouslyMatched'=>false]));
+expect(str_contains($initial['text'],'does not use Example Hosting nameservers') && !str_contains($initial['text'],'stopped using'),'Managed page without a prior match explains the current mismatch');
 require dirname(__DIR__).'/Domains/routes/owned.php';app('router')->getRoutes()->refreshNameLookups();
 foreach(['show','save']as$action){$route=app('router')->getRoutes()->getByName('domains.checks.'.$action);expect(in_array('web',$route->gatherMiddleware(),true)&&in_array('auth',$route->gatherMiddleware(),true),'Native web auth guards preferences');}
 // Page notices, transfer controls and history share configured and absent-name behavior.

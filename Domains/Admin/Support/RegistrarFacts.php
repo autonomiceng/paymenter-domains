@@ -19,8 +19,8 @@ final class RegistrarFacts
 {
     public const DUE_HELP='Registrar cost of renewals due in the next 30 days, plus open renewal requests not sent yet, whatever their date.';
     public const MODE_HELP="Test and Live are separate registrar accounts. Each has its own login, domains and money, so a Test account can't become Live. To go live, connect a Live account.";
-    /** Rows a link can land on: each one's anchor name and its row on the account page. The two switches, and the DNS template new domains use. */
-    public const SWITCHES=['orders'=>'Orders','dns'=>'DNS, nameservers and contacts','template'=>'New domains use'];
+    /** Rows a link can land on: each switch's anchor name and row on the account page. */
+    public const SWITCHES=['orders'=>'Orders','dns'=>'DNS, nameservers and contacts'];
     /** The account's own page, or the Registrars list when the account is gone. Null without access. $switch lands on that switch (SWITCHES). */
     public static function accountUrl(?int $server, ?string $switch=null): ?string
     {

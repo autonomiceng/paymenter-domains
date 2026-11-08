@@ -1,15 +1,17 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
-// Account defaults, retained customer choices and no-zone monitoring share real holding locks and DNS reads.
+// Site defaults, retained customer choices and no-zone monitoring share real holding locks and DNS reads.
+
+require_once __DIR__.'/site-dns-default.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Services\{NewDomainDns,ManagedPublicTarget,ManagedDnsSetup,WatchNoticeTarget,ManagedPublicReconciliation,ManagedPublicWorkSchema};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Operation,ManagedPublicConfig,ManagedPublicObservation};
 $account=Account::where('server_id',$d->server_id)->sole();
 $default=DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Models\WatchProfile::create(['name'=>'Account monitoring default',
     'enabled'=>true,'nameservers'=>['ns1.default.example','ns2.default.example'],'website_endpoints'=>['ips'=>['192.0.2.10']],
-    'email_endpoints'=>['exact'=>['mx.default.example']],'edited_by'=>$staff->id,'reason'=>'Synthetic account default']));
-DB::transaction(fn()=>NewDomainDns::saveLocked($account,$default->id));
-same(0,ManagedDnsSetup::affected($now)->count(),'An existing domain picks up its account default before any manual enrollment');
+    'email_endpoints'=>['exact'=>['mx.default.example']],'edited_by'=>$staff->id,'reason'=>'Synthetic site default']));
+siteDnsFixture($default->id);
+same(0,ManagedDnsSetup::affected($now)->count(),'An existing domain picks up its site default before any manual enrollment');
 same(1,\Paymenter\Extensions\Servers\Domains\Admin\Support\WatchFacts::usedBy($default->id),'Template usage includes inherited managed domains');
 DB::table('domains_managed_public_config')->where('domain_id',$id)->delete();
 same(0,ManagedDnsSetup::affected($now)->count(),'A newly enrolled domain inherits the same default without a config row');
@@ -17,10 +19,10 @@ $providerCalls=count($wire->calls);$authority=$d->fresh()->getRawOriginal();
 DB::table(\Paymenter\Extensions\Servers\Domains\Services\PublicDnsQuota::TABLE)->update(['sweep_due_at'=>$now,'sweep_cursor'=>0]);
 $sweep=new ManagedPublicReconciliation($signals);$sweep->sweep($now);
 $target=DB::transaction(fn()=>(new ManagedPublicTarget())->capture($id,$uid,$now));
-same((int)$default->id,(int)$target['profile']->id,'Normal daily sweep uses the registrar account template');
-same(null,ManagedPublicConfig::find($id)->profile_id,'Account inheritance does not freeze a per-domain override');
+same((int)$default->id,(int)$target['profile']->id,'Normal daily sweep uses the registrar site template');
+same(null,ManagedPublicConfig::find($id)->profile_id,'Site inheritance does not freeze a per-domain override');
 $defaultSummary=(new \Paymenter\Extensions\Servers\Domains\Services\DomainSummaries())->one($owner,'managed',$id,$now);
-expect(!in_array('domain.dns.not_configured',$defaultSummary->stateKeys,true),'Customer setup notice agrees with account inheritance');
+expect(!in_array('domain.dns.not_configured',$defaultSummary->stateKeys,true),'Customer setup notice agrees with site inheritance');
 same(['delegation'],array_column($sweep->due($now),'kind'),'No hosting means nameserver checks only, even with template record rules');
 $fake->answers['example.com|NS']=managedNs('ns1.customer.example');
 expect($signals->observe($id,$uid,'delegation'),'Domain without a zone has a successful nameserver check');
@@ -278,14 +280,14 @@ DB::table('domains_managed_public_config')->where('domain_id',$id)->update($save
 $savedConfig=ManagedPublicConfig::find($id)->getRawOriginal();
 $newDefault=DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Models\WatchProfile::create(['name'=>'Replacement monitoring default','enabled'=>true,
     'nameservers'=>['ns1.replacement.example','ns2.replacement.example'],'website_endpoints'=>[],'email_endpoints'=>[],'edited_by'=>$staff->id,'reason'=>'Synthetic changed default']));
-DB::transaction(fn()=>NewDomainDns::saveLocked($account,$newDefault->id));
+siteDnsFixture($newDefault->id);
 $originResults=[];
 foreach(['inherited default','explicit equal default','legacy unmarked','domain override','staff assignment']as$case){
     DB::table('domains_managed_public_config')->where('domain_id',$id)->update([...$savedConfig,'profile_id'=>$case==='domain override'?$profile->id:null,
         'expected_dns'=>$case==='staff assignment'?'external':'platform','edited_by'=>$case==='staff assignment'?$staff->id:null]);
     $payload=['nameservers'=>$default->profile()->nameservers];
     if($case!=='legacy unmarked'){$payload['nameservers_origin']=$case==='explicit equal default'?['source'=>'customer']:
-        ['source'=>'account_default','profile_id'=>(int)$default->id,'profile_revision'=>(int)$default->fresh()->revision];}
+        ['source'=>'site_default','profile_id'=>(int)$default->id,'profile_revision'=>(int)$default->fresh()->revision];}
     $registration=Operation::create(['domain_id'=>$id,'service_id'=>$d->service_id,'server_id'=>$d->server_id,'registrar_key'=>$d->registrar_key,
         'account_fingerprint'=>$d->account_fingerprint,'authority_generation'=>$d->authority_generation,'action'=>'register','state'=>'succeeded','currency'=>'USD',
         'operation_key'=>'provenance-'.str_replace(' ','-',$case),'payload'=>$payload,'completed_at'=>gmdate('Y-m-d H:i:s',$now-60)]);
@@ -306,24 +308,24 @@ foreach(['inherited default','explicit equal default','legacy unmarked','domain 
 $inheritedOrigin=['platform',true,['ns_changed'],['ns_changed'],['watch.ns_pending']];$explicitOrigin=['external',false,[],[],[]];
 same(['inherited default'=>$inheritedOrigin,'explicit equal default'=>$explicitOrigin,'legacy unmarked'=>$explicitOrigin,'domain override'=>$inheritedOrigin,'staff assignment'=>$explicitOrigin],
     $originResults,'Only inherited registrations follow the new comparison: '.json_encode($originResults));
-DB::transaction(fn()=>NewDomainDns::saveLocked($account,$default->id));
+siteDnsFixture($default->id);
 DB::table('domains_watch_profiles')->where('id',$newDefault->id)->delete();
 DB::table('domains_managed_public_config')->where('domain_id',$id)->update($savedConfig);
 // A concurrent default change discards the old answer and the next check uses the new template.
 managedDue($id,$now);$ticket=$signals->begin($id,$uid,'delegation',$now);expect($ticket!==null,'Default read captured');
 DB::table('domains_watch_profiles')->where('id',$profile->id)->update(['nameservers'=>json_encode(['ns1.override.example','ns2.override.example'])]);
-DB::transaction(fn()=>NewDomainDns::saveLocked($account,$profile->id));
+siteDnsFixture($profile->id);
 expect(!$signals->finish($ticket,new \Paymenter\Extensions\Servers\Domains\Dns\DnsReading('delegation','platform'),$now+1),'Changed default invalidates in-flight comparison');
-$target=DB::transaction(fn()=>(new ManagedPublicTarget())->capture($id,$uid,$now));same((int)$profile->id,(int)$target['profile']->id,'Existing null config follows changed account default');
+$target=DB::transaction(fn()=>(new ManagedPublicTarget())->capture($id,$uid,$now));same((int)$profile->id,(int)$target['profile']->id,'Existing null config follows changed site default');
 DB::transaction(function()use($id,$default){$c=ManagedPublicConfig::find($id);$c->fill(['profile_id'=>$default->id,'expected_dns'=>'external','revision'=>$c->revision+1])->save();});
-$target=DB::transaction(fn()=>(new ManagedPublicTarget())->capture($id,$uid,$now));same((int)$default->id,(int)$target['profile']->id,'Staff per-domain assignment wins over account default');
+$target=DB::transaction(fn()=>(new ManagedPublicTarget())->capture($id,$uid,$now));same((int)$default->id,(int)$target['profile']->id,'Staff per-domain assignment wins over site default');
 same('external',$target['config']->expected_dns,'Staff intent wins too');
 DB::table('domains_watch_profiles')->where('id',$default->id)->update(['enabled'=>false]);
-same(0,ManagedDnsSetup::affected($now)->count(),'Unusable explicit comparison falls back to a usable account default without a staff step');
+same(0,ManagedDnsSetup::affected($now)->count(),'Unusable explicit comparison falls back to a usable site default without a staff step');
 $target=DB::transaction(fn()=>(new ManagedPublicTarget())->capture($id,$uid,$now));same((int)$profile->id,(int)$target['profile']->id,'Unavailable override uses the account fallback');
 same($authority,$d->fresh()->getRawOriginal(),'Automatic monitoring never changes nameservers or holding authority');same($providerCalls,count($wire->calls),'Automatic monitoring makes zero registrar calls');
 // Restore the unconfigured fixture used by the setup and recovery tests below.
-DB::transaction(fn()=>NewDomainDns::saveLocked($account,null));
+siteDnsFixture(null);
 DB::transaction(function()use($id){$c=ManagedPublicConfig::find($id);$c->fill(['profile_id'=>null,'expected_dns'=>null,'revision'=>$c->revision+1])->save();});
 DB::table('domains_watch_profiles')->where('id',$default->id)->delete();
 DB::table('domains_watch_profiles')->where('id',$profile->id)->update(['nameservers'=>json_encode(['ns.platform.test'])]);

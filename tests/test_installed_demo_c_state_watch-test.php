@@ -18,4 +18,21 @@ foreach(['active','paused','retired'] as $state){
 }
 $probe=clone $w;$probe->setRelation('work',collect());
 if(str_contains(json_encode(WatchFacts::for($probe,['keys'=>[],'summary'=>null])),'Fills in by itself')){$failures[]='Unqueued watch promises a next check';}
+
+// The list uses its real native column renderers, not the detail facts above.
+$panel->resources([\Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource::class]);
+\Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(fn()=>\Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource::registerRoutes($panel));app('router')->getRoutes()->refreshNameLookups();
+$panel->viteTheme([])->theme(new \Illuminate\Support\HtmlString(''));
+foreach(['paused'=>'Paused','retired'=>'Monitoring stopped; no further checks']as$state=>$expected){
+ \Illuminate\Support\Facades\DB::table('domains_watch_names')->where('id',$id)->update(['state'=>$state]);
+ $list=\Livewire\Livewire::test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\ListWatches::class);
+ $record=$w->fresh();
+ foreach(['registration','delegation.dns','last_check']as$name){$column=$list->instance()->getTable()->getColumn($name)->record($record);
+  if($column->getState()!==$expected){$failures[]=$state.' '.$name.' still has Missing or no stopped/paused explanation';}
+  if(str_contains((string)$column->getDescriptionBelow(),'Fills in by itself')){$failures[]=$state.' '.$name.' promises checks';}
+ }
+ $html=\Illuminate\Support\Facades\Blade::render('<x-filament-panels::layout :livewire="$page">{!! $body !!}</x-filament-panels::layout>',['page'=>$list->instance(),'body'=>$list->html()]);
+ $html=preg_replace('~<script\b[^>]*>.*?</script>|<link\b[^>]*>~si','',$html);
+ writeRenderArtifact((getenv('R14_RENDER_DIR')?:sys_get_temp_dir()).'/r14-watchlist-'.$state.'.html',str_replace('</head>','<style>'.file_get_contents($fixture.'/vendor/filament/filament/dist/theme.css').'</style>'.view('domains::partials.staff-styles')->render().'</head>',$html));
+}
 expect($failures===[],implode('; ',$failures));$nativeSuccessful=true;echo "Watch missing facts respect stopped, paused and queued work.\n";

@@ -16,7 +16,7 @@ final class WatchNoticeTarget
             $t=$capture((int)($r?->source_cursor??0));if (!$t) { return null; }
             $r=$latest(WatchRegistryObservation::where('watch_id',$id)->where('user_id',$owner));
             $t=$capture((int)($r?->source_cursor??0));if (!$t) { return null; }
-            $w=$t['watch'];$name=$w->canonical_name;$profile=$t['profile'];$expected=$w->expected_dns==='platform';$preferences=$w->notice_preferences??[];
+            $w=$t['watch'];$name=$w->canonical_name;$profile=$t['profile'];$expected=SiteDnsDefault::watchExpected($w)==='platform';$preferences=$w->notice_preferences??[];
             $rw=DB::table('domains_watch_work')->where('watch_id',$id)->where('kind','expiry')->when($lock,fn($q)=>$q->lockForUpdate())->first();
             $valid=$r?->valid_until;
             if ($r && WatchRegistryChecks::urgent($r->facts['expiry']??null,$now)) { $valid=min((int)$valid,$r->started_at+43200); }
@@ -26,7 +26,7 @@ final class WatchNoticeTarget
             $d=$latest(WatchDnsObservation::where('watch_id',$id)->where('user_id',$owner)->where('check_kind','delegation'));
             $dt=$capture((int)($d?->source_cursor??0));$stamp=$dt['stamp']??null;
             $work=DB::table('domains_watch_work')->where('watch_id',$id)->where('kind','delegation')->when($lock,fn($q)=>$q->lockForUpdate())->first();
-            $ready=$dt && $profile?->enabled && (int)$dt['watch']->ns_profile_id===(int)$profile->id && $work && in_array($work->safe_code,[null,'budget_exhausted','rotation'],true);
+            $ready=$dt && $profile?->enabled && (int)$dt['profile']?->id===(int)$profile->id && $work && in_array($work->safe_code,[null,'budget_exhausted','rotation'],true);
             $confirmed=$d?->facts['ns_confirmed']??false;$family='watch_dns';
         } elseif ($kind==='managed') {
             $d=ManagedPublicObservation::where('domain_id',$id)->where('user_id',$owner)->where('check_kind','delegation')->orderByDesc('id')->first();

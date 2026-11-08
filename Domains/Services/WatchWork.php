@@ -25,6 +25,20 @@ final class WatchWork
     private function signals(): ManagedPublicSignals { return new ManagedPublicSignals($this->reader,$this->active(),$this->clock,$this->managedProfile); }
     public function enrollManaged(int $id,int $owner): void
     { $this->signals()->enqueue($id,$owner,($this->clock)()); }
+    public function enrollWatch(int $id,int $owner): void
+    {
+        if(!$this->active()){return;}
+        $now=($this->clock)();
+        $this->stage(fn()=>(new WatchRegistryChecks(true))->enroll($id,$owner,$now));
+        $this->stage(fn()=>(new WatchDnsChecks(true))->enroll($id,$owner,$now));
+    }
+    public function reconcileDefaults(): void
+    {
+        if(!$this->active() || DB::transactionLevel()!==0){return;}
+        $now=($this->clock)();
+        $this->stage(fn()=>(new ManagedPublicReconciliation($this->signals()))->sweep($now));
+        $this->stage(fn()=>$this->enroll($now));
+    }
     public function tick(): int
     {
         if (!$this->active() || !$this->queueReady() || DB::transactionLevel()!==0 || !Schema::hasTable('domains_watch_schedule')) { return 0; }
@@ -78,13 +92,17 @@ final class WatchWork
     {
         $row=DB::table('domains_watch_schedule')->where('scope','enrollment')->first();
         $watches=WatchName::where('id','>',(int)($row->cursor??0))->orderBy('id')->limit(25)->get();
+        $refresh=json_decode($row->data??'{}',true)['refresh_dns']??false;
         $failed=false;foreach($watches as$w) {
+            if($refresh && $w->state==='active' && $w->ns_profile_id===null){
+                DB::table('domains_watch_work')->where('watch_id',$w->id)->whereIn('kind',['delegation','points'])->update(['due_at'=>$now,'claim'=>null,'lease_until'=>null,'backoff_until'=>null,'attempts'=>0,'safe_code'=>null]);
+            }
             if (!$this->stage(function()use($w,$now):void {
                 (new WatchRegistryChecks(true))->enroll((int)$w->id,(int)$w->user_id,$now);
                 (new WatchDnsChecks(true))->enroll((int)$w->id,(int)$w->user_id,$now);
             })) { $failed=true; }
         }
-        DB::table('domains_watch_schedule')->updateOrInsert(['scope'=>'enrollment'],['cursor'=>$watches->count()<25?0:$watches->last()->id]);
+        DB::table('domains_watch_schedule')->updateOrInsert(['scope'=>'enrollment'],['cursor'=>$watches->count()<25?0:$watches->last()->id,'data'=>json_encode(['refresh_dns'=>$refresh && $watches->count()===25])]);
         if ($failed) { throw new \RuntimeException(); }
         return $watches->count();
     }

@@ -14,6 +14,20 @@ final class SalesPolicySchema
         Schema::create('domains_sales_policies', self::definition(...));
     }
 
+    /** Installation only: undated legacy choices need a new feed before absence is confirmed. */
+    public static function checkpointSelections(): void
+    {
+        \Illuminate\Support\Facades\DB::transaction(static function():void {
+            \Illuminate\Support\Facades\DB::table('domains_sales_policies')->orderBy('id')->lockForUpdate()->chunkById(100,static function($rows):void {
+                foreach($rows as $row){
+                    try{if($row->updated_at){\Carbon\CarbonImmutable::parse($row->updated_at);continue;}}catch(\Throwable){}
+                    $now=app()->bound(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)?app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now():new \DateTimeImmutable('now',new \DateTimeZone('UTC'));
+                    \Illuminate\Support\Facades\DB::table('domains_sales_policies')->where('id',$row->id)->update(['updated_at'=>$now->format('Y-m-d H:i:s')]);
+                }
+            });
+        });
+    }
+
     /** Slice 39 must call both retained schema verifiers after Migrator, even on migration skip. */
     public static function verify(): void
     {

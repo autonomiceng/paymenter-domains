@@ -21,7 +21,7 @@ final class Installation
     public function install(): void
     {
         OperationClaims::outside(); self::legacy();
-        if (FreshInstallation::uninstalled()) { Runtime::register(); FreshInstallation::install(); return; }
+        if (FreshInstallation::uninstalled()) { Runtime::register(); FreshInstallation::install(); SiteDnsDefault::ensure(); return; }
         OfferUpgrade::requireCompatible();
         Cache::lock('domains-installation',60)->block(5,function():void {
             $present=Schema::hasTable('domains_accounts');
@@ -116,7 +116,9 @@ final class Installation
             if ($dnsRecorded) { WatchDnsSchema::verify(); }
             app(Migrator::class)->run([dirname(__DIR__).'/database/migrations'],['force'=>true]);
             $this->verify(); // Required even when every migration was skipped.
+            SalesPolicySchema::checkpointSelections();
             ReminderTemplates::ensure();WatchNoticeTemplates::ensure();
         });
+        SiteDnsDefault::ensure();
     }
 }

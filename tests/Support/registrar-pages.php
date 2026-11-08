@@ -510,7 +510,7 @@ unset($page,$offRows);gc_collect_cycles();gc_mem_caches();
 if ($registrarsPart === 'dns') {
 // Real Livewire actions prove permissions, reviewed settings persistence and audit together.
 
-// Account registration defaults are local, audited and shared across providers.
+// Retired account defaults have no field; the site owns new-domain DNS.
 // The full fixture installation already owns the DNS-template schemas.
 // Global pricing saves reload Paymenter settings; keep this branding fixture in the same persisted source.
 App\Models\Setting::updateOrCreate(['key'=>'company_name','settingable_type'=>null,'settingable_id'=>null],['type'=>'string','encrypted'=>false,'value'=>'Example Hosting']);
@@ -518,33 +518,10 @@ config(['settings.company_name'=>'Example Hosting','app.name'=>'Generic app']);
 $template=DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Models\WatchProfile::create(['name'=>'Shared registration DNS','enabled'=>true,
     'nameservers'=>['ns1.provider.example','ns2.provider.example'],'website_endpoints'=>[],'email_endpoints'=>[],
     'edited_by'=>$admin->id,'reason'=>'Synthetic registration template']));
+App\Models\Server::findOrFail($enom->server_id)->settings()->create(['key'=>'domains_new_domain_dns_template','type'=>'string','encrypted'=>false,'value'=>'']);
 $action=TestAction::make('new_domain_dns_'.$enom->server_id)->schemaComponent('account_'.$enom->server_id,'content');
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertActionDoesNotExist($action);
-$page=Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('New domains use')->assertSee('Choose an enabled DNS template with Change. Create one under DNS templates first.')->assertSee('Example Hosting does not sell it yet.');
-$anchorDom=new DOMDocument();@$anchorDom->loadHTML($page->html());
-$target=(new DOMXPath($anchorDom))->query('//*[@id="switch-template"]');
-$dnsTargetReady=$target->length===1&&str_contains($target->item(0)->textContent,'New domains use');
-$page->assertActionExists($action,fn($action)=>$action->getLabel()==='Change'&&$action->getModalHeading()==='New domains use');
-$page->callAction($action,['dns_template'=>(string)$template->id])->assertHasNoActionErrors()->assertNotified('Saved');
-same($template->id,\Paymenter\Extensions\Servers\Domains\Services\NewDomainDns::profile($enom->server_id)->id,'Account form saves the default');
-Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('Shared registration DNS')->assertSee('ns1.provider.example');
-$history=StaffSettingsReview::historyRows(App\Models\Server::find($enom->server_id));$last=end($history);
-same('Change new domain nameservers',$last['action'],'DNS template selection is audited');same($template->id,$last['after']['dns_template'],'Audit includes the selected template');
-Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$silo->server_id])->callAction(TestAction::make('new_domain_dns_'.$silo->server_id)->schemaComponent('account_'.$silo->server_id,'content'),['dns_template'=>(string)$template->id])->assertHasNoActionErrors()->assertNotified('Saved');
-same(2,count(\Paymenter\Extensions\Servers\Domains\Services\NewDomainDns::accounts($template->id)),'One DNS template can serve both registrar accounts');
-// Retained settings can outlive a template or an old enabled state; neither is an explicit None.
-$dnsSetting=App\Models\Server::find($enom->server_id)->settings()->where('key',\Paymenter\Extensions\Servers\Domains\Services\NewDomainDns::KEY)->sole();
-DB::table('domains_watch_profiles')->where('id',$template->id)->update(['enabled'=>false]);
-Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('Choose an enabled DNS template with Change.');
-DB::table('domains_watch_profiles')->where('id',$template->id)->update(['enabled'=>true]);
-$dnsSetting->update(['value'=>(string)($template->id+1000)]);
-Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('Choose an enabled DNS template with Change.');
-$dnsSetting->update(['value'=>(string)$template->id]);
-Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->callAction($action,['dns_template'=>null])->assertHasNoActionErrors()->assertNotified('Saved');
-same(null,\Paymenter\Extensions\Servers\Domains\Services\NewDomainDns::profile($enom->server_id),'Registrar defaults do not invent a monitoring template');
-$defaultsPage=Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id]);
-$defaultsSet=str_contains($defaultsPage->html(),'Registrar defaults')&&!str_contains($defaultsPage->html(),'Choose an enabled DNS template with Change.');
-same([true,true],[$dnsTargetReady,$defaultsSet],'DNS setup row has a real New domains use target and treats explicit registrar defaults as set: '.json_encode([$dnsTargetReady,$defaultsSet]));
+Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertActionDoesNotExist($action)->assertDontSee('New domains use')->assertDontSee('None: keep registrar defaults');
 
 }
 

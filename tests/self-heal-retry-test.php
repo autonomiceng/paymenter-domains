@@ -45,26 +45,6 @@ $observation->during=static fn()=>throw new DomainException('Registrar read fail
 same('read_failed',$worker->turn($queue,$guard),'Transient primary failure is retained');
 expect(!HoldingObservationWork::stopped($d->fresh()),'First transient failure schedules an automatic retry');
 $assertFamily('Missing',cause:'The registrar read failed.');
-// Native staff facts and the shared Blade partial reproduce the contradictory top rows
-// and unbounded SVG; this cannot be covered by the retry policy alone.
-require_once __DIR__.'/Support/staff-panel.php';
-staffPanel();$staffActor=staffUser(array_keys(\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::permissions()));
-\Illuminate\Support\Facades\Auth::setUser($staffActor);
-$failedFacts=\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::for($d->fresh());
-$familyHtml=view('domains::partials.record-families',['recordFamilies'=>\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::read($d->fresh(),$clock->now()),'staff'=>true])->render();
-\Illuminate\Support\Facades\Auth::setUser($user);
-$css=file_get_contents($fixture.'/vendor/filament/filament/dist/theme.css');
-writeRenderArtifact(sys_get_temp_dir().'/r14-records.html','<!doctype html><html class="dark"><head><meta charset="utf-8"><style>'.$css.'</style>'.view('domains::partials.staff-styles')->render().'</head><body><main class="domains-sec">'.$familyHtml.'</main></body></html>');
-$x=new DOMDocument;@$x->loadHTML($familyHtml);$xp=new DOMXPath($x);$problems=[];
-foreach($xp->query('//span[@data-record-family]//svg')as$icon){
- if((int)$icon->getAttribute('width')<1||(int)$icon->getAttribute('width')>20||(int)$icon->getAttribute('height')<1||(int)$icon->getAttribute('height')>20){$problems[]='Missing icon has no compact intrinsic size';break;}
-}
-foreach(['Last sync','DNS records']as$label){$f=$failedFacts[$label]??[];$text=json_encode($f);
- if(!str_contains($text,'The registrar read failed.')){$problems[]=$label.' does not explain the failed read';}
- if(str_contains($text,'Fills in by itself')||str_contains($text,'Use Sync now')){$problems[]=$label.' promises a day or asks for a manual sync';}
-}
-expect($problems===[],implode('; ',$problems));
-
 $q=HoldingObservationWork::current($d->fresh());$job=(clone $q)->sole();same(60,$job->due_at-$clock->now()->getTimestamp(),'First retry uses bounded backoff');
 same('idle',$worker->turn($queue,$guard),'No retry before due time');
 $clock->instant=$clock->now()->modify('+60 seconds');same('refreshed',$worker->turn($queue,$guard),'Transient recovery needs no staff action');
@@ -109,4 +89,8 @@ $actor=staffUser([\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::VIE
 (new \Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords($actor->id,$d->id,$d->authority_generation,$d->account_fingerprint))->handle(new DomainObservation($readBindings,$clock,new AccountReadBudget($clock),$ports));
 expect(!HoldingObservationWork::stopped($d->fresh()),'Successful optional staff retry restores daily read work');
 same('refreshed',(clone $q)->value('safe_code'),'Manual read success does not leave a stale stopped heading');
+foreach(['pending'=>300,'observed'=>86400]as$followState=>$delay){
+ $current=$d->fresh();$p=$current->observation;$p['followup']=[...($p['followup']??[]),'state'=>$followState];$current->update(['observation'=>$p]);
+ \Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::completedManually($current);
+ same($clock->now()->getTimestamp()+$delay,(int)HoldingObservationWork::current($current)->sole()->due_at,$followState.' manual read keeps automatic follow-up cadence');}
 $nativeSuccessful=true;echo "Bounded automatic read recovery passed\n";

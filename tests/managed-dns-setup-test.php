@@ -63,30 +63,12 @@ DB::table('domains_domains')->where('id',$id)->update(['status'=>$d->status,'pro
 Livewire::actingAs($owner)->test(ListManagedDns::class)->assertForbidden();
 staffTableStandard($setup=Livewire::actingAs($viewer)->test(ListManagedDns::class)->assertCanSeeTableRecords([$d])->assertTableActionHidden('assignTemplate',$d),'Search domain',['domain','user.email']);staffRowsStandard($setup);
 app()->instance(WatchWork::class,new WatchWork($fake,new WatchDiscoveryWork(fn()=>0),true,fn()=>$time->now));
-$dnsPermission=\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::permission('new_domain_dns');
-foreach([[] , [Staff::POLICY], [$dnsPermission], [Staff::POLICY,$dnsPermission]]as$extra){
-    $actor=staffUser([Staff::VIEW,StaffWatchWrites::VIEW,StaffWatchWrites::MANAGE,...$extra]);$canEdit=count($extra)===2;
-    $page=Livewire::actingAs($actor)->test(ListManagedDns::class);
-    $canEdit?$page->assertTableActionVisible('accountTemplate',$d):$page->assertTableActionHidden('accountTemplate',$d);
-    $noticePage=Livewire::actingAs($actor)->test(ListWatches::class);
-    $canEdit?$noticePage->assertSee('Set account DNS template'):$noticePage->assertDontSee('Set account DNS template');
-    if($canEdit){
-        $templateEditor=$actor;
-        $noticePage->assertSee('DNS monitoring is not set up for 1 domain. Set a default DNS template on the registrar account.');
-        expect(str_contains($noticePage->html(),e(\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$d->server_id]))),'Setup action opens this domain registrar account');
-    }
-    $page=Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$id]);
-    $canEdit?$page->assertSee('Set account DNS template'):$page->assertDontSee('Set account DNS template');
-    if($canEdit){
-        $url=\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$d->server_id]).'#switch-template';
-        $page->assertSee('href="'.e($url).'">Set account DNS template',false);
-    }
-}
-Livewire::actingAs($viewer)->test(ListWatches::class)->assertSee('DNS monitoring is not set up for 1 domain.')
-    ->assertDontSee('Set account DNS template');
+$templateEditor=staffUser([Staff::VIEW,StaffWatchWrites::VIEW,StaffWatchWrites::MANAGE,Staff::POLICY,\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::MANAGE]);
+$page=Livewire::actingAs($manager)->test(ListManagedDns::class);
+expect($page->instance()->getTable()->getAction('accountTemplate')===null,'Account DNS control removed');
+Livewire::actingAs($templateEditor)->test(ListWatches::class)->assertSee('Site DNS settings');
+Livewire::actingAs($viewer)->test(ListWatches::class)->assertDontSee('Site DNS settings');
 
-DB::table('domains_watch_profiles')->where('id',$profile->id)->update(['enabled'=>false]);
-Livewire::actingAs($templateEditor)->test(ListManagedDns::class)->assertTableActionHidden('assignTemplate',$d)->assertTableActionVisible('accountTemplate',$d);
 DB::table('domains_watch_profiles')->where('id',$profile->id)->update(['enabled'=>true]);
 $setupPage=Livewire::actingAs($manager)->test(ListManagedDns::class);
 $mounted=Livewire::actingAs($manager)->test(ListManagedDns::class)->assertCanSeeTableRecords([$d])->mountTableAction('assignTemplate',$d);
@@ -107,7 +89,7 @@ DB::table('domains_watch_profiles')->where('id',$profile->id)->update(['nameserv
 expect($profile->fresh()->enabled && $profile->fresh()->readProfile()===null,'Retained enabled template is unreadable');
 same(1,ManagedDnsSetup::affected($now)->count(),'Unreadable template returns to setup count');
 Livewire::actingAs($viewer)->test(ListManagedDns::class)->assertCanSeeTableRecords([$d]);
-Livewire::actingAs($templateEditor)->test(ListWatches::class)->assertSee('DNS monitoring is not set up for 1 domain. Set a default DNS template on the registrar account.');
+Livewire::actingAs($templateEditor)->test(ListWatches::class)->assertSee('DNS monitoring is not set up for 1 domain. Set the site DNS default in monitoring settings.');
 $unreadableSummary=(new \Paymenter\Extensions\Servers\Domains\Services\DomainSummaries())->one($owner,'managed',$id,$now);
 expect(in_array('domain.dns.not_configured',$unreadableSummary->stateKeys,true),'Customer sees unreadable template as not configured');
 same([], (new ManagedPublicReconciliation($signals))->due($now),'Unreadable template has no configured runnable work');
