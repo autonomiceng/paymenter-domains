@@ -180,6 +180,7 @@ final class Labels
             'guard_refused'=>'Blocked by a safety check.','invalid_input'=>'Invalid input','invariant_failed'=>'Saved records disagree. Check at the registrar.',
             'producer_failed'=>'Background job failed','acquisition_provider_evidence'=>'Registrar result unclear. Check at the registrar.',
             'no_eligible_paid_line'=>'No paid invoice line for this order.','original_invoice_missing'=>'Original invoice missing. Check the order.',
+            'domain_not_in_account'=>'Domain not found in the registrar account',
             'read_failed'=>"Couldn't read from the registrar.",'read_exception'=>"Couldn't read from the registrar.",'read_deadline'=>"Registrar didn't answer in time",
             'read_no_evidence'=>'Registrar sent no answer.','read_identity_changed'=>'Domain or account changed during the check.',
             'account_unavailable'=>'Registrar account not found','binding_mismatch'=>'Request does not match this registrar account.',
