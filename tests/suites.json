@@ -765,7 +765,12 @@
     "tests/cart-term-picker-test.php",
     "tests/retail-upgrade-isolation-test.php",
     "tests/complimentary-call-history-closure-test.php",
-    "tests/retail-unpublished-upgrade-test.php"
+    "tests/retail-unpublished-upgrade-test.php",
+    "tests/staff-dns-template-controls-test.php",
+    "tests/adoption-retired-template-test.php",
+    "tests/dns-negative-health-test.php",
+    "tests/watch-option-a-test.php",
+    "tests/watch-enrollment-claim-test.php"
   ],
   "ui": [],
   "runner": [

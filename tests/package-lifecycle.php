@@ -248,7 +248,15 @@ if($phase==='bridge-seed'){
     ]),'Seed custom email with exact previous in-app default');
     same(1,DB::table('notification_templates')->where('key','domains_domain_expired')->update(previousReminderDefaults()),'Other template keeps matching historical text as custom content');
     same(1,DB::table('notification_templates')->where('key','domains_transfer_code_reminder')->update(['subject'=>'Retained operator transfer subject','updated_at'=>TEMPLATE_BEFORE_AT]),'Seed one edited transfer field beside shipped defaults');
-    if(getenv('PACKAGE_STANDING_UPGRADE')){seedInstalledUpgrade();}
+    if(getenv('PACKAGE_STANDING_UPGRADE')){
+        seedInstalledUpgrade();
+        $definition=Paymenter\Extensions\Servers\Domains\Services\WatchNoticeTemplates::definitions()['domains_watch_ns_changed'];
+        $old='As of {{ $date }}, {{ $domain }} @if($previously_matched)no longer uses @else does not use @endif{{ $nameservers }}. If you didn’t expect this, contact support.';
+        same(1,DB::table('notification_templates')->where('key','domains_watch_ns_changed')->update([
+            'in_app_body'=>$old,'body'=>str_replace($definition['in_app_body'],$old,$definition['body']),
+            'subject'=>'Retained customized mismatch subject','updated_at'=>TEMPLATE_BEFORE_AT,
+        ]),'Retained ZIP starts with previous mismatch defaults beside a customized field');
+    }
     file_put_contents($receipt,json_encode(retained(),JSON_THROW_ON_ERROR));
     file_put_contents((string)getenv('PACKAGE_MIGRATION_RECEIPT'),json_encode(DB::table('migrations')->orderBy('id')->get()->map(fn($r)=>(array)$r)->all(),JSON_THROW_ON_ERROR));
     echo "Native checkout, uncertain evidence, invoice/payment/credit and reservations seeded.\n";
