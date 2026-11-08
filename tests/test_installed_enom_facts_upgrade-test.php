@@ -65,10 +65,12 @@ $original = $t->catalogue_facts; $intent = $t->catalogue_intent;
 DB::table('domains_tlds')->where('id', $t->id)->update(['catalogue_intent' => OfferState::json(['sell' => false])]);
 $prices = DB::table('domains_prices')->where('server_id', $server->id)->get();
 $before = count($GLOBALS['catalogueCalls']);
-foreach (['term_evidence', 'renewal_families'] as $key) {
+foreach (['term_evidence', 'renewal_families','term_rule','family_rule'] as $key) {
     $changed = OfferState::decode($original);
     if ($key === 'term_evidence') { $changed[$key]['entries']['renew'][2]['version'] = 'withdrawn-approval'; }
-    else { $changed[$key]['entries']['ordinary']['valid_until'] = '2028-11-05T00:00:00+00:00'; }
+    elseif($key==='renewal_families'){ $changed[$key]['entries']['ordinary']['valid_until'] = '2028-11-05T00:00:00+00:00'; }
+    elseif($key==='term_rule'){$changed['term_evidence']['entries']['renew'][2]['rule']='withdrawn-rule';}
+    else{$changed['renewal_families']['entries']['ordinary']['rule']='withdrawn-rule';}
     DB::table('domains_tlds')->where('id', $t->id)->update(['catalogue_facts' => OfferState::json($changed)]);
     $terms = $caps->renewalTerms($b, $t->fresh(), $prices, $clock->now()->modify('+1 year'));
     same([false, 'unknown_facts'], [$terms[2]['available'], $terms[2]['reason']], 'Customer rejects superseded approval before facts refresh: '.$key);
