@@ -17,7 +17,7 @@ final readonly class Edit implements Command
 
     public static function defaults(AccountBinding $b, string $tld, Intent $intent): self
     {
-        if ($intent->sell !== null || $intent->longest !== null || $intent->transfers !== null || $intent->stops !== []) {
+        if ($intent->sell !== null || $intent->longest !== null || $intent->transfers !== null || $intent->stops !== [] || $intent->salesPaused) {
             throw new \InvalidArgumentException('Defaults cannot contain offer overrides.');
         }
         return new self($b, $tld, 'defaults', $intent);

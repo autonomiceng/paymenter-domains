@@ -259,11 +259,15 @@ final class Writer implements Catalogue
         $old = OfferState::decode($t->catalogue_intent); $new = $edit->intent;
         $sell = $new->sell ?? ($defaults['defaultSell'] ?? true);
         $longest = $new->longest ?? ($defaults['defaultLongest'] ?? 1);
-        $transfer = $new->transfers ?? ($defaults['defaultTransfers'] ?? false);
+        $transfer = ($new->transfers ?? ($defaults['defaultTransfers'] ?? false)) && !in_array('transfer', $new->stops, true);
+        if ($edit->sellerTransfers !== true) {
+            $transfer = $transfer && (bool) DB::table('domains_sales_policies')->where('tld', $t->tld)->value('transfer_enabled');
+        }
         $widen = $sell && !($old['sell'] ?? $defaults['defaultSell'] ?? true)
             || $longest > ($old['longest'] ?? $defaults['defaultLongest'] ?? 1)
             || $transfer && !($old['transfers'] ?? $defaults['defaultTransfers'] ?? false)
-            || array_diff($old['stops'] ?? [], $new->stops) !== [];
+            || array_diff($old['stops'] ?? [], $new->stops) !== []
+            || ($old['salesPaused'] ?? false) && !$new->salesPaused;
         if ($sell && \Paymenter\Extensions\Servers\Domains\Services\EndingChoices::hidden($t->tld)) { return 'This TLD is hidden.'; }
         if (!$widen) { return null; }
         return self::termsBlock(OfferState::facts($t->catalogue_facts), $edit->binding()->registrarKey, $t->tld, $sell, $longest, $transfer, $this->clock->now()) === null
@@ -279,7 +283,7 @@ final class Writer implements Catalogue
         if (!\Paymenter\Extensions\Servers\Domains\Services\RegistryInputs::supported($registrarKey, $tld, $facts->registryFields) || $facts->renewalSafe !== true
             || $facts->requiresNameservers !== false || $facts->autoRenewOnly !== false) { return 'unsupported_facts'; }
         if (!in_array(1, $facts->terms['renew'] ?? [], true)
-            || $sell && !in_array($longest, $facts->terms['register'] ?? [], true)
+            || $sell && !array_filter($facts->terms['register'] ?? [], static fn ($term) => $term <= $longest)
             || $transfer && !in_array(1, $facts->terms['transfer'] ?? [], true)) { return 'unsupported_term'; }
         return null;
     }
@@ -408,7 +412,7 @@ final class Writer implements Catalogue
         if ($command instanceof Edit) {
             if ($command->kind === 'override' || $command->kind === 'seller' && $command->intent !== null) {
                 $old = OfferState::decode($target->catalogue_intent);
-                foreach (['sell', 'longest', 'transfers', 'stops'] as $key) { $old[$key] = $command->intent->{$key}; }
+                foreach (['sell', 'longest', 'transfers', 'stops', 'salesPaused'] as $key) { $old[$key] = $command->intent->{$key}; }
                 $target->catalogue_intent = OfferState::json($command->kind === 'override' ? [...$old, 'pricing_rule' => $command->rule] : $old);
             }
             if ($command->kind === 'retail') { $target->catalogue_retained_annual_retail = $command->retail; }

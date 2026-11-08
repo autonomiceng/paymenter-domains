@@ -53,6 +53,8 @@ final class StaffCatalogue
         if(!$offers){return $missing('Check saved settings on .'.$t->tld.'.');}
         if($reason==='account_unavailable'){return $missing('Check account setup on Registrar account.','account');}
         try{$rule=self::ruleOnce($t,$once);}catch(\DomainException|\InvalidArgumentException){return $missing('Fix the pricing rule in Edit prices on .'.$t->tld.'.');}
+        if($reason==='staff_term_stopped'&&$action==='register'){return $step('off','Use Edit terms in What you sell to change the longest registration term.','tld');}
+        if($reason==='staff_term_stopped'&&$action==='transfer'){return $step('off','Transfers are off. Use Edit terms in What you sell to change that choice.','tld');}
         if(in_array($reason,self::STARTS,true)){
             try{$block=$this->start($t)['block'];}catch(\Throwable){return $missing('Check saved settings on .'.$t->tld.'.');}
             return match($block){null=>$step('off','Use Start selling on .'.$t->tld.'.','tld'),
@@ -175,21 +177,20 @@ final class StaffCatalogue
         $safe=$facts&&$facts->fresh($this->clock->now())&&\Paymenter\Extensions\Servers\Domains\Services\RegistryInputs::supported($t->registrar_key,$t->tld,$facts->registryFields)&&$facts->renewalSafe===true&&$facts->requiresNameservers===false&&$facts->autoRenewOnly===false&&in_array(1,$facts->terms['renew']??[],true);
         return ['register'=>$safe&&!empty($facts->terms['register']),'transfer'=>$safe&&in_array(1,$facts->terms['transfer']??[],true)];
     }
-    /** What Start selling saves on this TLD, by the writer's own terms rule. years: the TLD's longest term, or the
-     * longest under it that fresh registrar terms allow. transfers: the TLD sells them, by its own choice or the
-     * account's. checking: terms are missing or old, so the sale waits for the next read. block: why fresh terms rule
-     * the start out, as an evaluator reason. */
+    /** Desired term limit stays saved, including inheritance. Current support only gates availability.
+     * Transfers describe the intersection of TLD preference, independent stop and selected seller policy. */
     public function start(Tld $t): array
     {
         Staff::requireView();
         return self::startFor($t,OfferState::decode($t->catalogue_intent),OfferState::decode(Account::where('server_id',$t->server_id)->sole()->catalogue_defaults),
-            OfferState::facts($t->catalogue_facts),$this->clock->now());
+            OfferState::facts($t->catalogue_facts),$this->clock->now(),DB::table('domains_sales_policies')->where('tld',$t->tld)->first());
     }
-    private static function startFor(Tld $t,array $raw,array $d,?Facts $facts,\DateTimeImmutable $now): array
+    private static function startFor(Tld $t,array $raw,array $d,?Facts $facts,\DateTimeImmutable $now,?object $policy): array
     {
         $longest=(int)($raw['longest']??$d['defaultLongest']??1);$transfers=(bool)($raw['transfers']??$d['defaultTransfers']??false);
-        $checking=!$facts||!$facts->fresh($now);
-        $years=$checking?$longest:(max([0,...array_filter($facts->terms['register']??[],static fn($y)=>$y<=$longest)])?:$longest);
+        $transfers=$transfers&&!in_array('transfer',$raw['stops']??[],true)&&$policy
+            &&(int)$policy->server_id===(int)$t->server_id&&$policy->account_fingerprint===$t->account_fingerprint&&$policy->registrar_key===$t->registrar_key&&(bool)$policy->transfer_enabled;
+        $checking=!$facts||!$facts->fresh($now);$years=$longest;
         return ['years'=>$years,'transfers'=>$transfers,'checking'=>$checking,'block'=>Writer::termsBlock($facts,(string)$t->registrar_key,$t->tld,true,$years,$transfers,$now)];
     }
     public function setting(Tld $t,string $key): bool|int
@@ -198,8 +199,8 @@ final class StaffCatalogue
         try{$raw=OfferState::decode($t->catalogue_intent);$d=OfferState::decode(Account::where('server_id',$t->server_id)->sole()->catalogue_defaults);}
         catch(\Throwable){return in_array($key,['min_years','max_years'],true)?1:false;}
         return match($key){'min_years'=>1,'max_years'=>(int)($raw['longest']??$d['defaultLongest']??1),
-            'enabled'=>($raw['sell']??$d['defaultSell']??true)&&($raw['stops']??[])!==['register','renew','transfer'],
-            default=>!in_array($key,$raw['stops']??[],true)&&($key!=='transfer'||($raw['transfers']??$d['defaultTransfers']??false))};
+            'enabled'=>!($raw['salesPaused']??false)&&($raw['sell']??$d['defaultSell']??true)&&($raw['stops']??[])!==['register','renew','transfer'],
+            default=>($key==='renew'||!($raw['salesPaused']??false))&&!in_array($key,$raw['stops']??[],true)&&($key!=='transfer'||($raw['transfers']??$d['defaultTransfers']??false))};
     }
     public function own(Tld $t): bool {Staff::requireView();try{return Pricing::hasOwn($t);}catch(\Throwable){return !$t->use_default_rule;}}
     public function rule(int $server): array
@@ -268,7 +269,7 @@ final class StaffCatalogue
             // Without a staff stop, a terms reason means the TLD is set to sell and its head offers Stop selling: say so.
             $stopped=in_array($reason,self::STARTS,true);
             if(!$unreadable&&$stopped){
-                if(($block=self::startFor($t,$raw,$d,$facts,$this->clock->now())['block'])!==null){$reason=$block;}
+                if(($block=self::startFor($t,$raw,$d,$facts,$this->clock->now(),$policies[$t->tld]??null)['block'])!==null){$reason=$block;}
                 elseif($reason==='staff_stopped'&&($raw['sell']??null)===null&&!($d['defaultSell']??true)&&($raw['stops']??[])===[]
                     &&!\Paymenter\Extensions\Servers\Domains\Services\EndingChoices::hidden($t->tld)){$reason='not_sold_by_default';}
             }
@@ -297,7 +298,7 @@ final class StaffCatalogue
                 'refresh'=>$refreshed,
                 'prices'=>$prices,'acquisition'=>['register'=>$register!==null,'transfer'=>$transfer?->decision->available??false],'sales'=>['label'=>$chosen?'For sale':'Not for sale','tone'=>$chosen?'success':'gray','reason'=>$chosen?null:($invalidRule?TldFacts::ruleProblem($error):$label)],
                 'seller'=>isset($sellers[$t->tld])?(int)$sellers[$t->tld]:null,'holders'=>(int)($holders[$t->server_id.':'.$t->tld.':'.$t->account_fingerprint]->holders??0),
-                'demo'=>\Paymenter\Extensions\Servers\Domains\Support\DemoData::is($accounts[$t->server_id]),'intent'=>array_intersect_key(get_object_vars($unreadable?new Intent:OfferState::intent($t,$d)),array_flip(['sell','longest','transfers','stops','defaultTransfers'])),'defaults'=>$this->publicDefaults($d,$grants->costs),
+                'demo'=>\Paymenter\Extensions\Servers\Domains\Support\DemoData::is($accounts[$t->server_id]),'intent'=>array_intersect_key(get_object_vars($unreadable?new Intent:OfferState::intent($t,$d)),array_flip(['sell','longest','transfers','stops','defaultTransfers','salesPaused'])),'defaults'=>$this->publicDefaults($d,$grants->costs),
                 'unreadable'=>$unreadable,'own'=>$own,'pricing'=>!$own?'Default pricing':(($raw['pricing_rule']['mode']??$t->pricing_mode)==='fixed'?'Fixed price':'Custom markup'),'offers'=>$all,'facts'=>$facts];
         }
         return $out;

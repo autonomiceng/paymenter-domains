@@ -36,7 +36,7 @@ final readonly class Intent
     public function __construct(public bool $defaultSell = true, public int $defaultLongest = 1,
         public bool $defaultTransfers = false, public ?string $maxAnnualCost = null,
         public ?bool $sell = null, public ?int $longest = null, public ?bool $transfers = null,
-        public array $stops = [])
+        public array $stops = [], public bool $salesPaused = false)
     {
         foreach ([$defaultLongest, $longest ?? $defaultLongest] as $years) {
             if ($years < 1 || $years > 10) { throw new \InvalidArgumentException('Invalid intended term.'); }

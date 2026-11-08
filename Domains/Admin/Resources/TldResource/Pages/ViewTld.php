@@ -129,7 +129,7 @@ class ViewTld extends ViewRecord
         return Action::make('start_selling')->label('Start selling')->color('primary')->requiresConfirmation()->icon(null)->modalIcon('heroicon-o-play-circle')
             ->modalHeading('Start selling .'.$t->tld.'?')->modalSubmitActionLabel('Start selling')
             ->modalDescription(fn()=>'New '.($this->opensTransfers()?'registrations and transfers':'registrations')
-                .($this->start()['checking']?' open once the registrar terms are checked':' open at once').($this->salePrices()?', at these prices.':'.'))
+                .' are set to sell once all availability checks pass.'.($this->salePrices()?' Current prices are listed below.':''))
             ->modalContent(fn()=>$this->salePricesList())
             // A saved price account is not a registrar choice. Staff must choose where new orders go.
             ->disabled(fn():bool=>$this->sales()['reason']==='No registrar selected')
