@@ -113,6 +113,37 @@ final class OfferWork
             'due_at' => $work['feed_due'] ?? null, 'remaining' => count($work['pending'] ?? []), ...$failure];
     }
 
+    /** Read-only completion proof for retained work, independent of a later authority change.
+     * This does not assert current saleability or authorize another provider read. Callers must
+     * separately verify the retained publication and fence their initiating identity. */
+    public function settled(AccountBinding $binding, \DateTimeImmutable $after, array $endings): bool
+    {
+        $this->fence($binding); $this->account($binding);
+        $row = DB::table('domains_observation_queues')->where('server_id', $binding->serverId)->first();
+        if (!$row || $row->account_fingerprint !== $binding->fingerprint) { return false; }
+        $work = OfferState::decode($row->offer_work); $now = $this->clock->now();
+        if ($row->offer_claim !== null || (int) $row->offer_lease > $this->at()
+            || (int) $row->offer_feed_succeeded_at <= $after->getTimestamp()
+            || (int) $row->offer_feed_succeeded_at > $this->at()
+            || (int) $row->offer_feed_tried_at > (int) $row->offer_feed_succeeded_at
+            || $row->offer_feed_failure !== null || !empty($work['pending']) || !empty($work['local_failure'])
+            || !empty($work['tries']) || !empty($work['feed_hint']) || ($work['feed_due'] ?? 0) <= $this->at()
+            || $this->generation !== null && ($work['upgrade_generation'] ?? null) !== $this->generation
+            || $this->credentials && ($work['credential_revision'] ?? null) !== ($this->credentials)($binding)) { return false; }
+        if (!$endings) { return false; }
+        foreach ($endings as $ending) {
+            $t = Tld::where('server_id', $binding->serverId)->where('tld', $ending)->first();
+            if (!$t) { return false; }
+            $this->offerBinding($binding, $t);
+            $facts = OfferState::facts($t->catalogue_facts); $state = $work['facts'][$ending] ?? [];
+            if (!$facts || !$facts->fresh($now) || $facts->observedAt > $now
+                || empty($state['succeeded_at']) || $state['succeeded_at'] > $this->at() || $state['succeeded_at'] < $facts->observedAt->getTimestamp()
+                || ($state['tried_at'] ?? 0) > $state['succeeded_at'] || !empty($state['failure'])
+                || !empty($state['tries']) || !empty($state['unsupported']) || ($state['due_at'] ?? 0) <= $this->at()) { return false; }
+        }
+        return true;
+    }
+
     /** Fair bounded rotation, including accounts with only lazy facts/local republication. */
     public function tick(int $accounts = 8): array
     {

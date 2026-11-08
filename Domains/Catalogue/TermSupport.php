@@ -25,6 +25,21 @@ final class TermSupport
     ]]];
     public const HORIZON_YEARS = 10;
 
+    /** The carried expansion is the reviewed authority version. A changed/removed approval
+     * needs fresh provider facts, even when the old independent observation has not expired. */
+    public static function currentFacts(\Paymenter\Extensions\Servers\Domains\Data\AccountBinding $binding, string $tld, Facts $facts): bool
+    {
+        if ($binding->registrarKey !== 'enom') { return true; }
+        return OfferState::equivalent($facts->expansion, self::evidence($binding, $tld));
+    }
+
+    public static function evidence(\Paymenter\Extensions\Servers\Domains\Data\AccountBinding $binding, string $tld): array
+    {
+        return $binding->environment === Environment::Test && in_array($tld, self::FIRST_PASS, true)
+            && in_array($binding->registrarKey, self::EXACT_QUOTES, true)
+            ? (self::REVIEWED_EVIDENCE[$binding->registrarKey][$tld] ?? []) : [];
+    }
+
     /** Producers attach reviewed evidence. Other suffixes carry none, so a refresh drops it. */
     public static function attach(string $tld, Facts $facts, mixed $evidence): Facts
     {
