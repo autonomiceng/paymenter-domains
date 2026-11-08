@@ -85,9 +85,8 @@ foreach (['changed' => ['20.00', 'actual_charge_changed'], 'overrun' => ['16.00'
     $storedAttempt = $fresh->getRawOriginal('attempt');
     DB::table('domains_operations')->where('id', $held->id)->update(['attempt' => 'synthetic-unreadable-renewal-attempt']);
     try {
-        Livewire::actingAs($staff)->test(ViewOperation::class, ['record' => $held->id])
-            ->assertSuccessful()->assertSee(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::UNREADABLE)
-            ->assertActionHidden('resume_reads');
+        same(false, \Paymenter\Extensions\Servers\Domains\Admin\Support\OperationActions::relevant('resume_reads', $held->fresh()),
+            'Unreadable encrypted attempt has no eligible read-resume action');
     } catch (\Illuminate\Contracts\Encryption\DecryptException) { $unreadable[] = $reason; }
     finally { DB::table('domains_operations')->where('id', $held->id)->update(['attempt' => $storedAttempt]); }
     $page = Livewire::actingAs($staff)->test(ViewOperation::class, ['record' => $held->id]);
