@@ -16,6 +16,9 @@ $response=app(Illuminate\Contracts\Http\Kernel::class)->handle(Request::create('
 same(200,$response->getStatusCode(),'Guest reaches the real transfer page without a login redirect');
 $transfer=storefrontDom($response->getContent());
 same(1,$transfer->query('//nav[@aria-label="Get a domain"]//a[@aria-current="true" and normalize-space()="Transfer"]')->length,'Transfer tab is current');
+same(0,$transfer->query('//a[contains(@class,"domains-back") and @href="'.route('domains.domains.index').'"]')->length,'Guest transfer never points back at an auth-only domain list');
+Auth::login($user);$owned=Request::create('/domains/transfer','GET');$owned->setLaravelSession(app('request')->session());$ownedHtml=(new Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedTransferController($store))->show($owned)->render();
+expect(str_contains($ownedHtml,'href="'.route('domains.domains.index').'"'),'Authenticated transfer retains the owned-domain back link');Auth::logout();
 $data=storefrontData();$search=storefrontDom(view('domains::search',$data)->render());
 same(1,$search->query('//nav[@aria-label="Get a domain"]//a[@aria-current="true" and normalize-space()="Register"]')->length,'Register tab is current');
 $labels=[];foreach($search->query('//select[@name="term"]/option') as $option){$labels[]=$option->textContent;expect(str_contains($option->textContent,$option->getAttribute('data-total')),'Each year choice names its exact total');}
