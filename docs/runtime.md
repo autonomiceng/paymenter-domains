@@ -67,6 +67,8 @@ stores keep these notices quiet. Unexpected failures remain warnings. Candidate 
 offline or invoice-less display work from billing, transfer payment and timeout guards; retained
 reconciliation and refund selection remain independent, including recovery after invoice loss.
 
+Import admission reads the latest complimentary setting with a current locking read while holding the existing customer lock. The ordinary refund worker also closes a narrowly proved complimentary registration refusal: its Paid zero receipt stays intact, with no credit, refund or registrar replay. Staff with current secret-metadata access can see the validated, fixed registrar diagnostic on the request; it grants no return or replay authority.
+
 ## Go-live reviews
 
 These deployment and request checks have no page; review them before turning processing on.
