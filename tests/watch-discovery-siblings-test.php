@@ -20,6 +20,6 @@ DB::table('services')->where('id',$active->id)->update(['status'=>'suspended']);
 same(null,$checks->begin($watch->id,$owner->id,$now+3),'No active source can begin registry work');same(false,$checks->enroll($watch->id,$owner->id,$now+3),'All suspended sources refuse enrollment');
 same(null,(new Paymenter\Extensions\Servers\Domains\Services\WatchDnsChecks(true))->registryTarget($watch->id,$owner->id,false),'All suspended sources have no current public target');
 $paused=(new DomainSummaries)->one($owner,'watch',$watch->id,$now+3);expect($paused!==null,'Suspended watch remains visible');same([],$paused->relatedServices,'No suspended hosting link is offered');expect($paused->expiry===null||($paused->freshness['registry']['stale']??true),'No current registry fact from suspended sources');
-$staff=staffUser(['admin.domains.watch.view']);Illuminate\Support\Facades\Auth::setUser($staff);
+$staff=staffUser(['admin.domains.view','admin.domains.watch.view']);Illuminate\Support\Facades\Auth::setUser($staff);
 $context=Paymenter\Extensions\Servers\Domains\Services\DomainSummaryContext::staffWatches([$watch->id]);same([],$context->sources,'Staff context also excludes suspended sources');
 echo "Suspended siblings leave active checks and customer facts available.\n";$nativeSuccessful=true;

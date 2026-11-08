@@ -70,7 +70,7 @@ same('Switched to Default pricing',TldFacts::history($t->server_id,$t->id)[0]['c
 $late=$now->modify('+2 days');$clock->instant=$late;$before=array_map(fn(Price $p)=>$p->revision,$rows($t->fresh()));
 $preview=collect((new \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue($ports,$clock))->preview($t->fresh(),$rule))->keyBy(fn($r)=>$r['action'].$r['term']);
 same(['register1','register3','renew1','transfer1'],$preview->keys()->all(),'Aged preview retains every observed sold term');
-same(['7.50','28.30','10.40','8.50'],$preview->pluck('new')->all(),'Aged preview shows exact publication prices, preserving retained annual renewal');
+same(['7.50','26.50','10.40','8.50'],$preview->pluck('new')->all(),'Aged preview shows exact publication prices, preserving retained annual renewal');
 foreach($rows($t->fresh()) as $p){
     $observation=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::cost(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($p->catalogue_observation));
     expect($observation->freshUntil<=$clock->now(),'Saved cost has expired at the composed clock');

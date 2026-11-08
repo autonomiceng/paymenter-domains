@@ -22,7 +22,7 @@ DB::table('services')->whereIn('id',[$service->id,$second->id])->update(['status
 DB::table('services')->where('id',$service->id)->update(['status'=>'active']);$sweep();same('paused',$w->fresh()->state,'Return re-adds the watch while preserving staff pause');
 $w->refresh();$writes->run($staff,'watch',$w->id,'resume',StaffWatchWrites::ticket($staff->id,'watch',$w->id,$w->revision,'resume'),'Synthetic staff resume');$sweep();same('active',$w->fresh()->state,'Staff resume restores checks');
 // A legacy pause without staff audit remains paused until the existing audited Resume action.
-DB::table('domains_watch_names')->where('id',$w->id)->update(['state'=>'paused']);WatchAudit::where('subject_type','watch')->where('subject_id',$w->id)->whereIn('event',['staff_pause','staff_resume'])->delete();
+DB::table('domains_watch_names')->where('id',$w->id)->update(['state'=>'paused']);WatchAudit::where('subject_type','watch')->where('subject_id',$w->id)->whereIn('event',['staff_pause','staff_resume','discovery_paused'])->delete();
 $sweep();same('paused',$w->fresh()->state,'Unknown legacy pause history is never silently resumed');$w->refresh();
 $writes->run($staff,'watch',$w->id,'resume',StaffWatchWrites::ticket($staff->id,'watch',$w->id,$w->revision,'resume'),'Resume legacy monitoring');$sweep();same('active',$w->fresh()->state,'Existing audited Resume recovers the legacy pause');
 DB::table('services')->where('id',$service->id)->update(['user_id'=>$other->id]);$sweep();same('retired',$w->fresh()->state,'Owner mismatch retires prior watch before enrollment');same(0,WatchSource::where('service_id',$service->id)->count(),'An order-owner mismatch cannot create a new source');
