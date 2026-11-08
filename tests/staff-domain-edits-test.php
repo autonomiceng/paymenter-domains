@@ -13,6 +13,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainManagement,DomainObservation,ManagementForms,ObservationSchema,OwnedDomains,OwnerPorts};
 use Paymenter\Extensions\Servers\Domains\Services\{StaffOperationReview,StaffOperations};
 $view()->assertSee('Email auth code');
+require __DIR__.'/Support/staff-site-nameservers.php';
 // Nameservers: the owner's validation and messages, then one credited request.
 $before=Operation::count();$edit('Nameservers','nameservers',['nameservers'=>'ns1.example.com.'])->assertNotified("Couldn't save this change");
 same($before,Operation::count(),'Rejected nameservers queue nothing');
