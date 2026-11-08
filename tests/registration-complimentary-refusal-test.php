@@ -8,6 +8,9 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Services\{ComplimentaryAccounts,Refunds,RuntimePorts,RuntimeWork};
 $staff=commerceUser();$staff->update(['role_id'=>Role::create(['name'=>'Complimentary funding','permissions'=>['admin.domains.fund','admin.domains.view','admin.domains.manage','admin.domains.costs']])->id]);
 ComplimentaryAccounts::set($user->id,$staff,true,'Synthetic complimentary refusal',$clock);
+$outside=null;try{ComplimentaryAccounts::authorization($user->id,true);}catch(LogicException $e){$outside=$e->getMessage();}
+same('Current funding requires the owner transaction.',$outside,'Locked complimentary reads cannot run outside a transaction');
+expect(DB::transaction(fn()=>ComplimentaryAccounts::authorization($user->id,true))!==null,'The same authorization succeeds inside native locks');
 foreach(['RuntimeSchema','ReminderSchema','ObservationSchema'] as $schema){('Paymenter\\Extensions\\Servers\\Domains\\Services\\'.$schema)::install();}
 $binding=$bindingFor(0);$calls=[];$controls=[];$originalAttempts=[];
 foreach(['unknown','lost','contradictory','missing_proof','foreign_proof','invalid_receipt'] as $case){

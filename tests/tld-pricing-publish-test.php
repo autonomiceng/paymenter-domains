@@ -29,13 +29,13 @@ $setFixtureRule=static function(Tld $row,?array $own):void {
 same('cost + 30%',PricingRule::describe(PricingRule::DEFAULT),'Default formula');
 same('cost + $1.00, rounded up to the next $0.50',PricingRule::describe(['mode'=>'markup_amount','markup'=>'1','round_up'=>'half']),'Amount formula');
 same('cost + 12.5%, rounded up to the next .99',PricingRule::describe(['mode'=>'markup_percent','markup'=>'12.50','round_up'=>'ending_99']),'Percent formula');
-same('$20.00 a year to register, $21.00 to renew and $22.00 to transfer',PricingRule::describe(['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed'=>['register'=>'20','renew'=>'21','transfer'=>'22']]),'Own price formula');
+same('$20.00 for the first registration year, $21.00 to renew and $22.00 to transfer',PricingRule::describe(['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed'=>['register'=>'20','renew'=>'21','transfer'=>'22']]),'Own price formula');
 
 // Saving a TLD price publishes it at once; the preview shows exactly what gets published.
 $rule=PricingRule::validate(['mode'=>'markup_amount','markup'=>'1.20','round_up'=>'half']);
 $preview=(new \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue($ports,$clock))->preview($t->fresh(),$rule);
 same(['register1','register3','renew1','transfer1'],array_map(fn($r)=>$r['action'].$r['term'],$preview),'Preview lists each sold term in order');
-same(['7.50','22.50','9.50','8.50'],array_column($preview,'new'),'Preview applies the rule to each term');
+same(['7.50','26.50','9.50','8.50'],array_column($preview,'new'),'Preview applies the rule to each term');
 $before=array_map(fn(Price $p)=>$p->revision,$rows($t->fresh()));
 $writer->run($review('override',$t->id),$fields($rule),$now);
 $after=$rows($t->fresh());
@@ -70,7 +70,7 @@ same('Switched to Default pricing',TldFacts::history($t->server_id,$t->id)[0]['c
 $late=$now->modify('+2 days');$clock->instant=$late;$before=array_map(fn(Price $p)=>$p->revision,$rows($t->fresh()));
 $preview=collect((new \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue($ports,$clock))->preview($t->fresh(),$rule))->keyBy(fn($r)=>$r['action'].$r['term']);
 same(['register1','register3','renew1','transfer1'],$preview->keys()->all(),'Aged preview retains every observed sold term');
-same(['7.50','22.50','10.40','8.50'],$preview->pluck('new')->all(),'Aged preview shows exact publication prices, preserving retained annual renewal');
+same(['7.50','28.30','10.40','8.50'],$preview->pluck('new')->all(),'Aged preview shows exact publication prices, preserving retained annual renewal');
 foreach($rows($t->fresh()) as $p){
     $observation=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::cost(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($p->catalogue_observation));
     expect($observation->freshUntil<=$clock->now(),'Saved cost has expired at the composed clock');

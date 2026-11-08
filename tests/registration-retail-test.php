@@ -112,11 +112,11 @@ foreach (['markup_percent', 'fixed'] as $mode) {
         // This native component fixture installs Domains without booting the extension's runtime.
         Illuminate\Support\Facades\Artisan::registerCommand(new Paymenter\Extensions\Servers\Domains\Console\PriceMatch);
         same(0, Illuminate\Support\Facades\Artisan::call('domains:price-match'), 'Sends-off upgrade then sends-on passes the read-only native price check');
-        $installedSearch = $installedStore->check('installed-upgrade.net');
+        $installedSearch = $installedStore->check('installed-upgrade.example.net');
         same('available', $installedSearch['status'], 'Installed search reopens through normal admission');
         same(array_map(fn ($v) => '$'.$v, $expected), $installedSearch['terms'], 'Installed search offers all upgraded terms');
         $upgradeUser = commerceUser(); $upgradeCart = commerceCart($upgradeUser);
-        $upgradeItem = commerceAdd($upgradeCart, $installedOffers->offer('net', 'register', 2)['product'], 'upgrade-cart.net', 2);
+        $upgradeItem = commerceAdd($upgradeCart, $installedOffers->offer('net', 'register', 2)['product'], 'upgrade-cart.example.net', 2);
         $upgradePage = Livewire\Livewire::actingAs($upgradeUser)->withCookies(['cart' => $upgradeCart->ulid])
             ->test(App\Livewire\Cart::class)->set('use_credits', false);
         same('28.98', number_format((float) $upgradeItem->fresh()->price->total, 2, '.', ''), 'Upgraded two-year cart line');
@@ -124,13 +124,13 @@ foreach (['markup_percent', 'fixed'] as $mode) {
         config(['domains' => $deployment]);
     }
     Cache::flush();
-    $search = $store->check('search-'.$label.'.net');
+    $search = $store->check('search-'.$label.'.example.net');
     same('available', $search['status'], $mode.': searchable');
     same(array_map(fn ($v) => '$'.$v, $expected), $search['terms'], $mode.': search includes the first registration year: '.json_encode($search['terms']));
     $user = commerceUser(); $cart = commerceCart($user);
     foreach ($expected as $years => $total) {
         $offer = $offers->offer('net', 'register', $years);
-        $item = commerceAdd($cart, $offer['product'], $label.'-'.$years.'.net', $years);
+        $item = commerceAdd($cart, $offer['product'], $label.'-'.$years.'.example.net', $years);
         same($total, number_format((float) $item->price->total, 2, '.', ''), $mode.': cart total '.$years);
         // Landing's breakdown reads this native annual plan and this same-account holder renewal.
         $first = $item->product->availablePlans()->first(fn ($plan) => $plan->billing_unit === 'year' && $plan->billing_period === 1)->price('USD');
@@ -143,7 +143,7 @@ foreach (['markup_percent', 'fixed'] as $mode) {
     $page = commerceCheckout($user, $cart); $page->assertHasNoErrors();
     same(count($issued) + 1, Order::count(), $mode.': one native order');
     foreach ($expected as $years => $total) {
-        $op = Operation::whereHas('domain', fn ($q) => $q->where('domain', $label.'-'.$years.'.net'))->sole();
+        $op = Operation::whereHas('domain', fn ($q) => $q->where('domain', $label.'-'.$years.'.example.net'))->sole();
         $item = InvoiceItem::findOrFail($op->invoice_item_id);
         same([$years, $total, $total, $total], [(int) $op->term, $op->amount, $item->price, $op->policy['price']['retail']], $mode.': invoice and registrar order term '.$years);
         same($years === 1 ? '17.9900' : PricingRule::decimal(100000 * $years, 4), $op->cost['estimated'], $mode.': selected-term wholesale retained');
@@ -172,12 +172,12 @@ commerceReject(fn()=>$offers->offer('net','register',2));
 $ports->apply(Edit::override($binding, 'net', new Intent(sell: true, longest: 10, transfers: true),
     [...PricingRule::DEFAULT, 'mode' => 'fixed', 'fixed' => ['register' => '19.99', 'renew' => '12.99', 'transfer' => '12.00']]), $revision());
 same($issued[1], DB::table('invoice_items')->orderBy('id')->get()->map(fn ($row) => (array) $row)->all(), 'Issued invoices never reprice');
-same('28.98', Operation::whereHas('domain', fn ($q) => $q->where('domain', 'fixed-2.net'))->sole()->amount, 'Issued operation amount remains frozen');
+same('28.98', Operation::whereHas('domain', fn ($q) => $q->where('domain', 'fixed-2.example.net'))->sole()->amount, 'Issued operation amount remains frozen');
 // The order path must refresh annual pricing inputs even while the selected-term cost is current.
 $ports->apply(Edit::override($binding, 'net', new Intent(sell: true, longest: 10, transfers: true),
     [...PricingRule::DEFAULT, 'markup' => '0.00']), $revision());
 $user = commerceUser(); $cart = commerceCart($user);
-commerceAdd($cart, $native->product($tlds[0], 'register'), 'refresh-price.net', 2);
+commerceAdd($cart, $native->product($tlds[0], 'register'), 'refresh-price.example.net', 2);
 $page = Livewire\Livewire::actingAs($user)->withCookies(['cart' => $cart->ulid])
     ->test(App\Livewire\Cart::class)->set('use_credits', false);
 same('28.98', number_format((float) $page->get('total')->total, 2, '.', ''), 'Customer initially sees the published total');
@@ -223,7 +223,7 @@ $notice = collect($page->effects['dispatches'] ?? [])->firstWhere('name', 'notif
 expect(str_contains($notice, 'Review the total'), 'Refreshed invoice requires the visible new total: '.$notice);
 Illuminate\Support\Once::flush(); $page->call('checkout', ['contact' => commerceOrderContact($user), 'save_account' => false]);
 $page->assertHasNoErrors();
-$refreshed = Operation::whereHas('domain', fn ($q) => $q->where('domain', 'refresh-price.net'))->sole();
+$refreshed = Operation::whereHas('domain', fn ($q) => $q->where('domain', 'refresh-price.example.net'))->sole();
 same([2, '32.98', '18.0000', '32.98', '32.98'], [(int) $refreshed->term, $refreshed->amount, $refreshed->cost['estimated'],
     InvoiceItem::findOrFail($refreshed->invoice_item_id)->price, $refreshed->policy['price']['retail']], 'Refreshed cart/invoice agree while selected wholesale and term stay separate: '.json_encode([$refreshed->term, $refreshed->amount, $refreshed->cost, InvoiceItem::findOrFail($refreshed->invoice_item_id)->price]));
 // Dependency observation drift must invalidate the saved longer-term quote.

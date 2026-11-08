@@ -189,7 +189,7 @@ $listeners = (new ReflectionProperty(Livewire\EventBus::class, 'listeners'))->ge
 $mount = end($listeners['mount']); $component = new App\Livewire\Cart; $escaped = null;
 try { $mount($component); } catch (Throwable $error) { $escaped = $error; }
 expect($escaped === null, 'Gateway recalculation failure cannot escape the removal-notice listener');
-$render = end($listeners['render']); $render($component)('<div></div>');
+$render = end($listeners['render']); $render($component,view('domains::partials.styles'))('<div></div>');
 $dispatches = array_map(static fn ($event) => $event->serialize(), Livewire\store($component)->get('dispatched', []));
 $notification = collect($dispatches)->firstWhere('name', 'notify');
 expect(str_contains($notification['params'][0]['message'] ?? '', 'notice-placeholder.com'), 'Removal notice survives a failing gateway recalculation');

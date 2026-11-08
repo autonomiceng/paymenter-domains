@@ -43,8 +43,8 @@ foreach(['redemption period'=>'transfer_redemption','pending delete'=>'transfer_
     catch(\Paymenter\Extensions\Servers\Domains\Services\TransferRestriction $e){same([$code,null],[$e->getMessage(),$e->retryAt],'Public lifecycle state precedes either dated lock');}
 }
 $transferred=null;$expiry=null;$created='2020-01-01T00:00:00Z';$statuses=['client transfer prohibited'];
-$locked=$rdap->precheck('example.com',60,60,$now);same(['transfer_locked',null],[$locked['code'],$locked['retry_at']??null],'Missing expiry does not hide a lock');
-$created='2026-10-01T00:00:00Z';$dated=$rdap->precheck('example.com',60,60,$now);
+$locked=$rdap->precheck('example.com',60,60,$now);same(false,$locked['allowed'],'Missing-expiry registrar lock refuses transfer');same(['transfer_locked',null],[$locked['code'],$locked['retry_at']??null],'Missing expiry does not hide a lock');
+$created='2026-10-01T00:00:00Z';$dated=$rdap->precheck('example.com',60,60,$now);same(false,$dated['allowed'],'Missing-expiry dated lock refuses transfer');
 same(['transfer_creation_lock','2026-11-30T00:00:00+00:00'],[$dated['code'],$dated['retry_at']??null],'Missing expiry does not hide a dated lock');
 $created='2020-01-01T00:00:00Z';$statuses=['active'];$missing=$rdap->precheck('example.com',60,60,$now);
 same([true,null,Rdap::UNCHECKED],[$missing['allowed'],$missing['code'],$missing['warning']],'Only an unlocked missing expiry falls back to unverified guidance');

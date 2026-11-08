@@ -43,14 +43,14 @@ $enomWire = new class implements Transport {
             return $header.'<TLDs><TLD><TLD>'.$parameters['TLD'].'</TLD><Registration><Minimum>1</Minimum><Maximum>3</Maximum><Unit>year</Unit><DNSRequired>false</DNSRequired></Registration><ExtAttributes>false</ExtAttributes><Renewal><AutoRenewOnly>false</AutoRenewOnly></Renewal></TLD></TLDs></interface-response>';
         }
         if ($command === ReadCommand::Attributes) { return $header.'<ResponseCount>0</ResponseCount></interface-response>'; }
-        $years = $parameters['Years'];
+        $years = $parameters['Years'];$rate=match($years){1=>$this->register,2=>'9.0000',5=>'8.0000',10=>'7.0000'};
         if ($this->fail === $years) { throw new RuntimeException('Synthetic read failure.'); }
         // Recorded synthetic Text shape, including per-row currency (not just envelope currency).
         $body = "Command={$command->value}\nErrCount=0\nDone=true\nCount=2\n";
         foreach (['com', 'co.uk'] as $i => $tld) {
             $n = $i + 1;
             $body .= "TLD$n=$tld\nCurrency$n={$this->currency}\nRegisterPrice$n=999.00\nResellerPriceRenew$n={$this->renew}\nRenewEnabled$n=true\nResellerPriceTran$n=12.0000\nTransferEnabled$n=false\n";
-            if (!$this->omit) { $body .= "ResellerPriceReg$n={$this->register}\nRegisterEnabled$n={$this->enabled}\n"; }
+            if (!$this->omit) { $body .= "ResellerPriceReg$n={$rate}\nRegisterEnabled$n={$this->enabled}\n"; }
         }
         return $body;
     }
@@ -84,10 +84,10 @@ foreach ([Environment::Test, Environment::Live] as $environment) {
     }
     $clock->at = $savedTime;
 
-    same('20.0020', $rows['co.uk']->costs['register:2']->total, 'Compound suffix and annual-to-term exact total');
-    same('100.0100', $rows['com']->costs['register:10']->total, 'No float rounding on ten-year totals');
-    same('30.0030', $rows['com']->costs['register:3']->total ?? null, 'Documented bracket covers year three exactly');
-    same('90.0090', $rows['com']->costs['register:9']->total ?? null, 'Documented bracket covers year nine exactly');
+    same('18.0000', $rows['co.uk']->costs['register:2']->total, 'Compound suffix and annual-to-term exact total');
+    same('70.0000', $rows['com']->costs['register:10']->total, 'No float rounding on ten-year totals');
+    same('27.0000', $rows['com']->costs['register:3']->total ?? null, 'Documented bracket covers year three exactly');
+    same('72.0000', $rows['com']->costs['register:9']->total ?? null, 'Documented bracket covers year nine exactly');
     same(false, $rows['com']->costs['transfer:1']->enabled, 'Explicit disabled differs from absent');
     same(null, $rows['com']->costs['transfer:1']->total, 'Disabled is not zero-priced');
     same([], $rows['org']->costs, 'Listed but unpriced ending is discovery only');
@@ -108,7 +108,7 @@ foreach ([Environment::Test, Environment::Live] as $environment) {
     same([], $feed->facts('com', $context($binding, 2))->facts->terms['renew'], 'Unknown annual renewal cannot enable sales');
     $enomWire->renew = '11.0000';
     $explicit = new EnomFeed($driver, new CatalogueFreshness, terms: [1 => [1], 2 => [2, 3, 4], 5 => [5], 10 => [10]]);
-    same('30.0030', $indexed($explicit->prices($context($binding)))['com']->costs['register:3']->total, 'Only supplied bucket evidence enables another exact term');
+    same('27.0000', $indexed($explicit->prices($context($binding)))['com']->costs['register:3']->total, 'Only supplied bucket evidence enables another exact term');
     $refuses(fn () => new EnomFeed($driver, new CatalogueFreshness, terms: [5 => [4]]));
     $enomWire->enabled = 'false'; $enomWire->register = '0.00';
     same(false, $indexed($feed->prices($context($binding)))['com']->costs['register:1']->enabled, 'Provider disabled sentinel is positive evidence');

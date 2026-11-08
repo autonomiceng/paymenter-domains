@@ -24,7 +24,7 @@ foreach([false,true] as $repriced){
     same($repriced?'Your cart changed':'Domain removed',$notice['title']??null,'Removal/repricing notice survives gateway failure');
     same(['removed-price-placeholder.com'],$notice['names']??null,'Removal notice retains the removed domain');
     same($repriced?[$line->id=>'1.00']:[],$notice['was']??null,'Combined notice retains the prior line price');
-    $render($component)('<div></div>');
+    $render($component,view('domains::partials.styles'))('<div></div>');
     $dispatches=collect(array_map(static fn($event)=>$event->serialize(),Livewire\store($component)->get('dispatched',[])));
     expect($dispatches->contains('name','cartUpdated'),'Removal still refreshes the header cart badge');
     expect(str_contains($dispatches->firstWhere('name','notify')['params'][0]['message']??'','removed-price-placeholder.com'),'Fallback notification retains the removal after gateway failure');
