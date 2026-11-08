@@ -77,5 +77,5 @@ $writer->run(new Review($u->id,$t->server_id,$t->id,'remove_override',Review::ti
 Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id])->assertSee(['Customer pays','Card fee','Edit Customer pays','Edit Card fee'],false);
 $sell=Livewire::actingAs($u)->test(\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::class)->mountAction('default_pricing')->call('$refresh');$sees($sell,['2 TLDs use Default pricing.']);$render($sell,'modal-default_pricing');
 writeRenderArtifact($out.'/strings.json',json_encode($strings,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));
-same(9,count($strings),'Nine settings modals rendered');
-echo "Native TLD list/detail/revisions, account page, nine modals, price preview and refusals rendered.\n";$nativeSuccessful=true;
+same(['price_freshness','renewal_billing','unpaid_hold','override','seller','configure','probe','processing'],array_keys($strings),'All eight available settings modals rendered');
+echo "Native TLD list/detail/revisions, account page, eight modals, price preview and refusals rendered.\n";$nativeSuccessful=true;
