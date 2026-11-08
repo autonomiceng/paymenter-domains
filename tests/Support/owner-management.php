@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering. Real completed holdings and engine, synthetic transport.
 declare(strict_types=1);
 require __DIR__.'/owner-management-ready.php';
+require __DIR__.'/owner-site-nameservers.php';
 use Illuminate\Http\Request;
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\{OwnerActionController, OwnedDomainController};
 use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
