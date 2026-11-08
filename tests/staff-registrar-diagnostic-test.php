@@ -9,6 +9,10 @@ staffPanel();$staff=staffUser([Staff::VIEW,Staff::METADATA]);
 $makeEngine($bindingFor(0),static fn()=>'<interface-response><Command>Purchase</Command><Done>true</Done><RRPCode>545</RRPCode><ErrCount>1</ErrCount><errors><Err1>Error 545 - Name server does not exist; PRIVATE-CONTACT</Err1></errors></interface-response>');
 $op=$runRegistration($new('staff-diagnostic-placeholder.com'));
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertSee('Code 545: Error 545 - Name server does not exist')->assertDontSee('PRIVATE-CONTACT');
+require __DIR__.'/Support/registration-refusal-reply.php';
+$makeEngine($bindingFor(0),static fn()=>$purchaseRefusal);
+$refused=$runRegistration($new('staff-refused-placeholder.com'));
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$refused->id])->assertSee('Code 541: Validation error. Failed to create order.')->assertDontSee('PRIVATE-CONTACT');
 $original=$op->getRawOriginal('attempt');
 foreach([['code'=>'545','text'=>'PRIVATE-SECRET'],['code'=>'<script>','text'=>null],['code'=>'545','text'=>null,'raw'=>'PRIVATE-CONTACT']] as $invalid){
     $attempt=$op->attempt;$attempt['evidence']['registrarReply']=$invalid;

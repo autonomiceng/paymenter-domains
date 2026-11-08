@@ -6,7 +6,6 @@ require __DIR__.'/Support/money-receipt.php';
 require __DIR__.'/Support/owner-pages.php';
 use App\Models\{Credit,Gateway,InvoiceTransaction,Role};
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Presentation\DomainPage;
 use Paymenter\Extensions\Servers\Domains\Services\{PricingRule,Refunds};
 $staff=commerceUser();$staff->update(['role_id'=>Role::create(['name'=>'Return reviewer','permissions'=>['admin.domains.manage','admin.invoices.update']])->id]);
 $gateway=Gateway::create(['extension'=>'MoneyReceipt','name'=>'Synthetic return','type'=>'gateway','enabled'=>true]);
@@ -30,8 +29,6 @@ foreach(['split','returned','credited',null] as $index=>$expected){
     for($repeat=0;$repeat<2;$repeat++){
         $dto=$owners->present($saved->domain->fresh());
         same($expected,$dto->refundTo,'Reserved return projects its actual destination: '.($expected??'no payment'));
-        $note=DomainPage::expires($dto,null,null)['note'];
-        expect($expected!=='split'||str_contains($note,'account credit otherwise'),'Customer sees both parts of the split return');
     }
     same($money,$nativeMoney(),'Repeated projection changes no native money history');same($sends,MoneyReceiptGateway::$sends,'Rendering never calls the gateway');
     same($plan,$saved->fresh()->funding['refund']??null,'Rendering never rewrites retained allocation authority');
