@@ -215,7 +215,7 @@ same(null,$work->status($binding)['due_at'],'Unreadable pricing does not queue a
 $html=\Livewire\Livewire::actingAs($actor)->test(NextStepStaffPage::class)->filterTable('for_sale',false)->assertSee('Left out')->html();
 $dom=new DOMDocument;@$dom->loadHTML($html);$xpath=new DOMXPath($dom);
 $url=\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource::getUrl('view',['record'=>$t->id]);
-expect($xpath->query('//td[contains(@class,"domains-sell-status")]//a[@href="'.$url.'" and contains(.,"Fix the pricing rule in Edit prices on .com.")]')->length===1,'The table renders the invalid row with its visible Edit prices step and TLD link');
+expect($xpath->query('//td[contains(@class,"domains-sell-status") and (contains(.,"Fix the pricing rule in Edit prices on .com.") or .//*[contains(@x-tooltip,"Fix the pricing rule in Edit prices on .com.")])]//a[@href="'.$url.'"]')->length===1,'The table renders the invalid row with its Edit prices guidance and TLD link');
 } catch (Throwable $error) {$failures[]='Unreadable rule '.($pending?'pending':'current').': '.$error->getMessage();}
 }
 try {
@@ -226,7 +226,7 @@ $dom=new DOMDocument;@$dom->loadHTML($html);$xpath=new DOMXPath($dom);
 expect($xpath->query('//*[contains(@class,"description") and contains(.,"Check account setup on Registrar account.")]')->length>0,'The next step is visible beside Missing, outside its tooltip');
 $url=\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$binding->serverId]);
 expect($xpath->query('//a[@href="'.$url.'" and contains(.,"Missing")]')->length>0,'Missing links to the account page that fixes setup');
-expect($xpath->query('//td[contains(@class,"domains-sell-status")]//a[@href="'.$url.'" and contains(.,"Check account setup on Registrar account.")]')->length===1,'The Status setup step links to Registrar account, like the money cell');
+expect($xpath->query('//td[contains(@class,"domains-sell-status") and (contains(.,"Check account setup on Registrar account.") or .//*[contains(@x-tooltip,"Check account setup on Registrar account.")])]//a[@href="'.$url.'"]')->length===1,'The Status setup step links to Registrar account, like the money cell');
 } catch (Throwable $error) {$failures[]='Account status link: '.$error->getMessage();}
 // Review probe C: exercise the actual Status anchors, including deliberate absence of a link.
 foreach(['cost limit','registrar cost','registrar terms','registrar requirements','price choice'] as $scenario){
@@ -259,8 +259,10 @@ same($next,$status['next'],'The Status step names the action for '.$scenario);
 same($open,$status['open'],'The Status preserves the step destination for '.$scenario);
 $html=\Livewire\Livewire::actingAs($actor)->test(NextStepStaffPage::class)->filterTable('for_sale',false)->html();
 $dom=new DOMDocument;@$dom->loadHTML($html);$xpath=new DOMXPath($dom);
-$cell='//td[contains(@class,"domains-sell-status") and contains(.,"'.$next.'")]';
-same(1,$xpath->query($cell)->length,'The next step is visible in Status for '.$scenario);
+// Compact gray states carry the reason on hover; actionable colored states
+// show it as a description. Both retain the same destination.
+$cell='//td[contains(@class,"domains-sell-status") and (contains(.,"'.$next.'") or .//*[contains(@x-tooltip,"'.$next.'")])]';
+same(1,$xpath->query($cell)->length,'The current Status description or tooltip explains '.$scenario);
 if($url===null){same(0,$xpath->query($cell.'//a[@href]')->length,'Status has no unrelated TLD link for '.$scenario);}
 else{same(1,$xpath->query($cell.'//a[@href="'.$url.'"]')->length,'Status links to the TLD that fixes '.$scenario);}
 } catch (Throwable $error) {$failures[]='Status link '.$scenario.': '.$error->getMessage();}
