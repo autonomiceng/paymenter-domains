@@ -47,7 +47,7 @@ $req=static function($domain,array $data,$actor=null,?string $intent=null)use($u
 $refused=static function($domain,array $data,string $message)use($controller,$req,$session):void {
     $session->forget('errors');$response=$controller->renew($req($domain,$data),$domain->id);
     same(route('domains.domains.show',$domain->id),$response->getTargetUrl(),'Refusal returns to the domain page');
-    same([$message],$session->get('errors')->getBag('default')->get('renew'),'Exact owner refusal: '.$message.'; received '.json_encode($session->get('errors')->getBag('default')->get('renew')));
+    same([$message],$session->get('errors')->getBag('default')->get('renew'),'Exact owner refusal: '.$message);
 };
 $replay=static function($call):void {try{$call();expect(false,'Replay refused');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(419,$e->getStatusCode(),'Replay needs a fresh intent');}};
 $bounded=static function(callable $read):mixed {
