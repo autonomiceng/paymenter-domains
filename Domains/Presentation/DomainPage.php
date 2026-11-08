@@ -70,7 +70,7 @@ final class DomainPage
         if ($d->expiry === null) {
             if ($s?->abandoned) { return ['missing' => false, 'tone' => null, 'note' => null]; }
             if (self::rejected($d)) {
-                $transfer = $d->statusReason === DomainStatus::STATES['transfer_rejected'][1];
+                $transfer = $d->rejectedAcquisition === 'transfer' || $d->statusReason === DomainStatus::STATES['transfer_rejected'][1];
                 return ['missing' => false, 'tone' => null, 'value' => $transfer ? 'Not transferred' : 'Not registered',
                     'note' => trim(($transfer ? 'The domain stays at your current registrar. ' : '').(self::REFUND[$d->refundTo ?? ''] ?? ''))];
             }
@@ -95,7 +95,7 @@ final class DomainPage
         'credited' => 'We added what you paid to account credit.', 'returned' => 'We are returning what you paid to your original payment method.'];
     /** The registrar rejected the registration or transfer, so no expiry will ever fill in. */
     private static function rejected(OwnedDomain $d): bool
-    { return in_array($d->statusReason, [DomainStatus::STATES['registration_rejected'][1], DomainStatus::STATES['transfer_rejected'][1]], true); }
+    { return in_array($d->rejectedAcquisition, ['register', 'transfer'], true) || in_array($d->statusReason, [DomainStatus::STATES['registration_rejected'][1], DomainStatus::STATES['transfer_rejected'][1]], true); }
     /** Next invoice: the current renewal invoice's state (Due + Pay invoice, Paid, Under review in blue while we check it, or Missing with its cause and fix), else the day the next invoice goes out, the same date staff see. Null when it does not apply. */
     public static function nextInvoice(OwnedDomain $d, ?DomainSummary $s, ?string $support): ?array
     {
@@ -106,6 +106,7 @@ final class DomainPage
         return match (true) {
             $state === 'pending' => ['value' => $due ? ($d->earlyRenewal ? RequestStatus::earlyRenewal($due) : 'Due '.self::date($due)) : 'Due', 'action' => isset($d->renewNow['invoice']) ? ['label' => 'Pay invoice', 'url' => $d->renewNow['invoice']] : null],
             $state === 'paid' => ['value' => 'Paid', ...(($goes = $d->renewNow['goes'] ?? $d->renewalInvoice['goes'] ?? null) ? ['note' => RenewalRepeatWait::NOTHING.' '.RenewalRepeatWait::GOES, 'at' => $goes] : [])],
+            $state === 'closed' => ['value' => 'Renewal did not finish', 'action' => $contact],
             $state === 'cancelled' => ['missing' => true, 'cause' => 'Invoice cancelled', 'fix' => $contact],
             // When the page notice already says there is nothing to do, the row does not say it again.
             $state !== null => ['value' => 'Under review', 'tone' => 'info', 'note' => 'Renewal being checked.'.(self::noActionSaid(self::notice($d, $support, $s)) ? '' : ' '.Missing::NO_ACTION)],

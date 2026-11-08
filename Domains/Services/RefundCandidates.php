@@ -16,13 +16,17 @@ final class RefundCandidates
     {
         return $q->where($prefix.'state','rejected')->where(fn($q)=>$q->where($prefix.'funding_basis','paid_invoice')
             ->orWhere(fn($q)=>$q->where($prefix.'funding_basis','complimentary')->where($prefix.'action','register')
-                ->where($prefix.'safe_code',RegistrationRefusals::CODE)))
+                ->where($prefix.'safe_code',RegistrationRefusals::CODE)
+                ->whereExists(fn($services)=>$services->selectRaw('1')->from('services')
+                    ->whereColumn('services.id',($prefix?:'domains_operations.').'service_id')
+                    ->where(fn($open)=>$open->where('services.status','!=','cancelled')->orWhereNotNull('services.expires_at')))))
             ->whereIn($prefix.'action',self::ACTIONS)->where(fn($q)=>$q->whereNull($prefix.'safe_code')
                 ->orWhereNotIn($prefix.'safe_code',self::SKIPPED));
     }
     public static function matches(Operation $op, array $funding): bool
     {
-        return $op->state==='rejected' && ($op->funding_basis==='paid_invoice'||($op->funding_basis==='complimentary'&&$op->action==='register'&&$op->safe_code===RegistrationRefusals::CODE)) && in_array($op->action,self::ACTIONS,true)
+        return $op->state==='rejected' && ($op->funding_basis==='paid_invoice'||($op->funding_basis==='complimentary'&&$op->action==='register'&&$op->safe_code===RegistrationRefusals::CODE
+                &&($op->service?->status!=='cancelled'||$op->service?->expires_at!==null))) && in_array($op->action,self::ACTIONS,true)
             && !in_array($op->safe_code,self::SKIPPED,true) && !array_key_exists('refund',$funding);
     }
 }

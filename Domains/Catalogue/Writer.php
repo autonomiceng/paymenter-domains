@@ -57,13 +57,21 @@ final class Writer implements Catalogue
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Retail upgrade requires unlocked reads.'); }
         Tld::where('catalogue_converted', true)->orderBy('id')->chunkById(100, function ($rows): void {
             foreach ($rows as $tld) {
-                $published = OfferState::decode($tld->catalogue_published_revision);
-                if (($published['retailRule'] ?? 0) === Retail::VERSION) { continue; }
-                $account = Account::where('server_id', $tld->server_id)->sole();
-                $binding = AccountBindings::binding($account);
-                $revision = OfferState::revision($tld, OfferState::decode($account->catalogue_defaults),
-                    DB::table('domains_sales_policies')->where('tld', $tld->tld)->first());
-                $this->apply(Edit::republish($binding, $tld->tld), $revision);
+                // An unpublished own rule remains closed for its ordinary guarded recovery.
+                if ($tld->catalogue_published_revision === null) { continue; }
+                try {
+                    $published = OfferState::decode($tld->catalogue_published_revision);
+                    if (($published['retailRule'] ?? 0) === Retail::VERSION) { continue; }
+                    $account = Account::where('server_id', $tld->server_id)->sole();
+                    $binding = AccountBindings::binding($account);
+                    $revision = OfferState::revision($tld, OfferState::decode($account->catalogue_defaults),
+                        DB::table('domains_sales_policies')->where('tld', $tld->tld)->first());
+                    $this->apply(Edit::republish($binding, $tld->tld), $revision);
+                } catch (\Throwable) {
+                    // The writer rolls back this TLD; an install and healthy siblings can continue.
+                    try { \Illuminate\Support\Facades\Log::warning('Domains retail upgrade deferred.', ['server_id' => (int) $tld->server_id, 'tld_id' => (int) $tld->id]); }
+                    catch (\Throwable) { /* Logging cannot pin the installation. */ }
+                }
             }
         });
     }
