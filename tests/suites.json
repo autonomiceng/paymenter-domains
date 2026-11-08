@@ -775,7 +775,9 @@
     "tests/staff-sales-empty-test.php",
     "tests/tld-unreadable-seller-test.php",
     "tests/tld-seller-intent-test.php",
-    "tests/sale-filter-budget-test.php"
+    "tests/sale-filter-budget-test.php",
+    "tests/watch-discovery-lifecycle-test.php",
+    "tests/watch-discovery-input-test.php"
   ],
   "ui": [],
   "runner": [
