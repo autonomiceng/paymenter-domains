@@ -51,6 +51,7 @@ final class Labels
             $actor=$op->attempt['management_terminal']['actor_id']??null;
             return $actor===null ? 'Cancelled' : 'Cancelled by '.((int)$actor===(int)$op->domain->user_id?'customer':'staff');
         }
+        if($op->state==='succeeded'&&isset($op->policy['captured_charge_approval'])){return 'Captured registrar charge approved by staff';}
         // These codes outlive the send, so "Not sent" would be false once the registrar has the order.
         if ($op->state!=='held'&&in_array($op->safe_code,['registration_correction_required','registration_evidence_required'],true)) {
             return $op->state==='succeeded'||$op->safe_code==='registration_correction_required' ? 'Still to fix: '.self::corrections($op) : 'Sent. Waiting for the registrar charge.';

@@ -133,6 +133,10 @@ final class RequestFacts
                     }
                 }
             }
+            if($grants->costs&&\Paymenter\Extensions\Servers\Domains\Services\CapturedChargeReview::hasProof($op)){
+                $observations=$p['captured_charge_observations']??[];$last=$observations?end($observations):null;
+                if($last){$latest=$usd($last['proof']['charge']['amount']??null,$last['proof']['charge']['currency']??null);$out['cost_sub']=trim(($out['cost_sub']??'').' Latest reviewed read: '.($latest??'unavailable').'. Original captured expense retained.');}
+            }
             if ($grants->metadata && $op->action==='transfer') {
                 $payload=$op->payload??[];
                 $out['auth_code']=is_string($payload['epp']??null)&&$payload['epp']!=='' ? 'Saved' : null;
@@ -231,6 +235,10 @@ final class RequestFacts
         $facts ??= self::for($op);
         if ($facts['unreadable']??false) { return ['title'=>DomainFacts::UNREADABLE,'tone'=>'danger']; }
         $domain=$op->domain;
+        if($op->state==='uncertain'&&\Paymenter\Extensions\Servers\Domains\Services\CapturedChargeReview::hasProof($op)){
+            $approve=OperationActions::relevant('approve_charge',$op);
+            return ['title'=>'The registrar already charged this order.','body'=>'The system cannot approve a charge above the original quote itself. '.($approve?'Review and approve the same captured charge to complete this renewal.':'Check status to read the original order once. A different or unavailable charge remains under review.').' Future spending stays paused.','tone'=>'warning','action'=>$approve?'approve_charge':'resume_reads'];
+        }
         if(OperationActions::complimentaryCloseBlocked($op)){return ['title'=>'Close order is unavailable.','body'=>'Retained refusal evidence does not prove this order can be closed. Ask staff to review the original registrar outcome; nothing is charged or credited.','tone'=>'warning'];}
         if ($domain && in_array((int)$op->id,RenewalReplacements::activityIds($domain),true)) {
             return ['title'=>'Payment received after credit. Check the invoice.','tone'=>'warning','link'=>'invoice'];

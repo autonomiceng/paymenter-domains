@@ -22,6 +22,8 @@ class Operation extends Model
     {
         static::saving(static fn(self $operation)=>\Paymenter\Extensions\Servers\Domains\Services\ManagementProgressIndex::capture($operation));
         static::creating(static fn(self $operation)=>\Paymenter\Extensions\Servers\Domains\Services\EnomAnswers::guard($operation));
+        static::creating(static fn(self $operation)=>\Paymenter\Extensions\Servers\Domains\Services\CapturedChargeReview::guard($operation));
+        static::updating(static fn(self $operation)=>\Paymenter\Extensions\Servers\Domains\Services\CapturedChargeReview::guard($operation));
         static::creating(static fn(self $operation)=>\Paymenter\Extensions\Servers\Domains\Services\RenewalRetries::guardCreation($operation));
         static::creating(static function(self $operation):void {
             if(array_key_exists('management_unsent',$operation->attempt??[])){throw new \DomainException('Unsent management proof requires a live dispatched operation.');}
@@ -157,7 +159,7 @@ class Operation extends Model
                 }
             }
             if (!$safeAttemptReset&&isset($old['claim_key']) && $operation->isDirty(['started_at', 'request_fingerprint'])) { throw new \DomainException('Original attempt identity is frozen.'); }
-            if (isset($old['reconciliation']) && $operation->isDirty(['provider_order_id', 'confirmed_expires_at', 'completed_at'])) { throw new \DomainException('Completion evidence is frozen.'); }
+            if (isset($old['reconciliation']) && $operation->isDirty(['provider_order_id', 'confirmed_expires_at', 'completed_at'])&&!\Paymenter\Extensions\Servers\Domains\Services\CapturedChargeReview::completionAllowed($operation)) { throw new \DomainException('Completion evidence is frozen.'); }
             if (($old['seal'] ?? null) === 'sealed' && $operation->isDirty('payload')) {
                 throw new \DomainException('Sealed desired state is frozen.');
             }

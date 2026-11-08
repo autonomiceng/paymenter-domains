@@ -13,12 +13,12 @@ use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement,EnomTestRegi
 final class OperationActions
 {
     /** Toast titles, named for the action. */
-    public const DONE=['recheck'=>'Request reviewed','resume_reads'=>'Status checks restarted','resume_observation'=>'Sync resumed','hold'=>'Request on hold',
+    public const DONE=['approve_charge'=>'Captured charge approved','recheck'=>'Request reviewed','resume_reads'=>'Status checks restarted','resume_observation'=>'Sync resumed','hold'=>'Request on hold',
         'release'=>'Hold released','disposition'=>'Request closed','refund'=>'Request cancelled','credit'=>'Refund checked','replacement'=>'Renewal invoice reissued'];
     /** Money actions ask for a reason. Check status, Resume sync, Put on hold and Release hold run on click with the action name as the
      * recorded reason; every action still uses a one-use ticket bound to the page's review stamp, so a stale second click is refused.
      * Release hold asks first when it sends a purchase right away. */
-    private const REASON=['refund','credit','replacement'];
+    private const REASON=['refund','credit','replacement','approve_charge'];
     public static function make(Operation $op,string $stamp): array
     {
         $out=[];
@@ -33,7 +33,7 @@ final class OperationActions
                 ->visible(fn()=>Staff::can(StaffOperationReview::permission($name))&&self::relevant($name,$op));
             if(in_array($name,[...self::REASON,'disposition'],true)){
                 $action->requiresConfirmation()->modalHeading($name==='disposition'?$label:$label.'?')->modalSubmitActionLabel($label)->modalWidth('lg')
-                    ->modalDescription($complimentaryClosure?'Closes this complimentary order and its service. Nothing is charged or credited.':self::description($name));
+                    ->modalDescription($complimentaryClosure?'Closes this complimentary order and its service. Nothing is charged or credited.':($name==='approve_charge'?'Approves the charge already incurred at the registrar. Completes this renewal from its retained proof and keeps future spending paused.':self::description($name)));
             }
             $account=$name==='release'&&!$contactRecovery&&$op->state==='held'?RequestFacts::account($op)['account']:null;
             $sends=EnomTestRegistration::releaseSends($op,$account)?RequestFacts::sendWords($op,$account):null;
@@ -112,7 +112,8 @@ final class OperationActions
         if(StaffOperationReview::liveLease($op,app(Clock::class))){return false;}
         if($op->state==='succeeded'){return false;}
         if($action==='resume_observation'){return !DomainFacts::ended($op->domain)&&ObservationRecords::stopped($op->domain);}
-        if(PaidUncertainty::summary($op)!==null&&!in_array($action,['recheck','resume_reads','resume_observation'],true)){return false;}
+        if(PaidUncertainty::summary($op)!==null&&!in_array($action,['recheck','resume_reads','resume_observation','approve_charge'],true)){return false;}
+        if($action==='approve_charge'){try{StaffOperationReview::requirePermission(\App\Models\User::with('role')->find(Auth::id()),$action,$op);return \Paymenter\Extensions\Servers\Domains\Services\CapturedChargeReview::approvable($op);}catch(\Throwable){return false;}}
         return match($action){
             // Release needs what the customer still owes, so a hold here would have no way back.
             'hold'=>StaffOperationWrites::canHold($op)&&self::customerOwes($op)===null,
@@ -166,6 +167,7 @@ final class OperationActions
     }
     public static function description(string $action): ?string
     {
+        if($action==='approve_charge'){try{StaffOperationReview::requirePermission(\App\Models\User::with('role')->find(Auth::id()),$action,$op);return \Paymenter\Extensions\Servers\Domains\Services\CapturedChargeReview::approvable($op);}catch(\Throwable){return false;}}
         return match($action){
             'disposition'=>'Records the final result. Nothing is sent or credited.',
             'refund'=>"Cancels this unsent request and returns the payment. Account credit is used only when the original payment cannot be refunded.",
