@@ -148,7 +148,8 @@ final class TldFacts
                 $gap=$gap||($state['value']!==null&&in_array($state['value'],[\Paymenter\Extensions\Servers\Domains\Presentation\Missing::LABEL,'Not for sale'],true));
                 return $html;
             };
-            $transfer=$first('transfer');$catalogue=self::catalogue();$transfer=!($fact['unreadable']??false)&&!($fact['invalid_rule']??false)&&!$catalogue->setting($row,'transfer')&&($transfer['retail']??null)===null?'Off':$price('transfer');
+            $transfers=!in_array('transfer',$fact['intent']['stops']??[],true)&&($fact['intent']['transfers']??$fact['defaults']['defaultTransfers']??false);
+            $transfer=$first('transfer');$transfer=!($fact['unreadable']??false)&&!($fact['invalid_rule']??false)&&!$transfers&&($transfer['retail']??null)===null?'Off':$price('transfer');
             $name=(string)$row->server?->name;
             $account=(RegistrarFacts::accountLink((int)$row->server_id,$name)?->toHtml()??e($name)).($fact['demo']?' '.DemoData::tag(inline:true)->toHtml():'')
                 .($fact['seller']===(int)$row->server_id?' <span class="domains-table-tag">New orders</span>':'');
