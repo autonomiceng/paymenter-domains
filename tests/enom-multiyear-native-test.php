@@ -51,7 +51,7 @@ $staff = commerceUser();
 $role = App\Models\Role::create(['name' => 'Synthetic funding', 'permissions' => ['admin.domains.manage', 'admin.domains.fund',
     'admin.domains.view', 'admin.domains.operations.resume_reads', 'admin.domains.operations.recheck']]);
 $staff->update(['role_id' => $role->id]);
-$unavailable = [];
+$unavailable = []; $unreadable = [];
 foreach (['changed' => ['20.00', 'actual_charge_changed'], 'overrun' => ['16.00', 'actual_cost_overrun']] as $case => [$limit, $reason]) {
     config(['domains.enom_identity.environment' => null]);
     [$seed, $compDomain, $compBinding] = $makeRenewal(placeholderComFixtureName('multiyear-'.$case.'-placeholder.com'), false);
@@ -81,6 +81,15 @@ foreach (['changed' => ['20.00', 'actual_charge_changed'], 'overrun' => ['16.00'
     $fresh = $held->fresh();
     same(1, $fresh->policy['renewal_polls'], 'Captured financial hold is below the normal read limit');
     app()->instance(\Paymenter\Extensions\Servers\Domains\Services\RenewalCompletion::class, $compCompletion);
+    // Reproduce damaged encrypted storage without changing the issued operation or its financial proof.
+    $storedAttempt = $fresh->getRawOriginal('attempt');
+    DB::table('domains_operations')->where('id', $held->id)->update(['attempt' => 'synthetic-unreadable-renewal-attempt']);
+    try {
+        Livewire::actingAs($staff)->test(ViewOperation::class, ['record' => $held->id])
+            ->assertSuccessful()->assertSee(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::UNREADABLE)
+            ->assertActionHidden('resume_reads');
+    } catch (\Illuminate\Contracts\Encryption\DecryptException) { $unreadable[] = $reason; }
+    finally { DB::table('domains_operations')->where('id', $held->id)->update(['attempt' => $storedAttempt]); }
     $page = Livewire::actingAs($staff)->test(ViewOperation::class, ['record' => $held->id]);
     // Keep both native cases running on red so the visibility failure names each financial reason.
     if (!$page->instance()->getAction('resume_reads')->isVisible() || $page->instance()->getAction('recheck')->isVisible()) {
@@ -105,6 +114,7 @@ foreach (['changed' => ['20.00', 'actual_charge_changed'], 'overrun' => ['16.00'
         ->assertActionVisible('resume_reads')->assertActionHidden('recheck')->assertSee('Check status');
 }
 
+same([], $unreadable, 'Unreadable renewal attempt must not break staff action evaluation: '.implode(', ', $unreadable));
 same([], $unavailable, 'Captured holds need audited Check status below the poll limit: '.implode(', ', $unavailable));
 same(false, TermSupport::admits('enom', 2, $op->policy['renewal'], environment: Environment::Live), 'Frozen TEST debt cannot admit Live two-year renewal');
 echo "Enom TEST multiyear native: ok\n";
