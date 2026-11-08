@@ -42,11 +42,16 @@ foreach(['split','returned','credited',null] as $index=>$expected){
     }
     same($money,$nativeMoney(),'Repeated projection changes no native money history');same($sends,MoneyReceiptGateway::$sends,'Rendering never calls the gateway');
     same($plan,$saved->fresh()->funding['refund']??null,'Rendering never rewrites retained allocation authority');
+    if($expected===null){
+        if($action==='transfer'){expect(str_contains($html,'The domain stays at your current registrar.'),'Note-only rejected transfer remains visible');}
+        else{config(['domains.support_url'=>'https://support.example.test/domains']);$supportOnly=view('domains::partials.owner-renew',['domain'=>$dto,'summary'=>null,'support'=>'https://support.example.test/domains'])->render();expect(str_contains($supportOnly,'Contact support'),'Support-only rejected registration remains visible');config(['domains.support_url'=>null]);}
+    }
     if(in_array($expected,['split','returned'],true)){
         foreach($plan['allocations']as$allocation){MoneyReceiptGateway::complete(App\Models\Invoice::findOrFail($op->invoice_id),$allocation['key']);}
         Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::resume($op->id,$clock->now());
         $done=$owners->present($saved->domain->fresh());$completed=Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::expires($done,null,null);
         if(($completed['value']??null)!==($action==='transfer'?'Not transferred':'Not registered')){$failures[]=$action.':'.$index.': completed return loses rejection';}
+        expect(!str_contains($completed['note']??'','returning what you paid'),'Completed expiry note does not describe an unfinished return');
         expect(str_contains($done->order['return']??'','refunded')&&!str_contains($done->order['return']??'','checking its progress'),'Completed gateway result uses completed return wording');
         $money=$nativeMoney();$allocations=$op->fresh()->funding;$sends=MoneyReceiptGateway::$sends;
         Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::resume($op->id,$clock->now());$owners->present($saved->domain->fresh());
