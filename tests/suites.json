@@ -778,7 +778,9 @@
     "tests/sale-filter-budget-test.php",
     "tests/watch-discovery-lifecycle-test.php",
     "tests/watch-discovery-input-test.php",
-    "tests/watch-discovery-managed-test.php"
+    "tests/watch-discovery-managed-test.php",
+    "tests/watch-discovery-commit-test.php",
+    "tests/watch-discovery-notices-test.php"
   ],
   "ui": [],
   "runner": [
