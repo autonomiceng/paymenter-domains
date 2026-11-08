@@ -28,7 +28,9 @@ $fact=$c->page(collect([$t->fresh()]))[$t->id];$fact['prices']=[];$fact['selecte
 $check(str_contains(TldFacts::priceState($fact)['cause']??'',"Not in the registrar's price feed"),'Feed success after checkpoint confirms absence');
 $intent=OfferState::decode($t->catalogue_intent);DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_intent'=>OfferState::json([...$intent,'transfers'=>false,'pricing_rule'=>['mode'=>'invalid']])]);
 $html=TldFacts::accountsTable($t->fresh(),Staff::requireView())->toHtml();$dom=new DOMDocument;@$dom->loadHTML($html);$xp=new DOMXPath($dom);
-$transfer=$xp->query('//tbody/tr/td[5]')->item(0)?->textContent??'';$check(str_contains($transfer,'Edit prices'),'Disabled transfer retains invalid-rule repair');
+$transfer=$xp->query('//tbody/tr/td[5]')->item(0)?->textContent??'';$check(str_contains($transfer,'Missing'),'Disabled transfer cannot hide an invalid price as Off');
+$broken=Livewire\Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewTld::class,['record'=>$t->id]);
+$check(str_contains(strip_tags($broken->instance()->getSubheading()->toHtml()),'Edit prices'),'The page head retains the invalid-rule repair beside the shared state');
 // Actual Filament filter composition must scope its summary before reading other accounts.
 $unscoped=false;$observe=false;DB::listen(static function($q)use(&$observe,&$unscoped):void{if($observe&&str_starts_with($q->sql,'select * from "domains_accounts"')&&!str_contains($q->sql,'where')){$unscoped=true;}});
 $list=Livewire\Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ListTlds::class)->filterTable('server_id',(string)$t->server_id);

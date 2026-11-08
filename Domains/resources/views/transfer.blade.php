@@ -3,17 +3,17 @@
 <div class="container mt-14 mb-10"><div class="domains">
 @include('domains::partials.styles')
 @include('domains::partials.test-banner', ['test' => $testEnvironment])
-<a class="domains-back" href="{{ route('domains.domains.index') }}">Domains</a>
-<div class="domains-head domains-head--search"><div><h1 class="domains-title">Transfer a domain</h1><p class="domains-lede">Move a domain you own from another registrar. A transfer adds one year to its expiry date.</p></div>
-<a class="domains-btn domains-btn--ghost" href="{{ route('domains.domains.search') }}">Register a new domain instead</a></div>
+<div><a class="domains-back" href="{{ route('domains.domains.index') }}"><x-ri-arrow-left-s-line class="domains-i" aria-hidden="true" />Domains</a>
+<div class="domains-head domains-head--search"><div><h1 class="domains-title">Transfer a domain</h1><p class="domains-lede">Move a domain you own from another registrar. A transfer adds one year to its expiry date.</p></div></div></div>
+@include('domains::partials.acquire-tabs', ['current' => 'transfer'])
 @include('domains::partials.notices', ['fieldKeys' => ['domain'], 'summary' => false])
 @if (!$endings)
 <div class="domains-notice domains-notice--warn" role="status">Domain transfers aren't open yet. @php($support = \Paymenter\Extensions\Servers\Domains\Presentation\Missing::supportUrl())@if ($support) <a class="domains-a" href="{{ $support }}">{{ config('settings.tickets_disabled', false) ? 'Contact support' : 'Open a ticket' }}</a>@endif</div>
 @else
-<form method="GET" action="{{ route('domains.domains.transfer') }}" role="search" novalidate>
+<form method="GET" action="{{ route('domains.domains.transfer') }}" role="search">
 <div class="domains-searchbar">
 <label for="domains-transfer-name" class="domains-sr">Domain name</label>
-<input id="domains-transfer-name" name="name" type="text" value="{{ $sld ?? $name }}" placeholder="yourbusiness" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="253" required @if ($error) aria-invalid="true" aria-describedby="domains-transfer-error" @endif>
+<input id="domains-transfer-name" name="name" type="text" value="{{ $sld ?? $name }}" placeholder="yourbusiness" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="253" required pattern=".*\S.*" @if ($error) aria-invalid="true" aria-describedby="domains-transfer-error" @endif>
 <label for="domains-transfer-tld" class="domains-sr">TLD</label><select id="domains-transfer-tld" name="tld" class="domains-input">@foreach ($endings as $ending)<option value="{{ $ending['tld'] }}" @selected($ending['tld'] === $preferred)>.{{ $ending['tld'] }}</option>@endforeach</select>
 <button type="submit" class="domains-btn domains-btn--primary">Continue</button></div>
 @if ($error)<p id="domains-transfer-error" class="domains-error" role="alert">{{ $error }}</p>@endif

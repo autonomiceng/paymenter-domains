@@ -122,7 +122,7 @@ final class SettingsActions
                     ->visible(fn($get)=>$own($get)&&$get('mode')!=='fixed');
                 $fields[]=Select::make('round_up')->label('Round up')->options(PricingRule::ROUNDING_LABELS)->default(fn()=>$rule()['round_up']??null)->required()->live()
                     ->visible(fn($get)=>$own($get)&&$get('mode')!=='fixed');
-                foreach(['register'=>'Register','renew'=>'Renew','transfer'=>'Transfer'] as $key=>$label){$fields[]=TextInput::make('fixed_'.$key)->label($label.' price per year (USD)')->default(fn()=>$rule()['fixed'][$key]??null)->maxLength(14)->live(debounce:500)
+                foreach(['register'=>'Register','renew'=>'Renew','transfer'=>'Transfer'] as $key=>$label){$fields[]=TextInput::make('fixed_'.$key)->label($key==='register'?'First registration year (USD)':$label.' price per year (USD)')->default(fn()=>$rule()['fixed'][$key]??null)->maxLength(14)->live(debounce:500)
                     ->visible(fn($get)=>$own($get)&&$get('mode')==='fixed');}
                 $saved=self::cached(static function():?array{try{return CardFee::read();}catch(\Throwable){return null;}});
                 if($name==='default_pricing'){
@@ -148,7 +148,7 @@ final class SettingsActions
                     $fields[]=\Filament\Schemas\Components\Text::make(fn()=>'Off in Paymenter, so skipped: '.implode(', ',$reach()['off']).'. Prices there catch up once it is back on.')->key('reach_off')->visible(fn()=>$reach()['off']!==[]);
                 }
             }
-            if($name==='tld_settings'){
+                if($name==='tld_settings'){
                 // Offer only what the saved account terms allow; the writer still checks every change.
                 $allowed=self::cached(static fn()=>self::allowedTerms($server,$tld));
                 $years=static function(string $bound)use($allowed):int{$a=$allowed();return $a===null?($bound==='min'?1:10):$a[$bound];};
@@ -176,7 +176,12 @@ final class SettingsActions
             }
             if($name==='seller'){
                 $policy=self::cached(static fn()=>\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld',Tld::findOrFail($tld)->tld)->first());
-                $fields[]=Select::make('seller')->label('Registrar for new orders')->options(fn()=>\App\Models\Server::whereIn('id',Account::pluck('server_id'))->orderBy('id')->pluck('name','id')->all())->placeholder('None')->default(fn()=>$policy()?->server_id);
+                $choices=self::cached(static fn()=>TldRegistrar::choices($tld));
+                $fields[]=Select::make('seller')->label('Registrar for new orders')
+                    ->options(fn()=>array_map(static fn($row)=>$row['label'],$choices()))
+                    ->disableOptionWhen(fn($value)=>$choices()[(int)$value]['disabled']??true)
+                    ->helperText(fn()=>new \Illuminate\Support\HtmlString(implode('<br>',array_map(static fn($row)=>e($row['label'].': '.$row['reason']),array_filter($choices(),static fn($row)=>$row['reason']!==null)))))
+                    ->placeholder('None')->default(fn()=>$policy()?->server_id);
                 $fields[]=Checkbox::make('register')->label('Allow registrations')->default(fn()=>$policy()?->register_enabled??false);$fields[]=Checkbox::make('transfer')->label('Allow transfers')->default(fn()=>$policy()?->transfer_enabled??false);
             }
             if($name==='renewal_billing'){
@@ -464,6 +469,7 @@ final class SettingsActions
     /** Staff text for a refused settings change; never echoes unrecognized exception text. */
     public static function refusal(\Throwable $error,string $name,array $data=[],int $server=0,?int $tld=null): string
     {
+        if($name==='seller'&&($message=TldRegistrar::refusal($error,$data,$tld))!==null){return $message;}
         if($name==='tld_settings'&&$error instanceof \DomainException&&($text=self::termsRefusal($error->getMessage(),$data,$server,$tld))!==null){return $text;}
         if($name==='acceptance'&&$error->getMessage()==='Audit entry too large. Changes held.'){return 'That is too many changes for one save. Save fewer at a time. Nothing was saved.';}
         if($error instanceof EnomTestCallLimit&&(Account::where('server_id',$server)->value('environment')??($data['environment']??null))==='live'){return 'We stopped this before it reached Enom. Earlier reads may have been sent. Check API calls on the account page.';}
@@ -517,6 +523,6 @@ final class SettingsActions
                 'TEST renewal deployment is unavailable.'=>'Test renewals are off for this account or site. Check the Renewals row on the account page. Nothing was saved.',
                 'Enom TEST acquisition route acceptance is unavailable.'=>self::ADMIN_ORDERS,
                 'Enom TEST Purchase route acceptance is unavailable.'=>self::ADMIN_ORDERS,
-                default=>$name==='enroll_sandbox'?self::GENERIC_OUTCOME_UNKNOWN:'Check this page, then try again. If it fails again, open System checks on the registrar account.'};
+                default=>match($name){'enroll_sandbox'=>self::GENERIC_OUTCOME_UNKNOWN,'seller'=>'The registrar change could not be saved. Reopen Change registrar and try again.',default=>'Check this page, then try again. If it fails again, open System checks on the registrar account.'}};
     }
 }

@@ -205,7 +205,25 @@ class RunnerTests(unittest.TestCase):
                 self.assertEqual((output/f'{index:03d}.stdout.txt').read_text(), 'output '+str(index))
                 self.assertEqual((output/f'{index:03d}.stderr.txt').read_text(), 'error '+str(index))
 
-    def test_parallel_failure_stops_refill_and_receipts_inflight_success(self):
+    def test_failures_keep_scheduling_including_installed_commands(self):
+        paths = ['first', 'second', 'tests/test_installed_package.py', 'last']
+        commands = [('native', [path]) for path in paths]
+        for jobs in [1, 2]:
+            with self.subTest(jobs=jobs), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp); (root/'Domains').mkdir(); output = root/'output'; output.mkdir()
+                def execute(argv, **kwargs): return argv[-1].encode(), b'', int(argv[-1] in [paths[0], paths[2]]), False
+                with mock.patch.object(runner, 'ROOT', root), mock.patch.object(runner, 'execute', side_effect=execute) as called, \
+                     mock.patch.object(runner.Processes, 'cancel') as cancel, contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(runner.run(commands, {}, output, ['native'], {}, jobs=jobs), 1)
+                receipt = json.loads((output/'receipt.json').read_text())
+                self.assertFalse(receipt['complete']); self.assertEqual(called.call_count, len(commands))
+                cancel.assert_not_called(); self.assertEqual(receipt['not_run'], [])
+                self.assertEqual([row['argv'] for row in receipt['results']], [argv for _, argv in commands])
+                self.assertEqual([row['exit'] for row in receipt['results']], [1, 0, 1, 0])
+                self.assertEqual(receipt['first_failure'], 0); self.assertEqual(receipt['failures'], [0, 2])
+                for index, path in enumerate(paths): self.assertEqual((output/f'{index:03d}.stdout.txt').read_text(), path)
+
+    def test_parallel_fail_fast_stops_refill_and_receipts_inflight_success(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp); (root/'Domains').mkdir(); output = root/'output'; output.mkdir()
             commands = [('provider', [str(index)]) for index in range(8)]
@@ -219,11 +237,13 @@ class RunnerTests(unittest.TestCase):
                 self.assertEqual(argv, ['1'], 'A command was scheduled after failure')
                 return b'failed', b'problem', 1, False
             with mock.patch.object(runner, 'ROOT', root), mock.patch.object(runner, 'execute', side_effect=execute) as called, \
+                 mock.patch.object(runner.Processes, 'cancel') as cancel, \
                  contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-                self.assertEqual(runner.run(commands, {}, output, ['provider'], {}, jobs=2), 1)
-            self.assertEqual(called.call_count, 2)
+                self.assertEqual(runner.run(commands, {}, output, ['provider'], {}, jobs=2, fail_fast=True), 1)
+            self.assertEqual(called.call_count, 2); cancel.assert_called()
             receipt = json.loads((output/'receipt.json').read_text())
-            self.assertFalse(receipt['complete'])
+            self.assertFalse(receipt['complete']); self.assertTrue(receipt['fail_fast'])
+            self.assertEqual(receipt['first_failure'], 1); self.assertEqual(receipt['failures'], [1])
             self.assertEqual([row['exit'] for row in receipt['results']], [0, 1])
             self.assertEqual((output/'000.stdout.txt').read_bytes(), b'inflight finished')
             self.assertFalse((output/'002.stdout.txt').exists())
@@ -280,7 +300,7 @@ class RunnerTests(unittest.TestCase):
                     return b'output', b'', int(argv == commands[failed][1]), False
                 with mock.patch.object(runner, 'ROOT', root), mock.patch.object(runner, 'execute', side_effect=execute) as called, \
                      contextlib.redirect_stdout(io.StringIO()):
-                    self.assertEqual(runner.run(commands, {}, output, ['native'], {}, jobs=4), 1)
+                    self.assertEqual(runner.run(commands, {}, output, ['native'], {}, jobs=4, fail_fast=True), 1)
                 receipt = json.loads((output/'receipt.json').read_text())
                 self.assertFalse(receipt['complete'])
                 self.assertEqual(called.call_count, failed+1)
@@ -295,7 +315,7 @@ class RunnerTests(unittest.TestCase):
                 return b'changed', b'', 0, False
             with mock.patch.object(runner, 'ROOT', root), mock.patch.object(runner, 'execute', side_effect=execute), \
                  contextlib.redirect_stdout(io.StringIO()):
-                self.assertEqual(runner.run([('provider', ['probe'])]*4, {}, output, ['provider'], {}, jobs=2), 1)
+                self.assertEqual(runner.run([('provider', ['probe'])]*4, {}, output, ['provider'], {}, jobs=2, fail_fast=True), 1)
             receipt = json.loads((output/'receipt.json').read_text())
             self.assertFalse(receipt['complete'])
             self.assertTrue(any(not row['runtime_unchanged'] for row in receipt['results']))
@@ -307,7 +327,10 @@ class RunnerTests(unittest.TestCase):
             with mock.patch.object(runner, 'ROOT', root), mock.patch.object(runner, 'hashes', side_effect=[{}, {}, {'late': 'change'}]), \
                  mock.patch.object(runner, 'execute', return_value=(b'ok', b'', 0, False)), contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(runner.run([('provider', ['probe'])], {}, output, ['provider'], {}), 1)
-            self.assertFalse(json.loads((output/'receipt.json').read_text())['results'][0]['runtime_unchanged'])
+            receipt = json.loads((output/'receipt.json').read_text())
+            self.assertFalse(receipt['results'][0]['runtime_unchanged'])
+            self.assertEqual(receipt['first_failure'], 0)
+            self.assertEqual(receipt['failures'], [0])
 
     def test_parallel_runtime_write_then_restore_is_detected(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -468,6 +491,7 @@ class RunnerTests(unittest.TestCase):
                 self.assertFalse(receipt['complete'])
                 self.assertEqual(receipt['dependency_unchanged'], failure in ['runtime', 'final_runtime'])
                 self.assertEqual(receipt['results'][0]['runtime_unchanged'], failure not in ['runtime', 'final_runtime'])
+                self.assertEqual(receipt['failures'], [0] if failure in ['runtime', 'final_runtime'] else [])
 
     def test_mariadb_skip_is_not_acceptance(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -500,7 +524,7 @@ class RunnerTests(unittest.TestCase):
                     return b'partial', b'problem', 1 if failure == 'exit' else 0, False
                 with mock.patch.object(runner, 'ROOT', root), mock.patch.object(runner, 'execute', side_effect=execute) as called, \
                      contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-                    self.assertEqual(runner.run([('provider', ['php', 'probe']), ('provider', ['php', 'next'])], {}, root/'output', ['provider'], {}), 1)
+                    self.assertEqual(runner.run([('provider', ['php', 'probe']), ('provider', ['php', 'next'])], {}, root/'output', ['provider'], {}, fail_fast=True), 1)
                 called.assert_called_once()
                 receipt = json.loads((root/'output/receipt.json').read_text())
                 self.assertFalse(receipt['complete'])

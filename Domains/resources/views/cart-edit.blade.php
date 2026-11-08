@@ -6,7 +6,12 @@
 <form class="domains-panel domains-section" method="POST" action="{{ route('domains.cart.update',['item'=>$item->id]) }}">
 @include('domains::partials.form-key',['keys'=>['edit'=>$key],'action'=>'edit'])
 <label for="domain">Domain name</label><input id="domain" class="domains-input" name="domain" value="{{ $domain['name'] }}" maxlength="253" required>
-<label for="term">Years</label><select id="term" class="domains-input" name="term">@foreach($item->product->plans()->orderBy('billing_period')->get() as $plan)<option value="{{ $plan->billing_period }}" @selected($plan->id===$item->plan_id)>{{ $plan->billing_period }}</option>@endforeach</select>
+@php
+// Each term's line total, priced like the cart line itself (tax and coupon included); a complimentary account pays $0.00.
+$termTotal=function($plan)use($item){if(\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryAccounts::authorization((int)auth()->id())){return $item->price->format(0);}
+    $probe=$item;if($plan->id!==$item->plan_id){$probe=$item->replicate();$probe->plan_id=$plan->id;$probe->setRelation('plan',$plan);}$price=$probe->price;return $price->format($price->total*$item->quantity);};
+@endphp
+<label for="term">Years</label><select id="term" class="domains-input" name="term">@foreach(app(\Paymenter\Extensions\Servers\Domains\Services\Storefront::class)->checkoutPlans($item->product) as $plan)<option value="{{ $plan->billing_period }}" @selected($plan->id===$item->plan_id)>{{ $plan->billing_period }} {{ (int)$plan->billing_period===1?'year':'years' }} · {{ $termTotal($plan) }}</option>@endforeach</select>
 <button class="domains-btn domains-btn--primary" type="submit">Update domain</button></form>
 </div></div>
 @endcomponent

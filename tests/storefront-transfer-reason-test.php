@@ -7,6 +7,8 @@ require __DIR__.'/Support/native-commerce.php';
 require __DIR__.'/Support/storefront.php';
 require __DIR__.'/Support/storefront-reader.php';
 use Illuminate\Http\Request;
+use Paymenter\Extensions\Servers\Domains\Contracts\RegistrarDriver;
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,AttemptEvidence,Capabilities,DriverResult,Query,ReconciliationResult,RequestContext};
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\{OwnedTransferController, StorefrontController};
 use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
 use Paymenter\Extensions\Servers\Domains\Services\{Rdap, TransferPrecheck};
@@ -102,8 +104,21 @@ $wire = new class implements Paymenter\Extensions\Servers\Domains\Registrars\Eno
         return '<interface-response><Command>'.$command->value.'</Command><ErrCount>0</ErrCount><Done>true</Done><Domains><Domain><Name>transfer-placeholder.com</Name><RRPCode>211</RRPCode><IsPremium>0</IsPremium><IsPlatinum>0</IsPlatinum><IsEAP>0</IsEAP><Properties><Transferable>true</Transferable><MinRegYear>2</MinRegYear></Properties></Domain></Domains></interface-response>';
     }
 };
-$registry->registerBoundReader($b,static fn($binding,$credentials)=>new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver(
-    new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Client($binding,$credentials['token'],'synthetic',$wire),['com']));
+$registry->registerBoundReader($b,static function($binding,$credentials)use($wire,$state){
+    $driver=new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver(new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Client($binding,$credentials['token'],'synthetic',$wire),['com']);
+    return new class($driver,$state) implements RegistrarDriver {
+        public function __construct(private RegistrarDriver $driver,private object $state){}
+        public function binding():AccountBinding{return $this->driver->binding();}
+        public function accountCapabilities(RequestContext $c):Capabilities{return $this->driver->accountCapabilities($c);}
+        public function balance(RequestContext $c):DriverResult{return $this->driver->balance($c);}
+        public function quote(Query $q,RequestContext $c):DriverResult{return $this->driver->quote($q,$c);}
+        public function availability(Query $q,RequestContext $c):DriverResult{if(isset($this->state->exception)){$this->state->plainThrown=($this->state->plainThrown??0)+1;throw $this->state->exception;}return $this->driver->availability($q,$c);}
+        public function readDomain(string $n,RequestContext $c):DriverResult{return $this->driver->readDomain($n,$c);}
+        public function readRenewalDomain(string $n,RequestContext $c):DriverResult{return $this->driver->readRenewalDomain($n,$c);}
+        public function renewalAssessment(Query $q,RequestContext $c):DriverResult{return $this->driver->renewalAssessment($q,$c);}
+        public function reconcile(AttemptEvidence $a,RequestContext $c):ReconciliationResult{return $this->driver->reconcile($a,$c);}
+    };
+});
 $q = new Paymenter\Extensions\Servers\Domains\Catalogue\Query($b,['com'],'register');
 $ports->apply(Paymenter\Extensions\Servers\Domains\Catalogue\Edit::seller($b,'com',['transfer']),$ports->readOffers($q,Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
 foreach ([true,false] as $transferMode) {
@@ -118,5 +133,19 @@ app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::clas
 same('busy',$check(false)['status'],'A transfer-only seller keeps Retry when no registration read confirmed Taken');
 app()->forgetInstance(Paymenter\Extensions\Servers\Domains\Services\Runtime::class);
 app()->forgetInstance(Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class);
+// Plain reader exceptions must not impersonate typed public eligibility reasons.
+$state->exception=new DomainException('premium');$public->states=['active'];
+$failures=[];$spoof=$check();same(1,$state->plainThrown,'The actual bound reader throws the plain exception');if($spoof['status']!=='transfer_unconfirmed'||!str_contains($spoof['html'],'data-domains-retry')||str_contains($spoof['html'],'premium domains')){$failures[]='Plain provider exception must stay unconfirmed with Retry';}
+$state->exception=new Paymenter\Extensions\Servers\Domains\Services\WriteHeld('premium_name');$typed=$check();same('transfer_refused',$typed['status'],'Typed premium refusal remains authoritative');expect(str_contains($typed['html'],'premium domains')&&!str_contains($typed['html'],'data-domains-retry'),'Typed refusal retains fixed safe guidance');
+unset($state->exception);
+$user=commerceUser();$product=$native->product($tlds[0],'register');
+$order=App\Models\Order::create(['user_id'=>$user->id,'currency_code'=>'USD','status'=>'pending']);
+$service=App\Models\Service::withoutEvents(fn()=>App\Models\Service::create(['order_id'=>$order->id,'user_id'=>$user->id,'product_id'=>$product->id,'plan_id'=>$product->plans()->where('billing_period',1)->sole()->id,'price'=>10,'quantity'=>1,'currency_code'=>'USD','status'=>'pending']));
+Paymenter\Extensions\Servers\Domains\Models\Domain::create(['domain'=>'transfer-placeholder.com','sld'=>'transfer-placeholder','tld'=>'com','reservation_name'=>'transfer-placeholder.com','user_id'=>$user->id,'service_id'=>$service->id,'server_id'=>$tlds[0]->server_id,'registrar_key'=>'enom','account_fingerprint'=>$tlds[0]->account_fingerprint,'authority_generation'=>1,'status'=>'needs_review']);
+$reads=$state->calls;$reserved=$check();
+if($reserved['status']!=='transfer_refused'||!str_contains($reserved['html'],'Contact support')||str_contains($reserved['html'],'data-domains-retry')||str_contains($reserved['html'],'name="action"')){$failures[]='Local reservation must refuse with support and no retry or purchase';}
+same($reads,$state->calls,'Reserved names never reach the provider');
+same('taken',$check(false)['status'],'Registration reservation remains Taken');
+foreach($failures as $failure){echo 'FAIL: '.$failure."\n";}expect($failures===[],implode('; ',$failures));
 $nativeSuccessful = true;
 echo "Customer transfer reasons, next steps and registration isolation passed.\n";

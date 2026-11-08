@@ -319,14 +319,14 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         before = hashes()
         fingerprint = runtime_fingerprint() if jobs > 1 else None
     stopped, scheduling = threading.Event(), threading.Lock()
-    processes, first_failure = Processes(), []
+    processes, failures = Processes(), []
 
     def stop(index):
         with scheduling:
-            if not stopped.is_set():
-                first_failure.append(index)
-            stopped.set()
+            if index not in failures:
+                failures.append(index)
             if fail_fast:
+                stopped.set()
                 processes.cancel()
 
     def command(index, worker):
@@ -485,12 +485,15 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         dependency_unchanged, dependency_error = False, final_guard_error
     def finish():
         complete = runner_error is None and len(results) == len(commands) and all(r['exit'] == 0 and r['runtime_unchanged'] for r in results) and dependency_unchanged
+        failed_indexes = sorted(index for index, result in completed.items()
+                                if (result['exit'] != 0 and not result['skipped']) or not result['runtime_unchanged'])
+        first_failure = failures[0] if failures else next(iter(failed_indexes), None)
         timings['run'] = time.monotonic() - started_run
         planned = {argv[-1] for kind, argv in commands if kind != 'lint'}
         receipt = {'runner_error': runner_error, 'final_guard_complete': final_guard_complete,
                    'final_guard_error': final_guard_error, 'timings': timings, 'only_tests': sorted(set(only or [])),
                    'lint_base': lint_base,
-                   'fail_fast': fail_fast, 'first_failure': first_failure[0] if first_failure else None,
+                   'fail_fast': fail_fast, 'first_failure': first_failure, 'failures': failed_indexes,
                    'commands_planned': len(commands),
                    'plan': [{'index': index, 'kind': kind, 'argv': argv} for index, (kind, argv) in enumerate(commands)],
                    'not_run': [{'index': index, 'kind': kind, 'argv': argv} for index, (kind, argv) in enumerate(commands) if index not in completed],
@@ -515,7 +518,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                    'scope': 'Synthetic offline tests and native ZIP install/retention; no live provider, delivered mail, shared-database or production acceptance.'}
         (output/'receipt.json').write_text(json.dumps(receipt, indent=2)+'\n')
         print(json.dumps({'complete': complete, 'commands_run': len(results), 'commands_planned': len(commands),
-                          'first_failure': first_failure[0] if first_failure else None,
+                          'first_failure': first_failure, 'failures': failed_indexes,
                           'cancelled_commands': sum(row['cancelled'] for row in results),
                           'only_tests': sorted(set(only or [])), 'receipt': str(output/'receipt.json')}))
         if (runner_error is None and len(results) == len(commands) and any(r['skipped'] for r in results) and dependency_unchanged

@@ -15,9 +15,8 @@
                 <h1 class="domains-title">{{ $guest ? 'Find a domain' : 'Register a domain' }}</h1>
                 <p class="domains-lede">Type the name you want. We check it across every TLD we sell.</p>
             </div>
-            @if (\Illuminate\Support\Facades\Route::has('domains.domains.transfer') && ($transfersOffered ?? collect($endings)->contains(fn($row) => $row['transfer'] !== null)))<a class="domains-btn domains-btn--ghost" href="{{ route('domains.domains.transfer') }}">Transfer a domain instead</a>
-            @endif
         </div>
+        @if (\Illuminate\Support\Facades\Route::has('domains.domains.transfer') && ($transfersOffered ?? collect($endings)->contains(fn($row) => $row['transfer'] !== null)))@include('domains::partials.acquire-tabs', ['current' => 'register'])@endif
     </div>
     @include('domains::partials.notices', ['fieldKeys' => ['domain'], 'summary' => false])
     @include('domains::partials.order-closed')
@@ -44,7 +43,7 @@
             @if ($error || $errors->has('domain'))<p id="domains-name-error" class="domains-error" role="alert">{{ $error ?? $errors->first('domain') }}</p>@endif
             <p class="domains-endings" aria-label="First-year prices">
                 @foreach ($endings as $ending)
-                    <span><b>.{{ $ending['tld'] }}</b>@if ($ending['price']) {{ $ending['price'] }}/yr @endif</span>
+                    <span><b>.{{ $ending['tld'] }}</b>@if ($ending['price']) {{ $ending['price'] }} first year @endif</span>
                 @endforeach
                 <a class="domains-a" href="{{ route('domains.domains.pricing') }}">All prices</a>
             </p>

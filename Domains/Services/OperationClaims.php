@@ -359,6 +359,16 @@ final class OperationClaims
         return FinancialAdjustments::unattemptedFunding($withoutClaim);
     }
 
+    /** Completed negative proof only; never used to claim, send or release a live worker. */
+    public static function testCallRefusalTerminal(Operation $op): bool
+    {
+        if($op->state!=='rejected'||$op->completed_at===null||$op->safe_code!=='registrar_balance_insufficient'
+            ||!self::testCallHistory($op->attempt['test_call_refusals']??null)||empty($op->attempt['test_call_refusals'])){return false;}
+        foreach($op->attempt['test_call_refusals']as$event){if(new \DateTimeImmutable($event['refused_at'])>$op->completed_at){return false;}}
+        $proof=clone $op;$proof->completed_at=null;
+        return self::testCallRefusalUnsent($proof);
+    }
+
     /** Prior cap refusals or a released price hold retain strict negative proof through unsealed readmission. */
     public static function testCallRefusalUnsent(Operation $op): bool
     {

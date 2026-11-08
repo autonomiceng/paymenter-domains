@@ -291,7 +291,7 @@ final readonly class OwnedDomains
             order:$order, autoPay:$policy!==null&&RenewalAutoPay::ready($service), renewNow:$policy===null?[]:$renewNow,
             renewalOff:$renewal==='Off'?RenewalStop::offReason($renewalState):null,
             autoRenew:$forms&&OwnerAutoRenew::available($renewalState)?['url'=>route('domains.domains.auto-renew',$d->id),'enabled'=>!RenewalStop::ownerOff($renewalState)]:[],
-            dnsCorrection:$dnsCorrection, statusReason:$pill['reason'], refundTo:self::refundTo($d,$op,$order), earlyRenewal:$earlyRenewal, demo:DemoData::is($d), syncPaused:DemoData::syncPaused($d), owner:self::owner($contacts??[]),
+            dnsCorrection:$dnsCorrection, statusReason:$pill['reason'], refundTo:self::refundTo($d,$op,$order), rejectedAcquisition:$op?->state==='rejected'&&in_array($d->status,['registration_rejected','transfer_rejected'],true)?$op->action:null, earlyRenewal:$earlyRenewal, demo:DemoData::is($d), syncPaused:DemoData::syncPaused($d), owner:self::owner($contacts??[]),
             daysLeft:$d->provider_expires_at?(int)\Carbon\CarbonImmutable::parse($this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d'),'UTC')->diffInDays(\Carbon\CarbonImmutable::parse($d->provider_expires_at->format('Y-m-d'),'UTC'),false):null);
         return \Paymenter\Extensions\Servers\Domains\Presentation\DsState::owner($page,$d,$forms&&$caps!==null);
     }
@@ -361,10 +361,11 @@ final readonly class OwnedDomains
     }
     /** A checked renewal invoice as the owner reads it: pending (pay it), paid, or review while we check it.
      * The domain page and the Domains list both read it, so they say the same thing. */
-    public static function issuedState(Operation $cycle, Invoice $invoice): string
+    public static function issuedState(Operation $cycle, Invoice $invoice, ?Domain $domain = null): string
     {
         return match (true) {
             $cycle->state === 'awaiting_payment' && $invoice->status === 'pending' => 'pending',
+            $domain !== null && $cycle->funding_basis === 'complimentary' && FundsWaits::closedRenewal($cycle, $domain) => 'closed',
             $invoice->status === 'paid' && in_array($cycle->state, ['awaiting_payment', 'queued', 'running', 'pending', 'succeeded'], true) => 'paid',
             default => 'review',
         };
@@ -385,9 +386,10 @@ final readonly class OwnedDomains
             if ($invoice->status === 'pending' && RenewalCycles::expiredInvoice($cycle, $now ?? app(Clock::class)->now())) {
                 return ['status' => RenewalCycles::canRetireUnpaid($cycle, $l) ? 'cancelled' : 'review'];
             }
-            return match (self::issuedState($cycle, $invoice)) {
+            return match (self::issuedState($cycle, $invoice, $d)) {
                 'pending' => ['invoice' => route('invoices.show', $invoice)],
                 'paid' => ['status' => 'paid', ...self::goes($cycle)],
+                'closed' => ['status' => 'closed'],
                 default => ['status' => 'review'] };
         }
         // A retired or refunded debt permits a replacement only when billing's cycle proof holds.

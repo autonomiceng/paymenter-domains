@@ -5,7 +5,8 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 /** Public registry restriction. A lock end is not proof that every other transfer requirement is met. */
 final class TransferRestriction extends \DomainException
 {
-    public function __construct(string $reason, public readonly ?\DateTimeImmutable $retryAt = null)
+    public function __construct(string $reason, public readonly ?\DateTimeImmutable $retryAt = null,
+        public readonly ?array $appliedDays = null, public readonly bool $registrarLocked = false)
     {
         parent::__construct($reason);
     }

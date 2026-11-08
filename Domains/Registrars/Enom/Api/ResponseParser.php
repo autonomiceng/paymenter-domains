@@ -79,12 +79,17 @@ final class ResponseParser
     /** The observed order-creation refusal only. A registry error without this text is still uncertain. */
     private function purchaseRefused(#[\SensitiveParameter] array $data): bool
     {
-        if((int)$data['errcount']>100||!is_string($data['rrpcode']??null)||$data['rrpcode']!=='541'
+        if(!preg_match('/^(?:[1-9][0-9]?|100)$/D',$data['errcount'])||!is_string($data['rrpcode']??null)||$data['rrpcode']!=='541'
             ||isset($data['responsecode'])||!$this->noPurchaseFacts($data)){return false;}
         $metadata=['rrpcode','rrptext','command','apitype','language','errcount','responsecount','minperiod','maxperiod',
             'server','site','islockable','isrealtimetld','timedifference','exectime','done','trackingkey','requestdatetime','debug'];
         if(array_diff(array_keys($data),[...$metadata,'contacts','errors','responses'])){return false;}
         foreach($metadata as $key){if(isset($data[$key])&&!is_string($data[$key])){return false;}}
+        if(array_key_exists('contacts',$data)){
+            $contacts=$data['contacts'];
+            if(!is_array($contacts)||array_keys($contacts)!==['registrantemailaddress']
+                ||!is_string($contacts['registrantemailaddress'])||$contacts['registrantemailaddress']===''||strlen($contacts['registrantemailaddress'])>254){return false;}
+        }
         $messages=['Validation error. Failed to create order.','Validation error; failed to add; order(s)'];
         $found=false; $errors=$data['errors']??[];
         if($errors!==''&&$errors!==[]){

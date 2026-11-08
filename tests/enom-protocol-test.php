@@ -62,7 +62,13 @@ same('rejected',$parser->parse(RegistrationCommand::Purchase,$twoErrors)->status
 // controls remain complete only with their explicit matching response count.
 $errorsOnly=str_replace('<ResponseCount>1</ResponseCount>','<ResponseCount>0</ResponseCount>',preg_replace('~<responses>.*?</responses>~s','',$purchaseRefusal));
 same('rejected',$parser->parse(RegistrationCommand::Purchase,$errorsOnly)->status,'A complete errors-only refusal explicitly declares zero responses');
+$countFailures=[];$countRuns=0;
 foreach ([
+    'padded_errcount'=>str_replace('<ErrCount>1</ErrCount>','<ErrCount>01</ErrCount>',$purchaseRefusal),
+    'nested_contact_control'=>str_replace('RegistrantEmailAddress','ErrCount',$purchaseRefusal),
+    'contact_list'=>str_replace('</Contacts>','<RegistrantEmailAddress>SECOND-PRIVATE</RegistrantEmailAddress></Contacts>',$purchaseRefusal),
+    'contact_attributes'=>str_replace('<Contacts>','<Contacts count="1">',$purchaseRefusal),
+    'contact_text'=>preg_replace('~<Contacts>.*?</Contacts>~s','<Contacts>PRIVATE-CONTACT</Contacts>',$purchaseRefusal),
     'missing_response_count'=>str_replace('<ResponseCount>1</ResponseCount>','',$purchaseRefusal),
     'missing_count_errors_only'=>str_replace('<ResponseCount>0</ResponseCount>','',$errorsOnly),
     'missing_errors_count_two'=>str_replace('<ErrCount>1</ErrCount>','<ErrCount>2</ErrCount>',$onlyResponse),
@@ -78,9 +84,10 @@ foreach ([
     'empty_response'=>preg_replace('~<responses>.*?</responses>~s','<responses/>',$purchaseRefusal),
 ] as $case=>$body){
     $result=$parser->parse(RegistrationCommand::Purchase,$body);
-    same(['unknown',null],[$result->status,$result->value('purchase_refusal')],'Incomplete counts never mint refusal proof: '.$case);
+    $countRuns++;if([$result->status,$result->value('purchase_refusal')]!==['unknown',null]){$countFailures[]=$case;echo 'FAIL refusal envelope: '.$case."\n";}else{echo 'PASS refusal envelope: '.$case."\n";}
 }
-
+foreach(['recorded'=>$purchaseRefusal,'response_only'=>$onlyResponse,'errors_only'=>$errorsOnly,'multiple_errors'=>$twoErrors]as$case=>$body){$result=$parser->parse(RegistrationCommand::Purchase,$body);$countRuns++;if($result->status!=='rejected'||$result->value('purchase_refusal')===null){$countFailures[]=$case;}echo 'POSITIVE refusal envelope: '.$case."\n";}
+echo 'Refusal envelope cases run: '.$countRuns."\n";expect($countFailures===[],'Refusal envelope mismatches: '.implode(', ',$countFailures));
 
 foreach ([str_replace(['<Err1>','</Err1>'],['<Err2>','</Err2>'],$purchaseRefusal),str_replace('<RRPCode>541</RRPCode>','<RRPCode>451</RRPCode>',$purchaseRefusal),
     str_replace('<RRPCode>541</RRPCode>','<RRPCode>549</RRPCode>',$purchaseRefusal),str_replace('<RRPCode>541</RRPCode>','<RRPCode>554</RRPCode>',$purchaseRefusal),

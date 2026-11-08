@@ -9,6 +9,7 @@ Route::middleware(['web','auth'])->group(function():void {
 });
 Route::middleware('web')->group(function (): void {
     Route::get('/domains/register', [Storefront::class, 'search'])->name('domains.domains.search');
+    Route::get('/domains/transfer',[\Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedTransferController::class,'show'])->name('domains.domains.transfer');
     Route::get('/domains/search', [Storefront::class, 'searchAlias'])->name('domains.domains.search.alias');
     Route::get('/domains/pricing', [Storefront::class, 'pricing'])->name('domains.domains.pricing');
     Route::post('/domains/check', [Storefront::class, 'check'])->name('domains.domains.check')->block(10, 10);

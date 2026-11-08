@@ -29,7 +29,7 @@ final class RefundProof
         }
         if(EnomAnswers::unprocessed($op,$d)){return;}
         if (PrivacyRetirement::safe($op, $d)) { return; }
-        if (OperationClaims::testCallRefusalUnsent($op)) { return; }
+        if (OperationClaims::testCallRefusalUnsent($op) || OperationClaims::testCallRefusalTerminal($op)) { return; }
         if ($op->action === 'transfer' && array_key_exists('transfer_timeout', $a)) {
             if (!self::transferTimeout($op, $d)) { throw new \DomainException('Transfer is not a definitely-unsent timeout.'); }
             return;

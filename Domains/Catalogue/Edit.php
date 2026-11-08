@@ -27,12 +27,12 @@ final readonly class Edit implements Command
     public static function override(AccountBinding $b, string $tld, Intent $intent, ?array $rule = null, ?bool $sellerTransfers = null): self
     { return new self($b, $tld, 'override', $intent, $rule === null ? null : PricingRule::validate($rule), sellerTransfers: $sellerTransfers); }
     /** The binding is the new seller; an empty action list deselects the ending. */
-    public static function seller(AccountBinding $b, string $tld, array $actions): self
+    public static function seller(AccountBinding $b, string $tld, array $actions, ?Intent $intent = null): self
     {
         if (array_diff($actions, ['register', 'transfer']) !== [] || count(array_unique($actions)) !== count($actions)) {
             throw new \InvalidArgumentException('Invalid seller actions.');
         }
-        return new self($b, $tld, 'seller', actions: $actions);
+        return new self($b, $tld, 'seller', intent: $intent, actions: $actions);
     }
     public static function retainRenewal(AccountBinding $b, string $tld, string $retail): self
     {

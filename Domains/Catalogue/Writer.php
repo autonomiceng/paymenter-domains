@@ -57,13 +57,21 @@ final class Writer implements Catalogue
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Retail upgrade requires unlocked reads.'); }
         Tld::where('catalogue_converted', true)->orderBy('id')->chunkById(100, function ($rows): void {
             foreach ($rows as $tld) {
-                $published = OfferState::decode($tld->catalogue_published_revision);
-                if (($published['retailRule'] ?? 0) === Retail::VERSION) { continue; }
-                $account = Account::where('server_id', $tld->server_id)->sole();
-                $binding = AccountBindings::binding($account);
-                $revision = OfferState::revision($tld, OfferState::decode($account->catalogue_defaults),
-                    DB::table('domains_sales_policies')->where('tld', $tld->tld)->first());
-                $this->apply(Edit::republish($binding, $tld->tld), $revision);
+                // An unpublished own rule remains closed for its ordinary guarded recovery.
+                if ($tld->catalogue_published_revision === null) { continue; }
+                try {
+                    $published = OfferState::decode($tld->catalogue_published_revision);
+                    if (($published['retailRule'] ?? 0) === Retail::VERSION) { continue; }
+                    $account = Account::where('server_id', $tld->server_id)->sole();
+                    $binding = AccountBindings::binding($account);
+                    $revision = OfferState::revision($tld, OfferState::decode($account->catalogue_defaults),
+                        DB::table('domains_sales_policies')->where('tld', $tld->tld)->first());
+                    $this->apply(Edit::republish($binding, $tld->tld), $revision);
+                } catch (\Throwable) {
+                    // The writer rolls back this TLD; an install and healthy siblings can continue.
+                    try { \Illuminate\Support\Facades\Log::warning('Domains retail upgrade deferred.', ['server_id' => (int) $tld->server_id, 'tld_id' => (int) $tld->id]); }
+                    catch (\Throwable) { /* Logging cannot pin the installation. */ }
+                }
             }
         });
     }
@@ -258,14 +266,21 @@ final class Writer implements Catalogue
             || array_diff($old['stops'] ?? [], $new->stops) !== [];
         if ($sell && \Paymenter\Extensions\Servers\Domains\Services\EndingChoices::hidden($t->tld)) { return 'This TLD is hidden.'; }
         if (!$widen) { return null; }
-        $facts = OfferState::facts($t->catalogue_facts);
-        // Unknown/expired metadata queues the selected sold set after this review. Intent grants no sale.
-        if (!$facts || !$facts->fresh($this->clock->now())) { return null; }
-        if (!\Paymenter\Extensions\Servers\Domains\Services\RegistryInputs::supported($edit->binding()->registrarKey,$t->tld,$facts->registryFields) || $facts->renewalSafe !== true
-            || $facts->requiresNameservers !== false || $facts->autoRenewOnly !== false
-            || !in_array(1, $facts->terms['renew'] ?? [], true)
+        return self::termsBlock(OfferState::facts($t->catalogue_facts), $edit->binding()->registrarKey, $t->tld, $sell, $longest, $transfer, $this->clock->now()) === null
+            ? null : 'Explicit verified widening required.';
+    }
+
+    /** Why fresh registrar terms rule out a sale: 'unsupported_facts', 'unsupported_term', or null. Staff pages ask
+     * this too, so they offer only what this writer saves. Unknown or expired terms never block: the review queues a
+     * read of the sold set, and the evaluator holds the sale until it lands. */
+    public static function termsBlock(?Facts $facts, string $registrarKey, string $tld, bool $sell, int $longest, bool $transfer, \DateTimeImmutable $now): ?string
+    {
+        if (!$facts || !$facts->fresh($now)) { return null; }
+        if (!\Paymenter\Extensions\Servers\Domains\Services\RegistryInputs::supported($registrarKey, $tld, $facts->registryFields) || $facts->renewalSafe !== true
+            || $facts->requiresNameservers !== false || $facts->autoRenewOnly !== false) { return 'unsupported_facts'; }
+        if (!in_array(1, $facts->terms['renew'] ?? [], true)
             || $sell && !in_array($longest, $facts->terms['register'] ?? [], true)
-            || $transfer && !in_array(1, $facts->terms['transfer'] ?? [], true)) { return 'Explicit verified widening required.'; }
+            || $transfer && !in_array(1, $facts->terms['transfer'] ?? [], true)) { return 'unsupported_term'; }
         return null;
     }
 
@@ -382,10 +397,10 @@ final class Writer implements Catalogue
     private function mutate(Command $command, Tld $target, $prices, \DateTimeImmutable $now): bool
     {
         if ($command instanceof Edit) {
-            if ($command->kind === 'override') {
+            if ($command->kind === 'override' || $command->kind === 'seller' && $command->intent !== null) {
                 $old = OfferState::decode($target->catalogue_intent);
                 foreach (['sell', 'longest', 'transfers', 'stops'] as $key) { $old[$key] = $command->intent->{$key}; }
-                $target->catalogue_intent = OfferState::json([...$old, 'pricing_rule' => $command->rule]);
+                $target->catalogue_intent = OfferState::json($command->kind === 'override' ? [...$old, 'pricing_rule' => $command->rule] : $old);
             }
             if ($command->kind === 'retail') { $target->catalogue_retained_annual_retail = $command->retail; }
             return true;

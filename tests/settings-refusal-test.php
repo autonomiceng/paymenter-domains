@@ -45,7 +45,8 @@ foreach ([
 ] as $message) {
     same('Check this page, then try again. If it fails again, open System checks on the registrar account.', SettingsActions::refusal(new DomainException($message), 'acceptance'), 'Deliberate generic refusal: '.$message);
 }
-same('Check this page, then try again. If it fails again, open System checks on the registrar account.', SettingsActions::refusal(new DomainException('Audit entry too large. Changes held.'), 'seller'), 'Audit size stays generic elsewhere');
+same('This TLD changed. Reload the page and choose its registrar again.', SettingsActions::refusal(new DomainException('Audit entry too large. Changes held.'), 'seller'), 'A seller action without its TLD requires reloading the registrar choice');
+same('Check this page, then try again. If it fails again, open System checks on the registrar account.', SettingsActions::refusal(new DomainException('Audit entry too large. Changes held.'), 'default_pricing'), 'Audit size stays generic elsewhere');
 same('This was already submitted. Check this page, then try again if you need to.', SettingsActions::refusal(new DomainException('Review key used.'), 'tld_settings'), 'A used confirmation says so');
 same('That is too many changes for one save. Save fewer at a time. Nothing was saved.', SettingsActions::refusal(new DomainException('Audit entry too large. Changes held.'), 'acceptance'), 'What you sell says how to fix a large save');
 // Configure Save: a refused key keeps its words; a registrar that did not answer says so and what to do next.

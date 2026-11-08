@@ -57,6 +57,7 @@ final class DomainListRow
         if ($s->renewalOffShown()) {
             return ['value' => 'Off', 'note' => $s->expiry ? 'Cancels '.CarbonImmutable::parse(substr($s->expiry, 0, 10), 'UTC')->format('M j, Y') : null, 'invoiceMissing' => false, 'invoiceCause' => null, 'invoiceFix' => null];
         }
+        if ($s->renewalClosed) { return ['value'=>'On','note'=>'Renewal did not finish. Contact support.','invoiceMissing'=>false,'invoiceCause'=>null,'invoiceFix'=>null]; }
         $complimentary = $s->renewalPrice === ComplimentaryAccounts::LABEL;
         // Complimentary is said once per row: a pending complimentary order's Expires already says it.
         $price = !$s->renewalInvoiceMissing && $s->renewalPrice && !($complimentary && str_starts_with(self::expires($s)['cause'] ?? '', 'Complimentary. '))

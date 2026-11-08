@@ -139,6 +139,12 @@ final class StorefrontController extends Controller
     private function add(string $name,string $action,int $term,?int $replace=null): int
     {
         $ending=PolicyEndings::parse($name)['tld'];$offer=$this->storefront->offer($ending,$action,$term);
+        // Native add trusts the cookie even after login expires or the visitor changes account.
+        // Keep the old owner's cart intact; native createCart will issue this visitor a new cookie.
+        $cart=\App\Classes\Cart::getOnce();
+        if($cart->exists && $cart->user_id!==null && (int)$cart->user_id!==(int)\Illuminate\Support\Facades\Auth::id()){
+            request()->cookies->remove('cart');
+        }
         return \App\Classes\Cart::add($offer['product'],$offer['plan'],[],['domain'=>$name],1,$replace);
     }
 
