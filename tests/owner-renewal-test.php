@@ -40,7 +40,7 @@ $assertRenewalForm=static function(string $html)use($d):void {
 };$assertRenewalForm($html);
 $form=storefrontDom($html);$options=$form->query('//select[@id="renew-years"]/option');
 same(['1'],array_map(fn($option)=>$option->getAttribute('value'),iterator_to_array($options)),'Owner form offers exactly the supported annual term');
-same('1 year',trim((string)$options->item(0)?->textContent),'Owner form names the annual term');
+$option=$options->item(0);$total=$option?->getAttribute('data-total');expect($total!==''&&str_contains(trim($option->textContent),'1 year · '.$total),'Owner form visibly pairs the term and its exact total');
 foreach (range(2,10) as $years) { same(0,$form->query('//select[@id="renew-years"]/option[@value="'.$years.'"]')->length,'Unsupported longer term is not offered'); }
 same(range(1,10),DomainBilling::terms(new DateTimeImmutable('2027-10-18'),new DateTimeImmutable('2027-10-18T00:00:00Z')),'Horizon admits ten years from expiry day');
 same([1,2],DomainBilling::terms(new DateTimeImmutable('2035-08-01'),new DateTimeImmutable('2027-09-01T12:00:00Z')),'Far expiry narrows the term list');
