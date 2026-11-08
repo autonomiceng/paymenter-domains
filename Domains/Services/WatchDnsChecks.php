@@ -154,8 +154,7 @@ final class WatchDnsChecks
     /** Overflow uses one rotating source plus apex; never an unbounded native lock fanout. */
     private function sources(int $watchId, int $cursor, bool $lock): array
     {
-        $base = WatchSource::where('watch_id',$watchId)->where('state','watch')
-            ->whereExists(fn($q)=>$q->selectRaw('1')->from('services as s')->whereColumn('s.id','domains_watch_sources.service_id')->where('s.status','active'));
+        $base = WatchSource::withActiveWatchServices()->where('watch_id',$watchId)->where('state','watch');
         $prefix = (clone $base)->orderBy('id')->limit(101)->get(); $overflow = $prefix->count() > 100;
         if (!$overflow) { return [$lock ? (clone $base)->orderBy('id')->limit(101)->lockForUpdate()->get() : $prefix, false]; }
         $next = (clone $base)->where('id','>',$cursor)->orderBy('id')->first();
