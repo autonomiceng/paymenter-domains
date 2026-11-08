@@ -132,6 +132,8 @@ final class WatchDiscovery
         DB::table('domains_watch_work')->where('watch_id',$watch->id)->update(['claim'=>null,'lease_until'=>null,'safe_code'=>$reason]);
         $ids=DB::table('domains_watch_notices')->where('watch_id',$watch->id)->where('state','open')->lockForUpdate()->pluck('id');
         DB::table('domains_watch_deliveries')->whereIn('notice_id',$ids)->whereIn('state',['reserved','render_failed'])->update(['state'=>'suppressed','safe_code'=>$reason]);
-        DB::table('domains_watch_notices')->whereIn('id',$ids)->update(['state'=>'suppressed','resolved_at'=>$now]);
+        $handed=DB::table('domains_watch_deliveries')->whereIn('notice_id',$ids)->whereNotIn('state',['reserved','render_failed','suppressed'])->pluck('notice_id');
+        DB::table('domains_watch_notices')->whereIn('id',$ids)->whereIn('id',$handed)->update(['state'=>'resolved','resolved_at'=>$now]);
+        DB::table('domains_watch_notices')->whereIn('id',$ids)->whereNotIn('id',$handed)->update(['state'=>'suppressed','resolved_at'=>$now]);
     }
 }

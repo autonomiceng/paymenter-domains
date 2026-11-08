@@ -40,3 +40,9 @@ in the local transaction. A changed source is archived before its unique service
 After-commit hints enroll ordinary work; lost hints are repaired by the bounded daily sweeps.
 The regression evidence is offline native SQLite, not acceptance of MariaDB concurrency or live
 queue/resolver behavior.
+
+## Deployment prerequisite
+
+The library's discovery and public-reader bindings stay off until the host supplies accepted ports. The current beco-landing demo provider uses a separate discovery producer; a demo walk does not validate this producer. Before launch, the host must bind this WatchDiscovery producer before Domains boots, bind an enabled WatchWork with its accepted DnsReader, and run the scheduler plus an asynchronous queue worker with retry_after at least 180 seconds. The demo must use that same producer and retire its older producer. Host activation belongs to the separate deployment task.
+
+A retained paused watch without a staff pause/resume audit remains paused. This safe default protects old staff intent; authorized staff can use the existing audited Resume monitoring action. When hosting ends, unhanded deliveries are suppressed. A notice with handed-off or uncertain deliveries closes as resolved while preserving each channel's actual delivery outcome; returning hosting does not resend that notice.
