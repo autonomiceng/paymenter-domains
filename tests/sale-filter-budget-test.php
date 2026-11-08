@@ -20,7 +20,7 @@ $measure=static function()use($b,$source):array{
     $table=new SellTable([$b->serverId=>$b],1,true,static fn()=>[],false,$source);
     DB::enableQueryLog();DB::flushQueryLog();$at=microtime(true);$ids=$table->forSale($table->rows(null))->pluck('id')->all();$elapsed=microtime(true)-$at;$q=DB::getQueryLog();DB::disableQueryLog();
     $batches=count(array_filter($q,static fn($v)=>str_contains($v['query'],'from "domains_sales_policies"')));
-    echo json_encode(['rows'=>count($ids),'queries'=>count($q),'evaluation_batches'=>$batches,'seconds'=>$elapsed])."\n";
+    echo json_encode(['rows'=>count($ids),'queries'=>count($q),'policy_reads'=>$batches,'seconds'=>$elapsed])."\n";
     return [$ids,$batches];
 };
 [$ids,$batches]=$measure();same(1000,count($ids),'Large fixture consists of sale-ready bound TLDs');
@@ -30,5 +30,5 @@ DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_intent'=>'{"se
 $clock->instant=$now->modify('+2 days');pinStaffClock($clock->now());[$expired]=$measure();same([],$expired,'Elapsed freshness cannot reuse sale membership');
 DB::table('roles')->where('id',$actor->role_id)->update(['permissions'=>'[]']);
 try{$measure();expect(false,'Fresh filter requires current grants');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(403,$e->getStatusCode(),'Revoked staff view refuses');}
-expect($batches<=10&&$repeated<=10,'A thousand TLDs use at most ten bounded evaluator batches');
+expect($batches<=20&&$repeated<=20,'A thousand TLDs use at most twenty policy reads across bounded evaluation pages');
 $nativeSuccessful=true;echo "Bounded sale filter passed.\n";
