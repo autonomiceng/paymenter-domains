@@ -35,6 +35,7 @@ foreach (['malformed','transport'] as $failure) {
     else { $observation->during=static function():void { throw new RuntimeException('Synthetic primary transport failure'); }; }
     $failureCode=$failure==='malformed'?'read_no_evidence':'read_failed';
     same($failureCode,$failedWork->tick(2)[$d->server_id]['holding'],'All-failed '.$failure.' observation reports failure');
+    $firstFailureAt=$clock->now()->format(DATE_ATOM);
     if($failure==='transport'){
         // Transient failures retry automatically, then stop at the existing five-attempt limit.
         for($retry=1;$retry<5;$retry++){
@@ -54,7 +55,7 @@ foreach (['malformed','transport'] as $failure) {
     if($failure==='transport'){same(5,\Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::current($fresh)->value('tries'),'Transient recovery stops after five actual failed reads');
         same((int)\Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::current($fresh)->value('id'),$current['read_retry']['work_id'],'Retry audit names its actual work');}
     same(['identity'=>ObservationRecords::identity($fresh),'at'=>$clock->now()->format(DATE_ATOM),'code'=>$failureCode],$current['record_failure'],'Current primary failure retained separately');
-    same([...$current['record_failure'],'reason'=>$failureCode],$current['record_hold'],'Current failure holds record stage');
+    same([...$current['record_failure'],'at'=>$firstFailureAt,'reason'=>$failureCode],$current['record_hold'],'The original failure holds the record stage through bounded retries');
     same($expectedCalls,$observation->calls,'First primary failure stops all later domain reads');
     same([],$state->calls,'No record reads or provider writes after primary failure');
     same($operations,$fresh->operations->map->getAttributes()->all(),'All operation and financial evidence retained');
