@@ -22,8 +22,7 @@
     "tests/dns-signals-test.php",
     "tests/public-registry-test.php",
     "tests/rdap-transport-test.php",
-    "tests/namesilo-default-contact-test.php",
-    "tests/enom-nameserver-domains-test.php"
+    "tests/namesilo-default-contact-test.php"
   ],
   "contracts": [
     "tests/demo-c-record-readers-test.php",
@@ -786,7 +785,8 @@
     "tests/customer-initial-read-test.php",
     "tests/dns-summary-readback-test.php",
     "tests/staff-registration-pending-test.php",
-    "tests/staff-operation-sync-test.php"
+    "tests/staff-operation-sync-test.php",
+    "tests/enom-nameserver-domains-test.php"
   ],
   "ui": [],
   "runner": [
