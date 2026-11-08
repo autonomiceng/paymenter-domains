@@ -85,6 +85,6 @@ $act($r,'release');same('queued',$r->fresh()->state,'Release readmits a transfer
 $makeTransfer(1);$state->premium=null;$r=$engine->execute($op->id);same(['held','registrar_read_failed'],[$r->state,$r->safe_code],'The released order really runs its checks again');$state->premium=false;
 // The same transfer as an old catch-all hold: no automatic look here, so the words and Release say so.
 Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$op->id)->update(['safe_code'=>'write_acceptance_required']);$r=$op->fresh();
-Illuminate\Support\Facades\Auth::setUser($staff);$notice=RequestFacts::notice($r);same(['Not sent: reason not saved.','Release to check this order again.','release',null],[$notice['title'],$notice['body'],$notice['action'],$notice['link']??null],'An old hold with no automatic look claims no cause');
+Illuminate\Support\Facades\Auth::setUser($staff);$notice=RequestFacts::notice($r);same(['Not sent: reason not saved.','Release hold queues the test transfer to send to NameSilo. Release to check this order again.','release',null],[$notice['title'],$notice['body'],$notice['action'],$notice['link']??null],'An old hold with no automatic look claims no cause');
 $act($r,'release');$makeTransfer(1);$state->available=false;$r=$engine->execute($op->id);same(['held','name_unavailable'],[$r->state,$r->safe_code],'Release finds the real answer');$state->available=true;
 echo "Transfer dispatch input, feature and pre-seal refusal proofs passed.\n"; $nativeSuccessful=true;

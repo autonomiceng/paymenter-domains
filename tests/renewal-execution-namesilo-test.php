@@ -60,7 +60,7 @@ for ($cycle=0;$cycle<2;$cycle++) {
         app()->instance(Clock::class,$clock);
         expect(app(Clock::class)===$clock,'Release offer and writer share the existing fixture clock');
         $notice=Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::notice($renewal->fresh());
-        same(['Turn off auto-renew at NameSilo, then release the hold.','release'],[$notice['body']??null,$notice['action']??null],'Unsent notice names release rather than completion reads');
+        same(['Release hold queues the test renewal to send to NameSilo. Turn off auto-renew at NameSilo, then release the hold.','release'],[$notice['body']??null,$notice['action']??null],'Unsent notice names release rather than completion reads');
         $fresh=$renewal->fresh();$ticket=Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::ticket($staff->id,$holding->id,$fresh->id,'release',Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::stamp($fresh,$holding->fresh()),$clock);
         (new Paymenter\Extensions\Servers\Domains\Services\StaffOperations($clock))->run($staff,$holding->id,$fresh->id,'release',$ticket,'Corrected provider auto-renew and reviewed unsent renewal');
         same('queued',$renewal->fresh()->state,'NameSilo staff release queues original paid renewal');same(null,$renewal->fresh()->safe_code,'NameSilo refusal cleared');

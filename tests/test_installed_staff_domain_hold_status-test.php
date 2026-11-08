@@ -28,15 +28,15 @@ foreach([false,true] as $ordersOn){
     Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])
         ->callAction('hold')->assertHasNoActionErrors()->assertNotified('Request on hold');
     [$head,$request]=$page($op);
-    $check(str_contains($head,'Under review')&&str_contains($head,'put on hold by staff'),'Held transfer header names the staff hold');
-    $check(str_contains($request,'Under review')&&str_contains($request,'Put on hold by staff'),'Held request activity names the staff hold');
+    $check(str_contains($head,'On hold')&&str_contains($head,'Put on hold by Alex Admin'),'Held transfer header names the staff hold');
+    $check(str_contains($request,'On hold')&&str_contains($request,'Put on hold by Alex Admin'),'Held request activity names the staff hold');
     DB::table('domains_accounts')->where('server_id',$op->server_id)->update(['processing_enabled'=>$ordersOn]);
     $clock->instant=$clock->now()->modify('+1 minute');
     Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])
         ->callAction('release')->assertHasNoActionErrors()->assertNotified('Hold released');
     same(['queued',null],[$op->fresh()->state,$op->fresh()->safe_code],'Release clears the hold independently of Orders');
     [$head,$request,$entry,$text]=$page($op);
-    $check(!str_contains(strtolower($head.' '.$request),'put on hold by staff'),'Released header and request activity drop the old staff hold');
+    $check(!str_contains($head.' '.$request,'Put on hold by Alex Admin'),'Released header and request activity drop the old staff hold');
     if($ordersOn){
         $check(str_contains($head,'Pending transfer')&&str_contains($head,'Transfer in progress. Nothing to do yet.'),'Running orders leave the domain transfer in progress');
         $check(str_contains($request,'In progress'),'Running orders leave the request activity in progress');
@@ -56,7 +56,7 @@ foreach([false,true] as $ordersOn){
     Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])
         ->callAction('hold')->assertHasNoActionErrors()->assertNotified('Request on hold');
     [$head,$request,$entry,$text,$xpath]=$page($op);
-    $check(str_contains($head,'put on hold by staff')&&str_contains($request,'Put on hold by staff'),'A new staff hold is the real current cause');
+    $check(str_contains($head,'Put on hold by Alex Admin')&&str_contains($request,'Put on hold by Alex Admin'),'A new staff hold is the real current cause');
     $check($entry('Put on hold')->length===2,'Activity includes both staff holds');
     $latest=$xpath->query('//*['.$class('domains-rail').']//*['.$class('domains-trace-title').']')->item(0);
     $check($text($latest)==='Put on hold','The newer hold precedes the historical release');
@@ -84,7 +84,7 @@ DB::table('domains_operations')->where('id',$renewal->id)->update(['state'=>'que
 foreach([false,true] as $ordersOn){
     DB::table('domains_accounts')->where('server_id',$renewal->server_id)->update(['processing_enabled'=>$ordersOn]);
     [$head]=$page($renewal);
-    same(!$ordersOn,str_contains($head,'Turn Orders on in Registrars.'),'Queued renewal header matches the account Orders switch: '.$head);
+    same(!$ordersOn,str_contains($head,'Turn them on in Registrars.'),'Queued renewal header matches the account Orders switch: '.$head);
 }
 if($failures){fwrite(STDERR,implode("\n",$failures)."\n");}
 same([],$failures,'Domain header and Activity reflect the current hold');
