@@ -87,6 +87,7 @@ final class FundsWaits
                     AcquisitionRetirement::retainClosure($current,$l['transactions']->where('invoice_id',$current->invoice_id),
                         $l['invoices']->firstWhere('id',$current->invoice_id)?->status,$now);
                     $l['domain']->update(['status'=>$current->action==='transfer'?'transfer_rejected':'registration_rejected']);
+                    if($current->funding_basis==='complimentary'){NativeDomainGuard::terminal($l,$current);}
                 });
                 // A complimentary receipt has no customer payment to return.
                 if($op->funding_basis!=='complimentary'){app(Refunds::class)->creditRejected((int)$op->id);}

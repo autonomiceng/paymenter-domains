@@ -739,7 +739,8 @@
     "tests/renewal-completion-claims-test.php",
     "tests/complimentary-adoption-mode-test.php",
     "tests/complimentary-receipt-membership-test.php",
-    "tests/complimentary-renewal-cutoff-test.php"
+    "tests/complimentary-renewal-cutoff-test.php",
+    "tests/complimentary-funds-atomic-test.php"
   ],
   "ui": [],
   "runner": [
