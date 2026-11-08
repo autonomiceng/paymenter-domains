@@ -41,7 +41,7 @@ foreach(['changed'=>['20.00','actual_charge_changed'],'overrun'=>['16.00','actua
  [$engine,$writer,$completion]=$compose($b);same('pending',$engine->run($op->id,$writer)->state,'Real two-year send');$state->expiry='2029-10-18';$held=$completion->run($op->id);same($reason,$held->safe_code,'Real captured financial hold');
  app()->instance(\Paymenter\Extensions\Servers\Domains\Services\RenewalCompletion::class,$completion);app()->instance(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class,$renewBindings);
  $work=$renewalRuntime($b,$engine,$writer,$completion);$observe=static function()use($work,$op):void{app(\Paymenter\Extensions\Servers\Domains\Services\RuntimeDispatch::class)->enqueue($op->id,true);\Illuminate\Support\Facades\Queue::assertPushed(\Paymenter\Extensions\Servers\Domains\Jobs\RunOperation::class,fn($job)=>$job->operationId===$op->id);(new \Paymenter\Extensions\Servers\Domains\Jobs\RunOperation($op->id))->handle($work);};
- $attempt=$held->attempt;$cost=$held->cost;$amount=$held->amount;$expiry=$d->fresh()->provider_expires_at->format('Y-m-d');$writes=$state->writes;$calls=count($state->calls);
+ $rawProof=[$held->getRawOriginal('attempt'),$held->getRawOriginal('cost')];$attempt=$held->attempt;$cost=$held->cost;$amount=$held->amount;$expiry=$d->fresh()->provider_expires_at->format('Y-m-d');$writes=$state->writes;$calls=count($state->calls);
  $page=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id]);$page->assertActionVisible('resume_reads')->callAction('resume_reads')->assertNotified('Status checks restarted');
  same($calls,count($state->calls),'Audited action makes no inline provider request');
  $state->charge='16.02';
@@ -49,12 +49,12 @@ foreach(['changed'=>['20.00','actual_charge_changed'],'overrun'=>['16.00','actua
  $state->during=static function()use($completion,$op,$state):void{$before=count($state->calls);$completion->run($op->id);same($before,count($state->calls),'A concurrent worker cannot consume the same resume');};
  try{$observe();}catch(Throwable $error){$failures[]=$case.': changed observation must be retained without replacing frozen proof ('.$error::class.')';}
  $fresh=$op->fresh();$observations=$fresh->policy['captured_charge_observations']??[];
- $check(count($observations)===1&&\Paymenter\Extensions\Servers\Domains\Services\WriteMoney::compare($observations[0]['proof']['charge']['amount']??'0','16.02')===0,$case.': changed charge is separately retained');
- $check($fresh->attempt===$attempt&&$fresh->cost===$cost&&$fresh->amount===$amount,$case.': original attempt, actual cost and customer amount stay byte-equivalent');
+ $check(count($observations)===1&&\Paymenter\Extensions\Servers\Domains\Services\WriteMoney::compare($observations[0]['proof']['charge']['amount']??'0.00','16.02')===0,$case.': changed charge is separately retained');
+ $check([$fresh->getRawOriginal('attempt'),$fresh->getRawOriginal('cost')]===$rawProof&&$fresh->attempt===$attempt&&$fresh->cost===$cost&&$fresh->amount===$amount,$case.': original attempt, actual cost and customer amount stay byte-equivalent');
  $check($fresh->state==='uncertain'&&$fresh->safe_code===$reason&&$d->fresh()->provider_expires_at->format('Y-m-d')===$expiry&&$d->fresh()->renewal_policy['automatic_spend_paused'],$case.': changed observation keeps financial hold, expiry and spending pause');
  $calls=count($state->calls);$completion->run($op->id);$check($calls===count($state->calls),$case.': automatic reads stop after the one resumed observation');
  $page=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id]);$check(!($page->instance()->getAction('approve_charge',false)?->isVisible()??false),$case.': different charge cannot approve original evidence');
- if(!class_exists(\Paymenter\Extensions\Servers\Domains\Services\CapturedChargeReview::class)){continue;}
+ if(!is_file(dirname(__DIR__).'/Domains/Services/CapturedChargeReview.php')){continue;}
  // A failed read is consumed too and cannot reuse a previous successful observation for approval.
  $page->callAction('resume_reads');$state->fail=\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Order;$observe();$state->fail=null;
  same(null,($op->fresh()->policy['captured_charge_observations'][1]['proof']??null),'Unavailable read retains no invented proof');$calls=count($state->calls);$completion->run($op->id);same($calls,count($state->calls),'Failed one-read permission stays consumed');
@@ -79,9 +79,9 @@ foreach(['changed'=>['20.00','actual_charge_changed'],'overrun'=>['16.00','actua
  Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('resume_reads');$observe();$unchanged=$op->fresh()->getRawOriginal();
  $stale->callMountedAction();same($unchanged,$op->fresh()->getRawOriginal(),'Stale approval changes nothing');
  $fresh=$op->fresh();$ticket=\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::ticket($staff->id,$d->id,$op->id,'approve_charge',\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::stamp($fresh,$d->fresh()),$clock);
- $page=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('approve_charge',['reason'=>'Approve the same incurred charge after review'])->assertHasNoActionErrors()->assertNotified('Captured charge approved')->assertActionHidden('approve_charge');
- $done=$op->fresh();same(['succeeded','2029-10-18'],[$done->state,$d->fresh()->provider_expires_at->format('Y-m-d')],'Approval completes only the proved expiry');
- same([$attempt,$cost,$amount],[$done->attempt,$done->cost,$done->amount],'Approval never rewrites frozen proof, actual cost or customer amount');
+ $calls=count($state->calls);$page=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('approve_charge',['reason'=>'Approve the same incurred charge after review'])->assertHasNoActionErrors()->assertNotified('Captured charge approved')->assertActionHidden('approve_charge');
+ same($calls,count($state->calls),'Approving retained proof makes no provider request');$done=$op->fresh();same(['succeeded','2029-10-18'],[$done->state,$d->fresh()->provider_expires_at->format('Y-m-d')],'Approval completes only the proved expiry');
+ same($rawProof,[$done->getRawOriginal('attempt'),$done->getRawOriginal('cost')],'Approval preserves original encrypted bytes');same([$attempt,$cost,$amount],[$done->attempt,$done->cost,$done->amount],'Approval never rewrites frozen proof, actual cost or customer amount');
  expect($d->fresh()->renewal_policy['automatic_spend_paused']&&$d->fresh()->renewal_policy['owner_auto_renew']===false,'Approval does not clear any future spending pause or owner preference');same('paid',App\Models\Invoice::findOrFail($done->invoice_id)->status,'The zero receipt remains Paid');
  $before=[$done->getRawOriginal(),$d->fresh()->getRawOriginal()];
  try{(new \Paymenter\Extensions\Servers\Domains\Services\StaffOperations($clock))->run($staff,$d->id,$op->id,'approve_charge',$ticket,'Replay old captured approval');expect(false,'Old approval must refuse');}catch(DomainException){}
