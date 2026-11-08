@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence;
 Paymenter\Extensions\Servers\Domains\Services\FoundationSchema::install();
 storefrontViews();
 $now=new DateTimeImmutable('2026-11-07T12:00:00+00:00');
-$d=new Domain(['id'=>73,'domain'=>'new-example.com','status'=>'active','registrar_key'=>'enom','server_id'=>1,'authority_generation'=>1,'account_fingerprint'=>str_repeat('a',64),'observation'=>[]]);
+$d=new Domain(['id'=>73,'domain'=>'new-placeholder.com','status'=>'active','registrar_key'=>'enom','server_id'=>1,'authority_generation'=>1,'account_fingerprint'=>str_repeat('a',64),'observation'=>[]]);
 $page=new OwnedDomain(name:$d->domain,status:'Active',tone:'ok',expiry:'2027-11-07',renewal:'On',renewalPrice:'$10.99',actions:['show'=>'/domains/73'],progress:[],setup:[],transfer:[],management:['lock'=>['label'=>'Transfer lock','state'=>null,'actions'=>[]]],testEnvironment:true);
 require dirname(__DIR__).'/Domains/routes/web.php';require dirname(__DIR__).'/Domains/routes/owned.php';app('router')->getRoutes()->refreshNameLookups();
 $facts=RecordFamilies::read($d,$now);$page=RecordFamilies::owner($page,$facts);

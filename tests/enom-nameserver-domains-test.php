@@ -63,7 +63,7 @@ for ($i = 0; $i < 200; ++$i) { $rows .= $row('domain'.$i.'.example.com'); }
 same(200, count($parsed('<GetAllDomains>'.$rows.'</GetAllDomains>')->value('domains')), 'Exact 200-domain response boundary');
 foreach (['', '<GetAllDomains>PRIVATE-TEXT</GetAllDomains>', '<GetAllDomains><Unexpected/></GetAllDomains>',
     '<GetAllDomains/><GetAllDomains/>', '<GetAllDomains><DomainDetail/></GetAllDomains>',
-    '<GetAllDomains><DomainDetail><DomainName>example.com</DomainName><DomainName>other.com</DomainName></DomainDetail></GetAllDomains>',
+    '<GetAllDomains><DomainDetail><DomainName>example.com</DomainName><DomainName>other.example.net</DomainName></DomainDetail></GetAllDomains>',
     '<GetAllDomains>'.$row('example.com').$row('EXAMPLE.COM').'</GetAllDomains>',
     '<GetAllDomains>'.$rows.$row('overflow.example.com').'</GetAllDomains>'] as $invalid) {
     $reply = $parsed($invalid);
