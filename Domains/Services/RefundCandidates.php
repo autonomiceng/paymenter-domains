@@ -26,7 +26,7 @@ final class RefundCandidates
     public static function matches(Operation $op, array $funding): bool
     {
         return $op->state==='rejected' && ($op->funding_basis==='paid_invoice'||($op->funding_basis==='complimentary'&&$op->action==='register'&&$op->safe_code===RegistrationRefusals::CODE
-                &&($op->service?->status!=='cancelled'||$op->service?->expires_at!==null))) && in_array($op->action,self::ACTIONS,true)
+                &&!\App\Models\Service::whereKey($op->service_id)->where('status','cancelled')->whereNull('expires_at')->exists())) && in_array($op->action,self::ACTIONS,true)
             && !in_array($op->safe_code,self::SKIPPED,true) && !array_key_exists('refund',$funding);
     }
 }

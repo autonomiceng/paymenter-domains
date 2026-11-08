@@ -72,7 +72,7 @@ final class DomainPage
             if (self::rejected($d)) {
                 $transfer = $d->rejectedAcquisition === 'transfer' || $d->statusReason === DomainStatus::STATES['transfer_rejected'][1];
                 return ['missing' => false, 'tone' => null, 'value' => $transfer ? 'Not transferred' : 'Not registered',
-                    'note' => trim(($transfer ? 'The domain stays at your current registrar. ' : '').(self::REFUND[$d->refundTo ?? ''] ?? ''))];
+                    'note' => trim(($transfer ? 'The domain stays at your current registrar. ' : '').(($d->order['returned'] ?? false) ? ($d->order['return'] ?? '') : (self::REFUND[$d->refundTo ?? ''] ?? '')))];
             }
             $said = str_starts_with(self::notice($d, $support, $s)['text'] ?? '', 'Complimentary. ');
             if ($order = DomainListRow::orderExpires($d->order, $support, funding: !$said)) { return $order; }

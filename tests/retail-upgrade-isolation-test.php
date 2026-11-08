@@ -7,8 +7,8 @@ use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferState,Retail};
 use Paymenter\Extensions\Servers\Domains\Services\{Installation,NativeServerGuard};
 extract(commerceFixture(true));
 foreach($tlds as$t){$p=OfferState::decode($t->fresh()->catalogue_published_revision);unset($p['retailRule']);DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_published_revision'=>OfferState::json($p)]);}
-$unpublished=$tlds[1]->replicate();$unpublished->tld='unpublished';$unpublished->catalogue_published_revision=null;$unpublished->save();
-$nullBefore=$unpublished->getRawOriginal();$price=$native->product($tlds[0],'register')->plans()->where('billing_period',1)->sole()->prices()->sole();
+$unpublished=$tlds[1]->fresh()->replicate();$unpublished->tld='unpublished';$unpublished->catalogue_published_revision=null;$intent=OfferState::decode($unpublished->catalogue_intent);$intent['pricing_rule']=['mode'=>'unreadable'];$unpublished->catalogue_intent=OfferState::json($intent);$unpublished->save();
+$nullBefore=$unpublished->fresh()->getRawOriginal();$price=$native->product($tlds[0],'register')->plans()->where('billing_period',1)->sole()->prices()->sole();
 $rows=static fn($id)=>[DB::table('domains_tlds')->where('id',$id)->first(),DB::table('domains_prices')->where('server_id',$tlds[0]->server_id)->orderBy('id')->get()->toJson(),DB::table('prices')->where('id',$price->id)->first()];
 DB::table('prices')->where('id',$price->id)->update(['price'=>'0.01']);
 $before=serialize($rows($tlds[0]->id));$logs=0;
