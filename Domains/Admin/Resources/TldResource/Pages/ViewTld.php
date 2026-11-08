@@ -132,7 +132,11 @@ class ViewTld extends ViewRecord
         $sync=[self::entry('Last updated',isset($refresh['succeeded_at'])?'set':'Not yet',
             isset($refresh['due_at'])?Sheet::moment((int)$refresh['due_at'],'Next update'):'No update scheduled. Check Site setup on the Registrar account page, and the background worker.',
             at:isset($refresh['succeeded_at'])?(int)$refresh['succeeded_at']:null,side:[$this->syncPricesAction()->label('Sync prices')])];
-        if($failure=TldFacts::syncFailure((int)$t->server_id)){$sync[]=self::entry('Last refresh failure','Refresh failed',$failure['cause'],'danger');}
+        if($failure=TldFacts::syncFailure((int)$t->server_id)){
+            $cause=$failure['cause'];
+            if(isset($refresh['failed_at'])){$cause=new HtmlString(e($cause).' '.Sheet::moment((int)$refresh['failed_at'])->toHtml());}
+            $sync[]=self::entry('Last refresh failure','Refresh failed',$cause,'danger');
+        }
         return $schema->components([
             Sheet::split([Sheet::section('Sales',$sales),Sheet::section('Price sync',$sync)],[$this->activity()]),
             // A copy renders as a button here; the menu keeps its own item view.
