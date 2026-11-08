@@ -36,6 +36,9 @@ foreach(['split','returned','credited',null] as $index=>$expected){
         $html=view('domains::partials.owner-renew',['domain'=>$dto,'summary'=>null,'support'=>null])->render();$dom=storefrontDom($html);
         if(!str_contains($html,$action==='transfer'?'Not transferred':'Not registered')){$failures[]=$action.':'.$index.': real Blade lacks rejected expiry';}
         if($dom->query('//dd/span[contains(@class,"domains-sub") and not(normalize-space())]')->length){$failures[]=$action.':'.$index.': empty expiry subline';}
+        expect(!str_contains($html,'Renewal price')&&!str_contains($html,'Renewal invoices'),'Rejected acquisitions offer no future renewal');
+        $summary=(new \Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,'managed',$saved->domain_id,$clock->now()->getTimestamp());
+        if($summary){$renew=\Paymenter\Extensions\Servers\Domains\Presentation\DomainListRow::renewal($summary);expect($renew['value']!=='On'&&$renew['note']===null,'Rejected acquisition list has no On price or renewal promise');}
         expect(!str_contains($html,'after the next sync')&&!str_contains($html,'Pay invoice'),'No future expiry or renewal payment promise');
         if(in_array($expected,['split','returned'],true)){expect(str_contains($dto->order['return']??'','checking its progress'),'Pending gateway plan retains truthful progress');}
 
