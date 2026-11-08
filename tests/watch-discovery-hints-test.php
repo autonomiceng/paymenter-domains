@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\WatchSource;
 use Paymenter\Extensions\Servers\Domains\Services\DomainReservations;
 $makeEngine($bindingFor(0),static fn()=>$purchaseRefusal);$refused=$runRegistration($new('release-placeholder.com'));
+app()->offsetUnset(Paymenter\Extensions\Servers\Domains\Services\Runtime::class);app()->offsetUnset(Paymenter\Extensions\Servers\Domains\Services\RuntimePorts::class);
 $f=discoveryFixture();extract($f);$property->update(['value'=>'release-placeholder.com']);$sweep();
 $target=DB::table('domains_watch_discovery')->where('product_id',$product->id);$target->update(['hint'=>false,'due_at'=>$clock->at+86400]);
 $before=$refused->fresh()->only(['attempt','funding','cost','state']);
