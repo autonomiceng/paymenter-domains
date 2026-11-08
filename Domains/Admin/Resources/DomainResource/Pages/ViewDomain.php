@@ -164,8 +164,8 @@ class ViewDomain extends ViewRecord
     private function notices(Domain $d): array
     {
         $out=[];
-        if(Staff::can('admin.domains.fund')){foreach($d->operations()->where('state','held')->get() as $op){
-            try{if($message=\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::message($op,Staff::can('admin.domains.manage'))){
+        if(Staff::can('admin.domains.fund')||Staff::can(Staff::COSTS)){foreach($d->operations()->where('state','held')->get() as $op){
+            try{if($message=\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::message($op,Staff::can(Staff::COSTS)&&Staff::can('admin.domains.fund')&&Staff::can('admin.domains.manage'))){
                 if(!Staff::can(Staff::COSTS)){$message='Registrar cost approval is needed. Ask staff with access to domain costs to review it.';}
                 $out[]=Callout::make($message)->status('danger')->columnSpanFull();
             }}

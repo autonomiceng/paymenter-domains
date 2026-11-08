@@ -75,6 +75,31 @@ $check('Cost permission revoked after modal mount',static function()use($staff,$
     same($before,DB::table('domains_complimentary_approvals')->count(),'Revoked cost access adds no approval audit');
 });
 $staff->role()->first()->update(['permissions'=>$all]);
+[$notice,$d]=$hold('approval-cost-reader-placeholder.com');
+foreach([[Staff::VIEW,Staff::COSTS],[Staff::VIEW,Staff::COSTS,'admin.domains.manage'],[Staff::VIEW,Staff::COSTS,'admin.domains.fund']] as $permissions){
+    $check('Cost reader notice '.implode(',',$permissions),static function()use($staff,$d,$permissions):void {
+        $staff->role()->first()->update(['permissions'=>$permissions]);
+        $page=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$d->id])->assertActionHidden('approveComplimentaryCost');
+        $html=$page->html();
+        expect(str_contains($html,'Needs approval: registrar cost $8.01 is above the usual $8.00.'),'Cost-authorized staff see the approval notice');
+        expect(str_contains($html,'Ask staff with domain cost, management and funding permissions to approve this cost.'),'Staff without the full grant are directed to an authorized approver');
+        expect(!str_contains($html,'Use Approve registrar cost'),'Notice never offers an approval the current staff cannot perform');
+    });
+}
+$staff->role()->first()->update(['permissions'=>$all]);
+[$fractional,$d]=$hold('approval-exact-placeholder.com');
+$fractional->update(['policy'=>[...$fractional->policy,'complimentary_cost_review'=>['amount'=>'8.0040','usual'=>'8.0000']]]);
+$check('Exact stored approval costs',static function()use($staff,$d,$fractional):void {
+    $page=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$d->id]);
+    $message='Needs approval: registrar cost $8.0040 is above the usual $8.0000.';
+    expect(str_contains($page->html(),$message),'The cost notice preserves both stored decimal amounts');
+    $page->mountAction('approveComplimentaryCost')->setActionData(['reason'=>'Approve the exact displayed amount']);
+    expect(str_contains((string)$page->instance()->getAction('approveComplimentaryCost')->getModalDescription(),$message),'The approval modal preserves both stored decimal amounts');
+    expect(str_contains($page->effects['partials']['action-modals.0']??'',$message),'The rendered approval modal shows the exact amount to authorize');
+    $page->callMountedAction()->assertHasNoActionErrors()->assertNotified('Registrar cost approved');
+    same('queued',$fractional->fresh()->state,'The displayed exact quote can be approved');
+    same(0,\Paymenter\Extensions\Servers\Domains\Services\WriteMoney::compare('8.0040',DB::table('domains_complimentary_approvals')->where('operation_id',$fractional->id)->sole()->amount),'The approval audit retains the exact displayed amount');
+});
 [$broken,$d]=$hold('approval-unreadable-placeholder.com');
 DB::table('domains_operations')->where('id',$broken->id)->update(['policy'=>'unreadable-retained-policy']);
 $check('Unreadable cost details',static function()use($staff,$d):void {
