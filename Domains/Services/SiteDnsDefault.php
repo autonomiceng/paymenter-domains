@@ -22,7 +22,11 @@ final class SiteDnsDefault
         $p=is_string($id)&&ctype_digit($id)?WatchProfile::whereKey($id)->when($lock,fn($q)=>$q->lockForUpdate())->first():null;
         return ManagedDnsSetup::usable($p)?$p:null;
     }
-    public static function uses(int $id): bool { return $id>0 && (int)self::profile()?->id===$id; }
+    public static function uses(int $id): bool
+    {
+        if($id<1){return false;}$rows=self::query()->get();
+        return $rows->count()===1 && $rows[0]->type==='string' && !$rows[0]->encrypted && $rows[0]->value===(string)$id;
+    }
     public static function watchProfile(WatchName $watch,bool $lock=false): ?WatchProfile
     {
         // An explicit watch choice, including an unusable one, is never silently replaced.
