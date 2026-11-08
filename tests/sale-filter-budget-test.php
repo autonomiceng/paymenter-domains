@@ -32,7 +32,7 @@ DB::enableQueryLog();DB::flushQueryLog();$small=$thousand->forSale($thousand->ro
 same(1000,$small->count(),'Candidate scope is applied before sale evaluation');
 $focused=static function()use($b,$source):array{$table=new SellTable([$b->serverId=>$b],1,true,static fn()=>[],false,$source);return $table->forSale($table->rows('com'))->pluck('id')->all();};
 $original=$t->fresh()->getRawOriginal();$policyOriginal=(array)DB::table('domains_sales_policies')->where('tld','com')->sole();
-$price=DB::table('domains_prices')->where('server_id',$b->serverId)->where('tld','com')->where('action','register')->where('term',1)->sole();
+$price=DB::table('domains_prices')->where('server_id',$b->serverId)->where('tld','com')->where('action','renew')->where('term',1)->sole();
 foreach(['intent','facts','price','seller']as$change){
     if($change==='intent'){DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_intent'=>'{"sell":false}']);}
     if($change==='facts'){DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>null]);}

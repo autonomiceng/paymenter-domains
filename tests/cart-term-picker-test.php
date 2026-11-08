@@ -50,7 +50,7 @@ $case('read failure and retry',static function()use($broken,$render,$item):void{
     try{expect($broken->checkoutPlanChoices($item->product)['failed'],'Logger failure preserves the failed-read outcome');}finally{Illuminate\Support\Facades\Cache::swap($cache);Illuminate\Support\Facades\Log::swap($log);}
     $broken->broken=false;$x=$render();expect(!str_contains($x->evaluate('string(//body)'),'could not load the year choices'),'Fresh healthy read recovers');
     same(1,$x->query('//select[@name="term"]/option[@value="1"]')->length,'Healthy sibling survives');
-    Illuminate\Support\Facades\DB::table('prices')->where('plan_id',$item->plan_id)->update(['price'=>'0.01']);
+    Illuminate\Support\Facades\DB::table('prices')->where('plan_id',$item->fresh()->plan_id)->update(['price'=>'0.01']);
     $x=$render();expect(str_contains($x->evaluate('string(//body)'),'No years are currently available'),'Legitimate empty offers differ from read failure');
 });
 expect($failures===[],implode("\n",$failures));
