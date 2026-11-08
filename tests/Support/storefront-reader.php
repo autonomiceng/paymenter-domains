@@ -12,11 +12,11 @@ function storefrontTransferReader(object $state): Paymenter\Extensions\Servers\D
             #[SensitiveParameter] string $uid, #[SensitiveParameter] string $token, int $timeoutMs): string
         {
             $this->state->calls++;
-            if (isset($this->state->exception)) { throw $this->state->exception; }
             return '<interface-response><Command>'.$command->value.'</Command><ErrCount>0</ErrCount><Done>true</Done><Domains><Domain><Name>transfer-placeholder.com</Name><RRPCode>211</RRPCode><IsPremium>0</IsPremium><IsPlatinum>0</IsPlatinum><IsEAP>0</IsEAP><Properties><Transferable>'.($this->state->transferable??'true').'</Transferable></Properties></Domain></Domains></interface-response>';
         }
     };
     $registry->register('enom', ['token'], $verifier, static function ($binding, $credentials) use ($wire, $state) {
+        if (isset($state->exception) && $state->calls > $state->exceptionAfterCalls) { throw $state->exception; }
         if ($state->fail) { throw new RuntimeException('Enom account-private-key vendor diagnostic'); }
         return new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver(
             new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Client($binding, $credentials['token'], 'synthetic', $wire), ['com']);
