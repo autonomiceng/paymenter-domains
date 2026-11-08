@@ -2,6 +2,9 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/renewal-execution.php';
+require __DIR__.'/Support/staff-panel.php';
+use Livewire\Livewire;
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation;
 use Illuminate\Support\Facades\{Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Catalogue\{Context, Cost, FeedObserved, OfferState, Query, TermSupport};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CostUnit, Environment, Money};
@@ -11,6 +14,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{EnomTestSendLimitSchema, Rene
 // Native debt, funding, seal and completion need the existing financial fixture; a pure rule test cannot
 // prove invoice totals, the final no-send boundary or preservation of an incurred charge discrepancy.
 app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class, $clock);
+staffPanel();
 EnomTestSendLimitSchema::install();
 $review = static function ($d) use ($ports, $clock): void {
     $t = Tld::where('server_id', $d->server_id)->where('tld', 'com')->sole();
@@ -45,8 +49,9 @@ same([], (array) $op->fresh()->attempt, 'Over-limit debt remains unsealed');
 // A captured incurred charge stays held, whether it exceeds only the quote or also the staff cap.
 $staff = commerceUser();
 $role = App\Models\Role::create(['name' => 'Synthetic funding', 'permissions' => ['admin.domains.manage', 'admin.domains.fund',
-    'admin.domains.view', 'admin.domains.operations.resume_reads']]);
+    'admin.domains.view', 'admin.domains.operations.resume_reads', 'admin.domains.operations.recheck']]);
 $staff->update(['role_id' => $role->id]);
+$unavailable = [];
 foreach (['changed' => ['20.00', 'actual_charge_changed'], 'overrun' => ['16.00', 'actual_cost_overrun']] as $case => [$limit, $reason]) {
     config(['domains.enom_identity.environment' => null]);
     [$seed, $compDomain, $compBinding] = $makeRenewal(placeholderComFixtureName('multiyear-'.$case.'-placeholder.com'), false);
@@ -73,13 +78,22 @@ foreach (['changed' => ['20.00', 'actual_charge_changed'], 'overrun' => ['16.00'
     $compCompletion->run($held->id); $compCompletion->run($held->id);
     same($calls, count($state->calls), 'Captured charge hold does not repeat provider reads');
     same($before, $held->fresh()->getRawOriginal(), 'Captured hold preserves reason, proof, polls and all operation state');
-    $reviewClass = \Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::class;
-    $fresh = $held->fresh(); $domain = $compDomain->fresh();
-    $ticket = $reviewClass::ticket($staff->id, $domain->id, $fresh->id, 'resume_reads', $reviewClass::stamp($fresh, $domain), $clock);
-    $resume = new $reviewClass($staff->id, $domain->id, $fresh->id, 'resume_reads', $ticket, 'Review captured registrar charge', $clock);
-    $compCompletion->resume($held->id, $resume);
+    $fresh = $held->fresh();
+    same(1, $fresh->policy['renewal_polls'], 'Captured financial hold is below the normal read limit');
+    app()->instance(\Paymenter\Extensions\Servers\Domains\Services\RenewalCompletion::class, $compCompletion);
+    $page = Livewire::actingAs($staff)->test(ViewOperation::class, ['record' => $held->id]);
+    // Keep both native cases running on red so the visibility failure names each financial reason.
+    if (!$page->instance()->getAction('resume_reads')->isVisible() || $page->instance()->getAction('recheck')->isVisible()) {
+        $unavailable[] = $reason; $state->fail = null; continue;
+    }
+    $page->assertActionVisible('resume_reads')->assertActionHidden('recheck')->assertSee('Check status');
+    same('Check status', $page->instance()->getAction('resume_reads')->getLabel(), 'Visible Check status uses the audited resume path');
+    $page->callAction('resume_reads')->assertNotified('Status checks restarted')->assertSee('Status checks restarted');
+    same($calls, count($state->calls), 'Staff click schedules the existing bounded read without inline provider I/O');
     same($fresh->attempt, $held->fresh()->attempt, 'Audited resume retains the sealed attempt and captured proof');
     same(1, count($held->fresh()->policy['staff_actions']), 'Explicit read resume is audited once');
+    same(['resume_reads', $staff->id], [$held->fresh()->policy['staff_actions'][0]['action'], $held->fresh()->policy['staff_actions'][0]['actor_id']], 'Real staff dispatch records the actor and resume action');
+    same(['uncertain', $reason, true], [$held->fresh()->state, $held->fresh()->safe_code, $compDomain->fresh()->renewal_policy['automatic_spend_paused']], 'Staff resume retains the financial hold and spending pause');
     $state->fail = null;
     $again = $compCompletion->run($held->id);
     expect(count($state->calls) > $calls, 'Explicit audited resume permits one bounded read');
@@ -87,8 +101,11 @@ foreach (['changed' => ['20.00', 'actual_charge_changed'], 'overrun' => ['16.00'
     same($writes, $state->writes, 'Automatic checks and audited resume never resend a renewal');
     $calls = count($state->calls); $compCompletion->run($held->id);
     same($calls, count($state->calls), 'The renewed charge hold stops automatic reads again');
+    Livewire::actingAs($staff)->test(ViewOperation::class, ['record' => $held->id])
+        ->assertActionVisible('resume_reads')->assertActionHidden('recheck')->assertSee('Check status');
 }
 
+same([], $unavailable, 'Captured holds need audited Check status below the poll limit: '.implode(', ', $unavailable));
 same(false, TermSupport::admits('enom', 2, $op->policy['renewal'], environment: Environment::Live), 'Frozen TEST debt cannot admit Live two-year renewal');
 echo "Enom TEST multiyear native: ok\n";
 $nativeSuccessful = true;
