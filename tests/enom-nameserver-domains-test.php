@@ -10,6 +10,19 @@ use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, CurlTransp
 use Paymenter\Extensions\Servers\Domains\Services\{EnomTestCallLimit, EnomTestSendLimit};
 use function Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire;
 
+// Only the exact observed not-found response can stop reads as outside this account.
+$missing='<interface-response><Command>GetDomainInfo</Command><ErrCount>1</ErrCount><Done>true</Done>'
+    .'<errors><Err1>Domain name not found</Err1></errors><responses><response><ResponseNumber>301029</ResponseNumber>'
+    .'<ResponseString>Validation error; not found; domain name(s)</ResponseString></response></responses></interface-response>';
+$absence=(new ResponseParser)->parse(ReadCommand::Info,$missing);
+same(['rejected','domain_not_in_account'],[$absence->status,$absence->code],'Exact not-found response supplies absence evidence');
+foreach(['<DomainName>example.com</DomainName>','<RRPCode>200</RRPCode>','<ResponseCount>2</ResponseCount>',
+    '<debug><private>PRIVATE-TOKEN</private></debug>'] as $contradiction){
+    $ambiguous=(new ResponseParser)->parse(ReadCommand::Info,str_replace('</interface-response>',$contradiction.'</interface-response>',$missing));
+    expect($ambiguous->code!=='domain_not_in_account','Contradictory account evidence cannot prove absence');
+}
+same(null,(new ResponseParser)->parse(ReadCommand::Info,str_replace('Domain name not found','PRIVATE-TOKEN',$missing))->value('errors'),'An arbitrary account error stays private');
+
 $command = ReadCommand::tryFrom('GetAllDomains');
 expect($command instanceof ReadCommand, 'Nameserver-filtered account domains have a typed read command');
 $binding = new AccountBinding('enom', 1, Environment::Test, 'synthetic-uid');

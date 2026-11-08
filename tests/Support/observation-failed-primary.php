@@ -69,7 +69,9 @@ foreach (['malformed','transport'] as $failure) {
         same($count,Operation::count(),'Stale '.$kind.' POST remains blocked before resumed check');
     }
     same('refreshed',$failedWork->tick(2)[$d->server_id]['holding'],'Resumed daily primary read succeeds');
-    expect(isset($d->fresh()->observation['record_failure']),'Daily read does not claim to have refreshed records');
+    expect(!isset($d->fresh()->observation['record_failure']),'A resumed scheduled read confirms records and clears the failure');
+    foreach(['dns','srv','ds']as$kind){same('complete',$d->fresh()->observation['records']['families'][$kind]['state'],'Resumed scheduled read confirms '.$kind);}
+    same($clock->now()->format(DATE_ATOM),$d->fresh()->observation['records']['at'],'Resumed record evidence has the actual read time');
     same('refreshed',$observer->run($d->id,readRecords:true),'Sync now confirms current inventory again');
     expect(!isset($d->fresh()->observation['record_failure']),'Successful inventory replaces failure marker');
     same(1,storefrontDom($page())->query('//form[contains(@action,"/manage/dns")]')->length,'Successful resumed observation restores edit form');

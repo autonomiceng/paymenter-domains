@@ -25,10 +25,11 @@ expect(!str_contains($page(),'host_id')&&!str_contains($page(),'HostID'),'Source
 same(ManagementPayload::digest($f['srv']['records'],'srv'),ManagementPayload::digest($rows,'srv'),'Presentation order preserves canonical digest');
 same($finance,[$original->fresh()->getAttributes(),$d->fresh()->provider_expires_at->format(DATE_ATOM),$d->fresh()->confirmed_revision,$d->fresh()->renewal_policy],'Record presentation never changes financial authority');
 // Held/stopped customer rows and the shared page notice explain recovery together.
+$p=$d->fresh()->observation;unset($p['records']);$d->fresh()->update(['observation'=>$p]);
 ObservationRecords::hold($d->fresh(),'records_unavailable',$clock->now());
 foreach(['held','stopped']as$readState){
  if($readState==='stopped'){\Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::current($d->fresh())->update(['safe_code'=>'read_unavailable','tries'=>5]);}
- $heldHtml=$page();expect(str_contains($heldHtml,e(\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::READ_HELD)),$readState.' page has the real stopped-read notice');
+ $heldHtml=$page();same($readState==='stopped',str_contains($heldHtml,e(\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::READ_HELD)),'Only a stopped read needs the staff-recovery page notice');
  foreach(['dns','srv']as$kind){$row=storefrontDom($heldHtml)->query('//li[@id="'.$kind.'"]')->item(0);expect($row!==null&&str_contains($row->textContent,'Missing'),$readState.' '.$kind.' row stays visible with its calm missing value');}
 }
 echo "Native record producer gates, numeric DNS/SRV and source identity pairs passed.\n";$nativeSuccessful=true;
