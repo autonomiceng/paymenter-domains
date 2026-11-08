@@ -23,7 +23,7 @@ $assertWarning=static function($page)use($warning):void{
     same($warning,$xpath->evaluate('normalize-space(//*[@data-price-omission])'),'Unreadable TLD keeps its name and fix line');
 };
 if($unreadablePricingCase==='fixed'){
-$page=Livewire::actingAs($staff)->withQueryParams(['account'=>WhatYouSell::ALL])->test(WhatYouSell::class)->assertSuccessful()->assertSet('account',WhatYouSell::ALL);
+$page=Livewire::actingAs($staff)->withQueryParams(['account'=>WhatYouSell::ALL])->test(WhatYouSell::class)->filterTable('for_sale',false)->assertSuccessful()->assertSet('account',WhatYouSell::ALL);
 $assertWarning($page);
 $page->mountAction('default_pricing')->assertActionMounted('default_pricing');
 $assertWarning($page);
@@ -38,7 +38,7 @@ same($before,$savedPrices(),'Unreadable TLD keeps every saved price and revision
 }elseif($unreadablePricingCase==='persistence'){
 // The reload is independent of the dialog renders; arrange the same committed native writer state.
 app(StaffSettingsWrites::class)->run(pricingReview($staff->id),pricingForm(['mode'=>'markup_amount','markup'=>'2.00','round_up'=>'none']),$now);
-$assertWarning(Livewire::actingAs($staff)->withQueryParams(['account'=>WhatYouSell::ALL])->test(WhatYouSell::class)->assertSuccessful()->assertSet('account',WhatYouSell::ALL));
+$assertWarning(Livewire::actingAs($staff)->withQueryParams(['account'=>WhatYouSell::ALL])->test(WhatYouSell::class)->filterTable('for_sale',false)->assertSuccessful()->assertSet('account',WhatYouSell::ALL));
 same('markup_amount',(new PricingRules)->defaultRule()['mode'],'Reload retains saved default mode');
 same('2.00',(new PricingRules)->defaultRule()['markup'],'Reload retains saved default markup');
 foreach($tlds as $tld){same('8.00',$prices->current($tld->server_id,$tld->account_fingerprint,'com','register',1,'USD',$now)->retail,'Reload retains healthy default followers on both accounts');}
@@ -50,7 +50,7 @@ same(0,$reads->calls,'Reload uses no registrar I/O');
 app(StaffSettingsWrites::class)->run(pricingReview($staff->id),pricingForm(['mode'=>'markup_amount','markup'=>'2.00','round_up'=>'none']),$now);
 // An unreadable fee-mode override must not block the shared save's own-rule fee preflight either.
 $broken->fresh()->update(['pricing_mode'=>'markup_fee_percent','markup'=>'-1.00']);$savedTld=$broken->fresh()->getRawOriginal();
-$page=Livewire::actingAs($staff)->withQueryParams(['account'=>WhatYouSell::ALL])->test(WhatYouSell::class)->assertSuccessful()->assertSet('account',WhatYouSell::ALL);
+$page=Livewire::actingAs($staff)->withQueryParams(['account'=>WhatYouSell::ALL])->test(WhatYouSell::class)->filterTable('for_sale',false)->assertSuccessful()->assertSet('account',WhatYouSell::ALL);
 $page->mountAction('default_pricing')->assertActionMounted('default_pricing')
     ->setActionData(['markup'=>'3.00','fee_percent'=>'3.10','reason'=>'Keep malformed own fee pricing on its repair path'])
     ->callMountedAction()->assertHasNoActionErrors()->assertNotified('Saved')->assertSet('mountedActions',[]);

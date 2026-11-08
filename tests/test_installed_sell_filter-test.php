@@ -21,7 +21,7 @@ class EmptyFilterSellPage extends WhatYouSell
 Livewire::component('empty-filter-sell-page',EmptyFilterSellPage::class);
 foreach(['own'=>false,'default'=>true] as $filter=>$defaults){
     DB::table('domains_tlds')->where('id',$tlds[0]->id)->update(['catalogue_intent'=>'{"sell":','use_default_rule'=>$defaults]);
-    $page=Livewire::actingAs($actor)->test(EmptyFilterSellPage::class,['account'=>$binding->serverId]);
+    $page=Livewire::actingAs($actor)->test(EmptyFilterSellPage::class,['account'=>$binding->serverId])->filterTable('for_sale',false);
     $page->filterTable('show',$filter)->assertCountTableRecords(0)->assertDontSee('Prices left out');
     expect(str_contains($page->html(),'No prices to show. Some TLDs are left out.'),'Empty filter explains omissions without a missing callout pointer');
     expect(!str_contains($page->html(),'see above'),'Empty filter must not point at a missing callout');
