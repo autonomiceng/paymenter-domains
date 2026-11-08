@@ -13,7 +13,7 @@ extract(commerceFixture(true,registrars:['enom']));staffSalesFixture();tldPanel(
 app()->instance(StaffSettingsWrites::class,new StaffSettingsWrites($native,$sellers,$bindings));
 $t=$tlds[0];$actor=staffUser(array_keys(Staff::permissions()));Auth::setUser($actor);$errors=[];
 $raw=$t->fresh()->catalogue_intent;$facts=$t->fresh()->catalogue_facts;
-$submit=static function()use($actor,$t){return Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->mountAction('seller')->fillForm(['seller'=>$t->server_id,'register'=>true,'transfer'=>false]);};
+$submit=static function()use($actor,$t){return Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->mountAction('seller')->setActionData(['seller'=>$t->server_id,'register'=>true,'transfer'=>false]);};
 foreach(['terms','disabled','inheritance'] as $case){
     DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_intent'=>$raw,'catalogue_facts'=>$facts]);
     DB::table('extensions')->where('id',$t->server_id)->update(['enabled'=>true]);
