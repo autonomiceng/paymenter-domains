@@ -9,10 +9,10 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account,Tld};
 use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 extract(commerceFixture(true,registrars:['enom']));staffSalesFixture();tldPanel();pinStaffClock($now);
 $actor=staffUser(array_keys(Staff::permissions()));Auth::setUser($actor);$t=$tlds[0];
-$b=AccountBindings::binding(Account::where('server_id',$t->server_id)->sole());$source=StaffCatalogue::routed();
+$b=AccountBindings::binding(Account::where('server_id',$t->server_id)->sole());$source=new StaffCatalogue($ports,$clock);
 $base=$t->fresh()->getRawOriginal();unset($base['id']);$prices=DB::table('domains_prices')->where('server_id',$b->serverId)->get();$policy=(array)DB::table('domains_sales_policies')->where('tld','com')->sole();unset($policy['id']);
 for($i=1;$i<1000;$i++){
-    $name='ending'.base_convert((string)($i+1000),10,36);DB::table('domains_tlds')->insert([...$base,'tld'=>$name]);
+    $name='ending'.chr(97+intdiv($i,676)).chr(97+intdiv($i,26)%26).chr(97+$i%26);DB::table('domains_tlds')->insert([...$base,'tld'=>$name]);
     foreach($prices as $price){$row=(array)$price;unset($row['id']);DB::table('domains_prices')->insert([...$row,'tld'=>$name]);}
     DB::table('domains_sales_policies')->insert([...$policy,'tld'=>$name]);
 }
@@ -27,7 +27,7 @@ $measure=static function()use($b,$source):array{
 [$again,$repeated]=$measure();same($ids,$again,'A new request keeps the same evaluator result');
 DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_intent'=>'{"sell":false}']);
 [$changed]=$measure();expect(!in_array($t->id,$changed,true),'Fresh request immediately reflects stopped intent');
-pinStaffClock($now->modify('+2 days'));[$expired]=$measure();same([],$expired,'Elapsed freshness cannot reuse sale membership');
+$clock->instant=$now->modify('+2 days');pinStaffClock($clock->now());[$expired]=$measure();same([],$expired,'Elapsed freshness cannot reuse sale membership');
 DB::table('roles')->where('id',$actor->role_id)->update(['permissions'=>'[]']);
 try{$measure();expect(false,'Fresh filter requires current grants');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(403,$e->getStatusCode(),'Revoked staff view refuses');}
 expect($batches<=10&&$repeated<=10,'A thousand TLDs use at most ten bounded evaluator batches');
