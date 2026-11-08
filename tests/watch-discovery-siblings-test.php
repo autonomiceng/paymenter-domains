@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\WatchSource;
 use Paymenter\Extensions\Servers\Domains\Services\{DomainSummaries,WatchRegistryChecks};
 extract(dnsFixture());$now=1800000000;
+require dirname(__DIR__).'/Domains/routes/owned.php';app('router')->getRoutes()->refreshNameLookups();
 $o=App\Models\Order::create(['user_id'=>$owner->id,'currency_code'=>'USD']);
 $active=App\Models\Service::create(['user_id'=>$owner->id,'order_id'=>$o->id,'product_id'=>$product->id,'plan_id'=>$plan->id,'status'=>'active','quantity'=>1,'price'=>'5.00','currency_code'=>'USD']);
 $active->properties()->create(['key'=>'domain','value'=>'mail.example.com']);
