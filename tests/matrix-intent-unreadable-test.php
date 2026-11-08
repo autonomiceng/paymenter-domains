@@ -23,7 +23,7 @@ foreach(['{"sell":','"invalid"',OfferState::json(['sell'=>[]]),OfferState::json(
     same([$broken->id],array_column($matrix['skipped'],'id'),'Only unreadable intent is left out');
     $html=view('domains::admin.sell-note',['warning'=>$matrix['warnings'][0]])->render();
     $dom=new DOMDocument;@$dom->loadHTML($html);$xpath=new DOMXPath($dom);
-    same(".invalid on Synthetic left out: custom pricing can't be read. To fix, open the .invalid TLD page and use Edit prices.",
+    same(".invalid on Synthetic has no price: its custom pricing can't be read. Open .invalid and use Edit prices.",
         $xpath->evaluate('normalize-space(//*[@data-price-omission])'),'Existing named warning and repair wording are preserved');
     expect(str_contains($list->csv(),"Left out: custom pricing can't be read"),'CSV discloses the omitted price');
     same($before,StaffCommands::stamp($binding->serverId),'Reading leaves intent and publication unchanged');
