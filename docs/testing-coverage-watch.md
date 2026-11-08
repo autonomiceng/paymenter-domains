@@ -3,6 +3,8 @@
 `watch-discovery-lifecycle-test.php`, `watch-discovery-input-test.php`,
 `watch-discovery-managed-test.php`, `watch-discovery-commit-test.php` and
 `watch-discovery-notices-test.php` compose the local producer through the native scheduler.
+`watch-discovery-siblings-test.php` checks active-source registry reads and matching customer
+freshness when another hosting source is suspended.
 They cover exact primary fields, suffix boundaries, shared sources, suspension, staff pause,
 return after cancellation/deletion, mapping Off, ownership changes, managed and foreign
 reservations, pending acquisition/adoption, atomic source rechecks and notice suppression.
