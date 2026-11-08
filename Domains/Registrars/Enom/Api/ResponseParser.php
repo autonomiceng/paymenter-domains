@@ -39,6 +39,7 @@ final class ResponseParser
                 || ($data['responses']['response']['responsenumber'] ?? null) === '304155')) {
             return new ProtocolResult('rejected', 'identity_credentials_refused');
         }
+        if ($command === ReadCommand::Info && $this->domainNotFound($data)) { return new ProtocolResult('rejected','domain_not_in_account'); }
         $code = $data['rrpcode'] ?? $data['responsecode'] ?? null;
         $code = is_string($code) && preg_match('/^[0-9]{1,6}$/D', $code) ? $code : null;
         if ($command === ReadCommand::HostStatus && $data['errcount'] === '1' && ($data['errors']??null) === ['err1'=>'Error 545 - Name server does not exist']
@@ -72,8 +73,35 @@ final class ResponseParser
             $payload = $command === ReadCommand::Orders ? ['orderlist', 'ordercount'] : ['order'];
             $data['history_complete'] = !array_diff(array_keys($data), ['command', 'errcount', 'done', 'rrpcode', 'responsecode', 'errors', ...$payload]);
         }
+        if ($command === ReadCommand::DomainsByNameserver) {
+            $names = $this->domainNames($data['getalldomains'] ?? null);
+            if ($names === null) { return new ProtocolResult('unknown', 'invalid_domain_list'); }
+            // No account IDs, contacts or other account response fields survive this projection.
+            $data = ['domains' => $names];
+        }
         // Payload-specific validation belongs to each named read normalizer, never to acknowledgement alone.
         return new ProtocolResult('success', $code, $data, strlen($body));
+    }
+
+    /** Only the observed not-found envelope, with scalar metadata and one matching error response. */
+    private function domainNotFound(#[\SensitiveParameter] array $data): bool
+    {
+        if($data['errcount']!=='1'||($data['errors']??null)!==['err1'=>'Domain name not found']
+            ||!empty($data['rrpcode'])||!empty($data['responsecode'])){return false;}
+        $metadata=['command','errcount','done','rrpcode','rrptext','responsecode','responsecount','server','site','language',
+            'islockable','isrealtimetld','timedifference','exectime','requestdatetime','debug','minperiod','maxperiod','nazca','apitype','trackingkey'];
+        if(array_diff(array_keys($data),[...$metadata,'errors','responses'])){return false;}
+        foreach($metadata as $key){if(isset($data[$key])&&(!is_string($data[$key])||strlen($data[$key])>512)){return false;}}
+        if(isset($data['rrptext'])&&!in_array($data['rrptext'],['','Domain name not found'],true)){return false;}
+        if(isset($data['responsecount'])&&$data['responsecount']!=='1'){return false;}
+        if(isset($data['responses'])&&$data['responses']!==''){
+            $responses=$data['responses']; $response=is_array($responses)?($responses['response']??null):null;
+            if(!is_array($responses)||array_keys($responses)!==['response']||!is_array($response)
+                ||array_diff(array_keys($response),['responsenumber','responsestring'])
+                ||!is_string($response['responsenumber']??null)||!preg_match('/^[347][0-9]{5}$/D',$response['responsenumber'])
+                ||!in_array($response['responsestring']??null,['Domain name not found','Validation error; not found; domain name(s)'],true)){return false;}
+        }
+        return true;
     }
 
     /** The observed order-creation refusal only. A registry error without this text is still uncertain. */
@@ -124,6 +152,32 @@ final class ResponseParser
             if(is_array($value)&&!$this->noPurchaseFacts($value)){return false;}
         }
         return true;
+    }
+
+    /** GetAllDomains has no documented pagination. Refuse more than 200 results, never truncate.
+     * eNom API command catalog, pp. 180-182: https://cp.enom.com/download/APICommandCatalogEnom.pdf
+     */
+    private function domainNames(mixed $container): ?array
+    {
+        if ($container === '') { return []; }
+        if (!is_array($container) || array_is_list($container)
+            || array_diff(array_keys($container), ['domaindetail', 'userrequeststatus'])
+            || isset($container['userrequeststatus']) && !is_string($container['userrequeststatus'])) { return null; }
+        if (!array_key_exists('domaindetail', $container)) { return []; }
+        $rows = $container['domaindetail'];
+        if (!is_array($rows)) { return null; }
+        $rows = array_is_list($rows) ? $rows : [$rows];
+        if (count($rows) > 200) { return null; }
+        $names = [];
+        foreach ($rows as $row) {
+            if (!is_array($row) || !is_string($name = $row['domainname'] ?? null)) { return null; }
+            $name = strtolower($name);
+            if (strlen($name) > 253 || !str_contains($name, '.') || str_ends_with($name, '.')
+                || !filter_var($name, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME)
+                || filter_var($name, FILTER_VALIDATE_IP) || isset($names[$name])) { return null; }
+            $names[$name] = true;
+        }
+        return array_keys($names);
     }
 
     /** Indexed Text rows use the same internal shape as the documented XML products. */

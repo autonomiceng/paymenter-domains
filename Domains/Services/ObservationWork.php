@@ -21,6 +21,8 @@ final class ObservationWork
     { return \Paymenter\Extensions\Servers\Domains\Catalogue\OfferScheduler::routed() ?? throw new \DomainException(OfferUpgrade::MESSAGE); }
     public function enroll(int $server): void { $this->scheduler()->enroll($server); }
     public function tick(int $accounts=8): array { return $this->scheduler()->tick($accounts); }
+    public static function resumeBlocked(Domain $d): ?string
+    { return $d->status==='registration_pending'?'Registrar records can sync after registration is confirmed.':null; }
     public function resume(int $id, string $reason, StaffOperationReview|StaffSyncReview|null $review=null): void
     { $this->scheduler()->resume($id,$reason,$review); }
 }

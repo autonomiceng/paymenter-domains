@@ -8,6 +8,13 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
 /** Shared bounded holding portion. Only its owner selects and advances account turns. */
 final class HoldingObservationWork
 {
+    /** Called under the holding locks when registration or transfer becomes active. Never replaces existing work. */
+    public static function queueInitial(Domain $d, \DateTimeImmutable $now): void
+    {
+        if ($d->status!=='active'||!Schema::hasTable('domains_observation_work')) { return; }
+        DB::table('domains_observation_work')->insertOrIgnore(['server_id'=>$d->server_id,'account_fingerprint'=>$d->account_fingerprint,
+            'domain_id'=>$d->id,'generation'=>$d->authority_generation,'phase'=>self::phase($d),'due_at'=>$now->getTimestamp()]);
+    }
     /** Only the current binding, generation and follow-up phase can stop this holding. */
     public static function stopped(Domain $d): bool
     {
@@ -57,6 +64,7 @@ final class HoldingObservationWork
         DB::transaction(function () use ($id,$reason,$seed,$review,$current): void {
             $l=HoldingLocks::take($seed,$review?->actorId); $current((int)$seed->server_id); $review?->check($l); $d=$l['domain']; $q=DB::table('domains_observation_work')->where('id',$id); $job=(clone $q)->lockForUpdate()->firstOrFail();
             if ($job->domain_id!=$d->id||$job->server_id!=$d->server_id||$job->phase!==self::phase($d)||(int)$job->generation!==$d->authority_generation||$job->account_fingerprint!==$d->account_fingerprint||$job->lease_until>$this->clock->now()->getTimestamp()||$job->resumes>=20) { throw new \DomainException('Read resume unavailable.'); }
+            if ($blocked=ObservationWork::resumeBlocked($d)) { throw new StaffReviewRefused($blocked); }
             $p=$d->observation??[]; unset($p['record_hold']); $p['resumptions']=[...($p['resumptions']??[]),['work_id'=>$id,'reason'=>$reason,'at'=>$this->clock->now()->format(DATE_ATOM)]];
             $d->update(['observation'=>$p]); $q->update(['resumes'=>$job->resumes+1,'tries'=>0,'claim'=>null,'safe_code'=>null,'due_at'=>$this->clock->now()->getTimestamp()]); $review?->record($l);
         });
