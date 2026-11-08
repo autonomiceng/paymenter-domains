@@ -88,7 +88,7 @@ final class OfferWork
         $this->offerBinding($binding, $t);
         $intent = OfferState::decode($t->catalogue_intent);
         $defaults = OfferState::decode($this->account($binding)->catalogue_defaults);
-        if (!($intent['sell'] ?? $defaults['defaultSell'] ?? true) || in_array('renew', $intent['stops'] ?? [], true)) { return false; }
+        if (($intent['salesPaused'] ?? false) || !($intent['sell'] ?? $defaults['defaultSell'] ?? true) || in_array('renew', $intent['stops'] ?? [], true)) { return false; }
         $policy = DB::table('domains_sales_policies')->where('server_id', $binding->serverId)->where('tld', $tld)
             ->where('account_fingerprint', $binding->fingerprint)->where('registrar_key', $binding->registrarKey)->first();
         if (!$policy || !($policy->register_enabled && !in_array('register', $intent['stops'] ?? [], true)

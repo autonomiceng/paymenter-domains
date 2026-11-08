@@ -38,14 +38,16 @@ final class SellTable
     public function forSale(Builder $query): Builder
     {
         Staff::requireView();
-        if($this->forSaleIds===null){
-            $this->forSaleIds=[];
-            // Scope candidates before eligibility reads. Never load full off-page staff snapshots.
-            foreach((clone $query)->get(['server_id','tld'])->chunk(500)as$rows){
-                array_push($this->forSaleIds,...$this->source()->saleIds($this->tlds($rows->all())));
+        // Filament supplies a nested where builder without the table's derived FROM.
+        $candidates=$this->source()->rows($this->bindings,null)->addNestedWhereQuery($query->getQuery());
+        $key=hash('sha256',$candidates->toSql().serialize($candidates->getBindings()));
+        if(!isset($this->forSaleIds[$key])){
+            $this->forSaleIds[$key]=[];
+            foreach($candidates->get(['server_id','tld'])->chunk(500)as$rows){
+                array_push($this->forSaleIds[$key],...$this->source()->saleIds($this->tlds($rows->all())));
             }
         }
-        return $query->whereIntegerInRaw('id',$this->forSaleIds);
+        return $query->whereIntegerInRaw('id',$this->forSaleIds[$key]);
     }
     /** The viewer's rights, read once for this table build: a cell or a saved-price read never asks again. */
     private function grants(): StaffGrants { return $this->grants??=Staff::requireView(); }

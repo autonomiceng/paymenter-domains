@@ -44,7 +44,7 @@ final class OfferReadiness
                             $local=$this->reader->loadBatch($rowQueries,Context::Staff,true);
                         }
                         $intent=OfferState::decode($t->catalogue_intent);
-                        new Intent(...array_intersect_key($intent,array_flip(['sell','longest','transfers','stops'])));
+                        new Intent(...array_intersect_key($intent,array_flip(['sell','longest','transfers','stops','salesPaused'])));
                         $rows=[];
                         foreach($queries as $j=>$q){
                             $rows[$q->action.':'.$q->term]=$lock
@@ -60,7 +60,7 @@ final class OfferReadiness
                     $sell=$intent['sell']??$defaults['defaultSell']??true;
                     foreach(['registration'=>'register','transfer'=>'transfer','renewal'=>'renew'] as $feature=>$action){
                         if(!($features[$feature]??false)){continue;}
-                        if($action!=='renew'&&(!$sell||in_array($action,$intent['stops']??[],true)
+                        if($action!=='renew'&&(($intent['salesPaused']??false)||!$sell||in_array($action,$intent['stops']??[],true)
                             ||$action==='transfer'&&!($intent['transfers']??$defaults['defaultTransfers']??false))){continue;}
                         $terms=$action==='register'?range(1,$intent['longest']??$defaults['defaultLongest']??1):[1];
                         foreach($terms as $term){$row=$rows[$action.':'.$term];

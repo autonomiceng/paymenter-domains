@@ -30,6 +30,7 @@ $measure=static function()use($b,$source):array{
 $thousand=new SellTable([$b->serverId=>$b],1,true,static fn()=>[],false,$source);
 DB::enableQueryLog();DB::flushQueryLog();$small=$thousand->forSale($thousand->rows(null)->where('id','<=',1000))->pluck('id');$smallQueries=count(DB::getQueryLog());DB::disableQueryLog();
 same(1000,$small->count(),'Candidate scope is applied before sale evaluation');
+same(1500,$thousand->forSale($thousand->rows(null))->count(),'Same request caches distinct candidate scopes separately');
 $focused=static function()use($b,$source):array{$table=new SellTable([$b->serverId=>$b],1,true,static fn()=>[],false,$source);return $table->forSale($table->rows('com'))->pluck('id')->all();};
 $original=$t->fresh()->getRawOriginal();$policyOriginal=(array)DB::table('domains_sales_policies')->where('tld','com')->sole();
 $price=DB::table('domains_prices')->where('server_id',$b->serverId)->where('tld','com')->where('action','renew')->where('term',1)->sole();
