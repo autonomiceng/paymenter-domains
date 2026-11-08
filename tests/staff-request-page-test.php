@@ -42,7 +42,7 @@ same(['Transfer lock','Auth code email','DNS records','Other'],[Labels::action('
 same(['Auto Pay: charged','Auto Pay skipped: no saved payment method','Auto Pay: result missing'],
     [Labels::autoPay(['status'=>'charged']),Labels::autoPay(['status'=>'skipped','reason'=>'no_agreement']),Labels::autoPay(null)],'Auto Pay lines');
 same(['recheck'=>'Check status','resume_reads'=>'Check status','resume_observation'=>'Resume sync','hold'=>'Put on hold','release'=>'Release hold',
-    'disposition'=>'Close request','refund'=>'Cancel and refund','credit'=>'Retry refund','replacement'=>'Reissue renewal invoice'],StaffOperationReview::ACTIONS,'Action names');
+    'disposition'=>'Close request','approve_charge'=>'Approve captured charge','refund'=>'Cancel and refund','credit'=>'Retry refund','replacement'=>'Reissue renewal invoice'],StaffOperationReview::ACTIONS,'Action names');
 
 // List: Request, Domain, Type, Status, Note, Created, Registrar account; Status, Type and Registrar account filters. One-line rows.
 DB::table('domains_operations')->where('id',$heldOp->id)->update(['created_at'=>'2026-10-20 15:05:00']);
