@@ -17,7 +17,7 @@ $rev=static fn()=>offerCommerceAsStaff(static fn()=>$ports->readOffers($q,Contex
 $cart=commerceCart($user); $line=commerceAdd($cart,$com,'reload-price-placeholder.com',3);
 commerceAdd($cart,$second['product'],'example.net');
 $views=getenv('PAYMENTER_TEST_FIXTURE').'/resources/views/reload-cart'; mkdir($views,0700,true);
-file_put_contents($views.'/cart.blade.php', '<div>@includeIf(\'domains::cart-notice\')@foreach (\App\Classes\Cart::items() as $item)@includeIf(\'domains::cart-was\',[\'item\'=>$item]){{ $item->price->format($item->price->total) }}@endforeach</div>');
+file_put_contents($views.'/cart.blade.php', '<div>@includeIf(\'domains::cart-notice\')@foreach (\App\Classes\Cart::items() as $item)@includeIf(\'domains::cart-was\',[\'item\'=>$item]){{ $item->price->format($item->price->total) }}@endforeach<span data-current-cart-total>{{ $total?->format($total->total) }}</span></div>');
 Illuminate\Support\Facades\View::getFinder()->prependLocation($views);
 Illuminate\Support\Facades\View::getFinder()->flush();
 Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
@@ -34,6 +34,11 @@ foreach ([1,3] as $term) {
     same(0,$dom->query('//s')->length,'Own old term price is not struck');
 }
 $ports->apply(Edit::override($binding,'com',new Intent(sell:true,longest:3,transfers:true),[...PricingRule::DEFAULT,'markup'=>'50.00']),$rev());
+$before=[App\Models\Order::count(),App\Models\Invoice::count(),Paymenter\Extensions\Servers\Domains\Models\Operation::count(),$reads->calls];
+Illuminate\Support\Once::flush();app('request')->cookies->set('cart',$cart->ulid);$page->call('$refresh');
+$shown=storefrontDom($page->html());same('$33.50',trim($shown->query('//*[@data-current-cart-total]')->item(0)?->textContent??''),'Mounted refresh renders the current combined cart total');
+same('33.50',number_format((float)$page->get('total')->total,2,'.',''),'Rendered and native totals agree on the existing component');
+same($before,[App\Models\Order::count(),App\Models\Invoice::count(),Paymenter\Extensions\Servers\Domains\Models\Operation::count(),$reads->calls],'Local render creates no order, invoice or provider call');
 $ports->apply(Edit::override($secondBinding,'net',new Intent(sell:false,transfers:true)),offerCommerceAsStaff(static fn()=>$ports->readOffers(new Query($secondBinding,['net'],'register'),Context::Staff)[0]->revision));
 $page=$open(); $dom=storefrontDom($page->html());
 same('Your cart changed',trim($dom->query('//*[@data-domains-cart-notice]//strong')->item(0)?->textContent??''),'Reload announces the changed cart even when another line was removed');
