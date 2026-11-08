@@ -73,6 +73,7 @@ final class Labels
         // Older checks retained a cap code even when the sending switch refused the read.
         if(in_array($op->safe_code,['enom_test_reconciliation_call_cap','enom_test_transfer_reconciliation_call_cap'],true)
             &&($op->policy['status_check']['reason']??null)==='send_guard'){return self::reason('enom_test_reconciliation_send_guard');}
+        if (($held=self::staffHold($op))!==null) { return $held; }
         $reason=self::reason($op->safe_code,$op->funding_basis==='complimentary');
         if ($reason===self::FEATURE_OFF) {
             return 'Not sent: '.(['renew'=>'Renewals','transfer'=>'Transfers','register'=>'Registrations'][$op->action]??'Changes').' off for this account';
@@ -83,6 +84,19 @@ final class Labels
             if($cache->get($key)==='live'){return 'Not sent: our daily call cap reached';}
         }
         return $reason===RequestStatus::UNCONFIRMED?(ManagementEvidence::outcome($op)??$reason):$reason;
+    }
+    /** "Put on hold by <name>" for a staff hold whose history saved a name; null otherwise. The request reason and the domain header both read it. */
+    public static function staffHold(\Paymenter\Extensions\Servers\Domains\Models\Operation $op): ?string
+    { return $op->state==='held'&&$op->safe_code==='staff_review_required'&&($by=self::holdActor($op))!==null?'Put on hold by '.$by:null; }
+    /** The stored display name on the latest hold in the request's staff history. Like StaffReviewHistory, actor_id is never resolved for display. */
+    private static function holdActor(\Paymenter\Extensions\Servers\Domains\Models\Operation $op): ?string
+    {
+        try { $history=$op->policy['staff_actions']??[]; } catch (\Throwable) { return null; }
+        if (!is_array($history)) { return null; }
+        foreach (array_reverse($history) as $entry) {
+            if (is_array($entry)&&($entry['action']??null)==='hold') { $name=$entry['actor_name']??null; return is_string($name)&&trim($name)!==''?trim($name):null; }
+        }
+        return null;
     }
     /** Details the registrar did not take as ordered, from the attempt and later reads. */
     private static function corrections(\Paymenter\Extensions\Servers\Domains\Models\Operation $op): string

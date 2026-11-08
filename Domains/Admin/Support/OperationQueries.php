@@ -22,9 +22,9 @@ final class OperationQueries
         if (!$keys) { return $q; }
         $in=fn(string $state)=>in_array(RequestStatus::key($state),$keys,true);
         return $q->where(function($q) use ($in,$keys) {
-            if (in_array('on_hold',$keys,true)) { $q->orWhere(fn($held)=>self::heldRegistration($held)); }
+            if (in_array('on_hold',$keys,true)) { $q->orWhere(fn($held)=>self::heldAcquisition($held)); }
             $q->orWhere(function($q) use ($in) {
-            $q->whereNot(fn($held)=>self::heldRegistration($held))->where(function($q) use ($in) {
+            $q->whereNot(fn($held)=>self::heldAcquisition($held))->where(function($q) use ($in) {
             // Matches nothing until a state matches. An empty group would be dropped and match every request.
             $q->whereRaw('0 = 1');
             foreach (array_keys(RequestStatus::STATES) as $state) {
@@ -39,12 +39,13 @@ final class OperationQueries
             });
         });
     }
-    /** SQL form of RequestFacts::heldRegistration, including queued registrations stopped by Orders off. */
-    private static function heldRegistration(Builder $q): Builder
+    /** SQL form of RequestFacts::heldAcquisition, including queued registrations stopped by Orders off and transfers staff held. */
+    private static function heldAcquisition(Builder $q): Builder
     {
-        return $q->where('action','register')->where(fn($q)=>$q
+        return $q->where(fn($q)=>$q->where('action','register')->where(fn($q)=>$q
             ->where(fn($q)=>$q->where('state','held')->where(fn($q)=>$q->whereNull('safe_code')->orWhereNotIn('safe_code',RequestStatus::SETUP_CODES)))
-            ->orWhere(fn($q)=>self::whereOrdersOff($q->where('state','queued'))));
+            ->orWhere(fn($q)=>self::whereOrdersOff($q->where('state','queued')))))
+            ->orWhere(fn($q)=>$q->where('action','transfer')->where('state','held')->where('safe_code',RequestFacts::HELD_TRANSFER_CODE));
     }
     /** Orders are off for the request's own account. The word (RequestFacts::status) and the filter (whereOrdersOff) use this one rule. */
     public static function ordersOff(Operation $op): bool

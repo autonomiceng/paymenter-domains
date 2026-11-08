@@ -47,6 +47,7 @@ class DomainResource extends Resource
         if (!Staff::can()) { return null; }
         return NavigationCount::read('domains',fn()=>DomainQueries::openAlertCount(Domain::query()));
     }
+    public static function getNavigationBadgeTooltip(): ?string { return 'Domains with open alerts across all registrar accounts'; }
     public static function getNavigationBadgeColor(): string { return 'warning'; }
     public static function table(Table $table): Table
     {
@@ -63,7 +64,7 @@ class DomainResource extends Resource
             OneLine::apply(TextColumn::make('note')->label('Note')->state(fn(Domain $record,$livewire)=>self::note($record,$livewire)['text'])->color('gray')
                 ->formatStateUsing(fn(string $state,Domain $record,$livewire)=>DomainFacts::noteStep($state,self::status($record,$livewire)))
                 ->url(fn(Domain $record,$livewire)=>DomainFacts::requestUrl(self::status($record,$livewire)))
-                ->extraAttributes(fn(Domain $record,$livewire)=>StatusMark::note(self::note($record,$livewire)['act']))),
+                ->extraAttributes(fn(Domain $record,$livewire)=>StatusMark::note(self::note($record,$livewire)['act'])),OneLine::NOTE),
             OneLine::apply(TextColumn::make('provider_expires_at')->label('Expires')->state(fn(Domain $record)=>$record->provider_expires_at?->format('M j, Y')
                 ?? (self::registered($record)?Missing::LABEL:null))->color(fn($state,Domain $record,$livewire)=>$state===Missing::LABEL?Missing::color(DomainFacts::unread($record,self::row($record,$livewire)['sync'])):null)
                 ->icon(fn($state,Domain $record,$livewire)=>$state===Missing::LABEL?Missing::icon(DomainFacts::unread($record,self::row($record,$livewire)['sync'])):null)

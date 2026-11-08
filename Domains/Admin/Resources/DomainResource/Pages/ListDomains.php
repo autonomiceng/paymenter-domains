@@ -11,5 +11,6 @@ class ListDomains extends ListRecords
     public function getSubNavigation(): array { return \Paymenter\Extensions\Servers\Domains\Admin\Support\StaffTabs::domains('Domains'); }
     public function getTitle(): string { return 'Domains'; }
     public function getBreadcrumbs(): array { return []; }
+    public function getSubheading(): ?\Illuminate\Contracts\Support\Htmlable { return \Paymenter\Extensions\Servers\Domains\Admin\Support\PaidUncertainty::accounts(); }
     protected function getHeaderActions(): array { return [\Filament\Actions\Action::make('adopt')->label('Import domain')->visible(fn () => config('domains.adoption.enabled', false) === true && collect(\Paymenter\Extensions\Servers\Domains\Services\AdoptionCommit::PERMISSIONS)->every(fn ($permission) => \Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::can($permission)))->url(DomainResource::getUrl('adopt'))]; }
 }

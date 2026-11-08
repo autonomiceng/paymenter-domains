@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\{DomainStatus, RequestStatus};
 /** The staff view of a domain's status: the customer's status words, with the one staff step under them.
- * Status words come from DomainStatus, except held registrations: staff read On hold and customers read Under review. The step is staff-only.
+ * Status words come from DomainStatus, except held registrations and staff-held transfers: staff read On hold and customers read Under review. The step is staff-only.
  * Where the domain only says a request is in the way, the head word stays the customer's and the step names that request (RequestFacts::status reason).
  * Request history and every open alert stay on the domain and request pages.
  * This is the only copy of the rule: the list, the heading and the status filter all read it through DomainFacts::status(). */
@@ -41,7 +41,7 @@ final class StaffDomainStatus
         $act = $step !== null && !in_array($step, self::WAITING, true);
         $named = null;
         if (!$specific) {
-            if ($alerts) { $top = self::topAlert($alerts); [$step, $request] = self::alert($top); $act = true; $named = $top['code']; }
+            if ($alerts) { $top = self::topAlert($alerts); [$step, $request] = self::alert($top, $d); $act = true; $named = $top['code']; }
             elseif ($renewal && in_array($state, ['active', 'renewal_off_expiring'], true)) { [$step, $request, $act] = self::renewal($renewal); }
         }
         // A held or unconfirmed transfer, and a state this version doesn't know, only say a request is in the way.
@@ -51,13 +51,13 @@ final class StaffDomainStatus
         if ($behind) {
             if ($step === self::CHECK) {
                 $line = RequestFacts::status($behind);
-                [$step, $request, $act] = $line['reason'] === null ? [Labels::action($behind->action).' in progress. Nothing to do yet.', null, false] : [self::sentence($line['reason']).self::check($behind->id), $behind->id, true];
+                [$step, $request, $act] = $line['reason'] === null ? [Labels::action($behind->action).' in progress. Nothing to do yet.', null, false] : [self::sentence($line['reason']).self::ordersOrCheck($behind,$line['reason']), $behind->id, true];
             }
             $shared = [...$shared, 'tone' => $act ? $shared['tone'] : 'info', 'reason' => null];
         } elseif ($unknown && $step === self::CHECK) {
             [$step, $request] = [$op ? 'Status missing.'.self::check($op->id) : 'Status missing. Check the domain at the registrar.', $op?->id];
         }
-        if ($op && in_array($d->status,self::ACQUIRING,true) && RequestFacts::heldRegistration($op, $state==='registration_held')) {
+        if ($op && in_array($d->status,self::ACQUIRING,true) && RequestFacts::heldAcquisition($op, $state==='registration_held')) {
             $shared=[...$shared,'key'=>'on_hold','label'=>'On hold','tone'=>'warning'];
         }
         return [...self::forStaff($shared), 'step' => $step, 'request' => $request, 'act' => $act, 'alert' => $named];
@@ -72,11 +72,9 @@ final class StaffDomainStatus
     {
         if ($state === 'adoption_pending') { return ['Check open invoices.', true, null]; }
         if ($op && in_array($d->status, self::ACQUIRING, true)) {
-            try { $ready=RequestFacts::readyMessage($op); }
-            catch (\Throwable) { return [DomainFacts::UNREADABLE.self::check($op->id),true,$op->id]; }
+            try { $ready=RequestFacts::readyMessage($op); } catch (\Throwable) { return [DomainFacts::UNREADABLE.self::check($op->id),true,$op->id]; }
             if ($ready!==null) {
-                if ($op->state==='queued'&&OperationQueries::ordersOff($op)) { $ready.=RequestFacts::ordersStep($ready); }
-                return [$ready.self::check($op->id),true,$op->id];
+                return [$ready.self::ordersOrCheck($op,$ready),true,$op->id];
             }
             if (in_array($op->state, ['held', 'uncertain'], true)) { return [self::stopped($op), true, $op->id]; }
             if ($state === 'awaiting_payment') { return [self::UNPAID, false, null]; }
@@ -101,9 +99,9 @@ final class StaffDomainStatus
         }, null];
     }
     /** @return array{0:string,1:?int} */
-    private static function alert(array $alert): array
+    private static function alert(array $alert, Domain $d): array
     {
-        $step = self::sentence(DomainFacts::alertCause($alert['code']));
+        $step = self::sentence(DomainFacts::alertCause($alert['code'], $d));
         if (!$alert['request']) { return [$step, null]; }
         // Some causes already end by sending staff to the request. Name it there, once.
         $open = self::check($alert['request']);
@@ -115,7 +113,7 @@ final class StaffDomainStatus
         return match (true) {
             in_array($op->state, ['held', 'uncertain'], true) => [self::stopped($op), $op->id, true],
             $op->state === 'awaiting_payment' => [Labels::requestStatus($op)['reason'], null, false],
-            $op->state === 'queued' && ($ready = RequestFacts::readyMessage($op)) !== null => [$ready.(OperationQueries::ordersOff($op)?' Turn Orders on in Registrars.':'').self::check($op->id), $op->id, true],
+            $op->state === 'queued' && ($ready = RequestFacts::readyMessage($op)) !== null => [$ready.self::ordersOrCheck($op, $ready), $op->id, true],
             default => [self::RENEWING, null, false],
         };
     }
@@ -123,10 +121,13 @@ final class StaffDomainStatus
     {
         $cause = RequestFacts::reason($op);
         // A cost approval already names its one step, the Approve registrar cost button on the domain page.
-        if ($cause !== null && str_starts_with($cause, 'Needs approval:') && \Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::need($op) !== null) { return $cause; }
+        if ($cause !== null && \Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::need($op) !== null && str_starts_with($cause, 'Needs approval:')) { return $cause; }
         return self::sentence($cause ?? ($op->state === 'held' ? 'Not sent' : RequestStatus::UNCONFIRMED)).self::check($op->id);
     }
     private static function check(int $id): string { return ' Check request #'.$id.'.'; }
+    /** One step: a request that waits only on Orders names the switch, since its page says no more; any other names the request. */
+    private static function ordersOrCheck(Operation $op, string $reason): string
+    { return $op->state==='queued'&&OperationQueries::ordersOff($op)?RequestFacts::ordersStep($reason):self::check($op->id); }
     /** The first danger alert, else the oldest. */
     private static function topAlert(array $alerts): array
     {
