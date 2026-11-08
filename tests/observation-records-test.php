@@ -60,6 +60,10 @@ same('refreshed',$observer->run($d->id,readRecords:true),'Record failure preserv
 same('read_failed',$d->fresh()->observation['record_hold']['code']??null,'Partial Enom discovery retains its safe failure cause');
 require_once __DIR__.'/Support/staff-panel.php';
 \Illuminate\Support\Facades\Auth::login(staffUser([\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::VIEW]));
+// Model the existing automatic retry separately from a permanent stop.
+DB::table('domains_observation_work')->insert(['server_id'=>$d->server_id,'account_fingerprint'=>$d->account_fingerprint,'domain_id'=>$d->id,
+    'generation'=>$d->authority_generation,'phase'=>\Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::phase($d),
+    'due_at'=>$clock->now()->getTimestamp()+60,'safe_code'=>'read_failed','tries'=>1]);
 same(null,\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::recordHold($d->fresh()),'Scheduled recovery has no stopped-read notice');
 $partialJob=\Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::current($d)->sole();
 DB::table('domains_observation_work')->where('id',$partialJob->id)->update(['safe_code'=>'records_incomplete']);

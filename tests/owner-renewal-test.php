@@ -31,7 +31,7 @@ same($before,$ledger(),'Off request creates no invoice');
 $setting('domains_manual_renewals_enabled',true);$dto=$owners->present($d->fresh());
 same(['url'=>route('domains.domains.renew',$d->id),'terms'=>[1],'order_by'=>'2027-10-17'],$dto->renewNow,'Request offers horizon-bounded terms until the day before expiry');
 $html=$page($d);
-foreach(['Renew now','Renew '.$d->domain,'>Domain<','>'.$d->domain.'<' ,'>Years<',
+foreach(['Renew now','Renew '.$d->domain,'>Domain<','>'.$d->domain.'<','>Years<',
     'You can renew online until <time datetime="2027-10-17">Oct 17, 2027</time>.','Create invoice','action="'.route('domains.domains.renew',$d->id).'"','name="_request_key"'] as $text){expect(str_contains($html,$text),'Owner form shows '.$text);}
 $form=storefrontDom($html);$options=$form->query('//select[@id="renew-years"]/option');
 same(['1'],array_map(fn($option)=>$option->getAttribute('value'),iterator_to_array($options)),'Owner form offers exactly the supported annual term');
@@ -46,7 +46,7 @@ $before=$ledger();
 foreach(['0','01','abc','',' 2','2.0','-1','100'] as $years){$refused($d,['years'=>$years],'Choose how many years to renew for.');}
 $refused($d,[],'Choose how many years to renew for.');$refused($d,['years'=>['2']],'Choose how many years to renew for.');
 foreach(['10','11','99'] as $years){$refused($d,['years'=>$years],'Domains can be registered for at most 10 years ahead. Choose a shorter term.');}
-foreach (range(2,9) as $years) { $refused($d,['years'=>(string)$years],OwnerRenewalController::UNAVAILABLE); }
+foreach (range(2,9) as $years) { $refused($d,['years'=>(string)$years],'Renewals longer than 1 year aren’t available for this domain yet. Renew for 1 year at a time.'); }
 same($before,$ledger(),'Refused terms create no invoice');
 
 // Foreign owner, wrong intent and another domain's key are refused before billing.
