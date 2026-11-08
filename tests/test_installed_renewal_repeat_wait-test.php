@@ -2,7 +2,8 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/renewal-execution.php';
-require __DIR__.'/Support/staff-panel.php';
+require __DIR__.'/Support/staff-panel.php';require __DIR__.'/Support/renewal-runtime.php';
+app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
 use Illuminate\Support\Facades\{Auth, Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Labels, RequestFacts, Staff};
@@ -96,10 +97,21 @@ same($goes->format(DATE_ATOM),DomainListRow::renewal($offSummary)['at'],'Off lis
 $offHtml=view('domains::show',['domain'=>$owners->present($d->fresh()),'summary'=>$offSummary])->render();
 expect($at($offHtml)&&str_contains(strip_tags($offHtml),$customer),'Off detail retains paid cycle timing and assurance');
 $d->update(['renewal_policy'=>$policy]);
+// Scheduler -> queued native job: before the boundary it stays queued, then sends once at the stored time.
+$runtimeWork=$renewalRuntime($b,$engine,$writer,$completion);
+$scheduledSecond=static function()use($runtimeWork,$second):void {
+    \Illuminate\Support\Facades\Queue::fake();$runtimeWork->tickOperations();
+    \Illuminate\Support\Facades\Queue::assertPushed(\Paymenter\Extensions\Servers\Domains\Jobs\RunOperation::class,fn($job)=>$job->operationId===$second->id);
+    $jobs=\Illuminate\Support\Facades\Queue::pushed(\Paymenter\Extensions\Servers\Domains\Jobs\RunOperation::class,fn($job)=>$job->operationId===$second->id);
+    $jobs->last()->handle($runtimeWork);
+};
+$clock->instant=$goes->modify('-60 seconds');Cache::flush();$scheduledSecond();
+same(['queued',$writes],[$second->fresh()->state,$state->writes],'The scheduled native job sends nothing before the stored boundary');
 // When the time comes it sends by itself, and the wait words leave every page.
 $clock->instant = $goes; Cache::flush();
 $state->expiry = '10/18/2028 5:00:00 AM'; $state->day = '10/18/2028'; $state->years = 2; $state->after = '2030-10-18'; $state->order = '9003'; $state->charge = '16.00';
-same('pending', $engine->run($second->id, $writer)->state, 'At the stored time it sends by itself');
+$scheduledSecond();same('pending',$second->fresh()->state,'At the stored time the scheduled native job sends by itself');
+(new Paymenter\Extensions\Servers\Domains\Jobs\RunOperation($second->id))->handle($runtimeWork);
 same($writes + 1, $state->writes, 'Exactly one send');
 expect(!str_contains((string) (RequestFacts::notice($second->fresh())['title'] ?? ''), 'Enom refuses'), 'No wait notice once sent');
 same([], array_intersect_key(DomainPage::nextInvoice($owners->present($d->fresh()), null, null) ?? [], ['at' => true]), 'Customer page drops the time once sent');
