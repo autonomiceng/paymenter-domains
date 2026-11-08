@@ -263,12 +263,22 @@ class WhatYouSell extends Page implements HasTable
     }
     private function emptyHeading(): string
     {
-        if(!$this->narrowed()){return 'No prices yet';}
+        if(!$this->otherNarrowing()){
+            return $this->switchedOn('for_sale')&&$this->reads()->rows(null)->exists()?'No TLDs are for sale':'No prices yet';
+        }
         $only=$this->show()!==null&&!$this->hasTableSearch()&&!$this->switchedOn('country')&&!$this->switchedOn('no_cost');
         return $only&&$this->reads()->leftOutExplains($this->show())?'No prices to show. See the note above.':'No TLDs match';
     }
     private function focused(): bool {return $this->tld!==null&&$this->getTableSearch()===$this->tld;}
     private function switchedOn(string $filter): bool {return (bool)($this->getTableFilterState($filter)['isActive']??false);}
+    private function otherNarrowing(): bool {return $this->hasTableSearch()||$this->show()!==null||$this->switchedOn('country')||$this->switchedOn('no_cost');}
+    private function emptyDescription(): ?string
+    {
+        if($this->focused()){return 'This TLD has no prices here yet. To load them, use Sync prices.';}
+        if($this->otherNarrowing()){return null;}
+        if($this->emptyHeading()==='No TLDs are for sale'){return 'Clear For sale to see every TLD.';}
+        return $this->readerNeedsAttention()?'Check the registrar account to read prices.':'The first read runs by itself. To get prices now, use Sync prices.';
+    }
     /** A search or filter is why rows are gone, so the way back is to clear it, not to read prices again. */
     private function narrowed(): bool {return $this->hasTableSearch()||$this->show()!==null||$this->switchedOn('country')||$this->switchedOn('no_cost')||$this->switchedOn('for_sale');}
     /** Cost, Price and Profit for one sale. Renew and Transfer start off so the page stays one screen wide. */
@@ -313,9 +323,7 @@ class WhatYouSell extends Page implements HasTable
         return $table->query(fn()=>$this->reads()->rows($this->focused()?$this->tld:null))
             ->defaultSort('tld')->paginated([25,50,100])->defaultPaginationPageOption(25)->searchPlaceholder('Search TLDs')
             ->emptyStateHeading(fn()=>$this->emptyHeading())
-            ->emptyStateDescription(fn()=>$this->focused()
-                ?'This TLD has no prices here yet. To load them, use Sync prices.'
-                :($this->narrowed()?null:($this->readerNeedsAttention()?'Check the registrar account to read prices.':'The first read runs by itself. To get prices now, use Sync prices.')))
+            ->emptyStateDescription(fn()=>$this->emptyDescription())
             ->emptyStateActions([Action::make('clear')->label(fn()=>$this->show()!==null||$this->switchedOn('country')||$this->switchedOn('no_cost')||$this->switchedOn('for_sale')?'Clear filters':'Clear search')->color('gray')
                 ->visible(fn()=>$this->narrowed()&&!$this->focused())->action(function():void {$this->removeTableFilters();$this->resetTableSearch();})])
             // Merged, so the panel skin's table class stays and this head matches every other table.
