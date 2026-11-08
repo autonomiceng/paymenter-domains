@@ -39,7 +39,7 @@ final class ComplimentaryCosts
     public static function message(Operation $op,bool $canApprove=false):?string
     {
         $review=$op->policy['complimentary_cost_review']??null;
-        $next=$canApprove?'Use Approve registrar cost to continue.':'Ask staff with domain management and funding permissions to approve this cost.';
+        $next=$canApprove?'Use Approve registrar cost to continue.':'Ask staff with domain cost, management and funding permissions to approve this cost.';
         return $op->state==='held'&&$op->safe_code==='registrar_price_increased'&&$review?'Needs approval: registrar cost $'.number_format((float)$review['amount'],2,'.','').' is above the usual $'.number_format((float)$review['usual'],2,'.','').'. '.$next.' Nothing is charged until approval.':null;
     }
     public static function approve(int $id,User $actor,string $amount,string $reason,Clock $clock):void
@@ -48,7 +48,7 @@ final class ComplimentaryCosts
         DB::transaction(static function()use($seed,$id,$actor,$amount,$reason,$clock):void {
             $l=HoldingLocks::take($seed,(int)$actor->id);$op=$l['operations']->firstWhere('id',$id);
             $staff=$l['staff'];$review=$op?->policy['complimentary_cost_review']??null;
-            if(!$staff?->hasPermission('admin.domains.fund')||!$staff->hasPermission('admin.domains.manage')||$reason===''||strlen($reason)>500
+            if(!$staff?->hasPermission('admin.domains.fund')||!$staff->hasPermission('admin.domains.manage')||!$staff->hasPermission('admin.domains.costs')||$reason===''||strlen($reason)>500
                 ||!$review||$review['amount']!==$amount||!self::message($op)||!isset($op->policy['account_complimentary'])
                 ||($op->attempt['seal']??'absent')!=='absent'||isset($op->attempt['execution'])||isset($op->cost['actual'])){throw new \DomainException('Current unsent registrar cost approval required.');}
             ComplimentaryAccounts::require($op->policy['account_complimentary'],(int)$l['domain']->user_id);

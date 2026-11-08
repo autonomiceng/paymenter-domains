@@ -75,7 +75,7 @@ class ViewDomain extends ViewRecord
     private function approveComplimentaryCost(Domain $d):Action
     {
         $op=null;$message=null;
-        if(Staff::can('admin.domains.fund')&&Staff::can('admin.domains.manage')){
+        if(Staff::can('admin.domains.fund')&&Staff::can('admin.domains.manage')&&Staff::can(Staff::COSTS)){
             foreach($d->operations()->where('state','held')->where('safe_code','registrar_price_increased')->latest('id')->get() as $candidate){
                 try{$message=\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::message($candidate,true);}
                 catch(\Throwable){continue;}
@@ -165,7 +165,10 @@ class ViewDomain extends ViewRecord
     {
         $out=[];
         if(Staff::can('admin.domains.fund')){foreach($d->operations()->where('state','held')->get() as $op){
-            try{if($message=\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::message($op,Staff::can('admin.domains.manage'))){$out[]=Callout::make($message)->status('danger')->columnSpanFull();}}
+            try{if($message=\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::message($op,Staff::can('admin.domains.manage'))){
+                if(!Staff::can(Staff::COSTS)){$message='Registrar cost approval is needed. Ask staff with access to domain costs to review it.';}
+                $out[]=Callout::make($message)->status('danger')->columnSpanFull();
+            }}
             catch(\Throwable){$out[]=Callout::make('Registrar cost details are unavailable.')->status('warning')->columnSpanFull();}
         }}
         $sync=\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::result($d);
