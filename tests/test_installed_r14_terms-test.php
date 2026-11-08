@@ -31,7 +31,7 @@ foreach(['Customer total $'.number_format((float)$termPrice->retail,2,'.',''),'R
 
 // r16: two separate missing ranges say why once, on the first.
 $gaps=view('domains::admin.term-prices',['prices'=>array_map(fn($term)=>['term'=>$term,'current'=>in_array($term,[1,2,5,10],true)?'10.99':null,'cost'=>in_array($term,[1,2,5,10],true)?'8.9500':null,'synced'=>in_array($term,[1,2,5,10],true)],range(1,10))])->render();
-same([1,2],[substr_count($gaps,'No saved registrar total for these terms.'),substr_count(strip_tags($gaps),'Missing')],'Missing on 3 to 4 and 6 to 9 years, its cause once');
+same([1,2,1],[substr_count($gaps,'No saved registrar total for these terms.'),substr_count(strip_tags($gaps),'Missing'),substr_count($gaps,'Sync prices is an optional retry.')],'Missing on 3 to 4 and 6 to 9 years, its cause once');
 // Three selected endings with fresh term facts, and no ending needing attention.
 $policy=\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld',$t->tld)->sole()->getAttributes();unset($policy['id']);
 foreach(['net','org']as$ending){$copy=$t->replicate();$copy->tld=$ending;$copy->save();DB::table('domains_sales_policies')->insert([...$policy,'tld'=>$ending]);}
