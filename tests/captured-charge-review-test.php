@@ -33,7 +33,7 @@ config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enab
 $rights=['admin.domains.view','admin.domains.costs','admin.domains.manage','admin.domains.fund','admin.invoices.update','admin.domains.operations.resume_reads','admin.domains.operations.recheck','admin.domains.operations.approve_charge'];
 $staff=staffUser($rights);$role=$staff->role;$failures=[];$check=static function(bool $ok,string $message)use(&$failures):void{if(!$ok){$failures[]=$message;}};
 try{foreach(['changed'=>['20.00','actual_charge_changed'],'overrun'=>['16.00','actual_cost_overrun']]as$case=>[$limit,$reason]){
- config(['domains.enom_identity.environment'=>null]);
+ app()->instance(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class,$bindings);config(['domains.enom_identity.environment'=>null]);
  [$seed,$d,$b]=$makeRenewal(placeholderComFixtureName('captured-'.$case.'-placeholder.com'),false);$cycles->retireUnpaid($seed->id);
  $clock->instant=new DateTimeImmutable('2027-09-27T12:00:00Z');$review($d);
  $op=$cycles->complimentary($d->id,$staff,2,new Money($limit,'USD'),'staff_reviewed');
@@ -93,12 +93,13 @@ try{foreach(['changed'=>['20.00','actual_charge_changed'],'overrun'=>['16.00','a
 }catch(Throwable $error){throw new RuntimeException($error->getMessage().' at '.implode(' > ',array_map(static fn($frame)=>($frame['file']??'').':'.($frame['line']??0),$error->getTrace())),0,$error);}
 expect($failures===[],implode('; ',$failures));
 // Ordinary exact-charge paid completion still uses its frozen two-year total and no staff approval.
+app()->instance(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class,$bindings);config(['domains.enom_identity.environment'=>null]);
 [$paid,$d,$b,$invoice]=$makeRenewal(placeholderComFixtureName('captured-paid-control-placeholder.com'),true,2,beforeBill:$review);
-[$engine,$writer,$completion]=$compose($b);$state->years=2;$state->after='2029-10-18';$state->charge='16.00';same('pending',$engine->run($paid->id,$writer)->state,'Paid exact two-year send');$state->expiry='2029-10-18';
+config(['domains.enom_identity.environment'=>'test']);[$engine,$writer,$completion]=$compose($b);$state->years=2;$state->after='2029-10-18';$state->charge='16.00';same('pending',$engine->run($paid->id,$writer)->state,'Paid exact two-year send');$state->expiry='2029-10-18';
 $done=$completion->run($paid->id);same(['succeeded',2,'2029-10-18'],[$done->state,$state->lastWrite[1]['NumYears'],$d->fresh()->provider_expires_at->format('Y-m-d')],'Exact paid charge completes the real native invoice');same($paid->amount,$invoice->items()->sole()->price,'Original retail total stays frozen');
 // The ordinary exact-charge complimentary path remains independent of excess-charge approval.
 config(['domains.enom_identity.environment'=>null]);[$seed,$d,$b]=$makeRenewal(placeholderComFixtureName('captured-comp-control-placeholder.com'),false);$cycles->retireUnpaid($seed->id);$clock->instant=new DateTimeImmutable('2027-09-27T12:00:00Z');$review($d);
 $comp=$cycles->complimentary($d->id,$staff,2,new Money('16.00','USD'),'staff_reviewed');$clock->instant=new DateTimeImmutable('2027-10-18T11:59:00Z');config(['domains.enom_identity.environment'=>'test']);Cache::flush();
-[$engine,$writer,$completion]=$compose($b);$state->years=2;$state->after='2029-10-18';$state->charge='16.00';same('pending',$engine->run($comp->id,$writer)->state,'Complimentary exact two-year send');$state->expiry='2029-10-18';
+config(['domains.enom_identity.environment'=>'test']);[$engine,$writer,$completion]=$compose($b);$state->years=2;$state->after='2029-10-18';$state->charge='16.00';same('pending',$engine->run($comp->id,$writer)->state,'Complimentary exact two-year send');$state->expiry='2029-10-18';
 same(['succeeded','2029-10-18','0.00'],[$completion->run($comp->id)->state,$d->fresh()->provider_expires_at->format('Y-m-d'),$comp->amount],'Exact complimentary charge completes without the approval action');
 echo "Native captured-charge observation and audited approval passed\n";$nativeSuccessful=true;
