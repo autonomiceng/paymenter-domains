@@ -764,7 +764,8 @@
     "tests/retail-preview-test.php",
     "tests/cart-term-picker-test.php",
     "tests/retail-upgrade-isolation-test.php",
-    "tests/complimentary-call-history-closure-test.php"
+    "tests/complimentary-call-history-closure-test.php",
+    "tests/retail-unpublished-upgrade-test.php"
   ],
   "ui": [],
   "runner": [
