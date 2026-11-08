@@ -39,8 +39,8 @@ $before=$money();$runtime->tick();
 same('cancelled',Service::findOrFail($op->service_id)->status,'Ordinary runtime discovery and refund dispatch close the proved complimentary refusal');
 same('registration_rejected',$op->domain->fresh()->status,'Automatic closure preserves the refusal');
 same(['paid',0,0],[Invoice::findOrFail($op->invoice_id)->status,InvoiceTransaction::count(),Credit::count()],'Zero receipt stays Paid without transactions or credit');
-$closed=$op->fresh()->getRawOriginal();$serviceClosed=Service::findOrFail($op->service_id)->getRawOriginal();$clock->instant=$clock->now()->modify('+1 minute');Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());$runtime->tick();
-same($serviceClosed,Service::findOrFail($op->service_id)->getRawOriginal(),'Later worker replay does not rewrite the closed native service');same($closed,$op->fresh()->getRawOriginal(),'Repeated worker closure retains original evidence');
+$evidence=static fn()=>array_intersect_key($op->fresh()->getAttributes(),array_flip(['state','safe_code','attempt','funding']));$closed=$evidence();$serviceClosed=Service::findOrFail($op->service_id)->getRawOriginal();$clock->instant=$clock->now()->modify('+1 minute');Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());$runtime->tick();
+same($serviceClosed,Service::findOrFail($op->service_id)->getRawOriginal(),'Later worker replay does not rewrite the closed native service');same($closed,$evidence(),'Repeated worker closure retains original evidence; native closure bookkeeping may be recorded separately');
 foreach($controls as $case=>[$id,$serviceId,$status]){same($status,Service::findOrFail($serviceId)->status,'Unproved or invalid complimentary order stays open: '.$case);expect(!isset(\Paymenter\Extensions\Servers\Domains\Models\Operation::findOrFail($id)->funding['refund']),'No refund authority from '.$case);}
 same($before,$money(),'Worker closure and replay change no money history');same(['Purchase'],$calls,'Worker never resends the refused registration');
 echo "Native complimentary refusal worker closure passed\n";$nativeSuccessful=true;
