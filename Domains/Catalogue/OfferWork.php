@@ -54,15 +54,22 @@ final class OfferWork
             $this->offerBinding($binding, $t); $work = OfferState::decode($row->offer_work);
             $facts = OfferState::facts($t->catalogue_facts);
             $rejected = !OfferState::testFactsAccepted($binding, $tld, $facts, $this->clock);
-            if (isset($work['facts'][$tld])) {
-                $state = $work['facts'][$tld];
+            $state = $work['facts'][$tld] ?? null;
+            $authority = hash('sha256', OfferState::json(TermSupport::evidence($binding, $tld)));
+            $current = $facts && TermSupport::currentFacts($binding, $tld, $facts);
+            if ($state !== null && !$current && $binding->registrarKey === 'enom'
+                && ($state['authority'] ?? null) !== $authority) {
+                // Wake once for a changed approval; repeated hints preserve the new failure backoff.
+                $work['facts'][$tld] = ['sold_only' => $state['sold_only'] ?? $soldOnly,
+                    'authority' => $authority, 'due_at' => $this->at()];
+            } elseif ($state !== null) {
                 // Promote an old freshness deadline, while preserving failures and unsupported readers.
                 if (!$rejected || !empty($state['tries']) || !empty($state['unsupported'])
                     || ($state['due_at'] ?? 0) <= $this->at()) { return; }
                 $work['facts'][$tld]['due_at'] = $this->at();
             } else {
                 if (count($work['facts'] ?? []) >= 5000) { throw new \DomainException('Offer facts queue is full.'); }
-                $work['facts'][$tld] = ['sold_only' => $soldOnly, 'due_at' => !$rejected && $facts && $facts->fresh($this->clock->now()) ? $facts->freshUntil->getTimestamp() : $this->at()];
+                $work['facts'][$tld] = ['sold_only' => $soldOnly, 'authority' => $authority, 'due_at' => !$rejected && $current && $facts->fresh($this->clock->now()) ? $facts->freshUntil->getTimestamp() : $this->at()];
             }
             $q->update(['offer_work' => OfferState::json($work)]);
         });
@@ -103,7 +110,7 @@ final class OfferWork
             $t = Tld::where('server_id', $binding->serverId)->where('tld', $tld)->firstOrFail(); $this->offerBinding($binding, $t);
             if ($failure) { return $failure; }
             $state = $work['facts'][$tld] ?? []; $facts = OfferState::facts($t->catalogue_facts);
-            return [...$state, 'state' => $facts && $facts->fresh($this->clock->now()) && OfferState::testFactsAccepted($binding, $tld, $facts, $this->clock) ? 'ready' : (!$state ? 'unknown' : (!empty($state['unsupported']) ? 'unsupported' : (!empty($state['failure']) ? 'retrying' : 'queued'))),
+            return [...$state, 'state' => $facts && $facts->fresh($this->clock->now()) && TermSupport::currentFacts($binding, $tld, $facts) && OfferState::testFactsAccepted($binding, $tld, $facts, $this->clock) ? 'ready' : (!$state ? 'unknown' : (!empty($state['unsupported']) ? 'unsupported' : (!empty($state['failure']) ? 'retrying' : 'queued'))),
                 'due_at' => $state['due_at'] ?? null];
         }
         if (!$row || $row->offer_work === null) { return ['state' => 'idle']; }
@@ -189,6 +196,8 @@ final class OfferWork
                 $work['credential_revision'] = $credential; $work['upgrade_generation'] = $this->generation;
             }
             $this->republish($writer, $b, $work, $guard);
+            // Republication can wake retained facts when reviewed authority changes.
+            $work['facts'] = OfferState::decode(DB::table('domains_observation_queues')->where('server_id', $b->serverId)->value('offer_work'))['facts'] ?? [];
             $t = $this->nextFacts($work);
             if (!empty($work['pending'])) {
                 if ($t) { $this->facts($writer, $b, $t, $work, $guard); }
