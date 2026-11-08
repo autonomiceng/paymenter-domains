@@ -15,6 +15,8 @@ final class WatchFindings
     public const KEYS=['staff.unavailable','watch.redemption','watch.expired','watch.ns_changed','staff.expiring','watch.not_registered','watch.ns_pending','watch.stale','watch.partial','watch.not_checked','watch.no_coverage','staff.stopped'];
     /** Keys that make a monitored domain "Problem found", with the reason line; null reads the days to expiry. */
     public const PROBLEMS=['staff.unavailable'=>"Can't read saved data",'watch.redemption'=>'Redemption','watch.expired'=>'Expired','watch.ns_changed'=>'Nameservers changed','staff.expiring'=>null,'watch.not_registered'=>'Not registered'];
+    /** Why a stopped domain has no action; the page head says it, list rows show Stopped alone. */
+    public const ENDED='Ended with its hosting service';
     /** Status filter options; Monitoring and Problem found read the first CAP active names. */
     public const STATUSES=['monitoring'=>'Monitoring','problem'=>'Problem found','paused'=>'Paused','stopped'=>'Stopped'];
     public const CAP=1000;
