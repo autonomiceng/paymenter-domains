@@ -32,12 +32,12 @@ final class WatchWork
         $this->stage(fn()=>(new WatchRegistryChecks(true))->enroll($id,$owner,$now));
         $this->stage(fn()=>(new WatchDnsChecks(true))->enroll($id,$owner,$now));
     }
-    public function reconcileDefaults(): void
+    public function reconcileDefaults(bool $managed=true,bool $watches=true): void
     {
         if(!$this->active() || DB::transactionLevel()!==0){return;}
         $now=($this->clock)();
-        $this->stage(fn()=>(new ManagedPublicReconciliation($this->signals()))->sweep($now));
-        $this->stage(fn()=>$this->enroll($now));
+        if($managed){$this->stage(fn()=>(new ManagedPublicReconciliation($this->signals()))->sweep($now));}
+        if($watches){$this->stage(fn()=>$this->enroll($now));}
     }
     public function tick(): int
     {

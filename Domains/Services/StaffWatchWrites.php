@@ -29,7 +29,7 @@ final class StaffWatchWrites
             $class=match($kind){'watch'=>WatchName::class,'profile'=>WatchProfile::class,'mapping'=>WatchProductMap::class,default=>throw new \DomainException('Reload and try again.')};
             $row=$id?$class::whereKey($id)->lockForUpdate()->firstOrFail():new $class;
             if(($row->exists?(int)$row->revision:0)!==($t['revision']??null)){throw new \DomainException('The saved details changed. Reload and try again.');}
-            if($kind==='profile'&&$row->exists&&$row->readProfile()===null){throw new \DomainException('Reload and try again.');}
+            if($kind==='profile'&&$row->exists&&$row->readProfile()===null&&$action!=='delete'){throw new \DomainException('Saved DNS records cannot be read. Restore the template before changing it.');}
             $before=$row->exists?$row->revision:0;$data=[];
             if($kind==='watch'){
                 // Staff pause and resume; a watch ends only with its hosting service, never by a staff write.

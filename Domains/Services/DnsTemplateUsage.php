@@ -10,7 +10,10 @@ final class DnsTemplateUsage
     {
         if(SiteDnsDefault::uses($id)){return 'Choose another template for new domains first.';}
         // Paused choices still apply after monitoring resumes. Stopped watches no longer use the template.
-        if(WatchName::where('ns_profile_id',$id)->whereIn('state',['active','paused','linked'])->exists() || ManagedPublicConfig::where('profile_id',$id)->exists()){
+        if(WatchName::where('ns_profile_id',$id)->where('state','linked')->exists() || ManagedPublicConfig::where('profile_id',$id)->exists()){
+            return 'This template is assigned to retained domain records. Keep it for their history.';
+        }
+        if(WatchName::where('ns_profile_id',$id)->whereIn('state',['active','paused'])->exists()){
             return 'This template is assigned to domains. Choose another template for them first.';
         }
         if(WatchProductMap::where('expected_ns_profile_id',$id)->exists()){

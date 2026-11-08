@@ -17,6 +17,12 @@ final class WatchFindings
     public const PROBLEMS=['staff.unavailable'=>"Can't read saved data",'watch.redemption'=>'Redemption','watch.expired'=>'Expired','watch.ns_changed'=>'Nameservers changed','staff.expiring'=>null,'watch.not_registered'=>'Not registered'];
     /** Why a stopped domain has no action; the page head says it, list rows show Stopped alone. */
     public const ENDED='Ended with its hosting service';
+    public static function stoppedReason(WatchName $watch): string
+    {
+        $event=\Paymenter\Extensions\Servers\Domains\Models\WatchAudit::where('subject_type','watch')->where('subject_id',$watch->id)
+            ->whereIn('event',['discovery_retired','discovery_active','staff_retire','staff_stop'])->orderByDesc('id')->value('event');
+        return $event==='discovery_retired'?self::ENDED:'Monitoring has stopped';
+    }
     /** Status filter options; Monitoring and Problem found read the first CAP active names. */
     public const STATUSES=['monitoring'=>'Monitoring','problem'=>'Problem found','paused'=>'Paused','stopped'=>'Stopped'];
     public const CAP=1000;
