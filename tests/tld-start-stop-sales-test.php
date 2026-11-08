@@ -85,6 +85,17 @@ $case('term-limit recovery',static function()use($reset,$t,$catalogue):void{
     $step=$catalogue->recovery(collect([$t->fresh()]),'register',3)[$t->server_id.':com'];
     expect(str_contains($step['next'],'Edit terms')&&!str_contains($step['next'],'Start selling'),'Term-limit recovery names the available editor');
 });
+$case('paused readiness',static function()use($reset,$actor,$t,$binding):void{
+    $reset(['sell'=>true,'transfers'=>true],true);
+    Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->mountAction('stop_selling')->callMountedAction()->assertNotified('Change recorded');
+    $ready=Paymenter\Extensions\Servers\Domains\Catalogue\OfferReadiness::routed()->review(Account::where('server_id',$binding->serverId)->sole(),['registration'=>true,'transfer'=>true]);
+    same([[],[]],[$ready['costs'],$ready['failures']],'Paused acquisitions are excluded from activation readiness');
+});
+$case('paused automatic facts',static function()use($binding):void{
+    $q=Illuminate\Support\Facades\DB::table('domains_observation_queues')->where('server_id',$binding->serverId);$work=Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode((clone $q)->value('offer_work'));unset($work['facts']['com']);$q->update(['offer_work'=>json_encode($work)]);
+    Paymenter\Extensions\Servers\Domains\Catalogue\OfferScheduler::routed()->requestFacts($binding,'com');
+    $work=Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode((clone $q)->value('offer_work'));expect(!isset($work['facts']['com']),'Paused acquisitions do not schedule sold-set registrar reads');
+});
 expect($failures===[],implode("\n",$failures));
 $reset(['sell'=>false],false);
 
