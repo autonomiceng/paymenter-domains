@@ -100,6 +100,19 @@ $check('Exact stored approval costs',static function()use($staff,$d,$fractional)
     same('queued',$fractional->fresh()->state,'The displayed exact quote can be approved');
     same(0,\Paymenter\Extensions\Servers\Domains\Services\WriteMoney::compare('8.0040',DB::table('domains_complimentary_approvals')->where('operation_id',$fractional->id)->sole()->amount),'The approval audit retains the exact displayed amount');
 });
+[$changed,$d]=$hold('approval-replaced-quote-placeholder.com');
+$check('Quote changed after modal opens',static function()use($staff,$d,$changed):void {
+    $page=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$d->id])->mountAction('approveComplimentaryCost')
+        ->setActionData(['reason'=>'Approve the displayed quote']);
+    expect(str_contains($page->effects['partials']['action-modals.0']??'','registrar cost $8.01'),'The mounted modal displayed the original quote');
+    $changed->update(['policy'=>[...$changed->policy,'complimentary_cost_review'=>['amount'=>'8.02','usual'=>'8.00']]]);
+    $before=DB::table('domains_complimentary_approvals')->count();
+    $page->callMountedAction()->assertHasNoActionErrors();
+    same(['held',$before],[$changed->fresh()->state,DB::table('domains_complimentary_approvals')->count()],'An unseen replacement quote must remain held without an approval audit');
+    $page->assertNotified(Notification::make()->danger()->title('Could not approve registrar cost')->body('Reload the domain and check the current registrar cost and hold.'));
+    same('8.02',$changed->fresh()->policy['complimentary_cost_review']['amount'],'The replacement quote remains available for a fresh review');
+    same($before,DB::table('domains_complimentary_approvals')->count(),'An unseen replacement quote adds no approval audit');
+});
 [$broken,$d]=$hold('approval-unreadable-placeholder.com');
 DB::table('domains_operations')->where('id',$broken->id)->update(['policy'=>'unreadable-retained-policy']);
 $check('Unreadable cost details',static function()use($staff,$d):void {
