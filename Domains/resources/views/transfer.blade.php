@@ -10,10 +10,10 @@
 @if (!$endings)
 <div class="domains-notice domains-notice--warn" role="status">Domain transfers aren't open yet. @php($support = \Paymenter\Extensions\Servers\Domains\Presentation\Missing::supportUrl())@if ($support) <a class="domains-a" href="{{ $support }}">{{ config('settings.tickets_disabled', false) ? 'Contact support' : 'Open a ticket' }}</a>@endif</div>
 @else
-<form method="GET" action="{{ route('domains.domains.transfer') }}" role="search" novalidate>
+<form method="GET" action="{{ route('domains.domains.transfer') }}" role="search">
 <div class="domains-searchbar">
 <label for="domains-transfer-name" class="domains-sr">Domain name</label>
-<input id="domains-transfer-name" name="name" type="text" value="{{ $sld ?? $name }}" placeholder="yourbusiness" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="253" required @if ($error) aria-invalid="true" aria-describedby="domains-transfer-error" @endif>
+<input id="domains-transfer-name" name="name" type="text" value="{{ $sld ?? $name }}" placeholder="yourbusiness" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="253" required pattern=".*\S.*" @if ($error) aria-invalid="true" aria-describedby="domains-transfer-error" @endif>
 <label for="domains-transfer-tld" class="domains-sr">TLD</label><select id="domains-transfer-tld" name="tld" class="domains-input">@foreach ($endings as $ending)<option value="{{ $ending['tld'] }}" @selected($ending['tld'] === $preferred)>.{{ $ending['tld'] }}</option>@endforeach</select>
 <button type="submit" class="domains-btn domains-btn--primary">Continue</button></div>
 @if ($error)<p id="domains-transfer-error" class="domains-error" role="alert">{{ $error }}</p>@endif
