@@ -27,7 +27,8 @@ foreach(['terms','disabled','inheritance'] as $case){
     $page=$submit();if($case==='disabled'){$page->setActionData(['seller'=>$other->server_id]);}
     $before=$t->fresh()->getRawOriginal();
     if($case==='disabled'){DB::table('extensions')->where('id',$other->server_id)->update(['enabled'=>false]);}
-    $page->callMountedAction()->assertSuccessful();
+    echo 'Registrar scenario: '.$case."\n";
+    $page->callMountedAction()->assertSuccessful();if($case!=='disabled'){$page->assertHasNoActionErrors();}
     if($case==='disabled'){
         $review=Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::class;$commands=Paymenter\Extensions\Servers\Domains\Catalogue\StaffCommands::class;
         $r=new $review($actor->id,$t->server_id,$t->id,'seller',$review::ticket($actor->id,$t->server_id,$t->id,'seller',$commands::stamp($t->server_id,$t->id)),'Choose this registrar for new orders');
