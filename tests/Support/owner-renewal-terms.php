@@ -6,8 +6,7 @@ use Paymenter\Extensions\Servers\Domains\Data\CostUnit;
 
 // Calendar proof uses explicit synthetic ten-year evidence, independently of the two-year TEST approval.
 // Publish after the native registration observation, without replacing main's annual-only matrices.
-$publishOwnerCalendarTerms=static function($binding)use($ports,$clock):void{
-    $ownerCataloguePorts=$ports;
+$publishOwnerCalendarTerms=static function($binding)use($ownerCataloguePorts,$clock):void{
     $clock->instant=$clock->now()->modify('+1 second');$at=$clock->now();$until=new DateTimeImmutable('2028-11-05T00:00:00Z');
     $proof=['source'=>'synthetic_owner_calendar','version'=>'calendar-1','reviewed_at'=>'2026-10-01T00:00:00+00:00',
         'valid_until'=>$until->format(DATE_ATOM),'terms'=>range(1,10),'price_unit'=>'term_total','rule'=>'synthetic_exact_totals'];
