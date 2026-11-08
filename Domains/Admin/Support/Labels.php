@@ -65,9 +65,10 @@ final class Labels
         }
         // The domain page notice names one step for this hold. The reason names the same one, not Cancel or Release hold.
         if ($op->funding_basis==='complimentary'&&$op->safe_code==='registrar_price_increased') {
-            try { $need=\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::need($op,Staff::can('admin.domains.fund')&&Staff::can('admin.domains.manage')); }
+            $costs=Staff::can(Staff::COSTS);
+            try { $need=\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::need($op,$costs&&Staff::can('admin.domains.fund')&&Staff::can('admin.domains.manage')); }
             catch (\Throwable) { return DomainFacts::UNREADABLE; }
-            if ($need!==null) { return $need; }
+            if ($need!==null) { return $costs?$need:'Needs approval: registrar price increased. Ask staff with access to domain costs to review it.'; }
         }
         // Older checks retained a cap code even when the sending switch refused the read.
         if(in_array($op->safe_code,['enom_test_reconciliation_call_cap','enom_test_transfer_reconciliation_call_cap'],true)
