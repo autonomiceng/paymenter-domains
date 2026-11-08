@@ -69,7 +69,13 @@ try{
 \Illuminate\Support\Facades\Event::forget(\OwenIt\Auditing\Events\AuditCustom::class);config(['audit.enabled'=>false]);
 $on=(bool)ComplimentaryAccounts::current($user->id)['enabled'];
 $noAudit=$line($staff,$user->id)->mountAction($on?'turnOff':'turnOn');
-expect(str_contains($noAudit->html(),'Native audit logging is off'),'Confirmation explains the actual retained history');
+expect(str_contains(($noAudit->effects['partials']['action-modals.0']??'').$noAudit->html(),'Native audit logging is off'),'Confirmation explains the actual retained history');
 $noAudit->setActionData(['reason'=>'Native audit disabled'])->callMountedAction()->assertHasNoActionErrors();
 same('Native audit disabled',ComplimentaryAccounts::current($user->id)['reason'],'Disabled native auditing still retains the reason');
+// With native auditing active, a storage failure must still roll back the extension setting.
+config(['audit.enabled'=>true]);\Illuminate\Support\Facades\Event::listen(\OwenIt\Auditing\Events\AuditCustom::class,static fn()=>throw new RuntimeException('Synthetic audit failure'));
+$before=$rows();$on=(bool)ComplimentaryAccounts::current($user->id)['enabled'];
+try{ComplimentaryAccounts::set($user->id,$staff,!$on,'Refuse partial audit',$clock);expect(false,'Active audit failure propagates');}
+catch(RuntimeException $e){same('Synthetic audit failure',$e->getMessage(),'Actual audit error propagates');}
+same($before,$rows(),'Native audit failure rolls back the complimentary change');
 echo "Complimentary account action permissions, validation, audit and repeat saves passed\n";$nativeSuccessful=true;

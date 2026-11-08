@@ -18,6 +18,17 @@ foreach(Account::all()as$a){
  if($a->registrar_key==='namesilo'){$check(str_contains(strip_tags($html),'NameSilo needs explicit nameservers before an order can be sent.'),'NameSilo names its explicit nameserver requirement');}
  foreach(AccountChecklist::setup($a,['label'=>'Active','reason'=>null])as$row){$check(trim((string)($row['help']??''))!=='','Independent help for '.$a->registrar_key.' '.$row['label']);}
 }
+// Routed progress must retain its own safe cause and time even without missing prices.
+$worker=new \Paymenter\Extensions\Servers\Domains\Catalogue\OfferWork($ports->writer(),$clock,new \Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget($clock),static fn()=>throw new LogicException('No reads'),static fn()=>100);
+$catalogue=new StaffCatalogue($ports,$clock,$worker,static fn()=>true);
+$probe=new ReflectionProperty(CallerRouting::class,'probe');$probe->setValue(null,[StaffCatalogue::class=>$catalogue,\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::class=>$caps]);
+$a=Account::firstOrFail();$failedAt=$now->getTimestamp()-60;
+DB::table('domains_observation_queues')->where('server_id',$a->server_id)->update(['offer_work'=>json_encode(['local_failure'=>'storage_unavailable','local_failed_at'=>$failedAt]),'offer_feed_failed_at'=>$failedAt-3600]);
+$rows=AccountChecklist::setup($a,['label'=>'Active','reason'=>null]);$prices=collect($rows)->firstWhere('label','TLD prices');
+$check($prices['value']==='Sync failed'&&str_contains((string)$prices['cause'],'Database error'),'Routed account price row includes the mapped worker failure');
+$tld=\Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$a->server_id)->firstOrFail();
+$detail=Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewTld::class,['record'=>$tld->id]);
+$check(str_contains($detail->html(),gmdate('Y-m-d\\TH:i:s',$failedAt).'+00:00'),'TLD failure time comes from the same worker result');
 $a=Account::firstOrFail();$runtime=new RuntimePorts;$runtime->register($a->account_fingerprint,static fn()=>throw new RuntimeException('Synthetic broken composition'));app()->instance(RuntimePorts::class,$runtime);
 $check($runtime->registered($a)&&!$runtime->accepted($a),'Fixture separates registration from composition');
 $site=AccountChecklist::runtime($a);$check(str_contains($site['cause'],'Runtime registered')&&str_contains($site['help'],'API connection'),'Site setup reports registration rather than authenticated readiness');
