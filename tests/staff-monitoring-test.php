@@ -47,12 +47,14 @@ Livewire::actingAs($manager)->test(ListWatches::class)->filterTable('status','pa
 Livewire::actingAs($manager)->test(ListWatches::class)->filterTable('customer',['customer'=>(string)$uid])->assertCanSeeTableRecords([$watch]);
 
 // Checked: nameservers moved away and expiry within 30 days is Problem found with the reason.
-DB::table('domains_watch_names')->where('id',$id)->update(['registration'=>'external']);$at=time()-120;noticeRegistry($f,$at,11);noticeDns($f,$at,'external');
+DB::table('domains_watch_names')->where('id',$id)->update(['registration'=>'external']);$at=time()-1020;noticeRegistry($f,$at,11);noticeDns($f,$at,'external');
+same(false,\Paymenter\Extensions\Servers\Domains\Models\WatchDnsObservation::where('watch_id',$id)->where('check_kind','delegation')->latest('id')->sole()->facts['ns_confirmed'],'One DNS observation cannot confirm a mismatch');
+noticeDns($f,$at+900,'external');
 DB::table('domains_watch_work')->where('watch_id',$id)->where('kind','points')->update(['due_at'=>$at,'backoff_until'=>null]);$t=$dns->begin($id,$uid,'points',$at);expect($t!==null,'Points ticket');expect($dns->finish($t,new \Paymenter\Extensions\Servers\Domains\Dns\DnsReading('points',website:true,email:false),$at+1),'Points reading');
 $expiry=gmdate('Y-m-d',$at+11*86400);$days=intdiv(strtotime($expiry.' 00:00:00 UTC')-strtotime(gmdate('Y-m-d').' 00:00:00 UTC'),86400);
 $list=Livewire::actingAs($manager)->test(ListWatches::class);$record=WatchName::find($id);
 same('Problem found',$column($list,'status')->record($record)->getState(),'Problem found pill');same('warning',$column($list,'status')->record($record)->getColor('Problem found'),'Problem found is warning');
-same('Expires in '.$days.' days',$column($list,'note')->record($record)->getState(),'Reason in the Note column');
+same('Nameservers changed. Expires in '.$days.' days.',$column($list,'note')->record($record)->getState(),'Note keeps confirmed mismatch first and expiry second');
 same('Other',$column($list,'delegation.dns')->record($record)->getState(),'Nameservers elsewhere read Other');
 expect($column($list,'last_check')->record($record)->getState()!=='Missing','Last check has a time');
 expect(str_contains((string)$column($list,'last_check')->record($record)->formatState($column($list,'last_check')->getState()),'data-domains-time'),'Last check shows in the viewer time');
@@ -64,16 +66,19 @@ Livewire::actingAs($manager)->test(ListWatches::class)->filterTable('status','mo
 $view=Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id]);$page=$view->instance();$clean($view->html(),'monitored domain');
 expect(str_contains($page->getHeading()->toHtml(),'font-mono') && str_contains($page->getSubheading()->toHtml(),'Problem found'),'Mono name, then the status line');
 assertDomainNameWraps($page->getHeading()->toHtml(),$watch->canonical_name,'Monitored domain title','title');
-expect(str_contains($page->getSubheading()->toHtml(),'Expires in '.$days.' days'),'Reason under the heading');
+expect(str_contains($page->getSubheading()->toHtml(),'Nameservers changed'),'Observed mismatch leads the heading');
+// r16: the head says the problem and Latest checks lists the found nameservers; no notice repeats either.
+$seen=preg_replace('/\s+/',' ',html_entity_decode(strip_tags(preg_replace('~<(script|style)\b.*?</\1>~si','',$view->html())),ENT_QUOTES|ENT_HTML5));
+same([1,0],[substr_count($seen,'Nameservers changed'),substr_count($seen,'Nameservers changed:')],'Nameservers changed shows once, with no notice repeating the found nameservers');
 same([WatchResource::getUrl()=>'Domain monitoring','example.com'],$page->getBreadcrumbs(),'Breadcrumb');
 foreach(['read'=>'Check now','pause'=>'Pause monitoring','profile'=>'Change DNS template','note'=>'Add note','retire'=>'Stop monitoring'] as $name=>$label){same($label,$page->getAction($name)?->getLabel(),'Action '.$name);}
 $view->assertActionHidden('resume');
 foreach(['read','pause'] as $name){same(false,$page->getAction($name)->isConfirmationRequired(),$name.' has no dialog');}
 same('Stop monitoring?',$page->getAction('retire')->getModalHeading(),'Stop dialog heading');same("Checks and alerts stop. The domain won't be added again automatically.",$page->getAction('retire')->getModalDescription(),'Stop dialog body');
 same('Future checks compare against this DNS template.',$page->getAction('profile')->getModalDescription(),'Template dialog body');
-$view->assertSeeInOrder(['Domain','Customer','Expected nameservers','DNS template','Synthetic defaults','Registrar','Expires','Hosting service','Hosting','Registrar records','Billing and ownership','Latest checks','Nameservers','DNS records','Website points to','Email points elsewhere','Registry','Registered','Last check','Next check','Monitoring alerts','On','Activity','No history yet']);
-$view->assertSee('Expires in '.$days.' days.')->assertDontSee('Findings')->assertDontSee('Saved domain checks')->assertDontSee('Notification activity')->assertDontSee('Watch state');
-$facts=WatchFacts::for($record);same(['Domain','Checks','Evidence'],array_keys($facts),'Domain, checks and source evidence sections');same('Other',$facts['Domain']['Registrar']['value']??'Missing','Registrar from the saved registration');
+$view->assertSeeInOrder(['Domain','Customer','Expected nameservers','DNS template','Synthetic defaults','Registrar','Expires','Hosting service','Hosting','Latest checks','Nameservers','DNS records','Website points to','Email points elsewhere','Registry','Registered','Last check','Next check','Monitoring alerts','On','Activity','No history yet']);
+$view->assertSee('Expires in '.$days.' days')->assertDontSee('Findings')->assertDontSee('Saved domain checks')->assertDontSee('Notification activity')->assertDontSee('Watch state');
+$facts=WatchFacts::for($record);same(['Domain','Checks','Evidence'],array_keys($facts),'External monitoring keeps domain facts, checks and saved public evidence');expect(!isset($facts['Domain']['Registrar records'],$facts['Domain']['Billing and ownership']),'External monitoring makes no registrar or billing claim');same('Other',$facts['Domain']['Registrar']['value']??'Missing','Registrar from the saved registration');
 
 // Pause and resume run without a dialog; Check now queues; stale pages refuse.
 $stale=Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id]);DB::table('domains_watch_names')->where('id',$id)->increment('revision');
@@ -117,7 +122,7 @@ same($originalWait,$check->get('pendingCheck'),'Retry preserves the original dea
 same(1,\Paymenter\Extensions\Servers\Domains\Models\WatchAudit::where('subject_id',$id)->where('event','staff_read_requested')->count(),'Throttled tabs do not add a request');
 \Carbon\Carbon::setTestNow();
 $check->call('pollCheck')->assertSee('wire:poll.5s="pollCheck"',false)->assertNotNotified('Check finished');
-same(WatchFacts::date($at),$check->instance()->getSchema('infolist')->getComponentByStatePath('fact_'.md5('Last check'))->getState(),'Pending page keeps its saved Last check');
+same(WatchFacts::date($at+900),$check->instance()->getSchema('infolist')->getComponentByStatePath('fact_'.md5('Last check'))->getState(),'Pending page keeps its saved Last check');
 // A read already in flight can start before the request and save a newer Last check afterwards.
 $completedAt=$requestAt-1;DB::table('domains_watch_work')->where('watch_id',$id)->where('kind','delegation')->update(['due_at'=>$completedAt,'backoff_until'=>null]);
 $t=$dns->begin($id,$uid,'delegation',$completedAt);expect($t!==null,'In-flight DNS ticket');

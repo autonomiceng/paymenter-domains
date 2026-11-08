@@ -525,6 +525,7 @@
 .domains .domains-row__l { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .375rem; font-size: .8125rem; font-weight: 500; color: var(--e-muted); overflow-wrap: normal; }
 .domains .domains-row__l > .domains-sub { flex-basis: 100%; margin-top: 0; overflow-wrap: anywhere; }
 .domains .domains-row__v { min-width: 0; font-weight: 500; overflow-wrap: anywhere; }
+.domains .domains-row__v:has(> .domains-tablewrap) { grid-column: 1 / -1; }
 .domains .domains-row__a { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: .75rem; font-size: .8125rem; font-weight: 500; }
 /* Row actions are small outlined buttons; a link stays a link only when it leaves the page. */
 .domains .domains-row__a .domains-a { display: inline-flex; align-items: center; min-height: 2rem; padding: 0 .75rem; border: 1px solid var(--e-line); border-radius: .375rem; color: var(--e-fg); white-space: nowrap; }
@@ -540,7 +541,7 @@
 .domains .domains-sheet .domains-card > div { display: grid; grid-template-columns: 9.75rem minmax(0, 1fr); gap: 0 1rem; align-items: center; min-height: 2.75rem; padding: .5rem 1.5rem; border-top: 1px solid var(--e-line); border-bottom: 0; }
 /* Renewal and Settings labels: one size and weight, as in the mock. */
 .domains .domains-sheet .domains-card dt, .domains .domains-sheet .domains-row__l { font-size: inherit; font-weight: 400; }
-.domains .domains-ns-list { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.domains .domains-ns-list { display: flex; flex-direction: column; gap: 2px; font-size: .8125rem; overflow-wrap: anywhere; }
 .domains .domains-sheet .domains-card dd { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 1rem; align-items: center; text-align: left; font-weight: 400; }
 .domains .domains-sheet .domains-card dd > * { grid-column: 1; }
 .domains .domains-sheet .domains-card dd > .domains-card__a { grid-column: 2; grid-row: 1 / span 3; margin-top: 0; }
@@ -560,6 +561,9 @@
     .domains .domains-sheet .domains-panel__h { padding-inline: 1rem; }
     .domains .domains-rows > .domains-row { grid-template-columns: minmax(0, 1fr) auto; padding: .5rem 1rem; }
     .domains .domains-row__l { grid-column: 1 / -1; }
+    /* As in the mock, a row's action sits beside its label and status. Top-aligned, so a tall value (contacts, a nameserver list) doesn't pull it down. */
+    .domains .domains-rows > .domains-row:has(> .domains-row__a) > .domains-row__l { grid-column: 1; }
+    .domains .domains-rows > .domains-row > .domains-row__a { grid-column: 2; grid-row: 1 / span 2; align-self: start; }
     .domains .domains-sheet .domains-card > div { grid-template-columns: minmax(0, 1fr); padding: .5rem 1rem; }
     .domains .domains-sheet .domains-btn--block { width: calc(100% - 2rem); margin-inline: 1rem; }
     .domains .domains-row__a .domains-a { min-height: 2.75rem; }

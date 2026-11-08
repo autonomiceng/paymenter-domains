@@ -19,14 +19,14 @@ foreach(array_keys(DomainFacts::ALERTS) as $code){ObligationAlerts::record($doma
 DB::table('domains_observation_work')->insert(['server_id'=>$domain->server_id,'account_fingerprint'=>$domain->account_fingerprint,
     'domain_id'=>$domain->id,'generation'=>$domain->authority_generation,'due_at'=>0,'safe_code'=>'read_unavailable','tries'=>1]);
 // The stopped-sync row already names this alert; it does not repeat the generic cause.
-$pageCause=static fn(string $code):string=>DomainFacts::alertCause($code);
-same('Sync stopped. Ask staff who can resume sync.',$pageCause('observation_review'),'A viewer gets the stopped-read cause and the required staff permission');
+$pageCause=static fn(string $code,bool $notice=false):string=>$code==='observation_review'&&$notice?'The registrar read stopped.':DomainFacts::alertCause($code);
+same('Sync stopped. Ask staff who can resume sync.',DomainFacts::alertCause('observation_review'),'The list cause names staff with resume permission');
 $hidden=[];
 foreach([...array_keys(DomainStatus::STATES),'unknown'] as $status){
     DB::table('domains_domains')->where('id',$domain->id)->update(['status'=>$status,'provider_expires_at'=>null,'last_synced_at'=>null]);
     $html=html_entity_decode(strip_tags(Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$domain->id])->assertSuccessful()->html()),ENT_QUOTES);
     foreach(DomainFacts::ALERTS as $code=>[$row]){
-        $cause=$pageCause($code);
+        $cause=$pageCause($code,$status!=='adoption_pending');
         // Nothing syncs on an ended domain, so a stopped sync is no job there.
         if($code==='observation_review'&&DomainFacts::ended($domain->fresh())){continue;}
         if(!str_contains($html,$cause)||$code==='observation_review'&&!str_contains($html,'Read stopped')){$hidden[]=$code.'/'.$status;}

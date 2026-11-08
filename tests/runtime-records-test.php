@@ -12,6 +12,7 @@ same(1,count($stoppedReads),'One stopped-state read serves all record sections i
 same(array_map(fn($i)=>'record'.$i,range(1,12)),array_column($dto->management['dns']['records'],'name'),'Customer DNS numeric order');
 same(array_map(fn($i)=>'sip'.$i,range(1,12)),array_column($dto->management['srv']['records'],'service'),'Customer SRV numeric order');
 $html=$page();$dom=storefrontDom($html);
+same(['Renewal','Registrar records'],array_map(fn($n)=>trim($n->textContent),iterator_to_array($dom->query('//div[contains(@class,"domains-cols")]/div[contains(@class,"domains-sheet")]/section/div/h2'))),'Native customer sections follow the approved mock order');
 same('record2',$dom->query('//input[@id="dns-1-name"]')->item(0)->getAttribute('value'),'Real DNS form uses numeric order');
 same('sip10',$dom->query('//input[@id="srv-9-service"]')->item(0)->getAttribute('value'),'Real SRV form uses numeric order');
 $io=count($state->calls);$domainIo=count($observation->calls);$page();same($io,count($state->calls),'Customer GET has no management I/O');same($domainIo,count($observation->calls),'Customer GET has no observation I/O');
