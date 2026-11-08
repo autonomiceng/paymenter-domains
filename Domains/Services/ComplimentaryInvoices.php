@@ -28,9 +28,33 @@ final class ComplimentaryInvoices
             ||$op->account_fingerprint!==$l['domain']->account_fingerprint||$op->authority_generation!==$l['domain']->authority_generation
             ||$op->funding_basis!=='complimentary'||PricingRule::minor($op->amount)!==0||!$invoice||!$item||$invoice->status!=='paid'
             ||(int)$invoice->user_id!==(int)$l['domain']->user_id||$invoice->currency_code!=='USD'||(int)$item->invoice_id!==$op->invoice_id
-            ||$items->sum(fn($i)=>PricingRule::minor($i->price)*(int)$i->quantity)!==0||$items->contains(fn($i)=>(string)$i->quantity!=='1')
-            ||$l['transactions']->where('invoice_id',$op->invoice_id)->isNotEmpty()) {throw new \DomainException('Complimentary receipt authority changed.');}
+            ||!self::receipt($op,$invoice,$item,$items,$l['transactions']->where('invoice_id',$op->invoice_id))) {throw new \DomainException('Complimentary receipt authority changed.');}
         return ['basis'=>'complimentary','authorization'=>$a,'invoice_id'=>$invoice->id,'invoice_item_id'=>$item->id];
+    }
+    /** Exact informational receipt, including its confirmed charge/offset pair. Never accepts a payment. */
+    public static function receipt(Operation $op,Invoice $invoice,InvoiceItem $item,$items,$transactions):bool
+    {
+        try{
+            $auth=$op->policy['account_complimentary']??[];ComplimentaryAccounts::require($auth,(int)$invoice->user_id);
+            if($op->funding_basis!=='complimentary'||PricingRule::minor($op->amount)!==0||$op->currency!=='USD'
+                ||$invoice->id!==$op->invoice_id||$invoice->currency_code!=='USD'||$invoice->status!=='paid'
+                ||$item->id!==$op->invoice_item_id||(int)$item->invoice_id!==$invoice->id||$transactions->isNotEmpty()
+                ||$items->contains(fn($i)=>(string)$i->quantity!=='1')||$items->sum(fn($i)=>PricingRule::minor($i->price))!==0){return false;}
+            if($items->count()===1){return PricingRule::minor($item->price)===0;}
+            if($items->count()!==2||$op->state!=='succeeded'){return false;}
+            $cost=$op->cost['actual']??null;
+            if(!is_array($cost)||($cost['currency']??null)!=='USD'){return false;}
+            $amount=self::nativeCharge($cost['amount']);$offset=$items->firstWhere('id','!==',$item->id);
+            return PricingRule::minor($item->price)===PricingRule::minor($amount)&&$offset!==null
+                &&PricingRule::minor($offset->price)===-PricingRule::minor($amount)&&$offset->description==='Complimentary'
+                &&$offset->reference_type===null&&$offset->reference_id===null;
+        }catch(\Throwable){return false;}
+    }
+    private static function nativeCharge(string $amount):string
+    {
+        [$whole,$fraction]=explode('.',$amount);
+        if(strlen($whole)>10){throw new \DomainException('Registrar charge exceeds native invoice precision.');}
+        return PricingRule::decimal((int)$whole*100+(int)str_pad(substr($fraction,0,2),2,'0')+((int)($fraction[2]??0)>=5?1:0));
     }
     /** Only confirmed actual registrar charges enter the receipt. Caller holds the native invoice prefix. */
     public static function complete(Operation $op):void
@@ -40,9 +64,7 @@ final class ComplimentaryInvoices
         $invoice=Invoice::findOrFail($op->invoice_id);$item=InvoiceItem::findOrFail($op->invoice_item_id);
         $description=InvoiceDescription::complimentary($op->domain->domain,$op->action,(int)$op->term);
         // Native invoices store cents; retain the exact provider amount in the operation.
-        [$whole,$fraction]=explode('.',$cost['amount']);
-        if(strlen($whole)>10){throw new \DomainException('Registrar charge exceeds native invoice precision.');}
-        $amount=PricingRule::decimal((int)$whole*100+(int)str_pad(substr($fraction,0,2),2,'0')+((int)($fraction[2]??0)>=5?1:0));
+        $amount=self::nativeCharge($cost['amount']);
         if($invoice->items()->count()===2){return;}
         if($invoice->status!=='paid'||(float)$invoice->total!==0.0||$invoice->items()->count()!==1||$invoice->transactions()->exists()){throw new \DomainException('Complimentary receipt changed.');}
         // Exact owned receipt only. Suppressing observers prevents Paid/InvoiceItem hooks from launching a second path.
