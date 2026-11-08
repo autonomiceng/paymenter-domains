@@ -30,21 +30,23 @@ final class FundsWaits
     /** Same unsent closure for a collection deadline and a cancelled receipt already in flight. */
     public static function closeRenewal(Operation $op,array $l,\DateTimeImmutable $now,?array $receipts=null): void
     {
-        if($op->action!=='renew'||!RenewalCycles::registrarVirgin($op)||$op->funding_basis!=='paid_invoice'
+        if($op->action!=='renew'||!RenewalCycles::registrarVirgin($op)||!in_array($op->funding_basis,['paid_invoice','complimentary'],true)
             ||$op->base_expires_at?->format('Y-m-d')!==$l['domain']->provider_expires_at?->format('Y-m-d')){throw new \DomainException('Renewal funds outcome needs review.');}
         RefundProof::requireUnsent($op,$l['domain']);
-        if($receipts===null&&($deadline=LateRenewalQuote::deadline($op))!==null&&$deadline<=$now){
+        $complimentary=$op->funding_basis==='complimentary';
+        if($complimentary){ComplimentaryInvoices::require($op,$l);$receipts=null;}
+        if(!$complimentary&&$receipts===null&&($deadline=LateRenewalQuote::deadline($op))!==null&&$deadline<=$now){
             $rows=$l['transactions']->where('invoice_id',$op->invoice_id);
             if($rows->contains('status',InvoiceTransactionStatus::Processing)){throw new \DomainException('Renewal payment is still processing.');}
             // The cutoff closes collection, even when settled receipts could not fund a renewal.
             $receipts=$rows->pluck('id')->all();
         }
-        if($receipts===null){RefundPayment::requireCurrent($op,$l);}else{RefundPayment::requireLine($op,$l);}
+        if(!$complimentary){if($receipts===null){RefundPayment::requireCurrent($op,$l);}else{RefundPayment::requireLine($op,$l);}}
         $attempt=OperationTerminalProof::rejectedAttempt($op,$l['domain']);$attempt['terminal']['invoice_id']=$op->invoice_id;
         // These are retained receipt identities, never the empty zero-money retirement proof.
         if($receipts!==null){$attempt['terminal']['transactions']=$receipts;}
         $op->update(['state'=>'rejected','safe_code'=>self::RENEWAL_CLOSED,'completed_at'=>$now,'attempt'=>$attempt]);
-        $l['invoices']->firstWhere('id',$op->invoice_id)->update(['status'=>'cancelled']);
+        if(!$complimentary){$l['invoices']->firstWhere('id',$op->invoice_id)->update(['status'=>'cancelled']);}
     }
     public static function sweep(Account $a,\DateTimeImmutable $now): void
     {
