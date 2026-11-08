@@ -40,7 +40,20 @@ same($nativeBeforeReplay, nativeFinancialSnapshot($corrected), 'Replay preserves
 $state->expiry='2028-10-18'; $state->charge='8.00'; same('succeeded',$completion->run($corrected->id)->state,'Corrected renewal completes');
 same($history,$corrected->fresh()->funding['financial_adjustments'],'Completion retains audit');
 // Unsuitable fixed multiyear grace, with full native payment: refund retains holding and expiry.
-[$op,$d,$b]=$makeRenewal(placeholderComFixtureName('refund-grace-term-placeholder.com'),true,3); [$engine,$writer]=$compose($b);
+// Today only Enom TEST's reviewed two-year ordinary term can be sold. It becomes
+// unsuitable when execution reaches grace; do not invent an unapproved three-year offer.
+$ordinaryTwoYears=static function($d)use($ports,$clock):void {
+    $binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$d->server_id)->sole());
+    $q=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,['com'],'renew');
+    $revision=static fn()=>$ports->readOffers($q,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision;
+    $clock->instant=$clock->now()->modify('+1 second');
+    $facts=new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts(['register'=>[1],'renew'=>[1],'transfer'=>[]],[],true,false,false,'synthetic',$clock->now(),$clock->now()->modify('+30 days'));
+    $facts=\Paymenter\Extensions\Servers\Domains\Catalogue\TermSupport::attach('com',$facts,\Paymenter\Extensions\Servers\Domains\Catalogue\TermSupport::evidence($binding,'com'));
+    $ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FactsObserved($binding,'com',$facts),$revision());
+    $cost=new \Paymenter\Extensions\Servers\Domains\Catalogue\Cost('renew',2,true,'16.0000',\Paymenter\Extensions\Servers\Domains\Data\CostUnit::TermTotal,'synthetic',$clock->now(),$clock->now()->modify('+30 days'));
+    $ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding,'com',[$cost]),$revision());
+};
+[$op,$d,$b]=$makeRenewal(placeholderComFixtureName('refund-grace-term-placeholder.com'),true,2,beforeBill:$ordinaryTwoYears); [$engine,$writer]=$compose($b);
 $clock->instant=new DateTimeImmutable('2027-10-18T12:00:01Z'); $beforeWrites=$state->writes;
 same('held',$engine->run($op->id,$writer)->state,'Unsuitable paid term held'); same($beforeWrites,$state->writes,'No provider write');
 $expiry=$d->provider_expires_at->format('Y-m-d');$before=$credit();
