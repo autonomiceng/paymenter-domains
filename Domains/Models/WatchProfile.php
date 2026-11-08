@@ -18,6 +18,8 @@ final class WatchProfile extends WatchRecord
             throw new \DomainException('A profile name, actor and reason are required.');
         }
         $profile = $this->profile();
+        if($this->exists && $this->isDirty('enabled') && !$this->enabled
+            && ($refusal=\Paymenter\Extensions\Servers\Domains\Services\DnsTemplateUsage::refusal((int)$this->id))){throw new \DomainException($refusal);}
         if(\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::uses((int)$this->id)){
             if(!$this->enabled){throw new \DomainException('Choose another site DNS default before turning this template off.');}
             \Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::validateRegistrars($profile->nameservers);
@@ -37,11 +39,8 @@ final class WatchProfile extends WatchRecord
         });
         parent::booted();
         static::saved(static function (self $row): void {
-            \Illuminate\Support\Facades\DB::afterCommit(static function()use($row):void {
-                if(\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::uses((int)$row->id)){
-                    \Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::reconcile();
-                }
-            });
+            \Illuminate\Support\Facades\DB::afterCommit(static fn()=>\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::reconcile(
+                \Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::uses((int)$row->id)?null:(int)$row->id));
             WatchAudit::create(['subject_type' => 'dns_profile', 'subject_id' => $row->id, 'actor_id' => $row->edited_by,
                 'event' => 'dns_profile_saved', 'reason' => $row->reason, 'before_revision' => (string) ($row->revision - 1),
                 'after_revision' => (string) $row->revision, 'data' => ['nameservers' => $row->nameservers, 'website' => $row->website_endpoints,

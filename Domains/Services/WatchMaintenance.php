@@ -21,8 +21,8 @@ final class WatchMaintenance
         $managed=ManagedPublicReconciliation::eligible();
         $success=(int)DB::table('domains_watch_registry')->where('reason','<>','endpoint_failed')->max('completed_at');
         return ['registry'=>['pending'=>$pending((clone$watch)->where('kind','expiry')),'success'=>$success,'expected'=>$this->expectedDaily(clone$watch,'domains_watch_registry','watch_id','w',$now,true)],
-            'watch_dns'=>['pending'=>$pending((clone$watch)->whereIn('kind',['delegation','points'])),'success'=>(int)DB::table('domains_watch_observations')->where('result','complete')->max('completed_at'),'expected'=>$this->expectedDaily(clone$watch,'domains_watch_observations','watch_id','w',$now)],
-            'managed_dns'=>['pending'=>$pending(clone$managed),'success'=>(int)DB::table('domains_managed_public_observations')->where('result','complete')->max('completed_at'),'expected'=>$this->expectedDaily($managed,'domains_managed_public_observations','domain_id',ManagedPublicWorkSchema::TABLE,$now)]];
+            'watch_dns'=>['pending'=>$pending((clone$watch)->whereIn('kind',['delegation','points'])),'success'=>(int)DB::table('domains_watch_observations')->where(fn($q)=>$q->where('result','complete')->orWhere('safe_code','nameservers_missing'))->max('completed_at'),'expected'=>$this->expectedDaily(clone$watch,'domains_watch_observations','watch_id','w',$now)],
+            'managed_dns'=>['pending'=>$pending(clone$managed),'success'=>(int)DB::table('domains_managed_public_observations')->where(fn($q)=>$q->where('result','complete')->orWhere('safe_code','nameservers_missing'))->max('completed_at'),'expected'=>$this->expectedDaily($managed,'domains_managed_public_observations','domain_id',ManagedPublicWorkSchema::TABLE,$now)]];
     }
     /** Healthy daily work gets its own expected completion plus two turns, including registry jitter. */
     private function expectedDaily($work,string $table,string $target,string $alias,int $now,bool $registry=false): int

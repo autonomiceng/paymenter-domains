@@ -38,7 +38,8 @@ final class WatchFacts
         $p=WatchNoticePreferences::read((int)$w->user_id,$w->canonical_name);$on=$p['account']['enabled']&&$p['target']['enabled'];
         // A failed customer alert says why and what to do; the staff alert links here.
         $failed=NoticeHealth::open('watch',(int)$w->id,$w->canonical_name);
-        $checks['Monitoring alerts']=self::fact($on?'On':'Off',implode(' · ',array_filter([$on?null:'Turned off by customer',$failed['text']??null]))?:null,$failed['tone']??null);
+        $off=$w->state==='retired'?'Monitoring stopped':'The customer turns this on from their domain page';
+        $checks['Monitoring alerts']=self::fact($on&&$w->state!=='retired'?'On':'Off',implode(' · ',array_filter([$on&&$w->state!=='retired'?null:$off,$failed['text']??null]))?:null,$failed['tone']??null);
         // An empty string does not apply here and stays hidden; null is Missing.
         $shown=fn(array $facts)=>array_filter($facts,fn($f)=>$f['value']!=='');
         $e=\Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence::read(\Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence::domain($w),$w->points,$w->canonical_name);

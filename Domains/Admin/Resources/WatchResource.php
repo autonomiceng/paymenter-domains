@@ -60,7 +60,7 @@ class WatchResource extends WatchReadResource
             self::fact(TextColumn::make('last_check')->label('Last check')->visibleFrom('md')->formatStateUsing(fn($state,$record,$livewire)=>($at=self::lastCheck($record,$livewire)['at']??0)?Sheet::moment($at):$state),
                 fn($record,$livewire)=>[...self::lastCheck($record,$livewire),'sub'=>null]),
             self::fact(TextColumn::make('expiry')->label('Expires')->visibleFrom('lg'),fn($record,$livewire)=>[...self::expires($record,$livewire),'sub'=>null]),
-        ])->filters([
+        ],['registration','delegation.dns'])->filters([
             SelectFilter::make('status')->label('Status')->options(WatchFindings::STATUSES)->query(fn(Builder $query,array $data,$livewire)=>WatchFindings::filter($query,$data['value']??null,$livewire))
                 ->indicateUsing(fn(array $data)=>isset(WatchFindings::STATUSES[$data['value']??''])?(in_array($data['value'],['monitoring','problem'],true)?self::capped('Status: '.WatchFindings::STATUSES[$data['value']]):'Status: '.WatchFindings::STATUSES[$data['value']]):null),
             Filter::make('customer')->label('Customer')->schema([TextInput::make('customer')->label('Customer')])->query(fn(Builder $query,array $data)=>WatchFindings::customer($query,$data['customer']??null))

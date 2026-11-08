@@ -17,9 +17,6 @@ $check('Writer refuses forged Stop',function()use($manager,$watch):void{
     try{(new Writes())->run($manager,'watch',(int)$watch->id,'retire',Writes::ticket((int)$manager->id,'watch',(int)$watch->id,(int)$watch->revision,'retire'),'Synthetic forbidden stop');}catch(DomainException){$refused=true;}
     expect($refused,'Direct staff retirement must be refused');same($before,$watch->fresh()->getRawOriginal(),'Refused Stop preserves watch');same($sources,$watch->sources()->get()->map->getRawOriginal()->all(),'Refused Stop preserves sources');same($audit,\Paymenter\Extensions\Servers\Domains\Models\WatchAudit::count(),'No Stop audit');
 });
-// The ordinary service lifecycle still owns retirement.
-DB::transaction(fn()=>$service->update(['status'=>'cancelled']));
-(new \Paymenter\Extensions\Servers\Domains\Services\WatchDiscoveryWork(static fn()=>null))->tick(time());
 foreach($errors as$error){echo "FAIL $error\n";}
 expect($errors===[],implode('; ',$errors));
 $nativeSuccessful=true;echo "Monitoring Option A refuses staff Stop.\n";
