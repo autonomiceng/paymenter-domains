@@ -36,6 +36,8 @@ class ViewDomain extends ViewRecord
     private ?array $edits = null;
     private ?array $facts = null;
     private ?array $domainStatus = null;
+    #[\Livewire\Attributes\Locked]
+    public string $complimentaryCostStamp='';
     public function getTitle(): string { Staff::requireView(); return (string)$this->getRecord()->domain; }
     public function getHeading(): HtmlString
     {
@@ -70,7 +72,32 @@ class ViewDomain extends ViewRecord
     {
         $d=$this->getRecord();
         // Import domain for a pending import sits in the page notice.
-        return [self::complimentaryRenewal($d),$this->syncNow(),...AcquisitionActions::make($d),...AcquisitionPaymentReview::actions($d),$this->customerView($d)];
+        return [$this->approveComplimentaryCost($d),self::complimentaryRenewal($d),$this->syncNow(),...AcquisitionActions::make($d),...AcquisitionPaymentReview::actions($d),$this->customerView($d)];
+    }
+    private function approveComplimentaryCost(Domain $d):Action
+    {
+        $op=null;$message=null;
+        if(Staff::can('admin.domains.fund')&&Staff::can('admin.domains.manage')&&Staff::can(Staff::COSTS)){
+            foreach($d->operations()->where('state','held')->where('safe_code','registrar_price_increased')->latest('id')->get() as $candidate){
+                try{$message=\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::message($candidate,true);}
+                catch(\Throwable){continue;}
+                if($message!==null){$op=$candidate;break;}
+            }
+        }
+        return Action::make('approveComplimentaryCost')->label('Approve registrar cost')->color('danger')
+            ->visible($op!==null)->modalHeading('Approve registrar cost')->modalDescription($message)
+            ->schema([\Filament\Forms\Components\TextInput::make('reason')->label('Reason')->required()->maxLength(500)])
+            ->mountUsing(function(?Schema $schema)use($op,$d):void {
+                $this->complimentaryCostStamp=\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::stamp($op,$d);
+                $schema?->fill();
+            })
+            ->action(function(array $data)use($op,$d):void {
+                try{
+                    if(!hash_equals($this->complimentaryCostStamp,\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::stamp($op,$d))){throw new \DomainException('The reviewed registrar cost changed.');}
+                    \Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::approve($op->id,Auth::user(),$op->policy['complimentary_cost_review']['amount'],$data['reason'],app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class));
+                    \Filament\Notifications\Notification::make()->success()->title('Registrar cost approved')->send();
+                }catch(\Throwable){\Filament\Notifications\Notification::make()->danger()->title('Could not approve registrar cost')->body('Reload the domain and check the current registrar cost and hold.')->send();}
+            });
     }
     /** Named as on the Users page, so a skin that records impersonation sees this one too. */
     private function customerView(Domain $d): Action
@@ -144,6 +171,13 @@ class ViewDomain extends ViewRecord
     private function notices(Domain $d): array
     {
         $out=[];
+        if(Staff::can('admin.domains.fund')||Staff::can(Staff::COSTS)){foreach($d->operations()->where('state','held')->get() as $op){
+            try{if($message=\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::message($op,Staff::can(Staff::COSTS)&&Staff::can('admin.domains.fund')&&Staff::can('admin.domains.manage'))){
+                if(!Staff::can(Staff::COSTS)){$message='Registrar cost approval is needed. Ask staff with access to domain costs to review it.';}
+                $out[]=Callout::make($message)->status('danger')->columnSpanFull();
+            }}
+            catch(\Throwable){$out[]=Callout::make('Registrar cost details are unavailable.')->status('warning')->columnSpanFull();}
+        }}
         $sync=\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::result($d);
         if($sync!==null&&$sync['title']!=='Domain synced'){
             $out[]=Callout::make($sync['title'])->description($sync['body'])->status('warning')->columnSpanFull();
@@ -256,7 +290,7 @@ class ViewDomain extends ViewRecord
             ->modalHeading('Complimentary renewal')->modalSubmitActionLabel('Confirm complimentary renewal')->modalWidth('3xl')->modalFooterActionsAlignment(\Filament\Support\Enums\Alignment::End)
             ->schema(function()use($d):array {
                 try{$options=app(\Paymenter\Extensions\Servers\Domains\Services\RenewalCycles::class)->complimentaryOptions((int)$d->id,Auth::user());}catch(\Throwable){$options=['terms'=>[]];}
-                $terms=self::complimentaryTerms($d);
+                $terms=self::complimentaryTerms($d);$company=\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company();
                 // The domain's linked service owns its displayed annual price, even when owner requests are closed.
                 try{$service=$d->service;$annual=$service?->currency_code==='USD'?\Paymenter\Extensions\Servers\Domains\Services\PriceCatalogue::retail((string)$service->price):null;}catch(\Throwable){$annual=null;}
                 $term=fn(\Filament\Schemas\Components\Utilities\Get $get)=>$terms[(int)$get('years')]??null;
@@ -265,7 +299,7 @@ class ViewDomain extends ViewRecord
                     \Filament\Forms\Components\Select::make('years')->label('Years')->inlineLabel()->options(array_combine(array_keys($terms),array_map(fn($t)=>$t['years'].' '.($t['years']===1?'year':'years'),$terms)))->default(array_key_first($terms))->required()->live(),
                     \Filament\Schemas\Components\Html::make(fn(\Filament\Schemas\Components\Utilities\Get $get)=>view('domains::admin.renewal-facts',['facts'=>[
                         'New expiry'=>['value'=>isset($term($get)['expiry'])?\Carbon\CarbonImmutable::parse($term($get)['expiry'])->format('M j, Y'):'Missing','sub'=>'Up to '.($options['max_years']??0).(($options['max_years']??0)===1?' added year fits before ':' added years fit before ').(isset($options['horizon'])?\Carbon\CarbonImmutable::parse($options['horizon'])->format('M j, Y'):'the registration horizon').'.'],
-                        'Total'=>['value'=>'$0.00','sub'=>isset($term($get)['cost'])?'Beco covers the $'.number_format((float)$term($get)['cost'],2,'.','').' registrar renewal cost.':'Missing. Sync prices before renewing.'],
+                        'Total'=>['value'=>'$0.00','sub'=>isset($term($get)['cost'])?($company!==''?$company.' covers':'We cover').' the $'.number_format((float)$term($get)['cost'],2,'.','').' registrar renewal cost.':'Missing. Sync prices before renewing.'],
                         'Next annual renewal'=>['value'=>$annual===null?'Missing':('$'.$annual.' / year'),'sub'=>'Renewal invoices stay annual. Renewal prices may change.'],
                     ]]))];
             })->action(function(array $data)use($d):void {

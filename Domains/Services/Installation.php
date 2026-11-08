@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\{Cache,DB,Schema};
 /** No destructive rollback or automatic adoption of retained history. */
 final class Installation
 {
-    public const SCHEMAS=[FoundationSchema::class,SalesPolicySchema::class,ContactProfileSchema::class,ObservationSchema::class,ReminderSchema::class,RuntimeSchema::class,HoldingProvenanceSchema::class,PslSchema::class,PslReviewSchema::class,WatchSchema::class,AdoptionSchema::class,HistoryLinkSchema::class,WatchDnsSchema::class,NativeIntentSchema::class,HoldingAdoptionSchema::class,BalanceSchema::class,ManagedPublicWorkSchema::class,ManagedPublicSchema::class,WatchScheduleSchema::class,WatchNoticeSchema::class,StaffWatchSchema::class,StaffAuditSchema::class,EnomTestSendLimitSchema::class,UserDeletionSchema::class,EnomLiveCallSchema::class,StaffAlertSchema::class,BalanceAlertSchema::class,OfferRetirement::class,RenewalRetrySchema::class,ManagementProgressIndex::class,ProfileContactSchema::class,OfferSchema::class,OfferWorkSchema::class,LiveCatalogueSchema::class];
+    public const SCHEMAS=[FoundationSchema::class,SalesPolicySchema::class,ContactProfileSchema::class,ObservationSchema::class,ReminderSchema::class,RuntimeSchema::class,HoldingProvenanceSchema::class,PslSchema::class,PslReviewSchema::class,WatchSchema::class,AdoptionSchema::class,HistoryLinkSchema::class,WatchDnsSchema::class,NativeIntentSchema::class,HoldingAdoptionSchema::class,BalanceSchema::class,ManagedPublicWorkSchema::class,ManagedPublicSchema::class,WatchScheduleSchema::class,WatchNoticeSchema::class,StaffWatchSchema::class,StaffAuditSchema::class,EnomTestSendLimitSchema::class,UserDeletionSchema::class,EnomLiveCallSchema::class,StaffAlertSchema::class,BalanceAlertSchema::class,OfferRetirement::class,RenewalRetrySchema::class,ManagementProgressIndex::class,ProfileContactSchema::class,OfferSchema::class,OfferWorkSchema::class,LiveCatalogueSchema::class,ComplimentaryAccountSchema::class];
     public static function legacy(): void
     {
         foreach(Server::where('extension','Enom')->get() as $server){
@@ -59,6 +59,8 @@ final class Installation
                 [StaffAlertSchema::TABLE,StaffAlertSchema::MIGRATION,StaffAlertSchema::class],
                 [BalanceAlertSchema::TABLE,BalanceAlertSchema::MIGRATION,BalanceAlertSchema::class],
                 [UserDeletionSchema::TABLE,UserDeletionSchema::MIGRATION,UserDeletionSchema::class],
+                ['domains_complimentary_accounts',ComplimentaryAccountSchema::MIGRATION,ComplimentaryAccountSchema::class],
+                ['domains_complimentary_approvals',ComplimentaryAccountSchema::MIGRATION,ComplimentaryAccountSchema::class],
                 [EnomLiveCallSchema::TABLE,EnomLiveCallSchema::MIGRATION,EnomLiveCallSchema::class],
                 ['domains_watch_staff_claims',StaffWatchSchema::MIGRATION,StaffWatchSchema::class],
                 ['domains_adoptions','2026_10_19_000010_create_domains_adoptions',AdoptionSchema::class],

@@ -74,6 +74,14 @@ final readonly class Refunds
             if (!$approved && !RefundProof::transferTimeout($op, $l['domain']) && !RefundProof::retired($op, $l['domain']) && !PrivacyRetirement::safe($op, $l['domain']) && !OperationTerminalProof::safe($op, $l['domain'])) {
                 throw new \DomainException('No retained refund disposition.');
             }
+            if($op->funding_basis==='complimentary'){
+                ComplimentaryInvoices::require($op,$l);
+                if(in_array($op->action,['register','transfer'],true)){
+                    $l['domain']->update(['status'=>$op->action==='transfer'?'transfer_rejected':'registration_rejected']);
+                    NativeDomainGuard::terminal($l,$op);
+                }
+                $review?->record($l);return null;
+            }
             $payment = RefundPayment::requireCurrent($op, $l);
             if (ReceiptReturns::reserve($op, $l, $payment, $this->clock->now())) { $review?->record($l); return null; }
             $credit = $l['credit'] ?? new Credit(['user_id' => $l['user']->id, 'currency_code' => 'USD', 'amount' => '0.00']);

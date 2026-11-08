@@ -333,10 +333,12 @@ final class DomainFacts
             return ['title'=>'Payment activity after the order closed.','body'=>'Check the invoice and payments before contacting the customer.','tone'=>'warning',
                 'action'=>self::invoiceAction($invoice)];
         }
-        if (RenewalReplacements::activity($d)) {
-            $invoice=$d->operations()->where('action','renew')->get()->first(fn(Operation $op)=>array_key_exists('renewal_replacement',$op->policy??[]))?->invoice_id;
-            return ['title'=>'Payment received after credit. Check the invoice.','tone'=>'warning','action'=>self::invoiceAction($invoice)];
-        }
+        try {
+            if (RenewalReplacements::activity($d)) {
+                $invoice=$d->operations()->where('action','renew')->get()->first(fn(Operation $op)=>array_key_exists('renewal_replacement',$op->policy??[]))?->invoice_id;
+                return ['title'=>'Payment received after credit. Check the invoice.','tone'=>'warning','action'=>self::invoiceAction($invoice)];
+            }
+        } catch (\Throwable) { return ['title'=>self::UNREADABLE,'tone'=>'danger']; }
         if ($d->provenance==='adopted'&&($d->observation['adoption_review']['near_due']??false)===true&&!RenewalStop::stopped(RenewalStop::read($d))) {
             return ['title'=>'Imported after the invoice date. No renewal invoice was issued.','tone'=>'warning',
                 'action'=>['label'=>'Open service','url'=>self::url(fn()=>\App\Admin\Resources\ServiceResource::getUrl('edit',['record'=>$d->service_id]))]];
@@ -344,7 +346,7 @@ final class DomainFacts
         if (!self::account($d)) { return ['title'=>self::NO_ACCOUNT,'tone'=>'warning']; }
         $op=$d->latestAcquisition;
         if ($op&&in_array($op->state,['held','uncertain'],true)&&in_array($d->status,StaffDomainStatus::ACQUIRING,true)) {
-            $cause=rtrim(preg_replace('/^Not sent: /','',(string)Labels::reason($op->safe_code)),'.');
+            $cause=rtrim(preg_replace('/^Not sent: /','',(string)Labels::reason($op->safe_code,$op->funding_basis==='complimentary')),'.');
             $title=Labels::action($op->action).($op->state==='held'?' not sent'.($cause===''?'':': '.(preg_match('/\A(?:Enom|NameSilo)\b/',$cause)?$cause:lcfirst($cause))).'.':' not confirmed by the registrar.');
             try{$title=RequestFacts::readyMessage($op)??$title;}catch(\Throwable){}
             return ['title'=>$title,'tone'=>'warning','action'=>['label'=>'Check request #'.$op->id,'url'=>self::url(fn()=>OperationResource::getUrl('view',['record'=>$op->id]))]];
@@ -418,8 +420,9 @@ final class DomainFacts
         if (!in_array($d->price_mode,['standard','complimentary'],true)) { return self::fact(null,sub:'No renewal price set. Check the linked service.'); }
         $code=$observation['adoption_review']['price']??null;
         if ($code==='retained_renewal') { $code=null; }
-        return self::fact($service->currency_code.' '.number_format((float)$service->price,2).' / year',
-            sub:match(true) {$code==='below_cost'=>'Below cost',$code!==null=>'Cost missing',$d->price_mode==='complimentary'=>'Complimentary',self::purchasePrice($d,$service)=>'Price kept from purchase until the next renewal invoice.',default=>'Standard pricing'},
+        $company=\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company();
+        return self::fact(($d->price_mode==='complimentary'?'Standard renewal price ':'').$service->currency_code.' '.number_format((float)$service->price,2).' / year'.($d->price_mode==='complimentary'?', complimentary':''),
+            sub:match(true) {$code==='below_cost'=>'Below cost',$code!==null=>'Cost missing',$d->price_mode==='complimentary'=>\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryAccounts::LABEL.'. '.($company!==''?$company.' covers':'We cover').' registrar costs.',self::purchasePrice($d,$service)=>'Price kept from purchase until the next renewal invoice.',default=>'Standard pricing'},
             tone:$code===null?null:'danger');
     }
     /** The native service keeps checkout's annual gross until a renewal invoice projects current pricing. */

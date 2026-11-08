@@ -50,6 +50,10 @@ final class DomainBilling
             // Scheduled renewals stay annual; longer terms are owner requests only.
             if ($actor === null && $years !== 1) { throw new \DomainException('Scheduled renewals are annual.'); }
             $calendar = $this->requireRequest($l, $actor !== null, $years, $late !== null);
+            if($d->price_mode==='complimentary'){
+                if($late!==null&&($l['stamp']!==$late['stamp']||$late['valid_until']<=$this->clock->now()->modify('+25 seconds'))){throw new \DomainException('Renewal quote changed. Try again.');}
+                return AccountComplimentaryRenewals::issue($l,$key,$years,$calendar,$this->clock,$late);
+            }
             // NS17: a longer term needs reviewed evidence and an exact-term cost, frozen below as its cap.
             $term = null; $terms = $years === 1 ? null : self::renewalTerms($l, $this->catalogue);
             if ($terms !== null) { $cap = TermSupport::cap($terms, $years); $term = $terms[$years]['rule']; }
@@ -143,7 +147,7 @@ final class DomainBilling
         else{$bindings->requireProcessingLocked($l['server'],$l['account']);}
         if($d->renewal_policy['automatic_spend_paused']??false){throw new RuntimeIneligible(RuntimeReason::SpendingPaused);}
         if ($s->status !== 'active' || !in_array($d->status, ['active', 'expired', 'grace'], true)
-            || ($manual ? RenewalStop::blocked($l) : RenewalStop::stopped($l)) || $d->price_mode !== 'standard') { throw new RuntimeIneligible(RuntimeReason::LifecycleNotReady); }
+            || ($manual ? RenewalStop::blocked($l) : RenewalStop::stopped($l)) || !($d->price_mode==='standard'||($d->price_mode==='complimentary'&&ComplimentaryAccounts::authorization((int)$d->user_id)))) { throw new RuntimeIneligible(RuntimeReason::LifecycleNotReady); }
         $anchor = HoldingAnchor::resolve($l); $prior = $anchor->operation;
         if ($prior) { RenewalAuthority::requireCostAnchor($prior); }
         if ($l['operations']->contains(fn ($op) => $op->id !== $prior?->id && !HoldingAnchor::resolved($op, $l))) {
@@ -154,6 +158,10 @@ final class DomainBilling
     /** Validate retained debt without changing the invoice or operation. Writers pass their locked rows. */
     public static function existingInvoice(Operation $op, array $l, ?int $years = null): Invoice
     {
+        if(isset($op->policy['account_complimentary'])){
+            if($years!==null&&$years!==(int)$op->term){throw new \DomainException('Complimentary term is fixed.');}
+            ComplimentaryInvoices::require($op,$l);return $l['invoices']->firstWhere('id',$op->invoice_id);
+        }
         $invoice = $l['invoices']->firstWhere('id', $op->invoice_id); $item = $l['items']->firstWhere('id', $op->invoice_item_id); $d = $l['domain'];
         if (!$invoice || !$item || !$invoice->due_at || !$op->base_expires_at || !$op->expected_expires_at || $l['items']->where('invoice_id', $op->invoice_id)->count() !== 1 || $op->action !== 'renew' || $op->funding_basis !== 'paid_invoice' || ($years !== null && (int) $op->term !== $years)
             || $op->service_id !== $d->service_id || $op->server_id !== $d->server_id || $op->registrar_key !== $d->registrar_key
@@ -198,7 +206,7 @@ final class DomainBilling
             $late = self::expired($l['domain'], $this->clock->now()) && EnomLateRenewal::accepted(AccountBindings::binding($l['account']));
             $calendar = $this->requireRequest($l, true, $late ? 1 : null, $late);
             if ($late) { return ['terms' => [1], 'order_by' => null, 'late' => true]; }
-            $annual = $this->native->quote($l)['annual_gross'];
+            $annual = $l['domain']->price_mode==='complimentary'?'0.00':$this->native->quote($l)['annual_gross'];
             $terms = self::terms($l['domain']->provider_expires_at->toDateTimeImmutable(), $this->clock->now());
             if (($support = self::renewalTerms($l, $this->catalogue)) !== null) {
                 $terms = array_values(array_filter($terms, static fn (int $y) => $support[$y]['available'] ?? false));

@@ -148,6 +148,7 @@ final class DomainSummaries
                     if ($t->provenance==='adopted') { $states[]='adopt.provenance'; }
                     if ($policy===null) { $states[]='domain.review'; } elseif ($off && !$pending) { $states[]='adopt.renewal_off'; }
                     if (!$pending) { try { if ($s->currency_code==='USD') { $price=Storefront::money(RetailLine::decimal($s->price)); } } catch (\Throwable) {} }
+                    if($t->price_mode==='complimentary'){$price=ComplimentaryAccounts::LABEL;}
                     $cycle=($cycles[$id]??collect())->first(fn($o)=>(int)$o->authority_generation===(int)$t->authority_generation && (int)$o->service_id===(int)$t->service_id && (int)$o->server_id===(int)$t->server_id && $o->registrar_key===$t->registrar_key && $o->account_fingerprint===$t->account_fingerprint && $o->base_expires_at?->format('Y-m-d')===$expiry);
                     if (!$off && $expiry) {
                         if ($cycle && !RenewalCycles::closedEarly($cycle)) { $inv=$invoices[$cycle->invoice_id]??null;$item=$items[$cycle->invoice_item_id]??null;

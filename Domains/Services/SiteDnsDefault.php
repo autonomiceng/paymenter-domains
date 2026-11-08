@@ -33,16 +33,16 @@ final class SiteDnsDefault
     /** Called only after lifecycle initialization has proved and installed the retained schema. */
     public static function ensure(): void
     {
-        Cache::lock('domains-site-dns-default',30)->block(5,static function():void {
-            DB::transaction(static function():void {
-                Setting::orderBy('id')->lockForUpdate()->get();
+        $changed=Cache::lock('domains-site-dns-default',30)->block(5,static function():bool {
+            return DB::transaction(static function():bool {
+                Setting::orderBy('id')->select('id')->lockForUpdate()->get();
                 Setting::where('settingable_type',(new \App\Models\Server)->getMorphClass())->where('key','domains_new_domain_dns_template')
                     ->whereIn('settingable_id',\App\Models\Server::where('extension','Domains')->select('id'))->delete();
-                if(self::query()->exists()){return;} // Deployment changes never move a saved choice.
+                if(self::query()->exists()){return false;} // Deployment changes never move a saved choice.
                 $names=config('domains.site_dns_default.nameservers');
-                if(!is_array($names) || !$names){return;}
-                try{$routing=new RoutingProfile($names,[],[]);}catch(\InvalidArgumentException|\TypeError){return;}
-                try{self::validateRegistrars($routing->nameservers);}catch(\DomainException){return;}
+                if(!is_array($names) || !$names){return false;}
+                try{$routing=new RoutingProfile($names,[],[]);}catch(\InvalidArgumentException|\TypeError){return false;}
+                try{self::validateRegistrars($routing->nameservers);}catch(\DomainException){return false;}
                 // System installation has no staff actor. Quiet maintenance preserves normal staff validation.
                 $p=new WatchProfile(['name'=>'Beco DNS','nameservers'=>$routing->nameservers,'website_endpoints'=>[],
                     'email_endpoints'=>[],'enabled'=>true,'edited_by'=>0,'reason'=>'Deployment DNS default']);
@@ -50,9 +50,10 @@ final class SiteDnsDefault
                 self::write($p);
                 WatchAudit::create(['subject_type'=>'dns_profile','subject_id'=>$p->id,'event'=>'deployment_dns_default',
                     'reason'=>'Deployment DNS default','after_revision'=>'1','data'=>['profile_id'=>$p->id],'created_at'=>now()]);
+                return true;
             });
         });
-        self::reconcile();
+        if($changed){self::reconcile();}
     }
     private static function authorize(User $actor): void
     {
@@ -64,7 +65,7 @@ final class SiteDnsDefault
         self::authorize($actor);
         Cache::lock('domains-site-dns-default',30)->block(5,static function()use($actor,$id):void {
             DB::transaction(static function()use($actor,$id):void {
-                self::authorize($actor);Setting::orderBy('id')->lockForUpdate()->get();
+                self::authorize($actor);Setting::orderBy('id')->select('id')->lockForUpdate()->get();
                 $p=WatchProfile::whereKey($id)->lockForUpdate()->first();
                 if(!ManagedDnsSetup::usable($p)){throw new \DomainException('Choose an enabled DNS template.');}
                 self::validateRegistrars($p->nameservers);
@@ -115,7 +116,7 @@ final class SiteDnsDefault
         if(!Schema::hasTable(PublicDnsQuota::TABLE) || !Schema::hasTable('domains_watch_schedule')){return;}
         PublicDnsQuota::seed(time());
         DB::table(PublicDnsQuota::TABLE)->where('id',1)->update(['sweep_due_at'=>0,'sweep_cursor'=>0]);
-        DB::table('domains_watch_schedule')->updateOrInsert(['scope'=>'enrollment'],['cursor'=>0,'data'=>json_encode(['refresh_dns'=>true])]);
+        DB::table('domains_watch_schedule')->updateOrInsert(['scope'=>'enrollment'],['cursor'=>0,'data'=>json_encode(['refresh_dns'=>true,'restart'=>bin2hex(random_bytes(16))])]);
         DB::afterCommit(static fn()=>app(WatchWork::class)->reconcileDefaults());
     }
 }

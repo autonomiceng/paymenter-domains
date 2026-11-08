@@ -39,7 +39,7 @@ final class StaffReviewHistory
             // Only stored display names are shown; actor_id is never resolved for display.
             $by=$action==='engine_hold' ? 'System' : (is_string($entry['actor_name']??null)&&$entry['actor_name']!=='' ? $entry['actor_name'] : 'Staff');
             // Actions without a reason field record their own name; that repeats the event, so it is not shown.
-            $reason=$action==='engine_hold' ? Labels::reason($entry['reason']??null) : ($entry['reason']??null);
+            $reason=$action==='engine_hold' ? Labels::reason($entry['reason']??null,$op->funding_basis==='complimentary') : ($entry['reason']??null);
             $sub=is_string($reason)&&$reason!==''&&$reason!==($contactUpdate?'Use updated account details':(StaffOperationReview::ACTIONS[$action]??null)) ? $reason : null;
             $rows[]=['time'=>self::time($date?:null),'event'=>$event,'sub'=>$sub,'by'=>$by];
         }
@@ -53,7 +53,7 @@ final class StaffReviewHistory
         try { $hold=$op->policy['first_hold']??null; } catch (\Throwable) { $hold=null; }
         // A staff Cancelled already says how this request ended.
         $ended=$op->completed_at&&in_array($op->state,['succeeded','rejected','disposed','cancelled'],true)&&!in_array($status['label'],array_column($rows,'event'),true);
-        $all=[$system($op->created_at,'Request created'),...($hold?[$system(new \DateTimeImmutable($hold['at']),'Put on hold',Labels::reason($hold['reason']))]:[]),...($op->started_at&&($sent=self::sendEvent($op))?[$system($op->started_at,$sent)]:[]),...$rows,...($ended?[$system($op->completed_at,$status['label'],$status['reason'])]:[])];
+        $all=[$system($op->created_at,'Request created'),...($hold?[$system(new \DateTimeImmutable($hold['at']),'Put on hold',Labels::reason($hold['reason'],$op->funding_basis==='complimentary'))]:[]),...($op->started_at&&($sent=self::sendEvent($op))?[$system($op->started_at,$sent)]:[]),...$rows,...($ended?[$system($op->completed_at,$status['label'],$status['reason'])]:[])];
         $at=PHP_INT_MIN;
         $keyed=array_map(function(array $row)use(&$at){$at=$row['time']===null?$at:(int)strtotime($row['time']);return [$at,$row];},$all);
         usort($keyed,fn(array $a,array $b)=>$a[0]<=>$b[0]);

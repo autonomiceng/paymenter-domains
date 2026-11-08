@@ -105,7 +105,7 @@ final class OperationClaims
             ObservationWork::discardUnsent($domain,$this->clock->now(),$all);
             if ($op->action === 'transfer' && !TransferInputs::validCode($op->payload['epp'] ?? null)) { return null; }
             if(FundsWaits::elapsed($op,$this->clock->now())){return null;}
-            $capacityRetry=self::capacityRetry($op);$priceRetry=self::testCallRetry($op)&&ExecutionWindow::priceReleased($op);
+            $capacityRetry=self::capacityRetry($op);$priceRetry=(self::testCallRetry($op)&&ExecutionWindow::priceReleased($op))||ComplimentaryCosts::readmitted($op);
             $testCallRetry=self::testCallRetry($op)&&!$priceRetry&&!BalanceRetry::from($op)?->window;$balanceRetry=self::balanceRefusalRetryable($op);
             // A cap refusal starts fresh authority; validated balance and price retries retain the original unsent claim.
             $claimRetry=($capacityRetry||$balanceRetry||$priceRetry)&&!$testCallRetry&&isset($op->attempt['claim_key']);

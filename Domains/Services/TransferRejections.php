@@ -42,7 +42,7 @@ final class TransferRejections
             catch(\InvalidArgumentException){throw new \DomainException('Record final USD amounts in dollars and cents. If the registrar cannot confirm them, leave this request open.');}
         }
         if($amounts['registrar_refund']>$amounts['charge']){throw new \DomainException('Registrar refund exceeds the charge. Ask the registrar to check it.');}
-        RefundPayment::requireCurrent($op,$l);
+        if($op->funding_basis==='complimentary'){ComplimentaryInvoices::require($op,$l);}else{RefundPayment::requireCurrent($op,$l);}
         return ['charge'=>PricingRule::decimal($amounts['charge']),'registrar_refund'=>PricingRule::decimal($amounts['registrar_refund']),
             'absorbed_fee'=>PricingRule::decimal($amounts['charge']-$amounts['registrar_refund']),'currency'=>'USD','final_confirmed'=>true,...($op->registrar_key==='namesilo'?['transfer_status'=>$input['transfer_status']]:[])];
     }

@@ -67,6 +67,10 @@ final class RenewalExecution
                     || new \DateTimeImmutable($op->policy['renewal_admission']['until']) <= $this->clock->now() || !RenewalCycles::registrarVirgin($op) || !in_array($op->state, ['awaiting_payment', 'queued'], true)) { throw new \DomainException('Renewal changed.'); }
                 $funding = $this->current($op, $l); $writer->requirePolicy($binding, $this->features, $this->accepted);
                 $cap = $op->policy['renewal']['cost_cap'] ?? null;
+                if(isset($op->policy['account_complimentary'])&&$cap){
+                    try{ComplimentaryCosts::require($op,$ready->cost,$cap['amount']);}catch(WriteHeld){$this->hold($op->refresh(),'registrar_price_increased');return [null,null];}
+                    $cap['amount']=ComplimentaryCosts::cap($op,$cap['amount']);
+                }
                 $late = $op->policy['renewal']['late'] ?? null;
                 if ($ready->status === \Paymenter\Extensions\Servers\Domains\Data\RenewalStatus::Grace && EnomTestRenewal::enabled($binding)) {
                     if (!$late || !EnomLateRenewal::accepted($binding) || $ready->providerExpiry !== $late['expiry'] || !$ready->renewalUntil) { throw new RenewalRefused(\Paymenter\Extensions\Servers\Domains\Data\RenewalCode::Grace); }

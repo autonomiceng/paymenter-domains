@@ -63,7 +63,7 @@ final class Labels
         if (\Paymenter\Extensions\Servers\Domains\Services\BalanceRetries::legacyHold($op)) {
             return \Paymenter\Extensions\Servers\Domains\Services\BalanceRetries::pending($op) ? 'Not sent: checking this order again' : 'Not sent: reason not saved';
         }
-        $reason=self::reason($op->safe_code);
+        $reason=self::reason($op->safe_code,$op->funding_basis==='complimentary');
         if ($reason===self::FEATURE_OFF) {
             return 'Not sent: '.(['renew'=>'Renewals','transfer'=>'Transfers','register'=>'Registrations'][$op->action]??'Changes').' off for this account';
         }
@@ -86,7 +86,7 @@ final class Labels
     private const FEATURE_OFF='Not sent: feature off for this account';
     /** One short reason line: the cause, then the next step when staff have one. Held requests start "Not sent:". Null means an internal code with no line.
      * Unknown codes read Missing (see unknownReason). */
-    public static function reason(?string $value): ?string
+    public static function reason(?string $value, bool $complimentary=false): ?string
     {
         $map=['staff_review_required'=>'Put on hold by staff','contact_details_required'=>'Contact details needed','transfer_code_required'=>'Auth code needed',
             'transfer_code_timeout'=>'Auth code deadline passed','transfer_not_registered'=>'Domain not found at registry',
@@ -154,7 +154,7 @@ final class Labels
             'no_hosting'=>'No hosting service. DNS record checks do not apply.',
             'rotation'=>'Check not finished. It continues on the next run.',
             'resolver_failed'=>'DNS resolver failed','invalid_answer'=>'DNS answer invalid','ambiguous_empty'=>'DNS answer incomplete',
-            'registrar_price_increased'=>'Not sent: registrar price exceeds the frozen order limit. Cancel and add credit, or use Release hold after the price falls.',
+            'registrar_price_increased'=>'Not sent: registrar price exceeds the frozen order limit. Cancel'.($complimentary?'':' and add credit').', or use Release hold after the price falls.',
             'actual_cost_overrun'=>'Registrar cost is above the spending limit.','below_cost'=>'Registrar cost exceeds retail price',
             'confirmed'=>'Confirmed','correction_required'=>'Corrections needed','original_attempt_unresolved'=>'First try has no result yet.',
             'resumed'=>'Status checks resumed','transfer_rejection_contradiction'=>'Registrar says rejected, our records disagree.',
