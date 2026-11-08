@@ -111,4 +111,14 @@ foreach([1,13]as$count){$refuse(fn()=>DB::transaction(fn()=>$default->fresh()->u
 $twelve=$make(12);SiteDnsDefault::save($manager,$twelve->id);same(12,count(SiteDnsDefault::profile()->nameservers),'Both connected registrars accept twelve');
 DB::transaction(fn()=>$twelve->fresh()->update(['nameservers'=>$servers(2),'revision'=>$twelve->revision+1]));
 same(2,count(SiteDnsDefault::profile()->nameservers),'Both connected registrars accept editing to two');
+// Hostname refusals are not server-count failures; no saved default means create/select recovery.
+try{SiteDnsDefault::validateRegistrars(['invalid host','ns2.example.test']);expect(false,'Invalid hostname refused');}
+catch(DomainException $e){expect(str_contains(strtolower($e->getMessage()),'hostname')&&!str_contains($e->getMessage(),'takes 2 to'),'Hostname refusal explains the relevant rule');}
+\App\Models\Setting::where('key',SiteDnsDefault::KEY)->delete();DB::table('domains_watch_profiles')->update(['enabled'=>false]);
+config(['domains.site_dns_default.nameservers'=>null]);
+\Livewire\Livewire::actingAs($viewer)->test($page)->assertSee('Ask staff who can change the site DNS default.')->assertDontSee('Choose a set with Change site DNS default');
+$empty=\Livewire\Livewire::actingAs($manager)->test($page)->mountAction('siteDefault');
+$empty->assertSee('Create a DNS template in Domains > DNS templates, turn it on, then choose it here.');
+config(['domains.site_dns_default.nameservers'=>['invalid host','ns2.example.test']]);
+expect(str_contains((string)SiteDnsDefault::refusal(),'Create and turn on a compatible DNS template'),'An unusable deployment seed does not tell staff to edit a nonexistent saved template');
 $nativeSuccessful=true;echo "Site DNS installation default passed.\n";
