@@ -182,6 +182,8 @@ $result=app(StaffSettingsWrites::class)->run($review,['mode'=>'fixed','fixed_reg
 same('$40.00',$storefront->offer('com','register',1)['price'],'Installed global pricing save reaches active catalogue publication');
 expect($result['published']>0,'Installed global command returns main publication result');
 
+// The earlier intentional feed failure is not part of this missing-cost scenario.
+DB::table('domains_observation_queues')->where('server_id',$binding->serverId)->update(['offer_feed_failure'=>null,'offer_feed_failed_at'=>null]);
 // Discovered .org has metadata but no annual renewal price. It stays closed with the existing staff next step.
 $orgQuery=new Query($binding,['org'],'register');$orgRevision=fn()=>$ports->readOffers($orgQuery,Context::Staff)[0]->revision;
 $ports->apply(new FactsObserved($binding,'org',new Facts(['register'=>[1],'renew'=>[1]],[],true,false,false,'enom_tld_facts',$now,$now->modify('+30 days'))),$orgRevision());
