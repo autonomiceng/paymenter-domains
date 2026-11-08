@@ -11,6 +11,12 @@ $resource=\Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileRe
 $panel=\Filament\Facades\Filament::getCurrentPanel();$panel->resources([$resource]);
 \Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(fn()=>$resource::registerRoutes($panel));app('router')->getRoutes()->refreshNameLookups();
 $w=WatchName::findOrFail($id);$failures=[];
+$paused=clone $w;$paused->state='paused';$public=new \Paymenter\Extensions\Servers\Domains\Models\WatchDnsObservation(['check_kind'=>'points','started_at'=>1700000000,'completed_at'=>1700000001,'result'=>'complete','partial'=>false,'valid_until'=>1700000300,'facts'=>['queries'=>[]]]);
+$paused->setRelation('points',$public);
+$facts=WatchFacts::for($paused,['keys'=>[],'summary'=>null]);
+expect(isset($facts['Evidence']['Public DNS']),'Paused empty answers retain Public DNS evidence row');
+expect(str_contains((string)$facts['Evidence']['Public DNS']['sub'],'2023-11-14'),'The evidence row keeps its own public observation instant');
+
 foreach(['active','paused','retired'] as $state){
     $probe=clone $w;$probe->state=$state;$facts=WatchFacts::for($probe,['keys'=>[],'summary'=>null]);$encoded=json_encode($facts);
     $expected=match($state){'paused'=>'Paused','retired'=>'Monitoring stopped; no further checks',default=>'Fills in by itself after the next check'};
