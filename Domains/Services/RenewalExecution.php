@@ -37,15 +37,17 @@ final class RenewalExecution
             try { $this->current($op, $l); } catch (RenewalHold $held) { $this->hold($op, $held->reason, $held->reason===EnomLateRenewal::PAUSED); return null; } catch (RenewalRefused $refused) { $this->hold($op, $refused->reason->value); return null; } catch (\Throwable) { $this->hold($op, 'renewal_funding_or_authority'); return null; }
             // Enom's Extend contract requires OverrideOrder for another renewal within 24 hours.
             // Wait from confirmed completion (later than the send), never bypass replay protection.
+            // The time it may go is the latest such completion + 24 hours, stored once so pages show a fixed time.
             if ($op->registrar_key === 'enom') {
-                $binding = AccountBindings::binding($l['account']);
+                $binding = AccountBindings::binding($l['account']); $until = null;
                 foreach ($l['operations'] as $prior) {
-                    if ($prior->action === 'renew' && $prior->completed_at !== null
-                        && $prior->completed_at->copy()->addHours(24) > $this->clock->now()
-                        && RenewalAuthority::completed($prior, $l['domain'], $binding)) {
-                        $this->hold($op, RenewalCode::Rate->value, true);
-                        return null;
-                    }
+                    if ($prior->action !== 'renew' || $prior->completed_at === null) { continue; }
+                    $ends = \DateTimeImmutable::createFromInterface($prior->completed_at)->modify('+'.RenewalRepeatWait::HOURS.' hours');
+                    if ($ends > $this->clock->now() && ($until === null || $ends > $until) && RenewalAuthority::completed($prior, $l['domain'], $binding)) { $until = $ends; }
+                }
+                if ($until !== null) {
+                    $this->hold($op, RenewalCode::Repeat->value, true, ['staff_alert' => false, 'eligible_at' => $until->format(DATE_ATOM)]);
+                    return null;
                 }
             }
             $claim = bin2hex(random_bytes(16));
@@ -179,10 +181,10 @@ final class RenewalExecution
     {
         return $op->funding_basis === 'paid_invoice' && PricingRule::minor((string) \App\Models\InvoiceTransaction::where('invoice_id', $op->invoice_id)->where('status', 'succeeded')->sum('amount')) > 0;
     }
-    private function hold(Operation $op, string $reason, bool $retry = false): void
+    private function hold(Operation $op, string $reason, bool $retry = false, array $facts = []): void
     {
         if($reason===RenewalCode::Balance->value&&\Illuminate\Support\Facades\Schema::hasTable('domains_obligation_alerts')){ObligationAlerts::record($op->domain,'renewal_funds',$this->clock->now()->getTimestamp(),(int)$op->id);}
         $op->update(['state' => $retry ? 'queued' : 'held', 'safe_code' => $reason, 'policy' => [...$op->policy,
-            'renewal_execution' => ['staff_alert' => true, 'reason' => $reason, 'refundable_later' => !$retry && $this->hasPayment($op)]]]);
+            'renewal_execution' => [...['staff_alert' => true, 'reason' => $reason, 'refundable_later' => !$retry && $this->hasPayment($op)], ...$facts]]]);
     }
 }

@@ -11,6 +11,7 @@ enum RenewalCode: string
     case Paused = 'automatic_spend_paused';
     case Acceptance = 'renewal_acceptance_required';
     case Rate = 'renewal_rate_limited';
+    case Repeat = 'renewal_repeat_wait';
     case Changed = 'renewal_binding_changed';
     case Reads = 'renewal_reads_unavailable';
     case Owner = 'provider_membership_unconfirmed';

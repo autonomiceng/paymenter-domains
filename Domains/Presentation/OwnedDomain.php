@@ -21,6 +21,7 @@ namespace Paymenter\Extensions\Servers\Domains\Presentation;
  * renewNow: eligible owner renewal request: url, terms and last request date
  * (order_by, Y-m-d), or only invoice for this cycle's issued pending invoice, or only status
  * (cancelled, paid or review) when this cycle can be neither requested nor paid, independent of new-request switches; otherwise empty.
+ * A paid status may carry goes (OwnedDomains::goes): the fixed time a renewal waiting out Enom's 24-hour repeat refusal goes to the registrar.
  */
 final readonly class OwnedDomain
 {
