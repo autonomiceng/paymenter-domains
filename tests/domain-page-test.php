@@ -293,7 +293,7 @@ expect(str_contains($html, '.domains .domains-card > div { position: relative;')
 expect(str_contains($html, '.domains .domains-ph { position: relative;'), 'Status help anchors to the full page header');
 expect(preg_match('/\\.domains \\.domains-help-pop \\{[^}]*white-space: normal;/s',$html)===1, 'Card help resets inherited label nowrap');
 $d=$domain(['dnsCorrection'=>true]);$html=$render($d,$summary($d,['dnsKeys'=>['domain.dns.platform','domain.points.platform_empty'],'website'=>false,'email'=>false]));$dom=storefrontDom($html);
-same('Your domain is registered, but the registrar could not confirm your chosen nameservers. Set up DNS with your provider, then change nameservers. Change nameservers',$norm($dom->query('//div[contains(@class,"domains-notice")]')->item(0)),'Refused registration DNS gives a quiet next step');
+same('The registered nameservers do not match the registration settings. Set up DNS with your provider, then change nameservers. Change nameservers',$norm($dom->query('//div[contains(@class,"domains-notice")]')->item(0)),'Refused registration DNS gives a quiet next step');
 expect(str_contains($html,'To use this domain, buy a service or point it to your own nameservers.'),'Domain without hosting explains the next step');
 
 $d=$domain(['dnsCorrection'=>true,'management'=>[]]);$dom=storefrontDom($render($d,$summary($d)));
