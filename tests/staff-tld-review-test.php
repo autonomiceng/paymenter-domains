@@ -31,6 +31,21 @@ $html=TldFacts::accountsTable($t->fresh(),Staff::requireView())->toHtml();$dom=n
 $transfer=$xp->query('//tbody/tr/td[5]')->item(0)?->textContent??'';$check(str_contains($transfer,'Missing'),'Disabled transfer cannot hide an invalid price as Off');
 $broken=Livewire\Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewTld::class,['record'=>$t->id]);
 $check(str_contains(strip_tags($broken->instance()->getSubheading()->toHtml()),'Edit prices'),'The page head retains the invalid-rule repair beside the shared state');
+// A broken own pricing rule must not hide the independent no-registrar cause in the real account table.
+DB::table('domains_sales_policies')->where('tld',$t->tld)->update(['server_id'=>null]);
+$accountHtml=TldFacts::accountsTable($t->fresh(),Staff::requireView())->toHtml();
+$check(str_contains($accountHtml,TldFacts::NO_SELLER),'Invalid own pricing keeps the independent missing registrar reason');
+$reader=staffUser([Staff::VIEW]);Auth::setUser($reader);
+$notes=Livewire\Livewire::actingAs($reader)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ListTlds::class);
+$column=$notes->instance()->getTable()->getColumn('note')->record($tlds[1]);
+$check(str_contains((string)$column->getState(),'Ask staff who can change the registrar.'),'Read-only list recovery does not offer a hidden Change registrar action');
+Auth::setUser($actor);
+// Retained per-TLD transfer defaults apply when the account has not overridden them.
+DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_intent'=>OfferState::json([...array_diff_key($intent,['transfers'=>true]),'defaultTransfers'=>true])]);
+Paymenter\Extensions\Servers\Domains\Models\Price::where(['server_id'=>$t->server_id,'tld'=>$t->tld,'action'=>'transfer'])->delete();
+$html=TldFacts::accountsTable($t->fresh(),Staff::requireView())->toHtml();$dom=new DOMDocument;@$dom->loadHTML($html);$xp=new DOMXPath($dom);
+$check(trim($xp->query('//tbody/tr/td[5]')->item(0)?->textContent??'')!=='Off','Retained enabled transfer intent is not displayed as Off');
+DB::table('domains_sales_policies')->where('id',$p['id'])->update($p);
 // Actual Filament filter composition must scope its summary before reading other accounts.
 $unscoped=false;$observe=false;DB::listen(static function($q)use(&$observe,&$unscoped):void{if($observe&&str_starts_with($q->sql,'select * from "domains_accounts"')&&!str_contains($q->sql,'where')){$unscoped=true;}});
 $list=Livewire\Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ListTlds::class)->filterTable('server_id',(string)$t->server_id);

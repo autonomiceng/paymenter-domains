@@ -68,7 +68,7 @@ try{
 // Native audit disabled at provider boot means no listener; the extension still retains its history.
 \Illuminate\Support\Facades\Event::forget(\OwenIt\Auditing\Events\AuditCustom::class);config(['audit.enabled'=>false]);
 $on=(bool)ComplimentaryAccounts::current($user->id)['enabled'];
-$noAudit=$line($staff,$user->id)->mountAction($on?'turnOff':'turnOn');
+$noAudit=$line($staff,$user->id)->mountAction($on?'turnOff':'turnOn')->call('$refresh');
 expect(str_contains(($noAudit->effects['partials']['action-modals.0']??'').$noAudit->html(),'Native audit logging is off'),'Confirmation explains the actual retained history');
 $noAudit->setActionData(['reason'=>'Native audit disabled'])->callMountedAction()->assertHasNoActionErrors();
 same('Native audit disabled',ComplimentaryAccounts::current($user->id)['reason'],'Disabled native auditing still retains the reason');

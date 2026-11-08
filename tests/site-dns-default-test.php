@@ -117,8 +117,8 @@ catch(DomainException $e){expect(str_contains(strtolower($e->getMessage()),'host
 \App\Models\Setting::where('key',SiteDnsDefault::KEY)->delete();DB::table('domains_watch_profiles')->update(['enabled'=>false]);
 config(['domains.site_dns_default.nameservers'=>null]);
 \Livewire\Livewire::actingAs($viewer)->test($page)->assertSee('Ask staff who can change the site DNS default.')->assertDontSee('Choose a set with Change site DNS default');
-$empty=\Livewire\Livewire::actingAs($manager)->test($page)->mountAction('siteDefault');
-$empty->assertSee('Create a DNS template in Domains > DNS templates, turn it on, then choose it here.');
+$empty=\Livewire\Livewire::actingAs($manager)->test($page)->mountAction('siteDefault')->call('$refresh');
+expect(str_contains(html_entity_decode(implode('', $empty->effects['partials']??[]).$empty->html(),ENT_QUOTES),'Create a DNS template in Domains > DNS templates, turn it on, then choose it here.'),'Empty selector explains create, enable and select');
 config(['domains.site_dns_default.nameservers'=>['invalid host','ns2.example.test']]);
 expect(str_contains((string)SiteDnsDefault::refusal(),'Create and turn on a compatible DNS template'),'An unusable deployment seed does not tell staff to edit a nonexistent saved template');
 $nativeSuccessful=true;echo "Site DNS installation default passed.\n";

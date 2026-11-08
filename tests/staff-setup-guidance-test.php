@@ -23,7 +23,7 @@ $worker=new \Paymenter\Extensions\Servers\Domains\Catalogue\OfferWork($ports->wr
 $catalogue=new StaffCatalogue($ports,$clock,$worker,static fn()=>true);
 $probe=new ReflectionProperty(CallerRouting::class,'probe');$probe->setValue(null,[StaffCatalogue::class=>$catalogue,\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::class=>$caps]);
 $a=Account::firstOrFail();$failedAt=$now->getTimestamp()-60;
-DB::table('domains_observation_queues')->where('server_id',$a->server_id)->update(['offer_work'=>json_encode(['local_failure'=>'storage_unavailable','local_failed_at'=>$failedAt]),'offer_feed_failed_at'=>$failedAt-3600]);
+DB::table('domains_observation_queues')->updateOrInsert(['server_id'=>$a->server_id,'account_fingerprint'=>$a->account_fingerprint],['offer_work'=>json_encode(['local_failure'=>'storage_unavailable','local_failed_at'=>$failedAt]),'offer_feed_failed_at'=>$failedAt-3600]);
 $rows=AccountChecklist::setup($a,['label'=>'Active','reason'=>null]);$prices=collect($rows)->firstWhere('label','TLD prices');
 $check($prices['value']==='Sync failed'&&str_contains((string)$prices['cause'],'Database error'),'Routed account price row includes the mapped worker failure');
 $tld=\Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$a->server_id)->firstOrFail();
