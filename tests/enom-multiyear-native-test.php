@@ -81,6 +81,7 @@ foreach (['changed' => ['20.00', 'actual_charge_changed'], 'overrun' => ['16.00'
     $fresh = $held->fresh();
     same(1, $fresh->policy['renewal_polls'], 'Captured financial hold is below the normal read limit');
     app()->instance(\Paymenter\Extensions\Servers\Domains\Services\RenewalCompletion::class, $compCompletion);
+    \Illuminate\Support\Facades\Auth::setUser($staff);
     // Reproduce damaged encrypted storage without changing the issued operation or its financial proof.
     $storedAttempt = $fresh->getRawOriginal('attempt');
     DB::table('domains_operations')->where('id', $held->id)->update(['attempt' => 'synthetic-unreadable-renewal-attempt']);
