@@ -350,6 +350,14 @@ expect(!str_contains(strip_tags((string)$disconnected->instance()->getSubheading
 $historyHead=Livewire::actingAs($staff)->test(RegistrarHistory::class,['account'=>$silo->server_id])->instance()->getSubheading();
 expect(str_contains(strip_tags((string)$historyHead),'Off in Paymenter'),'History keeps the connection cause when there is no API row');
 App\Models\Server::whereKey($silo->server_id)->update(['enabled'=>true]);
+$identityBefore=$silo->getRawOriginal('stable_identity');
+DB::table('domains_accounts')->where('id',$silo->id)->update(['stable_identity'=>'broken ciphertext']);
+$failed=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$silo->server_id])->assertSee('Connection failed');
+same(1,substr_count($failed->html(),'Could not load account settings'),'A failed connection cause appears once on Overview');
+expect(!str_contains(strip_tags((string)$failed->instance()->getSubheading()),'Could not load account settings'),'Failed Overview leaves its cause to the API row');
+$failedHistory=Livewire::actingAs($staff)->test(RegistrarHistory::class,['account'=>$silo->server_id])->instance()->getSubheading();
+expect(str_contains(strip_tags((string)$failedHistory),'Could not load account settings'),'History keeps the failed connection cause');
+DB::table('domains_accounts')->where('id',$silo->id)->update(['stable_identity'=>$identityBefore]);
 $emptyHead=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$off->id])->instance()->getSubheading();
 expect(str_contains(strip_tags((string)$emptyHead),'Off in Paymenter'),'An unconfigured account keeps the cause in the head');
 
