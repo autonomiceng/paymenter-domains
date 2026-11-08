@@ -34,7 +34,7 @@ $check($runtime->registered($a)&&!$runtime->accepted($a),'Fixture separates regi
 $site=AccountChecklist::runtime($a);$check(str_contains($site['cause'],'Runtime registered')&&str_contains($site['help'],'API connection'),'Site setup reports registration rather than authenticated readiness');
 // Staff without cost access can read the recovery instruction beside the actual row state.
 DB::table('domains_sales_policies')->update(['server_id'=>null]);$reader=staffUser([Staff::VIEW]);Auth::setUser($reader);
-$list=Livewire::actingAs($reader)->test(WhatYouSell::class);$record=$list->instance()->getTableRecords()->first();
+$list=Livewire::actingAs($reader)->test(WhatYouSell::class)->set('tableFilters.for_sale.isActive',false);$record=$list->instance()->getTableRecords()->first();
 expect($record!==null,'The real saved offer row exists');$status=$list->instance()->getTable()->getColumn('status')->record($record);
 $check(trim((string)$status->getDescriptionBelow())!=='','Gray row renders a recovery description outside its tooltip');
 // Grouped formula inputs must reach the explanation, independently of generic table help.
