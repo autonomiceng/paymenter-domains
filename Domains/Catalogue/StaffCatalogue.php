@@ -323,8 +323,9 @@ final class StaffCatalogue
     public function omissions(Collection $tlds): array
     {
         abort_unless(Staff::requireView()->costs,403);$out=[];$state=self::pricingState();
+        $accounts=Account::whereIn('server_id',$tlds->pluck('server_id'))->get()->keyBy('server_id');
         foreach($tlds as $t){
-            try{$raw=OfferState::decode($t->catalogue_intent);OfferState::intent($t,$d);$unreadable=false;}
+            try{$d=OfferState::decode($accounts[$t->server_id]->catalogue_defaults);$raw=OfferState::decode($t->catalogue_intent);OfferState::intent($t,$d);$unreadable=false;}
             catch(\Throwable){$unreadable=true;}
             if(self::pricingCause($t,$state,$unreadable)!==null){$out[]=$t->server_id.':'.$t->tld;}
         }

@@ -177,8 +177,8 @@ final class TldFacts
 
     /** The one fix for each reason a TLD with a saved price is not for sale. */
     public const FIXES=['Cost out of date'=>'See the next refresh on this TLD.','Cost missing'=>'The registrar price feed must supply the exact cost.','Prices not published'=>'Open Edit prices and save.','Below cost'=>'Raise the price in Edit prices.','Price missing'=>'Open Edit prices and save.','Prices need checking'=>'Check the registrar account and the last refresh failure.',self::NO_SELLER=>'Open the TLD and use Change registrar.'];
-    public static function fixText(string $reason):string
-    {return $reason===self::NO_SELLER&&!(Staff::can(Staff::POLICY)&&Staff::can(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::permission('seller')))?'Ask staff who can change the registrar.':(self::FIXES[$reason]??'');}
+    public static function fixText(string $reason,?bool $changeSeller=null):string
+    {return $reason===self::NO_SELLER&&!($changeSeller??(Staff::can(Staff::POLICY)&&Staff::can(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::permission('seller'))))?'Ask staff who can change the registrar.':(self::FIXES[$reason]??'');}
     /** For sale or Not for sale, with the reason it is not for sale. */
     public static function salesState(Tld $t, ?StaffGrants $grants = null): array
     {return self::snapshot($t,$grants)['sales'];}

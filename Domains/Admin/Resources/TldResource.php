@@ -38,6 +38,7 @@ class TldResource extends Resource
         $attention=fn($livewire)=>(bool)($livewire->getTableFilterState('needs_attention')['isActive']??false)&&blank($livewire->getTableSearch());
         $narrowed=fn($livewire)=>filled($livewire->getTableSearch())||$livewire->getTable()->isFiltered();
         $grants=Staff::requireView();$pages=new \WeakMap();$demo=[];
+        $changeSeller=$grants->policy&&Staff::can(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::permission('seller'));
         // Facts for the whole rendered page in one batch of reads, so extra rows add no queries.
         $row=static function(Tld $t,mixed $livewire)use($pages,$grants):array {
             $records=method_exists($livewire,'getTableRecords')?$livewire->getTableRecords():collect([$t]);
@@ -71,7 +72,7 @@ class TldResource extends Resource
             TextColumn::make('holders')->label('Domains')->state(fn(Tld $record,$livewire)=>$row($record,$livewire)['holders']),
             TextColumn::make('status')->label('Status')->badge()->state(fn(Tld $record,$livewire)=>$row($record,$livewire)['sales']['label'])
                 ->color(fn(Tld $record,$livewire)=>$row($record,$livewire)['sales']['tone'])->extraAttributes(fn(Tld $record,$livewire)=>StatusMark::attributes($row($record,$livewire)['sales']['tone'],'tld-'.$record->id)),
-            OneLine::apply(TextColumn::make('note')->label('Note')->color('gray')->state(fn(Tld $record,$livewire)=>($reason=$row($record,$livewire)['sales']['reason'])?trim($reason.'. '.TldFacts::fixText($reason)):null)),
+            OneLine::apply(TextColumn::make('note')->label('Note')->color('gray')->state(fn(Tld $record,$livewire)=>($reason=$row($record,$livewire)['sales']['reason'])?trim($reason.'. '.TldFacts::fixText($reason,$changeSeller)):null)),
         ])->filters([SelectFilter::make('registrar_key')->label('Registrar')->options(['enom'=>'Enom','namesilo'=>'NameSilo']),
             SelectFilter::make('server_id')->label('Registrar account')->options(fn()=>\App\Models\Server::where('extension','Domains')->pluck('name','id')->all()),
             Filter::make('needs_attention')->label('Terms need attention')->query(fn(Builder $query,$livewire)=>$query->whereIn('domains_tlds.id',\Paymenter\Extensions\Servers\Domains\Admin\Support\TldTerms::summary(filter_var($livewire->getTableFilterState('server_id')['value']??null,FILTER_VALIDATE_INT,['options'=>['min_range'=>1]])?:null)['attention']))])
