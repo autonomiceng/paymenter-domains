@@ -65,6 +65,8 @@ foreach(['register','transfer']as$action){
     $page=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id]);
     $page->assertActionVisible('credit')->callAction('credit',['reason'=>'Complete retained complimentary order closure'])->assertHasNoActionErrors()->assertNotified('Order closed')->assertActionHidden('credit');
     $op->refresh();
+    $events=array_column(\Paymenter\Extensions\Servers\Domains\Admin\Support\StaffReviewHistory::rows($op),'event');
+    expect(in_array('Order closed',$events,true)&&!in_array('Refund checked',$events,true),'Actual complimentary Close order history never calls it a refund');
     same(0,DB::table('domains_obligation_alerts')->where('operation_id',$op->id)->where('code','refund_repair')->whereNull('resolved_at')->count(),'Successful staff retry clears its failed-closure alert');
     same(['rejected',$action==='register'?'registration_rejected':'transfer_rejected','cancelled'],[$op->state,$op->domain->status,Service::findOrFail($op->service_id)->status],'The final answer closes the operation, domain and native service');
     same($attempt,$op->attempt,'Support closure preserves the original sealed attempt');
