@@ -3,7 +3,7 @@
 @php $staff ??= false; $part ??= null; @endphp
 <div class="domains">
 @if ($part !== 'tail')
-@if ($recordFamilies['stale'])<p class="domains-hint">Registrar records are waiting for an update. Last confirmed data is retained.</p>@endif
+@if ($recordFamilies['stale'] && ($readScheduling ?? true))<p class="domains-hint">Registrar records are waiting for an update. Last confirmed data is retained.</p>@endif
 @if ($recordFamilies['at'])<p class="domains-hint">Last registrar read: @include('domains::partials.moment', ['at'=>$recordFamilies['at']])</p>@endif
 {{-- What to do next is on the Next registrar read line below. When the read stopped, the page notice names the cause and Resume sync, so this line keeps only the attempt count and time. --}}
 @if ($staff && ($readScheduling ?? true) && $recordFamilies['failed_family'])<p class="domains-hint">Last read failed for {{ collect($recordFamilies['rows'])->firstWhere('kind', $recordFamilies['failed_family'])['label'] ?? $recordFamilies['failed_family'] }}. {{ $recordFamilies['staff_hold'] }}</p>@endif

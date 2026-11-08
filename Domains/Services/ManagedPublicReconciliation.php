@@ -57,9 +57,9 @@ final readonly class ManagedPublicReconciliation
                     ->map(fn($w)=>['domain_id'=>(int)$w->domain_id,'user_id'=>(int)$owner,'kind'=>$w->kind,'due_at'=>(int)$w->due_at,'sort_id'=>(int)$w->id]);
                 $watched=(clone$watch)->where('n.user_id',$owner)->select('w.id','w.watch_id','w.kind','w.due_at')->orderBy('w.due_at')->orderBy('w.id')->limit(2)->get()
                     ->map(fn($w)=>['watch_id'=>(int)$w->watch_id,'user_id'=>(int)$owner,'kind'=>$w->kind,'due_at'=>(int)$w->due_at,'sort_id'=>(int)$w->id]);
-                // One owner turn across both public target families; earlier due work wins.
+                // Due watches get the first turn; preserve oldest-first order within each family.
                 $candidates=[...$managed,...$watched];
-                usort($candidates,fn($a,$b)=>[$a['due_at'],$a['sort_id'],isset($a['watch_id'])]<=>[$b['due_at'],$b['sort_id'],isset($b['watch_id'])]);
+                usort($candidates,fn($a,$b)=>[!isset($a['watch_id']),$a['due_at'],$a['sort_id']]<=>[!isset($b['watch_id']),$b['due_at'],$b['sort_id']]);
                 foreach(array_slice($candidates,0,2)as$hint) { unset($hint['due_at'],$hint['sort_id']);$out[]=$hint; }
             }
             if ($owners->isNotEmpty()) { DB::table(PublicDnsQuota::TABLE)->where('id',1)->update(['dispatch_cursor'=>$owners->last()]); }

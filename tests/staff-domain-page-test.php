@@ -316,6 +316,11 @@ DB::table('domains_domains')->where('id',$active->id)->update(['status'=>'active
 DB::table('domains_obligation_alerts')->where('domain_id',$active->id)->delete();
 Auth::setUser($viewer);
 DB::table('domains_observation_work')->where('id',$work)->delete();
+foreach(['cancelled','registration_rejected','transfer_rejected'] as $endedStatus){
+    $endedDomain=$active->fresh();$endedDomain->status=$endedStatus;
+    $ds=\Paymenter\Extensions\Servers\Domains\Presentation\DsState::staff($endedDomain);
+    expect(!str_contains((string)$ds['sub'],'Sync this domain.'),'An ended domain without queued reads has no DS sync instruction: '.$endedStatus);
+}
 foreach(['history_limit'=>'Missing: saved record history needs a fresh read. Use Sync now to refresh DNS records.','ownership_drift'=>'Sync stopped: domain is not in the registrar account.',
     'glue_unavailable'=>"Couldn't read glue records. Other domain facts were saved. Use Sync now to try again.",
     'records_unavailable'=>"Sync stopped: couldn't read DNS records.",'unmapped_reason_code'=>'Sync stopped: DNS record check failed.'] as $reason=>$title){
