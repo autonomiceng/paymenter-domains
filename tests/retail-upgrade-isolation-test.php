@@ -10,6 +10,7 @@ foreach($tlds as$t){$p=OfferState::decode($t->fresh()->catalogue_published_revis
 $unpublished=$tlds[1]->replicate();$unpublished->tld='unpublished';$unpublished->catalogue_published_revision=null;$unpublished->save();
 $nullBefore=$unpublished->getRawOriginal();$price=$native->product($tlds[0],'register')->plans()->where('billing_period',1)->sole()->prices()->sole();
 $rows=static fn($id)=>[DB::table('domains_tlds')->where('id',$id)->first(),DB::table('domains_prices')->where('server_id',$tlds[0]->server_id)->orderBy('id')->get()->toJson(),DB::table('prices')->where('id',$price->id)->first()];
+DB::table('prices')->where('id',$price->id)->update(['price'=>'0.01']);
 $before=serialize($rows($tlds[0]->id));$logs=0;
 Log::listen(static function($event)use(&$logs):void{if($event->message==='Domains retail upgrade deferred.'){$logs++;throw new RuntimeException('Synthetic logging failure');}});
 DB::statement('CREATE TRIGGER isolate_retail BEFORE UPDATE ON prices WHEN OLD.id = '.$price->id." BEGIN SELECT RAISE(ABORT, 'synthetic isolated TLD failure'); END");
