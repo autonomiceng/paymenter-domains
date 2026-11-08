@@ -148,9 +148,11 @@ final class OperationActions
     /** Status reads stopped by a limit or a captured financial hold; Check status uses the audited resume. */
     public static function readLimit(Operation $op): bool
     {
-        try { $p=$op->policy??[]; } catch (\Throwable) { return false; }
-        if($op->action==='renew'&&($op->attempt['seal']??null)==='sealed'
-            &&\Paymenter\Extensions\Servers\Domains\Services\RenewalCompletion::capturedChargeHeld($op)){return true;}
+        try {
+            $p=$op->policy??[];
+            if($op->action==='renew'&&($op->attempt['seal']??null)==='sealed'
+                &&\Paymenter\Extensions\Servers\Domains\Services\RenewalCompletion::capturedChargeHeld($op)){return true;}
+        } catch (\Throwable) { return false; }
         if(($p['reconciliation']['reason']??null)==='transfer_deadline_passed'||($p['reconciliation']['final_check']??null)==='done'){return true;}
         if(\Paymenter\Extensions\Servers\Domains\Services\TransferPolling::expected($op)){return false;}
         return ($p['renewal_polls']??0)>=\Paymenter\Extensions\Servers\Domains\Services\OperationReconciliation::POLL_LIMIT||($p['reconciliation']['polls']??0)>=\Paymenter\Extensions\Servers\Domains\Services\OperationReconciliation::POLL_LIMIT;
