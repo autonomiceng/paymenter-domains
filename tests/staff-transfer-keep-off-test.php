@@ -26,6 +26,10 @@ $probe=new ReflectionProperty(Paymenter\Extensions\Servers\Domains\Catalogue\Cal
 try{
     foreach(['false',0,false,'true',1,true,'null',null] as $databaseValue){
         $row=Paymenter\Extensions\Servers\Domains\Models\OfferRow::hydrate([['id'=>$t->id,'server_id'=>$t->server_id,'tld'=>'com','longest'=>3,'transfer'=>$databaseValue]])->first();
+        // The form reads saved TLD intent; the SQL projection alone is no longer its authority.
+        $intent=OfferState::decode($t->fresh()->catalogue_intent);
+        $intent['transfers']=$row->transfer;
+        DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_intent'=>OfferState::json($intent)]);
         $fields=$edit->invoke($page,$row);$field=collect($fields)->first(fn($f)=>$f->getName()==='transfer');
         $expected=in_array($databaseValue,['false',0,false],true)?'Off':'On';
         same('Leave as is ('.$expected.')',$field->getOptions()['keep'],'Single-row Transfers matches the saved JSON boolean '.json_encode($databaseValue));
