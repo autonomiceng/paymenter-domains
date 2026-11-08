@@ -127,6 +127,19 @@ Auth::setUser(staffUser([Staff::VIEW]));$withoutCosts=Staff::requireView();Auth:
 DB::table('domains_prices')->whereIn('id',$detailPrices)->delete();DB::table('domains_tlds')->whereIn('id',$detailTlds)->delete();
 
 
+// Missing-registrar guidance follows the same fresh permissions as Change registrar.
+DB::table('domains_sales_policies')->where('tld','com')->update(['server_id'=>null]);
+foreach([[Staff::VIEW],[Staff::VIEW,Staff::POLICY],[Staff::VIEW,Review::permission('seller')],
+    [Staff::VIEW,Staff::POLICY,Review::permission('seller')]] as $rights){
+    $reader=staffUser($rights);Auth::setUser($reader);
+    $canChange=in_array(Staff::POLICY,$rights,true)&&in_array(Review::permission('seller'),$rights,true);
+    $missing=Livewire::actingAs($reader)->test(ViewTld::class,['record'=>$silo->id])->assertSuccessful();
+    if($canChange){$missing->assertActionVisible('seller')->assertSee(ViewTld::CHOOSE_SELLER);}
+    else{$missing->assertActionHidden('seller')->assertDontSee(ViewTld::CHOOSE_SELLER)->assertSee('Ask staff who can change the registrar.');}
+}
+DB::table('domains_sales_policies')->where('tld','com')->update(['server_id'=>$enom->server_id]);
+Auth::setUser($u);
+
 // Sync failed: the stored cause is shown as words, with the last good prices kept.
 DB::table('domains_observation_queues')->insert(['server_id'=>$enom->server_id,'account_fingerprint'=>$enom->account_fingerprint,
     'catalogue_hold'=>'catalogue_reader_unavailable','catalogue_audit'=>json_encode([['code'=>'catalogue_reader_unavailable','server_id'=>$enom->server_id,
@@ -201,15 +214,4 @@ $viewer=staffUser([Staff::VIEW]);Auth::setUser($viewer);
 $list=Livewire::actingAs($viewer)->test(ListTlds::class)->assertSuccessful()->assertDontSee('USD 8.00');
 same('TLDs from What you sell. Open one for its prices.',$list->instance()->getSubheading(),'Staff without costs get the same head line.');
 $page=Livewire::actingAs($viewer)->test(ViewTld::class,['record'=>$silo->id])->assertSuccessful()->assertDontSee('USD 8.00')->assertDontSee('Restore fee');
-// Missing-registrar guidance follows the same fresh permissions as Change registrar.
-DB::table('domains_sales_policies')->where('tld','com')->update(['server_id'=>null]);
-foreach([[Staff::VIEW],[Staff::VIEW,Staff::POLICY],[Staff::VIEW,Review::permission('seller')],
-    [Staff::VIEW,Staff::POLICY,Review::permission('seller')]] as $rights){
-    $reader=staffUser($rights);Auth::setUser($reader);
-    $canChange=in_array(Staff::POLICY,$rights,true)&&in_array(Review::permission('seller'),$rights,true);
-    $missing=Livewire::actingAs($reader)->test(ViewTld::class,['record'=>$silo->id])->assertSuccessful();
-    if($canChange){$missing->assertActionVisible('seller')->assertSee(ViewTld::CHOOSE_SELLER);}
-    else{$missing->assertActionHidden('seller')->assertDontSee(ViewTld::CHOOSE_SELLER)->assertSee('Ask staff who can change the registrar.');}
-}
-DB::table('domains_sales_policies')->where('tld','com')->update(['server_id'=>$enom->server_id]);
 echo "Native TLDs & pricing list and TLD page passed.\n";$nativeSuccessful=true;
