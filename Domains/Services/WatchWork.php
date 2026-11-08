@@ -90,39 +90,38 @@ final class WatchWork
     }
     private function enroll(int $now): int
     {
-        // Claim before selecting the batch: a duplicate caller cannot repeat refresh side effects.
-        $batch=DB::transaction(static function()use($now):?array {
-            DB::table('domains_watch_schedule')->insertOrIgnore(['scope'=>'enrollment']);
-            $q=DB::table('domains_watch_schedule')->where('scope','enrollment');$row=$q->lockForUpdate()->first();
-            $data=json_decode($row->data??'{}',true);$data=is_array($data)?$data:[];
-            if(($data['enrollment_until']??0)>$now){return null;}
-            unset($data['enrollment_claim'],$data['enrollment_until']);
-            $payload=json_encode([...$data,'enrollment_claim'=>bin2hex(random_bytes(16)),'enrollment_until'=>$now+120]);
-            $q->update(['data'=>$payload]);return ['cursor'=>(int)$row->cursor,'data'=>$data,'payload'=>$payload];
-        });
-        if($batch===null){return 0;}
-        $watches=WatchName::where('id','>',$batch['cursor'])->orderBy('id')->limit(25)->get();$data=$batch['data'];
+        DB::table('domains_watch_schedule')->insertOrIgnore(['scope'=>'enrollment']);
+        $schedule=DB::table('domains_watch_schedule')->where('scope','enrollment');$row=(clone $schedule)->first();
+        $data=json_decode($row->data??'{}',true);$data=is_array($data)?$data:[];
+        if(($data['enrollment_until']??0)>$now){return 0;}
+        $watches=WatchName::where('id','>',(int)$row->cursor)->orderBy('id')->limit(25)->get();
+        unset($data['enrollment_claim'],$data['enrollment_until']);
+        $payload=json_encode([...$data,'enrollment_claim'=>bin2hex(random_bytes(16)),'enrollment_until'=>$now+120]);
+        // Only the caller that still owns this snapshot may start refresh side effects.
+        if(!(clone $schedule)->where('cursor',(int)$row->cursor)->where('data',$row->data)->update(['data'=>$payload])){return 0;}
+        $cursor=(int)$row->cursor;
         $failed=false;foreach($watches as$w) {
-            $owned=DB::transaction(function()use($batch,$data,$w,$now):bool {
-                $row=DB::table('domains_watch_schedule')->where('scope','enrollment')->where('data',$batch['payload'])->lockForUpdate()->first();
+            $owned=DB::transaction(function()use($payload,$cursor,$data,$w,$now):bool {
+                $q=DB::table('domains_watch_schedule')->where('scope','enrollment')->where('cursor',$cursor)->where('data',$payload);$row=$q->lockForUpdate()->first();
                 if(!$row || ($this->clock)()>=$now+120){return false;}
                 $refresh=$w->ns_profile_id===null?($data['refresh_dns']??false):in_array((int)$w->ns_profile_id,$data['refresh_profiles']??[],true);
                 if($refresh && $w->state==='active'){
                     DB::table('domains_watch_work')->where('watch_id',$w->id)->whereIn('kind',['delegation','points'])
                         ->update(['due_at'=>$now,'claim'=>null,'lease_until'=>null,'backoff_until'=>null,'attempts'=>0,'safe_code'=>null]);
                 }
-                return true;
+                // Persist each consumed refresh with its side effect, so lease recovery never repeats it.
+                $q->update(['cursor'=>(int)$w->id]);return true;
             });
-            if(!$owned){return 0;}
+            if(!$owned){return 0;}$cursor=(int)$w->id;
             // These workers own their transactions and must not run inside the batch-claim transaction.
             if (!$this->stage(function()use($w,$now):void {
                 (new WatchRegistryChecks(true))->enroll((int)$w->id,(int)$w->user_id,$now);
                 (new WatchDnsChecks(true))->enroll((int)$w->id,(int)$w->user_id,$now);
             })) { $failed=true; }
         }
-        $complete=!$failed && $watches->count()<25;
-        DB::table('domains_watch_schedule')->where('scope','enrollment')->where('cursor',$batch['cursor'])->where('data',$batch['payload'])->update([
-            'cursor'=>$failed?$batch['cursor']:($complete?0:$watches->last()->id),
+        $complete=$watches->count()<25;
+        (clone $schedule)->where('cursor',$cursor)->where('data',$payload)->update([
+            'cursor'=>$complete?0:$cursor,
             'data'=>json_encode([...$data,'refresh_dns'=>!$complete&&($data['refresh_dns']??false),'refresh_profiles'=>$complete?[]:($data['refresh_profiles']??[])])]);
         if ($failed) { throw new \RuntimeException(); }
         return $watches->count();
