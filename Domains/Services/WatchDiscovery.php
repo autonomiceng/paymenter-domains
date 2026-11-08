@@ -37,7 +37,7 @@ final class WatchDiscovery
             $digest=$this->digest($service,$map,$values);
             $same=$old && (int)$old->user_id===(int)$service->user_id && (int)$old->map_id===(int)$map->id
                 && (int)$old->map_revision===(int)$map->revision && hash_equals($old->source_digest,$digest);
-            $snapshot=$this->psl->current();
+            $snapshot=DB::table('domains_psl_snapshots')->where('state','current')->lockForUpdate()->first();
             $usable=$snapshot && $now>=(int)$snapshot->validated_at && $now<=(int)$snapshot->validated_at+PublicSuffixList::MAX_AGE_DAYS*86400 && $this->psl->parserUsable($snapshot);
             // A stale list stops new discovery, while retained identities and lifecycle cleanup still work.
             if(!$usable && $same && $old->state!=='held'){$this->seen($old,$now);$this->sync($old->watch_id,$now);return;}
@@ -63,7 +63,7 @@ final class WatchDiscovery
                 $attrs=['user_id'=>$owner,'service_id'=>$id,'map_id'=>$map->id,'map_revision'=>$map->revision,'hostname'=>$result->hostname,'registrable_name'=>$name,
                     'state'=>'managed_link','managed_domain_id'=>$domain->id,'source_digest'=>$digest,'last_seen_at'=>$now];
                 $this->source($old,$attrs,$now);
-                if($watch){$this->change($watch,['state'=>'linked','managed_domain_id'=>$domain->id,'registration'=>in_array($domain->status,WatchManagedTarget::MANAGED,true)?'platform':null],'registration_managed',$now);$this->stop($watch,'registration_managed',$now);}
+                if($watch){$watch->refresh();$this->change($watch,['state'=>'linked','managed_domain_id'=>$domain->id,'registration'=>in_array($domain->status,WatchManagedTarget::MANAGED,true)?'platform':null],'registration_managed',$now);$this->stop($watch,'registration_managed',$now);}
                 DB::afterCommit(fn()=>app(WatchWork::class)->enrollManaged((int)$domain->id,$owner));
             }else{
                 $watch=WatchName::where('user_id',$owner)->where('canonical_name',$name)->lockForUpdate()->first();
@@ -76,7 +76,9 @@ final class WatchDiscovery
                 $this->sync((int)$watch->id,$now);
             }
             // Property writers participate in the native transaction; reject reentrant stale-value writes too.
-            if($digest!==$this->digest($service->fresh(),$map->fresh(),$service->properties()->where('key',$map->property_key)->pluck('value')->all())){throw new \DomainException('Discovery source changed.');}
+            $current=$service->fresh();$currentMap=$map->fresh();
+            if(!$current || !$currentMap?->enabled || $current->status!==$service->status || $snapshot?->revision!==$this->psl->revision()
+                || $digest!==$this->digest($current,$currentMap,$service->properties()->where('key',$currentMap->property_key)->pluck('value')->all())){throw new \DomainException('Discovery source changed.');}
         },3);
     }
     private function digest(Service $s,WatchProductMap $map,array $values): string
