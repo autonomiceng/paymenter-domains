@@ -762,7 +762,8 @@
     "tests/storefront-cart-owner-test.php",
     "tests/shopping-entry-test.php",
     "tests/retail-preview-test.php",
-    "tests/cart-term-picker-test.php"
+    "tests/cart-term-picker-test.php",
+    "tests/retail-upgrade-isolation-test.php"
   ],
   "ui": [],
   "runner": [
