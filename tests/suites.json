@@ -786,7 +786,8 @@
     "tests/dns-summary-readback-test.php",
     "tests/staff-registration-pending-test.php",
     "tests/staff-operation-sync-test.php",
-    "tests/enom-nameserver-domains-test.php"
+    "tests/enom-nameserver-domains-test.php",
+    "tests/owner-order-status-test.php"
   ],
   "ui": [],
   "runner": [
