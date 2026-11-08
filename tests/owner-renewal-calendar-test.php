@@ -16,7 +16,7 @@ foreach ([true,false] as $autoRenew) {
     $lastDay=$autoRenew?$d:$late;
     $lastDay->update(['renewal_policy'=>[...($lastDay->renewal_policy??[]),'owner_auto_renew'=>$autoRenew]]);
     $clock->instant=new DateTimeImmutable('2027-10-17T23:59:59Z');
-    same(['terms'=>range(1,9),'order_by'=>'2027-10-17'],$billing->requestOptions($lastDay),'Last-day preview: '.($autoRenew?'On':'Off'));
+    same(['terms'=>[1,2],'order_by'=>'2027-10-17'],$billing->requestOptions($lastDay),'Last-day preview: '.($autoRenew?'On':'Off'));
     $response=$controller->renew($req($lastDay,['years'=>'2']),$lastDay->id);
     $lastOp=Operation::where('domain_id',$lastDay->id)->where('action','renew')->sole();$lastInvoice=Invoice::findOrFail($lastOp->invoice_id);
     same(route('invoices.show',$lastInvoice),$response->getTargetUrl(),'Last-day POST accepts two-year request');
