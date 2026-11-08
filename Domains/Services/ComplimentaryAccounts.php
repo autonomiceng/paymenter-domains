@@ -20,7 +20,7 @@ final class ComplimentaryAccounts
     public static function set(int $user,User $actor,bool $enabled,string $reason,Clock $clock,?int $seen=null):void
     {
         OperationClaims::outside();$reason=trim($reason);
-        if($reason===''||strlen($reason)>500){throw new \DomainException('A reason is required.');}
+        if($reason===''||mb_strlen($reason)>500){throw new \DomainException('A reason is required.');}
         DB::transaction(static function()use($user,$actor,$enabled,$reason,$clock,$seen):void {
             $users=User::whereIn('id',[$user,$actor->id])->orderBy('id')->lockForUpdate()->get();
             $staff=$users->firstWhere('id',$actor->id);$staff?->setRelation('role',$staff->role()->lockForUpdate()->first());
