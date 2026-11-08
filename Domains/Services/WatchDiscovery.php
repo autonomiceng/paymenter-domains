@@ -40,8 +40,9 @@ final class WatchDiscovery
             $snapshot=DB::table('domains_psl_snapshots')->where('state','current')->lockForUpdate()->first();
             $usable=$snapshot && $now>=(int)$snapshot->validated_at && $now<=(int)$snapshot->validated_at+PublicSuffixList::MAX_AGE_DAYS*86400 && $this->psl->parserUsable($snapshot);
             // A stale list stops new discovery, while retained identities and lifecycle cleanup still work.
-            if(!$usable && $same && $old->state!=='held'){$this->seen($old,$now);$this->sync($old->watch_id,$now);return;}
-            $result=new Held('psl_unavailable',$snapshot?->revision??str_repeat('0',64));
+            $known=!$usable && $same && $old->state!=='held'?WatchName::where('user_id',$service->user_id)->where('canonical_name',$old->registrable_name)->lockForUpdate()->first():null;
+            if(!$usable && $same && $old->state!=='held' && !$known){$this->seen($old,$now);$this->sync($old->watch_id,$now);return;}
+            $result=$known?new Registrable($old->hostname,$old->registrable_name,$known->psl_revision):new Held('psl_unavailable',$snapshot?->revision??str_repeat('0',64));
             if($usable){
                 if($this->parsed?->revision!==$snapshot->revision){$this->parsed=new PslSnapshot(PublicSuffixList::body($snapshot),$this->validator);}
                 $value=count($values)===1 && is_string($values[0])?$values[0]:null;
