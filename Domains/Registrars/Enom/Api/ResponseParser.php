@@ -85,6 +85,11 @@ final class ResponseParser
             'server','site','islockable','isrealtimetld','timedifference','exectime','done','trackingkey','requestdatetime','debug'];
         if(array_diff(array_keys($data),[...$metadata,'contacts','errors','responses'])){return false;}
         foreach($metadata as $key){if(isset($data[$key])&&!is_string($data[$key])){return false;}}
+        if(array_key_exists('contacts',$data)){
+            $contacts=$data['contacts'];
+            if(!is_array($contacts)||array_keys($contacts)!==['registrantemailaddress']
+                ||!is_string($contacts['registrantemailaddress'])||$contacts['registrantemailaddress']===''||strlen($contacts['registrantemailaddress'])>254){return false;}
+        }
         $messages=['Validation error. Failed to create order.','Validation error; failed to add; order(s)'];
         $found=false; $errors=$data['errors']??[];
         if($errors!==''&&$errors!==[]){
