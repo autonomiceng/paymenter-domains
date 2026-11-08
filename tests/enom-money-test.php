@@ -31,7 +31,7 @@ $quote = $driver->quote($query, $context());
 same('26.8650', $quote->evidence()->quote?->cost?->amount, 'Selected-term annual rate multiplied exactly without rounding');
 same(CostUnit::TermTotal, $quote->evidence()->quote?->unit, 'Neutral quote total has exact units');
 same(null, $quote->evidence()->premium, 'Catalogue cost never proves ordinary-name eligibility');
-same(['TLD' => 'com', 'ProductType' => 10, 'Years' => 3], end($wire->calls)[1], 'Exact selected term sent');
+same(['TLD' => 'com', 'ProductType' => 10, 'Years' => 2], end($wire->calls)[1], 'Three-year quote reads the documented two-to-four-year price bracket');
 $rate = Pricing::catalogue($quote, $binding, $query, $clock->now());
 same('8.9550', $rate->perYear, 'Quote maps back to exact per-year selected-term rate');
 same('2026-10-18T12:05:00+00:00', $rate->freshUntil?->format(DATE_ATOM), 'Explicit local five-minute freshness');
