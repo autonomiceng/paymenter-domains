@@ -65,6 +65,18 @@ foreach (['enom', 'namesilo'] as $registrar) {
     $policyTerms = $caps->renewalTerms($binding, $tld, $policyPrices, new DateTimeImmutable('2027-11-20T00:00:00+00:00'));
     $policyReady = $caps->termReadiness($binding, 'com');
     same([null, null], [$policyTerms[1]['cost'], $policyReady['renew'][1]['cost']], $registrar.': shortened account age removes stale annual caps and readiness costs');
+    // A derived two-year total shares its annual source's account age policy after a settings change.
+    if ($registrar === 'enom' && $environment === Environment::Test) {
+        $twoYear = $prices->firstWhere('term', 2); $savedTwoYear = $twoYear->catalogue_observation;
+        $derived = new Cost('renew', 2, true, '24.0000', CostUnit::TermTotal,
+            'enom_renew_annual_total', $now->modify('-25 hours'), $now->modify('+23 hours'));
+        DB::table('domains_prices')->where('id', $twoYear->id)->update(['catalogue_observation' => OfferState::json(OfferState::encodeCost($derived))]);
+        $checkDerived = static fn () => $caps->renewalTerms($binding, $tld, Price::where(['server_id' => $server->id, 'tld' => 'com', 'action' => 'renew'])->get(), new DateTimeImmutable('2027-11-20T00:00:00+00:00'));
+        same('stale_price', $checkDerived()[2]['reason'], 'Shortened account age removes a derived two-year quote');
+        $server->settings()->updateOrCreate(['key' => 'domains_price_freshness_hours'], ['value' => 48, 'type' => 'integer']);
+        same('24.0000', $checkDerived()[2]['cost'], 'Current account age restores the same derived observation without redating it');
+        DB::table('domains_prices')->where('id', $twoYear->id)->update(['catalogue_observation' => $savedTwoYear]);
+    }
     $server->settings()->updateOrCreate(['key' => 'domains_price_freshness_hours'], ['value' => 48, 'type' => 'integer']);
     $policyTerms = $caps->renewalTerms($binding, $tld, $policyPrices, new DateTimeImmutable('2027-11-20T00:00:00+00:00'));
     same('14.0000', $policyTerms[1]['cost'], $registrar.': current account age restores the same observation without redating it');
