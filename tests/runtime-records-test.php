@@ -23,5 +23,5 @@ ObservationRecords::save($d->fresh(),$f,$clock->now());$rows=OwnerRecords::forDo
 foreach($rows as$i=>$row){$p=OwnerRecords::restoreSrv($d->fresh(),['records'=>[[...$row,'port'=>9443]],'record_sources'=>[(string)$i],'preimage_digest'=>$owners->present($d->fresh())->management['srv']['digest']]);same($row['protocol']==='udp'?202:(int)substr($row['service'],3)+100,$p['records'][0]['host_id'],'SRV displayed source maps correct provider ID');}
 expect(!str_contains($page(),'host_id')&&!str_contains($page(),'HostID'),'Source identity remains server-side');
 same(ManagementPayload::digest($f['srv']['records'],'srv'),ManagementPayload::digest($rows,'srv'),'Presentation order preserves canonical digest');
-same($finance,[$original->fresh()->getAttributes(),$d->fresh()->provider_expires_at->format(DATE_ATOM),$d->confirmed_revision,$d->renewal_policy],'Record presentation never changes financial authority');
+same($finance,[$original->fresh()->getAttributes(),$d->fresh()->provider_expires_at->format(DATE_ATOM),$d->fresh()->confirmed_revision,$d->fresh()->renewal_policy],'Record presentation never changes financial authority');
 echo "Native record producer gates, numeric DNS/SRV and source identity pairs passed.\n";$nativeSuccessful=true;
