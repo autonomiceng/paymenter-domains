@@ -84,7 +84,7 @@ final class CartCheckoutRefresh
             } catch (\Throwable $e) { OrderContact::clear(); self::unavailable($component, $e); $returnEarly(); }
         });
         // Themes without the notice include keep the toast, with the same words.
-        Livewire::listen('render', static function ($component) use ($admission) {
+        Livewire::listen('render', static function ($component, $view) use ($admission) {
             if ($component::class !== Cart::class) { return null; }
             // Native line prices are dynamic on every render, not just checkout. Never advance the
             // signed/session shown amount silently when an unrelated Livewire update races publication.
@@ -111,6 +111,8 @@ final class CartCheckoutRefresh
                 } catch (CartLinesRemoved $e) { self::show($component, self::cartTotal()); self::removed($component, $e); }
                 catch (\Throwable $e) { self::unavailable($component, $e); }
             }
+            // Render listeners run after Livewire copies the component properties into the view.
+            $view->with('total', $component->total);
             return static function ($html) use ($component) {
                 $notice = CartNotice::get($component);
                 if ($notice && !preg_match('/<[a-z][^>]*\s'.CartNotice::MARKER.'(?=[\s=>])/i', $html)) { $component->notify($notice['toast'], $notice['type']); }

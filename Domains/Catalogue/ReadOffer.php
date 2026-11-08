@@ -16,7 +16,27 @@ final readonly class ReadOffer implements \JsonSerializable
     { return $this->orderCost ?? ($this->row?->catalogue_observation === null ? null : ($this->freshness ?? \Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness::forAccount($this->binding->serverId))->cost(OfferState::cost(OfferState::decode($this->row->catalogue_observation)))); }
 
     /** Local row fence for a server-held order quote; never a price or spending grant. */
-    public function identity(): array { return [$this->row?->id, $this->row?->revision]; }
+    public function identity(): array
+    {
+        $identity = [$this->row?->id, $this->row?->revision];
+        if ($this->query?->action === 'register' && $this->query->term > 1) {
+            // The batch already loaded every price under the same locks. Fence the annual source
+            // inputs without adding a query per line or shrinking the 250-line checkout batch.
+            $identity[] = array_map(static fn ($cost) => $cost === null ? null : OfferState::encodeCost($cost), $this->pricingInputs());
+        }
+        return $identity;
+    }
+
+    /** Cost inputs only; the shared evaluator still decides whether a sale is available. */
+    public function pricingInputs(): array
+    {
+        $query = $this->query ?? throw new \LogicException('Pricing snapshot missing.');
+        $out = [];
+        foreach (Retail::terms($query->action, $query->term) as [$action, $term]) {
+            $key = $action.':'.$term; $out[$key] = $this->snapshot?->costs[$key] ?? null;
+        }
+        return $out;
+    }
 
     /** Re-evaluate every ordinary sale guard using server-held, exact-name order costs.
      * This transient snapshot never reaches Writer or the daily price table. */

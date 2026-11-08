@@ -86,7 +86,8 @@ foreach ([Environment::Test, Environment::Live] as $environment) {
 
     same('20.0020', $rows['co.uk']->costs['register:2']->total, 'Compound suffix and annual-to-term exact total');
     same('100.0100', $rows['com']->costs['register:10']->total, 'No float rounding on ten-year totals');
-    same(false, isset($rows['com']->costs['register:3']), 'Unproven bucket membership stays unknown');
+    same('30.0030', $rows['com']->costs['register:3']->total ?? null, 'Documented bracket covers year three exactly');
+    same('90.0090', $rows['com']->costs['register:9']->total ?? null, 'Documented bracket covers year nine exactly');
     same(false, $rows['com']->costs['transfer:1']->enabled, 'Explicit disabled differs from absent');
     same(null, $rows['com']->costs['transfer:1']->total, 'Disabled is not zero-priced');
     same([], $rows['org']->costs, 'Listed but unpriced ending is discovery only');

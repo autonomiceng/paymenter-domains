@@ -187,7 +187,7 @@ final class OfferWork
         if (!$job) { return 'busy'; }
         $job->credentialRevision = $credential;
         $guard = function () use ($b, $job): void { $this->current($b, $job); };
-        $writer = $this->writer->withGuard($guard); $work = OfferState::decode($job->offer_work);
+        $writer = $this->writer->withGuard($guard); $work = OfferState::decode($job->offer_work); $touched = [];
         try {
             if ($this->credentials && ($work['credential_revision'] ?? null) !== $credential
                 || $this->generation !== null && ($work['upgrade_generation'] ?? null) !== $this->generation) {
@@ -195,23 +195,23 @@ final class OfferWork
                 $work['pending'] = []; $work['feed_due'] = $this->at(); $work['tries'] = 0;
                 $work['credential_revision'] = $credential; $work['upgrade_generation'] = $this->generation;
             }
-            $this->republish($writer, $b, $work, $guard);
+            $this->republish($writer, $b, $work, $guard, $touched);
             // Republication can wake retained facts when reviewed authority changes.
             $work['facts'] = OfferState::decode(DB::table('domains_observation_queues')->where('server_id', $b->serverId)->value('offer_work'))['facts'] ?? [];
             $t = $this->nextFacts($work);
             if (!empty($work['pending'])) {
-                if ($t) { $this->facts($writer, $b, $t, $work, $guard); }
-                $this->drain($writer, $b, $work);
+                if ($t) { $this->facts($writer, $b, $t, $work, $guard, $touched); }
+                $this->drain($writer, $b, $work, $touched);
             } else {
                 $due = ($work['feed_due'] ?? PHP_INT_MAX) <= $this->at();
                 if ($t && (!$due || ($work['last'] ?? '') === 'feed')) {
-                    $work['last'] = 'facts'; $this->facts($writer, $b, $t, $work, $guard);
+                    $work['last'] = 'facts'; $this->facts($writer, $b, $t, $work, $guard, $touched);
                 } elseif ($due) {
                     $this->beginFeed($b, $job, $work);
                     $work['last'] = 'feed'; $this->prices($b, $job, $work, $guard);
                     // Durable buffer precedes per-offer writes; a crash can resume without rereading.
                     $this->save($b, $job, ['offer_work' => OfferState::json($work)]);
-                    $this->drain($writer, $b, $work);
+                    $this->drain($writer, $b, $work, $touched);
                 }
             }
             unset($work['local_failure'], $work['local_failed_at']);
@@ -229,6 +229,13 @@ final class OfferWork
                     ->update(['offer_claim' => null, 'offer_lease' => 0]);
             }
             throw $error;
+        } finally {
+            if ($touched) {
+                try {
+                    CallerRouting::resolve(\Paymenter\Extensions\Servers\Domains\Services\AcquisitionOffers::class)
+                        ?->warnPriceMismatches(array_keys($touched), $b->serverId);
+                } catch (\Throwable) { /* Diagnostics cannot replace the saved result or its original failure. */ }
+            }
         }
     }
 
@@ -270,7 +277,7 @@ final class OfferWork
         }
     }
 
-    private function facts(Writer $writer, AccountBinding $b, string $tld, array &$work, \Closure $guard): void
+    private function facts(Writer $writer, AccountBinding $b, string $tld, array &$work, \Closure $guard, array &$touched): void
     {
         $guard(); $state = $work['facts'][$tld];
         if (!empty($state['sold_only']) && !$this->sold($b, $tld)) { unset($work['facts'][$tld]); $work['facts_removed'][] = $tld; return; }
@@ -285,7 +292,7 @@ final class OfferWork
             }, $guard);
             $guard(); $b->requireMatch($command->binding());
             if ($command->tld() !== $tld) { throw new \DomainException('Facts ending changed.'); }
-            $writer->apply($command, $this->revision($b, $tld));
+            $writer->apply($command, $this->revision($b, $tld)); $touched[$tld] = true;
             $state['succeeded_at'] = $this->at(); $state['failure'] = null; $state['tries'] = 0;
             $due = max($this->at() + 120, $command->facts->freshUntil->getTimestamp());
         } catch (ReadDeferred|EnomTestCallLimit) { $due = $this->at() + 120; }
@@ -320,16 +327,17 @@ final class OfferWork
         } finally { $budget->finish(); }
     }
 
-    private function drain(Writer $writer, AccountBinding $b, array &$work): void
+    private function drain(Writer $writer, AccountBinding $b, array &$work, array &$touched): void
     {
         for ($i = 0; $i < self::BATCH && !empty($work['pending']); $i++) {
             $row = $work['pending'][0];
             $writer->apply(new FeedObserved($b, $row['tld'], array_map(OfferState::cost(...), $row['costs'])), $this->revision($b, $row['tld']));
+            $touched[$row['tld']] = true;
             array_shift($work['pending']);
         }
     }
 
-    private function republish(Writer $writer, AccountBinding $b, array &$work, \Closure $guard): void
+    private function republish(Writer $writer, AccountBinding $b, array &$work, \Closure $guard, array &$touched): void
     {
         $rows = Tld::where('server_id', $b->serverId)->where('id', '>', $work['local_cursor'] ?? 0)->orderBy('id')->limit(self::BATCH)->get();
         // Shared pricing failures still stop the account; only an unreadable own rule is skipped.
@@ -343,7 +351,7 @@ final class OfferWork
             $this->requestSoldFacts($b, $t->tld);
             $revision = $this->revision($b, $t->tld);
             if ($t->catalogue_published_revision === null || !OfferState::equivalent(OfferState::decode($t->catalogue_published_revision), get_object_vars($revision))) {
-                try { $writer->apply(Edit::republish($b, $t->tld), $revision); }
+                try { $writer->apply(Edit::republish($b, $t->tld), $revision); $touched[$t->tld] = true; }
                 catch (\Throwable $error) {
                     // An obsolete account claim still stops the turn; one failed projection cannot pin the scan.
                     $guard();

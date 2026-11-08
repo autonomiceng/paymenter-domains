@@ -50,6 +50,24 @@ final class Writer implements Catalogue
         });
     }
 
+    /** Install/upgrade recalculates old-rule publications locally, through the normal native-first writer.
+     * The saved observation timestamps and issued invoices are never changed. Safe to retry after interruption. */
+    public function republishRetailRule(): void
+    {
+        if (DB::transactionLevel() !== 0) { throw new \LogicException('Retail upgrade requires unlocked reads.'); }
+        Tld::where('catalogue_converted', true)->orderBy('id')->chunkById(100, function ($rows): void {
+            foreach ($rows as $tld) {
+                $published = OfferState::decode($tld->catalogue_published_revision);
+                if (($published['retailRule'] ?? 0) === Retail::VERSION) { continue; }
+                $account = Account::where('server_id', $tld->server_id)->sole();
+                $binding = AccountBindings::binding($account);
+                $revision = OfferState::revision($tld, OfferState::decode($account->catalogue_defaults),
+                    DB::table('domains_sales_policies')->where('tld', $tld->tld)->first());
+                $this->apply(Edit::republish($binding, $tld->tld), $revision);
+            }
+        });
+    }
+
     /** One global review saves once; each account then publishes independently, matching the legacy F51 result. */
     public function defaultPricing(StaffSettingsReview $review, array $rule, array $fee): array
     {
@@ -329,6 +347,8 @@ final class Writer implements Catalogue
             foreach ($seller ? $offers : [$target] as $offer) {
                 $id = (int) $offer->server_id; $account = $accounts[$id]; $b = AccountBindings::binding($account);
                 $d = OfferState::decode($account->catalogue_defaults);
+                $retailUpgrade = $command instanceof Edit && $command->kind === 'republish'
+                    && (OfferState::decode($offer->catalogue_published_revision)['retailRule'] ?? 0) !== Retail::VERSION;
                 $offer->catalogue_revision = (int) $offer->catalogue_revision + 1;
                 $annual = $offer->catalogue_retained_annual_retail;
                 $published = $command instanceof Edit && $command->kind === 'retail'
@@ -338,7 +358,7 @@ final class Writer implements Catalogue
                 if ($preserveRetained) { $offer->catalogue_retained_annual_retail = $annual; }
                 $prices = OfferState::query('domains_prices')->where('server_id', $id)->where('tld', $name)->get();
                 $snapshot = OfferState::snapshot($b, $offer, $d, $policy, $prices, $servers[$id]->enabled && ($this->ready)($b, $servers[$id], $account), $published);
-                $this->projection->write($offer, $snapshot, $now, $native);
+                $this->projection->write($offer, $snapshot, $now, $native, $published && $retailUpgrade);
                 $offer->catalogue_published_revision = $published ? OfferState::json($snapshot->revision) : null;
                 // Raw update: dormant staging does not invoke active legacy model observers.
                 DB::table('domains_tlds')->where('id', $offer->id)->update([
@@ -444,10 +464,17 @@ final class Writer implements Catalogue
         if ($rule === null) { return false; }
         $freshness = \Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness::forAccount((int) $tld->server_id);
         $prices = OfferState::query('domains_prices')->where('server_id', $tld->server_id)->where('tld', $tld->tld)->where('currency', 'USD')->orderBy('id')->get();
+        $costs = [];
+        foreach ($prices as $p) {
+            if ($p->catalogue_observation !== null) {
+                $cost = $freshness->cost(OfferState::cost(OfferState::decode($p->catalogue_observation)));
+                $costs[$cost->key()] = $cost;
+            }
+        }
         foreach ($prices as $p) {
             if ($p->catalogue_observation === null) { continue; }
-            $cost = $freshness->cost(OfferState::cost(OfferState::decode($p->catalogue_observation)));
-            try { $retail = Retail::quote($cost, $rule); }
+            $cost = $costs[$p->action.':'.$p->term];
+            try { $retail = Retail::quote($cost, $rule, $costs); }
             catch (\InvalidArgumentException) { $retail = null; }
             // Only the annual renewal feeds retained holder retail; an exact longer renewal keeps its own price.
             if ($cost->action === 'renew' && $cost->term === 1) {
