@@ -56,6 +56,10 @@ if(!str_contains($coherent['html'],'registered less than 60 days ago')||str_cont
 unset($public->afterRead);
 $fresh=$check();expect(str_contains($fresh['html'],'registered less than 120 days ago')&&str_contains($fresh['html'],$now->modify('-30 minutes')->modify('+120 days')->format('M j, Y \a\t H:i').' UTC'),'A new check independently applies current policy');
 $creation->update(['value'=>'60']);
+$public->created='2020-01-01T00:00:00Z';$public->transferred=$now->modify('-30 minutes')->format(DATE_ATOM);$public->states=['server transfer prohibited'];
+$previous=$check();if(!str_contains($previous['html'],'transferred less than 60 days ago')||!str_contains($previous['html'],$now->modify('-30 minutes')->modify('+60 days')->format('M j, Y \a\t H:i').' UTC')||!str_contains($previous['html'],'Unlock this domain at your current registrar')){$failures[]='Prior transfer plus server lock must retain date, applied days and unlock instruction';}
+$public->states=['active'];$datedOnly=$check();expect(!str_contains($datedOnly['html'],'Unlock this domain at your current registrar'),'Dated-only restriction invents no registrar lock');$public->transferred=null;
+
 $public->created='2020-01-01T00:00:00Z';$public->status=503;$state->transferable='false';
 $unknown=$check();same('transfer_unconfirmed',$unknown['status'],'Unknown registrar eligibility is not a hard refusal');
 expect(str_contains($unknown['html'],'data-domains-retry')&&!str_contains($unknown['html'],'name="action"'),'Unconfirmed transfer offers Retry and no purchase');

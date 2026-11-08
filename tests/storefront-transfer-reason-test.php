@@ -136,6 +136,7 @@ app()->forgetInstance(Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter
 // Plain reader exceptions must not impersonate typed public eligibility reasons.
 $state->exception=new DomainException('premium');$public->states=['active'];
 $failures=[];$spoof=$check();same(1,$state->plainThrown,'The actual bound reader throws the plain exception');if($spoof['status']!=='transfer_unconfirmed'||!str_contains($spoof['html'],'data-domains-retry')||str_contains($spoof['html'],'premium domains')){$failures[]='Plain provider exception must stay unconfirmed with Retry';}
+$state->exception=new Paymenter\Extensions\Servers\Domains\Services\WriteHeld('premium');$typed=$check();same('transfer_refused',$typed['status'],'Typed premium refusal remains authoritative');expect(str_contains($typed['html'],'premium domains')&&!str_contains($typed['html'],'data-domains-retry'),'Typed refusal retains fixed safe guidance');
 unset($state->exception);
 $user=commerceUser();$product=$native->product($tlds[0],'register');
 $order=App\Models\Order::create(['user_id'=>$user->id,'currency_code'=>'USD','status'=>'pending']);
