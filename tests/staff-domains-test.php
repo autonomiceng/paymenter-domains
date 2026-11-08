@@ -214,6 +214,7 @@ same('Nameservers missing at the registry',Labels::reason('nameservers_missing')
 same('Domain not found in the registrar account',Labels::reason('domain_not_in_account'),'Staff can identify a domain missing from its registrar account');
 same('SRV records',Labels::reason('srv'),'Staff can identify the affected record family');
 same('Cancelled',Labels::reason('cancelled'),'Staff can identify a cancelled order');
+same('Captured registrar charge approved by staff',Labels::reason('captured_charge_approved'),'Staff can identify an approved captured renewal charge');
 preg_match_all("/'([a-z][a-z0-9_]*)'\\s*=>/",$reasonSource,$mapped);
 $mapped=array_fill_keys($mapped[1],true);$emitted=[];
 foreach (\Paymenter\Extensions\Servers\Domains\Data\RenewalCode::cases() as $reason) { $emitted[$reason->value][]='RenewalCode'; }

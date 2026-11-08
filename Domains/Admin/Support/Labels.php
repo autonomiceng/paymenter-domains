@@ -132,6 +132,7 @@ final class Labels
             'healthy_pending'=>'Waiting for old registrar','refreshed'=>null,'unresolved'=>'Status check failed',
             'acquisition_definitely_unsent'=>RequestStatus::UNSENT,'management_definitely_unsent'=>RequestStatus::UNSENT,
             'renewal_definitely_unsent'=>'Renewal not sent','renewal_confirmation_required'=>RequestStatus::UNCONFIRMED,
+            'captured_charge_approved'=>'Captured registrar charge approved by staff',
             'awaiting_unique_charge'=>'Registrar has not confirmed the charge','refund_approved'=>'Credit approved',
             'authority'=>'Not sent: registrar account changed',
             'reads'=>'Status check failed','cost'=>'Not sent: cost missing','funding'=>'Not sent: low registrar balance','renewal_invoice_unpaid'=>'Not sent: renewal invoice not paid. Check the invoice.','renewal_spend_paused'=>'Not sent: orders paused for this domain',
