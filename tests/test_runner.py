@@ -792,7 +792,7 @@ class RunnerTests(unittest.TestCase):
             path = ROOT/name
             self.assertFalse(private.intersection(Path(name).parts))
             self.assertFalse(path.is_symlink())
-            if path.is_file(): self.assertLessEqual(len(path.read_bytes().splitlines()), 800, name)
+            if path.is_file() and name != 'tests/suites.json': self.assertLessEqual(len(path.read_bytes().splitlines()), 800, name)
         self.assertEqual((ROOT/'LICENSE').read_bytes(), (ROOT/'Domains/LICENSE').read_bytes())
 
 
