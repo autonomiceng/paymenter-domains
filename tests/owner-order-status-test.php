@@ -17,7 +17,7 @@ same(true,$progress['pending'],'The owner can poll an unfinished registration');
 expect(is_string($progress['state'])&&preg_match('/^[a-f0-9]{64}$/D',$progress['state'])===1,'Progress is an opaque local state token');
 expect(str_contains($response->headers->get('Cache-Control'),'no-store')&&str_contains($response->headers->get('Cache-Control'),'private'),'Progress cannot be cached between owners');
 same($progress,$controller->orderStatus($request,$d->id)->getData(true),'Unchanged local status has a stable token');
-$request->setLaravelSession($session);$html=$controller->show($request,$d->id)->render();
+storefrontViews();app('view')->getFinder()->flush();$request->setLaravelSession($session);$html=$controller->show($request,$d->id)->render();
 expect(preg_match('/const state = "([a-f0-9]{64})";/',$html,$embedded)===1,'Real pending page embeds a local progress token');
 same($progress['state'],$embedded[1],'Page presentation and local poll return the same token without a reload loop');
 
