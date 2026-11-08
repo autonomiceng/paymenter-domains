@@ -21,4 +21,11 @@ DB::table('domains_domains')->where('id',$domain->id)->update(['status'=>'active
 same(null,$domain->fresh()->snapshot,'Discovery never fabricates holding or checkout authority');same(0,DB::table('domains_operations')->count(),'Discovery creates no financial operation');
 DB::table('domains_domains')->where('id',$domain->id)->update(['status'=>'registration_rejected']);$sweep();same('watch',WatchSource::where('service_id',$service->id)->value('state'),'Failed acquisition restores external monitoring');same('active',$w->fresh()->state,'Linked tombstone can return to monitoring');same(null,$w->fresh()->registration,'Old platform classification is cleared');
 DB::table('domains_domains')->where('id',$domain->id)->update(['status'=>'active']);$new=discoveryService($f,'new.example.com');$sweep();same('managed_link',WatchSource::where('service_id',$new->id)->value('state'),'Already managed name links new hosting without creating a watch');same(1,WatchName::where('canonical_name','example.com')->count(),'Managed and external deduplication is owner/name scoped');same([],$dns->calls,'Managed linking is local only');
+DB::table('domains_domains')->where('id',$domain->id)->update(['status'=>'registration_rejected']);$sweep();
+DB::table('domains_psl_snapshots')->where('state','current')->update(['validated_at'=>$clock->at-91*86400]);
+DB::table('domains_watch_discovery')->update(['hint'=>false,'due_at'=>$clock->at+86400]);
+$domain->refresh()->update(['status'=>'active']);
+expect((bool)DB::table('domains_watch_discovery')->where('product_id',$product->id)->value('hint'),'Managed status event queues local discovery without a public read');
+$work->tick($clock->at);expect(!$work->failed,'Known-name relink completes with an aged suffix list');
+same('managed_link',WatchSource::where('service_id',$service->id)->value('state'),'Aged suffix data cannot leave a known name checking as external after acquisition');same('linked',$w->fresh()->state,'Known identity relinks without a new suffix derivation');
 echo "Foreign holdings, native owner checks, pending adoption, acquisition links and external return passed.\n";$nativeSuccessful=true;
