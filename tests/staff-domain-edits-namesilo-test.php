@@ -17,6 +17,8 @@ $ports=new OwnerPorts(fn($b)=>$driver);
 app()->instance(OwnerPorts::class,$ports);app()->instance(OwnedDomains::class,new OwnedDomains($clock,$ports,$management));app()->instance(DomainManagement::class,$management);
 $staff=staffUser([Staff::VIEW,'admin.domains.manage']);Auth::setUser($staff);
 require __DIR__.'/Support/staff-site-nameservers.php';
+$contactCallOffset=count($ms->calls);
+$writes=static fn()=>array_values(array_filter(array_slice($ms->calls,$contactCallOffset),fn($row)=>!in_array($row[0],['getDomainInfo','contactList','listRegisteredNameServers'],true)));
 $edit=static fn(string $action,array $data=[])=>Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$d->id])
     ->callAction(TestAction::make('edit_'.$action)->schemaComponent('fact_'.md5('Contacts'),'infolist'),$data);
 $last=static fn(string $action)=>$d->operations()->where('action',$action)->orderByDesc('id')->first();
