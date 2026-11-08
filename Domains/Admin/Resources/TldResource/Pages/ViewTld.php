@@ -89,7 +89,7 @@ class ViewTld extends ViewRecord
             'Cost missing','Cost out of date'=>$reason.'. Use Sync prices below.',
             'Check registrar account'=>$link(RegistrarFacts::accountUrl((int)$t->server_id),'Open the registrar account'),
             'Over the cost limit'=>$link(\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::getUrl(['account'=>$t->server_id]),'Change it in What you sell'),
-            'No registrar selected'=>'Choose a registrar for new orders.',
+            'No registrar selected'=>'No registrar selected. '.($this->settings()['seller']->isVisible()?'Choose a registrar for new orders.':'Ask staff who can change the registrar.'),
             default=>$reason};
         return StatusMark::line($tone,'Not for sale','tld-'.$t->id,$step);
     }
