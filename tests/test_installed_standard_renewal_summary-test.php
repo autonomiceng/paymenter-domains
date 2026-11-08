@@ -13,6 +13,14 @@ $detail=fn($s)=>DomainPage::nextInvoice($owners->present($d->fresh()),$s,null);
 $s=$summary();
 same('Paid',$detail($s)['value'],'Valid standard invoice is Paid on the detail page');
 same('Next invoice: Paid',DomainListRow::renewal($s)['note'],'Valid standard invoice is Paid on the list');
+// Paid, but the registrar has not confirmed the renewal: the detail says Under review, so the list must too (demo R18b).
+$state=$op->fresh()->state;$op->forceFill(['state'=>'uncertain'])->saveQuietly();
+$s=$summary();
+same('Under review',$detail($s)['value'],'Detail keeps an unconfirmed paid renewal under review');
+same('Next invoice: Under review',DomainListRow::renewal($s)['note'],'List agrees with detail on an unconfirmed paid renewal');
+expect(!$s->renewalInvoicePaid && !$s->renewalInvoiceMissing,'Unconfirmed paid renewal is neither Paid nor not issued');
+$op->forceFill(['state'=>$state])->saveQuietly();
+same('Next invoice: Paid',DomainListRow::renewal($summary())['note'],'Restored renewal is Paid on the list again');
 // A zero extra line preserves the paid amount but invalidates the exact standard renewal debt shape.
 // Privileged retained-state mutation: live billing guards already refuse this malformed shape.
 App\Models\InvoiceItem::withoutEvents(fn()=>$invoice->items()->create(['description'=>'Synthetic extra renewal line','quantity'=>1,'price'=>'0.00','reference_type'=>null,'reference_id'=>null]));
