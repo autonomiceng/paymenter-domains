@@ -118,5 +118,19 @@ app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::clas
 same('busy',$check(false)['status'],'A transfer-only seller keeps Retry when no registration read confirmed Taken');
 app()->forgetInstance(Paymenter\Extensions\Servers\Domains\Services\Runtime::class);
 app()->forgetInstance(Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class);
+// Plain reader exceptions must not impersonate typed public eligibility reasons.
+$state->exception=new DomainException('premium');$public->states=['active'];
+$spoof=$check();same('transfer_unconfirmed',$spoof['status'],'Plain provider exception is not premium authority');
+expect(str_contains($spoof['html'],'data-domains-retry')&&!str_contains($spoof['html'],'premium domains'),'Unknown exception retains Retry without a premium claim');
+unset($state->exception);
+$product=$native->product($tlds[0],'register');
+$order=App\Models\Order::create(['user_id'=>$user->id,'currency_code'=>'USD','status'=>'pending']);
+$service=App\Models\Service::withoutEvents(fn()=>App\Models\Service::create(['order_id'=>$order->id,'user_id'=>$user->id,'product_id'=>$product->id,'plan_id'=>$product->plans()->where('billing_period',1)->sole()->id,'price'=>10,'quantity'=>1,'currency_code'=>'USD','status'=>'pending']));
+Paymenter\Extensions\Servers\Domains\Models\Domain::create(['domain'=>'transfer-placeholder.com','sld'=>'transfer-placeholder','tld'=>'com','reservation_name'=>'transfer-placeholder.com','user_id'=>$user->id,'service_id'=>$service->id,'server_id'=>$tlds[0]->server_id,'registrar_key'=>'enom','account_fingerprint'=>$tlds[0]->account_fingerprint,'authority_generation'=>1,'status'=>'needs_review']);
+$reads=$state->calls;$reserved=$check();
+same('transfer_refused',$reserved['status'],'Local reservation is a fixed refusal');
+expect(str_contains($reserved['html'],'Contact support')&&!str_contains($reserved['html'],'data-domains-retry')&&!str_contains($reserved['html'],'name="action"'),'Local refusal has support and no retry or purchase');
+same($reads,$state->calls,'Reserved names never reach the provider');
+same('taken',$check(false)['status'],'Registration reservation remains Taken');
 $nativeSuccessful = true;
 echo "Customer transfer reasons, next steps and registration isolation passed.\n";

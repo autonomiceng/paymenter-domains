@@ -12,6 +12,7 @@ function storefrontTransferReader(object $state): Paymenter\Extensions\Servers\D
             #[SensitiveParameter] string $uid, #[SensitiveParameter] string $token, int $timeoutMs): string
         {
             $this->state->calls++;
+            if (isset($this->state->exception)) { throw $this->state->exception; }
             return '<interface-response><Command>'.$command->value.'</Command><ErrCount>0</ErrCount><Done>true</Done><Domains><Domain><Name>transfer-placeholder.com</Name><RRPCode>211</RRPCode><IsPremium>0</IsPremium><IsPlatinum>0</IsPlatinum><IsEAP>0</IsEAP><Properties><Transferable>'.($this->state->transferable??'true').'</Transferable></Properties></Domain></Domains></interface-response>';
         }
     };
