@@ -54,7 +54,11 @@ try{foreach(['changed'=>['20.00','actual_charge_changed'],'overrun'=>['16.00','a
  $check($fresh->state==='uncertain'&&$fresh->safe_code===$reason&&$d->fresh()->provider_expires_at->format('Y-m-d')===$expiry&&$d->fresh()->renewal_policy['automatic_spend_paused'],$case.': changed observation keeps financial hold, expiry and spending pause');
  $calls=count($state->calls);$completion->run($op->id);$check($calls===count($state->calls),$case.': automatic reads stop after the one resumed observation');
  $page=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id]);$check(!($page->instance()->getAction('approve_charge',false)?->isVisible()??false),$case.': different charge cannot approve original evidence');
- if(!is_file(dirname(__DIR__).'/Domains/Services/CapturedChargeReview.php')){continue;}
+ if(!is_file(dirname(__DIR__).'/Domains/Services/CapturedChargeReview.php')){
+  $state->charge='16.01';$page->callAction('resume_reads');$observe();
+  $matching=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id]);
+  $check($matching->instance()->getAction('approve_charge',false)?->isVisible()??false,$case.': same captured charge needs an audited approval action');continue;
+ }
  // A failed read is consumed too and cannot reuse a previous successful observation for approval.
  $page->callAction('resume_reads');$state->fail=\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Order;$observe();$state->fail=null;
  same(null,($op->fresh()->policy['captured_charge_observations'][1]['proof']??null),'Unavailable read retains no invented proof');$calls=count($state->calls);$completion->run($op->id);same($calls,count($state->calls),'Failed one-read permission stays consumed');

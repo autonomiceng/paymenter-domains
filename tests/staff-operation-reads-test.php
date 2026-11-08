@@ -92,7 +92,7 @@ Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$check->domain_id]
 [$solo]=$prepare(placeholderComFixtureName('staff-solo-placeholder.com'));$soloDomain=$solo->domain;DB::table('domains_operations')->where('id',$solo->id)->delete();
 $soloWork=DB::table('domains_observation_work')->insertGetId(['server_id'=>$soloDomain->server_id,'account_fingerprint'=>$soloDomain->account_fingerprint,'domain_id'=>$soloDomain->id,
     'generation'=>$soloDomain->authority_generation,'phase'=>'holding','due_at'=>0,'safe_code'=>'read_unavailable','tries'=>5]);
-$soloPage=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$soloDomain->id])->assertActionVisible('resume_observation')->assertSee('Use Resume sync below.')->assertDontSeeHtml('fi-callout');
+$soloPage=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$soloDomain->id])->assertActionVisible('resume_observation')->assertSee('Registrar records can sync after registration is confirmed.')->assertDontSeeHtml('fi-callout');
 commerceReject(fn()=>app(ObservationWork::class)->resume($soloWork,'staff_review',new StaffSyncReview((int)$staff->id,(int)$soloDomain->id,'stale',StaffOperationReview::ACTIONS['resume_observation'],$clock)));
 commerceReject(fn()=>app(ObservationWork::class)->resume($soloWork,'staff_review',new StaffSyncReview((int)$staff->id+1,(int)$soloDomain->id,StaffSyncReview::stamp($soloDomain->fresh()),StaffOperationReview::ACTIONS['resume_observation'],$clock)));
 same(0,(int)DB::table('domains_observation_work')->where('id',$soloWork)->value('resumes'),'A stale or foreign review resumes nothing');
