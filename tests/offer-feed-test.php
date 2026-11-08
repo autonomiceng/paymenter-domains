@@ -62,6 +62,14 @@ foreach ([Environment::Test, Environment::Live] as $environment) {
     $enomWire->calls = [];
     $c = $context($binding); $rows = $indexed($feed->prices($c));
     same('10.0010', $rows['com']->costs['register:1']->total ?? null, 'Enom feed returns exact reseller cost observations');
+    same(5, count($enomWire->calls), 'Four buckets and one suffix list, independent of catalogue size');
+    same(0, $c->budget->remaining(), 'Every feed wire consumes the bound request budget');
+    same([1, 2, 5, 10], array_column(array_column(array_slice($enomWire->calls, 0, 4), 2), 'Years'), 'All four bucket requests use explicit years');
+    foreach ($enomWire->calls as [$env, $command, $parameters, $timeout]) {
+        same($environment, $env, 'Both environments remain explicitly bound');
+        expect($timeout > 0 && $timeout <= 25000, 'Feed preserves transport deadline');
+        if ($command === ReadCommand::RetailPricing) { same(1, $parameters['TLDOnly'], 'Account reseller feed has no hypothetical domain quantity'); }
+    }
     $savedTime = $clock->at; $clock->at = new DateTimeImmutable('2026-11-05T12:00:00Z');
     $approved = new EnomFeed($driver, new CatalogueFreshness, expansion: \Paymenter\Extensions\Servers\Domains\Catalogue\TermSupport::REVIEWED_EVIDENCE['enom']);
     $approvedRows = $indexed($approved->prices($context($binding)));
@@ -75,16 +83,7 @@ foreach ([Environment::Test, Environment::Live] as $environment) {
         same([true, '22.0000'], [$terms[2]['available'], $terms[2]['cost']], 'Real feed supplies annual support, reviewed evidence and exact two-year total');
     }
     $clock->at = $savedTime;
-    $enomWire->calls = array_slice($enomWire->calls, 0, 5);
 
-    same(5, count($enomWire->calls), 'Four buckets and one suffix list, independent of catalogue size');
-    same(0, $c->budget->remaining(), 'Every feed wire consumes the bound request budget');
-    same([1, 2, 5, 10], array_column(array_column(array_slice($enomWire->calls, 0, 4), 2), 'Years'), 'All four bucket requests use explicit years');
-    foreach ($enomWire->calls as [$env, $command, $parameters, $timeout]) {
-        same($environment, $env, 'Both environments remain explicitly bound');
-        expect($timeout > 0 && $timeout <= 25000, 'Feed preserves transport deadline');
-        if ($command === ReadCommand::RetailPricing) { same(1, $parameters['TLDOnly'], 'Account reseller feed has no hypothetical domain quantity'); }
-    }
     same('20.0020', $rows['co.uk']->costs['register:2']->total, 'Compound suffix and annual-to-term exact total');
     same('100.0100', $rows['com']->costs['register:10']->total, 'No float rounding on ten-year totals');
     same(false, isset($rows['com']->costs['register:3']), 'Unproven bucket membership stays unknown');
