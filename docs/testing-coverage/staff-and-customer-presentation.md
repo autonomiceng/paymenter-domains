@@ -102,3 +102,13 @@ replacement preserves every unrelated attempt key. Temporary guard-removal
 mutations must make each isolated refusal assertion fail, with the guards restored
 before the full suite. These are sequential synthetic SQLite interleavings, not
 shared-database concurrency, provider acceptance or production evidence.
+
+
+`captured-charge-review-test.php` drives both Enom TEST multi-year financial holds through
+native Check status, the queued runtime worker and the reason-confirmed staff approval.
+Each audited resume admits one bounded observation; changed or unavailable charges remain held.
+Approval requires current cost, funding, management and invoice permissions plus the specific action
+permission. Only a latest read matching the frozen captured order can complete its proved expiry.
+Encrypted original proof, actual expense, customer amount and future spending pause remain unchanged.
+Stale, foreign, revoked and replayed approvals refuse. No approval sends a provider request.
+Ordinary paid and manual complimentary two-year renewals remain independent positive controls.
