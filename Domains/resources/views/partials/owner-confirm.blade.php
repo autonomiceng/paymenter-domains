@@ -2,6 +2,7 @@
 @php($confirmId = 'confirm-'.$id)
 <dialog class="domains-confirm" id="{{ $confirmId }}" aria-labelledby="{{ $confirmId }}-title" aria-describedby="{{ $confirmId }}-risk" data-confirm-dialog @if ($open ?? false) open @endif>
 <h3 id="{{ $confirmId }}-title" class="domains-h3">{{ $title }}</h3>
+@if ($registrar ?? null)<p class="domains-hint">Registrar: {{ $registrar }}.</p>@endif
 @if ($facts ?? [])
 <dl class="domains-confirm__facts">
 @foreach ($facts as $fact)

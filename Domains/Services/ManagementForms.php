@@ -28,8 +28,7 @@ final readonly class ManagementForms
         $records=in_array($action,['dns','srv'],true);
         $current=$records?(OwnerRecords::forDomain($d)[$action]??throw new \DomainException('Current records required.')):null;
         $payload=match($action) {
-            'nameservers'=>($p['use_default']??null)==='1' && $d->registrar_key==='enom'
-                ? ['nameservers'=>[],'use_default'=>true] : ['nameservers'=>OwnerNameservers::parse($p['nameservers']??null,false,$d->registrar_key)],
+            'nameservers'=>['nameservers'=>OwnerNameservers::parse($p['nameservers']??null,false,$d->registrar_key)],
             'lock'=>['locked'=>match($p['locked']??null){'1'=>true,'0'=>false,default=>throw new \DomainException}],
             'contacts','contact_profile'=>['role'=>$p['role']??'all','contact'=>$p['contact']??[]],
             'dns','srv','ds_add','ds_delete','glue_add','glue_update','glue_delete'=>OwnerRecordInput::payload($action,$p,$d->domain,$d->registrar_key),

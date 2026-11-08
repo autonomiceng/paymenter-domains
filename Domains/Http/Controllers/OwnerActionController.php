@@ -71,6 +71,12 @@ final readonly class OwnerActionController
                 // The fixed-field draft uses these same raw records after validation errors.
                 $request->request->set('records',$p['records']??[]);
             }
+            if ($action==='nameservers' && ($p['fill_site_default']??null)==='1') {
+                $servers=\Paymenter\Extensions\Servers\Domains\Services\ManagementNameservers::defaults($d,$this->ports);
+                if (!$servers) { throw new OwnerFormValidation(['nameservers']); }
+                $p['nameservers']=implode("\n",$servers);
+                $request->request->set('nameservers',$p['nameservers']);
+            }
             (new \Paymenter\Extensions\Servers\Domains\Services\ManagementForms($this->management,$this->ports))->submit($request->user(),$d,$action,$p,$nonce);
         },\Paymenter\Extensions\Servers\Domains\Services\ManagementForms::REQUESTED);
     }

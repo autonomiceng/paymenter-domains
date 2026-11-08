@@ -11,8 +11,6 @@ use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Dns;
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 final readonly class OwnedDomains
 {
-    /** Enom's default nameservers, shown when an owner chooses them. The request itself sends UseDNS=default. */
-    public const DEFAULT_NAMESERVERS=['dns1.name-services.com','dns2.name-services.com','dns3.name-services.com','dns4.name-services.com','dns5.name-services.com'];
     /** Owner and staff see the same reason and next step while records can't be changed here. */
     public const DNS_OFF='You can’t change DNS records here yet. Contact support for a change.';
     /** History change label for each management request action. */
@@ -188,8 +186,9 @@ final readonly class OwnedDomains
                 $retail=\App\Models\Server::find($d->server_id)?->settings()->where('key','domains_privacy_price')->value('value');
                 try { $management['privacy']['price']=PricingRule::minor($retail)>0?Storefront::money(RetailLine::decimal($retail)):null; } catch(\Throwable) { $management['privacy']['price']=null; } }
             if ($caps) {
-                if (isset($management['nameservers'])) { $management['nameservers']['max']=$setup['maxNameservers']; $management['nameservers']['defaults']=$d->registrar_key==='enom';
-                    $management['nameservers']['defaultServers']=$d->registrar_key==='enom'?self::DEFAULT_NAMESERVERS:[];
+                if (isset($management['nameservers'])) { $management['nameservers']['max']=$setup['maxNameservers']; $management['nameservers']['defaultServers']=ManagementNameservers::defaults($d,$this->ports);
+                    $management['nameservers']['defaults']=$management['nameservers']['defaultServers']!==[];
+                    $management['nameservers']['registrar']=ManagementNameservers::registrar($d);
                     // Only a confirmed readback supplies current nameservers; otherwise the form starts empty.
                     $management['nameservers']['current']=self::storedNameservers($d); }
                 if (isset($management['contacts'])) { $management['contacts']+=self::contactForm($d,$contacts)+['digest'=>hash('sha256',json_encode($contacts,JSON_THROW_ON_ERROR))]; }

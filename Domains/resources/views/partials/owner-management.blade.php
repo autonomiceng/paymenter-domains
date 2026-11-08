@@ -47,18 +47,18 @@
 <span class="domains-row__v">@if (!($section['current'] ?? []))@include('domains::partials.missing', ['cause' => $waits, 'calm' => $waits === null, 'fix' => null, 'stack' => true])@else @include('domains::partials.nameserver-list', ['servers' => $section['current']])@endif</span>
 @if ($section['actions'])
 <span class="domains-row__a"><a class="domains-a" data-dialog-open href="{{ $editUrl }}" aria-label="Edit nameservers">Edit</a></span>
-@php $useDefault = $confirmStep === 'nameservers' && ($retry['values']['use_default'] ?? '') === '1'; @endphp
-@php $nsValue = $confirmStep === 'nameservers' ? ($useDefault ? implode("\n", $section['defaultServers'] ?? []) : $retry['values']['nameservers']) : implode("\n", $section['current'] ?? []); @endphp
+@php $nsValue = $confirmStep === 'nameservers' ? $retry['values']['nameservers'] : implode("\n", $section['current'] ?? []); @endphp
 @component('domains::partials.owner-edit', ['id' => $cap, 'title' => $label, 'open' => $editOpen, 'cancel' => $show])
 <form method="POST" action="{{ $section['url'] }}" class="domains-owner-form" data-confirm @if ($section['defaults'] ?? false) data-default-servers="{{ implode("\n", $section['defaultServers'] ?? []) }}" @endif>
 @include('domains::partials.form-key', ['action' => 'nameservers'])
-@if ($section['defaults'] ?? false)<input type="hidden" name="use_default" value="1" data-use-default @disabled(!$useDefault)>@endif
+<p class="domains-hint">Registrar: {{ $section['registrar'] }}.</p>
+@if (!($section['defaults'] ?? false))<p class="domains-hint">{{ \Paymenter\Extensions\Servers\Domains\Services\ManagementNameservers::MISSING }}</p>@endif
 @include('domains::partials.nameservers', ['id' => 'domains-ns', 'max' => $section['max'], 'required' => true, 'useOld' => $failed === $section['url'], 'value' => $nsValue, 'placeholder' => "ns1.example.com\nns2.example.com", 'hint' => '2 to '.$section['max'].', like ns1.example.com.'])
 <div class="domains-buttons">
 <button type="submit" class="domains-btn domains-btn--primary">Save</button>
-@if ($section['defaults'] ?? false)<button type="submit" name="use_default" value="1" formnovalidate class="domains-btn domains-btn--ghost" data-fill-defaults>Use the default nameservers</button>@endif
+@if ($section['defaults'] ?? false)<button type="submit" name="fill_site_default" value="1" formnovalidate class="domains-btn domains-btn--ghost" data-fill-defaults>Use site default nameservers</button>@endif
 </div>
-@include('domains::partials.owner-confirm', ['id' => 'nameservers', 'open' => $confirmStep === 'nameservers', 'cancel' => $show.'?edit=nameservers#edit-nameservers', 'title' => 'Change nameservers?', 'tone' => 'primary', 'button' => 'Change nameservers',
+@include('domains::partials.owner-confirm', ['id' => 'nameservers', 'open' => $confirmStep === 'nameservers', 'cancel' => $show.'?edit=nameservers#edit-nameservers', 'title' => 'Change nameservers?', 'registrar' => $section['registrar'], 'tone' => 'primary', 'button' => 'Change nameservers',
     'facts' => [['label' => 'Current', 'value' => $section['current'] ?? []], ['label' => 'New', 'slot' => 'nameservers', 'value' => preg_split('/\R/', trim($nsValue), -1, PREG_SPLIT_NO_EMPTY)]],
     'risk' => \Paymenter\Extensions\Servers\Domains\Services\ManagementForms::NAMESERVERS_RISK])
 </form>
