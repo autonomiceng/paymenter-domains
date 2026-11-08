@@ -45,7 +45,7 @@ final class DomainSummaries
     {
         $domainIds=array_unique($domainIds);$watchIds=array_unique($watchIds);
         if (count($domainIds)+count($watchIds)>250) { throw new \InvalidArgumentException('At most 250 targets per batch.'); }
-        return $this->summaries(new DomainSummaryContext((int)$owner->id,$domainIds,$watchIds),$now??time());
+        return $this->summaries(new DomainSummaryContext((int)$owner->id,$domainIds,$watchIds),$now??app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp());
     }
     /** The customer's domains: registered ones and the ones their hosting uses, without abandoned orders. Every customer list starts here. */
     public function listed(User $owner,int $now): array
@@ -58,7 +58,7 @@ final class DomainSummaries
     }
     /** Staff-only multi-owner watch projection. Customer batch() always retains its owner-scoped context. */
     public function staffWatches(array $watchIds,?int $now=null): array
-    { return $this->summaries(DomainSummaryContext::staffWatches(array_unique($watchIds)),$now??time()); }
+    { return $this->summaries(DomainSummaryContext::staffWatches(array_unique($watchIds)),$now??app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp()); }
     private function summaries(DomainSummaryContext $c,int $now): array
     {
         if ($c->staff && $c->domains) { throw new \LogicException('Staff watch context cannot include managed domains.'); }

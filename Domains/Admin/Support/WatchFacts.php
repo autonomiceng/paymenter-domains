@@ -59,7 +59,7 @@ final class WatchFacts
         if(!$active){foreach(['Nameservers','Registry','Last check'] as $label){if(isset($checks[$label])&&$checks[$label]['value']===null){$checks[$label]['value']='';}}}
         // Saved answers only. Registrar records with no values are already Unknown in the Domain section.
         $evidence=[];foreach(['public'=>'Public DNS','registrar'=>'Registrar records'] as $key=>$label){
-            if(!$e[$key]&&($key==='registrar'||!$active)){continue;}
+            if(!$e[$key]&&($key==='registrar'||(!$active&&$e['public_at']===null))){continue;}
             $at=$e[$key.'_at'];$evidence[$label]=self::fact($e[$key]?implode('; ',$e[$key]):'Unknown',$at?new \Illuminate\Support\HtmlString(($key==='public'&&$e['public_stale']?'Historical answers. ':'').Sheet::moment(is_int($at)?$at:(int)strtotime($at),'Checked')->toHtml()):'No saved observation.');}
         return array_filter(['Domain'=>$shown($domain),'Checks'=>$shown($checks),'Evidence'=>$evidence]);
     }
@@ -67,7 +67,7 @@ final class WatchFacts
     {
         if($w->state==='paused'){return 'Paused';}
         if($w->state!=='active'){return 'Monitoring stopped; no further checks';}
-        return $w->work->contains(fn($row)=>($kind===null||$row->kind===$kind)&&($row->due_at!==null||$row->lease_until>time()))
+        return $w->work->contains(fn($row)=>($kind===null||$row->kind===$kind)&&($row->due_at!==null||$row->lease_until>app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp()))
             ?Missing::fills('after the next check'):'No check scheduled. Check the background worker.';
     }
     /** The latest check across nameservers, records and registry. Only failed checks are red; waiting or old evidence explains its next step. */
@@ -92,7 +92,7 @@ final class WatchFacts
     }
     private static function nextCheck(WatchName $w): array
     {
-        $work=$w->work()->get();if($work->contains(fn($r)=>$r->lease_until>time())){return self::fact('Checking now');}
+        $work=$w->work()->get();if($work->contains(fn($r)=>$r->lease_until>app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp())){return self::fact('Checking now');}
         $due=$work->min('due_at');return [...self::fact($due?self::date((int)$due):null,cause:'No check scheduled. Open Registrars and check the background worker.',check:true),'at'=>$due?(int)$due:null];
     }
     /** The nameservers the last delegation check found, compared with the expected ones. */
@@ -129,7 +129,7 @@ final class WatchFacts
         $inherited=\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::uses($id);
         return WatchName::where(fn($q)=>$q->where('ns_profile_id',$id)->when($inherited,fn($q)=>$q->orWhereNull('ns_profile_id')))->whereIn('state',['active','paused'])->count()
             + \Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::configured(
-                \Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::eligible(time()),'domains_domains.id','domains_domains.user_id',profile:$id)
+                \Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::eligible(app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp()),'domains_domains.id','domains_domains.user_id',profile:$id)
                 ->whereNotExists(fn($q)=>$q->selectRaw('1')->from('domains_watch_names as predecessor')
                     ->whereColumn('predecessor.user_id','domains_domains.user_id')->whereColumn('predecessor.canonical_name','domains_domains.reservation_name')
                     ->where(fn($q)=>$q->where('predecessor.ns_profile_id',$id)->when($inherited,fn($q)=>$q->orWhereNull('predecessor.ns_profile_id')))->whereIn('predecessor.state',['active','paused']))->count();

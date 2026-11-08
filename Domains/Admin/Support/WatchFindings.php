@@ -31,7 +31,7 @@ final class WatchFindings
     /** @return array<int,array{keys:list<string>,summary:?DomainSummary}> keyed by watch id. Staff-batched across owners; each bounded chunk uses the same local projection as the customer portal. */
     public static function summaries(iterable $watches,?int $now=null): array
     {
-        abort_unless(Staff::can(Writes::VIEW),403);$now??=time();$out=[];$active=[];
+        abort_unless(Staff::can(Writes::VIEW),403);$now??=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp();$out=[];$active=[];
         foreach($watches as $w){if($w->state==='active'){$active[]=(int)$w->id;$out[(int)$w->id]=['keys'=>['staff.unavailable'],'summary'=>null];}else{$out[(int)$w->id]=['keys'=>['staff.stopped'],'summary'=>null];}}
         foreach(array_chunk($active,250) as $chunk){foreach((new DomainSummaries())->staffWatches($chunk,$now) as $key=>$summary){$out[(int)substr($key,6)]=['keys'=>self::keys($summary,$now),'summary'=>$summary];}}
         return $out;
@@ -40,7 +40,7 @@ final class WatchFindings
     {
         $keys=array_intersect($s->stateKeys,self::KEYS);
         // The summary only carries a current public expiry; this matches the 30-day customer notice window.
-        if($s->expiry && !in_array('watch.expired',$keys,true) && substr($s->expiry,0,10)<=gmdate('Y-m-d',($now??time())+30*86400)){$keys[]='staff.expiring';}
+        if($s->expiry && !in_array('watch.expired',$keys,true) && substr($s->expiry,0,10)<=gmdate('Y-m-d',($now??app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp())+30*86400)){$keys[]='staff.expiring';}
         return array_values(array_intersect(self::KEYS,$keys));
     }
     /** The monitored domain status set: label, tone and reason line. */
@@ -53,7 +53,7 @@ final class WatchFindings
     }
     public static function expires(?string $expiry,?int $now=null): ?string
     {
-        if(!$expiry){return null;}$days=intdiv(strtotime(substr($expiry,0,10).' 00:00:00 UTC')-strtotime(gmdate('Y-m-d',$now??time()).' 00:00:00 UTC'),86400);
+        if(!$expiry){return null;}$days=intdiv(strtotime(substr($expiry,0,10).' 00:00:00 UTC')-strtotime(gmdate('Y-m-d',$now??app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp()).' 00:00:00 UTC'),86400);
         $n=abs($days).' '.(abs($days)===1?'day':'days');return match(true){$days<0=>'Expired '.$n.' ago',$days===0=>'Expires today',default=>'Expires in '.$n};
     }
     /** The configured company name, as the customer pages show it. */
