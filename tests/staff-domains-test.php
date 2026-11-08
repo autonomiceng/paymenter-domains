@@ -274,6 +274,12 @@ same(['alternate_reason','default_reason','fallback_reason','field_reason','held
 // These values have separate presenters or describe results, audit events, inputs or configuration.
 // Exclusions are per file and code: a new reason in any service still fails coverage.
 $excluded=[
+    // These results have their own owner/money presenters, not operation reason labels.
+    'OwnedDomains.php'=>['closed','credited','paid','pending','returned','review','split'],
+    'Storefront.php'=>['ending'],
+    'ReceiptReturns.php'=>['credit','original','split'],
+    // Storefront maps these RDAP transfer checks to customer guidance.
+    'Rdap.php'=>['transfer_creation_lock','transfer_previous_lock'],
     'DomainObservation.php'=>['records_disabled'], // Manual result rendered by SyncDomainRecords; scheduled work passes readRecords:false.
     'AccountBindings.php'=>['matched','server_unavailable','server_disabled','not_configured','site_invalid','site_unbound','site_mismatch','configuration_unavailable'],
     'RegistrarBalances.php'=>['rate_limited','configuration_unavailable','read_failed','test_call_refused'], // Balance facts.
