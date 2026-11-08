@@ -139,7 +139,7 @@ $now=app(Clock::class)->now();
 $key=['server_id'=>$server->id,'registrar_key'=>'namesilo','account_fingerprint'=>$binding->fingerprint,'tld'=>'com'];
 DB::table('domains_tlds')->insert([...$key,'catalogue_converted'=>true,'catalogue_revision'=>1,
     'catalogue_intent'=>OfferState::json(['sell'=>true,'longest'=>1,'transfers'=>true]),
-    'catalogue_published_revision'=>OfferState::json(['offer'=>1,'defaults'=>0,'selection'=>1]),
+    'catalogue_published_revision'=>OfferState::json(['offer'=>1,'defaults'=>0,'selection'=>1,'retailRule'=>\Paymenter\Extensions\Servers\Domains\Catalogue\Retail::VERSION]),
     'catalogue_retained_annual_retail'=>'13.00',
     'catalogue_facts'=>OfferState::encodeFacts(new Facts(['register'=>[1],'renew'=>[1],'transfer'=>[1]],[],true,false,false,
         'offline_synthetic_setup',$now,$now->modify('+1 day')))]);
