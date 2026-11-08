@@ -35,7 +35,7 @@ foreach(['disable','delete'] as $change){
     try{
         DB::transaction(function()use($template,$change){$row=$template->fresh();if($change==='delete'){$row->delete();}else{$row->update(['enabled'=>false,'revision'=>$row->revision+1]);}});
         throw new RuntimeException('Expected in-use template refusal');
-    }catch(DomainException $e){same('Choose another template for new domains first.',$e->getMessage(),'In-use refusal explains the site dependency');}
+    }catch(DomainException $e){same($change==='disable'?'Choose another template for new domains first.':'Choose another site DNS default before deleting this template.',$e->getMessage(),'In-use refusal explains the site dependency');}
 }
 $registration->mode=$binding->registrarKey==='enom'?'clean':'300';$registration->calls=[];
 $purchaseWire=[];$captureExchange=static function($origin,$command,$parameters,$timeout)use($exchange,&$purchaseWire){
