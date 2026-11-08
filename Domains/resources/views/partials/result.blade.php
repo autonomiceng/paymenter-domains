@@ -2,18 +2,25 @@
 @php
     $state = $result['status'];
     [$label, $tone] = match ($state) {
-        'available' => ['Available', 'ok'], 'transferable' => [($result['transferPage'] ?? false) ? 'Can transfer' : 'Taken', 'muted'],
-        'taken' => ['Taken', 'muted'], 'transfer_refused' => ['Can’t transfer', 'muted'],
+        'available' => ['Available', 'ok'], 'transferable' => [($result['transferPage'] ?? false) ? 'Can transfer' : 'Taken', ($result['transferPage'] ?? false) ? 'ok' : 'muted'],
+        'taken' => ['Taken', 'muted'], 'transfer_refused' => ['Can’t transfer', $result['refusalTone'] ?? 'muted'],
+        'transfer_wait' => ['Wait to transfer', $result['refusalTone'] ?? 'warn'], 'transfer_unconfirmed' => ['Couldn’t check', 'muted'],
         'premium' => ['Premium name', 'muted'], 'held' => ['Not available', 'muted'],
         'busy' => ['Try again in a moment', 'warn'],
         'idle' => ['Checking', 'muted'], 'in_cart' => ['In your cart', 'ok'], default => ['Couldn’t check', 'warn'],
     };
+    $statusClass = 'domains-badge domains-tone-'.$tone;
+    if ($result['transferPage'] ?? false) {
+        $statusClass = in_array($state, ['error', 'transfer_unconfirmed'], true)
+            ? 'domains-result-label' : 'domains-badge domains-status domains-tone-'.$tone;
+    }
+    if ($state === 'idle') { $statusClass = 'domains-checking'; }
     // Replace mode (Change on the cart): the chosen name takes over that cart line.
     $replace ??= null;
 @endphp
 <li class="domains-result {{ ($first ?? false) ? 'is-first' : '' }}" data-domains-result data-domain="{{ $result['domain'] }}" data-state="{{ $state }}">
     <div class="domains-result__name"><span>{{ $result['sld'] }}</span><wbr><span class="domains-tld">.{{ $result['tld'] }}</span>@if ($result['testEnvironment'] ?? false) <span class="domains-badge domains-tone-muted">Test</span>@endif</div>
-    <div class="domains-result__status"><span class="{{ $state === 'idle' ? 'domains-checking' : 'domains-badge domains-tone-'.$tone }}">{{ $label }}</span></div>
+    <div class="domains-result__status"><span class="{{ $statusClass }}">{{ $label }}</span></div>
     <div class="domains-result__price">{{ $state==='premium' ? 'Not sold here' : '' }}</div>
     <div class="domains-result__action">
         @if (in_array($state, ['available', 'transferable'], true))
@@ -36,7 +43,8 @@
                 <button type="submit" class="domains-btn domains-btn--{{ $state === 'available' ? 'primary' : 'secondary' }}" aria-label="{{ $replace ? 'Use '.$result['domain'].($replace['name'] ? ' instead of '.$replace['name'] : '') : ($state === 'available' ? 'Add '.$result['domain'].' to cart' : 'Transfer '.$result['domain'].' to us') }}">{{ $replace ? 'Use this name' : ($state === 'available' ? 'Add to cart' : 'Transfer') }}</button>
             </form>
         @elseif ($state === 'in_cart')<a class="domains-btn domains-btn--secondary" href="{{ route('cart') }}">Go to cart</a>
-        @elseif (in_array($state, ['error', 'busy'], true))<button type="button" class="domains-btn domains-btn--secondary" data-domains-retry>Retry</button>@endif
+        @elseif (in_array($state, ['error', 'busy', 'transfer_unconfirmed'], true))<button type="button" class="domains-btn domains-btn--secondary" data-domains-retry>Retry</button>@endif
     </div>
-    <p class="domains-result__note domains-small domains-muted">{{ $result['message'] ?? '' }}</p>
+    <p class="domains-result__note domains-small domains-muted">{{ $result['message'] ?? '' }}@if ($result['register'] ?? false) <a class="domains-a" href="{{ route('domains.domains.search', ['name' => $result['domain']]) }}">Register this domain</a>@endif
+        @if ($result['support'] ?? false)@php($support = \Paymenter\Extensions\Servers\Domains\Presentation\Missing::supportUrl())@if ($support) <a class="domains-a" href="{{ $support }}">Contact support</a>@endif @endif</p>
 </li>

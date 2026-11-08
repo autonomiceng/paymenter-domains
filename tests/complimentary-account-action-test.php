@@ -30,6 +30,11 @@ foreach([['reason'=>'','error'=>'required'],['reason'=>'   ','error'=>'required'
 $line($staff,$user->id)->assertActionVisible('turnOn')->assertActionHidden('turnOff');
 ComplimentaryAccounts::set($user->id,$staff,false,'Invalid toggle',app(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class),0);
 same($before,$rows(),'Invalid actions add no audit entries');
+$reason=str_repeat('界',500);
+$line($staff,$user->id)->callAction('turnOn',['reason'=>$reason])->assertHasNoActionErrors()->assertSee('Complimentary domains');
+same($reason,ComplimentaryAccounts::current($user->id)['reason'],'500 Unicode characters retain the whole audit reason');
+$line($staff,$user->id)->callAction('turnOff',['reason'=>'Reset Unicode case'])->assertHasNoActionErrors();
+$before=$rows();
 // A valid save keeps the staff actor and reason and stays on the edited customer.
 $line($staff,$user->id)->callAction('turnOn',['reason'=>'Customer gift'])->assertHasNoActionErrors()->assertNoRedirect()
     ->assertSet('customer',$user->id)->assertSee('Complimentary domains')->assertSee('Reason: Customer gift');

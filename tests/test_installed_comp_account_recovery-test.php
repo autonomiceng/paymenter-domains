@@ -45,12 +45,29 @@ $check('staff releases and engine re-admits the same funded term',function()use(
 same($before,$money(),'Setup/release/re-admission do not collect money or change the receipt');
 $transfer=$newRegistration(placeholderComFixtureName('comp-code-notice-placeholder.com'),'transfer');
 $check('complimentary transfer receives missing-code and deadline notices',function()use($transfer,$transfers,$clock):void {
-    $transfers->paymentAccepted($transfer->id);$transfer->refresh();
+    same($transfer->created_at->utc()->format(DATE_ATOM),$transfer->policy['paid_at']??null,'Receipt issuance freezes the transfer input clock');
+    same('awaiting_code',$transfer->state,'Missing-code complimentary transfers await their input immediately');
+    same([$transfer->id],\Paymenter\Extensions\Servers\Domains\Services\RuntimeCandidates::transfer(\Paymenter\Extensions\Servers\Domains\Models\Operation::whereKey($transfer->id))->pluck('id')->all(),'Native runtime discovers the complimentary transfer');
+    app()->instance(\Paymenter\Extensions\Servers\Domains\Services\TransferInputs::class,$transfers);
+    app()->instance(\Paymenter\Extensions\Servers\Domains\Services\RuntimeDispatch::class,new \Paymenter\Extensions\Servers\Domains\Services\RuntimeDispatch($clock));
+    $runtime=new \Paymenter\Extensions\Servers\Domains\Services\RuntimeWork($clock,new \Paymenter\Extensions\Servers\Domains\Services\RuntimePorts);
+    $runtime->service($transfer->service_id);$transfer->refresh();
+    $beforeRuntime=$clock->instant;$fixed=$transfer->policy['paid_at'];$clock->instant=$clock->now()->modify('+1 minute');$runtime->service($transfer->service_id);
+    same($fixed,$transfer->fresh()->policy['paid_at'],'Repeated runtime recovery cannot reset the fixed input deadline');$clock->instant=$beforeRuntime;
     foreach([['+1 day','domains_transfer_code_paid'],['+24 days','domains_transfer_code_reminder']] as [$offset,$template]){
         $plan=DB::transaction(function()use($transfer,$clock,$offset){$alerts=[];return TransferNotifications::plan(HoldingLocks::take($transfer->domain),$clock->now()->modify($offset),$alerts);});
         same($template,$plan['template']??null,'Missing-code mail is planned at '.$offset);
         same('$0.00',$plan['data']['amount'],'Notice never asks the complimentary customer to pay');
     }
+});
+$coded=$newRegistration(placeholderComFixtureName('comp-runtime-code-placeholder.com'),'transfer');
+$check('runtime-discovered complimentary transfer accepts an owner code',function()use($coded,$transfers,$clock,$user,$money):void {
+    $fixed=$coded->policy['paid_at'];$before=$money();
+    expect(\Paymenter\Extensions\Servers\Domains\Services\RuntimeCandidates::transfer(\Paymenter\Extensions\Servers\Domains\Models\Operation::whereKey($coded->id))->exists(),'Native runtime discovers the code-bound transfer');
+    $work=new \Paymenter\Extensions\Servers\Domains\Services\RuntimeWork($clock,new \Paymenter\Extensions\Servers\Domains\Services\RuntimePorts);$work->service($coded->service_id);
+    $request=Illuminate\Http\Request::create('/transfer-code','POST',['transfer_code'=>'Synthetic-code']);$request->setUserResolver(fn()=>$user);$transfers->submitCode($request,$coded->id);
+    same([$fixed,'Synthetic-code'],[$coded->fresh()->policy['paid_at'],$coded->fresh()->payload['epp']],'Owner code retains the original input deadline');
+    same($before,$money(),'Runtime and auth-code entry invent no payment or credit');
 });
 $wait=$op->fresh();
 $wait->update(['state'=>'held','safe_code'=>'registrar_balance_insufficient','policy'=>[...$wait->policy,'funds_wait_at'=>$clock->now()->format(DATE_ATOM)]]);
@@ -60,6 +77,7 @@ $check('elapsed complimentary funds wait closes without payment or refund',funct
     FundsWaits::sweep($account,$clock->now());
     same('rejected',$wait->fresh()->state,'Elapsed unsent complimentary acquisition closes');
     same('registration_rejected',$wait->domain->fresh()->status,'The domain shows the terminal outcome');
+    same('cancelled',Service::findOrFail($wait->service_id)->status,'Funds closure cancels the native service in its transaction');
     expect(Paymenter\Extensions\Servers\Domains\Services\OperationTerminalProof::safe($wait->fresh(),$wait->domain->fresh()),'Closure retains negative proof');
     same(0,DB::table('domains_obligation_alerts')->where('operation_id',$wait->id)->whereNull('resolved_at')->whereIn('code',['funds_wait_review','refund_repair'])->count(),'Complimentary closure never asks for nonexistent payment/refund repair');
     FundsWaits::sweep($account,$clock->now());same($before,$money(),'Repeated sweep changes no invoice, transaction or credit');

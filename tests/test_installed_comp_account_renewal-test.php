@@ -13,6 +13,7 @@ $enable=fn()=>ComplimentaryAccounts::set($user->id,$staff,true,'Staff account gi
 $disable=fn()=>ComplimentaryAccounts::set($user->id,$staff,false,'Gift ended',$clock);
 [$op,$d,$b,$invoice]=$makeRenewal(placeholderComFixtureName('account-renew-placeholder.com'),false,1,false,$enable);
 same(['complimentary','queued','0.00','paid',0.0,0],[$op->funding_basis,$op->state,$op->amount,$invoice->status,(float)$invoice->total,$invoice->transactions()->count()],'Renewal is complimentary with a paid zero receipt');
+same($op->policy['calendar']['due'],$invoice->due_at->format('Y-m-d'),'The zero receipt keeps the frozen renewal due date');
 $before=Invoice::count();same($invoice->id,$billing->invoice($d->id)->id,'Scheduled billing returns the same funded term');same($before,Invoice::count(),'No second renewal invoice');
 $disable();same('standard',$d->fresh()->price_mode,'Switch off changes new terms');
 DB::transaction(function()use($op,$d){$l=HoldingLocks::take($d->fresh());same('complimentary',RenewalFunding::requireCurrent($op->fresh(),$l)['basis'],'Issued complimentary term survives switch off');});

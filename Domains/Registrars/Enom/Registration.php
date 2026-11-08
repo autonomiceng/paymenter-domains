@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom;
 use Paymenter\Extensions\Servers\Domains\Contracts\RegistrationProtocol;
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, AdmittedOperation, Discrepancy, Disposition, DriverResult, Evidence, NameserverEvidence, RegistrationEvidence, RequestContext, ResultReason, SendState};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, AdmittedOperation, Discrepancy, Disposition, DriverResult, Evidence, NameserverEvidence, RegistrationEvidence, RequestContext, ResultReason, SendState, RejectionBasis, RegistrationRefusal};
 use Paymenter\Extensions\Servers\Domains\Services\ContactDetails;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{RegistrationCommand, ResponseParser};
 final class Registration extends RegistrationProtocol
@@ -18,8 +18,10 @@ final class Registration extends RegistrationProtocol
         $this->requireInFlight($op, $ctx, $payload, $origin, $timeoutMs);
         $contacts = ContactDetails::validate('enom', $payload['contacts'] ?? null);
         $parts = explode('.', $op->query->name, 2); $name = ['SLD' => $parts[0], 'TLD' => $parts[1]];
+        $servers = $payload['nameservers'] ?? [];
         $parameters = $name + ['NumYears' => $op->query->years, 'UnLockRegistrar' => 0, 'RenewName' => 0,
-            'EmailNotify' => 0, 'UseCreditCard' => 'no', 'QueueOrder' => 0, 'AllowQueuing' => 0, 'IgnoreNSFail' => 'No', 'UseDNS' => 'default'];
+            'EmailNotify' => 0, 'UseCreditCard' => 'no', 'QueueOrder' => 0, 'AllowQueuing' => 0, 'IgnoreNSFail' => 'No']
+            + ($servers ? self::nameservers($servers) : ['UseDNS' => 'default']);
         $fields = ['first_name' => 'FirstName', 'last_name' => 'LastName', 'organization_name' => 'OrganizationName',
             'address1' => 'Address1', 'address2' => 'Address2', 'city' => 'City', 'state_province' => 'StateProvince',
             'postal_code' => 'PostalCode', 'country' => 'Country', 'email_address' => 'EmailAddress', 'phone' => 'Phone'];
@@ -29,7 +31,10 @@ final class Registration extends RegistrationProtocol
         $parser = new ResponseParser;
         $submittedAt = $ctx->now();
         $purchase = $parser->parse(RegistrationCommand::Purchase, $this->request($op, $ctx, $origin, 'Purchase', $parameters));
-        if ($purchase->status !== 'success') { return new DriverResult($op->binding, Disposition::Unknown, SendState::PossiblySent, ResultReason::Unresolved); }
+        if ($purchase->status === 'rejected') { return new DriverResult($op->binding, Disposition::Rejected, SendState::Sent, ResultReason::ProvenRejected,
+            new Evidence(registrarReply:$purchase->registrarReply(),registrationRefusal:RegistrationRefusal::enom($op,$purchase->value('purchase_refusal'))),rejectionBasis:RejectionBasis::ProviderProof); }
+        if ($purchase->status !== 'success') { return new DriverResult($op->binding, Disposition::Unknown, SendState::PossiblySent, ResultReason::Unresolved,
+            new Evidence(registrarReply:$purchase->registrarReply())); }
         $reference = $purchase->value('orderid');
         $reference = is_string($reference) && preg_match('/^[1-9][0-9]{0,19}$/D', $reference) ? $reference : null;
         $expiry = Expiry::read($purchase, $expiryIssue); $status = $purchase->value('orderstatus');
@@ -40,7 +45,7 @@ final class Registration extends RegistrationProtocol
         if ($purchase->code !== '200' || $reference === null || $expiry === null) {
             return new DriverResult($op->binding, Disposition::Unknown, SendState::Sent, ResultReason::Unresolved, new Evidence(registration: $facts));
         }
-        $corrections = []; $servers = $payload['nameservers'] ?? []; $nameservers = null;
+        $corrections = []; $nameservers = null;
         if ($servers) {
             $corrections[] = 'nameservers';
             try {

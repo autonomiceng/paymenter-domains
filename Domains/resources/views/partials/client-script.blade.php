@@ -176,7 +176,7 @@
             row.querySelector('.domains-result__price').replaceChildren();
             row.querySelector('.domains-result__note').textContent = '';
             row.querySelector('.domains-result__action').replaceChildren();
-            let note = '';
+            let note = list.dataset.mode === 'transfer' ? 'We couldn’t check this transfer right now. Try again in a few minutes.' : '';
             try {
                 const response = await fetch(list.dataset.domainsResults, {method: 'POST', credentials: 'same-origin',
                     headers: {'Content-Type': 'application/json', 'Accept': 'application/json',
@@ -195,9 +195,13 @@
                 row.dataset.state = 'error';
                 const status = row.querySelector('.domains-result__status');
                 status.replaceChildren(); const badge = document.createElement('span');
-                badge.className = 'domains-badge domains-tone-warn'; badge.textContent = 'Couldn’t check'; status.append(badge);
+                badge.className = list.dataset.mode === 'transfer' ? 'domains-result-label' : 'domains-badge domains-tone-warn'; badge.textContent = 'Couldn’t check'; status.append(badge);
                 row.querySelector('.domains-result__price').replaceChildren();
-                row.querySelector('.domains-result__note').textContent = note;
+                const message = row.querySelector('.domains-result__note'); message.textContent = note;
+                if (list.dataset.mode === 'transfer' && list.dataset.supportUrl) {
+                    const support = document.createElement('a'); support.className = 'domains-a';
+                    support.href = list.dataset.supportUrl; support.textContent = 'Contact support'; message.append(' ', support);
+                }
                 const actions = row.querySelector('.domains-result__action'); actions.replaceChildren();
                 const retry = document.createElement('button'); retry.type = 'button'; retry.textContent = 'Retry';
                 retry.className = 'domains-btn domains-btn--secondary'; retry.dataset.domainsRetry = ''; actions.append(retry);

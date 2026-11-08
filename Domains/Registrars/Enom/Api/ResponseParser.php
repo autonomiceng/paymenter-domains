@@ -44,17 +44,29 @@ final class ResponseParser
         if ($command === ReadCommand::HostStatus && $data['errcount'] === '1' && ($data['errors']??null) === ['err1'=>'Error 545 - Name server does not exist']
             && !array_key_exists('nschecksuccess',$data) && !array_key_exists('checknsstatus',$data)
             && $code === '545' && !isset($data['responsecode']) && !array_filter(array_keys($data),fn($k)=>preg_match('/^err[0-9]+$/D',$k))) { return new ProtocolResult('success',$code,['host_absent'=>true]); }
-        if (trim($data['errcount'], '0') !== '') { return new ProtocolResult($command instanceof ReadCommand||$command instanceof ManagementCommand&&$this->refused($command,$data) ? 'rejected' : 'unknown', $code); }
-        if (isset($data['errors']) && $data['errors'] !== '') { return new ProtocolResult('unknown', 'contradictory_errors'); }
+        $reply=null;
+        if($command===RegistrationCommand::Purchase){
+            $number=$data['responses']['response']['responsenumber']??null; $replyCode=$code;
+            if($replyCode===null&&is_string($number)&&preg_match('/^[0-9]{1,6}$/D',$number)){$replyCode=$number;}
+            $reply=\Paymenter\Extensions\Servers\Domains\Data\RegistrarReply::capture($replyCode,
+                $data['errors']['err1']??$data['err1']??$data['responses']['response']['responsestring']??null);
+        }
+        if (trim($data['errcount'], '0') !== '') {
+            $refusal=$command===RegistrationCommand::Purchase&&$this->purchaseRefused($data)
+                ? ['purchase_refusal'=>['err_count'=>(int)$data['errcount'],'rrp_code'=>$data['rrpcode'],
+                    'text'=>$data['errors']['err1']??$data['responses']['response']['responsestring'],'order_id'=>null,'done'=>true]]:[];
+            return new ProtocolResult($command instanceof ReadCommand||$command instanceof ManagementCommand&&$this->refused($command,$data)||$refusal ? 'rejected' : 'unknown', $code, $refusal, registrarReply:$reply);
+        }
+        if (isset($data['errors']) && $data['errors'] !== '') { return new ProtocolResult('unknown', 'contradictory_errors', registrarReply:$reply); }
         foreach ($data as $key => $value) {
-            if (preg_match('/^err[0-9]+$/D', $key) && $value !== '') { return new ProtocolResult('unknown', 'contradictory_errors'); }
+            if (preg_match('/^err[0-9]+$/D', $key) && $value !== '') { return new ProtocolResult('unknown', 'contradictory_errors', registrarReply:$reply); }
         }
         if (isset($data['responsecode']) && (!is_string($data['responsecode']) || !preg_match('/^1[0-9]{5}$/D', $data['responsecode']))) {
-            return new ProtocolResult('unknown', $code);
+            return new ProtocolResult('unknown', $code, registrarReply:$reply);
         }
         $codes = $command === ReadCommand::Check ? ['200', '210', '211'] : ($command instanceof RegistrationCommand && in_array($command, [RegistrationCommand::Purchase, RegistrationCommand::Renew, RegistrationCommand::GraceRenew], true) ? ['200', '1300'] : ['200']);
         if (isset($data['rrpcode']) && !in_array($data['rrpcode'], $codes, true)) {
-            return new ProtocolResult('unknown', $code);
+            return new ProtocolResult('unknown', $code, registrarReply:$reply);
         }
         if (in_array($command, [ReadCommand::Orders, ReadCommand::Order], true)) {
             $payload = $command === ReadCommand::Orders ? ['orderlist', 'ordercount'] : ['order'];
@@ -62,6 +74,51 @@ final class ResponseParser
         }
         // Payload-specific validation belongs to each named read normalizer, never to acknowledgement alone.
         return new ProtocolResult('success', $code, $data, strlen($body));
+    }
+
+    /** The observed order-creation refusal only. A registry error without this text is still uncertain. */
+    private function purchaseRefused(#[\SensitiveParameter] array $data): bool
+    {
+        if((int)$data['errcount']>100||!is_string($data['rrpcode']??null)||$data['rrpcode']!=='541'
+            ||isset($data['responsecode'])||!$this->noPurchaseFacts($data)){return false;}
+        $metadata=['rrpcode','rrptext','command','apitype','language','errcount','responsecount','minperiod','maxperiod',
+            'server','site','islockable','isrealtimetld','timedifference','exectime','done','trackingkey','requestdatetime','debug'];
+        if(array_diff(array_keys($data),[...$metadata,'contacts','errors','responses'])){return false;}
+        foreach($metadata as $key){if(isset($data[$key])&&!is_string($data[$key])){return false;}}
+        $messages=['Validation error. Failed to create order.','Validation error; failed to add; order(s)'];
+        $found=false; $errors=$data['errors']??[];
+        if($errors!==''&&$errors!==[]){
+            if(!is_array($errors)||array_is_list($errors)||!array_key_exists('err1',$errors)||count($errors)!==(int)$data['errcount']){return false;}
+            foreach($errors as $key=>$text){
+                if(!preg_match('/^err[1-9][0-9]*$/D',(string)$key)||!in_array($text,$messages,true)){return false;}
+                $found=true;
+            }
+        }elseif($data['errcount']!=='1'){return false;}
+        // The recorded refusal explicitly counts its responses. Missing or
+        // contradictory count evidence cannot authorize a payment return.
+        if(!isset($data['responsecount'])||!in_array($data['responsecount'],['0','1'],true)
+            ||$data['responsecount']!==(isset($data['responses'])&&$data['responses']!==''?'1':'0')){return false;}
+        if(isset($data['responses'])&&$data['responses']!==''){
+            $responses=$data['responses'];$response=is_array($responses)?($responses['response']??null):null;
+            if(!is_array($responses)||array_keys($responses)!==['response']||!is_array($response)
+                ||array_diff(array_keys($response),['responsenumber','responsestring'])
+                ||!is_string($response['responsenumber']??null)||!preg_match('/^[347][0-9]{5}$/D',$response['responsenumber'])
+                ||!in_array($response['responsestring']??null,$messages,true)){return false;}
+            $found=true;
+        }
+        return $found;
+    }
+    /** Order, expiry, charge and status fields contradict a refusal even when nested or empty. */
+    private function noPurchaseFacts(#[\SensitiveParameter] array $data): bool
+    {
+        foreach($data as $key=>$value){
+            if(preg_match('/order|domainid|domainnameid|expir|expdate|charge|amount|owned|belong|processing|pending|queued/i',(string)$key)
+                ||preg_match('/^err[0-9]+$/D',(string)$key)&&!in_array($value,['Validation error. Failed to create order.','Validation error; failed to add; order(s)'],true)) {return false;}
+            if(is_string($value)&&preg_match('/^(?:rrptext|responsestring|err[0-9]+)$/D',(string)$key)
+                &&preg_match('/\b(?:success|successful|successfully|pending|processing|queued)\b/i',$value)){return false;}
+            if(is_array($value)&&!$this->noPurchaseFacts($value)){return false;}
+        }
+        return true;
     }
 
     /** Indexed Text rows use the same internal shape as the documented XML products. */

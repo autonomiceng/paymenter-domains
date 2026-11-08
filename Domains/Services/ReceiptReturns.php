@@ -16,6 +16,15 @@ final class ReceiptReturns
         if(!$gateway){return false;}
         return ExtensionHelper::hasFunction($gateway,'allocateReceiptReturn')&&ExtensionHelper::hasFunction($gateway,'receiptReturnStatus');
     }
+    /** Where a refund of these invoice payments would go, as reserve() splits it: 'original' when every paid row's gateway
+     * can return it, 'credit' when none can, 'split' when some can. Null when nothing was paid. */
+    public static function destination(iterable $rows): ?string
+    {
+        $paid=collect($rows)->filter(fn($r)=>($r->status===InvoiceTransactionStatus::Succeeded||$r->status===InvoiceTransactionStatus::Succeeded->value)&&PricingRule::minor((string)$r->amount)>0);
+        if($paid->isEmpty()){return null;}
+        $capable=$paid->filter(fn($r)=>self::capable($r->gateway))->count();
+        return match(true){$capable===0=>'credit',$capable===$paid->count()=>'original',default=>'split'};
+    }
     /** Caller holds the owner/invoice/operation locks. Commit the immutable plan before any gateway call. */
     public static function reserve(Operation $op,array $l,array $payment,\DateTimeImmutable $now): bool
     {

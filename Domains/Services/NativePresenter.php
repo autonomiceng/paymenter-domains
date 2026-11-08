@@ -31,7 +31,7 @@ final readonly class NativePresenter
         $ops=Operation::where('invoice_id',$invoiceId)->where('currency',$invoice->currency_code)->whereIn('invoice_item_id',\App\Models\InvoiceItem::where('invoice_id',$invoiceId)->select('id'))->orderBy('id')->limit(250)->get();
         $dtos=$this->services($owner,$ops->pluck('service_id')->unique()->all());$result=[];
         foreach($ops as $op){$dto=$dtos[(int)$op->service_id]??null;if($dto&&isset($items[$op->invoice_item_id])&&$this->line($items[$op->invoice_item_id],$op)
-                &&Domain::whereKey($op->domain_id)->where('service_id',$op->service_id)->where('user_id',$owner->id)->where('account_fingerprint',$op->account_fingerprint)->where('authority_generation',$op->authority_generation)->exists()){
+                &&Domain::whereKey($op->domain_id)->where('service_id',$op->service_id)->where('user_id',$owner->id)->where('server_id',$op->server_id)->where('registrar_key',$op->registrar_key)->where('account_fingerprint',$op->account_fingerprint)->where('authority_generation',$op->authority_generation)->exists()){
                 if($op->action!=='renew'||$invoice->status!=='pending'||($dto->renewNow['invoice']??null)!==route('invoices.show',$invoice)){
                     $dto=new OwnedDomain(...[...get_object_vars($dto),'renewalDue'=>null]);
                 }
@@ -113,6 +113,7 @@ final readonly class NativePresenter
     {
         $service=$item->reference_type===(new Service)->getMorphClass()&&(int)$item->reference_id===(int)$op->service_id;
         $retained=in_array($op->action,['renew','privacy_purchase','privacy_renew'],true)&&$item->reference_type===null&&$item->reference_id===null;
+        if($op->funding_basis==='complimentary'){return ($service||$retained)&&ComplimentaryInvoices::receipt($op,$item->invoice,$item,$item->invoice->items,$item->invoice->transactions);}
         try{return ($service||$retained)&&(string)$item->quantity==='1'&&PricingRule::minor((string)$item->price)===PricingRule::minor((string)$op->amount);}catch(\Throwable){return false;}
     }
     /** Neutral owner-scoped edit target; no receipt or provider identity enters the URL. */

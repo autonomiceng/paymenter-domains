@@ -736,7 +736,16 @@
     "tests/test_installed_renewal_uncertain-test.php",
     "tests/test_installed_renewal_cooldown-test.php",
     "tests/test_installed_renewal_repeat_wait-test.php",
-    "tests/renewal-completion-claims-test.php"
+    "tests/renewal-completion-claims-test.php",
+    "tests/complimentary-adoption-mode-test.php",
+    "tests/complimentary-receipt-membership-test.php",
+    "tests/complimentary-renewal-cutoff-test.php",
+    "tests/complimentary-funds-atomic-test.php",
+    "tests/registration-enom-refusal-test.php",
+    "tests/registration-enom-explicit-ns-test.php",
+    "tests/transfer-restriction-date-test.php",
+    "tests/rejected-registration-page-test.php",
+    "tests/storefront-transfer-date-test.php"
   ],
   "ui": [],
   "runner": [

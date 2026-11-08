@@ -58,6 +58,13 @@ final readonly class OwnedDomains
         };
         return $invoice?->status==='paid'&&in_array($op->state,['awaiting_payment','awaiting_code','queued','running','pending','held','uncertain'],true)?['state'=>'paid','kind'=>$kind,'next'=>$next,...($op->funding_basis==='complimentary'?['complimentary'=>true]:[]),...(isset($op->policy['status_check'])&&!isset($op->policy['status_check']['next_at'])?['check'=>RegistrarCheck::forCustomer($op)]:[])]:[];
     }
+    /** Where a rejected registration or transfer's money goes, for the customer page: see OwnedDomain::$refundTo. */
+    public static function refundTo(Domain $d, ?Operation $op, array $order): ?string
+    {
+        if (!$op || $op->state !== 'rejected' || !(in_array($d->status, ['registration_rejected', 'transfer_rejected'], true) || ($order['state'] ?? null) === 'failed')) { return null; }
+        if (isset($op->funding['refund'])) { return match ($op->funding['refund']['to'] ?? null) { 'account_credit' => 'credited', 'original_payment' => 'returned', default => null }; }
+        return ReceiptReturns::destination(\App\Models\InvoiceTransaction::where('invoice_id', $op->invoice_id)->with('gateway')->get());
+    }
     /** The service is gone, or a cancellation or native intent stops it. */
     public static function closed(?string $serviceStatus, bool $stopped): bool
     { return !in_array($serviceStatus,['pending','active'],true)||$stopped; }
@@ -280,7 +287,7 @@ final readonly class OwnedDomains
             order:$order, autoPay:$policy!==null&&RenewalAutoPay::ready($service), renewNow:$policy===null?[]:$renewNow,
             renewalOff:$renewal==='Off'?RenewalStop::offReason($renewalState):null,
             autoRenew:$forms&&OwnerAutoRenew::available($renewalState)?['url'=>route('domains.domains.auto-renew',$d->id),'enabled'=>!RenewalStop::ownerOff($renewalState)]:[],
-            dnsCorrection:$dnsCorrection, statusReason:$pill['reason'], earlyRenewal:$earlyRenewal, demo:DemoData::is($d), syncPaused:DemoData::syncPaused($d), owner:self::owner($contacts??[]),
+            dnsCorrection:$dnsCorrection, statusReason:$pill['reason'], refundTo:self::refundTo($d,$op,$order), earlyRenewal:$earlyRenewal, demo:DemoData::is($d), syncPaused:DemoData::syncPaused($d), owner:self::owner($contacts??[]),
             daysLeft:$d->provider_expires_at?(int)\Carbon\CarbonImmutable::parse($this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d'),'UTC')->diffInDays(\Carbon\CarbonImmutable::parse($d->provider_expires_at->format('Y-m-d'),'UTC'),false):null);
         return \Paymenter\Extensions\Servers\Domains\Presentation\DsState::owner($page,$d,$forms&&$caps!==null);
     }

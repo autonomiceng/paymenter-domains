@@ -4,7 +4,7 @@
 declare(strict_types=1);
 require __DIR__.'/bootstrap.php';
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Disposition, Environment, RequestBudget, RequestContext, RequestOrigin};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ProtocolResult, ReadCommand, ResponseParser, Transport};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ProtocolResult, ReadCommand, ResponseParser, RegistrationCommand, Transport};
 ini_set('zend.exception_ignore_args', '0');
 function envelope(string $command, string $payload = ''): string
 {
@@ -44,6 +44,87 @@ same(null, Paymenter\Extensions\Servers\Domains\Registrars\Enom\Catalogue::names
     'A list with no supported ending stays unavailable');
 same(null, Paymenter\Extensions\Servers\Domains\Registrars\Enom\Catalogue::names($parser->parse(ReadCommand::Tlds, envelope('GetTLDList', '<tldlist><tld><tld>com</tld></tld><tld><tld>bad ending</tld></tld></tldlist>'))),
     'A non-hostname entry still voids the whole list');
+// Sanitized Purchase refusal from the 2026-11-07 TEST probe.
+$purchaseRefusal='<interface-response><RRPCode>541</RRPCode><RRPText>Data management policy violation; host ns2.provider.example is subordinate to provider.example, which does not exist yet</RRPText>'
+    .'<Contacts><RegistrantEmailAddress>PRIVATE-CONTACT</RegistrantEmailAddress></Contacts><Command>PURCHASE</Command><APIType>API.NET</APIType><Language>eng</Language>'
+    .'<ErrCount>1</ErrCount><errors><Err1>Validation error. Failed to create order.</Err1></errors><ResponseCount>1</ResponseCount>'
+    .'<responses><response><ResponseNumber>309242</ResponseNumber><ResponseString>Validation error; failed to add; order(s)</ResponseString></response></responses>'
+    .'<MinPeriod>1</MinPeriod><MaxPeriod>10</MaxPeriod><Server>TEST</Server><Site>Enom</Site><IsLockable>True</IsLockable><IsRealTimeTLD>True</IsRealTimeTLD>'
+    .'<TimeDifference>+00.00</TimeDifference><ExecTime>0.01</ExecTime><Done>true</Done><TrackingKey>synthetic-tracking</TrackingKey>'
+    .'<RequestDateTime>11/7/2026 6:42:36 AM</RequestDateTime><debug/></interface-response>';
+same('rejected',$parser->parse(RegistrationCommand::Purchase,$purchaseRefusal)->status,'Observed 541 failure to create an order is a definite refusal');
+$onlyResponse=preg_replace('~<errors>.*?</errors>~s','',$purchaseRefusal);
+same('rejected',$parser->parse(RegistrationCommand::Purchase,$onlyResponse)->status,'The exact failed-to-add order response also proves refusal');
+$twoErrors=str_replace(['<ErrCount>1</ErrCount>','</errors>'],['<ErrCount>2</ErrCount>','<Err2>Validation error. Failed to create order.</Err2></errors>'],$purchaseRefusal);
+same('rejected',$parser->parse(RegistrationCommand::Purchase,$twoErrors)->status,'Multiple consistent errors retain explicit order-creation refusal');
+
+// The recorded 541 has ResponseCount=1; synthetic response-only and errors-only
+// controls remain complete only with their explicit matching response count.
+$errorsOnly=str_replace('<ResponseCount>1</ResponseCount>','<ResponseCount>0</ResponseCount>',preg_replace('~<responses>.*?</responses>~s','',$purchaseRefusal));
+same('rejected',$parser->parse(RegistrationCommand::Purchase,$errorsOnly)->status,'A complete errors-only refusal explicitly declares zero responses');
+foreach ([
+    'missing_response_count'=>str_replace('<ResponseCount>1</ResponseCount>','',$purchaseRefusal),
+    'missing_count_errors_only'=>str_replace('<ResponseCount>0</ResponseCount>','',$errorsOnly),
+    'missing_errors_count_two'=>str_replace('<ErrCount>1</ErrCount>','<ErrCount>2</ErrCount>',$onlyResponse),
+    'missing_errors_count_nine'=>str_replace('<ErrCount>1</ErrCount>','<ErrCount>9</ErrCount>',$onlyResponse),
+    'empty_errors_count_three'=>str_replace(['<ErrCount>1</ErrCount>','<errors><Err1>Validation error. Failed to create order.</Err1></errors>'],['<ErrCount>3</ErrCount>','<errors/>'],$purchaseRefusal),
+    'error_list_count_mismatch'=>str_replace('<ErrCount>1</ErrCount>','<ErrCount>2</ErrCount>',$purchaseRefusal),
+    'response_count_two'=>str_replace('<ResponseCount>1</ResponseCount>','<ResponseCount>2</ResponseCount>',$purchaseRefusal),
+    'response_count_zero'=>str_replace('<ResponseCount>1</ResponseCount>','<ResponseCount>0</ResponseCount>',$purchaseRefusal),
+    'response_count_empty'=>str_replace('<ResponseCount>1</ResponseCount>','<ResponseCount/>',$purchaseRefusal),
+    'response_count_invalid'=>str_replace('<ResponseCount>1</ResponseCount>','<ResponseCount>invalid</ResponseCount>',$purchaseRefusal),
+    'response_count_padded'=>str_replace('<ResponseCount>1</ResponseCount>','<ResponseCount>01</ResponseCount>',$purchaseRefusal),
+    'missing_response'=>preg_replace('~<responses>.*?</responses>~s','',$purchaseRefusal),
+    'empty_response'=>preg_replace('~<responses>.*?</responses>~s','<responses/>',$purchaseRefusal),
+] as $case=>$body){
+    $result=$parser->parse(RegistrationCommand::Purchase,$body);
+    same(['unknown',null],[$result->status,$result->value('purchase_refusal')],'Incomplete counts never mint refusal proof: '.$case);
+}
+
+
+foreach ([str_replace(['<Err1>','</Err1>'],['<Err2>','</Err2>'],$purchaseRefusal),str_replace('<RRPCode>541</RRPCode>','<RRPCode>451</RRPCode>',$purchaseRefusal),
+    str_replace('<RRPCode>541</RRPCode>','<RRPCode>549</RRPCode>',$purchaseRefusal),str_replace('<RRPCode>541</RRPCode>','<RRPCode>554</RRPCode>',$purchaseRefusal),
+    str_replace('<RRPCode>541</RRPCode>','',$purchaseRefusal),
+    str_replace('<ErrCount>1</ErrCount>','<ErrCount>0</ErrCount>',$purchaseRefusal),
+    str_replace('Validation error. Failed to create order.','Validation error. Order status unknown.',str_replace('Validation error; failed to add; order(s)','Order pending',$purchaseRefusal)),
+    str_replace('Validation error; failed to add; order(s)','Order pending',$purchaseRefusal),
+    str_replace('<Done>true</Done>','<Done>false</Done>',$purchaseRefusal)] as $ambiguous) {
+    same('unknown',$parser->parse(RegistrationCommand::Purchase,$ambiguous)->status,'An ambiguous refusal remains uncertain');
+}
+foreach (['<OrderID>1234</OrderID>','<OrderID/>','<GetDomainInfo><OrderID>1234</OrderID></GetDomainInfo>',
+    '<GetDomainInfo><DomainName DomainNameID="456">example.com</DomainName></GetDomainInfo>','<Accepted>true</Accepted>','<ExpirationDate>2027-11-07</ExpirationDate>','<OrderStatus>Pending</OrderStatus>','<ChargedAmount>6.00</ChargedAmount>'] as $contradiction) {
+    same('unknown',$parser->parse(RegistrationCommand::Purchase,str_replace('</interface-response>',$contradiction.'</interface-response>',$purchaseRefusal))->status,
+        'Contradictory order or financial evidence prevents definite refusal');
+}
+
+// The reply retains fixed error wording only, never private suffixes or arbitrary error content.
+foreach ([['Error 545 - Name server does not exist; PW=PRIVATE-TOKEN','Error 545 - Name server does not exist'],
+    [str_repeat('PRIVATE-TOKEN',400),null],['owner@example.test PRIVATE-ACCOUNT',null],['<private>PRIVATE-TOKEN</private>',null]] as [$text,$expected]) {
+    $body='<interface-response><Command>Purchase</Command><ErrCount>1</ErrCount><Done>true</Done><RRPCode>545</RRPCode>'
+        .'<errors><Err1>'.htmlspecialchars($text,ENT_XML1).'</Err1></errors><debug>PRIVATE-TOKEN</debug></interface-response>';
+    $reply=$parser->parse(RegistrationCommand::Purchase,$body);
+    same(['code'=>'545','text'=>$expected],get_object_vars($reply->registrarReply()),'Bounded sanitized diagnostic');
+    same('unknown',$reply->status,'Diagnostic never makes the refusal terminal');
+    expect(!str_contains(json_encode($reply->registrarReply()),'PRIVATE-'),'No private error values survive');
+    same(null,$reply->value('errors'),'Non-success still discards all raw protocol data');
+}
+$reply=$parser->parse(RegistrationCommand::Purchase,'<interface-response><Command>Purchase</Command><ErrCount>1</ErrCount><Done>true</Done>'
+    .'<errors><Err1>Invalid nameserver information</Err1></errors><responses><response><ResponseNumber>316153</ResponseNumber>'
+    .'</response></responses></interface-response>');
+same(['code'=>'316153','text'=>'Invalid nameserver information'],get_object_vars($reply->registrarReply()),'Nested eNom response number survives');
+same(null,\Paymenter\Extensions\Servers\Domains\Data\RegistrarReply::fromArray(['code'=>'545','text'=>'PRIVATE-TOKEN']),
+    'Malformed saved diagnostics cannot expose arbitrary text');
+
+foreach (['<RRPCode>545</RRPCode>','<RRPCode>200</RRPCode><Err1>Invalid nameserver information</Err1>'] as $unconfirmed) {
+    $reply=$parser->parse(RegistrationCommand::Purchase,envelope('Purchase',$unconfirmed));
+    same('unknown',$reply->status,'A contradictory or unsuccessful acknowledgement stays uncertain');
+    expect($reply->registrarReply()!==null,'Numeric Purchase evidence survives outside the ErrCount failure branch');
+}
+
+$reply=$parser->parse(RegistrationCommand::Purchase,envelope('Purchase','<responses><response><ResponseNumber>1300</ResponseNumber></response></responses>'));
+same(['success',null,null],[$reply->status,$reply->code,$reply->registrarReply()],
+    'A diagnostic response number cannot change an incomplete acknowledgement into pending acceptance');
+
 $binding = new AccountBinding('enom', 1, Environment::Test, 'synthetic-uid');
 $transport = new class implements Transport {
     public int $calls = 0;
