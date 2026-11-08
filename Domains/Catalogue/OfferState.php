@@ -111,11 +111,8 @@ final class OfferState
             if ($p->retail !== null) { $retail[$c->key()] = OfferState::money($p->retail, 2) ?? throw new \DomainException('Invalid published retail.'); }
         }
         $revision = self::revision($tld, $defaults, $policy);
-        $published = null;
-        if (!$publishing && $tld->catalogue_published_revision !== null) {
-            $saved = self::decode($tld->catalogue_published_revision);
-            $published = new Revision(...[...$saved, 'retailRule' => $saved['retailRule'] ?? 0]);
-        }
+        $saved = self::decode($tld->catalogue_published_revision);
+        $published = $tld->catalogue_published_revision === null ? null : new Revision(...[...$saved, 'retailRule' => $saved['retailRule'] ?? 0]);
         $selected = $policy && (int) $policy->server_id === $binding->serverId
             && $policy->registrar_key === $binding->registrarKey && $policy->account_fingerprint === $binding->fingerprint;
         $actions = [];

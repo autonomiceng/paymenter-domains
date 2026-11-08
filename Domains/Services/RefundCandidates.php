@@ -23,20 +23,6 @@ final class RefundCandidates
             ->whereIn($prefix.'action',self::ACTIONS)->where(fn($q)=>$q->whereNull($prefix.'safe_code')
                 ->orWhereNotIn($prefix.'safe_code',self::SKIPPED));
     }
-    /** A failed retained proof needs repair, not repeated native holding locks. Money is still checked by Refunds. */
-    public static function automatic(Operation $op): bool
-    {
-        if ($op->funding_basis !== 'complimentary' || $op->action !== 'register' || $op->safe_code !== RegistrationRefusals::CODE) { return true; }
-        try {
-            $domain=$op->domain;
-            if ($domain && RegistrationRefusals::proved($op,$domain)) { return true; }
-            $key='domains.refusal-proof.'.$op->id.'.'.hash('sha256',serialize([$op->getAttributes(),$domain?->getAttributes()]));
-            if (\Illuminate\Support\Facades\Cache::add($key,true,86400)) {
-                \Illuminate\Support\Facades\Log::warning('Complimentary registration closure needs retained refusal evidence.',['operation_id'=>(int)$op->id]);
-            }
-        } catch (\Throwable) { /* Unreadable evidence is not authority, and diagnostics cannot break other rows. */ }
-        return false;
-    }
     public static function matches(Operation $op, array $funding): bool
     {
         return $op->state==='rejected' && ($op->funding_basis==='paid_invoice'||($op->funding_basis==='complimentary'&&$op->action==='register'&&$op->safe_code===RegistrationRefusals::CODE

@@ -365,8 +365,8 @@ final class Writer implements Catalogue
             foreach ($seller ? $offers : [$target] as $offer) {
                 $id = (int) $offer->server_id; $account = $accounts[$id]; $b = AccountBindings::binding($account);
                 $d = OfferState::decode($account->catalogue_defaults);
-                $retailUpgrade = $offer->catalogue_published_revision !== null
-                    && self::retailVersion($offer->catalogue_published_revision) !== Retail::VERSION;
+                $retailUpgrade = $command instanceof Edit && $command->kind === 'republish'
+                    && (OfferState::decode($offer->catalogue_published_revision)['retailRule'] ?? 0) !== Retail::VERSION;
                 $offer->catalogue_revision = (int) $offer->catalogue_revision + 1;
                 $annual = $offer->catalogue_retained_annual_retail;
                 $published = $command instanceof Edit && $command->kind === 'retail'
@@ -388,12 +388,6 @@ final class Writer implements Catalogue
             if (!$reviewed) { $this->audit($servers[$binding->serverId], $command, $revision, $result, $now); }
             $this->afterCommit();
             return $result;
-    }
-
-    private static function retailVersion(?string $marker): int
-    {
-        try { return (int)(OfferState::decode($marker)['retailRule'] ?? 0); }
-        catch (\Throwable) { return 0; }
     }
 
     /** Only current registrar terms that list 1-year transfers allow them; missing or stale terms leave the row off. */

@@ -12,9 +12,10 @@ use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AcquisitionO
 extract(commerceFixture(true, ending: 'net', registrars: ['enom']));
 $b = AccountBindings::binding(Account::where('server_id', $tlds[0]->server_id)->sole());
 config(['domains.enom_identity.environment' => 'test', 'domains.enom_catalogue.enabled' => true,
-    'domains.enom_writes.registration' => true, 'domains.enom_writes.renewal' => true]);
+    'domains.enom_writes.registration' => true, 'domains.enom_writes.renewal' => true, 'domains.enom_writes.transfer'=>true]);
 App\Models\Server::findOrFail($b->serverId)->settings()->updateOrCreate(['key' => EnomTestRenewal::KEY],
     ['type' => 'string', 'encrypted' => true, 'value' => json_encode(['fingerprint' => $b->fingerprint, ...EnomTestRenewal::protocol($b)])]);
+App\Models\Server::findOrFail($b->serverId)->settings()->updateOrCreate(['key'=>Paymenter\Extensions\Servers\Domains\Services\EnomTestTransfer::KEY],['type'=>'string','encrypted'=>true,'value'=>json_encode(['fingerprint'=>$b->fingerprint,...Paymenter\Extensions\Servers\Domains\Services\EnomTestTransfer::protocol($b)])]);
 $offers = CallerRouting::resolve(AcquisitionOffers::class);
 $command = new Paymenter\Extensions\Servers\Domains\Console\PriceMatch;
 $console = new Symfony\Component\Console\Application; $console->add($command); $command->setLaravel(app());
