@@ -260,9 +260,9 @@ final class Writer implements Catalogue
         $sell = $new->sell ?? ($defaults['defaultSell'] ?? true);
         $longest = $new->longest ?? ($defaults['defaultLongest'] ?? 1);
         $transfer = ($new->transfers ?? ($defaults['defaultTransfers'] ?? false)) && !in_array('transfer', $new->stops, true);
-        if ($edit->sellerTransfers !== true) {
-            $transfer = $transfer && (bool) DB::table('domains_sales_policies')->where('tld', $t->tld)->value('transfer_enabled');
-        }
+        $sellerTransfers = $edit->kind === 'seller' ? in_array('transfer', $edit->actions, true)
+            : ($edit->sellerTransfers ?? (bool) DB::table('domains_sales_policies')->where('tld', $t->tld)->value('transfer_enabled'));
+        $transfer = $transfer && $sellerTransfers;
         $widen = $sell && !($old['sell'] ?? $defaults['defaultSell'] ?? true)
             || $longest > ($old['longest'] ?? $defaults['defaultLongest'] ?? 1)
             || $transfer && !($old['transfers'] ?? $defaults['defaultTransfers'] ?? false)

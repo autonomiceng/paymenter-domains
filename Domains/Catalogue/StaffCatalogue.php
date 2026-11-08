@@ -215,6 +215,25 @@ final class StaffCatalogue
     }
     public function fee(int $server): array
     {Staff::requireView();return CardFee::read();}
+    /** Sale filtering needs eligibility only, not page prices, queue history or holder counts.
+     * Each load is capped at the reader's 500 identities. Results live in the caller's request only. */
+    public function saleIds(Collection $tlds): array
+    {
+        Staff::requireView();if($tlds->count()>500){throw new \DomainException('Sale filter exceeds 500 rows.');}
+        if($tlds->isEmpty()){return [];}
+        $accounts=Account::whereIn('server_id',$tlds->pluck('server_id'))->get()->keyBy('server_id');$queries=[];
+        foreach($tlds->groupBy('server_id')as$server=>$rows){$queries[]=new Query(AccountBindings::binding($accounts[$server]),$rows->pluck('tld')->all(),'register');}
+        $loaded=$this->ports->staffBatch($queries);$offers=[];
+        foreach($queries as$i=>$q){foreach($loaded[$i]as$name=>$rows){$offers[$q->binding->serverId.':'.$name]=$rows;}}
+        $ids=[];$once=[];
+        foreach($tlds as$t){
+            try{self::ruleOnce($t,$once);}catch(\Throwable){continue;}
+            foreach($offers[$t->server_id.':'.$t->tld]??[]as$offer){
+                if(in_array($offer->decision->action,['register','transfer'],true)&&$offer->decision->available){$ids[]=(int)$t->id;break;}
+            }
+        }
+        return $ids;
+    }
     /** Each call is at most one table page. Same evaluator and observation evidence as the public adapter. */
     public function page(Collection $tlds): array { return $this->pageFor($tlds,Staff::requireView()); }
     /** One rights read covers the page: snapshot costs and the offers left for staff without costs. */

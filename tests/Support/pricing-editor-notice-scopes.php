@@ -14,13 +14,12 @@ namespace {
         $notice=\Paymenter\Extensions\Servers\Domains\Admin\Support\PricingEditorNotice::class;
         $tld=\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewTld::class;
         $product=\App\Admin\Resources\ProductResource\Pages\EditProduct::class;
-        $all=[$tld,$product];
+        $all=[$product];
         $root=\Filament\Support\Facades\FilamentView::getFacadeRoot();
         $logger=\Illuminate\Support\Facades\Log::getFacadeRoot();
         try{
             foreach([
-                [$product.'::getRecord',[$tld]],
-                [$tld.'::getRecord',[$product]],
+                [$product.'::getRecord',[]],
                 [\Filament\Support\View\ViewManager::class.'::registerRenderHook',[]],
                 [\Livewire\LivewireManager::class.'::current',[]],
                 [\Filament\View\PanelsRenderHook::class.'::PAGE_HEADER_WIDGETS_BEFORE',[]],
@@ -30,6 +29,7 @@ namespace {
                 \Illuminate\Support\Facades\Log::swap($logger);
                 \Illuminate\Support\Facades\Log::spy();
                 $notice::boot();
+                same(false,\Filament\Support\Facades\FilamentView::hasRenderHook(\Filament\View\PanelsRenderHook::PAGE_HEADER_WIDGETS_BEFORE,$tld),'TLD never registers the Product notice');
                 same($missing,$notice::missing(),'Missing page APIs remain visible to staff diagnostics');
                 $warning=collect(\Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::system()['failing'])->firstWhere('label','Pricing change warning');
                 expect($warning!==null&&str_contains($warning['help'],$missing),'System checks identify the exact missing pricing notice API');

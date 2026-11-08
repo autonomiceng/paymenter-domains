@@ -58,6 +58,10 @@ same('rejected',$parser->parse(RegistrationCommand::Purchase,$onlyResponse)->sta
 $twoErrors=str_replace(['<ErrCount>1</ErrCount>','</errors>'],['<ErrCount>2</ErrCount>','<Err2>Validation error. Failed to create order.</Err2></errors>'],$purchaseRefusal);
 same('rejected',$parser->parse(RegistrationCommand::Purchase,$twoErrors)->status,'Multiple consistent errors retain explicit order-creation refusal');
 
+$hundredErrors=str_replace('<ErrCount>1</ErrCount>','<ErrCount>100</ErrCount>',preg_replace('~<errors>.*?</errors>~s','<errors>'.implode('',array_map(static fn($n)=>'<Err'.$n.'>Validation error. Failed to create order.</Err'.$n.'>',range(1,100))).'</errors>',$purchaseRefusal));
+$boundary=$parser->parse(RegistrationCommand::Purchase,$hundredErrors);
+same('rejected',$boundary->status,'One hundred matching errors retain the exact refusal boundary');expect($boundary->value('purchase_refusal')!==null,'Complete boundary carries refusal proof');
+
 // The recorded 541 has ResponseCount=1; synthetic response-only and errors-only
 // controls remain complete only with their explicit matching response count.
 $errorsOnly=str_replace('<ResponseCount>1</ResponseCount>','<ResponseCount>0</ResponseCount>',preg_replace('~<responses>.*?</responses>~s','',$purchaseRefusal));

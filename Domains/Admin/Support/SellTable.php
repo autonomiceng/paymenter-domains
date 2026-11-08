@@ -37,11 +37,13 @@ final class SellTable
     /** Use the same sale decision as the TLD status, in bounded pages, before table pagination. */
     public function forSale(Builder $query): Builder
     {
+        Staff::requireView();
         if($this->forSaleIds===null){
             $this->forSaleIds=[];
-            $this->tlds($this->source()->rows($this->bindings,null)->get(['server_id','tld'])->all())->chunk(100)->each(function($page):void {
-                foreach($this->source()->page($page) as $id=>$fact){if($fact['sales']['label']==='For sale'){$this->forSaleIds[]=$id;}}
-            });
+            // Scope candidates before eligibility reads. Never load full off-page staff snapshots.
+            foreach((clone $query)->get(['server_id','tld'])->chunk(500)as$rows){
+                array_push($this->forSaleIds,...$this->source()->saleIds($this->tlds($rows->all())));
+            }
         }
         return $query->whereIntegerInRaw('id',$this->forSaleIds);
     }

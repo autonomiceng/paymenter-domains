@@ -100,7 +100,9 @@ foreach (['markup_percent', 'fixed'] as $mode) {
             DB::table('domains_tlds')->orderBy('id')->get()->toJson(), DB::table('prices')->orderBy('id')->get()->toJson()];
         $beforeFailure = $publication();
         DB::statement('CREATE TRIGGER refuse_retail_projection BEFORE UPDATE ON prices WHEN OLD.id = '.$twoYearPrice->id." BEGIN SELECT RAISE(ABORT, 'synthetic retail projection refusal'); END");
+        $deferrals=[];Illuminate\Support\Facades\Log::listen(static function($event)use(&$deferrals):void{if($event->message==='Domains retail upgrade deferred.'){$deferrals[]=$event->context;}});
         (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install(); // One retained TLD may defer without aborting installation.
+        same([['server_id'=>(int)$binding->serverId,'tld_id'=>(int)$tlds[0]->id]],$deferrals,'First install attempted and deferred the exact failing TLD once');
         DB::statement('DROP TRIGGER refuse_retail_projection');
         same($beforeFailure, $publication(), 'Native projection failure rolls back Domains publication and native prices together');
         (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
