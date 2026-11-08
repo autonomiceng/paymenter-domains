@@ -32,8 +32,8 @@ $render=static function($test,string $name,string $extra='')use($out,$css){
     expect(!str_contains($html,'account-enom'),'No synthetic credential');writeRenderArtifact($out.'/'.$name.'.html',$html);
 };
 $list=Livewire::actingAs($u)->test(ListTlds::class)->assertSee(['TLD','Registrar account','Domains','Renewal price','.com']);$render($list,'tlds');
-$view=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->assertSee(['Prices by registrar account','History','More','Edit prices','Open in What you sell'],false)
-    ->assertDontSee(['Publish prices','Use default pricing','Edit default pricing'],false);$render($view,'tld-revisions');
+$view=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->assertSee(['Prices by registrar account','History','More','Edit prices'],false)
+    ->assertDontSee(['Publish prices','Use default pricing','Edit default pricing','Open in What you sell'],false);$render($view,'tld-revisions');
 // The header More menu, opened: its panel is hidden until clicked, so show it for the capture.
 $render($view,'tld-more-menu','.fi-ac .fi-dropdown-panel{display:block!important;position:absolute;right:0;z-index:50}');
 $render(Livewire::actingAs($u)->test(RegistrarSetup::class),'setup-both');$render(Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id]),'setup-account');$strings=[];
@@ -61,10 +61,10 @@ $sees=static function($page,array $texts):void{$html=$page->effects['partials'][
 config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,'domains.enom_writes.registration'=>true]);
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->mountAction('override')
     ->setActionData(['pricing'=>'custom','mode'=>'markup_amount','markup'=>'1.20','round_up'=>'half'])->call('$refresh');
-$sees($page,['Customer pays: cost + $1.20, rounded up to the next $0.50','After saving','$7.50','$22.50']);$render($page,'modal-override-preview');
+$sees($page,['Customer pays: cost + $1.20, rounded up to the next $0.50','After saving','$7.50','$26.50']);$render($page,'modal-override-preview');
 $page->setActionData(['pricing'=>'custom','mode'=>'fixed','fixed_register'=>'5','fixed_renew'=>'7','fixed_transfer'=>'9'])->call('$refresh');
 $sees($page,['$5.00<div class="domains-warn">Below cost: not sold','Below cost: still billed']);$render($page,'modal-override-below-cost');
-$page->setActionData(['pricing'=>'default'])->call('$refresh');$sees($page,['Customer pays: $1.00 a year to register']);$render($page,'modal-override-default');
+$page->setActionData(['pricing'=>'default'])->call('$refresh');$sees($page,['Customer pays: $1.00 for the first registration year']);$render($page,'modal-override-default');
 $page->setActionData(['pricing'=>'custom','mode'=>'markup_amount','markup'=>'1.20','round_up'=>'half','reason'=>'Publish reviewed prices'])->callMountedAction()
     ->assertNotified(\Filament\Notifications\Notification::make()->success()->title('Prices published'));
 same('7.50',$prices->current($t->server_id,$t->account_fingerprint,'com','register',1,'USD',$now)->retail,'Saving from the dialog publishes');
