@@ -29,6 +29,8 @@ $wire = new class implements DeadlineTransport {
     public array $calls = [];
     public string $body = '{"request":{"operation":"getAccountBalance"},"reply":{"code":300,"detail":"synthetic","balance":"0.00"}}';
     public ?Closure $during = null;
+    public int $status = 200;
+    public bool $timeout = false;
     public function send(WireEnvironment $environment, WireContext $context, RegistrarRequest $request, string $apiKey): TransportResponse
     { throw new LogicException('Authentication requires a deadline.'); }
     public function sendWithin(WireEnvironment $environment, WireContext $context, RegistrarRequest $request, string $apiKey, int $timeoutMs): TransportResponse
@@ -36,7 +38,8 @@ $wire = new class implements DeadlineTransport {
         same(0, DB::transactionLevel(), 'Key authentication never holds database locks');
         $this->calls[] = [$environment, $context, $request->command, $request->parameters(), $timeoutMs];
         if ($this->during) { $during = $this->during; $this->during = null; $during(); }
-        return new TransportResponse(200, $this->body);
+        if ($this->timeout) { throw new RuntimeException('synthetic deadline elapsed'); }
+        return new TransportResponse($this->status, $this->body);
     }
 };
 $auth = new \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\CredentialAuthenticator(Environment::Live, $wire);
