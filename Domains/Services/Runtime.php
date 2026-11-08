@@ -70,8 +70,8 @@ final class Runtime
             HookDiagnostics::unavailable($feature,$notice,$feature==='Start after payment'?[\App\Events\Invoice\Paid::class]:NativePaidHooks::serviceMissing());}}});
         foreach(['saved','deleted']as$event) {
             Event::listen('eloquent.'.$event.': '.\App\Models\Service::class,static function($service):void {
-                $product=(int)$service->product_id;
-                \Illuminate\Support\Facades\DB::afterCommit(fn()=>app(WatchDiscoveryWork::class)->hint($product));
+                $products=array_unique([(int)$service->product_id,(int)$service->getRawOriginal('product_id')]);
+                \Illuminate\Support\Facades\DB::afterCommit(static function()use($products):void {foreach($products as$product){app(WatchDiscoveryWork::class)->hint($product);}});
             });
             Event::listen('eloquent.'.$event.': '.\App\Models\Property::class,static function($property):void {
                 if ($property->model_type!==(new \App\Models\Service())->getMorphClass()) { return; }
@@ -91,8 +91,15 @@ final class Runtime
         });
         Event::listen('eloquent.saved: '.\Paymenter\Extensions\Servers\Domains\Models\Domain::class,static function($domain):void {
             if(!$domain->wasRecentlyCreated && !$domain->wasChanged(['status','service_id','user_id','server_id','authority_generation','confirmed_revision','provider_expires_at'])){return;}
-            $id=(int)$domain->id;$owner=(int)$domain->user_id;
-            \Illuminate\Support\Facades\DB::afterCommit(fn()=>app(WatchWork::class)->enrollManaged($id,$owner));
+            $id=(int)$domain->id;$owner=(int)$domain->user_id;$name=$domain->reservation_name;
+            \Illuminate\Support\Facades\DB::afterCommit(static function()use($id,$owner,$name):void {
+                app(WatchWork::class)->enrollManaged($id,$owner);
+                if(!app(WatchDiscoveryWork::class)->ready()){return;}
+                try{
+                    $maps=\Paymenter\Extensions\Servers\Domains\Models\WatchProductMap::whereIn('id',\Paymenter\Extensions\Servers\Domains\Models\WatchSource::where('user_id',$owner)->where('registrable_name',$name)->whereNotNull('service_id')->select('map_id'))->orderBy('product_id')->limit(100)->pluck('product_id');
+                    foreach($maps as$product){app(WatchDiscoveryWork::class)->hint((int)$product);}
+                }catch(\Throwable){\Illuminate\Support\Facades\Log::warning('Public domain managed link hint deferred.');}
+            });
         });
         foreach([\Paymenter\Extensions\Servers\Domains\Models\WatchName::class,\Paymenter\Extensions\Servers\Domains\Models\WatchSource::class] as $model){
             Event::listen('eloquent.saved: '.$model,static function($row):void {

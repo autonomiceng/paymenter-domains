@@ -11,6 +11,12 @@ final class WatchSource extends WatchRecord
     protected array $identity = ['id', 'user_id', 'hostname', 'registrable_name', 'map_id'];
     protected $hidden = ['source_digest'];
     protected $casts = ['revision' => 'integer', 'map_revision' => 'integer', 'last_seen_at' => 'integer'];
+    /** Suspended hosting stays in history but cannot veto a live sibling's public checks or display stamp. */
+    public function scopeWithActiveWatchServices(\Illuminate\Database\Eloquent\Builder $query): void
+    {
+        $query->where(fn($q)=>$q->whereNull('watch_id')->orWhereExists(fn($q)=>$q->selectRaw('1')->from('services as s')
+            ->whereColumn('s.id','domains_watch_sources.service_id')->where('s.status','active')));
+    }
     protected function validateRecord(): void
     {
         if ($this->exists && $this->getRawOriginal('state') === 'retired') { throw new \DomainException('Retired source history is immutable.'); }
