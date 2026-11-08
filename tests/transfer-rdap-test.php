@@ -30,8 +30,10 @@ function lookup(array $body, ?DateTimeImmutable $now = null, int $created = 60, 
     return $rdap->precheck('example.com', $created, $transferred, $now ?? new DateTimeImmutable('2026-10-17T12:00:00Z'));
 }
 $result = lookup($body);
-verify($result === ['allowed' => true, 'code' => null, 'warning' => null, 'expires_at' => '2027-01-01', 'comparison_allowed' => true], 'Valid lookup failed.');
+verify($result === ['allowed' => true, 'code' => null, 'warning' => null, 'expires_at' => '2027-01-01', 'registrar_locked' => false, 'comparison_allowed' => true], 'Valid lookup failed.');
 verify($requests === ['https://data.iana.org/rdap/dns.json', 'https://rdap.example.com/domain/example.com'], 'Lookup ignored the bootstrap/name endpoint.');
+$locked = $body; $locked['status'] = ['active', 'clientTransferProhibited']; $lockedResult = lookup($locked);
+verify(!$lockedResult['allowed'] && $lockedResult['code'] === 'transfer_locked' && $lockedResult['registrar_locked'] === true && $lockedResult['comparison_allowed'] === false, 'Registrar lock was not reported.');
 $candidate = $body; $candidate['status'] = ['unrecognized-status']; $advisory = lookup($candidate);
 verify($advisory['allowed'] && $advisory['comparison_allowed'] === false, 'Unknown status must preserve ordinary advisory admission but refuse a watch comparison.');
 $compound = $body; $compound['ldhName'] = 'example.co.nz';
