@@ -148,7 +148,7 @@ final class TldFacts
                 $gap=$gap||($state['value']!==null&&in_array($state['value'],[\Paymenter\Extensions\Servers\Domains\Presentation\Missing::LABEL,'Not for sale'],true));
                 return $html;
             };
-            $transfers=!in_array('transfer',$fact['intent']['stops']??[],true)&&($fact['intent']['transfers']??$fact['defaults']['defaultTransfers']??false);
+            $transfers=!in_array('transfer',$fact['intent']['stops']??[],true)&&($fact['intent']['transfers']??$fact['intent']['defaultTransfers']??false);
             $transfer=$first('transfer');$transfer=!($fact['unreadable']??false)&&!($fact['invalid_rule']??false)&&!$transfers&&($transfer['retail']??null)===null?'Off':$price('transfer');
             $name=(string)$row->server?->name;
             $account=(RegistrarFacts::accountLink((int)$row->server_id,$name)?->toHtml()??e($name)).($fact['demo']?' '.DemoData::tag(inline:true)->toHtml():'')
@@ -158,7 +158,8 @@ final class TldFacts
             if($grants->costs){$cells.=self::cell($price('renew','cost'));}
             $cells.=self::cell(e((string)$fact['holders']));
             // Said in the page head: no registrar selected, or this TLD's own reason.
-            $causes=array_values(array_filter(array_unique($causes),fn(string $c)=>$c!==self::NO_SELLER&&!($own&&$c===$said)));
+            if(($fact['seller']??null)===null&&$said!==self::NO_SELLER){$causes[]=self::NO_SELLER;}
+            $causes=array_values(array_filter(array_unique($causes),fn(string $c)=>!($c===self::NO_SELLER&&$said===self::NO_SELLER)&&!($own&&$c===$said)));
             $note=implode(' ',array_map(fn(string $c)=>rtrim($c,'.').'.',$causes));
             // Another account's refresh is not on this page yet. The page's own account shows it in Price sync.
             if($gap&&!$own&&!($fact['invalid_rule']??false)){$note=trim($note.' '.self::refreshText($fact['refresh']??[]));}
@@ -176,6 +177,8 @@ final class TldFacts
 
     /** The one fix for each reason a TLD with a saved price is not for sale. */
     public const FIXES=['Cost out of date'=>'See the next refresh on this TLD.','Cost missing'=>'The registrar price feed must supply the exact cost.','Prices not published'=>'Open Edit prices and save.','Below cost'=>'Raise the price in Edit prices.','Price missing'=>'Open Edit prices and save.','Prices need checking'=>'Check the registrar account and the last refresh failure.',self::NO_SELLER=>'Open the TLD and use Change registrar.'];
+    public static function fixText(string $reason):string
+    {return $reason===self::NO_SELLER&&!(Staff::can(Staff::POLICY)&&Staff::can(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::permission('seller')))?'Ask staff who can change the registrar.':(self::FIXES[$reason]??'');}
     /** For sale or Not for sale, with the reason it is not for sale. */
     public static function salesState(Tld $t, ?StaffGrants $grants = null): array
     {return self::snapshot($t,$grants)['sales'];}

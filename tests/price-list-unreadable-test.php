@@ -71,12 +71,12 @@ foreach($cases as $case){
         foreach([5,9,13] as $offset){same(['Left out','Left out','Left out','Left out: '.lcfirst($reason)],array_slice($record,$offset,4),'Omitted amounts never invent saved prices');}
         same(['Left out','Left out'],array_slice($record,17),'Unreadable formula and fee are explicit');
     }
-    $page=Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful()->set('account',WhatYouSell::ALL)->filterTable('for_sale',false)->assertSee('Left out')->assertSee('so these have no price:')->assertDontSee('Some TLDs are left out')->assertSee('Fix it in Default pricing at the top of this page.');
+    $page=Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful()->set('account',WhatYouSell::ALL)->filterTable('for_sale',false)->assertSee('Left out')->assertSee('so prices are left out for:')->assertDontSee('Some TLDs are left out')->assertSee('Fix it in Default pricing at the top of this page.');
     $html=$page->html();
     $dom=new DOMDocument;@$dom->loadHTML($html);$xpath=new DOMXPath($dom);
     $warningText=$xpath->evaluate('normalize-space(//*[@data-price-omission])');
     $labels=array_values(array_unique(array_column($matrix['skipped'],'tld')));
-    same(($cause==='card_fee'?"The card fee can't be read":$reason).', so these have no price: '.implode(', ',$labels).'. Fix it in Default pricing at the top of this page.',$warningText,'Warning names the cause, every grouped TLD and repair location');
+    same(($cause==='card_fee'?"The card fee can't be read":$reason).', so prices are left out for: '.implode(', ',$labels).'. Fix it in Default pricing at the top of this page.',$warningText,'Warning names the cause, every grouped TLD and repair location');
     same(count($labels),(int)$xpath->evaluate('count(//*[@data-price-omission]//*[@data-omitted-tld])'),'Page identifies every omitted TLD once');
     $page->assertCountTableRecords(count($matrix['rows'])+count($matrix['skipped']));
     expect((int)$xpath->evaluate('count(//*[@data-price-omission]/ancestor::*[contains(concat(" ",normalize-space(@class)," ")," fi-sc-callout ") and contains(@class,"fi-color-warning")])')===1,'Unreadable prices appear in an amber callout');

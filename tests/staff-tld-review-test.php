@@ -41,6 +41,7 @@ $column=$notes->instance()->getTable()->getColumn('note')->record($tlds[1]);
 $check(str_contains((string)$column->getState(),'Ask staff who can change the registrar.'),'Read-only list recovery does not offer a hidden Change registrar action');
 Auth::setUser($actor);
 // Retained per-TLD transfer defaults apply when the account has not overridden them.
+$a=Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$t->server_id)->sole();$defaults=OfferState::decode($a->catalogue_defaults);unset($defaults['defaultTransfers']);$a->catalogue_defaults=OfferState::json($defaults);$a->save();
 DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_intent'=>OfferState::json([...array_diff_key($intent,['transfers'=>true]),'defaultTransfers'=>true])]);
 Paymenter\Extensions\Servers\Domains\Models\Price::where(['server_id'=>$t->server_id,'tld'=>$t->tld,'action'=>'transfer'])->delete();
 $html=TldFacts::accountsTable($t->fresh(),Staff::requireView())->toHtml();$dom=new DOMDocument;@$dom->loadHTML($html);$xp=new DOMXPath($dom);
