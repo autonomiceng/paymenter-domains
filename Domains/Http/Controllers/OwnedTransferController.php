@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Http\Controllers;
 use Illuminate\Http\Request;
 use Paymenter\Extensions\Servers\Domains\Services\Storefront;
 use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
-/** Authenticated entry only. Checks and native cart admission retain the storefront's independent proof. */
+/** Public entry only. Checks and native cart admission retain the storefront's independent proof. */
 final readonly class OwnedTransferController
 {
     public function __construct(private Storefront $storefront) {}

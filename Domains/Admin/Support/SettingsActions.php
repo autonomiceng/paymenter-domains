@@ -148,7 +148,8 @@ final class SettingsActions
                     $fields[]=\Filament\Schemas\Components\Text::make(fn()=>'Off in Paymenter, so skipped: '.implode(', ',$reach()['off']).'. Prices there catch up once it is back on.')->key('reach_off')->visible(fn()=>$reach()['off']!==[]);
                 }
             }
-            if($name==='tld_settings'){
+            if($name==='seller'&&($message=TldRegistrar::refusal($error,$data,$tld))!==null){return $message;}
+        if($name==='tld_settings'){
                 // Offer only what the saved account terms allow; the writer still checks every change.
                 $allowed=self::cached(static fn()=>self::allowedTerms($server,$tld));
                 $years=static function(string $bound)use($allowed):int{$a=$allowed();return $a===null?($bound==='min'?1:10):$a[$bound];};
@@ -176,7 +177,12 @@ final class SettingsActions
             }
             if($name==='seller'){
                 $policy=self::cached(static fn()=>\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld',Tld::findOrFail($tld)->tld)->first());
-                $fields[]=Select::make('seller')->label('Registrar for new orders')->options(fn()=>\App\Models\Server::whereIn('id',Account::pluck('server_id'))->orderBy('id')->pluck('name','id')->all())->placeholder('None')->default(fn()=>$policy()?->server_id);
+                $choices=self::cached(static fn()=>TldRegistrar::choices($tld));
+                $fields[]=Select::make('seller')->label('Registrar for new orders')
+                    ->options(fn()=>array_map(static fn($row)=>$row['label'],$choices()))
+                    ->disableOptionWhen(fn($value)=>$choices()[(int)$value]['disabled']??true)
+                    ->helperText(fn()=>new \Illuminate\Support\HtmlString(implode('<br>',array_map(static fn($row)=>e($row['label'].': '.$row['reason']),array_filter($choices(),static fn($row)=>$row['reason']!==null)))))
+                    ->placeholder('None')->default(fn()=>$policy()?->server_id);
                 $fields[]=Checkbox::make('register')->label('Allow registrations')->default(fn()=>$policy()?->register_enabled??false);$fields[]=Checkbox::make('transfer')->label('Allow transfers')->default(fn()=>$policy()?->transfer_enabled??false);
             }
             if($name==='renewal_billing'){
@@ -517,6 +523,6 @@ final class SettingsActions
                 'TEST renewal deployment is unavailable.'=>'Test renewals are off for this account or site. Check the Renewals row on the account page. Nothing was saved.',
                 'Enom TEST acquisition route acceptance is unavailable.'=>self::ADMIN_ORDERS,
                 'Enom TEST Purchase route acceptance is unavailable.'=>self::ADMIN_ORDERS,
-                default=>$name==='enroll_sandbox'?self::GENERIC_OUTCOME_UNKNOWN:'Check this page, then try again. If it fails again, open System checks on the registrar account.'};
+                default=>match($name){'enroll_sandbox'=>self::GENERIC_OUTCOME_UNKNOWN,'seller'=>'The registrar change could not be saved. Reopen Change registrar and try again.',default=>'Check this page, then try again. If it fails again, open System checks on the registrar account.'}};
     }
 }

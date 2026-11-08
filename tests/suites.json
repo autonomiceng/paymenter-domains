@@ -750,7 +750,18 @@
     "tests/price-match-test.php",
     "tests/registration-return-projection-test.php",
     "tests/registration-complimentary-refusal-test.php",
-    "tests/staff-registrar-diagnostic-test.php"
+    "tests/staff-registrar-diagnostic-test.php",
+    "tests/tld-start-stop-sales-test.php",
+    "tests/tld-stop-keeps-transfers-test.php",
+    "tests/tld-start-unread-terms-test.php",
+    "tests/tld-registrar-options-test.php",
+    "tests/tld-registrar-sales-test.php",
+    "tests/tld-sales-one-state-test.php",
+    "tests/tld-sales-transfers-off-test.php",
+    "tests/staff-sales-list-test.php",
+    "tests/storefront-cart-owner-test.php",
+    "tests/shopping-entry-test.php",
+    "tests/retail-preview-test.php"
   ],
   "ui": [],
   "runner": [
