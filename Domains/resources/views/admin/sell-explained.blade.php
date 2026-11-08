@@ -3,7 +3,7 @@
         <div class="domains-price-help">
             <p>Each TLD uses Default pricing, or Custom pricing set just for that TLD. Registration uses the first-year price plus renewal prices for later years. Each annual price is rounded first. Default pricing and the card fee are set here, in Default pricing.</p>
             @foreach($explanations as $group)
-                <p><strong>{{ $group['account'] }} — {{ $group['pricing'] }}</strong>: {{ $group['formula'] }}
+                <p><strong>{{ $group['account'] }}: {{ $group['pricing'] }}</strong>: {{ $group['formula'] }}
                     Card fee: {{ is_array($group['fee']) ? \Paymenter\Extensions\Servers\Domains\Services\CardFee::describe($group['fee']) : $group['fee'] }}.
                     {{ $group['fee_in_price'] ? 'The pricing formula includes this fee.' : 'This fee reduces estimated profit; it is not added to the price.' }}
                     TLDs: {{ implode(', ', $group['tlds']) }}.</p>
