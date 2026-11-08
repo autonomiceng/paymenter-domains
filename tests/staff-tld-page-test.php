@@ -153,7 +153,7 @@ $syncFailureFixture=static function(?string $code,?string $at)use($enom,$now):vo
 };
 $syncFailureFixture('catalogue_reader_unavailable','2026-10-18T13:05:00+00:00');
 $cause="Couldn't load the registrar account's settings";
-same(['cause'=>$cause,'at'=>'Oct 18, 2026 13:05 UTC'],TldFacts::syncFailure($enom->server_id),'Stored failure code becomes its cause');
+same(['cause'=>$cause,'timestamp'=>(new DateTimeImmutable('2026-10-18T13:05:00Z'))->getTimestamp(),'at'=>'Oct 18, 2026 13:05 UTC'],TldFacts::syncFailure($enom->server_id),'Stored failure code becomes its cause');
 same('Sync failed: '.$cause,TldFacts::refreshState($enom->server_id),'Refresh state names the cause');
 $list=Livewire::actingAs($u)->test(ListTlds::class)->assertSuccessful()
     ->assertSee('Price sync failed for 1 registrar account.')->assertSee('Enom TEST identity check (account '.$enom->server_id.'): '.$cause.'.')->assertSee('New sales stop when registrar costs are out of date.')->assertSee('Open Registrars');
@@ -164,7 +164,7 @@ $clean($page->html(),'TLD page sync failed');
 Livewire::actingAs($u)->test(ViewTld::class,['record'=>$silo->id])->assertSuccessful()->assertDontSee('Sync failed');
 DB::table('domains_observation_queues')->where('server_id',$enom->server_id)->update(['catalogue_hold'=>'read_unavailable','catalogue_audit'=>'[]']);
 $syncFailureFixture('read_unavailable',null);
-same(['cause'=>'Registrar read failed','at'=>null],TldFacts::syncFailure($enom->server_id),'Older hold code keeps a plain cause and no time');
+same(['cause'=>'Registrar read failed','timestamp'=>null,'at'=>null],TldFacts::syncFailure($enom->server_id),'Older hold code keeps a plain cause and no time');
 // A retained failure older than the latest saved prices is history, not a current failure.
 DB::table('domains_observation_queues')->where('server_id',$enom->server_id)->update(['catalogue_hold'=>null,'catalogue_audit'=>json_encode([['code'=>'read_deadline',
     'server_id'=>$enom->server_id,'account_fingerprint'=>$enom->account_fingerprint,'at'=>'2026-10-18T11:00:00+00:00']])]);
@@ -173,7 +173,7 @@ same(null,TldFacts::syncFailure($enom->server_id),'Prices synced after the failu
 DB::table('domains_observation_queues')->where('server_id',$enom->server_id)->update(['catalogue_audit'=>json_encode([['code'=>'read_deadline',
     'server_id'=>$enom->server_id,'account_fingerprint'=>$enom->account_fingerprint,'at'=>'2026-10-18T12:30:00+00:00']])]);
 $syncFailureFixture('read_deadline','2026-10-18T12:30:00+00:00');
-same(['cause'=>"Registrar didn't answer in time",'at'=>'Oct 18, 2026 12:30 UTC'],TldFacts::syncFailure($enom->server_id),'A failure after the latest prices still shows');
+same(['cause'=>"Registrar didn't answer in time",'timestamp'=>(new DateTimeImmutable('2026-10-18T12:30:00Z'))->getTimestamp(),'at'=>'Oct 18, 2026 12:30 UTC'],TldFacts::syncFailure($enom->server_id),'A failure after the latest prices still shows');
 DB::table('domains_observation_queues')->where('server_id',$enom->server_id)->delete();
 
 // No registrar for new orders.

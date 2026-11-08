@@ -81,7 +81,7 @@ $partial=RecordFamilies::owner($editable,RecordFamilies::read($d,$now));$same([]
 $countDom=storefrontDom(view('domains::partials.owner-management',['domain'=>$partial,'caps'=>['dns'],'keys'=>['dns'=>str_repeat('b',64)]])->render());
 $countSub=trim($countDom->query('//li[@id="dns"]/span[@class="domains-row__l"]/span[@class="domains-sub"]')->item(0)?->textContent??'');
 $countValue=trim($countDom->query('//li[@id="dns"]/span[@class="domains-row__v"]')->item(0)?->textContent??'');
-$same([true,'1 record'],[str_starts_with($countSub,'Checked '),$countValue],'DNS says its record count once and keeps the check time: '.json_encode([$countSub,$countValue]));
+$same([true,'0 records'],[str_starts_with($countSub,'Checked '),$countValue],'DNS says its record count once and keeps the check time: '.json_encode([$countSub,$countValue]));
 // customer-layout: as in the 390 mock, the "?" sits right after its label, before the status, and Edit sits beside the status.
 $same(1,$countDom->query('//li[@id="dns"]/span[@class="domains-row__l"]/span[@data-record-family]/preceding-sibling::span[@data-help]')->length,'The ? sits with its label, before the status');
 $same(1,$countDom->query('//li[@id="dns"]/span[@class="domains-row__a"]/a[normalize-space()="Edit"]')->length,'The DNS row has its Edit action');

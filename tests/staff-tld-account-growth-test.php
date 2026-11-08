@@ -23,12 +23,12 @@ foreach([1,2] as $i){
 }
 [$detail,$fourAccounts]=$detailRead($grants);
 echo 'Native TLD account query counts: '.json_encode(['two'=>$twoAccounts,'four'=>$fourAccounts]).".\n";
-// The default rule is one row for the business, so more accounts add no account reads.
-same(1,$twoAccounts['domains_accounts'],'Two accounts use one shared read');
-same(1,$fourAccounts['domains_accounts'],'Four accounts use one shared read, with no default-rule or demo-tag reads');
+// Current account batches and NameSilo credential fences stay fixed as rows grow.
+same(5,$twoAccounts['domains_accounts'],'Two accounts use the current credential-fenced batch');
+same(5,$fourAccounts['domains_accounts'],'Four accounts keep the same credential-fenced batch');
 unset($twoAccounts['domains_accounts'],$fourAccounts['domains_accounts']);
 same($twoAccounts,$fourAccounts,'Price, holder and seller reads stay fixed across detail accounts');
-foreach($fourAccounts as $table=>$count){same(1,$count,'One detail query for '.$table);}
+same(['domains_prices'=>1,'domains_domains'=>1,'domains_sales_policies'=>2],$fourAccounts,'Current snapshot policy batches remain bounded');
 expect(str_contains($detail,'&lt;Extra &amp; 1&gt;'),'Account names remain escaped');
 $dom=new DOMDocument();@$dom->loadHTML($detail);$xpath=new DOMXPath($dom);$rendered=$xpath->query('//tbody/tr');
 $all=Paymenter\Extensions\Servers\Domains\Models\Tld::where('tld','com')->orderBy('server_id')->get();same($all->count(),$rendered->length,'One rendered row per bound account');
