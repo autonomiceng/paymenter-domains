@@ -85,7 +85,7 @@ same($annual->id, $native->annualPlan($registration)->id, 'Master stop preserves
 // Replacing the override intentionally supplies an empty stop list; background commands never do this.
 $apply(Edit::override($b, 'com', new Intent(sell: true, longest: 3, transfers: true)));
 same([true, '7.80'], [$read($b)->available, $read($b)->retail], 'Verified offer publishes through the single evaluator');
-same('23.40', $read($b, Context::Public, 'register', 3)->retail, 'Existing exact term preserves annual rounding');
+same('28.60', $read($b, Context::Public, 'register', 3)->retail, 'Long registration combines rounded first-year and renewal retail');
 same($products, Product::orderBy('id')->pluck('id')->all(), 'Native product IDs survive initial projection');
 same($plans, Plan::orderBy('id')->pluck('id')->all(), 'Native plan IDs survive initial projection');
 // Same prices on a new revision must cause no native row updates, including timestamps.
@@ -155,7 +155,7 @@ $cost = static fn ($action, $term, $amount, $time) => new Cost($action, $term, $
     'synthetic_feed', $time, $time->modify('+1 day'));
 $apply(new FeedObserved($b, 'com', [$cost('register', 3, '20.0001', $clock->time)]));
 same($oldFact, DB::table('domains_tlds')->where('id', $enom->id)->value('catalogue_facts'), 'Cost observations never refresh facts');
-same('26.01', $read($b, Context::Public, 'register', 3)->retail, 'Indivisible exact total uses rational annual rounding');
+same('28.60', $read($b, Context::Public, 'register', 3)->retail, 'Selected wholesale drift does not replace the annual retail inputs');
 same('7.80', $read($b)->retail, 'Partial feed retains omitted annual cost');
 $stable = $revision($b);
 expect($stable->matches($writer->apply(new FeedObserved($b, 'com', []), $stable)), 'Empty feed is a true no-op');
