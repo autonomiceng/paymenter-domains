@@ -12,7 +12,9 @@
 <p class="domains-hint">Next registrar read: @if ($recordFamilies['next_read'] !== null)@include('domains::partials.moment', ['at'=>gmdate(DATE_ATOM, $recordFamilies['next_read'])])@elseif ($recordFamilies['read_stopped'])Stopped after {{ $recordFamilies['read_attempts'] }} {{ $recordFamilies['read_attempts'] === 1 ? 'attempt' : 'attempts' }}.@if ($recordFamilies['read_failed_at'])Last failure: @include('domains::partials.moment', ['at'=>$recordFamilies['read_failed_at']])@endif @else No read queued. The domain must be active and its registrar read setup enabled.@endif</p>
 @if ($recordFamilies['read_code'] && !$recordFamilies['read_stopped'])<p class="domains-hint">{{ $recordFamilies['read_cause'] }} {{ $recordFamilies['read_attempts'] }} {{ $recordFamilies['read_attempts'] === 1 ? 'attempt' : 'attempts' }}.@if ($recordFamilies['read_failed_at']) Last failure: @include('domains::partials.moment', ['at'=>$recordFamilies['read_failed_at']])@endif</p>@endif
 @endif
+@if ($readScheduling ?? true)
 @include('domains::partials.record-read-note', ['recordFamilies' => $recordFamilies, 'staff' => $staff])
+@endif
 @if ($staff && !($recordFamilies['cancelled_without_records'] ?? false))<p class="domains-hint">Last complete read: @if ($recordFamilies['last_complete_at'])@include('domains::partials.moment',['at'=>$recordFamilies['last_complete_at']])@else Unknown @endif</p>@endif
 @if ($recordFamilies['cancelled_without_records'] ?? false)
 <p class="domains-hint">Registration cancelled; no registrar records to check</p>

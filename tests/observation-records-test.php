@@ -60,16 +60,27 @@ same('refreshed',$observer->run($d->id,readRecords:true),'Record failure preserv
 same('read_failed',$d->fresh()->observation['record_hold']['code']??null,'Partial Enom discovery retains its safe failure cause');
 require_once __DIR__.'/Support/staff-panel.php';
 \Illuminate\Support\Facades\Auth::login(staffUser([\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::VIEW]));
-same("Sync stopped: couldn't read DNS records.",\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::recordHold($d->fresh()),'Staff record notice names the stopped read');
+// Model the existing automatic retry separately from a permanent stop.
+DB::table('domains_observation_work')->insert(['server_id'=>$d->server_id,'account_fingerprint'=>$d->account_fingerprint,'domain_id'=>$d->id,
+    'generation'=>$d->authority_generation,'phase'=>\Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::phase($d),
+    'due_at'=>$clock->now()->getTimestamp()+60,'safe_code'=>'read_failed','tries'=>1]);
+same(null,\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::recordHold($d->fresh()),'Scheduled recovery has no stopped-read notice');
+$partialJob=\Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::current($d)->sole();
+DB::table('domains_observation_work')->where('id',$partialJob->id)->update(['safe_code'=>'records_incomplete']);
+same("Sync stopped: couldn't read SRV records. Other domain facts were saved. Use Sync now to try again.",\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::recordHold($d->fresh()),'Staff record notice names the stopped read');
 $unsafe=clone $d->fresh();$unsafeFacts=$unsafe->observation;$unsafeFacts['record_hold']['code']='PRIVATE-PROVIDER-PAYLOAD';$unsafe->observation=$unsafeFacts;
-same("Sync stopped: couldn't read DNS records.",\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::recordHold($unsafe),'Arbitrary stored payload cannot become a displayed cause');
+same("Sync stopped: couldn't read SRV records. Other domain facts were saved. Use Sync now to try again.",\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::recordHold($unsafe),'Arbitrary stored payload cannot become a displayed cause');
 \Illuminate\Support\Facades\Auth::login($user);
 $r=$d->fresh()->observation['records'];same('complete',$r['families']['dns']['state'],'Independent completed family remains proven');
 same('unknown',$r['families']['srv']['state'],'Failed family unknown');same('unknown',$r['families']['ds']['state'],'Unattempted family unknown');
 expect(!in_array('GetDnsSec',array_column($state->calls,0),true),'No further wire after failure');
-$html=$page();same(['Missing','Our team needs to check this domain. No action needed.'],array_map(fn($n)=>trim($n->textContent),iterator_to_array(storefrontDom($html)->query('//li[@id="srv"]/span[@class="domains-row__v"]//span[contains(concat(@class," "),"domains-missing ") or @class="domains-sub"]'))),'Unknown SRV held shows Missing with its cause');
+$html=$page();$srvDom=storefrontDom($html);
+same('Missing',trim($srvDom->query('//li[@id="srv"]//*[@data-record-family="srv"]')->item(0)?->textContent??''),'Unknown stopped SRV shows Missing');
+same(1,substr_count(html_entity_decode($html,ENT_QUOTES,'UTF-8'),\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::READ_HELD),'The customer reads the stopped-read notice once above the rows');
+same(0,$srvDom->query('//li[@id="srv"]/span[@class="domains-row__v"]/span[@class="domains-sub"][contains(.,"complete supported record family")]')->length,'Unknown SRV does not duplicate the staff read cause');
 same(0,storefrontDom($html)->query('//form[contains(@action,"/manage/srv")]')->length,'Failed refresh cannot retain old edit form');
 expect(isset(OwnerRecords::forDomain($d->fresh())['dns']),'Healthy primary retains independently complete DNS under partial-record hold');
+DB::table('domains_observation_work')->where('id',$partialJob->id)->update(['safe_code'=>$partialJob->safe_code]);
 // A later primary failure also invalidates the healthy family under an existing partial-record hold.
 $prior=$d->fresh()->observation;$observation->fault='info_missing';$clock->instant=$clock->now()->modify('+61 seconds');
 same('read_no_evidence',$observer->run($d->id,readRecords:true),'Failed primary under existing partial-record hold');

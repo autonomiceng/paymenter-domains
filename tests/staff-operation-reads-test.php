@@ -31,9 +31,12 @@ Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$deferred->id])
     ->assertNotified('Check delayed')->assertSee('Check delayed')->assertSee('Our sending settings paused this check.')->assertSee('The next check is at')->assertSee('UTC')->assertDontSee('Status checked');
 same('deferred',$deferred->fresh()->policy['status_check']['outcome'],'Guard refusal is saved as deferred, never checked');
 expect($deferred->fresh()->policy['status_check']['next_at']>$clock->now()->getTimestamp(),'Deferred read has an automatic next due time');
+// A lost reply retains its staff answer boundary and cannot claim a completed read.
 [$uncheckable]=$prepare(placeholderComFixtureName('staff-no-reply-placeholder.com'),'null');
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$uncheckable->id])->callAction('recheck')
     ->assertNotified('Enom has not answered yet')->assertSee('Ask Enom to check this attempt.')->assertSee('You can record Enom’s answer after Oct 19, 5:00 AM PT.')->assertDontSee('Status checked');
+same('awaiting_answer',$uncheckable->fresh()->policy['status_check']['outcome'],'Lost reply retains the registrar answer state');
+same((new \DateTimeImmutable($uncheckable->attempt['dispatch_attempted_at']))->modify('+24 hours')->getTimestamp(),$uncheckable->fresh()->policy['status_check']['answer_after'],'Staff answer waits 24 hours from this dispatch');
 same([],$observation->calls,'No original ID or accepted history never claims a registrar read');
 [$transportFailure]=$prepare(placeholderComFixtureName('staff-failed-read-placeholder.com'),'captured');
 $observation->fault='transport';
@@ -67,12 +70,17 @@ $stoppedPage->callAction('resume_observation')->assertNotified('Sync resumed');
 same(1,(int)DB::table('domains_observation_work')->where('id',$stopped)->value('resumes'),'Stopped domain work remains resumable after purchase completion');
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$check->id])->assertDontSee('More');
 commerceReject(fn()=>$run($check->fresh(),'resume_observation'));
-// Record-only holds also recover when the current scheduler job is healthy.
+// 875ef5d4 keeps a healthy queued retry automatic; only stopped work needs staff resume.
 ObservationRecords::hold($check->domain->fresh(),'records_unavailable',$clock->now());
+$retryBefore=(array)DB::table('domains_observation_work')->where('id',$stopped)->first();
+Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$check->domain_id])->assertActionHidden('resume_observation');
+same($retryBefore,(array)DB::table('domains_observation_work')->where('id',$stopped)->first(),'Viewing a queued record hold cannot reset its retry');
+expect(ObservationRecords::held($check->domain->fresh()),'The record hold waits for a real successful read');
+DB::table('domains_observation_work')->where('id',$stopped)->update(['safe_code'=>'records_incomplete']);
 Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$check->domain_id])->assertActionVisible('resume_observation')
     ->callAction('resume_observation')->assertNotified('Sync resumed');
 expect(!ObservationRecords::held($check->domain->fresh()),'Domain recovery clears the record hold');
-same(2,(int)DB::table('domains_observation_work')->where('id',$stopped)->value('resumes'),'Record hold resumes current healthy job');
+same(2,(int)DB::table('domains_observation_work')->where('id',$stopped)->value('resumes'),'Stopped record hold resumes its current job');
 // Sync now reads outside a job row and can set a hold, so with no row its own button is the way back, and a complete read clears the hold.
 DB::table('domains_observation_work')->where('id',$stopped)->delete();ObservationRecords::hold($check->domain->fresh(),'records_unavailable',$clock->now());
 $noRow=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$check->domain_id])->assertActionHidden('resume_observation')->assertSee('Use Sync now.')->assertDontSee('Use Resume sync');

@@ -61,3 +61,19 @@ function pinStaffClock(DateTimeImmutable $at): void
     Carbon\Carbon::setTestNow($at);
     app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new class($at) implements \Paymenter\Extensions\Servers\Domains\Contracts\Clock{public function __construct(private DateTimeImmutable $at){} public function now():DateTimeImmutable{return $this->at;}});
 }
+
+/** Synthetic TEST feature acceptance for pages that assert actual sale availability.
+ * Uses the installed feature guards; no provider factory or request is resolved.
+ */
+function staffSalesFixture(): void
+{
+    config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,
+        'domains.enom_writes.registration'=>true,'domains.enom_writes.renewal'=>true,'domains.enom_writes.transfer'=>true]);
+    foreach(\Paymenter\Extensions\Servers\Domains\Models\Account::where('registrar_key','enom')->get() as $account){
+        $binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account);
+        foreach([\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::class,\Paymenter\Extensions\Servers\Domains\Services\EnomTestTransfer::class] as $policy){
+            \App\Models\Server::findOrFail($binding->serverId)->settings()->updateOrCreate(['key'=>$policy::KEY],
+                ['type'=>'string','encrypted'=>true,'value'=>json_encode(['fingerprint'=>$binding->fingerprint,...$policy::protocol($binding)],JSON_THROW_ON_ERROR)]);
+        }
+    }
+}

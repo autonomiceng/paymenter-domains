@@ -17,6 +17,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement, ObligationA
 // Saving global settings reloads Paymenter settings from the table.
 App\Models\Setting::updateOrCreate(['key'=>'company_name','settingable_type'=>null,'settingable_id'=>null],['value'=>'Example Hosting','type'=>'string','encrypted'=>false]);config(['settings.company_name'=>'Example Hosting']);
 
+(new Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
 staffPanel(); [$held,$active,$long]=staffData(); Paymenter\Extensions\Servers\Domains\Services\PslReviewSchema::install();
 Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
 app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new Paymenter\Extensions\Servers\Domains\Data\SystemClock);
@@ -309,7 +310,7 @@ $ended=DomainFacts::head($active->fresh(),DomainFacts::status($active->fresh()),
 same('gray',$ended['tone'],'An ended domain keeps its own tone');
 expect(!str_contains((string)$ended['step'],'Sync'),'An ended domain has no sync step');
 expect($value($active,'Last sync')!=='Read stopped','An ended domain does not ask for a resume');
-Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$active->id])->assertDontSee('Resume sync')->assertDontSee('Stopped until resumed');
+Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$active->id])->assertDontSee('Resume sync')->assertDontSee('Stopped until resumed')->assertDontSee('Next registrar read:')->assertDontSee('No read queued.');
 same(null,DomainFacts::sync($active->fresh()),'The list reads the same');
 DB::table('domains_domains')->where('id',$active->id)->update(['status'=>'active']);
 DB::table('domains_obligation_alerts')->where('domain_id',$active->id)->delete();

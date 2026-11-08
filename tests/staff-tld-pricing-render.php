@@ -11,13 +11,12 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Services\{ObservationSchema,StaffSettingsReview as Review};
 $out=$argv[1]??'';expect(is_dir($out)&&is_writable($out),'Output directory required');
-$f=commerceFixture();extract($f);tldPanel();ObservationSchema::install();Carbon\Carbon::setTestNow($now);
+$f=commerceFixture(nameSiloLocal:false,identities:['namesilo'=>'demo-namesilo']);extract($f);staffSalesFixture();tldPanel();ObservationSchema::install();Carbon\Carbon::setTestNow($now);
 Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
 [$enom,$silo]=$tlds;
 // Several registrar accounts: Enom takes new orders, the NameSilo account is demo data.
 DB::table('extensions')->where('id',$enom->server_id)->update(['name'=>'Enom TEST identity check']);
 DB::table('extensions')->where('id',$silo->server_id)->update(['name'=>'OFFLINE DEMO NameSilo (synthetic)']);
-DB::table('domains_accounts')->where('server_id',$silo->server_id)->update(['stable_identity'=>Illuminate\Support\Facades\Crypt::encryptString('demo-namesilo')]);
 Domain::create(['server_id'=>$enom->server_id,'registrar_key'=>'enom','account_fingerprint'=>$enom->account_fingerprint,
     'user_id'=>900,'service_id'=>900,'domain'=>'holder-placeholder.com','sld'=>'holder-placeholder','tld'=>'com','status'=>'active']);
 $permissions=[Staff::VIEW,Staff::COSTS,Staff::POLICY];foreach(array_keys(Review::ACTIONS) as $key){$permissions[]=Review::permission($key);}
@@ -40,6 +39,10 @@ $render(ListTlds::class,[],'list-synced');$render(ViewTld::class,['record'=>$eno
 DB::table('domains_observation_queues')->insert(['server_id'=>$enom->server_id,'account_fingerprint'=>$enom->account_fingerprint,
     'catalogue_hold'=>'catalogue_reader_unavailable','catalogue_audit'=>json_encode([['code'=>'catalogue_reader_unavailable','server_id'=>$enom->server_id,
         'account_fingerprint'=>$enom->account_fingerprint,'at'=>'2026-10-18T13:05:00+00:00']])]);
+DB::table('domains_observation_queues')->where('server_id',$enom->server_id)->update([
+    'offer_work'=>json_encode(['upgrade_generation'=>\Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::generation(),'feed_due'=>$now->modify('+1 day')->getTimestamp()]),
+    'offer_feed_succeeded_at'=>$now->getTimestamp(),'offer_feed_failure'=>'catalogue_reader_unavailable',
+    'offer_feed_failed_at'=>(new DateTimeImmutable('2026-10-18T13:05:00+00:00'))->getTimestamp()]);
 $render(ListTlds::class,[],'list-sync-failed');$render(ViewTld::class,['record'=>$enom->id],'tld-sync-failed');
 DB::table('domains_observation_queues')->where('server_id',$enom->server_id)->delete();
 DB::table('domains_sales_policies')->where('tld','com')->update(['server_id'=>null]);

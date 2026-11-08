@@ -124,15 +124,20 @@ class ViewTld extends ViewRecord
     {
         $grants=Staff::requireView();$t=$this->getRecord();$snapshot=TldFacts::snapshot($t,$grants);
         $sellerId=TldFacts::sellerId($t->tld);$seller=$sellerId===null?null:Account::where('server_id',$sellerId)->first();
+        $chooseSeller=$this->settings()['seller']->isVisible()?self::CHOOSE_SELLER:'Ask staff who can change the registrar.';
         // The head says why the TLD is not for sale; a missing registrar row says only what to do.
-        $sales=[self::entry('Registrar for new orders',$seller?(string)\App\Models\Server::whereKey($sellerId)->value('name'):null,$seller?'Existing domains stay with their registrar':self::CHOOSE_SELLER,color:'primary',url:RegistrarFacts::accountUrl($sellerId),suffix:$seller&&DemoData::is($seller)?DemoData::tag(inline:true):null),
+        $sales=[self::entry('Registrar for new orders',$seller?(string)\App\Models\Server::whereKey($sellerId)->value('name'):null,$seller?'Existing domains stay with their registrar':$chooseSeller,color:'primary',url:RegistrarFacts::accountUrl($sellerId),suffix:$seller&&DemoData::is($seller)?DemoData::tag(inline:true):null),
             self::entry('Terms',$snapshot['unreadable']?null:TldFacts::terms($t),$snapshot['unreadable']?'Saved TLD terms unreadable. Use Edit prices to repair them.':null)];
         $refresh=$snapshot['refresh']??[];
         // One row: when prices last updated, and when they update next. Sync prices sits beside it.
         $sync=[self::entry('Last updated',isset($refresh['succeeded_at'])?'set':'Not yet',
             isset($refresh['due_at'])?Sheet::moment((int)$refresh['due_at'],'Next update'):'No update scheduled. Check Site setup on the Registrar account page, and the background worker.',
             at:isset($refresh['succeeded_at'])?(int)$refresh['succeeded_at']:null,side:[$this->syncPricesAction()->label('Sync prices')])];
-        if($failure=TldFacts::syncFailure((int)$t->server_id)){$sync[]=self::entry('Last refresh failure','Refresh failed',$failure['cause'],'danger');}
+        if($failure=TldFacts::syncFailure((int)$t->server_id)){
+            $cause=$failure['cause'];
+            if(isset($refresh['failed_at'])){$cause=new HtmlString(e($cause).' '.Sheet::moment((int)$refresh['failed_at'])->toHtml());}
+            $sync[]=self::entry('Last refresh failure','Refresh failed',$cause,'danger');
+        }
         return $schema->components([
             Sheet::split([Sheet::section('Sales',$sales),Sheet::section('Price sync',$sync)],[$this->activity()]),
             // A copy renders as a button here; the menu keeps its own item view.
