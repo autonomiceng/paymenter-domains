@@ -90,24 +90,27 @@ $queued=OfferState::decode($queue->value('offer_work'));
 $queued['facts']['com']['due_at']=$now->getTimestamp()-60;$queue->update(['offer_work'=>OfferState::json($queued)]);
 [$sales,$row]=$table('com');same('Queued for the next background run.',$sales->status($row)['next'],'An overdue check shows the real queue state');
 
-// Only custom-rule validation is contained: an account-wide writer error still stops the turn.
+// A failed offer projection is isolated and logged, so it cannot pin the account scan.
+// Shared default validation below remains an account-wide refusal.
 DB::table('domains_tlds')->where('id',$com->id)->increment('catalogue_revision');
+$published=$com->fresh()->catalogue_published_revision;$warnings=[];
+\Illuminate\Support\Facades\Event::listen(\Illuminate\Log\Events\MessageLogged::class,static function($event)use(&$warnings):void {
+    if($event->level==='warning'){$warnings[]=$event->context;}
+});
 $fault=new \Paymenter\Extensions\Servers\Domains\Catalogue\Writer(new \Paymenter\Extensions\Servers\Domains\Catalogue\Projection($native),$clock,
-    static fn()=>throw new InvalidArgumentException('Synthetic account-wide writer failure'),static fn()=>true);
+    static fn()=>throw new InvalidArgumentException('Synthetic local projection failure'),static fn()=>true);
 $failed=new OfferWork($fault,$clock,new AccountReadBudget($clock,25),static fn()=>$feed,static fn()=>25);
-$beforeCalls=$feed->priceCalls;$stopped=false;
-try{$failed->accountTurn($binding->serverId);}catch(InvalidArgumentException $error){$stopped=$error->getMessage()==='Synthetic account-wide writer failure';}
-expect($stopped,'An unrelated account error must propagate rather than being treated as unreadable own pricing');
-same($beforeCalls,$feed->priceCalls,'An account-wide writer failure stops the feed');
-same('retrying',$failed->status($binding,'com')['state'],'Account work failure replaces a stuck facts Checking state');
-same('read_exception',$failed->status($binding,'com')['failure'],'Only a safe failure code is exposed');
-same(null,$failed->status($binding,'com')['due_at'],'Failed work does not advertise an expired retry');
-$failedSource=new StaffCatalogue($ports,$clock,$failed,static fn()=>true);
-$recovery=$failedSource->nextSteps(collect([$com->fresh()]),[$binding->serverId.':com'=>$failedSource->page(collect([$com->fresh()]))[$com->id]],'register',1);
-same('Check the registrar account and read prices again.',$recovery[$binding->serverId.':com']['next'],'An account failure points at the account, not another TLD’s Edit prices');
-same('account',$recovery[$binding->serverId.':com']['open'],'Account failure links to its recovery page');
+$beforeCalls=$feed->priceCalls;
+same('worked',$failed->accountTurn($binding->serverId),'A projection failure cannot pin other offers in the scan');
+same($published,$com->fresh()->catalogue_published_revision,'A failed projection never records a new publication');
+expect(count(array_filter($warnings,static fn($warning)=>($warning['producer']??null)==='publication'&&(int)($warning['row_id']??0)===(int)$com->id))===1,'The failed offer retains one actionable publication diagnostic');
+same($beforeCalls,$feed->priceCalls,'Local publication does not reread a feed that is not due');
+$retry=$work->status($binding,'com');
+same('retrying',$retry['state'],'A failed facts write retains its bounded retry');
+expect($retry['due_at']>$clock->now()->getTimestamp(),'The facts retry preserves its future backoff');
+$clock->instant=$clock->now()->setTimestamp($retry['due_at']);
 $work->accountTurn($binding->serverId);
-same('ready',$work->status($binding,'com')['state'],'A later successful turn clears the account failure and restores facts');
+same('ready',$work->status($binding,'com')['state'],'A later successful turn restores the offer');
 
 // A broken shared default is an account-wide failure, even beside an unreadable override.
 $shared=\Paymenter\Extensions\Servers\Domains\Services\BusinessSetting::row(\Paymenter\Extensions\Servers\Domains\Services\PricingRules::KEY);
