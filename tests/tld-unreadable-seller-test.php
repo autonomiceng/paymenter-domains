@@ -19,6 +19,10 @@ foreach(['{','{"action":"renew","term":"bad"}'] as $broken){
         $schema=$page->instance()->getSchema($page->instance()->getMountedActionSchemaName());$select=$schema->getComponentByStatePath('seller');$options=$select->getOptions();
         expect($select->isOptionDisabled($bad->server_id,$options[$bad->server_id]),'Unreadable renewal is not usable seller evidence');
         expect(!$select->isOptionDisabled($good->server_id,$options[$good->server_id]),'A malformed sibling does not disable healthy choice');
+        $review=Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::class;$commands=Paymenter\Extensions\Servers\Domains\Catalogue\StaffCommands::class;
+        $r=new $review($actor->id,$good->server_id,$good->id,'seller',$review::ticket($actor->id,$good->server_id,$good->id,'seller',$commands::stamp($good->server_id,$good->id)),'Choose this registrar for new orders');
+        try{(new $commands(new Paymenter\Extensions\Servers\Domains\Catalogue\Writer(new Paymenter\Extensions\Servers\Domains\Catalogue\Projection($native),$clock,static fn()=>null,static fn()=>true),$bindings,static fn()=>null))->run($r,['seller'=>$bad->server_id,'register'=>true]);expect(false,'Malformed renewal evidence cannot be selected');}
+        catch(DomainException $e){same('Seller price missing.',$e->getMessage(),'Staff dispatch gives the same missing-evidence refusal');}
         expect(str_contains($page->effects['partials']['action-modals.0']??'','No NameSilo price for .com yet.'),'Dialog gives the missing-price reason');
     }catch(Throwable $e){$errors[]=$e::class.': '.$e->getMessage();}
 }
