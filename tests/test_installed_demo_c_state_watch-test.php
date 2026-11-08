@@ -34,7 +34,8 @@ foreach(['paused'=>'Paused','retired'=>'Stopped']as$state=>$expected){
  $list=\Livewire\Livewire::test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\ListWatches::class);
  $record=$w->fresh();
  same($expected,$list->instance()->getTable()->getColumn('status')->record($record)->getState(),'The row names its monitoring state');
- $list->assertSee($expected);
+ $rowHtml=$list->instance()->getTable()->getColumn('status')->record($record)->render()->toHtml();
+ expect(str_contains(strip_tags($rowHtml),$expected),'The rendered row badge contains its state, independent of the filter options');
  foreach(['registration','delegation.dns','last_check']as$name){$column=$list->instance()->getTable()->getColumn($name)->record($record);
   // Status says Paused or Stopped once per row (ui-r15); the fact cells stay empty instead of repeating it.
   if(filled($column->getState())){$failures[]=$state.' '.$name.' still has Missing or repeats the row state';}
