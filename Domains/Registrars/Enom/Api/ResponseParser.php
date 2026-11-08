@@ -94,6 +94,10 @@ final class ResponseParser
                 $found=true;
             }
         }
+        // A declared response count must agree with the complete refusal envelope.
+        // Missing or contradictory response evidence cannot authorize a payment return.
+        if(isset($data['responsecount'])&&(!in_array($data['responsecount'],['0','1'],true)
+            ||$data['responsecount']!==(isset($data['responses'])&&$data['responses']!==''?'1':'0'))){return false;}
         if(isset($data['responses'])&&$data['responses']!==''){
             $responses=$data['responses'];$response=is_array($responses)?($responses['response']??null):null;
             if(!is_array($responses)||array_keys($responses)!==['response']||!is_array($response)
