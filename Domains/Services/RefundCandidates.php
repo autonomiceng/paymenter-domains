@@ -30,7 +30,9 @@ final class RefundCandidates
         try {
             $domain=$op->domain;
             if ($domain && RegistrationRefusals::proved($op,$domain)) { return true; }
-            $key='domains.refusal-proof.'.$op->id.'.'.hash('sha256',serialize([$op->getAttributes(),$domain?->getAttributes()]));
+            $facts=array_intersect_key($op->getAttributes(),array_flip(['state','safe_code','lease_expires_at','attempt','funding','cost','domain_id','service_id','server_id','registrar_key','account_fingerprint','authority_generation','term','provider_order_id','confirmed_expires_at','started_at','request_fingerprint']));
+            $identity=$domain?->only(['id','status','domain','service_id','user_id','server_id','registrar_key','account_fingerprint','authority_generation','provider_order_id','provider_domain_id','provider_expires_at']);
+            $key='domains.refusal-proof.'.$op->id.'.'.hash('sha256',serialize([$facts,$identity]));
             if (\Illuminate\Support\Facades\Cache::add($key,true,86400)) {
                 \Illuminate\Support\Facades\Log::warning('Complimentary registration closure needs retained refusal evidence.',['operation_id'=>(int)$op->id]);
             }
