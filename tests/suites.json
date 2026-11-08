@@ -771,7 +771,11 @@
     "tests/dns-negative-health-test.php",
     "tests/watch-option-a-test.php",
     "tests/watch-enrollment-claim-test.php",
-    "tests/template-propagation-test.php"
+    "tests/template-propagation-test.php",
+    "tests/staff-sales-empty-test.php",
+    "tests/tld-unreadable-seller-test.php",
+    "tests/tld-seller-intent-test.php",
+    "tests/sale-filter-budget-test.php"
   ],
   "ui": [],
   "runner": [
