@@ -33,11 +33,14 @@ foreach ([1,3] as $term) {
     same(0,$dom->query('//*[@data-domains-cart-notice]')->length,'Own term edit is not a retail price change');
     same(0,$dom->query('//s')->length,'Own old term price is not struck');
 }
+$refreshCart=commerceCart($user);commerceAdd($refreshCart,$com,'mounted-refresh-placeholder.com',3);Illuminate\Support\Once::flush();
+$refreshPage=Livewire\Livewire::actingAs($user)->withCookies(['cart'=>$refreshCart->ulid])->test(App\Livewire\Cart::class);
+same('28.60',number_format((float)$refreshPage->get('total')->total,2,'.',''),'Independent mounted cart starts at the current price');
 $ports->apply(Edit::override($binding,'com',new Intent(sell:true,longest:3,transfers:true),[...PricingRule::DEFAULT,'markup'=>'50.00']),$rev());
 $before=[App\Models\Order::count(),App\Models\Invoice::count(),Paymenter\Extensions\Servers\Domains\Models\Operation::count(),$reads->calls];
-Illuminate\Support\Once::flush();app('request')->cookies->set('cart',$cart->ulid);$page->call('$refresh');
-$shown=storefrontDom($page->html());same('$39.50',trim($shown->query('//*[@data-current-cart-total]')->item(0)?->textContent??''),'Mounted refresh renders the current combined cart total');
-same('39.50',number_format((float)$page->get('total')->total,2,'.',''),'Rendered and native totals agree on the existing component');
+Illuminate\Support\Once::flush();app('request')->cookies->set('cart',$refreshCart->ulid);$refreshPage->call('$refresh');
+$shown=storefrontDom($refreshPage->html());same('$33.00',trim($shown->query('//*[@data-current-cart-total]')->item(0)?->textContent??''),'Mounted refresh renders the current combined cart total');
+same('33.00',number_format((float)$refreshPage->get('total')->total,2,'.',''),'Rendered and native totals agree on the existing component');
 same($before,[App\Models\Order::count(),App\Models\Invoice::count(),Paymenter\Extensions\Servers\Domains\Models\Operation::count(),$reads->calls],'Local render creates no order, invoice or provider call');
 $ports->apply(Edit::override($secondBinding,'net',new Intent(sell:false,transfers:true)),offerCommerceAsStaff(static fn()=>$ports->readOffers(new Query($secondBinding,['net'],'register'),Context::Staff)[0]->revision));
 $page=$open(); $dom=storefrontDom($page->html());

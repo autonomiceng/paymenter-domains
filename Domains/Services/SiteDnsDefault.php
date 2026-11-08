@@ -25,7 +25,7 @@ final class SiteDnsDefault
     public static function uses(int $id): bool
     {
         if($id<1){return false;}$rows=self::query()->get();
-        return $rows->count()===1 && $rows[0]->type==='string' && !$rows[0]->encrypted && $rows[0]->value===(string)$id;
+        return $rows->contains(fn($row)=>$row->type==='string' && !$row->encrypted && $row->value===(string)$id);
     }
     public static function watchProfile(WatchName $watch,bool $lock=false): ?WatchProfile
     {

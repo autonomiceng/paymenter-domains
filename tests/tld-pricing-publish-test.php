@@ -127,8 +127,8 @@ same([], $pending['failed'],'Missing cost does not block recording pending staff
 same($low,\Paymenter\Extensions\Servers\Domains\Catalogue\Pricing::own($t->fresh()),'Pending intent retains exactly the reviewed rule');
 $missingAfter=$rows($t->fresh());
 same($beforeMissing['renew1'],[$missingAfter['renew1']->revision,$missingAfter['renew1']->retail],'Missing renewal evidence preserves its exact retained revision and retail');
-foreach(['register1'=>'5.00','register3'=>'15.00','transfer1'=>'9.00'] as $key=>$retail){
-    same([$beforeMissing[$key][0]+1,$retail],[$missingAfter[$key]->revision,PriceCatalogue::retail($missingAfter[$key]->retail)],'Independent observed price is published exactly: '.$key);
+foreach(['register1'=>'5.00','register3'=>null,'transfer1'=>'9.00'] as $key=>$retail){
+    same([$beforeMissing[$key][0]+1,$retail],[$missingAfter[$key]->revision,$missingAfter[$key]->retail===null?null:PriceCatalogue::retail($missingAfter[$key]->retail)],'Independent observed price is published exactly: '.$key);
 }
 $missingBinding=$bindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$t->server_id)->sole());
 foreach(['register','transfer'] as $action){

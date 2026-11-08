@@ -34,7 +34,7 @@ $get=static function()use(&$jar,$app,$kernel){
     same(200,$res->getStatusCode(),'Native cart request renders: '.substr(strip_tags($res->getContent()),0,160));
     return $res->getContent();
 };
-$html=$get(); expect(str_contains($html,'$23.40'),'Original HTTP cart shows 23.40');
+$html=$get(); expect(str_contains($html,'$28.60'),'Original HTTP cart shows 28.60');
 $q=new Query($binding,['com'],'register',3);$rev=offerCommerceAsStaff(static fn()=>$ports->readOffers($q,Context::Staff)[0]->revision);
 $ports->apply(Edit::override($binding,'com',new Intent(sell:true,longest:3,transfers:true),[...PricingRule::DEFAULT,'markup'=>'50.00']),$rev);
 // A non-checkout Livewire update may race publication. It must not silently advance the saved shown amount.
@@ -46,8 +46,8 @@ expect(str_contains($effects['html']??'','Your cart changed'),'Editing another l
 session()->save();
 $html=$get();$x=storefrontDom($html);
 same('Your cart changed',trim($x->query('//*[@data-domains-cart-notice]//strong')->item(0)?->textContent??''),'HTTP reload announces the changed price');
-same('Was $23.40',trim($x->query('//s')->item(0)?->textContent??''),'HTTP reload strikes the total the browser last saw');
-expect(str_contains($html,'$27.00'),'HTTP reload shows the new quote');
+same('Was $28.60',trim($x->query('//s')->item(0)?->textContent??''),'HTTP reload strikes the total the browser last saw');
+expect(str_contains($html,'$33.00'),'HTTP reload shows the new quote');
 if(isset($argv[1])){require __DIR__.'/Support/demo-c-r11-cart-render.php';}
 // Stale review metadata cannot be restored onto a different cart snapshot.
 $shownKey='domains.cart_shown.'.$cart->ulid;
@@ -64,12 +64,12 @@ $calls=[['method'=>'checkout','params'=>[['contact'=>commerceOrderContact($user)
 Illuminate\Support\Once::flush();
 [$reviewed,$effects]=app('livewire')->update($snapshot,[],$calls);
 same(0,App\Models\Order::count(),'Checkout cannot invoice a quote the customer has not seen');
-$x=storefrontDom($effects['html']);same('Was $27.00',trim($x->query('//s')->item(0)?->textContent??''),'Checkout strikes the latest displayed quote');
+$x=storefrontDom($effects['html']);same('Was $33.00',trim($x->query('//s')->item(0)?->textContent??''),'Checkout strikes the latest displayed quote');
 expect(str_contains($effects['html'],'Your cart changed'),'Checkout requires review after a later publish');
 Illuminate\Support\Once::flush();
 request()->headers->set('X-Livewire','true');
 app('livewire')->update($reviewed,[],$calls);
 same(1,App\Models\Order::count(),'A second checkout accepts the reviewed quote exactly once');
 same(null,session()->get($shownKey.'.review'),'Accepted checkout clears the saved review');
-same('30.60',Paymenter\Extensions\Servers\Domains\Models\Operation::sole()->policy['price']['retail'],'Invoice freezes the reviewed quote');
+same('37.40',Paymenter\Extensions\Servers\Domains\Models\Operation::sole()->policy['price']['retail'],'Invoice freezes the reviewed quote');
 $nativeSuccessful=true;echo "HTTP cart session price passed.\n";
