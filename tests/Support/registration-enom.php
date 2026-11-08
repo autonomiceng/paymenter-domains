@@ -31,7 +31,7 @@ $exchange = static function ($origin, $command, $parameters, $timeout) use ($reg
     if ($command === 'Purchase') {
         $registration->purchases[] = $parameters;
         if($registration->mode==='defaultdns'){same('default',$parameters['UseDNS']??null,'Unconfigured Purchase uses registrar defaults');expect(!isset($parameters['NS1']),'No custom nameservers without setup');}
-        else{expect(!isset($parameters['UseDNS']),'Configured Purchase sends explicit nameservers');same(['ns1.provider.example','ns2.provider.example'],[$parameters['NS1']??null,$parameters['NS2']??null],'Frozen initial Purchase nameservers');}
+        else{expect(!isset($parameters['UseDNS']),'Configured Purchase sends explicit nameservers');same($registration->expectedNameservers??['ns1.provider.example','ns2.provider.example'],[$parameters['NS1']??null,$parameters['NS2']??null],'Frozen initial Purchase nameservers');}
         same(0, $parameters['RenewName'], 'Provider renewal off'); same('no', $parameters['UseCreditCard'], 'Account funds only');
         expect(isset($parameters['AuxBillingFirstName']), 'Frozen four-role casing');
         if ($registration->mode === 'authority') {

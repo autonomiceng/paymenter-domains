@@ -54,11 +54,14 @@ $registration->query=\Paymenter\Extensions\Servers\Domains\Services\OperationCla
 $result=$engine->execute($op->id);same('pending',$result->state,'Default registration reaches financial observation: '.$result->safe_code);$assertRetained($result,[]);
 if($binding->registrarKey==='enom'){
     same(['Purchase','ModifyNS','GetDNS'],$registration->calls,'Template reuses the existing post-purchase nameserver path');
-    same(['default','No'],[$purchaseWire['Purchase']['UseDNS'],$purchaseWire['Purchase']['IgnoreNSFail']],'Purchase keeps registrar defaults and IgnoreNSFail unchanged');
+    expect(!array_key_exists('UseDNS',$purchaseWire['Purchase']),'Explicit nameservers replace registrar-default DNS at purchase');
+    same('No',$purchaseWire['Purchase']['IgnoreNSFail'],'Purchase preserves IgnoreNSFail');
+    same($template->nameservers,[$purchaseWire['Purchase']['NS1'],$purchaseWire['Purchase']['NS2']],'Enom receives explicit template nameservers at purchase');
     same($template->nameservers,[$purchaseWire['ModifyNS']['NS1'],$purchaseWire['ModifyNS']['NS2']],'Enom receives the template in ModifyNS');
 }else{same($template->nameservers,[$purchaseWire['registerDomain']['ns1'],$purchaseWire['registerDomain']['ns2']],'NameSilo receives the template at purchase');}
 $op=$binding->registrarKey==='enom'?$new('template-choice.example.com'):$nsNew(placeholderComFixtureName('template-choice-placeholder.com'));
 $chosen=['ns1.customer.example','ns2.customer.example'];
+$registration->expectedNameservers=$chosen;
 (new OwnerSetup($clock,$ports))->save($user,$op->domain_id,['nameservers'=>$chosen,'privacy'=>false]);
 same($chosen,$op->fresh()->payload['nameservers'],'Finish setup customer choice replaces the template');
 same(['source'=>'customer'],$op->fresh()->payload['nameservers_origin']??null,'Explicit owner setup replaces inherited provenance');
@@ -67,6 +70,7 @@ $registration->query=\Paymenter\Extensions\Servers\Domains\Services\OperationCla
 $result=$engine->execute($op->id);same('pending',$result->state,'Customer choice reaches financial observation: '.$result->safe_code);$assertRetained($result,[]);
 $wire=$purchaseWire[$binding->registrarKey==='enom'?'ModifyNS':'registerDomain'];
 same($chosen,$binding->registrarKey==='enom'?[$wire['NS1'],$wire['NS2']]:[$wire['ns1'],$wire['ns2']],'Customer choice reaches the provider instead of the template');
+$registration->expectedNameservers=['ns1.provider.example','ns2.provider.example'];
 same([] ,NewDomainDns::nameservers($binding->serverId,'transfer'),'Site defaults never supply transfer nameservers');
 if($binding->registrarKey==='enom'){
     $transfer=$new('template-transfer.example.com',action:'transfer');
