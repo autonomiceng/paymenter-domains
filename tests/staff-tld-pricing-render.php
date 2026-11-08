@@ -39,6 +39,10 @@ $render(ListTlds::class,[],'list-synced');$render(ViewTld::class,['record'=>$eno
 DB::table('domains_observation_queues')->insert(['server_id'=>$enom->server_id,'account_fingerprint'=>$enom->account_fingerprint,
     'catalogue_hold'=>'catalogue_reader_unavailable','catalogue_audit'=>json_encode([['code'=>'catalogue_reader_unavailable','server_id'=>$enom->server_id,
         'account_fingerprint'=>$enom->account_fingerprint,'at'=>'2026-10-18T13:05:00+00:00']])]);
+DB::table('domains_observation_queues')->where('server_id',$enom->server_id)->update([
+    'offer_work'=>json_encode(['upgrade_generation'=>\Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::generation(),'feed_due'=>$now->modify('+1 day')->getTimestamp()]),
+    'offer_feed_succeeded_at'=>$now->getTimestamp(),'offer_feed_failure'=>'catalogue_reader_unavailable',
+    'offer_feed_failed_at'=>(new DateTimeImmutable('2026-10-18T13:05:00+00:00'))->getTimestamp()]);
 $render(ListTlds::class,[],'list-sync-failed');$render(ViewTld::class,['record'=>$enom->id],'tld-sync-failed');
 DB::table('domains_observation_queues')->where('server_id',$enom->server_id)->delete();
 DB::table('domains_sales_policies')->where('tld','com')->update(['server_id'=>null]);
