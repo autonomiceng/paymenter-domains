@@ -103,11 +103,8 @@ final class CartCheckoutRefresh
                     $changed = static fn () => \Livewire\store($component)->get('domains.customer_edit')
                         ? self::changedOffers($held, $beforeOffers, $admission->offers()) : self::changedShown($held);
                     $was = $changed();
-                    if ($was) {
-                        $admission->refresh();
-                        $was = $changed();
-                        if ($was) { self::changed($component, self::cartTotal(), $was); }
-                    }
+                    // Display the current local amount; checkout owns refreshed eligibility and provider reads.
+                    if ($was) { self::changed($component, self::cartTotal(), $was); }
                 } catch (CartLinesRemoved $e) { self::show($component, self::cartTotal()); self::removed($component, $e); }
                 catch (\Throwable $e) { self::unavailable($component, $e); }
             }
