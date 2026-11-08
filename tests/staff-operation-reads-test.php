@@ -121,8 +121,11 @@ foreach(['register','transfer'] as $action){
 $resumedPage=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$resume->id])->callAction('resume_reads')->assertNotified('Status checks restarted')
     ->assertSee('Status checks restarted')->assertActionHidden('resume_reads')->assertActionVisible('recheck');
 same('scheduled',$resume->fresh()->policy['status_check']['outcome'],'Resume clears stale status');same($clock->now()->getTimestamp(),(int)DB::table('domains_runtime_operations')->where('operation_id',$resume->id)->value('due_at'),'Resume is due immediately');same(0,$resume->fresh()->policy['reconciliation']['polls'],'Bounded read budget reset');same($original,$resume->fresh()->attempt,'Read resume cannot reset attempt');
-$job=DB::table('domains_observation_work')->insertGetId(['server_id'=>$resume->server_id,'account_fingerprint'=>$resume->account_fingerprint,'domain_id'=>$resume->domain_id,
-    'generation'=>$resume->authority_generation,'due_at'=>0,'safe_code'=>'read_unavailable','tries'=>5]);
+// Registration confirmation makes record sync eligible and queues its initial work.
+$resumedPage->callAction('recheck')->assertNotified('Registrar checked');$resume=$resume->fresh();
+$jobKey=['domain_id'=>$resume->domain_id,'generation'=>$resume->authority_generation,'phase'=>\Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::phase($resume->domain->fresh())];
+DB::table('domains_observation_work')->updateOrInsert($jobKey,['server_id'=>$resume->server_id,'account_fingerprint'=>$resume->account_fingerprint,'due_at'=>0,'safe_code'=>'read_unavailable','tries'=>5]);
+$job=DB::table('domains_observation_work')->where($jobKey)->value('id');
 // Resume sync lives on the domain page; the request page does not offer it.
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$resume->id])->assertDontSee('Resume sync');
 Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$resume->domain_id])->callAction('resume_observation')->assertNotified('Sync resumed');
@@ -141,6 +144,7 @@ foreach (['generation'=>$current->generation+1,'phase'=>'old-phase'] as $field=>
     $row=(array)$current;unset($row['id']);$row[$field]=$value;
     $id=DB::table('domains_observation_work')->insertGetId($row);$foreign[]=$id;
     $before=DB::table('domains_observation_work')->where('id',$job)->value('resumes');
+    DB::table('domains_observation_work')->where('id',$job)->update(['safe_code'=>'read_unavailable','tries'=>5]);
     $run($resume->fresh(),'resume_observation');
     same($before+1,DB::table('domains_observation_work')->where('id',$job)->value('resumes'),'Staff resumes the current job despite newer historical work');
     same(1,DB::table('domains_observation_work')->where('id',$id)->value('resumes'),'Historical saved work stays unchanged');
