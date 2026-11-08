@@ -158,19 +158,19 @@ class Storefront
         } catch (\Throwable $error) {
             if ($transferOnly) {
                 // Only known local reason codes can reach customers, never exception/provider text.
-                $reason = $error instanceof WriteHeld ? $error->reason : ($error::class === \DomainException::class ? $error->getMessage() : null);
+                $reason = $error instanceof WriteHeld ? $error->reason : ($error instanceof TransferRestriction || $error::class === \DomainException::class ? $error->getMessage() : null);
                 $days = [60, 60];
                 if (in_array($reason, ['transfer_creation_lock', 'transfer_previous_lock'], true)) {
                     try { $days = TransferPrecheck::rules($transfer['selection']); } catch (\Throwable) { $reason = null; }
                 }
-                return $this->transferRefusal($base, $reason, $days);
+                return $this->transferRefusal($base,$reason,$days,$error instanceof TransferRestriction?$error->retryAt:null);
             }
         }
         return $base;
     }
 
     /** Fixed public wording; an unknown refusal remains unknown and offers a safe next step. */
-    private function transferRefusal(array $base, ?string $reason = null, array $days = [60, 60]): array
+    private function transferRefusal(array $base, ?string $reason = null, array $days = [60, 60],?\DateTimeImmutable $retryAt=null): array
     {
         $message = match ($reason) {
             'transfer_locked' => 'This domain is locked. Unlock this domain at your current registrar, then try again.',
@@ -185,6 +185,7 @@ class Storefront
             'premium', 'premium_name' => 'We don’t offer transfers for premium domains. Contact support for help.',
             default => 'We couldn’t confirm that this domain can be transferred. Try again, or contact support if this continues.',
         };
+        if($retryAt&&in_array($reason,['transfer_creation_lock','transfer_previous_lock'],true)){$message='This domain is under a transfer lock until '.$retryAt->setTimezone(new \DateTimeZone('UTC'))->format('j M Y').'. Try again after that date.';}
         return [...$base, 'status' => 'transfer_refused', 'message' => $message];
     }
 

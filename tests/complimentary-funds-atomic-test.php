@@ -8,6 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{ComplimentaryAccounts,FundsWa
 (new NativeDomainGuard(new HolderPricing($prices),$clock))->boot();
 $staff=commerceUser();$staff->update(['role_id'=>App\Models\Role::create(['name'=>'Funding closure','permissions'=>['admin.domains.fund']])->id]);
 ComplimentaryAccounts::set($user->id,$staff,true,'Cover test terms',$clock);
+Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
 foreach(['register','transfer']as$action){
     $cart=commerceCart($user);$name=placeholderComFixtureName('comp-atomic-'.$action.'-placeholder.com');
     commerceAdd($cart,$native->product($tlds[0],$action),$name);commerceCheckout($user,$cart)->assertHasNoErrors()->assertRedirect();

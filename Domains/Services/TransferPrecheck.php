@@ -43,10 +43,13 @@ final readonly class TransferPrecheck
     {
         CanonicalName::parse($name, [$s->tld]); $days = self::rules($s);
         $r = $driver->availability(new Query($name, Action::Transfer, 1), $context);
-        WriteMoney::requireRead($driver->binding(), $r); WriteMoney::requireAvailable($r->evidence());
+        $driver->binding()->requireMatch($r->binding);
         $rdap = $this->rdap->precheck($name, $days[0], $days[1], $context->now(), $context);
+        if ($context->now() >= $context->deadline) { throw new \DomainException('Transfer check expired.'); }
         if (!$rdap['allowed'] && $rdap['code'] === 'transfer_not_registered') { throw new WriteHeld('transfer_not_registered'); }
-        if (!$rdap['allowed'] || $context->now() >= $context->deadline) { throw new \DomainException($rdap['code'] ?? 'Transfer check expired.'); }
+        if (!$rdap['allowed']) { throw new TransferRestriction($rdap['code'], isset($rdap['retry_at']) ? new \DateTimeImmutable($rdap['retry_at']) : null); }
+        // A public restriction can explain a refusal, but never replaces positive registrar eligibility.
+        WriteMoney::requireRead($driver->binding(), $r); WriteMoney::requireAvailable($r->evidence());
         return ['rules' => $days, 'rdap_unchecked' => $rdap['warning'] !== null, 'base_expiry' => $rdap['expires_at'], 'comparison_allowed' => ($rdap['comparison_allowed'] ?? false) && $rdap['allowed']];
     }
 }

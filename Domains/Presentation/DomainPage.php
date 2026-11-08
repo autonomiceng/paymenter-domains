@@ -69,6 +69,11 @@ final class DomainPage
     {
         if ($d->expiry === null) {
             if ($s?->abandoned) { return ['missing' => false, 'tone' => null, 'note' => null]; }
+            if (self::rejected($d)) {
+                $transfer = $d->statusReason === DomainStatus::STATES['transfer_rejected'][1];
+                return ['missing' => false, 'tone' => null, 'value' => $transfer ? 'Not transferred' : 'Not registered',
+                    'note' => trim(($transfer ? 'The domain stays at your current registrar. ' : '').(self::REFUND[$d->refundTo ?? ''] ?? ''))];
+            }
             $said = str_starts_with(self::notice($d, $support, $s)['text'] ?? '', 'Complimentary. ');
             if ($order = DomainListRow::orderExpires($d->order, $support, funding: !$said)) { return $order; }
             if (self::checkHeld($d)) { return ['missing' => true, 'cause' => self::TEAM_CHECK, 'fix' => null]; }
@@ -84,13 +89,20 @@ final class DomainPage
         };
         return ['missing' => false, 'tone' => $days <= 0 ? 'bad' : ($days <= 30 ? 'warn' : null), 'note' => $note];
     }
+    /** What happens to the money once the registrar rejected the order, by OwnedDomain::$refundTo. */
+    public const REFUND = ['original' => 'Any refund goes back to your original payment method.', 'credit' => 'Any refund goes to your account credit.',
+        'split' => 'Any refund goes back to your original payment method where it can, and to your account credit otherwise.',
+        'credited' => 'We added what you paid to account credit.', 'returned' => 'We are returning what you paid to your original payment method.'];
+    /** The registrar rejected the registration or transfer, so no expiry will ever fill in. */
+    private static function rejected(OwnedDomain $d): bool
+    { return in_array($d->statusReason, [DomainStatus::STATES['registration_rejected'][1], DomainStatus::STATES['transfer_rejected'][1]], true); }
     /** Next invoice: the current renewal invoice's state (Due + Pay invoice, Paid, Under review in blue while we check it, or Missing with its cause and fix), else the day the next invoice goes out, the same date staff see. Null when it does not apply. */
     public static function nextInvoice(OwnedDomain $d, ?DomainSummary $s, ?string $support): ?array
     {
         $state = $d->renewNow['status'] ?? (isset($d->renewNow['invoice']) ? 'pending' : null) ?? $d->renewalInvoice['state'] ?? null;
         $contact = Missing::support($support);
         $due = $d->renewalDue ?? $d->renewalInvoice['due'] ?? null;
-        if ($state === null && ($d->renewal !== 'On' || $d->setupPending)) { return null; }
+        if ($state === null && ($d->renewal !== 'On' || $d->setupPending || self::rejected($d))) { return null; }
         return match (true) {
             $state === 'pending' => ['value' => $due ? ($d->earlyRenewal ? RequestStatus::earlyRenewal($due) : 'Due '.self::date($due)) : 'Due', 'action' => isset($d->renewNow['invoice']) ? ['label' => 'Pay invoice', 'url' => $d->renewNow['invoice']] : null],
             $state === 'paid' => ['value' => 'Paid', ...(($goes = $d->renewNow['goes'] ?? $d->renewalInvoice['goes'] ?? null) ? ['note' => RenewalRepeatWait::NOTHING.' '.RenewalRepeatWait::GOES, 'at' => $goes] : [])],

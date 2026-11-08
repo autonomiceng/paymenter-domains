@@ -60,6 +60,15 @@ $check('complimentary transfer receives missing-code and deadline notices',funct
         same('$0.00',$plan['data']['amount'],'Notice never asks the complimentary customer to pay');
     }
 });
+$coded=$newRegistration(placeholderComFixtureName('comp-runtime-code-placeholder.com'),'transfer');
+$check('runtime-discovered complimentary transfer accepts an owner code',function()use($coded,$transfers,$clock,$user,$money):void {
+    $fixed=$coded->policy['paid_at'];$before=$money();
+    expect(\Paymenter\Extensions\Servers\Domains\Services\RuntimeCandidates::transfer(\Paymenter\Extensions\Servers\Domains\Models\Operation::whereKey($coded->id))->exists(),'Native runtime discovers the code-bound transfer');
+    $work=new \Paymenter\Extensions\Servers\Domains\Services\RuntimeWork($clock,new \Paymenter\Extensions\Servers\Domains\Services\RuntimePorts);$work->service($coded->service_id);
+    $request=Illuminate\Http\Request::create('/transfer-code','POST',['transfer_code'=>'Synthetic-code']);$request->setUserResolver(fn()=>$user);$transfers->submitCode($request,$coded->id);
+    same([$fixed,'Synthetic-code'],[$coded->fresh()->policy['paid_at'],$coded->fresh()->payload['epp']],'Owner code retains the original input deadline');
+    same($before,$money(),'Runtime and auth-code entry invent no payment or credit');
+});
 $wait=$op->fresh();
 $wait->update(['state'=>'held','safe_code'=>'registrar_balance_insufficient','policy'=>[...$wait->policy,'funds_wait_at'=>$clock->now()->format(DATE_ATOM)]]);
 $check('elapsed complimentary funds wait closes without payment or refund',function()use($wait,$clock,$money):void {
