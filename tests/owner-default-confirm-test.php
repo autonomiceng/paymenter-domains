@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerActionController;
 $profile=DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Models\WatchProfile::create(['name'=>'Current default','enabled'=>true,'nameservers'=>['ns3.example.net','ns4.example.net'],'website_endpoints'=>[],'email_endpoints'=>[],'edited_by'=>$viewer->id,'reason'=>'Synthetic DNS default']));
 \App\Models\Setting::updateOrCreate(['key'=>SiteDnsDefault::KEY,'settingable_type'=>null,'settingable_id'=>null],['value'=>(string)$profile->id,'type'=>'string','encrypted'=>false]);
 $controller=new OwnerActionController($owners,new OwnerSetup($clock,$ports),new TransferInputs($clock,app(Refunds::class)),$management,$ports);
-$session=app('request')->session();$before=$d->operations()->count();
+$session=app('session')->driver();app('request')->setLaravelSession($session);$before=$d->operations()->count();
 $data=['fill_site_default'=>'1','confirmed'=>'1','nameservers'=>"ns1.old.example.net\nns2.old.example.net"];
 $r=\Illuminate\Http\Request::create('/domains/'.$d->id.'/manage/nameservers','POST',$data);$r->setUserResolver(fn()=>$user);$r->setLaravelSession($session);
 $r->request->set('_request_key',FormKeys::issue($r,'owner:'.$d->id.':nameservers'));

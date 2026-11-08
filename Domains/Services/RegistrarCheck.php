@@ -147,7 +147,7 @@ final class RegistrarCheck
         $check = self::status($op);
         if (($check['outcome'] ?? null) !== 'awaiting_answer') { return self::for($op); }
         $kind = match ($op->action) { 'transfer' => 'transfer', 'renew' => 'renewal', default => 'registration' };
-        return ['title'=>ucfirst($kind).' pending','body'=>'We’re confirming this '.$kind.' with the registrar. You don’t need to do anything. Contact support if it’s still pending after '.self::answerAfter($check).'.','tone'=>'info'];
+        return ['title'=>ucfirst($kind).' pending','body'=>'We’re confirming this '.$kind.' with the registrar. You don’t need to do anything. Contact support if it’s still pending after '.(new \DateTimeImmutable('@'.(int)($check['answer_after']??0)))->setTimezone(new \DateTimeZone('America/Los_Angeles'))->format('M j, g:i A').' PT.','tone'=>'info'];
     }
     public static function for(Operation $op): array { return self::words(self::status($op), $op->state === 'succeeded'); }
 }
