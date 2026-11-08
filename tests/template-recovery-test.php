@@ -17,6 +17,11 @@ $check('Unused unreadable template can be deleted from the real page',function()
  $page->callAction('delete')->assertNotified('DNS template deleted');same(null,WatchProfile::find($row->id),'Unreadable unused template removed');
  same(1,WatchAudit::where('subject_type','dns_profile')->where('subject_id',$row->id)->where('event','dns_profile_deleted')->count(),'Deletion retains the audit');
 });
+$check('Unreadable saved site default cannot be deleted',function()use($make,$manager):void{
+ $row=$make();siteDnsFixture($row->id);DB::table('domains_watch_profiles')->where('id',$row->id)->update(['enabled'=>true,'nameservers'=>'["bad host"]']);
+ $page=Livewire::actingAs($manager)->test(ViewConfiguration::class,['record'=>$row->id]);expect(str_contains($page->instance()->getAction('delete')->getTooltip()??'','new domains'),'Unreadable saved reference remains guarded');
+ $page->callAction('delete')->assertNotNotified('DNS template deleted');expect(WatchProfile::find($row->id)!==null,'Unreadable saved default is retained');siteDnsFixture(null);
+});
 $check('New domains Missing has one sentence boundary',function()use($manager,$profile):void{
  siteDnsFixture(null);$page=Livewire::actingAs($manager)->test(ListConfiguration::class);expect(!str_contains($page->instance()->getSubheading(),'..'),'Missing default never doubles punctuation');
  siteDnsFixture($profile->id);$next=Livewire::actingAs($manager)->test(ListConfiguration::class);expect(str_contains($next->instance()->getSubheading(),$profile->name),'Named default survives rendering');
