@@ -49,9 +49,9 @@ $policy=$op->fresh()->policy;unset($policy['complimentary_cost_review']);$op->re
 $runRenewal($op,$binding);[$engine,$writer,$completion]=$compose($binding);$state->expiry='2028-10-18';$state->after='2028-10-18';$state->charge='8.00';
 same('succeeded',$completion->run($op->id)->state,'Real confirmed renewal charge supplies the customer receipt');$invoice=$invoice->fresh();
 same($before,$report->chart()['datasets'],'Complimentary positive and negative lines do not create reported revenue');
-$editor=Livewire::actingAs($staff)->test(App\Admin\Resources\UserResource\Pages\EditUser::class,['record'=>$user->id]);$editor->assertSee('Domains are complimentary')->assertSee('Reason')->assertSee('Example Hosting pays for this customer');
+$editor=Livewire::actingAs($staff)->test(App\Admin\Resources\UserResource\Pages\EditUser::class,['record'=>$user->id]);$editor->assertSee('Complimentary domains')->assertSee('. Reason: Gift account')->assertSee('Turn off');
 $staffHtml=$editor->html();
-$plain=staffUser(['admin.users.viewAny','admin.users.view','admin.users.update']);Livewire::actingAs($plain)->test(App\Admin\Resources\UserResource\Pages\EditUser::class,['record'=>$user->id])->assertDontSee('Domains are complimentary');
+$plain=staffUser(['admin.users.viewAny','admin.users.view','admin.users.update']);Livewire::actingAs($plain)->test(App\Admin\Resources\UserResource\Pages\EditUser::class,['record'=>$user->id])->assertDontSee('Complimentary domains')->assertDontSee('Reason: Gift account');
 Auth::login($staff);$domainPage=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$d->id]);$domainPage->assertSee(ComplimentaryAccounts::LABEL)->assertSee('Standard renewal price USD 10.40 / year, complimentary')->assertSee('Example Hosting covers registrar costs.');$domainHtml=$domainPage->html();
 $domainPage->assertActionVisible('complimentary_renewal')->mountAction('complimentary_renewal')->call('$refresh');
 expect(str_contains($domainPage->effects['partials']['action-modals.0']??'','Example Hosting covers the $8.00 registrar renewal cost.'),'Renewal dialog names the configured company');$domainPage->unmountAction();
@@ -66,7 +66,7 @@ App\Models\Setting::updateOrCreate(['key'=>'company_name','settingable_type'=>nu
 config(['settings.company_name'=>'','app.name'=>'']);Auth::login($staff);
 $domainPage->call('pollManagement')->assertSee('We cover registrar costs.')->mountAction('complimentary_renewal')->call('$refresh');
 expect(str_contains($domainPage->effects['partials']['action-modals.0']??'','We cover the $8.00 registrar renewal cost.'),'Unnamed sites use neutral renewal dialog copy');$domainPage->unmountAction();
-expect(str_contains(ComplimentaryAccountSetting::render($user),'We pay for this customer'), 'Unnamed sites use neutral account funding copy');
+expect(str_starts_with((string)Livewire::actingAs($staff)->test(ComplimentaryAccountSetting::class,['customer'=>$user->id])->instance()->turnOnAction()->getModalDescription(),'We pay for new registrations'),'Unnamed sites use neutral account funding copy');
 $out=getenv('COMP_ACCOUNT_RENDER_DIR');
 if($out){
     expect(is_dir($out),'Existing review artifact directory required');

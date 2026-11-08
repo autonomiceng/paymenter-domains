@@ -4,9 +4,13 @@
 .domains-dialog .fi-modal-footer:is(.fi-align-end,.fi-align-right) .fi-modal-footer-actions{flex-direction:row;justify-content:flex-end}
 .domains-mono,.domains-wrap,.domains-row .fi-in-entry-content-col{overflow-wrap:anywhere}
 .domains-title{display:inline-flex;flex-wrap:wrap;align-items:center;gap:.5rem;min-width:0}
-.domains-form-stack{display:grid;gap:1rem}
-.domains-form-switch{display:flex;gap:.75rem;align-items:center}
-.domains-form-input{display:block;width:100%}
+/* Domain price line under the customer title: the state and its button, then the last change on its own row.
+   The last change wraps to at most 2 lines and ends in "..."; the audit log has all of it. */
+.domains-comp{display:grid;gap:.25rem;margin-top:.375rem;min-width:0;font-size:.875rem;line-height:1.25rem}
+.domains-comp-line{display:flex;flex-wrap:wrap;align-items:center;gap:.375rem .75rem;min-width:0}
+.domains-comp-state{opacity:.75}
+.domains-comp-last{max-width:72ch;margin:0;opacity:.75;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden}
+@media (max-width:39.99rem){.domains-comp-last{min-height:2.5rem}}
 .domains-missing-mark{display:inline-block;width:14px;height:16px;flex:none;vertical-align:middle;color:inherit}
 .domains-missing{display:inline-flex;align-items:center;gap:.375rem;color:var(--beco-err,var(--danger-600));font-weight:600}
 .domains-missing--calm{color:var(--beco-fg-3,var(--gray-500));font-weight:500}

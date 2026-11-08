@@ -1,6 +1,6 @@
 # Complimentary domain accounts
 
-Staff with `admin.domains.fund` can set **Domains are complimentary** on the native customer editor. A reason is required. Extension-owned history retains every change, staff actor and timestamp. The native customer row is unchanged.
+Staff with `admin.domains.fund` see one line under the native customer editor's title: **Standard domain prices** or **Complimentary domains**, one button that opens a confirm, and the last change (who, when, reason). A reason is required. Like the registrar cost approval, a confirm applies only over the setting it showed: if someone changes it after the confirm opens, the confirm refuses and asks staff to reload. Extension-owned history retains every change, staff actor and timestamp, and each change also appears in the customer's native Audit Log with its reason, through the auditing package's public custom event. The native customer row is unchanged. The line uses only the public `PAGE_HEADER_HEADING_AFTER` hook, scoped to the customer editor, and shows no amounts.
 
 The setting applies to new registrations, transfers and renewal terms. Domain checkout lines become zero; hosting keeps its normal native charges. Each domain term retains its own account authorization and registrar cost ceiling. Turning the setting off restores standard pricing for new terms and leaves issued terms funded. The separate staff **Complimentary renewal** action still covers one renewal only.
 
