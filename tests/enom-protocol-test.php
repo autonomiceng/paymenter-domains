@@ -58,6 +58,30 @@ same('rejected',$parser->parse(RegistrationCommand::Purchase,$onlyResponse)->sta
 $twoErrors=str_replace(['<ErrCount>1</ErrCount>','</errors>'],['<ErrCount>2</ErrCount>','<Err2>Validation error. Failed to create order.</Err2></errors>'],$purchaseRefusal);
 same('rejected',$parser->parse(RegistrationCommand::Purchase,$twoErrors)->status,'Multiple consistent errors retain explicit order-creation refusal');
 
+// The recorded 541 has ResponseCount=1; synthetic response-only and errors-only
+// controls remain complete only with their explicit matching response count.
+$errorsOnly=str_replace('<ResponseCount>1</ResponseCount>','<ResponseCount>0</ResponseCount>',preg_replace('~<responses>.*?</responses>~s','',$purchaseRefusal));
+same('rejected',$parser->parse(RegistrationCommand::Purchase,$errorsOnly)->status,'A complete errors-only refusal explicitly declares zero responses');
+foreach ([
+    'missing_response_count'=>str_replace('<ResponseCount>1</ResponseCount>','',$purchaseRefusal),
+    'missing_count_errors_only'=>str_replace('<ResponseCount>0</ResponseCount>','',$errorsOnly),
+    'missing_errors_count_two'=>str_replace('<ErrCount>1</ErrCount>','<ErrCount>2</ErrCount>',$onlyResponse),
+    'missing_errors_count_nine'=>str_replace('<ErrCount>1</ErrCount>','<ErrCount>9</ErrCount>',$onlyResponse),
+    'empty_errors_count_three'=>str_replace(['<ErrCount>1</ErrCount>','<errors><Err1>Validation error. Failed to create order.</Err1></errors>'],['<ErrCount>3</ErrCount>','<errors/>'],$purchaseRefusal),
+    'error_list_count_mismatch'=>str_replace('<ErrCount>1</ErrCount>','<ErrCount>2</ErrCount>',$purchaseRefusal),
+    'response_count_two'=>str_replace('<ResponseCount>1</ResponseCount>','<ResponseCount>2</ResponseCount>',$purchaseRefusal),
+    'response_count_zero'=>str_replace('<ResponseCount>1</ResponseCount>','<ResponseCount>0</ResponseCount>',$purchaseRefusal),
+    'response_count_empty'=>str_replace('<ResponseCount>1</ResponseCount>','<ResponseCount/>',$purchaseRefusal),
+    'response_count_invalid'=>str_replace('<ResponseCount>1</ResponseCount>','<ResponseCount>invalid</ResponseCount>',$purchaseRefusal),
+    'response_count_padded'=>str_replace('<ResponseCount>1</ResponseCount>','<ResponseCount>01</ResponseCount>',$purchaseRefusal),
+    'missing_response'=>preg_replace('~<responses>.*?</responses>~s','',$purchaseRefusal),
+    'empty_response'=>preg_replace('~<responses>.*?</responses>~s','<responses/>',$purchaseRefusal),
+] as $case=>$body){
+    $result=$parser->parse(RegistrationCommand::Purchase,$body);
+    same(['unknown',null],[$result->status,$result->value('purchase_refusal')],'Incomplete counts never mint refusal proof: '.$case);
+}
+
+
 foreach ([str_replace(['<Err1>','</Err1>'],['<Err2>','</Err2>'],$purchaseRefusal),str_replace('<RRPCode>541</RRPCode>','<RRPCode>451</RRPCode>',$purchaseRefusal),
     str_replace('<RRPCode>541</RRPCode>','<RRPCode>549</RRPCode>',$purchaseRefusal),str_replace('<RRPCode>541</RRPCode>','<RRPCode>554</RRPCode>',$purchaseRefusal),
     str_replace('<RRPCode>541</RRPCode>','',$purchaseRefusal),
