@@ -7,13 +7,13 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts,Staff};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\ObservationReader;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,ObservationProjection,ObservationRecords,ObservationSchema,OwnerRecords};
-// Enom CAA stays held (fail closed). Staff copy remains owned by the words lane.
+// Enom CAA stays held; staff get the specific cause and registrar recovery step.
 $state->dns[]=$caa;$tick();
 same('refreshed',$observer->run($d->id,readRecords:true),'Legacy Enom CAA read holds only records');
 same(['caa_unsupported','dns'],$hold(),'Legacy Enom CAA names its reason and family');
 expect(!isset(OwnerRecords::forDomain($d->fresh())['dns']),'CAA keeps the DNS editor off');
 Auth::login(staffUser([Staff::VIEW]));
-same('Sync stopped: DNS record check failed.',DomainFacts::recordHold($d->fresh()),'CAA hold retains the current staff fallback pending the words lane');
+same("Sync stopped: this domain has CAA records, which can't be read from Enom here. Other domain facts were saved. Manage this domain's DNS at Enom.",DomainFacts::recordHold($d->fresh()),'CAA hold names the read limitation and where staff can manage DNS');
 array_pop($state->dns);$tick();$observer->run($d->id,readRecords:true);
 expect(!ObservationRecords::held($d->fresh()),'Removing CAA clears the legacy hold');
 

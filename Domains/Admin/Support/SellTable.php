@@ -51,7 +51,7 @@ final class SellTable
         if(!($facts['acquisition']['register']??false)&&($facts['acquisition']['transfer']??false)){return ['label'=>'Renewals and transfers only','tone'=>'gray'];}
         $s=$facts['sales']??['label'=>'Not for sale','tone'=>'gray','reason'=>TldFacts::NEEDS_SYNC];
         if($s['reason']===null){return ['label'=>$s['label'],'tone'=>$s['tone']];}
-        if(!Staff::requireView()->costs){return ['label'=>$s['label'],'tone'=>$s['tone'],'next'=>$s['reason'],'open'=>null];}
+        if(!$this->grants()->costs){return ['label'=>$s['label'],'tone'=>$s['tone'],'next'=>$s['reason'],'open'=>null];}
         $action=in_array('register',$facts['intent']['stops']??[],true)?'transfer':'register';
         $step=$this->nextStep($row,$action);
         return ['label'=>$step['state']==='checking'?'Checking':$s['label'],'tone'=>$s['tone'],'next'=>$step['next']?:$s['reason'],'open'=>$step['open']];

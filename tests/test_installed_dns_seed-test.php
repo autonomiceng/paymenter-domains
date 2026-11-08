@@ -37,7 +37,7 @@ $reject=static function(int $n,string $rule)use($names,$staff):void {
     unset($row,$page);gc_collect_cycles();gc_mem_caches();
 };
 $connect('namesilo');
-$reject(1,'NameSilo requires 2 to 13 valid nameservers. Update this DNS template before saving the site default.');
+$reject(1,'NameSilo takes 2 to 13 nameservers. Update this DNS template or choose another one.');
 config(['domains.site_dns_default.nameservers'=>$names(13)]);app(Installation::class)->install();
 $seeded=SiteDnsDefault::profile();same($names(13),$seeded?->nameservers,'NameSilo accepts its upper limit at installation');
 $count=WatchProfile::count();$audit=WatchAudit::count();
@@ -45,7 +45,7 @@ config(['domains.site_dns_default.nameservers'=>$names(1)]);app(Installation::cl
 same($seeded->id,SiteDnsDefault::profile()?->id,'Configuration never replaces a saved choice');
 same([$count,$audit],[WatchProfile::count(),WatchAudit::count()],'Repeated installation remains idempotent');
 $unset();$connect('enom');
-foreach([1,13]as$n){$reject($n,'Enom requires 2 to 12 valid nameservers. Update this DNS template before saving the site default.');}
+foreach([1,13]as$n){$reject($n,'Enom takes 2 to 12 nameservers. Update this DNS template or choose another one.');}
 foreach([2,12]as$n){
     config(['domains.site_dns_default.nameservers'=>$names($n)]);app(Installation::class)->install();
     same($names($n),SiteDnsDefault::profile()?->nameservers,'Both connected registrars accept installation boundary '.$n);

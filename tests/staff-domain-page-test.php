@@ -39,7 +39,7 @@ same(['This registrar doesn\'t support this change.',null],[DomainEditActions::h
 $unknown=DomainEditActions::held($active,null)['held'];
 expect(!str_contains($unknown,'last request')&&!str_contains($unknown,'History'),'With no cause, the hold claims no request');
 Account::where('server_id',$active->server_id)->update(['processing_enabled'=>$processing]);
-// Progress sits under a row's own words, and a finished change stops talking.
+// Progress sits under a row's own words, retains its optional tone (a7b7c7d4), and a finished change stops talking.
 $rows=['Contacts'=>['value'=>'Ada','sub'=>'ada@example.test'],'Nameservers'=>['value'=>null,'sub'=>'Sync to read them']];
 $saving=['contacts'=>['pending'=>true,'text'=>'Saving…'],'nameservers'=>['pending'=>true,'text'=>'Saving…']];
 same(['ada@example.test','Saving…'],array_column(DomainFacts::withProgress($rows,$saving),'sub'),'Progress keeps the email line and replaces a Missing cause');
@@ -166,7 +166,7 @@ $storeNs($active,['ns1.example.net','ns2.example.net','ns3.example.net']);
 same(['ns1.example.net','ns2.example.net','ns3.example.net'],$value($active,'Nameservers'),'Stored nameservers in order');
 same(false,DomainFacts::for($active->fresh())['Nameservers']['demo'],'Ordinary nameservers have no Demo tag');
 same($before,$queries($active->fresh()),'Nameservers add no queries');
-Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSeeInOrder(['Transfer lock','Nameservers','ns1.example.net','ns2.example.net','ns3.example.net'])->assertSeeHtml('data-beco-tone="ok" data-beco-record="lock-'.$active->id.'"');
+Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSeeInOrder(['Nameservers','ns1.example.net','ns2.example.net','ns3.example.net','Transfer lock'])->assertSeeHtml('data-beco-tone="ok" data-beco-record="lock-'.$active->id.'"');
 foreach([[],['ns1.example.net',7],['a'=>'ns1.example.net'],'ns1.example.net'] as $bad){$storeNs($active,$bad);same(null,$value($active,'Nameservers'),'Unusable stored nameservers are Missing');}
 $storeNs($active,['ns1.example.net','ns2.example.net']);
 // Every Missing carries its cause.
@@ -190,7 +190,7 @@ foreach (['off'=>[false,'Off',true],'on'=>[true,'On',false],'unknown'=>[null,nul
 }
 $active->fresh()->update(['observation'=>$autoRenew]);
 DB::table('domains_domains')->where('id',$active->id)->update(['provider_expires_at'=>null]);
-same([null,'Fills in by itself within a day',null,'Fills in by itself after the expiry date syncs'],[$value($active,'Expires'),$sub($active,'Expires'),$value($active,'Next invoice'),$sub($active,'Next invoice')],'Active without expiry shows Missing with causes');
+same([null,'No confirmed expiry saved. Check the domain at the registrar.',null,'Fills in by itself after the expiry date syncs'],[$value($active,'Expires'),$sub($active,'Expires'),$value($active,'Next invoice'),$sub($active,'Next invoice')],'Active without expiry shows Missing with causes: '.json_encode([$value($active,'Expires'),$sub($active,'Expires'),$value($active,'Next invoice'),$sub($active,'Next invoice')]));
 Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($active->domain)->assertSee('Expiry missing')->assertSee('Fills in by itself within a day');
 same('Under review',DomainFacts::status($active->fresh())['label'],'Active without expiry is under review');
 same('Expiry missing. Check the domain.',DomainFacts::statusLine(DomainFacts::status($active->fresh())),'Expiry missing step');
@@ -253,24 +253,24 @@ Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$unsent->id])->as
     ->assertDontSee('Sync stopped')->assertDontSee('Sync failed')->assertDontSee('Resume sync');
 Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($unsent->domain)->assertDontSee('Sync failed');
 
-// Sync: a failed read stops immediately; the page must not claim repeated failures.
+// A terminal read refusal stops immediately; transient failures keep their automatic retry.
 $work=DB::table('domains_observation_work')->insertGetId(['server_id'=>$active->server_id,'account_fingerprint'=>$active->account_fingerprint,
-    'domain_id'=>$active->id,'generation'=>$active->authority_generation,'due_at'=>0,'safe_code'=>'read_failed','tries'=>1]);
+    'domain_id'=>$active->id,'generation'=>$active->authority_generation,'due_at'=>0,'safe_code'=>'read_unavailable','tries'=>1]);
 $staff=staffUser([Staff::VIEW,'admin.domains.operations.resume_observation']);
 Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$active->id])
-    ->assertSee('Sync stopped after a failed check.')->assertSee('1 attempt. Stopped until resumed.')->assertSee('Resume sync')->assertDontSee('repeated failures');
+    ->assertSee('The registrar read stopped.')->assertSee('Stopped after 1 attempts.')->assertSee('Resume sync')->assertDontSee('repeated failures');
 DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>'read_unavailable','tries'=>5]);
-same(['Sync failed','danger','5 attempts. Stopped until resumed.'],[$value($active,'Last sync'),DomainFacts::for($active->fresh())['Last sync']['tone'],$sub($active,'Last sync')],'Sync failed row');
-same('Sync stopped after a failed check.',DomainFacts::notice($active->fresh())['title'],'Sync stopped notice');
+same(['Read stopped','danger',null],[$value($active,'Last sync'),DomainFacts::for($active->fresh())['Last sync']['tone'],$sub($active,'Last sync')],'Sync failed row');
+same('The registrar read stopped.',DomainFacts::notice($active->fresh())['title'],'Sync stopped notice');
 DB::table('domains_domains')->where('id',$active->id)->update(['provider_expires_at'=>null]);
-same('Sync failed. Use Resume sync.',$sub($active,'Expires'),'Missing expiry names the failed sync');
+same('No confirmed expiry saved. Check the domain at the registrar.',$sub($active,'Expires'),'Missing expiry names the failed sync');
 DB::table('domains_domains')->where('id',$active->id)->update(['provider_expires_at'=>today()->addDays(120)->format('Y-m-d')]);
 Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($active->domain)->assertSee('Active')->assertSee('Sync failed')->assertSeeHtml('data-beco-tone="warn" data-beco-record="domain-'.$active->id.'"');
 same('success',DomainFacts::listTone(['tone'=>'success'],null),'A healthy row stays green in the list');same('danger',DomainFacts::listTone(['tone'=>'danger'],'failed'),'A stopped sync never softens a worse status');
-Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$active->id])->assertSee('Sync stopped after a failed check.')->assertSee('Resume sync')->assertSee('Sync failed');
+Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$active->id])->assertSee('The registrar read stopped.')->assertSee('Resume sync')->assertSee('Read stopped')->assertSee('Stopped after 5 attempts.')->assertSee('Cause: read_unavailable.');
 Auth::setUser($staff);$stoppedHead=DomainFacts::head($active->fresh(),DomainFacts::status($active->fresh()),DomainFacts::for($active->fresh()));
 same('warning',$stoppedHead['tone'],'Active over a stopped sync turns amber');
-expect(str_contains((string)$stoppedHead['step'],'Sync stopped after a failed check. Use Resume sync below.')&&!str_contains((string)$stoppedHead['step'],'data-beco-tone'),'The state is the one mark');
+expect(str_contains((string)$stoppedHead['step'],'The registrar read stopped. Use Resume sync below.')&&!str_contains((string)$stoppedHead['step'],'data-beco-tone'),'The state is the one mark');
 Auth::setUser($viewer);expect(str_contains((string)DomainFacts::head($active->fresh(),DomainFacts::status($active->fresh()),DomainFacts::for($active->fresh()))['step'],'Ask staff who can resume sync.'),'Without the right the step names who can');
 // One rule for the request a page names: the one that needs staff, in the head and on the rows alike, and none when nothing does.
 Auth::setUser($staff);
@@ -308,7 +308,7 @@ Auth::setUser($staff); DB::table('domains_domains')->where('id',$active->id)->up
 $ended=DomainFacts::head($active->fresh(),DomainFacts::status($active->fresh()),DomainFacts::for($active->fresh()));
 same('gray',$ended['tone'],'An ended domain keeps its own tone');
 expect(!str_contains((string)$ended['step'],'Sync'),'An ended domain has no sync step');
-expect($value($active,'Last sync')!=='Sync failed','An ended domain does not ask for a resume');
+expect($value($active,'Last sync')!=='Read stopped','An ended domain does not ask for a resume');
 Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$active->id])->assertDontSee('Resume sync')->assertDontSee('Stopped until resumed');
 same(null,DomainFacts::sync($active->fresh()),'The list reads the same');
 DB::table('domains_domains')->where('id',$active->id)->update(['status'=>'active']);
@@ -428,8 +428,8 @@ same(['On','Unpaid renewal invoice cancelled. Talk to the customer about renewal
 ObligationAlerts::record($active->fresh(),'observation_review',time());
 same(['Oct 20, 2026 15:05 UTC',null],[$value($active,'Last sync'),$sub($active,'Last sync')],'A sync that is not stopped has nothing to resume');
 $work=DB::table('domains_observation_work')->insertGetId(['server_id'=>$active->server_id,'account_fingerprint'=>$active->account_fingerprint,
-    'domain_id'=>$active->id,'generation'=>$active->authority_generation,'due_at'=>0,'safe_code'=>'read_failed','tries'=>1]);
-same('1 attempt. Stopped until resumed.',$sub($active,'Last sync'),'A sync review alert does not repeat the stopped row');
+    'domain_id'=>$active->id,'generation'=>$active->authority_generation,'due_at'=>0,'safe_code'=>'read_unavailable','tries'=>1]);
+same('Sync stopped. Ask staff who can resume sync.',$sub($active,'Last sync'),'The stopped row names staff with resume permission');
 DB::table('domains_observation_work')->where('id',$work)->delete();
 Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSeeInOrder(['Service','Missing','Customer, order or service missing'])->assertSee('Unpaid renewal invoice cancelled');
 $filter(Livewire::actingAs($viewer)->test(ListDomains::class),'alerts',true)->assertCanSeeTableRecords([$active])->assertCanNotSeeTableRecords([$held,$long]);

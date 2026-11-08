@@ -17,9 +17,10 @@ $viewer=staffUser([Staff::VIEW]); Auth::setUser($viewer);
 foreach(array_keys(DomainFacts::ALERTS) as $code){ObligationAlerts::record($domain,$code,time());}
 // A sync alert only counts while the sync is stopped, because Resume sync is its way out.
 DB::table('domains_observation_work')->insert(['server_id'=>$domain->server_id,'account_fingerprint'=>$domain->account_fingerprint,
-    'domain_id'=>$domain->id,'generation'=>$domain->authority_generation,'due_at'=>0,'safe_code'=>'read_failed','tries'=>1]);
+    'domain_id'=>$domain->id,'generation'=>$domain->authority_generation,'due_at'=>0,'safe_code'=>'read_unavailable','tries'=>1]);
 // The stopped-sync row already names this alert; it does not repeat the generic cause.
-$pageCause=static fn(string $code):string=>$code==='observation_review'?'Stopped until resumed.':DomainFacts::alertCause($code);
+$pageCause=static fn(string $code):string=>DomainFacts::alertCause($code);
+same('Sync stopped. Ask staff who can resume sync.',$pageCause('observation_review'),'A viewer gets the stopped-read cause and the required staff permission');
 $hidden=[];
 foreach([...array_keys(DomainStatus::STATES),'unknown'] as $status){
     DB::table('domains_domains')->where('id',$domain->id)->update(['status'=>$status,'provider_expires_at'=>null,'last_synced_at'=>null]);
@@ -28,10 +29,10 @@ foreach([...array_keys(DomainStatus::STATES),'unknown'] as $status){
         $cause=$pageCause($code);
         // Nothing syncs on an ended domain, so a stopped sync is no job there.
         if($code==='observation_review'&&DomainFacts::ended($domain->fresh())){continue;}
-        if(!str_contains($html,$cause)||$code==='observation_review'&&!str_contains($html,'Sync failed')){$hidden[]=$code.'/'.$status;}
+        if(!str_contains($html,$cause)||$code==='observation_review'&&!str_contains($html,'Read stopped')){$hidden[]=$code.'/'.$status;}
     }
 }
-same([],$hidden,'No open alert may be hidden on a domain page');
+same([],$hidden,'No open alert may be hidden on a domain page: '.implode(', ',$hidden));
 echo "All alert kinds visible in every domain state.\n";
 // The account-filtered list must explain why a pending domain has an open alert.
 DB::table('domains_obligation_alerts')->where('domain_id',$domain->id)->delete();
@@ -65,7 +66,7 @@ foreach(array_keys(DomainFacts::ALERTS) as $code){ObligationAlerts::record($doma
 DB::table('domains_domains')->where('id',$domain->id)->update(['renewal_policy'=>'unreadable']);
 $unreadable=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$domain->id])->assertSee('Open alerts');
 foreach(array_keys(DomainFacts::ALERTS) as $code){$unreadable->assertSee($pageCause($code));}
-$unreadable->assertSee('Sync failed');
+$unreadable->assertSee('Read stopped');
 // Unknown kinds still surface safely, without printing stored codes.
 DB::table('domains_obligation_alerts')->where('domain_id',$domain->id)->update(['resolved_at'=>time()]);
 DB::table('domains_obligation_alerts')->where('domain_id',$domain->id)->where('code','unknown_expiry')->limit(1)->update(['resolved_at'=>null,'code'=>'PRIVATE-UNKNOWN-CODE']);
@@ -75,6 +76,6 @@ Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($domain->doma
 Paymenter\Extensions\Servers\Domains\Services\WatchNoticeSchema::install();$watcher=staffUser([Staff::VIEW,'admin.domains.watch.view']);$failedAt=time();
 Paymenter\Extensions\Servers\Domains\Services\WatchNoticeHealth::record((int)$domain->user_id,(int)$domain->id,'managed','render_failed',$failedAt,['template'=>'domains_watch_ns_changed','channel'=>'mail']);
 Livewire::actingAs($watcher)->test(ViewDomain::class,['record'=>$domain->id])->assertSee('Open alerts')
-    ->assertSee('Customer alert failed '.gmdate('M j, Y H:i',$failedAt).' UTC.')->assertSee('An alert template has an error. Fix it in Notification templates.');
+    ->assertSee('Customer alert failed '.gmdate('M j, Y, g:i A',$failedAt).' UTC.')->assertSee('An alert template has an error. Fix it in Notification templates.');
 Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$domain->id])->assertDontSee('Customer alert failed');
 $nativeSuccessful=true;echo "Staff alert visibility passed.\n";

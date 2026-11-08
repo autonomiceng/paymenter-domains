@@ -33,6 +33,7 @@ final readonly class OwnerRenewalController
         return $e instanceof \DomainException ? match($e->getMessage()) {
             'Renewal is off for this adopted registration.'=>'Auto-renew is off for this domain. Contact support if you want to renew it.',
             'Renewal term exceeds the registry horizon.'=>'Domains can be registered for at most 10 years ahead. Choose a shorter term.',
+            'Renewal term unavailable.'=>'Renewals longer than 1 year aren’t available for this domain yet. Renew for 1 year at a time.',
             'Existing renewal obligation requires review.'=>match($status) { 'cancelled'=>self::CANCELLED,
                 'review'=>'This renewal is under review. Contact support if you need an update on this renewal.',
                 default=>'This domain already has a renewal invoice for a different term. Pay that invoice, or contact support to change it.'},

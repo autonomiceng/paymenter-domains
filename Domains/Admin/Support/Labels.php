@@ -63,6 +63,16 @@ final class Labels
         if (\Paymenter\Extensions\Servers\Domains\Services\BalanceRetries::legacyHold($op)) {
             return \Paymenter\Extensions\Servers\Domains\Services\BalanceRetries::pending($op) ? 'Not sent: checking this order again' : 'Not sent: reason not saved';
         }
+        // The domain page notice names one step for this hold. The reason names the same one, not Cancel or Release hold.
+        if ($op->funding_basis==='complimentary'&&$op->safe_code==='registrar_price_increased') {
+            $costs=Staff::can(Staff::COSTS);
+            try { $need=\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::need($op,$costs&&Staff::can('admin.domains.fund')&&Staff::can('admin.domains.manage')); }
+            catch (\Throwable) { return DomainFacts::UNREADABLE; }
+            if ($need!==null) { return $costs?$need:'Needs approval: registrar price increased. Ask staff with access to domain costs to review it.'; }
+        }
+        // Older checks retained a cap code even when the sending switch refused the read.
+        if(in_array($op->safe_code,['enom_test_reconciliation_call_cap','enom_test_transfer_reconciliation_call_cap'],true)
+            &&($op->policy['status_check']['reason']??null)==='send_guard'){return self::reason('enom_test_reconciliation_send_guard');}
         $reason=self::reason($op->safe_code,$op->funding_basis==='complimentary');
         if ($reason===self::FEATURE_OFF) {
             return 'Not sent: '.(['renew'=>'Renewals','transfer'=>'Transfers','register'=>'Registrations'][$op->action]??'Changes').' off for this account';
@@ -132,6 +142,7 @@ final class Labels
             'contact_profile_proof_required'=>'Not sent: contact details need fixing','write_disabled'=>self::FEATURE_OFF,
             'enom_test_transfer_call_cap'=>'Not sent: stopped by our test send check','enom_test_call_cap'=>'Not sent: stopped by our test send check','enom_test_management_call_cap'=>'Not sent: stopped by our test send check','enom_test_renewal_call_cap'=>'Not sent: stopped by our test send check',
             'enom_test_reconciliation_call_cap'=>RequestStatus::UNCONFIRMED,'enom_test_transfer_reconciliation_call_cap'=>RequestStatus::UNCONFIRMED,
+            'enom_test_reconciliation_send_guard'=>'Status check paused: Enom sends are off',
             'enom_test_transfer_setup_required'=>'Not sent: registrar account not set up','enom_test_setup_required'=>'Not sent: registrar account not set up',
             'enom_test_transfer_usd_balance_required'=>'Not sent: registrar balance needs another check','usd_balance_required'=>'Not sent: registrar balance needs another check',
             'configuration_unavailable'=>"Not sent: couldn't load the registrar account's settings",
@@ -154,7 +165,7 @@ final class Labels
             'no_hosting'=>'No hosting service. DNS record checks do not apply.',
             'rotation'=>'Check not finished. It continues on the next run.',
             'resolver_failed'=>'DNS resolver failed','invalid_answer'=>'DNS answer invalid','ambiguous_empty'=>'DNS answer incomplete',
-            'registrar_price_increased'=>'Not sent: registrar price exceeds the frozen order limit. Cancel'.($complimentary?'':' and add credit').', or use Release hold after the price falls.',
+            'registrar_price_increased'=>'Not sent: the registrar price is above the limit saved with the order. Cancel'.($complimentary?'':' and add credit').', or use Release hold after the price falls.',
             'actual_cost_overrun'=>'Registrar cost is above the spending limit.','below_cost'=>'Registrar cost exceeds retail price',
             'confirmed'=>'Confirmed','correction_required'=>'Corrections needed','original_attempt_unresolved'=>'First try has no result yet.',
             'resumed'=>'Status checks resumed','transfer_rejection_contradiction'=>'Registrar says rejected, our records disagree.',
