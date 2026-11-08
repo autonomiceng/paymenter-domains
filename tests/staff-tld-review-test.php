@@ -47,6 +47,10 @@ Paymenter\Extensions\Servers\Domains\Models\Price::where(['server_id'=>$t->serve
 $html=TldFacts::accountsTable($t->fresh(),Staff::requireView())->toHtml();$dom=new DOMDocument;@$dom->loadHTML($html);$xp=new DOMXPath($dom);
 $check(trim($xp->query('//tbody/tr/td[5]')->item(0)?->textContent??'')!=='Off','Retained enabled transfer intent is not displayed as Off');
 DB::table('domains_sales_policies')->where('id',$p['id'])->update($p);
+// Missing prices must carry the recovery instruction into the actual account-table note.
+Paymenter\Extensions\Servers\Domains\Models\Price::where(['server_id'=>$t->server_id,'tld'=>$t->tld,'action'=>'renew'])->delete();
+$html=TldFacts::accountsTable($t->fresh(),Staff::requireView())->toHtml();$dom=new DOMDocument;@$dom->loadHTML($html);$xp=new DOMXPath($dom);
+$check(str_contains($xp->query('//tbody/tr/td[4]')->item(0)?->textContent??'','Missing')&&str_contains($xp->query('//tr[contains(@class,"domains-table-note")]')->item(0)?->textContent??'','Edit prices must supply a valid price.'),'Actual missing-renewal cell has its displayed price-edit next step');
 // Actual Filament filter composition must scope its summary before reading other accounts.
 $unscoped=false;$observe=false;DB::listen(static function($q)use(&$observe,&$unscoped):void{if($observe&&str_starts_with($q->sql,'select * from "domains_accounts"')&&!str_contains($q->sql,'where')){$unscoped=true;}});
 $list=Livewire\Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ListTlds::class)->filterTable('server_id',(string)$t->server_id);

@@ -64,6 +64,12 @@ try{
   $stored=ComplimentaryAccounts::current($user->id);$instant=\Carbon\CarbonImmutable::parse($stored['at'],$zone)->utc()->format(DATE_ATOM);
   expect(str_contains($changed->html(),'datetime="'.$instant.'"'),'Actual action renders the stored instant once in UTC: '.$zone);
  }
+ foreach(['2026-07-01T12:00:00-07:00','2026-12-01T12:00:00-08:00']as$instant){
+  date_default_timezone_set('America/Los_Angeles');config(['app.timezone'=>'America/Los_Angeles']);
+  app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new class($instant) implements \Paymenter\Extensions\Servers\Domains\Contracts\Clock{public function __construct(private string $at){}public function now():DateTimeImmutable{return new DateTimeImmutable($this->at);}});
+  $on=(bool)ComplimentaryAccounts::current($user->id)['enabled'];$changed=$line($staff,$user->id)->callAction($on?'turnOff':'turnOn',['reason'=>'Seasonal storage timestamp'])->assertHasNoActionErrors();
+  expect(str_contains($changed->html(),'datetime="'.(new DateTimeImmutable($instant))->setTimezone(new DateTimeZone('UTC'))->format(DATE_ATOM).'"'),'Summer and winter retained timestamps keep their actual offset');
+ }
 }finally{date_default_timezone_set($priorTimezone);config(['app.timezone'=>$priorAppZone]);app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);}
 // Native audit disabled at provider boot means no listener; the extension still retains its history.
 \Illuminate\Support\Facades\Event::forget(\OwenIt\Auditing\Events\AuditCustom::class);config(['audit.enabled'=>false]);
