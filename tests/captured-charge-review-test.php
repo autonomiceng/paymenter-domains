@@ -32,7 +32,7 @@ $review = static function ($d) use ($ports, $clock): void {
 config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,'domains.enom_writes.renewal'=>true]);
 $rights=['admin.domains.view','admin.domains.costs','admin.domains.manage','admin.domains.fund','admin.invoices.update','admin.domains.operations.resume_reads','admin.domains.operations.recheck','admin.domains.operations.approve_charge'];
 $staff=staffUser($rights);$role=$staff->role;$failures=[];$check=static function(bool $ok,string $message)use(&$failures):void{if(!$ok){$failures[]=$message;}};
-foreach(['changed'=>['20.00','actual_charge_changed'],'overrun'=>['16.00','actual_cost_overrun']]as$case=>[$limit,$reason]){
+try{foreach(['changed'=>['20.00','actual_charge_changed'],'overrun'=>['16.00','actual_cost_overrun']]as$case=>[$limit,$reason]){
  config(['domains.enom_identity.environment'=>null]);
  [$seed,$d,$b]=$makeRenewal(placeholderComFixtureName('captured-'.$case.'-placeholder.com'),false);$cycles->retireUnpaid($seed->id);
  $clock->instant=new DateTimeImmutable('2027-09-27T12:00:00Z');$review($d);
@@ -90,6 +90,7 @@ foreach(['changed'=>['20.00','actual_charge_changed'],'overrun'=>['16.00','actua
  try{$op->fresh()->update(['policy'=>$changed]);expect(false,'Retained observation must be protected');}catch(DomainException){}
  same($writes,$state->writes,'No staff review resends Extend');
 }
+}catch(Throwable $error){throw new RuntimeException($error->getMessage().' at '.implode(' > ',array_map(static fn($frame)=>($frame['file']??'').':'.($frame['line']??0),$error->getTrace())),0,$error);}
 expect($failures===[],implode('; ',$failures));
 // Ordinary exact-charge paid completion still uses its frozen two-year total and no staff approval.
 [$paid,$d,$b,$invoice]=$makeRenewal(placeholderComFixtureName('captured-paid-control-placeholder.com'),true,2,beforeBill:$review);
