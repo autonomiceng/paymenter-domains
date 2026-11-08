@@ -96,6 +96,22 @@ catch (DomainException $error) {
 ini_set('zend.exception_ignore_args', '1');
 same($beforeRows, Account::count(), 'Failed authentication creates no account');
 expect(!Server::findOrFail(11)->settings()->whereIn('key', ['domains_credentials', LocalAccountEnrollment::KEY])->exists(), 'Failed authentication saves no secrets');
+// A registrar that does not answer is not a refused key: staff are told to try again, nothing is saved.
+foreach (['HTTP 503 page' => [503, '<html><body>Service Unavailable</body></html>', false], 'deadline' => [200, '', true]] as $case => [$status, $body, $timeout]) {
+    [$wire->status, $wire->body, $wire->timeout] = [$status, $body, $timeout];
+    $before = count($wire->calls); $audit = count(StaffSettingsReview::historyRows(Server::findOrFail(11)));
+    try { $local->configure(11, 'namesilo', Environment::Live, ['api_key' => 'placeholder-key-unanswered'], $review(11)); expect(false, $case.' accepted'); }
+    catch (DomainException $error) {
+        same('Registrar did not answer.', $error->getMessage(), $case.' says the registrar did not answer');
+        same(null, $error->getPrevious(), $case.' retains no cause');
+    }
+    same($before + 1, count($wire->calls), $case.' sends one read and no retry');
+    same($beforeRows, Account::count(), $case.' creates no account');
+    expect(!Server::findOrFail(11)->settings()->whereIn('key', ['domains_credentials', LocalAccountEnrollment::KEY])->exists(), $case.' saves no secrets');
+    $rows = StaffSettingsReview::historyRows(Server::findOrFail(11));
+    same([$audit + 2, 'authentication_refused'], [count($rows), end($rows)['phase'] ?? null], $case.' audit still records the refusal');
+}
+[$wire->status, $wire->timeout] = [200, false];
 $malformedKey = "placeholder-key-\xFF";
 $malformedError = null;
 $before = count($wire->calls);

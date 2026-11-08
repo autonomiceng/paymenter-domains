@@ -38,7 +38,7 @@ final readonly class CatalogueFreshness
     /** Re-evaluate the saved observation with today's staff policy without redating its source. */
     public function cost(Cost $cost): Cost
     {
-        if (!in_array($cost->source, ['enom_bulk_bucket_1','enom_bulk_bucket_2','enom_bulk_bucket_5','enom_bulk_bucket_10','namesilo_account_annual'], true)) { return $cost; }
+        if (!in_array($cost->source, ['enom_bulk_bucket_1','enom_bulk_bucket_2','enom_bulk_bucket_5','enom_bulk_bucket_10','namesilo_account_annual','enom_renew_annual_total'], true)) { return $cost; }
         return new Cost($cost->action, $cost->term, $cost->enabled, $cost->total, $cost->sourceUnit, $cost->source,
             $cost->observedAt, $cost->observedAt->modify('+'.$this->maxAge().' seconds'), $cost->currency, normalized: true);
     }

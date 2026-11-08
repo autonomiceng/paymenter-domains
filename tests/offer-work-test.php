@@ -73,7 +73,8 @@ $nsWire = new class implements DeadlineTransport {
 };
 $factory = static fn ($binding) => $binding->registrarKey === 'namesilo'
     ? new NsFeed(new NsDriver(new NsClient($binding, 'placeholder-key', $nsWire), clock: $clock))
-    : new OfferFeed(new Driver(new Client($binding, Account::where('server_id', $binding->serverId)->sole()->stable_identity, 'placeholder-key', $wire), ['com', 'org', 'co.uk']));
+    : new OfferFeed(new Driver(new Client($binding, Account::where('server_id', $binding->serverId)->sole()->stable_identity, 'placeholder-key', $wire), ['com', 'org', 'co.uk']),
+        expansion: $binding->environment === Environment::Test ? \Paymenter\Extensions\Servers\Domains\Catalogue\TermSupport::REVIEWED_EVIDENCE['enom'] : []);
 $allowance = 25;
 $worker = new OfferWork($writer, $clock, new AccountReadBudget($clock, 25), $factory,
     static function () use (&$allowance): int { return $allowance; });

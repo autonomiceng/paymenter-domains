@@ -3,8 +3,8 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom;
 
-use Paymenter\Extensions\Servers\Domains\Catalogue\{Cost, Facts, FactsObserved, FeedObserved, PricedFeed, TermSupport};
-use Paymenter\Extensions\Servers\Domains\Data\{CatalogueFreshness, CostUnit, RequestContext};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{Cost, ExpansionFacts, Facts, FactsObserved, FeedObserved, PricedFeed, TermSupport};
+use Paymenter\Extensions\Servers\Domains\Data\{CatalogueFreshness, CostUnit, Environment, RequestContext};
 use Paymenter\Extensions\Servers\Domains\Services\PricingRule;
 
 /** Five account reads. Bucket membership is evidence, never interpolation from an annual price. */
@@ -66,6 +66,28 @@ final class OfferFeed implements PricedFeed
                     }
                 }
             }
+        }
+        // The reviewed TEST rule uses bucket 1's per-year renewal cost, never a registration bucket rate.
+        if ($context->binding->environment === Environment::Test && in_array('enom', TermSupport::EXACT_QUOTES, true)) {
+            foreach ($rows as $tld => &$costs) {
+                $evidence = $this->expansion[$tld] ?? [];
+                $family = ExpansionFacts::family($evidence, 'ordinary', $at);
+                if (!in_array($tld, TermSupport::FIRST_PASS, true) || $family === null) { continue; }
+                $annual = null;
+                foreach ($costs as $cost) { if ($cost->key() === 'renew:1') { $annual = $cost; } }
+                if ($annual === null) { continue; }
+                foreach ($family['terms'] as $years) {
+                    $term = ExpansionFacts::term($evidence, 'renew', $years, $at);
+                    if ($years === 1 || $term === null || $term['rule'] !== 'annual_cost_times_years'
+                        || $term['price_unit'] !== 'term_total' || $family['price_unit'] !== 'term_total') { continue; }
+                    try {
+                        $total = $annual->enabled ? PricingRule::decimal(PricingRule::units($annual->total) * $years, 4) : null;
+                        $costs[] = new Cost('renew', $years, $annual->enabled, $total, CostUnit::TermTotal,
+                            'enom_renew_annual_total', $at, $until);
+                    } catch (\InvalidArgumentException) { /* Unknown total retains old evidence. */ }
+                }
+            }
+            unset($costs);
         }
         $list = $this->read($this->reader->catalogue($context), $context);
         foreach ($list['tlds'] as $tld) { $rows[$tld] ??= []; }
