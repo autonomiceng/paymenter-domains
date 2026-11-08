@@ -747,7 +747,10 @@
     "tests/rejected-registration-page-test.php",
     "tests/storefront-transfer-date-test.php",
     "tests/registration-retail-test.php",
-    "tests/price-match-test.php"
+    "tests/price-match-test.php",
+    "tests/registration-return-projection-test.php",
+    "tests/registration-complimentary-refusal-test.php",
+    "tests/staff-registrar-diagnostic-test.php"
   ],
   "ui": [],
   "runner": [
