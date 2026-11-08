@@ -122,5 +122,6 @@ final class Installation
             ReminderTemplates::ensure();WatchNoticeTemplates::ensure();
         });
         SiteDnsDefault::ensure();
+        \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::resolve(\Paymenter\Extensions\Servers\Domains\Catalogue\Writer::class)?->republishRetailRule();
     }
 }

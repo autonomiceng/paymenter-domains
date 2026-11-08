@@ -103,7 +103,8 @@ class ViewOperation extends ViewRecord
         // Sent to registrar is hidden while the request has not been sent.
         if (($op->started_at || in_array($op->state,['running','pending','uncertain','succeeded'],true)) && ($sent=StaffReviewHistory::sendEvent($op))) { $rows[]=self::entry($sent,self::time($op->started_at),cause:RequestFacts::NO_TIME,at:$op->started_at); }
         if (!($facts['unreadable']??false)) {
-            if (isset($facts['send_failure'])) { $rows[]=self::entry('Registrar reply',$facts['send_failure']); }
+            if (isset($facts['registrar_reply'])) { $rows[]=self::entry('Registrar reply',$facts['registrar_reply']); }
+            elseif (isset($facts['send_failure'])) { $rows[]=self::entry('Registrar reply',$facts['send_failure']); }
             if (array_key_exists('invoice',$facts)) { $rows[]=self::entry('Invoice',$facts['invoice'],sub:$facts['invoice_sub'],url:$op->invoice_id?self::invoiceUrl((int)$op->invoice_id):null); }
             if (array_key_exists('cost',$facts)) { $rows[]=self::entry('Cost',$facts['cost'],sub:$facts['cost_sub']); }
             if (array_key_exists('auth_code',$facts)) {

@@ -15,6 +15,7 @@ $clock = new class implements Clock { public function now(): DateTimeImmutable {
 $binding = new AccountBinding('enom', 1, Environment::Test, 'offline');
 $context = fn () => new RequestContext($binding, RequestOrigin::Background, $clock->now()->modify('+1 hour'), new RequestBudget(5), $clock);
 $wire = new class implements Transport {
+    public array $priceParameters = [];
     public string $price = '8.9550'; public bool $enabled = true; public bool $fail = false;
     public function send(Environment $environment, ReadCommand $command, #[\SensitiveParameter] array $parameters,
         #[\SensitiveParameter] string $uid, #[\SensitiveParameter] string $token, int $timeoutMs): string
@@ -22,6 +23,7 @@ $wire = new class implements Transport {
         if ($this->fail) { throw new RuntimeException('offline timeout'); }
         if ($command === ReadCommand::TldInfo) { return '<interface-response><Command>'.$command->value.'</Command><ErrCount>0</ErrCount><Done>true</Done><TLDs><TLD><TLD>com</TLD><Registration><Minimum>1</Minimum><Maximum>3</Maximum><Unit>year</Unit><DNSRequired>false</DNSRequired></Registration><ExtAttributes>false</ExtAttributes><Renewal><AutoRenewOnly>false</AutoRenewOnly></Renewal></TLD></TLDs></interface-response>'; }
         if ($command === ReadCommand::Attributes) { return '<interface-response><Command>'.$command->value.'</Command><ErrCount>0</ErrCount><Done>true</Done><ResponseCount>0</ResponseCount></interface-response>'; }
+        $this->priceParameters = $parameters;
         return '<interface-response><Command>'.$command->value.'</Command><ErrCount>0</ErrCount><Done>true</Done><ProductPrice><ProductEnabled>'.($this->enabled ? 'true' : 'false').'</ProductEnabled><Price>'.$this->price.'</Price></ProductPrice></interface-response>';
     }
 };
@@ -29,6 +31,7 @@ $driver = new Driver(new Client($binding, 'offline', 'synthetic', $wire), ['com'
 $query = new Query('example.com', Action::Register, 3);
 $read=static fn()=>$driver->productPrice('com','register',3,$context());
 $observed=$read();same('success',$observed->status,'Synthetic Enom price reply accepted');
+same(2, $wire->priceParameters['Years'], 'Three-year native quote selects the documented two-to-four-year bracket');
 same(['tld'=>'com','action'=>'register','years'=>3,'price'=>'8.9550'],$observed->facts(),'Exact annual precision and requested term preserved');
 $before=Price::count();$wire->fail=true;same('unknown',$read()->status,'Timeout stays unknown');same($before,Price::count(),'Pure failed quote never changes persisted prices');
 $wire->fail=false;$wire->price='8.95500000';same('unknown',$read()->status,'Unsupported precision stays unknown');

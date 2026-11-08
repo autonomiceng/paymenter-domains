@@ -85,7 +85,7 @@ final class AdoptionCommit
                 // Sole reviewed reservation acquisition for an existing converted pending row.
                 Domain::whereKey($d->id)->update(['reservation_name' => $target->name]); $d->refresh();
             }
-            if ($d->reservation_name !== $target->name || !($d->price_mode==='standard'||($d->price_mode==='complimentary'&&ComplimentaryAccounts::authorization($target->customerId)))) { throw new AdoptionRefused(RefusalCode::HoldingReview); }
+            if ($d->reservation_name !== $target->name || !($d->price_mode==='standard'||($d->price_mode==='complimentary'&&ComplimentaryAccounts::authorization($target->customerId,true)))) { throw new AdoptionRefused(RefusalCode::HoldingReview); }
             $a->fill(['cancellation_id' => $cancellation, 'state' => 'committed', 'domain_id' => $d->id, 'authority_generation' => $e['resulting_generation'], 'committed_at' => $now])->save();
             $d->attachAdoption($lock, (int) $a->id);
             NativeDomainGuard::adopt($lock, $d, $a);
@@ -123,7 +123,7 @@ final class AdoptionCommit
             'user_id' => $target->customerId, 'server_id' => $target->serverId, 'registrar_key' => $capture['binding']->registrarKey,
             'account_fingerprint' => $capture['binding']->fingerprint, 'status' => 'adoption_pending', 'provenance' => 'adoption_pending',
             'authority_generation' => 0, 'confirmed_revision' => 0, 'billing_managed' => false,
-            'price_mode'=>ComplimentaryAccounts::authorization($target->customerId)?'complimentary':'standard']);
+            'price_mode'=>ComplimentaryAccounts::authorization($target->customerId,true)?'complimentary':'standard']);
         $row->updateTimestamps();
         $id = DB::table($row->getTable())->insertGetId($row->getAttributes());
         return Domain::findOrFail($id);

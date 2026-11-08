@@ -62,7 +62,11 @@ final readonly class OwnedDomains
     public static function refundTo(Domain $d, ?Operation $op, array $order): ?string
     {
         if (!$op || $op->state !== 'rejected' || !(in_array($d->status, ['registration_rejected', 'transfer_rejected'], true) || ($order['state'] ?? null) === 'failed')) { return null; }
-        if (isset($op->funding['refund'])) { return match ($op->funding['refund']['to'] ?? null) { 'account_credit' => 'credited', 'original_payment' => 'returned', default => null }; }
+        if (isset($op->funding['refund'])) {
+            $refund=$op->funding['refund'];$bridge=$refund['bridge_minor']??0;
+            return match ($refund['to']??null) { 'account_credit'=>'credited',
+                'original_payment'=>is_int($bridge)&&$bridge>=0?($bridge>0?'split':'returned'):null,default=>null };
+        }
         return ReceiptReturns::destination(\App\Models\InvoiceTransaction::where('invoice_id', $op->invoice_id)->with('gateway')->get());
     }
     /** The service is gone, or a cancellation or native intent stops it. */

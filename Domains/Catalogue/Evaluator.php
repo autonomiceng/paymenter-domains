@@ -63,14 +63,15 @@ final class Evaluator
             || !RegistryInputs::supported($offer->feed->binding()->registrarKey, $offer->feed->tld(), $facts->registryFields)) { return 'unsupported_facts'; }
         if (!in_array($term, $facts->terms[$action] ?? [], true) || !in_array(1, $facts->terms['renew'] ?? [], true)) { return 'unsupported_term'; }
         // A new acquisition always has a current annual renewal path, on this same account.
-        foreach (array_unique(['renew:1', $action.':'.$term]) as $key) {
+        foreach (Retail::terms($action, $term) as [$needed, $years]) {
+            $key = $needed.':'.$years;
             $cost = $offer->costs[$key] ?? null;
             if ($cost === null) { return 'unknown_price'; }
             if (!$cost->enabled) { return 'provider_disabled'; }
             if (!$cost->fresh($now)) { return 'stale_price'; }
             $retail = $offer->retail[$key] ?? null;
             if ($retail === null || PricingRule::units($retail, 2) < 1) { return 'unpublished_price'; }
-            if ($cost->action !== 'renew' && PricingRule::units($retail, 2) * 100 < PricingRule::units($cost->total)) { return 'below_cost'; }
+            if ($action !== 'renew' && $key === $action.':'.$term && PricingRule::units($retail, 2) * 100 < PricingRule::units($cost->total)) { return 'below_cost'; }
         }
         if ($intent->maxAnnualCost !== null) {
             foreach ($offer->costs as $cost) {

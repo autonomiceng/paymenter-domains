@@ -67,6 +67,8 @@ stores keep these notices quiet. Unexpected failures remain warnings. Candidate 
 offline or invoice-less display work from billing, transfer payment and timeout guards; retained
 reconciliation and refund selection remain independent, including recovery after invoice loss.
 
+Import admission reads the latest complimentary setting with a current locking read while holding the existing customer lock. The ordinary refund worker also closes a narrowly proved complimentary registration refusal: its Paid zero receipt stays intact, with no credit, refund or registrar replay. Staff with current secret-metadata access can see the validated, fixed registrar diagnostic on the request; it grants no return or replay authority.
+
 ## Go-live reviews
 
 These deployment and request checks have no page; review them before turning processing on.
@@ -115,3 +117,5 @@ A processed order number unlocks exact readback only. A confirmed no-order/no-ch
 answer returns the original payment once. The encrypted request evidence and account
 audit retain who recorded the answer, its support case and the original attempt hash.
 Neither answer authorizes resending the original request.
+
+Registration retail uses the first registration year plus the annual renewal retail for each additional year. Each annual input is rounded before summing; the independently quoted selected-term registrar cost still bounds the sale. Installation republishes older retail rules locally, preserving native plan and price identities, observation ages and issued invoices. `domains:price-match --json` reports eligible catalogue terms and native price mismatches without repairs or registrar reads. Mismatched terms stay hidden; warning failures cannot withdraw healthy terms or fail a completed feed turn.

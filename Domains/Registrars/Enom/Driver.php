@@ -92,7 +92,7 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         Catalogue::tld($tld);
         $type = match ($action) { 'register' => 10, 'renew' => 16, 'transfer' => 19, default => throw new \InvalidArgumentException('Invalid price action.') };
         if ($years < 1 || $years > 10) { throw new \InvalidArgumentException('Invalid price term.'); }
-        $reply = $this->read(ReadCommand::ProductPrice, ['TLD' => $tld, 'ProductType' => $type, 'Years' => $years], $context);
+        $reply = $this->read(ReadCommand::ProductPrice, ['TLD' => $tld, 'ProductType' => $type, 'Years' => Pricing::bracket($years)], $context);
         if ($reply->status !== 'success') { return $this->result(null); }
         $enabled = $reply->value('productprice.productenabled'); $price = $reply->value('productprice.price');
         if (is_string($enabled) && in_array(strtolower($enabled), ['false', '0'], true)) {
