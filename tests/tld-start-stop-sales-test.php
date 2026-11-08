@@ -41,7 +41,7 @@ $case=static function(string $label,Closure $body)use(&$failures):void{try{$body
 $reset=static function(array $intent,bool $sellerTransfers,int $defaultLongest=1)use($t,$binding,$ports,$offer):void{
     $a=Account::where('server_id',$binding->serverId)->sole();$defaults=Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($a->catalogue_defaults);$defaults['defaultLongest']=$defaultLongest;
     Illuminate\Support\Facades\DB::table('domains_accounts')->where('id',$a->id)->update(['catalogue_defaults'=>json_encode($defaults)]);
-    Illuminate\Support\Facades\DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_intent'=>json_encode($intent)]);
+    Illuminate\Support\Facades\DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_intent'=>json_encode($intent),'catalogue_published_revision'=>null]);
     Illuminate\Support\Facades\DB::table('domains_sales_policies')->where('tld','com')->update(['transfer_enabled'=>$sellerTransfers]);
     $ports->apply(Edit::republish($binding,'com'),$offer('register')->revision);
 };
@@ -67,9 +67,9 @@ foreach([10,null]as$longest){
         same($longest,json_decode($t->fresh()->catalogue_intent,true)['longest']??null,'Start preserves explicit or inherited longest choice');
         same(10,$catalogue->setting($t->fresh(),'max_years'),'Saved ten-year preference stays ten');
         same(false,$ports->readOffers(new Query($binding,['com'],'register',10),Context::Staff)[0]->available,'Unsupported checkout term stays closed');
-        $ports->apply(new FactsObserved($binding,'com',new Facts(['register'=>[1,3,10],'renew'=>[1],'transfer'=>[1]],[],true,false,false,'synthetic',$now,$now->modify('+1 day'))),$offer('register')->revision);
+        Illuminate\Support\Facades\DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::encodeFacts(new Facts(['register'=>[1,3,10],'renew'=>[1],'transfer'=>[1]],[],true,false,false,'synthetic',$now,$now->modify('+1 day')))]);
         same(10,$catalogue->setting($t->fresh(),'max_years'),'Restored registrar support keeps the preference');
-        $ports->apply(new FactsObserved($binding,'com',new Facts(['register'=>[1,3],'renew'=>[1],'transfer'=>[1]],[],true,false,false,'synthetic',$now,$now->modify('+1 day'))),$offer('register')->revision);
+        Illuminate\Support\Facades\DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::encodeFacts(new Facts(['register'=>[1,3],'renew'=>[1],'transfer'=>[1]],[],true,false,false,'synthetic',$now,$now->modify('+1 day')))]);
     });
 }
 $case('conditional confirmation',static function()use($reset,$t):void{
