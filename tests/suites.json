@@ -227,6 +227,7 @@
     "tests/owner-nameservers-test.php",
     "tests/owner-renewal-test.php",
     "tests/owner-renewal-calendar-test.php",
+    "tests/owner-renewal-schedule-test.php",
     "tests/owner-renewal-retained-test.php",
     "tests/owner-auto-renew-test.php",
     "tests/owner-declutter-test.php",
