@@ -38,7 +38,7 @@ $case('unread feed retains real account cause',function()use($t,$now){
     DB::table('domains_observation_queues')->where($queue)->update(['offer_feed_succeeded_at'=>$now->getTimestamp(),'offer_feed_failure'=>null]);
     $fact=TldFacts::snapshot($t->fresh());expect(str_contains(TldFacts::priceState($fact)['cause'],"Not in the registrar's price feed; not for sale"),'Success after selection proves a feed gap');
     DB::table('domains_sales_policies')->where('tld',$t->tld)->update(['updated_at'=>null,'created_at'=>null]);
-    $fact=TldFacts::snapshot($t->fresh());expect(str_contains(TldFacts::priceState($fact)['cause'],"Not in the registrar's price feed"),'Legacy selection is covered by the successful account feed');same("Not in the registrar's price feed; not for sale",$fact['sales']['reason'],'Legacy sales status agrees with price cell');
+    $fact=TldFacts::snapshot($t->fresh());expect(str_starts_with(TldFacts::priceState($fact)['cause'],'Price feed not read yet: Check registrar account.'),'A missing legacy selection timestamp cannot prove a feed gap');expect(!str_contains($fact['sales']['reason']??'',"Not in the registrar's price feed"),'Legacy sales status does not claim an unproved feed gap');
 });
 DB::table('domains_tlds')->where('id',$t->id)->update($original);
 foreach(['markup_percent','fixed','default'] as $kind){$case('invalid '.$kind.' wording',function()use($t,$kind,$actor){
