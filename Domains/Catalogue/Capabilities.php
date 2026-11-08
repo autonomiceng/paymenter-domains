@@ -127,6 +127,7 @@ final class Capabilities
             if ($c->action === 'renew' && $c->term === (int)$p->term) { $costs[$c->key()] = $c; }
         }
         try { $f = OfferState::facts($t->catalogue_facts); } catch (\Throwable) { $f = null; }
+        if ($f && !TermSupport::currentFacts($b, $t->tld, $f)) { $f = null; }
         // NameSilo stays annual before any TEST protocol check: its price read has no years parameter.
         return TermSupport::renewal($b->registrarKey, $t->tld, $f, $costs, $expiry, $this->clock->now(), environment: $b->environment);
     }
@@ -137,6 +138,7 @@ final class Capabilities
         $t = Tld::where('server_id', $b->serverId)->where('tld', $name)->sole(); $this->identity($b, $name, $t);
         $prices = DB::table('domains_prices')->where('server_id', $b->serverId)->where('tld', $name)->where('action', 'renew')->orderBy('id')->get();
         try { $f = OfferState::facts($t->catalogue_facts); } catch (\Throwable) { $f = null; }
+        if ($f && !TermSupport::currentFacts($b, $t->tld, $f)) { $f = null; }
         $costs = []; $freshness = CatalogueFreshness::forAccount($b->serverId);
         foreach ($prices as $p) {
             if ($p->account_fingerprint !== $b->fingerprint || $p->currency !== 'USD' || $p->catalogue_observation === null) { continue; }
