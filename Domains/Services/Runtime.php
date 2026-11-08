@@ -16,7 +16,7 @@ final class Runtime
         foreach([RegistrarRegistry::class,AccountBindings::class,PricingRules::class,PriceCatalogue::class,SellerPolicies::class,NativeCatalogue::class,
             CheckoutEligibility::class,CartAdmission::class,InvoiceBinding::class,HolderPricing::class,NativeDomainGuard::class,NativeServerGuard::class,
             Storefront::class,OwnedDomains::class,Installation::class,AccountReadBudget::class,ObservationWork::class,
-            RegistrarBalances::class,PublicSuffixList::class,PslTransport::class,PslValidator::class,CatalogueSync::class,Reminders::class,Refunds::class,PayCheck::class,RuntimeWork::class,RuntimePorts::class,NativePresenter::class,WatchWork::class,WatchDiscoveryWork::class] as $class){
+            RegistrarBalances::class,PublicSuffixList::class,PslTransport::class,PslValidator::class,CatalogueSync::class,Reminders::class,Refunds::class,PayCheck::class,RuntimeWork::class,RuntimePorts::class,NativePresenter::class,WatchDiscovery::class] as $class){
             if(!$app->bound($class)){$app->singleton($class);}
         }
         if (!$app->bound(\Paymenter\Extensions\Servers\Domains\Contracts\DnsReader::class)) {
@@ -25,6 +25,11 @@ final class Runtime
         }
         if(EnomTestTransfer::deploymentEnabled()){$app->singletonIf(TransferPrecheck::class);}
         if(!$app->bound(Clock::class)){$app->singleton(Clock::class,SystemClock::class);}
+        // Deployment opts in explicitly; installing the local producer never starts public reads.
+        if(!$app->bound(WatchDiscoveryWork::class)){$app->singleton(WatchDiscoveryWork::class,fn($a)=>new WatchDiscoveryWork(
+            config('domains.watch.enabled',false)===true?fn($id,$product)=>$a->make(WatchDiscovery::class)->discover($id,$product):null));}
+        if(!$app->bound(WatchWork::class)){$app->singleton(WatchWork::class,fn($a)=>new WatchWork($a->make(\Paymenter\Extensions\Servers\Domains\Contracts\DnsReader::class),
+            $a->make(WatchDiscoveryWork::class),config('domains.watch.enabled',false)===true,fn()=>$a->make(Clock::class)->now()->getTimestamp()));}
         if(!$app->bound(ReadLimiter::class)){$app->singleton(ReadLimiter::class,fn($a)=>new AccountReadBudget($a->make(Clock::class),48));}
         if(!$app->bound(OwnerPorts::class)){$app->singleton(OwnerPorts::class,fn($a)=>new OwnerPorts(fn($binding)=>$a->make(RuntimePorts::class)->management($binding)));}
         // Record discovery shares the accepted account/processing authority; ordinary domain reads remain independent.
