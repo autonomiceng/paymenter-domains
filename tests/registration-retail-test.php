@@ -158,12 +158,13 @@ $marker=OfferState::decode($tlds[0]->fresh()->catalogue_published_revision);$mar
 DB::table('domains_tlds')->where('id',$tlds[0]->id)->update(['catalogue_published_revision'=>OfferState::json($marker)]);
 DB::table('prices')->where('id',$held->id)->update(['price'=>'0.01']);
 $money=DB::table('invoice_items')->orderBy('id')->get()->toJson();$retained=$tlds[0]->fresh()->catalogue_published_revision;
+$clock->instant=$clock->now()->modify('+1 minute');$repairCosts=array_map(fn(Cost $c)=>new Cost($c->action,$c->term,$c->enabled,$c->total,$c->sourceUnit,$c->source,$clock->now(),$clock->now()->modify('+1 day'),normalized:true),$costs);
 DB::statement('CREATE TRIGGER refuse_feed_upgrade BEFORE UPDATE ON prices WHEN OLD.id = '.$held->id." BEGIN SELECT RAISE(ABORT, 'synthetic paused feed upgrade failure'); END");
-$failed=false;try{$ports->apply(new FeedObserved($binding,'example.net',$costs),$revision());}catch(Throwable){$failed=true;}
+$failed=false;try{$ports->apply(new FeedObserved($binding,'example.net',$repairCosts),$revision());}catch(Throwable){$failed=true;}
 DB::statement('DROP TRIGGER refuse_feed_upgrade');
 expect($failed,'Ordinary feed upgrade projects paused native plans in its transaction');
 same($retained,$tlds[0]->fresh()->catalogue_published_revision,'Failed ordinary feed upgrade retains old marker for retry');
-$ports->apply(new FeedObserved($binding,'example.net',$costs),$revision());
+$ports->apply(new FeedObserved($binding,'example.net',$repairCosts),$revision());
 same('28.98',number_format((float)$held->fresh()->price,2,'.',''),'Feed retry repairs retained paused plan before advancing the marker');
 same(Retail::VERSION,OfferState::decode($tlds[0]->fresh()->catalogue_published_revision)['retailRule'],'Feed repair advances marker atomically');
 same($money,DB::table('invoice_items')->orderBy('id')->get()->toJson(),'Paused retail repair leaves issued invoices unchanged');

@@ -28,7 +28,7 @@ same(null,$checks->begin($watch->id,$owner->id,'delegation',$now),'Unchanged set
 $selected=SiteDnsDefault::profile();
 $explicit=DB::transaction(fn()=>WatchName::create(['user_id'=>$owner->id,'canonical_name'=>'explicit-placeholder.com','psl_revision'=>str_repeat('a',64),'state'=>'active','ns_profile_id'=>$selected->id,'profile_revision'=>$selected->revision,'expected_dns'=>'platform','notice_preferences'=>[]]));
 $order2=App\Models\Order::create(['user_id'=>$owner->id,'currency_code'=>'USD']);$host2=App\Models\Service::create([...$service->only(['product_id','plan_id','status','quantity','price','currency_code']),'user_id'=>$owner->id,'order_id'=>$order2->id]);
-$copy=$source->replicate();$copy->watch_id=$explicit->id;$copy->registrable_name='explicit-placeholder.com';$copy->hostname='explicit-placeholder.com';$copy->service_id=$host2->id;DB::transaction(fn()=>$copy->save());
+$host2->properties()->create(['key'=>'domain','value'=>'explicit-placeholder.com']);$copy=$source->replicate();$copy->watch_id=$explicit->id;$copy->registrable_name='explicit-placeholder.com';$copy->hostname='explicit-placeholder.com';$copy->service_id=$host2->id;DB::transaction(fn()=>$copy->save());
 $work->enrollWatch($explicit->id,$owner->id);DB::table('domains_watch_work')->where('watch_id',$explicit->id)->whereIn('kind',['delegation','points'])->update(['due_at'=>$now+3600,'backoff_until'=>$now+3600]);
 
 DB::transaction(fn()=>$selected->update(['revision'=>$selected->revision+1,'nameservers'=>['ns1.changed.test','ns2.changed.test'],'edited_by'=>$owner->id,'reason'=>'Changed selected nameservers']));

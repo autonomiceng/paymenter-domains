@@ -121,7 +121,7 @@ same('worked', $worker->accountTurn($b->serverId), 'Existing account job finishe
 same(2, count(array_filter($offers->priceMatches(), fn ($r) => $r['mismatch'] !== null)), 'Full check still detects touched and untouched drift');
 Log::shouldHaveReceived('warning')->with('Domain acquisition price mismatch after catalogue publication.',
     Mockery::on(fn ($row) => $row['tld'] === 'net' && $row['term'] === 3 && $row['mismatch'] !== null))->once();
-Log::shouldNotHaveReceived('warning')->with('Domain acquisition price mismatch after catalogue publication.',Mockery::on(fn($row)=>$row['tld']==='org'));
+Log::shouldNotHaveReceived('warning',['Domain acquisition price mismatch after catalogue publication.',Mockery::on(fn($row)=>$row['tld']==='org')]);
 same($calls, $reads->calls, 'End-of-publication check makes no provider calls');
 same(0, $feedCalls, 'Buffered publication and its check never resolve another provider feed');
 same('0.01', number_format((float) $orgPrice->fresh()->price, 2, '.', ''), 'Untouched ending remains unchanged');
