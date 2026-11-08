@@ -15,7 +15,7 @@ DB::table('services')->where('id',$service->id)->update(['status'=>'suspended'])
 expect((new WatchDnsChecks)->registryTarget($w->id,$owner->id,false)!==null,'Suspended source does not block active source checks');
 DB::table('services')->where('id',$second->id)->update(['status'=>'suspended']);$sweep();same('paused',$w->fresh()->state,'Suspension pauses the last active source without retiring it');same(2,WatchSource::where('state','watch')->count(),'Suspended source history retained');
 DB::table('services')->where('id',$service->id)->update(['status'=>'active']);$sweep();same('active',$w->fresh()->state,'Returning hosting resumes a lifecycle pause');
-$staff=staffUser(['admin.domains.watch.view','admin.domains.watch.manage']);$w->refresh();$writes=new StaffWatchWrites;
+$staff=staffUser(['admin.domains.view','admin.domains.watch.view','admin.domains.watch.manage']);$w->refresh();$writes=new StaffWatchWrites;
 $writes->run($staff,'watch',$w->id,'pause',StaffWatchWrites::ticket($staff->id,'watch',$w->id,$w->revision,'pause'),'Synthetic staff pause');
 $sweep();same('paused',$w->fresh()->state,'Discovery preserves an explicit staff pause');
 DB::table('services')->whereIn('id',[$service->id,$second->id])->update(['status'=>'cancelled']);$sweep();same('retired',$w->fresh()->state,'Last hosting cancellation retires monitoring');same(0,WatchSource::whereNotNull('service_id')->count(),'Retirement frees the current-service key');

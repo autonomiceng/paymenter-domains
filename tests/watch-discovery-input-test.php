@@ -9,7 +9,7 @@ foreach(['https://www.example.com','a@example.com','example.com:443','example.co
     $property->update(['value'=>$value]);$sweep();$source=WatchSource::where('service_id',$service->id)->sole();same('held',$source->state,'Unsafe input is held: '.json_encode($value));same(null,$source->hostname,'Unsafe property never becomes a query hostname');same(null,$source->watch_id,'Unsafe input has no external work target');
 }
 $property->update(['value'=>'WWW.Example.COM.']);$sweep();same('www.example.com',WatchSource::where('service_id',$service->id)->value('hostname'),'Case and one root dot normalized');
-$duplicate=$service->properties()->create(['key'=>'domain','value'=>'other.com']);$sweep();same('held',WatchSource::where('service_id',$service->id)->value('state'),'Duplicate primary values cannot be split or guessed');$duplicate->delete();
+$property->delete();$sweep();same('held',WatchSource::where('service_id',$service->id)->value('state'),'Missing primary value cannot be guessed');$property=$service->properties()->create(['key'=>'domain','value'=>'www.example.com']);
 foreach(['a.co.uk'=>'a.co.uk','sub.www.ck'=>'www.ck','a.b.ck'=>'a.b.ck']as$host=>$name){$property->update(['value'=>$host]);$sweep();same($name,WatchSource::where('service_id',$service->id)->value('registrable_name'),'ICANN wildcard and exception: '.$host);}
 $property->update(['value'=>'www.example.com']);$sweep();$w=WatchName::where('canonical_name','example.com')->sole();
 DB::table('domains_psl_snapshots')->where('state','current')->update(['validated_at'=>$clock->at-91*86400]);$sweep();same('active',$w->fresh()->state,'Aged PSL does not stop unchanged known checks');
