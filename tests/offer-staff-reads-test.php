@@ -65,7 +65,7 @@ public function binding():?\Paymenter\Extensions\Servers\Domains\Data\AccountBin
 $last=Tld::where('server_id',$binding->serverId)->where('tld','like','scale%')->orderByDesc('tld')->take(2)->get();
 DB::table('domains_tlds')->where('id',$last[0]->id)->update(['catalogue_intent'=>'{"sell":']);
 DB::table('domains_tlds')->where('id',$last[1]->id)->update(['catalogue_intent'=>\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::json(['sell'=>true,'pricing_rule'=>['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed'=>['register'=>'42.00','renew'=>'43.00','transfer'=>'44.00']]])]);
-$component=\Livewire\Livewire::actingAs($actor)->test(OfferStaffPage::class)->assertSee('12.00');
+$component=\Livewire\Livewire::actingAs($actor)->test(OfferStaffPage::class)->filterTable('for_sale',false)->assertSee('12.00');
 same(599,$component->instance()->getTableRecords()->total(),'Real rendered table preserves paginator');
 $component->assertSee('No price for .')->assertSee('It is on another page of this list.');
 same([],array_column($component->instance()->savedPrices()['skipped'],'id'),'Saved prices remain limited to the current page');
