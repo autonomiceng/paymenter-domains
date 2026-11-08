@@ -61,8 +61,10 @@ foreach(array_keys(StaffOperationReview::ACTIONS) as $action){
     same($before,[$check->fresh()->getRawOriginal(),$check->domain->fresh()->getRawOriginal()],'Direct completed action leaves operation and domain unchanged');
 }
 // Domain recovery appears for stopped scheduled work, never on the completed request.
-$stopped=DB::table('domains_observation_work')->insertGetId(['server_id'=>$check->server_id,'account_fingerprint'=>$check->account_fingerprint,'domain_id'=>$check->domain_id,
-    'generation'=>$check->authority_generation,'phase'=>hash('sha256',$check->operation_key),'due_at'=>0,'safe_code'=>'read_unavailable','tries'=>5]);
+// Completion already queued the initial read. Stop that exact row instead of creating a duplicate.
+$stoppedKey=['domain_id'=>$check->domain_id,'generation'=>$check->authority_generation,'phase'=>hash('sha256',$check->operation_key)];
+DB::table('domains_observation_work')->updateOrInsert($stoppedKey,['server_id'=>$check->server_id,'account_fingerprint'=>$check->account_fingerprint,'due_at'=>0,'safe_code'=>'read_unavailable','tries'=>5]);
+$stopped=DB::table('domains_observation_work')->where($stoppedKey)->value('id');
 $stoppedPage=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$check->domain_id])->assertActionVisible('resume_observation');
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$check->id])->assertDontSee('More');
 foreach(array_keys(StaffOperationReview::ACTIONS) as $action){if($action!=='resume_observation'){commerceReject(fn()=>$run($check->fresh(),$action));}}
