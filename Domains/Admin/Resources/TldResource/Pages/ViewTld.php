@@ -162,7 +162,7 @@ class ViewTld extends ViewRecord
         $rows=$this->salePrices();
         return $rows?new HtmlString('<dl class="domains-sale-prices">'.implode('',array_map(fn($k,$v)=>'<div><dt>'.e($k).'</dt><dd>'.e($v).'</dd></div>',array_keys($rows),$rows)).'</dl>'):null;
     }
-    /** Stops new registrations and transfers. Domains customers already have keep renewing. Only the stops change,
+    /** Stops new registrations and transfers. Domains customers already have keep renewing. Only the acquisition pause changes,
      * so the TLD's transfer and term choices wait for Start selling. */
     public function stopSellingAction(): Action
     {

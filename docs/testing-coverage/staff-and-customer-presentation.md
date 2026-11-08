@@ -112,3 +112,13 @@ permission. Only a latest read matching the frozen captured order can complete i
 Encrypted original proof, actual expense, customer amount and future spending pause remain unchanged.
 Stale, foreign, revoked and replayed approvals refuse. No approval sends a provider request.
 Ordinary paid and manual complimentary two-year renewals remain independent positive controls.
+
+TLD sales recovery: `tld-start-stop-sales-test.php` dispatches the real Start/Stop actions and checks independent
+transfer restrictions, repeated pauses, explicit and inherited longest terms, conditional confirmation, term-limit
+recovery, renewal settings, activation readiness and sold-set read hints. Unknown and unsupported terms remain
+covered by `tld-start-unread-terms-test.php`. `sale-filter-budget-test.php` measures all local queries at 1,000/1,500
+candidates, bounds each eligibility load, and checks current intent, prices, facts, seller choice, time and grants.
+`cart-term-picker-test.php` renders unavailable retained terms and failed reads, dispatches missing/explicit term
+submissions, and checks bounded diagnostics, logger failure, recovery and no order/invoice/provider side effects.
+Native Product pricing notices remain separate from the TLD page head; parser and retail-install fixtures cover
+complete 100-error refusals and exact failed-publication diagnostic count and identity.
