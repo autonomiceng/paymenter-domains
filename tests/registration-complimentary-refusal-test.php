@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{ComplimentaryAccounts,Refunds
 $staff=commerceUser();$staff->update(['role_id'=>Role::create(['name'=>'Complimentary funding','permissions'=>['admin.domains.fund','admin.domains.view','admin.domains.manage','admin.domains.costs']])->id]);
 ComplimentaryAccounts::set($user->id,$staff,true,'Synthetic complimentary refusal',$clock);
 foreach(['RuntimeSchema','ReminderSchema','ObservationSchema'] as $schema){('Paymenter\\Extensions\\Servers\\Domains\\Services\\'.$schema)::install();}
-$binding=$bindingFor(0);$calls=[];$controls=[];
+$binding=$bindingFor(0);$calls=[];$controls=[];$originalAttempts=[];
 foreach(['unknown','lost','contradictory','missing_proof','foreign_proof','invalid_receipt'] as $case){
     $makeEngine($binding,static function($origin,$command,$parameters,$timeout)use($case,$purchaseRefusal):string {
         if($case==='lost'){throw new RuntimeException('Synthetic lost reply');}
@@ -20,7 +20,7 @@ foreach(['unknown','lost','contradictory','missing_proof','foreign_proof','inval
     });
     $bad=$runRegistration($new(str_replace('_','-',$case).'.example.com',false));
     if(in_array($case,['missing_proof','foreign_proof'],true)){
-        $attempt=$bad->attempt;
+        $originalAttempts[$bad->id]=$bad->getRawOriginal('attempt');$attempt=$bad->attempt;
         if($case==='missing_proof'){unset($attempt['evidence']['registrationRefusal']);}
         else{$attempt['evidence']['registrationRefusal']['record']['claim_key']='foreign';}
         // Test-only corruption of retained encrypted facts, never a production bypass.
@@ -49,6 +49,8 @@ expect(!Paymenter\Extensions\Servers\Domains\Admin\Support\DomainQueries::credit
 DB::table('domains_operations')->where('id',$op->id)->update(['service_id'=>$nativeService]);
 DB::table('domains_domains')->where('id',$op->domain_id)->update(['service_id'=>$nativeService]);
 same(false,$missingMatches,'Missing native service also has no staff credit obligation');
+$badLocks=0;$badIds=array_map(fn($c)=>$c[0],array_intersect_key($controls,array_flip(['missing_proof','foreign_proof'])));
+DB::listen(static function($q)use(&$badLocks,$badIds):void{if(!str_contains($q->sql,'from "domains_domains"')){return;}foreach(debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS,65)as$f){if(($f['class']??null)===Refunds::class&&($f['function']??null)==='creditRejected'){$candidate=Paymenter\Extensions\Servers\Domains\Models\Operation::whereIn('id',$badIds)->pluck('domain_id')->all();if(array_intersect($candidate,$q->bindings)){$badLocks++;}break;}}});
 $runtime->tick();
 same('cancelled',Service::findOrFail($op->service_id)->status,'Ordinary runtime discovery and refund dispatch close the proved complimentary refusal');
 same('registration_rejected',$op->domain->fresh()->status,'Automatic closure preserves the refusal');
@@ -61,6 +63,10 @@ $refundLocks=0;DB::listen(static function($q)use(&$refundLocks,$op):void{if(!str
 $evidence=static fn()=>array_intersect_key($op->fresh()->getAttributes(),array_flip(['state','safe_code','attempt','funding']));$closed=$evidence();$serviceClosed=Service::findOrFail($op->service_id)->getRawOriginal();$clock->instant=$clock->now()->modify('+1 minute');Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());$runtime->tick();
 same($serviceClosed,Service::findOrFail($op->service_id)->getRawOriginal(),'Later worker replay does not rewrite the closed native service');same($closed,$evidence(),'Repeated worker closure retains original evidence; native closure bookkeeping may be recorded separately');
 foreach($controls as $case=>[$id,$serviceId,$status]){same($status,Service::findOrFail($serviceId)->status,'Unproved or invalid complimentary order stays open: '.$case);expect(!isset(\Paymenter\Extensions\Servers\Domains\Models\Operation::findOrFail($id)->funding['refund']),'No refund authority from '.$case);}
+same(0,$badLocks,'Unchanged invalid complimentary refusal evidence never enters native refund locks');
+$repair=$controls['missing_proof'];DB::table('domains_operations')->where('id',$repair[0])->update(['attempt'=>$originalAttempts[$repair[0]]]);
+$clock->instant=$clock->now()->modify('+1 minute');Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());$runtime->tick();
+same('cancelled',Service::findOrFail($repair[1])->status,'Repaired evidence resumes normal guarded closure without waiting for a cooldown');
 same(0,$refundLocks,'A later runtime tick never re-locks the already closed complimentary holding');
 same($before,$money(),'Worker closure and replay change no money history');same(['Purchase'],$calls,'Worker never resends the refused registration');
 echo "Native complimentary refusal worker closure passed\n";$nativeSuccessful=true;

@@ -151,6 +151,23 @@ foreach (['markup_percent', 'fixed'] as $mode) {
     }
     $issued[] = DB::table('invoice_items')->orderBy('id')->get()->map(fn ($row) => (array) $row)->all();
 }
+// Ordinary feed writes cannot bless an old marker while paused native plans keep old amounts.
+$product=$native->product($tlds[0],'register');$held=$product->plans()->where('billing_period',2)->sole()->prices()->where('currency_code','USD')->sole();
+$ports->apply(Edit::override($binding,'net',new Intent(sell:false,longest:10,transfers:false)),$revision());
+$marker=OfferState::decode($tlds[0]->fresh()->catalogue_published_revision);$marker['retailRule']=1;
+DB::table('domains_tlds')->where('id',$tlds[0]->id)->update(['catalogue_published_revision'=>OfferState::json($marker)]);
+DB::table('prices')->where('id',$held->id)->update(['price'=>'0.01']);
+$money=DB::table('invoice_items')->orderBy('id')->get()->toJson();$retained=$tlds[0]->fresh()->catalogue_published_revision;
+DB::statement('CREATE TRIGGER refuse_feed_upgrade BEFORE UPDATE ON prices WHEN OLD.id = '.$held->id." BEGIN SELECT RAISE(ABORT, 'synthetic paused feed upgrade failure'); END");
+$failed=false;try{$ports->apply(new FeedObserved($binding,'net',$costs),$revision());}catch(Throwable){$failed=true;}
+DB::statement('DROP TRIGGER refuse_feed_upgrade');
+expect($failed,'Ordinary feed upgrade projects paused native plans in its transaction');
+same($retained,$tlds[0]->fresh()->catalogue_published_revision,'Failed ordinary feed upgrade retains old marker for retry');
+$ports->apply(new FeedObserved($binding,'net',$costs),$revision());
+same('28.98',number_format((float)$held->fresh()->price,2,'.',''),'Feed retry repairs retained paused plan before advancing the marker');
+same(Retail::VERSION,OfferState::decode($tlds[0]->fresh()->catalogue_published_revision)['retailRule'],'Feed repair advances marker atomically');
+same($money,DB::table('invoice_items')->orderBy('id')->get()->toJson(),'Paused retail repair leaves issued invoices unchanged');
+commerceReject(fn()=>$offers->offer('net','register',2));
 // A later pricing save must not change either issued invoice or its frozen operation amount.
 $ports->apply(Edit::override($binding, 'net', new Intent(sell: true, longest: 10, transfers: true),
     [...PricingRule::DEFAULT, 'mode' => 'fixed', 'fixed' => ['register' => '19.99', 'renew' => '12.99', 'transfer' => '12.00']]), $revision());
