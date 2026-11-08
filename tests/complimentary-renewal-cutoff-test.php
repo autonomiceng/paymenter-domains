@@ -14,6 +14,17 @@ $disable=fn()=>ComplimentaryAccounts::set($user->id,$staff,false,'Gift ended',$c
 [$op,$d,$b,$invoice]=$makeRenewal(placeholderComFixtureName('account-renew-placeholder.com'),false,1,false,$enable);
 same(['complimentary','queued','0.00','paid',0.0,0],[$op->funding_basis,$op->state,$op->amount,$invoice->status,(float)$invoice->total,$invoice->transactions()->count()],'Renewal is complimentary with a paid zero receipt');
 $op->update(['state'=>'held','safe_code'=>'registrar_balance_insufficient_or_unknown','policy'=>[...$op->policy,'funds_wait_until'=>$clock->now()->format(DATE_ATOM)]]);
+// The same native sweep must refuse sent/uncertain attempts and damaged receipts.
+$account=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->sole();$virgin=$op->fresh()->getRawOriginal();
+foreach([['attempt',encrypt(json_encode(['seal'=>'sealed','send_state'=>'possibly_sent']),false)],['state','uncertain']]as[$field,$value]){
+    DB::table('domains_operations')->where('id',$op->id)->update([$field=>$value]);$before=$nativeMoney();
+    \Paymenter\Extensions\Servers\Domains\Services\FundsWaits::sweep($account,$clock->now());
+    same($value,$op->fresh()->getRawOriginal($field),'Sent/uncertain renewal remains open: '.$field);same($before,$nativeMoney(),'Unresolved renewal moves no money');
+    DB::table('domains_operations')->where('id',$op->id)->update($virgin);
+}
+DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'pending']);
+\Paymenter\Extensions\Servers\Domains\Services\FundsWaits::sweep($account,$clock->now());same('held',$op->fresh()->state,'Damaged zero receipt cannot close');
+DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'paid']);
 $before=$nativeMoney();$account=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->sole();
 \Paymenter\Extensions\Servers\Domains\Services\FundsWaits::sweep($account,$clock->now());
 same('rejected',$op->fresh()->state,'Elapsed unsent complimentary renewal closes');

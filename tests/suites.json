@@ -744,7 +744,8 @@
     "tests/registration-enom-refusal-test.php",
     "tests/registration-enom-explicit-ns-test.php",
     "tests/transfer-restriction-date-test.php",
-    "tests/rejected-registration-page-test.php"
+    "tests/rejected-registration-page-test.php",
+    "tests/storefront-transfer-date-test.php"
   ],
   "ui": [],
   "runner": [
