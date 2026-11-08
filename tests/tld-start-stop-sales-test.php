@@ -39,7 +39,7 @@ $page->assertActionVisible('start_selling')->assertActionHidden('stop_selling');
 $failures=[];
 $case=static function(string $label,Closure $body)use(&$failures):void{try{$body();echo "PASS contract: $label\n";}catch(Throwable $e){$failures[]=$label.': '.$e->getMessage();echo "FAIL contract: ".end($failures)."\n";}};
 $reset=static function(array $intent,bool $sellerTransfers,int $defaultLongest=1)use($t,$binding,$ports,$offer):void{
-    $a=Account::where('server_id',$binding->serverId)->sole();$defaults=json_decode($a->catalogue_defaults,true);$defaults['defaultLongest']=$defaultLongest;
+    $a=Account::where('server_id',$binding->serverId)->sole();$defaults=Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($a->catalogue_defaults);$defaults['defaultLongest']=$defaultLongest;
     Illuminate\Support\Facades\DB::table('domains_accounts')->where('id',$a->id)->update(['catalogue_defaults'=>json_encode($defaults)]);
     Illuminate\Support\Facades\DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_intent'=>json_encode($intent)]);
     Illuminate\Support\Facades\DB::table('domains_sales_policies')->where('tld','com')->update(['transfer_enabled'=>$sellerTransfers]);
@@ -74,8 +74,8 @@ foreach([10,null]as$longest){
 }
 $case('conditional confirmation',static function()use($reset,$t):void{
     $reset(['sell'=>false],false);
-    foreach(['catalogue_published_revision'=>null,'catalogue_published_revision'=>'{}']as$field=>$value){
-        Illuminate\Support\Facades\DB::table('domains_tlds')->where('id',$t->id)->update([$field=>$value]);
+    foreach([null,'{}']as$value){
+        Illuminate\Support\Facades\DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_published_revision'=>$value]);
         $description=(string)Livewire::test(ViewTld::class,['record'=>$t->id])->instance()->startSellingAction()->getModalDescription();
         expect(!str_contains($description,'open at once')&&str_contains($description,'availability checks'),'Confirmation never promises immediate availability');
     }
