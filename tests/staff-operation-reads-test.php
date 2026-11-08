@@ -34,7 +34,7 @@ expect($deferred->fresh()->policy['status_check']['next_at']>$clock->now()->getT
 // A lost reply retains its staff answer boundary and cannot claim a completed read.
 [$uncheckable]=$prepare(placeholderComFixtureName('staff-no-reply-placeholder.com'),'null');
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$uncheckable->id])->callAction('recheck')
-    ->assertNotified('Enom has not answered yet')->assertSee('Ask Enom to check this attempt.')->assertSee('You can record Enom’s answer after Oct 19, 5:00 AM PT.')->assertDontSee('Status checked');
+    ->assertNotified('Enom has not answered yet')->assertSee('Ask Enom to check this attempt.')->assertSee('You can record Enom’s answer after Oct 19, 2026, 12:00 PM UTC.')->assertDontSee('Status checked');
 same('awaiting_answer',$uncheckable->fresh()->policy['status_check']['outcome'],'Lost reply retains the registrar answer state');
 same((new \DateTimeImmutable($uncheckable->attempt['dispatch_attempted_at']))->modify('+24 hours')->getTimestamp(),$uncheckable->fresh()->policy['status_check']['answer_after'],'Staff answer waits 24 hours from this dispatch');
 same([],$observation->calls,'No original ID or accepted history never claims a registrar read');
