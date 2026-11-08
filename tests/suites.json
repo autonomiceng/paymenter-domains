@@ -719,7 +719,8 @@
     "tests/test_installed_comp_account_views-test.php",
     "tests/test_installed_comp_account_transfer-test.php",
     "tests/test_installed_comp_account_recovery-test.php",
-    "tests/site-dns-refresh-test.php"
+    "tests/site-dns-refresh-test.php",
+    "tests/complimentary-status-grants-test.php"
   ],
   "ui": [],
   "runner": [
