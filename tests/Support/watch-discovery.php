@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\{Clock,DnsReader};
 use Paymenter\Extensions\Servers\Domains\Services\{PublicSuffixList,PslTransport,PslValidator,WatchDiscoveryWork};
 function discoveryFixture(): array
 {
-    config(['domains.watch.enabled'=>true,'queue.default'=>'database','queue.connections.database'=>['driver'=>'database','retry_after'=>180]]);
+    config(['queue.default'=>'database','queue.connections.database'=>['driver'=>'database','retry_after'=>180]]);
     $clock=new PslClock;$v=new PslValidator(128,5,1);
     app()->instance(Clock::class,$clock);app()->instance(PslValidator::class,$v);
     $psl=new PublicSuffixList($clock,new PslTransport(fn()=>['status'=>200,'body'=>pslFixture()]),$v);
@@ -18,7 +18,13 @@ function discoveryFixture(): array
     $f=dnsFixture();same('updated',$psl->update(),'Synthetic current suffix list');
     // Start with native hosting only, rather than the manually enrolled DNS fixture.
     DB::table('domains_watch_sources')->delete();DB::table('domains_watch_names')->delete();
-    $f['entry']->boot();$work=app(WatchDiscoveryWork::class);
+    $f['entry']->boot();
+    same(false,app(WatchDiscoveryWork::class)->ready(),'Fresh installation does not activate discovery');
+    same(false,app(Paymenter\Extensions\Servers\Domains\Services\WatchWork::class)->active(),'Fresh installation does not activate public reads');
+    // Compose the accepted local producer through the real scheduler, with synthetic public ports only.
+    $work=new WatchDiscoveryWork(fn($id,$product)=>app(Paymenter\Extensions\Servers\Domains\Services\WatchDiscovery::class)->discover($id,$product));
+    app()->instance(WatchDiscoveryWork::class,$work);
+    app()->instance(Paymenter\Extensions\Servers\Domains\Services\WatchWork::class,new Paymenter\Extensions\Servers\Domains\Services\WatchWork($dns,$work,true,fn()=>$clock->at,static fn()=>null));
     $sweep=static function()use($work,$clock,$f):void {$work->hint((int)$f['product']->id);$work->tick($clock->at);expect(!$work->failed,'Discovery completes without swallowed failures');};
     return [...$f,...compact('clock','psl','dns','work','sweep')];
 }
