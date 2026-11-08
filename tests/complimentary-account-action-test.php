@@ -54,4 +54,22 @@ ComplimentaryAccounts::set($user->id,$staff,false,'Repeated end',$clock,Complime
 $line($staff,PHP_INT_MAX)->assertDontSee('Standard domain prices')->assertActionHidden('turnOn')->assertActionHidden('turnOff');
 $refused(fn()=>ComplimentaryAccounts::set(PHP_INT_MAX,$staff,true,'Unknown customer',$clock),'Domain funding permission required.');
 same($disabled,$rows(),'Unknown customer cannot create an audit entry');
+// Actual SystemClock writes native timezone-less timestamps in the configured PHP zone.
+$priorTimezone=date_default_timezone_get();$priorAppZone=config('app.timezone');
+try{
+ foreach(['America/Los_Angeles','UTC']as$zone){date_default_timezone_set($zone);config(['app.timezone'=>$zone]);
+  app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new \Paymenter\Extensions\Servers\Domains\Data\SystemClock);
+  $on=(bool)(ComplimentaryAccounts::current($user->id)['enabled']??false);
+  $changed=$line($staff,$user->id)->callAction($on?'turnOff':'turnOn',['reason'=>'Storage timezone check'])->assertHasNoActionErrors();
+  $stored=ComplimentaryAccounts::current($user->id);$instant=\Carbon\CarbonImmutable::parse($stored['at'],$zone)->utc()->format(DATE_ATOM);
+  expect(str_contains($changed->html(),'datetime="'.$instant.'"'),'Actual action renders the stored instant once in UTC: '.$zone);
+ }
+}finally{date_default_timezone_set($priorTimezone);config(['app.timezone'=>$priorAppZone]);app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);}
+// Native audit disabled at provider boot means no listener; the extension still retains its history.
+\Illuminate\Support\Facades\Event::forget(\OwenIt\Auditing\Events\AuditCustom::class);config(['audit.enabled'=>false]);
+$on=(bool)ComplimentaryAccounts::current($user->id)['enabled'];
+$noAudit=$line($staff,$user->id)->mountAction($on?'turnOff':'turnOn');
+expect(str_contains($noAudit->html(),'Native audit logging is off'),'Confirmation explains the actual retained history');
+$noAudit->setActionData(['reason'=>'Native audit disabled'])->callMountedAction()->assertHasNoActionErrors();
+same('Native audit disabled',ComplimentaryAccounts::current($user->id)['reason'],'Disabled native auditing still retains the reason');
 echo "Complimentary account action permissions, validation, audit and repeat saves passed\n";$nativeSuccessful=true;
