@@ -59,6 +59,11 @@ $unsupported=$check();$assertRefusal($unsupported, 'We don’t offer transfers f
 expect(str_contains($unsupported['html'],'href="https://support.example.test/domains"')&&str_contains($unsupported['html'],'Contact support'),'Unsupported ending offers the configured safe support link');
 expect(!str_contains($unsupported['html'],'Register this domain'),'An unsupported ending does not imply registration is available');
 $setting->update(['value' => 'com']);
+$state->transferable='unknown';
+$flags=$store->check('transfer-placeholder.com',true);same(['transfer_unconfirmed',false,true],[$flags['status'],$flags['register'],$flags['support']],'Unknown registrar eligibility stays unconfirmed with support and no registration offer');
+$unknown=$check();$assertRefusal($unknown,'Try again in a few minutes.');
+expect(str_contains($unknown['html'],'data-domains-retry'),'Unknown eligibility retains Retry without a purchase submit');
+$state->transferable='true';
 $result = $check();
 same('transferable', $result['status'], 'Eligible name offers a transfer');
 expect(str_contains($result['html'], 'value="transfer"'), 'Eligible name has the Transfer action');
