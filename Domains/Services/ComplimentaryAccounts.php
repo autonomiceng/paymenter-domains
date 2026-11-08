@@ -36,10 +36,12 @@ final class ComplimentaryAccounts
             Domain::where('user_id',$user)->update(['price_mode'=>$enabled?'complimentary':'standard']);
         });
     }
+    public static function nativeAuditAvailable():bool
+    {return config('audit.enabled',true)&&class_exists(\OwenIt\Auditing\Events\AuditCustom::class)&&\Illuminate\Support\Facades\Event::hasListeners(\OwenIt\Auditing\Events\AuditCustom::class);}
     /** The same change in the customer's native Audit Log, through the auditing package's public custom event, as core's extension actions do. */
     private static function audit(User $customer,bool $enabled,string $reason):void
     {
-        if(!class_exists(\OwenIt\Auditing\Events\AuditCustom::class)||!$customer instanceof \OwenIt\Auditing\Contracts\Auditable){return;}
+        if(!self::nativeAuditAvailable()||!$customer instanceof \OwenIt\Auditing\Contracts\Auditable){return;}
         // The stock log prints "<staff> <event> User (#id)" and lists the values under it, so the reason stays whole and the header stays short.
         $customer->auditEvent=($enabled?'turned on':'turned off').' complimentary domains for';$customer->isCustomEvent=true;
         $customer->auditCustomOld=[];$customer->auditCustomNew=['reason'=>$reason];

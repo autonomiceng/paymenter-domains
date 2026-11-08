@@ -297,7 +297,7 @@ final class TldFacts
     /** The current price sync failure: an active hold, or a retained failure newer than the latest saved prices.
      * Returns the plain cause and the failure time (null when the stored failure has no time). */
     public static function syncFailure(int $serverId, ?\Carbon\CarbonImmutable $lastPrices=null): ?array
-    { $s=self::catalogue()->progress($serverId);return empty($s['failure'])?null:['cause'=>self::syncCause($s['failure']),'at'=>isset($s['failed_at'])?gmdate('M j, Y H:i',(int)$s['failed_at']).' UTC':null]; }
+    { $s=self::catalogue()->progress($serverId);return empty($s['failure'])?null:['cause'=>self::syncCause($s['failure']),'timestamp'=>$s['failed_at']??null,'at'=>isset($s['failed_at'])?gmdate('M j, Y H:i',(int)$s['failed_at']).' UTC':null]; }
     /** The plain cause for a failure code. A call-capacity failure names the calls needed and left when we know them.
      * The TLD list and the staff alert use the same words; the alert keeps the numbers from when it fired. */
     public static function currentCause(int $serverId, ?string $code): string { return self::syncCause($code); }

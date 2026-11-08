@@ -199,7 +199,7 @@ final readonly class OwnedDomains
                 $retail=\App\Models\Server::find($d->server_id)?->settings()->where('key','domains_privacy_price')->value('value');
                 try { $management['privacy']['price']=PricingRule::minor($retail)>0?Storefront::money(RetailLine::decimal($retail)):null; } catch(\Throwable) { $management['privacy']['price']=null; } }
             if ($caps) {
-                if (isset($management['nameservers'])) { $management['nameservers']['max']=$setup['maxNameservers']; $management['nameservers']['defaultServers']=ManagementNameservers::defaults($d,$this->ports);
+                if (isset($management['nameservers'])) { $management['nameservers']['max']=$setup['maxNameservers']; $choice=ManagementNameservers::choice($d,$this->ports);$management['nameservers']['defaultServers']=$choice['servers'];$management['nameservers']['defaultError']=$choice['error'];
                     $management['nameservers']['defaults']=$management['nameservers']['defaultServers']!==[];
                     $management['nameservers']['registrar']=ManagementNameservers::registrar($d);
                     // Only a confirmed readback supplies current nameservers; otherwise the form starts empty.

@@ -107,7 +107,7 @@ class RegistrarAccount extends Page
             $sections[]=Sheet::section('Renewals',$this->rows('renewal',$pick('Renewals','Late renewal','Customer can renew early','Invoice issued','Invoice due','Unpaid hold','Scheduled renewals','Selected TLD terms','Reminder emails','Reminder schedule')));
             $default=SiteDnsDefault::profile();$refusal=SiteDnsDefault::refusal();
             $sections[]=Sheet::section('Domain settings',$this->rows('settings',[...$pick('DNS, nameservers and contacts','WHOIS privacy'),
-                self::fact('Site DNS default',$refusal?null:$default?->name,$refusal??($default?null:'Choose one in Domain monitoring settings.'))]));
+                self::fact('Site DNS default',$refusal?null:$default?->name,$refusal??($default?null:'New registrations have no site-default nameservers. '.($a->registrar_key==='namesilo'?'NameSilo needs explicit nameservers before an order can be sent. ':'').'Choose one in Domain monitoring settings.'))]));
         } else {
             $sections[]=Sheet::section('Account',$this->rows('account',[self::fact('Registrar',null,'Account not set up yet. Use Connect account.'),self::fact('Domains',(string)Domain::where('server_id',$s->id)->count())]));
         }

@@ -249,13 +249,13 @@ class WhatYouSell extends Page implements HasTable
         foreach($saved['warnings'] as $warning){
             $one=$warning['cause']==='custom_rule'&&count($warning['tlds'])===1?collect($saved['skipped'])->first(fn($row)=>$row['server_id']===$warning['server_id']&&$row['tld']===$warning['tlds'][0]):null;
             $tlds=$warning['tlds'];
-            $components[]=Callout::make(count($tlds)===1?'No price for '.$tlds[0]:'No prices for '.count($tlds).' TLDs')->warning()->columnSpanFull()
+            $components[]=Callout::make(count($tlds)===1?'Prices left out for '.$tlds[0]:'Prices left out for '.count($tlds).' TLDs')->warning()->columnSpanFull()
                 ->description(new HtmlString(view('domains::admin.sell-note',['warning'=>$warning])->render()))
                 ->footer($one===null?null:$button('Open '.$one['tld'],TldResource::getUrl('view',['record'=>$one['id']])));
         }
         if(($hidden=$this->reads()->hiddenWarnings())!==[]){
             $count=count($hidden);
-            $components[]=Callout::make($count===1?'No price for '.$hidden[0]['tld']:'No prices for '.$count.' more TLDs')->warning()->columnSpanFull()
+            $components[]=Callout::make($count===1?'Prices left out for '.$hidden[0]['tld']:'Prices left out for '.$count.' more TLDs')->warning()->columnSpanFull()
                 ->description(($count===1?'It is':'They are').' on another page of this list. Open '.($count===1?'it':'each one').' to fix the pricing.')
                 ->footer(new HtmlString(implode(' ',array_map(fn(array $row)=>$button('Open '.$row['tld'],TldResource::getUrl('view',['record'=>$row['id']]))->toHtml(),$hidden))));
         }
@@ -346,9 +346,9 @@ class WhatYouSell extends Page implements HasTable
                 ...array_map(fn(string $action)=>$this->moneyGroup($action),array_keys(PriceList::ACTIONS)),
                 TextColumn::make('status')->label('Status')->extraHeaderAttributes(['class'=>'domains-sell-status'])->extraCellAttributes(['class'=>'domains-sell-status'])->badge()->state(fn(OfferRow $record)=>$this->reads()->status($record)['label'])
                     ->color(fn(OfferRow $record)=>$this->reads()->status($record)['tone'])->extraAttributes(fn(OfferRow $record)=>StatusMark::attributes($this->reads()->status($record)['tone'],'sell-'.$record->server_id.'-'.$record->tld))
-                    // Staff rows stay one line (table standard). A gray state keeps its reason on hover; a state that needs action shows its next step.
-                    ->description(fn(OfferRow $record)=>($s=$this->reads()->status($record))['tone']==='gray'?null:($s['next']??null))
-                    ->tooltip(fn(OfferRow $record)=>implode(' ',array_filter([($s=$this->reads()->status($record))['tone']==='gray'?($s['next']??null):null,$this->canEdit()?$this->reads()->blocked($record):null]))?:null)
+                    // Recovery is visible for every tone, including staff who cannot edit.
+                    ->description(fn(OfferRow $record)=>$this->reads()->status($record)['next']??null)
+                    ->tooltip(fn(OfferRow $record)=>$this->canEdit()?$this->reads()->blocked($record):null)
                     ->url(fn(OfferRow $record)=>match($this->reads()->status($record)['open']??null){'tld'=>TldResource::getUrl('view',['record'=>$this->reads()->tldId($record)]),'account'=>RegistrarAccount::getUrl(['account'=>$record->server_id]),default=>null}),
             ])
             ->checkIfRecordIsSelectableUsing(fn(OfferRow $record)=>$this->reads()->blocked($record)===null)

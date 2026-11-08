@@ -53,7 +53,7 @@
 <form method="POST" action="{{ $section['url'] }}" class="domains-owner-form" data-confirm @if ($section['defaults'] ?? false) data-default-servers="{{ implode("\n", $section['defaultServers'] ?? []) }}" @endif>
 @include('domains::partials.form-key', ['action' => 'nameservers'])
 <p class="domains-hint">Registrar: {{ $section['registrar'] }}.</p>
-@if (!($section['defaults'] ?? false))<p class="domains-hint">{{ \Paymenter\Extensions\Servers\Domains\Services\ManagementNameservers::MISSING }}</p>@endif
+@if (!($section['defaults'] ?? false))<p class="domains-hint">{{ $section['defaultError'] ?? \Paymenter\Extensions\Servers\Domains\Services\ManagementNameservers::MISSING }}</p>@endif
 @include('domains::partials.nameservers', ['id' => 'domains-ns', 'max' => $section['max'], 'required' => true, 'useOld' => $failed === $section['url'], 'value' => $nsValue, 'placeholder' => "ns1.example.com\nns2.example.com", 'hint' => '2 to '.$section['max'].', like ns1.example.com.'])
 <div class="domains-buttons">
 <button type="submit" class="domains-btn domains-btn--primary">Save</button>

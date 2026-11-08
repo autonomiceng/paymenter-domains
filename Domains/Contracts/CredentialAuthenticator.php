@@ -7,6 +7,7 @@ use Paymenter\Extensions\Servers\Domains\Data\Environment;
 interface CredentialAuthenticator
 {
     /** No reply came back (HTTP failure, deadline or no JSON): the key was not refused. */
+    public const UNCONFIRMED = 'Registrar key could not be confirmed.';
     public const UNANSWERED = 'Registrar did not answer.';
     public function authenticate(Environment $environment, #[\SensitiveParameter] array $credentials): void;
 }
