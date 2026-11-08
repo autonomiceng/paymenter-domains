@@ -250,7 +250,7 @@ final class StaffCatalogue
             $selectedAt=$policy?->updated_at;
             try{$selectedAt=$selectedAt?\Carbon\CarbonImmutable::parse($selectedAt)->getTimestamp():null;}catch(\Throwable){$selectedAt=null;}
             $refreshed=['succeeded_at'=>$queue->offer_feed_succeeded_at??null,'due_at'=>$work['feed_due']??null,
-                'failure'=>$queue->offer_feed_failure??null,'selected_at'=>$selectedAt];
+                'failure'=>$queue->offer_feed_failure??null,'failed_at'=>$queue->offer_feed_failed_at??null,'selected_at'=>$selectedAt];
             $confirmed=TldFacts::feedConfirmed($refreshed);
             if(!$unreadable&&!collect($prices)->contains(fn($price)=>$price['synced'])&&($selected||isset($sellers[$t->tld]))){
                 if($confirmed){$label="Not in the registrar's price feed; not for sale";}
