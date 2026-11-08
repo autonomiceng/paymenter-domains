@@ -213,7 +213,7 @@ final class AcquisitionOffers
             if (($mismatch = self::nativePriceMismatch($product, $plan, $price->retail)) !== null) {
                 try {
                     $day = app(Clock::class)->now()->format('Y-m-d');
-                    if (Cache::add('domains.price-mismatch.'.$name.'.'.$price->term.'.'.$day, true, 86400)) {
+                    if (Cache::add('domains.price-mismatch.'.$name.'.'.$price->action.'.'.$price->term.'.'.$day, true, 86400)) {
                         logger()->warning('Domain acquisition price mismatch; term hidden.',
                             ['tld' => $name, 'action' => $price->action, 'term' => $price->term,
                                 'catalogue' => $price->retail, 'plan' => $mismatch]);
