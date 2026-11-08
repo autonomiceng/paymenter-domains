@@ -28,7 +28,7 @@ try{
     same([$tlds[0]->id],array_column($matrix['rows'],'id'),'Healthy converted row remains readable');
     $html=view('domains::admin.sell-note',['warning'=>$matrix['warnings'][0]])->render();
     $dom=new DOMDocument;@$dom->loadHTML($html);$xpath=new DOMXPath($dom);
-    same(".invalid on Synthetic has no price: its custom pricing can't be read. Open .invalid and use Edit prices.",
+    same(".invalid on Synthetic has prices left out: its custom pricing can't be read. Open .invalid and use Edit prices.",
         $xpath->evaluate('normalize-space(//*[@data-price-omission])'),'Converted path retains the existing named warning and fix line');
 }catch(InvalidArgumentException $error){$failures[]='Converted price matrix: '.$error->getMessage();}
 foreach($failures as $failure){echo $failure."\n";}same([],$failures,'Converted readers and default save isolate unreadable own pricing');
@@ -59,7 +59,7 @@ same([$saved->id],array_column($matrix['skipped'],'id'),'Malformed saved fee rul
 same([$tlds[0]->id],array_column($matrix['rows'],'id'),'Healthy matrix row remains readable beside malformed saved fee rule');
 $html=view('domains::admin.sell-note',['warning'=>$matrix['warnings'][0]])->render();
 $dom=new DOMDocument;@$dom->loadHTML($html);$xpath=new DOMXPath($dom);
-same(".savedfee on Synthetic has no price: its custom pricing can't be read. Open .savedfee and use Edit prices.",
+same(".savedfee on Synthetic has prices left out: its custom pricing can't be read. Open .savedfee and use Edit prices.",
     $xpath->evaluate('normalize-space(//*[@data-price-omission])'),'Malformed saved fee rule retains the named warning and repair action');
 echo "Malformed saved fee rule keeps its TLD warning while shared pricing and healthy publication succeed.\n";
 same(0,$reads->calls,'Converted pricing needs no provider I/O');
