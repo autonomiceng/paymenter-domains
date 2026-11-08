@@ -91,6 +91,14 @@ final class TransferInputs
         }
         if (!self::deadline($op, $this->clock->now())) { throw new \DomainException('Transfer payment time is unverified.'); }
     }
+    /** Issuance already owns the outer checkout locks; validate the Paid zero receipt before freezing its input clock. */
+    public function complimentaryIssued(Operation $seed): void
+    {
+        if(DB::transactionLevel()!==1||$seed->funding_basis!=='complimentary'){throw new \DomainException('Complimentary receipt issuance required.');}
+        $l=HoldingLocks::take($seed->domain);$op=$l['operations']->firstWhere('id',$seed->id);
+        self::open($op,$l);$this->payment($op,$l);
+        if(!self::validCode($op->payload['epp']??null)){$op->update(['state'=>'awaiting_code','safe_code'=>'transfer_code_required']);}
+    }
     public function paymentAccepted(int $id): void
     {
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();

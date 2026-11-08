@@ -42,6 +42,7 @@ final class InvoiceBinding
             try{
                 $item=ComplimentaryInvoices::create((int)$service->user_id,$line['name'].' '.$line['selection']->action.', '.$line['selection']->term.' year',(int)$service->id);
                 ComplimentaryInvoices::paid($item->invoice);
+                if($line['selection']->action==='transfer'){(new TransferInputs($this->clock,new Refunds($this->clock)))->complimentaryIssued(Operation::where('invoice_item_id',$item->id)->sole());}
             }finally{$service->status=$status;unset($finalizing[$service->id]);}
         });
         Event::listen(\App\Events\InvoiceItem\Creating::class, function ($e): void {
