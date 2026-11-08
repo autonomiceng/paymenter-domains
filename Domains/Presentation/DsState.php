@@ -42,7 +42,7 @@ final class DsState
         }
         try{$records=ObservationProjection::sections($d)['ds']['facts']['records']??null;}catch(\Illuminate\Contracts\Encryption\DecryptException){$records=null;}
         $fact=['value'=>$records===null?'Unknown':($records===[]?'Off':'On'),'tone'=>'gray','url'=>null,'demo'=>false,'help'=>null,
-            'sub'=>(self::off($d)?($d->tld?str_replace('this TLD','.'. $d->tld,self::STAFF):self::STAFF).' ':'').($records===null?'Current DS records have not been confirmed. Sync this domain.':($records===[]?'The registrar confirmed there are no DS records.':implode('; ',array_map(fn($ds)=>'Key tag '.$ds['key_tag'].', algorithm '.$ds['algorithm'].', digest type '.$ds['digest_type'].': '.$ds['digest'],$records))))];
+            'sub'=>(self::off($d)?($d->tld?str_replace('this TLD','.'. $d->tld,self::STAFF):self::STAFF).' ':'').($records===null?'Current DS records have not been confirmed.'.(in_array($d->status,['cancelled','registration_rejected','transfer_rejected'],true)?'':' Sync this domain.'):($records===[]?'The registrar confirmed there are no DS records.':implode('; ',array_map(fn($ds)=>'Key tag '.$ds['key_tag'].', algorithm '.$ds['algorithm'].', digest type '.$ds['digest_type'].': '.$ds['digest'],$records))))];
         $progress=\Paymenter\Extensions\Servers\Domains\Services\ManagementProgress::for($d)['ds']??null;
         if($progress&&($op=$d->operations()->whereKey($progress['id'])->first())&&!($progress['settled']??false)){
             $event=self::event($op,$d,true);$fact['value']=$event['state'];$fact['tone']=$event['tone'];

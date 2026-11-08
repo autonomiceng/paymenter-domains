@@ -3,9 +3,9 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Filament\Actions\Action;
-use Filament\Forms\Components\{Hidden,Repeater,Select,TextInput,Textarea,Toggle};
+use Filament\Forms\Components\{Hidden,Repeater,Select,TextInput,Textarea};
 use Filament\Notifications\Notification;
-use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\{Get,Set};
 use Illuminate\Support\Facades\{Auth,Log};
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain};
@@ -73,10 +73,12 @@ final class DomainEditActions
     private static function nameservers(Domain $d, array $m): Action
     {
         return self::edit($d,'nameservers','Change','Change nameservers?',[
-            ...($m['defaults']?[Toggle::make('use_default')->label('Use the default nameservers')->live()]:[]),
-            Textarea::make('nameservers')->label('Nameservers')->rows(4)->helperText('2 to '.$m['max'].', like ns1.example.com.')->hidden(fn(Get $get)=>(bool)$get('use_default'))],
-            fn(array $data)=>['nameservers'=>(string)($data['nameservers']??''),'use_default'=>($data['use_default']??false)?'1':'0'],
-            ManagementForms::NAMESERVERS_RISK,['nameservers'=>implode("\n",$m['current']??[])]);
+            Textarea::make('nameservers')->label('Nameservers')->rows(4)
+                ->helperText('2 to '.$m['max'].', like ns1.example.com.'.($m['defaults']?'':' '.\Paymenter\Extensions\Servers\Domains\Services\ManagementNameservers::MISSING))
+                ->hintActions($m['defaults']?[Action::make('fill_site_default_nameservers')->label('Use site default nameservers')
+                    ->action(fn(Set $set)=>$set('nameservers',implode("\n",$m['defaultServers'])))]:[])],
+            fn(array $data)=>['nameservers'=>(string)($data['nameservers']??'')],
+            'Registrar: '.$m['registrar'].'. '.ManagementForms::NAMESERVERS_RISK,['nameservers'=>implode("\n",$m['current']??[])]);
     }
     /** An unknown state needs a choice; a known one has only one next step. */
     /** The lock button names its one step; with the state unread it is Change. A blocked button reads the same. */

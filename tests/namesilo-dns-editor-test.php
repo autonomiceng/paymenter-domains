@@ -23,9 +23,11 @@ expect(str_contains($text($dom->query('//li[@id="dns"]/span[contains(@class,"dom
 same(['','A','AAAA','CNAME','MX','TXT'],array_map(fn($o)=>$o->getAttribute('value'),iterator_to_array($dom->query('//select[@name="records[0][type]"]/option'))),'Only standard types are offered');
 same(['0','1','2'],array_map(fn($i)=>$i->getAttribute('value'),iterator_to_array($dom->query('//li[@id="dns"]//input[contains(@name,"[_source]")]'))),'Saved rows carry their place, not a provider ID');
 expect(!str_contains($html,'original')&&!str_contains($html,'opaque'),'Provider record IDs stay server-side');
-$fixed=$text($dom->query('//li[@id="dns"]//*[@data-fixed-records]')->item(0));
-expect(str_contains($fixed,'_sip._tcp SRV')&&str_contains($fixed,'SRV records can’t be changed here yet, because we can’t read their priority. Saving keeps them as they are. To change one, contact support.'),'SRV is read-only with a plain reason and next step');
-expect(str_contains($fixed,'@ CAA 0:issue:ca.example.com'),'CAA is listed read-only');
+$fixed=array_map(fn($row)=>array_map($text,iterator_to_array($row->getElementsByTagName('td'))),iterator_to_array($dom->query('//li[@id="dns"]//*[@data-fixed-records]')));
+same([['@','CAA','0:issue:ca.example.com','—','Unknown','Read-only'],['_sip._tcp','SRV','5:5060:sip.example.com.','—','Unknown','Read-only']],$fixed,'Every read-only row has its type and value');
+$notes=array_map($text,iterator_to_array($dom->query('//li[@id="dns"]//p[@class="domains-hint"]')));
+foreach(['SRV records can’t be changed here yet, because we can’t read their priority. Saving keeps them as they are. To change one, contact support.',
+    'CAA records can’t be changed here yet. Saving keeps them as they are. To change one, contact support.'] as $note){expect(in_array($note,$notes,true),'Each read-only type has its complete reason and next step');}
 // One edited row changes; every other row, ID and TTL stays.
 $rows=$form();$rows[0]['address']='192.0.2.2';$post($rows);$op=$latest();
 same([],$wire->writes,'The form save only reads');Cache::flush();same('succeeded',$management->run($op->id,$driver)->state,'The edit completes');

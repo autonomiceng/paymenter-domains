@@ -73,14 +73,13 @@
             }
             return true;
         };
-        const servers = form.elements.nameservers, useDefault = form.querySelector('[data-use-default]');
+        const servers = form.elements.nameservers;
         form.querySelector('[data-fill-defaults]')?.addEventListener('click', event => {
             event.preventDefault();
-            servers.value = form.dataset.defaultServers; useDefault.disabled = false;
+            servers.value = form.dataset.defaultServers;
             servers.dispatchEvent(new Event('input', {bubbles: true})); servers.focus();
             if (live) live.textContent = live.dataset.nameserversFilled;
         });
-        servers?.addEventListener('input', event => { if (event.isTrusted && useDefault) useDefault.disabled = true; });
         form.addEventListener('submit', event => {
             if (event.submitter?.name === 'confirmed') return;
             if (event.submitter?.matches('[data-delete-record]')) {

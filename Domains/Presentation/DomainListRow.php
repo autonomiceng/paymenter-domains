@@ -61,7 +61,7 @@ final class DomainListRow
         // Complimentary is said once per row: a pending complimentary order's Expires already says it.
         $price = !$s->renewalInvoiceMissing && $s->renewalPrice && !($complimentary && str_starts_with(self::expires($s)['cause'] ?? '', 'Complimentary. '))
             ? $s->renewalPrice.($complimentary ? '' : '/yr') : null;
-        return ['value' => 'On', 'note' => $price, 'invoiceMissing' => $s->renewalInvoiceMissing,
+        return ['value' => 'On', 'note' => $s->renewalInvoicePaid ? 'Next invoice: Paid' : ($s->renewalInvoiceReview ? 'Next invoice: Under review' : $price), 'invoiceMissing' => $s->renewalInvoiceMissing,
             'invoiceCause' => $s->renewalInvoiceMissing ? 'Not issued yet' : null, 'invoiceFix' => $s->renewalInvoiceMissing ? Missing::support($s->urls['support'] ?? null) : null];
     }
 }

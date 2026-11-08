@@ -11,7 +11,11 @@ $html=$page();same(1,substr_count($html,e(Paymenter\Extensions\Servers\Domains\P
 $io=count($state->calls);$clock->instant=$clock->now()->modify('+1 day');$runtimePorts->initialManagedRecordObservations();same($io,count($state->calls),'Held producer never automatically retries');
 $state->fault='';app(ObservationWork::class)->resume($job->id,'staff_records_resume');$runtimePorts->initialManagedRecordObservations();expect(!ObservationRecords::held($d->fresh())&&!ObservationRecords::stopped($d->fresh()),'Explicit scheduled resume recovers native producer');
 $p=$d->fresh()->observation;unset($p['records']);$d->fresh()->update(['observation'=>$p]);$html=$page();same(['Checking',''],[trim(storefrontDom($html)->query('//li[@id="dns"]//span[@data-record-family="dns"]')->item(0)?->textContent??''),trim(storefrontDom($html)->query('//li[@id="dns"]/span[@class="domains-row__v"]')->item(0)->textContent)],'Unheld unknown record says Checking once, beside the label');expect(!str_contains($html,'our team resumes'),'Unheld note has no false manual hold');
-$visible=strip_tags(preg_replace('~<(style|script)\b[^>]*>.*?</\1>~si','',$html));
+$neutral=storefrontDom($html);
+$registrarLines=$neutral->query('//dialog[@id="edit-nameservers"]/form/p[normalize-space()="Registrar: Enom."]|//dialog[@id="confirm-nameservers"]/p[normalize-space()="Registrar: Enom."]');
+same(2,$registrarLines->length,'Only the nameserver editor and confirmation identify the registrar');
+foreach(iterator_to_array($registrarLines) as $line){$line->parentNode->removeChild($line);}
+$visible=strip_tags(preg_replace('~<(style|script)\b[^>]*>.*?</\1>~si','',$neutral->document->saveHTML()));
 foreach(['enom','namesilo']as$name){expect(!str_contains(strtolower($visible),$name),'Customer copy stays registrar-neutral');}
 // A failed ordinary read while processing is off stops scheduled work without a record hold.
 $bindings->setProcessing($d->server_id,false);$observation->fault='info_missing';$dueRecords();$runtimePorts->initialManagedRecordObservations();

@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering. Real completed holdings and engine, synthetic transport.
 declare(strict_types=1);
 require __DIR__.'/owner-management-ready.php';
+require __DIR__.'/owner-site-nameservers.php';
 use Illuminate\Http\Request;
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\{OwnerActionController, OwnedDomainController};
 use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
@@ -24,7 +25,8 @@ if(isset($dto->management['auth_code_email'])){same($free?'We email it to the ad
 same(0,$dom->query('//input[@name="confirmed"]')->length,'No form carries a ticked or hidden confirmation');
 foreach(['nameservers','lock','auth_code_email']as$risky){if(isset($dto->management[$risky])&&!($risky==='lock'&&($dto->management['lock']['state']??null)===false)){same(1,$dom->query('//li[@id="'.$risky.'"]//form[@data-confirm]//dialog[@data-confirm-dialog][not(@open)]//button[@name="confirmed"]')->length,'Risky action has a closed confirm dialog: '.$risky);}}
 foreach(['contacts']as$plain){if(isset($dto->management[$plain])){same(1,$dom->query('//li[@id="'.$plain.'"]')->length,'Plain action row rendered: '.$plain);same(0,$dom->query('//li[@id="'.$plain.'"]//dialog[@data-confirm-dialog]|//li[@id="'.$plain.'"]//form[@data-confirm]')->length,'Plain action has no confirm step: '.$plain);}}
-foreach($free?['srv','ds','auth_code_display']:['dns','srv','ds','auth_code_display']as$a){expect(!isset($dto->management[$a]),'Unsupported or disabled advanced/display forms are absent');}
+foreach($free?['srv','auth_code_display']:['dns','srv','ds','auth_code_display']as$a){expect(!isset($dto->management[$a]),'Unsupported or disabled advanced/display forms are absent');}
+if($free){same(['label'=>'DNSSEC','off'=>true,'actions'=>[],'url'=>null,'reason'=>\Paymenter\Extensions\Servers\Domains\Presentation\DsState::CUSTOMER,'progress'=>null,'records'=>null],$dto->management['ds'],'Unsupported DS stays visible without change controls');}
 if($free){same(['label'=>'DNS records','unavailable'=>true,'actions'=>[],'url'=>null,'records'=>null,'fixed'=>[],'asOf'=>null,'progress'=>null],$dto->management['dns'],'Dormant NameSilo DNS shows as not available');}
 if($free){ // Stopped reads never restart by themselves, so an unknown row names the step instead of a time.
     $d->update(['observation'=>null]);$lockRow=static fn():string=>trim(preg_replace('/\s+/',' ',storefrontDom((new OwnedDomainController($owners))->show($r,$d->id)->render())->query('//li[@id="lock"]/span[@class="domains-row__v"]')->item(0)->textContent));
@@ -38,9 +40,9 @@ if($free){ // Stopped reads never restart by themselves, so an unknown row names
 if($free){expect(!str_contains($html,'privacy_purchase'),'Free privacy offers no paid action');commerceReject(fn()=>$driver->validate('nameservers',['use_default'=>true,'nameservers'=>[]],$d->domain));}
 else {
     commerceReject(fn()=>$driver->validate('nameservers',['nameservers'=>[]],$d->domain));
-    expect(str_contains($html,'Use the default nameservers'),'Explicit reset is distinct from custom nameservers');
-    $r=$post('nameservers',['use_default'=>'1']);$controller->manage($r,$d->id,'nameservers');$reset=$d->operations()->where('action','nameservers')->orderByDesc('id')->firstOrFail();
-    same(['nameservers'=>[],'use_default'=>true],$reset->payload,'Named reset intent is frozen through the engine');
+    expect(str_contains($html,'Use site default nameservers'),'Saved site nameservers have a fill action');
+    $reset=$management->request($user,$d->id,'nameservers',['nameservers'=>[],'use_default'=>true],hash('sha256','legacy-default-reset'),$driver);
+    same(['nameservers'=>[],'use_default'=>true],$reset->payload,'Already-frozen legacy reset remains supported by the engine');
     $state->ns=['dns1.name-services.com','dns2.name-services.com'];$state->apply=false;Illuminate\Support\Facades\Cache::forget('domains-write-slot:'.$d->account_fingerprint);
     same('succeeded',$management->run($reset->id,$driver)->state,'Explicit default reset requires provider default readback');
     $writes=array_values(array_filter($state->calls,fn($call)=>$call[0]==='ModifyNS'));same('default',end($writes)[1]['UseDNS'],'The grant sends explicit default DNS intent');$state->apply=true;
