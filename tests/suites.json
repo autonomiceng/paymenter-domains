@@ -789,7 +789,8 @@
     "tests/pending-transfer-observation-test.php",
     "tests/enom-nameserver-domains-test.php",
     "tests/owner-order-status-test.php",
-    "tests/template-recovery-test.php"
+    "tests/template-recovery-test.php",
+    "tests/watch-discovery-hints-test.php"
   ],
   "ui": [],
   "runner": [
