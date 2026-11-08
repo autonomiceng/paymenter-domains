@@ -24,11 +24,15 @@ $negative=$new('saved-response.example.com'); $virgin=$negative->getRawOriginal(
 $refunds=new \Paymenter\Extensions\Servers\Domains\Services\Refunds($clock);
 // Error evidence survives the real driver, sealed finish and later recovery without authorizing a replay or credit.
 $diagnostics=[];
-foreach (['refusal','contradictory','lost'] as $case) {
+foreach (['incomplete','missing_response','zero_count','invalid_count','refusal','contradictory','lost'] as $case) {
     $calls=[];
     $wire=static function($origin,$command,$parameters,$timeout) use (&$calls,$case,$purchaseRefusal): string {
         $calls[]=$command;
         if ($case==='lost') { throw new RuntimeException('PRIVATE-TRANSPORT'); }
+        if($case==='missing_response'){return preg_replace('#<responses>.*?</responses>#s','',$purchaseRefusal);}
+        if(in_array($case,['incomplete','zero_count','invalid_count'],true)){
+            return str_replace('<ResponseCount>1</ResponseCount>','<ResponseCount>'.match($case){'incomplete'=>'2','zero_count'=>'0',default=>'invalid'}.'</ResponseCount>',$purchaseRefusal);
+        }
         if ($case==='contradictory') { return str_replace('</interface-response>','<OrderID>1234</OrderID></interface-response>',$purchaseRefusal); }
         $text='Error 545 - Name server does not exist';
         return '<interface-response><Command>Purchase</Command><ErrCount>1</ErrCount><Done>true</Done><RRPCode>545</RRPCode>'
@@ -37,9 +41,14 @@ foreach (['refusal','contradictory','lost'] as $case) {
     };
     $makeEngine($binding,$wire); $op=$negative->fresh(); $money=nativeFinancialSnapshot($op);
     $result=$runRegistration($op);
+    if(in_array($case,['incomplete','missing_response','zero_count','invalid_count'],true)){
+        $return=$refunds->creditRejected($result->id);
+        echo $case.': '.json_encode(['state'=>$result->state,'return'=>$return,'service'=>App\Models\Service::findOrFail($result->service_id)->status])."\n";
+        same(null,$return,'An incomplete refusal envelope cannot authorize a native payment return');
+    }
     same(['uncertain','sealed',$case==='lost'?null:'unknown','possibly_sent'],[$result->state,$result->attempt['seal'],$result->attempt['execution']['disposition']??null,
         $result->attempt['send_state']],'Purchase error/lost reply retains uncertain sent authority: '.$case);
-    $expected=match($case){'lost'=>null,'contradictory'=>['code'=>'541','text'=>'Validation error. Failed to create order.'],
+    $expected=match($case){'lost'=>null,'contradictory','incomplete','missing_response','zero_count','invalid_count'=>['code'=>'541','text'=>'Validation error. Failed to create order.'],
         default=>['code'=>'545','text'=>'Error 545 - Name server does not exist']};
     $diagnostics[] = [$case, $expected, $result->attempt['evidence']['registrarReply'] ?? null];
     same(null,$refunds->creditRejected($result->id),'Ambiguous reply cannot enter the credit path');
