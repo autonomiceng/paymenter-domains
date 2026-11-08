@@ -153,7 +153,7 @@ foreach (['markup_percent', 'fixed'] as $mode) {
 }
 // Ordinary feed writes cannot bless an old marker while paused native plans keep old amounts.
 $product=$native->product($tlds[0],'register');$held=$product->plans()->where('billing_period',2)->sole()->prices()->where('currency_code','USD')->sole();
-$ports->apply(Edit::override($binding,'example.net',new Intent(sell:false,longest:10,transfers:false)),$revision());
+$ports->apply(Edit::override($binding,'example.net',new Intent(sell:false,longest:10,transfers:false),$rule),$revision());
 $marker=OfferState::decode($tlds[0]->fresh()->catalogue_published_revision);$marker['retailRule']=1;
 DB::table('domains_tlds')->where('id',$tlds[0]->id)->update(['catalogue_published_revision'=>OfferState::json($marker)]);
 DB::table('prices')->where('id',$held->id)->update(['price'=>'0.01']);

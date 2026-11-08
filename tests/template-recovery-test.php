@@ -37,7 +37,7 @@ $check('Stopped causes are based on retained audit evidence',function()use($mana
  DB::table('domains_watch_names')->where('id',$watch->id)->update(['state'=>'retired']);
  $page=Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$watch->id]);$page->assertDontSee('Ended with its hosting service');
  WatchAudit::create(['subject_type'=>'watch','subject_id'=>$watch->id,'user_id'=>$watch->user_id,'actor_id'=>$manager->id,'after_revision'=>'1','event'=>'staff_retire','reason'=>'Legacy staff stop','data'=>[],'created_at'=>now()]);
- Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$watch->id])->assertDontSee('Ended with its hosting service')->assertActionHidden('resume');
+ Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$watch->id])->assertDontSee('Ended with its hosting service')->assertActionDoesNotExist('resume');
  WatchAudit::create(['subject_type'=>'watch','subject_id'=>$watch->id,'user_id'=>$watch->user_id,'after_revision'=>'2','event'=>'discovery_retired','data'=>[],'created_at'=>now()]);
  Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$watch->id])->assertSee('Ended with its hosting service');
  DB::table('domains_watch_names')->where('id',$watch->id)->update(['state'=>'paused']);Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$watch->id])->assertActionVisible('resume')->assertDontSee('Ended with its hosting service');
