@@ -122,7 +122,7 @@ final class SettingsActions
                     ->visible(fn($get)=>$own($get)&&$get('mode')!=='fixed');
                 $fields[]=Select::make('round_up')->label('Round up')->options(PricingRule::ROUNDING_LABELS)->default(fn()=>$rule()['round_up']??null)->required()->live()
                     ->visible(fn($get)=>$own($get)&&$get('mode')!=='fixed');
-                foreach(['register'=>'Register','renew'=>'Renew','transfer'=>'Transfer'] as $key=>$label){$fields[]=TextInput::make('fixed_'.$key)->label($label.' price per year (USD)')->default(fn()=>$rule()['fixed'][$key]??null)->maxLength(14)->live(debounce:500)
+                foreach(['register'=>'Register','renew'=>'Renew','transfer'=>'Transfer'] as $key=>$label){$fields[]=TextInput::make('fixed_'.$key)->label($key==='register'?'First registration year (USD)':$label.' price per year (USD)')->default(fn()=>$rule()['fixed'][$key]??null)->maxLength(14)->live(debounce:500)
                     ->visible(fn($get)=>$own($get)&&$get('mode')==='fixed');}
                 $saved=self::cached(static function():?array{try{return CardFee::read();}catch(\Throwable){return null;}});
                 if($name==='default_pricing'){
@@ -148,8 +148,7 @@ final class SettingsActions
                     $fields[]=\Filament\Schemas\Components\Text::make(fn()=>'Off in Paymenter, so skipped: '.implode(', ',$reach()['off']).'. Prices there catch up once it is back on.')->key('reach_off')->visible(fn()=>$reach()['off']!==[]);
                 }
             }
-            if($name==='seller'&&($message=TldRegistrar::refusal($error,$data,$tld))!==null){return $message;}
-        if($name==='tld_settings'){
+                if($name==='tld_settings'){
                 // Offer only what the saved account terms allow; the writer still checks every change.
                 $allowed=self::cached(static fn()=>self::allowedTerms($server,$tld));
                 $years=static function(string $bound)use($allowed):int{$a=$allowed();return $a===null?($bound==='min'?1:10):$a[$bound];};
@@ -470,6 +469,7 @@ final class SettingsActions
     /** Staff text for a refused settings change; never echoes unrecognized exception text. */
     public static function refusal(\Throwable $error,string $name,array $data=[],int $server=0,?int $tld=null): string
     {
+        if($name==='seller'&&($message=TldRegistrar::refusal($error,$data,$tld))!==null){return $message;}
         if($name==='tld_settings'&&$error instanceof \DomainException&&($text=self::termsRefusal($error->getMessage(),$data,$server,$tld))!==null){return $text;}
         if($name==='acceptance'&&$error->getMessage()==='Audit entry too large. Changes held.'){return 'That is too many changes for one save. Save fewer at a time. Nothing was saved.';}
         if($error instanceof EnomTestCallLimit&&(Account::where('server_id',$server)->value('environment')??($data['environment']??null))==='live'){return 'We stopped this before it reached Enom. Earlier reads may have been sent. Check API calls on the account page.';}

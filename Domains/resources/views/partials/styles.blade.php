@@ -208,7 +208,9 @@
 }
 
 /* Search */
-.domains .domains-searchbar, .domains .domains-endings, .domains .domains-head--search { max-width: 42rem; }
+.domains .domains-searchbar, .domains .domains-endings, .domains .domains-head--search, .domains .domains-acquire-tabs { max-width: 42rem; }
+.domains .domains-acquire-tabs { margin: 1.25rem 0 1.5rem; }
+.domains .domains-term-rows .domains-term-select { width: auto; max-width: 100%; }
 .domains .domains-searchbar { display: flex; align-items: stretch; gap: .25rem; padding: .25rem; border: 1px solid hsl(var(--color-control, var(--color-neutral))); border-radius: .5rem;
     transition: border-color .15s; }
 .domains .domains-searchbar:focus-within { border-color: var(--e-accent); }
