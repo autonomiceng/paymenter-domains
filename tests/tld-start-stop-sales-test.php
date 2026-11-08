@@ -88,6 +88,7 @@ $case('term-limit recovery',static function()use($reset,$t,$catalogue):void{
 $case('paused readiness',static function()use($reset,$actor,$t,$binding):void{
     $reset(['sell'=>true,'transfers'=>true],true);
     Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->mountAction('stop_selling')->callMountedAction()->assertNotified('Change recorded');
+    same(true,StaffCatalogue::routed()->setting($t->fresh(),'enabled'),'A sales pause keeps the TLD enabled for renewals');
     $ready=Paymenter\Extensions\Servers\Domains\Catalogue\OfferReadiness::routed()->review(Account::where('server_id',$binding->serverId)->sole(),['registration'=>true,'transfer'=>true]);
     same([[],[]],[$ready['costs'],$ready['failures']],'Paused acquisitions are excluded from activation readiness');
 });
