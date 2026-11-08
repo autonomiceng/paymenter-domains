@@ -2,7 +2,7 @@
 // Real encrypted WatchName relations and staff facts; no network or full list fixture is needed.
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require __DIR__.'/Support/watch-notices.php';
+require __DIR__.'/Support/watch-notices.php';require __DIR__.'/Support/storefront.php';
 use Illuminate\Support\Facades\Auth;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,WatchFacts};
 use Paymenter\Extensions\Servers\Domains\Models\WatchName;
