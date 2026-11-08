@@ -39,7 +39,7 @@ final class SellTable
     {
         if($this->forSaleIds===null){
             $this->forSaleIds=[];
-            $this->tlds($this->source()->rows($this->bindings,null)->get(['server_id','tld'])->all())->chunk(25)->each(function($page):void {
+            $this->tlds($this->source()->rows($this->bindings,null)->get(['server_id','tld'])->all())->chunk(100)->each(function($page):void {
                 foreach($this->source()->page($page) as $id=>$fact){if($fact['sales']['label']==='For sale'){$this->forSaleIds[]=$id;}}
             });
         }

@@ -157,6 +157,12 @@ final class StaffCommands
         $actions=($data['seller']??'')===''?[]:array_keys(array_filter(['register'=>(bool)($data['register']??false),'transfer'=>(bool)($data['transfer']??false)]));
         $target=Tld::where('server_id',$id)->where('tld',$t->tld)->first()??throw new \DomainException('Seller offer missing.');
         if($actions!==[]&&!SellerAvailability::hasPrices($account,$target)){throw new \DomainException('Seller price missing.');}
-        return Edit::seller($b,$t->tld,$actions,$actions===[]?null:$this->intent(OfferState::decode($target->catalogue_intent))->allowSales($actions));
+        $intent=null;
+        if($actions!==[]){
+            $raw=OfferState::decode($target->catalogue_intent);$intent=$this->intent($raw)->allowSales($actions);
+            $defaults=OfferState::decode($account->catalogue_defaults);
+            $intent=new Intent(...[...get_object_vars($intent),'sell'=>($raw['sell']??null)===true?true:(($defaults['defaultSell']??true)?null:true)]);
+        }
+        return Edit::seller($b,$t->tld,$actions,$intent);
     }
 }

@@ -255,7 +255,7 @@ final class Writer implements Catalogue
     /** Staff may record pending intent; the evaluator still requires independent evidence before selling. */
     private function intentRefusal(Edit $edit, Tld $t, array $defaults): ?string
     {
-        if ($edit->kind !== 'override') { return null; }
+        if ($edit->kind !== 'override' && !($edit->kind === 'seller' && $edit->intent !== null)) { return null; }
         $old = OfferState::decode($t->catalogue_intent); $new = $edit->intent;
         $sell = $new->sell ?? ($defaults['defaultSell'] ?? true);
         $longest = $new->longest ?? ($defaults['defaultLongest'] ?? 1);
@@ -297,6 +297,9 @@ final class Writer implements Catalogue
             foreach ($ids as $id) { $servers[$id] = Server::whereKey($id)->lockForUpdate()->firstOrFail(); }
             foreach ($ids as $id) { $accounts[$id] = Account::where('server_id', $id)->lockForUpdate()->sole(); }
             if (!isset($accounts[$binding->serverId])) { throw new \DomainException('Seller offer missing.'); }
+            if ($seller && $command->actions !== [] && !$servers[$binding->serverId]->enabled) {
+                throw new \DomainException('Seller account off.');
+            }
             $binding->requireMatch(AccountBindings::binding($accounts[$binding->serverId]));
             if ($this->current) { ($this->current)(); }
             $policy = DB::table('domains_sales_policies')->where('tld', $name)->lockForUpdate()->first();
