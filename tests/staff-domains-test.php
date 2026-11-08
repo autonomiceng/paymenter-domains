@@ -117,8 +117,8 @@ $work=DB::table('domains_observation_work')->insertGetId(['server_id'=>$held->se
     'domain_id'=>$held->id,'generation'=>$held->authority_generation,'due_at'=>0]);
 foreach (['read_unavailable','budget_exhausted','superseded']as$code) {
     DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>$code]);
-    // The compact Last sync row names the stop; its page notice owns recovery guidance.
-    Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->assertSee('Read stopped')->assertDontSee('Cause: '.$code.'.');
+    // The stopped-read row and notice name the failure; saved status retains attempts and the exact cause.
+    Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->assertSee('Read stopped')->assertSee('The registrar read stopped.')->assertDontSee('Cause: '.$code.'.');
     foreach(['generation'=>$held->authority_generation+1,'server_id'=>$held->server_id+100,'account_fingerprint'=>str_repeat('a',64),'phase'=>'foreign']as$field=>$value){
         $old=DB::table('domains_observation_work')->where('id',$work)->value($field);DB::table('domains_observation_work')->where('id',$work)->update([$field=>$value]);
         expect(!$recordService::stopped($held->fresh()),'Foreign scheduled work never stops this holding');DB::table('domains_observation_work')->where('id',$work)->update([$field=>$old]);
