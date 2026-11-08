@@ -483,6 +483,7 @@ final class SettingsActions
                 'Connection checks are unavailable.'=>'Connection checks are off on this site. '.self::NOT_SENT,
                 'identity_credentials_refused'=>'Enom refused the user ID or API token. Check both for this account type.',
                 'identity_unavailable'=>'Enom did not confirm this account. Nothing was saved. Try again later.',
+                \Paymenter\Extensions\Servers\Domains\Contracts\CredentialAuthenticator::UNANSWERED=>(['enom'=>'Enom','namesilo'=>'NameSilo'][$data['registrar']??'']??'The registrar')." didn't answer. Nothing was saved. Try again in a few minutes.",
                 'Connection not verified.'=>Account::where('server_id',$server)->value('registrar_key')==='namesilo'?'NameSilo did not confirm the balance. The last saved balance stays. Trying again may send one more balance read.':'Enom did not confirm the balance. The last saved balance stays.',
                 'identity_environment_refused'=>'Enom reads for this account type are off on this site. '.self::NOT_SENT,
                 'identity_account_changed'=>'These credentials belong to a different account. The saved account was kept.',

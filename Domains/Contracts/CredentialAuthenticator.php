@@ -6,5 +6,7 @@ use Paymenter\Extensions\Servers\Domains\Data\Environment;
 /** Connectivity only: no provider identity, contact or spending authority is returned. */
 interface CredentialAuthenticator
 {
+    /** No reply came back (HTTP failure, deadline or no JSON): the key was not refused. */
+    public const UNANSWERED = 'Registrar did not answer.';
     public function authenticate(Environment $environment, #[\SensitiveParameter] array $credentials): void;
 }
