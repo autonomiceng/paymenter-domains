@@ -40,8 +40,8 @@ $feed=new class($binding,$now->modify('+1 second')) implements PricedFeed {
     }
     public function facts(string $tld,RequestContext $context):FactsObserved {
         $this->factCalls[]=$tld;
-        return new FactsObserved($this->binding,$tld,new Facts(['register'=>[1,3],'renew'=>[1],'transfer'=>[1]],
-            [],true,false,false,'synthetic',$this->now,$this->now->modify('+1 day')));
+        return new FactsObserved($this->binding,$tld,\Paymenter\Extensions\Servers\Domains\Catalogue\TermSupport::attach($tld,new Facts(['register'=>[1,3],'renew'=>[1],'transfer'=>[1]],
+            [],true,false,false,'synthetic',$this->now,$this->now->modify('+1 day')),\Paymenter\Extensions\Servers\Domains\Catalogue\TermSupport::evidence($this->binding,$tld)));
     }
 };
 $clock->instant=$now->modify('+1 second');
