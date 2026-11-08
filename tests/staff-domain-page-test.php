@@ -400,14 +400,16 @@ try {
     $reservedSync=$syncConnection->pop();expect($reservedSync!==null,'Staff A has a real reserved sync job');
     $syncJob=unserialize($reservedSync->payload()['data']['command']);
     same([$importer->id,$active->id,$active->authority_generation,$active->account_fingerprint],[$syncJob->actor,$syncJob->domain,$syncJob->generation,$syncJob->fingerprint],'Queued sync binds actor and current holding');
-    Livewire::actingAs($secondSyncStaff)->test(ViewDomain::class,['record'=>$active->id])->callAction('sync_now')->assertHasNoActionErrors();
+    Livewire::actingAs($secondSyncStaff)->test(ViewDomain::class,['record'=>$active->id])->assertActionDisabled('sync_now')->assertSee('Sync in progress')->callAction('sync_now')->assertHasNoActionErrors();
     $syncNotices=new \Filament\Notifications\Livewire\Notifications;$syncNotices->mount();
     $syncTitles=$syncNotices->notifications->map(fn($notice)=>$notice->getTitle())->values()->all();
     expect(!in_array('Sync queued',$syncTitles,true),'Second staff is not promised a silently dropped sync');
-    same(["A sync was already requested. If nothing changes in 15 minutes, press Sync now again. If it still doesn't run, check the queue worker."],$syncTitles,'Second staff gets retry and worker guidance without a queued promise');
+    same([],$syncTitles,'The disabled button and progress line do not promise another queued sync');
     same(1,$syncConnection->size(),'Two staff clicks retain one holding read, including its reservation');
     config(['queue.default'=>'sync','queue.connections.sync.driver'=>'sync']);
-    Livewire::actingAs($importer)->test(ViewDomain::class,['record'=>$active->id])->callAction('sync_now')->assertNotified(\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::WORKER);
+    Livewire::actingAs($importer)->test(ViewDomain::class,['record'=>$active->id])->assertActionDisabled('sync_now');
+    try{\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::enqueue((int)$importer->id,$active->fresh());throw new LogicException('Inline queue must be refused');}
+    catch(DomainException $error){same(\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::WORKER,$error->getMessage(),'The writer refuses inline queue configuration');}
     same(1,$syncConnection->size(),'Sync queue refusal never falls back to inline reads');
 } finally {
     if ($reservedSync) { $reservedSync->delete(); }
