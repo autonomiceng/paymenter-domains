@@ -112,7 +112,7 @@ final class StaffCatalogue
         }
         if($human!==null){return $human;}
         return match($reason){
-            'seller_changed'=>$missing($this->sellerStep($t,$action)),
+            'seller_changed'=>($once['seller_rights']??=TldFacts::canChangeSeller())?$missing($this->sellerStep($t,$action)):$missing(TldFacts::ASK_SELLER,null),
             'below_cost'=>$missing('Raise the price in Edit prices on .'.$t->tld.'.'),
             'cost_limit'=>$missing('Change the cost limit under Default for new TLDs in What you sell.',null),
             'unpublished_price'=>$missing('Set a positive '.$names[$action].' price in Edit prices on .'.$t->tld.'.'),

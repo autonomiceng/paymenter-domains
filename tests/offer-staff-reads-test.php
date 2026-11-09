@@ -31,6 +31,23 @@ $key=Review::ticket($actor->id,$binding->serverId,$t->id,'override',StaffCommand
 $commands->run(new Review($actor->id,$binding->serverId,$t->id,'override',$key,'Synthetic below cost'),['mode'=>'fixed','fixed_register'=>'2.00','fixed_renew'=>'14.00','fixed_transfer'=>'13.00']);
 $below=$source->matrix(collect([$t->fresh()]),1,'below_cost');same('2.00',$below['rows'][0]['prices']['register']['price'],'Below-cost filter keeps the exact saved staff retail');commerceReject(fn()=>$storefront->offer('com','register',1));
 $key=Review::ticket($actor->id,$binding->serverId,$t->id,'override',StaffCommands::stamp($binding->serverId,$t->id));$commands->run(new Review($actor->id,$binding->serverId,$t->id,'override',$key,'Restore synthetic price'),['mode'=>'fixed','fixed_register'=>'12.00','fixed_renew'=>'14.00','fixed_transfer'=>'13.00']);
+// Registrar hints follow seller rights: a cost viewer who can't change the registrar is sent to staff who can.
+$policyRow=array_diff_key((array)DB::table('domains_sales_policies')->where('tld','com')->sole(),['id'=>true]);
+$sellerHint=static function(array $permissions,array $policy)use($binding,$source,$actor,$policyRow):array{
+    Auth::setUser(staffUser($permissions));DB::table('domains_sales_policies')->where('tld','com')->update($policy);
+    $page=[];$table=new SellTable([$binding->serverId=>$binding],1,true,static function()use(&$page){return $page;},false,$source);
+    $page=$table->rows('com')->get()->all();$status=$table->status($page[0]);
+    DB::table('domains_sales_policies')->where('tld','com')->update($policyRow);Auth::setUser($actor);
+    return [$status['next']??null,$status['open']??null];
+};
+$noSeller=['server_id'=>null,'registrar_key'=>null,'account_fingerprint'=>null];$registerOff=['register_enabled'=>false,'transfer_enabled'=>false];
+$changer=[Staff::VIEW,Staff::COSTS,Staff::POLICY,Review::permission('seller')];
+same(['Choose the registrar in More on .com.','tld'],$sellerHint($changer,$noSeller),'Staff who can change the registrar are sent to Change registrar');
+same(['Allow registrations in More → Change registrar on .com.','tld'],$sellerHint($changer,$registerOff),'Staff who can change the registrar get the switch to turn on');
+foreach([[Staff::VIEW,Staff::COSTS],[Staff::VIEW,Staff::COSTS,Staff::POLICY],[Staff::VIEW,Staff::COSTS,Review::permission('seller')]] as $rights){
+    same(['Ask staff who can change the registrar.',null],$sellerHint($rights,$noSeller),'Cost viewers without both seller rights are not sent to Change registrar');
+    same(['Ask staff who can change the registrar.',null],$sellerHint($rights,$registerOff),'Cost viewers without both seller rights are not sent to the registrar switch');
+}
 // All accounts + No cost yet: 25 displayed pairs must not expand into 5 x 25 snapshots.
 $multi=[];$multiPage=[];$identity=$t->fresh()->getRawOriginal();unset($identity['id']);$rate=(array)DB::table('domains_prices')->where('server_id',$binding->serverId)->where('action','register')->where('term',1)->first();unset($rate['id']);
 for($a=0;$a<5;$a++){
