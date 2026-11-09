@@ -20,7 +20,7 @@ foreach(['terms','disabled','inheritance'] as $case){
     DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_intent'=>$raw,'catalogue_facts'=>$facts]);
     DB::table('extensions')->where('id',$t->server_id)->update(['enabled'=>true]);
     if($case==='terms'){
-        $f=OfferState::decode($facts);$f['terms']['register']=[1];
+        $f=OfferState::decode($facts);$f['terms']['register']=[4];
         DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>OfferState::json($f),'catalogue_intent'=>OfferState::json([...OfferState::decode($raw),'sell'=>false])]);
     }
     if($case==='inheritance'){DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_intent'=>OfferState::json([...OfferState::decode($raw),'sell'=>null])]);}
