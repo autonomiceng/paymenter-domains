@@ -343,6 +343,8 @@ final class DomainManagement
             $projection=$l['domain']->observation??[]; $sequence=($projection['management_sequence']??0)+1;
             $entry = ['sequence'=>$sequence,'operation_key' => $op->operation_key, 'generation' => $op->authority_generation, 'action' => $op->action,
                 'at' => $this->clock->now()->format(DATE_ATOM), 'correction_link' => $op->policy['management']['correction_link'] ?? null, 'confirmed' => $confirmed, 'email_accepted' => $email, 'facts' => $result->facts()];
+            // A newer saved inventory stays the record source: this older confirmed read keeps its history but ranks no higher than it.
+            if ($newer && in_array($op->action,['dns','srv','ds_add','ds_delete','glue_add','glue_update','glue_delete'],true) && ($inventory=ObservationRecords::current($l['domain']))!==null) { $entry['sequence']=min($sequence,$inventory['sequence']); }
             $refused=$result->refused&&!$confirmed&&!$email;$terminal=$refused&&$op->funding_basis==='non_billable_management';
             $history = $op->attempt['management_reads'] ?? [];
             $recovery=$op->attempt['management_recovery']??null;

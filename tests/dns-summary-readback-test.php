@@ -59,5 +59,7 @@ $state->afterWrite=static function()use(&$op,$d,$driver,$clock,$newer):void {
 };
 same('succeeded',$management->run($op->id,$driver)->state,'The write still confirms from its own readback');
 same($newer,ObservationRecords::current($d->fresh(),$clock->now())['families']['dns']['records'],'An older write readback cannot replace newer saved DNS records');
+same($newer,\Paymenter\Extensions\Servers\Domains\Services\ObservationProjection::sections($d->fresh())['dns']['facts']['records']??null,'The DNS editor shows the newer saved records, not the older readback');
+$reads=$op->fresh()->attempt['management_reads'];same($next,end($reads)['facts']['records']??null,'The older confirmed readback stays in the request history');
 
 $nativeSuccessful=true;echo "Confirmed DNS readback refreshes the customer summary.\n";
