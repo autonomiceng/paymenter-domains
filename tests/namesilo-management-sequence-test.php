@@ -63,7 +63,14 @@ $input=['role'=>'tech','contact'=>$original->payload['contacts']['tech']];$old=$
 $step=$d->operations()->where('action','contact_profile')->sole();$unreadable=true;$sent=count($writes());
 for($round=0;$round<8&&$step->fresh()->state!=='rejected';$round++){$clock->instant=$clock->now()->modify('+16 minutes');Cache::flush();$management->run($old->id,$driver);}
 same(['rejected','management_preparation_failed','absent'],[$step->fresh()->state,$step->fresh()->safe_code,$step->fresh()->attempt['seal']],'The prerequisite closes unsealed after five unsent preparation tries');
-$unreadable=false;Cache::flush();$fresh=$submit($d,$driver,'contacts',$input);
+$unreadable=false;Cache::flush();
+require __DIR__.'/Support/owner-pages.php';storefrontViews();$owners=new OwnedDomains($clock,new OwnerPorts(fn($b)=>$driver),$management);
+$get=Request::create('/domains/'.$d->id);$get->setUserResolver(fn()=>$user);$get->setLaravelSession(app('request')->session());
+$dom=storefrontDom((new OwnedDomainController($owners))->show($get,$d->id)->render());
+same(1,$dom->query('//li[@id="contacts"]//a[@aria-label="Edit contacts"]')->length,'The owner can open the contacts editor after the unsent tries');
+same(1,$dom->query('//li[@id="contacts"]//form[contains(@action,"/manage/contacts")]//button[@type="submit" and normalize-space()="Save"]')->length,'The contacts form has its Save button');
+same(0,$dom->query('//li[@id="contacts"]//*[@data-management-pending]')->length,'The unsent pair does not hold the row');
+$fresh=$submit($d,$driver,'contacts',$input);
 expect($fresh->id!==$old->id,'An identical save replaces a pair held by an exhausted unsent prerequisite');
 same(['rejected','rejected'],[$old->fresh()->state,$step->fresh()->state],'Replacement closes both old operations');
 $management->run($old->id,$driver);$management->run($step->id,$driver);same($sent,count($writes()),'The old pair never sends');
@@ -168,7 +175,6 @@ same('succeeded',$management->run($fresh->id,$driver,\Paymenter\Extensions\Serve
 $physical=$GLOBALS['nsPhysical'];$management->run($old->id,$driver);$management->run($child->id,$driver);
 same($physical,$GLOBALS['nsPhysical'],'The old child and parent never replay');
 same(['contactAdd','contactDomainAssociate'],array_values(array_filter($physical,fn($c)=>\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\AdmittedTransport::feature($c)!=='catalogue')),'Exactly one creation and association are physically dispatched');
-require __DIR__.'/Support/owner-pages.php';
 [$d,$driver,$original]=$holding('single-form');
 storefrontViews();
 $ports=new OwnerPorts(fn($b)=>$driver);$owners=new OwnedDomains($clock,$ports,$management);
