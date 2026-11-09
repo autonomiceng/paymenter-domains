@@ -21,4 +21,13 @@ same('Resume monitoring',$paused->instance()->getAction('resume')->getLabel(),'R
 Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id])->callAction('note',['note'=>'Synthetic staff note'])->assertNotified('Saved');
 Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id])->assertSeeInOrder(['History','Note','Synthetic staff note','Monitoring resumed','Monitoring paused'])->assertDontSee('No history yet');
 $rows=WatchFacts::history(WatchName::find($id));same(['Note','Monitoring resumed','Monitoring paused'],array_column($rows,'event'),'History events newest first');
+// Pausing turns alerts off on this page and keeps the customer's saved choice for when monitoring resumes.
+$alerts=fn()=>array_intersect_key(WatchFacts::for(WatchName::find($id))['Checks']['Monitoring alerts'],['value'=>1,'sub'=>1]);
+$prefs=fn()=>\Paymenter\Extensions\Servers\Domains\Services\WatchNoticePreferences::read($uid,'example.com');$saved=$prefs();
+same([true,true],[$saved['account']['enabled'],$saved['target']['enabled']],'The customer turned alerts on');
+same(['value'=>'On','sub'=>null],$alerts(),'Active monitoring shows alerts On');
+Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id])->callAction('pause')->assertNotified('Monitoring paused');
+same(['value'=>'Off','sub'=>'Paused. Alerts resume with monitoring.'],$alerts(),'Paused monitoring shows alerts Off');
+Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id])->assertSee('Paused. Alerts resume with monitoring.');
+same($saved,$prefs(),'Pausing keeps the customer alert choice');
 $nativeSuccessful=true;echo "Staff monitoring actions passed\n";

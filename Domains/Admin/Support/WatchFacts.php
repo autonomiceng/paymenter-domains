@@ -38,11 +38,12 @@ final class WatchFacts
         $lastMinute=($lastAt=(int)($last['at']??0))>0&&is_string($last['value'])&&$last['value']!==''?intdiv($lastAt,60):null;
         $checked=fn(int|string $at)=>intdiv($t=is_int($at)?$at:(int)strtotime($at),60)===$lastMinute?null:Sheet::moment($t,'Checked')->toHtml();
         if($active){$checks['Next check']=self::nextCheck($w);}
+        // Alerts are on only while monitoring runs. Pausing keeps the customer's saved choice for when monitoring resumes.
         $p=WatchNoticePreferences::read((int)$w->user_id,$w->canonical_name);$on=$p['account']['enabled']&&$p['target']['enabled'];
         // A failed customer alert says why and what to do; the staff alert links here.
         $failed=NoticeHealth::open('watch',(int)$w->id,$w->canonical_name);
-        $off=$w->state==='retired'?'Monitoring stopped':'The customer turns this on from their domain page';
-        $checks['Monitoring alerts']=self::fact($on&&$w->state!=='retired'?'On':'Off',implode(' · ',array_filter([$on&&$w->state!=='retired'?null:$off,$failed['text']??null]))?:null,$failed['tone']??null);
+        $off=match(true){!in_array($w->state,['active','paused'],true)=>'Monitoring stopped',$w->state==='paused'&&$on=>'Paused. Alerts resume with monitoring.',default=>'The customer turns this on from their domain page'};
+        $checks['Monitoring alerts']=self::fact($on&&$active?'On':'Off',implode(' · ',array_filter([$on&&$active?null:$off,$failed['text']??null]))?:null,$failed['tone']??null);
         // An empty string does not apply here and stays hidden; null is Missing.
         $shown=fn(array $facts)=>array_filter($facts,fn($f)=>$f['value']!=='');
         $e=\Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence::read(\Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence::domain($w),$w->points,$w->canonical_name);
