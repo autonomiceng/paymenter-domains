@@ -14,7 +14,7 @@ $m=[];
 foreach(['nameservers'=>'Nameservers','dns'=>'DNS records','glue'=>'Glue records','ds'=>'DNSSEC','lock'=>'Transfer lock','privacy'=>'WHOIS privacy','contacts'=>'Contacts','auth_code_email'=>'Auth code']as$cap=>$label){
     $m[$cap]=['label'=>$label,'url'=>'/domains/1/manage/'.$cap,'actions'=>[$cap=>'/domains/1/manage/'.$cap]];
 }
-$m['nameservers']+=['max'=>12,'defaults'=>true,'defaultServers'=>['ns1.hosting.example','ns2.hosting.example'],'current'=>['ns1.hosting.example','ns2.hosting.example']];
+$m['nameservers']+=['registrar'=>'Example Registrar','max'=>12,'defaults'=>true,'defaultServers'=>['ns1.hosting.example','ns2.hosting.example'],'current'=>['ns1.hosting.example','ns2.hosting.example']];
 $m['dns']+=['records'=>[['name'=>'@','type'=>'A','address'=>'192.0.2.1'],['name'=>'www','type'=>'CNAME','address'=>'@'],['name'=>'@','type'=>'MX','address'=>'mail.example.com']],'digest'=>str_repeat('b',64),'recordCheckHeld'=>false];
 $m['glue']+=['records'=>[],'recordCheckHeld'=>false];$m['glue']['actions']=['glue_add'=>'/domains/1/manage/glue_add'];
 $m['ds']+=['records'=>[],'recordCheckHeld'=>false];$m['ds']['actions']=['ds_add'=>'/domains/1/manage/ds_add'];

@@ -32,6 +32,20 @@ The browser blocks network/application scripts and measures both text axes: Tran
 wrapped height/padding, and the real Renewal card's Pay invoice link on one line at default size in both modes at 320/360/768/1280px.
 It compares Register/Transfer/Retry geometry with prior inline-flex/normal-wrap/1.25rem rules. Output artifacts and `button-layout-receipt.json` include failures; this minimal shell proves neither installed-theme nor browser-zoom acceptance.
 
+## Explicit offline name and heading check
+
+Same setup as above. Render the staff monitoring list and the client domain page, then measure them in Chromium:
+
+```sh
+R14_RENDER_DIR="$NAME_RENDER_DIR" suite-slot --quick python3 scripts/render-reminders.py "$NAME_RENDER_DIR" tests/test_installed_demo_c_state_watch-test.php tests/domain-page-render.php
+suite-slot --quick node scripts/check-name-and-heading.cjs "$NAME_RENDER_DIR"
+```
+
+A long name in the staff list's real name and person text items must be a block box, stay on one line inside its
+24rem or 11rem column, and end in a painted "...". The client domain heading must keep its clamp(1.125rem, 5vw, 1.5rem)
+size and 18 by 20px status mark at 320/390/768/1280px in both modes. Scripts are off, so the check shows Filament's
+main area that a script would fade in. It is not a screenshot beside the approved mock.
+
 Run `python3 scripts/bootstrap.py --download` once, then `scripts/test.py` fully offline.
 PHP **8.4.27** (Debian `8.4.27-1~deb13u1`, Linux x86_64) is pinned by archive SHA-256;
 hashes came from Debian security downloads on 2026-10-22. ICU `76.1-4` was re-downloaded

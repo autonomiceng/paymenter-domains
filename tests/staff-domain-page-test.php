@@ -214,6 +214,15 @@ DB::table('domains_domains')->where('id',$active->id)->update(['renewal_policy'=
 // Page: no internal facts, one notice, breadcrumb uses the name.
 $page=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSuccessful()->assertSet('data',[]);
 $page->assertDontSee('WHOIS privacy')->assertSee('Renewal')->assertSee('Registration')->assertSee('Billing')->assertSee('Ada Lovelace')->assertSee('Missing')->assertSee('Needs the linked service. Check the Services page.')->assertSeeHtml('domains-sheet');
+// The Renewal row holds its own value, not just Renewal text somewhere on the page. Stop and Resume in it: staff-holding-test.
+$renewalRow=static function(string $html):array{$doc=new DOMDocument();@$doc->loadHTML('<?xml encoding="UTF-8">'.$html);$x=new DOMXPath($doc);$t=static fn(DOMNode $n)=>trim(preg_replace('/\s+/',' ',$n->textContent));
+    $rows=$x->query('//div[contains(concat(" ",normalize-space(@class)," ")," domains-row ")][.//*[@role="term"][normalize-space(.)="Renewal"]]');
+    if($rows->length!==1){return [$rows->length,'',[]];}
+    return [1,$t($rows->item(0)),array_values(array_filter(array_map($t,iterator_to_array($x->query('.//button',$rows->item(0)))),fn(string $b)=>in_array($b,HoldingActions::LABELS,true)))];};
+same([1,'Renewal On',[]],$renewalRow(Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSuccessful()->html()),'One Renewal row says On, with no Stop or Resume for a viewer');
+DB::table('domains_domains')->where('id',$active->id)->update(['renewal_policy'=>encrypt(json_encode([...$policy,'renewals_stopped'=>true]),false)]);
+same([1,'Renewal Off Stopped by staff',[]],$renewalRow(Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSuccessful()->html()),'The Renewal row says Off, Stopped by staff');
+DB::table('domains_domains')->where('id',$active->id)->update(['renewal_policy'=>encrypt(json_encode($policy),false)]);
 foreach(['Saved facts','Assignment generation','Observation drift','Follow-up','Data retention','Server #','Domain #','Account spending holds','Preview adoption','Scheduled reads'] as $old){$page->assertDontSee($old);}
 same([DomainResource::getUrl('index')=>'Domains','active.example.com'],$page->instance()->getBreadcrumbs(),'Breadcrumb names the domain');
 // One head line: no box on the page, and green can't sit over rows that need work.

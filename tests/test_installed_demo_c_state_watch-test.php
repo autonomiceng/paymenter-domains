@@ -17,6 +17,16 @@ $facts=WatchFacts::for($paused,['keys'=>[],'summary'=>null]);
 expect(isset($facts['Evidence']['Public DNS']),'Paused empty answers retain Public DNS evidence row');
 expect(str_contains((string)$facts['Evidence']['Public DNS']['sub'],'2023-11-14'),'The evidence row keeps its own public observation instant');
 
+// Saved public answers without a template comparison show on DNS records with their own Checked time.
+$answered=clone $w;$answered->state='paused';$answered->setRelation('points',new \Paymenter\Extensions\Servers\Domains\Models\WatchDnsObservation(['check_kind'=>'points','started_at'=>1700000000,'completed_at'=>1700000001,'result'=>'complete','partial'=>false,'valid_until'=>1700000300,
+    'facts'=>['queries'=>[['name'=>$w->canonical_name,'type'=>'A','records'=>[['value'=>'192.0.2.10']]],['name'=>'other.example','type'=>'A','records'=>[['value'=>'192.0.2.99']]]]]]));
+$records=WatchFacts::for($answered,['keys'=>[],'summary'=>null])['Checks']['DNS records'];
+same('A @ → 192.0.2.10',$records['value'],'Saved public answers for this name fill DNS records');
+$recordsDom=storefrontDom('<div id="records-sub">'.$records['sub'].'</div>');
+same([gmdate('c',1700000000)],array_map(fn($n)=>$n->getAttribute('datetime'),iterator_to_array($recordsDom->query('//*[@id="records-sub"]//time'))),'DNS records shows the saved answer time');
+$recordsText=trim(preg_replace('/\s+/',' ',$recordsDom->query('//*[@id="records-sub"]')->item(0)->textContent));
+same('Historical answers. Checked Nov 14, 2023, 10:13 PM GMT+0000. DNS template comparison is unavailable for these saved records.',$recordsText,'DNS records says Checked before the time and why there is no comparison: '.$recordsText);
+
 foreach(['active','paused','retired'] as $state){
     $probe=clone $w;$probe->state=$state;$facts=WatchFacts::for($probe,['keys'=>[],'summary'=>null]);$encoded=json_encode($facts);
     $expected=match($state){'paused'=>'Paused','retired'=>'Monitoring stopped; no further checks',default=>'Fills in by itself after the next check'};

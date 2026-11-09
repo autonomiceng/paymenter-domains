@@ -182,7 +182,8 @@ same(1,$dom->query('//section[@id="renewal"]//a[@data-dialog-open][.="Renew now"
 // Four months before expiry Renew now is a quiet link, not the page's main action.
 same('domains-a',$dom->query('//section[@id="renewal"]//a[@data-dialog-open][.="Renew now"]')->item(0)?->getAttribute('class'),'Renew now stays a quiet row link until renewal is near');
 // The last day to renew online is a fact about expiry, so it sits under the dialog's Expires date.
-foreach(['Renew '.$name,'>Years<','<span class="domains-sub">Renew online by <time datetime="2027-02-28">Feb 28, 2027</time>.</span>','Create invoice','Turn off renewal invoices?','This stops scheduled renewal invoices. You can still use Renew now when your domain is eligible. An invoice already issued stays payable. Paying it can still renew '.$name.'.']as$t){expect(str_contains($html,$t),'Renewal card: '.$t);}
+same(['Renew online by Feb 28, 2027.'],array_map($norm,iterator_to_array($dom->query('//dialog[@id="edit-renew"]//dt[.="Expires"]/following-sibling::dd[1]/span[@class="domains-sub"][time[@datetime="2027-02-28"]]'))),'The renewal deadline sits under the dialog Expires date');
+foreach(['Renew '.$name,'>Years<','Create invoice','Turn off renewal invoices?','This stops scheduled renewal invoices. You can still use Renew now when your domain is eligible. An invoice already issued stays payable. Paying it can still renew '.$name.'.']as$t){expect(str_contains($html,$t),'Renewal card: '.$t);}
 same(0,$dom->query('//div[contains(@class,"domains-notice")]')->length,'An active domain has no notice');
 same('No changes yet.',$norm($dom->query('//section[@id="history"]//p')->item(0)),'Empty history');
 
