@@ -54,7 +54,7 @@ final class RegistrarCheck
                     DB::table('domains_runtime_operations')->updateOrInsert(['operation_id' => $op->id], ['due_at' => $next]);
                 }
             }
-            $op->update(['policy' => [...($op->policy ?? []), 'status_check' => ['outcome' => $outcome, 'at' => $now, 'next_at' => $next, 'reason' => $this->deferred, ...($this->identity!==null?['attempt_identity'=>$this->identity,'read_attempted'=>$this->context!==null,'facts'=>$this->facts]:[]), ...($this->awaitingAnswer !== null ? ['registrar'=>$this->awaitingAnswer,'answer_after'=>$this->answerAfter] : [])]]]);
+            $op->update(['policy' => [...($op->policy ?? []), 'status_check' => ['outcome' => $outcome, 'at' => $now, 'next_at' => $next, 'reason' => $this->deferred, ...($this->identity!==null?['attempt_identity'=>$this->identity,'read_attempted'=>$this->context!==null||self::attempted($op),'facts'=>$this->facts]:[]), ...($this->awaitingAnswer !== null ? ['registrar'=>$this->awaitingAnswer,'answer_after'=>$this->answerAfter] : [])]]]);
             return $op;
         });
     }
@@ -156,6 +156,10 @@ final class RegistrarCheck
     public static function forCustomer(Operation $op): array
     {
         $check = self::status($op);
+        // Before the first read the customer sees the same pending line; Check status is a staff button.
+        if (($check['outcome'] ?? null) === 'not_checked' && is_string($op->attempt['dispatch_attempted_at'] ?? null)) {
+            $check = ['outcome'=>'awaiting_answer','answer_after'=>(new \DateTimeImmutable($op->attempt['dispatch_attempted_at']))->modify('+24 hours')->getTimestamp()];
+        }
         if (($check['outcome'] ?? null) !== 'awaiting_answer') { return self::for($op); }
         $kind = match ($op->action) { 'transfer' => 'transfer', 'renew' => 'renewal', default => 'registration' };
         return ['title'=>ucfirst($kind).' pending','body'=>'We’re confirming this '.$kind.' with the registrar. You don’t need to do anything. Contact support if it’s still pending after '.(new \DateTimeImmutable('@'.(int)($check['answer_after']??0)))->setTimezone(new \DateTimeZone('America/Los_Angeles'))->format('M j, g:i A').' PT.','tone'=>'info'];

@@ -9,7 +9,10 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,ObservationRecords,ObservationSchema,ObservationWork,Refunds,RenewalReplacements,StaffOperationReview,StaffOperations,StaffSyncReview};
+use Paymenter\Extensions\Servers\Domains\Data\{RequestBudget,RequestContext,RequestOrigin};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{CataloguePreview,EnomTestReconciliationReader};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
+use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,ObservationRecords,ObservationSchema,ObservationWork,OperationReconciliation,ReconciliationEvidence,RegistrarCheck,Refunds,RenewalCompletion,RenewalReplacements,StaffOperationReview,StaffOperations,StaffSyncReview};
 \Paymenter\Extensions\Servers\Domains\Services\RuntimeSchema::install();
 try{
 // Native re-check calls the existing read-only reconciliation engine; actual proof alone can complete.
@@ -38,7 +41,7 @@ Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$uncheckable->i
     ->assertNotified('Enom has not answered yet')->assertSee('Ask Enom to check this attempt.')->assertSee('You can record Enom’s answer after Oct 19, 2026, 12:00 PM UTC.')->assertDontSee('Status checked');
 same('awaiting_answer',$uncheckable->fresh()->policy['status_check']['outcome'],'Lost reply retains the registrar answer state');
 same((new \DateTimeImmutable($uncheckable->attempt['dispatch_attempted_at']))->modify('+24 hours')->getTimestamp(),$uncheckable->fresh()->policy['status_check']['answer_after'],'Staff answer waits 24 hours from this dispatch');
-same([],$observation->calls,'No original ID or accepted history never claims a registrar read');
+expect(in_array(ReadCommand::Info,$observation->calls,true),'A lost Enom reply still reads the domain before staff ask for a case');
 [$transportFailure]=$prepare(placeholderComFixtureName('staff-failed-read-placeholder.com'),'captured');
 $observation->fault='transport';
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$transportFailure->id])->callAction('recheck')
@@ -210,6 +213,54 @@ commerceReject(fn()=>$run($readRenew->fresh(),'disposition'));
 $policy=$limitRenew->policy;$policy['renewal_resumptions']=array_fill(0,20,['prior_polls'=>5,'at'=>$clock->now()->format(DATE_ATOM)]);$limitRenew->update(['policy'=>$policy]);
 commerceReject(fn()=>$run($limitRenew,'resume_reads'));
 commerceReject(fn()=>$limitRenew->fresh()->update(['policy'=>array_diff_key($limitRenew->fresh()->policy,['renewal_resumptions'=>true])]));
+// An Enom lost reply reads the domain first. The read keeps facts only: no charge, completion or money change.
+[$lost,$binding]=$prepare(placeholderComFixtureName('staff-lost-read-placeholder.com'),'absent');
+$clock->instant=$clock->now()->modify('+25 hours');
+DB::table('domains_accounts')->where('server_id',$lost->server_id)->update(['processing_enabled'=>false]);
+$staff->role->update(['permissions'=>[...$all,Staff::POLICY,'admin.domains.settings.enom_answer']]);
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$lost->id])->assertActionHidden('enom_answer')->assertSee('Registrar check pending');
+$said=RegistrarCheck::forCustomer($lost->fresh());
+same('Registration pending',$said['title'],'Before the first read the customer sees the pending registration line');
+expect(!str_contains($said['body'],'Check status'),'Customers never see the staff Check status step');
+$before=[$lost->attempt,$lost->funding,$lost->domain->reservation_name,$credit()];
+$reconcile->run($lost->id);
+expect(in_array(ReadCommand::Info,$observation->calls,true),'Automatic recovery reads the domain before staff ask for a case');
+expect(!in_array(ReadCommand::Order,$observation->calls,true)&&!in_array(ReadCommand::Orders,$observation->calls,true),'Missing order identity and unaccepted history never allow an order search');
+$lost->refresh();
+same(['owned'=>true,'expiry'=>'2027-10-18','expiry_precision'=>'date','charge_confirmed'=>false],$lost->policy['status_check']['facts'],'Domain facts are kept without inventing an original charge');
+same('awaiting_answer',$lost->policy['status_check']['outcome'],'Unknown original charge still needs the registrar answer');
+same(1,$lost->policy['reconciliation']['polls'],'A completed read of a lost reply counts toward the read limit');
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$lost->id])->assertActionVisible('enom_answer')->assertSee('The original charge is still unconfirmed.');
+same('uncertain',$lost->state,'A found domain cannot settle a lost purchase');
+same(null,$lost->cost['actual']??null,'Unknown charge stays unknown');
+same($before,[$lost->attempt,$lost->funding,$lost->domain->fresh()->reservation_name,$credit()],'Reads keep the original attempt, reservation and payment');
+// The installed reader allows the same sealed-attempt read while its history gate stays closed.
+$driver=$readBindings->reader($lost->server_id);
+$reader=new EnomTestReconciliationReader(new CataloguePreview($driver),$driver);
+$context=new RequestContext($binding,RequestOrigin::Background,$clock->now()->modify('+250 seconds'),new RequestBudget(25),$clock);
+same(true,$reader->reconcile(ReconciliationEvidence::attempt($lost,$lost->domain->fresh(),$binding),$context)->result()->evidence()->domain?->owned,'Installed reader reads a sealed lost attempt through a paid-changes hold');
+// A failed read records no ownership or charge.
+$observation->fault='transport';$reconcile->run($lost->id);
+same([],$lost->fresh()->policy['status_check']['facts'],'A failed read cannot repeat earlier facts as current');
+same(null,$lost->fresh()->cost['actual']??null,'A failed read cannot settle the fee');
+// Once the read limit stops new reads, the earlier read of this attempt still lets staff record the answer.
+$policy=$lost->fresh()->policy;$policy['reconciliation']['polls']=OperationReconciliation::POLL_LIMIT;$lost->fresh()->update(['policy'=>$policy]);$observation->fault='';$observation->calls=[];
+$reconcile->run($lost->id);
+same([],$observation->calls,'The read limit stops another read');
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$lost->id])->assertActionVisible('enom_answer')->assertDontSee('Registrar check pending');
+// A lost renewal reply outside its history window can still read the domain.
+DB::table('domains_accounts')->where('server_id',$lost->server_id)->update(['processing_enabled'=>true]);
+[$lostRenew,$lostDomain,$binding]=$makeRenewal(placeholderComFixtureName('staff-lost-renewal-placeholder.com'));
+$state->lost=true;$runRenewal($lostRenew,$binding);$lostRenew->refresh();$state->calls=[];
+$clock->instant=$clock->now()->modify('+25 hours');
+DB::table('domains_accounts')->where('server_id',$lostRenew->server_id)->update(['processing_enabled'=>false]);
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$lostRenew->id])->assertActionHidden('enom_answer')->assertSee('Registrar check pending');
+$before=[$lostRenew->attempt,$lostRenew->funding,$lostDomain->fresh()->provider_expires_at->format('Y-m-d'),$credit(),$state->writes];
+(new RenewalCompletion($renewBindings,$clock))->run($lostRenew->id);
+expect(in_array(ReadCommand::Info,$state->calls,true),'Automatic renewal recovery reads before staff ask for a case');
+same(false,$lostRenew->fresh()->policy['status_check']['facts']['charge_confirmed'],'A later expiry is not proof of this renewal charge');
+same($before,[$lostRenew->fresh()->attempt,$lostRenew->fresh()->funding,$lostDomain->fresh()->provider_expires_at->format('Y-m-d'),$credit(),$state->writes],'Unknown renewal cost keeps its original authority and money');
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$lostRenew->id])->assertActionVisible('recheck')->assertActionVisible('enom_answer');
 echo "Native staff actions: permissions, confirmations, reasons, audit, stale/replay/binding, read-only reconciliation, credit and cycle replacement passed.\n";
 }catch(Throwable $error){throw new RuntimeException($error->getMessage().' at '.implode(' > ',array_map(static fn($frame)=>($frame['file']??'').':'.($frame['line']??0),$error->getTrace())),0,$error);}
 $nativeSuccessful=true;
