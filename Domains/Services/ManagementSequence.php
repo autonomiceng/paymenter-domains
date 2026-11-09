@@ -134,13 +134,17 @@ final class ManagementSequence
         if (!is_array($steps) || !array_is_list($steps) || count($steps)<1 || count($steps)>50
             || !is_array($plan['preimage']??null) || !is_string($plan['configuration']??null)
             || $data['funding_basis']!=='non_billable_management') { throw new \DomainException('Invalid management sequence.'); }
+        $kept=$plan['confirmed']??[];
+        if (!is_array($kept) || !array_is_list($kept) || count($kept)>50 || array_filter($kept,fn($entry)=>!is_array($entry) || array_keys($entry)!==['row'] || !is_array($entry['row']))) {
+            throw new \DomainException('Invalid management sequence.');
+        }
         $last=count($steps)-1;$key=$data['operation_key'];$management=$data['policy']['management'];
         foreach ($steps as $i=>&$step) {
             if (!is_array($step) || array_keys($step)!==['action','input'] || !is_array($step['input'])
                 || DomainManagement::capability($step['action'])!==DomainManagement::capability($data['action'])) { throw new \DomainException('Invalid management delta.'); }
             $step=['key'=>$i===$last?$key:$key.':step:'.$i,...$step];
         } unset($step);
-        $sequence=['preimage'=>$plan['preimage'],'configuration'=>$plan['configuration'],'steps'=>$steps];$root=null;
+        $sequence=['preimage'=>$plan['preimage'],'configuration'=>$plan['configuration'],'steps'=>$steps,...($kept?['confirmed'=>$kept]:[])];$root=null;
         foreach ($steps as $i=>$step) {
             $root=Operation::create([...$data,'operation_key'=>$step['key'],'action'=>$step['action'],'payload'=>$step['input'],
                 'policy'=>['management'=>[...$management,'intent'=>$management['input'],'input'=>$step['input'],'sequence'=>$sequence,'sequence_index'=>$i,
@@ -189,7 +193,9 @@ final class ManagementSequence
     }
     /**
      * The verified leading changes of the latest five identical sequences that are unsent or were replaced. Each comes
-     * with the inventory read before and after it, so the new plan keeps the rows they added. An unreadable one is skipped.
+     * with the inventory read before and after it, so the new plan keeps the rows they added. Each sequence also carries
+     * the rows it kept from the ones it replaced, so older history survives any number of replacements. An unreadable
+     * one is skipped.
      */
     public static function confirmed(array $l,string $action,array $intent): array
     {
@@ -201,7 +207,7 @@ final class ManagementSequence
                     && self::unsent($peer,$l['operations']) && !self::started($peer,$l['operations'])))->sortByDesc('id')->take(5);
         $steps=[];
         foreach ($parents as $parent) {
-            $before=$parent->policy['management']['sequence']['preimage'];$found=[];
+            $before=$parent->policy['management']['sequence']['preimage'];$found=$parent->policy['management']['sequence']['confirmed']??[];
             try {
                 foreach (self::members($parent,$l['operations']) as $child) {
                     self::pairPlan($parent,$child);$after=ManagementReadRecovery::latest($child)['facts']['sequence_preimage']??null;
