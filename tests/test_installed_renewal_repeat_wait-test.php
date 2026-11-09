@@ -90,13 +90,24 @@ $check($at($listHtml), 'customer list: the fixed time in the viewer\'s zone');
 $check(!str_contains($showText.$listText, 'Under review') && !str_contains($showText.$listText, 'request limit'), 'customer: no review or limit words');
 expect($failed === [], 'Repeat-renewal wait facts missing: '.implode('; ', $failed));
 
-// Turning off future renewal invoices preserves this already paid cycle, including its fixed time.
-$policy=$d->fresh()->renewal_policy;$d->update(['renewal_policy'=>[...$policy,'owner_auto_renew'=>false]]);
-$offSummary=(new DomainSummaries)->one($user,'managed',$d->id,$clock->now()->getTimestamp());
-same($goes->format(DATE_ATOM),DomainListRow::renewal($offSummary)['at'],'Off list retains the exact paid wait instant');
+// The owner's real Off switch stops future renewal invoices but keeps this paid cycle, its fixed time, its money and its send.
+$session=app('request')->session();$switch=new \Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerAutoRenewController($owners,new \Paymenter\Extensions\Servers\Domains\Services\OwnerAutoRenew($clock));
+$turn=static function(bool $on)use($session,$switch,$d,$user):void {
+    $r=Illuminate\Http\Request::create('/domains/'.$d->id.'/auto-renew','POST',['enabled'=>$on?'1':'0','confirmed'=>'1']);$r->setUserResolver(fn()=>$user);$r->setLaravelSession($session);
+    $r->request->set('_request_key',\Paymenter\Extensions\Servers\Domains\Http\FormKeys::issue($r,'owner:'.$d->id.':auto-renew'));$session->forget('errors');
+    $switch->save($r,$d->id);same(null,$session->get('errors'),'Owner switch saved: '.($on?'On':'Off'));
+};
+$debt=[$nativeMoney(),$second->fresh()->getRawOriginal()];$sent=[$state->writes,count($state->calls)];
+$turn(false);same(false,$d->fresh()->renewal_policy['owner_auto_renew'],'The owner switch saves Off');
+$offSummary=(new DomainSummaries)->one($user,'managed',$d->id,$clock->now()->getTimestamp());$offRow=DomainListRow::renewal($offSummary);
+same(['Off','Next invoice: Paid. '.$customer,$goes->format(DATE_ATOM)],[$offRow['value'],$offRow['note'],$offRow['at']],'Off list retains the paid cycle and its exact wait instant');
+$offList=view('domains::index',['domains'=>new Illuminate\Pagination\LengthAwarePaginator([$offSummary],1,25)])->render();
+expect($at($offList)&&str_contains($text($offList),'Next invoice: Paid. '.$customer),'Rendered Off list retains paid cycle timing and assurance');
 $offHtml=view('domains::show',['domain'=>$owners->present($d->fresh()),'summary'=>$offSummary])->render();
 expect($at($offHtml)&&str_contains(strip_tags($offHtml),$customer),'Off detail retains paid cycle timing and assurance');
-$d->update(['renewal_policy'=>$policy]);
+same($debt,[$nativeMoney(),$second->fresh()->getRawOriginal()],'Off and its renders keep the paid debt and its fixed send time');
+same($sent,[$state->writes,count($state->calls)],'Off and its renders call no registrar');
+$turn(true);
 // Scheduler -> queued native job: before the boundary it stays queued, then sends once at the stored time.
 $runtimeWork=$renewalRuntime($b,$engine,$writer,$completion);
 $scheduledSecond=static function()use($runtimeWork,$second):void {
