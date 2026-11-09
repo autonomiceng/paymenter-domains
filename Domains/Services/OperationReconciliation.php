@@ -37,7 +37,8 @@ final class OperationReconciliation
                 if ($op->action !== 'transfer' && $attempt->replyLost() && !$attempt->historyAcceptance?->covers($attempt, $this->clock->now())) {
                     $check->awaitingAnswer = $attempt->binding->registrarKey === 'enom' ? 'Enom' : 'NameSilo';
                     $check->answerAfter = (new \DateTimeImmutable($op->attempt['dispatch_attempted_at']))->modify('+24 hours')->getTimestamp();
-                    return null;
+                    // Enom can still read the domain before staff ask for a case; NameSilo waits for its answer.
+                    if ($attempt->binding->registrarKey !== 'enom') { return null; }
                 }
                 if (($op->policy['reconciliation']['polls'] ?? 0) >= self::POLL_LIMIT && !TransferPolling::expected($op) && !$manual && !($watch&&TransferPolling::expired($op,$now))) { return null; }
                 if($watch){TransferPolling::reserve($op,$now);$op->refresh();}

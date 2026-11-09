@@ -33,7 +33,8 @@ final readonly class RenewalCompletion
                 if ($attempt->replyLost() && !$attempt->historyAcceptance?->covers($attempt, $this->clock->now())) {
                     $check->awaitingAnswer = $attempt->binding->registrarKey === 'enom' ? 'Enom' : 'NameSilo';
                     $check->answerAfter = (new \DateTimeImmutable($op->attempt['dispatch_attempted_at']))->modify('+24 hours')->getTimestamp();
-                    return null;
+                    // Enom can still read the domain before staff ask for a case; NameSilo waits for its answer.
+                    if ($attempt->binding->registrarKey !== 'enom') { return null; }
                 }
                 if (($op->policy['renewal_polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT) { return null; }
                 $read=$financial?CapturedChargeReview::reserve($op,$this->clock):null;

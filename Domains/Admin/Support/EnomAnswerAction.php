@@ -20,7 +20,9 @@ final class EnomAnswerAction
     {
         $server=(int)$op->server_id;$id=$op->id;$registrar=$op->registrar_key==='namesilo'?'NameSilo':'Enom';
         return Action::make('enom_answer')->label(self::label($op))->modalHeading(self::label($op))->color('gray')
-            ->visible(fn()=>Staff::can(Staff::POLICY)&&Staff::can(Review::permission('enom_answer'))&&Answers::eligible($op,app(Clock::class)->now()))
+            // An Enom registration or renewal waits for one read of this attempt before staff ask Enom.
+            ->visible(fn()=>Staff::can(Staff::POLICY)&&Staff::can(Review::permission('enom_answer'))&&Answers::eligible($op,app(Clock::class)->now())
+                &&($op->registrar_key!=='enom'||$op->action==='transfer'||\Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::attempted($op)))
             ->modalDescription('The system cannot prove the final result or fee. Ask '.$registrar.' to check this account and exact attempt, then record its final answer.')
             ->modalSubmitActionLabel('Record answer')->schema([
                 Hidden::make('review_key')->default(fn()=>Review::ticket((int)Auth::id(),$server,null,'enom_answer',$stamp)),

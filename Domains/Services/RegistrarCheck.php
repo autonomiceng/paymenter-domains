@@ -34,6 +34,13 @@ final class RegistrarCheck
             $now = $this->clock->now()->getTimestamp();
             if ($op->state==='succeeded') { $this->awaitingAnswer=null; }
             $outcome = $this->awaitingAnswer !== null ? 'awaiting_answer' : ($this->deferred !== null ? 'deferred' : (($this->context?->completedReads() ?? 0) > 0 ? 'checked' : 'unavailable'));
+            // A completed read of a lost reply counts toward the same read limit as any other check.
+            if ($this->awaitingAnswer!==null && ($this->context?->completedReads()??0)>0) {
+                $policy=$op->policy;
+                if ($op->action==='renew') { $policy['renewal_polls']=($policy['renewal_polls']??0)+1; }
+                else { $policy['reconciliation']['polls']=($policy['reconciliation']['polls']??0)+1; }
+                $op->policy=$policy;
+            }
             $next = null;
             $watch = TransferPolling::applies($op);
             $stopped = $op->action === 'renew' ? RenewalCompletion::capturedChargeHeld($op) || ($op->policy['renewal_polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT
@@ -124,6 +131,9 @@ final class RegistrarCheck
     {
         $check = $op->policy['status_check'] ?? null;
         if (isset($check['attempt_identity']) && !hash_equals(RegistrarAnswers::identity($op),(string)$check['attempt_identity'])) { $check=null; }
+        // An Enom lost reply is read before staff ask Enom for a case.
+        if ($op->action==='register'&&$op->registrar_key==='enom'&&in_array($op->state,['running','pending','uncertain'],true)
+            &&RegistrarAnswers::eligible($op,app(Clock::class)->now())&&!self::attempted($op)) { return ['outcome'=>'not_checked']; }
         if ($op->action !== 'renew' || !in_array($op->state, ['running', 'pending', 'uncertain'], true)
             || isset($op->policy['enom_answer']) || isset($op->attempt['reconciliation'])) { return $check; }
         try {
@@ -135,6 +145,7 @@ final class RegistrarCheck
                 || $op->authority_generation !== $domain->authority_generation) { return $check; }
             $attempt = ReconciliationEvidence::attempt($op, $domain, AccountBindings::binding($account));
             if ($attempt->replyLost() && !$attempt->historyAcceptance?->covers($attempt, $now)) {
+                if ($op->registrar_key==='enom'&&!self::attempted($op)) { return ['outcome'=>'not_checked']; }
                 return [...($check??[]),'outcome'=>'awaiting_answer', 'registrar'=>$attempt->binding->registrarKey === 'enom' ? 'Enom' : 'NameSilo',
                     'answer_after'=>(new \DateTimeImmutable($op->attempt['dispatch_attempted_at']))->modify('+24 hours')->getTimestamp()];
             }
