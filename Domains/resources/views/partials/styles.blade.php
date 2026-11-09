@@ -494,8 +494,10 @@
 .domains .domains-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .domains .domains-ph { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: .375rem .75rem; margin-bottom: 1.25rem; }
 .domains .domains-ph > h1 { flex-basis: 100%; }
+/* The head status uses the head-size mark. */
+.domains .domains-ph .domains-status::before { width: 18px; height: 20px; }
 .domains .domains-ph__sub { flex-basis: 100%; margin: -.5rem 0 0; color: var(--e-muted); font-size: .875rem; }
-.domains h1.domains-mono { font-size: clamp(1.25rem, 5.5vw, 1.75rem); line-height: 1.2; font-weight: 600; overflow-wrap: anywhere; }
+.domains h1.domains-mono { font-size: clamp(1.125rem, 5vw, 1.5rem); line-height: 1.5; font-weight: 600; overflow-wrap: anywhere; }
 .domains .domains-ph ~ .domains-notice { align-items: center; margin-bottom: 1.5rem; }
 .domains .domains-notice__tx { flex: 1; }
 @media (max-width: 719px) {
