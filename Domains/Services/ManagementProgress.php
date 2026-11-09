@@ -105,8 +105,9 @@ final class ManagementProgress
             $total=$members->count();$request='Request #'.$op->id.': ';
             if ($done===$total) { return [...$row,'text'=>$request.($total===1?'1 change verified.':'all '.$total.' changes verified.')]; }
             $prefix=$request.$done.' of '.$total.($total===1?' change':' changes').' verified. ';
-            if ($op->policy['management']['sequence']['configuration']!==ManagementSequence::currentConfiguration($d)
-                || (int)$d->service->user_id!==(int)$d->user_id) {
+            // A later settings change cannot finish this request, but a fresh save still replaces it when the rest was never sent.
+            if ((int)$d->service->user_id!==(int)$d->user_id
+                || $op->policy['management']['sequence']['configuration']!==ManagementSequence::currentConfiguration($d) && !ManagementSequence::unsent($op,$members)) {
                 return [...$row,'text'=>$prefix.'The account or ownership changed. Contact support to finish the remaining changes.','tone'=>'warning'];
             }
             if ($blocked?->state==='queued' && $row['slow']) {

@@ -13,6 +13,23 @@ use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\DnsManagement;
 use Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence;
 use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement,ObservationProjection,OwnedDomains,OwnerPorts,OwnerSetup,Refunds,TransferInputs};
+// A middle change that used its five unsent tries keeps the editor after a settings change, and a fresh save finishes the rest.
+$setup('dns-drift',[$a,$txt,$caa,$srv]);$seed=$submit($d,$driver,'dns',['records'=>[$a,$txt,$cname]]);Cache::flush();$management->run($seed->id,$driver);
+$rows=$form();$rows[0]['address']='192.0.2.5';$rows[1]['address']='v=spf1 a -all';$rows[]=['name'=>'mail','type'=>'A','address'=>'192.0.2.6','mx_pref'=>'','_source'=>''];$post($rows);$op=$latest();
+$steps=$d->operations()->where('action','dns')->where('id','<=',$op->id)->orderByDesc('id')->limit(3)->get()->reverse()->values();
+Cache::flush();$management->run($op->id,$driver);same('succeeded',$steps[0]->fresh()->state,'The first change is confirmed');$wire->fault='missing';
+for($round=0;$round<8&&$steps[1]->fresh()->state!=='rejected';$round++){$clock->instant=$clock->now()->modify('+16 minutes');Cache::flush();$management->run($op->id,$driver);}
+same(['rejected','management_preparation_failed','queued'],[$steps[1]->fresh()->state,$steps[1]->fresh()->safe_code,$op->fresh()->state],'The middle change stops after five unsent tries');
+$wire->fault='';\App\Models\Server::findOrFail($d->server_id)->settings()->create(['key'=>'synthetic_revision','value'=>'changed']);Cache::flush();
+$want='Request #'.$op->id.': 1 of 3 changes verified. The remaining changes were not sent. Save again to retry.';
+$row=(new OwnedDomainController($owners))->status($request(),$d->id)->getData(true)['dns']??null;same([$want,false],[$row['text']??null,$row['pending']??null],'Owner polling says the rest was not sent and frees the row');
+$dom=$page();same($want,$text($dom->query('//li[@id="dns"]//*[@role="status"]')->item(0)),'The owner page says the same and how to retry');same(0,$dom->query('//li[@id="dns"]//*[@data-management-pending]')->length,'The unsent request does not hold the row');
+same(1,$dom->query('//li[@id="dns"]//a[@data-dialog-open]')->length,'The owner can open the DNS editor');same(1,$dom->query('//li[@id="dns"]//form')->length,'The editor form is on the page');
+$wire->writes=[];$rows=$form();$at=fn($type)=>array_search($type,array_column($rows,'type'),true);
+same('192.0.2.5',$rows[$at('A')]['address'],'The editor shows the confirmed change');$rows[$at('TXT')]['address']='v=spf1 a -all';$rows[]=['name'=>'mail','type'=>'A','address'=>'192.0.2.6','mx_pref'=>'','_source'=>''];$post($rows);$fresh=$latest();
+expect($fresh->id!==$op->id,'A fresh save replaces the unsent request');same('management_retired',$op->fresh()->safe_code,'The old request is closed');
+for($i=0;$i<3&&$fresh->fresh()->state!=='succeeded';$i++){Cache::flush();$management->run($fresh->id,$driver);}
+same('succeeded',$fresh->fresh()->state,'The fresh request completes');same(['dnsUpdateRecord','dnsAddRecord'],$wire->writes,'Only the remaining changes are sent');
 // The opt-in adapter edits standard rows in the shared editor; CAA and SRV stay read-only.
 $setup('dns-form',[$a,$txt,$caa,$srv]);
 $seed=$submit($d,$driver,'dns',['records'=>[$a,$txt,$cname]]);Cache::flush();same('succeeded',$management->run($seed->id,$driver)->state,'Synthetic seed save completes');$wire->writes=[];
