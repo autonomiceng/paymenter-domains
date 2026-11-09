@@ -323,4 +323,45 @@ same('On hold',RequestFacts::status($heldOp)['label'],'Staff-held transfer share
 expect(\Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::status(Operation::query(),['on_hold'])->whereKey($heldOp->id)->exists(),'Held-transfer filter matches presentation');
 same('Put on hold by Saved Operator',Labels::requestStatus($heldOp)['reason'],'Retained hold names its recorded actor');
 Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$staffTransfer->id])->assertSee('On hold')->assertSee('Saved Operator');
+// A queued registration that Orders off stop reads On hold on its domain, as on its request and in both Status filters.
+// A closed order and unfinished customer setup keep their own words.
+$accounts=Account::where('server_id',$seed->server_id); $accounts->update(['processing_enabled'=>false]);
+$queuedOff=$row('registration_pending','register','queued'); $queuedOp=$queuedOff->operations()->sole();
+$closedOff=$row('registration_pending','register','queued'); DB::table('services')->where('id',$closedOff->service_id)->update(['status'=>'cancelled']);
+$setupOff=$row('registration_pending','register','held','contact_details_required');
+$word=static fn(Domain $d)=>[DomainFacts::status($d->fresh())['label'],RequestFacts::status($d->operations()->sole())['label']];
+same(['On hold','On hold'],$word($queuedOff),'Queued registration with Orders off: domain and request');
+same(['Under review','On hold'],$word($closedOff),'A closed order keeps its domain word');
+same(['Action required','Action required'],$word($setupOff),'Customer setup keeps its word');
+same('warning',DomainFacts::status($queuedOff->fresh())['tone'],'The held registration is amber');
+$onHold=DomainQueries::status(Domain::whereKey([$queuedOff->id,$closedOff->id,$setupOff->id]),['on_hold'])->pluck('id')->all();
+same([$queuedOff->id],$onHold,'Domain Status filter: only the stopped registration is On hold');
+expect(\Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::status(Operation::query(),['on_hold'])->whereKey($queuedOp->id)->exists(),'Request Status filter: the stopped registration is On hold');
+$accounts->update(['processing_enabled'=>true]);
+same(['Pending registration','In progress'],$word($queuedOff),'Orders on: the registration moves again');
+// The list reads the Orders switches once, for its Status filter and its rows, even when a switch changes while it is built.
+$flip=static function(bool $enabled) use ($seed): void {
+    $armed=true;
+    DB::listen(function($query) use (&$armed,$seed,$enabled): void {
+        $sql=strtolower($query->sql);
+        if (!$armed||!str_contains($sql,'domains_accounts')||!str_contains($sql,'processing_enabled')||str_contains($sql,'exists')) { return; }
+        $armed=false; Account::where('server_id',$seed->server_id)->update(['processing_enabled'=>$enabled]);
+    });
+};
+$parity=[]; $seen=[];
+foreach (['on_hold'=>'On hold','pending_registration'=>'Pending registration'] as $key=>$label) {
+    foreach ([false,true] as $enabled) {
+        $accounts->update(['processing_enabled'=>!$enabled]);
+        $page=Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($queuedOff->domain)->filterTable('status',[$key]);
+        $page->set('tableDeferredFilters',$page->get('tableFilters')); $flip($enabled); $page->call('applyTableFilters');
+        $column=$page->instance()->getTable()->getColumns()['status'];
+        foreach ($page->instance()->getTableRecords() as $record) {
+            if ($record->id===$queuedOff->id) { $seen[$enabled?'on':'off'][]=$key; }
+            if (($shown=$column->record($record)->getState())!==$label) { $parity[]="$key, Orders turned ".($enabled?'on':'off').": {$record->domain} reads $shown"; }
+        }
+    }
+}
+same([],$parity,'Every row the domain Status filter keeps reads that status');
+ksort($seen); same(['off'=>['pending_registration'],'on'=>['on_hold']],$seen,'The list reads the switches as they were when it started');
+$accounts->update(['processing_enabled'=>true]);
 $nativeSuccessful=true; echo "Staff domain status: customer words and one next step per row.\n";

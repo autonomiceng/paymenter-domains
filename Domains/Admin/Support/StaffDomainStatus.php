@@ -29,13 +29,13 @@ final class StaffDomainStatus
     private const LATE = 'Check renewal options and status at the registrar.';
     /** Reasons written for the customer. Staff read their step. */
     private const CUSTOMER_ONLY = [DomainStatus::LATE, DomainStatus::ON_IT];
-    /** $shared is the status the customer sees and $state the state it came from (DomainFacts::status). $alerts, $renewal and $waiting come from StaffDomainInputs.
+    /** $shared is the status the customer sees and $state the state it came from (DomainFacts::status). $alerts, $renewal, $waiting and $ordersOff come from StaffDomainInputs.
      * An open alert names the step unless the row already has a specific one (a held request, an import) or has ended.
      * With no alert, an open renewal says what happens next on a domain that is otherwise Active.
      * @param array{key:string,label:string,tone:string,reason:?string} $shared
      * @param list<array{code:string,request:?int}> $alerts
      * @return array{key:string,label:string,tone:string,reason:?string,step:?string,request:?int,act:bool,alert:?string} $request is set when the step names one, $act when staff have a job here, $alert when the step is that open alert */
-    public static function for(array $shared, string $state, Domain $d, ?Operation $op, array $alerts, ?Operation $renewal=null, ?Operation $waiting=null): array
+    public static function for(array $shared, string $state, Domain $d, ?Operation $op, array $alerts, ?Operation $renewal=null, ?Operation $waiting=null, bool $ordersOff=false): array
     {
         [$step, $specific, $request] = self::resolve($state, $d, $op);
         $act = $step !== null && !in_array($step, self::WAITING, true);
@@ -57,7 +57,8 @@ final class StaffDomainStatus
         } elseif ($unknown && $step === self::CHECK) {
             [$step, $request] = [$op ? 'Status missing.'.self::check($op->id) : 'Status missing. Check the domain at the registrar.', $op?->id];
         }
-        if ($op && in_array($d->status,self::ACQUIRING,true) && RequestFacts::heldAcquisition($op, $state==='registration_held')) {
+        // A queued registration that Orders off stop is On hold, as its request reads. A closed order or customer setup keeps its own word.
+        if ($op && in_array($d->status,self::ACQUIRING,true) && RequestFacts::heldAcquisition($op, $state==='registration_held'||$state==='registration_pending'&&$ordersOff)) {
             $shared=[...$shared,'key'=>'on_hold','label'=>'On hold','tone'=>'warning'];
         }
         return [...self::forStaff($shared), 'step' => $step, 'request' => $request, 'act' => $act, 'alert' => $named];

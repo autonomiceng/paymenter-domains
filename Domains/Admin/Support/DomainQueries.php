@@ -15,11 +15,12 @@ final class DomainQueries
             ->where('authority_generation',$d->authority_generation);
     }
     /** Rows whose status (DomainFacts::status) falls in one of the DomainStatus::SET keys.
-     * The rule reads encrypted request data and has one copy, so rows are sorted in PHP, 200 at a time. */
-    public static function status(Builder $q, array $keys): Builder
+     * The rule reads encrypted request data and has one copy, so rows are sorted in PHP, 200 at a time.
+     * $ordersOff: the OperationQueries::ordersOffAccounts() snapshot the list's rows read. */
+    public static function status(Builder $q, array $keys, ?array $ordersOff=null): Builder
     {
         if (!$keys) { return $q; }
-        return self::rows($q,fn(array $status)=>in_array($status['key'],$keys,true));
+        return self::rows($q,fn(array $status)=>in_array($status['key'],$keys,true),$ordersOff);
     }
     /** Alerting rows: an open alert that still applies, on a row that asks staff to act. OK, outdated and ended rows are not alerting.
      * The account page's count, the Open alerts filter and the menu badge all use this one rule. */
@@ -28,11 +29,11 @@ final class DomainQueries
         return self::rows(self::openAlerts($q),fn(array $status,array $inputs)=>$inputs['alerts']!==[]&&$status['act']);
     }
     /** Rows whose staff status (DomainFacts::status) and its inputs pass $keep. */
-    private static function rows(Builder $q, \Closure $keep): Builder
+    private static function rows(Builder $q, \Closure $keep, ?array $ordersOff=null): Builder
     {
         $ids=[];
-        (clone $q)->reorder()->with('latestAcquisition')->chunkById(200,function ($page) use (&$ids,$keep): void {
-            $inputs=StaffDomainInputs::for($page);
+        (clone $q)->reorder()->with('latestAcquisition')->chunkById(200,function ($page) use (&$ids,$keep,$ordersOff): void {
+            $inputs=StaffDomainInputs::for($page,$ordersOff);
             foreach ($page as $d) {
                 if ($keep(DomainFacts::status($d,$inputs[$d->id]),$inputs[$d->id])) { $ids[]=$d->id; }
             }

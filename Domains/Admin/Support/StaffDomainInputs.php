@@ -13,11 +13,15 @@ final class StaffDomainInputs
     /** Renewal request states that still have a next step. */
     private const OPEN_RENEWAL=['awaiting_payment','queued','running','pending','held','uncertain'];
     /** @param iterable<Domain> $domains
-     * @return array<int,array{alerts:list<array{code:string,request:?int}>,late:bool,renewal:?Operation,off:?bool,invoice:?Invoice,closed:bool,waiting:?Operation}> by domain id.
-     * off: automatic renewal is off, null when its saved data can't be read. invoice and closed: what OwnedDomains::order reads. waiting: the newest request not finished. */
-    public static function for(iterable $domains): array
+     * @param ?array $ordersOff an OperationQueries::ordersOffAccounts() snapshot, shared with the list's Status filter. Null reads it when a row needs it.
+     * @return array<int,array{alerts:list<array{code:string,request:?int}>,late:bool,renewal:?Operation,off:?bool,invoice:?Invoice,closed:bool,waiting:?Operation,orders_off:bool}> by domain id.
+     * off: automatic renewal is off, null when its saved data can't be read. invoice and closed: what OwnedDomains::order reads. waiting: the newest request not finished.
+     * orders_off: Orders are off for the account of a queued registration or transfer request. */
+    public static function for(iterable $domains, ?array $ordersOff=null): array
     {
         $domains=collect($domains); $ids=$domains->pluck('id')->all();
+        $queued=$domains->filter(fn(Domain $d)=>$d->latestAcquisition?->state==='queued')->keyBy('id');
+        $ordersOff??=$queued->isEmpty()?[]:OperationQueries::ordersOffAccounts();
         $open=Schema::hasTable('domains_obligation_alerts') ? ObligationAlerts::open($ids)
             ->orderBy('id')->get(['domain_id','code','operation_id','last_seen'])->groupBy('domain_id') : collect();
         // Every renewal, because only the newest one counts. All requests of a domain with a linked alert, to check its fixes.
@@ -43,7 +47,8 @@ final class StaffDomainInputs
             $inputs[$d->id]=['alerts'=>$live->map(fn(object $a)=>['code'=>$a->code,'request'=>$a->operation_id===null?null:(int)$a->operation_id])->values()->all(),
                 'late'=>$rows->contains('code','acquisition_late_money'),
                 'renewal'=>$current&&in_array($current->state,self::OPEN_RENEWAL,true)?$current:null,'off'=>$off,
-                'invoice'=>(int)$invoice?->user_id===(int)$d->user_id?$invoice:null,'closed'=>OwnedDomains::closed($statuses->get($d->service_id),$stops->isNotEmpty()),'waiting'=>$waiting->get($d->id)];
+                'invoice'=>(int)$invoice?->user_id===(int)$d->user_id?$invoice:null,'closed'=>OwnedDomains::closed($statuses->get($d->service_id),$stops->isNotEmpty()),'waiting'=>$waiting->get($d->id),
+                'orders_off'=>$queued->has($d->getKey())&&OperationQueries::ordersOff($d->latestAcquisition,$ordersOff)];
         }
         return $inputs;
     }
