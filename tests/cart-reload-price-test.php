@@ -41,6 +41,8 @@ $before=[App\Models\Order::count(),App\Models\Invoice::count(),Paymenter\Extensi
 Illuminate\Support\Once::flush();app('request')->cookies->set('cart',$refreshCart->ulid);$refreshPage->call('$refresh');
 $shown=storefrontDom($refreshPage->html());same('$33.00',trim($shown->query('//*[@data-current-cart-total]')->item(0)?->textContent??''),'Mounted refresh renders the current combined cart total');
 same('33.00',number_format((float)$refreshPage->get('total')->total,2,'.',''),'Rendered and native totals agree on the existing component');
+same('Your cart changed',trim($shown->query('//*[@data-domains-cart-notice]//strong')->item(0)?->textContent??''),'Mounted refresh announces the changed price');
+same('Was $28.60',trim($shown->query('//s')->item(0)?->textContent??''),'Mounted refresh strikes the amount this page showed');
 same($before,[App\Models\Order::count(),App\Models\Invoice::count(),Paymenter\Extensions\Servers\Domains\Models\Operation::count(),$reads->calls],'Local render creates no order, invoice or provider call');
 $ports->apply(Edit::override($secondBinding,'net',new Intent(sell:false,transfers:true)),offerCommerceAsStaff(static fn()=>$ports->readOffers(new Query($secondBinding,['net'],'register'),Context::Staff)[0]->revision));
 $page=$open(); $dom=storefrontDom($page->html());
@@ -58,4 +60,19 @@ $page=$open(); $dom=storefrontDom($page->html());
 same('10.00',number_format((float)$page->get('total')->total,2,'.',''),'Native quantity edit updates the total');
 same(0,$dom->query('//*[@data-domains-cart-notice]')->length,'Own quantity edit is not a retail price change');
 same(0,$dom->query('//s')->length,'Own old quantity price is not struck');
+// A complimentary account keeps $0.00 when an unrelated update refreshes the mounted cart.
+$staff=commerceUser();$staff->update(['role_id'=>App\Models\Role::create(['name'=>'Fund domains','permissions'=>['admin.domains.fund']])->id]);
+$comp=commerceUser();Paymenter\Extensions\Servers\Domains\Services\ComplimentaryAccounts::set($comp->id,$staff,true,'Approved gift',$clock);
+$compCart=commerceCart($comp);commerceAdd($compCart,$com,'comp-refresh-placeholder.com',3);Illuminate\Support\Once::flush();
+$compPage=Livewire\Livewire::actingAs($comp)->withCookies(['cart'=>$compCart->ulid])->test(App\Livewire\Cart::class);
+same('0.00',number_format((float)$compPage->get('total')->total,2,'.',''),'Complimentary cart mounts at zero');
+Illuminate\Support\Once::flush();app('request')->cookies->set('cart',$compCart->ulid);$compPage->call('$refresh');
+$shown=storefrontDom($compPage->html());$text=$shown->evaluate('string(//div)');
+same('$0.00',trim($shown->query('//*[@data-current-cart-total]')->item(0)?->textContent??''),'Unrelated refresh keeps the zero total');
+same(2,substr_count($text,'$0.00'),'Unrelated refresh keeps the zero line price');
+same(0,$shown->query('//*[@data-domains-cart-notice]')->length,'Unrelated refresh is not a price change');
+same('0.00',number_format((float)$compPage->get('total')->total,2,'.',''),'Native total stays zero');
+$orders=App\Models\Order::count();Illuminate\Support\Once::flush();app('request')->cookies->set('cart',$compCart->ulid);
+$compPage->call('checkout',['contact'=>commerceOrderContact($comp),'save_account'=>false]);
+same($orders+1,App\Models\Order::count(),'Checkout accepts the zero price the refresh showed');
 $nativeSuccessful=true; echo "Reload price notice passed.\n";

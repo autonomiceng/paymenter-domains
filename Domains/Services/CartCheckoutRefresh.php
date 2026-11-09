@@ -118,6 +118,10 @@ final class CartCheckoutRefresh
                 try { $admission->refresh(); self::show($component, self::cartTotal()); }
                 catch (CartLinesRemoved $e) { self::show($component, self::cartTotal()); self::removed($component, $e); }
                 catch (\Throwable $e) { self::unavailable($component, $e); }
+            } else {
+                // Any other update reloads the paid native lines too; reapply the grant locally.
+                try { if ($admission->complimentary()) { self::show($component, self::cartTotal()); } }
+                catch (\Throwable $e) { self::unavailable($component, $e); }
             }
             if ($held) {
                 try {

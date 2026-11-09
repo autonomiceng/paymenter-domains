@@ -166,6 +166,27 @@ class CartAdmission
         }
     }
 
+    /** Local only: a complimentary account's domain lines show 0.00 on any render, with no reads or writes.
+     * Returns whether a line changed, so an already priced page keeps its gateways. */
+    public function complimentary(): bool
+    {
+        if (!ComplimentaryAccounts::authorization((int) Auth::id())) { return false; }
+        $changed = false;
+        foreach (NativeCart::items() as $item) {
+            $mapping = $this->native->mapping($item->product, $item->plan);
+            if (!$mapping || !in_array($mapping['action'], ['register', 'transfer'], true)) { continue; }
+            $price = $item->plan->prices->where('currency_code', 'USD')->sole();
+            if (RetailLine::decimal($price->price) === '0.00') { continue; }
+            // Same isolation as refresh(): eager-loaded same-plan lines share models.
+            $plan = clone $item->plan;
+            $plan->setRelation('prices', $plan->prices->map(static fn ($price) => clone $price));
+            $item->setRelation('plan', $plan);
+            $item->plan->prices->where('currency_code', 'USD')->sole()->price = '0.00';
+            $item->offsetUnset('price'); $changed = true;
+        }
+        return $changed;
+    }
+
     /** Signed page memo contains only the domain lines and retail the customer could see. */
     public function offers(): array
     {
