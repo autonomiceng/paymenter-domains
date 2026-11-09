@@ -14,14 +14,14 @@ authority still follows the existing retirement path.
 | `scripts/conversion/EvidenceHost.php` | Conversion application preflight, protected evidence collection, collector CLI and development-source packaging exclusions. |
 | Changed test files or shared support fixtures | The tests themselves, every requiring registered consumer, fixture policy and runner discovery checks. |
 
-The conservative lexical inventory contains 300 registered tests, including the
+The conservative lexical inventory contains 292 registered tests, including the
 [focused checks for adoption and registrars](adoption-focused.md). It follows class imports,
 requires, shared fixtures, route registration and source/package collectors. An import
 or route reference qualifies for this conservative selection; it does not establish
 that the changed marker branch executes in that test. No suite category is selected
 as a substitute for this dependency inventory.
 
-The command below selects the 297 offline tests (284 regular and 13 installed) through
+The command below selects the 289 offline tests (276 regular and 13 installed) through
 the existing selector. Run installed tests with the full resource slot. The three
 MariaDB scenario registrations are recorded separately below; they require a supplied
 MariaDB environment and are not included in offline pass counts.
@@ -42,10 +42,7 @@ python3 scripts/test.py --jobs 2 --only \
   tests/balance-recording-rule-test.php tests/binding-test.php \
   tests/cart-admission-test.php tests/catalogue-sync-test.php \
   tests/catalogue-test.php tests/contact-setup-test.php \
-  tests/conversion-app-native-test.php tests/conversion-app-policy-test.php \
-  tests/conversion-evidence-test.php tests/conversion-guards-test.php \
-  tests/conversion-new-pin-test.php tests/conversion-retired-pin-test.php \
-  tests/conversion-test.php tests/curl-transport-test.php \
+  tests/curl-transport-test.php \
   tests/customer-tags-test.php tests/demo-data-test.php \
   tests/doh-settings-test.php tests/domain-counts-test.php \
   tests/domain-page-test.php tests/domain-portal-test.php \
