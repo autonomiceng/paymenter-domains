@@ -41,7 +41,8 @@ same(['','A','AAAA','CNAME','MX','TXT'],array_map(fn($o)=>$o->getAttribute('valu
 same(['0','1','2'],array_map(fn($i)=>$i->getAttribute('value'),iterator_to_array($dom->query('//li[@id="dns"]//input[contains(@name,"[_source]")]'))),'Saved rows carry their place, not a provider ID');
 expect(!str_contains($html,'original')&&!str_contains($html,'opaque'),'Provider record IDs stay server-side');
 $fixed=array_map(fn($row)=>array_map($text,iterator_to_array($row->getElementsByTagName('td'))),iterator_to_array($dom->query('//li[@id="dns"]//*[@data-fixed-records]')));
-same([['@','CAA','0:issue:ca.example.com','—','Unknown','Read-only'],['_sip._tcp','SRV','5:5060:sip.example.com.','—','Unknown','Read-only']],$fixed,'Every read-only row has its type and value');
+// A complete read lists CAA last with the other DNS records, and every read-only row shows the TTL that read returned.
+same([['_sip._tcp','SRV','5:5060:sip.example.com.','—','900','Read-only'],['@','CAA','0:issue:ca.example.com','—','600','Read-only']],$fixed,'Every read-only row has its type, value and read TTL');
 $notes=array_map($text,iterator_to_array($dom->query('//li[@id="dns"]//p[@class="domains-hint"]')));
 foreach(['SRV records can’t be changed here yet, because we can’t read their priority. Saving keeps them as they are. To change one, contact support.',
     'CAA records can’t be changed here yet. Saving keeps them as they are. To change one, contact support.'] as $note){expect(in_array($note,$notes,true),'Each read-only type has its complete reason and next step');}
@@ -68,7 +69,8 @@ $staffPage()->callAction(TestAction::make('edit_dns')->schemaComponent('fact_'.m
 $op=$latest();same((int)$staff->id,(int)$op->authorized_by,'The staff save is one request');Cache::flush();$management->run($op->id,$driver);
 $progress('Request #'.$op->id.': 1 change verified.');same($caa,$by('CAA'),'Staff edits keep read-only rows');
 // Saved records stay counted when DNS is closed again, and both sides still say why and what to do.
-$driver=$ordinary;$row=$text($page()->query('//li[@id="dns"]/span[contains(@class,"domains-row__v")]')->item(0));
-expect(str_starts_with($row,'4 records')&&str_contains($row,'As of ')&&str_ends_with($row,$off),'Owner keeps the count and gets the reason and next step');same(0,$page()->query('//li[@id="dns"]//form')->length,'No records form with saved records either');
+// The confirmed save is the last records check, so the owner page gives its time once in the Checked line.
+$driver=$ordinary;$dom=$page();$row=$text($dom->query('//li[@id="dns"]/span[contains(@class,"domains-row__v")]')->item(0));$checked=$text($dom->query('//p[starts-with(normalize-space(.),"Checked ")]')->item(0));
+expect(str_starts_with($row,'4 records')&&str_starts_with($checked,'Checked ')&&str_ends_with($row,$off),'Owner keeps the count and its time and gets the reason and next step');same(0,$page()->query('//li[@id="dns"]//form')->length,'No records form with saved records either');
 $html=html_entity_decode($staffPage()->html(),ENT_QUOTES|ENT_HTML5);expect(str_contains($html,'4 records')&&str_contains($html,'As of ')&&str_contains($html,$off),'Staff keep the count and get the reason and next step');
 $nativeSuccessful=true;echo "namesilo-dns-editor-test.php passed\n";

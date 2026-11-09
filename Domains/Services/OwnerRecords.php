@@ -40,7 +40,7 @@ final class OwnerRecords
             return strnatcmp($left[$field],$right[$field]) ?: strcmp(json_encode($left),json_encode($right));
         });return $rows;
     }
-    /** NameSilo's last complete read, from a confirmed save or a complete stored list; IDs and TTLs never leave the server. */
+    /** NameSilo's last complete read, from a confirmed save or a complete stored list; provider IDs never leave the server. */
     public static function nameSilo(Domain $d, ?array $sections=null): ?array
     {
         if (($d->observation['record_failure']['identity']??null)===ObservationRecords::identity($d)) { return null; }
