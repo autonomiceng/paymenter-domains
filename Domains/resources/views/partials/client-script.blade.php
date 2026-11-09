@@ -6,9 +6,15 @@
 (() => {
     const live = document.getElementById('domains-live');
     document.querySelectorAll('.domains-record-form select[name$="[type]"]').forEach(type => {
-        const priority = type.closest('tr').querySelector('input[name$="[mx_pref]"]');
-        if (!priority) return;
-        const update = () => { priority.disabled = type.value !== 'MX'; };
+        const row = type.closest('tr');
+        const priority = row.querySelector('input[name$="[mx_pref]"]');
+        // A saved row keeps its TTL only while its type is unchanged; otherwise the registrar default is sent.
+        const ttl = row.querySelector('[data-saved-ttl]');
+        if (!priority && !ttl) return;
+        const update = () => {
+            if (priority) priority.disabled = type.value !== 'MX';
+            if (ttl) ttl.textContent = type.value === ttl.dataset.savedType ? ttl.dataset.savedTtl : 'Registrar default';
+        };
         type.addEventListener('change', update); update();
     });
     document.querySelectorAll('[data-contact-fields]').forEach(group => {

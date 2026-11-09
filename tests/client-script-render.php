@@ -37,7 +37,7 @@ foreach (['dns'=>[
     ['service'=>'xmpp','protocol'=>'tcp','priority'=>0,'weight'=>0,'port'=>5222,'target'=>'chat.example.com.'],
 ]] as $cap=>$records) {
     $recordManagement[$cap]=['label'=>strtoupper($cap).' records','records'=>$records,'digest'=>str_repeat('b',64),
-        'recordCheckHeld'=>false,'actions'=>[$cap=>'/domains/1/manage/'.$cap]];
+        'recordCheckHeld'=>false,'actions'=>[$cap=>'/domains/1/manage/'.$cap],...($cap==='dns'?['ttls'=>[300,3600]]:[])];
 }
 $pendingDomain=new OwnedDomain(...[...get_object_vars($domain),'management'=>['lock'=>['label'=>'Transfer lock','progress'=>['id'=>42,'pending'=>true,'slow'=>false,'text'=>'Turning off…']]]]);
 writeRenderArtifact($out.'/show-management-pending.html',view('domains::show',['domain'=>$pendingDomain,'keys'=>[]])->render());
