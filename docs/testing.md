@@ -32,19 +32,24 @@ The browser blocks network/application scripts and measures both text axes: Tran
 wrapped height/padding, and the real Renewal card's Pay invoice link on one line at default size in both modes at 320/360/768/1280px.
 It compares Register/Transfer/Retry geometry with prior inline-flex/normal-wrap/1.25rem rules. Output artifacts and `button-layout-receipt.json` include failures; this minimal shell proves neither installed-theme nor browser-zoom acceptance.
 
-## Explicit offline name and heading check
+## Rendered layout check (UI suite)
 
-Same setup as above. Render the staff monitoring list and the client domain page, then measure them in Chromium:
+The `ui` suite runs `tests/test_rendered_layout.py` in the native fixture, so default runs with `PAYMENTER_TEST_APP`
+include it and a failure fails the run. It renders the staff Domains list, the staff monitoring list and the client
+domain page with real Blade, then runs `scripts/check-name-and-heading.cjs` in Chromium. It needs the setup above:
+`NODE_PATH` (Playwright) and `CHROME_BIN`, which the runner passes to this suite only. It runs alone and needs a 2048 MiB budget.
 
 ```sh
-R14_RENDER_DIR="$NAME_RENDER_DIR" suite-slot --quick python3 scripts/render-reminders.py "$NAME_RENDER_DIR" tests/test_installed_demo_c_state_watch-test.php tests/domain-page-render.php
-suite-slot --quick node scripts/check-name-and-heading.cjs "$NAME_RENDER_DIR"
+NODE_PATH=/path/to/node_modules CHROME_BIN=/path/to/chrome PAYMENTER_TEST_APP=/canonical/path/to/paymenter-1.5.9 \
+  scripts/test.py --suite ui
 ```
 
-A long name in the staff list's real name and person text items must be a block box, stay on one line inside its
-24rem or 11rem column, and end in a painted "...". The client domain heading must keep its clamp(1.125rem, 5vw, 1.5rem)
-size and 18 by 20px status mark at 320/390/768/1280px in both modes. Scripts are off, so the check shows Filament's
-main area that a script would fade in. It is not a screenshot beside the approved mock.
+At 1440, 900 and 390px, with the staff sheet after Filament's theme (as installed) and before it, each long name,
+customer and Note must be a one-line block box exactly 16rem, 11rem or 13rem wide, cut with a painted "...".
+The Domains list uses real long values: each item keeps its full text, its tooltip has all of it, and keyboard focus on
+the row link shows it in place. The client domain heading must keep its clamp(1.125rem, 5vw, 1.5rem) size and
+18 by 20px status mark at 320/390/768/1280px in both modes. Scripts are off, so the check shows Filament's main area
+that a script would fade in. It is not a screenshot beside the approved mock.
 
 Run `python3 scripts/bootstrap.py --download` once, then `scripts/test.py` fully offline.
 PHP **8.4.27** (Debian `8.4.27-1~deb13u1`, Linux x86_64) is pinned by archive SHA-256;
@@ -66,7 +71,7 @@ Listed paths must exist and appear once. Files named `test_*_mariadb.py`, `test_
 `test_package*.py` must be listed in that category; `*-test.cjs` files are refused until a
 JavaScript runner exists. Lint covers every runtime/test PHP file.
 Unknown, missing or explicitly unimplemented suites fail. Default runs execute all implemented
-categories, omitting native without a dependency. Empty categories are unimplemented; no UI suite exists.
+categories, omitting native and UI without a dependency. Empty categories are unimplemented.
 `--suite` selects categories and receipts disclose omissions. Synthetic tests do not prove provider acceptance.
 Native `test_client_scripts.py` needs Node.js on PATH, renders the shared client script and every
 including view with real Blade, then checks each inline script with `node --check`.

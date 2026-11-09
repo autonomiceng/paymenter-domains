@@ -22,7 +22,7 @@ runner's calculated budget.
 The 1024 MiB host reserve applies only to available memory; the default budget
 permits two workers. Explicit `--jobs 1` retains serial support on small hosts
 and requires only a budget of at least 1024 MiB. This is a scheduling reservation,
-not a kernel memory limit. Installed-package checks still drain the pool and run alone;
+not a kernel memory limit. Installed-package and UI checks still drain the pool and run alone;
 they require a budget of at least 2048 MiB. Worker fixtures remain private.
 CPU-based default jobs shrink to fit memory, down to one worker on small hosts.
 Receipts record the requested and actual counts and the reason for that reduction.
