@@ -71,17 +71,18 @@ final class DomainManagement
         $plan=null;$sequenceStamp=null;
         if ($driver->sequences($action)) {
             if ($paid || $correction!==null) { throw new \DomainException('Sequenced billing or correction unsupported.'); }
-            [$input,$sequenceStamp,$binding,$configuration,$existing]=DB::transaction(function()use($seed,$actor,$action,$payload,$nonce,$driver):array {
+            [$input,$sequenceStamp,$binding,$configuration,$existing,$confirmed]=DB::transaction(function()use($seed,$actor,$action,$payload,$nonce,$driver):array {
                 $l=HoldingLocks::take($seed,(int)$actor->id);$this->authority($l,(int)$actor->id,$action,$driver);
                 $input=$driver->validate($action,$payload,$l['domain']->domain);$key='manage:'.$seed->id.':'.$nonce;
                 $input=$driver->freeze($key,$l['domain']->domain,$action,$input,(int)$seed->id);
                 $old=$l['operations']->firstWhere('operation_key',$key);
                 if ($old && ($old->action!==$action || (int)$old->authorized_by!==(int)$actor->id
                     || ($old->policy['management']['intent']??null)!==$input)) { throw new \DomainException('Management key reused.'); }
-                return [$input,$l['stamp'],AccountBindings::binding($l['account']),ManagementSequence::configuration($l),$old];
+                return [$input,$l['stamp'],AccountBindings::binding($l['account']),ManagementSequence::configuration($l),$old,ManagementSequence::confirmed($l,$action,$input)];
             });
             if ($existing) { return $existing; }
-            $r=new ManagementRequest($binding,'manage:'.$seed->id.':'.$nonce,$seed->domain,$action,$input,$seed->provider_domain_id,domainId:(int)$seed->id);
+            $r=new ManagementRequest($binding,'manage:'.$seed->id.':'.$nonce,$seed->domain,$action,$input,$seed->provider_domain_id,domainId:(int)$seed->id,
+                sequence:$confirmed?['confirmed'=>$confirmed]:null);
             $plan=$driver->plan($r,new RequestContext($binding,RequestOrigin::Interactive,$deadline,new RequestBudget(10),$this->clock,Runtime::limiter()));
             $plan['configuration']=$configuration;
         }

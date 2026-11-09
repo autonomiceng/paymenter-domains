@@ -84,6 +84,22 @@ foreach([false,true] as $partial) {
     same(['dnsUpdateRecord','dnsAddRecord'],$wire->writes,'Completed prefix and unsent old child never replay');
     $before=$wire->writes;$management->run($op->id,$driver);$management->run($stuck->id,$driver);same($before,$wire->writes,'Retired descriptors have no grant');
 }
+// An identical save without record IDs keeps every row earlier adds confirmed, across repeated replacements, and sends only the unsent adds.
+[$d,$driver]=$setup('unsent-identical',[$a]);$wire->next=0;
+$intent=['records'=>[$a,$add,array_replace($add,['name'=>'second','ttl'=>7208]),array_replace($add,['name'=>'third','ttl'=>7209])]];
+$op=$submit($d,$refusal(),'dns',$intent);
+foreach([['second','third'],['third']] as $round=>$left){
+    $driver=$refusal();$ms->route='apibatch';$management->run($op->id,$driver,RequestOrigin::Background);Cache::flush();
+    $wire->fault='prewire';$management->run($op->id,$driver,RequestOrigin::Background);
+    same(array_fill(0,$round+1,'dnsAddRecord'),$wire->writes,'Each round confirms one add and the next is refused before the wire');
+    $wire->fault='';$ms->route='api';$driver=new DnsManagement($binding,$dnsExchange);Cache::flush();
+    $fresh=$submit($d,$driver,'dns',$intent);expect($fresh->id!==$op->id,'An identical save replaces the proven-unsent sequence');
+    same(array_map(fn($name)=>['kind'=>'add','name'=>$name],$left),array_map(fn($s)=>['kind'=>$s['input']['delta']['kind'],'name'=>($s['input']['delta']['after']??$s['input']['delta']['before'])['name']],$fresh->policy['management']['sequence']['steps']),'The new plan keeps every confirmed row and adds only the missing ones');
+    $op=$fresh;
+}
+same('succeeded',$management->run($op->id,$driver)->state,'The last add completes the identical request');
+same(['dnsAddRecord','dnsAddRecord','dnsAddRecord'],$wire->writes,'No confirmed row is ever deleted and added again');
+same(['made1','made2','made3'],array_values(array_column(array_filter($wire->records,fn($r)=>$r['type']==='TXT'),'record_id')),'Each requested row exists once');
 [$d,$driver]=$setup('unsent-preparation',[$a]);$op=$submit($d,$driver,'dns',['records'=>[$want]]);$wire->records[0]['ttl']=301;
 $management->run($op->id,$driver);same('held',$op->fresh()->state,'Changed provider preimage refuses before send');
 $fresh=$submit($d,$driver,'dns',['records'=>[$want]]);expect($fresh->id!==$op->id,'Fresh ordinary save replaces a failed unsent preparation');

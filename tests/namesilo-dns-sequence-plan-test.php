@@ -42,4 +42,17 @@ $add=DnsSequence::plan('example.com',$empty,[$added])[0];
 $made=['state'=>'complete','records'=>[$added+['record_id'=>'made']]];
 same($made,DnsSequence::confirm($empty,$made,$add,null),'Lost add response recovers only one new matching record');
 same(null,DnsSequence::confirm($empty,['state'=>'complete','records'=>[$added+['record_id'=>'made'],$added+['record_id'=>'twice']]],$add,null),'Ambiguous add does not authorize another mutation');
+// A replaced identical request keeps only the exact row its earlier add confirmed.
+$kept=array_replace($txt,['name'=>'new','ttl'=>301,'record_id'=>'made']);$ids=fn($rows)=>array_map(fn($r)=>$r['record_id']??null,$rows);$current=['state'=>'complete','records'=>[$a,$kept]];
+$confirmed=[['input'=>['delta'=>$add],'before'=>['state'=>'complete','records'=>[$a]],'after'=>$current]];
+same(['oldA','made'],$ids(DnsSequence::correlate('example.com',$current,[$a,$added],$confirmed)),'The confirmed add gives its row back its ID');
+$reject(fn()=>DnsSequence::plan('example.com',$current,DnsSequence::correlate('example.com',$current,[$a,$added],$confirmed))); // nothing left to change
+$changed=['state'=>'complete','records'=>[$a,array_replace($kept,['ttl'=>1])]];
+same(['delete','add'],array_column(DnsSequence::plan('example.com',$changed,DnsSequence::correlate('example.com',$changed,[$a,$added],$confirmed)),'kind'),'A row changed since its add is not reused');
+$other=array_replace($added,['address'=>'other']);
+same(['oldA',null],$ids(DnsSequence::correlate('example.com',$current,[$a,$other],$confirmed)),'A different desired row takes no confirmed ID');
+same(['oldA','made',null],$ids(DnsSequence::correlate('example.com',$current,[$a,$added,$added],$confirmed)),'One confirmed add names one row');
+$twice=['state'=>'complete','records'=>[$a,$kept,$added+['record_id'=>'also']]];
+same(['oldA',null],$ids(DnsSequence::correlate('example.com',$twice,[$a,$added],[['input'=>['delta'=>$add],'before'=>['state'=>'complete','records'=>[$a]],'after'=>$twice]])),'An add with two new rows is not attributable');
+same(['oldA',null],$ids(DnsSequence::correlate('example.com',$current,[$a,$added],[['input'=>['delta'=>$del],'before'=>['state'=>'complete','records'=>[$a]],'after'=>$current]])),'Only a confirmed add is reused');
 echo "DNS sequence planning and unique readback passed\n";

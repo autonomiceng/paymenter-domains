@@ -187,6 +187,31 @@ final class ManagementSequence
             if ($child->state!=='succeeded' || !ManagementEvidence::resolved($child,$l['domain'])) { throw new \DomainException('Previous management delta unconfirmed.'); }
         }
     }
+    /**
+     * The verified leading changes of the latest five identical sequences that are unsent or were replaced. Each comes
+     * with the inventory read before and after it, so the new plan keeps the rows they added. An unreadable one is skipped.
+     */
+    public static function confirmed(array $l,string $action,array $intent): array
+    {
+        $parents=$l['operations']->filter(fn($peer)=>$peer->action===$action && isset($peer->policy['management']['sequence'])
+            && !isset($peer->policy['management']['sequence_parent']) && ($peer->policy['management']['intent']??null)===$intent
+            && $peer->authority_generation===$l['domain']->authority_generation && $peer->account_fingerprint===$l['domain']->account_fingerprint
+            && ($peer->state==='rejected' && $peer->safe_code==='management_retired'
+                || in_array($peer->state,['queued','held'],true) && !isset($peer->attempt['management_terminal'])
+                    && self::unsent($peer,$l['operations']) && !self::started($peer,$l['operations'])))->sortByDesc('id')->take(5);
+        $steps=[];
+        foreach ($parents as $parent) {
+            $before=$parent->policy['management']['sequence']['preimage'];$found=[];
+            try {
+                foreach (self::members($parent,$l['operations']) as $child) {
+                    self::pairPlan($parent,$child);$after=ManagementReadRecovery::latest($child)['facts']['sequence_preimage']??null;
+                    if ($child->state!=='succeeded' || !ManagementEvidence::resolved($child,$l['domain']) || !is_array($after)) { break; }
+                    $found[]=['input'=>$child->policy['management']['input'],'before'=>$before,'after'=>$after];$before=$after;
+                }
+            } catch (\DomainException) { continue; }
+            array_push($steps,...$found);
+        } return $steps;
+    }
     /** Context reconstructed solely from frozen policy and verified predecessor evidence. */
     public static function context(Operation $op,array $l): ?array
     {

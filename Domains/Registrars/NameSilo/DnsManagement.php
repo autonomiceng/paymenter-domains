@@ -28,7 +28,8 @@ class DnsManagement extends Management
     {
         $this->owned($r,$c);$inventory=$this->inventory($r,$c);$seen=$r->payload()['preimage']??null;
         if ($seen!==null && DnsSequence::records(['state'=>'complete','records'=>$seen])!==DnsSequence::records($inventory)) { throw new \DomainException('DNS records changed.'); }
-        return ['preimage'=>$inventory,'steps'=>array_map(fn($delta)=>['action'=>'dns','input'=>['delta'=>$delta]],DnsSequence::plan($r->name,$inventory,$r->payload()['records']))];
+        $desired=$seen===null ? DnsSequence::correlate($r->name,$inventory,$r->payload()['records'],$r->sequence()['confirmed']??[]) : $r->payload()['records'];
+        return ['preimage'=>$inventory,'steps'=>array_map(fn($delta)=>['action'=>'dns','input'=>['delta'=>$delta]],DnsSequence::plan($r->name,$inventory,$desired))];
     }
     protected function readCommands(): array { return [...parent::readCommands(),'dnsListRecords']; }
     protected function validateRead(string $command,array $p): void
