@@ -68,4 +68,14 @@ Artisan::call('queue:work',['--stop-when-empty'=>true,'--sleep'=>0,'--tries'=>1]
 $page->call('pollManagement')->assertSee('Sync needs a check')->assertDontSee('Sync in progress')->assertActionEnabled('sync_now');
 same('Sync needs a check',SyncDomainRecords::result($d->fresh())['title'],'Unresolved registrar facts cannot claim Domain synced');
 expect(!str_contains($page->html(),'wire:poll.'),'Unresolved outcome stops pending progress');
+// Unreadable saved observation must not block queueing or hide the sync result.
+$raw=DB::table('domains_domains')->where('id',$d->id)->value('observation');
+DB::table('domains_domains')->where('id',$d->id)->update(['observation'=>'unreadable']);
+$clock->instant=$clock->now()->modify('+61 seconds');
+same(true,SyncDomainRecords::enqueue($actor->id,$d->fresh()),'Sync queues even when history cannot be saved');
+Artisan::call('queue:work',['--stop-when-empty'=>true,'--sleep'=>0,'--tries'=>1]);
+same("Couldn't sync domain",SyncDomainRecords::result($d->fresh())['title']??null,'The sync result is cached when history cannot be saved');
+same("Couldn't sync domain",App\Models\Notification::where('user_id',$actor->id)->latest('id')->value('title'),'Staff still get the sync notification');
+same(0,DB::table('failed_jobs')->count(),'Unreadable history fails no queue job');
+DB::table('domains_domains')->where('id',$d->id)->update(['observation'=>$raw]);
 $nativeSuccessful=true;echo "Native database worker refreshes saved facts and the open staff page.\n";

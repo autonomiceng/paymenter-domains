@@ -50,7 +50,7 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
         $lock=app(UniqueLock::class);
         if (!$lock->acquire($job)) { return false; }
         // Dispatch directly after admission: PendingDispatch would try to acquire the same lock again.
-        try { $job->recordHistory('Sync requested'); Cache::forget($job->uniqueId().':result'); Cache::put($job->pendingKey(),true,self::UNIQUE_FOR); app(Dispatcher::class)->dispatch($job); }
+        try { $job->tryHistory('Sync requested'); Cache::forget($job->uniqueId().':result'); Cache::put($job->pendingKey(),true,self::UNIQUE_FOR); app(Dispatcher::class)->dispatch($job); }
         catch (\Throwable $error) { Cache::forget($job->pendingKey()); $lock->release($job); throw $error; }
         return true;
     }
@@ -83,13 +83,18 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
             $p['sync_history']=array_slice([...$history,['event'=>$event,'actor_id'=>$this->actor,
                 'at'=>app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->format(DATE_ATOM)]],-20);
             $d->update(['observation'=>$p]);
-
         });
+    }
+    /** Activity history is secondary: an unreadable saved observation must not hide the sync result or block queueing. */
+    private function tryHistory(string $event): void
+    {
+        try { $this->recordHistory($event); }
+        catch (\Throwable $error) { report($error); }
     }
     private function notice(string $title,string $body): void
     {
-        $this->recordHistory($title);
         Cache::put($this->uniqueId().':result',compact('title','body'),self::UNIQUE_FOR);
+        $this->tryHistory($title);
         if (!Staff::allows(User::find($this->actor))) { return; }
         $route='filament.admin.resources.domains.view';
         Notification::create(['user_id'=>$this->actor,'title'=>$title,'body'=>$body,'url'=>Route::has($route)?route($route,['record'=>$this->domain]):null]);
