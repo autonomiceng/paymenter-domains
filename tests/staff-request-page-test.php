@@ -250,6 +250,24 @@ foreach (['on_hold'=>'On hold','in_progress'=>'In progress'] as $key=>$word) {
 }
 same([],$parity,'Every row the request Status filter keeps reads that status');
 ksort($seen); same(['off'=>['in_progress'],'on'=>['on_hold']],$seen,'The list reads the switches as they were when it started');
+// Many accounts with Orders off: the Status filter's statement stays the same size, however many there are.
+$orders->update(['processing_enabled'=>false]);
+$statement=static function(array $keys) use ($filter): array {
+    DB::enableQueryLog(); DB::flushQueryLog(); $page=$filter('status',$keys); $log=DB::getQueryLog(); DB::disableQueryLog();
+    $log=array_filter($log,static fn(array $q)=>str_contains($q['query'],'domains_operations'));
+    return [$page,max(array_map(static fn(array $q)=>count($q['bindings']),$log)),max(array_map(static fn(array $q)=>strlen($q['query']),$log))];
+};
+[,$fewBindings,$fewBytes]=$statement(['under_review','on_hold']);
+for($n=0;$n<60;$n++){App\Models\Server::forceCreate(['id'=>500+$n,'name'=>'Paused registrar','extension'=>'Domains','type'=>'server','enabled'=>true]);
+    Paymenter\Extensions\Servers\Domains\Models\Account::withVerifiedBindingWrite(static fn()=>Paymenter\Extensions\Servers\Domains\Models\Account::create(['server_id'=>500+$n,'registrar_key'=>'enom','environment'=>'test','stable_identity'=>'PAUSED-ACCOUNT-'.$n]));}
+DB::table('domains_accounts')->where('server_id','>=',500)->update(['processing_enabled'=>false]);
+[$page,$manyBindings,$manyBytes]=$statement(['under_review','on_hold']);
+expect($manyBindings<=$fewBindings&&$manyBytes<=$fewBytes+200,"61 paused accounts keep the statement bounded: $fewBindings/$fewBytes then $manyBindings/$manyBytes");
+same(null,Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::ordersOffAccounts(),'Past the limit the list reads the switches live');
+$page->assertCanSeeTableRecords([$queued]);
+same('On hold',$page->instance()->getTable()->getColumns()['state']->record($queued->fresh())->formatState($page->instance()->getTable()->getColumns()['state']->getState()),'The row still reads its status');
+$filter('status',['in_progress'])->assertCanNotSeeTableRecords([$queued]);
+DB::table('domains_accounts')->where('server_id','>=',500)->delete(); App\Models\Server::where('id','>=',500)->delete();
 $orders->update(['processing_enabled'=>true]);
 DB::table('domains_operations')->where('id',$queued->id)->update(['action'=>$heldOp->action]);
 // Held for setup reads Action required, as its domain does, with the next step it already shows.

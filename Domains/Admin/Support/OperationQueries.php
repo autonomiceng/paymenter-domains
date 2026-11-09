@@ -52,17 +52,23 @@ final class OperationQueries
      * With an ordersOffAccounts() snapshot it reads that, so every row of one list uses the same accounts. */
     public static function ordersOff(Operation $op, ?array $accounts=null): bool
     {
-        if ($accounts!==null) { return $op->account_fingerprint!==null&&isset($accounts[self::accountKey($op->server_id,$op->registrar_key,$op->account_fingerprint)]); }
+        if ($accounts!==null&&count($accounts)<=self::SNAPSHOT_LIMIT) { return $op->account_fingerprint!==null&&isset($accounts[self::accountKey($op->server_id,$op->registrar_key,$op->account_fingerprint)]); }
         return Account::where('processing_enabled',false)->where('server_id',$op->server_id)->where('registrar_key',$op->registrar_key)
             ->where('account_fingerprint',$op->account_fingerprint)->exists();
     }
+    /** Most accounts a snapshot holds. The Status filter repeats each one in its SQL, so with more the list reads the switches live. */
+    public const SNAPSHOT_LIMIT=20;
     /** The accounts with Orders off, read once. A list passes this to its Status filter and its row words.
-     * @return array<string,array{0:int,1:string,2:string}> by accountKey() */
-    public static function ordersOffAccounts(): array
+     * Null when more than SNAPSHOT_LIMIT accounts have Orders off: the filter and the words then read the accounts now.
+     * @return ?array<string,array{0:int,1:string,2:string}> by accountKey() */
+    public static function ordersOffAccounts(): ?array
     {
         $accounts=[];
         // A missing fingerprint matches no request, as in SQL.
-        foreach (Account::query()->toBase()->where('processing_enabled',false)->whereNotNull('account_fingerprint')->get(['server_id','registrar_key','account_fingerprint']) as $a) {
+        $rows=Account::query()->toBase()->where('processing_enabled',false)->whereNotNull('account_fingerprint')->orderBy('server_id')
+            ->limit(self::SNAPSHOT_LIMIT+1)->get(['server_id','registrar_key','account_fingerprint']);
+        if ($rows->count()>self::SNAPSHOT_LIMIT) { return null; }
+        foreach ($rows as $a) {
             $accounts[self::accountKey($a->server_id,$a->registrar_key,$a->account_fingerprint)]=[(int)$a->server_id,(string)$a->registrar_key,(string)$a->account_fingerprint];
         }
         return $accounts;
@@ -71,7 +77,7 @@ final class OperationQueries
     { return (int)$server."\0".$registrar."\0".$fingerprint; }
     private static function whereOrdersOff(Builder $q, ?array $accounts): Builder
     {
-        if ($accounts!==null) {
+        if ($accounts!==null&&count($accounts)<=self::SNAPSHOT_LIMIT) {
             // Matches nothing until an account matches. An empty group would be dropped and match every request.
             return $q->where(function($q) use ($accounts) {
                 $q->whereRaw('0 = 1');
