@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\{DB,Schema};
 /** Indexes the DNS template assignments, so a template's dependency check reads only that template's rows. */
 final class TemplateAssignmentIndex
 {
-    public const MIGRATION='2026_11_09_000056_index_template_assignments';
+    public const MIGRATION='2026_11_09_000057_index_template_assignments';
     public const COLUMNS=[
         'domains_watch_names'=>['ns_profile_id','state'],
         'domains_managed_public_config'=>['profile_id'],
