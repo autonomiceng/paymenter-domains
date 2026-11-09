@@ -93,6 +93,16 @@ final class OfferState
         $v = array_diff_key(get_object_vars($f), ['expansion' => true]);
         return self::json([...$v, 'observedAt' => $f->observedAt->format(DATE_ATOM), 'freshUntil' => $f->freshUntil->format(DATE_ATOM), ...$f->expansion]);
     }
+    /** True only for a complete marker published under the current retail rule. Anything else still needs the
+     * retail upgrade, which repairs kept native prices before the marker is replaced. */
+    public static function currentPublication(?string $marker): bool
+    {
+        try { $saved = self::decode($marker); } catch (\Throwable) { return false; }
+        $keys = array_keys($saved); sort($keys);
+        if ($keys !== ['defaults', 'offer', 'retailRule', 'selection']) { return false; }
+        foreach ($saved as $value) { if (!is_int($value) || $value < 0) { return false; } }
+        return $saved['retailRule'] === Retail::VERSION;
+    }
     public static function revision(object $tld, array $defaults, ?object $policy): Revision
     { return new Revision((int) $tld->catalogue_revision, $defaults['_revision'] ?? 0, (int) ($policy?->revision ?? 0)); }
     public static function intent(object $tld,array $defaults):Intent

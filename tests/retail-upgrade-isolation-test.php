@@ -25,4 +25,14 @@ same($healthy,$tlds[1]->fresh()->getRawOriginal(),'Current sibling stays unchang
 same($nullBefore,$unpublished->fresh()->getRawOriginal(),'Repeated install leaves unpublished own rule untouched');
 DB::statement('DROP TRIGGER isolate_retail');(new Installation)->install();
 same(Retail::VERSION,OfferState::decode($tlds[0]->fresh()->catalogue_published_revision)['retailRule']??null,'Ordinary guarded retry recovers the deferred TLD');
+// A marker that names only the current version is incomplete: install repairs a paused TLD's kept native price.
+$paused=$tlds[1]->fresh();$pausedPrice=$native->product($paused,'register')->plans()->where('billing_period',1)->sole()->prices()->sole();$good=$pausedPrice->getRawOriginal('price');
+DB::table('domains_tlds')->where('id',$paused->id)->update(['catalogue_intent'=>OfferState::json([...OfferState::decode($paused->catalogue_intent),'salesPaused'=>true]),'catalogue_published_revision'=>OfferState::json(['retailRule'=>Retail::VERSION])]);
+DB::table('prices')->where('id',$pausedPrice->id)->update(['price'=>'0.01']);$invoices=DB::table('invoice_items')->orderBy('id')->get()->toJson();
+(new Installation)->install();
+same((string)$good,(string)DB::table('prices')->where('id',$pausedPrice->id)->value('price'),'Install repairs the paused kept native price');
+expect(isset(OfferState::decode($tlds[1]->fresh()->catalogue_published_revision)['offer']),'Install replaces the incomplete marker');
+same(true,OfferState::decode($tlds[1]->fresh()->catalogue_intent)['salesPaused']??null,'Install keeps sales paused');
+$after=$tlds[1]->fresh()->getRawOriginal();(new Installation)->install();same($after,$tlds[1]->fresh()->getRawOriginal(),'Repeated install leaves the repaired TLD alone');
+same($invoices,DB::table('invoice_items')->orderBy('id')->get()->toJson(),'Install leaves invoices unchanged');
 echo "Native install isolates failed retail publications and preserves unopened rows\n";$nativeSuccessful=true;

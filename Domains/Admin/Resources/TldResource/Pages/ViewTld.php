@@ -145,9 +145,17 @@ class ViewTld extends ViewRecord
                     if($start['block']!==null){throw new \DomainException('Explicit verified widening required.');}
                     $input=['min_years'=>1,'max_years'=>$start['years'],'sales'=>'start','verified'=>true];
                     app(StaffSettingsWrites::class)->run(new Review((int)auth()->id(),$server,$id,'tld_settings',(string)($data['review_key']??''),'Started selling from the TLD page.'),$input);
-                    Notification::make()->success()->title('Change recorded')->send();
+                    Notification::make()->success()->title('Change recorded')->body($this->keptTransferStop())->send();
                 }catch(\Throwable $error){Notification::make()->danger()->title('Change refused')->body(SettingsActions::refusal($error,'tld_settings',$input,$server,$id))->send();}
             });
+    }
+    /** Start selling keeps a separate transfer stop. Say so, and name who can allow transfers in Change registrar. */
+    private function keptTransferStop(): ?string
+    {
+        try{$stops=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($this->getRecord()->fresh()->catalogue_intent)['stops']??[];}
+        catch(\Throwable){return null;}
+        if(!is_array($stops)||!in_array('transfer',$stops,true)){return null;}
+        return 'Transfers stay off. '.($this->settings()['seller']->isVisible()?'Allow them in More → Change registrar.':'Ask staff who can change the registrar.');
     }
     /** Retail prices that go live, one year each. */
     private function salePrices(): array

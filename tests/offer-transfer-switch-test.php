@@ -39,6 +39,34 @@ foreach(['missing'=>null,
     $setFacts($facts);
     same('Allow transfers in More → Change registrar on .com.',$hint(),$case.' terms: the staff hint names the real next step');
 }
+// Transfer intent is checked against current terms even while the seller row has transfers off.
+$intentOf=static fn()=>json_decode(DB::table('domains_tlds')->where('id',$tlds[0]->id)->value('catalogue_intent'),true);
+$transferIntent=static function()use($writer,$review,$binding,$revision,$intentOf):void{
+    $raw=$intentOf();$intent=new Paymenter\Extensions\Servers\Domains\Catalogue\Intent(...[...array_intersect_key($raw,get_object_vars(new Paymenter\Extensions\Servers\Domains\Catalogue\Intent)),'transfers'=>true]);
+    $writer->reviewed($review('acceptance'),[[Edit::override($binding,'com',$intent),$revision()]],static fn()=>StaffCommands::stamp($binding->serverId,null));
+};
+$unsupported=str_replace('"transfer":[1]','"transfer":[]',$facts);
+// The unknown-terms cases above saved the intent; start again from transfers off.
+$run('acceptance',['sell'=>['terms'=>['com'=>['transfer'=>false]]]]);
+same([false,0],[$intentOf()['transfers']??null,(int)$policy()->transfer_enabled],'Transfers start off');
+$setFacts($unsupported);$before=$intentOf();
+try{$transferIntent();$refusal=null;}catch(DomainException $e){$refusal=$e->getMessage();}
+same('Explicit verified widening required.',$refusal,'Transfer intent against unsupported terms is refused with the seller row off');
+same($before,$intentOf(),'The refused transfer intent is not saved');
+// Intent saved while terms are unknown is checked again when Change registrar later allows transfers.
+$setFacts(null);$transferIntent();
+same([true,0],[$intentOf()['transfers']??null,(int)$policy()->transfer_enabled],'Unknown terms keep the transfer intent with the seller row off');
+$setFacts($unsupported);
+try{$run('seller',['seller'=>$binding->serverId,'register'=>true,'transfer'=>true],$tlds[0]->id);$refusal=null;}catch(DomainException $e){$refusal=$e->getMessage();}
+same('Explicit verified widening required.',$refusal,'Allowing transfers on the registrar is checked against current unsupported terms');
+same([1,0],[(int)$policy()->register_enabled,(int)$policy()->transfer_enabled],'The refused registrar change keeps transfers off');
+commerceReject(fn()=>$storefront->offer('com','transfer',1));
+// With current terms that list transfers, the same registrar change is accepted.
+$setFacts($facts);
+$run('seller',['seller'=>$binding->serverId,'register'=>true,'transfer'=>true],$tlds[0]->id);
+same([1,1],[(int)$policy()->register_enabled,(int)$policy()->transfer_enabled],'Supported terms let the registrar allow transfers');
+$run('acceptance',['sell'=>['terms'=>['com'=>['transfer'=>false]]]]);
+same(0,(int)$policy()->transfer_enabled,'Transfers Off resets the seller row for the next steps');
 // Transfers On in What you sell is the one switch: the chosen registrar's seller row now allows them too.
 $run('acceptance',['sell'=>['terms'=>['com'=>['transfer'=>true]]]]);
 same([1,1,(int)$binding->serverId],[(int)$policy()->register_enabled,(int)$policy()->transfer_enabled,(int)$policy()->server_id],'Transfers On allows transfers on the seller row and keeps registrations');

@@ -20,7 +20,7 @@ $save=static fn()=>$writer->defaultPricing(pricingReview($actor->id),$rule,CardF
 $priceRows=static fn(Tld $t)=>DB::table('domains_prices')->where('server_id',$t->server_id)->where('tld',$t->tld)->orderBy('id')->get()->toJson();
 $state=static fn(Tld $t)=>[$priceRows($t),$t->fresh()->catalogue_revision,$t->fresh()->catalogue_published_revision];
 same(['published'=>2,'failed'=>[],'skipped'=>[]],$save(),'Start with current publications');
-foreach(['null','true','1','"invalid"','{broken','{}','{"offer":1}'] as $marker){
+foreach(['null','true','1','"invalid"','{broken','{}','{"offer":1}','{"retailRule":'.\Paymenter\Extensions\Servers\Domains\Catalogue\Retail::VERSION.'}'] as $marker){
     DB::table('domains_tlds')->where('id',$target->id)->update(['catalogue_published_revision'=>$marker]);
     $siblingBefore=$state($sibling);
     same(['published'=>1,'failed'=>[],'skipped'=>[]],$save(),'An invalid retained marker is repaired by the repeated pricing save: '.$marker);
@@ -31,5 +31,23 @@ foreach(['null','true','1','"invalid"','{broken','{}','{"offer":1}'] as $marker)
     same($siblingBefore,$state($sibling),'Repair leaves the healthy sibling unchanged');
     same('8.40',$prices->current($target->server_id,$target->account_fingerprint,'com','register',1,'USD',$now)->retail,'Repair publishes the exact saved default');
 }
+// A marker that names only the current retail version is incomplete. Repair still fixes a paused TLD's kept native
+// price before the marker is replaced; a repeated save then has nothing to do and issued invoices stay as they were.
+$nativePrice=static fn()=>$native->product($target,'register')->plans()->where('billing_period',1)->sole()->prices()->sole();
+$invoices=static fn()=>[DB::table('invoices')->orderBy('id')->get()->toJson(),DB::table('invoice_items')->orderBy('id')->get()->toJson()];
+$invoicesBefore=$invoices();
+$intent=json_decode($target->fresh()->catalogue_intent,true);
+DB::table('domains_tlds')->where('id',$target->id)->update(['catalogue_intent'=>json_encode([...$intent,'salesPaused'=>true]),
+    'catalogue_published_revision'=>json_encode(['retailRule'=>\Paymenter\Extensions\Servers\Domains\Catalogue\Retail::VERSION])]);
+DB::table('prices')->where('id',$nativePrice()->id)->update(['price'=>'0.01']);
+same(['published'=>1,'failed'=>[],'skipped'=>[]],$save(),'An incomplete current-version marker on a paused TLD is repaired');
+same(840,PricingRule::minor((string)$nativePrice()->getRawOriginal('price')),'Repair fixes the paused TLD kept native price');
+expect(isset(json_decode($target->fresh()->catalogue_published_revision,true)['offer']),'The repaired paused marker is complete');
+$repaired=$state($target);
+same(['published'=>0,'failed'=>[],'skipped'=>[]],$save(),'A repeated save leaves the repaired paused TLD alone');
+same($repaired,$state($target),'Repeated repair changes nothing');
+same(840,PricingRule::minor((string)$nativePrice()->getRawOriginal('price')),'Repeated repair keeps the native price');
+same(true,json_decode($target->fresh()->catalogue_intent,true)['salesPaused']??null,'Repair keeps sales paused');
+same($invoicesBefore,$invoices(),'Repair leaves invoices unchanged');
 same(0,$reads->calls,'Marker repair uses only local evidence');
 $nativeSuccessful=true;echo "Default pricing repairs invalid retained publication markers.\n";

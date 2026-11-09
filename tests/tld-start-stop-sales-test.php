@@ -4,6 +4,7 @@
 declare(strict_types=1);
 require __DIR__.'/native-app.php';require __DIR__.'/Support/staff-tlds.php';
 use Illuminate\Support\Facades\Auth;
+use Filament\Notifications\Notification;
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewTld;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
@@ -25,8 +26,12 @@ same('primary',$page->instance()->startSellingAction()->getColor(),'Start sellin
 expect(str_contains($head($page),'Not for sale')&&str_contains($head($page),'Stopped by staff'),'The head says the state once, with its reason');
 $page->mountAction('start_selling');
 expect(str_contains((string)$page->instance()->getMountedAction()->getModalContent()?->toHtml(),'Register'),'The confirm lists the prices that go on sale');
-$page->callMountedAction()->assertHasNoActionErrors()->assertNotified('Change recorded')->assertActionHidden('start_selling');
+// A legacy full stop keeps its separate transfer stop, and the notice names the staff step that allows transfers.
+$page->callMountedAction()->assertHasNoActionErrors()->assertActionHidden('start_selling')
+    ->assertNotified(Notification::make()->success()->title('Change recorded')->body('Transfers stay off. Allow them in More → Change registrar.'));
 same(true,$offer('register')->available,'Start selling makes registrations purchasable: '.$offer('register')->reason);
+same(['transfer'],json_decode($t->fresh()->catalogue_intent,true)['stops'],'Start selling keeps the separate transfer stop');
+same(false,$offer('transfer')->available,'Transfers stay closed after Start selling');
 // For sale: no Start selling; Stop selling ends new orders and keeps renewals.
 $page->assertActionVisible('stop_selling');
 same('For sale',$head($page),'The head says For sale and nothing else');
@@ -85,12 +90,24 @@ $case('term-limit recovery',static function()use($reset,$t,$catalogue):void{
     $step=$catalogue->recovery(collect([$t->fresh()]),'register',3)[$t->server_id.':com'];
     expect(str_contains($step['next'],'Edit terms')&&!str_contains($step['next'],'Start selling'),'Term-limit recovery names the available editor');
 });
-$case('paused readiness',static function()use($reset,$actor,$t,$binding):void{
+$case('paused readiness',static function()use($reset,$actor,$t,$binding,$ports):void{
     $reset(['sell'=>true,'transfers'=>true],true);
     Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->mountAction('stop_selling')->callMountedAction()->assertNotified('Change recorded');
     same(true,StaffCatalogue::routed()->setting($t->fresh(),'enabled'),'A sales pause keeps the TLD enabled for renewals');
     $ready=Paymenter\Extensions\Servers\Domains\Catalogue\OfferReadiness::routed()->review(Account::where('server_id',$binding->serverId)->sole(),['registration'=>true,'transfer'=>true]);
     same([[],[]],[$ready['costs'],$ready['failures']],'Paused acquisitions are excluded from activation readiness');
+    // A term saved in What you sell while sales are paused keeps the pause.
+    $review=new Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview($actor->id,$binding->serverId,null,'acceptance',
+        Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::ticket($actor->id,$binding->serverId,null,'acceptance',Paymenter\Extensions\Servers\Domains\Catalogue\StaffCommands::stamp($binding->serverId)),'');
+    $saved=app(StaffSettingsWrites::class)->run($review,['sell'=>['terms'=>['com'=>['longest'=>3]]]]);
+    same([],$saved['failures']??[],'The paused term save is accepted');
+    $intent=json_decode($t->fresh()->catalogue_intent,true);
+    same([3,true],[$intent['longest']??null,$intent['salesPaused']??null],'The saved term is kept and sales stay paused');
+    foreach([1,3] as $years){same(false,$ports->readOffers(new Query($binding,['com'],'register',$years),Context::Staff)[0]->available,'Registrations stay unavailable for '.$years.' years');}
+    same(true,$ports->readOffers(new Query($binding,['com'],'renew'),Context::Staff)[0]->available,'Renewals stay available after the term save');
+    same(true,StaffCatalogue::routed()->setting($t->fresh(),'enabled'),'The term save keeps the TLD enabled for renewals');
+    $ready=Paymenter\Extensions\Servers\Domains\Catalogue\OfferReadiness::routed()->review(Account::where('server_id',$binding->serverId)->sole(),['registration'=>true,'transfer'=>true]);
+    same([[],[]],[$ready['costs'],$ready['failures']],'Activation readiness is unchanged by the paused term save');
 });
 $case('paused automatic facts',static function()use($binding):void{
     $q=Illuminate\Support\Facades\DB::table('domains_observation_queues')->where('server_id',$binding->serverId);$work=Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode((clone $q)->value('offer_work'));unset($work['facts']['com']);$q->update(['offer_work'=>json_encode($work)]);
@@ -100,6 +117,13 @@ $case('paused automatic facts',static function()use($binding):void{
 expect($failures===[],implode("\n",$failures));
 $reset(['sell'=>false],false);
 
+// Staff who can't change the registrar are told who can allow transfers.
+$ports->apply(Edit::override($binding,'com',new Intent(sell:false,stops:['register','renew','transfer'])),$offer('register')->revision);
+$starter=staffUser(array_values(array_diff(array_keys(Staff::permissions()),[Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::permission('seller')])));
+Livewire::actingAs($starter)->test(ViewTld::class,['record'=>$t->id])->mountAction('start_selling')->callMountedAction()->assertHasNoActionErrors()
+    ->assertNotified(Notification::make()->success()->title('Change recorded')->body('Transfers stay off. Ask staff who can change the registrar.'));
+same(['transfer'],json_decode($t->fresh()->catalogue_intent,true)['stops'],'The transfer stop stays for staff without registrar access');
+$reset(['sell'=>false],false);
 // Visibility and dispatch both use the current native staff grant.
 $viewer=staffUser([Staff::VIEW]);
 Livewire::actingAs($viewer)->test(ViewTld::class,['record'=>$t->id])->assertActionHidden('start_selling')->assertActionHidden('stop_selling');
