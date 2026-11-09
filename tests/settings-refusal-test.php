@@ -54,6 +54,7 @@ same('Check this page, then try again. If it fails again, open System checks on 
 same("NameSilo didn't answer. Nothing was saved. Try again in a few minutes.", SettingsActions::refusal(new DomainException('Registrar did not answer.'), 'configure', ['registrar' => 'namesilo']), 'NameSilo no answer says so');
 same("Enom didn't answer. Nothing was saved. Try again in a few minutes.", SettingsActions::refusal(new DomainException('Registrar did not answer.'), 'configure', ['registrar' => 'enom']), 'Shared words name the registrar');
 same('Registrar key could not be confirmed. Nothing was saved. Check the API details and try again.', SettingsActions::refusal(new DomainException('Registrar key could not be confirmed.'), 'configure', ['registrar' => 'namesilo']), 'An unconfirmed key check has its own words');
+same('NameSilo refused this API key. Nothing was saved. Check the key, its account type and any IP limit set on it.', SettingsActions::refusal(new DomainException('Registrar refused the key.'), 'configure', ['registrar' => 'namesilo']), 'A refused key says so and does not ask for a retry');
 echo "Live and TEST refusal guidance and unknown fallback passed.\n";
 
 foreach(['default_pricing','override'] as $action){

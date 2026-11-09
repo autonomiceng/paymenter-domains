@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 use Paymenter\Extensions\Servers\Domains\Data\Environment;
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{CurlTransport, DeadlineTransport, Environment as WireEnvironment,
-    Outcome, RegistrarClient, RegistrarRequest, RequestContext};
+    Outcome, RegistrarClient, RegistrarRequest, RejectionScope, RequestContext};
 /** One bounded balance read authenticates the key; it never attests account identity. */
 final readonly class CredentialAuthenticator implements \Paymenter\Extensions\Servers\Domains\Contracts\CredentialAuthenticator
 {
@@ -16,8 +16,8 @@ final readonly class CredentialAuthenticator implements \Paymenter\Extensions\Se
             $client = new RegistrarClient($credentials['api_key'], $environment === Environment::Live ? WireEnvironment::Live : WireEnvironment::Sandbox, $this->transport);
             $result = $client->execute(RegistrarRequest::balance(), RequestContext::Interactive, 10000);
         } catch (\Throwable) { throw new \DomainException(self::UNCONFIRMED); }
-        // The client keeps no reply code unless NameSilo answered with JSON; refusal codes keep the refusal.
-        if ($result->outcome === Outcome::Unknown && $result->code === null) { throw new \DomainException(self::UNCONFIRMED); }
+        // Only a documented key or account refusal says the key is wrong. A missing, malformed or other reply stays unconfirmed.
+        if ($result->outcome === Outcome::Rejected && $result->scope === RejectionScope::Account) { throw new \DomainException(self::REFUSED); }
         if ($result->outcome !== Outcome::Success) { throw new \DomainException(self::UNCONFIRMED); }
     }
 }

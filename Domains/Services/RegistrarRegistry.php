@@ -42,7 +42,7 @@ final class RegistrarRegistry
         $authenticator = $this->entry($key)[7] ?? throw new \DomainException('Local enrollment unavailable.');
         try { $authenticator->authenticate($environment, $this->credentials($key, $credentials)); }
         catch (\Throwable $error) {
-            $safe = $error instanceof \DomainException && in_array($error->getMessage(),[CredentialAuthenticator::UNANSWERED,CredentialAuthenticator::UNCONFIRMED],true);
+            $safe = $error instanceof \DomainException && in_array($error->getMessage(),[CredentialAuthenticator::UNANSWERED,CredentialAuthenticator::UNCONFIRMED,CredentialAuthenticator::REFUSED],true);
             throw new \DomainException($safe ? $error->getMessage() : 'Registrar key authentication failed.');
         }
     }

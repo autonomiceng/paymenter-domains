@@ -466,6 +466,7 @@ final class SettingsActions
             'unreadable'=>'We could not read our test send count, so this Enom request was not sent. '.$earlier.'Try again in a minute.',
             default=>'Our test send check stopped this Enom request before sending. '.$earlier.EnomTestSendLimit::facts(($account=Account::where('server_id',$server)->first())?EnomTestSendLimit::login($account):($data['uid']??null))};
     }
+    private static function registrarName(array $data): string { return ['enom'=>'Enom','namesilo'=>'NameSilo'][$data['registrar']??'']??'The registrar'; }
     /** Staff text for a refused settings change; never echoes unrecognized exception text. */
     public static function refusal(\Throwable $error,string $name,array $data=[],int $server=0,?int $tld=null): string
     {
@@ -490,7 +491,8 @@ final class SettingsActions
                 'identity_credentials_refused'=>'Enom refused the user ID or API token. Check both for this account type.',
                 'identity_unavailable'=>'Enom did not confirm this account. Nothing was saved. Try again later.',
                 \Paymenter\Extensions\Servers\Domains\Contracts\CredentialAuthenticator::UNCONFIRMED=>'Registrar key could not be confirmed. Nothing was saved. Check the API details and try again.',
-                \Paymenter\Extensions\Servers\Domains\Contracts\CredentialAuthenticator::UNANSWERED=>(['enom'=>'Enom','namesilo'=>'NameSilo'][$data['registrar']??'']??'The registrar')." didn't answer. Nothing was saved. Try again in a few minutes.",
+                \Paymenter\Extensions\Servers\Domains\Contracts\CredentialAuthenticator::UNANSWERED=>self::registrarName($data)." didn't answer. Nothing was saved. Try again in a few minutes.",
+                \Paymenter\Extensions\Servers\Domains\Contracts\CredentialAuthenticator::REFUSED=>self::registrarName($data).' refused this API key. Nothing was saved. Check the key, its account type and any IP limit set on it.',
                 'Connection not verified.'=>Account::where('server_id',$server)->value('registrar_key')==='namesilo'?'NameSilo did not confirm the balance. The last saved balance stays. Trying again may send one more balance read.':'Enom did not confirm the balance. The last saved balance stays.',
                 'identity_environment_refused'=>'Enom reads for this account type are off on this site. '.self::NOT_SENT,
                 'identity_account_changed'=>'These credentials belong to a different account. The saved account was kept.',

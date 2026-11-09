@@ -6,8 +6,11 @@ use Paymenter\Extensions\Servers\Domains\Data\Environment;
 /** Connectivity only: no provider identity, contact or spending authority is returned. */
 interface CredentialAuthenticator
 {
-    /** No reply came back (HTTP failure, deadline or no JSON): the key was not refused. */
+    /** No usable reply, or a reply that neither confirms nor refuses the key. */
     public const UNCONFIRMED = 'Registrar key could not be confirmed.';
+    /** The registrar answered and refused the key or its account access. */
+    public const REFUSED = 'Registrar refused the key.';
+    /** The registrar did not answer at all. */
     public const UNANSWERED = 'Registrar did not answer.';
     public function authenticate(Environment $environment, #[\SensitiveParameter] array $credentials): void;
 }
