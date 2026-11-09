@@ -224,6 +224,33 @@ $filter('status',['in_progress'])->assertCanNotSeeTableRecords([$queued]);
 $orders->update(['processing_enabled'=>true]);
 $filter('status',['in_progress'])->assertCanSeeTableRecords([$queued]);
 $filter('status',['under_review'])->assertCanNotSeeTableRecords([$queued]);
+// The list reads the Orders switches once, for its Status filter and its rows, even when a switch changes while it is built.
+DB::table('domains_operations')->where('id',$queued->id)->update(['action'=>'register','state'=>'queued','safe_code'=>null]);
+$flip=static function(bool $enabled) use ($orders): void {
+    $armed=true;
+    DB::listen(function($query) use (&$armed,$orders,$enabled): void {
+        $sql=strtolower($query->sql);
+        if (!$armed||!str_contains($sql,'domains_accounts')||!str_contains($sql,'processing_enabled')||str_contains($sql,'exists')) { return; }
+        $armed=false; (clone $orders)->update(['processing_enabled'=>$enabled]);
+    });
+};
+$parity=[]; $seen=[];
+foreach (['on_hold'=>'On hold','in_progress'=>'In progress'] as $key=>$word) {
+    foreach ([false,true] as $enabled) {
+        $orders->update(['processing_enabled'=>!$enabled]);
+        $p=Livewire::actingAs(Auth::user())->test(ListOperations::class)->filterTable('status',[$key]);
+        $p->set('tableDeferredFilters',$p->get('tableFilters')); $flip($enabled); $p->call('applyTableFilters');
+        $column=$p->instance()->getTable()->getColumns()['state'];
+        foreach ($p->instance()->getTableRecords() as $record) {
+            if ($record->id===$queued->id) { $seen[$enabled?'on':'off'][]=$key; }
+            if (($shown=$column->record($record)->formatState($column->getState()))!==$word) { $parity[]="$key, Orders turned ".($enabled?'on':'off').": request #{$record->id} reads $shown"; }
+        }
+    }
+}
+same([],$parity,'Every row the request Status filter keeps reads that status');
+ksort($seen); same(['off'=>['in_progress'],'on'=>['on_hold']],$seen,'The list reads the switches as they were when it started');
+$orders->update(['processing_enabled'=>true]);
+DB::table('domains_operations')->where('id',$queued->id)->update(['action'=>$heldOp->action]);
 // Held for setup reads Action required, as its domain does, with the next step it already shows.
 $setup=[]; $next=[];
 foreach(['register','transfer','renew','nameservers','contacts','lock','privacy_purchase','dns'] as $kind){

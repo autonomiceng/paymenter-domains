@@ -63,7 +63,9 @@ final class RegistrarFacts
      * @return array{open:int,staff:array<string,int>} */
     public static function requests(int $server): array
     {
-        $count=fn(array $keys)=>OperationQueries::status(OperationResource::getEloquentQuery()->where('server_id',$server),$keys)->count();
+        // One read of the Orders switches, so the counts agree with each other.
+        $off=OperationQueries::ordersOffAccounts();
+        $count=fn(array $keys)=>OperationQueries::status(OperationResource::getEloquentQuery()->where('server_id',$server),$keys,$off)->count();
         $statuses=array_combine(self::OPEN_REQUESTS,array_map(fn(string $key)=>$count([$key]),self::OPEN_REQUESTS));
         return ['open'=>array_sum($statuses),'staff'=>array_intersect_key($statuses,array_flip(OperationResource::NEEDS_STAFF)),'statuses'=>$statuses];
     }
