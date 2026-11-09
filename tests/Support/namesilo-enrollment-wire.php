@@ -23,6 +23,7 @@ function curl_exec($handle): bool
     if($mode==='throw'){throw new \RuntimeException($o[CURLOPT_URL].' sandbox@example.test 9876.54');}
     $reply=$query['key']==='wrong-key'?['code'=>110,'detail'=>'Wrong key']:
         ['code'=>300,'detail'=>'success','balance'=>'9876.54','userId'=>'123','ownerUserId'=>'456','contact_id'=>'789','order_number'=>'999'];
+    if(preg_match('/^code_(\d+)$/D',$mode,$code)){$reply=['code'=>(int)$code[1],'detail'=>'Synthetic refusal'];}
     if($mode==='missing_balance'){unset($reply['balance']);}
     if($mode==='bad_balance'){$reply['balance']='NaN';}
     if($mode==='null_balance'){$reply['balance']=null;}
