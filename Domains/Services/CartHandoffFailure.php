@@ -55,6 +55,9 @@ final class CartHandoffFailure
             'transfer_creation_lock' => 'transfer_creation_lock',
             'transfer_previous_lock' => 'transfer_previous_lock',
             'transfer_maximum_term' => 'transfer_maximum_term',
+            'Catalogue upgrade state is invalid; keep maintenance active.' => 'catalogue_upgrade_state_invalid',
+            'Invalid active catalogue contract.' => 'catalogue_contract_invalid',
+            'Invalid Domains initialization intent.' => 'initialization_intent_invalid',
         ],
         RuntimeIneligible::class => ['Registrar processing is disabled.' => 'processing_disabled'],
         ReadDeferred::class => ['Account read budget unavailable.' => 'account_read_budget_unavailable'],
@@ -74,6 +77,8 @@ final class CartHandoffFailure
             'Registrar request budget exhausted.' => 'request_budget_exhausted',
         ],
     ];
+    /** Saved upgrade state that a reload cannot repair; staff must fix it. */
+    public const PERSISTENT = ['catalogue_upgrade_state_invalid', 'catalogue_contract_invalid', 'initialization_intent_invalid'];
 
     /** Closed context only. Unknown messages, nested exceptions and names never enter logs. */
     public static function context(\Throwable $error,string $phase): array
