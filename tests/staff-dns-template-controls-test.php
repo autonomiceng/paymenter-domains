@@ -199,6 +199,27 @@ $check('Unusable and duplicate saved defaults keep their template and name the r
         DB::table('settings')->where('id',$duplicate)->delete();
     }finally{DB::table('domains_watch_profiles')->where('id',$row->id)->update(['nameservers'=>$stored]);siteDnsFixture(null);}
 });
+$check('Dependency reads stay bounded to the template and use its indexes',function()use($make,$manager):void{
+    $row=$make('Bounded dependency template');siteDnsFixture(null);
+    $configs=array_map(fn($i)=>['domain_id'=>910000+$i,'user_id'=>$manager->id,'profile_id'=>$row->id,'notice_preferences'=>'{}'],range(1,150));
+    DB::table('domains_managed_public_config')->insert($configs);
+    $reads=null;
+    DB::listen(static function($q)use(&$reads):void{
+        if(is_array($reads) && preg_match('/^select (?!exists).* from "(domains_watch_names|domains_managed_public_config|domains_watch_product_maps)"/',$q->sql)){$reads[]=$q->sql;}
+    });
+    try{
+        $reads=[];$reason=DB::transaction(fn()=>DnsTemplateUsage::refusal((int)$row->id,true));$seen=$reads;$reads=null;
+        same('This template is assigned to retained domain records. Keep it for their history.',$reason,'Retained registered domain records keep the template');
+        foreach($seen as$sql){expect(str_contains($sql,' limit '),'Each dependency read is one bounded row or page: '.$sql);}
+        expect(count($seen)>=4,'Each dependency is read');
+        same(2,count(array_filter($seen,fn($sql)=>str_contains($sql,'from "domains_managed_public_config"'))),'150 registered domain records are read in two pages');
+        foreach(\Paymenter\Extensions\Servers\Domains\Services\TemplateAssignmentIndex::COLUMNS as$table=>$columns){
+            expect(\Illuminate\Support\Facades\Schema::hasIndex($table,$columns),'Template assignments are indexed in '.$table);
+        }
+        $plan=json_encode(DB::select('EXPLAIN QUERY PLAN select "id" from "domains_watch_names" where "ns_profile_id" = ? and "state" in (?, ?) limit 1',[$row->id,'active','paused']));
+        expect(str_contains($plan,'ns_profile_id_state_index'),'The watch assignment read uses its index: '.$plan);
+    }finally{$reads=null;DB::table('domains_managed_public_config')->whereIn('domain_id',array_column($configs,'domain_id'))->delete();}
+});
 foreach($errors as$error){echo "FAIL $error\n";}
 expect($errors===[],'DNS template control regressions: '.implode('; ',$errors));
 $nativeSuccessful=true;echo "DNS template controls passed\n";
