@@ -42,7 +42,7 @@ final class WatchActions
                 $done=$kind==='profile'?match($action){'save'=>$id?'DNS template saved':'DNS template added','enable'=>'DNS template turned on','disable'=>'DNS template turned off','delete'=>'DNS template deleted'}:(self::DONE[$action]??'Saved');
                 // A resume saved while the hosting service is suspended keeps the domain paused until the service is active.
                 $waiting=$kind==='watch' && $action==='resume' && WatchName::whereKey($id)->value('state')==='paused';
-                Notification::make()->success()->title($waiting?'Monitoring will resume':$done)->body($waiting?WatchFindings::HOSTING_SUSPENDED:null)->send();
+                Notification::make()->success()->title($waiting?WatchFacts::RESUME_SAVED:$done)->body($waiting?WatchFindings::HOSTING_SUSPENDED:null)->send();
                 if($kind==='profile' && $action!=='delete'){
                     if($id){$livewire->refreshTemplate();}
                     return;

@@ -10,6 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{WatchName,WatchAudit,WatchProfi
 final class StaffWatchWrites
 {
     public const VIEW='admin.domains.watch.view',MANAGE='admin.domains.watch.manage';
+    public const BUSY='Every check for this domain is running or waiting to retry. Try again in a few minutes.';
     public const UNREADABLE='Saved DNS records cannot be read. Restore the template before changing it.';
     public static function ticket(int $actor,string $kind,int $id,int $revision,string $action): string
     { return Crypt::encryptString(json_encode(compact('actor','kind','id','revision','action')+['until'=>time()+600,'key'=>bin2hex(random_bytes(16))],JSON_THROW_ON_ERROR)); }
@@ -51,7 +52,9 @@ final class StaffWatchWrites
                     // Enqueue eligibility only: ordinary dispatcher performs the read outside this transaction. A missing-nameserver answer is a successful check.
                     $q=DB::table('domains_watch_work')->where('watch_id',$id);
                     if(!(clone$q)->exists()){throw new \DomainException('This watch has no scheduled checks yet.');}
-                    $count=$q->whereNull('claim')->where(fn($q)=>$q->whereNull('backoff_until')->orWhere('backoff_until','<=',time()))->where(fn($q)=>$q->whereNull('safe_code')->orWhereIn('safe_code',['ready','rotation','nameservers_missing']))->update(['due_at'=>time()]);$data=['eligible_rows'=>$count];
+                    $count=$q->whereNull('claim')->where(fn($q)=>$q->whereNull('backoff_until')->orWhere('backoff_until','<=',time()))->where(fn($q)=>$q->whereNull('safe_code')->orWhereIn('safe_code',['ready','rotation','nameservers_missing']))->update(['due_at'=>time()]);
+                    // Nothing to advance: refuse, so the rollback keeps the five-minute cooldown free.
+                    if($count===0){throw new \DomainException(self::BUSY);}$data=['eligible_rows'=>$count];
                 }elseif($action!=='note'){throw new \DomainException('The watch state changed. Reload and try again.');}
             }elseif($kind==='mapping' && $action==='enable'){
                 $row=(new WatchMappings())->enable($actor,$id,$before,$reason);

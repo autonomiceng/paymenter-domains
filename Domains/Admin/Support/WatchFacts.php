@@ -11,6 +11,8 @@ use Paymenter\Extensions\Servers\Domains\Services\{StaffWatchWrites as Writes,Wa
 final class WatchFacts
 {
     public const EVENTS=['staff_pause'=>'Monitoring paused','staff_resume'=>'Monitoring resumed','staff_profile'=>'DNS template changed','staff_retire'=>'Monitoring stopped','staff_read_requested'=>'Check requested','staff_note'=>'Note'];
+    /** A resume saved while the hosting service is suspended leaves monitoring paused. */
+    public const RESUME_SAVED='Monitoring will resume';
     public const DECRYPT="Can't read saved data. Ask your site admin.";
     public const TEMPLATE_UNAVAILABLE='Saved DNS records cannot be read. Ask your site admin to restore this template.';
     private static function gate(): void{abort_unless(Staff::can(Writes::VIEW),403);}
@@ -128,7 +130,7 @@ final class WatchFacts
     public static function history(WatchName $w): ?array
     {
         self::gate();
-        try{$rows=WatchAudit::where('subject_type','watch')->where('subject_id',$w->id)->whereIn('event',array_keys(self::EVENTS))->orderByDesc('id')->limit(50)->get()->map(fn($a)=>['time'=>gmdate('c',$a->created_at->getTimestamp()),'event'=>self::EVENTS[$a->event],'actor'=>(int)$a->actor_id,'note'=>$a->reason!==self::EVENTS[$a->event]?$a->reason:null])->all();}
+        try{$rows=WatchAudit::where('subject_type','watch')->where('subject_id',$w->id)->whereIn('event',array_keys(self::EVENTS))->orderByDesc('id')->limit(50)->get()->map(fn($a)=>['time'=>gmdate('c',$a->created_at->getTimestamp()),'event'=>$a->event==='staff_resume'&&($a->data['hosting']??null)==='suspended'?self::RESUME_SAVED:self::EVENTS[$a->event],'actor'=>(int)$a->actor_id,'note'=>$a->reason!==self::EVENTS[$a->event]?$a->reason:null])->all();}
         catch(\Illuminate\Contracts\Encryption\DecryptException){return null;}
         $names=Staff::can('admin.users.view')?User::whereIn('id',array_column($rows,'actor'))->get(['id','first_name','last_name','email'])->mapWithKeys(fn($u)=>[$u->id=>trim($u->first_name.' '.$u->last_name)?:$u->email])->all():[];
         $rows=[...array_map(fn($r)=>[...$r,'by'=>$names[$r['actor']]??'Staff #'.$r['actor']],$rows),...\Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence::history($w)];
