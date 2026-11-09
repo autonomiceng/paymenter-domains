@@ -48,10 +48,10 @@ final class StaffWatchWrites
                     $latest=DB::table('domains_watch_staff_claims')->where('subject_type','watch')->where('subject_id',$id)->where('action','read')->where('claim','<>',$claim)->orderByDesc('created_at')->lockForUpdate()->first()?->created_at;
                     if($latest && $latest>time()-300){throw new \DomainException('A check was recently requested. Try again later.');}
                     if(!app(WatchWork::class)->active() || !app(WatchWork::class)->queueReady()){throw new \DomainException('Public checks are disabled or the asynchronous queue is unavailable.');}
-                    // Enqueue eligibility only: ordinary dispatcher performs the read outside this transaction.
+                    // Enqueue eligibility only: ordinary dispatcher performs the read outside this transaction. A missing-nameserver answer is a successful check.
                     $q=DB::table('domains_watch_work')->where('watch_id',$id);
                     if(!(clone$q)->exists()){throw new \DomainException('This watch has no scheduled checks yet.');}
-                    $count=$q->whereNull('claim')->where(fn($q)=>$q->whereNull('backoff_until')->orWhere('backoff_until','<=',time()))->where(fn($q)=>$q->whereNull('safe_code')->orWhereIn('safe_code',['ready','rotation']))->update(['due_at'=>time()]);$data=['eligible_rows'=>$count];
+                    $count=$q->whereNull('claim')->where(fn($q)=>$q->whereNull('backoff_until')->orWhere('backoff_until','<=',time()))->where(fn($q)=>$q->whereNull('safe_code')->orWhereIn('safe_code',['ready','rotation','nameservers_missing']))->update(['due_at'=>time()]);$data=['eligible_rows'=>$count];
                 }elseif($action!=='note'){throw new \DomainException('The watch state changed. Reload and try again.');}
             }elseif($kind==='mapping' && $action==='enable'){
                 $row=(new WatchMappings())->enable($actor,$id,$before,$reason);
