@@ -43,6 +43,5 @@ The opt-in MariaDB category currently exercises native schema fresh/reinstall/
 upgrade, not installed ZIP upgrades. This SQLite scenario adds no MariaDB claim,
 provider calls, concurrent locking or production deployment acceptance.
 
-`conversion-test.php` checks the gate before journal creation, refuses incomplete conversion, then verifies that repeated completed checks make no database queries.
-Conversion checks compile the journal definition with the offline MySQL grammar, retain a summary over 64 KB across repeated installs, read bare systemd template definitions with `cat`, and require concrete stopped instances before state inspection. SQLite cannot distinguish MySQL TEXT from LONGTEXT.
+`conversion-gate-test.php` checks the gate without a journal, refuses an incomplete or foreign journal, then verifies that repeated completed checks make no database queries.
 Package checks cover the exact serialized ZIP limit before artifact creation, portable case-collision fixtures, in-memory non-UTF-8 paths, archive/member/total verification limits, and CLI verification against the adjacent manifest.
