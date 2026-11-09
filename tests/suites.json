@@ -808,6 +808,7 @@
     "tests/fixture-policy-test.php",
     "tests/php83-compatibility-test.php",
     "tests/test_runner.py",
+    "tests/test_runner_installed_phases.py",
     "tests/test_runner_receipts.py",
     "tests/test_lint.py",
     "tests/test_blade_verbatim.py",
