@@ -54,6 +54,10 @@ $plain=$page([],[],[],['nameservers'=>['nameservers'=>['ns1.example.net','ns2.ex
 same('Domains / example.com',$norm($dom->query('//nav[contains(@class,"domains-crumb")]')->item(0)),'Breadcrumb names the domain');
 same('Hosting: Web A and 1 more',$norm($dom->query('//*[contains(@class,"domains-ph__sub")]')->item(0)),'Header names its hosting service');same('/services/1',$dom->query('//*[contains(@class,"domains-ph__sub")]/a/@href')->item(0)?->value,'Hosting service is a link');
 same(1,substr_count($text($plain),'We check the public registry and nameservers daily.'),'Status help says how often we check');
+// The summary lists every usable link; its overflow counts those past the first three, so it never adds to the count.
+$four=array_map(fn($i)=>['label'=>'Web '.$i,'url'=>'/services/'.$i],range(1,4));
+$many=$page([],[],[],['nameservers'=>['nameservers'=>['ns1.example.net','ns2.example.net'],'at'=>'2027-01-10T08:00:00Z'],'expiry'=>'2027-06-01','daysLeft'=>200,'relatedServices'=>$four,'relatedOverflow'=>1,'urls'=>['compareTransfer'=>'/domains/checks/watch/1/transfer','support'=>'/tickets/create']]);
+same('Hosting: Web 1 and 3 more',$norm(storefrontDom($many)->query('//*[contains(@class,"domains-ph__sub")]')->item(0)),'Four usable hosting links show the first and 3 more');
 same([],$notice($plain),'Nothing to do: no notice');same(0,$dom->query('//input[@type="checkbox"]')->length,'No checkboxes');
 same(['Nameservers','ns1.example.net ns2.example.net Checked Jan 10, 2027',[]],$li($plain,'nameservers'),'Nameservers with their check date');
 same(['Monitoring alerts','On',['Turn off']],$li($plain,'alerts'),'Alerts on: one Turn off');

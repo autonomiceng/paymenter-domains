@@ -62,4 +62,25 @@ require dirname(__DIR__).'/Domains/routes/web.php';require dirname(__DIR__).'/Do
 $summary=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($owner,'managed',$id,$time->now);
 same([(int)$healthy->id],array_column($summary->relatedServices,'id'),'Healthy hosting link survives over one hundred suspended links');
 same(0,$summary->relatedOverflow,'Suspended hosting never counts as more hosting');
+// Suspended links are not public-check candidates, so the cohort is the healthy link alone and is not partial.
+$target=(new Paymenter\Extensions\Servers\Domains\Services\ManagedPublicTarget)->capture($id,$uid,$time->now,0,false);
+expect($target!==null,'The domain with suspended links is still checked');
+same(false,$target['overflow'],'Suspended links never fill the cohort or mark the check partial');
+same(0,$target['next_source_cursor'],'Suspended links never take a turn in source rotation');
+expect(in_array('shop.example.com',$target['hosts'],true),'The healthy link is checked');
+// Usable links are counted apart from active links that are not usable: four usable links show three after the first.
+$link=static function(string $name,string $property)use($uid,$host,$map,$id,$time):int {
+    $o=App\Models\Order::create(['user_id'=>$uid,'currency_code'=>'USD']);
+    $s=App\Models\Service::create(['user_id'=>$uid,'order_id'=>$o->id,'product_id'=>$host->product_id,'plan_id'=>$host->plan_id,'status'=>'active','quantity'=>1,'price'=>'5.00','currency_code'=>'USD']);
+    $s->properties()->create(['key'=>'domain','value'=>$property]);
+    DB::transaction(fn()=>WatchSource::create(['user_id'=>$uid,'service_id'=>$s->id,'map_id'=>$map->id,'map_revision'=>1,'hostname'=>$name,
+        'registrable_name'=>'example.com','managed_domain_id'=>$id,'state'=>'managed_link','source_digest'=>hash('sha256',$name),'last_seen_at'=>$time->now]));
+    return (int)$s->id;
+};
+$usable=[(int)$healthy->id];foreach(['blog','mail','docs'] as $name){$usable[]=$link($name.'.example.com',$name.'.example.com');}
+foreach(['old','stale','moved'] as $name){$link($name.'.example.com','elsewhere-'.$name.'.example.net');}
+$summary=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($owner,'managed',$id,$time->now);
+same($usable,array_column($summary->relatedServices,'id'),'The summary lists only usable hosting links');
+same(1,$summary->relatedOverflow,'Overflow counts usable links past the first three, not active links that are not usable');
+expect(str_ends_with((string)Paymenter\Extensions\Servers\Domains\Presentation\DomainListRow::hosting($summary),' and 3 more'),'The list row shows the first link and 3 more');
 $nativeSuccessful=true;echo "Large managed source cohorts retain stable NS confirmation and bounded partial points rotation.\n";
