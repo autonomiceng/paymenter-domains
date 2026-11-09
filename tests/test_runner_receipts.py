@@ -98,6 +98,34 @@ class ReceiptTests(unittest.TestCase):
             self.assertFalse(receipt['complete'])
             self.assertEqual((receipt['git_tree'], receipt['git_tree_error']), ('a'*40, None))
 
+    def test_setup_failure_receipt_rechecks_the_checkout_tree(self):
+        def git(repo, *args):
+            return subprocess.run(['git', '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+                                   '-c', 'commit.gpgsign=false', *args], cwd=repo, check=True,
+                                  capture_output=True, text=True).stdout.strip()
+        for case in ['unchanged', 'dirty', 'changed']:
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as temp:
+                repo = Path(temp)/'repo'; (repo/'Domains').mkdir(parents=True); (repo/'Domains/Probe.php').write_text('<?php\n')
+                output = Path(temp)/'output'; output.mkdir()
+                git(repo, 'init', '-q'); git(repo, 'add', 'Domains/Probe.php'); git(repo, 'commit', '-q', '-m', 'probe')
+                tree = git(repo, 'rev-parse', 'HEAD^{tree}')
+                def failing_setup():
+                    if case != 'unchanged':
+                        (repo/'notes.txt').write_text('written during setup')
+                    if case == 'changed':
+                        git(repo, 'add', 'notes.txt'); git(repo, 'commit', '-q', '-m', 'notes')
+                    raise ValueError('bad manifest')
+                with mock.patch.object(runner, 'ROOT', repo), mock.patch.object(runner, 'manifest', side_effect=failing_setup), \
+                     mock.patch.object(runner.tempfile, 'mkdtemp', return_value=str(output)), \
+                     mock.patch.object(runner.sys, 'argv', ['test.py']), contextlib.redirect_stderr(io.StringIO()), \
+                     self.assertRaises(ValueError):
+                    runner.main()
+                receipt = json.loads((output/'receipt.json').read_text())
+                self.assertFalse(receipt['complete'])
+                expected = {'unchanged': (tree, None), 'dirty': (None, 'uncommitted changes'),
+                            'changed': (None, 'checkout changed during the run')}[case]
+                self.assertEqual((receipt['git_tree'], receipt['git_tree_error']), expected)
+
 
 if __name__ == '__main__':
     unittest.main()
