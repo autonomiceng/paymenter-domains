@@ -60,8 +60,7 @@ final class Writer implements Catalogue
                 // An unpublished own rule remains closed for its ordinary guarded recovery.
                 if ($tld->catalogue_published_revision === null) { continue; }
                 try {
-                    $published = OfferState::decode($tld->catalogue_published_revision);
-                    if (($published['retailRule'] ?? 0) === Retail::VERSION) { continue; }
+                    if (OfferState::currentPublication($tld->catalogue_published_revision)) { continue; }
                     $account = Account::where('server_id', $tld->server_id)->sole();
                     $binding = AccountBindings::binding($account);
                     $revision = OfferState::revision($tld, OfferState::decode($account->catalogue_defaults),
@@ -370,7 +369,7 @@ final class Writer implements Catalogue
                 $id = (int) $offer->server_id; $account = $accounts[$id]; $b = AccountBindings::binding($account);
                 $d = OfferState::decode($account->catalogue_defaults);
                 $retailUpgrade = $offer->catalogue_published_revision !== null
-                    && self::retailVersion($offer->catalogue_published_revision) !== Retail::VERSION;
+                    && !OfferState::currentPublication($offer->catalogue_published_revision);
                 $offer->catalogue_revision = (int) $offer->catalogue_revision + 1;
                 $annual = $offer->catalogue_retained_annual_retail;
                 $published = $command instanceof Edit && $command->kind === 'retail'
@@ -392,12 +391,6 @@ final class Writer implements Catalogue
             if (!$reviewed) { $this->audit($servers[$binding->serverId], $command, $revision, $result, $now); }
             $this->afterCommit();
             return $result;
-    }
-
-    private static function retailVersion(?string $marker): int
-    {
-        try { return (int)(OfferState::decode($marker)['retailRule'] ?? 0); }
-        catch (\Throwable) { return 0; }
     }
 
     /** Only current registrar terms that list 1-year transfers allow them; missing or stale terms leave the row off. */
