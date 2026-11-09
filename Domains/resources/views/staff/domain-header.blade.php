@@ -1,8 +1,7 @@
 <x-filament-panels::header :actions="$this->getCachedHeaderActions()" :actions-alignment="$this->getHeaderActionsAlignment()" :breadcrumbs="$this->getBreadcrumbs()" :heading="$this->getHeading()" :subheading="$this->getSubheading()" />
-@php($pending = array_filter($this->managementProgress(), fn ($row) => $row['pending']))
+@php($poll = $this->managementPoll())
 @if ($this->syncPending())<p role="status" class="domains-hint">Sync in progress. This page updates when the read finishes.</p>@endif
-@if ($pending || $this->syncPending())
-{{-- Follow queued completion even when staff switch tabs; pending state bounds this poll. --}}
-@if (array_filter($pending, fn ($row) => $row['slow']))<div wire:key="management-poll-slow" wire:poll.10s.keep-alive="pollManagement"></div>
-@else<div wire:key="management-poll-fast" wire:poll.2s.keep-alive="pollManagement"></div>@endif
-@endif
+@if ($poll['stopped'])<p role="status" class="domains-hint">A change is still waiting. Reload this page to check it again.</p>@endif
+{{-- Follow queued completion even when staff switch tabs, for a bounded time (managementPoll). --}}
+@if ($poll['every'] === '10s')<div wire:key="management-poll-slow" wire:poll.10s.keep-alive="pollManagement"></div>
+@elseif ($poll['every'] === '2s')<div wire:key="management-poll-fast" wire:poll.2s.keep-alive="pollManagement"></div>@endif

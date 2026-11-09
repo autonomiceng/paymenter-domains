@@ -34,6 +34,21 @@ class ViewDomain extends ViewRecord
     }
     public function managementProgress(): array
     { return \Paymenter\Extensions\Servers\Domains\Services\ManagementProgress::for($this->getRecord()); }
+    /** How long the page keeps following waiting changes in the background. Sync now keeps its own window (syncPending). */
+    public const FOLLOW_SECONDS=900;
+    #[\Livewire\Attributes\Locked]
+    public ?int $followStarted=null;
+    /** @return array{every:?string,stopped:bool} How often the head reads stored progress again, and whether it stopped while a change still waits.
+     * A change that never finishes stays shown as waiting; the page just stops reading it in the background. */
+    public function managementPoll(): array
+    {
+        $pending=array_filter($this->managementProgress(),fn(array $row)=>$row['pending']);
+        $now=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp();
+        $this->followStarted=$pending?($this->followStarted??$now):null;
+        $following=$pending&&$now<$this->followStarted+self::FOLLOW_SECONDS;
+        $every=$following||$this->syncPending()?(array_filter($pending,fn(array $row)=>$row['slow'])?'10s':'2s'):null;
+        return ['every'=>$every,'stopped'=>$pending&&!$following];
+    }
 
     protected static string $resource = DomainResource::class;
     protected Width|string|null $maxContentWidth = Sheet::WIDTH;
@@ -77,6 +92,8 @@ class ViewDomain extends ViewRecord
     {
         parent::afterActionCalled($action);
         if ($action->getName()==='resume_observation') { $this->resumeStarted=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp(); }
+        // A new change starts a new follow window.
+        $this->followStarted=null;
         $this->pollManagement();
         $this->cacheSchema('infolist');
     }
