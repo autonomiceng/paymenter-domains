@@ -30,7 +30,7 @@ class HiddenLinkStaffPage extends Paymenter\Extensions\Servers\Domains\Admin\Pag
 Livewire\Livewire::component('hidden-link-staff-page',HiddenLinkStaffPage::class);
 $page=Livewire\Livewire::actingAs($actor)->test(HiddenLinkStaffPage::class)->filterTable('for_sale',false);
 same(26,$page->instance()->getTableRecords()->total(),'The omitted TLD is off the first page');
-$page->assertSee('No price for .zzbroken')->assertSee('Open .zzbroken')
+$page->assertSee('Prices left out for .zzbroken')->assertSee('Open .zzbroken')
     ->assertSeeHtml('href="'.e(Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource::getUrl('view',['record'=>$id])).'"');
-$page->searchTable('com')->assertDontSee('No price for .zzbroken')->assertDontSee('Open .zzbroken');
+$page->searchTable('com')->assertDontSee('Prices left out for .zzbroken')->assertDontSee('Open .zzbroken');
 $nativeSuccessful=true;echo "Off-page pricing warning names and links the omitted TLD.\n";
