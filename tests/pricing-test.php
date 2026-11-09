@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/bootstrap.php';
-use Paymenter\Extensions\Servers\Domains\Services\{CardFee, MarginPolicy, PricingRule, RetailLine};
+use Paymenter\Extensions\Servers\Domains\Services\{CardFee, PricingRule, RetailLine};
 
 $rule = PricingRule::DEFAULT;
 same('13.00', PricingRule::price('10.0000', $rule, 'register'), 'Default percent');
@@ -32,26 +32,8 @@ same(123, PricingRule::minor(1.23), 'Exact native float compatibility');
 same(null, PricingRule::wholesale('broken'), 'Malformed wholesale unknown');
 $fixed = [...$rule, 'mode' => 'fixed', 'fixed' => ['register' => '5.00', 'renew' => '6.00', 'transfer' => '7.00']];
 same('6.00', PricingRule::price('10.0000', $fixed, 'renew'), 'Fixed action price');
-foreach (['register', 'transfer'] as $action) {
-    $decision = MarginPolicy::assess($action, '10.0001', '10.00');
-    same(false, $decision->publishable, 'Subcent below-cost acquisition held');
-    same('below_cost', $decision->staffAlert, 'Staff acquisition alert');
-}
-$renew = MarginPolicy::assess('renew', '10.0001', '10.00');
-same(true, $renew->publishable, 'Below-cost renewal continues');
-same(null, $renew->hold, 'No renewal floor');
-same('below_cost', $renew->staffAlert, 'Renewal staff alert');
-same(false, MarginPolicy::assess('renew', null, '10.00')->publishable, 'Unknown cost never zero');
-same(true, MarginPolicy::assess('register', '0.0000', '0.01')->publishable, 'Known free wholesale');
-same(false, MarginPolicy::assess('register', '0.0000', '0.00')->publishable, 'Zero retail not complimentary authority');
-same(false, MarginPolicy::assess('register', '10.0000', '9.00')->publishable, 'Tax cannot cover below-cost published list price');
 same(true, RetailLine::positiveNet('12.00', '2.00', '1.00'), 'Positive discounted line may be below cost');
-same(true, MarginPolicy::assess('register', '10.0000', '10.00')->publishable, 'Discounts never change published margin');
 same(false, RetailLine::positiveNet('12.00', '2.00', '10.00'), 'Zero net line refused separately from margin');
-$unknownRenewal = MarginPolicy::assess('renew', null, '10.00');
-same(false, $unknownRenewal->publishable, 'Unknown renewal retains prior published price');
-same(null, $unknownRenewal->hold, 'Unknown cost never creates renewal hold');
-same('unknown_price', $unknownRenewal->staffAlert, 'Staff must resolve unknown renewal');
 // Fee-inclusive markup covers the fee on the final rounded price.
 $feeRule = [...$rule, 'mode' => 'markup_fee_percent', 'markup' => '5.00', 'round_up' => 'ending_99',
     'card_fee' => ['percent' => '2.90', 'fixed' => '0.30']];

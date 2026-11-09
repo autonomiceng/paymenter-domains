@@ -1,34 +1,25 @@
 <?php
-// Native staff action; MIT, Copyright (c) 2026 Autonomic Engineering.
+// Account reset service; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/namesilo-fingerprint-reset.php';
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount;
 // The installed account page no longer offers the retained default-contact reset.
 Livewire::actingAs($actor)->test(RegistrarAccount::class,['account'=>$server->id])->assertSuccessful()->assertActionDoesNotExist('accept_namesilo_account');
-// Keep the complete legacy action and service matrix on a test-only page.
-class RetainedNameSiloAccountReview extends RegistrarAccount
-{
-    protected function getHeaderActions(): array
-    {return [\Paymenter\Extensions\Servers\Domains\Admin\Support\NameSiloAccountAction::make($this->account)];}
-}
-Livewire::component('retained-namesilo-account-review',RetainedNameSiloAccountReview::class);
-$page=Livewire::actingAs($actor)->test(RetainedNameSiloAccountReview::class,['account'=>$server->id])->assertSuccessful();
+// The account reset service keeps its full refusal and audit matrix without a page action.
+$reset=app(Paymenter\Extensions\Servers\Domains\Services\NameSiloAccountReset::class);
 same(0,$wire->calls,'Opening the account page sends no provider request');
-$page->mountAction('accept_namesilo_account')->assertActionMounted('accept_namesilo_account');
-$review=$page->get('mountedActions.0.data');
-expect(is_string($review['review']??null),'Fresh read succeeds: '.($review['error']??'no review'));
-$modal=$page->html().implode('',$page->effects['partials']??[]);
-foreach(['Saved account','Current account','old@example.com','new@example.com','900','901'] as $see){expect(str_contains($modal,$see),'Fresh comparison shows '.$see);}
+$review=$reset->preview($server->id);$details=$reset->details($server->id,$review);
+same(['binding'=>$binding->fingerprint,'contact_id'=>'900','email'=>'old@example.com'],$details['pinned'],'Fresh comparison keeps the saved account');
+same(['binding'=>$binding->fingerprint,'contact_id'=>'901','email'=>'new@example.com'],$details['live'],'Fresh comparison reads the current account');
 same(1,$wire->calls,'Comparison requires a fresh read through the runner transport');
 // A typed reason is required before another read or a local change.
-$reset=app(Paymenter\Extensions\Servers\Domains\Services\NameSiloAccountReset::class);
-$ticket=$review['review'];$reads=$wire->calls;
-$page->setActionData(['reason'=>''])->callMountedAction()->assertHasActionErrors(['reason'=>'required']);
+$ticket=$review;$reads=$wire->calls;
+try{$reset->accept($server->id,$review,'');expect(false,'Missing reason must refuse');}catch(DomainException $e){same('Enter a one-line reason between 5 and 500 characters.',$e->getMessage(),'Missing reason refused');}
 same($reads,$wire->calls,'Missing reason sends no fresh submit read');
 // The fixture clock advances as staff types a reason, beyond the shared one-second read interval.
 $clock->instant=$clock->now()->modify('+2 seconds');
-$page->setActionData(['reason'=>'Default contact changed after staff review'])->callMountedAction()->assertHasNoActionErrors()->assertSet('mountedActions',[]);
+$reset->accept($server->id,$review,'Default contact changed after staff review');
 $pin=$server->settings()->where('key',Paymenter\Extensions\Servers\Domains\Services\NameSiloAccountGuard::PIN)->sole();
 same(['binding'=>$binding->fingerprint,'contact_id'=>'901','email'=>'new@example.com'],json_decode($pin->value,true,8,JSON_THROW_ON_ERROR),'Explicit staff acceptance replaces the encrypted fingerprint');
 expect($pin->encrypted&&!str_contains($pin->getRawOriginal('value'),'new@example.com'),'New fingerprint stays encrypted at rest');
@@ -61,11 +52,10 @@ try{$checkGuard();expect(false,'Numeric wire ID must remain held');}catch(Paymen
 $wire->id='901';$checkGuard();
 // Mismatch is displayed, then refused without a second provider read or a write.
 $wire->email='other@example.com';$advance();
-$mismatch=Livewire::actingAs($actor)->test(RetainedNameSiloAccountReview::class,['account'=>$server->id])->mountAction('accept_namesilo_account')->assertActionMounted('accept_namesilo_account');
-$modal=$mismatch->html().implode('',$mismatch->effects['partials']??[]);
-expect(str_contains($modal,'The NameSilo contact email is'),'Staff sees why acceptance is refused');
+$mismatch=$reset->preview($server->id);
+same('other@example.com',$reset->details($server->id,$mismatch)['live']['email'],'Review shows the mismatched current email');
 $reads=$wire->calls;$saved=$server->settings()->where('key',$guardKey)->sole()->getRawOriginal();
-$reject(fn()=>$accept($mismatch->get('mountedActions.0.data.review')),'Current email does not match Expected default contact email. Nothing was saved.');
+$reject(fn()=>$accept($mismatch),'Current email does not match Expected default contact email. Nothing was saved.');
 same($reads,$wire->calls,'Mismatch makes no submit read');same($saved,$server->settings()->where('key',$guardKey)->sole()->getRawOriginal(),'Mismatch retains encrypted pin');same(1,count($history()),'Mismatch adds no success audit');
 $wire->email='new@example.com';
 // Old tickets and contact changes cannot overwrite a later acceptance.
@@ -75,7 +65,6 @@ $reject(fn()=>$accept($reviewed),'The current contact changed. Open this review 
 same('901',json_decode($server->settings()->where('key',$guardKey)->sole()->value,true)['contact_id'],'Unreviewed contact is never saved');
 // Revocation is checked on direct calls and after the fresh read.
 $reviewed=$preview();$reads=$wire->calls;$actor->role->update(['permissions'=>['admin.domains.view']]);
-Livewire::actingAs($actor)->test(RetainedNameSiloAccountReview::class,['account'=>$server->id])->assertActionHidden('accept_namesilo_account');
 try{$accept($reviewed);expect(false,'Manage permission is required');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(403,$e->getStatusCode(),'Direct acceptance denies missing manage permission');}
 same($reads,$wire->calls,'Denied actor sends no read');$actor->role->update(['permissions'=>['admin.domains.view','admin.domains.manage']]);
 $reviewed=$preview();$wire->during=static function()use($actor):void {$actor->role->update(['permissions'=>['admin.domains.view']]);};
@@ -104,11 +93,7 @@ same('903',json_decode($server->settings()->where('key',$guardKey)->sole()->valu
 $expired=$preview();$clock->instant=$clock->now()->modify('+301 seconds');
 $reject(fn()=>$accept($expired),'Open the account review again.');
 $wire->failed=true;$advance();
-$failure=Livewire::actingAs($actor)->test(RetainedNameSiloAccountReview::class,['account'=>$server->id])->mountAction('accept_namesilo_account');
-same(null,$failure->get('mountedActions.0.data.review'),'Read failure produces no acceptance ticket');
-$modal=$failure->html().implode('',$failure->effects['partials']??[]);
-expect(str_contains($modal,'Could not read the current NameSilo default contact.'),'Read failure is explained');
-expect(!str_contains($modal,'old@example.com'),'No stale comparison is shown after a failed read');
+$reject(fn()=>$reset->preview($server->id),'Could not read the current NameSilo default contact. Try again.');
 same($heldBefore,$held->fresh()->getRawOriginal(),'Every refusal and acceptance keeps held operations unchanged');
 Illuminate\Support\Facades\Queue::assertNothingPushed();
 echo "Account reset, refusals, audit rollback and overlapping review checks passed.\n";$nativeSuccessful=true;

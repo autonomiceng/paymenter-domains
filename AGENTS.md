@@ -1,6 +1,6 @@
 # Domains extension work
 
-Read `docs/design/plan.md` for the amended architecture and slice budgets. The standalone NameSilo API client is in progress and not usable as an extension yet. Before changing provider behavior, read `docs/design/api-contract.md` and `docs/design/parity.md`; preserve unknown outcomes and acceptance gates. Reads alone are dispatchable; purchase mappings have no transport path. Runtime, billing and UI integration require a scoped implementation task.
+Read `docs/design/plan.md` for the amended architecture and slice budgets. Before changing provider behavior, read `docs/design/api-contract.md` and `docs/design/parity.md`; preserve unknown outcomes and acceptance gates. Runtime, billing and UI integration require a scoped implementation task.
 
 Before implementation, read `docs/paymenter-extension-conventions.md` and `docs/testing.md`. In the maintainer's local checkout, also read `.local/IMPLEMENTATION-HANDOFF.md` when present. Read `.local/REGISTRAR-ALTERNATIVES.md` when reconsidering the provider. These ignored files are local research, are absent from public clones, and must stay out of commits and packages. If absent, use public docs and the active task to establish scope.
 
