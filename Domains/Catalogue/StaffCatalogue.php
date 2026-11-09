@@ -352,14 +352,16 @@ final class StaffCatalogue
         }catch(\DomainException|\InvalidArgumentException){return 'custom_rule';}
     }
     /** Omitted-price identities only: validate saved settings without loading every off-page offer and price. */
-    public function omissions(Collection $tlds): array
+    public function omissions(Collection $tlds): array {return array_keys($this->omissionCauses($tlds));}
+    /** @return array<string,string> why each omitted TLD is left out, by server:tld */
+    public function omissionCauses(Collection $tlds): array
     {
         abort_unless(Staff::requireView()->costs,403);$out=[];$state=self::pricingState();
         foreach($tlds as $t){
             // Bad account defaults are not a pricing omission: the row's status names them.
             try{OfferState::decode($t->catalogue_intent);OfferState::intent($t,[]);$unreadable=false;}
             catch(\Throwable){$unreadable=true;}
-            if(self::pricingCause($t,$state,$unreadable)!==null){$out[]=$t->server_id.':'.$t->tld;}
+            if(($cause=self::pricingCause($t,$state,$unreadable))!==null){$out[$t->server_id.':'.$t->tld]=$cause;}
         }
         return $out;
     }

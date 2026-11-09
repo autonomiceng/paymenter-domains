@@ -112,7 +112,13 @@ class WhatYouSell extends Page implements HasTable
     {return \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed() ?? throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE);}
     private function reads(): SellTable
     {
-        return $this->reads??=new SellTable($this->bindings(),$this->years(),$this->canSeeCosts(),fn()=>$this->getTableRecords()->items(),$this->account===self::ALL,$this->catalogue(),fn()=>$this->getFilteredTableQuery()->get(['server_id','tld'])->all());
+        return $this->reads??=new SellTable($this->bindings(),$this->years(),$this->canSeeCosts(),fn()=>$this->getTableRecords()->items(),$this->account===self::ALL,$this->catalogue(),fn()=>$this->warningQuery());
+    }
+    /** Search and the other filters narrow pricing warnings with the table. For sale does not: it drops exactly the rows that can't be priced. */
+    private function warningQuery(): \Illuminate\Database\Eloquent\Builder
+    {
+        $filters=is_array($this->tableFilters)?$this->tableFilters:[];$this->tableFilters=[...$filters,'for_sale'=>['isActive'=>false]];
+        try{return $this->getFilteredTableQuery();}finally{$this->tableFilters=$filters;}
     }
     private function reload(): void
     {
@@ -254,11 +260,17 @@ class WhatYouSell extends Page implements HasTable
                 ->description(new HtmlString(view('domains::admin.sell-note',['warning'=>$warning])->render()))
                 ->footer($one===null?null:$button('Open '.$one['tld'],TldResource::getUrl('view',['record'=>$one['id']])));
         }
-        if(($hidden=$this->reads()->hiddenWarnings())!==[]){
-            $count=count($hidden);
-            $components[]=Callout::make($count===1?'Prices left out for '.$hidden[0]['tld']:'Prices left out for '.$count.' more TLDs')->warning()->columnSpanFull()
-                ->description(($count===1?'It is':'They are').' on another page of this list. Open '.($count===1?'it':'each one').' to fix the pricing.')
-                ->footer(new HtmlString(implode(' ',array_map(fn(array $row)=>$button('Open '.$row['tld'],TldResource::getUrl('view',['record'=>$row['id']]))->toHtml(),$hidden))));
+        if(($hidden=$this->reads()->hiddenWarnings())['count']>0){
+            $count=$hidden['count'];$one=$count===1;$shared=SellTable::sharedCause($hidden['causes']);
+            $said=$shared!==null&&array_diff($hidden['causes'],array_column($saved['warnings'],'cause'))===[];
+            // With For sale on, a left-out TLD may be off this list as well as on another page.
+            $where=($one?'It is':'They are').($this->switchedOn('for_sale')?' not shown on this page.':' on another page of this list.');
+            $fix=$shared===null?'Open '.($one?'it':'each one').' to fix the pricing.':($said?'':$shared.' Fix it in Default pricing at the top of this page.');
+            $more=$count-count($hidden['rows']);
+            $components[]=Callout::make($one?'Prices left out for '.$hidden['rows'][0]['tld']:'Prices left out for '.number_format($count).($saved['warnings']===[]?'':' more').' TLDs')->warning()->columnSpanFull()
+                ->description(trim($where.' '.$fix))
+                ->footer($shared!==null?null:new HtmlString(implode(' ',array_map(fn(array $row)=>$button('Open '.$row['tld'],TldResource::getUrl('view',['record'=>$row['id']]))->toHtml(),$hidden['rows']))
+                    .($more>0?' <span class="domains-small">and '.number_format($more).' more</span>':'')));
         }
         return $schema->components([...$components,EmbeddedTable::make()]);
     }
@@ -268,14 +280,19 @@ class WhatYouSell extends Page implements HasTable
             return $this->switchedOn('for_sale')&&$this->reads()->rows(null)->exists()?'No TLDs are for sale':'No prices yet';
         }
         $only=$this->show()!==null&&!$this->hasTableSearch()&&!$this->switchedOn('country')&&!$this->switchedOn('no_cost');
-        return $only&&$this->reads()->leftOutExplains($this->show())?'No prices to show. See the note above.':'No TLDs match';
+        return $only&&$this->reads()->leftOutExplains($this->show())?self::LEFT_OUT:'No TLDs match';
     }
+    private const LEFT_OUT='No prices to show. Some TLDs are left out.';
     private function focused(): bool {return $this->tld!==null&&$this->getTableSearch()===$this->tld;}
     private function switchedOn(string $filter): bool {return (bool)($this->getTableFilterState($filter)['isActive']??false);}
     private function otherNarrowing(): bool {return $this->hasTableSearch()||$this->show()!==null||$this->switchedOn('country')||$this->switchedOn('no_cost');}
     private function emptyDescription(): ?string
     {
         if($this->focused()){return 'This TLD has no prices here yet. To load them, use Sync prices.';}
+        if($this->emptyHeading()===self::LEFT_OUT){
+            $shared=SellTable::sharedCause($this->reads()->leftOutCauses((string)$this->show()));
+            return $shared===null?"Their pricing can't be read. Clear filters, then open each one and use Edit prices.":$shared.' Fix it in Default pricing at the top of this page.';
+        }
         if($this->otherNarrowing()){return null;}
         if($this->emptyHeading()==='No TLDs are for sale'){return 'Clear For sale to see every TLD.';}
         return $this->readerNeedsAttention()?'Check the registrar account to read prices.':'The first read runs by itself. To get prices now, use Sync prices.';

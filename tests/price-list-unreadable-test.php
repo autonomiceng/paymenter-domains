@@ -82,7 +82,13 @@ foreach($cases as $case){
     expect((int)$xpath->evaluate('count(//*[@data-price-omission]/ancestor::*[contains(concat(" ",normalize-space(@class)," ")," fi-sc-callout ") and contains(@class,"fi-color-warning")])')===1,'Unreadable prices appear in an amber callout');
     expect((int)$xpath->evaluate('count(//*[@data-price-omission]/following::*[contains(concat(" ",normalize-space(@class)," ")," fi-ta-header-toolbar ")])')>0,'Omission alert is above the toolbar');
     expect(!str_contains($html,'Prices in USD for')&&!str_contains($html,'Saved prices in USD for'),'No repeated currency/years note between toolbar and rows');
-    $page->set('account',$t->server_id)->filterTable('show','default')->assertSee('No prices to show. See the note above.');
+    $page->set('account',$t->server_id)->filterTable('show','default')->assertSee('No prices to show. Some TLDs are left out.')
+        ->assertSee(($cause==='card_fee'?"The card fee can't be read.":"Default pricing can't be read.").' Fix it in Default pricing at the top of this page.');
+    // For sale is on when staff open the page. It drops the rows that can't be priced, but never their warning.
+    $default=Livewire::actingAs($u)->test(WhatYouSell::class,['account'=>WhatYouSell::ALL])->assertSuccessful();
+    expect($default->instance()->getTableFilterState('for_sale')['isActive']??false,'For sale starts on');
+    same(1,substr_count(html_entity_decode($default->html(),ENT_QUOTES),'Fix it in Default pricing at the top of this page.'),'For sale on still gives the shared fix, once: '.$cause);
+    if($cause==='default_rule'){$default->assertSee('Prices left out for 3 TLDs')->assertSee("They are not shown on this page. Default pricing can't be read.");}
     same($settingsBefore,$rawSettings(),'Service, page and CSV preserve raw settings bytes, including corrupt ciphertext');
     same($before,DB::table('domains_prices')->orderBy('id')->get()->toJson(),'Each corrupt case preserves saved prices and revisions');
     $watch=false;App\Models\Setting::whereNull('settingable_type')->where('key',$key)->delete();if($key===PricingRules::KEY){saveDefaultRule(PricingRule::DEFAULT);}
@@ -115,8 +121,16 @@ $watch=false;
 same([],$writes,'Service, page and export change no saved data');
 same($before,DB::table('domains_prices')->orderBy('id')->get()->toJson(),'All saved prices and revision identities remain unchanged');
 same(0,$reads->calls,'No provider calls');
+// Many TLDs with their own unreadable pricing: For sale on, the warning names ten with a way to each and counts the rest.
+App\Models\Setting::whereNull('settingable_type')->where('key',CardFee::KEY)->delete();
+for($i=0;$i<14;$i++){$copy=$t->fresh()->replicate();$copy->tld='broken'.chr(97+$i);$copy->catalogue_intent='{"sell":';$copy->save();}
+$many=Livewire::actingAs($u)->test(WhatYouSell::class,['account'=>WhatYouSell::ALL])->assertSuccessful()->assertSee('Prices left out for 15 TLDs')->assertSee('and 5 more');
+$dom=new DOMDocument;@$dom->loadHTML($many->html());$xpath=new DOMXPath($dom);
+$callout='//*[contains(concat(" ",normalize-space(@class)," ")," fi-sc-callout ")][contains(normalize-space(.),"not shown on this page")]';
+same(1,$xpath->query($callout)->length,'One warning covers the TLDs this page does not show');
+same(10,$xpath->query($callout.'//a')->length,'The warning links at most ten TLDs');
 // Permission checks remain in force even when settings cannot be read.
 $u->role->update(['permissions'=>[Staff::VIEW]]);
 foreach([fn()=>$service->read(),fn()=>$service->csv()] as $call){try{$call();expect(false,'Costs permission required');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(403,$e->getStatusCode(),'Unreadable settings do not bypass permissions');}}
-Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful()->assertDontSee('Some TLDs are left out');
+Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful()->assertDontSee('Some TLDs are left out')->assertDontSee('Prices left out');
 echo "Unreadable settings are reported with explicit page/export omissions and no writes.\n";$nativeSuccessful=true;
