@@ -20,8 +20,23 @@
     const reload = () => { stopped = true; window.location.reload(); };
     // A result read before this page loaded is older than the page itself.
     const changed = value => value.read > loaded && typeof value.state === 'string' && (value.state !== state || value.pending === false);
+    // A Web Lock makes checking and saving the shared next read one step across tabs. Without one, each tab still keeps its own pace.
+    const busy = {};
+    const exclusive = async work => {
+        const locks = window.navigator?.locks;
+        if (!locks || typeof locks.request !== 'function') return work();
+        let started = false;
+        try { return await locks.request(key, {ifAvailable: true}, lock => { if (!lock) return busy; started = true; return work(); }); }
+        catch (error) { if (started) throw error; return work(); }
+    };
     const poll = async () => {
         if (stopped || reading || !script.isConnected || document.hidden) return;
+        reading = true;
+        let result = null;
+        try { result = await exclusive(turn); } catch (_) { result = busy; } finally { reading = false; }
+        if (result === busy && !stopped) { const shared = saved(), now = Date.now(); later(shared && shared.next > now ? shared.next - now : pace); }
+    };
+    const turn = async () => {
         const shared = saved(), now = Date.now();
         if (shared && changed(shared)) { reload(); return; }
         if (shared && shared.next > now) { later(shared.next - now); return; }
@@ -29,7 +44,6 @@
         const grown = pace = Math.min(Math.round(delay * 1.5), longest);
         save({...(shared || {}), next: now + delay, delay});
         let wait = grown;
-        reading = true;
         try {
             const response = await fetch(url, {credentials: 'same-origin', headers: {'Accept': 'application/json'}, cache: 'no-store'});
             if ([401, 403, 404, 419].includes(response.status) || response.redirected) { stopped = true; return; }
@@ -47,7 +61,6 @@
                 return;
             }
         } catch (_) { /* Retry local status after a temporary network failure. */ }
-        finally { reading = false; }
         save({...(saved() || {}), next: Date.now() + wait, delay: grown});
         later(wait);
     };

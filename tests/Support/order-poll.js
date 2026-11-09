@@ -5,13 +5,29 @@ const vm = require('node:vm');
 const script = require('node:fs').readFileSync(0, 'utf8');
 const state = script.match(/const state = "([a-f0-9]{64})";/)[1];
 const url = JSON.parse(script.match(/const url = ("[^"]+");/)[1]);
-const browser = () => {
-    const world = {now: 1_000_000, store: new Map(), reads: [], answers: [], tabs: []};
-    world.storage = {getItem: key => world.store.has(key) ? world.store.get(key) : null, setItem: (key, value) => { world.store.set(key, String(value)); }};
+const browser = ({locks = true} = {}) => {
+    const world = {now: 1_000_000, store: new Map(), reads: [], answers: [], tabs: [], interleave: null};
+    // A storage read can be overtaken by another tab before this tab writes, as in separate browser processes.
+    world.storage = {getItem: key => {
+        const value = world.store.has(key) ? world.store.get(key) : null;
+        const other = world.interleave; world.interleave = null; if (other) other();
+        return value;
+    }, setItem: (key, value) => { world.store.set(key, String(value)); }};
+    // One Web Lock manager shared by every tab, as in one browser profile.
+    world.held = new Set();
+    world.locks = locks ? {request(name, options, callback) {
+        assert.deepEqual([Object.keys(options), options.ifAvailable], [['ifAvailable'], true], 'A tab never waits in line for the lock');
+        if (world.held.has(name)) return Promise.resolve(callback(null));
+        world.held.add(name);
+        let result;
+        try { result = callback({name, mode: 'exclusive'}); } catch (error) { world.held.delete(name); return Promise.reject(error); }
+        return Promise.resolve(result).finally(() => world.held.delete(name));
+    }} : undefined;
     world.open = () => {
         const tab = {timers: [], reloaded: 0, hidden: false, listeners: {}, script: {isConnected: true}};
         const window = {
             localStorage: world.storage,
+            navigator: world.locks ? {locks: world.locks} : {},
             setTimeout(callback, delay) { const timer = {callback, at: world.now + delay}; tab.timers.push(timer); return timer; },
             clearTimeout(timer) { tab.timers = tab.timers.filter(entry => entry !== timer); },
             location: {reload() { tab.reloaded++; }},
@@ -130,6 +146,33 @@ const minute = 60000;
     const fresh = world.open();
     await world.until(world.now + minute);
     assert.equal(fresh.reloaded, 0, 'A page loaded after the shared answer does not reload in a loop');
+
+    // Two tabs whose timers fire together: one tab's whole reservation overtakes the other tab's storage read.
+    const together = async options => {
+        const world = browser(options);
+        const first = world.open(), second = world.open();
+        world.interleave = () => { const timer = second.timers.shift(); timer.callback(); };
+        await world.until(world.now + 10000);
+        await new Promise(done => setImmediate(done));
+        return {world, first, second};
+    };
+    ({world} = await together());
+    assert.equal(world.reads.length, 1, 'Two tabs firing together share one read: ' + world.reads.length);
+    assert.equal(world.held.size, 0, 'The lock is released after the read');
+    await world.until(world.now + 10 * minute);
+    assert.ok(world.reads.length <= 16, 'Simultaneous tabs keep the shared pace: ' + world.reads.length);
+    assert.ok(world.tabs.every(tab => !world.idle(tab)), 'Both tabs keep their timers');
+    // Without Web Locks, or when the lock request fails, each tab still reads and backs off on its own.
+    ({world} = await together({locks: false}));
+    assert.ok(world.reads.length >= 1 && world.reads.length <= 2, 'Without locks, tabs firing together read at most once each');
+    await world.until(world.now + 10 * minute);
+    assert.ok(world.reads.length <= 30, 'Without locks, each tab still backs off: ' + world.reads.length);
+    world = browser();
+    world.locks.request = () => { throw new Error('locks blocked'); };
+    const unlocked = world.open();
+    await world.until(world.now + 10 * minute);
+    assert.ok(world.reads.length >= 1 && world.reads.length <= 15, 'A failing lock request still reads and backs off: ' + world.reads.length);
+    assert.ok(!world.idle(unlocked), 'A failing lock request keeps reading');
 
     // Without browser storage each tab still backs off on its own.
     world = browser();
