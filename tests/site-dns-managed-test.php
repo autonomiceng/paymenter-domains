@@ -21,6 +21,12 @@ expect($signals->enqueue($id,$uid,$now),'Existing holding reconciles using the s
 same($default->id,ManagedDnsSetup::profile($d,ManagedPublicConfig::find($id))->id,'Managed target resolves site reference');
 same(null,ManagedPublicConfig::find($id)->profile_id,'Reconciliation does not assign inherited profiles');
 same(1,count((new ManagedPublicReconciliation($signals))->due($now)),'Unhosted holding schedules delegation only');
+// A new template revision is new work: the old revision's retry delay is cleared, unrelated reads keep theirs.
+$retry=fn()=>array_map('intval',array_values((array)DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',$id)->where('kind','delegation')->select('attempts','backoff_until','due_at')->first()));
+DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',$id)->where('kind','delegation')->update(['attempts'=>3,'backoff_until'=>$now+3600,'due_at'=>$now+3600]);
+expect($signals->enqueue($id,$uid,$now),'Unchanged template reconciles');same([3,$now+3600,$now+3600],$retry(),'An unchanged template keeps its retry delay');
+DB::transaction(fn()=>$default->update(['revision'=>$default->revision+1,'nameservers'=>['ns1.edited.test','ns2.edited.test'],'edited_by'=>$staff->id,'reason'=>'Synthetic edited policy']));
+expect($signals->enqueue($id,$uid,$now),'Edited template reconciles');same([0,0,$now],$retry(),'A new template revision clears the old retry delay');
 $before=$d->fresh()->getRawOriginal();$providerCalls=count($wire->calls);
 $replacement=DB::transaction(fn()=>WatchProfile::create(['name'=>'Other default','nameservers'=>['ns1.other.test','ns2.other.test'],
     'website_endpoints'=>[],'email_endpoints'=>[],'enabled'=>true,'edited_by'=>$staff->id,'reason'=>'Synthetic changed policy']));
