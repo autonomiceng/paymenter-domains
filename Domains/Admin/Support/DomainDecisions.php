@@ -268,7 +268,8 @@ final class DomainDecisions
     {
         $said=strtolower((string)$said);
         if (isset($facts['Registrar']['sub'])&&array_filter(self::ORDERS_OFF_WORDS,fn(string $w)=>str_contains($said,$w))!==[]) {
-            $facts['Registrar']['sub']=str_replace(', '.self::ORDERS_PAUSED,'',$facts['Registrar']['sub']);
+            // An alert's tone starts after the plain words (ViewDomain::words), so both drop the same text.
+            foreach (['sub','plain'] as $key) { if (isset($facts['Registrar'][$key])) { $facts['Registrar'][$key]=str_replace(', '.self::ORDERS_PAUSED,'',$facts['Registrar'][$key]); } }
         }
         return $facts;
     }
