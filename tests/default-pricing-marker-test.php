@@ -38,7 +38,17 @@ foreach(['null','true','1','"invalid"','{broken','{}','{"offer":1}','{"retailRul
 // price before the marker is replaced; a repeated save then has nothing to do and issued invoices stay as they were.
 $nativePrice=static fn()=>$native->product($target,'register')->plans()->where('billing_period',1)->sole()->prices()->sole();
 $invoices=static fn()=>[DB::table('invoices')->orderBy('id')->get()->toJson(),DB::table('invoice_items')->orderBy('id')->get()->toJson()];
+// An issued, unpaid invoice for this TLD's native product at the old price must keep its amounts.
+$customer=App\Models\User::create(['first_name'=>'Test','last_name'=>'Owner','email'=>'marker-owner@example.com','password'=>'test-password']);
+$product=$native->product($target,'register');$plan=$product->plans()->where('billing_period',1)->sole();
+$order=App\Models\Order::withoutEvents(fn()=>App\Models\Order::create(['user_id'=>$customer->id,'currency_code'=>'USD']));
+$service=App\Models\Service::withoutEvents(fn()=>App\Models\Service::create(['order_id'=>$order->id,'product_id'=>$product->id,'plan_id'=>$plan->id,'user_id'=>$customer->id,'currency_code'=>'USD','quantity'=>1,'price'=>'12.00','status'=>'pending']));
+$issued=App\Models\Invoice::withoutEvents(fn()=>App\Models\Invoice::create(['user_id'=>$customer->id,'currency_code'=>'USD','status'=>'pending','due_at'=>'2026-11-20']));
+$issued->items()->create(['description'=>'Domain registration','price'=>'12.00','quantity'=>1,'reference_type'=>$service->getMorphClass(),'reference_id'=>$service->id]);
 $invoicesBefore=$invoices();
+same([1,1],[DB::table('invoices')->count(),DB::table('invoice_items')->count()],'The invoice check starts from an issued invoice and item');
+$issuedRow=static fn()=>[PricingRule::minor((string)DB::table('invoice_items')->where('invoice_id',$issued->id)->value('price')),DB::table('invoices')->where('id',$issued->id)->value('status')];
+same([1200,'pending'],$issuedRow(),'The issued item keeps the old price');
 $intent=json_decode($target->fresh()->catalogue_intent,true);
 DB::table('domains_tlds')->where('id',$target->id)->update(['catalogue_intent'=>json_encode([...$intent,'salesPaused'=>true]),
     'catalogue_published_revision'=>json_encode(['retailRule'=>\Paymenter\Extensions\Servers\Domains\Catalogue\Retail::VERSION])]);
@@ -52,5 +62,6 @@ same($repaired,$state($target),'Repeated repair changes nothing');
 same(840,PricingRule::minor((string)$nativePrice()->getRawOriginal('price')),'Repeated repair keeps the native price');
 same(true,json_decode($target->fresh()->catalogue_intent,true)['salesPaused']??null,'Repair keeps sales paused');
 same($invoicesBefore,$invoices(),'Repair leaves invoices unchanged');
+same([1200,'pending'],$issuedRow(),'Repair keeps the issued invoice amount and status');
 same(0,$reads->calls,'Marker repair uses only local evidence');
 $nativeSuccessful=true;echo "Default pricing repairs invalid retained publication markers.\n";
