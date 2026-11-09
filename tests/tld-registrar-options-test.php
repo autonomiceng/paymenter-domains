@@ -29,5 +29,13 @@ $r=new $reviewClass($actor->id,$enom->server_id,$enom->id,'seller',$reviewClass:
 try{$commands->run($r,['seller'=>$silo->server_id,'register'=>true,'transfer'=>true]);expect(false,'Missing offer selection must refuse');}
 catch(DomainException $error){same('No NameSilo price for .com yet. Sync prices first.',
     Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions::refusal($error,'seller',['seller'=>$silo->server_id],$enom->server_id,$enom->id),'Refusal names missing prices and its next step');}
+// An unrecognized registrar refusal on a TLD that still exists gives the safe next step, never its private text.
+foreach([new DomainException('Unrecognized private seller detail'),new RuntimeException('Unrecognized private seller detail')] as $error){
+    foreach([$silo->server_id,$enom->server_id,0] as $seller){
+        $text=Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions::refusal($error,'seller',['seller'=>$seller],$enom->server_id,$enom->id);
+        same('The registrar change could not be saved. Reopen Change registrar and try again.',$text,'Unknown seller refusal on an existing TLD: '.get_class($error).' '.$seller);
+        expect(!str_contains($text,'private'),'Unknown seller refusal hides its private text');
+    }
+}
 same(0,$reads->calls,'Opening Change registrar makes no provider calls');
 echo "TLD registrar options passed.\n";$nativeSuccessful=true;

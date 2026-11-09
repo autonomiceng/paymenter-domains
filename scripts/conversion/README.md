@@ -8,6 +8,13 @@ only authenticated ownership reads. Keep both registrar runtimes parked outside 
 extension directory during conversion. Unsupported source bindings, native plans, queue
 shapes or host scheduling require a separately reviewed prerequisite; do not weaken guards.
 
+Convert with the pinned bridge. Offer retirement removed columns this converter writes and
+needs the checked bridge activation, so this package no longer stages or converts a new target.
+Follow this whole procedure with the converter from Domains bridge 0.1.0 at `891124421645`,
+install that bridge, run its checked catalogue conversion, then install this package. Here
+`--stage-schema` only verifies a finished installation. On a new target, staging and dry runs
+refuse before any DDL and name these steps.
+
 Supply canonical `--app` and `--source` directories, `--source-revision` from `source.json`,
 `--evidence` and `--units` JSON paths. Default is `--dry-run`. Use `--stage-schema` separately
 if the neutral migrations have not run. Schema DDL is not transactional: verify all schemas

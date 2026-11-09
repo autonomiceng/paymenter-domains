@@ -4,6 +4,7 @@
 import argparse
 from contextlib import contextmanager
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+import fnmatch
 import json
 import math
 import os
@@ -24,6 +25,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SUPERVISOR = Path(__file__).with_name('process_supervisor.py')
 CATEGORIES = ['lint', 'provider', 'contracts', 'native', 'ui', 'runner', 'package', 'mariadb']
 ORDER = ['lint', 'provider', 'contracts', 'runner', 'package', 'ui', 'native', 'mariadb']
+# Tests named for a category must be listed there, so they never fall back to native.
+NAMED = [('mariadb', 'tests/test_*_mariadb.py'), ('runner', 'tests/test_runner*.py'), ('package', 'tests/test_package*.py')]
 WORKER_MEMORY_MIB = 1024
 # About 85 s alone; parallel load pushed it past the 120 s native limit.
 SLOW_NATIVE = {'management-privacy-retirement-test.php', 'native-paid-baseline-test.php', 'transfer-completion-test.php'}
@@ -215,21 +218,44 @@ def order_commands(commands, previous=None):
     return [command for _, command in sorted(enumerate(commands), key=priority)]
 
 
+def git_tree():
+    """Return (tree, reason): the HEAD tree only for a clean checkout rooted here."""
+    def git(*args):
+        output = subprocess.run(['git', *args], cwd=ROOT, capture_output=True, check=True, timeout=30).stdout
+        return os.fsdecode(output).strip()
+    try:
+        if Path(git('rev-parse', '--show-toplevel')).resolve() != ROOT.resolve():
+            return None, 'not a Git checkout'
+        if git('status', '--porcelain=v1', '--untracked-files=all', '--ignore-submodules=none'):
+            return None, 'uncommitted changes'
+        return git('rev-parse', '--verify', 'HEAD^{tree}'), None
+    except (OSError, subprocess.SubprocessError):
+        return None, 'not a Git checkout'
+
+
 def hashes():
     return native.hashes(ROOT/'Domains')
 
 
 def manifest():
-    suites = json.loads((ROOT/'tests/suites.json').read_text())
-    if set(suites) != set(CATEGORIES)-{'lint'}:
+    """Return every category's tests; a discovered test not listed in suites.json is native."""
+    listed = json.loads((ROOT/'tests/suites.json').read_text())
+    if set(listed) != set(CATEGORIES)-{'lint', 'native'}:
         raise ValueError('Suite categories are incomplete.')
-    paths = [p for names in suites.values() for p in names]
+    paths = [p for names in listed.values() for p in names]
     discovered = {str(p.relative_to(ROOT)) for pattern in ['*-test.php', 'test_*.py', '*-test.cjs']
                   for p in (ROOT/'tests').rglob(pattern)}
-    if any(p.endswith('.cjs') for p in paths):
+    if any(p.endswith('.cjs') for p in discovered):
         raise ValueError('JavaScript runner is not implemented.')
-    if len(paths) != len(set(paths)) or set(paths) != discovered or not paths:
-        raise ValueError('Missing, duplicate or unregistered suite.')
+    if len(paths) != len(set(paths)) or not set(paths) <= discovered:
+        raise ValueError('Missing or duplicate suite.')
+    native = sorted(discovered - set(paths))
+    for kind, pattern in NAMED:
+        if misplaced := [p for p in native if fnmatch.fnmatch(p, pattern)]:
+            raise ValueError(f'Register {", ".join(misplaced)} in the {kind} suite.')
+    suites = {kind: native if kind == 'native' else listed[kind] for kind in CATEGORIES if kind != 'lint'}
+    if not any(suites.values()):
+        raise ValueError('No registered suite.')
     return suites
 
 
@@ -309,8 +335,10 @@ def cancel_on_error(processes):
 
 
 def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, workers=None, worker_check=None, timings=None, only=None,
-        fail_fast=False, requested_jobs=None, memory_mib=None, jobs_explicit=False, lint_base=None):
+        fail_fast=False, requested_jobs=None, memory_mib=None, jobs_explicit=False, lint_base=None, checkout=None):
     started_run = time.monotonic()
+    # main() captures the checkout before setup; direct callers record no tree.
+    checkout = (None, 'not recorded') if checkout is None else checkout
     timings = {} if timings is None else timings
     jobs = 1 if any(kind == 'mariadb' for kind, _ in commands) else jobs
     completed, attempted, submitted = {}, {}, {}
@@ -485,16 +513,27 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         dependency_unchanged, dependency_error = False, final_guard_error
     def finish():
         complete = runner_error is None and len(results) == len(commands) and all(r['exit'] == 0 and r['runtime_unchanged'] for r in results) and dependency_unchanged
+        # A process stopped by fail-fast or interruption did not fail on its own. It
+        # still fails when its completed integrity check found a runtime change.
+        cancelled = sorted(index for index, result in completed.items() if result['cancelled'])
         failed_indexes = sorted(index for index, result in completed.items()
-                                if (result['exit'] != 0 and not result['skipped']) or not result['runtime_unchanged'])
+                                if (not result['cancelled'] and ((result['exit'] != 0 and not result['skipped'])
+                                                                 or not result['runtime_unchanged']))
+                                or (result['cancelled'] and result.get('guard_complete') and not result['runtime_unchanged']))
+        # The tree is evidence only when the same clean checkout held before and after.
+        tree, tree_error = checkout
+        if tree is not None:
+            after, after_error = git_tree()
+            tree, tree_error = (tree, None) if after == tree else (None, after_error or 'checkout changed during the run')
         first_failure = failures[0] if failures else next(iter(failed_indexes), None)
         timings['run'] = time.monotonic() - started_run
         planned = {argv[-1] for kind, argv in commands if kind != 'lint'}
         receipt = {'runner_error': runner_error, 'final_guard_complete': final_guard_complete,
                    'final_guard_error': final_guard_error, 'timings': timings, 'only_tests': sorted(set(only or [])),
                    'lint_base': lint_base,
+                   'git_tree': tree, 'git_tree_error': tree_error,
                    'fail_fast': fail_fast, 'first_failure': first_failure, 'failures': failed_indexes,
-                   'commands_planned': len(commands),
+                   'cancelled': cancelled, 'commands_planned': len(commands),
                    'plan': [{'index': index, 'kind': kind, 'argv': argv} for index, (kind, argv) in enumerate(commands)],
                    'not_run': [{'index': index, 'kind': kind, 'argv': argv} for index, (kind, argv) in enumerate(commands) if index not in completed],
                    'requested_jobs': requested_jobs or jobs, 'memory_mib': memory_mib,
@@ -518,8 +557,8 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                    'scope': 'Synthetic offline tests and native ZIP install/retention; no live provider, delivered mail, shared-database or production acceptance.'}
         (output/'receipt.json').write_text(json.dumps(receipt, indent=2)+'\n')
         print(json.dumps({'complete': complete, 'commands_run': len(results), 'commands_planned': len(commands),
-                          'first_failure': first_failure, 'failures': failed_indexes,
-                          'cancelled_commands': sum(row['cancelled'] for row in results),
+                          'first_failure': first_failure, 'failures': failed_indexes, 'cancelled': cancelled,
+                          'not_run': len(commands)-len(results), 'git_tree': tree,
                           'only_tests': sorted(set(only or [])), 'receipt': str(output/'receipt.json')}))
         if (runner_error is None and len(results) == len(commands) and any(r['skipped'] for r in results) and dependency_unchanged
                 and all(r['exit'] in [0, 77] and r['runtime_unchanged'] for r in results)):
@@ -610,6 +649,7 @@ def main():
         except (ValueError, argparse.ArgumentTypeError) as error:
             parser.error(str(error))
     os.umask(0o077)
+    checkout = git_tree()
     output = Path(tempfile.mkdtemp(prefix='domains-tests-'))
     selected = args.suite or []
     runtime = fixture = None
@@ -683,10 +723,11 @@ def main():
             worker_check = lambda: test_workers.verify(workers, fixture_snapshot, runtime_snapshot)
         return run(commands, env, output, selected, suites, dependency, jobs=jobs, workers=workers, worker_check=worker_check,
                    timings=timings, only=args.only, fail_fast=args.fail_fast, requested_jobs=args.jobs, memory_mib=args.memory_mib,
-                   jobs_explicit=jobs_explicit, lint_base=args.lint_base)
+                   jobs_explicit=jobs_explicit, lint_base=args.lint_base, checkout=checkout)
     except BaseException as error:
         if not (output/'receipt.json').exists():
             (output/'receipt.json').write_text(json.dumps({'complete': False, 'phase': 'setup', 'error_type': type(error).__name__, 'selected_suites': selected,
+                                                          'git_tree': checkout[0], 'git_tree_error': checkout[1],
                                                           'only_tests': args.only or [], 'lint_base': args.lint_base, 'timings': timings})+'\n')
             print('Setup failed; receipt: '+str(output/'receipt.json'), file=sys.stderr)
         raise

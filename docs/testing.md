@@ -46,9 +46,11 @@ Python 3, dpkg-deb and compatible system libraries are required; system PHP/Comp
 
 See [scheduling and fail-fast receipts](test-scheduling.md) for concurrency, memory reservations, ordering and measurements.
 
-`tests/suites.json` registers provider, contracts, native, UI, runner and package categories.
-All `*-test.php` and `test_*.py` paths must exist and be registered exactly once; `*-test.cjs`
-files are refused until a JavaScript runner exists. Lint covers every runtime/test PHP file.
+`tests/suites.json` lists the provider, contracts, UI, runner, package and MariaDB categories.
+Every other `*-test.php` and `test_*.py` file under `tests/` is native and runs in sorted order.
+Listed paths must exist and appear once. Files named `test_*_mariadb.py`, `test_runner*.py` or
+`test_package*.py` must be listed in that category; `*-test.cjs` files are refused until a
+JavaScript runner exists. Lint covers every runtime/test PHP file.
 Unknown, missing or explicitly unimplemented suites fail. Default runs execute all implemented
 categories, omitting native without a dependency. Empty categories are unimplemented; no UI suite exists.
 `--suite` selects categories and receipts disclose omissions. Synthetic tests do not prove provider acceptance.
@@ -545,6 +547,7 @@ only explicit synthetic availability checks read the provider port.
 Holding provenance tests pair purchased holdings with pending conversions: billing, renewal proof, reminders, direct dispatch, observation and owner/staff presentation refuse pending authority. The additive migration retains existing rows without fabricating purchase provenance.
 
 Slice 41: `tests/conversion-test.php` and `tests/conversion-guards-test.php` exercise exact synthetic legacy schemas, offline accepted evidence, staged ID-map recovery, native financial/evidence retention, pending exclusions, configuration/queue/maintenance/backup refusals and replay safety. The one-time development converter is excluded from the runtime archive; see `scripts/conversion/README.md` for its guarded operator workflow. Real application databases and registrar transports are never used by these suites.
+`tests/conversion-bridge-first-test.php` checks that this package refuses a new target before any DDL, never repairs a partial foundation, and verifies a checked bridge only after the package upgrade.
 
 PSL updater tests use small synthetic ICANN/PRIVATE lists and injected clocks/transports.
 `psl-test.php` covers retained copies, validation refusals, conditional requests, shared daily admission,

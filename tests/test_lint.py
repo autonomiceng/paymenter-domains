@@ -30,7 +30,7 @@ class LintTests(unittest.TestCase):
             (root/path).write_text('<?php // initial\n')
         for path in ['tests/php83-compatibility-test.php', 'tests/Support/Php83Compatibility.php', 'scripts/php-test']:
             shutil.copy2(ROOT/path, root/path)
-        suites = {kind: [] for kind in runner.CATEGORIES if kind != 'lint'}
+        suites = {kind: [] for kind in runner.CATEGORIES if kind not in ['lint', 'native']}
         suites['runner'] = ['tests/php83-compatibility-test.php']
         (root/'tests/suites.json').write_text(json.dumps(suites))
         self.git(root, 'init', '-q')
