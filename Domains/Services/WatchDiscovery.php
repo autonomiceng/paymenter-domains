@@ -41,8 +41,10 @@ final class WatchDiscovery
             $usable=$snapshot && $now>=(int)$snapshot->validated_at && $now<=(int)$snapshot->validated_at+PublicSuffixList::MAX_AGE_DAYS*86400 && $this->psl->parserUsable($snapshot);
             // A stale list stops new discovery, while retained identities and lifecycle cleanup still work.
             $known=!$usable && $same && $old->state!=='held'?WatchName::where('user_id',$service->user_id)->where('canonical_name',$old->registrable_name)->lockForUpdate()->first():null;
-            if(!$usable && $same && $old->state!=='held' && !$known){$this->seen($old,$now);$this->sync($old->watch_id,$now);return;}
-            $result=$known?new Registrable($old->hostname,$old->registrable_name,$known->psl_revision):new Held('psl_unavailable',$snapshot?->revision??str_repeat('0',64));
+            // A retained managed link rechecks its managed target with the name it already validated.
+            $retainedLink=!$usable && $same && $old->state==='managed_link' && !$known;
+            if(!$usable && $same && $old->state!=='held' && !$known && !$retainedLink){$this->seen($old,$now);$this->sync($old->watch_id,$now);return;}
+            $result=$known||$retainedLink?new Registrable($old->hostname,$old->registrable_name,$known?->psl_revision??''):new Held('psl_unavailable',$snapshot?->revision??str_repeat('0',64));
             if($usable){
                 if($this->parsed?->revision!==$snapshot->revision){$this->parsed=new PslSnapshot(PublicSuffixList::body($snapshot),$this->validator);}
                 $value=count($values)===1 && is_string($values[0])?$values[0]:null;
@@ -66,6 +68,9 @@ final class WatchDiscovery
                 $this->source($old,$attrs,$now);
                 if($watch){$watch->refresh();$this->change($watch,['state'=>'linked','managed_domain_id'=>$domain->id,'registration'=>in_array($domain->status,WatchManagedTarget::MANAGED,true)?'platform':null],'registration_managed',$now);$this->stop($watch,'registration_managed',$now);}
                 DB::afterCommit(fn()=>app(WatchWork::class)->enrollManaged((int)$domain->id,$owner));
+            }elseif($retainedLink){
+                // Without a current suffix list, a link that lost its managed target waits rather than starting a new watch.
+                $this->held($old,$service,$map,$digest,'psl_unavailable',$now);return;
             }else{
                 $watch=WatchName::where('user_id',$owner)->where('canonical_name',$name)->lockForUpdate()->first();
                 if($service->status==='suspended' && (!$same || $old->state!=='watch')){$this->held($old,$service,$map,$digest,'service_suspended',$now);return;}
