@@ -99,6 +99,11 @@ config(['queue.default'=>'database','queue.connections.database.driver'=>'databa
 DB::table('domains_watch_schedule')->where('scope','dispatch')->delete();DB::table('domains_watch_schedule')->insert(['scope'=>'dispatch','due_at'=>$since,'progress_at'=>$since-86400,'data'=>json_encode(['started_at'=>$since-86400])]);
 // A stopped dispatcher needs server maintenance, even when staff can open Failed jobs.
 Livewire::actingAs($viewer)->test(ListWatches::class)->assertSee('Monitoring checks have not run since Jan 14, 2027, 12:00 AM PST.')->assertDontSee('Open Failed jobs');
+// The same notice in July reads PDT; January above keeps PST.
+$july=(int)strtotime('2027-07-15T07:00:00Z');same('Monitoring checks have not run since Jul 15, 2027, 12:00 AM PDT. Ask your site admin to restart them.',WatchMaintenance::notice(['outage'=>true,'reason'=>'dispatch_overdue','since'=>$july])['text'],'July overdue notice');
+$clock->now=$july+86400;DB::table('domains_watch_schedule')->where('scope','dispatch')->update(['due_at'=>$july+86400,'progress_at'=>$july,'data'=>json_encode(['started_at'=>$july])]);
+Livewire::actingAs($viewer)->test(ListWatches::class)->assertSee('Monitoring checks have not run since Jul 15, 2027, 12:00 AM PDT.')->assertDontSee('PST');
+$clock->now=$since;DB::table('domains_watch_schedule')->where('scope','dispatch')->update(['due_at'=>$since,'progress_at'=>$since-86400,'data'=>json_encode(['started_at'=>$since-86400])]);
 $manager->role->update(['permissions'=>[...$manager->role->permissions,'admin.failed_jobs.viewAny']]);
 $overdue=Livewire::actingAs($manager)->test(ListWatches::class)->assertSee('Monitoring checks have not run since Jan 14, 2027, 12:00 AM PST.')->assertDontSee('Open Failed jobs')->assertDontSee('Resolver settings')->assertSee('Ask your site admin to restart them.')->assertCanSeeTableRecords([$watch]);
 $text=html_entity_decode(strip_tags($overdue->html()));expect(!str_contains($text,'—'),'No em dash');foreach(['unavailable','Public domain checks'] as $word){expect(stripos($text,$word)===false,'No "'.$word.'" on the list');}
