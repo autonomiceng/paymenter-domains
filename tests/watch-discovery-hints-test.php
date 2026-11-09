@@ -18,9 +18,15 @@ same(null,$refused->domain->fresh()->reservation_name,'Real terminal release cle
 expect((bool)(clone$target)->value('hint'),'Query-builder terminal release hints the formerly linked hosting name after commit');
 same($before,$refused->fresh()->only(['attempt','funding','cost','state']),'Discovery hints never rewrite financial evidence');
 $work->tick($clock->at);same('watch',WatchSource::where('service_id',$service->id)->value('state'),'Released refusal remains an external monitoring source');
+// A same-owner held source on a separate product has no name, so a cleared reservation never hints it.
+$heldProduct=(int)DB::table('domains_watch_product_maps')->max('product_id')+1;
+$heldMap=DB::table('domains_watch_product_maps')->insertGetId(['product_id'=>$heldProduct,'property_key'=>'domain','edited_by'=>$service->user_id,'reason'=>'Synthetic held map']);
+DB::table('domains_watch_sources')->insert(['user_id'=>$owner->id,'service_id'=>899999,'map_id'=>$heldMap,'map_revision'=>1,'hostname'=>null,'registrable_name'=>null,'state'=>'held','safe_code'=>'source_invalid','source_digest'=>hash('sha256','held-separate'),'last_seen_at'=>$clock->at]);
+DB::table('domains_watch_discovery')->insert(['product_id'=>$heldProduct,'hint'=>false,'due_at'=>$clock->at+86400]);
 $queries=[];DB::listen(static function($q)use(&$queries):void{if(str_contains($q->sql,'domains_watch_sources')){$queries[]=$q->sql;}});
 $refused->domain->refresh()->update(['confirmed_revision'=>2]);
 expect(!array_filter($queries,fn($q)=>str_contains($q,'"registrable_name" is null')),'Cleared reservations never look up unrelated null-name held sources');
+same(false,(bool)DB::table('domains_watch_discovery')->where('product_id',$heldProduct)->value('hint'),'The separate held product keeps its cleared hint after the domain update');
 $rows=DB::table('domains_watch_discovery')->count();$work->hint(0);same($rows,DB::table('domains_watch_discovery')->count(),'Nonpositive hints remain pre-SQL no-ops');
 // Hosting products past the first page of one hundred are still hinted for the same owner and name.
 $base=(int)DB::table('domains_watch_product_maps')->max('product_id')+1;$at=$clock->at;
