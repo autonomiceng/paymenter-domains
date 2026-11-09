@@ -225,5 +225,12 @@ $prior['domains_watch_ns_restored']['subject'][]='{{ $domain }} uses {{ $company
 $prior['domains_watch_ns_restored']['in_app_title'][]='{{ $domain }} uses {{ $company }} nameservers again';
 $prior['domains_watch_ns_restored']['in_app_body'][]='As of {{ $date }}, {{ $domain }} uses {{ $company }} nameservers again.';
 $prior['domains_watch_ns_restored']['body'][]='<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%"><tr><td style="color:#1f2937;padding:0 0 16px;font-family:Arial,sans-serif;font-size:18px;line-height:26px;font-weight:bold;overflow-wrap:anywhere">{{ $domain }} uses {{ $company }} nameservers again</td></tr><tr><td style="color:#1f2937;padding:0 0 20px;font-family:Arial,sans-serif;font-size:16px;line-height:24px;overflow-wrap:anywhere">As of {{ $date }}, {{ $domain }} uses {{ $company }} nameservers again.</td></tr><tr><td style="color:#1f2937;padding:0 0 20px;font-family:Arial,sans-serif;font-size:16px;line-height:24px"><a href="{{ $domain_url }}" style="color:#2563eb;text-decoration:underline">View domain</a></td></tr><tr><td style="color:#1f2937;font-family:Arial,sans-serif;font-size:14px;line-height:22px">You get this because monitoring alerts are on. Turn them off on the domain page.</td></tr></table>';
+// Exact conditional mismatch defaults immediately before the expression-only body.
+$oldMismatch='As of {{ $date }}, {{ $domain }} @if($previously_matched)no longer uses @else does not use @endif{{ $nameservers }}. If you didn’t expect this, contact support.';
+$title='@if($previously_matched)Nameservers changed for {{ $domain }}@else{{ $domain }} does not use {{ $nameservers }}@endif';
+$prior['domains_watch_ns_changed']['in_app_body'][]=$oldMismatch;
+$prior['domains_watch_ns_changed']['body'][]=str_replace(
+    ['Nameservers changed for {{ $domain }}',$prior['domains_watch_ns_changed']['in_app_body'][1]],
+    [$title,$oldMismatch],$prior['domains_watch_ns_changed']['body'][1]);
 return $prior;
 }

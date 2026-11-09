@@ -163,6 +163,7 @@ final class Labels
             'read_deferred'=>'Check delayed. It runs again later.','clock_reversal'=>'Server clock problem. Try again.',
             'profile_unavailable'=>"Couldn't load the check settings",'dns_not_configured'=>'DNS comparison not set up. Choose a DNS template.',
             'no_hosting'=>'No hosting service. DNS record checks do not apply.',
+            'nameservers_missing'=>'Nameservers missing at the registry',
             'rotation'=>'Check not finished. It continues on the next run.',
             'resolver_failed'=>'DNS resolver failed','invalid_answer'=>'DNS answer invalid','ambiguous_empty'=>'DNS answer incomplete',
             'registrar_price_increased'=>'Not sent: the registrar price is above the limit saved with the order. Cancel'.($complimentary?'':' and add credit').', or use Release hold after the price falls.',

@@ -3,7 +3,7 @@
 <div class="container mt-14 mb-10"><div class="domains">
 @include('domains::partials.styles')
 @include('domains::partials.test-banner', ['test' => $testEnvironment])
-<div><a class="domains-back" href="{{ route('domains.domains.index') }}"><x-ri-arrow-left-s-line class="domains-i" aria-hidden="true" />Domains</a>
+<div><a class="domains-back" href="{{ route(auth()->check() ? 'domains.domains.index' : 'domains.domains.search') }}"><x-ri-arrow-left-s-line class="domains-i" aria-hidden="true" />{{ auth()->check() ? 'Domains' : 'Register a domain' }}</a>
 <div class="domains-head domains-head--search"><div><h1 class="domains-title">Transfer a domain</h1><p class="domains-lede">Move a domain you own from another registrar. A transfer adds one year to its expiry date.</p></div></div></div>
 @include('domains::partials.acquire-tabs', ['current' => 'transfer'])
 @include('domains::partials.notices', ['fieldKeys' => ['domain'], 'summary' => false])

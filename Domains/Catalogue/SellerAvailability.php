@@ -15,7 +15,8 @@ final class SellerAvailability
         foreach(DB::table('domains_prices')->where('server_id',$account->server_id)->where('tld',$t->tld)
             ->where('registrar_key',$account->registrar_key)->where('account_fingerprint',$account->account_fingerprint)->where('term',1)->get() as $price){
             if($price->catalogue_observation===null){continue;}
-            $cost=OfferState::cost(OfferState::decode($price->catalogue_observation));
+            try{$cost=OfferState::cost(OfferState::decode($price->catalogue_observation));}
+            catch(\Throwable){continue;}
             if($cost->enabled){$costs[$cost->action]=true;}
         }
         return isset($costs['renew'])&&(isset($costs['register'])||isset($costs['transfer']));

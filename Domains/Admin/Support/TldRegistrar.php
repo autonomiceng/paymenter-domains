@@ -33,6 +33,7 @@ final class TldRegistrar
         return match($error->getMessage()){
             'Seller offer missing.','Seller price missing.'=>self::missingPrice($account?->registrar_key??'',$ending),
             'Seller account missing.'=>'This registrar account was removed. Choose another registrar.',
+            'Seller account off.'=>'This registrar account is off. Turn it on in Servers.',
             'Offer binding or conversion changed.','Price binding changed.','Seller offer group changed; retry.','Offer disappeared.'=>'Saved registrar prices changed. Reopen Change registrar and try again.',
             default=>null,
         };

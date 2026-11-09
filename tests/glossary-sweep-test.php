@@ -22,8 +22,9 @@ $md=file_get_contents(OwnerHelp::path());
 expect(str_contains($md,"How each setting on a domain page works. Changes show in History once the registrar confirms them."),'Help intro');
 same(1,substr_count(strtolower($md),'transfer code'),'"transfer code" appears once, as the other name for the auth code');
 same(1,substr_count($md,'(also called EPP code or transfer code)'),'The auth code names its other terms once');
-expect(str_contains($md,'**Use the default nameservers**'),'Help names the nameservers button as the page does');
-$none($md,['Activity','Domain privacy','domain privacy','administrative contact','EPP code)','auth code or EPP','could not','cannot','do not','does not'],'Help page');
+expect(str_contains($md,'**Use site default nameservers**'),'Help names the nameservers button as the page does');
+$none($md,['Activity','Domain privacy','domain privacy','administrative contact','EPP code)','auth code or EPP','could not','cannot','do not'],'Help page');
+expect(str_contains($md,'This does not enable DNS record editing here; that requires confirmed registrar DNS hosting.'),'Site DNS fill preserves the DNS hosting requirement');
 $help=$plain((new OwnerHelpController)->show()->render());
 expect(!str_contains($help,'WHOIS privacy'),'Rendered help hides privacy');
 foreach(['Auth code','History'] as $term){expect(str_contains($help,$term),'Rendered help says '.$term);}

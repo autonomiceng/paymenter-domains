@@ -1,0 +1,30 @@
+<?php
+// MIT, Copyright (c) 2026 Autonomic Engineering.
+declare(strict_types=1);
+require __DIR__.'/Support/watch-discovery.php';
+use Illuminate\Support\Facades\DB;
+use Paymenter\Extensions\Servers\Domains\Models\{WatchName,WatchSource,WatchAudit};
+use Paymenter\Extensions\Servers\Domains\Services\{WatchWork,WatchDnsChecks,StaffWatchWrites,WatchProducts};
+$f=discoveryFixture();extract($f);$sweep();
+same(1,WatchName::where('state','active')->count(),'Native saved hosting domain is discovered by the runtime producer');
+$w=WatchName::sole();$s=WatchSource::where('service_id',$service->id)->sole();
+same('www.example.com',$s->hostname,'Original valid hostname retained');same('example.com',$w->canonical_name,'Registrable identity');same(null,$w->ns_profile_id,'New watch inherits the site default');same(null,$w->registration,'Hosting property never proves registration');
+$revision=$w->revision;$sourceId=$s->id;$sweep();same($revision,$w->fresh()->revision,'Repeated discovery does not invalidate evidence');same($sourceId,WatchSource::where('service_id',$service->id)->value('id'),'Source upsert is idempotent');
+$second=discoveryService($f,'mail.example.com');$sweep();same(1,WatchName::count(),'Same owner shares one watch');same(2,WatchSource::where('state','watch')->count(),'Two services retain separate sources');
+DB::table('services')->where('id',$service->id)->update(['status'=>'suspended']);$sweep();same('active',$w->fresh()->state,'Another active hosting source keeps monitoring');
+expect((new WatchDnsChecks)->registryTarget($w->id,$owner->id,false)!==null,'Suspended source does not block active source checks');
+DB::table('services')->where('id',$second->id)->update(['status'=>'suspended']);$sweep();same('paused',$w->fresh()->state,'Suspension pauses the last active source without retiring it');same(2,WatchSource::where('state','watch')->count(),'Suspended source history retained');
+DB::table('services')->where('id',$service->id)->update(['status'=>'active']);$sweep();same('active',$w->fresh()->state,'Returning hosting resumes a lifecycle pause');
+$staff=staffUser(['admin.domains.view','admin.domains.watch.view','admin.domains.watch.manage']);$w->refresh();$writes=new StaffWatchWrites;
+$writes->run($staff,'watch',$w->id,'pause',StaffWatchWrites::ticket($staff->id,'watch',$w->id,$w->revision,'pause'),'Synthetic staff pause');
+$sweep();same('paused',$w->fresh()->state,'Discovery preserves an explicit staff pause');
+DB::table('services')->whereIn('id',[$service->id,$second->id])->update(['status'=>'cancelled']);$sweep();same('retired',$w->fresh()->state,'Last hosting cancellation retires monitoring');same(0,WatchSource::whereNotNull('service_id')->count(),'Retirement frees the current-service key');
+DB::table('services')->where('id',$service->id)->update(['status'=>'active']);$sweep();same('paused',$w->fresh()->state,'Return re-adds the watch while preserving staff pause');
+$w->refresh();$writes->run($staff,'watch',$w->id,'resume',StaffWatchWrites::ticket($staff->id,'watch',$w->id,$w->revision,'resume'),'Synthetic staff resume');$sweep();same('active',$w->fresh()->state,'Staff resume restores checks');
+DB::table('services')->where('id',$service->id)->update(['user_id'=>$other->id]);$sweep();same('retired',$w->fresh()->state,'Owner mismatch retires prior watch before enrollment');same(0,WatchSource::where('service_id',$service->id)->count(),'An order-owner mismatch cannot create a new source');
+DB::table('orders')->where('id',$order->id)->update(['user_id'=>$other->id]);$sweep();$new=WatchName::where('user_id',$other->id)->sole();same('active',$new->state,'Ownership change creates a separate owner watch');expect($new->id!==$w->id,'History is never reparented');
+$property->update(['value'=>'new.example.com']);$sweep();same($new->id,WatchSource::where('service_id',$service->id)->value('watch_id'),'Changed hostname within the name shares current watch');
+$property->update(['value'=>'www.second.com']);$sweep();same('retired',$new->fresh()->state,'Changing the registrable name retires old monitoring');same('second.com',WatchSource::where('service_id',$service->id)->value('registrable_name'),'Property event discovers the new name');
+$last=WatchSource::where('service_id',$service->id)->sole();DB::table('services')->where('id',$service->id)->delete();$sweep();same('retired',$last->fresh()->state,'Deleted native services are reconciled from retained sources');expect(WatchAudit::where('event','source_retired')->count()>=5,'Lifecycle audit retains former service identities');
+DB::table('domains_watch_product_maps')->where('id',$map->id)->update(['enabled'=>false]);WatchProducts::adopt($product);same(false,$map->fresh()->enabled,'System inference never overrides staff Off');
+same([],$dns->calls,'Discovery never performs a public query');echo "Runtime discovery, shared sources, suspension, pause, return, ownership and deletion passed.\n";$nativeSuccessful=true;

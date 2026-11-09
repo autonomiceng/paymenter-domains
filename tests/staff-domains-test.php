@@ -210,6 +210,7 @@ expect(!isset(RequestFacts::for($op)['registrar_refund']),'Local unsent rejectio
 // Check explicit map keys. Passthrough alone must never satisfy mapping coverage.
 $labelsSource=file_get_contents(dirname(__DIR__).'/Domains/Admin/Support/Labels.php');
 $reasonSource=explode('public static function reason(', $labelsSource, 2)[1];
+same('Nameservers missing at the registry',Labels::reason('nameservers_missing'),'Staff can identify a missing registry delegation');
 preg_match_all("/'([a-z][a-z0-9_]*)'\\s*=>/",$reasonSource,$mapped);
 $mapped=array_fill_keys($mapped[1],true);$emitted=[];
 foreach (\Paymenter\Extensions\Servers\Domains\Data\RenewalCode::cases() as $reason) { $emitted[$reason->value][]='RenewalCode'; }

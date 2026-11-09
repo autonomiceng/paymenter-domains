@@ -24,6 +24,7 @@ final class StaffWatchWrites
             self::authorize($actor);
             $claim=hash('sha256',$ticket);
             if(!DB::table('domains_watch_staff_claims')->insertOrIgnore(['claim'=>$claim,'subject_type'=>$kind,'subject_id'=>$id,'action'=>$action,'created_at'=>time()])){throw new \DomainException('Reload and try again.');}
+            if($kind==='profile'){\App\Models\Setting::orderBy('id')->select('id')->lockForUpdate()->get();}
             if($kind==='mapping'){$product=$id?WatchProductMap::findOrFail($id)->product_id:(int)($input['product_id']??0);\App\Models\Product::whereKey($product)->lockForUpdate()->firstOrFail();}
             $class=match($kind){'watch'=>WatchName::class,'profile'=>WatchProfile::class,'mapping'=>WatchProductMap::class,default=>throw new \DomainException('Reload and try again.')};
             $row=$id?$class::whereKey($id)->lockForUpdate()->firstOrFail():new $class;
@@ -31,10 +32,10 @@ final class StaffWatchWrites
             if($kind==='profile'&&$row->exists&&$row->readProfile()===null){throw new \DomainException('Reload and try again.');}
             $before=$row->exists?$row->revision:0;$data=[];
             if($kind==='watch'){
-                if(!in_array($action,['pause','resume','profile','retire','read','note'],true) || $row->managed_domain_id!==null || $row->state==='linked'){throw new \DomainException('This watch cannot be changed.');}
+                // Staff pause and resume; a watch ends only with its hosting service, never by a staff write.
+                if(!in_array($action,['pause','resume','profile','read','note'],true) || $row->managed_domain_id!==null || $row->state==='linked'){throw new \DomainException('This watch cannot be changed.');}
                 if($action==='pause' && $row->state==='active'){$row->state='paused';}
                 elseif($action==='resume' && $row->state==='paused'){$row->state='active';}
-                elseif($action==='retire' && in_array($row->state,['active','paused'],true)){$row->sources()->where('state','watch')->orderBy('id')->lockForUpdate()->get()->each(fn($s)=>$s->retire($reason));$row->state='retired';}
                 elseif($action==='profile' && in_array($row->state,['active','paused'],true)){
                     $profile=WatchProfile::whereKey((int)($input['profile']??0))->where('enabled',true)->lockForUpdate()->firstOrFail();
                     $row->ns_profile_id=$profile->id;$row->profile_revision=$profile->revision;
@@ -54,6 +55,18 @@ final class StaffWatchWrites
                 $row=(new WatchMappings())->save($actor,(int)$row->product_id,$row->property_key,$before,$reason);
             }elseif($kind==='profile' && $action==='enable'){
                 if(!$row->exists || $row->enabled){throw new \DomainException('Reload the disabled profile first.');}$row->enabled=true;$row->edited_by=$actor->id;$row->reason=$reason;
+            }elseif($kind==='profile' && in_array($action,['disable','delete'],true)){
+                if(!$row->exists){throw new \DomainException('Reload and try again.');}
+                if($reasonBlocked=DnsTemplateUsage::refusal((int)$row->id)){throw new \DomainException($reasonBlocked);}
+                if($action==='delete'){
+                    // Delete only an unreferenced template here; watch history remains append-only.
+                    WatchAudit::create(['subject_type'=>'dns_profile','subject_id'=>$row->id,'actor_id'=>$actor->id,
+                        'event'=>'dns_profile_deleted','reason'=>$reason,'before_revision'=>(string)$before,
+                        'after_revision'=>(string)($before+1),'data'=>['name'=>$row->name],'created_at'=>now()]);
+                    $row->newQuery()->whereKey($row->id)->delete();self::authorize($actor);return;
+                }
+                if(!$row->enabled){throw new \DomainException('The saved details changed. Reload and try again.');}
+                $row->enabled=false;$row->edited_by=$actor->id;$row->reason=$reason;
             }elseif($action==='save'){
                 $row->edited_by=$actor->id;$row->reason=$reason;
                 if($kind==='profile'){
