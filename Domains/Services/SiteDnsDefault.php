@@ -12,20 +12,46 @@ final class SiteDnsDefault
     public const KEY='domains_site_dns_template';
     public const MANAGE='admin.domains.settings.new_domain_dns';
     public const MISSING='Site DNS default is Missing. New domains have no nameservers to use. Choose a set with Change site DNS default.';
+    public const REPLACE='Choose another template for new domains first.';
+    public const RETAINED='This template is saved for new domains but cannot be used. Choose another template for new domains first.';
+    /** Settings writes refuse duplicates, so only someone with database access can remove the extra row. */
+    public const DUPLICATE='The site DNS default is saved more than once. Ask your site admin to remove the extra setting.';
     private static function query(): \Illuminate\Database\Eloquent\Builder
     { return Setting::whereNull('settingable_type')->whereNull('settingable_id')->where('key',self::KEY); }
-    public static function profile(bool $lock=false): ?WatchProfile
+    /** A locking read sees rows committed after an older read view opened. */
+    private static function rows(bool $lock=false): \Illuminate\Support\Collection
+    { return self::query()->when($lock,fn($q)=>$q->lockForUpdate())->get(); }
+    private static function usable(\Illuminate\Support\Collection $rows,bool $lock=false): ?WatchProfile
     {
-        $rows=self::query()->when($lock,fn($q)=>$q->lockForUpdate())->get();
         if($rows->count()!==1 || $rows[0]->type!=='string' || $rows[0]->encrypted){return null;}
         $id=$rows[0]->value;
         $p=is_string($id)&&ctype_digit($id)?WatchProfile::whereKey($id)->when($lock,fn($q)=>$q->lockForUpdate())->first():null;
         return ManagedDnsSetup::usable($p)?$p:null;
     }
-    public static function uses(int $id): bool
+    private static function saves(\Illuminate\Support\Collection $rows,int $id): bool
+    { return $id>0 && $rows->contains(fn($row)=>$row->type==='string' && !$row->encrypted && $row->value===(string)$id); }
+    public static function profile(bool $lock=false): ?WatchProfile
+    { return self::usable(self::rows($lock),$lock); }
+    public static function uses(int $id,bool $lock=false): bool
+    { return self::saves(self::rows($lock),$id); }
+    /** Why a saved reference keeps this template, or null. Unusable and duplicate references stay protected. */
+    public static function usesRefusal(int $id,bool $lock=false): ?string
     {
-        if($id<1){return false;}$rows=self::query()->get();
-        return $rows->contains(fn($row)=>$row->type==='string' && !$row->encrypted && $row->value===(string)$id);
+        $rows=self::rows($lock);
+        if(!self::saves($rows,$id)){return null;}
+        if($rows->count()>1){return self::DUPLICATE;}
+        return self::usable($rows,$lock)?->id===$id?self::REPLACE:self::RETAINED;
+    }
+    /** DNS template list markers from one settings read. @return array<int,string> */
+    public static function marks(): array
+    {
+        $rows=self::rows();$live=self::usable($rows)?->id;$out=[];
+        foreach($rows as $row){
+            if($row->type!=='string' || $row->encrypted || !is_string($row->value) || !ctype_digit($row->value)){continue;}
+            $id=(int)$row->value;
+            $out[$id]=$id===$live?'Used for new domains':($rows->count()>1?'Saved for new domains more than once':'Saved for new domains but cannot be used');
+        }
+        return $out;
     }
     public static function watchProfile(WatchName $watch,bool $lock=false): ?WatchProfile
     {
@@ -98,7 +124,9 @@ final class SiteDnsDefault
      */
     public static function refusal(): ?string
     {
-        $p=self::profile();
+        $rows=self::rows();
+        if($rows->count()>1){return self::DUPLICATE;}
+        $p=self::usable($rows);
         if($p){$names=$p->nameservers;}
         else{
             $names=config('domains.site_dns_default.nameservers');
@@ -111,7 +139,7 @@ final class SiteDnsDefault
     private static function write(WatchProfile $p): void
     {
         $rows=self::query()->lockForUpdate()->get();
-        if($rows->count()>1){throw new \DomainException('Duplicate site DNS defaults need administrator review.');}
+        if($rows->count()>1){throw new \DomainException(self::DUPLICATE);}
         $s=$rows->first()??new Setting(['key'=>self::KEY,'settingable_type'=>null,'settingable_id'=>null]);
         $s->fill(['type'=>'string','encrypted'=>false,'value'=>(string)$p->id])->save();
     }

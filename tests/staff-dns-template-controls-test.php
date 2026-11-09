@@ -7,8 +7,8 @@ use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource\Pages\{ListConfiguration,ViewConfiguration};
-use Paymenter\Extensions\Servers\Domains\Models\{WatchProfile,WatchAudit};
-use Paymenter\Extensions\Servers\Domains\Services\{SiteDnsDefault,StaffWatchWrites as Writes};
+use Paymenter\Extensions\Servers\Domains\Models\{ManagedPublicConfig,WatchName,WatchProductMap,WatchProfile,WatchAudit};
+use Paymenter\Extensions\Servers\Domains\Services\{DnsTemplateUsage,SiteDnsDefault,StaffWatchWrites as Writes};
 $make=fn(string $name)=>DB::transaction(fn()=>WatchProfile::create(['name'=>$name,'enabled'=>true,
     'nameservers'=>['ns1.spare.test','ns2.spare.test'],'website_endpoints'=>[],'email_endpoints'=>[],
     'edited_by'=>$manager->id,'reason'=>'Synthetic template setup']));
@@ -121,6 +121,83 @@ $check('Default label lookup is constant per table render',function()use($profil
  siteDnsFixture(null);$page=Livewire::actingAs($manager)->test(ListConfiguration::class);$column=$page->instance()->getTable()->getColumn('name');$count=0;
  for($i=0;$i<100;$i++){same(null,$column->record($profile)->getDescriptionBelow(),'Missing default has no row marker');}expect($count<=1,'Missing default is cached within this render');
  siteDnsFixture($profile->id);$page=Livewire::actingAs($manager)->test(ListConfiguration::class);same('Used for new domains',$page->instance()->getTable()->getColumn('name')->record($profile)->getDescriptionBelow(),'Next request sees changed default');
+});
+$check('Paused and linked assignments refuse independently',function()use($watch,$make,$write):void{
+    $row=$make('Watch state template');siteDnsFixture(null);$held=DB::table('domains_watch_names')->where('id',$watch->id)->first();
+    try{
+        foreach(['paused'=>'This template is assigned to domains. Choose another template for them first.','linked'=>'This template is assigned to retained domain records. Keep it for their history.','retired'=>null]as$state=>$reason){
+            DB::table('domains_watch_names')->where('id',$watch->id)->update(['state'=>$state,'ns_profile_id'=>$row->id]);
+            same($reason,DnsTemplateUsage::refusal((int)$row->id),ucfirst($state).' watch has its own reason');
+            if($reason===null){continue;}
+            foreach(['disable','delete']as$action){
+                $error=null;try{$write($row->fresh(),$action);}catch(DomainException $e){$error=$e->getMessage();}
+                same($reason,$error,ucfirst($state).' watch refuses '.$action);
+                expect(WatchProfile::find($row->id)?->enabled===true,ucfirst($state).' watch keeps the template on after '.$action);
+            }
+        }
+    }finally{DB::table('domains_watch_names')->where('id',$watch->id)->update(['state'=>$held->state,'ns_profile_id'=>$held->ns_profile_id]);}
+});
+$check('Turn off and delete read assignments committed while they wait for the template lock',function()use($watch,$map,$make,$write,$manager):void{
+    siteDnsFixture(null);$setting=(int)\App\Models\Setting::where('key',SiteDnsDefault::KEY)->whereNull('settingable_type')->value('id');
+    // SQLite has no repeatable-read views. Model the write's older view: the assignment commits when the template
+    // row lock is taken, and from then on only locking reads see it.
+    $view=(object)['arm'=>null,'table'=>null,'key'=>null,'late'=>null];
+    WatchProfile::addGlobalScope('late_assignment',static function($q)use($view):void{
+        if($view->arm && $q->getQuery()->lock){$arm=$view->arm;$view->arm=null;[$view->table,$view->key,$view->late]=$arm();}
+    });
+    $hide=static fn(string $table)=>static function($q)use($view,$table):void{
+        if($view->late!==null && $view->table===$table && !$q->getQuery()->lock){$q->where($table.'.'.$view->key,'<>',$view->late);}
+    };
+    foreach([WatchName::class=>'domains_watch_names',ManagedPublicConfig::class=>'domains_managed_public_config',WatchProductMap::class=>'domains_watch_product_maps',\App\Models\Setting::class=>'settings']as$model=>$table){$model::addGlobalScope('late_assignment',$hide($table));}
+    $held=DB::table('domains_watch_names')->where('id',$watch->id)->first();$heldMap=DB::table('domains_watch_product_maps')->where('id',$map->id)->value('expected_ns_profile_id');
+    $cases=[
+        'active watch'=>fn($id)=>[DB::table('domains_watch_names')->where('id',$watch->id)->update(['state'=>'active','ns_profile_id'=>$id]),['domains_watch_names','id',$watch->id]][1],
+        'paused watch'=>fn($id)=>[DB::table('domains_watch_names')->where('id',$watch->id)->update(['state'=>'paused','ns_profile_id'=>$id]),['domains_watch_names','id',$watch->id]][1],
+        'linked watch'=>fn($id)=>[DB::table('domains_watch_names')->where('id',$watch->id)->update(['state'=>'linked','ns_profile_id'=>$id]),['domains_watch_names','id',$watch->id]][1],
+        'registered domain'=>fn($id)=>[DB::table('domains_managed_public_config')->insert(['domain_id'=>900002,'user_id'=>$manager->id,'profile_id'=>$id,'notice_preferences'=>'{}']),['domains_managed_public_config','domain_id',900002]][1],
+        'hosting product'=>fn($id)=>[DB::table('domains_watch_product_maps')->where('id',$map->id)->update(['expected_ns_profile_id'=>$id]),['domains_watch_product_maps','id',$map->id]][1],
+        'site default'=>fn($id)=>[DB::table('settings')->where('id',$setting)->update(['value'=>(string)$id]),['settings','id',$setting]][1],
+    ];
+    try{
+        foreach($cases as$case=>$assign){
+            foreach(['disable','delete']as$action){
+                $row=$make('Late '.$case.' '.$action);$before=WatchAudit::where('subject_type','dns_profile')->where('subject_id',$row->id)->count();
+                $view->arm=fn()=>$assign((int)$row->id);$error=null;
+                try{$write($row,$action);}catch(DomainException $e){$error=$e->getMessage();}
+                finally{$view->arm=null;$view->late=null;}
+                expect($view->table!==null,'The '.$case.' assignment committed during the '.$action.' lock wait');$view->table=null;
+                expect($error!==null,'A '.$case.' assignment committed during the wait refuses '.$action);
+                expect(WatchProfile::find($row->id)?->enabled===true,'The template stays on for the late '.$case.' after '.$action);
+                same($before,WatchAudit::where('subject_type','dns_profile')->where('subject_id',$row->id)->count(),'The refused '.$action.' adds no audit for the late '.$case);
+                DB::table('domains_watch_names')->where('id',$watch->id)->update(['state'=>$held->state,'ns_profile_id'=>$held->ns_profile_id]);
+                DB::table('domains_managed_public_config')->where('domain_id',900002)->delete();
+                DB::table('domains_watch_product_maps')->where('id',$map->id)->update(['expected_ns_profile_id'=>$heldMap]);siteDnsFixture(null);
+            }
+        }
+    }finally{$view->arm=null;$view->late=null;}
+});
+$check('Unusable and duplicate saved defaults keep their template and name the recovery',function()use($make,$write,$manager):void{
+    $row=$make('Retained default');siteDnsFixture($row->id);$stored=DB::table('domains_watch_profiles')->where('id',$row->id)->value('nameservers');
+    $marker=fn()=>Livewire::actingAs($manager)->test(ListConfiguration::class)->instance()->getTable()->getColumn('name')->record($row)->getDescriptionBelow();
+    $retained='This template is saved for new domains but cannot be used. Choose another template for new domains first.';
+    try{
+        DB::table('domains_watch_profiles')->where('id',$row->id)->update(['nameservers'=>'["bad host"]']);
+        same($retained,DnsTemplateUsage::refusal((int)$row->id),'An unreadable saved default is not called the live default');
+        same('Saved for new domains but cannot be used',$marker(),'The list marks the unusable saved default it protects');
+        DB::table('domains_watch_profiles')->where('id',$row->id)->update(['nameservers'=>$stored]);
+        same('Used for new domains',$marker(),'A healthy default keeps its marker');
+        // Settings writes refuse a duplicate, so Change site DNS default cannot be the recovery.
+        $duplicate=DB::table('settings')->insertGetId(['key'=>SiteDnsDefault::KEY,'value'=>'opaque','type'=>'string','encrypted'=>true,'settingable_type'=>null,'settingable_id'=>null,'created_at'=>now(),'updated_at'=>now()]);
+        $admin='The site DNS default is saved more than once. Ask your site admin to remove the extra setting.';
+        foreach(['disable','delete']as$action){
+            $error=null;try{$write($row->fresh(),$action);}catch(DomainException $e){$error=$e->getMessage();}
+            same($admin,$error,'A duplicate saved default refuses '.$action.' with administrator recovery');
+            expect(WatchProfile::find($row->id)?->enabled===true,'The duplicate reference keeps the template after '.$action);
+        }
+        same($admin,SiteDnsDefault::refusal(),'Site settings give the same administrator recovery');
+        same('Saved for new domains more than once',$marker(),'The list marks a duplicated saved default');
+        DB::table('settings')->where('id',$duplicate)->delete();
+    }finally{DB::table('domains_watch_profiles')->where('id',$row->id)->update(['nameservers'=>$stored]);siteDnsFixture(null);}
 });
 foreach($errors as$error){echo "FAIL $error\n";}
 expect($errors===[],'DNS template control regressions: '.implode('; ',$errors));

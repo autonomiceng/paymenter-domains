@@ -81,6 +81,16 @@ $before=WatchAudit::count();$mounted->setTableActionData(['profile'=>$profile->i
 $manager->role->update(['permissions'=>[Staff::VIEW,StaffWatchWrites::VIEW,StaffWatchWrites::MANAGE]]);
 Livewire::actingAs($manager)->test(ListManagedDns::class)->callTableAction('assignTemplate',$d,['profile'=>$profile->id,'expected_dns'=>'external'])->assertNotified('DNS template assigned');
 same((int)$profile->id,(int)ManagedPublicConfig::find($id)->profile_id,'Staff action uses tested writer');
+// A live registered-domain assignment is explained before retained history, alone and beside a linked watch.
+$live='This template is assigned to monitored registered domains. Keep it while they are monitored.';
+expect(!\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::uses((int)$profile->id),'The assigned template is not the site default');
+same($live,\Paymenter\Extensions\Servers\Domains\Services\DnsTemplateUsage::refusal((int)$profile->id),'Live registered-domain assignment is not called history');
+$linked=DB::table('domains_watch_names')->insertGetId(['user_id'=>$uid,'canonical_name'=>'linked-history.example','psl_revision'=>str_repeat('a',64),'state'=>'linked',
+    'registration'=>'platform','ns_profile_id'=>$profile->id,'managed_domain_id'=>$id,'notice_preferences'=>'{}']);
+same($live,\Paymenter\Extensions\Servers\Domains\Services\DnsTemplateUsage::refusal((int)$profile->id),'Mixed linked and live references explain the live assignment');
+$heldStatus=DB::table('domains_domains')->where('id',$id)->value('status');DB::table('domains_domains')->where('id',$id)->update(['status'=>'expired']);
+same('This template is assigned to retained domain records. Keep it for their history.',\Paymenter\Extensions\Servers\Domains\Services\DnsTemplateUsage::refusal((int)$profile->id),'A no longer monitored registration keeps history guidance');
+DB::table('domains_domains')->where('id',$id)->update(['status'=>$heldStatus]);DB::table('domains_watch_names')->where('id',$linked)->delete();
 expect(!$m->health($now)['outage'],'Assignment does not inherit an old setup-only outage clock');
 same(0,ManagedDnsSetup::affected($now)->count(),'Assigned domain leaves the filtered list');same(1,count((new ManagedPublicReconciliation($signals))->due($now)),'Domain without hosting queues only nameserver checks');
 // A retained enabled template can be unreadable even though the editor refuses that data.

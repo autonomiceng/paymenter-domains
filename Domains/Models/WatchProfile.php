@@ -19,9 +19,9 @@ final class WatchProfile extends WatchRecord
         }
         $profile = $this->profile();
         if($this->exists && $this->isDirty('enabled') && !$this->enabled
-            && ($refusal=\Paymenter\Extensions\Servers\Domains\Services\DnsTemplateUsage::refusal((int)$this->id))){throw new \DomainException($refusal);}
-        if(\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::uses((int)$this->id)){
-            if(!$this->enabled){throw new \DomainException('Choose another site DNS default before turning this template off.');}
+            && ($refusal=\Paymenter\Extensions\Servers\Domains\Services\DnsTemplateUsage::refusal((int)$this->id,true))){throw new \DomainException($refusal);}
+        if($saved=\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::usesRefusal((int)$this->id)){
+            if(!$this->enabled){throw new \DomainException($saved===\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::REPLACE?'Choose another site DNS default before turning this template off.':$saved);}
             \Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::validateRegistrars($profile->nameservers);
         }
         $this->nameservers = $profile->nameservers; $this->website_endpoints = $profile->website; $this->email_endpoints = $profile->email;
@@ -35,7 +35,10 @@ final class WatchProfile extends WatchRecord
     protected static function booted(): void
     {
         static::deleting(static function(self $row):void {
-            if(\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::uses((int)$row->id)){throw new \DomainException('Choose another site DNS default before deleting this template.');}
+            // A duplicate or unusable saved reference names its own recovery.
+            if($saved=\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::usesRefusal((int)$row->id)){
+                throw new \DomainException($saved===\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::REPLACE?'Choose another site DNS default before deleting this template.':$saved);
+            }
         });
         parent::booted();
         static::saved(static function (self $row): void {

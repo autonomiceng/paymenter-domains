@@ -25,7 +25,7 @@ final class WatchFacts
         $c=WatchFindings::customers([$w->user_id])[$w->user_id];$profile=\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::watchProfile($w);
         $domain=['Customer'=>self::fact($c['label'],$c['email'],null,$c['url']),
             'Expected nameservers'=>self::fact(WatchFindings::who(\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::watchExpected($w)),cause:'Choose it in Change DNS template'),
-            'DNS template'=>self::fact($profile?->name,url:$profile?RoutingProfileResource::getUrl('view',['record'=>$profile->id]):null,cause:'Choose one in Change DNS template'),
+            'DNS template'=>self::fact($profile?->name,self::templateProblem($w,$profile),$profile&&self::templateProblem($w,$profile)?'warning':null,url:$profile?RoutingProfileResource::getUrl('view',['record'=>$profile->id]):null,cause:'Choose one in Change DNS template'),
             'Registrar'=>self::fact(WatchFindings::who($w->registration),cause:self::missingCause($w,'expiry'))];
         // Hidden when the registry does not publish an expiry date.
         if(!in_array('watch.no_coverage',$keys,true)){$domain['Expires']=self::expires($s,$keys,$active,$w);}
@@ -66,6 +66,12 @@ final class WatchFacts
             $at=$e[$key.'_at'];$sub=$at?rtrim(($key==='public'&&$e['public_stale']?'Historical answers. ':'').($checked($at)??'')):'No saved observation.';
             $evidence[$label]=self::fact($e[$key]?implode('; ',$e[$key]):'Unknown',$at?($sub===''?null:new \Illuminate\Support\HtmlString($sub)):$sub);}
         return array_filter(['Domain'=>$shown($domain),'Checks'=>$shown($checks),'Evidence'=>$evidence]);
+    }
+    /** A saved choice is never replaced automatically, including on a watch that returns after its template was turned off. */
+    private static function templateProblem(WatchName $w,?WatchProfile $profile): ?string
+    {
+        if(!$profile || $w->managed_domain_id!==null || \Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::usable($profile) || !in_array($w->state,['active','paused'],true)){return null;}
+        return ($profile->readProfile()===null?'Saved DNS records cannot be read.':'This template is off.').' Choose another in Change DNS template.';
     }
     public static function missingCause(WatchName $w,?string $kind=null): string
     {

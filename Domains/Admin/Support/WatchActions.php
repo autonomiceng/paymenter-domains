@@ -56,6 +56,7 @@ final class WatchActions
         return match($e->getMessage()){
             'The saved details changed. Reload and try again.','Reload and try again.','The watch state changed. Reload and try again.','Reload the disabled profile first.','Review the saved disabled mapping before enabling it.','The saved mapping changed.'=>$changed,
             'Enter one DNS target per line.'=>'Enter one value per line.',
+            Writes::UNREADABLE=>WatchFacts::TEMPLATE_UNAVAILABLE,
             'This watch cannot be changed.'=>"This domain can't be changed.",
             'Public checks are disabled or the asynchronous queue is unavailable.'=>'Monitoring is off or its queue is unavailable. Open Registrars → System checks and restore the background worker.',
             'This watch has no scheduled checks yet.'=>'The scheduler adds checks automatically. Open Registrars and check the background worker, then try Check now again.',

@@ -10,6 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{WatchName,WatchAudit,WatchProfi
 final class StaffWatchWrites
 {
     public const VIEW='admin.domains.watch.view',MANAGE='admin.domains.watch.manage';
+    public const UNREADABLE='Saved DNS records cannot be read. Restore the template before changing it.';
     public static function ticket(int $actor,string $kind,int $id,int $revision,string $action): string
     { return Crypt::encryptString(json_encode(compact('actor','kind','id','revision','action')+['until'=>time()+600,'key'=>bin2hex(random_bytes(16))],JSON_THROW_ON_ERROR)); }
     public static function authorize(User $actor): void
@@ -29,7 +30,7 @@ final class StaffWatchWrites
             $class=match($kind){'watch'=>WatchName::class,'profile'=>WatchProfile::class,'mapping'=>WatchProductMap::class,default=>throw new \DomainException('Reload and try again.')};
             $row=$id?$class::whereKey($id)->lockForUpdate()->firstOrFail():new $class;
             if(($row->exists?(int)$row->revision:0)!==($t['revision']??null)){throw new \DomainException('The saved details changed. Reload and try again.');}
-            if($kind==='profile'&&$row->exists&&$row->readProfile()===null&&$action!=='delete'){throw new \DomainException('Saved DNS records cannot be read. Restore the template before changing it.');}
+            if($kind==='profile'&&$row->exists&&$row->readProfile()===null&&$action!=='delete'){throw new \DomainException(self::UNREADABLE);}
             $before=$row->exists?$row->revision:0;$data=[];
             if($kind==='watch'){
                 // Staff pause and resume; a watch ends only with its hosting service, never by a staff write.
@@ -57,7 +58,7 @@ final class StaffWatchWrites
                 if(!$row->exists || $row->enabled){throw new \DomainException('Reload the disabled profile first.');}$row->enabled=true;$row->edited_by=$actor->id;$row->reason=$reason;
             }elseif($kind==='profile' && in_array($action,['disable','delete'],true)){
                 if(!$row->exists){throw new \DomainException('Reload and try again.');}
-                if($reasonBlocked=DnsTemplateUsage::refusal((int)$row->id)){throw new \DomainException($reasonBlocked);}
+                if($reasonBlocked=DnsTemplateUsage::refusal((int)$row->id,true)){throw new \DomainException($reasonBlocked);}
                 if($action==='delete'){
                     // Delete only an unreferenced template here; watch history remains append-only.
                     WatchAudit::create(['subject_type'=>'dns_profile','subject_id'=>$row->id,'actor_id'=>$actor->id,
