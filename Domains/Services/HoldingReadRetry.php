@@ -20,18 +20,18 @@ final class HoldingReadRetry
             ->orWhere(fn($q)=>$q->whereIn('safe_code',self::TRANSIENT)->where('tries','>=',self::LIMIT)));
     }
     public static function delay(int $tries): int { return min(3600,60*(2**min(6,max(0,$tries-1)))); }
-    /** A successful staff retry restores only idle current read work, never a live lease or financial job. */
-    public static function completedManually(Domain $seed, string $code='refreshed'): void
+    /** A successful staff retry restores idle current read work or its own manual lease, never another live lease or financial job. */
+    public static function completedManually(Domain $seed, string $code='refreshed', ?string $claim=null): void
     {
         if(!in_array($code,['refreshed','domain_not_in_account'],true)){throw new \InvalidArgumentException('Invalid manual read result.');}
         if(!\Illuminate\Support\Facades\Schema::hasTable('domains_observation_work')){return;}
-        \Illuminate\Support\Facades\DB::transaction(function()use($seed,$code):void {
+        \Illuminate\Support\Facades\DB::transaction(function()use($seed,$code,$claim):void {
             $locked=HoldingLocks::take($seed);$d=$locked['domain'];
             if(ObservationRecords::identity($seed)!==ObservationRecords::identity($d)||($code==='refreshed'&&ObservationRecords::held($d))){return;}
             if($code==='domain_not_in_account'&&(($d->observation['record_failure']['identity']??null)!==ObservationRecords::identity($d)||($d->observation['record_failure']['code']??null)!==$code)){return;}
             $now=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp();
-            HoldingObservationWork::current($d)->where('lease_until','<=',$now)
-                ->update(['tries'=>0,'claim'=>null,'safe_code'=>$code,'due_at'=>$now+($code==='refreshed'&&($d->observation['followup']['state']??null)==='pending'?300:86400)]);
+            HoldingObservationWork::current($d)->where(fn($q)=>$q->where('lease_until','<=',$now)->when($claim!==null&&$claim!=='',fn($q)=>$q->orWhere('claim',$claim)))
+                ->update(['tries'=>0,'claim'=>null,'lease_until'=>0,'safe_code'=>$code,'due_at'=>$now+($code==='refreshed'&&($d->observation['followup']['state']??null)==='pending'?300:86400)]);
         });
     }
     public static function status(Domain $d, ?\DateTimeImmutable $now=null): array

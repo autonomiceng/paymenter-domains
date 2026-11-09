@@ -55,6 +55,36 @@ final class HoldingObservationWork
         if (Schema::hasTable('domains_observation_work')) { self::current($d)->where('lease_until','<=',$now->getTimestamp())->delete(); }
         return true;
     }
+    /** A live lease means a scheduled or manual registrar read for this holding is running now. */
+    public static function leased(Domain $d, \DateTimeImmutable $now): bool
+    { return Schema::hasTable('domains_observation_work')&&self::current($d,true)->where('lease_until','>',$now->getTimestamp())->exists(); }
+    /**
+     * Manual Sync now takes the same lease the scheduler claims, so the two never read one holding at once.
+     * Returns the work id and claim, or null while another read holds the lease. Tries and due time stay with the scheduler.
+     */
+    public static function claimManual(Domain $d, \DateTimeImmutable $now, int $seconds): ?array
+    {
+        if (!Schema::hasTable('domains_observation_work')) { return [0,'']; }
+        return DB::transaction(function()use($d,$now,$seconds): ?array {
+            self::queueInitial($d,$now);
+            $job=self::current($d)->lockForUpdate()->first();
+            if (!$job) { return [0,'']; }
+            if ($job->lease_until>$now->getTimestamp()) { return null; }
+            $claim=bin2hex(random_bytes(16));
+            DB::table('domains_observation_work')->where('id',$job->id)->update(['claim'=>$claim,'lease_until'=>$now->getTimestamp()+$seconds]);
+            return [(int)$job->id,$claim];
+        });
+    }
+    /** True while this manual claim still owns a live lease on unchanged work. */
+    public static function ownsManual(int $id, string $claim, \DateTimeImmutable $now): bool
+    {
+        if ($claim==='') { return true; }
+        $q=DB::table('domains_observation_work')->where('id',$id)->where('claim',$claim)->where('lease_until','>',$now->getTimestamp());
+        return (DB::transactionLevel()>0?$q->lockForUpdate():$q)->exists();
+    }
+    /** Releases only this manual lease; a scheduler claim taken after expiry keeps its own. */
+    public static function releaseManual(int $id, string $claim): void
+    { if ($claim!=='') { DB::table('domains_observation_work')->where('id',$id)->where('claim',$claim)->update(['claim'=>null,'lease_until'=>0]); } }
     public function __construct(private readonly DomainObservation $observer, private readonly Clock $clock) {}
     /** Shared reviewed recovery; the selected scheduler supplies its captured generation guard. */
     public function resume(int $id, string $reason, StaffOperationReview|\Paymenter\Extensions\Servers\Domains\Services\StaffSyncReview|null $review, \Closure $current): void

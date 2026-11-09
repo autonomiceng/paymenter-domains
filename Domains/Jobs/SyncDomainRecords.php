@@ -11,13 +11,15 @@ use Illuminate\Queue\{InteractsWithQueue,SerializesModels};
 use Illuminate\Support\Facades\{Cache,DB,Route};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
-use Paymenter\Extensions\Servers\Domains\Services\{DomainObservation,ObservationRecords,ReadFailure};
+use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
+use Paymenter\Extensions\Servers\Domains\Services\{DomainObservation,HoldingObservationWork,HoldingReadRetry,ObservationRecords,ReadDeferred,ReadFailure};
 /** Registrar reads can outlive a web request, so manual sync uses the existing queue worker. */
 final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
 {
     use Dispatchable,InteractsWithQueue,Queueable,SerializesModels;
     public const TIMEOUT=300;
     public const UNIQUE_FOR=900;
+    public const RUNNING='A scheduled registrar read is running for this domain. This page updates when it finishes.';
     public const WORKER='Sync now needs a database or Redis queue with retry_after above 300 seconds. Ask your site admin to check the queue worker, then try again.';
     public int $timeout=self::TIMEOUT;
     public int $uniqueFor=self::UNIQUE_FOR;
@@ -30,7 +32,7 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
     public static function pending(Domain $d): bool
     {
         $job=new self(0,(int)$d->id,$d->authority_generation,$d->account_fingerprint);
-        return Cache::has($job->pendingKey());
+        return Cache::has($job->pendingKey())||HoldingObservationWork::leased($d,app(Clock::class)->now());
     }
     /** Last bounded completion notice, also shown beside the facts it did or did not refresh. */
     public static function result(Domain $d): ?array
@@ -46,6 +48,8 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
         $cache=config('cache.stores.'.config('cache.default').'.driver');
         if (!in_array($cache,['redis','database','memcached'],true)) { throw new \DomainException('Sync now needs a shared cache to prevent duplicate reads. Ask your site admin to configure Redis, database or Memcached cache, then try again.'); }
         if ($d->status!=='active') { throw new \DomainException('Domain is no longer active. Reload this page.'); }
+        // The worker also yields to a live lease; this refusal only explains it before queueing.
+        if (HoldingObservationWork::leased($d,app(Clock::class)->now())) { throw new \DomainException(self::RUNNING); }
         $job=new self($actor,(int)$d->id,$d->authority_generation,$d->account_fingerprint);
         $lock=app(UniqueLock::class);
         if (!$lock->acquire($job)) { return false; }
@@ -60,15 +64,27 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
             if (!Staff::allows(User::find($this->actor),'admin.domains.manage')) { $this->notice('Sync stopped','The staff permission to sync this domain was removed.'); return; }
             $d=Domain::find($this->domain);
             if (!$d||$d->status!=='active'||$d->authority_generation!==$this->generation||$d->account_fingerprint!==$this->fingerprint) { $this->notice('Sync stopped','Domain changed. Reload its page before trying Sync now again.'); return; }
+            $clock=app(Clock::class); $work=0; $claim=''; $lost=false;
             try {
-                $result=$observer->run($this->domain,$this->generation,$this->fingerprint,readRecords:true);
+                // Take the scheduler's lease so a scheduled read and this one never overlap; never take a live one.
+                $lease=HoldingObservationWork::claimManual($d,$clock->now(),self::TIMEOUT);
+                if ($lease===null) { $this->notice('Sync not started','A scheduled registrar read started first. Its result shows on this page.'); return; }
+                [$work,$claim]=$lease;
+                $current=function()use($work,$claim,$clock,&$lost):void {
+                    if (!HoldingObservationWork::ownsManual($work,$claim,$clock->now())) { $lost=true; throw new ReadDeferred('Manual read lease lost.'); }
+                };
+                $result=$observer->run($this->domain,$this->generation,$this->fingerprint,readRecords:true,current:$current);
                 if ($result==='records_disabled') { $this->notice('Records not read','Record checks are paused or not set up for this registrar account. Ask your site admin to check Processing and record-read setup, then press Sync now again.'); return; }
                 $failed=ObservationRecords::held($d->refresh())||in_array($result,ReadFailure::CODES,true)||$result==='read_deferred';
-                if(!$failed&&$result==='refreshed'){\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::completedManually($d);}
-                if ($result==='domain_not_in_account') { \Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::completedManually($d,$result); $this->notice("Couldn't read all records",'Domain is not in the registrar account. Check the assigned account or complete the transfer there, then use Sync now.'); return; }
+                if(!$failed&&$result==='refreshed'){HoldingReadRetry::completedManually($d,claim:$claim);}
+                if ($result==='domain_not_in_account') { HoldingReadRetry::completedManually($d,$result,$claim); $this->notice("Couldn't read all records",'Domain is not in the registrar account. Check the assigned account or complete the transfer there, then use Sync now.'); return; }
                 if (!$failed&&$result!=='refreshed') { $this->notice('Sync needs a check','The registrar read finished, but its facts differ from the saved domain. Check the domain and its open request.'); return; }
                 $this->notice($failed?"Couldn't read all records":'Domain synced',$failed?(ObservationRecords::limitNotice($d)??'Open the domain and check the sync notice, then try Sync now again.'):'The saved records are up to date.');
-            } catch (\Throwable) { $this->notice("Couldn't sync domain",'Check the registrar account, then try Sync now again.'); }
+            } catch (\Throwable) {
+                // After its lease expires, the scheduler may claim the work, so this read must not save its result.
+                if ($lost) { $this->notice('Sync stopped','The registrar read ran past its time limit. Press Sync now again.'); return; }
+                $this->notice("Couldn't sync domain",'Check the registrar account, then try Sync now again.');
+            } finally { HoldingObservationWork::releaseManual($work,$claim); }
         } finally { Cache::forget($this->pendingKey()); }
     }
     public function failed(?\Throwable $error): void
