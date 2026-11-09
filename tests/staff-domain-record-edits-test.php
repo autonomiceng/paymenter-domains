@@ -32,16 +32,18 @@ $view()->callAction(TestAction::make('edit_lock')->schemaComponent('fact_'.md5('
 $add=['name'=>'www','type'=>'A','address'=>'8.8.4.4','mx_pref'=>''];
 $edit('DNS records','dns',['records'=>[['name'=>'www','type'=>'A','address'=>'not-an-ip','mx_pref'=>'']]])->assertNotified("Couldn't save this change");
 $edit('DNS records','dns',['records'=>[$add]])->assertNotified(ManagementForms::REQUESTED);
-$op=$last('dns');same(['www','A','8.8.4.4'],[$op->payload['records'][0]['name'],$op->payload['records'][0]['type'],$op->payload['records'][0]['address']],'Staff DNS row reaches the request');same((int)$actor->id,(int)$op->authorized_by,'DNS credited to staff');$finish($op);
+$op=$last('dns');same(['www','A','8.8.4.4'],[$op->payload['records'][0]['name'],$op->payload['records'][0]['type'],$op->payload['records'][0]['address']],'Staff DNS row reaches the request');same((int)$actor->id,(int)$op->authorized_by,'DNS credited to staff');$finish($op);$dnsId=(int)$op->id;
 $edit('DNS records','srv',['records'=>[['service'=>'sip','protocol'=>'tcp','priority'=>'1','weight'=>'2','port'=>'5060','target'=>'sip.example.com.','_source'=>'']]])->assertNotified(ManagementForms::REQUESTED);
 $op=$last('srv');same('sip',$op->payload['records'][0]['service'],'Staff SRV row reaches the request');$finish($op);
-// DNS and SRV share one zone write: a finished SRV change shows only on the SRV row, and a waiting one on both rows.
+// DNS and SRV share one zone write: each row keeps its own finished change, and a waiting one shows on both rows.
 $row=static function(string $html,string $label):string{$doc=new DOMDocument();@$doc->loadHTML('<?xml encoding="UTF-8">'.$html);
     return trim((string)(new DOMXPath($doc))->query('//*[contains(concat(" ",normalize-space(@class)," ")," fi-in-entry ")][.//*[@role="term"][normalize-space(.)="'.$label.'"]]')->item(0)?->textContent);};
 same(['srv',false],[ManagementProgress::for($d->fresh())['dns']['section'],ManagementProgress::for($d->fresh())['dns']['pending']],'The finished SRV change is the latest on the shared DNS setting');
 $html=$view()->html();
 expect(str_contains($row($html,'SRV records'),'Saved.'),'A finished SRV change shows on the SRV row');
-expect(!str_contains($row($html,'DNS records'),'Saved.'),'A finished SRV change is not shown beside DNS');
+$sections=ManagementProgress::for($d->fresh())['dns']['sections']??[];
+same([$dnsId,(int)$op->id],[$sections['dns']['id']??null,$sections['srv']['id']??null],'The DNS row keeps the finished DNS change, not the later SRV change');
+expect(str_contains($row($html,'DNS records'),'Saved.'),'The finished DNS change still shows on the DNS row');
 DB::table('domains_operations')->where('id',$op->id)->update(['state'=>'queued']);
 try {
     $waiting=ManagementProgress::for($d->fresh())['dns'];same([true,'srv'],[$waiting['pending'],$waiting['section']],'The SRV change waits on the shared DNS setting');

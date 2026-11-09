@@ -100,12 +100,12 @@ foreach(['absent','mismatched'] as $fault){for($i=0;$i<3;$i++){
     $changes[$fault==='absent'?'server_id':'account_fingerprint']=$fault==='absent'?999999:str_repeat('e',64);
     $id=$clone('domains_domains',$demo->id,$changes);$missing[]=$id;
     if($i===0){$row=Domain::findOrFail($id);DB::table('domains_observation_work')->insert(['domain_id'=>$id,'server_id'=>$row->server_id,
-        'account_fingerprint'=>$row->account_fingerprint,'generation'=>$row->authority_generation,'phase'=>'holding','due_at'=>0,'safe_code'=>'read_failed']);}
+        'account_fingerprint'=>$row->account_fingerprint,'generation'=>$row->authority_generation,'phase'=>'holding','due_at'=>0,'safe_code'=>'read_failed','tries'=>Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::LIMIT]);}
 }}
 [$columns,$records,,$queries]=$list();same($rows+18,count($records),'Missing-account controls are on the same rendered page');
 same($beforeMissing,$accountReads($queries),'Missing or mismatched accounts do not add row queries');
 foreach($missing as $i=>$id){$row=$records[$id];
     same($i%3===0?'failed':null,DomainFacts::sync($row),'Direct callers still lazily read the identity and stopped state');
-    same(DomainFacts::NO_ACCOUNT.($i%3===0?' Sync failed. Ask staff who can resume sync.':''),$columns['note']->record($row)->getState(),'Missing accounts never falsely pause demo sync');
+    same(DomainFacts::NO_ACCOUNT.($i%3===0?' Sync stopped. Ask staff who can resume sync.':''),$columns['note']->record($row)->getState(),'Missing accounts never falsely pause demo sync');
 }
 echo "Staff Domains list: Auto-renew on every state, one demo-paused definition and a fixed query count passed.\n";$nativeSuccessful=true;

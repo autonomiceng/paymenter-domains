@@ -55,7 +55,9 @@ $recordFact=$missingFacts['Checks']['DNS records']??['value'=>null,'sub'=>null];
 same('A @ → 192.0.2.10',$recordFact['value'],'DNS records shows stored public answers without a template');
 // ui-r15 R2: the check time is a <time> in the viewer's zone, so compare its datetime.
 expect(str_contains((string)($recordFact['sub']??''),'template'),'Unconfigured comparison explains the next step');
-expect(str_contains((string)($recordFact['sub']??''),'datetime="'.gmdate('c',$at->getTimestamp()-60).'"'),'DNS records retains the actual observation time');
+// The saved answers are from the same minute as Last check, so the row adds no second Checked time.
+same(intdiv($at->getTimestamp()-60,60),intdiv((int)($missingFacts['Checks']['Last check']['at']??0),60),'Saved DNS answers are from the Last check minute');
+expect(!str_contains((string)($recordFact['sub']??''),'datetime="'),'DNS records does not repeat the Last check time');
 $html=Livewire\Livewire::test(ViewWatch::class,['record'=>$watch->id])->html();
 $x=storefrontDom($html);$row=$x->query('//*[contains(concat(" ",normalize-space(@class)," ")," domains-row ")][.//*[normalize-space(.)="DNS records"]]')->item(0);
 expect($row!==null&&str_contains($row->textContent,'192.0.2.10')&&!str_contains($row->textContent,'Missing'),'Real monitoring row renders the saved public record');
