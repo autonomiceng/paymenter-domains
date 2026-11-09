@@ -15,10 +15,11 @@ class RequestsRelationManager extends RelationManager
     protected static ?string $title = 'History';
     protected static bool $isLazy = false;
     public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool { return Staff::can(); }
-    /** The request the domain page head names, and the head's words, passed by the page (ViewDomain::getRelationManagers). */
-    #[\Livewire\Attributes\Locked]
+    /** The request the domain page head names, and the head's words, passed by the page (ViewDomain::getRelationManagers).
+     * Reactive: the page keeps this tab mounted, so each page render passes the current head again. The browser cannot set them. */
+    #[\Livewire\Attributes\Reactive]
     public ?int $headRequest=null;
-    #[\Livewire\Attributes\Locked]
+    #[\Livewire\Attributes\Reactive]
     public ?string $headSaid=null;
     public function table(Table $table): Table
     {

@@ -47,14 +47,15 @@ foreach ($releaseOps as $i=>$request) {
 // The History tab follows the same rule: the request the head names keeps its status there, but not the reason the head already says.
 $reason='Not sent. Orders are off for this account.';$released=$releaseOps[0];
 // The tab is mounted with the properties the domain page gives it, as Filament does inside the page.
-$historyRows=static function(int $domain):array{
-    $managers=Livewire::actingAs(Auth::user())->test(ViewDomain::class,['record'=>$domain])->assertSuccessful()->instance()->getRelationManagers();
-    $config=array_values(array_filter($managers,fn($m)=>$m instanceof \Filament\Resources\RelationManagers\RelationManagerConfiguration&&$m->relationManager===RequestsRelationManager::class));
-    same(1,count($config),'The domain page configures its History tab');
-    $html=Livewire::actingAs(Auth::user())->test(RequestsRelationManager::class,['ownerRecord'=>\Paymenter\Extensions\Servers\Domains\Models\Domain::findOrFail($domain),'pageClass'=>ViewDomain::class,...$config[0]->getProperties()])->assertSuccessful()->html();
+$rowsIn=static function(string $html):array{
     $dom=new DOMDocument;@$dom->loadHTML('<?xml encoding="utf-8" ?>'.$html);
     $x=new DOMXPath($dom);$text=static fn(DOMNode $n)=>trim(preg_replace('/\s+/',' ',$n->textContent));
     return array_map(fn(DOMNode $row)=>array_map($text,iterator_to_array($x->query('./td',$row))),iterator_to_array($x->query('//tbody/tr')));};
+$historyRows=static function(int $domain)use($rowsIn):array{
+    $managers=Livewire::actingAs(Auth::user())->test(ViewDomain::class,['record'=>$domain])->assertSuccessful()->instance()->getRelationManagers();
+    $config=array_values(array_filter($managers,fn($m)=>$m instanceof \Filament\Resources\RelationManagers\RelationManagerConfiguration&&$m->relationManager===RequestsRelationManager::class));
+    same(1,count($config),'The domain page configures its History tab');
+    return $rowsIn(Livewire::actingAs(Auth::user())->test(RequestsRelationManager::class,['ownerRecord'=>\Paymenter\Extensions\Servers\Domains\Models\Domain::findOrFail($domain),'pageClass'=>ViewDomain::class,...$config[0]->getProperties()])->assertSuccessful()->html());};
 // A request's own row has the request in its Change cell; hold and release rows name it only in Detail.
 $rowOf=static fn(array $rows,int $request)=>array_values(array_map(fn(array $cells)=>implode(' ',$cells),array_filter($rows,fn(array $cells)=>preg_grep('/\ARequest #'.$request.' [^.]+\z/',$cells)!==[])));
 Auth::setUser($viewer);
@@ -73,6 +74,28 @@ $rows=$historyRows($released->domain_id);
 expect(!str_contains($rowOf($rows,$released->id)[0],$reason),'History still leaves out the head reason for the request it names');
 expect(str_contains($rowOf($rows,$other->id)[0]??'',$reason),'Another request keeps its own reason in History: '.($rowOf($rows,$other->id)[0]??'missing'));
 DB::table('domains_operations')->where('id',$other->id)->delete();
+// The page keeps History mounted while the head polls. The browser sends the page poll and the mounted History tab in one
+// update request, so History must follow a head that changed after it was mounted.
+$orders=static fn(bool $on)=>DB::table('domains_accounts')->where('server_id',$released->server_id)->update(['processing_enabled'=>$on]);
+$orders(true);
+// Staff open the History tab, which mounts it inside the page.
+$page=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$released->domain_id])->assertSuccessful()->set('activeRelationManager','0');$mounted=$page->html();
+expect(!str_contains($mounted,$reason),'With Orders on, the head does not say the Orders-off reason');
+preg_match_all('/wire:snapshot="([^"]*)"/',$mounted,$found);$tabSnapshot=null;
+foreach ($found[1] as $raw) { $snapshot=json_decode(html_entity_decode($raw,ENT_QUOTES|ENT_HTML5),true);if (str_ends_with($snapshot['memo']['name'],'requests-relation-manager')) { $tabSnapshot=$snapshot; } }
+expect($tabSnapshot!==null,'The page renders with its History tab mounted');$pageSnapshot=$page->snapshot;
+$orders(false);
+app('livewire')->flushState();
+[,$pageEffects]=app('livewire')->update($pageSnapshot,[],[['path'=>'','method'=>'pollManagement','params'=>[]]]);
+[$tabSnapshot,$tabEffects]=app('livewire')->update($tabSnapshot,[],[]);
+expect(str_contains($pageEffects['html']??'',$reason),'After the poll the head says the Orders-off reason');
+$polledRow=$rowOf($rowsIn($tabEffects['html']??''),$released->id);same(1,count($polledRow),'The mounted History tab lists the released request once');
+expect(str_contains($polledRow[0],'Under review')&&!str_contains($polledRow[0],$reason),'The mounted History tab follows the new head: '.$polledRow[0]);
+// A later History-only request, such as a search or a page change, keeps the head the poll passed.
+app('livewire')->flushState();
+[,$tabEffects]=app('livewire')->update($tabSnapshot,[],[['path'=>'','method'=>'$refresh','params'=>[]]]);
+$laterRow=$rowOf($rowsIn($tabEffects['html']??''),$released->id);
+expect(count($laterRow)===1&&!str_contains($laterRow[0],$reason),'A History-only request keeps the current head: '.($laterRow[0]??'missing'));
 // With Orders off in the head, a Registrar alert keeps its whole cause and the row drops only the paused words.
 \Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::record($released->domain->fresh(),'renewal_funds',time());
 $cause=DomainFacts::alertCause('renewal_funds');
