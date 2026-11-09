@@ -227,9 +227,11 @@ class ViewDomain extends ViewRecord
         $view=fn(string $part)=>Html::make(view('domains::partials.record-families',['recordFamilies'=>$state,'staff'=>true,'part'=>$part,'readScheduling'=>!DomainFacts::ended($d)]));
         $own=array_intersect_key($facts,array_flip(DomainFacts::SECTIONS[self::HELD_SECTION]));$own['DS records']=\Paymenter\Extensions\Servers\Domains\Presentation\DsState::staff($d);
         $rows=[$view('head')];$shown=[];
+        // SRV has no row of its own in the facts, so its change line comes straight from the stored progress.
+        $srv=DomainFacts::progress($this->managementProgress(),'srv',DomainFacts::headRequest($d,$this->status(),$edits['request']));
         foreach (($state['cancelled_without_records']??false)||($state['not_at_registrar']??null)!==null?[]:$state['rows'] as $family) {
             $label=$family['label'];$fact=$own[$label]??null;$shown[]=$label;
-            $rows[]=$this->familyRow($family,$fact,$fact!==null&&$label!=='DS records'?$this->side($label,$fact,$edits,null):[],$state['at']??null);
+            $rows[]=$this->familyRow($family,$fact,$fact!==null&&$label!=='DS records'?$this->side($label,$fact,$edits,null):[],$state['at']??null,$family['kind']==='srv'?$srv:null);
         }
         // Nothing is at the registrar yet: the head says so once, with no row per record.
         foreach (($state['not_at_registrar']??null)!==null?[]:array_diff_key($own,array_flip($shown)) as $label=>$fact) { $rows[]=$this->row($label,$fact,$label==='DS records'?[]:$this->side($label,$fact,$edits,null)); }
@@ -241,12 +243,14 @@ class ViewDomain extends ViewRecord
     private function familyState(): array
     { return $this->families??=\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::read($this->getRecord(),app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()); }
     /** The family's read state above the row's own value, which keeps its red Missing, Failed or Under review tone and demo tag.
-     * A family with no read and a Missing value says Missing once. Families with no own fact (Domain settings, SRV) show the read state alone. */
-    private function familyRow(array $family, ?array $fact, array|Html $side, mixed $readAt = null): Flex
+     * A family with no read and a Missing value says Missing once. Families with no own fact (Domain settings, SRV) show the read state, and SRV its change line. */
+    private function familyRow(array $family, ?array $fact, array|Html $side, mixed $readAt = null, ?array $progress = null): Flex
     {
         $status=new HtmlString('<div class="domains">'.view('domains::partials.record-family-status',['family'=>$family,'staff'=>true,'readAt'=>$readAt])->render().'</div>');
         if ($fact===null) {
-            return Sheet::row(TextEntry::make('family_'.$family['kind'])->label($family['label'])->state($status),$side,key:'fact_'.md5($family['label']));
+            $entry=TextEntry::make('family_'.$family['kind'])->label($family['label'])->state($status);
+            if ($progress!==null) { $entry->belowContent(self::below(['value'=>null,'sub'=>null,'progress'=>$progress])); }
+            return Sheet::row($entry,$side,pending:$progress['waiting']??false,key:'fact_'.md5($family['label']));
         }
         $entry=$this->entry($family['label'],$fact);
         if ($family['label']==='DS records'&&$fact['value']!==null) { $entry->prefix('DNSSEC: '); }

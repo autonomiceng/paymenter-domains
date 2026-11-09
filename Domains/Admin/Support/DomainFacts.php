@@ -533,15 +533,24 @@ final class DomainFacts
      * so the page sends staff to one request, and to none when none needs them. */
     public static function withProgress(array $facts, array $progress, ?int $named=null): array
     {
-        foreach (['Contacts'=>'contacts','Nameservers'=>'nameservers','Transfer lock'=>'lock','DNS records'=>'dns','Email auth code'=>'auth_code_email'] as $label=>$setting) {
-            $row=$progress[$setting]??null;
-            if (!isset($facts[$label])||$row===null||($row['settled']??false)||($row['replaced']??false)) { continue; }
-            $stopped=isset($row['outcome']); $request=$stopped&&$row['id']===$named?$row['id']:null;
-            $text=$stopped?StaffDomainStatus::sentence($row['outcome']).($request===null?'':' Check request #'.$request.'.'):$row['text'];
-            if ($facts[$label]['value']===null) { $facts[$label]['sub']=$text; continue; }
-            $facts[$label]['progress']=['text'=>$text,'request'=>$request,'waiting'=>(bool)($row['pending']??false),'tone'=>$row['tone']??null];
+        foreach (['Contacts'=>'contacts','Nameservers'=>'nameservers','Transfer lock'=>'lock','DNS records'=>'dns','Email auth code'=>'auth_code_email'] as $label=>$section) {
+            $line=self::progress($progress,$section,$named);
+            if (!isset($facts[$label])||$line===null) { continue; }
+            if ($facts[$label]['value']===null) { $facts[$label]['sub']=$line['text']; continue; }
+            $facts[$label]['progress']=$line;
         }
         return $facts;
+    }
+    /** @return ?array{text:string,request:?int,waiting:bool,tone:?string} A section's change line, or null when its row shows none.
+     * DNS and SRV share one setting, one zone write at a time: a waiting change shows on both rows, since neither can change, and a finished one only on its own row. */
+    public static function progress(array $progress, string $section, ?int $named=null): ?array
+    {
+        $row=$progress[\Paymenter\Extensions\Servers\Domains\Services\ManagementProgress::setting($section)]??null;
+        if ($row===null||($row['settled']??false)||($row['replaced']??false)) { return null; }
+        if (!($row['pending']??false)&&($row['section']??$section)!==$section) { return null; }
+        $stopped=isset($row['outcome']); $request=$stopped&&$row['id']===$named?$row['id']:null;
+        $text=$stopped?StaffDomainStatus::sentence($row['outcome']).($request===null?'':' Check request #'.$request.'.'):$row['text'];
+        return ['text'=>$text,'request'=>$request,'waiting'=>(bool)($row['pending']??false),'tone'=>$row['tone']??null];
     }
     /** A count above the glue detail: "1 of 2 differs." */
     public static function differs(int $count, int $of): string
