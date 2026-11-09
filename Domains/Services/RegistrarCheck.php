@@ -19,12 +19,19 @@ final class RegistrarCheck
     private ?string $identity = null;
     private ?array $seen = null;
     private int $started = 0;
+    private int $order = 0;
     private array $facts = [];
-    /** Called under the check's first lock, after its eligibility check and before any other early return, so every result names its attempt. */
+    /** Called under the check's first lock, after its eligibility check and before any other early return, so every result names its attempt.
+     * The saved order number ranks checks, resumes and answers even when they start in the same second. */
     public function capture(Operation $op): void
     {
         $this->identity=RegistrarAnswers::identity($op);$this->seen=$op->policy['status_check']??null;$this->started=$this->clock->now()->getTimestamp();
+        $this->order=self::nextOrder($op);$op->update(['policy'=>[...($op->policy??[]),'status_check_order'=>$this->order]]);
     }
+    private static function nextOrder(Operation $op): int { return max(0,(int)($op->policy['status_check_order']??0))+1; }
+    /** A saved result is newer when it was ranked after this check, or, before order numbers existed, started no earlier. */
+    private function newer(?array $stored): bool
+    { return isset($stored['order'])?(int)$stored['order']>$this->order:(int)($stored['started']??$stored['at']??0)>=$this->started; }
     /** Observations do not grant completion, payment return or another send. */
     public function observe(AttemptEvidence $attempt, Evidence $facts, bool $chargeConfirmed): void
     {
@@ -41,7 +48,7 @@ final class RegistrarCheck
             if ($this->identity===null || !hash_equals($this->identity,RegistrarAnswers::identity($op))) { return $op; }
             // A check, resume or answer saved after this check began is newer. This result must not replace it.
             $stored=$op->policy['status_check']??null;
-            if ($stored!==$this->seen && (int)($stored['started']??$stored['at']??0)>=$this->started) { return $op; }
+            if ($stored!==$this->seen && $this->newer($stored)) { return $op; }
             $now = $this->clock->now()->getTimestamp();
             if ($op->state==='succeeded') { $this->awaitingAnswer=null; }
             $outcome = $this->awaitingAnswer !== null ? 'awaiting_answer' : ($this->deferred !== null ? 'deferred' : (($this->context?->completedReads() ?? 0) > 0 ? 'checked' : 'unavailable'));
@@ -65,7 +72,7 @@ final class RegistrarCheck
                     DB::table('domains_runtime_operations')->updateOrInsert(['operation_id' => $op->id], ['due_at' => $next]);
                 }
             }
-            $op->update(['policy' => [...($op->policy ?? []), 'status_check' => ['outcome' => $outcome, 'at' => $now, 'started' => $this->started, 'next_at' => $next, 'reason' => $this->deferred, 'attempt_identity'=>$this->identity, 'read_attempted'=>($this->context?->exchanges()??0)>0||self::attempted($op), 'facts'=>$this->facts, ...($this->awaitingAnswer !== null ? ['registrar'=>$this->awaitingAnswer,'answer_after'=>$this->answerAfter] : [])]]]);
+            $op->update(['policy' => [...($op->policy ?? []), 'status_check' => ['outcome' => $outcome, 'at' => $now, 'started' => $this->started, 'order' => $this->order, 'next_at' => $next, 'reason' => $this->deferred, 'attempt_identity'=>$this->identity, 'read_attempted'=>($this->context?->exchanges()??0)>0||self::attempted($op), 'facts'=>$this->facts, ...($this->awaitingAnswer !== null ? ['registrar'=>$this->awaitingAnswer,'answer_after'=>$this->answerAfter] : [])]]]);
             return $op;
         });
     }
@@ -77,7 +84,8 @@ final class RegistrarCheck
         }
         // An earlier read of this same attempt still counts, so staff can record the registrar's answer after a resume.
         $kept=self::attempted($op)?['attempt_identity'=>$op->policy['status_check']['attempt_identity'],'read_attempted'=>true]:[];
-        $op->update(['policy' => [...$op->policy, 'status_check' => ['outcome' => 'scheduled', 'at' => $now, 'next_at' => $now, 'reason' => null, ...$kept]]]);
+        $order=self::nextOrder($op);
+        $op->update(['policy' => [...$op->policy, 'status_check_order' => $order, 'status_check' => ['outcome' => 'scheduled', 'at' => $now, 'order' => $order, 'next_at' => $now, 'reason' => null, ...$kept]]]);
     }
     /** A lost reply that no accepted order history covers. Only the registrar's answer can settle it. */
     public static function lostReply(Operation $op, AttemptEvidence $attempt, \DateTimeImmutable $now): bool
