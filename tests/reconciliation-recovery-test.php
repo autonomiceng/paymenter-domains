@@ -3,6 +3,7 @@
 declare(strict_types=1);
 require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/reconciliation-fixture.php';
+use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Data\HistoryAcceptance;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Services\HistoryAcceptances;
@@ -56,7 +57,9 @@ $input=static fn($op,$outcome)=>['operation_id'=>$op->id,'attempt_hash'=>\Paymen
 foreach(['accepted','not_processed'] as $outcome){
     [$op]=$prepare(placeholderComFixtureName('support-'.str_replace('_','-',$outcome).'-placeholder.com'),'absent');$attempt=$op->attempt;$before=$writer->calls;
     commerceReject(fn()=>$settings->run($review($op),$input($op,$outcome),$clock->now()));
-    $clock->instant=$clock->now()->modify('+25 hours');$r=$review($op);
+    $clock->instant=$clock->now()->modify('+25 hours');
+    // Enom reads the domain on a lost reply before staff record its answer.
+    $reconcile->run($op->id);$r=$review($op);
     $bad=$input($op,$outcome);$bad['attempt_hash']=str_repeat('0',64);commerceReject(fn()=>$settings->run($r,$bad,$clock->now()));
     $role->update(['permissions'=>array_diff($permissions,['admin.domains.settings.enom_answer'])]);commerceReject(fn()=>$settings->run($r,$input($op,$outcome),$clock->now()));$role->update(['permissions'=>$permissions]);
     $settings->run($r,$input($op,$outcome),$clock->now());$op->refresh();
@@ -83,6 +86,20 @@ foreach (['', 'wrong-charge'] as $fault) {
     $attempt = $op->attempt; $before = $writer->calls;
     commerceReject(fn() => $settings->run($review($op), $input($op, 'accepted'), $clock->now()));
     $clock->instant = $clock->now()->modify('+25 hours');
+    // A saved order can be read, so staff record the registrar's answer only after a read of this exact attempt.
+    $unread = static function (string $why) use ($op, $settings, $review, $input, $clock, $staff): void {
+        \Illuminate\Support\Facades\Auth::setUser($staff->fresh()); expect(!\Paymenter\Extensions\Servers\Domains\Admin\Support\EnomAnswerAction::make($op->fresh(), 'stamp')->isVisible(), $why.' hides the answer button');
+        $kept = $op->fresh()->getRawOriginal(); $refusal = null;
+        try { $settings->run($review($op), $input($op, 'accepted'), $clock->now()); } catch (DomainException $error) { $refusal = $error->getMessage(); }
+        same('Use Check status to read this attempt first, then record the registrar’s answer.', $refusal, $why.' refuses the answer');
+        same($kept, $op->fresh()->getRawOriginal(), $why.' leaves the request unchanged');
+    };
+    $unread('No read yet');
+    $p = $op->fresh()->policy; $p['status_check'] = ['outcome' => 'unavailable', 'at' => $clock->now()->getTimestamp(), 'attempt_identity' => hash('sha256', 'another attempt'), 'read_attempted' => true];
+    $op->fresh()->update(['policy' => $p]); $unread('A read of another attempt');
+    $observation->fault = 'transport'; $reconcile->run($op->id);
+    same([true, 'unavailable'], [$op->fresh()->policy['status_check']['read_attempted'], $op->fresh()->policy['status_check']['outcome']], 'A failed read of this attempt still counts as read');
+    expect(\Paymenter\Extensions\Servers\Domains\Admin\Support\EnomAnswerAction::make($op->fresh(), 'stamp')->isVisible(), 'After a read of this attempt the answer button shows');
     commerceReject(fn() => $settings->run($review($op), $input($op, 'not_processed'), $clock->now()));
     $wrong = $input($op, 'accepted'); $wrong['order_reference'] = '9002';
     commerceReject(fn() => $settings->run($review($op), $wrong, $clock->now()));
@@ -94,4 +111,17 @@ foreach (['', 'wrong-charge'] as $fault) {
     same($attempt, $original, 'Support retains the original unknown/sent result');
     same($before, $writer->calls, 'Captured order support never sends Purchase');
 }
+// A check names its attempt before any early return, and an older check never replaces a newer result.
+[$op] = $prepare(placeholderComFixtureName('check-order-placeholder.com'), 'captured');
+DB::table('domains_domains')->where('id', $op->domain_id)->update(['authority_generation' => 2]); $reconcile->run($op->id);
+same(\Paymenter\Extensions\Servers\Domains\Services\EnomAnswers::identity($op->fresh()), $op->fresh()->policy['status_check']['attempt_identity'] ?? null, 'A check that stops before reading still names its attempt');
+DB::table('domains_domains')->where('id', $op->domain_id)->update(['authority_generation' => $op->authority_generation]);
+$observation->fault = 'wrong-charge';
+$observation->during = static function () use ($op, $clock): void { \Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::resumed($op->fresh(), $clock->now()->getTimestamp()); };
+$reconcile->run($op->id); same('scheduled', $op->fresh()->policy['status_check']['outcome'], 'A resume saved during a read keeps its status');
+$observation->during = static function () use ($op, $clock, $observation, $reconcile): void {
+    $clock->instant = $clock->now()->modify('+60 seconds'); $observation->fault = 'send_guard'; $reconcile->run($op->id); $observation->fault = 'wrong-charge';
+};
+$reconcile->run($op->id); same('deferred', $op->fresh()->policy['status_check']['outcome'], 'A newer check keeps its result over the older check');
+$observation->during = null; $reconcile->run($op->id); same('checked', $op->fresh()->policy['status_check']['outcome'], 'The next check saves its own result');
 echo "Double completion-persistence failure recovers only unique original provider charge without replay\n"; $nativeSuccessful = true;

@@ -36,6 +36,8 @@ foreach(['register','transfer']as$action){
         $op->update(['policy'=>[...$op->policy,'reconciliation'=>['transfer_status'=>'rejected','reason'=>'transfer_rejection_unreconciled']]]);
     }
     $clock->instant=$now->modify('+25 hours');expect(RegistrarAnswers::eligible($op,$clock->now()),'The original attempt is eligible for an account-specific final answer');
+    // Staff record an Enom answer after a read of this attempt. This fixture has no reader, so it saves that read.
+    $op->update(['policy'=>[...$op->policy,'status_check'=>['outcome'=>'awaiting_answer','at'=>$clock->now()->getTimestamp(),'attempt_identity'=>RegistrarAnswers::identity($op),'read_attempted'=>true,'facts'=>[]]]]);
     $attempt=$op->attempt;$calls=$writer->calls;$money=$nativeMoney();
     $review=new Review($staff->id,$op->server_id,null,'enom_answer',Review::ticket($staff->id,$op->server_id,null,'enom_answer',Review::stamp($op->server_id,null)),'Record final complimentary order answer');
     $input=['operation_id'=>$op->id,'attempt_hash'=>RegistrarAnswers::identity($op),'outcome'=>$action==='register'?'not_processed':'transfer_rejected',

@@ -22,6 +22,7 @@ final class OperationReconciliation
     {
         OperationClaims::outside();
         $capture = $this->claims->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($check): ?array {
+            $check->capture($op);
             if (!$this->eligible($op)) { return null; }
             $watch=TransferPolling::applies($op);$now=$this->clock->now()->getTimestamp();
             $manual=$watch&&($op->policy['reconciliation']['manual_check']??false);
@@ -33,8 +34,7 @@ final class OperationReconciliation
             try {
                 $binding = $this->authority($op, $domain, $all, $funding, $server, $account);
                 $attempt = ReconciliationEvidence::attempt($op, $domain, $binding);
-                $check->capture($op);
-                if ($op->action !== 'transfer' && $attempt->replyLost() && !$attempt->historyAcceptance?->covers($attempt, $this->clock->now())) {
+                if (RegistrarCheck::lostReply($op, $attempt, $this->clock->now())) {
                     $check->awaitingAnswer = $attempt->binding->registrarKey === 'enom' ? 'Enom' : 'NameSilo';
                     $check->answerAfter = (new \DateTimeImmutable($op->attempt['dispatch_attempted_at']))->modify('+24 hours')->getTimestamp();
                     // Enom can still read the domain before staff ask for a case; NameSilo waits for its answer.

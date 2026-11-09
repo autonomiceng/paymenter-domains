@@ -3,8 +3,8 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Data\{DateEvidence,ExpiryPrecision};
-use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
+use Paymenter\Extensions\Servers\Domains\Data\{AttemptEvidence,DateEvidence,ExpiryPrecision};
+use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
 /** An account-specific support answer is evidence, never permission to resend a purchase. */
 class RegistrarAnswers
 {
@@ -33,6 +33,16 @@ class RegistrarAnswers
             &&($op->provider_order_id===null||$op->provider_order_id===self::capturedReference($op))&&($op->registrar_key==='namesilo'||!isset($op->attempt['registration'])&&!isset($op->attempt['renewal']))
             &&!isset($op->policy['enom_answer'])&&!isset($op->attempt['reconciliation']);
     }
+    /** Staff ask the registrar only after the system has read this exact attempt, unless there is nothing to read. */
+    public static function readFirst(Operation $op,AttemptEvidence $attempt,\DateTimeImmutable $now): bool
+    {return $op->action==='transfer'||RegistrarCheck::unreadable($op,$attempt,$now)||RegistrarCheck::attempted($op);}
+    /** The staff page offers the answer under the same rule the writer repeats under its locks. */
+    public static function ready(Operation $op,\DateTimeImmutable $now): bool
+    {
+        if(!self::eligible($op,$now)){return false;}
+        try{$d=$op->domain()->firstOrFail();return self::readFirst($op,ReconciliationEvidence::attempt($op,$d,AccountBindings::binding(Account::where('server_id',$op->server_id)->sole())),$now);}
+        catch(\Throwable){return false;}
+    }
     public static function record(StaffSettingsReview $review,array $input,\DateTimeImmutable $now): void
     {
         // Actor, account and invoice locks follow the same order as all other financial writers.
@@ -49,6 +59,7 @@ class RegistrarAnswers
             $attempt=ReconciliationEvidence::attempt($op,$d,AccountBindings::binding($l['account']));
             if($op->action!=='transfer'&&($attempt->providerReference!==null||$attempt->executionFacts!==null)&&!$attempt->executionFacts?->capturedUnknown()
                 &&!($op->registrar_key==='namesilo'&&$attempt->providerReference===null)){throw new \DomainException('This request already has a registrar order. Check that order instead.');}
+            if(!self::readFirst($op,$attempt,$now)){throw new \DomainException('Use Check status to read this attempt first, then record the registrar’s answer.');}
             $outcome=$input['outcome']??null;$reference=trim((string)($input['order_reference']??''));
             if ($attempt->executionFacts?->capturedUnknown() && ($outcome !== 'accepted' || $reference !== $attempt->providerReference)) { throw new \DomainException('Use the exact saved registrar order number and its accepted outcome.'); }
             $case=ManagementPayload::text($input['case_reference']??null,128);$evidence=ManagementPayload::text($input['evidence']??null,2000);

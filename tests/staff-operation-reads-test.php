@@ -12,7 +12,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{RequestBudget,RequestContext,RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{CataloguePreview,EnomTestReconciliationReader};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,ObservationRecords,ObservationSchema,ObservationWork,OperationReconciliation,ReconciliationEvidence,RegistrarCheck,Refunds,RenewalCompletion,RenewalReplacements,StaffOperationReview,StaffOperations,StaffSyncReview};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,ObservationRecords,ObservationSchema,ObservationWork,OperationReconciliation,ReconciliationEvidence,RegistrarAnswers,RegistrarCheck,Refunds,RenewalCompletion,RenewalReplacements,StaffOperationReview,StaffOperations,StaffSettingsReview,StaffSyncReview};
 \Paymenter\Extensions\Servers\Domains\Services\RuntimeSchema::install();
 try{
 // Native re-check calls the existing read-only reconciliation engine; actual proof alone can complete.
@@ -219,6 +219,16 @@ $clock->instant=$clock->now()->modify('+25 hours');
 DB::table('domains_accounts')->where('server_id',$lost->server_id)->update(['processing_enabled'=>false]);
 $staff->role->update(['permissions'=>[...$all,Staff::POLICY,'admin.domains.settings.enom_answer']]);
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$lost->id])->assertActionHidden('enom_answer')->assertSee('Registrar check pending');
+// The writer repeats the page rule: no Enom answer before one read of this attempt.
+$unread=static function($op,string $why)use($staff,$clock):void{
+    $r=new StaffSettingsReview($staff->id,$op->server_id,null,'enom_answer',StaffSettingsReview::ticket($staff->id,$op->server_id,null,'enom_answer',StaffSettingsReview::stamp($op->server_id,null)),'Record final synthetic Enom answer');
+    $kept=$op->fresh()->getRawOriginal();$refusal=null;
+    try{RegistrarAnswers::record($r,['operation_id'=>$op->id,'attempt_hash'=>RegistrarAnswers::identity($op->fresh()),'outcome'=>'accepted','order_reference'=>'9001','case_reference'=>'synthetic-case-123',
+        'evidence'=>'Enom checked the exact account, domain and attempt time.','confirmed'=>true],$clock->now());}catch(DomainException $error){$refusal=$error->getMessage();}
+    same('Use Check status to read this attempt first, then record the registrar’s answer.',$refusal,$why.' refuses the answer before a read');
+    same($kept,$op->fresh()->getRawOriginal(),$why.' stays unchanged');
+};
+$unread($lost,'An Enom lost registration reply');
 $said=RegistrarCheck::forCustomer($lost->fresh());
 same('Registration pending',$said['title'],'Before the first read the customer sees the pending registration line');
 expect(!str_contains($said['body'],'Check status'),'Customers never see the staff Check status step');
@@ -255,6 +265,7 @@ $state->lost=true;$runRenewal($lostRenew,$binding);$lostRenew->refresh();$state-
 $clock->instant=$clock->now()->modify('+25 hours');
 DB::table('domains_accounts')->where('server_id',$lostRenew->server_id)->update(['processing_enabled'=>false]);
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$lostRenew->id])->assertActionHidden('enom_answer')->assertSee('Registrar check pending')->assertDontSee('too old to check in its order history');
+$unread($lostRenew,'An Enom lost renewal reply');
 $before=[$lostRenew->attempt,$lostRenew->funding,$lostDomain->fresh()->provider_expires_at->format('Y-m-d'),$credit(),$state->writes];
 (new RenewalCompletion($renewBindings,$clock))->run($lostRenew->id);
 expect(in_array(ReadCommand::Info,$state->calls,true),'Automatic renewal recovery reads before staff ask for a case');
