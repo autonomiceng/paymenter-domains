@@ -46,6 +46,7 @@ $emit=static function(string $stateName)use($out,$shell,$owners,&$d):void {
             // slop-sweep: a held read is said once in the page notice, so its row shows a calm Missing alone.
             $expected=$stateName==='unknown'?'Contact support to sync these records.':'Missing';
             expect(str_contains($rows->item(0)->textContent,$expected),'Record note explains recovery for '.$kind.' '.$stateName);
+            if($stateName==='stopped'){expect(str_contains($html,e(\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::READ_HELD)),'The page notice explains recovery for '.$kind.' '.$stateName);}
         }
         preg_match('#<body>(.*)</body>#s',$html,$body);$content=$body[1]??$html;
         writeRenderArtifact($out.'/customer-'.$kind.'-'.$stateName.'.html',str_replace('@@SLOT@@',$content,$shell));

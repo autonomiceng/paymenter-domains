@@ -30,11 +30,13 @@ if($free){same(['label'=>'DNSSEC','off'=>true,'actions'=>[],'url'=>null,'reason'
 if($free){same(['label'=>'DNS records','unavailable'=>true,'actions'=>[],'url'=>null,'records'=>null,'fixed'=>[],'asOf'=>null,'progress'=>null],$dto->management['dns'],'Dormant NameSilo DNS shows as not available');}
 if($free){ // Stopped reads never restart by themselves, so an unknown row names the step instead of a time.
     $d->update(['observation'=>null]);$lockRow=static fn():string=>trim(preg_replace('/\s+/',' ',storefrontDom((new OwnedDomainController($owners))->show($r,$d->id)->render())->query('//li[@id="lock"]/span[@class="domains-row__v"]')->item(0)->textContent));
-    same('Missing Fills in by itself within a day',$lockRow(),'Scheduled reads fill an unknown row in');
+    same('Checking',$lockRow(),'An initial registrar read is Checking rather than Missing');
+    expect(str_contains((new OwnedDomainController($owners))->show($r,$d->id)->render(),e(\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::INITIAL_READ)),'The real owner page explains the initial read');
     Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
     $stoppedRead=Illuminate\Support\Facades\DB::table('domains_observation_work')->insertGetId(['server_id'=>$d->server_id,'account_fingerprint'=>$d->account_fingerprint,'domain_id'=>$d->id,'generation'=>$d->authority_generation,'phase'=>'holding','due_at'=>0,'safe_code'=>'read_unavailable']);
     same([],$owners->present($d->fresh())->management['dns']['actions'],'This registrar has no record changes');
-    same('Missing',$lockRow(),'A stopped read promises no time; the page notice says it once'); // slop-sweep
+    same('Missing',$lockRow(),'A stopped read promises no time; the page notice says it once');
+    expect(str_contains((new OwnedDomainController($owners))->show($r,$d->id)->render(),e(\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::READ_HELD)),'A stopped read explains recovery in the rendered page notice'); // slop-sweep
     Illuminate\Support\Facades\DB::table('domains_observation_work')->where('id',$stoppedRead)->delete();
 }
 if($free){expect(!str_contains($html,'privacy_purchase'),'Free privacy offers no paid action');commerceReject(fn()=>$driver->validate('nameservers',['use_default'=>true,'nameservers'=>[]],$d->domain));}

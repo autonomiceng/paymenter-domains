@@ -52,6 +52,26 @@ final class ObservationRecords
         $p['records']=$record;
         $d->update(['observation'=>$p]);
     }
+    /** A confirmed DNS write includes a complete registrar list, but does not recheck other families. */
+    public static function saveDnsReadback(Domain $d, array $facts, \DateTimeImmutable $now, array $capabilities): void
+    {
+        $family=$d->registrar_key==='namesilo'?($facts['sequence_preimage']??[]):
+            (isset($facts['records'])?['state'=>'complete','records'=>$facts['records']]:[]);
+        $family=RecordInventory::family('dns',$family,$d->registrar_key,$d->domain);
+        if ($family['state']!=='complete' || ($capabilities['families']['dns']??null)!=='supported') { return; }
+        $p=$d->observation??[];
+        $record=self::current($d,$now)??RecordFormat::read([
+            'identity'=>self::identity($d),'at'=>$now->format(DATE_ATOM),'sequence'=>0,
+            'format'=>1,'capability_revision'=>$capabilities['revision']??null,'expected_families'=>$capabilities['families'],
+            'families'=>array_fill_keys(RecordFormat::FAMILIES,['state'=>'unknown','records'=>[]]),
+        ],$d->registrar_key);
+        if ($record===null) { return; }
+        $at=$now->format(DATE_ATOM);
+        $record['families']['dns']=[...$family,'at'=>$at,'last_good'=>['at'=>$at,'records'=>$family['records']]];
+        // Keep the whole-observation sequence: this single-family read cannot supersede other management evidence.
+        $p['records']=$record;
+        $d->update(['observation'=>$p]);
+    }
     /** Failure is separate from saved inventory and survives staff resume until new record evidence. */
     public static function failPrimary(Domain $d, \DateTimeImmutable $now, string $code='read_failed'): void
     {

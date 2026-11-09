@@ -781,7 +781,14 @@
     "tests/watch-discovery-managed-test.php",
     "tests/watch-discovery-commit-test.php",
     "tests/watch-discovery-notices-test.php",
-    "tests/watch-discovery-siblings-test.php"
+    "tests/watch-discovery-siblings-test.php",
+    "tests/customer-initial-read-test.php",
+    "tests/dns-summary-readback-test.php",
+    "tests/staff-registration-pending-test.php",
+    "tests/staff-operation-sync-test.php",
+    "tests/pending-transfer-observation-test.php",
+    "tests/enom-nameserver-domains-test.php",
+    "tests/owner-order-status-test.php"
   ],
   "ui": [],
   "runner": [

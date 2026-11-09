@@ -8,7 +8,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
  * registrar: 'enom' or 'namesilo'; environment: 'test' or 'live' (NameSilo OTE is 'test').
  * Enom commands: GetBalance, GetTLDList, PE_GetProductPrice, PE_GetRetailPricing, PE_GetDomainPricing, GetTLDDetails, GetExtAttributes,
  * Check, GetDomainInfo, GetDomainExp, GetExtendInfo, GetContacts, GetRegLock, GetWPPSInfo,
- * GetRenew, GetExpiredDomains, GetOrderDetail, TP_GetOrder, GetOrderList, GetDNS, GetHosts,
+ * GetRenew, GetExpiredDomains, GetOrderDetail, TP_GetOrder, GetOrderList, GetAllDomains, GetDNS, GetHosts,
  * GetDomainSRVHosts, GetDnsSec, CheckNSStatus, Purchase, TP_CreateOrder, Extend,
  * UpdateExpiredDomains, ModifyNS, Contacts, SetRegLock, SynchAuthInfo, SetRenew,
  * EnableServices, DisableServices, PurchaseServices, RenewServices, SetHosts,

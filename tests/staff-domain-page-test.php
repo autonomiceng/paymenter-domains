@@ -191,7 +191,7 @@ foreach (['off'=>[false,'Off',true],'on'=>[true,'On',false],'unknown'=>[null,nul
 }
 $active->fresh()->update(['observation'=>$autoRenew]);
 DB::table('domains_domains')->where('id',$active->id)->update(['provider_expires_at'=>null]);
-same([null,'No confirmed expiry saved. Check the domain at the registrar.',null,'Fills in by itself after the expiry date syncs'],[$value($active,'Expires'),$sub($active,'Expires'),$value($active,'Next invoice'),$sub($active,'Next invoice')],'Active without expiry shows Missing with causes: '.json_encode([$value($active,'Expires'),$sub($active,'Expires'),$value($active,'Next invoice'),$sub($active,'Next invoice')]));
+same([null,'Fills in by itself within a day',null,'Fills in by itself after the expiry date syncs'],[$value($active,'Expires'),$sub($active,'Expires'),$value($active,'Next invoice'),$sub($active,'Next invoice')],'Active without expiry shows Missing with causes: '.json_encode([$value($active,'Expires'),$sub($active,'Expires'),$value($active,'Next invoice'),$sub($active,'Next invoice')]));
 Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($active->domain)->assertSee('Expiry missing')->assertSee('Fills in by itself within a day');
 same('Under review',DomainFacts::status($active->fresh())['label'],'Active without expiry is under review');
 same('Expiry missing. Check the domain.',DomainFacts::statusLine(DomainFacts::status($active->fresh())),'Expiry missing step');
@@ -264,9 +264,9 @@ DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>'
 same(['Read stopped','danger',null],[$value($active,'Last sync'),DomainFacts::for($active->fresh())['Last sync']['tone'],$sub($active,'Last sync')],'Sync failed row');
 same('The registrar read stopped.',DomainFacts::notice($active->fresh())['title'],'Sync stopped notice');
 DB::table('domains_domains')->where('id',$active->id)->update(['provider_expires_at'=>null]);
-same('No confirmed expiry saved. Check the domain at the registrar.',$sub($active,'Expires'),'Missing expiry names the failed sync');
+same(null,$sub($active,'Expires'),'Missing expiry leaves stopped-read recovery to the page notice');
 DB::table('domains_domains')->where('id',$active->id)->update(['provider_expires_at'=>today()->addDays(120)->format('Y-m-d')]);
-Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($active->domain)->assertSee('Active')->assertSee('Sync failed')->assertSeeHtml('data-beco-tone="warn" data-beco-record="domain-'.$active->id.'"');
+Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($active->domain)->assertSee('Active')->assertSee('Sync stopped')->assertSeeHtml('data-beco-tone="warn" data-beco-record="domain-'.$active->id.'"');
 same('success',DomainFacts::listTone(['tone'=>'success'],null),'A healthy row stays green in the list');same('danger',DomainFacts::listTone(['tone'=>'danger'],'failed'),'A stopped sync never softens a worse status');
 Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$active->id])->assertSee('The registrar read stopped.')->assertSee('Resume sync')->assertSee('Read stopped')->assertSee('Stopped after 5 attempts.')->assertDontSee('Cause: read_unavailable.');
 Auth::setUser($staff);$stoppedHead=DomainFacts::head($active->fresh(),DomainFacts::status($active->fresh()),DomainFacts::for($active->fresh()));
@@ -400,14 +400,16 @@ try {
     $reservedSync=$syncConnection->pop();expect($reservedSync!==null,'Staff A has a real reserved sync job');
     $syncJob=unserialize($reservedSync->payload()['data']['command']);
     same([$importer->id,$active->id,$active->authority_generation,$active->account_fingerprint],[$syncJob->actor,$syncJob->domain,$syncJob->generation,$syncJob->fingerprint],'Queued sync binds actor and current holding');
-    Livewire::actingAs($secondSyncStaff)->test(ViewDomain::class,['record'=>$active->id])->callAction('sync_now')->assertHasNoActionErrors();
+    Livewire::actingAs($secondSyncStaff)->test(ViewDomain::class,['record'=>$active->id])->assertActionDisabled('sync_now')->assertSee('Sync in progress')->callAction('sync_now')->assertHasNoActionErrors();
     $syncNotices=new \Filament\Notifications\Livewire\Notifications;$syncNotices->mount();
     $syncTitles=$syncNotices->notifications->map(fn($notice)=>$notice->getTitle())->values()->all();
     expect(!in_array('Sync queued',$syncTitles,true),'Second staff is not promised a silently dropped sync');
-    same(["A sync was already requested. If nothing changes in 15 minutes, press Sync now again. If it still doesn't run, check the queue worker."],$syncTitles,'Second staff gets retry and worker guidance without a queued promise');
+    same([],$syncTitles,'The disabled button and progress line do not promise another queued sync');
     same(1,$syncConnection->size(),'Two staff clicks retain one holding read, including its reservation');
     config(['queue.default'=>'sync','queue.connections.sync.driver'=>'sync']);
-    Livewire::actingAs($importer)->test(ViewDomain::class,['record'=>$active->id])->callAction('sync_now')->assertNotified(\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::WORKER);
+    Livewire::actingAs($importer)->test(ViewDomain::class,['record'=>$active->id])->assertActionDisabled('sync_now');
+    try{\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::enqueue((int)$importer->id,$active->fresh());throw new LogicException('Inline queue must be refused');}
+    catch(DomainException $error){same(\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::WORKER,$error->getMessage(),'The writer refuses inline queue configuration');}
     same(1,$syncConnection->size(),'Sync queue refusal never falls back to inline reads');
 } finally {
     if ($reservedSync) { $reservedSync->delete(); }

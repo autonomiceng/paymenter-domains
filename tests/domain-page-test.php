@@ -68,7 +68,12 @@ same(1,$dom->query('//li[@id="nameservers"]/span[contains(@class,"domains-row__v
 expect(str_contains($html,'.domains .domains-ns-list { display: flex; flex-direction: column;')&&!str_contains($html,'line-clamp'),'One name per line, never cut off');
 expect(str_contains($html,'.domains .domains-sheet .domains-card dt, .domains .domains-sheet .domains-row__l { font-size: inherit; font-weight: 400; }'),'Settings labels are the size of the Renewal labels');
 same(['2 records',['Edit']],[$text('dns'),$action('dns')],'DNS records row');
-same(['No glue records',['Add']],[$text('glue'),$action('glue')],'Glue row');
+same(['No glue records known here',['Manage']],[$text('glue'),$action('glue')],'Glue row does not claim an unread inventory is empty');
+same('/domains/1?edit=glue#edit-glue',$dom->query('//li[@id="glue"]/span[contains(@class,"domains-row__a")]/a[@data-dialog-open]')->item(0)?->getAttribute('href'),'Glue Manage opens its editor');
+foreach(['partial'=>'No glue records known here','complete'=>'0 records']as$state=>$value){
+    $glue=$domain(['management'=>$management(['glue'=>['family'=>['state'=>$state,'value'=>ucfirst($state),'kind'=>'glue','count'=>0,'at'=>null,'last_good_at'=>null,'customer'=>'']]])]);
+    same([$value,['Manage']],$row(storefrontDom($render($glue)),'glue'),'Glue row distinguishes '.$state.' inventory');
+}
 same(['Off',['Add DS record']],[$text('ds'),$action('ds')],'DNSSEC row');
 same(['On',['Turn off']],[$text('lock'),$action('lock')],'Transfer lock row');
 same([null,[]],[$text('privacy'),$action('privacy')],'Paid privacy is hidden while its DTO data stays intact');
@@ -288,7 +293,7 @@ expect(str_contains($html, '.domains .domains-card > div { position: relative;')
 expect(str_contains($html, '.domains .domains-ph { position: relative;'), 'Status help anchors to the full page header');
 expect(preg_match('/\\.domains \\.domains-help-pop \\{[^}]*white-space: normal;/s',$html)===1, 'Card help resets inherited label nowrap');
 $d=$domain(['dnsCorrection'=>true]);$html=$render($d,$summary($d,['dnsKeys'=>['domain.dns.platform','domain.points.platform_empty'],'website'=>false,'email'=>false]));$dom=storefrontDom($html);
-same('Your domain is registered, but the registrar could not confirm your chosen nameservers. Set up DNS with your provider, then change nameservers. Change nameservers',$norm($dom->query('//div[contains(@class,"domains-notice")]')->item(0)),'Refused registration DNS gives a quiet next step');
+same('The registered nameservers do not match the registration settings. Set up DNS with your provider, then change nameservers. Change nameservers',$norm($dom->query('//div[contains(@class,"domains-notice")]')->item(0)),'Refused registration DNS gives a quiet next step');
 expect(str_contains($html,'To use this domain, buy a service or point it to your own nameservers.'),'Domain without hosting explains the next step');
 
 $d=$domain(['dnsCorrection'=>true,'management'=>[]]);$dom=storefrontDom($render($d,$summary($d)));
