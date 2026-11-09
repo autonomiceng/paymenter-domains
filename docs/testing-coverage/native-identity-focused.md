@@ -14,15 +14,15 @@ authority still follows the existing retirement path.
 | `scripts/conversion/EvidenceHost.php` | Conversion application preflight, protected evidence collection, collector CLI and development-source packaging exclusions. |
 | Changed test files or shared support fixtures | The tests themselves, every requiring registered consumer, fixture policy and runner discovery checks. |
 
-The conservative lexical inventory contains 292 registered tests, including the
+The conservative lexical inventory contains 289 registered tests, including the
 [focused checks for adoption and registrars](adoption-focused.md). It follows class imports,
 requires, shared fixtures, route registration and source/package collectors. An import
 or route reference qualifies for this conservative selection; it does not establish
 that the changed marker branch executes in that test. No suite category is selected
 as a substitute for this dependency inventory.
 
-The command below selects the 289 offline tests (276 regular and 13 installed) through
-the existing selector. Run installed tests with the full resource slot. The three
+The command below selects the 287 offline tests (274 regular and 13 installed) through
+the existing selector. Run installed tests with the full resource slot. The two
 MariaDB scenario registrations are recorded separately below; they require a supplied
 MariaDB environment and are not included in offline pass counts.
 
@@ -148,7 +148,6 @@ python3 scripts/test.py --jobs 2 --only \
   tests/status-pages-test.php tests/status-pill-test.php \
   tests/status-sets-test.php tests/storefront-cache-test.php \
   tests/storefront-test.php tests/terminal-proof-test.php \
-  tests/test_conversion_evidence_cli.py tests/test_conversion_mariadb_guards.py \
   tests/test_hook_attribution.py tests/test_installed_namesilo_enrollment.py \
   tests/test_installed_package.py tests/test_installed_package_acquisition.py \
   tests/test_installed_package_enom_exchange.py tests/test_installed_package_enom_live.py \
@@ -178,7 +177,6 @@ python3 scripts/test.py --jobs 2 --only \
 
 MariaDB registrations in the static dependency inventory:
 
-- `tests/test_conversion_mariadb.py`
 - `tests/test_schema_mariadb.py`
 - `tests/test_user_deletion_mariadb.py`
 

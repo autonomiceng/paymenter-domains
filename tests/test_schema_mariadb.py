@@ -16,9 +16,19 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'scripts'))
 import native
-from test_conversion_mariadb import memory_gate
 
 IMAGE = 'mariadb:11.4.5'
+
+
+def memory_gate():
+    for attempt in range(41):
+        available = int(next(line.split()[1] for line in Path('/proc/meminfo').read_text().splitlines()
+                             if line.startswith('MemAvailable:')))
+        if available >= 1572864:
+            return
+        if attempt == 40:
+            raise RuntimeError('MemAvailable remained below 1.5 GiB for ten minutes.')
+        time.sleep(15)
 
 
 def php_environment(app, socket, database, password, prefix):
