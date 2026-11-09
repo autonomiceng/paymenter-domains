@@ -74,13 +74,16 @@ final class DomainHistory
             'sub'=>$reason,
             'status'=>RequestFacts::status($entry,$ordersOff,$domain),'by'=>self::requester($entry,$domain)];
     }
-    /** The newest entries as Sheet::trace steps: the reason, then when and who. */
-    public static function steps(Domain $domain, array $entries): array
+    /** The newest entries as Sheet::trace steps: the reason, then when and who.
+     * $said is the page's status line, which names request $request: that request's reason is not said again. */
+    public static function steps(Domain $domain, array $entries, ?int $request = null, ?string $said = null): array
     {
         $off=self::ordersOff($domain);
-        return array_map(function(Operation|array $entry) use($domain,$off): array {
+        return array_map(function(Operation|array $entry) use($domain,$off,$request,$said): array {
             $row=self::row($entry,$domain,$off);
-            return Sheet::event($row['event'],$row['sub']?StaffDomainStatus::sentence($row['sub']):null,$row['time']?->getTimestamp(),$row['by'],$row['status']['tone']??'gray',$row['status']['label']??null);
+            $sub=$row['sub']?StaffDomainStatus::sentence($row['sub']):null;
+            if ($sub!==null&&$said!==null&&$entry instanceof Operation&&(int)$entry->id===$request&&str_contains($said,$sub)) { $sub=null; }
+            return Sheet::event($row['event'],$sub,$row['time']?->getTimestamp(),$row['by'],$row['status']['tone']??'gray',$row['status']['label']??null);
         },$entries);
     }
     /** A management request names who asked for it. Everything else runs on its own. */

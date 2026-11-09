@@ -31,7 +31,7 @@ foreach (['auto-renew','alerts','neither'] as $slot) {
     }
     if ($slot==='neither') { DB::table('domains_obligation_alerts')->where('domain_id',$checked->id)->update(['resolved_at'=>time()]); }
     $facts=DomainFacts::for($checked->fresh());
-    same($slot==='auto-renew',isset($facts['Renewal invoices']),'Auto-renew slot: '.$slot);
+    same($slot==='auto-renew',isset($facts['Renewal']),'Auto-renew slot: '.$slot);
     same($slot==='alerts',isset($facts['Open alerts']),'Open alerts slot: '.$slot);
     $page=Livewire::actingAs($review)->test(ViewDomain::class,['record'=>$checked->id])->assertActionVisible('notice_review');
     same(1,substr_count(html_entity_decode(strip_tags($page->html()),ENT_QUOTES),'Mark reminder checked'),'Review button renders once with slot: '.$slot);

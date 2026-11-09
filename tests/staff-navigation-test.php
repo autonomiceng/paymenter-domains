@@ -80,8 +80,8 @@ same([null,'Install the PHP cURL extension to use a custom resolver.',true],$set
 Livewire::actingAs($manager)->test(MonitoringSettings::class)->assertSee('Install the PHP cURL extension to use a custom resolver.')->assertSee('Server default')->assertActionHidden('configure')->assertActionHidden('check')->assertDontSee('Edit resolver');
 $GLOBALS['domainsTestCurlMissing']=false;
 
-// Maintenance notice, one line per state; time in staff format.
-$since=1800000000;$at='Jan 15, 2027 08:00 UTC';
+// Maintenance notice, one line per state; time in the staff format with its zone, like every other staff time.
+config(['domains.time_zone'=>'America/Los_Angeles']);$since=1800000000;$at='Jan 15, 2027, 12:00 AM PST';
 same(null,WatchMaintenance::notice(['outage'=>false,'reason'=>'waiting','since'=>null]),'Waiting has no notice');
 same(null,WatchMaintenance::notice(['outage'=>false,'reason'=>'current','since'=>$since]),'Current has no notice');
 same(['text'=>'Monitoring is not set up on this site.','tone'=>'warning','action'=>'setup'],WatchMaintenance::notice(['outage'=>false,'reason'=>'disabled','since'=>null]),'Disabled');
@@ -98,9 +98,9 @@ $clock=(object)['now'=>$since];app()->instance(WatchWork::class,new WatchWork(ne
 config(['queue.default'=>'database','queue.connections.database.driver'=>'database','queue.connections.database.retry_after'=>180]);
 DB::table('domains_watch_schedule')->where('scope','dispatch')->delete();DB::table('domains_watch_schedule')->insert(['scope'=>'dispatch','due_at'=>$since,'progress_at'=>$since-86400,'data'=>json_encode(['started_at'=>$since-86400])]);
 // A stopped dispatcher needs server maintenance, even when staff can open Failed jobs.
-Livewire::actingAs($viewer)->test(ListWatches::class)->assertSee('Monitoring checks have not run since Jan 14, 2027 08:00 UTC.')->assertDontSee('Open Failed jobs');
+Livewire::actingAs($viewer)->test(ListWatches::class)->assertSee('Monitoring checks have not run since Jan 14, 2027, 12:00 AM PST.')->assertDontSee('Open Failed jobs');
 $manager->role->update(['permissions'=>[...$manager->role->permissions,'admin.failed_jobs.viewAny']]);
-$overdue=Livewire::actingAs($manager)->test(ListWatches::class)->assertSee('Monitoring checks have not run since Jan 14, 2027 08:00 UTC.')->assertDontSee('Open Failed jobs')->assertDontSee('Resolver settings')->assertSee('Ask your site admin to restart them.')->assertCanSeeTableRecords([$watch]);
+$overdue=Livewire::actingAs($manager)->test(ListWatches::class)->assertSee('Monitoring checks have not run since Jan 14, 2027, 12:00 AM PST.')->assertDontSee('Open Failed jobs')->assertDontSee('Resolver settings')->assertSee('Ask your site admin to restart them.')->assertCanSeeTableRecords([$watch]);
 $text=html_entity_decode(strip_tags($overdue->html()));expect(!str_contains($text,'—'),'No em dash');foreach(['unavailable','Public domain checks'] as $word){expect(stripos($text,$word)===false,'No "'.$word.'" on the list');}
 // Resolver advice links to readable settings and affected checks; write controls keep their own permission checks.
 DB::beginTransaction();

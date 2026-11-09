@@ -65,7 +65,7 @@ foreach (HistoryLink::all() as $link) {
 staffPanel(); \Illuminate\Support\Facades\Auth::login($staff);
 $d->update(['observation' => [...($d->observation ?? []), 'adoption_review' => ['inside_issue_window' => true, 'near_due' => true]]]);
 $facts = \Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::for($d->fresh());
-same(['Off', 'Set at import'], [$facts['Renewal invoices']['value'], $facts['Renewal invoices']['sub']], 'Renewal-off staff fact reflects original intent');
+same(['Off', 'Set at import'], [$facts['Renewal']['value'], $facts['Renewal']['sub']], 'Renewal-off staff fact reflects original intent');
 same(null, \Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::notice($d->fresh()), 'Renewal off at import: no cutoff notice');
 \Livewire\Livewire::actingAs($staff)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class, ['record' => $d->id])
     ->assertSee('Set at import')->assertDontSee('Imported after the invoice date');

@@ -43,15 +43,17 @@ foreach ($cases as $case=>[$status,$action,$state,$code]) {
     DB::table('domains_domains')->where('id',$held->id)->update(['status'=>$status,'provider_expires_at'=>null]);
     DB::table('domains_operations')->where('domain_id',$held->id)->update(['action'=>$action,'state'=>$state,'safe_code'=>$code]);
     [$columns,$records]=$list();$cell=$columns['auto_renew']->record($records[$held->id]);
-    same(DomainFacts::for($held->fresh())['Renewal invoices']['value']??'Missing',$cell->getState(),'Auto-renew cell matches the domain page: '.$case);
+    same(DomainFacts::for($held->fresh())['Renewal']['value']??'Missing',$cell->getState(),'Auto-renew cell matches the domain page: '.$case);
     expect(in_array($cell->getState(),['On','Off','Missing'],true),'Auto-renew cell is not blank: '.$case);
 }
 // A pending import never bills renewals: the list says Off, Until import, like the domain page. By status or by provenance alone.
 $saved=(array)DB::table('domains_domains')->where('id',$held->id)->first(['status','provenance','provider_expires_at']);
 foreach (['status'=>['status'=>'adoption_pending'],'provenance'=>['provenance'=>'adoption_pending']] as $case=>$pending) {
     DB::table('domains_domains')->where('id',$held->id)->update([...$pending,'provider_expires_at'=>today()->addDays(200)->format('Y-m-d')]);
-    [$columns,$records]=$list();$cell=$columns['auto_renew']->record($records[$held->id]);$page=DomainFacts::for($held->fresh())['Renewal invoices'];
+    [$columns,$records]=$list();$cell=$columns['auto_renew']->record($records[$held->id]);$page=DomainFacts::for($held->fresh())['Renewal'];
     same(['Off','Until import'],[$page['value'],$page['sub']],'Domain page says Off until import: pending '.$case);
+    // Customers and staff see one name for the setting.
+    same('Renewal',$columns['auto_renew']->getLabel(),'List column says Renewal, as the domain page row');
     same([$page['value'],$page['sub']],[$cell->getState(),$cell->getDescriptionBelow()],'List matches the domain page: pending '.$case);
     DB::table('domains_domains')->where('id',$held->id)->update($saved);
 }
