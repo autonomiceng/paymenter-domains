@@ -33,7 +33,7 @@ final class OperationActions
                 ->visible(fn()=>Staff::can(StaffOperationReview::permission($name))&&self::relevant($name,$op));
             if(in_array($name,[...self::REASON,'disposition'],true)){
                 $action->requiresConfirmation()->modalHeading($name==='disposition'?$label:$label.'?')->modalSubmitActionLabel($label)->modalWidth('lg')
-                    ->modalDescription($complimentaryClosure?'Closes this complimentary order and its service. Nothing is charged or credited.':($name==='approve_charge'?'Approves the charge already incurred at the registrar. Completes this renewal from its retained proof and keeps future spending paused.':self::description($name)));
+                    ->modalDescription($complimentaryClosure?'Closes this complimentary order and its service. Nothing is charged or credited.':self::description($name));
             }
             $account=$name==='release'&&!$contactRecovery&&$op->state==='held'?RequestFacts::account($op)['account']:null;
             $sends=EnomTestRegistration::releaseSends($op,$account)?RequestFacts::sendWords($op,$account):null;
@@ -165,10 +165,11 @@ final class OperationActions
         if(\Paymenter\Extensions\Servers\Domains\Services\TransferPolling::expected($op)){return false;}
         return ($p['renewal_polls']??0)>=\Paymenter\Extensions\Servers\Domains\Services\OperationReconciliation::POLL_LIMIT||($p['reconciliation']['polls']??0)>=\Paymenter\Extensions\Servers\Domains\Services\OperationReconciliation::POLL_LIMIT;
     }
+    /** The confirmation text for each action that opens one. */
     public static function description(string $action): ?string
     {
-        if($action==='approve_charge'){try{StaffOperationReview::requirePermission(\App\Models\User::with('role')->find(Auth::id()),$action,$op);return \Paymenter\Extensions\Servers\Domains\Services\CapturedChargeReview::approvable($op);}catch(\Throwable){return false;}}
         return match($action){
+            'approve_charge'=>'Approves the charge already incurred at the registrar. Completes this renewal from its retained proof and keeps future spending paused.',
             'disposition'=>'Records the final result. Nothing is sent or credited.',
             'refund'=>"Cancels this unsent request and returns the payment. Account credit is used only when the original payment cannot be refunded.",
             'credit'=>'Checks the payment return again using the same refund request.',

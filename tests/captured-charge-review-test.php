@@ -7,9 +7,9 @@ use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation;
 use Illuminate\Support\Facades\{Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Catalogue\{Context, Cost, FeedObserved, OfferState, Query, TermSupport};
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CostUnit, Environment, Money};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, CostUnit, Environment, HistoryAcceptance, Money};
 use Paymenter\Extensions\Servers\Domains\Models\Tld;
-use Paymenter\Extensions\Servers\Domains\Services\{EnomTestSendLimitSchema, RenewalCycles};
+use Paymenter\Extensions\Servers\Domains\Services\{EnomTestSendLimitSchema, HistoryAcceptances, RenewalCycles};
 
 // Native debt, funding, seal and completion need the existing financial fixture; a pure rule test cannot
 // prove invoice totals, the final no-send boundary or preservation of an incurred charge discrepancy.
@@ -38,12 +38,18 @@ try{foreach(['changed'=>['20.00','actual_charge_changed'],'overrun'=>['16.00','a
  $clock->instant=new DateTimeImmutable('2027-09-27T12:00:00Z');$review($d);
  $op=$cycles->complimentary($d->id,$staff,2,new Money($limit,'USD'),'staff_reviewed');
  $state->years=2;$state->after='2029-10-18';$state->expiry='10/18/2027 5:00:00 AM';$state->charge='16.01';$state->fail=null;$clock->instant=new DateTimeImmutable('2027-10-18T11:59:00Z');Cache::flush();config(['domains.enom_identity.environment'=>'test']);
- [$engine,$writer,$completion]=$compose($b);same('pending',$engine->run($op->id,$writer)->state,'Real two-year send');$state->expiry='2029-10-18';$held=$completion->run($op->id);same($reason,$held->safe_code,'Real captured financial hold');
+ [$engine,$writer,$completion]=$compose($b);same('pending',$engine->run($op->id,$writer)->state,'Real two-year send');$state->expiry='2029-10-18';
+ // The changed case is captured while auto-renew is still on at the registrar, so its frozen proof keeps that correction.
+ if($case==='changed'){$state->auto='1';}
+ $held=$completion->run($op->id);same($reason,$held->safe_code,'Real captured financial hold');same($case==='changed'?['auto_renew']:[],$held->attempt['reconciliation']['observed_corrections'],'Frozen proof keeps the auto-renew correction it saw');
  app()->instance(\Paymenter\Extensions\Servers\Domains\Services\RenewalCompletion::class,$completion);app()->instance(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class,$renewBindings);
  $work=$renewalRuntime($b,$engine,$writer,$completion);$observe=static function()use($work,$op):void{app(\Paymenter\Extensions\Servers\Domains\Services\RuntimeDispatch::class)->enqueue($op->id,true);\Illuminate\Support\Facades\Queue::assertPushed(\Paymenter\Extensions\Servers\Domains\Jobs\RunOperation::class,fn($job)=>$job->operationId===$op->id);(new \Paymenter\Extensions\Servers\Domains\Jobs\RunOperation($op->id))->handle($work);};
  $rawProof=[$held->getRawOriginal('attempt'),$held->getRawOriginal('cost')];$attempt=$held->attempt;$cost=$held->cost;$amount=$held->amount;$expiry=$d->fresh()->provider_expires_at->format('Y-m-d');$writes=$state->writes;$calls=count($state->calls);
  $page=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id]);$page->assertActionVisible('resume_reads')->callAction('resume_reads')->assertNotified('Status checks restarted');
  same($calls,count($state->calls),'Audited action makes no inline provider request');
+ // While the restarted read waits in the queue, the notice offers Check status for that one read, not another restart.
+ same('recheck',\Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::notice($op->fresh())['action']??null,$case.': a queued audited read offers Check status');
+ Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertActionVisible('recheck')->assertActionHidden('resume_reads');
  $state->charge='16.02';
  // A concurrent worker must see the consumed one-read permission before the first read returns.
  $state->during=static function()use($completion,$op,$state):void{$before=count($state->calls);$completion->run($op->id);same($before,count($state->calls),'A concurrent worker cannot consume the same resume');};
@@ -54,24 +60,33 @@ try{foreach(['changed'=>['20.00','actual_charge_changed'],'overrun'=>['16.00','a
  $check($fresh->state==='uncertain'&&$fresh->safe_code===$reason&&$d->fresh()->provider_expires_at->format('Y-m-d')===$expiry&&$d->fresh()->renewal_policy['automatic_spend_paused'],$case.': changed observation keeps financial hold, expiry and spending pause');
  $calls=count($state->calls);$completion->run($op->id);$check($calls===count($state->calls),$case.': automatic reads stop after the one resumed observation');
  $page=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id]);$check(!($page->instance()->getAction('approve_charge',false)?->isVisible()??false),$case.': different charge cannot approve original evidence');
- if(!is_file(dirname(__DIR__).'/Domains/Services/CapturedChargeReview.php')){
-  $state->charge='16.01';$page->callAction('resume_reads');$observe();
-  $matching=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id]);
-  $check($matching->instance()->getAction('approve_charge',false)?->isVisible()??false,$case.': same captured charge needs an audited approval action');continue;
- }
  // A failed read is consumed too and cannot reuse a previous successful observation for approval.
  $page->callAction('resume_reads');$state->fail=\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Order;$observe();$state->fail=null;
  same(null,($op->fresh()->policy['captured_charge_observations'][1]['proof']??null),'Unavailable read retains no invented proof');$calls=count($state->calls);$completion->run($op->id);same($calls,count($state->calls),'Failed one-read permission stays consumed');
- $state->charge='16.01';Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('resume_reads');$observe();
+ // The matching read comes after the registrar confirmed auto-renew Off. Check status takes it now; the delayed queued read then finds it used.
+ $state->charge='16.01';$state->auto='0';$resumed=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('resume_reads');
+ $calls=count($state->calls);$resumed->assertActionVisible('recheck')->callAction('recheck');expect(count($state->calls)>$calls,$case.': Check status reads the original order');
+ $calls=count($state->calls);$observe();same($calls,count($state->calls),$case.': the delayed queued read finds the audited read already used');
  $fresh=$op->fresh();same(3,count($fresh->policy['captured_charge_observations']),'Each audited read has one retained outcome');
  $row=$fresh->policy['captured_charge_observations'][2];same([$staff->id,$fresh->operation_key,$fresh->account_fingerprint],[$row['actor_id'],$row['operation_key'],$row['fingerprint']],'Observation binds the audited actor and current original attempt');
  $d->refresh()->update(['renewal_policy'=>[...$d->renewal_policy,'owner_auto_renew'=>false]]);
+ same([],$row['proof']['observed_corrections'],'The matching read saw auto-renew Off');
  $page=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertActionVisible('approve_charge')->assertSee('The registrar already charged this order');
  // Current permission loss is checked at submit, not taken from the mounted confirmation.
  $page->mountAction('approve_charge')->setActionData(['reason'=>'Review the same incurred registrar charge']);$before=[$fresh->getRawOriginal(),$d->fresh()->getRawOriginal()];
+ // Every staff action has its wording; each one that opens a confirmation shows a sentence.
+ foreach(array_keys(\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::ACTIONS) as $action){$text=\Paymenter\Extensions\Servers\Domains\Admin\Support\OperationActions::description($action);expect($text===null||is_string($text)&&$text!=='',$case.': wording for '.$action);}
+ foreach(['approve_charge','disposition','refund','credit','replacement'] as $action){expect(is_string(\Paymenter\Extensions\Servers\Domains\Admin\Support\OperationActions::description($action)),$case.': confirmation wording for '.$action);}
+ same(\Paymenter\Extensions\Servers\Domains\Admin\Support\OperationActions::description('approve_charge'),$page->instance()->getMountedAction()?->getModalDescription(),'The live dialog uses the shared approval wording');
  $role->update(['permissions'=>array_values(array_diff($rights,['admin.domains.costs']))]);
  $page->callMountedAction();same($before,[$op->fresh()->getRawOriginal(),$d->fresh()->getRawOriginal()],'Revoked cost access cannot approve');
  Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertActionHidden('approve_charge')->assertDontSee('16.01')->assertDontSee('16.02');$role->update(['permissions'=>$rights]);
+ // Approval needs its own permission, even with a current ticket and the same proof.
+ $role->update(['permissions'=>array_values(array_diff($rights,['admin.domains.operations.approve_charge']))]);
+ $key=\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::ticket($staff->id,$d->id,$op->id,'approve_charge',\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::stamp($op->fresh(),$d->fresh()),$clock);$before=[$op->fresh()->getRawOriginal(),$d->fresh()->getRawOriginal()];
+ try{(new \Paymenter\Extensions\Servers\Domains\Services\StaffOperations($clock))->run($staff,$d->id,$op->id,'approve_charge',$key,'Approve without the approval permission');expect(false,'Missing approval permission must refuse');}catch(DomainException $refused){same("You don't have permission to do this.",$refused->getMessage(),'Refused for the missing approval permission');}
+ same($before,[$op->fresh()->getRawOriginal(),$d->fresh()->getRawOriginal()],'Missing approval permission changes nothing');$role->update(['permissions'=>$rights]);
+ expect(\Paymenter\Extensions\Servers\Domains\Services\CapturedChargeReview::approvable($op->fresh()),'The same proof stays approvable for permitted staff');
  // Foreign captured proof cannot turn current observations into approval authority.
  $rawAttempt=$op->fresh()->getRawOriginal('attempt');$foreign=$op->fresh()->attempt;$foreign['reconciliation']['fingerprint']=str_repeat('f',64);
  DB::table('domains_operations')->where('id',$op->id)->update(['attempt'=>\Illuminate\Support\Facades\Crypt::encryptString(json_encode($foreign))]);
@@ -96,6 +111,26 @@ try{foreach(['changed'=>['20.00','actual_charge_changed'],'overrun'=>['16.00','a
 }
 }catch(Throwable $error){throw new RuntimeException($error->getMessage().' at '.implode(' > ',array_map(static fn($frame)=>($frame['file']??'').':'.($frame['line']??0),$error->getTrace())),0,$error);}
 expect($failures===[],implode('; ',$failures));
+// Accepted renewal history can prove a captured charge after a lost reply. Eligibility and approval accept it alike, with no other send.
+app()->instance(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class,$bindings);config(['domains.enom_identity.environment'=>null]);
+[$seed,$d,$b]=$makeRenewal(placeholderComFixtureName('captured-history-placeholder.com'),false);$cycles->retireUnpaid($seed->id);
+$clock->instant=new DateTimeImmutable('2027-09-27T12:00:00Z');$review($d);$op=$cycles->complimentary($d->id,$staff,2,new Money('20.00','USD'),'staff_reviewed');
+$state->years=2;$state->after='2029-10-18';$state->expiry='10/18/2027 5:00:00 AM';$state->charge='16.01';$state->fail=null;$clock->instant=new DateTimeImmutable('2027-10-18T11:59:00Z');Cache::flush();config(['domains.enom_identity.environment'=>'test']);
+[$engine,$writer,$completion]=$compose($b);$state->lost=true;same('uncertain',$engine->run($op->id,$writer)->state,'Lost two-year reply');$state->lost=false;$writes=$state->writes;
+$accept=static fn()=>HistoryAcceptances::save(new HistoryAcceptance($b,'America/Los_Angeles',0,9*86400,'enom_renewal_v1'));$accept();
+$clock->instant=$clock->now()->modify('+10 minutes');$state->expiry='2029-10-18';
+app()->instance(\Paymenter\Extensions\Servers\Domains\Services\RenewalCompletion::class,$completion);app()->instance(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class,$renewBindings);
+$held=$completion->run($op->id);same(['actual_charge_changed','accepted_history'],[$held->safe_code,$held->attempt['reconciliation']['source']??null],'Accepted history proves the captured charge');
+$rawProof=[$held->getRawOriginal('attempt'),$held->getRawOriginal('cost')];$work=$renewalRuntime($b,$engine,$writer,$completion);
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('resume_reads');(new \Paymenter\Extensions\Servers\Domains\Jobs\RunOperation($op->id))->handle($work);
+same('accepted_history',collect($op->fresh()->policy['captured_charge_observations'])->last()['proof']['source']??null,'The audited read finds the same order in history');
+DB::transaction(fn()=>HistoryAcceptances::revokeLocked($b,Action::Renew));
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertActionHidden('approve_charge');$accept();
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertActionVisible('approve_charge')
+    ->callAction('approve_charge',['reason'=>'Approve the same charge found in order history'])->assertHasNoActionErrors()->assertNotified('Captured charge approved');
+$done=$op->fresh();same(['succeeded','2029-10-18'],[$done->state,$d->fresh()->provider_expires_at->format('Y-m-d')],'History approval completes only the proved expiry');
+same($rawProof,[$done->getRawOriginal('attempt'),$done->getRawOriginal('cost')],'History approval preserves original encrypted bytes');same($writes,$state->writes,'History approval sends nothing');
+expect($d->fresh()->renewal_policy['automatic_spend_paused'],'History approval keeps future spending paused');DB::transaction(fn()=>HistoryAcceptances::revokeLocked($b,Action::Renew));
 // Ordinary exact-charge paid completion still uses its frozen two-year total and no staff approval.
 app()->instance(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class,$bindings);config(['domains.enom_identity.environment'=>null]);
 [$paid,$d,$b,$invoice]=$makeRenewal(placeholderComFixtureName('captured-paid-control-placeholder.com'),true,2,beforeBill:$review);

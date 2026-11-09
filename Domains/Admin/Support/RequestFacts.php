@@ -237,7 +237,11 @@ final class RequestFacts
         $domain=$op->domain;
         if($op->state==='uncertain'&&\Paymenter\Extensions\Servers\Domains\Services\CapturedChargeReview::hasProof($op)){
             $approve=OperationActions::relevant('approve_charge',$op);
-            return ['title'=>'The registrar already charged this order.','body'=>'The system cannot approve a charge above the original quote itself. '.($approve?'Review and approve the same captured charge to complete this renewal.':'Check status to read the original order once. A different or unavailable charge remains under review.').' Future spending stays paused.','tone'=>'warning','action'=>$approve?'approve_charge':'resume_reads'];
+            // After an audited restart the one read is still to come, so Check status reads it now instead of restarting again.
+            $queued=!$approve&&!OperationActions::readLimit($op);
+            return ['title'=>'The registrar already charged this order.','body'=>'The system cannot approve a charge above the original quote itself. '.($approve?'Review and approve the same captured charge to complete this renewal.'
+                :($queued?'Check status reads the original order once now, or the system reads it on its next turn.':'Check status to read the original order once.').' A different or unavailable charge remains under review.').' Future spending stays paused.',
+                'tone'=>'warning','action'=>$approve?'approve_charge':($queued?'recheck':'resume_reads')];
         }
         if(OperationActions::complimentaryCloseBlocked($op)){return ['title'=>'Close order is unavailable.','body'=>'Retained refusal evidence does not prove this order can be closed. Ask staff to review the original registrar outcome; nothing is charged or credited.','tone'=>'warning'];}
         if ($domain && in_array((int)$op->id,RenewalReplacements::activityIds($domain),true)) {
