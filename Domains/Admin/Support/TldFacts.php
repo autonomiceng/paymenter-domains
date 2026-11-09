@@ -81,6 +81,7 @@ final class TldFacts
             'fixed'=>'Invalid fixed price rule. Use Edit prices to enter all three positive prices.',
             'markup'=>'Invalid markup rule. Use Edit prices to enter a valid markup and rounding rule.',
             'default'=>'Invalid default pricing rule. Open Default pricing in What you sell to repair it.',
+            'account_defaults'=>"This account's default for new TLDs is invalid. Open Default for new TLDs in What you sell and save it.",
             'unreadable'=>'Saved TLD settings unreadable. Use Edit prices to repair them.',
             default=>'Invalid pricing rule. Use Edit prices to repair it.',
         };
@@ -103,6 +104,8 @@ final class TldFacts
         $name=ucfirst(['register'=>'registration','renew'=>'renewal','transfer'=>'transfer'][$action]);
         $selected=$fact['selected']??false;$invalid=$fact['invalid_rule']??false;
         $value=$row[$field]??null;
+        // Bad account defaults stop sales only; holders keep their saved renewal price.
+        $kept=$invalid&&$value!==null&&$action==='renew'&&$field==='retail'&&($fact['invalid_rule_kind']??null)==='account_defaults';
         $cause=match(true){
             $invalid=>self::ruleProblem($fact),
             $notOffered=>$name.' not offered by this registrar',
@@ -113,6 +116,7 @@ final class TldFacts
         };
         $missing=$invalid||($value===null&&!$notOffered&&$selected);
         if($refresh&&$value===null&&!$notOffered){$cause=rtrim($cause,'.').'. '.self::refreshText($fact['refresh']??[]);}
+        if($kept){return ['value'=>$value,'cause'=>$cause,'tone'=>null,'missing'=>false];}
         return ['value'=>$invalid?\Paymenter\Extensions\Servers\Domains\Presentation\Missing::LABEL:($notOffered?$cause:($value??($missing?\Paymenter\Extensions\Servers\Domains\Presentation\Missing::LABEL:'Not for sale'))),
             'cause'=>$notOffered&&!$invalid?null:$cause,'tone'=>$missing||($value!==null&&self::costNote($row))?'danger':null,'missing'=>$missing];
     }
@@ -165,7 +169,9 @@ final class TldFacts
             if($gap&&!$own&&!($fact['invalid_rule']??false)){$note=trim($note.' '.self::refreshText($fact['refresh']??[]));}
             $link='';
             if($fact['invalid_rule']??false){
-                try{$default=($fact['invalid_rule_kind']??null)==='default';$url=$default?\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::getUrl():\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource::getUrl('view',['record'=>$row]);$link='<a class="domains-link" href="'.e($url).'">'.($default?'Edit default pricing':'Edit prices').'</a>';}catch(\Throwable){}
+                try{$kind=$fact['invalid_rule_kind']??null;$label=match($kind){'default'=>'Edit default pricing','account_defaults'=>'Edit default for new TLDs',default=>'Edit prices'};
+                    $url=match($kind){'default'=>\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::getUrl(),'account_defaults'=>\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::getUrl(['account'=>(int)$row->server_id]),default=>\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource::getUrl('view',['record'=>$row])};
+                    $link='<a class="domains-link" href="'.e($url).'">'.$label.'</a>';}catch(\Throwable){}
             }
             $html.='<tr'.($note!==''||$link!==''?' class="domains-table-noted"':'').'>'.$cells.'</tr>';
             if($note!==''||$link!==''){$html.='<tr class="domains-table-note"><td></td><td colspan="'.(count($head)-1).'"><span class="domains-small">'.e($note).'</span>'.($note!==''&&$link!==''?' ':'').$link.'</td></tr>';}
@@ -177,8 +183,12 @@ final class TldFacts
 
     /** The one fix for each reason a TLD with a saved price is not for sale. */
     public const FIXES=['Cost out of date'=>'See the next refresh on this TLD.','Cost missing'=>'The registrar price feed must supply the exact cost.','Prices not published'=>'Open Edit prices and save.','Below cost'=>'Raise the price in Edit prices.','Price missing'=>'Open Edit prices and save.','Prices need checking'=>'Check the registrar account and the last refresh failure.',self::NO_SELLER=>'Open the TLD and use Change registrar.'];
+    public const ASK_SELLER='Ask staff who can change the registrar.';
+    /** Change registrar needs both rights, so registrar hints name it only to staff who can use it. */
+    public static function canChangeSeller(): bool
+    {return Staff::can(Staff::POLICY)&&Staff::can(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::permission('seller'));}
     public static function fixText(string $reason,?bool $changeSeller=null):string
-    {return $reason===self::NO_SELLER&&!($changeSeller??(Staff::can(Staff::POLICY)&&Staff::can(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::permission('seller'))))?'Ask staff who can change the registrar.':(self::FIXES[$reason]??'');}
+    {return $reason===self::NO_SELLER&&!($changeSeller??self::canChangeSeller())?self::ASK_SELLER:(self::FIXES[$reason]??'');}
     /** For sale or Not for sale, with the reason it is not for sale. */
     public static function salesState(Tld $t, ?StaffGrants $grants = null): array
     {return self::snapshot($t,$grants)['sales'];}

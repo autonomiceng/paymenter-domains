@@ -43,6 +43,25 @@ foreach(['intent','facts','price','seller']as$change){
     DB::table('domains_tlds')->where('id',$t->id)->update($original);DB::table('domains_prices')->where('id',$price->id)->update((array)$price);DB::table('domains_sales_policies')->where('tld','com')->update($policyOriginal);
     same([(int)$t->id],$focused(),'Healthy membership recovers after '.$change);
 }
+// Membership is sent as one hex digit per four ids, never as an id list: any pattern stays exact and the statement stays small.
+$intents=DB::table('domains_tlds')->where('server_id',$b->serverId)->pluck('catalogue_intent','id');
+DB::table('domains_tlds')->where('server_id',$b->serverId)->whereRaw('(id % 3 = 0 or id % 7 = 0)')->update(['catalogue_intent'=>'{"sell":false}']);
+$expected=DB::table('domains_tlds')->where('server_id',$b->serverId)->whereRaw('not (id % 3 = 0 or id % 7 = 0)')->orderBy('tld')->pluck('id')->map(static fn($id)=>(int)$id)->all();
+$table=new SellTable([$b->serverId=>$b],1,true,static fn()=>[],false,$source);$query=$table->forSale($table->rows(null));
+$size=static function($query):int{
+    DB::enableQueryLog();DB::flushQueryLog();(clone $query)->orderBy('tld')->paginate(25,['*'],'page',3);$log=DB::getQueryLog();DB::disableQueryLog();
+    return max(array_map(static fn(array $q):int=>strlen($q['query'])+array_sum(array_map(static fn($v):int=>strlen((string)$v),$q['bindings'])),$log));
+};
+$pager=(clone $query)->orderBy('tld')->paginate(25,['*'],'page',3);$bytes=$size($query)-$size($table->rows(null));
+same($expected,(clone $query)->orderBy('tld')->pluck('id')->map(static fn($id)=>(int)$id)->all(),'Interleaved membership is exact');
+same(count($expected),$pager->total(),'Filtered pagination counts exact membership');
+same(array_slice($expected,50,25),array_map(static fn($row)=>(int)$row->id,$pager->items()),'Filtered pagination keeps sort and page');
+echo json_encode(['members'=>count($expected),'membership_bytes'=>$bytes])."\n";
+expect(count($expected)>800&&$bytes<1024,'Membership adds under 1 KiB to the page statement for '.count($expected).' members, got '.$bytes.' bytes');
+foreach($intents as $id=>$intent){DB::table('domains_tlds')->where('id',$id)->update(['catalogue_intent'=>$intent]);}
+$fresh=new SellTable([$b->serverId=>$b],1,true,static fn()=>[],false,$source);
+same(1500,$fresh->forSale($fresh->rows(null))->count(),'Restored intents restore membership');
+same(0,$fresh->forSale($fresh->rows(null)->where('id','<',0))->count(),'An empty candidate scope keeps no rows');
 $calls=$reads->calls;$clock->instant=$now->modify('+2 days');pinStaffClock($clock->now());same([],$focused(),'Elapsed freshness cannot reuse sale membership');same($calls,$reads->calls,'Filter never reads a provider');
 DB::table('roles')->where('id',$actor->role_id)->update(['permissions'=>'[]']);
 try{$focused();expect(false,'Fresh filter requires current grants');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(403,$e->getStatusCode(),'Revoked staff view refuses');}

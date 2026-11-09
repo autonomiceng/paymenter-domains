@@ -93,7 +93,9 @@ final class DomainFacts
             $facts=$observation['facts']??null;
             $facts=is_array($facts)&&ObservationProjection::matches($d,$facts)?$facts:[];
             $unread=self::unread($d,$sync);
-            $f['In registrar account']=self::fact(ObservationRecords::held($d)&&($observation['record_hold']['reason']??null)==='ownership_drift'?'No':self::flag($facts['owned']??null,'Yes','No'),sub:isset($facts['owned'])?null:$unread);
+            // A current not-found read outranks older ownership facts; other read failures leave them as they were.
+            $absent=\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::absent($d)||ObservationRecords::held($d)&&($observation['record_hold']['reason']??null)==='ownership_drift';
+            $f['In registrar account']=self::fact($absent?'No':self::flag($facts['owned']??null,'Yes','No'),sub:$absent||isset($facts['owned'])?null:$unread);
             try { $contact=OwnedDomains::owner(OwnedDomains::contacts($d)); $none=$pending?self::unread($d,$sync):(Staff::can('admin.domains.manage')?self::ADD_CONTACTS:'Ask the customer to add them on the domain page'); }
             catch (\Throwable) { $contact=null; $none=self::UNREADABLE; }
             $f['Contacts']=self::fact($contact['name']??null,sub:$contact['email']??$none);
@@ -234,7 +236,7 @@ final class DomainFacts
         [$state,$reason]=OwnedDomains::orderStatus(DomainStates::managed($d,$op,gmdate('Y-m-d'),(bool)$inputs['off']),$d,$order);
         $shared=['key'=>DomainStatus::key($state),...DomainStatus::for($state,$reason)];
         if ($inputs['late']) { return StaffDomainStatus::late($shared); }
-        return StaffDomainStatus::for($shared,$state,$d,$op,$inputs['alerts'],$inputs['renewal'],$inputs['waiting']);
+        return StaffDomainStatus::for($shared,$state,$d,$op,$inputs['alerts'],$inputs['renewal'],$inputs['waiting'],$inputs['orders_off']??false);
     }
     /** The list's status tone. A stopped sync or a missing registrar account is a job for staff, as in the domain's head. */
     public static function listTone(array $status, ?string $sync, bool $noAccount=false): string
@@ -343,8 +345,10 @@ final class DomainFacts
         try { $d->observation; $d->renewal_policy; $d->snapshot; } catch (\Throwable) { return ['title'=>self::UNREADABLE,'tone'=>'danger']; }
         $op=$d->latestAcquisition;
         if(self::unconfirmedRegistration($d)&&$op){
-            $facts=RequestFacts::for($op);
-            return ['title'=>'Registration not confirmed by the registrar.','body'=>$facts['registrar_reply']??null,'tone'=>'warning',
+            // Unreadable request data still names the request, so staff can open it.
+            try { $facts=RequestFacts::for($op); } catch (\Throwable) { $facts=['unreadable'=>true]; }
+            $unreadable=$facts['unreadable']??false;
+            return ['title'=>'Registration not confirmed by the registrar.','body'=>$unreadable?self::UNREADABLE:($facts['registrar_reply']??null),'tone'=>$unreadable?'danger':'warning',
                 'action'=>['label'=>'Check request #'.$op->id,'url'=>self::url(fn()=>OperationResource::getUrl('view',['record'=>$op->id]))]];
         }
         $read=\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($d);

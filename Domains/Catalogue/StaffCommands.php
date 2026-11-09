@@ -59,7 +59,7 @@ final class StaffCommands
         $d=OfferState::decode($account->catalogue_defaults);$entries=[];$failed=[];
         foreach($names as $name){if(!$rows->contains('tld',$name)){$failed[$name]='Converted TLD required.';}}
         if($defaults){
-            $intent=$this->intent($d);
+            // A new rule replaces the saved defaults whole, so unreadable old defaults never block their repair.
             $intent=Intent::fromRule($sell['rule']);
             $command=Edit::defaults($binding,$rows->first()->tld,$intent);
             $entries[]=[$command,$this->revision($rows->first(),$d)];
@@ -156,7 +156,7 @@ final class StaffCommands
         $b=AccountBindings::binding($account);
         $actions=($data['seller']??'')===''?[]:array_keys(array_filter(['register'=>(bool)($data['register']??false),'transfer'=>(bool)($data['transfer']??false)]));
         $target=Tld::where('server_id',$id)->where('tld',$t->tld)->first()??throw new \DomainException('Seller offer missing.');
-        if($actions!==[]&&!SellerAvailability::hasPrices($account,$target)){throw new \DomainException('Seller price missing.');}
+        if($actions!==[]&&($prices=SellerAvailability::state($account,$target))!==SellerAvailability::READY){throw new \DomainException($prices===SellerAvailability::UNREADABLE?'Seller price unreadable.':'Seller price missing.');}
         $intent=null;
         if($actions!==[]){
             $raw=OfferState::decode($target->catalogue_intent);$intent=$this->intent($raw)->allowSales($actions);

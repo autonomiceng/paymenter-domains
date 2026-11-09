@@ -40,5 +40,16 @@ foreach(['rotation','generation'] as $scenario){
     same($before,$original->fresh()->getAttributes(),'Completion races preserve financial evidence');
     $clock->instant=$clock->now()->modify('+1 minute');
 }
+// Manual Sync now and the scheduler share one lease: neither claims work the other holds.
+$work=observationFixtureScheduler(new DomainObservation($readBindings,$clock,$budget),$clock,$ports);
+DB::table('domains_observation_work')->where('domain_id',$d->id)->delete();
+$lease=\Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::claimManual($d->fresh(),$clock->now(),300);
+expect(is_array($lease)&&$lease[0]>0&&strlen($lease[1])===32,'Manual sync queues and leases the holding read');
+same('idle',$work->tick(2)[$d->server_id]['holding'],'The scheduler does not claim work under a live manual lease');
+same(0,(int)DB::table('domains_observation_work')->where('id',$lease[0])->value('tries'),'A manual lease spends no scheduled try');
+same(null,\Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::claimManual($d->fresh(),$clock->now(),300),'A second claim waits for the live lease');
+\Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::releaseManual(...$lease);
+expect($work->tick(2)[$d->server_id]['holding']!=='idle','The scheduler claims once the manual lease is released');
+expect((int)DB::table('domains_observation_work')->where('id',$lease[0])->value('due_at')>$clock->now()->getTimestamp(),'The scheduled read finishes and sets its next due time');
 $nativeSuccessful=true;
 echo "Holding completion credential and generation boundaries passed.\n";

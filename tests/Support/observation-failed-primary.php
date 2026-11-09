@@ -94,5 +94,21 @@ foreach (['malformed','transport'] as $failure) {
 // Leave the later independent child-host discovery scenarios an empty local history.
 Cache::flush();$op=$submit($d,$driver,'glue_delete',['host'=>'ns1.discovery-placeholder.com']);
 same('succeeded',$management->run($op->id,$driver)->state,'Remove seeded child host after retention cases');
+// A registration in progress may not be in the account yet: a not-found read rechecks a bounded number of times, then stops.
+$pendingJob=DB::table('domains_observation_work')->where('domain_id',$d->id)->sole();$pendingOperations=$d->fresh()->operations->map->getAttributes()->all();
+DB::table('domains_domains')->where('id',$d->id)->update(['status'=>'registration_pending']);
+DB::table('domains_observation_work')->where('id',$pendingJob->id)->update(['safe_code'=>null,'tries'=>0,'claim'=>null,'lease_until'=>0,'due_at'=>$clock->now()->getTimestamp()]);
+$observation->calls=[];$state->calls=[];$observation->fault='absent';
+for($try=1;$try<\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::LIMIT;$try++){
+    same('read_failed',$failedWork->tick(2)[$d->server_id]['holding'],'Pending not-found read '.$try.' keeps an automatic recheck');
+    $clock->instant=$clock->now()->modify('+3601 seconds');
+}
+same('domain_not_in_account',$failedWork->tick(2)[$d->server_id]['holding'],'The last recheck stops with the exact cause');
+$clock->instant=$clock->now()->modify('+1 day');same('idle',$failedWork->tick(2)[$d->server_id]['holding'],'No recheck after the limit');
+same(array_fill(0,\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::LIMIT,ReadCommand::Info),$observation->calls,'Each recheck is one domain read');
+same([],$state->calls,'Rechecks send no registrar writes');
+same($pendingOperations,$d->fresh()->operations->map->getAttributes()->all(),'Rechecks change no operation or payment evidence');
+$observation->fault='';DB::table('domains_domains')->where('id',$d->id)->update(['status'=>'active']);
+DB::table('domains_observation_work')->where('id',$pendingJob->id)->update(array_diff_key((array)$pendingJob,['id'=>true]));
 // Reset this fixture's turn before the independent two-account fairness scenario below.
 DB::table('domains_observation_queues')->where('server_id',$d->server_id)->update(['turn'=>0]);

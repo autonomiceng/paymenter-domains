@@ -78,4 +78,16 @@ foreach (['0:issue:ca.example.com', '0:iodef:mailto:dns@example.com',
     same('complete', $inventory['state'], 'Documented CAA triplet permits colons inside its value');
     same($value, $inventory['records'][0]['address'], 'CAA validation preserves original bytes');
 }
+// A confirmed readback of the dormant DNS adapter is a full DNS list, so it reports DNS observation; mutations stay as they were.
+$binding = new \Paymenter\Extensions\Servers\Domains\Data\AccountBinding('namesilo', 1, \Paymenter\Extensions\Servers\Domains\Data\Environment::Test, 'synthetic-account');
+$exchange = static fn () => throw new LogicException('No wire');
+$baseline = new \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Management($binding, $exchange);
+$dns = new \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\DnsManagement($binding, $exchange);
+same(['revision' => 'namesilo-records-1', 'families' => ['dns' => 'supported', 'srv' => 'unsupported', 'ds' => 'unsupported', 'glue' => 'supported']],
+    $dns->observationCapabilities(), 'The DNS adapter reports only DNS observation beyond the baseline');
+same('unsupported', $baseline->observationCapabilities()['families']['dns'], 'The installed adapter still reports no DNS observation');
+foreach (['nameservers', 'contacts', 'lock', 'privacy', 'auto_renew_off', 'auth_code_email', 'glue', 'ds', 'auth_code_display'] as $action) {
+    same($baseline->capabilities()->get($action)->support, $dns->capabilities()->get($action)->support, 'The DNS adapter keeps baseline '.$action.' support');
+}
+same(\Paymenter\Extensions\Servers\Domains\Data\Support::Unsupported, $baseline->capabilities()->get('dns')->support, 'The installed adapter still closes DNS editing');
 echo "NameSilo DNS acknowledgement/readback checks passed\n";

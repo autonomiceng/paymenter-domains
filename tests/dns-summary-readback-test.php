@@ -46,5 +46,18 @@ same([$wanted[0]],ObservationRecords::current($d->fresh(),$clock->now())['famili
 $table=storefrontDom($page())->query('//table[contains(concat(" ",normalize-space(@class)," ")," domains-dns-inventory ")]')->item(0);
 expect($table&&!str_contains($table->textContent,'saved-alias'),'Deleted CNAME disappears from the customer summary');
 same(2,count(array_filter($state->calls,fn($call)=>$call[0]==='SetHosts')),'Reconciliation never repeats a DNS write');
+// After the write lease expires, a scheduled read can save newer records before the write's readback finishes.
+Cache::flush();$clock->instant=$clock->now()->modify('+2 minutes');
+Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
+$next=[$wanted[0],['name'=>'www','type'=>'A','address'=>'8.8.4.4','mx_pref'=>10]];
+$op=$submit($d,$driver,'dns',['records'=>$next,'preimage_digest'=>\Paymenter\Extensions\Servers\Domains\Services\ManagementPayload::digest([$wanted[0]])]);
+$newer=[['name'=>'@','type'=>'A','address'=>'1.1.1.1','mx_pref'=>10]];
+$state->afterWrite=static function()use(&$op,$d,$driver,$clock,$newer):void {
+    $op->fresh()->update(['lease_expires_at'=>$clock->now()->modify('-1 second')]);
+    ObservationRecords::save($d->fresh(),['dns'=>['state'=>'complete','records'=>$newer],'srv'=>['state'=>'complete','records'=>[]],
+        'ds'=>['state'=>'complete','records'=>[]],'glue'=>['state'=>'partial','records'=>[]]],$clock->now(),$driver->observationCapabilities());
+};
+same('succeeded',$management->run($op->id,$driver)->state,'The write still confirms from its own readback');
+same($newer,ObservationRecords::current($d->fresh(),$clock->now())['families']['dns']['records'],'An older write readback cannot replace newer saved DNS records');
 
 $nativeSuccessful=true;echo "Confirmed DNS readback refreshes the customer summary.\n";

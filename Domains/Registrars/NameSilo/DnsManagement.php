@@ -13,6 +13,9 @@ class DnsManagement extends Management
         foreach (['nameservers','contacts','lock','privacy','auto_renew_off','auth_code_email','glue','ds','auth_code_display'] as $action) { $actions[$action]=$base->get($action); }
         return new Capabilities($this->binding,$actions,$base->privacy);
     }
+    /** A confirmed DNS readback is a complete dnsListRecords inventory, so DNS observation is supported; other families keep the baseline. */
+    public function observationCapabilities(): array
+    { $base=parent::observationCapabilities();$base['families']['dns']='supported';return $base; }
     public function sequences(string $action): bool { return $action==='dns'; }
     public function validate(string $action,array $payload,string $name): array
     {

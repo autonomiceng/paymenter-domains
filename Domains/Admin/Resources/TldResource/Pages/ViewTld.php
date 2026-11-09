@@ -59,10 +59,10 @@ class ViewTld extends ViewRecord
         return array_values(array_filter([$this->startSellingAction()->color($fix===null?'primary':'gray'),$seller,$actions['override']->color($fix==='override'?'primary':'gray'),
             ActionGroup::make(array_values(array_filter([$seller?null:$actions['seller'],$this->stopSellingAction()])))->label('More')->button()->color('gray')]));
     }
-    /** @return array{label:string,tone:string,reason:?string,invalid:bool} */
+    /** @return array{label:string,tone:string,reason:?string,invalid:bool,kind:?string} */
     private function sales(): array
     {
-        if(!isset($this->sales)){$t=$this->getRecord();$snapshot=TldFacts::snapshot($t);$this->sales=[...$snapshot['sales'],'invalid'=>(bool)($snapshot['invalid_rule']??false)];}
+        if(!isset($this->sales)){$t=$this->getRecord();$snapshot=TldFacts::snapshot($t);$this->sales=[...$snapshot['sales'],'invalid'=>(bool)($snapshot['invalid_rule']??false),'kind'=>$snapshot['invalid_rule_kind']??null];}
         return $this->sales;
     }
     private ?array $sales=null;
@@ -73,6 +73,8 @@ class ViewTld extends ViewRecord
     {
         $s=$this->sales();
         if($s['label']==='For sale'){return null;}
+        // Edit prices can't repair the account's defaults; the reason names where to.
+        if($s['invalid']&&$s['kind']==='account_defaults'){return null;}
         if($s['invalid']||in_array($s['reason'],['Below cost','Price missing','Prices not published'],true)){return 'override';}
         return in_array($s['reason'],['No registrar selected','Not offered by this registrar'],true)?'seller':null;
     }

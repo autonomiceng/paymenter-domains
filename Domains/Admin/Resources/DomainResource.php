@@ -9,7 +9,7 @@ use Filament\Support\Enums\FontFamily;
 use Filament\Tables\Filters\{Filter, SelectFilter};
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\{Builder, Model};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{DemoTag, DomainFacts, DomainQueries, EmptyTable, NavigationCount,OneLine, Staff, StaffDomainInputs, StatusMark, TableColumns};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{DemoTag, DomainFacts, DomainQueries, EmptyTable, NavigationCount, OneLine, OperationQueries, Staff, StaffDomainInputs, StatusMark, TableColumns};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\{AdoptDomain, AdoptionPreview, ListDomains, ViewDomain};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain};
@@ -52,6 +52,8 @@ class DomainResource extends Resource
     public static function table(Table $table): Table
     {
         EmptyTable::apply($table,'No domains yet','They show here after a customer orders one.','No domains match');
+        // One read of the Orders switches: the Status filter and every row's status use it, so they agree even if a switch changes meanwhile.
+        $orders=OperationQueries::ordersOffAccounts(); self::$orders??=new \WeakMap(); self::$orders[$table->getLivewire()]=$orders;
         return TableColumns::choose($table->modifyQueryUsing(fn (Builder $query) => $query
             ->with(['user:id,first_name,last_name,email', 'server:id,name', 'latestAcquisition'])),[
             DemoTag::apply(OneLine::apply(TextColumn::make('domain')->label('Domain')->searchable()->sortable()->fontFamily(FontFamily::Mono),OneLine::NAME)),
@@ -81,7 +83,7 @@ class DomainResource extends Resource
         ],['server_id'])->filters([
             SelectFilter::make('price_mode')->label('Domain funding')->options(['standard'=>'Standard','complimentary'=>\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryAccounts::LABEL]),
             SelectFilter::make('status')->label('Status')->multiple()->options(self::statusOptions())
-                ->query(fn(Builder $query,array $data)=>DomainQueries::status($query,$data['values']??[])),
+                ->query(fn(Builder $query,array $data)=>DomainQueries::status($query,$data['values']??[],$orders)),
             SelectFilter::make('server_id')->label('Registrar account')->options(function(): array {
                 if (!Staff::can()) { return []; }
                 return \App\Models\Server::whereIn('id',Account::query()->pluck('server_id'))->orderBy('name')->orderBy('id')->get(['id','name'])->mapWithKeys(fn($server)=>[$server->id=>$server->name.' #'.$server->id])->all();
@@ -112,6 +114,8 @@ class DomainResource extends Resource
     private const REGISTRARS=['enom'=>'Enom','namesilo'=>'NameSilo'];
     /** Auto-renew stops and sync state per rendered page of records, keyed by domain id: one batch of reads per page. */
     private static ?\WeakMap $rows=null;
+    /** The Orders snapshot of each list's table, by its Livewire component. */
+    private static ?\WeakMap $orders=null;
     private static function status(Domain $record, mixed $livewire): array
     {
         return DomainFacts::status($record,self::row($record,$livewire)['inputs']);
@@ -133,7 +137,7 @@ class DomainResource extends Resource
             if (!$page->contains('id',$record->id)) { $page=collect([$record]); }
             $accounts=Account::whereIn('server_id',$page->pluck('server_id')->unique()->values()->all())->get();
             $stopped=ObservationWork::stoppedIds($page);
-            $inputs=StaffDomainInputs::for($page);
+            $inputs=StaffDomainInputs::for($page,is_object($livewire)?(self::$orders[$livewire]??null):null);
             foreach ($page as $d) {
                 $account=$accounts->first(fn(Account $a)=>(int)$a->server_id===(int)$d->server_id&&$a->registrar_key===$d->registrar_key
                     &&$a->account_fingerprint===$d->account_fingerprint);

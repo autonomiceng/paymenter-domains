@@ -200,7 +200,7 @@ final class DomainManagement
             $driver->preparedRecords();
             $prepared = $driver->prepare($r, $ctx);
             $records = $driver->preparedRecords();
-            [$r, $stamp] = $this->locked($seed, $id, $driver, function ($l, $op) use ($prepared, $driver, $stamp, $records): array {
+            [$r, $stamp, $evidence] = $this->locked($seed, $id, $driver, function ($l, $op) use ($prepared, $driver, $stamp, $records): array {
                 if ($l['stamp'] !== $stamp) { throw new \DomainException('Management authority changed during preparation.'); }
                 if ($op->state !== 'running' || ($op->attempt['seal'] ?? null) !== 'absent') { throw new \DomainException('Management claim changed.'); }
                 $this->peers($l, $op->id, $op->policy['management']['correction'] ?? null, $op->action); $this->features->requireManagement();
@@ -208,12 +208,12 @@ final class DomainManagement
                 ManagementPreparation::requireFrozen($op, $prepared);
                 GlueRecords::prepared($l['domain'],$records,$this->clock->now());
                 $op->update(['payload' => $prepared]);
-                return [$this->descriptor($op, $l), HoldingLocks::take($l['domain'], (int)$op->authorized_by)['stamp']];
+                return [$this->descriptor($op, $l), HoldingLocks::take($l['domain'], (int)$op->authorized_by)['stamp'], self::evidence($l['domain'])];
             });
             $this->grant = [$r, $ctx, $driver, $stamp, $seed, $id];
             try { $result = $driver->perform($r, $ctx, $this); }
             finally { $this->grant = null; $this->receiptGrant = null; }
-            return $this->finish($seed, $id, $driver, $result);
+            return $this->finish($seed, $id, $driver, $result, evidence: $evidence);
         } catch (\Throwable $error) {
             return DB::transaction(function () use ($seed, $id, $claimed, $claim, $error, $refusals, $driver): Operation {
                 $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
@@ -327,11 +327,16 @@ final class DomainManagement
         try { $result = $driver->observe($r, $ctx); return $this->finish($seed, $id, $driver, $result, $stamp); }
         catch (\Throwable $error) { if($reviewed){throw $error;} return Operation::findOrFail($id); }
     }
-    private function finish(Domain $seed, int $id, ManagementProtocol $driver, ManagementResult $result, ?string $stamp = null): Operation
+    /** Sealing changes the operation rows, so a write's readback compares only the saved record evidence it started from. */
+    private static function evidence(Domain $d): string
+    { return hash('sha256', json_encode($d->observation['records'] ?? null, JSON_THROW_ON_ERROR)); }
+    private function finish(Domain $seed, int $id, ManagementProtocol $driver, ManagementResult $result, ?string $stamp = null, ?string $evidence = null): Operation
     {
-        return $this->locked($seed, $id, $driver, function ($l, $op) use ($result, $stamp, $driver): Operation {
+        return $this->locked($seed, $id, $driver, function ($l, $op) use ($result, $stamp, $driver, $evidence): Operation {
             if(!in_array($op->state,['running','uncertain'],true)||($op->attempt['seal']??null)!=='sealed'){throw new \DomainException('Management readback no longer applicable.');}
             if ($stamp !== null && $l['stamp'] !== $stamp) { throw new \DomainException('Management changed during readback.'); }
+            // After an expired write lease, a scheduled read may save newer records before this readback finishes.
+            $newer = $evidence !== null && self::evidence($l['domain']) !== $evidence;
             $facts = $result->facts(); $ack = $op->attempt['management_ack'] ?? [];
             $email=$op->action==='auth_code_email'&&($ack['email_accepted']??null)===true&&($result->confirmed||$result->emailAccepted); $confirmed=$result->confirmed&&$op->action!=='auth_code_email';
             $ok = ($confirmed || $email) && ($op->action!=='contact_profile'||isset($ack['profile_id'])) && (!in_array($op->action,['privacy_purchase','privacy_renew'],true) || isset($ack['order_id']));
@@ -358,7 +363,7 @@ final class DomainManagement
                 }
             }
             $projection['management_sequence']=$sequence; $l['domain']->update(['observation'=>$projection]);
-            if ($op->action==='dns' && $ok && $confirmed && ManagementEvidence::resolved($op,$l['domain'])) {
+            if ($op->action==='dns' && $ok && $confirmed && !$newer && ManagementEvidence::resolved($op,$l['domain'])) {
                 ObservationRecords::saveDnsReadback($l['domain'],$facts,$this->clock->now(),$driver->observationCapabilities());
             }
             return $op;

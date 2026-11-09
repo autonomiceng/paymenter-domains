@@ -225,6 +225,33 @@ $filter('status',['in_progress'])->assertCanNotSeeTableRecords([$queued]);
 $orders->update(['processing_enabled'=>true]);
 $filter('status',['in_progress'])->assertCanSeeTableRecords([$queued]);
 $filter('status',['under_review'])->assertCanNotSeeTableRecords([$queued]);
+// The list reads the Orders switches once, for its Status filter and its rows, even when a switch changes while it is built.
+DB::table('domains_operations')->where('id',$queued->id)->update(['action'=>'register','state'=>'queued','safe_code'=>null]);
+$flip=static function(bool $enabled) use ($orders): void {
+    $armed=true;
+    DB::listen(function($query) use (&$armed,$orders,$enabled): void {
+        $sql=strtolower($query->sql);
+        if (!$armed||!str_contains($sql,'domains_accounts')||!str_contains($sql,'processing_enabled')||str_contains($sql,'exists')) { return; }
+        $armed=false; (clone $orders)->update(['processing_enabled'=>$enabled]);
+    });
+};
+$parity=[]; $seen=[];
+foreach (['on_hold'=>'On hold','in_progress'=>'In progress'] as $key=>$word) {
+    foreach ([false,true] as $enabled) {
+        $orders->update(['processing_enabled'=>!$enabled]);
+        $p=Livewire::actingAs(Auth::user())->test(ListOperations::class)->filterTable('status',[$key]);
+        $p->set('tableDeferredFilters',$p->get('tableFilters')); $flip($enabled); $p->call('applyTableFilters');
+        $column=$p->instance()->getTable()->getColumns()['state'];
+        foreach ($p->instance()->getTableRecords() as $record) {
+            if ($record->id===$queued->id) { $seen[$enabled?'on':'off'][]=$key; }
+            if (($shown=$column->record($record)->formatState($column->getState()))!==$word) { $parity[]="$key, Orders turned ".($enabled?'on':'off').": request #{$record->id} reads $shown"; }
+        }
+    }
+}
+same([],$parity,'Every row the request Status filter keeps reads that status');
+ksort($seen); same(['off'=>['in_progress'],'on'=>['on_hold']],$seen,'The list reads the switches as they were when it started');
+$orders->update(['processing_enabled'=>true]);
+DB::table('domains_operations')->where('id',$queued->id)->update(['action'=>$heldOp->action]);
 // Held for setup reads Action required, as its domain does, with the next step it already shows.
 $setup=[]; $next=[];
 foreach(['register','transfer','renew','nameservers','contacts','lock','privacy_purchase','dns'] as $kind){
@@ -242,6 +269,24 @@ same([],$next,'A request held for setup keeps its next step');
 DB::table('domains_operations')->where('id',$queued->id)->update(['state'=>'held','safe_code'=>'contact_details_required']);
 $filter('status',['action_required'])->assertCanSeeTableRecords([$queued]);
 $filter('status',['under_review'])->assertCanNotSeeTableRecords([$queued]);
+// The Domains list names each account whose paid changes are held, once. Its reads stay the same however many accounts are held.
+$saved=DB::table('domains_operations')->orderBy('id')->get(['id','state','safe_code']);
+$holds=static function(): array {
+    DB::connection()->flushQueryLog(); DB::connection()->enableQueryLog();
+    $html=(string)Paymenter\Extensions\Servers\Domains\Admin\Support\PaidUncertainty::accounts()?->toHtml();
+    $reads=count(DB::connection()->getQueryLog()); DB::connection()->disableQueryLog();
+    return [array_map(fn(string $line)=>trim(html_entity_decode(strip_tags($line))),explode('<br>',$html)),$reads];
+};
+$name=static fn(int $server)=>\App\Models\Server::whereKey($server)->value('name');
+DB::table('domains_operations')->whereIn('id',[$heldOp->id,$longOp->id])->update(['state'=>'uncertain','safe_code'=>null]);
+[$lines,$oneAccount]=$holds();
+same(['Check 2 requests Paid changes on '.$name($heldOp->server_id).' are on hold until they are checked.'],$lines,'One held account');
+DB::table('domains_operations')->where('id',$doneOp->id)->update(['state'=>'uncertain','safe_code'=>null]);
+[$lines,$twoAccounts]=$holds();
+same(['Check 2 requests Paid changes on '.$name($heldOp->server_id).' are on hold until they are checked.','Check request #'.$doneOp->id.' Paid changes on '.$name($doneOp->server_id).' are on hold until it is checked.'],
+    $lines,'Two held accounts, each named once');
+same($oneAccount,$twoAccounts,'Held accounts are read together, not one by one');
+foreach ($saved as $row) { DB::table('domains_operations')->where('id',$row->id)->update(['state'=>$row->state,'safe_code'=>$row->safe_code]); }
 // Unreadable saved data: one notice with its fix, never an "unavailable" value.
 DB::table('domains_operations')->where('id',$longOp->id)->update(['policy'=>'not-encrypted']);
 Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$longOp->id])->assertSee("Can't read saved data. Ask your site admin to check the encryption key.")->assertDontSee('unavailable');

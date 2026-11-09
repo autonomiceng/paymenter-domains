@@ -19,20 +19,40 @@ final class HoldingReadRetry
         return $q->where(fn($q)=>$q->whereIn('safe_code',array_values(array_diff(self::STOPPED,self::TRANSIENT)))
             ->orWhere(fn($q)=>$q->whereIn('safe_code',self::TRANSIENT)->where('tries','>=',self::LIMIT)));
     }
+    /** A registration or transfer in progress may not be in the account yet: a not-found read retries like a failed read, then stops. */
+    public static function scheduled(Domain $d, string $code, int $tries): string
+    { return $code==='domain_not_in_account'&&in_array($d->status,['registration_pending','transfer_pending'],true)&&$tries<self::LIMIT?'read_failed':$code; }
     public static function delay(int $tries): int { return min(3600,60*(2**min(6,max(0,$tries-1)))); }
-    /** A successful staff retry restores only idle current read work, never a live lease or financial job. */
-    public static function completedManually(Domain $seed, string $code='refreshed'): void
+    /** A successful staff retry restores idle current read work or its own manual lease, never another live lease or financial job. */
+    public static function completedManually(Domain $seed, string $code='refreshed', ?string $claim=null): void
     {
         if(!in_array($code,['refreshed','domain_not_in_account'],true)){throw new \InvalidArgumentException('Invalid manual read result.');}
         if(!\Illuminate\Support\Facades\Schema::hasTable('domains_observation_work')){return;}
-        \Illuminate\Support\Facades\DB::transaction(function()use($seed,$code):void {
+        \Illuminate\Support\Facades\DB::transaction(function()use($seed,$code,$claim):void {
             $locked=HoldingLocks::take($seed);$d=$locked['domain'];
             if(ObservationRecords::identity($seed)!==ObservationRecords::identity($d)||($code==='refreshed'&&ObservationRecords::held($d))){return;}
             if($code==='domain_not_in_account'&&(($d->observation['record_failure']['identity']??null)!==ObservationRecords::identity($d)||($d->observation['record_failure']['code']??null)!==$code)){return;}
             $now=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp();
-            HoldingObservationWork::current($d)->where('lease_until','<=',$now)
-                ->update(['tries'=>0,'claim'=>null,'safe_code'=>$code,'due_at'=>$now+($code==='refreshed'&&($d->observation['followup']['state']??null)==='pending'?300:86400)]);
+            HoldingObservationWork::current($d)->where(fn($q)=>$q->where('lease_until','<=',$now)->when($claim!==null&&$claim!=='',fn($q)=>$q->orWhere('claim',$claim)))
+                ->update(['tries'=>0,'claim'=>null,'lease_until'=>0,'safe_code'=>$code,'due_at'=>$now+($code==='refreshed'&&($d->observation['followup']['state']??null)==='pending'?300:86400)]);
         });
+    }
+    /** This identity's confirmed not-found read, unless a later read of the same identity proved ownership. Other read failures are never absence. */
+    public static function absent(Domain $d): bool
+    { return self::absenceFailure($d)!==null&&!self::absenceSuperseded($d); }
+    private static function absenceFailure(Domain $d): ?array
+    {
+        $failure=$d->observation['record_failure']??null;
+        return is_array($failure)&&($failure['identity']??null)===ObservationRecords::identity($d)&&($failure['code']??null)==='domain_not_in_account'?$failure:null;
+    }
+    private static function absenceSuperseded(Domain $d): bool
+    {
+        $failure=self::absenceFailure($d); $facts=$d->observation['facts']??null;
+        if ($failure===null||!is_array($facts)||!ObservationProjection::matches($d,$facts)||($facts['owned']??null)!==true) { return false; }
+        $at=static function(mixed $value): ?int { try { return is_string($value)?(new \DateTimeImmutable($value))->getTimestamp():(is_int($value)?$value:null); } catch (\Throwable) { return null; } };
+        $owned=$at($facts['at']??null); $missing=$at($failure['at']??null);
+        // Equal or unreadable times keep the absence: only a strictly newer ownership read clears it.
+        return $owned!==null&&$missing!==null&&$owned>$missing;
     }
     public static function status(Domain $d, ?\DateTimeImmutable $now=null): array
     {
@@ -40,8 +60,9 @@ final class HoldingReadRetry
         $eligible=$d->status==='active'&&!$d->adoptionPending()&&ObservationEligibility::allows($d);
         $stopped=$job&&self::stoppedQuery(HoldingObservationWork::current($d,true))->exists();
         $code=$job&&in_array($job->safe_code,self::STOPPED,true)?$job->safe_code:null;
-        $failure=$d->observation['record_failure']??[];
-        if (($failure['identity']??null)===ObservationRecords::identity($d)&&($failure['code']??null)==='domain_not_in_account') { $code='domain_not_in_account'; $stopped=true; }
+        if (self::absent($d)) { $code='domain_not_in_account'; $stopped=true; }
+        // A later read proved ownership, so the stopped job no longer means absence. A held family keeps its own diagnostic.
+        elseif ($code==='domain_not_in_account'&&self::absenceSuperseded($d)) { $code=ObservationRecords::held($d)?'records_incomplete':null; }
         $now??=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now();
         return ['read_review'=>$eligible&&$code!==null&&in_array($code,['read_failed','read_deadline','read_no_evidence'],true)&&($stopped||($job->tries??0)>=self::LIMIT||($job->resumes??0)>0),
             'records_paused'=>$job?->safe_code==='records_disabled',

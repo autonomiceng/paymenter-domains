@@ -19,14 +19,16 @@ final class SellTable
     private ?array $savedRead=null;
     private ?array $savedRows=null;
     private ?array $hiddenWarnings=null;
+    /** The most left-out TLDs one warning names; it counts the rest. */
+    public const WARNING_LIMIT=10;
     private array $filtered=[];
     private ?StaffGrants $grants=null;
     /** Account and settings reads the next-step hints share across Register, Renew and Transfer in this build. */
     private array $hintReads=[];
     /** @param array<int,AccountBinding> $bindings by server
      * @param \Closure():array<OfferRow> $page the rows on screen
-     * @param ?\Closure():array<OfferRow> $filteredRows all rows kept by search and filters */
-    public function __construct(private readonly array $bindings,private readonly int $years,private readonly bool $costs,private readonly \Closure $page,private readonly bool $projected=false,private readonly ?\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue $catalogue=null,private readonly ?\Closure $filteredRows=null) {}
+     * @param ?\Closure():Builder $warningRows rows kept by search and every filter except For sale, which drops exactly the rows that can't be priced */
+    public function __construct(private readonly array $bindings,private readonly int $years,private readonly bool $costs,private readonly \Closure $page,private readonly bool $projected=false,private readonly ?\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue $catalogue=null,private readonly ?\Closure $warningRows=null) {}
     /** The registrar's list plus saved TLDs it no longer has, so a price with no sales row still shows.
      * Those rows stay read-only and carry the negated TLD id: a write here would add a sales row. Hidden TLDs show only when already saved.
      * The cast gives the id number affinity, so SQLite matches Filament's string keys. */
@@ -42,12 +44,28 @@ final class SellTable
         $candidates=$this->source()->rows($this->bindings,null)->addNestedWhereQuery($query->getQuery());
         $key=hash('sha256',$candidates->toSql().serialize($candidates->getBindings()));
         if(!isset($this->forSaleIds[$key])){
-            $this->forSaleIds[$key]=[];
+            $ids=[];
             foreach($candidates->get(['server_id','tld'])->chunk(500)as$rows){
-                array_push($this->forSaleIds[$key],...$this->source()->saleIds($this->tlds($rows->all())));
+                array_push($ids,...$this->source()->saleIds($this->tlds($rows->all())));
             }
+            $this->forSaleIds[$key]=self::membership($ids);
         }
-        return $query->whereIntegerInRaw('id',$this->forSaleIds[$key]);
+        [$from,$to,$bits]=$this->forSaleIds[$key];
+        if($bits===''){return $query->whereRaw('1=0');}
+        // One hex digit holds four ids, so the statement grows by a quarter byte per id and never by an id list.
+        // CASE keeps the unsigned subtraction away from ids below the range.
+        $id=$query->getQuery()->getGrammar()->wrap('id');$offset='('.$id.' - '.$from.')';
+        return $query->whereBetween('id',[$from,$to])
+            ->whereRaw("(case when $id between $from and $to then (((instr('0123456789abcdef', substr(?, ($offset >> 2) + 1, 1)) - 1) >> ($offset & 3)) & 1) else 0 end) = 1",[$bits]);
+    }
+    /** @param list<int> $ids
+     * @return array{0:int,1:int,2:string} first id, last id and one hex digit per four ids between them */
+    private static function membership(array $ids): array
+    {
+        if($ids===[]){return [0,0,''];}
+        $from=min($ids);$to=max($ids);$nibbles=array_fill(0,intdiv($to-$from,4)+1,0);
+        foreach($ids as $id){$nibbles[intdiv($id-$from,4)]|=1<<(($id-$from)%4);}
+        return [$from,$to,implode('',array_map('dechex',$nibbles))];
     }
     /** The viewer's rights, read once for this table build: a cell or a saved-price read never asks again. */
     private function grants(): StaffGrants { return $this->grants??=Staff::requireView(); }
@@ -107,15 +125,34 @@ final class SellTable
         $this->facts();
         return $this->savedRead=$this->costs?$this->source()->matrix(collect($this->rowTlds),$this->years):['rows'=>[],'skipped'=>[],'warnings'=>[],'explanations'=>[]];
     }
-    /** Name omitted TLDs on other filtered pages without loading their offer/price snapshots. */
+    /** Left-out TLDs the page does not show, without loading their offer/price snapshots: on other pages, or dropped by For sale.
+     * Reads identities in bounded chunks, names at most WARNING_LIMIT and counts the rest.
+     * @return array{count:int,rows:list<array{id:int,tld:string,cause:string}>,causes:list<string>} */
     public function hiddenWarnings(): array
     {
-        if(!$this->grants()->costs||!$this->costs||$this->filteredRows===null){return [];}
+        if(!$this->grants()->costs||!$this->costs||$this->warningRows===null){return ['count'=>0,'rows'=>[],'causes'=>[]];}
         if($this->hiddenWarnings!==null){return $this->hiddenWarnings;}
-        $this->facts();$hidden=$this->tlds(($this->filteredRows)(),['id','server_id','tld','catalogue_intent','use_default_rule','pricing_mode','markup','round_up','fixed_register','fixed_renew','fixed_transfer'])->reject(fn(Tld $t)=>isset($this->rowTlds[$t->server_id.':'.$t->tld]));
-        $omitted=array_flip($this->source()->omissions($hidden));
-        return $this->hiddenWarnings=$hidden->filter(fn(Tld $t)=>isset($omitted[$t->server_id.':'.$t->tld]))->map(fn(Tld $t)=>['id'=>(int)$t->id,'tld'=>'.'.$t->tld])->values()->all();
+        $this->facts();$count=0;$rows=[];$causes=[];
+        Tld::whereIn('id',($this->warningRows)()->select('id'))
+            ->select(['id','server_id','tld','catalogue_intent','use_default_rule','pricing_mode','markup','round_up','fixed_register','fixed_renew','fixed_transfer'])
+            ->chunkById(500,function($chunk)use(&$count,&$rows,&$causes):void {
+                $hidden=$chunk->reject(fn(Tld $t)=>isset($this->rowTlds[$t->server_id.':'.$t->tld]))->keyBy(fn(Tld $t)=>$t->server_id.':'.$t->tld);
+                foreach($this->source()->omissionCauses($hidden) as $key=>$cause){
+                    $count++;$causes[$cause]=true;
+                    if(count($rows)<self::WARNING_LIMIT){$rows[]=['id'=>(int)$hidden[$key]->id,'tld'=>'.'.$hidden[$key]->tld,'cause'=>$cause];}
+                }
+            });
+        return $this->hiddenWarnings=['count'=>$count,'rows'=>$rows,'causes'=>array_keys($causes)];
     }
+    /** The shared setting that can't be read, when every cause is one, or null when a TLD's own pricing needs fixing.
+     * @param list<string> $causes */
+    public static function sharedCause(array $causes): ?string
+    {
+        if($causes===[]||array_diff($causes,['card_fee','default_rule'])!==[]){return null;}
+        return match(true){count($causes)===2=>"Default pricing and the card fee can't be read.",$causes===['card_fee']=>"The card fee can't be read.",default=>"Default pricing can't be read."};
+    }
+    /** @return list<string> why a price filter left rows out */
+    public function leftOutCauses(string $filter): array {return array_values(array_unique(array_column($this->kept($filter)['skipped'],'cause')));}
     public function scope(): ?int {return count($this->bindings)===1?array_key_first($this->bindings):null;}
     private function savedRow(OfferRow $row): ?array
     {
@@ -180,7 +217,9 @@ final class SellTable
     }
     private function nextStep(OfferRow $row,string $action): array
     {
-        $key=self::key($row);$this->facts();
+        $key=self::key($row);$facts=$this->facts()[$key]??[];
+        // The account setting is the one repair; offer hints would point at the TLD instead.
+        if(($facts['invalid_rule_kind']??null)==='account_defaults'){return ['state'=>'missing','next'=>TldFacts::ruleProblem($facts),'open'=>null];}
         $this->steps[$action]??=$this->source()->nextSteps(collect($this->rowTlds),$this->facts(),$action,$this->years,$this->hintReads);
         return $this->steps[$action][$key];
     }

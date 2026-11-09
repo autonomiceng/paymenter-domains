@@ -8,8 +8,12 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account,Tld};
 /** Registrar-choice wording lives here so the TLD page and dialog use the same causes. */
 final class TldRegistrar
 {
+    private static function name(string $registrar): string {return ['enom'=>'Enom','namesilo'=>'NameSilo'][$registrar]??'registrar';}
     public static function missingPrice(string $registrar,string $ending): string
-    {return 'No '.(['enom'=>'Enom','namesilo'=>'NameSilo'][$registrar]??'registrar').' price for .'.$ending.' yet. Sync prices first.';}
+    {return 'No '.self::name($registrar).' price for .'.$ending.' yet. Sync prices first.';}
+    /** The saved 1-year cost is damaged, not absent. The next price sync replaces it. */
+    public static function unreadablePrice(string $registrar,string $ending): string
+    {return 'The saved '.self::name($registrar).' price for .'.$ending." can't be read. Sync prices to replace it.";}
     /** @return array<int,array{label:string,reason:?string,disabled:bool}> */
     public static function choices(int $id): array
     {
@@ -18,7 +22,8 @@ final class TldRegistrar
         $servers=Server::whereIn('id',Account::pluck('server_id'))->orderBy('id')->get()->keyBy('id');
         foreach(Account::whereIn('server_id',$servers->keys())->orderBy('server_id')->get() as $account){
             $server=$servers[$account->server_id];$disabled=false;
-            if(!SellerAvailability::hasPrices($account,$rows[$account->server_id]??null)){$reason=self::missingPrice($account->registrar_key,$ending);$disabled=true;}
+            $prices=SellerAvailability::state($account,$rows[$account->server_id]??null);
+            if($prices!==SellerAvailability::READY){$reason=$prices===SellerAvailability::UNREADABLE?self::unreadablePrice($account->registrar_key,$ending):self::missingPrice($account->registrar_key,$ending);$disabled=true;}
             elseif(!$server->enabled||$server->extension!=='Domains'){$reason='This registrar account is off. Turn it on in Servers.';$disabled=true;}
             else{$reason=$account->processing_enabled?null:'Orders are paused. Turn on Orders on this registrar account.';}
             $out[(int)$account->server_id]=['label'=>(string)$server->name,'reason'=>$reason,'disabled'=>$disabled];
@@ -32,6 +37,7 @@ final class TldRegistrar
         $account=Account::where('server_id',(int)($data['seller']??0))->first();
         return match($error->getMessage()){
             'Seller offer missing.','Seller price missing.'=>self::missingPrice($account?->registrar_key??'',$ending),
+            'Seller price unreadable.'=>self::unreadablePrice($account?->registrar_key??'',$ending),
             'Seller account missing.'=>'This registrar account was removed. Choose another registrar.',
             'Seller account off.'=>'This registrar account is off. Turn it on in Servers.',
             'Offer binding or conversion changed.','Price binding changed.','Seller offer group changed; retry.','Offer disappeared.'=>'Saved registrar prices changed. Reopen Change registrar and try again.',

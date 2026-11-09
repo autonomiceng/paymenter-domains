@@ -157,7 +157,8 @@ final class RequestFacts
     }
     /** A request's status, in the customer's words. Orders off stop all queued work, so a queued request whose account has them off is held
      * for staff: it reads as held (RequestStatus::READS_AS), the same word as its domain and the Status filter. With its domain (passed, or loaded with the row) a change reads as
-     * customer History does (ManagementProgress::statusKey), on the rail, the list and the request page. Lists pass $ordersOff as for reason(). */
+     * customer History does (ManagementProgress::statusKey), on the rail, the list and the request page. Lists pass $ordersOff as for reason(),
+     * and $accounts, the OperationQueries::ordersOffAccounts() snapshot their Status filter reads. */
     /** Staff alone name a registration stopped here, or a transfer staff held, On hold: one word for one hold. Setup still waits on the customer. */
     public const STATUSES = [...RequestStatus::SET, 'on_hold'=>['On hold','warning']];
     /** A transfer reads On hold only when staff held it; a transfer waiting on its old registrar keeps its own word. */
@@ -167,10 +168,10 @@ final class RequestFacts
         return RequestStatus::readsAs($op->state,$op->safe_code,$ordersOff)==='held'
             && ($op->action==='register' || ($op->action==='transfer' && $op->state==='held' && $op->safe_code===self::HELD_TRANSFER_CODE));
     }
-    public static function status(Operation $op, bool $ordersOff=true, ?Domain $d=null, ?StaffGrants $grants=null): array
+    public static function status(Operation $op, bool $ordersOff=true, ?Domain $d=null, ?StaffGrants $grants=null, ?array $accounts=null): array
     {
         $d??=$op->relationLoaded('domain')?$op->domain:null;
-        $off=$ordersOff&&$op->state==='queued'&&OperationQueries::ordersOff($op);
+        $off=$ordersOff&&$op->state==='queued'&&OperationQueries::ordersOff($op,$accounts);
         $status=[...Labels::requestStatus($op,$off,$grants),'reason'=>self::reason($op,$ordersOff,$grants)];
         try { $key=$d?ManagementProgress::statusKey($op,$d,$off):null; } catch (\Throwable) { $key=null; }
         if ($key!==null) { [$status['label'],$status['tone']]=RequestStatus::SET[$key]; }

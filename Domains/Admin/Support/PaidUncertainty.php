@@ -31,18 +31,25 @@ final class PaidUncertainty
     }
     /** The account-wide hold, said where staff look first: the Domains list and the registrar account page. Only a hold staff must clear shows:
      * a request still with the registrar clears by itself. One line per account: the job first, as on a held domain's head, then what it holds.
-     * The count is the account's Under review requests, the rows its link opens. Null with none. */
+     * The count is the account's Under review requests, the rows its link opens. Null with none.
+     * A fixed number of reads, however many accounts are held: the held accounts, their Under review counts, then their names. */
     public static function accounts(?int $server=null): ?\Illuminate\Support\HtmlString
     {
         Staff::requireView();
-        $held=OperationQueries::status(AccountSpendingHolds::query(Operation::query()),['under_review'])->when($server!==null,fn($q)=>$q->where('server_id',$server))
+        $off=OperationQueries::ordersOffAccounts();
+        $held=OperationQueries::status(AccountSpendingHolds::query(Operation::query()),['under_review'],$off)->when($server!==null,fn($q)=>$q->where('server_id',$server))
             ->selectRaw('server_id, min(id) as first')->groupBy('server_id')->orderBy('server_id')->limit(100)->pluck('first','server_id');
+        if ($held->isEmpty()) { return null; }
+        $ids=$held->keys()->map(fn($id)=>(int)$id)->all();
+        $reviews=OperationQueries::status(OperationResource::getEloquentQuery()->whereIn('domains_operations.server_id',$ids),['under_review'],$off)->toBase()
+            ->selectRaw('domains_operations.server_id as server_id, count(*) as total, min(domains_operations.id) as first')->groupBy('domains_operations.server_id')->get()->keyBy('server_id');
+        $names=\App\Models\Server::whereIn('id',$ids)->pluck('name','id');
         $lines=[];
         foreach ($held as $id=>$oldest) {
-            $review=OperationQueries::status(OperationResource::getEloquentQuery()->where('server_id',$id),['under_review']);
+            $review=$reviews->get($id);
             // A request the list can't show (an older registration of the domain) is still named, by itself.
-            $count=max(1,(clone $review)->count()); $first=$count===1?((int)(clone $review)->orderBy('id')->value('id') ?: (int)$oldest):0;
-            $name=e(\App\Models\Server::whereKey($id)->value('name') ?: 'this registrar account');
+            $count=max(1,(int)($review->total??0)); $first=$count===1?((int)($review->first??0) ?: (int)$oldest):0;
+            $name=e($names->get($id) ?: 'this registrar account');
             [$label,$url,$until]=$count===1
                 ? ['Check request #'.$first,DomainFacts::requestUrl(['request'=>$first]),'it is checked']
                 : ['Check '.$count.' requests',RegistrarFacts::requestsUrl((int)$id,['under_review']),'they are checked'];

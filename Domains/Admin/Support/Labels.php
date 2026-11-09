@@ -76,8 +76,11 @@ final class Labels
             if ($need!==null) { return $costs?$need:'Needs approval: registrar price increased. Ask staff with access to domain costs to review it.'; }
         }
         // Older checks retained a cap code even when the sending switch refused the read.
-        if(in_array($op->safe_code,['enom_test_reconciliation_call_cap','enom_test_transfer_reconciliation_call_cap'],true)
-            &&($op->policy['status_check']['reason']??null)==='send_guard'){return self::reason('enom_test_reconciliation_send_guard');}
+        if(in_array($op->safe_code,['enom_test_reconciliation_call_cap','enom_test_transfer_reconciliation_call_cap'],true)){
+            try{$guarded=($op->policy['status_check']['reason']??null)==='send_guard';}
+            catch(\Illuminate\Contracts\Encryption\DecryptException){return DomainFacts::UNREADABLE;}
+            if($guarded){return self::reason('enom_test_reconciliation_send_guard');}
+        }
         if (($held=self::staffHold($op))!==null) { return $held; }
         $reason=self::reason($op->safe_code,$op->funding_basis==='complimentary');
         if ($reason===self::FEATURE_OFF) {
