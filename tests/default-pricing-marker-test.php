@@ -20,7 +20,7 @@ $save=static fn()=>$writer->defaultPricing(pricingReview($actor->id),$rule,CardF
 $priceRows=static fn(Tld $t)=>DB::table('domains_prices')->where('server_id',$t->server_id)->where('tld',$t->tld)->orderBy('id')->get()->toJson();
 $state=static fn(Tld $t)=>[$priceRows($t),$t->fresh()->catalogue_revision,$t->fresh()->catalogue_published_revision];
 same(['published'=>2,'failed'=>[],'skipped'=>[]],$save(),'Start with current publications');
-foreach(['null','true','1','"invalid"','{broken'] as $marker){
+foreach(['null','true','1','"invalid"','{broken','{}','{"offer":1}'] as $marker){
     DB::table('domains_tlds')->where('id',$target->id)->update(['catalogue_published_revision'=>$marker]);
     $siblingBefore=$state($sibling);
     same(['published'=>1,'failed'=>[],'skipped'=>[]],$save(),'An invalid retained marker is repaired by the repeated pricing save: '.$marker);

@@ -12,7 +12,7 @@ function discoveryFixture(): array
     config(['queue.default'=>'database','queue.connections.database'=>['driver'=>'database','retry_after'=>180]]);
     $clock=new PslClock;$v=new PslValidator(128,5,1);
     app()->instance(Clock::class,$clock);app()->instance(PslValidator::class,$v);
-    $psl=new PublicSuffixList($clock,new PslTransport(fn()=>['status'=>200,'body'=>pslFixture()]),$v);
+    $psl=new PublicSuffixList($clock,new PslTransport(fn()=>['status'=>200,'body'=>str_replace('p1.example','hosting.example.com',pslFixture())]),$v);
     app()->instance(PublicSuffixList::class,$psl);
     $dns=new Paymenter\Extensions\Servers\Domains\Tests\FakeDnsReader;app()->instance(DnsReader::class,$dns);
     $f=dnsFixture();same('updated',$psl->update(),'Synthetic current suffix list');

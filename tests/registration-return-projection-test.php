@@ -46,6 +46,14 @@ foreach(['split','returned','credited',null] as $index=>$expected){
         if($action==='transfer'){expect(str_contains($html,'The domain stays at your current registrar.'),'Note-only rejected transfer remains visible');}
         else{config(['domains.support_url'=>'https://support.example.test/domains']);$supportOnly=view('domains::partials.owner-renew',['domain'=>$dto,'summary'=>null,'support'=>'https://support.example.test/domains'])->render();expect(str_contains($supportOnly,'Contact support'),'Support-only rejected registration remains visible');config(['domains.support_url'=>null]);}
     }
+    if($expected==='split'){
+        $raw=$saved->getRawOriginal('funding');
+        foreach([-1,'100','not-an-amount']as$bad){$funding=$saved->funding;$funding['refund']['bridge_minor']=$bad;
+            DB::table('domains_operations')->where('id',$saved->id)->update(['funding'=>Illuminate\Support\Facades\Crypt::encryptString(json_encode($funding))]);
+            same(null,$owners->present($saved->domain->fresh())->refundTo,'Malformed split funding has no invented return destination');
+            same($money,$nativeMoney(),'Malformed funding projection writes no money');same($sends,MoneyReceiptGateway::$sends,'Malformed funding projection never calls a gateway');}
+        DB::table('domains_operations')->where('id',$saved->id)->update(['funding'=>$raw]);
+    }
     if(in_array($expected,['split','returned'],true)){
         foreach($plan['allocations']as$allocation){MoneyReceiptGateway::complete(App\Models\Invoice::findOrFail($op->invoice_id),$allocation['key']);}
         Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::resume($op->id,$clock->now());

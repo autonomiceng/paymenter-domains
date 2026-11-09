@@ -108,7 +108,9 @@ final readonly class RuntimeWork
         }
         if($operationsOnly){return;}
         $this->attempt('initial_managed_records',fn()=>$this->ports->initialManagedRecordObservations());
-        foreach(ObservationCandidates::next('refund') as $ids){foreach($ids as $id){$this->attempt('refund',fn()=>app(Refunds::class)->creditRejected((int)$id),(int)$id);}}
+        foreach(ObservationCandidates::next('refund') as $ids){foreach($ids as $id){$this->attempt('refund',static function()use($id):void {
+            $op=Operation::find($id);if($op && RefundCandidates::automatic($op)){app(Refunds::class)->creditRejected((int)$id);}
+        },(int)$id);}}
         foreach(ObservationCandidates::next('timeout') as $ids){foreach($ids as $id){$this->attempt('timeout',fn()=>app(TransferInputs::class)->expireMissingCode((int)$id),(int)$id);}}
         $this->attempt('reminders',fn()=>app(Reminders::class)->sweep());
         $this->attempt('watch_public_checks',fn()=>app(WatchWork::class)->tick());

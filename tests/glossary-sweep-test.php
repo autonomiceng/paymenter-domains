@@ -23,7 +23,7 @@ expect(str_contains($md,"How each setting on a domain page works. Changes show i
 same(1,substr_count(strtolower($md),'transfer code'),'"transfer code" appears once, as the other name for the auth code');
 same(1,substr_count($md,'(also called EPP code or transfer code)'),'The auth code names its other terms once');
 expect(str_contains($md,'**Use site default nameservers**'),'Help names the nameservers button as the page does');
-$none($md,['Activity','Domain privacy','domain privacy','administrative contact','EPP code)','auth code or EPP','could not','cannot','do not'],'Help page');
+$none(str_replace('This does not enable DNS record editing here; that requires confirmed registrar DNS hosting.','',$md),['does not','Activity','Domain privacy','domain privacy','administrative contact','EPP code)','auth code or EPP','could not','cannot','do not'],'Help page');
 expect(str_contains($md,'This does not enable DNS record editing here; that requires confirmed registrar DNS hosting.'),'Site DNS fill preserves the DNS hosting requirement');
 $help=$plain((new OwnerHelpController)->show()->render());
 expect(!str_contains($help,'WHOIS privacy'),'Rendered help hides privacy');

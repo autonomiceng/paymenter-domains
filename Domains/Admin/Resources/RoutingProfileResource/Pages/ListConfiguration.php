@@ -12,6 +12,6 @@ class ListConfiguration extends ListRecords
     public function getSubNavigation(): array { return \Paymenter\Extensions\Servers\Domains\Admin\Support\StaffTabs::domains('DNS templates'); }
     public function getTitle(): string{return 'DNS templates';}
     public function getBreadcrumbs(): array{return [];}
-    public function getSubheading(): ?string{return 'New domains use: '.(\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::profile()?->name??'Missing. Choose a template in Site DNS settings.').'. On templates can be used for monitoring.';}
+    public function getSubheading(): ?string{return 'New domains use: '.(\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::profile()?->name??'Missing. Choose a template in Site DNS settings').'. On templates can be used for monitoring.';}
     protected function getHeaderActions(): array{return [WatchActions::configuration(null)];}
 }

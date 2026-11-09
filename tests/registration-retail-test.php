@@ -13,9 +13,9 @@ use Paymenter\Extensions\Servers\Domains\Data\CostUnit;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AcquisitionOffers, InvoiceBinding, PricingRule};
 
-extract(commerceFixture(true, ending: 'net', registrars: ['enom']));
+extract(commerceFixture(true, ending: 'example.net', registrars: ['enom']));
 $binding = AccountBindings::binding(Account::where('server_id', $tlds[0]->server_id)->sole());
-$query = new Query($binding, ['net'], 'register');
+$query = new Query($binding, ['example.net'], 'register');
 $revision = fn () => $ports->readOffers($query, Context::Staff)[0]->revision;
 $clock->instant = $now->modify('+1 minute');
 $costs = [new Cost('renew', 1, true, '10.9900', CostUnit::TermTotal, 'synthetic', $clock->now(), $now->modify('+1 day'))];
@@ -24,8 +24,8 @@ foreach ([1, 2, 5, 10] as $years) {
     $costs[] = new Cost('register', $years, true, $years === 1 ? '17.9900' : PricingRule::decimal(100000 * $years, 4),
         CostUnit::TermTotal, 'synthetic', $clock->now(), $now->modify('+1 day'));
 }
-$ports->apply(new FeedObserved($binding, 'net', $costs), $revision());
-$ports->apply(new FactsObserved($binding, 'net', new Facts(['register' => [1, 2, 5, 10], 'renew' => [1], 'transfer' => [1]],
+$ports->apply(new FeedObserved($binding, 'example.net', $costs), $revision());
+$ports->apply(new FactsObserved($binding, 'example.net', new Facts(['register' => [1, 2, 5, 10], 'renew' => [1], 'transfer' => [1]],
     [], true, false, false, 'synthetic', $clock->now(), $now->modify('+1 day'))), $revision());
 $eligibility = activeFixtureEligibility($bindings, $clock);
 $admission = activeFixtureAdmission($native, $sellers, $eligibility, $clock); $admission->boot();
@@ -37,13 +37,13 @@ foreach (['markup_percent', 'fixed'] as $mode) {
     $label = str_replace('_', '-', $mode);
     $rule = [...PricingRule::DEFAULT, 'mode' => $mode, 'markup' => '0.00',
         'fixed' => ['register' => '17.99', 'renew' => '10.99', 'transfer' => '12.00']];
-    $ports->apply(Edit::override($binding, 'net', new Intent(sell: true, longest: 10, transfers: true), $rule), $revision());
+    $ports->apply(Edit::override($binding, 'example.net', new Intent(sell: true, longest: 10, transfers: true), $rule), $revision());
     if ($mode === 'markup_percent') {
         // Replay a fresh old-rule publication: upgrading must use the saved costs, without a feed read.
         $oldTotals = [1 => '17.99', 2 => '21.98', 5 => '54.95', 10 => '109.90'];
         $product = $native->product($tlds[0], 'register');
         foreach ($oldTotals as $years => $total) {
-            DB::table('domains_prices')->where('server_id', $binding->serverId)->where('tld', 'net')
+            DB::table('domains_prices')->where('server_id', $binding->serverId)->where('tld', 'example.net')
                 ->where('action', 'register')->where('term', $years)->update(['retail' => $total]);
             $product->plans()->where('billing_period', $years)->sole()->prices()->where('currency_code', 'USD')->update(['price' => $total]);
         }
@@ -77,7 +77,7 @@ foreach (['markup_percent', 'fixed'] as $mode) {
         same($expected, $nativeTotals(), 'Upgrade republishes the native amounts the storefront compares: '.json_encode($nativeTotals()));
         foreach ($expected as $years => $total) {
             same($total, number_format((float) DB::table('domains_prices')->where('server_id', $binding->serverId)
-                ->where('tld', 'net')->where('action', 'register')->where('term', $years)->sole()->retail, 2, '.', ''), 'Upgrade publishes matching Domains retail '.$years);
+                ->where('tld', 'example.net')->where('action', 'register')->where('term', $years)->sole()->retail, 2, '.', ''), 'Upgrade publishes matching Domains retail '.$years);
         }
         same($nativeIds, $product->plans()->orderBy('id')->pluck('id')->all(), 'Upgrade preserves native plan identities');
         same($priceIds, DB::table('prices')->whereIn('plan_id', $nativeIds)->orderBy('id')->pluck('id')->all(), 'Upgrade preserves native price identities');
@@ -89,7 +89,7 @@ foreach (['markup_percent', 'fixed'] as $mode) {
         same($priceRows, DB::table('domains_prices')->orderBy('id')->get()->map(fn ($row) => (array) $row)->all(), 'Already-current installation does not republish');
         same($nativeRows, DB::table('prices')->orderBy('id')->get()->toJson(), 'Already-current installation leaves native prices untouched');
         $installedOffers = \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::resolve(AcquisitionOffers::class);
-        commerceReject(fn () => $installedOffers->offer('net', 'register', 2));
+        commerceReject(fn () => $installedOffers->offer('example.net', 'register', 2));
         // Replay R26 too: Domains already has new totals and a version 1 publication, native prices lag.
         // A native failure must roll back Domains rows and the publication marker too, allowing retry.
         $partial = OfferState::decode($tlds[0]->fresh()->catalogue_published_revision); $partial['retailRule'] = 1;
@@ -112,11 +112,11 @@ foreach (['markup_percent', 'fixed'] as $mode) {
         // This native component fixture installs Domains without booting the extension's runtime.
         Illuminate\Support\Facades\Artisan::registerCommand(new Paymenter\Extensions\Servers\Domains\Console\PriceMatch);
         same(0, Illuminate\Support\Facades\Artisan::call('domains:price-match'), 'Sends-off upgrade then sends-on passes the read-only native price check');
-        $installedSearch = $installedStore->check('installed-upgrade.net');
+        $installedSearch = $installedStore->check('installed-upgrade.example.net');
         same('available', $installedSearch['status'], 'Installed search reopens through normal admission');
         same(array_map(fn ($v) => '$'.$v, $expected), $installedSearch['terms'], 'Installed search offers all upgraded terms');
         $upgradeUser = commerceUser(); $upgradeCart = commerceCart($upgradeUser);
-        $upgradeItem = commerceAdd($upgradeCart, $installedOffers->offer('net', 'register', 2)['product'], 'upgrade-cart.net', 2);
+        $upgradeItem = commerceAdd($upgradeCart, $installedOffers->offer('example.net', 'register', 2)['product'], 'upgrade-cart.example.net', 2);
         $upgradePage = Livewire\Livewire::actingAs($upgradeUser)->withCookies(['cart' => $upgradeCart->ulid])
             ->test(App\Livewire\Cart::class)->set('use_credits', false);
         same('28.98', number_format((float) $upgradeItem->fresh()->price->total, 2, '.', ''), 'Upgraded two-year cart line');
@@ -124,26 +124,26 @@ foreach (['markup_percent', 'fixed'] as $mode) {
         config(['domains' => $deployment]);
     }
     Cache::flush();
-    $search = $store->check('search-'.$label.'.net');
+    $search = $store->check('search-'.$label.'.example.net');
     same('available', $search['status'], $mode.': searchable');
     same(array_map(fn ($v) => '$'.$v, $expected), $search['terms'], $mode.': search includes the first registration year: '.json_encode($search['terms']));
     $user = commerceUser(); $cart = commerceCart($user);
     foreach ($expected as $years => $total) {
-        $offer = $offers->offer('net', 'register', $years);
-        $item = commerceAdd($cart, $offer['product'], $label.'-'.$years.'.net', $years);
+        $offer = $offers->offer('example.net', 'register', $years);
+        $item = commerceAdd($cart, $offer['product'], $label.'-'.$years.'.example.net', $years);
         same($total, number_format((float) $item->price->total, 2, '.', ''), $mode.': cart total '.$years);
         // Landing's breakdown reads this native annual plan and this same-account holder renewal.
         $first = $item->product->availablePlans()->first(fn ($plan) => $plan->billing_unit === 'year' && $plan->billing_period === 1)->price('USD');
         $annual = (new \Paymenter\Extensions\Servers\Domains\Services\HolderPricing($prices, $caps))->renewal(
             new \Paymenter\Extensions\Servers\Domains\Models\Domain(['server_id' => $binding->serverId, 'registrar_key' => $binding->registrarKey,
-                'account_fingerprint' => $binding->fingerprint, 'tld' => 'net']), 'USD', $clock->now());
+                'account_fingerprint' => $binding->fingerprint, 'tld' => 'example.net']), 'USD', $clock->now());
         $breakdown = \Paymenter\Extensions\Servers\Domains\Catalogue\TermSupport::lines(number_format((float) $first->total, 2, '.', ''), $annual->retail, $years);
         same($total, $breakdown['total'], $mode.': Landing breakdown agrees with native line total '.$years);
     }
     $page = commerceCheckout($user, $cart); $page->assertHasNoErrors();
     same(count($issued) + 1, Order::count(), $mode.': one native order');
     foreach ($expected as $years => $total) {
-        $op = Operation::whereHas('domain', fn ($q) => $q->where('domain', $label.'-'.$years.'.net'))->sole();
+        $op = Operation::whereHas('domain', fn ($q) => $q->where('domain', $label.'-'.$years.'.example.net'))->sole();
         $item = InvoiceItem::findOrFail($op->invoice_item_id);
         same([$years, $total, $total, $total], [(int) $op->term, $op->amount, $item->price, $op->policy['price']['retail']], $mode.': invoice and registrar order term '.$years);
         same($years === 1 ? '17.9900' : PricingRule::decimal(100000 * $years, 4), $op->cost['estimated'], $mode.': selected-term wholesale retained');
@@ -151,16 +151,34 @@ foreach (['markup_percent', 'fixed'] as $mode) {
     }
     $issued[] = DB::table('invoice_items')->orderBy('id')->get()->map(fn ($row) => (array) $row)->all();
 }
+// Ordinary feed writes cannot bless an old marker while paused native plans keep old amounts.
+$product=$native->product($tlds[0],'register');$held=$product->plans()->where('billing_period',2)->sole()->prices()->where('currency_code','USD')->sole();
+$ports->apply(Edit::override($binding,'example.net',new Intent(sell:false,longest:10,transfers:false),$rule),$revision());
+$marker=OfferState::decode($tlds[0]->fresh()->catalogue_published_revision);$marker['retailRule']=1;
+DB::table('domains_tlds')->where('id',$tlds[0]->id)->update(['catalogue_published_revision'=>OfferState::json($marker)]);
+DB::table('prices')->where('id',$held->id)->update(['price'=>'0.01']);
+$money=DB::table('invoice_items')->orderBy('id')->get()->toJson();$retained=$tlds[0]->fresh()->catalogue_published_revision;
+$clock->instant=$clock->now()->modify('+1 minute');$repairCosts=array_map(fn(Cost $c)=>new Cost($c->action,$c->term,$c->enabled,$c->total,$c->sourceUnit,$c->source,$clock->now(),$clock->now()->modify('+1 day'),normalized:true),$costs);
+DB::statement('CREATE TRIGGER refuse_feed_upgrade BEFORE UPDATE ON prices WHEN OLD.id = '.$held->id." BEGIN SELECT RAISE(ABORT, 'synthetic paused feed upgrade failure'); END");
+$failed=false;try{$ports->apply(new FeedObserved($binding,'example.net',$repairCosts),$revision());}catch(Throwable){$failed=true;}
+DB::statement('DROP TRIGGER refuse_feed_upgrade');
+expect($failed,'Ordinary feed upgrade projects paused native plans in its transaction');
+same($retained,$tlds[0]->fresh()->catalogue_published_revision,'Failed ordinary feed upgrade retains old marker for retry');
+$ports->apply(new FeedObserved($binding,'example.net',$repairCosts),$revision());
+same('28.98',number_format((float)$held->fresh()->price,2,'.',''),'Feed retry repairs retained paused plan before advancing the marker');
+same(Retail::VERSION,OfferState::decode($tlds[0]->fresh()->catalogue_published_revision)['retailRule'],'Feed repair advances marker atomically');
+same($money,DB::table('invoice_items')->orderBy('id')->get()->toJson(),'Paused retail repair leaves issued invoices unchanged');
+commerceReject(fn()=>$offers->offer('example.net','register',2));
 // A later pricing save must not change either issued invoice or its frozen operation amount.
-$ports->apply(Edit::override($binding, 'net', new Intent(sell: true, longest: 10, transfers: true),
+$ports->apply(Edit::override($binding, 'example.net', new Intent(sell: true, longest: 10, transfers: true),
     [...PricingRule::DEFAULT, 'mode' => 'fixed', 'fixed' => ['register' => '19.99', 'renew' => '12.99', 'transfer' => '12.00']]), $revision());
 same($issued[1], DB::table('invoice_items')->orderBy('id')->get()->map(fn ($row) => (array) $row)->all(), 'Issued invoices never reprice');
-same('28.98', Operation::whereHas('domain', fn ($q) => $q->where('domain', 'fixed-2.net'))->sole()->amount, 'Issued operation amount remains frozen');
+same('28.98', Operation::whereHas('domain', fn ($q) => $q->where('domain', 'fixed-2.example.net'))->sole()->amount, 'Issued operation amount remains frozen');
 // The order path must refresh annual pricing inputs even while the selected-term cost is current.
-$ports->apply(Edit::override($binding, 'net', new Intent(sell: true, longest: 10, transfers: true),
+$ports->apply(Edit::override($binding, 'example.net', new Intent(sell: true, longest: 10, transfers: true),
     [...PricingRule::DEFAULT, 'markup' => '0.00']), $revision());
 $user = commerceUser(); $cart = commerceCart($user);
-commerceAdd($cart, $native->product($tlds[0], 'register'), 'refresh-price.net', 2);
+commerceAdd($cart, $native->product($tlds[0], 'register'), 'refresh-price.example.net', 2);
 $page = Livewire\Livewire::actingAs($user)->withCookies(['cart' => $cart->ulid])
     ->test(App\Livewire\Cart::class)->set('use_credits', false);
 same('28.98', number_format((float) $page->get('total')->total, 2, '.', ''), 'Customer initially sees the published total');
@@ -178,11 +196,11 @@ $registry = new \Paymenter\Extensions\Servers\Domains\Services\RegistrarRegistry
 $registry->register('enom', ['token'], new class implements \Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier {
     public function verify($environment, array $credentials): string { return $credentials['token']; }
 }, fn ($b, $credentials) => new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver(
-    new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Client($b, $credentials['token'], 'synthetic', $wire), ['net']));
+    new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Client($b, $credentials['token'], 'synthetic', $wire), ['example.net']));
 $quoted = new AcquisitionOffers($ports, new AccountBindings($registry), $native);
 $admission->fixtureOffers = $eligibility->fixtureOffers = $quoted;
 $expire = static function (array $keys) use ($clock, $binding): void {
-    foreach (DB::table('domains_prices')->where('server_id', $binding->serverId)->where('tld', 'net')->get() as $row) {
+    foreach (DB::table('domains_prices')->where('server_id', $binding->serverId)->where('tld', 'example.net')->get() as $row) {
         if (!in_array($row->action.':'.$row->term, $keys, true)) { continue; }
         $raw = OfferState::decode($row->catalogue_observation); $raw['fresh_until'] = $clock->now()->format(DATE_ATOM);
         DB::table('domains_prices')->where('id', $row->id)->update(['catalogue_observation' => OfferState::json($raw)]);
@@ -206,21 +224,21 @@ $notice = collect($page->effects['dispatches'] ?? [])->firstWhere('name', 'notif
 expect(str_contains($notice, 'Review the total'), 'Refreshed invoice requires the visible new total: '.$notice);
 Illuminate\Support\Once::flush(); $page->call('checkout', ['contact' => commerceOrderContact($user), 'save_account' => false]);
 $page->assertHasNoErrors();
-$refreshed = Operation::whereHas('domain', fn ($q) => $q->where('domain', 'refresh-price.net'))->sole();
+$refreshed = Operation::whereHas('domain', fn ($q) => $q->where('domain', 'refresh-price.example.net'))->sole();
 same([2, '32.98', '18.0000', '32.98', '32.98'], [(int) $refreshed->term, $refreshed->amount, $refreshed->cost['estimated'],
     InvoiceItem::findOrFail($refreshed->invoice_item_id)->price, $refreshed->policy['price']['retail']], 'Refreshed cart/invoice agree while selected wholesale and term stay separate: '.json_encode([$refreshed->term, $refreshed->amount, $refreshed->cost, InvoiceItem::findOrFail($refreshed->invoice_item_id)->price]));
 // Dependency observation drift must invalidate the saved longer-term quote.
 $selection = new \Paymenter\Extensions\Servers\Domains\Data\SaleSelection(...$refreshed->policy['checkout']['catalogue']);
-$annual = DB::table('domains_prices')->where('server_id', $binding->serverId)->where('tld', 'net')->where('action', 'register')->where('term', 1)->sole();
+$annual = DB::table('domains_prices')->where('server_id', $binding->serverId)->where('tld', 'example.net')->where('action', 'register')->where('term', 1)->sole();
 $changed = OfferState::decode($annual->catalogue_observation); $changed['total'] = '25.9900';
 DB::table('domains_prices')->where('id', $annual->id)->update(['catalogue_observation' => OfferState::json($changed)]);
 commerceReject(fn () => $quoted->validate($selection));
 DB::table('domains_prices')->where('id', $annual->id)->update(['catalogue_observation' => $annual->catalogue_observation]);
 // The mixed retail must still cover the independently quoted selected term's wholesale cost.
 $clock->instant = $clock->now()->modify('+1 minute');
-$ports->apply(new FeedObserved($binding, 'net', [new Cost('register', 10, true, '200.0000', CostUnit::TermTotal,
+$ports->apply(new FeedObserved($binding, 'example.net', [new Cost('register', 10, true, '200.0000', CostUnit::TermTotal,
     'synthetic', $clock->now(), $now->modify('+1 day'))]), $revision());
-same('below_cost', $ports->readOffers(new Query($binding, ['net'], 'register', 10), Context::Staff)[0]->reason, 'Selected-term below-cost guard remains authoritative');
+same('below_cost', $ports->readOffers(new Query($binding, ['example.net'], 'register', 10), Context::Staff)[0]->reason, 'Selected-term below-cost guard remains authoritative');
 // Nonzero markup and fees round each annual input before combining the purchased term.
 $inputs = []; foreach ($costs as $cost) { $inputs[$cost->key()] = $cost; }
 foreach ([

@@ -12,7 +12,7 @@ foreach ([$css => true, '<section data-domains-cart-notice>message</section>' =>
     $cart = new App\Livewire\Cart;
     CartNotice::set($cart, 'Your cart changed', 'Review the total, then check out again.',
         'Your cart changed. Review the total, then check out again.', 'warning');
-    same($html, $render($cart)($html), 'Render preserves the theme HTML');
+    same($html, $render($cart,Illuminate\Support\Facades\View::file(dirname(__DIR__).'/Domains/resources/views/partials/styles.blade.php'))($html), 'Render preserves the theme HTML');
     $events = array_map(static fn ($event) => $event->serialize(), Livewire\store($cart)->get('dispatched', []));
     same($toast, collect($events)->contains('name', 'notify'), 'Only a rendered notice element suppresses the toast');
 }

@@ -81,11 +81,11 @@ final class WatchActions
     {return self::action('watch',(int)$w->id,$revision,'read','Check now')->name('check')->visible(fn()=>$w->state==='active' && Staff::can(Writes::VIEW)&&Staff::can(Writes::MANAGE));}
     public static function enable(WatchProfile $row,int $revision): Action
     {
-        return self::action('profile',(int)$row->id,$revision,'enable','Turn on')->view('domains::admin.template-switch')
-            ->arguments(['on'=>false])->requiresConfirmation()->modalHeading('Turn on DNS template?')
+        return self::templateGuard(self::action('profile',(int)$row->id,$revision,'enable','Turn on')->view('domains::admin.template-switch')
+            ->arguments(['on'=>false,'blocked'=>$row->readProfile()===null])->requiresConfirmation()->modalHeading('Turn on DNS template?')
             ->modalDescription('Monitoring can check domains against these records. New domains keep their current template.')
-            ->modalSubmitActionLabel('Turn on')->disabled($row->readProfile()===null)
-            ->visible(fn()=>!$row->enabled && Staff::can(Writes::VIEW)&&Staff::can(Writes::MANAGE));
+            ->modalSubmitActionLabel('Turn on')
+            ->visible(fn()=>!$row->enabled && Staff::can(Writes::VIEW)&&Staff::can(Writes::MANAGE)),$row->readProfile()===null?WatchFacts::TEMPLATE_UNAVAILABLE:null);
     }
     /** Blocked switches keep the same dimming and reason as the shared blocked button. */
     private static function templateGuard(Action $action,?string $reason): Action
@@ -95,7 +95,7 @@ final class WatchActions
     }
     public static function disable(WatchProfile $row,int $revision): Action
     {
-        $reason=\Paymenter\Extensions\Servers\Domains\Services\DnsTemplateUsage::refusal((int)$row->id);
+        $reason=\Paymenter\Extensions\Servers\Domains\Services\DnsTemplateUsage::refusal((int)$row->id)??($row->readProfile()===null?WatchFacts::TEMPLATE_UNAVAILABLE:null);
         return self::templateGuard(self::action('profile',(int)$row->id,$revision,'disable','Turn off')->view('domains::admin.template-switch')
             ->arguments(['on'=>true,'blocked'=>$reason!==null])->requiresConfirmation()->modalHeading('Turn off DNS template?')
             ->modalDescription('Monitoring will no longer use this template. Saved records stay here.')

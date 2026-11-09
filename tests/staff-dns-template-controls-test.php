@@ -114,6 +114,14 @@ $check('Read-only staff cannot change templates',function()use($make):void{
     catch(\Symfony\Component\HttpKernel\Exception\HttpException $e){$error=$e->getStatusCode();}
     same(403,$error,'Deletion requires manage permission');expect($row->fresh()!==null,'Refused deletion preserves the template');
 });
+$check('Default label lookup is constant per table render',function()use($profile,$make,$manager):void{
+ $count=0;DB::listen(static function($q)use(&$count):void{if(str_contains($q->sql,'"settings"')&&in_array(SiteDnsDefault::KEY,$q->bindings,true)){$count++;}});
+ foreach([1,25,100]as$size){$page=Livewire::actingAs($manager)->test(ListConfiguration::class);$column=$page->instance()->getTable()->getColumn('name');$count=0;
+  for($i=0;$i<$size;$i++){$column->record($profile)->getDescriptionBelow();}expect($count<=1,'Default lookup stays constant for '.$size.' rows');}
+ siteDnsFixture(null);$page=Livewire::actingAs($manager)->test(ListConfiguration::class);$column=$page->instance()->getTable()->getColumn('name');$count=0;
+ for($i=0;$i<100;$i++){same(null,$column->record($profile)->getDescriptionBelow(),'Missing default has no row marker');}expect($count<=1,'Missing default is cached within this render');
+ siteDnsFixture($profile->id);$page=Livewire::actingAs($manager)->test(ListConfiguration::class);same('Used for new domains',$page->instance()->getTable()->getColumn('name')->record($profile)->getDescriptionBelow(),'Next request sees changed default');
+});
 foreach($errors as$error){echo "FAIL $error\n";}
 expect($errors===[],'DNS template control regressions: '.implode('; ',$errors));
 $nativeSuccessful=true;echo "DNS template controls passed\n";

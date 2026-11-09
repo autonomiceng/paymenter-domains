@@ -16,14 +16,24 @@ $work->reconcileDefaults();
 same(3,DB::table('domains_watch_work')->where('watch_id',$watch->id)->count(),'Enrollment schedules registry and DNS without an outer transaction');
 $hold=static function()use($watch,$now):void {DB::table('domains_watch_work')->where('watch_id',$watch->id)->whereIn('kind',['delegation','points'])->update(['due_at'=>$now+3600,'backoff_until'=>$now+3600,'attempts'=>3,'claim'=>null,'lease_until'=>null]);};
 $hold();
+DB::table('domains_watch_schedule')->where('scope','enrollment')->update(['cursor'=>987,'data'=>json_encode(['refresh_profiles'=>[999],'enrollment_claim'=>'retained-claim','enrollment_until'=>$now+500])]);
+$beforeUnused=DB::table('domains_watch_schedule')->where('scope','enrollment')->first();
 DB::transaction(fn()=>WatchProfile::create(['name'=>'Unrelated DNS','enabled'=>true,'nameservers'=>['ns1.other.test','ns2.other.test'],
     'website_endpoints'=>[],'email_endpoints'=>[],'edited_by'=>$owner->id,'reason'=>'Another explicit template']));
 same(null,$checks->begin($watch->id,$owner->id,'delegation',$now),'An unrelated DNS template must preserve inherited-watch retry backoff');
+same((array)$beforeUnused,(array)DB::table('domains_watch_schedule')->where('scope','enrollment')->first(),'Unused template leaves unrelated claims and cursor intact');
+DB::table('domains_watch_schedule')->where('scope','enrollment')->update(['cursor'=>0,'data'=>null]);
 $hold();SiteDnsDefault::ensure();
 same(null,$checks->begin($watch->id,$owner->id,'delegation',$now),'Unchanged setup must preserve inherited-watch retry backoff');
 $selected=SiteDnsDefault::profile();
+$explicit=DB::transaction(fn()=>WatchName::create(['user_id'=>$owner->id,'canonical_name'=>'explicit-placeholder.com','psl_revision'=>str_repeat('a',64),'state'=>'active','ns_profile_id'=>$selected->id,'profile_revision'=>$selected->revision,'expected_dns'=>'platform','notice_preferences'=>[]]));
+$order2=App\Models\Order::create(['user_id'=>$owner->id,'currency_code'=>'USD']);$host2=App\Models\Service::create([...$service->only(['product_id','plan_id','status','quantity','price','currency_code']),'user_id'=>$owner->id,'order_id'=>$order2->id]);
+$host2->properties()->create(['key'=>'domain','value'=>'explicit-placeholder.com']);$copy=$source->replicate();$copy->watch_id=$explicit->id;$copy->registrable_name='explicit-placeholder.com';$copy->hostname='explicit-placeholder.com';$copy->service_id=$host2->id;DB::transaction(fn()=>$copy->save());
+$work->enrollWatch($explicit->id,$owner->id);DB::table('domains_watch_work')->where('watch_id',$explicit->id)->whereIn('kind',['delegation','points'])->update(['due_at'=>$now+3600,'backoff_until'=>$now+3600]);
+
 DB::transaction(fn()=>$selected->update(['revision'=>$selected->revision+1,'nameservers'=>['ns1.changed.test','ns2.changed.test'],'edited_by'=>$owner->id,'reason'=>'Changed selected nameservers']));
 expect($checks->begin($watch->id,$owner->id,'delegation',$now)!==null,'Editing the selected site template still refreshes inherited DNS work');
+expect($checks->begin($explicit->id,$owner->id,'delegation',$now)!==null,'Editing the site template also refreshes explicit assignments to it');
 $hold();
 // Interleave a real default restart after this batch has read its cursor, with eager processing disabled.
 app()->instance(WatchWork::class,new WatchWork($reader,new WatchDiscoveryWork(static fn()=>0),false,fn()=>$now));

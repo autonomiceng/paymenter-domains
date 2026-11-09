@@ -130,6 +130,8 @@ final class ReceiptReturns
     public static function summary(Operation $op): ?array
     {
         $plans=self::plans($op);if(!$plans){return null;}$states=[];$bridge=0;
+        foreach($plans as$p){if(!is_int($p['bridge_minor']??null)||$p['bridge_minor']<0){return ['Refund needs a check','Our team is checking the payment return. Contact support with the invoice number.'];}}
+
         foreach([...(isset($op->funding['refund'])?[$op->funding['refund']]:[]),...($op->funding['late_credits']??[])] as $p){if(($p['to']??null)==='account_credit'){$bridge+=PricingRule::minor($p['amount']);}}
         foreach($plans as $p){$bridge+=$p['bridge_minor'];foreach($p['allocations'] as $a){$states[]=$op->funding['receipt_return_results'][$a['key']]['state']??'reserved';}}
         if(array_intersect($states,['review'])){return ['Refund needs a check','Our team is checking the payment return. Contact support with the invoice number.'];}

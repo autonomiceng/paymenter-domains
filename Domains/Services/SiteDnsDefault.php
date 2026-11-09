@@ -22,7 +22,11 @@ final class SiteDnsDefault
         $p=is_string($id)&&ctype_digit($id)?WatchProfile::whereKey($id)->when($lock,fn($q)=>$q->lockForUpdate())->first():null;
         return ManagedDnsSetup::usable($p)?$p:null;
     }
-    public static function uses(int $id): bool { return $id>0 && (int)self::profile()?->id===$id; }
+    public static function uses(int $id): bool
+    {
+        if($id<1){return false;}$rows=self::query()->get();
+        return $rows->contains(fn($row)=>$row->type==='string' && !$row->encrypted && $row->value===(string)$id);
+    }
     public static function watchProfile(WatchName $watch,bool $lock=false): ?WatchProfile
     {
         // An explicit watch choice, including an unusable one, is never silently replaced.
@@ -111,19 +115,24 @@ final class SiteDnsDefault
         $s->fill(['type'=>'string','encrypted'=>false,'value'=>(string)$p->id])->save();
     }
     /** Restart durable bounded cursors, then process one local page through the admitted workers. No DNS I/O. */
-    public static function reconcile(?int $profileId=null): void
+    public static function reconcile(?int $profileId=null,bool $inherited=false): void
     {
         if(!Schema::hasTable(PublicDnsQuota::TABLE) || !Schema::hasTable('domains_watch_schedule')){return;}
-        PublicDnsQuota::seed(time());
-        DB::table(PublicDnsQuota::TABLE)->where('id',1)->update(['sweep_due_at'=>0,'sweep_cursor'=>0]);
-        DB::transaction(static function()use($profileId):void {
+        $inherited=$inherited||$profileId===null;
+        $watch=WatchName::where('state','active')->where(fn($q)=>$q->where('ns_profile_id',$profileId)->when($inherited,fn($q)=>$q->orWhereNull('ns_profile_id')))->exists();
+        $managed=Schema::hasTable('domains_managed_public_config') && \Paymenter\Extensions\Servers\Domains\Models\ManagedPublicConfig::where(fn($q)=>$q->where('profile_id',$profileId)->when($inherited,fn($q)=>$q->orWhereNull('profile_id')))->exists();
+        // A site-wide change must also discover managed targets without an explicit config row.
+        $managed=$managed||$inherited;
+        if(!$watch&&!$managed){return;}
+        if($managed){PublicDnsQuota::seed(time());DB::table(PublicDnsQuota::TABLE)->where('id',1)->update(['sweep_due_at'=>0,'sweep_cursor'=>0]);}
+        if($watch){DB::transaction(static function()use($profileId,$inherited):void {
             DB::table('domains_watch_schedule')->insertOrIgnore(['scope'=>'enrollment']);
             $q=DB::table('domains_watch_schedule')->where('scope','enrollment');$row=$q->lockForUpdate()->first();
             $data=json_decode($row->data??'{}',true);$data=is_array($data)?$data:[];
             $profiles=array_values(array_unique([...($data['refresh_profiles']??[]),...($profileId===null?[]:[$profileId])]));
-            $q->update(['cursor'=>0,'data'=>json_encode(['refresh_dns'=>$profileId===null||($data['refresh_dns']??false),
+            $q->update(['cursor'=>0,'data'=>json_encode(['refresh_dns'=>$inherited||($data['refresh_dns']??false),
                 'refresh_profiles'=>$profiles,'restart'=>bin2hex(random_bytes(16))])]);
-        });
-        DB::afterCommit(static fn()=>app(WatchWork::class)->reconcileDefaults());
+        });}
+        DB::afterCommit(static fn()=>app(WatchWork::class)->reconcileDefaults($managed,$watch));
     }
 }

@@ -788,7 +788,11 @@
     "tests/staff-operation-sync-test.php",
     "tests/pending-transfer-observation-test.php",
     "tests/enom-nameserver-domains-test.php",
-    "tests/owner-order-status-test.php"
+    "tests/owner-order-status-test.php",
+    "tests/template-recovery-test.php",
+    "tests/watch-discovery-hints-test.php",
+    "tests/adoption-missing-template-test.php",
+    "tests/template-explicit-default-test.php"
   ],
   "ui": [],
   "runner": [

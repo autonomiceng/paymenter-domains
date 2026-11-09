@@ -12,9 +12,10 @@ use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AcquisitionO
 extract(commerceFixture(true, ending: 'net', registrars: ['enom']));
 $b = AccountBindings::binding(Account::where('server_id', $tlds[0]->server_id)->sole());
 config(['domains.enom_identity.environment' => 'test', 'domains.enom_catalogue.enabled' => true,
-    'domains.enom_writes.registration' => true, 'domains.enom_writes.renewal' => true]);
+    'domains.enom_writes.registration' => true, 'domains.enom_writes.renewal' => true, 'domains.enom_writes.transfer'=>false]);
 App\Models\Server::findOrFail($b->serverId)->settings()->updateOrCreate(['key' => EnomTestRenewal::KEY],
     ['type' => 'string', 'encrypted' => true, 'value' => json_encode(['fingerprint' => $b->fingerprint, ...EnomTestRenewal::protocol($b)])]);
+App\Models\Server::findOrFail($b->serverId)->settings()->updateOrCreate(['key'=>Paymenter\Extensions\Servers\Domains\Services\EnomTestTransfer::KEY],['type'=>'string','encrypted'=>true,'value'=>json_encode(['fingerprint'=>$b->fingerprint,...Paymenter\Extensions\Servers\Domains\Services\EnomTestTransfer::protocol($b)])]);
 $offers = CallerRouting::resolve(AcquisitionOffers::class);
 $command = new Paymenter\Extensions\Servers\Domains\Console\PriceMatch;
 $console = new Symfony\Component\Console\Application; $console->add($command); $command->setLaravel(app());
@@ -41,9 +42,16 @@ Log::shouldNotHaveReceived('warning');
 same([], $offers->display(['net']), 'Storefront hides both mismatched terms');
 $offers->display(['net']);
 Log::shouldHaveReceived('warning')->twice();
+config(['domains.enom_writes.transfer'=>true]);
+$transferPrice=$native->product($tlds[0],'transfer')->plans()->where('billing_period',1)->sole()->prices()->where('currency_code','USD')->sole();
+DB::table('prices')->where('id',$transferPrice->id)->update(['price'=>'0.01']);
+$offers->display(['net']);$offers->display(['net']);
+Log::shouldHaveReceived('warning')->with('Domain acquisition price mismatch; term hidden.',Mockery::on(fn($r)=>$r['action']==='transfer'&&$r['term']===1))->once();
+DB::table('prices')->where('id',$transferPrice->id)->update(['price'=>$transferPrice->price]);
+config(['domains.enom_writes.transfer'=>false]);
 $clock->instant = $now->modify('+13 hours');
 $offers->display(['net']);
-Log::shouldHaveReceived('warning')->times(4);
+Log::shouldHaveReceived('warning')->times(5);
 $clock->instant = $now;
 DB::table('prices')->where('id', $annualPrice->id)->update(['price' => $annualPrice->price]);
 DB::table('prices')->where('id', $longPrice->id)->update(['setup_fee' => '0.00']);
@@ -113,6 +121,7 @@ same('worked', $worker->accountTurn($b->serverId), 'Existing account job finishe
 same(2, count(array_filter($offers->priceMatches(), fn ($r) => $r['mismatch'] !== null)), 'Full check still detects touched and untouched drift');
 Log::shouldHaveReceived('warning')->with('Domain acquisition price mismatch after catalogue publication.',
     Mockery::on(fn ($row) => $row['tld'] === 'net' && $row['term'] === 3 && $row['mismatch'] !== null))->once();
+Log::shouldNotHaveReceived('warning',['Domain acquisition price mismatch after catalogue publication.',Mockery::on(fn($row)=>$row['tld']==='org')]);
 same($calls, $reads->calls, 'End-of-publication check makes no provider calls');
 same(0, $feedCalls, 'Buffered publication and its check never resolve another provider feed');
 same('0.01', number_format((float) $orgPrice->fresh()->price, 2, '.', ''), 'Untouched ending remains unchanged');

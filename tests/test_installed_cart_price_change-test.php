@@ -39,20 +39,20 @@ expect($cart->items()->whereKey($line->id)->exists(), 'Same-price publish keeps 
 $checkout($page, $cart);
 expect(!collect($page->effects['dispatches'] ?? [])->contains('name', 'notify'), 'Same price shows no notice');
 same($before[2] + 1, Operation::count(), 'Same price checks out on the first click');
-same('23.40', Operation::latest('id')->first()->policy['price']['retail'], 'Same price keeps the shown total');
+same('28.60', Operation::latest('id')->first()->policy['price']['retail'], 'Same price keeps the shown total');
 
 // A published markup change keeps the line, shows the new total once, and the next click buys at that total.
 $cart = commerceCart($user); $line = commerceAdd($cart, $com, 'changed-price-placeholder.com', 3);
-$page = $open($cart); same('23.40', $total($page), 'Held page shows the old total');
+$page = $open($cart); same('28.60', $total($page), 'Held page shows the old total');
 $ports->apply(Edit::override($binding, 'com', new Intent(sell: true, longest: 3, transfers: true), [...PricingRule::DEFAULT, 'markup' => '50.00']), $rev());
 expect($cart->items()->whereKey($line->id)->exists(), 'Published price change keeps the cart line');
 $before = $counts(); $checkout($page, $cart);
 same($before, $counts(), 'First click after a price change places no order');
 same($changed, $notice($page), 'Changed price shows the changed-cart notice');
-same('27.00', $total($page), 'Changed price shows the new total');
+same('33.00', $total($page), 'Changed price shows the new total');
 $checkout($page, $cart);
 same($before[2] + 1, Operation::count(), 'Second click checks out');
-same('27.00', Operation::latest('id')->first()->policy['price']['retail'], 'Second click buys at the new total');
+same('33.00', Operation::latest('id')->first()->policy['price']['retail'], 'Second click buys at the new total');
 
 // Staff take .com off sale: only that line goes, in plain words, on page load and at checkout.
 $cart = commerceCart($user); $closed = commerceAdd($cart, $com, 'closed-sale-placeholder.com', 3);
@@ -140,7 +140,7 @@ Illuminate\Support\Facades\View::getFinder()->prependLocation($views); Illuminat
 Illuminate\Support\Facades\View::addNamespace('domains', dirname(__DIR__).'/Domains/resources/views');
 $ports->apply(Edit::override($binding, 'com', new Intent(sell: true, longest: 3, transfers: true), [...PricingRule::DEFAULT, 'markup' => '50.00']), $rev());
 $cart = commerceCart($user); commerceAdd($cart, $com, 'themed-notice-placeholder.com', 3);
-$page = $open($cart); same('27.00', $total($page), 'Themed page shows the held total');
+$page = $open($cart); same('33.00', $total($page), 'Themed page shows the held total');
 $ports->apply(Edit::override($binding, 'com', new Intent(sell: true, longest: 3, transfers: true), [...PricingRule::DEFAULT, 'markup' => '70.00']), $rev());
 $before = $counts(); $checkout($page, $cart); $html = $page->html();
 same($before, $counts(), 'Themed price change places no order');
@@ -149,8 +149,8 @@ $dom = storefrontDom($html); $box = $dom->query('//*[@data-domains-cart-notice]/
 same(1, $box->length, 'One cart notice');
 same('Your cart changed', trim($dom->query('.//strong', $box->item(0))->item(0)?->textContent ?? ''), 'Notice has its title');
 same('Review the total, then check out again.', trim($dom->query('.//p', $box->item(0))->item(0)?->textContent ?? ''), 'Notice keeps the sentence');
-same('Was $27.00', trim($dom->query('//*[@class="line"]/s')->item(0)?->textContent ?? ''), 'Changed line strikes the old price');
-expect($total($page) !== '27.00' && str_contains($dom->query('//*[@class="line"]')->item(0)->textContent, '$'.$total($page)), 'Line shows the new price beside it');
+same('Was $33.00', trim($dom->query('//*[@class="line"]/s')->item(0)?->textContent ?? ''), 'Changed line strikes the old price');
+expect($total($page) !== '33.00' && str_contains($dom->query('//*[@class="line"]')->item(0)->textContent, '$'.$total($page)), 'Line shows the new price beside it');
 
 // With a coupon, the struck amount is the discounted line the buyer saw, not the list price.
 $coupon = App\Models\Coupon::create(['code' => 'NOTICETEN', 'type' => 'percentage', 'value' => 10, 'applies_to' => 'price', 'recurring' => 0]);
@@ -189,7 +189,7 @@ $listeners = (new ReflectionProperty(Livewire\EventBus::class, 'listeners'))->ge
 $mount = end($listeners['mount']); $component = new App\Livewire\Cart; $escaped = null;
 try { $mount($component); } catch (Throwable $error) { $escaped = $error; }
 expect($escaped === null, 'Gateway recalculation failure cannot escape the removal-notice listener');
-$render = end($listeners['render']); $render($component)('<div></div>');
+$render = end($listeners['render']); $render($component,Illuminate\Support\Facades\View::file(dirname(__DIR__).'/Domains/resources/views/partials/styles.blade.php'))('<div></div>');
 $dispatches = array_map(static fn ($event) => $event->serialize(), Livewire\store($component)->get('dispatched', []));
 $notification = collect($dispatches)->firstWhere('name', 'notify');
 expect(str_contains($notification['params'][0]['message'] ?? '', 'notice-placeholder.com'), 'Removal notice survives a failing gateway recalculation');

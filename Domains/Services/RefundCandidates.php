@@ -23,6 +23,22 @@ final class RefundCandidates
             ->whereIn($prefix.'action',self::ACTIONS)->where(fn($q)=>$q->whereNull($prefix.'safe_code')
                 ->orWhereNotIn($prefix.'safe_code',self::SKIPPED));
     }
+    /** A failed retained proof needs repair, not repeated native holding locks. Money is still checked by Refunds. */
+    public static function automatic(Operation $op): bool
+    {
+        if ($op->funding_basis !== 'complimentary' || $op->action !== 'register' || $op->safe_code !== RegistrationRefusals::CODE) { return true; }
+        try {
+            $domain=$op->domain;
+            if ($domain && RegistrationRefusals::proved($op,$domain)) { return true; }
+            $facts=array_intersect_key($op->getAttributes(),array_flip(['state','safe_code','lease_expires_at','attempt','funding','cost','domain_id','service_id','server_id','registrar_key','account_fingerprint','authority_generation','term','provider_order_id','confirmed_expires_at','started_at','request_fingerprint']));
+            $identity=$domain?->only(['id','status','domain','service_id','user_id','server_id','registrar_key','account_fingerprint','authority_generation','provider_order_id','provider_domain_id','provider_expires_at']);
+            $key='domains.refusal-proof.'.$op->id.'.'.hash('sha256',serialize([$facts,$identity]));
+            if (\Illuminate\Support\Facades\Cache::add($key,true,86400)) {
+                \Illuminate\Support\Facades\Log::warning('Complimentary registration closure needs retained refusal evidence.',['operation_id'=>(int)$op->id]);
+            }
+        } catch (\Throwable) { /* Unreadable evidence is not authority, and diagnostics cannot break other rows. */ }
+        return false;
+    }
     public static function matches(Operation $op, array $funding): bool
     {
         return $op->state==='rejected' && ($op->funding_basis==='paid_invoice'||($op->funding_basis==='complimentary'&&$op->action==='register'&&$op->safe_code===RegistrationRefusals::CODE
