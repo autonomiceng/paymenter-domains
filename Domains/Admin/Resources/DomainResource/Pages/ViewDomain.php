@@ -12,6 +12,7 @@ use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource,WatchResource};
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{AcquisitionActions, AcquisitionPaymentReview, DomainEditActions, DomainFacts, DomainHistory, HelpHint, HoldingActions, MissingEntry, NoticeReview, OperationActions, RegistrarFacts, Sheet, Staff, StatusMark};
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Presentation\DomainName;
@@ -80,6 +81,12 @@ class ViewDomain extends ViewRecord
     /** The head's step as plain text, so rows and Activity can leave out what it already says. */
     private function said(): ?string
     { $step=$this->head()['step']; return $step===null?null:html_entity_decode(strip_tags($step instanceof Htmlable?$step->toHtml():$step),ENT_QUOTES|ENT_HTML5); }
+    /** History gets the request the head names and the head's words, so it leaves out the reason the head already says (DomainHistory::repeatsHead). */
+    public function getRelationManagers(): array
+    {
+        return array_map(fn($manager)=>$manager===RequestsRelationManager::class?RequestsRelationManager::make([
+            'headRequest'=>DomainFacts::headRequest($this->getRecord(),$this->status(),$this->edits()['request'],$this->notice()),'headSaid'=>$this->said()]):$manager,parent::getRelationManagers());
+    }
     private function edits(): array { return $this->edits??=DomainEditActions::for($this->getRecord()); }
     private function status(): array { return $this->domainStatus??=DomainFacts::status($this->getRecord()); }
     private function notice(): ?array { if ($this->notice===false) { $this->notice=DomainFacts::notice($this->getRecord()); } return $this->notice; }

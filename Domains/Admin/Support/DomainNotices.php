@@ -49,7 +49,8 @@ final class DomainNotices
         // A stopped read names its request beside any invoice link late money added: staff need both.
         if (($notice['resume']??false)&&$request) { $notice['action']=['label'=>'Check request #'.$request,'url'=>self::requestUrl(['request'=>$request])]; }
         $missing=array_filter($facts,fn(array $fact)=>$fact['value']===null&&!Missing::needsNothing($fact['sub']));
-        $tone=$status['tone']==='success'&&(($notice['resume']??false)||$missing!==[])?'warning':$status['tone'];
+        // A danger notice, such as unreadable saved data, is red whatever the status says.
+        $tone=match(true) { ($notice['tone']??null)==='danger'=>'danger',$status['tone']==='success'&&(($notice['resume']??false)||$missing!==[])=>'warning',default=>$status['tone'] };
         $mark=!in_array($tone,['warning','danger'],true);
         $step=match(true) { $notice!==null=>self::noticeHtml($notice,$mark),$held!==null=>self::holdHtml($held,$mark),default=>self::stepHtml($status,$mark) };
         return ['tone'=>$tone,'step'=>$step??($missing!==[]?'Some details are Missing. Each row says what to do.':null)];

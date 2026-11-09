@@ -46,13 +46,16 @@ final class HoldingReadRetry
         return is_array($failure)&&($failure['identity']??null)===ObservationRecords::identity($d)&&($failure['code']??null)==='domain_not_in_account'?$failure:null;
     }
     private static function absenceSuperseded(Domain $d): bool
+    { $failure=self::absenceFailure($d); return $failure!==null&&self::ownedAfter($d,$failure['at']??null); }
+    /** Saved facts of this identity proved ownership strictly after $at, the time of a failure or hold that said otherwise.
+     * Equal or unreadable times, foreign facts and facts that do not prove ownership keep what the failure or hold said. */
+    public static function ownedAfter(Domain $d, mixed $at): bool
     {
-        $failure=self::absenceFailure($d); $facts=$d->observation['facts']??null;
-        if ($failure===null||!is_array($facts)||!ObservationProjection::matches($d,$facts)||($facts['owned']??null)!==true) { return false; }
-        $at=static function(mixed $value): ?int { try { return is_string($value)?(new \DateTimeImmutable($value))->getTimestamp():(is_int($value)?$value:null); } catch (\Throwable) { return null; } };
-        $owned=$at($facts['at']??null); $missing=$at($failure['at']??null);
-        // Equal or unreadable times keep the absence: only a strictly newer ownership read clears it.
-        return $owned!==null&&$missing!==null&&$owned>$missing;
+        $facts=$d->observation['facts']??null;
+        if (!is_array($facts)||!ObservationProjection::matches($d,$facts)||($facts['owned']??null)!==true) { return false; }
+        $time=static function(mixed $value): ?int { try { return is_string($value)?(new \DateTimeImmutable($value))->getTimestamp():(is_int($value)?$value:null); } catch (\Throwable) { return null; } };
+        $owned=$time($facts['at']??null); $before=$time($at);
+        return $owned!==null&&$before!==null&&$owned>$before;
     }
     public static function status(Domain $d, ?\DateTimeImmutable $now=null): array
     {

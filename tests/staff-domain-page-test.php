@@ -157,6 +157,19 @@ foreach (['name'=>'other.example.com','generation'=>2,'fingerprint'=>str_repeat(
     $saved=$heldFacts;$saved['record_hold']['identity'][$field]=$bad;$active->fresh()->update(['observation'=>$saved]);
     same(['Yes','Off'],[$value($active,'In registrar account'),$value($active,'Registrar auto-renew')],'Stale ownership hold cannot override current facts: '.$field);
 }
+// With record checks off a read saves ownership but no records, so the hold stays. Only a strictly newer owned read of the same identity answers membership.
+require_once __DIR__.'/Support/storefront.php';
+$membershipRow=static function(Domain $d):string{
+    $rows=storefrontDom(Livewire::actingAs(Auth::user())->test(ViewDomain::class,['record'=>$d->id])->assertSuccessful()->html())->query('//*[contains(concat(" ",normalize-space(@class)," ")," domains-row ")][.//*[normalize-space(.)="In registrar account"]]');
+    same(1,$rows->length,'One rendered membership row');return trim(preg_replace('/\s+/',' ',$rows->item(0)->textContent));};
+$holdAt=$heldFacts['record_hold']['at'];$after=(new DateTimeImmutable($holdAt))->modify('+1 second')->format(DATE_ATOM);
+foreach (['newer'=>[$after,[],'Yes'],'equal'=>[$holdAt,[],'No'],'stale'=>[(new DateTimeImmutable($holdAt))->modify('-1 second')->format(DATE_ATOM),[],'No'],
+    'unreadable time'=>['not-a-time',[],'No'],'foreign'=>[$after,['generation'=>2],'No'],'not owned'=>[$after,['owned'=>false],'No']] as $case=>[$at,$change,$expected]) {
+    $saved=$heldFacts;$saved['facts']=[...$saved['facts'],'at'=>$at,...$change];$active->fresh()->update(['observation'=>$saved]);
+    same($expected,$value($active,'In registrar account'),'Ownership hold against a '.$case.' ownership read');
+    same('In registrar account '.$expected,$membershipRow($active),'Rendered membership against a '.$case.' ownership read');
+    same($heldFacts['record_hold'],$active->fresh()->observation['record_hold'],'The display keeps the ownership hold: '.$case);
+}
 $active->fresh()->update(['observation'=>$factObservation]);
 // Nameservers: the stored registrar readback the customer page shows, one per line in order. No extra queries.
 $queries=static function(Domain $d):int{DB::enableQueryLog();DB::flushQueryLog();DomainFacts::for($d);$n=count(DB::getQueryLog());DB::disableQueryLog();return $n;};
