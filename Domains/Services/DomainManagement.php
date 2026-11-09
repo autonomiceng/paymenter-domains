@@ -365,7 +365,8 @@ final class DomainManagement
                     $projection['record_reads'][$facts['host']]=['identity'=>ObservationRecords::identity($l['domain']),...$entry];
                 }
             }
-            $projection['management_sequence']=$sequence; $l['domain']->update(['observation'=>$projection]);
+            // A read ranked below the newer inventory is not a later read, so a long history does not treat that inventory as stale.
+            $projection['management_sequence']=max($projection['management_sequence']??0,$entry['sequence']); $l['domain']->update(['observation'=>$projection]);
             if ($op->action==='dns' && $ok && $confirmed && !$newer && ManagementEvidence::resolved($op,$l['domain'])) {
                 ObservationRecords::saveDnsReadback($l['domain'],$facts,$this->clock->now(),$driver->observationCapabilities());
             }
