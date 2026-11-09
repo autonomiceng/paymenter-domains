@@ -41,7 +41,12 @@ their peak RSS is unknown (`null`). Other commands, including PHP compatibility
 tests in the lint category, retain supervision and GNU time peak child RSS in KiB.
 Receipts include the complete
 command plan, first failure index, cancelled results and `not_run` commands.
-Cancelled commands can have unknown RSS; they never count as passes. Output files
+Cancelled commands can have unknown RSS; they never count as passes. `failures`
+lists commands that failed on their own or changed the runtime, `cancelled` lists
+commands stopped by fail-fast or interruption, and `not_run` lists commands never
+started. A cancelled command alone still leaves the run incomplete. `git_tree` is
+the HEAD tree when the checkout was clean and unchanged from start to finish;
+otherwise it is null and `git_tree_error` says why. Setup receipts record it too. Output files
 use plan indexes even when commands finish out of order. Category summaries report
 summed child time and maximum known child RSS, not aggregate simultaneous memory.
 Category RSS is null when no measurement is known.
