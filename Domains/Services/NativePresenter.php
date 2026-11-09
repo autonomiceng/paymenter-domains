@@ -93,9 +93,11 @@ final readonly class NativePresenter
     private function outcomeMoney(array $ops,Invoice $invoice): array
     {
         $minor=0;$states=[];$covered=[];
+        // An unreadable return is under review: pending with no total, before any amount or coverage is read.
+        foreach($ops as $op){if(ReceiptReturns::malformed($op)){return ['pending',null];}}
         foreach($ops as $op){
             foreach([...(isset($op->funding['refund'])?[$op->funding['refund']]:[]),...($op->funding['late_credits']??[])] as $p){
-                $minor+=PricingRule::minor($p['amount']);
+                $minor+=ReceiptReturns::amount($p);
                 foreach($p['payments']??[] as $payment){$covered[$payment['id']]=($covered[$payment['id']]??0)+max(0,$payment['amount_minor']);}
                 if(($p['to']??null)==='account_credit'){$states[]='credit';continue;}
                 $bridge=ReceiptReturns::bridge($p);

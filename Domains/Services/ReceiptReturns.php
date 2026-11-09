@@ -88,21 +88,42 @@ final class ReceiptReturns
     }
     public static function plans(Operation $op): array
     {
-        return array_values(array_filter([...(isset($op->funding['refund'])?[$op->funding['refund']]:[]),...($op->funding['late_credits']??[])],fn($p)=>($p['to']??null)==='original_payment'));
+        return array_values(array_filter(self::returns($op),fn($p)=>($p['to']??null)==='original_payment'));
+    }
+    /** Every retained return, the refund first and then each late credit. */
+    private static function returns(Operation $op): array
+    {
+        return [...(isset($op->funding['refund'])?[$op->funding['refund']]:[]),...($op->funding['late_credits']??[])];
     }
     /** A retained original-payment plan's bridge credit in minor units. Null when the bridge is missing, not a nonnegative
-     * integer, or bridge plus allocations differs from the plan amount: the plan then needs staff review. */
+     * integer, an allocation lacks its key or a positive integer amount, or bridge plus allocations differs from the plan
+     * amount: the plan then needs staff review. */
     public static function bridge(array $plan): ?int
     {
         $bridge=$plan['bridge_minor']??null;
         if(!is_int($bridge)||$bridge<0||!is_array($plan['allocations']??null)){return null;}
         $total=$bridge;
-        foreach($plan['allocations'] as $a){$minor=is_array($a)?($a['amount_minor']??null):null;if(!is_int($minor)||$minor<=0){return null;}$total+=$minor;}
+        foreach($plan['allocations'] as $a){
+            $minor=is_array($a)?($a['amount_minor']??null):null;
+            if(!is_int($minor)||$minor<=0||!is_string($a['key']??null)||$a['key']===''){return null;}
+            $total+=$minor;
+        }
         try{return PricingRule::minor($plan['amount']??null)===$total?$bridge:null;}catch(\Throwable){return null;}
     }
+    /** A retained return's amount in minor units. Null when its amount or paid-row coverage cannot be read, or an
+     * original-payment plan does not balance: the return then needs staff review. */
+    public static function amount(mixed $return): ?int
+    {
+        if(!is_array($return)||!is_array($payments=$return['payments']??[])){return null;}
+        foreach($payments as $p){if(!is_array($p)||!is_int($p['id']??null)||!is_int($p['amount_minor']??null)){return null;}}
+        if(($return['to']??null)==='original_payment'&&self::bridge($return)===null){return null;}
+        try{return PricingRule::minor($return['amount']??null);}catch(\Throwable){return null;}
+    }
+    /** Any retained return, refund or late credit, that cannot be read stays with staff: callers check this before any
+     * amount, allocation or coverage arithmetic. */
     public static function malformed(Operation $op): bool
     {
-        foreach(self::plans($op) as $p){if(self::bridge($p)===null){return true;}}
+        foreach(self::returns($op) as $r){if(self::amount($r)===null){return true;}}
         return false;
     }
     /** Pending allocations reserve funds; completed ones already have a signed native reversal from the gateway. */
@@ -146,7 +167,7 @@ final class ReceiptReturns
     {
         $plans=self::plans($op);if(!$plans){return null;}$states=[];$bridge=0;
         if(self::malformed($op)){return ['Refund needs a check','Our team is checking the payment return. Contact support with the invoice number.'];}
-        foreach([...(isset($op->funding['refund'])?[$op->funding['refund']]:[]),...($op->funding['late_credits']??[])] as $p){if(($p['to']??null)==='account_credit'){$bridge+=PricingRule::minor($p['amount']);}}
+        foreach(self::returns($op) as $p){if(($p['to']??null)==='account_credit'){$bridge+=PricingRule::minor($p['amount']);}}
         foreach($plans as $p){$bridge+=$p['bridge_minor'];foreach($p['allocations'] as $a){$states[]=$op->funding['receipt_return_results'][$a['key']]['state']??'reserved';}}
         if(array_intersect($states,['review'])){return ['Refund needs a check','Our team is checking the payment return. Contact support with the invoice number.'];}
         if(array_diff($states,['refunded','credited'])){return ['Refund processing','We are returning your payment and checking its progress automatically.'];}

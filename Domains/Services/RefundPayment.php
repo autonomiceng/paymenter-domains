@@ -76,9 +76,10 @@ final class RefundPayment
         $peers=$op->safe_code===UnpaidAcquisitionProof::CODE?Operation::where('invoice_id',$op->invoice_id)->orderBy('id')->lockForUpdate()->get():[$op];
         $outstanding=0;
         foreach($peers as $peer){
+            if(ReceiptReturns::malformed($peer)){throw new \DomainException('Retained return plan needs review.');}
             $outstanding+=ReceiptReturns::outstanding($peer);
             foreach([...(isset($peer->funding['refund'])?[$peer->funding['refund']]:[]),...($peer->funding['late_credits']??[])] as $p){
-                $local+=($p['to']??null)==='original_payment'?(ReceiptReturns::bridge($p)??throw new \DomainException('Retained return plan needs review.')):PricingRule::minor($p['amount']);
+                $local+=($p['to']??null)==='original_payment'?ReceiptReturns::bridge($p):PricingRule::minor($p['amount']);
             }
         }
         $left = $net - $local - $outstanding;

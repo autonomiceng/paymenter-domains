@@ -24,10 +24,22 @@ $quiet=static function(callable $render,string $label)use(&$failures){
         MoneyReceiptGateway::$onStatus=null;MoneyReceiptGateway::$onAllocated=null; // Deliberate recovery may call the gateway.
     }
 };
-// A malformed bridge amount, by kind, for a plan whose valid bridge is $bridge.
-$malformed=static fn(array $plan,int $bridge)=>['missing'=>array_diff_key($plan,['bridge_minor'=>true]),'negative'=>[...$plan,'bridge_minor'=>-1],
-    'string'=>[...$plan,'bridge_minor'=>(string)$bridge],'text'=>[...$plan,'bridge_minor'=>'not-an-amount'],'unbalanced'=>[...$plan,'bridge_minor'=>$bridge+1]];
-$writePlan=static function(Operation $op,array $plan):void{$funding=$op->fresh()->funding;$funding['refund']=$plan;
+// A malformed retained return, by kind, for a plan whose valid bridge is $bridge: [refund plan, late credits].
+$malformed=static function(array $plan,int $bridge):array {
+    $allocation=static fn(array $change)=>[...$plan,'allocations'=>[[...$plan['allocations'][0],...$change],...array_slice($plan['allocations'],1)]];
+    $first=$plan['allocations'][0]['amount_minor'];
+    $kinds=['missing'=>array_diff_key($plan,['bridge_minor'=>true]),'negative'=>[...$plan,'bridge_minor'=>-1],
+        'string'=>[...$plan,'bridge_minor'=>(string)$bridge],'text'=>[...$plan,'bridge_minor'=>'not-an-amount'],'unbalanced'=>[...$plan,'bridge_minor'=>$bridge+1],
+        // Balanced plans whose allocation amount is not a positive integer.
+        'allocation zero'=>[...$allocation(['amount_minor'=>0]),'bridge_minor'=>$bridge+$first],'allocation string'=>$allocation(['amount_minor'=>(string)$first]),
+        'allocation text'=>$allocation(['amount_minor'=>'not-an-amount']),'allocation key'=>[...$plan,'allocations'=>[array_diff_key($plan['allocations'][0],['key'=>true])]],
+        'payment coverage'=>[...$plan,'payments'=>[['amount_minor'=>$plan['payments'][0]['amount_minor']]]],'plan amount'=>[...$plan,'amount'=>'not-an-amount']];
+    $kinds=array_map(static fn($bad)=>[$bad,[]],$kinds);
+    $kinds['late credit amount']=[$plan,[['amount'=>'not-an-amount','currency'=>'USD','payments'=>[],'to'=>'account_credit','credit_id'=>null,'at'=>$plan['at']]]];
+    return $kinds;
+};
+$writePlan=static function(Operation $op,array $plan,array $late=[]):void{$funding=$op->fresh()->funding;$funding['refund']=$plan;
+    if($late){$funding['late_credits']=$late;}
     DB::table('domains_operations')->where('id',$op->id)->update(['funding'=>Crypt::encryptString(json_encode($funding))]);};
 // Staff summary, customer wording, destination and the list row each say the return needs review, independently.
 $reviewed=static function(Operation $saved,string $label)use($owners,$user,$clock,$quiet,$reviewText,&$failures):void{
@@ -89,7 +101,7 @@ foreach(['split','returned','credited',null] as $index=>$expected){
     }
     if(in_array($expected,['split','returned'],true)){
         $raw=$saved->fresh()->getRawOriginal('funding');
-        foreach($malformed($plan,$bridge) as $kind=>$bad){$writePlan($saved,$bad);
+        foreach($malformed($plan,$bridge) as $kind=>[$bad,$late]){$writePlan($saved,$bad,$late);
             $reviewed($saved,$action.':'.$index.': pending '.$kind);
             same($money,$nativeMoney(),'Malformed funding projection writes no money');same($sends,MoneyReceiptGateway::$sends,'Malformed funding projection never calls a gateway');}
         DB::table('domains_operations')->where('id',$saved->id)->update(['funding'=>$raw]);
@@ -97,20 +109,20 @@ foreach(['split','returned','credited',null] as $index=>$expected){
     if(in_array($expected,['split','returned'],true)){
         foreach($plan['allocations']as$allocation){MoneyReceiptGateway::complete(App\Models\Invoice::findOrFail($op->invoice_id),$allocation['key']);}
         Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::resume($op->id,$clock->now());
-        $done=$owners->present($saved->domain->fresh());$completed=Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::expires($done,null,null);
+        [$done,$completed]=$quiet(fn()=>[$done=$owners->present($saved->domain->fresh()),DomainPage::expires($done,null,null)],$action.':'.$index.': completed render');
         if(($completed['value']??null)!==($action==='transfer'?'Not transferred':'Not registered')){$failures[]=$action.':'.$index.': completed return loses rejection';}
         expect(!str_contains($completed['note']??'','returning what you paid'),'Completed expiry note does not describe an unfinished return');
         expect(str_contains($done->order['return']??'','refunded')&&!str_contains($done->order['return']??'','checking its progress'),'Completed gateway result uses completed return wording');
         $money=$nativeMoney();$allocations=$op->fresh()->funding;$sends=MoneyReceiptGateway::$sends;
-        Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::resume($op->id,$clock->now());$owners->present($saved->domain->fresh());
+        Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::resume($op->id,$clock->now());$quiet(fn()=>$owners->present($saved->domain->fresh()),$action.':'.$index.': repeated completed render');
         same([$money,$allocations,$sends],[$nativeMoney(),$op->fresh()->funding,MoneyReceiptGateway::$sends],'Completed recovery and render preserve money and allocations');
         // After the gateway finished, a malformed bridge still keeps the order in review and a staff repair open.
         Illuminate\Support\Facades\Mail::fake();ReminderSchedules::enroll($op->server_id);$notices=new Reminders($clock,$bindings);
         $raw=$op->fresh()->getRawOriginal('funding');$repair=fn()=>DB::table('domains_obligation_alerts')->where('operation_id',$op->id)->where('code','refund_repair')->whereNull('resolved_at')->exists();
-        foreach($malformed($plan,$bridge) as $kind=>$bad){$label=$action.':'.$index.': completed '.$kind;
+        foreach($malformed($plan,$bridge) as $kind=>[$bad,$late]){$label=$action.':'.$index.': completed '.$kind;
             DB::table('domains_operations')->where('id',$op->id)->update(['funding'=>$raw]);ReceiptReturns::resume($op->id,$clock->now());
             expect(!$repair(),$label.': a valid completed plan resolves its repair');
-            $writePlan($op,$bad);$before=$op->fresh()->funding;$money=$nativeMoney();$calls=[MoneyReceiptGateway::$statusCalls,MoneyReceiptGateway::$sends];
+            $writePlan($op,$bad,$late);$before=$op->fresh()->funding;$money=$nativeMoney();$calls=[MoneyReceiptGateway::$statusCalls,MoneyReceiptGateway::$sends];
             $refunds->creditRejected($op->id);ReceiptReturns::resume($op->id,$clock->now());
             expect($repair(),$label.': automatic recovery keeps the staff repair open');
             same([$money,$before,$calls],[$nativeMoney(),$op->fresh()->funding,[MoneyReceiptGateway::$statusCalls,MoneyReceiptGateway::$sends]],$label.': recovery of a malformed plan moves no money and calls no gateway');

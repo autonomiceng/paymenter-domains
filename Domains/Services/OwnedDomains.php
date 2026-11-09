@@ -63,6 +63,7 @@ final readonly class OwnedDomains
     {
         if (!$op || $op->state !== 'rejected' || !(in_array($d->status, ['registration_rejected', 'transfer_rejected'], true) || ($order['state'] ?? null) === 'failed')) { return null; }
         if (isset($op->funding['refund'])) {
+            if (ReceiptReturns::malformed($op)) { return null; } // An unreadable return names no destination.
             $refund=$op->funding['refund'];
             return match ($refund['to']??null) { 'account_credit'=>'credited',
                 'original_payment'=>match (ReceiptReturns::bridge($refund)) { null=>null, 0=>'returned', default=>'split' },default=>null };
