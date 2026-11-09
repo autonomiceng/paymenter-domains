@@ -16,7 +16,8 @@ final class RecordFamilies
             $section=$management[$key]??['label'=>$family['label'],'actions'=>[],'url'=>null,'family_only'=>true];
             $section['family']=$family;
             // Missing inventory must not revoke controls already granted by the native management projection.
-            if(!$facts['current_read']){$management[$key]=$section;continue;}
+            // A legacy snapshot never read the settings families, so it cannot revoke their controls either.
+            if(!$facts['current_read']||($facts['settings'][$key]['expectation']??null)==='unknown'){$management[$key]=$section;continue;}
             if($family['state']!=='complete'){
                 // Keep already authorized Enom per-host additions and edits; a partial list grants no replacement.
                 $section['actions']=$key==='glue'&&($facts['registrar_key']??null)==='enom'&&$family['state']==='partial'?array_intersect_key($section['actions'],array_flip(['glue_add','glue_update','glue_delete'])):($key==='glue'?array_intersect_key($section['actions'],['glue_add'=>true]):[]);

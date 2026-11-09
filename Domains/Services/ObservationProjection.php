@@ -146,7 +146,8 @@ final class ObservationProjection
         foreach (['families'=>RecordFormat::FAMILIES,'settings'=>['nameservers','contacts','flags']] as $group=>$kinds) {
             foreach ($kinds as $kind) {
                 $f=$r[$group][$kind]??[];$out[$group][$kind]=[
-                    'expectation'=>$group==='families'?($r['expected_families'][$kind]??'unknown'):'supported',
+                    // A legacy snapshot has no settings group: that read never covered them.
+                    'expectation'=>$group==='families'?($r['expected_families'][$kind]??'unknown'):(isset($r['settings'])?'supported':'unknown'),
                     'state'=>$failed?'unknown':($f['state']??'unknown'),'at'=>$f['at']??$r['at']??null,
                     'last_good_at'=>$f['last_good']['at']??null,
                     ...array_intersect_key($f,array_flip(['records','facts','last_good','candidates','read_failed']))];
