@@ -254,7 +254,7 @@ DB::table('domains_accounts')->where('server_id',$lost->server_id)->update(['pro
 $state->lost=true;$runRenewal($lostRenew,$binding);$lostRenew->refresh();$state->calls=[];
 $clock->instant=$clock->now()->modify('+25 hours');
 DB::table('domains_accounts')->where('server_id',$lostRenew->server_id)->update(['processing_enabled'=>false]);
-Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$lostRenew->id])->assertActionHidden('enom_answer')->assertSee('Registrar check pending');
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$lostRenew->id])->assertActionHidden('enom_answer')->assertSee('Registrar check pending')->assertDontSee('too old to check in its order history');
 $before=[$lostRenew->attempt,$lostRenew->funding,$lostDomain->fresh()->provider_expires_at->format('Y-m-d'),$credit(),$state->writes];
 (new RenewalCompletion($renewBindings,$clock))->run($lostRenew->id);
 expect(in_array(ReadCommand::Info,$state->calls,true),'Automatic renewal recovery reads before staff ask for a case');

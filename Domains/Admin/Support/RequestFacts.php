@@ -273,7 +273,8 @@ final class RequestFacts
             $step=RegistrarCheck::step($op);
             // History already says the result is unconfirmed, so then the notice leads with what to do. The answer step already says to ask Enom.
             $said=$op->started_at&&StaffReviewHistory::sendEvent($op)===RequestStatus::UNCONFIRMED;
-            $cause=$recover?HistoryRecovery::CAUSE:($tooOld&&(RegistrarCheck::status($op)['outcome']??null)!=='awaiting_answer'?HistoryRecovery::TOO_OLD:null);
+            // Ask Enom comes after the first read, so a pending check doesn't say it yet.
+            $cause=$recover?HistoryRecovery::CAUSE:($tooOld&&!in_array(RegistrarCheck::status($op)['outcome']??null,['awaiting_answer','not_checked'],true)?HistoryRecovery::TOO_OLD:null);
             $parts=array_values(array_filter([$said?null:$facts['outcome'],$step['title']??null,$step['body']??null,$cause,$facts['auto_renew']??PaidUncertainty::holdSummary($op)]));
             if($said&&$step===null&&$cause===null){array_unshift($parts,self::CHECK_STATUS);}
             return ['title'=>array_shift($parts),'body'=>$parts===[]?null:implode(' ',$parts),'tone'=>'warning',...(($step['answer']??false)?['primary'=>'enom_answer']:[]),
