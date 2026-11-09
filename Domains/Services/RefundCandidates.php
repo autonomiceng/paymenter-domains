@@ -23,6 +23,9 @@ final class RefundCandidates
             ->whereIn($prefix.'action',self::ACTIONS)->where(fn($q)=>$q->whereNull($prefix.'safe_code')
                 ->orWhereNotIn($prefix.'safe_code',self::SKIPPED));
     }
+    /** Paid returns only. Runtime selection pages complimentary closures separately. */
+    public static function paid(Builder|Query $q): Builder|Query { return self::query($q)->where('funding_basis','paid_invoice'); }
+    public static function complimentary(Builder|Query $q): Builder|Query { return self::query($q)->where('funding_basis','complimentary'); }
     /** A failed retained proof needs repair, not repeated native holding locks. Money is still checked by Refunds. */
     public static function automatic(Operation $op): bool
     {

@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\{Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 /** Fair durable selection only. Consumers must independently authorize timeout/credit under holding locks. */
 final class ObservationCandidates
@@ -16,12 +16,23 @@ final class ObservationCandidates
             $turn=(int)$q->max($kind.'_turn'); $result=[];
             foreach ($rows as $row) {
                 $cursor=$kind.'_cursor'; $ops=Operation::where('server_id',$row->server_id)->where('account_fingerprint',$row->account_fingerprint)->where('id','>',$row->$cursor);
-                if ($kind==='refund') { RefundCandidates::query($ops); }
+                if ($kind==='refund') { RefundCandidates::paid($ops); }
                 else { RuntimeCandidates::transfer($ops)->whereIn('state',['awaiting_code','awaiting_payment','held']); }
                 $ids=$ops->orderBy('id')->limit($limit)->pluck('id'); $result[$row->server_id]=$ids->all();
+                if ($kind==='refund') { $result[$row->server_id]=[...$ids->all(),...self::closures($row,$limit)]; }
                 (clone $q)->where('id',$row->id)->update([$kind.'_turn'=>++$turn,$cursor=>$ids->count()===$limit?$ids->last():0]);
             }
             return $result;
         });
+    }
+    /** Complimentary refusals move no money, and an unproven one stays unproven until its evidence changes.
+     * They take a separate page with its own cursor, so they never delay a paid return. Losing the cursor restarts that page. */
+    private static function closures(object $row, int $limit): array
+    {
+        $key='domains.complimentary-closure-cursor.'.$row->server_id;
+        $ids=RefundCandidates::complimentary(Operation::where('server_id',$row->server_id)->where('account_fingerprint',$row->account_fingerprint)
+            ->where('id','>',(int)Cache::get($key,0)))->orderBy('id')->limit($limit)->pluck('id');
+        Cache::forever($key,$ids->count()===$limit?$ids->last():0);
+        return $ids->all();
     }
 }
