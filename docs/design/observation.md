@@ -34,8 +34,10 @@ append a safe reason and allow at most 20 per job, preserving the original pendi
 Staff authorization/diagnosis/alert policy and delivery remain 35/36/38 before installation.
 
 `ObservationCandidates` has independent durable account turns and ID cursors for refund
-and missing-code candidates, at most 100 IDs/account. Selection has no financial effect
-or time-based debt expiry. Consumers 39 must independently invoke the existing locked
+and missing-code candidates, at most 100 IDs/account per page. Complimentary registration
+refusals move no money and take a separate refund page with its own cursor, so refusals
+without retained proof never fill the paid page; each turn rechecks the next page of them.
+Selection has no financial effect or time-based debt expiry. Consumers 39 must independently invoke the existing locked
 credit/timeout authority; sent provider rejections are excluded from refund scans.
 Held readmission, saved-code/never-paid dispositions and unpaid-retirement calendar policy
 remain 35/36; selecting an ID must never be interpreted as an authorization.

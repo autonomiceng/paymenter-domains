@@ -6,7 +6,7 @@ require __DIR__.'/Support/renewal-execution.php';
 use App\Models\{Credit, Role};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Services\{HoldingLocks, PricingRule, RefundPayment, RefundProof, Refunds, OperationTerminalProof};
+use Paymenter\Extensions\Servers\Domains\Services\{HoldingLocks, ObservationCandidates, PricingRule, RefundCandidates, RefundPayment, RefundProof, Refunds, OperationTerminalProof, RegistrationRefusals};
 $refunds=new Refunds($clock); $staff=commerceUser();
 $role=Role::create(['name'=>'Refund evidence','permissions'=>['admin.domains.manage','admin.invoices.update']]); $staff->update(['role_id'=>$role->id]);
 $op=$new(placeholderComFixtureName('refund-presence-placeholder.com')); $op->update(['state'=>'held','safe_code'=>'staff_review']);
@@ -62,4 +62,43 @@ foreach(['accepted','null','absent'] as $mode){
         'policy'=>[...$sent->policy,'renewal_execution'=>['refundable_later'=>true]]]);
     commerceReject(fn()=>$refunds->refundHeld($staff,$sent->id,'customer_cancelled'));
 }
+// Complimentary refusals without retained proof come first by ID, yet a later paid return still gets its turn.
+Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
+foreach(Paymenter\Extensions\Servers\Domains\Models\Account::orderBy('server_id')->get() as $a){DB::table('domains_observation_queues')->insertOrIgnore(['server_id'=>$a->server_id,'account_fingerprint'=>$a->account_fingerprint]);}
+$unproven=[];
+for($i=0;$i<25;$i++){
+    $row=$new(placeholderComFixtureName('refund-unproven-'.$i.'-placeholder.com'));
+    DB::table('domains_operations')->where('id',$row->id)->update(['state'=>'rejected','funding_basis'=>'complimentary','safe_code'=>RegistrationRefusals::CODE]);
+    $unproven[]=$row->id;
+}
+$eligible=$new(placeholderComFixtureName('refund-after-unproven-placeholder.com')); [$claim]=$claims->claim($eligible->id); $claims->finish($claim); OperationTerminalProof::encode($claims,$eligible->id);
+$enom=$eligible->server_id; $other=(int)DB::table('domains_observation_queues')->where('server_id','!=',$enom)->value('server_id');
+$paid=RefundCandidates::query(Operation::where('server_id',$enom))->where('funding_basis','paid_invoice')->orderBy('id')->pluck('id')->all();
+expect(count($paid)<25&&in_array($eligible->id,$paid,true),'Paid returns fit one page once complimentary refusals are paged apart');
+$held=static fn()=>[Operation::whereIn('id',$unproven)->orderBy('id')->get()->map->getRawOriginal()->all(),Credit::sum('amount')];$retained=$held();
+$page=ObservationCandidates::next('refund')[$enom]??[];
+expect(array_diff($paid,$page)===[],'Twenty-five earlier unproven complimentary refusals leave the paid return on the first page');
+expect(array_search($eligible->id,$page,true)<array_search($unproven[0],$page,true),'Paid returns run before complimentary closures');
+$credit=Credit::sum('amount');
+foreach($page as $id){$row=Operation::find($id);if($row&&RefundCandidates::automatic($row)){try{$refunds->creditRejected((int)$id);}catch(DomainException){}}}
+expect(isset($eligible->fresh()->funding['refund'])&&PricingRule::minor((string)Credit::sum('amount'))===PricingRule::minor((string)$credit)+PricingRule::minor($eligible->amount),'The paid return is credited in the same turn');
+same($retained[0],$held()[0],'Unproven complimentary refusals stay unchanged');
+foreach($unproven as $id){$row=Operation::findOrFail($id);expect(!RefundCandidates::automatic($row),'Unproven complimentary refusal stays out of native refund locks');commerceReject(fn()=>$refunds->creditRejected($id));}
+same($retained[0],$held()[0],'Direct credit still refuses unproven complimentary refusals');
+// A smaller page still rechecks every complimentary refusal within a bounded number of turns, after its cursor wraps.
+$seen=[];
+for($turn=0;$turn<6;$turn++){
+    $page=ObservationCandidates::next('refund',8,10)[$enom]??[];
+    expect(array_diff($paid,$page)===[],'Every turn keeps the paid page: '.$turn);
+    expect(count(array_intersect($page,$unproven))<=10,'Complimentary review stays within its page: '.$turn);
+    $seen=[...$seen,...array_intersect($page,$unproven)];
+}
+same($unproven,array_values(array_unique(array_intersect($unproven,$seen))),'Each unproven complimentary refusal is rechecked within one cursor pass');
+// A cache outage loses only the complimentary cursor, never the scheduler turn or the paid page.
+$cacheManager=Illuminate\Support\Facades\Cache::getFacadeRoot();
+Illuminate\Support\Facades\Cache::swap(new class { public function __call($method,$arguments){throw new RuntimeException('Synthetic cache outage');} });
+try{$page=ObservationCandidates::next('refund')[$enom]??[];}finally{Illuminate\Support\Facades\Cache::swap($cacheManager);}
+expect(array_diff($paid,$page)===[]&&array_slice(array_values(array_intersect($page,$unproven)),0,1)===[$unproven[0]],'A cache outage restarts the complimentary page and keeps the paid page');
+same([$enom],array_keys(ObservationCandidates::next('refund',1)),'One account turn');
+same([$other],array_keys(ObservationCandidates::next('refund',1)),'The other account still gets the next turn');
 echo "Independent negative proof and null/presence/route refusal matrix passed\n"; $nativeSuccessful=true;
