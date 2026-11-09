@@ -68,7 +68,7 @@ final readonly class Reminders
             $credits=['refund:'.$op->id=>$op->funding['refund']??null];
             foreach($op->funding['late_credits']??[] as $i=>$late){$credits['refund:'.$op->id.':'.$i]=$late;}
             foreach($credits as $identity=>$r){
-            if(is_array($r)&&($r['to']??null)==='original_payment'&&($r['bridge_minor']??0)>0){$r=[...$r,'to'=>'account_credit','amount'=>PricingRule::decimal($r['bridge_minor'])];}
+            if(is_array($r)&&($r['to']??null)==='original_payment'&&($bridge=ReceiptReturns::bridge($r))>0){$r=[...$r,'to'=>'account_credit','amount'=>PricingRule::decimal($bridge)];}
             if($op->state!=='rejected'||!is_array($r)||($r['to']??null)!=='account_credit'||($r['currency']??null)!=='USD'
                 ||$op->account_fingerprint!==$d->account_fingerprint||$op->authority_generation!==$d->authority_generation){continue;}
             $credit=$l['credit'];

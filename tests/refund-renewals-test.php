@@ -173,6 +173,19 @@ MoneyReceiptGateway::complete($bill,'receipt_partial:excess');
 same(['amount'=>'1.00','currency'=>'USD'],$refunds->creditRejected($card->id),'Domains observes original-method completion');
 same(null,$refunds->creditRejected($card->id),'Observed automatic refund is once-only');
 $outcome=$presenter->invoiceOutcome($user,(int)$bill->id);same(['returned','$1.00'],[$outcome->money,$outcome->amount],'Observed original-method completion is not reported as credit');
+// An unbalanced retained plan stays pending and with staff: no finished outcome, no credit, no gateway call.
+$valid=$card->fresh()->getRawOriginal('funding');$unbalanced=$card->fresh()->funding;$unbalanced['late_credits'][0]['bridge_minor']=1;
+DB::table('domains_operations')->where('id',$card->id)->update(['funding'=>\Illuminate\Support\Facades\Crypt::encryptString(json_encode($unbalanced))]);
+same('pending',$presenter->invoiceOutcome($user,(int)$bill->id)->money,'An unbalanced return plan is not reported as finished');
+$sends=MoneyReceiptGateway::$sends;same(null,$refunds->creditRejected($card->id),'An unbalanced return plan is not credited');
+same([$before,$sends],[$credit(),MoneyReceiptGateway::$sends],'An unbalanced return plan moves no money and calls no gateway');
+expect(DB::table('domains_obligation_alerts')->where('operation_id',$card->id)->where('code','refund_repair')->whereNull('resolved_at')->exists(),'An unbalanced return plan keeps its staff repair');
+// The return writer refuses a plan whose bridge amount is missing instead of reading it as zero.
+unset($unbalanced['late_credits'][0]['bridge_minor']);
+DB::table('domains_operations')->where('id',$card->id)->update(['funding'=>\Illuminate\Support\Facades\Crypt::encryptString(json_encode($unbalanced))]);
+commerceReject(fn()=>DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Services\RefundPayment::lateUncredited($card->fresh(),\Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($d->fresh()))));
+DB::table('domains_operations')->where('id',$card->id)->update(['funding'=>$valid]);
+same([],DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Services\RefundPayment::lateUncredited($card->fresh(),\Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($d->fresh()))),'The valid plan has nothing left to credit');
 // Completion can precede Domains observing the positive receipt and its matching negative native row.
 InvoiceTransaction::create(['invoice_id'=>$bill->id,'amount'=>'0.50','fee'=>'0.00','status'=>'succeeded','gateway_id'=>$gateway->id,'transaction_id'=>'receipt_later']);
 MoneyReceiptGateway::automatic($bill,'receipt_later',50);

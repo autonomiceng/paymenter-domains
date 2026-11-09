@@ -78,7 +78,7 @@ final class RefundPayment
         foreach($peers as $peer){
             $outstanding+=ReceiptReturns::outstanding($peer);
             foreach([...(isset($peer->funding['refund'])?[$peer->funding['refund']]:[]),...($peer->funding['late_credits']??[])] as $p){
-                $local+=($p['to']??null)==='original_payment'?($p['bridge_minor']??0):PricingRule::minor($p['amount']);
+                $local+=($p['to']??null)==='original_payment'?(ReceiptReturns::bridge($p)??throw new \DomainException('Retained return plan needs review.')):PricingRule::minor($p['amount']);
             }
         }
         $left = $net - $local - $outstanding;

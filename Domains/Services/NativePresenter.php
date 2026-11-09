@@ -98,7 +98,9 @@ final readonly class NativePresenter
                 $minor+=PricingRule::minor($p['amount']);
                 foreach($p['payments']??[] as $payment){$covered[$payment['id']]=($covered[$payment['id']]??0)+max(0,$payment['amount_minor']);}
                 if(($p['to']??null)==='account_credit'){$states[]='credit';continue;}
-                if(($p['bridge_minor']??0)>0){$states[]='credit';}
+                $bridge=ReceiptReturns::bridge($p);
+                if($bridge===null){$states[]='pending';continue;} // An unbalanced plan is under review, never a finished return.
+                if($bridge>0){$states[]='credit';}
                 foreach($p['allocations']??[] as $a){$states[]=match($op->funding['receipt_return_results'][$a['key']]['state']??null){'refunded'=>'returned','credited'=>'credit',default=>'pending'};}
             }
         }
