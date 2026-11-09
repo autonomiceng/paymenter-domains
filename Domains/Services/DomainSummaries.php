@@ -155,8 +155,8 @@ final class DomainSummaries
                     if ($expiry && (!$off || $cycle && !RenewalCycles::closedEarly($cycle))) {
                         if ($cycle && !RenewalCycles::closedEarly($cycle)) { $inv=$invoices[$cycle->invoice_id]??null;
                             // List and detail validate every member of the issued renewal invoice.
-                            try { $inv=DomainBilling::existingInvoice($cycle,['domain'=>$t,'invoices'=>$invoices,'items'=>$items,'transactions'=>$transactions],allowCancelled:true);$due=$inv->due_at?->format('Y-m-d');
-                                $issued=OwnedDomains::issuedState($cycle,$inv,$t);$renewalClosed=$issued==='closed';$invoiceReview=$issued==='review';$invoiceCancelled=$issued==='cancelled'; } catch (\Throwable) { $invoiceReview=true;$issued='review'; }
+                            try { $ledger=['domain'=>$t,'invoices'=>$invoices,'items'=>$items,'transactions'=>$transactions];$inv=DomainBilling::existingInvoice($cycle,$ledger,allowCancelled:true);$due=$inv->due_at?->format('Y-m-d');
+                                $issued=OwnedDomains::issuedState($cycle,$inv,$t,$ledger);$renewalClosed=$issued==='closed';$invoiceReview=$issued==='review';$invoiceCancelled=$issued==='cancelled'; } catch (\Throwable) { $invoiceReview=true;$issued='review'; }
                             $invoiceMissing=$due===null && !$invoiceReview;
                             $invoicePaid=!$invoiceReview && !$invoiceMissing && $issued==='paid';
                             $goes=$invoicePaid?(OwnedDomains::goes($cycle)['goes']??null):null; }

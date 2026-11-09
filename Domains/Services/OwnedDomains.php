@@ -368,11 +368,12 @@ final readonly class OwnedDomains
         return is_bool($value)?$value:null;
     }
     /** A checked renewal invoice as the owner reads it: pending (pay it), paid, or review while we check it.
-     * The domain page and the Domains list both read it, so they say the same thing. */
-    public static function issuedState(Operation $cycle, Invoice $invoice, ?Domain $domain = null): string
+     * The domain page and the Domains list both read it, so they say the same thing.
+     * A cancelled invoice reads cancelled only when its ledger $l proves the renewal unpaid and unsent; otherwise we check it. */
+    public static function issuedState(Operation $cycle, Invoice $invoice, ?Domain $domain = null, ?array $l = null): string
     {
         return match (true) {
-            $invoice->status === 'cancelled' => 'cancelled',
+            $invoice->status === 'cancelled' => $l !== null && RenewalCycles::canRetireUnpaid($cycle, $l) ? 'cancelled' : 'review',
             $cycle->state === 'awaiting_payment' && $invoice->status === 'pending' => 'pending',
             $domain !== null && $cycle->funding_basis === 'complimentary' && FundsWaits::closedRenewal($cycle, $domain) => 'closed',
             $invoice->status === 'paid' && in_array($cycle->state, ['awaiting_payment', 'queued', 'running', 'pending', 'succeeded'], true) => 'paid',
@@ -395,7 +396,7 @@ final readonly class OwnedDomains
             if ($invoice->status === 'pending' && RenewalCycles::expiredInvoice($cycle, $now ?? app(Clock::class)->now())) {
                 return ['status' => RenewalCycles::canRetireUnpaid($cycle, $l) ? 'cancelled' : 'review'];
             }
-            return match (self::issuedState($cycle, $invoice, $d)) {
+            return match (self::issuedState($cycle, $invoice, $d, $l)) {
                 'pending' => ['invoice' => route('invoices.show', $invoice)],
                 'paid' => ['status' => 'paid', ...self::goes($cycle)],
                 'closed' => ['status' => 'closed'],
