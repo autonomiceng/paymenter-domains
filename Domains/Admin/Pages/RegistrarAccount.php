@@ -16,7 +16,8 @@ use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\HtmlString;
 use Livewire\Attributes\Locked;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{CatalogueSalesNotice,AccountChecklist,BalanceCheck,HelpHint,LiveActivationAction,MissingEntry,OnOffSwitch,PslActions,RegistrarFacts,RequestFacts,SettingsActions,Sheet,Staff,TldFacts,StatusMark};
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\MonitoringSettings;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{CatalogueSalesNotice,AccountChecklist,BalanceCheck,HelpHint,LiveActivationAction,MissingEntry,OnOffSwitch,PaidUncertainty,PslActions,RegistrarFacts,RequestFacts,SettingsActions,Sheet,Staff,TldFacts,StatusMark};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Tld};
 use Paymenter\Extensions\Servers\Domains\Presentation\{AccountStatus,Missing};
 use Paymenter\Extensions\Servers\Domains\Services\{SiteDnsDefault,StaffSettingsReview};
@@ -58,7 +59,10 @@ class RegistrarAccount extends Page
         $status=$this->status();
         // On Overview the API connection row says why the connection failed or is off, so the head names only the status.
         $rowSays=!$this instanceof RegistrarHistory&&$this->record()&&in_array($status['label'],[AccountStatus::SET['connection_failed'][0],AccountStatus::SET['not_connected'][0]],true);
-        return StatusMark::line($status['tone'],$status['label'],'registrar-'.$this->account,$rowSays?null:$status['reason']);
+        $line=StatusMark::line($status['tone'],$status['label'],'registrar-'.$this->account,$rowSays?null:$status['reason']);
+        // The account-wide hold on paid changes, as the Domains list says it.
+        $held=PaidUncertainty::accounts($this->account);
+        return $held?new HtmlString($line->toHtml().'<br>'.$held->toHtml()):$line;
     }
     /** @return list<NavigationItem> */
     public function getSubNavigation(): array
@@ -106,9 +110,7 @@ class RegistrarAccount extends Page
             $sections[]=Sheet::section('Balance and usage',$this->rows('usage',$this->usageRows($s,$a)),after:$funds?[Sheet::link('add_funds','Add funds',$funds,external:true)]:[]);
             $sections[]=Sheet::section('Sales',$this->rows('sales',$pick('Orders','Registrations',AccountChecklist::TRANSFER_LABEL,'What you sell','TLD prices','Customer pays','Card fee')));
             $sections[]=Sheet::section('Renewals',$this->rows('renewal',$pick('Renewals','Late renewal','Customer can renew early','Invoice issued','Invoice due','Unpaid hold','Scheduled renewals','Selected TLD terms','Reminder emails','Reminder schedule')));
-            $default=SiteDnsDefault::profile();$refusal=SiteDnsDefault::refusal();
-            $sections[]=Sheet::section('Domain settings',$this->rows('settings',[...$pick('DNS, nameservers and contacts','WHOIS privacy'),
-                self::fact('Site DNS default',$refusal?null:$default?->name,$refusal??($default?null:'New registrations have no site-default nameservers. '.($a->registrar_key==='namesilo'?'NameSilo needs explicit nameservers before an order can be sent. ':'').'Choose one in Domain monitoring settings.'))]));
+            $sections[]=Sheet::section('Domain settings',$this->rows('settings',[self::newDomainsUse($a),...$pick('DNS, nameservers and contacts','WHOIS privacy')]));
         } else {
             $sections[]=Sheet::section('Account',$this->rows('account',[self::fact('Registrar',null,'Account not set up yet. Use Connect account.'),self::fact('Domains',(string)Domain::where('server_id',$s->id)->count())]));
         }
@@ -127,6 +129,17 @@ class RegistrarAccount extends Page
 
         }
         return $system;
+    }
+    /** The site DNS default as it applies here: its name, its nameservers and Change, which opens Domain monitoring settings where it is chosen. */
+    private static function newDomainsUse(Account $a): array
+    {
+        $default=SiteDnsDefault::profile();$refusal=SiteDnsDefault::refusal();
+        $names=$default&&!$refusal?'<span class="domains-mono">'.e(implode(', ',array_map('strval',(array)$default->nameservers))).'</span><br>':'';
+        $row=self::fact('New domains use',$refusal?null:$default?->name,$refusal??($default
+            ?new HtmlString($names.'New registrations get these nameservers from the start. Transfers keep the nameservers they already have.')
+            :'New registrations have no site-default nameservers. '.($a->registrar_key==='namesilo'?'NameSilo needs explicit nameservers before an order can be sent. ':'').'Choose one in Domain monitoring settings.'));
+        try { $url=MonitoringSettings::canAccess()?MonitoringSettings::getUrl():null; } catch (\Throwable) { $url=null; }
+        return [...$row,'buttons'=>$url?[Action::make('new_domains_use')->label('Change')->link()->size('sm')->url($url)]:[]];
     }
     /** A value with no fix of its own. */
     private static function fact(string $label,?string $value,string|Htmlable|null $cause=null,?string $help=null): array

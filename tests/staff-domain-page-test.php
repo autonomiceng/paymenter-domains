@@ -174,7 +174,7 @@ $storeNs($active,['ns1.example.net','ns2.example.net']);
 same([null,'Service #'.$active->service_id.' not found. Check the Services page.'],[$f['Service']['value'],$f['Service']['sub']],'Deleted service is Missing with its cause');
 same([null,'Needs the linked service. Check the Services page.'],[$f['Renewal price']['value'],$f['Renewal price']['sub']],'Renewal price without a service names the cause');
 same(['Ada Lovelace','ada@example.test'],[$f['Customer']['value'],$f['Customer']['sub']],'Customer name with email');
-same(['On',null],[$f['Renewal invoices']['value'],$f['Renewal invoices']['sub']],'Renewals on');
+same(['On',null],[$f['Renewal']['value'],$f['Renewal']['sub']],'Renewals on');
 expect(!isset($f['Auto-renew']),'Auto-renew and renewal invoices are one row');
 same(today()->addDays(120-21)->format('M j, Y'),$f['Next invoice']['value'],'Next invoice from the billing calendar');
 expect(!isset($f['Open invoice']),'Open invoice hidden when none');
@@ -205,15 +205,15 @@ same([null,'Customer account not found. Check the Users page.'],[$value($held,'C
 // Renewal settings.
 $policy=$active->renewal_policy;
 DB::table('domains_domains')->where('id',$active->id)->update(['renewal_policy'=>encrypt(json_encode([...$policy,'owner_auto_renew'=>false]),false)]);
-same(['Off','Turned off by customer'],[$value($active,'Renewal invoices'),$sub($active,'Renewal invoices')],'Owner auto-renew off');
+same(['Off','Turned off by customer'],[$value($active,'Renewal'),$sub($active,'Renewal')],'Owner auto-renew off');
 expect(!isset(DomainFacts::for($active->fresh())['Next invoice']),'No next invoice while auto-renew is off');
 DB::table('domains_domains')->where('id',$active->id)->update(['renewal_policy'=>encrypt(json_encode([...$policy,'renewals_stopped'=>true]),false)]);
-same(['Off','Stopped by staff'],[$value($active,'Renewal invoices'),$sub($active,'Renewal invoices')],'Staff stop');
+same(['Off','Stopped by staff'],[$value($active,'Renewal'),$sub($active,'Renewal')],'Staff stop');
 DB::table('domains_domains')->where('id',$active->id)->update(['renewal_policy'=>encrypt(json_encode($policy),false)]);
 
 // Page: no internal facts, one notice, breadcrumb uses the name.
 $page=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSuccessful()->assertSet('data',[]);
-$page->assertDontSee('WHOIS privacy')->assertSee('Renewal invoices')->assertSee('Registration')->assertSee('Billing')->assertSee('Ada Lovelace')->assertSee('Missing')->assertSee('Needs the linked service. Check the Services page.')->assertSeeHtml('domains-sheet');
+$page->assertDontSee('WHOIS privacy')->assertSee('Renewal')->assertSee('Registration')->assertSee('Billing')->assertSee('Ada Lovelace')->assertSee('Missing')->assertSee('Needs the linked service. Check the Services page.')->assertSeeHtml('domains-sheet');
 foreach(['Saved facts','Assignment generation','Observation drift','Follow-up','Data retention','Server #','Domain #','Account spending holds','Preview adoption','Scheduled reads'] as $old){$page->assertDontSee($old);}
 same([DomainResource::getUrl('index')=>'Domains','active.example.com'],$page->instance()->getBreadcrumbs(),'Breadcrumb names the domain');
 // One head line: no box on the page, and green can't sit over rows that need work.
@@ -438,7 +438,7 @@ same([null,'Service #'.$active->service_id." not found. Check the Services page.
 ObligationAlerts::record($active->fresh(),'missing_obligation',time());
 same([today()->addDays(120-21)->format('M j, Y'),'Renewal invoice missing. Check billing before expiry.','danger'],[$value($active,'Next invoice'),$sub($active,'Next invoice'),DomainFacts::for($active->fresh())['Next invoice']['tone']],'A Next invoice date stays, with the missing invoice below in danger');
 ObligationAlerts::record($active->fresh(),'renewal_unpaid',time());
-same(['On','Unpaid renewal invoice cancelled. Talk to the customer about renewal.','warning'],[$value($active,'Renewal invoices'),$sub($active,'Renewal invoices'),DomainFacts::for($active->fresh())['Renewal invoices']['tone']],'Review alerts keep the value and add the cause');
+same(['On','Unpaid renewal invoice cancelled. Talk to the customer about renewal.','warning'],[$value($active,'Renewal'),$sub($active,'Renewal'),DomainFacts::for($active->fresh())['Renewal']['tone']],'Review alerts keep the value and add the cause');
 ObligationAlerts::record($active->fresh(),'observation_review',time());
 same(['Oct 20, 2026 15:05 UTC',null],[$value($active,'Last sync'),$sub($active,'Last sync')],'A sync that is not stopped has nothing to resume');
 $work=DB::table('domains_observation_work')->insertGetId(['server_id'=>$active->server_id,'account_fingerprint'=>$active->account_fingerprint,
@@ -449,7 +449,7 @@ DB::table('domains_observation_work')->where('id',$work)->delete();
 Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSeeInOrder(['Service','Missing','Customer, order or service missing'])->assertSee('Unpaid renewal invoice cancelled');
 $filter(Livewire::actingAs($viewer)->test(ListDomains::class),'alerts',true)->assertCanSeeTableRecords([$active])->assertCanNotSeeTableRecords([$held,$long]);
 DB::table('domains_obligation_alerts')->update(['resolved_at'=>time()]);
-same(['Service #'.$active->service_id.' not found. Check the Services page.','On'],[$sub($active,'Service'),$sub($active,'Renewal invoices')??$value($active,'Renewal invoices')],'Resolved alerts leave the rows');
+same(['Service #'.$active->service_id.' not found. Check the Services page.','On'],[$sub($active,'Service'),$sub($active,'Renewal')??$value($active,'Renewal')],'Resolved alerts leave the rows');
 
 same(false,PendingAdoptionResource::shouldRegisterNavigation(),'Adoption pending is not in navigation');
 same(DomainResource::getUrl('index',['filters'=>['status'=>['values'=>['under_review']]]]),PendingAdoptionResource::redirectUrl(),'Adoption pending opens the Under review filter');

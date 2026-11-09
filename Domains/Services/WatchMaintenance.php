@@ -67,7 +67,7 @@ final class WatchMaintenance
         }
         return null;
     }
-    private static function date(?int $at): string{return $at?gmdate('M j, Y H:i',$at).' UTC':'the first run';}
+    private static function date(?int $at): string{return $at?\Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at($at):'the first run';}
     /** The Domain monitoring notice: one line, its tone and its resolver settings action, when it can help. Normal states have none;
      * a short queue timeout shows under Registrars > account > System checks instead. Failed checks also return 'line', the
      * fact alone, for the staff alert that links here. */

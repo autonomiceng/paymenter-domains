@@ -45,6 +45,7 @@ class ViewDomain extends ViewRecord
     private ?array $edits = null;
     private ?array $facts = null;
     private ?array $domainStatus = null;
+    private ?array $head = null;
     #[\Livewire\Attributes\Locked]
     public string $complimentaryCostStamp='';
     public function getTitle(): string { Staff::requireView(); return (string)$this->getRecord()->domain; }
@@ -55,10 +56,13 @@ class ViewDomain extends ViewRecord
     }
     public function getSubheading(): string|Htmlable|null
     {
-        $d=$this->getRecord(); $status=$this->status();
-        $head=DomainFacts::head($d,$status,$this->facts(),$this->edits()['request']);
-        return StatusMark::line($head['tone'],$status['label'],'domain-'.$d->id,$head['step']);
+        $d=$this->getRecord(); $head=$this->head();
+        return StatusMark::line($head['tone'],$this->status()['label'],'domain-'.$d->id,$head['step']);
     }
+    private function head(): array { return $this->head??=DomainFacts::head($this->getRecord(),$this->status(),$this->facts(),$this->edits()['request']); }
+    /** The head's step as plain text, so rows and Activity can leave out what it already says. */
+    private function said(): ?string
+    { $step=$this->head()['step']; return $step===null?null:html_entity_decode(strip_tags($step instanceof Htmlable?$step->toHtml():$step),ENT_QUOTES|ENT_HTML5); }
     private function edits(): array { return $this->edits??=DomainEditActions::for($this->getRecord()); }
     private function status(): array { return $this->domainStatus??=DomainFacts::status($this->getRecord()); }
     private function facts(): array
@@ -118,13 +122,13 @@ class ViewDomain extends ViewRecord
             ->visible(fn()=>$user&&(int)$user->id!==(int)Auth::id()&&Auth::user()?->hasPermission('admin.users.impersonate'))
             ->action(function()use($user,$d):void { session()->put('impersonating',$user->id); $this->redirect(route('domains.domains.show',$d->id)); });
     }
-    /** Stop and Resume sit on the Renewal invoices row, and stay page actions so their dialogs need no row. */
+    /** Stop and Resume sit on the Renewal row, and stay page actions so their dialogs need no row. */
     public function cacheInteractsWithHeaderActions(): void
     {
         parent::cacheInteractsWithHeaderActions();
         $this->cacheHoldingActions();
     }
-    /** The infolist first builds during mount, before Filament caches page actions, and its Renewal invoices row draws these. */
+    /** The infolist first builds during mount, before Filament caches page actions, and its Renewal row draws these. */
     private function cacheHoldingActions(): void
     {
         if (isset($this->cachedActions['stop'])) { return; }
@@ -158,13 +162,13 @@ class ViewDomain extends ViewRecord
     public function infolist(Schema $schema): Schema
     {
         $this->cacheHoldingActions();
-        $d=$this->getRecord(); $facts=$this->facts(); $edits=$this->edits();
+        $d=$this->getRecord(); $facts=DomainFacts::besideHead($this->facts(),$this->said()); $edits=$this->edits();
         // WHOIS privacy stays stored and read, but the page does not show it (PrivacyVisibility).
         if (!\Paymenter\Extensions\Servers\Domains\Presentation\PrivacyVisibility::SHOWN) { unset($facts['WHOIS privacy']); }
-        // Reminder issues sit on Renewal invoices, then on Open alerts, which they open when neither row exists.
+        // Reminder issues sit on Renewal, then on Open alerts, which they open when neither row exists.
         $review=$this->getAction('notice_review',false); $button=$review?->isVisible()?$review->toHtml():null;
-        if ($button&&!isset($facts['Renewal invoices'])) { $facts['Open alerts']??=['value'=>['A reminder needs a check.'],'sub'=>null,'url'=>null,'tone'=>'warning','help'=>null,'demo'=>false]; }
-        $slot=isset($facts['Renewal invoices'])?'Renewal invoices':'Open alerts';
+        if ($button&&!isset($facts['Renewal'])) { $facts['Open alerts']??=['value'=>['A reminder needs a check.'],'sub'=>null,'url'=>null,'tone'=>'warning','help'=>null,'demo'=>false]; }
+        $slot=isset($facts['Renewal'])?'Renewal':'Open alerts';
         $placed=array_filter(DomainFacts::SECTIONS,fn(array $labels)=>array_intersect($labels,array_keys($facts))!==[]);
         // Contacts and DNS rows sit on their registrar record rows, with their edit buttons, as in the approved mock.
         $recordsHeld=isset($placed[self::HELD_SECTION]);unset($placed[self::HELD_SECTION]);
@@ -254,13 +258,13 @@ class ViewDomain extends ViewRecord
     {
         $entries=DomainHistory::entries($d);
         $url=DomainResource::getUrl('view',['record'=>$d->id,'relation'=>'0']);
-        return Sheet::section('Activity',[$entries===[]?Text::make('No history yet'):Sheet::trace(DomainHistory::steps($d,array_slice($entries,0,Sheet::RAIL_STEPS)))],
+        return Sheet::section('Activity',[$entries===[]?Text::make('No history yet'):Sheet::trace(DomainHistory::steps($d,array_slice($entries,0,Sheet::RAIL_STEPS),DomainFacts::headRequest($d,$this->status(),$this->edits()['request']),$this->said()))],
             after:$entries===[]?[]:[Sheet::link('view_history','View all '.count($entries),$url)]);
     }
-    /** A row's action column: its edits or its link. Renewal invoices and Last sync draw the page's own actions. */
+    /** A row's action column: its edits or its link. Renewal and Last sync draw the page's own actions. */
     private function side(string $label, array $fact, array $edits, ?string $review): array|Html
     {
-        if ($label==='Renewal invoices') {
+        if ($label==='Renewal') {
             // On a row that says Off, Stop shows only when the row says what it still stops.
             $buttons=array_filter(['stop','resume'],fn(string $name)=>(($this->cachedActions[$name]??null)?->isVisible()??false)&&($name!=='stop'||$fact['value']!=='Off'||str_contains((string)$fact['sub'],'Stop renewal')));
             $html=[...array_map(fn(string $name)=>$this->cachedActions[$name]->toHtml(),$buttons),...($review?[$review]:[])];

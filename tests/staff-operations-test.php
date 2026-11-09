@@ -37,6 +37,10 @@ Livewire::actingAs($viewer)->test(ViewOperation::class,['record'=>$ops[0]->id])-
     ->assertSee('Paid domain changes on this NameSilo account wait until the result is known');
 Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->assertSuccessful()->assertDontSee('Paid domain changes on this NameSilo account wait');
 same(['Request #'.$ops[0]->id.' unconfirmed'],PaidUncertainty::for($held),'Account-wide hold names the request');
+// The registrar account page says the account-wide hold under its status, as the Domains list does.
+$accountHold=PaidUncertainty::accounts((int)$ops[0]->server_id);expect($accountHold!==null,'Fixture holds paid changes on the account');
+$accountPage=new \Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount;$accountPage->account=(int)$ops[0]->server_id;$accountHead=$accountPage->getSubheading();
+expect(str_contains((string)($accountHead instanceof \Illuminate\Contracts\Support\Htmlable?$accountHead->toHtml():$accountHead),$accountHold->toHtml()),'Registrar account head names the paid changes hold');
 expect(preg_match('/ \((under 1 hour|1 hour|\d+ hours) so far\)\. Registrations/',PaidUncertainty::holdSummary($ops[0]))===1,'Account-wide hold includes age');
 same(null,RequestFacts::for($ops[1])['reason'],'Absent reason remains absent');
 $completed=clone $ops[0];$completed->state='succeeded';$completed->attempt=['execution'=>null];same([null,null],[RequestFacts::for($completed)['outcome'],RequestFacts::notice($completed)],'Completed readback has no unconfirmed notice');

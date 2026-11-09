@@ -39,7 +39,7 @@ $connect=static function(string $registrar)use($snapshot):Account {
     same($saved,Setting::where('key',SiteDnsDefault::KEY)->sole()->getRawOriginal(),'Connection preserves the exact saved default');
     return $account;
 };
-$row=static fn($page)=>$page->instance()->getSchema('content')->getComponent(fn($c)=>$c instanceof TextEntry&&$c->getLabel()==='Site DNS default');
+$row=static fn($page)=>$page->instance()->getSchema('content')->getComponent(fn($c)=>$c instanceof TextEntry&&in_array($c->getLabel(),['Site DNS default','New domains use'],true));
 $assertMissing=static function(Account $account,string $rule)use($staff,$row):void {
     // Account first: it must show the problem immediately after connect, without revisiting settings or upgrading.
     foreach([[RegistrarAccount::class,['account'=>$account->server_id]],[MonitoringSettings::class,[]]]as[$class,$params]){
@@ -59,6 +59,9 @@ $select=static function(WatchProfile $profile,array $accounts,string $oldRule)us
     foreach([[MonitoringSettings::class,[]],...array_map(fn($a)=>[RegistrarAccount::class,['account'=>$a->server_id]],$accounts)]as[$class,$params]){
         $page=Livewire::actingAs($staff)->test($class,$params)->assertDontSee($oldRule);
         $entry=$row($page);same($profile->name,$entry?->getState(),'Valid staff choice clears Missing on each native page');
+        // The account page names what new domains get, with its nameservers and Change, as in the approved mock.
+        if($class===RegistrarAccount::class){same('New domains use',$entry->getLabel(),'Account row says what new domains use');
+            $page->assertSee(implode(', ',$profile->nameservers))->assertSee('New registrations get these nameservers from the start. Transfers keep the nameservers they already have.')->assertSeeHtml('href="'.e(MonitoringSettings::getUrl()).'"');}
         expect($entry->getColor($entry->getState())!=='danger','Valid default is no longer red');
         unset($entry,$page);gc_collect_cycles();gc_mem_caches();
     }

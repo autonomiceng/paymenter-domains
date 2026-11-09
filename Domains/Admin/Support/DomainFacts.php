@@ -17,7 +17,7 @@ final class DomainFacts
 {
     /** The page's sections and their rows, in order. */
     public const SECTIONS=['Registration'=>['Expires','Registrar','In registrar account','Transfer lock','WHOIS privacy','Email auth code','Registrar auto-renew','Last sync','Open alerts'],
-        'Renewal'=>['Renewal invoices','Renewal price','Next invoice','Open invoice'],
+        'Renewal'=>['Renewal','Renewal price','Next invoice','Open invoice'],
         'Contacts and DNS'=>['Contacts','Nameservers','Glue records','DNS records'],
         'Billing'=>['Customer','Service']];
     /** Rows that open another page, and what their link says. */
@@ -27,7 +27,7 @@ final class DomainFacts
         $company = \Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company();
         return ['Transfer lock'=>'Registrar lock that blocks transfers to another registrar.',
             'Registrar auto-renew'=>"The registrar's own auto-renew. Keep it off: ".($company !== '' ? $company.' renews' : 'we renew').' after the customer pays.',
-            'Renewal invoices'=>($company !== '' ? $company.' sends' : 'We send').' a renewal invoice before this domain expires. Auto Pay is a separate setting.'];
+            'Renewal'=>($company !== '' ? $company.' sends' : 'We send').' a renewal invoice before this domain expires. Auto Pay is a separate setting.'];
     }
     /** Why the registrar's own auto-renew reads Off. */
     private static function registrarRenewOff(): string
@@ -51,14 +51,14 @@ final class DomainFacts
         'unknown_price'=>['Renewal price','danger'],
         'unknown_cost'=>['Renewal price','danger'],
         'below_cost'=>['Renewal price','danger'],
-        'renewal_unpaid'=>['Renewal invoices','warning'],
-        'held_obligation'=>['Renewal invoices','warning'],
-        'invalid_invoice'=>['Renewal invoices','warning'],
-        'credit_notice_overdue'=>['Renewal invoices','warning'],
-        'schedule_binding'=>['Renewal invoices','warning'],
-        'delivery_uncertain'=>['Renewal invoices','warning'],
-        'template_failed'=>['Renewal invoices','warning'],
-        'reminder_failed'=>['Renewal invoices','warning'],
+        'renewal_unpaid'=>['Renewal','warning'],
+        'held_obligation'=>['Renewal','warning'],
+        'invalid_invoice'=>['Renewal','warning'],
+        'credit_notice_overdue'=>['Renewal','warning'],
+        'schedule_binding'=>['Renewal','warning'],
+        'delivery_uncertain'=>['Renewal','warning'],
+        'template_failed'=>['Renewal','warning'],
+        'reminder_failed'=>['Renewal','warning'],
         'missing_obligation'=>['Next invoice','danger'],
         'missing_execution'=>['Next invoice','danger'],
     ];
@@ -86,7 +86,7 @@ final class DomainFacts
         $registrar=['enom'=>'Enom','namesilo'=>'NameSilo'][$d->registrar_key]??null;
         $f['Registrar']=$account&&$registrar ? self::fact(\App\Models\Server::whereKey($d->server_id)->value('name')??$registrar,
             sub:implode(', ',array_filter([$registrar,['test'=>'Test','live'=>'Live'][$account->environment]??null,
-                !self::ended($d)&&($paused||!$account->processing_enabled||($policy['automatic_spend_paused']??false))?'orders paused':null])),
+                !self::ended($d)&&($paused||!$account->processing_enabled||($policy['automatic_spend_paused']??false))?self::ORDERS_PAUSED:null])),
             url:self::url(fn()=>RegistrarFacts::accountUrl((int)$d->server_id)),
             demo:DemoData::is($account)) : self::fact(null,sub:$account?'Unknown registrar. Check Registrars.':self::NO_ACCOUNT);
         if ($registered && $observation!==null) {
@@ -158,7 +158,7 @@ final class DomainFacts
             $off=match(true) {$renewal===null=>null,RenewalStop::adopted($renewal)=>'Set at import',$pending=>'Until import',
                 RenewalStop::blocksExisting($renewal)=>'Service cancellation pending',$cancel=>'Cancels at period end',
                 (bool)($policy['renewals_stopped']??false)=>'Stopped by staff',RenewalStop::ownerOff($renewal)=>self::ownerOff(),default=>null};
-            $f['Renewal invoices']=$renewal===null?self::fact(null,sub:self::UNREADABLE_RENEWAL,help:self::help()['Renewal invoices']):self::fact($off?'Off':'On',sub:$off,help:self::help()['Renewal invoices']);
+            $f['Renewal']=$renewal===null?self::fact(null,sub:self::UNREADABLE_RENEWAL,help:self::help()['Renewal']):self::fact($off?'Off':'On',sub:$off,help:self::help()['Renewal']);
             $f['Renewal price']=self::price($d,$service,$observation);
             $expired=$d->provider_expires_at&&$d->provider_expires_at->format('Y-m-d')<=gmdate('Y-m-d');
             // An issued renewal is due even when future automatic renewals have been stopped.
@@ -293,6 +293,18 @@ final class DomainFacts
     public static function whileHeld(array $facts, ?string $first): array
     {
         if (($facts['Contacts']['sub']??null)===self::ADD_CONTACTS) { $facts['Contacts']['sub']=($first??'Wait until changes are back on').', then add them with Edit.'; }
+        return $facts;
+    }
+    private const ORDERS_PAUSED='orders paused';
+    /** Words a head uses for Orders off (RequestFacts, DomainEditActions, Labels). */
+    private const ORDERS_OFF_WORDS=['orders are off','turn orders on','orders paused'];
+    /** When the head already says Orders are off, the Registrar row names only the account. $said: the head's plain text. */
+    public static function besideHead(array $facts, ?string $said): array
+    {
+        $said=strtolower((string)$said);
+        if (isset($facts['Registrar']['sub'])&&array_filter(self::ORDERS_OFF_WORDS,fn(string $w)=>str_contains($said,$w))!==[]) {
+            $facts['Registrar']['sub']=str_replace(', '.self::ORDERS_PAUSED,'',$facts['Registrar']['sub']);
+        }
         return $facts;
     }
     /** The one request the head names, or null. A notice names one only beside Resume sync. Rows name no other (withProgress). */

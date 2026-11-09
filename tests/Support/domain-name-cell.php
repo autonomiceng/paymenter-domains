@@ -30,6 +30,8 @@ function assertDomainNameOneLine(string $html, string $name, string $where): voi
     expect(str_contains((string) $items[0]->closest('.fi-ta-text')?->getAttribute('class'), 'domains-name-cell'), $where.': the cell is a one-line name');
     $sheet = file_get_contents(dirname(__DIR__,2).'/Domains/resources/views/partials/staff-styles.blade.php');
     expect(preg_match('/[^{}]*\.domains-name-cell[^{}]*\{[^}]*white-space:nowrap/', $sheet) === 1, $where.': the staff sheet keeps it on one line');
+    // Filament makes table text items a line-clamp box, where browsers never draw "...". The one-line cell must be a plain block.
+    expect(preg_match('/(^|[},])\s*[^{}]*\.domains-name-cell(?![-\w>])[^{}]*\{display:block\}/', $sheet) === 1, $where.': the cut name ends in "..."');
 }
 
 /**

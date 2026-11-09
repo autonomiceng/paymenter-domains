@@ -56,5 +56,11 @@ same('Future checks compare against this DNS template.',$page->getAction('profil
 $view->assertSeeInOrder(['Domain','Customer','Expected nameservers','DNS template','Synthetic defaults','Registrar','Expires','Hosting service','Hosting','Latest checks','Nameservers','DNS records','Website points to','Email points elsewhere','Registry','Registered','Last check','Next check','Monitoring alerts','On','Activity','No history yet']);
 $view->assertSee('Expires in '.$days.' days')->assertDontSee('Findings')->assertDontSee('Saved domain checks')->assertDontSee('Notification activity')->assertDontSee('Watch state');
 $facts=WatchFacts::for($record);same(['Domain','Checks','Evidence'],array_keys($facts),'External monitoring keeps domain facts, checks and saved public evidence');expect(!isset($facts['Domain']['Registrar records'],$facts['Domain']['Billing and ownership']),'External monitoring makes no registrar or billing claim');same('Other',$facts['Domain']['Registrar']['value']??'Missing','Registrar from the saved registration');
+// Last check already says when; Evidence from that same check says no second Checked time. An older answer keeps its own.
+$lastAt=(int)($facts['Checks']['Last check']['at']??0);expect($lastAt>0&&isset($facts['Evidence']['Public DNS'])&&$record->points!==null,'Fixture saves public DNS and a last check');
+$saved=fn(int $at)=>\Illuminate\Support\Facades\DB::table($record->points->getTable())->where('id',$record->points->id)->update(['started_at'=>$at,'completed_at'=>$at+1]);$saved($lastAt-3600);
+expect(str_contains((string)WatchFacts::for(WatchName::find($id))['Evidence']['Public DNS']['sub'],'Checked'),'An older saved answer keeps its Checked time');
+$saved($lastAt);
+same(null,WatchFacts::for(WatchName::find($id))['Evidence']['Public DNS']['sub'],'Evidence does not repeat the Last check time');
 
 $nativeSuccessful=true;echo "Staff monitoring list and details passed\n";
