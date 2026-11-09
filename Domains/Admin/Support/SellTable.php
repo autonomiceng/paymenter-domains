@@ -50,22 +50,33 @@ final class SellTable
             }
             $this->forSaleIds[$key]=self::membership($ids);
         }
-        [$from,$to,$bits]=$this->forSaleIds[$key];
+        [$from,$to,$stride,$index,$bits]=$this->forSaleIds[$key];
         if($bits===''){return $query->whereRaw('1=0');}
-        // One hex digit holds four ids, so the statement grows by a quarter byte per id and never by an id list.
-        // CASE keeps the unsigned subtraction away from ids below the range.
-        $id=$query->getQuery()->getGrammar()->wrap('id');$offset='('.$id.' - '.$from.')';
+        // Each group of 64 ids that holds a member costs one index entry and 16 hex digits, so the statement grows with
+        // the members and never with the span between their ids. The entry's place in the index is its place in the bits;
+        // a missing group reads the all-zero first record.
+        $grammar=$query->getQuery()->getGrammar();$id=$grammar->wrap('id');$width=$stride-1;
+        $cat=static fn(string ...$parts)=>$query->getQuery()->getConnection()->getDriverName()==='sqlite'?'('.implode(' || ',$parts).')':'concat('.implode(', ',$parts).')';
+        $group=$cat("','",'substr('.$cat("'".str_repeat('0',$width)."'","($id >> 6)").', -'.$width.')',"','");
+        $record="((instr(?, $group) + ".($stride-2).') >> '.[8=>3,16=>4,32=>5][$stride].')';
         return $query->whereBetween('id',[$from,$to])
-            ->whereRaw("(case when $id between $from and $to then (((instr('0123456789abcdef', substr(?, ($offset >> 2) + 1, 1)) - 1) >> ($offset & 3)) & 1) else 0 end) = 1",[$bits]);
+            ->whereRaw("(((instr('0123456789abcdef', substr(?, $record * 16 + (($id & 63) >> 2) + 1, 1)) - 1) >> ($id & 3)) & 1) = 1",[$bits,$index]);
     }
     /** @param list<int> $ids
-     * @return array{0:int,1:int,2:string} first id, last id and one hex digit per four ids between them */
+     * @return array{0:int,1:int,2:int,3:string,4:string} first id, last id, index entry length, the index of 64-id groups and their bits.
+     * Entries are a comma and the zero-padded group number, so a search finds only whole entries; entry 0 matches nothing. */
     private static function membership(array $ids): array
     {
-        if($ids===[]){return [0,0,''];}
-        $from=min($ids);$to=max($ids);$nibbles=array_fill(0,intdiv($to-$from,4)+1,0);
-        foreach($ids as $id){$nibbles[intdiv($id-$from,4)]|=1<<(($id-$from)%4);}
-        return [$from,$to,implode('',array_map('dechex',$nibbles))];
+        if($ids===[]){return [0,0,0,'',''];}
+        $groups=[];
+        foreach($ids as $id){$groups[$id>>6][($id&63)>>2]=($groups[$id>>6][($id&63)>>2]??0)|1<<($id&3);}
+        ksort($groups);$digits=strlen((string)array_key_last($groups));$stride=$digits<8?8:($digits<16?16:32);
+        $index=','.str_repeat('x',$stride-1);$bits=str_repeat('0',16);
+        foreach($groups as $group=>$nibbles){
+            $index.=','.str_pad((string)$group,$stride-1,'0',STR_PAD_LEFT);
+            for($n=0;$n<16;$n++){$bits.=dechex($nibbles[$n]??0);}
+        }
+        return [min($ids),max($ids),$stride,$index.',',$bits];
     }
     /** The viewer's rights, read once for this table build: a cell or a saved-price read never asks again. */
     private function grants(): StaffGrants { return $this->grants??=Staff::requireView(); }
