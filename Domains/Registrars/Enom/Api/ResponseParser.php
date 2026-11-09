@@ -94,6 +94,8 @@ final class ResponseParser
         foreach($metadata as $key){if(isset($data[$key])&&(!is_string($data[$key])||strlen($data[$key])>512)){return false;}}
         if(isset($data['rrptext'])&&!in_array($data['rrptext'],['','Domain name not found'],true)){return false;}
         if(isset($data['responsecount'])&&$data['responsecount']!=='1'){return false;}
+        // A counted reply must carry the response it counts. Only the uncounted envelope may omit it.
+        if(isset($data['responsecount'])&&(!isset($data['responses'])||$data['responses']==='')){return false;}
         if(isset($data['responses'])&&$data['responses']!==''){
             $responses=$data['responses']; $response=is_array($responses)?($responses['response']??null):null;
             if(!is_array($responses)||array_keys($responses)!==['response']||!is_array($response)

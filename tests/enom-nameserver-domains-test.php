@@ -22,6 +22,25 @@ foreach(['<DomainName>example.com</DomainName>','<RRPCode>200</RRPCode>','<Respo
     expect($ambiguous->code!=='domain_not_in_account','Contradictory account evidence cannot prove absence');
 }
 same(null,(new ResponseParser)->parse(ReadCommand::Info,str_replace('Domain name not found','PRIVATE-TOKEN',$missing))->value('errors'),'An arbitrary account error stays private');
+// A counted reply proves absence only with the one matching response it counts.
+$counted=str_replace('<responses>','<ResponseCount>1</ResponseCount><responses>',$missing);
+same(['rejected','domain_not_in_account'],[(new ResponseParser)->parse(ReadCommand::Info,$counted)->status,(new ResponseParser)->parse(ReadCommand::Info,$counted)->code],'A counted reply with its matching response proves absence');
+$uncounted=preg_replace('#<responses>.*</responses>#s','',$counted);
+foreach(['missing'=>$uncounted,'empty'=>str_replace('</errors>','</errors><responses></responses>',$uncounted),
+    'self-closed'=>str_replace('</errors>','</errors><responses/>',$uncounted),
+    'contradictory'=>str_replace('Validation error; not found; domain name(s)','Command completed successfully',$counted)] as $case=>$body){
+    expect(substr_count($body,'<ResponseCount>1</ResponseCount>')===1,'Counted '.$case.' fixture');
+    expect((new ResponseParser)->parse(ReadCommand::Info,$body)->code!=='domain_not_in_account','A counted reply with a '.$case.' response cannot prove absence');
+}
+same('domain_not_in_account',(new ResponseParser)->parse(ReadCommand::Info,preg_replace('#<responses>.*</responses>#s','',$missing))->code,'The uncounted reply keeps its accepted shape');
+// Absence evidence is a read result only. The recorded purchase refusal keeps its own rules.
+require __DIR__.'/Support/registration-refusal-reply.php';
+$refusal=(new ResponseParser)->parse(Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\RegistrationCommand::Purchase,$purchaseRefusal);
+expect($refusal->status==='rejected'&&$refusal->value('purchase_refusal')!==null,'The recorded purchase refusal still carries refusal proof');
+foreach([$counted,$uncounted] as $body){
+    $purchase=(new ResponseParser)->parse(Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\RegistrationCommand::Purchase,str_replace('GetDomainInfo','Purchase',$body));
+    expect($purchase->code!=='domain_not_in_account'&&$purchase->value('purchase_refusal')===null,'A not-found reply never becomes purchase refusal proof');
+}
 
 $command = ReadCommand::tryFrom('GetAllDomains');
 expect($command instanceof ReadCommand, 'Nameserver-filtered account domains have a typed read command');
