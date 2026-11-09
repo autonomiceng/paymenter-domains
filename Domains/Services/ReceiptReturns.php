@@ -90,6 +90,21 @@ final class ReceiptReturns
     {
         return array_values(array_filter([...(isset($op->funding['refund'])?[$op->funding['refund']]:[]),...($op->funding['late_credits']??[])],fn($p)=>($p['to']??null)==='original_payment'));
     }
+    /** A retained original-payment plan's bridge credit in minor units. Null when the bridge is missing, not a nonnegative
+     * integer, or bridge plus allocations differs from the plan amount: the plan then needs staff review. */
+    public static function bridge(array $plan): ?int
+    {
+        $bridge=$plan['bridge_minor']??null;
+        if(!is_int($bridge)||$bridge<0||!is_array($plan['allocations']??null)){return null;}
+        $total=$bridge;
+        foreach($plan['allocations'] as $a){$minor=is_array($a)?($a['amount_minor']??null):null;if(!is_int($minor)||$minor<=0){return null;}$total+=$minor;}
+        try{return PricingRule::minor($plan['amount']??null)===$total?$bridge:null;}catch(\Throwable){return null;}
+    }
+    public static function malformed(Operation $op): bool
+    {
+        foreach(self::plans($op) as $p){if(self::bridge($p)===null){return true;}}
+        return false;
+    }
     /** Pending allocations reserve funds; completed ones already have a signed native reversal from the gateway. */
     public static function outstanding(Operation $op): int
     {
@@ -130,8 +145,7 @@ final class ReceiptReturns
     public static function summary(Operation $op): ?array
     {
         $plans=self::plans($op);if(!$plans){return null;}$states=[];$bridge=0;
-        foreach($plans as$p){if(!is_int($p['bridge_minor']??null)||$p['bridge_minor']<0){return ['Refund needs a check','Our team is checking the payment return. Contact support with the invoice number.'];}}
-
+        if(self::malformed($op)){return ['Refund needs a check','Our team is checking the payment return. Contact support with the invoice number.'];}
         foreach([...(isset($op->funding['refund'])?[$op->funding['refund']]:[]),...($op->funding['late_credits']??[])] as $p){if(($p['to']??null)==='account_credit'){$bridge+=PricingRule::minor($p['amount']);}}
         foreach($plans as $p){$bridge+=$p['bridge_minor'];foreach($p['allocations'] as $a){$states[]=$op->funding['receipt_return_results'][$a['key']]['state']??'reserved';}}
         if(array_intersect($states,['review'])){return ['Refund needs a check','Our team is checking the payment return. Contact support with the invoice number.'];}
@@ -143,6 +157,8 @@ final class ReceiptReturns
     {
         OperationClaims::outside();$seen=Operation::findOrFail($id);$plans=self::plans($seen);
         if(!$plans){return null;}
+        // An unbalanced plan stays with staff: no gateway call and no automatic resolution until it is reviewed.
+        if(self::malformed($seen)){RefundRepairs::failed($id,$now->getTimestamp());return null;}
         try{
             $results=[];
             foreach($plans as $plan){foreach($plan['allocations'] as $a){

@@ -3,10 +3,10 @@
 declare(strict_types=1);
 class MoneyReceiptGateway extends \App\Classes\Extension\Gateway {
     public static array $returns=[];public static bool $lost=true;public static int $sends=0;public static ?\Closure $onAllocated=null;
-    public static string $outcome='refunded';public static ?\Closure $onStatus=null;
+    public static string $outcome='refunded';public static ?\Closure $onStatus=null;public static int $statusCalls=0;
     public function pay(\App\Models\Invoice $invoice,$total){return '';}
     public function receiptReturnStatus(\App\Models\Invoice $invoice,string $receipt,string $key):?array {
-        $result=self::$returns[$key==='excess'?$receipt.':excess':$key]??null;
+        self::$statusCalls++;$result=self::$returns[$key==='excess'?$receipt.':excess':$key]??null;
         $next=self::$onStatus;self::$onStatus=null;$next?->__invoke();return $result;
     }
     public function allocateReceiptReturn(\App\Models\Invoice $invoice,string $receipt,string $key,int $minor):array {

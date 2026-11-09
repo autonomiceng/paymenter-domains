@@ -51,7 +51,7 @@ final readonly class Refunds
             $review?->local(static fn()=>null);$review=null; // Consume the bound staff review before gateway recovery.
             $returned = ReceiptReturns::resume($id, $this->clock->now());
             $seen->refresh();
-            if (ReceiptReturns::outstanding($seen)>0 || (!RefundProof::retired($seen, $seen->domain)&&!FundsWaits::closedRenewal($seen,$seen->domain))) { return $returned; }
+            if (ReceiptReturns::outstanding($seen)>0 || ReceiptReturns::malformed($seen) || (!RefundProof::retired($seen, $seen->domain)&&!FundsWaits::closedRenewal($seen,$seen->domain))) { return $returned; }
         }
         $seed = $seen->domain()->firstOrFail();
         try { $result = DB::transaction(function () use ($seed, $id, $review): ?array {
@@ -151,7 +151,7 @@ final readonly class Refunds
     private function creditClosed(Operation $seen): ?array
     {
         $returned=ReceiptReturns::plans($seen)?ReceiptReturns::resume((int)$seen->id, $this->clock->now()):null;
-        if (ReceiptReturns::outstanding($seen->fresh())>0) { return null; }
+        $fresh=$seen->fresh(); if (ReceiptReturns::outstanding($fresh)>0 || ReceiptReturns::malformed($fresh)) { return null; }
         $result = DB::transaction(function () use ($seen): ?array {
             $l = HoldingLocks::take($seen->domain()->firstOrFail(), released: true); $op = $l['operations']->firstWhere('id', $seen->id);
             if (!$op || !UnpaidAcquisitionProof::terminal($op, $l['domain'])) { throw new \DomainException('Closed order proof is unavailable.'); }

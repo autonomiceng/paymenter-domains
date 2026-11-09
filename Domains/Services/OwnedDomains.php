@@ -41,7 +41,7 @@ final readonly class OwnedDomains
     {
         if (!$op) { return []; }
         $kind=$op->action==='transfer'?'transfer':'registration';
-        if($op->state==='rejected'&&($return=ReceiptReturns::summary($op))){return ['state'=>'cancelled','kind'=>$kind,'return'=>$return[1],'returned'=>ReceiptReturns::outstanding($op)===0];}
+        if($op->state==='rejected'&&($return=ReceiptReturns::summary($op))){return ['state'=>'cancelled','kind'=>$kind,'return'=>$return[1],'returned'=>!ReceiptReturns::malformed($op)&&ReceiptReturns::outstanding($op)===0];}
         // Applying the credit closes the domain row too. The order still reads Cancelled, as its request does. Approval alone adds no money: the credit can fail and retry.
         if ($op->state==='rejected'&&($op->safe_code==='refund_approved'||isset($op->funding['refund'])&&in_array($op->safe_code,[...WriteHeld::FINAL_REFUSALS,TransferRejections::CODE],true))&&in_array($d->status,['registration_pending','transfer_pending',$kind.'_rejected'],true)) { return ['state'=>'cancelled','kind'=>$kind,...(isset($op->funding['refund'])?['credit'=>true]:[])]; }
         if ($op->safe_code===UnpaidAcquisitionProof::CODE&&isset($op->funding['late_credits'])) { return ['state'=>'cancelled','kind'=>$kind,'credit'=>true]; }
@@ -63,9 +63,9 @@ final readonly class OwnedDomains
     {
         if (!$op || $op->state !== 'rejected' || !(in_array($d->status, ['registration_rejected', 'transfer_rejected'], true) || ($order['state'] ?? null) === 'failed')) { return null; }
         if (isset($op->funding['refund'])) {
-            $refund=$op->funding['refund'];$bridge=$refund['bridge_minor']??0;
+            $refund=$op->funding['refund'];
             return match ($refund['to']??null) { 'account_credit'=>'credited',
-                'original_payment'=>is_int($bridge)&&$bridge>=0?($bridge>0?'split':'returned'):null,default=>null };
+                'original_payment'=>match (ReceiptReturns::bridge($refund)) { null=>null, 0=>'returned', default=>'split' },default=>null };
         }
         return ReceiptReturns::destination(\App\Models\InvoiceTransaction::where('invoice_id', $op->invoice_id)->with('gateway')->get());
     }

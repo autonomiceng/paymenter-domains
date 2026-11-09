@@ -19,7 +19,7 @@ final class ReceiptReversals
         if($ops->count()>250){throw new \DomainException('Invoice domain history needs review.');}
         foreach($ops as $op){
             foreach([...(isset($op->funding['refund'])?[$op->funding['refund']]:[]),...($op->funding['late_credits']??[])] as $p){
-                $minor=($p['to']??null)==='account_credit'?PricingRule::minor($p['amount']):($p['bridge_minor']??0);
+                $minor=($p['to']??null)==='account_credit'?PricingRule::minor($p['amount']):(ReceiptReturns::bridge($p)??throw new \DomainException('Retained return plan needs review.'));
                 if($minor<=0){continue;}
                 $payments=[];
                 foreach($p['payments'] as $payment){if($payment['amount_minor']>0){$payments[$payment['id']]=$payment['amount_minor'];}}

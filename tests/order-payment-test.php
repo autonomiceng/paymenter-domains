@@ -38,7 +38,7 @@ same([],$rejected('acquisition_cancelled_unpaid'),'Unpaid close is not a failed 
 // A completed gateway return cancels the order without calling it account credit.
 foreach(['refunded','credited','pending','reserved','review'] as $result){
     $returned=OwnedDomains::order($d(),$op(['state'=>'rejected','safe_code'=>'refund_approved','funding'=>[
-        'refund'=>['to'=>'original_payment','bridge_minor'=>0,'allocations'=>[['key'=>'return-key','amount_minor'=>100]]],
+        'refund'=>['amount'=>'1.00','to'=>'original_payment','bridge_minor'=>0,'allocations'=>[['key'=>'return-key','amount_minor'=>100]]],
         'receipt_return_results'=>['return-key'=>['state'=>$result]]]]),$invoice('paid'));
     same(in_array($result,['refunded','credited'],true)?'Cancelled':'Under review',$pill($returned)['label'],'Gateway return pill agrees with '.$result);
     expect(!isset($returned['credit']),'A gateway return does not set the account credit marker');
