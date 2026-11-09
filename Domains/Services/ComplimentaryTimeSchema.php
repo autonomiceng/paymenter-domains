@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\Schema;
 /** New complimentary audit times are UTC and say so per row. Retained rows have no marker, stay store-zone wall time and are never rewritten. */
 final class ComplimentaryTimeSchema
 {
-    public const MIGRATION='2026_11_09_000056_add_complimentary_time_zone';
+    public const MIGRATION='2026_11_09_000058_add_complimentary_time_zone';
     public const TABLES=['domains_complimentary_accounts','domains_complimentary_approvals'];
     public static function install(): void
     {
