@@ -333,8 +333,10 @@ final class DomainFacts
         try { $d->observation; $d->renewal_policy; $d->snapshot; } catch (\Throwable) { return ['title'=>self::UNREADABLE,'tone'=>'danger']; }
         $op=$d->latestAcquisition;
         if(self::unconfirmedRegistration($d)&&$op){
-            $facts=RequestFacts::for($op);
-            return ['title'=>'Registration not confirmed by the registrar.','body'=>$facts['registrar_reply']??null,'tone'=>'warning',
+            // Unreadable request data still names the request, so staff can open it.
+            try { $facts=RequestFacts::for($op); } catch (\Throwable) { $facts=['unreadable'=>true]; }
+            $unreadable=$facts['unreadable']??false;
+            return ['title'=>'Registration not confirmed by the registrar.','body'=>$unreadable?self::UNREADABLE:($facts['registrar_reply']??null),'tone'=>$unreadable?'danger':'warning',
                 'action'=>['label'=>'Check request #'.$op->id,'url'=>self::url(fn()=>OperationResource::getUrl('view',['record'=>$op->id]))]];
         }
         $read=\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($d);

@@ -40,6 +40,17 @@ $pendingPage->assertSee('Registration not confirmed by the registrar.')->assertS
 Livewire::actingAs($metadataViewer)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation::class,['record'=>$request->id])
     ->assertSee('Registrar reply')->assertSee('Error 545 - Name server does not exist');
 Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$pending->id])->assertDontSee('Error 545 - Name server does not exist');
+// Unreadable request data keeps the notice and its request link, whether reading it throws or returns unreadable.
+$rawRequest=DB::table('domains_operations')->where('id',$request->id)->first();
+foreach(['policy'=>'enom_test_reconciliation_call_cap','attempt'=>'reconciliation_required'] as $column=>$code){
+    DB::table('domains_operations')->where('id',$request->id)->update([$column=>'d09-explicit-unreadable-fixture','safe_code'=>$code]);
+    Livewire::actingAs($metadataViewer)->test(ViewDomain::class,['record'=>$pending->id])->assertSuccessful()
+        ->assertSee('Registration not confirmed by the registrar.')->assertSee(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::UNREADABLE)
+        ->assertSee('Check request #'.$request->id)->assertDontSee('Error 545 - Name server does not exist');
+    if($column==='policy'){Livewire::actingAs($metadataViewer)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation::class,['record'=>$request->id])
+        ->assertSuccessful()->assertSee(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::UNREADABLE);}
+    DB::table('domains_operations')->where('id',$request->id)->update([$column=>$rawRequest->$column,'safe_code'=>$rawRequest->safe_code]);
+}
 same(4,DB::table('domains_observation_work')->where('id',$pendingWork)->value('tries'),'Display preserves saved observation work');
 $pending->update(['observation'=>['record_failure'=>['identity'=>ObservationRecords::identity($pending),'code'=>'domain_not_in_account','at'=>gmdate(DATE_ATOM)]]]);
 Livewire::actingAs($metadataViewer)->test(ViewDomain::class,['record'=>$pending->id])->assertSee('Registration not confirmed by the registrar.')
