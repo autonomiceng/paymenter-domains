@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/renewal-execution.php';
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
 use Paymenter\Extensions\Servers\Domains\Services\{EnomAnswers, RegistrarCheck, Refunds};
 
 // The real financial fixture is required: a lost paid reply must retain both the sealed attempt
@@ -27,7 +28,9 @@ expect(str_contains($words['body'], 'Ask Enom to check this attempt.'), 'Staff s
 same('uncertain', $result->state, 'Missing reply is not a failure proof');
 same($attempt, $result->attempt, 'Read checks preserve original attempt evidence');
 same($money, nativeFinancialSnapshot($result), 'Read checks preserve customer money and issued debt');
-same($reads, count($state->calls), 'No unaccepted history or speculative order reads');
+// One read of the sealed attempt: the domain and its expiry, never history or a guessed order.
+same([ReadCommand::Info, ReadCommand::Renewal, ReadCommand::Info, ReadCommand::Expiry], array_slice($state->calls, $reads), 'One sealed-attempt read with no unaccepted history or speculative order reads');
+expect(RegistrarCheck::attempted($result), 'The read is recorded for this exact attempt');
 same(null, app(Refunds::class)->creditRejected($op->id), 'Unknown renewal cannot return customer money');
 $engine->run($op->id, $writer);
 same($writes, $state->writes, 'Unknown original renewal never sends a second Extend');
