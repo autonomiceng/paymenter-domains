@@ -45,7 +45,8 @@ const browser = ({locks = true} = {}) => {
                 if (answer.error) throw new Error('offline');
                 if (answer.stall) return new Promise(() => {});
                 return {status: answer.status, ok: answer.status >= 200 && answer.status < 300, redirected: answer.redirected ?? false,
-                    headers: {get: name => (answer.headers ?? {})[name] ?? null}, json: async () => answer.body};
+                    headers: {get: name => (answer.headers ?? {})[name] ?? null},
+                    json: async () => { if (answer.unreadable) throw new Error('Unexpected token < in JSON'); return answer.body; }};
             }});
         world.tabs.push(tab);
         return tab;
@@ -64,9 +65,30 @@ const browser = ({locks = true} = {}) => {
         world.now = Math.max(world.now, moment);
     };
     world.idle = tab => tab.timers.length === 0;
+    // Every waiting read is due at a real moment no later than the longest rate-limit wait.
+    world.bounded = tab => tab.timers.every(timer => Number.isFinite(timer.at) && timer.at >= world.now && timer.at <= world.now + 300000);
     return world;
 };
 const minute = 60000;
+const key = 'domains-order-status:' + url;
+// One failed read waits the normal grown wait, then a valid answer resumes the usual pace without a reload.
+const retriesThenRecovers = async (answer, label) => {
+    const world = browser();
+    const tab = world.open();
+    world.answers.push(answer, {status: 200, body: {state, pending: true}});
+    await world.until(world.now + 10000);
+    assert.equal(world.reads.length, 1, label + ' is read once');
+    assert.ok(world.bounded(tab) && !world.idle(tab), label + ' keeps one finite timer');
+    const failedAt = world.reads[0];
+    await world.until(failedAt + 14999);
+    assert.equal(world.reads.length, 1, label + ' waits the grown wait');
+    await world.until(failedAt + 15000);
+    assert.equal(world.reads.length, 2, label + ' is retried after the grown wait');
+    await world.until(failedAt + 15000 + 22500);
+    assert.equal(world.reads.length, 3, label + ' recovers the usual pace after a valid answer');
+    assert.equal(tab.reloaded, 0, label + ' never reloads the page');
+    assert.ok(world.bounded(tab) && !world.idle(tab), label + ' keeps reading after recovery');
+};
 (async () => {
     // Two tabs on one pending order share each read, and the wait grows while nothing changes.
     let world = browser();
@@ -122,6 +144,51 @@ const minute = 60000;
     assert.equal(world.reads.length, 4, 'Reading resumes after the rate limit');
     assert.equal(flaky.reloaded, 0, 'Failures never reload the page');
     assert.ok(!world.idle(flaky), 'Reading continues after recovery');
+
+    // A timed-out request, a damaged answer, an unreadable body or a rate limit without a usable wait is retried, then reading recovers.
+    await retriesThenRecovers({status: 408}, 'A request timeout');
+    for (const body of [{state: 5, pending: true}, {state, pending: 'yes'}, {state}, null, []]) {
+        await retriesThenRecovers({status: 200, body}, 'A damaged answer ' + JSON.stringify(body));
+    }
+    await retriesThenRecovers({status: 200, unreadable: true}, 'An answer that is not JSON');
+    for (const after of [undefined, 'soon', 'Wed, 21 Oct 2015 07:28:00 GMT', '-5']) {
+        await retriesThenRecovers({status: 429, headers: after === undefined ? {} : {'Retry-After': after}}, 'A rate limit with Retry-After ' + after);
+    }
+    world = browser();
+    const capped = world.open();
+    world.answers.push({status: 429, headers: {'Retry-After': '99999'}});
+    await world.until(world.now + 10000);
+    await world.until(world.reads[0] + 299999);
+    assert.equal(world.reads.length, 1, 'A very long Retry-After still waits');
+    await world.until(world.reads[0] + 300000);
+    assert.equal(world.reads.length, 2, 'A very long Retry-After waits at most five minutes');
+    assert.equal(capped.reloaded, 0, 'A rate limit never reloads');
+
+    // A refused read stops reading for good: no timer, no reload.
+    for (const status of [400, 405, 422]) {
+        world = browser();
+        const refused = world.open();
+        world.answers.push({status});
+        await world.until(world.now + 30 * minute);
+        assert.equal(world.reads.length, 1, 'A refused read stops reading: ' + status);
+        assert.ok(world.idle(refused), 'A refused read leaves no timer: ' + status);
+        assert.equal(refused.reloaded, 0, 'A refused read does not reload: ' + status);
+    }
+
+    // A damaged saved answer from another tab never stops reading or reads without a pause.
+    for (const stored of [{next: 1, delay: 'x'}, {next: 1, delay: {}}, {next: 1, delay: null}, {next: 1e15, delay: 10000},
+        {next: 1_000_000 + 10 * minute, delay: 10000}, {next: '1', delay: 10000}, '{', '7']) {
+        world = browser();
+        world.store.set(key, typeof stored === 'string' ? stored : JSON.stringify(stored));
+        const damaged = world.open();
+        await world.until(world.now + 10000);
+        assert.equal(world.reads.length, 1, 'A damaged saved answer still reads on time: ' + JSON.stringify(stored));
+        assert.ok(world.bounded(damaged) && !world.idle(damaged), 'A damaged saved answer keeps one finite timer: ' + JSON.stringify(stored));
+        await world.until(world.now + 10 * minute);
+        assert.ok(world.reads.length >= 8 && world.reads.length <= 16, 'A damaged saved answer keeps the usual pace: ' + world.reads.length);
+        assert.ok(world.bounded(damaged), 'A damaged saved answer never leaves an unbounded timer: ' + JSON.stringify(stored));
+        assert.equal(damaged.reloaded, 0, 'A damaged saved answer never reloads');
+    }
 
     // Signing out or losing the domain stops every read.
     for (const answer of [{status: 401}, {status: 403}, {status: 404}, {status: 419}, {status: 200, redirected: true, body: {}}]) {
@@ -197,5 +264,5 @@ const minute = 60000;
     world.open();
     await world.until(world.now + 10 * minute);
     assert.ok(world.reads.length <= 15, 'A tab without storage still backs off: ' + world.reads.length);
-    console.log('Order status polling backs off, shares reads across tabs, pauses hidden tabs and stops on lost access.');
+    console.log('Order status polling backs off, shares reads across tabs, pauses hidden tabs and stops on lost access or a refused read.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

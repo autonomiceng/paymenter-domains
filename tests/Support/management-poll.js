@@ -43,5 +43,42 @@ const script = require('node:fs').readFileSync(0, 'utf8');
         assert.equal(reloaded, 1, 'Completion reloads confirmed values and controls');
         assert.equal(timer, null, 'Completion schedules no more polling');
     }
-    console.log('Owner status polling updates, slows and stops on completion or loss of ownership.');
+    // One owner page whose status reads answer in turn; a valid pending row follows the given answers.
+    const page = answers => {
+        const world = {timer: null, delays: [], reloaded: 0, reads: 0};
+        const control = {closest: () => ({querySelector: () => null}), dataset: {managementPending: 'lock', operation: '42'}, textContent: '',
+            classList: {toggle() {}}};
+        world.control = control;
+        vm.runInNewContext(script, {
+            Date,
+            document: {querySelectorAll: () => [control]},
+            window: {setTimeout(callback, delay) { world.timer = callback; world.delays.push(delay); }, location: {reload() { world.reloaded++; }}},
+            fetch: async () => {
+                world.reads++;
+                const answer = answers.shift() ?? {status: 200, body: {lock: {id: 42, pending: true, slow: false, tone: 'info', text: 'Turning off…'}}};
+                if (answer.error) throw new Error('offline');
+                return {status: answer.status, ok: answer.status >= 200 && answer.status < 300, redirected: answer.redirected ?? false,
+                    json: async () => { if (answer.unreadable) throw new Error('Unexpected token < in JSON'); return answer.body; }};
+            },
+        });
+        world.tick = async () => { const callback = world.timer; world.timer = null; await callback(); };
+        return world;
+    };
+    // A sign-in or verification redirect, lost access and other refused reads stop polling without a reload.
+    for (const answer of [{status: 401}, {status: 404}, {status: 400}, {status: 422}, {status: 200, redirected: true, unreadable: true}]) {
+        const world = page([answer]);
+        await world.tick();
+        assert.equal(world.timer, null, 'A refused read stops polling: ' + JSON.stringify(answer));
+        assert.equal(world.reloaded, 0, 'A refused read does not reload: ' + JSON.stringify(answer));
+    }
+    // A timed-out request, a rate limit, a server error, a network failure or an unreadable body is retried, then the row updates.
+    for (const answer of [{status: 408}, {status: 429}, {status: 500}, {error: true}, {status: 200, unreadable: true}]) {
+        const world = page([answer]);
+        await world.tick();
+        assert.equal(world.delays.pop(), 2000, 'A temporary failure is retried: ' + JSON.stringify(answer));
+        await world.tick();
+        assert.equal(world.control.textContent, 'Turning off…', 'The next valid read updates the row: ' + JSON.stringify(answer));
+        assert.ok(world.timer !== null && world.reloaded === 0, 'Polling continues after recovery: ' + JSON.stringify(answer));
+    }
+    console.log('Owner status polling updates, slows and stops on completion, lost access or a refused read.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

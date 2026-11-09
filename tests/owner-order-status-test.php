@@ -34,15 +34,35 @@ $closed=$controller->orderStatus($request,$d->id)->getData(true);
 same(false,$closed['pending'],'A terminal registration stops customer polling');expect($closed['state']!==$progress['state'],'A local status change reloads the open page');
 // Open pages read status on their own limit, so status reads never use up the limit for owner forms.
 require __DIR__.'/Support/web-visit.php';app()->instance(Paymenter\Extensions\Servers\Domains\Services\OwnedDomains::class,$owners);
+// A fresh in-memory limiter: only the requests below count, and nothing earlier can use up or refill either allowance.
+config(['cache.limiter'=>'array','settings.mail_must_verify'=>false]);app()->forgetInstance(Illuminate\Cache\RateLimiter::class);
 $help=webVisit($user,'/domains/help');same(200,$help->getStatusCode(),'The owner opens a page under the owner form limit');
 $left=(int)$help->headers->get('X-RateLimit-Remaining');
 for($i=0;$i<5;$i++){$read=webVisit($user,'/domains/'.$d->id.'/order-status');same(200,$read->getStatusCode(),'An open page reads its order status');}
 same(['pending','state'],array_keys(json_decode($read->getContent(),true)),'The web read returns only local progress');
 same('120',$read->headers->get('X-RateLimit-Limit'),'Status reads count against their own limit');
 same($left-1,(int)webVisit($user,'/domains/help')->headers->get('X-RateLimit-Remaining'),'Status reads leave the owner form limit untouched');
-foreach(['domains.domains.order-status','domains.domains.management-status'] as $name){
-    $middleware=Illuminate\Support\Facades\Route::getRoutes()->getByName($name)->gatherMiddleware();
-    expect(in_array('auth',$middleware,true)&&in_array(App\Http\Middleware\MustVerfiyEmail::class,$middleware,true)&&!in_array('throttle:60,1,domains.owner',$middleware,true),'Status read '.$name.' keeps sign-in and verification on its own limit');
+same('115',$read->headers->get('X-RateLimit-Remaining'),'Only these five reads used the status allowance');
+// Both status reads refuse a signed-out visitor, and an unverified owner when the site requires verified email.
+$json=['Accept'=>'application/json'];$status=['/domains/'.$d->id.'/order-status','/domains/'.$d->id.'/management-status'];
+foreach($status as $path){same(401,webVisit(null,$path,$json)->getStatusCode(),'A signed-out status read is refused: '.$path);}
+config(['settings.mail_must_verify'=>true]);$user->forceFill(['email_verified_at'=>null])->save();
+foreach($status as $path){
+    $refused=webVisit($user,$path,$json);same(302,$refused->getStatusCode(),'An unverified owner cannot read status: '.$path);
+    same(parse_url(route('verification.notice'),PHP_URL_PATH),parse_url((string)$refused->headers->get('Location'),PHP_URL_PATH),'An unverified owner is sent to verify email: '.$path);
 }
+$user->forceFill(['email_verified_at'=>now()])->save();
+// One allowance covers both status reads. Sign-in is checked before it, so signed-out reads use none; the limit is checked
+// before verification, so the owner's two unverified reads used two.
+foreach($status as $i=>$path){$read=webVisit($user,$path,$json);same(200,$read->getStatusCode(),'A verified owner reads status: '.$path);same((string)(112-$i),$read->headers->get('X-RateLimit-Remaining'),'Each status read uses the shared allowance: '.$path);}
+for($i=0;$i<111;$i++){$read=webVisit($user,$status[$i%2],$json);same(200,$read->getStatusCode(),'Status reads within the allowance succeed');}
+same('0',$read->headers->get('X-RateLimit-Remaining'),'The last read within the allowance uses it up');
+foreach($status as $path){
+    $limited=webVisit($user,$path,$json);same(429,$limited->getStatusCode(),'A status read past the shared allowance is refused: '.$path);
+    expect((int)$limited->headers->get('Retry-After')>0,'A refused status read says when to read again: '.$path);
+}
+$owner=webVisit($user,'/domains/help');same(200,$owner->getStatusCode(),'Owner pages stay available after status reads use up their allowance');
+same($left-2,(int)$owner->headers->get('X-RateLimit-Remaining'),'Status reads past their allowance leave the owner form limit untouched');
+config(['settings.mail_must_verify'=>false]);
 same($calls,count($state->calls),'Every progress read and refusal performs no provider I/O');
 $nativeSuccessful=true;echo "Native local order progress preserves ownership and never calls the registrar.\n";
