@@ -258,13 +258,20 @@ final class Writer implements Catalogue
         $old = OfferState::decode($t->catalogue_intent); $new = $edit->intent;
         $sell = $new->sell ?? ($defaults['defaultSell'] ?? true);
         $longest = $new->longest ?? ($defaults['defaultLongest'] ?? 1);
-        $transfer = ($new->transfers ?? ($defaults['defaultTransfers'] ?? false)) && !in_array('transfer', $new->stops, true);
+        $intended = static fn (array|Intent $i): bool => (bool) ((is_array($i) ? $i['transfers'] ?? null : $i->transfers) ?? $defaults['defaultTransfers'] ?? false)
+            && !in_array('transfer', (is_array($i) ? $i['stops'] ?? [] : $i->stops), true);
+        // Seller row transfers for this offer's account, before and after the edit.
+        $policy = DB::table('domains_sales_policies')->where('tld', $t->tld)->first();
+        $sellerBefore = $policy && (int) $policy->server_id === (int) $t->server_id && (bool) $policy->transfer_enabled;
         $sellerTransfers = $edit->kind === 'seller' ? in_array('transfer', $edit->actions, true)
-            : ($edit->sellerTransfers ?? (bool) DB::table('domains_sales_policies')->where('tld', $t->tld)->value('transfer_enabled'));
-        $transfer = $transfer && $sellerTransfers;
+            : $policy && (int) $policy->server_id === (int) $t->server_id && ($edit->sellerTransfers ?? (bool) $policy->transfer_enabled);
+        // A transfer intent is checked on its own, so a seller row that is off can't hide it. Turning the seller row
+        // on later is checked against current terms too, though the intent was already saved.
+        $intentWidens = $intended($new) && !$intended($old);
+        $transfer = $intended($new) && $sellerTransfers || $intentWidens;
         $widen = $sell && !($old['sell'] ?? $defaults['defaultSell'] ?? true)
             || $longest > ($old['longest'] ?? $defaults['defaultLongest'] ?? 1)
-            || $transfer && !($old['transfers'] ?? $defaults['defaultTransfers'] ?? false)
+            || $intentWidens || $transfer && !($intended($old) && $sellerBefore)
             || array_diff($old['stops'] ?? [], $new->stops) !== []
             || ($old['salesPaused'] ?? false) && !$new->salesPaused;
         if ($sell && \Paymenter\Extensions\Servers\Domains\Services\EndingChoices::hidden($t->tld)) { return 'This TLD is hidden.'; }
