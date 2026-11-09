@@ -148,6 +148,10 @@ Follow the complete [profile procedure](../scripts/conversion/README.md), includ
 Docker/Plesk sections where applicable. This summary does not replace process, cron,
 lock, web-entry-point or permission inspection.
 
+Run the whole procedure with the converter from Domains bridge 0.1.0 at `891124421645`,
+install that bridge, run its checked catalogue conversion, then install this package. This
+package's converter only verifies a finished installation and refuses a new target before any DDL.
+
 | Checkpoint | Required evidence before continuing |
 | --- | --- |
 | Source | Exact accepted `source.json` revision and schema; source/plan digests; no independently configured NameSilo server |

@@ -305,6 +305,7 @@
     "tests/conversion-evidence-test.php",
     "tests/test_conversion_evidence_cli.py",
     "tests/conversion-guards-test.php",
+    "tests/conversion-bridge-first-test.php",
     "tests/psl-test.php",
     "tests/psl-staff-test.php",
     "tests/doh-settings-test.php",

@@ -84,20 +84,18 @@ final class Converter
         }
         return $value;
     }
+    public const BRIDGE_FIRST='This package no longer stages or converts a new target. Run the one-time conversion with the converter from Domains bridge 0.1.0 at 891124421645, run its checked catalogue conversion, then install this package.';
     private static function target(): void
     {
-        (new Installation)->verify();$ran=app(\Illuminate\Database\Migrations\Migrator::class)->getRepository()->getRan();
-        foreach(glob(dirname(__DIR__,2).'/Domains/database/migrations/*.php')as$file){if(!in_array(basename($file,'.php'),$ran,true)){throw new \DomainException('Target migration history incomplete.');}}
+        $ran=app(\Illuminate\Database\Migrations\Migrator::class)->getRepository()->getRan();
+        $files=array_map(fn($file)=>basename($file,'.php'),glob(dirname(__DIR__,2).'/Domains/database/migrations/*.php'));
+        // Offer retirement removed columns this converter writes and needs the checked bridge activation, so refuse a new target before any DDL.
+        if(!array_intersect($ran,$files)&&!array_filter([...self::TARGET,'domains_conversion_runs','domains_conversion_map'],fn($t)=>Schema::hasTable($t))){throw new \DomainException(self::BRIDGE_FIRST);}
+        foreach($files as$name){if(!in_array($name,$ran,true)){throw new \DomainException('Target migration history incomplete.');}}
+        (new Installation)->verify();
     }
-    public static function stageSchema(): void
-    {
-        $migrator=app(\Illuminate\Database\Migrations\Migrator::class);$ran=$migrator->getRepository()->getRan();
-        $tables=array_filter([...self::TARGET,'domains_conversion_runs','domains_conversion_map'],fn($t)=>Schema::hasTable($t));
-        $records=array_intersect($ran,array_map(fn($file)=>basename($file,'.php'),glob(dirname(__DIR__,2).'/Domains/database/migrations/*.php')));
-        // Only a wholly new or fully verified installation is accepted; no partial foundation repair.
-        if($tables||$records){self::target();return;}
-        $migrator->run([dirname(__DIR__,2).'/Domains/database/migrations'],['force'=>true]);self::target();
-    }
+    /** Verify a finished installation only; never repair a partial foundation. */
+    public static function stageSchema(): void { self::target(); }
     private function emptyTarget(): void
     {
         foreach(self::TARGET as $t){if(DB::table($t)->exists()){throw new \DomainException('Target ledger must be empty.');}}
