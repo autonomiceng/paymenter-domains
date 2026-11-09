@@ -22,6 +22,7 @@ final readonly class RenewalCompletion
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
         $capture = DB::transaction(function () use ($seed, $id, $check) {
             $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
+            if ($op) { $check->capture($op); }
             if (!$op || !$this->eligible($op) || self::capturedChargeHeld($op)) { return null; }
             $financial=CapturedChargeReview::hasProof($op);
             $policy = $op->policy; $policy['renewal_execution'] = ['staff_alert' => true, 'reason' => ($op->policy['renewal_polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT ? 'poll_limit_reached' : 'original_attempt_unresolved', 'refundable_later' => false];
@@ -29,11 +30,11 @@ final readonly class RenewalCompletion
             try {
                 $this->bindings->requireReadableLocked($l['server'], $l['account']); RenewalFunding::requireCurrent($op, $l, true);
                 $attempt = ReconciliationEvidence::attempt($op, $l['domain'], AccountBindings::binding($l['account']));
-                $check->capture($op);
-                if ($attempt->replyLost() && !$attempt->historyAcceptance?->covers($attempt, $this->clock->now())) {
+                if (RegistrarCheck::lostReply($op, $attempt, $this->clock->now())) {
                     $check->awaitingAnswer = $attempt->binding->registrarKey === 'enom' ? 'Enom' : 'NameSilo';
                     $check->answerAfter = (new \DateTimeImmutable($op->attempt['dispatch_attempted_at']))->modify('+24 hours')->getTimestamp();
-                    return null;
+                    // Enom can still read the domain before staff ask for a case; NameSilo waits for its answer.
+                    if ($attempt->binding->registrarKey !== 'enom' || $financial) { return null; }
                 }
                 if (($op->policy['renewal_polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT) { return null; }
                 $read=$financial?CapturedChargeReview::reserve($op,$this->clock):null;

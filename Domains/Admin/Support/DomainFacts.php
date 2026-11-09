@@ -195,7 +195,12 @@ final class DomainFacts
             [$row,$tone]=self::ALERTS[$code]??[null,'warning']; $cause=self::alertCause($code,$d);
             // The row sends staff to the same place the head would.
             $request=in_array($code,['operation_review','held_obligation'],true)?array_values(array_filter($rows,fn(array $a)=>$a['code']===$code&&$a['request']!==null))[0]['request']??null:null;
-            if ($request!==null) { $cause=str_replace('Check the request','Check request #'.$request,$cause); }
+            if ($request!==null) {
+                $cause=str_replace('Check the request','Check request #'.$request,$cause);
+                // A rejected request that is not closed failed; the row says so instead of asking staff to check it.
+                $failed=Operation::whereKey($request)->where('domain_id',$d->id)->where('state','rejected')->first();
+                if ($code==='operation_review'&&$failed&&!RequestStatus::closed($failed->state,$failed->safe_code)) { $cause='Request failed. Check request #'.$request.'.'; }
+            }
             if (!isset($f[$row])) {
                 $notice=$f['Open alerts']??self::fact([],tone:$tone);
                 $notice['value']=array_values(array_unique([...$notice['value'],$cause]));
@@ -299,7 +304,7 @@ final class DomainFacts
     public static function headRequest(Domain $d, array $status, ?int $held=null, ?array $notice=null): ?int
     {
         $notice??=self::notice($d);
-        return $notice===null||($notice['resume']??false)?$held??$status['request']:null;
+        return $notice===null||($notice['resume']??false)?$held??$status['request']??(ObservationWork::resumeBlocked($d)!==null?$d->latestAcquisition?->id:null):null;
     }
     /** A notice in the head line: its words, then its links. */
     private static function noticeHtml(array $notice, bool $mark): HtmlString

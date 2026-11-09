@@ -21,6 +21,9 @@ final class DomainPage
     /** True when the page notice already tells the customer there is nothing for them to do. */
     public static function noActionSaid(?array $notice): bool
     { return str_contains($notice['text'] ?? '', self::NOTHING_TO_DO) || str_contains($notice['text'] ?? '', Missing::NO_ACTION); }
+    /** True when the page may still say there is nothing to do: not said yet, and no step for the customer in the status or notice. */
+    private static function reassure(OwnedDomain $d, ?array $notice): bool
+    { return !self::noActionSaid($notice) && !DomainStatus::asksCustomer($d->status) && !in_array($notice['tone'] ?? null, ['warn', 'bad'], true); }
     public static function checkHeld(OwnedDomain $d): bool
     { return collect($d->management)->contains(fn ($section) => $section['recordCheckHeld'] ?? false); }
     /** The one notice at the top of the page: text, tone and its one action, or null when nothing needs doing.
@@ -102,7 +105,7 @@ final class DomainPage
     /** The registrar rejected the registration or transfer, so no expiry will ever fill in. */
     private static function rejected(OwnedDomain $d): bool
     { return in_array($d->rejectedAcquisition, ['register', 'transfer'], true) || in_array($d->statusReason, [DomainStatus::STATES['registration_rejected'][1], DomainStatus::STATES['transfer_rejected'][1]], true); }
-    /** Next invoice: the current renewal invoice's state (Due + Pay invoice, Paid, Under review in blue while we check it, or Missing with its cause and fix), else the day the next invoice goes out, the same date staff see. Null when it does not apply. */
+    /** Next invoice: the current renewal invoice's state (Due + Pay invoice, Paid, Under review in blue while we check it, or Missing with its cause and fix), else the day the next invoice is issued and when it is due. Null when it does not apply. */
     public static function nextInvoice(OwnedDomain $d, ?DomainSummary $s, ?string $support): ?array
     {
         $state = $d->renewNow['status'] ?? (isset($d->renewNow['invoice']) ? 'pending' : null) ?? $d->renewalInvoice['state'] ?? null;
@@ -114,10 +117,11 @@ final class DomainPage
             $state === 'paid' => ['value' => 'Paid', ...(($goes = $d->renewNow['goes'] ?? $d->renewalInvoice['goes'] ?? null) ? ['note' => RenewalRepeatWait::NOTHING.' '.RenewalRepeatWait::GOES, 'at' => $goes] : [])],
             $state === 'closed' => ['value' => 'Renewal did not finish', 'action' => $contact],
             $state === 'cancelled' => ['missing' => true, 'cause' => 'Invoice cancelled', 'fix' => $contact],
-            // When the page notice already says there is nothing to do, the row does not say it again.
-            $state !== null => ['value' => 'Under review', 'tone' => 'info', 'note' => 'Renewal being checked.'.(self::noActionSaid(self::notice($d, $support, $s)) ? '' : ' '.Missing::NO_ACTION)],
+            // The row says there is nothing to do unless the page notice already says so,
+            // or the status or notice gives the customer a step (an expired domain: contact support).
+            $state !== null => ['value' => 'Under review', 'tone' => 'info', 'note' => 'Renewal being checked.'.(self::reassure($d, self::notice($d, $support, $s)) ? ' '.Missing::NO_ACTION : '')],
             (bool) $s?->renewalInvoiceMissing => ['missing' => true, 'cause' => 'Not issued yet'.($s->renewalIssueAt ? '. Expected '.self::date($s->renewalIssueAt).'.' : ''), 'fix' => $contact],
-            $s?->renewalIssueAt !== null => ['value' => self::date($s->renewalIssueAt)],
+            $s?->renewalIssueAt !== null => ['value' => 'Issues '.self::date($s->renewalIssueAt).($s->renewalDueAt ? '. Due '.self::date($s->renewalDueAt).'.' : '')],
             ($d->plannedRenewalDue ?? $s?->renewalDueAt) !== null => ['value' => 'Due '.self::date($d->plannedRenewalDue ?? $s->renewalDueAt)],
             $d->expiry === null => ['missing' => true, 'cause' => self::checkHeld($d) ? self::TEAM_CHECK : Missing::fills('after the next sync'), 'fix' => null],
             default => null,

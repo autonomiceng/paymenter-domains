@@ -4,7 +4,8 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Data\{AttemptEvidence,Environment};
+use Paymenter\Extensions\Servers\Domains\Models\{Account,Operation};
 /** Review of an incurred charge. No new send, charge, refund or replacement of the original proof. */
 final class CapturedChargeReview
 {
@@ -61,8 +62,23 @@ final class CapturedChargeReview
         try{if(!self::hasProof($op)||$op->state!=='uncertain'||$op->lease_expires_at!==null||$op->completed_at!==null){return false;}
         $p=$op->policy;$reads=$p['captured_charge_reads']??[];$observations=$p['captured_charge_observations']??[];
         if(!is_array($reads)||!array_is_list($reads)||!$reads||!is_array($observations)||!array_is_list($observations)||!$observations){return false;}$read=end($reads);$seen=end($observations);
+        $attempt=ReconciliationEvidence::attempt($op,$op->domain()->firstOrFail(),AccountBindings::binding(Account::where('server_id',$op->server_id)->sole()));
         return $read['resume']===count($p['renewal_resumptions']??[])&&$seen['key']===$read['key']&&$seen['attempt_hash']===self::identity($op)
-            &&$seen['proof']===($op->attempt['reconciliation']??null)&&!isset($p['captured_charge_approval']);}catch(\Throwable){return false;}
+            &&self::sameProof($seen['proof'],$op->attempt['reconciliation']??null)&&self::supported($op,$attempt)&&!isset($p['captured_charge_approval']);}catch(\Throwable){return false;}
+    }
+    /** The same complete proof, or the same order read again after the registrar confirmed auto-renew Off. The frozen proof keeps its correction. */
+    private static function sameProof(mixed $seen,mixed $frozen):bool
+    {
+        if(!is_array($seen)||!is_array($frozen)){return false;}
+        $rest=static fn(array $proof)=>array_diff_key($proof,['observed_corrections'=>true]);
+        return $seen===$frozen||(($seen['observed_corrections']??null)===[]&&($frozen['observed_corrections']??null)===['auto_renew']&&$rest($seen)===$rest($frozen));
+    }
+    /** Approval needs the proof source the original attempt supports: its captured TEST order, or order history this account still accepts. */
+    private static function supported(Operation $op,AttemptEvidence $attempt):bool
+    {
+        $source=$op->attempt['reconciliation']['source']??null;
+        if($attempt->binding->environment!==Environment::Test){return false;}
+        return $attempt->executionFacts&&$attempt->providerReference!==null?$source==='captured_order':$source==='accepted_history'&&$attempt->historyAcceptance!==null;
     }
     public static function approve(Operation $op,array $l,AccountBindings $bindings,Clock $clock):void
     {
@@ -70,8 +86,7 @@ final class CapturedChargeReview
         if(!self::approvable($op)){throw new StaffReviewRefused('Read the original charge again. A different or unavailable result cannot approve the captured expense.');}
         $d=$l['domain'];$binding=AccountBindings::binding($l['account']);$proof=$op->attempt['reconciliation'];$charge=$proof['charge']??null;
         $bindings->requireReadableLocked($l['server'],$l['account']);RenewalFunding::requireCurrent($op,$l,true);
-        ReconciliationEvidence::attempt($op,$d,$binding);
-        if($binding->environment!==\Paymenter\Extensions\Servers\Domains\Data\Environment::Test||$proof['source']!=='captured_order'
+        if(!self::supported($op,ReconciliationEvidence::attempt($op,$d,$binding))
             ||$proof['operation_key']!==$op->operation_key||$proof['generation']!==$op->authority_generation||$proof['fingerprint']!==$op->account_fingerprint
             ||$proof['query']!==['name'=>$d->domain,'action'=>'renew','years'=>$op->term]||$proof['provider_domain_id']!==$d->provider_domain_id
             ||$charge!==($op->cost['actual']??null)||($charge['currency']??null)!=='USD'||!is_string($proof['order_reference']??null)

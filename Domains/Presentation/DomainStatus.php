@@ -44,4 +44,12 @@ final class DomainStatus
     }
     /** The SET key a state belongs to; unknown states count as under_review. */
     public static function key(?string $state): string { return (self::STATES[$state] ?? ['under_review'])[0]; }
+    /** Statuses that give the customer a step (pay, act, contact support). A page showing one never says there is nothing for them to do. */
+    public const CUSTOMER_STEP = ['awaiting_payment', 'action_required', 'expired', 'redemption', 'failed'];
+    /** True when this status label gives the customer a step. */
+    public static function asksCustomer(?string $label): bool
+    {
+        foreach (self::CUSTOMER_STEP as $key) { if (self::SET[$key][0] === $label) { return true; } }
+        return false;
+    }
 }

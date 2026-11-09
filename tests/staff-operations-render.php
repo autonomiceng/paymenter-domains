@@ -77,5 +77,7 @@ Livewire::actingAs($user)->test(ViewOperation::class,['record'=>$release->id])->
     ->callAction('release')->assertNotified('Hold released')->assertActionNotMounted('release');
 same('queued',$release->fresh()->state,'Fresh release queues the unsent funded request without a modal');
 same($attempt,$release->fresh()->attempt,'Release retains the unsent attempt');
+// Every action that opens a confirmation has its wording, the same text its live dialog shows.
+foreach(['approve_charge','disposition','refund','credit','replacement'] as $action){expect(is_string($rows[$action]['description'])&&$rows[$action]['description']!=='','Confirmation wording: '.$action);}
 writeRenderArtifact($out.'/strings.json',json_encode($rows,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));
 echo "Native operation queue, view, four confirmation modals and refusal fixture rendered.\n";$nativeSuccessful=true;

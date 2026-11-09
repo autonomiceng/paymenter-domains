@@ -44,6 +44,11 @@ same(4,DB::table('domains_observation_work')->where('id',$pendingWork)->value('t
 $pending->update(['observation'=>['record_failure'=>['identity'=>ObservationRecords::identity($pending),'code'=>'domain_not_in_account','at'=>gmdate(DATE_ATOM)]]]);
 Livewire::actingAs($metadataViewer)->test(ViewDomain::class,['record'=>$pending->id])->assertSee('Registration not confirmed by the registrar.')
     ->assertSee('Check request #'.$request->id)->assertDontSee('Register or transfer the domain')->assertDontSee('No read queued');
+// Resume sync waits for the registration, so a stopped sync links the running registration request that the status line does not name.
+DB::table('domains_operations')->where('id',$request->id)->update(['state'=>'running','safe_code'=>null]);
+$pending->update(['observation'=>[]]);ObservationRecords::hold($pending->fresh(),'records_unavailable',new DateTimeImmutable());
+Livewire::actingAs($metadataViewer)->test(ViewDomain::class,['record'=>$pending->id])
+    ->assertSee('Registrar records can sync after registration is confirmed.')->assertSee('Check request #'.$request->id);
 DB::table('domains_observation_work')->where('id',$pendingWork)->delete();
 DB::table('domains_operations')->where('id',$request->id)->delete(); DB::table('domains_domains')->where('id',$pending->id)->delete(); Auth::setUser($viewer);
 

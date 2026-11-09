@@ -32,6 +32,8 @@ same('2028-10-18',$d->fresh()->provider_expires_at->format('Y-m-d'),'Original re
 $state->lost=true;$writes=$state->writes;same('uncertain',$engine->run($op->id,$writer)->state,'Missing reply remains uncertain');$attempt=$op->fresh()->attempt;
 $clock->instant=$clock->now()->modify('+25 hours');$state->lost=false;$state->expiry='2028-10-18';$state->charge='8.00';
 app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);app()->instance(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class,$renewBindings);
+// Enom reads the domain on a lost reply before staff record its answer. The read alone cannot complete the renewal.
+same('uncertain',$completion->run($op->id)->state,'A read without the answer keeps the renewal uncertain');
 $staff=commerceUser();$role=\App\Models\Role::create(['name'=>'Renewal support answer','permissions'=>['admin.domains.view','admin.domains.manage-policy','admin.domains.settings.enom_answer']]);$staff->update(['role_id'=>$role->id]);
 $reviewClass=\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::class;
 $review=new $reviewClass($staff->id,$op->server_id,null,'enom_answer',$reviewClass::ticket($staff->id,$op->server_id,null,'enom_answer',$reviewClass::stamp($op->server_id,null)),'Record exact synthetic renewal answer');

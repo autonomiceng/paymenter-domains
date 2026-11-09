@@ -15,8 +15,14 @@ final class RegistrarCheck
     public ?int $answerAfter = null;
     public function __construct(private readonly Clock $clock) {}
     private ?string $identity = null;
+    private ?array $seen = null;
+    private int $started = 0;
     private array $facts = [];
-    public function capture(Operation $op): void { $this->identity=RegistrarAnswers::identity($op); }
+    /** Called under the check's first lock, before any early return, so every result names its attempt. */
+    public function capture(Operation $op): void
+    {
+        $this->identity=RegistrarAnswers::identity($op);$this->seen=$op->policy['status_check']??null;$this->started=$this->clock->now()->getTimestamp();
+    }
     /** Observations do not grant completion, payment return or another send. */
     public function observe(AttemptEvidence $attempt, Evidence $facts, bool $chargeConfirmed): void
     {
@@ -30,10 +36,20 @@ final class RegistrarCheck
         return DB::transaction(function () use ($result): Operation {
             Domain::whereKey($result->domain_id)->lockForUpdate()->firstOrFail();
             $op = Operation::whereKey($result->id)->lockForUpdate()->firstOrFail();
-            if ($this->identity!==null && !hash_equals($this->identity,RegistrarAnswers::identity($op))) { return $op; }
+            if ($this->identity===null || !hash_equals($this->identity,RegistrarAnswers::identity($op))) { return $op; }
+            // A check, resume or answer saved after this check began is newer. This result must not replace it.
+            $stored=$op->policy['status_check']??null;
+            if ($stored!==$this->seen && (int)($stored['started']??$stored['at']??0)>=$this->started) { return $op; }
             $now = $this->clock->now()->getTimestamp();
             if ($op->state==='succeeded') { $this->awaitingAnswer=null; }
             $outcome = $this->awaitingAnswer !== null ? 'awaiting_answer' : ($this->deferred !== null ? 'deferred' : (($this->context?->completedReads() ?? 0) > 0 ? 'checked' : 'unavailable'));
+            // A completed read of a lost reply counts toward the same read limit as any other check.
+            if ($this->awaitingAnswer!==null && ($this->context?->completedReads()??0)>0) {
+                $policy=$op->policy;
+                if ($op->action==='renew') { $policy['renewal_polls']=($policy['renewal_polls']??0)+1; }
+                else { $policy['reconciliation']['polls']=($policy['reconciliation']['polls']??0)+1; }
+                $op->policy=$policy;
+            }
             $next = null;
             $watch = TransferPolling::applies($op);
             $stopped = $op->action === 'renew' ? RenewalCompletion::capturedChargeHeld($op) || ($op->policy['renewal_polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT
@@ -47,7 +63,7 @@ final class RegistrarCheck
                     DB::table('domains_runtime_operations')->updateOrInsert(['operation_id' => $op->id], ['due_at' => $next]);
                 }
             }
-            $op->update(['policy' => [...($op->policy ?? []), 'status_check' => ['outcome' => $outcome, 'at' => $now, 'next_at' => $next, 'reason' => $this->deferred, ...($this->identity!==null?['attempt_identity'=>$this->identity,'read_attempted'=>$this->context!==null,'facts'=>$this->facts]:[]), ...($this->awaitingAnswer !== null ? ['registrar'=>$this->awaitingAnswer,'answer_after'=>$this->answerAfter] : [])]]]);
+            $op->update(['policy' => [...($op->policy ?? []), 'status_check' => ['outcome' => $outcome, 'at' => $now, 'started' => $this->started, 'next_at' => $next, 'reason' => $this->deferred, 'attempt_identity'=>$this->identity, 'read_attempted'=>$this->context!==null||self::attempted($op), 'facts'=>$this->facts, ...($this->awaitingAnswer !== null ? ['registrar'=>$this->awaitingAnswer,'answer_after'=>$this->answerAfter] : [])]]]);
             return $op;
         });
     }
@@ -59,6 +75,12 @@ final class RegistrarCheck
         }
         $op->update(['policy' => [...$op->policy, 'status_check' => ['outcome' => 'scheduled', 'at' => $now, 'next_at' => $now, 'reason' => null]]]);
     }
+    /** A lost reply that no accepted order history covers. Only the registrar's answer can settle it. */
+    public static function lostReply(Operation $op, AttemptEvidence $attempt, \DateTimeImmutable $now): bool
+    { return $op->action!=='transfer'&&$attempt->replyLost()&&!$attempt->historyAcceptance?->covers($attempt,$now); }
+    /** Enom still reads the domain on a lost reply; a NameSilo lost reply has nothing to read. */
+    public static function unreadable(Operation $op, AttemptEvidence $attempt, \DateTimeImmutable $now): bool
+    { return $attempt->binding->registrarKey!=='enom'&&self::lostReply($op,$attempt,$now); }
     public static function attempted(Operation $op): bool
     {
         $check=$op->policy['status_check']??[];
@@ -124,6 +146,9 @@ final class RegistrarCheck
     {
         $check = $op->policy['status_check'] ?? null;
         if (isset($check['attempt_identity']) && !hash_equals(RegistrarAnswers::identity($op),(string)$check['attempt_identity'])) { $check=null; }
+        // An Enom lost reply is read before staff ask Enom for a case.
+        if ($op->action==='register'&&$op->registrar_key==='enom'&&in_array($op->state,['running','pending','uncertain'],true)
+            &&RegistrarAnswers::eligible($op,app(Clock::class)->now())&&!self::attempted($op)) { return ['outcome'=>'not_checked']; }
         if ($op->action !== 'renew' || !in_array($op->state, ['running', 'pending', 'uncertain'], true)
             || isset($op->policy['enom_answer']) || isset($op->attempt['reconciliation'])) { return $check; }
         try {
@@ -134,7 +159,8 @@ final class RegistrarCheck
             if ($op->account_fingerprint !== $account->account_fingerprint || $op->account_fingerprint !== $domain->account_fingerprint
                 || $op->authority_generation !== $domain->authority_generation) { return $check; }
             $attempt = ReconciliationEvidence::attempt($op, $domain, AccountBindings::binding($account));
-            if ($attempt->replyLost() && !$attempt->historyAcceptance?->covers($attempt, $now)) {
+            if (self::lostReply($op, $attempt, $now)) {
+                if ($op->registrar_key==='enom'&&!self::attempted($op)) { return ['outcome'=>'not_checked']; }
                 return [...($check??[]),'outcome'=>'awaiting_answer', 'registrar'=>$attempt->binding->registrarKey === 'enom' ? 'Enom' : 'NameSilo',
                     'answer_after'=>(new \DateTimeImmutable($op->attempt['dispatch_attempted_at']))->modify('+24 hours')->getTimestamp()];
             }
@@ -145,6 +171,10 @@ final class RegistrarCheck
     public static function forCustomer(Operation $op): array
     {
         $check = self::status($op);
+        // Before the first read the customer sees the same pending line; Check status is a staff button.
+        if (($check['outcome'] ?? null) === 'not_checked' && is_string($op->attempt['dispatch_attempted_at'] ?? null)) {
+            $check = ['outcome'=>'awaiting_answer','answer_after'=>(new \DateTimeImmutable($op->attempt['dispatch_attempted_at']))->modify('+24 hours')->getTimestamp()];
+        }
         if (($check['outcome'] ?? null) !== 'awaiting_answer') { return self::for($op); }
         $kind = match ($op->action) { 'transfer' => 'transfer', 'renew' => 'renewal', default => 'registration' };
         return ['title'=>ucfirst($kind).' pending','body'=>'We’re confirming this '.$kind.' with the registrar. You don’t need to do anything. Contact support if it’s still pending after '.(new \DateTimeImmutable('@'.(int)($check['answer_after']??0)))->setTimezone(new \DateTimeZone('America/Los_Angeles'))->format('M j, g:i A').' PT.','tone'=>'info'];
