@@ -59,20 +59,22 @@ class Storefront
     {
         try {
             $mapping = $this->native->mapping($product);
-            if ($mapping === null) { return ['plans'=>collect(), 'failed'=>false]; }
+            if ($mapping === null) { return ['plans'=>collect(), 'failed'=>false, 'persistent'=>false]; }
             $ending = $mapping['tld']->tld;
             $offers = ($this->catalogue() ?? throw new \DomainException('Catalogue unavailable.'))->display([$ending]);
             $plans = collect($offers[$ending] ?? [])
                 ->filter(static fn ($offer) => $offer['product']->id === $product->id)
                 ->pluck('plan')->sortBy('billing_period')->values();
-            return ['plans'=>$plans, 'failed'=>false];
-        } catch (\Throwable) {
+            return ['plans'=>$plans, 'failed'=>false, 'persistent'=>false];
+        } catch (\Throwable $error) {
+            // Allowlisted cause only; never exception text. Invalid saved upgrade state survives a reload.
+            $cause = CartHandoffFailure::key($error);
             try {
-                if (\Illuminate\Support\Facades\Cache::add('domains.cart.choices:'.$product->id, true, 60)) {
-                    \Illuminate\Support\Facades\Log::warning('Domains cart term choices unavailable.', ['product_id'=>(int)$product->id]);
+                if (\Illuminate\Support\Facades\Cache::add('domains.cart.choices:'.$product->id.':'.$cause, true, 60)) {
+                    \Illuminate\Support\Facades\Log::warning('Domains cart term choices unavailable.', ['product_id'=>(int)$product->id, 'cause'=>$cause]);
                 }
             } catch (\Throwable) { /* Diagnostic failure cannot turn retained plans into offers. */ }
-            return ['plans'=>collect(), 'failed'=>true];
+            return ['plans'=>collect(), 'failed'=>true, 'persistent'=>in_array($cause, CartHandoffFailure::PERSISTENT, true)];
         }
     }
 
