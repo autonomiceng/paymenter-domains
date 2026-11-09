@@ -11,6 +11,8 @@ use Paymenter\Extensions\Servers\Domains\Models\Operation;
 final class ReceiptReturns
 {
     private const CLOSED_ALLOCATION = 'excess'; // Gateway-owned closed-invoice return; never allocate it here.
+    /** Title and customer words for a retained return that needs a person to check it. */
+    public const REVIEW=['Refund needs a check','Our team is checking the payment return. Contact support with the invoice number.'];
     public static function capable(?Gateway $gateway): bool
     {
         if(!$gateway){return false;}
@@ -166,10 +168,10 @@ final class ReceiptReturns
     public static function summary(Operation $op): ?array
     {
         $plans=self::plans($op);if(!$plans){return null;}$states=[];$bridge=0;
-        if(self::malformed($op)){return ['Refund needs a check','Our team is checking the payment return. Contact support with the invoice number.'];}
+        if(self::malformed($op)){return self::REVIEW;}
         foreach(self::returns($op) as $p){if(($p['to']??null)==='account_credit'){$bridge+=PricingRule::minor($p['amount']);}}
         foreach($plans as $p){$bridge+=$p['bridge_minor'];foreach($p['allocations'] as $a){$states[]=$op->funding['receipt_return_results'][$a['key']]['state']??'reserved';}}
-        if(array_intersect($states,['review'])){return ['Refund needs a check','Our team is checking the payment return. Contact support with the invoice number.'];}
+        if(array_intersect($states,['review'])){return self::REVIEW;}
         if(array_diff($states,['refunded','credited'])){return ['Refund processing','We are returning your payment and checking its progress automatically.'];}
         if(in_array('refunded',$states,true)&&($bridge>0||in_array('credited',$states,true))){return ['Money returned','Part was refunded to your original payment method. The rest is account credit because it could not be refunded.'];}
         return in_array('refunded',$states,true)?['Refunded','Your payment was refunded to your original payment method.']:['Credit added','The payment could not be refunded. The returned amount is account credit.'];

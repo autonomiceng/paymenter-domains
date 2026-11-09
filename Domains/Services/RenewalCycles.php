@@ -131,7 +131,10 @@ final readonly class RenewalCycles
     {
         if($op->action!=='renew'){return null;}
         if($return=ReceiptReturns::summary($op)){return $return[1];}
-        $minor = self::closedEarly($op) ? array_sum(RefundPayment::lateCredited($op)) : 0;
+        if(!self::closedEarly($op)){return null;}
+        // Account credit alone has no original-payment plan for summary(); unreadable coverage still reads as a check.
+        if(ReceiptReturns::malformed($op)){return ReceiptReturns::REVIEW[1];}
+        $minor = array_sum(RefundPayment::lateCredited($op));
         return $minor > 0 ? RequestStatus::lateCredit(RenewalReminders::money(PricingRule::decimal($minor))) : null;
     }
     /** Read-only eligibility proof, independent of expiry. Writes require the current locked ledger. */

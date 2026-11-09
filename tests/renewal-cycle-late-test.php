@@ -27,6 +27,23 @@ same([$words('$1.00')],$notes($lateDomain),'The closed request shows the amount 
 same($words('$1.00'),\Paymenter\Extensions\Servers\Domains\Admin\Support\Labels::requestStatus($late->fresh())['reason'],'Staff read the same words');
 same(0,$refunds->retryPending(),'The next sweep changes nothing');same(100,$cash(),'A payment is credited once');
 same(1,Operation::where('domain_id',$lateDomain->id)->where('action','renew')->count(),'Late money starts no renewal');
+// Account credit whose paid-row coverage is missing or unreadable still reads as a check on every page, with nothing written.
+require_once dirname(__DIR__).'/Domains/routes/owned.php';require_once dirname(__DIR__).'/Domains/routes/web.php';app('router')->getRoutes()->refreshNameLookups();
+$reader=commerceUser();$reader->update(['role_id'=>Role::create(['name'=>'Late credit reader','permissions'=>['admin.domains.view']])->id]);Illuminate\Support\Facades\Auth::login($reader);
+$review='Our team is checking the payment return. Contact support with the invoice number.';$validLate=$late->fresh()->getRawOriginal('funding');$credited=$late->fresh()->funding;
+$rows=static fn()=>serialize([DB::table('invoices')->orderBy('id')->get(),DB::table('invoice_transactions')->orderBy('id')->get(),DB::table('credits')->orderBy('id')->get(),DB::table('domains_operations')->orderBy('id')->get()]);
+foreach(['missing'=>array_diff_key($credited['late_credits'][0],['payments'=>true]),'invalid'=>[...$credited['late_credits'][0],'payments'=>[['id'=>$credited['late_credits'][0]['payments'][0]['id'],'amount_minor'=>[100]]]]] as $kind=>$credit){
+    DB::table('domains_operations')->where('id',$late->id)->update(['funding'=>Illuminate\Support\Facades\Crypt::encryptString(json_encode([...$credited,'late_credits'=>[$credit]]))]);
+    $before=$rows();
+    same([$review],$notes($lateDomain),'A closed renewal with '.$kind.' credit coverage shows the check note');
+    same($review,\Paymenter\Extensions\Servers\Domains\Admin\Support\Labels::requestStatus($late->fresh())['reason'],'Staff lists read the check note for '.$kind.' coverage');
+    same($review,\Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::for($late->fresh())['reason'],'The staff request page reads the check note for '.$kind.' coverage');
+    $page=(new \Paymenter\Extensions\Servers\Domains\Services\OwnedDomains($clock,new \Paymenter\Extensions\Servers\Domains\Services\OwnerPorts))->present($lateDomain->fresh());
+    same([['Renewal','Cancelled',$review]],array_map(static fn($row)=>[$row['label'],$row['state'],$row['note']??null],array_values(array_filter($page->progress,static fn($row)=>$row['label']==='Renewal'))),'The customer domain page reads the check note for '.$kind.' coverage');
+    same($before,$rows(),'Reading '.$kind.' credit coverage writes no money or request row');
+}
+DB::table('domains_operations')->where('id',$late->id)->update(['funding'=>$validLate]);Illuminate\Support\Facades\Auth::logout();
+same([$words('$1.00')],$notes($lateDomain),'Readable coverage restores the credited amount');
 [$twice,$twiceDomain,,$twiceInvoice]=$closed('renew-late-twice-placeholder.com');$amount=PricingRule::minor($twice->amount);
 foreach([1,2] as $n){$pay::addPayment($twiceInvoice->id,null,$twice->amount);$refunds->retryPending();same($n*$amount,$cash(),'Full payment '.$n.' on a closed invoice becomes credit');}
 same([$words(\Paymenter\Extensions\Servers\Domains\Services\RenewalReminders::money(PricingRule::decimal(2*$amount)))],$notes($twiceDomain),'The note adds up what was credited');
