@@ -218,11 +218,14 @@ final class Writer implements Catalogue
                 $policy = DB::table('domains_sales_policies')->where('tld', $t->tld)->first();
                 $current = OfferState::revision($t, $d, $policy);
                 if ($command->kind === 'defaults') {
-                    $oldDefaults = get_object_vars(new Intent(...array_intersect_key($d, get_object_vars(new Intent))));
                     $newDefaults = get_object_vars($command->intent);
-                    $oldDefaults['maxAnnualCost'] = PricingRule::wholesale($oldDefaults['maxAnnualCost']);
                     $newDefaults['maxAnnualCost'] = PricingRule::wholesale($newDefaults['maxAnnualCost']);
-                    $defaultsChanged = !OfferState::equivalent($oldDefaults, $newDefaults);
+                    // Saved defaults that can't be read always differ from the valid ones replacing them.
+                    try {
+                        $oldDefaults = get_object_vars(new Intent(...array_intersect_key($d, get_object_vars(new Intent))));
+                        $oldDefaults['maxAnnualCost'] = PricingRule::wholesale($oldDefaults['maxAnnualCost']);
+                        $defaultsChanged = !OfferState::equivalent($oldDefaults, $newDefaults);
+                    } catch (\Throwable) { $defaultsChanged = true; }
                 }
                 $salesEdit = $review->action === 'acceptance' && $command->kind === 'override';
                 if ($salesEdit) {

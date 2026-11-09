@@ -180,7 +180,9 @@ final class SellTable
     }
     private function nextStep(OfferRow $row,string $action): array
     {
-        $key=self::key($row);$this->facts();
+        $key=self::key($row);$facts=$this->facts()[$key]??[];
+        // The account setting is the one repair; offer hints would point at the TLD instead.
+        if(($facts['invalid_rule_kind']??null)==='account_defaults'){return ['state'=>'missing','next'=>TldFacts::ruleProblem($facts),'open'=>null];}
         $this->steps[$action]??=$this->source()->nextSteps(collect($this->rowTlds),$this->facts(),$action,$this->years,$this->hintReads);
         return $this->steps[$action][$key];
     }

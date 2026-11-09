@@ -59,7 +59,7 @@ final class StaffCommands
         $d=OfferState::decode($account->catalogue_defaults);$entries=[];$failed=[];
         foreach($names as $name){if(!$rows->contains('tld',$name)){$failed[$name]='Converted TLD required.';}}
         if($defaults){
-            $intent=$this->intent($d);
+            // A new rule replaces the saved defaults whole, so unreadable old defaults never block their repair.
             $intent=Intent::fromRule($sell['rule']);
             $command=Edit::defaults($binding,$rows->first()->tld,$intent);
             $entries[]=[$command,$this->revision($rows->first(),$d)];

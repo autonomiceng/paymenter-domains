@@ -81,6 +81,7 @@ final class TldFacts
             'fixed'=>'Invalid fixed price rule. Use Edit prices to enter all three positive prices.',
             'markup'=>'Invalid markup rule. Use Edit prices to enter a valid markup and rounding rule.',
             'default'=>'Invalid default pricing rule. Open Default pricing in What you sell to repair it.',
+            'account_defaults'=>"This account's default for new TLDs is invalid. Open Default for new TLDs in What you sell and save it.",
             'unreadable'=>'Saved TLD settings unreadable. Use Edit prices to repair them.',
             default=>'Invalid pricing rule. Use Edit prices to repair it.',
         };
@@ -103,6 +104,8 @@ final class TldFacts
         $name=ucfirst(['register'=>'registration','renew'=>'renewal','transfer'=>'transfer'][$action]);
         $selected=$fact['selected']??false;$invalid=$fact['invalid_rule']??false;
         $value=$row[$field]??null;
+        // Bad account defaults stop sales only; holders keep their saved renewal price.
+        $kept=$invalid&&$value!==null&&$action==='renew'&&$field==='retail'&&($fact['invalid_rule_kind']??null)==='account_defaults';
         $cause=match(true){
             $invalid=>self::ruleProblem($fact),
             $notOffered=>$name.' not offered by this registrar',
@@ -113,6 +116,7 @@ final class TldFacts
         };
         $missing=$invalid||($value===null&&!$notOffered&&$selected);
         if($refresh&&$value===null&&!$notOffered){$cause=rtrim($cause,'.').'. '.self::refreshText($fact['refresh']??[]);}
+        if($kept){return ['value'=>$value,'cause'=>$cause,'tone'=>null,'missing'=>false];}
         return ['value'=>$invalid?\Paymenter\Extensions\Servers\Domains\Presentation\Missing::LABEL:($notOffered?$cause:($value??($missing?\Paymenter\Extensions\Servers\Domains\Presentation\Missing::LABEL:'Not for sale'))),
             'cause'=>$notOffered&&!$invalid?null:$cause,'tone'=>$missing||($value!==null&&self::costNote($row))?'danger':null,'missing'=>$missing];
     }
@@ -165,7 +169,9 @@ final class TldFacts
             if($gap&&!$own&&!($fact['invalid_rule']??false)){$note=trim($note.' '.self::refreshText($fact['refresh']??[]));}
             $link='';
             if($fact['invalid_rule']??false){
-                try{$default=($fact['invalid_rule_kind']??null)==='default';$url=$default?\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::getUrl():\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource::getUrl('view',['record'=>$row]);$link='<a class="domains-link" href="'.e($url).'">'.($default?'Edit default pricing':'Edit prices').'</a>';}catch(\Throwable){}
+                try{$kind=$fact['invalid_rule_kind']??null;$label=match($kind){'default'=>'Edit default pricing','account_defaults'=>'Edit default for new TLDs',default=>'Edit prices'};
+                    $url=match($kind){'default'=>\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::getUrl(),'account_defaults'=>\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::getUrl(['account'=>(int)$row->server_id]),default=>\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource::getUrl('view',['record'=>$row])};
+                    $link='<a class="domains-link" href="'.e($url).'">'.$label.'</a>';}catch(\Throwable){}
             }
             $html.='<tr'.($note!==''||$link!==''?' class="domains-table-noted"':'').'>'.$cells.'</tr>';
             if($note!==''||$link!==''){$html.='<tr class="domains-table-note"><td></td><td colspan="'.(count($head)-1).'"><span class="domains-small">'.e($note).'</span>'.($note!==''&&$link!==''?' ':'').$link.'</td></tr>';}

@@ -256,18 +256,22 @@ final class StaffCatalogue
         $refresh=DB::table('domains_observation_queues')->whereIn('server_id',$tlds->pluck('server_id'))->get()->keyBy('server_id');
         $holders=Domain::whereIn('server_id',$tlds->pluck('server_id'))->whereIn('tld',$tlds->pluck('tld'))->whereNotNull('reservation_name')
             ->selectRaw('server_id,tld,account_fingerprint,count(*) as holders')->groupBy('server_id','tld','account_fingerprint')->get()->keyBy(fn($r)=>$r->server_id.':'.$r->tld.':'.$r->account_fingerprint);
-        $out=[];$pricingOnce=[];
+        $out=[];$pricingOnce=[];$defaultsOnce=[];
         foreach($tlds as $t){
-            $d=OfferState::decode($accounts[$t->server_id]->catalogue_defaults);$unreadable=false;
+            [$d,$badDefaults]=$defaultsOnce[$t->server_id]??=self::accountDefaults($accounts[$t->server_id]);$unreadable=false;
             try{
                 $raw=OfferState::decode($t->catalogue_intent);
-                OfferState::intent($t,$d);
+                OfferState::intent($t,$badDefaults?[]:$d);
                 $own=Pricing::hasOwn($t);
             }catch(\Throwable){$raw=[];$own=!$t->use_default_rule;$unreadable=true;}
             $invalidRule=$unreadable;
             $ruleKind=$unreadable?'unreadable':(!$own?'default':match($raw['pricing_rule']['mode']??$t->pricing_mode){'fixed'=>'fixed','markup_amount','markup_percent','markup_fee_percent'=>'markup',default=>'pricing'});
             if(!$unreadable){try{self::ruleOnce($t,$pricingOnce);}catch(\Throwable){$invalidRule=true;}}
+            // Bad account defaults stop sales, but this TLD's own settings and its holders' renewal price stay readable.
+            $holderRenewal=!$invalidRule&&$badDefaults?OfferState::money($t->catalogue_retained_annual_retail,2):null;
+            if(!$invalidRule&&$badDefaults){$invalidRule=true;$ruleKind='account_defaults';}
             $all=$unreadable?[]:($offers[$t->server_id.':'.$t->tld]??[]);$prices=[];
+            if($holderRenewal!==null&&!isset($all['renew:1'])){$prices[]=['action'=>'renew','term'=>1,'retail'=>TldFacts::money($holderRenewal),'flags'=>[],'synced'=>false,'observed'=>null,...($grants->costs?['cost'=>null]:[])];}
             foreach($all as $offer){$decision=$offer->decision;$cost=$offer->observation();$flags=[];
                 if($decision->reason!==null){$flags[]=$decision->reason;}
                 if($cost!==null&&!$cost->enabled){$flags[]='not_offered';}
@@ -275,6 +279,7 @@ final class StaffCatalogue
                 if(!$cost?->fresh($this->clock->now())){$flags[]='cost_old';}
                 $retail=$invalidRule?null:$offer->staffRetail();
                 if(!$invalidRule&&$decision->action==='renew'&&$decision->term===1){$retail=OfferState::money($t->catalogue_retained_annual_retail,2);}
+                if($decision->action==='renew'&&$decision->term===1&&$holderRenewal!==null){$retail=$holderRenewal;}
                 $prices[]=['action'=>$decision->action,'term'=>$decision->term,'retail'=>$retail===null?null:TldFacts::money($retail),
                     'flags'=>$flags,'synced'=>$cost!==null,'observed'=>$cost?->observedAt,
                     ...($grants->costs?['cost'=>$cost?->total===null?null:TldFacts::money($cost->total,4)]:[])];
@@ -317,10 +322,17 @@ final class StaffCatalogue
                 'refresh'=>$refreshed,
                 'prices'=>$prices,'acquisition'=>['register'=>$register!==null,'transfer'=>$transfer?->decision->available??false],'sales'=>['label'=>$chosen?'For sale':'Not for sale','tone'=>$chosen?'success':'gray','reason'=>$chosen?null:($invalidRule?TldFacts::ruleProblem($error):$label)],
                 'seller'=>isset($sellers[$t->tld])?(int)$sellers[$t->tld]:null,'holders'=>(int)($holders[$t->server_id.':'.$t->tld.':'.$t->account_fingerprint]->holders??0),
-                'demo'=>\Paymenter\Extensions\Servers\Domains\Support\DemoData::is($accounts[$t->server_id]),'intent'=>array_intersect_key(get_object_vars($unreadable?new Intent:OfferState::intent($t,$d)),array_flip(['sell','longest','transfers','stops','defaultTransfers','salesPaused'])),'defaults'=>$this->publicDefaults($d,$grants->costs),
+                'demo'=>\Paymenter\Extensions\Servers\Domains\Support\DemoData::is($accounts[$t->server_id]),'intent'=>array_intersect_key(get_object_vars($unreadable?new Intent:OfferState::intent($t,$badDefaults?[]:$d)),array_flip(['sell','longest','transfers','stops','defaultTransfers','salesPaused'])),'defaults'=>$this->publicDefaults($d,$grants->costs),
                 'unreadable'=>$unreadable,'own'=>$own,'pricing'=>!$own?'Default pricing':(($raw['pricing_rule']['mode']??$t->pricing_mode)==='fixed'?'Fixed price':'Custom markup'),'offers'=>$all,'facts'=>$facts];
         }
         return $out;
+    }
+    /** @return array{0:array,1:bool} the account's saved defaults, and whether they fail their own checks.
+     * Bad defaults are the account's problem, never a TLD pricing error. */
+    private static function accountDefaults(Account $account): array
+    {
+        try{$d=OfferState::decode($account->catalogue_defaults);OfferState::intent((object)['catalogue_intent'=>null],$d);return [$d,false];}
+        catch(\Throwable){return [isset($d)&&is_array($d)?$d:[],true];}
     }
     private function publicDefaults(array $d,bool $costs): array
     {unset($d['card_fee'],$d['pricing_rule']);if(!$costs){unset($d['maxAnnualCost']);}return $d;}
@@ -343,9 +355,9 @@ final class StaffCatalogue
     public function omissions(Collection $tlds): array
     {
         abort_unless(Staff::requireView()->costs,403);$out=[];$state=self::pricingState();
-        $accounts=Account::whereIn('server_id',$tlds->pluck('server_id'))->get()->keyBy('server_id');
         foreach($tlds as $t){
-            try{$d=OfferState::decode($accounts[$t->server_id]->catalogue_defaults);$raw=OfferState::decode($t->catalogue_intent);OfferState::intent($t,$d);$unreadable=false;}
+            // Bad account defaults are not a pricing omission: the row's status names them.
+            try{OfferState::decode($t->catalogue_intent);OfferState::intent($t,[]);$unreadable=false;}
             catch(\Throwable){$unreadable=true;}
             if(self::pricingCause($t,$state,$unreadable)!==null){$out[]=$t->server_id.':'.$t->tld;}
         }

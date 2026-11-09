@@ -61,5 +61,17 @@ try{$page->callTableBulkAction('edit',array_slice($ids,0,25),['choice'=>'skip','
 catch(Throwable $error){$notices=new Filament\Notifications\Livewire\Notifications;$notices->mount();throw new RuntimeException('Bulk selection 25: '.json_encode($notices->notifications->map(fn($n)=>[$n->getTitle(),$n->getBody()])->all()).': '.$error->getMessage(),0,$error);}
 foreach(array_slice($ids,0,25) as $id){same(false,OfferState::decode(\Paymenter\Extensions\Servers\Domains\Models\Tld::find($id)->catalogue_intent)['sell'],'Exactly 25 selected TLDs save');}
 same(true,OfferState::decode(\Paymenter\Extensions\Servers\Domains\Models\Tld::find($ids[25])->catalogue_intent)['sell'],'Unselected TLD keeps its choice');
+// Bad account defaults: the row names the account setting, and Default for new TLDs opens and saves the repair.
+$savedDefaults=OfferState::decode(DB::table('domains_accounts')->where('server_id',$binding->serverId)->value('catalogue_defaults'));
+DB::table('domains_accounts')->where('server_id',$binding->serverId)->update(['catalogue_defaults'=>OfferState::json([...$savedDefaults,'defaultLongest'=>11])]);
+$reason=Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::ruleProblem(['invalid_rule_kind'=>'account_defaults']);
+$page=Livewire::actingAs($actor)->test(UnreadableIntentSellPage::class,['account'=>$binding->serverId])->filterTable('for_sale',false)->searchTable('com')->assertSuccessful()->assertSee($reason);
+$row=collect($page->instance()->getTableRecords()->items())->firstWhere('tld','com');
+same($reason,$page->instance()->getTable()->getColumn('status')->record($row)->getDescriptionBelow(),'Status names the account setting');
+same([],$page->instance()->savedPrices()['skipped'],'Bad account defaults leave no price out');
+$page->mountAction('rule')->assertHasNoActionErrors()->callMountedAction()->assertHasActionErrors(['sell_new','years']);
+$page=Livewire::actingAs($actor)->test(UnreadableIntentSellPage::class,['account'=>$binding->serverId]);
+$page->callAction('rule',['sell_new'=>'yes','max_cost'=>null,'years'=>2,'transfers'=>true])->assertHasNoActionErrors()->assertNotified('Saved');
+same(2,OfferState::decode(DB::table('domains_accounts')->where('server_id',$binding->serverId)->value('catalogue_defaults'))['defaultLongest'],'Default for new TLDs replaces the bad defaults');
 same(0,$reads->calls,'Page reads and refused saves make no provider calls');
 echo "What you sell isolates unreadable intent, names the TLD and refuses its save.\n";$nativeSuccessful=true;
