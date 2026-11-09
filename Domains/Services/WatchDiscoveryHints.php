@@ -7,6 +7,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{WatchProductMap,WatchSource};
 /** Local hints only. Native writes retain their own locks and all authority. */
 final class WatchDiscoveryHints
 {
+    private const PAGE=100;
     /** @param list<array{0:int,1:mixed}> $pairs Current and previous owner/name identities, never a cross-owner name lookup. */
     public static function names(array $pairs): void
     {
@@ -22,8 +23,12 @@ final class WatchDiscoveryHints
                 $sources=WatchSource::whereNotNull('service_id')->where(function($q)use($valid):void{
                     foreach($valid as[$owner,$name]){$q->orWhere(fn($q)=>$q->where('user_id',$owner)->where('registrable_name',$name));}
                 })->select('map_id');
-                $products=WatchProductMap::whereIn('id',$sources)->where('product_id','>',0)->select('product_id')->distinct()->orderBy('product_id')->limit(100)->pluck('product_id');
-                foreach($products as$product){app(WatchDiscoveryWork::class)->hint((int)$product);}
+                // Bounded pages continue after the last product hinted, so every mapped product is reached.
+                $after=0;
+                do {
+                    $products=WatchProductMap::whereIn('id',$sources)->where('product_id','>',$after)->select('product_id')->distinct()->orderBy('product_id')->limit(self::PAGE)->pluck('product_id');
+                    foreach($products as$product){app(WatchDiscoveryWork::class)->hint((int)$product);$after=(int)$product;}
+                } while($products->count()===self::PAGE);
             }catch(\Throwable){\Illuminate\Support\Facades\Log::warning('Public domain managed link hint deferred.');}
         });
     }

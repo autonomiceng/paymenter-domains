@@ -22,4 +22,14 @@ $queries=[];DB::listen(static function($q)use(&$queries):void{if(str_contains($q
 $refused->domain->refresh()->update(['confirmed_revision'=>2]);
 expect(!array_filter($queries,fn($q)=>str_contains($q,'"registrable_name" is null')),'Cleared reservations never look up unrelated null-name held sources');
 $rows=DB::table('domains_watch_discovery')->count();$work->hint(0);same($rows,DB::table('domains_watch_discovery')->count(),'Nonpositive hints remain pre-SQL no-ops');
+// Hosting products past the first page of one hundred are still hinted for the same owner and name.
+$base=(int)DB::table('domains_watch_product_maps')->max('product_id')+1;$at=$clock->at;
+foreach(range(0,100)as$i){
+    $map=DB::table('domains_watch_product_maps')->insertGetId(['product_id'=>$base+$i,'property_key'=>'domain','edited_by'=>$service->user_id,'reason'=>'Synthetic page map']);
+    DB::table('domains_watch_sources')->insert(['user_id'=>$owner->id,'service_id'=>900000+$i,'map_id'=>$map,'map_revision'=>1,'hostname'=>'release-placeholder.com','registrable_name'=>'release-placeholder.com','state'=>'held','safe_code'=>'synthetic','source_digest'=>hash('sha256','page'.$i),'last_seen_at'=>$at]);
+}
+DB::table('domains_watch_discovery')->update(['hint'=>false]);
+Paymenter\Extensions\Servers\Domains\Services\WatchDiscoveryHints::names([[(int)$owner->id,'release-placeholder.com']]);
+same(102,DB::table('domains_watch_discovery')->where('hint',true)->count(),'Every mapped product for the name is hinted across pages');
+expect((bool)DB::table('domains_watch_discovery')->where('product_id',$base+100)->value('hint'),'The product after the first hundred is hinted');
 same([],$dns->calls,'Hints and release are local only');echo "Native terminal-release discovery hints passed.\n";$nativeSuccessful=true;
