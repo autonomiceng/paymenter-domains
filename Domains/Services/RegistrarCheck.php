@@ -13,6 +13,8 @@ final class RegistrarCheck
     public ?string $deferred = null;
     public ?string $awaitingAnswer = null;
     public ?int $answerAfter = null;
+    /** Set when reconciliation already counted this read toward the read limit. */
+    public bool $counted = false;
     public function __construct(private readonly Clock $clock) {}
     private ?string $identity = null;
     private ?array $seen = null;
@@ -43,8 +45,8 @@ final class RegistrarCheck
             $now = $this->clock->now()->getTimestamp();
             if ($op->state==='succeeded') { $this->awaitingAnswer=null; }
             $outcome = $this->awaitingAnswer !== null ? 'awaiting_answer' : ($this->deferred !== null ? 'deferred' : (($this->context?->completedReads() ?? 0) > 0 ? 'checked' : 'unavailable'));
-            // A completed read of a lost reply counts toward the same read limit as any other check.
-            if ($this->awaitingAnswer!==null && ($this->context?->completedReads()??0)>0) {
+            // A completed read of a lost reply counts toward the same read limit as any other check, once.
+            if ($this->awaitingAnswer!==null && !$this->counted && ($this->context?->completedReads()??0)>0) {
                 $policy=$op->policy;
                 if ($op->action==='renew') { $policy['renewal_polls']=($policy['renewal_polls']??0)+1; }
                 else { $policy['reconciliation']['polls']=($policy['reconciliation']['polls']??0)+1; }

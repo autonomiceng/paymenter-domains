@@ -124,4 +124,13 @@ $observation->during = static function () use ($op, $clock, $observation, $recon
 };
 $reconcile->run($op->id); same('deferred', $op->fresh()->policy['status_check']['outcome'], 'A newer check keeps its result over the older check');
 $observation->during = null; $reconcile->run($op->id); same('checked', $op->fresh()->policy['status_check']['outcome'], 'The next check saves its own result');
+// A lost reply whose order history becomes readable during the read counts that read once.
+[$lag, $binding] = $prepare(placeholderComFixtureName('history-lag-placeholder.com'), 'absent');
+HistoryAcceptances::save(new HistoryAcceptance($binding, 'America/Los_Angeles', 600, 86400, 'enom_registration_v1'));
+$ready = \Paymenter\Extensions\Servers\Domains\Services\ReconciliationEvidence::attempt($lag->fresh(), $lag->domain->fresh(), $binding)->windowEnd->modify('+600 seconds');
+$clock->instant = $ready->modify('-5 seconds'); $observation->fault = 'history-zero'; $observation->during = static function () use ($clock, $ready): void { $clock->instant = $ready; };
+$reconcile->run($lag->id); $observation->fault = '';
+same(true, in_array(\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Orders, $observation->calls, true), 'The read reaches the order history');
+same(1, $lag->fresh()->policy['reconciliation']['polls'] ?? 0, 'A read covered by history during the read counts once');
+DB::transaction(fn () => HistoryAcceptances::revokeLocked($binding, \Paymenter\Extensions\Servers\Domains\Data\Action::Register));
 echo "Double completion-persistence failure recovers only unique original provider charge without replay\n"; $nativeSuccessful = true;
