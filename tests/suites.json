@@ -64,8 +64,7 @@
     "tests/test_blade_verbatim.py",
     "tests/test_native.py",
     "tests/test_native_cache.py",
-    "tests/test_conversion_inventory.py",
-    "tests/test_conversion_mariadb_guards.py",
+    "tests/test_schema_mariadb_guards.py",
     "tests/test_runner_speed.py",
     "tests/test_retired_catalogue_references.py"
   ],
@@ -74,7 +73,6 @@
   ],
   "mariadb": [
     "tests/test_offer_scheduler_mariadb.py",
-    "tests/test_conversion_mariadb.py",
     "tests/test_schema_mariadb.py",
     "tests/test_user_deletion_mariadb.py",
     "tests/test_enom_send_limit_mariadb.py"
