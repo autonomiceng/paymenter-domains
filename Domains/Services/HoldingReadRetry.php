@@ -19,6 +19,9 @@ final class HoldingReadRetry
         return $q->where(fn($q)=>$q->whereIn('safe_code',array_values(array_diff(self::STOPPED,self::TRANSIENT)))
             ->orWhere(fn($q)=>$q->whereIn('safe_code',self::TRANSIENT)->where('tries','>=',self::LIMIT)));
     }
+    /** A registration or transfer in progress may not be in the account yet: a not-found read retries like a failed read, then stops. */
+    public static function scheduled(Domain $d, string $code, int $tries): string
+    { return $code==='domain_not_in_account'&&in_array($d->status,['registration_pending','transfer_pending'],true)&&$tries<self::LIMIT?'read_failed':$code; }
     public static function delay(int $tries): int { return min(3600,60*(2**min(6,max(0,$tries-1)))); }
     /** A successful staff retry restores idle current read work or its own manual lease, never another live lease or financial job. */
     public static function completedManually(Domain $seed, string $code='refreshed', ?string $claim=null): void
