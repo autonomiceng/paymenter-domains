@@ -34,17 +34,25 @@ final class OfferState
         return $value === null ? [] : json_decode($value, true, 32, JSON_THROW_ON_ERROR);
     }
     /** Account defaults as a defaults save sees them. The save replaces them whole, so defaults that can't be decoded
-     * read as empty. Their revision then moves past every saved publication of the account, so none reads as current. */
+     * read as empty, and a bad revision keeps only the readable defaults beside it, above all the cost limit.
+     * The revision then moves past every saved publication of the account, so none reads as current. */
     public static function replaceableDefaults(mixed $value, int $server): array
     {
         try { $defaults = self::decode($value); if (is_int($defaults['_revision'] ?? 0)) { return $defaults; } }
-        catch (\JsonException|\TypeError) {}
+        catch (\JsonException|\TypeError) { $defaults = []; }
+        $readable = array_filter([
+            'defaultSell' => is_bool($defaults['defaultSell'] ?? null),
+            'defaultLongest' => is_int($defaults['defaultLongest'] ?? null) && $defaults['defaultLongest'] >= 1 && $defaults['defaultLongest'] <= 10,
+            'defaultTransfers' => is_bool($defaults['defaultTransfers'] ?? null),
+            'maxAnnualCost' => array_key_exists('maxAnnualCost', $defaults)
+                && ($defaults['maxAnnualCost'] === null || PricingRule::wholesale($defaults['maxAnnualCost']) !== null),
+        ]);
         $revision = 0;
         foreach (\Illuminate\Support\Facades\DB::table('domains_tlds')->where('server_id', $server)->whereNotNull('catalogue_published_revision')->pluck('catalogue_published_revision') as $marker) {
             try { $saved = self::decode($marker); } catch (\JsonException|\TypeError) { continue; }
             if (is_int($saved['defaults'] ?? null)) { $revision = max($revision, $saved['defaults']); }
         }
-        return ['_revision' => $revision];
+        return [...array_intersect_key($defaults, $readable), '_revision' => $revision];
     }
     public static function money(mixed $value, int $scale): ?string
     {

@@ -104,6 +104,12 @@ same([5,'25.0000'],[$defaultsNow()['defaultLongest'],$defaultsNow()['maxAnnualCo
 $review=new \Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview($editor->id,$binding->serverId,null,'acceptance',\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::ticket($editor->id,$binding->serverId,null,'acceptance',StaffCommands::stamp($binding->serverId)),'');
 $commands->run($review,['sell'=>['rule'=>['mode'=>'except','max_cost'=>'1','years'=>2,'transfers'=>false]]]);
 same([2,'25.0000'],[$defaultsNow()['defaultLongest'],$defaultsNow()['maxAnnualCost']],'The command ignores a cost limit sent by staff without Costs');
+// A bad revision alone leaves the saved cost limit readable, so a save without Costs still keeps it.
+DB::table('domains_accounts')->where('server_id',$binding->serverId)->update(['catalogue_defaults'=>'{"_revision":"bad","maxAnnualCost":"25.0000"}']);
+$review=new \Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview($editor->id,$binding->serverId,null,'acceptance',\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::ticket($editor->id,$binding->serverId,null,'acceptance',StaffCommands::stamp($binding->serverId)),'');
+$commands->run($review,['sell'=>['rule'=>['mode'=>'except','max_cost'=>'1','years'=>3,'transfers'=>false]]]);
+same([3,'25.0000'],[$defaultsNow()['defaultLongest'],$defaultsNow()['maxAnnualCost']],'A bad saved revision keeps the readable cost limit');
+expect(is_int($defaultsNow()['_revision']),'The save repairs the bad revision');
 Auth::setUser($actor);
 same(0,$reads->calls,'Page reads and refused saves make no provider calls');
 echo "What you sell isolates unreadable intent, names the TLD and refuses its save.\n";$nativeSuccessful=true;
