@@ -41,7 +41,7 @@ final class Evaluator
     private function staffReason(Snapshot $offer, Query $query): ?string
     {
         $intent = $offer->intent; $action = $query->action; $term = $query->term;
-        if ($offer->hidden || !($intent->sell ?? $intent->defaultSell) || in_array($action, $intent->stops, true)) { return 'staff_stopped'; }
+        if ($action !== 'renew' && $intent->salesPaused || $offer->hidden || !($intent->sell ?? $intent->defaultSell) || in_array($action, $intent->stops, true)) { return 'staff_stopped'; }
         if ($action !== 'renew' && in_array('renew', $intent->stops, true)) { return 'renewal_stopped'; }
         if ($action === 'register' && $term > ($intent->longest ?? $intent->defaultLongest)
             || $action === 'transfer' && !($intent->transfers ?? $intent->defaultTransfers)) { return 'staff_term_stopped'; }

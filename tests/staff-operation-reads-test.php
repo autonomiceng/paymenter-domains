@@ -11,6 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,ObservationRecords,ObservationSchema,ObservationWork,Refunds,RenewalReplacements,StaffOperationReview,StaffOperations,StaffSyncReview};
 \Paymenter\Extensions\Servers\Domains\Services\RuntimeSchema::install();
+try{
 // Native re-check calls the existing read-only reconciliation engine; actual proof alone can complete.
 [$check]=$prepare(placeholderComFixtureName('staff-recheck-placeholder.com'));$calls=count($observation->calls);
 $checkedPage=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$check->id])->callAction('recheck')->assertNotified('Registrar checked')
@@ -34,7 +35,7 @@ expect($deferred->fresh()->policy['status_check']['next_at']>$clock->now()->getT
 // A lost reply retains its staff answer boundary and cannot claim a completed read.
 [$uncheckable]=$prepare(placeholderComFixtureName('staff-no-reply-placeholder.com'),'null');
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$uncheckable->id])->callAction('recheck')
-    ->assertNotified('Enom has not answered yet')->assertSee('Ask Enom to check this attempt.')->assertSee('You can record Enom’s answer after Oct 19, 5:00 AM PT.')->assertDontSee('Status checked');
+    ->assertNotified('Enom has not answered yet')->assertSee('Ask Enom to check this attempt.')->assertSee('You can record Enom’s answer after Oct 19, 2026, 12:00 PM UTC.')->assertDontSee('Status checked');
 same('awaiting_answer',$uncheckable->fresh()->policy['status_check']['outcome'],'Lost reply retains the registrar answer state');
 same((new \DateTimeImmutable($uncheckable->attempt['dispatch_attempted_at']))->modify('+24 hours')->getTimestamp(),$uncheckable->fresh()->policy['status_check']['answer_after'],'Staff answer waits 24 hours from this dispatch');
 same([],$observation->calls,'No original ID or accepted history never claims a registrar read');
@@ -61,8 +62,10 @@ foreach(array_keys(StaffOperationReview::ACTIONS) as $action){
     same($before,[$check->fresh()->getRawOriginal(),$check->domain->fresh()->getRawOriginal()],'Direct completed action leaves operation and domain unchanged');
 }
 // Domain recovery appears for stopped scheduled work, never on the completed request.
-$stopped=DB::table('domains_observation_work')->insertGetId(['server_id'=>$check->server_id,'account_fingerprint'=>$check->account_fingerprint,'domain_id'=>$check->domain_id,
-    'generation'=>$check->authority_generation,'phase'=>hash('sha256',$check->operation_key),'due_at'=>0,'safe_code'=>'read_unavailable','tries'=>5]);
+// Completion already queued the initial read. Stop that exact row instead of creating a duplicate.
+$stoppedKey=['domain_id'=>$check->domain_id,'generation'=>$check->authority_generation,'phase'=>hash('sha256',$check->operation_key)];
+DB::table('domains_observation_work')->updateOrInsert($stoppedKey,['server_id'=>$check->server_id,'account_fingerprint'=>$check->account_fingerprint,'due_at'=>0,'safe_code'=>'read_unavailable','tries'=>5]);
+$stopped=DB::table('domains_observation_work')->where($stoppedKey)->value('id');
 $stoppedPage=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$check->domain_id])->assertActionVisible('resume_observation');
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$check->id])->assertDontSee('More');
 foreach(array_keys(StaffOperationReview::ACTIONS) as $action){if($action!=='resume_observation'){commerceReject(fn()=>$run($check->fresh(),$action));}}
@@ -87,10 +90,12 @@ $noRow=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$check->dom
 $noRow->assertActionVisible('sync_now');
 Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$check->domain_id])->assertActionHidden('resume_observation');
 // Any domain can stop syncing. One with no request resumes on its own page, through the same writer, audited in its history.
-[$solo]=$prepare(placeholderComFixtureName('staff-solo-placeholder.com'));$soloDomain=$solo->domain;DB::table('domains_operations')->where('id',$solo->id)->delete();
+[$solo]=$prepare(placeholderComFixtureName('staff-solo-placeholder.com'));$run($solo,'recheck');$soloDomain=$solo->domain->fresh();
+DB::table('domains_observation_work')->where('domain_id',$soloDomain->id)->delete();DB::table('domains_operations')->where('id',$solo->id)->delete();
 $soloWork=DB::table('domains_observation_work')->insertGetId(['server_id'=>$soloDomain->server_id,'account_fingerprint'=>$soloDomain->account_fingerprint,'domain_id'=>$soloDomain->id,
-    'generation'=>$soloDomain->authority_generation,'phase'=>'holding','due_at'=>0,'safe_code'=>'read_unavailable','tries'=>5]);
-$soloPage=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$soloDomain->id])->assertActionVisible('resume_observation')->assertSee('Use Resume sync below.')->assertDontSeeHtml('fi-callout');
+    'generation'=>$soloDomain->authority_generation,'phase'=>\Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::phase($soloDomain),'due_at'=>0,'safe_code'=>'read_unavailable','tries'=>5]);
+$soloPage=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$soloDomain->id])->assertActionVisible('resume_observation')->assertSee('Use Sync now.');
+same(1,substr_count($soloPage->html(),'The registrar read stopped.'),'Read stop is stated once; an independent monitoring setup callout may remain');
 commerceReject(fn()=>app(ObservationWork::class)->resume($soloWork,'staff_review',new StaffSyncReview((int)$staff->id,(int)$soloDomain->id,'stale',StaffOperationReview::ACTIONS['resume_observation'],$clock)));
 commerceReject(fn()=>app(ObservationWork::class)->resume($soloWork,'staff_review',new StaffSyncReview((int)$staff->id+1,(int)$soloDomain->id,StaffSyncReview::stamp($soloDomain->fresh()),StaffOperationReview::ACTIONS['resume_observation'],$clock)));
 same(0,(int)DB::table('domains_observation_work')->where('id',$soloWork)->value('resumes'),'A stale or foreign review resumes nothing');
@@ -116,8 +121,11 @@ foreach(['register','transfer'] as $action){
 $resumedPage=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$resume->id])->callAction('resume_reads')->assertNotified('Status checks restarted')
     ->assertSee('Status checks restarted')->assertActionHidden('resume_reads')->assertActionVisible('recheck');
 same('scheduled',$resume->fresh()->policy['status_check']['outcome'],'Resume clears stale status');same($clock->now()->getTimestamp(),(int)DB::table('domains_runtime_operations')->where('operation_id',$resume->id)->value('due_at'),'Resume is due immediately');same(0,$resume->fresh()->policy['reconciliation']['polls'],'Bounded read budget reset');same($original,$resume->fresh()->attempt,'Read resume cannot reset attempt');
-$job=DB::table('domains_observation_work')->insertGetId(['server_id'=>$resume->server_id,'account_fingerprint'=>$resume->account_fingerprint,'domain_id'=>$resume->domain_id,
-    'generation'=>$resume->authority_generation,'due_at'=>0,'safe_code'=>'read_unavailable','tries'=>5]);
+// Registration confirmation makes record sync eligible and queues its initial work.
+$resumedPage->callAction('recheck')->assertNotified('Registrar checked');$resume=$resume->fresh();
+$jobKey=['domain_id'=>$resume->domain_id,'generation'=>$resume->authority_generation,'phase'=>\Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::phase($resume->domain->fresh())];
+DB::table('domains_observation_work')->updateOrInsert($jobKey,['server_id'=>$resume->server_id,'account_fingerprint'=>$resume->account_fingerprint,'due_at'=>0,'safe_code'=>'read_unavailable','tries'=>5]);
+$job=DB::table('domains_observation_work')->where($jobKey)->value('id');
 // Resume sync lives on the domain page; the request page does not offer it.
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$resume->id])->assertDontSee('Resume sync');
 Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$resume->domain_id])->callAction('resume_observation')->assertNotified('Sync resumed');
@@ -136,6 +144,7 @@ foreach (['generation'=>$current->generation+1,'phase'=>'old-phase'] as $field=>
     $row=(array)$current;unset($row['id']);$row[$field]=$value;
     $id=DB::table('domains_observation_work')->insertGetId($row);$foreign[]=$id;
     $before=DB::table('domains_observation_work')->where('id',$job)->value('resumes');
+    DB::table('domains_observation_work')->where('id',$job)->update(['safe_code'=>'read_unavailable','tries'=>5]);
     $run($resume->fresh(),'resume_observation');
     same($before+1,DB::table('domains_observation_work')->where('id',$job)->value('resumes'),'Staff resumes the current job despite newer historical work');
     same(1,DB::table('domains_observation_work')->where('id',$id)->value('resumes'),'Historical saved work stays unchanged');
@@ -202,4 +211,5 @@ $policy=$limitRenew->policy;$policy['renewal_resumptions']=array_fill(0,20,['pri
 commerceReject(fn()=>$run($limitRenew,'resume_reads'));
 commerceReject(fn()=>$limitRenew->fresh()->update(['policy'=>array_diff_key($limitRenew->fresh()->policy,['renewal_resumptions'=>true])]));
 echo "Native staff actions: permissions, confirmations, reasons, audit, stale/replay/binding, read-only reconciliation, credit and cycle replacement passed.\n";
+}catch(Throwable $error){throw new RuntimeException($error->getMessage().' at '.implode(' > ',array_map(static fn($frame)=>($frame['file']??'').':'.($frame['line']??0),$error->getTrace())),0,$error);}
 $nativeSuccessful=true;

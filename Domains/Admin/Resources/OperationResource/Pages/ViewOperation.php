@@ -20,7 +20,7 @@ class ViewOperation extends ViewRecord
     protected static string $resource=OperationResource::class;
     protected \Filament\Support\Enums\Width|string|null $maxContentWidth=Sheet::WIDTH;
     /** Actions in the More menu; Check status and Release hold sit in the notice. */
-    private const MORE=['hold','disposition','refund','credit','replacement'];
+    private const MORE=['approve_charge','hold','disposition','refund','credit','replacement'];
     public function getTitle(): string { Staff::requireView(); return 'Request #'.$this->getRecord()->id; }
     public function getHeading(): HtmlString
     { return new HtmlString('<span class="domains-title">'.e($this->getTitle()).(OperationResource::demo($this->getRecord())?DemoData::tag(inline:true)->toHtml():'').'</span>'); }

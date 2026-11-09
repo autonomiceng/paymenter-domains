@@ -129,7 +129,7 @@ class ViewTld extends ViewRecord
         return Action::make('start_selling')->label('Start selling')->color('primary')->requiresConfirmation()->icon(null)->modalIcon('heroicon-o-play-circle')
             ->modalHeading('Start selling .'.$t->tld.'?')->modalSubmitActionLabel('Start selling')
             ->modalDescription(fn()=>'New '.($this->opensTransfers()?'registrations and transfers':'registrations')
-                .($this->start()['checking']?' open once the registrar terms are checked':' open at once').($this->salePrices()?', at these prices.':'.'))
+                .' are set to sell once all availability checks pass, including registrar terms.'.($this->salePrices()?' Current prices are listed below.':''))
             ->modalContent(fn()=>$this->salePricesList())
             // A saved price account is not a registrar choice. Staff must choose where new orders go.
             ->disabled(fn():bool=>$this->sales()['reason']==='No registrar selected')
@@ -162,7 +162,7 @@ class ViewTld extends ViewRecord
         $rows=$this->salePrices();
         return $rows?new HtmlString('<dl class="domains-sale-prices">'.implode('',array_map(fn($k,$v)=>'<div><dt>'.e($k).'</dt><dd>'.e($v).'</dd></div>',array_keys($rows),$rows)).'</dl>'):null;
     }
-    /** Stops new registrations and transfers. Domains customers already have keep renewing. Only the stops change,
+    /** Stops new registrations and transfers. Domains customers already have keep renewing. Only the acquisition pause changes,
      * so the TLD's transfer and term choices wait for Start selling. */
     public function stopSellingAction(): Action
     {

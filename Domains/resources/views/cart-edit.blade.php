@@ -11,7 +11,18 @@
 $termTotal=function($plan)use($item){if(\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryAccounts::authorization((int)auth()->id())){return $item->price->format(0);}
     $probe=$item;if($plan->id!==$item->plan_id){$probe=$item->replicate();$probe->plan_id=$plan->id;$probe->setRelation('plan',$plan);}$price=$probe->price;return $price->format($price->total*$item->quantity);};
 @endphp
-<label for="term">Years</label><select id="term" class="domains-input" name="term">@foreach(app(\Paymenter\Extensions\Servers\Domains\Services\Storefront::class)->checkoutPlans($item->product) as $plan)<option value="{{ $plan->billing_period }}" @selected($plan->id===$item->plan_id)>{{ $plan->billing_period }} {{ (int)$plan->billing_period===1?'year':'years' }} · {{ $termTotal($plan) }}</option>@endforeach</select>
-<button class="domains-btn domains-btn--primary" type="submit">Update domain</button></form>
+@php
+$choices=app(\Paymenter\Extensions\Servers\Domains\Services\Storefront::class)->checkoutPlanChoices($item->product);
+$plans=$choices['plans'];$currentAvailable=$plans->contains('id',$item->plan_id);
+@endphp
+@if($choices['failed'])
+<p role="status">We could not load the year choices. Reload this page to try again.</p>
+@elseif($plans->isEmpty())
+<p role="status">No years are currently available. Return to your cart and remove this line, or try again later.</p>
+@endif
+<label for="term">Years</label><select id="term" class="domains-input" name="term" required @disabled($choices['failed']||$plans->isEmpty())>
+@if(!$currentAvailable)<option value="" selected disabled>Current {{ $item->plan->billing_period }}-year term unavailable. Choose a year.</option>@endif
+@foreach($plans as $plan)<option value="{{ $plan->billing_period }}" @selected($plan->id===$item->plan_id)>{{ $plan->billing_period }} {{ (int)$plan->billing_period===1?'year':'years' }} · {{ $termTotal($plan) }}</option>@endforeach</select>
+<button class="domains-btn domains-btn--primary" type="submit" @disabled($choices['failed']||$plans->isEmpty())>Update domain</button></form>
 </div></div>
 @endcomponent

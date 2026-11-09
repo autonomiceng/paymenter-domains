@@ -37,13 +37,17 @@ final class SellTable
     /** Use the same sale decision as the TLD status, in bounded pages, before table pagination. */
     public function forSale(Builder $query): Builder
     {
-        if($this->forSaleIds===null){
-            $this->forSaleIds=[];
-            $this->tlds($this->source()->rows($this->bindings,null)->get(['server_id','tld'])->all())->chunk(100)->each(function($page):void {
-                foreach($this->source()->page($page) as $id=>$fact){if($fact['sales']['label']==='For sale'){$this->forSaleIds[]=$id;}}
-            });
+        Staff::requireView();
+        // Filament supplies a nested where builder without the table's derived FROM.
+        $candidates=$this->source()->rows($this->bindings,null)->addNestedWhereQuery($query->getQuery());
+        $key=hash('sha256',$candidates->toSql().serialize($candidates->getBindings()));
+        if(!isset($this->forSaleIds[$key])){
+            $this->forSaleIds[$key]=[];
+            foreach($candidates->get(['server_id','tld'])->chunk(500)as$rows){
+                array_push($this->forSaleIds[$key],...$this->source()->saleIds($this->tlds($rows->all())));
+            }
         }
-        return $query->whereIntegerInRaw('id',$this->forSaleIds);
+        return $query->whereIntegerInRaw('id',$this->forSaleIds[$key]);
     }
     /** The viewer's rights, read once for this table build: a cell or a saved-price read never asks again. */
     private function grants(): StaffGrants { return $this->grants??=Staff::requireView(); }

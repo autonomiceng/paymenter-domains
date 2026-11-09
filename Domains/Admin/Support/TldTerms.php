@@ -22,7 +22,7 @@ final class TldTerms
     public static function chosen(Tld $t,array $policy,array $defaults): bool
     {
         $i=OfferState::decode($t->catalogue_intent);$stops=$i['stops']??[];
-        return self::matches($t,$policy)&&($i['sell']??$defaults['defaultSell']??true)&&!in_array('renew',$stops,true)
+        return self::matches($t,$policy)&&!($i['salesPaused']??false)&&($i['sell']??$defaults['defaultSell']??true)&&!in_array('renew',$stops,true)
             &&(($policy['register_enabled']??false)&&!in_array('register',$stops,true)
                 ||($policy['transfer_enabled']??false)&&($i['transfers']??$defaults['defaultTransfers']??false)&&!in_array('transfer',$stops,true));
     }

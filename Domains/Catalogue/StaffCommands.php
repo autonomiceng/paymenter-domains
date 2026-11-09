@@ -125,6 +125,7 @@ final class StaffCommands
             $raw=[...$raw,...get_object_vars($this->intent($raw)->allowSales(array_keys(array_filter(['register'=>$data['register']??false,'transfer'=>$data['transfer']??false]))))];
             $raw['sell']=($defaults['defaultSell']??true)?null:true;
         }
+        $raw['salesPaused']=false;
         $raw['longest']=(int)($data['max_years']??1);$raw['transfers']=(bool)($data['transfer']??false);$raw['stops']=[];
         foreach(['register','renew','transfer'] as $action){if(!($data['enabled']??false)||!($data[$action]??false)){$raw['stops'][]=$action;}}
         if(in_array('renew',$raw['stops'],true)&&Domain::where(['server_id'=>$binding->serverId,'tld'=>$t->tld,'account_fingerprint'=>$binding->fingerprint])->whereNotNull('reservation_name')->exists()){
@@ -132,22 +133,21 @@ final class StaffCommands
         // A verified checkbox is administrative intent only; this command never creates or ages Facts.
         return Edit::override($binding,$t->tld,$this->intent($raw),$rule,array_key_exists('transfer',$data)?$raw['transfers']&&!in_array('transfer',$raw['stops'],true):null);
     }
-    /** The TLD page pauses and resumes sales. Only the stops and the sell choice change, so the TLD's own transfer
-     * and term choices survive a Stop, and Start restores exactly what was sold before. Start also lifts the TLD's
+    /** The TLD page pauses and resumes sales. The acquisition pause and sell choice change, so the TLD's own transfer
+     * and term choices survive a Stop, and Start preserves independent transfer restrictions. Start also lifts the TLD's
      * renewal stop, and sets Sell only when the TLD doesn't sell already. */
     private function sales($binding,Tld $t,array $raw,array $data,?array $rule): Edit
     {
         $stops=$raw['stops']??[];
         if($data['sales']==='stop'){
-            $raw['stops']=array_values(array_unique([...$stops,'register','transfer']));
+            $raw['salesPaused']=true;
             return Edit::override($binding,$t->tld,$this->intent($raw),$rule);
         }
         $d=OfferState::decode(Account::where('server_id',$binding->serverId)->sole()->catalogue_defaults);
-        $raw['stops']=array_values(array_diff($stops,['register','renew','transfer']));
+        $raw['salesPaused']=false;
+        $raw['stops']=array_values(array_diff($stops,['register','renew']));
         if(!($raw['sell']??$d['defaultSell']??true)){$raw['sell']=($d['defaultSell']??true)?null:true;}
-        // A longer term than the registrar takes is saved down to the longest it takes.
-        if(isset($data['max_years'])&&(int)$data['max_years']!==(int)($raw['longest']??$d['defaultLongest']??1)){$raw['longest']=(int)$data['max_years'];}
-        return Edit::override($binding,$t->tld,$this->intent($raw),$rule,(bool)($raw['transfers']??$d['defaultTransfers']??false));
+        return Edit::override($binding,$t->tld,$this->intent($raw),$rule);
     }
     private function seller(Tld $t,array $data): Edit
     {

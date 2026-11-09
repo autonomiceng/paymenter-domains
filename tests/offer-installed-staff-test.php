@@ -11,12 +11,10 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewT
 tldPanel();pinStaffClock($now);$actor=staffUser(array_keys(Staff::permissions()));Auth::setUser($actor);
 $t=$tlds[0];
 DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>null]);
-$notice=\Paymenter\Extensions\Servers\Domains\Admin\Support\PricingEditorNotice::render($t->fresh());
-expect(!str_contains($notice,'open Edit prices and save.'),'Unknown registrar facts must not tell staff to re-save a sold TLD');
-expect(str_contains($notice,'Check account setup on Registrar account.'),'Unknown facts on an unavailable account point to account setup');
+same('',\Paymenter\Extensions\Servers\Domains\Admin\Support\PricingEditorNotice::render($t->fresh()),'TLD status belongs to its real head');
+Livewire\Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->assertSee('Check registrar account');
 $actor->role()->first()->update(['permissions'=>[Staff::VIEW]]);
-$restrictedNotice=\Paymenter\Extensions\Servers\Domains\Admin\Support\PricingEditorNotice::render($t->fresh());
-expect(str_contains($restrictedNotice,'Check account setup on Registrar account.'),'Staff without cost access retain account recovery guidance');
+Livewire\Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->assertSee('Check registrar account');
 $page=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed()->page(collect([$t->fresh()]));
 same([],$page[$t->id]['offers'],'Restricted recovery never exposes raw cost-bearing offers');
 $actor->role()->first()->update(['permissions'=>array_keys(Staff::permissions())]);

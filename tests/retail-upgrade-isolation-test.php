@@ -11,13 +11,14 @@ $unpublished=$tlds[1]->fresh()->replicate();$unpublished->tld='unpublished';$unp
 $nullBefore=$unpublished->fresh()->getRawOriginal();$price=$native->product($tlds[0],'register')->plans()->where('billing_period',1)->sole()->prices()->sole();
 $rows=static fn($id)=>[DB::table('domains_tlds')->where('id',$id)->first(),DB::table('domains_prices')->where('server_id',$tlds[0]->server_id)->orderBy('id')->get()->toJson(),DB::table('prices')->where('id',$price->id)->first()];
 DB::table('prices')->where('id',$price->id)->update(['price'=>'0.01']);
-$before=serialize($rows($tlds[0]->id));$logs=0;
-Log::listen(static function($event)use(&$logs):void{if($event->message==='Domains retail upgrade deferred.'){$logs++;throw new RuntimeException('Synthetic logging failure');}});
+$before=serialize($rows($tlds[0]->id));$logs=[];$throwLog=false;
+Log::listen(static function($event)use(&$logs,&$throwLog):void{if($event->message==='Domains retail upgrade deferred.'){$logs[]=$event->context;if($throwLog){throw new RuntimeException('Synthetic logging failure');}}});
 DB::statement('CREATE TRIGGER isolate_retail BEFORE UPDATE ON prices WHEN OLD.id = '.$price->id." BEGIN SELECT RAISE(ABORT, 'synthetic isolated TLD failure'); END");
 (new Installation)->install();
 same(Retail::VERSION,OfferState::decode($tlds[1]->fresh()->catalogue_published_revision)['retailRule']??null,'Healthy sibling upgrades despite earlier native failure and failing logger');
 same($before,serialize($rows($tlds[0]->id)),'Failed TLD rolls back publication, costs and native amount atomically');
-expect($logs>0,'Deferred TLD receives a bounded diagnostic');same($nullBefore,$unpublished->fresh()->getRawOriginal(),'Unpublished row does not churn revision or cache publication');
+same([['server_id'=>(int)$tlds[0]->server_id,'tld_id'=>(int)$tlds[0]->id]],$logs,'Exactly one deferral names the failed server and TLD');
+$throwLog=true;$logs=[];(new Installation)->install();same($before,serialize($rows($tlds[0]->id)),'Failing logger retains failed-row atomicity');same([['server_id'=>(int)$tlds[0]->server_id,'tld_id'=>(int)$tlds[0]->id]],$logs,'Failing logger still attempts one bounded diagnostic');same($nullBefore,$unpublished->fresh()->getRawOriginal(),'Unpublished row does not churn revision or cache publication');
 $healthy=$tlds[1]->fresh()->getRawOriginal();(new NativeServerGuard)->boot();
 App\Models\Server::create(['name'=>'New Domains account','type'=>'server','extension'=>'Domains','enabled'=>true]);
 same($healthy,$tlds[1]->fresh()->getRawOriginal(),'Current sibling stays unchanged during new-server install');

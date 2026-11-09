@@ -12,7 +12,7 @@ final class StaffOperationReview
     /** Check status covers both a fresh read (recheck) and restarting reads after the read limit (resume_reads). */
     public const ACTIONS=['recheck'=>'Check status','resume_reads'=>'Check status','resume_observation'=>'Resume sync',
         'hold'=>'Put on hold','release'=>'Release hold','disposition'=>'Close request',
-        'refund'=>'Cancel and refund','credit'=>'Retry refund','replacement'=>'Reissue renewal invoice'];
+        'approve_charge'=>'Approve captured charge','refund'=>'Cancel and refund','credit'=>'Retry refund','replacement'=>'Reissue renewal invoice'];
     public const CHANGED='This request changed. Reload the page and try again.';
     private array $before=[];
     private array $verifiedTicket=[];
@@ -53,7 +53,8 @@ final class StaffOperationReview
         if(!$staff instanceof User || !$staff->hasPermission('admin.domains.view')
             || !$staff->hasPermission(self::permission($action))
             || (!in_array($action,['recheck','resume_reads','resume_observation'],true)&&!$staff->hasPermission('admin.domains.manage'))
-            || (in_array($action,['refund','credit','replacement'],true)&&!$staff->hasPermission('admin.invoices.update'))
+            || (in_array($action,['refund','credit','replacement','approve_charge'],true)&&!$staff->hasPermission('admin.invoices.update'))
+            || ($action==='approve_charge'&&(!$staff->hasPermission('admin.domains.costs')||!$staff->hasPermission('admin.domains.fund')))
             || ($action==='release'&&$op?->funding_basis==='complimentary'&&!$staff->hasPermission('admin.domains.fund'))) {
             throw new StaffReviewRefused("You don't have permission to do this.");
         }

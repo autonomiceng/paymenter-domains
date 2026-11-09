@@ -51,6 +51,11 @@ final class Labels
             $actor=$op->attempt['management_terminal']['actor_id']??null;
             return $actor===null ? 'Cancelled' : 'Cancelled by '.((int)$actor===(int)$op->domain->user_id?'customer':'staff');
         }
+        if($op->action==='renew'&&$op->state==='succeeded'){
+            try{$approved=isset($op->policy['captured_charge_approval']);}
+            catch(\Illuminate\Contracts\Encryption\DecryptException){return DomainFacts::UNREADABLE;}
+            if($approved){return 'Captured registrar charge approved by staff';}
+        }
         // These codes outlive the send, so "Not sent" would be false once the registrar has the order.
         if ($op->state!=='held'&&in_array($op->safe_code,['registration_correction_required','registration_evidence_required'],true)) {
             return $op->state==='succeeded'||$op->safe_code==='registration_correction_required' ? 'Still to fix: '.self::corrections($op) : 'Sent. Waiting for the registrar charge.';
@@ -127,6 +132,7 @@ final class Labels
             'healthy_pending'=>'Waiting for old registrar','refreshed'=>null,'unresolved'=>'Status check failed',
             'acquisition_definitely_unsent'=>RequestStatus::UNSENT,'management_definitely_unsent'=>RequestStatus::UNSENT,
             'renewal_definitely_unsent'=>'Renewal not sent','renewal_confirmation_required'=>RequestStatus::UNCONFIRMED,
+            'captured_charge_approved'=>'Captured registrar charge approved by staff',
             'awaiting_unique_charge'=>'Registrar has not confirmed the charge','refund_approved'=>'Credit approved',
             'authority'=>'Not sent: registrar account changed',
             'reads'=>'Status check failed','cost'=>'Not sent: cost missing','funding'=>'Not sent: low registrar balance','renewal_invoice_unpaid'=>'Not sent: renewal invoice not paid. Check the invoice.','renewal_spend_paused'=>'Not sent: orders paused for this domain',

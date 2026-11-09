@@ -12,6 +12,7 @@ final readonly class StaffOperations
     {
         $r=new StaffOperationReview((int)$actor->id,$domain,$operation,$action,$ticket,$reason,$this->clock);
         switch($action){
+            case 'approve_charge': $r->local(fn($op,$l)=>CapturedChargeReview::approve($op,$l,app(AccountBindings::class),$this->clock));break;
             case 'hold': $r->local(fn($op,$l)=>StaffOperationWrites::hold($op,$l));break;
             case 'release':
                 $op=\Paymenter\Extensions\Servers\Domains\Models\Operation::findOrFail($operation);

@@ -52,16 +52,28 @@ class Storefront
     /** Display-only native plans for the current seller, using the same exact prices as search.
      * Retained native rows alone never make a term sellable; admission still rechecks the choice. */
     public function checkoutPlans(\App\Models\Product $product): \Illuminate\Support\Collection
+    { return $this->checkoutPlanChoices($product)['plans']; }
+
+    /** A failed local read differs from a healthy catalogue with no available terms. */
+    public function checkoutPlanChoices(\App\Models\Product $product): array
     {
         try {
             $mapping = $this->native->mapping($product);
-            if ($mapping === null) { return collect(); }
+            if ($mapping === null) { return ['plans'=>collect(), 'failed'=>false]; }
             $ending = $mapping['tld']->tld;
-            $offers = $this->catalogue()?->display([$ending]) ?? [];
-            return collect($offers[$ending] ?? [])
+            $offers = ($this->catalogue() ?? throw new \DomainException('Catalogue unavailable.'))->display([$ending]);
+            $plans = collect($offers[$ending] ?? [])
                 ->filter(static fn ($offer) => $offer['product']->id === $product->id)
                 ->pluck('plan')->sortBy('billing_period')->values();
-        } catch (\Throwable) { return collect(); }
+            return ['plans'=>$plans, 'failed'=>false];
+        } catch (\Throwable) {
+            try {
+                if (\Illuminate\Support\Facades\Cache::add('domains.cart.choices:'.$product->id, true, 60)) {
+                    \Illuminate\Support\Facades\Log::warning('Domains cart term choices unavailable.', ['product_id'=>(int)$product->id]);
+                }
+            } catch (\Throwable) { /* Diagnostic failure cannot turn retained plans into offers. */ }
+            return ['plans'=>collect(), 'failed'=>true];
+        }
     }
 
     /** Current public transfer offers, bounded to the candidate suffixes of these names. */
