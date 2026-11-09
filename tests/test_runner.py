@@ -418,18 +418,53 @@ class RunnerTests(unittest.TestCase):
                 self.assertEqual((root/'output/000.stdout.txt').read_bytes(), b'partial')
                 self.assertEqual((root/'output/000.stderr.txt').read_bytes(), b'problem')
 
-    def test_manifest_rejects_missing_duplicate_and_unregistered_suites(self):
+    def test_manifest_rejects_missing_duplicate_empty_and_incomplete_suites(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp); (root/'tests').mkdir()
+            suites = {name: [] for name in runner.CATEGORIES if name not in ['lint', 'native']}
+            incomplete = {name: paths for name, paths in suites.items() if name != 'mariadb'}
+            (root/'tests/suites.json').write_text(json.dumps(suites))
+            with mock.patch.object(runner, 'ROOT', root), self.assertRaisesRegex(ValueError, 'No registered'):
+                runner.manifest()
             (root/'tests/probe-test.php').write_text('<?php')
-            suites = {name: [] for name in runner.CATEGORIES if name != 'lint'}
-            for paths in [[], ['tests/missing-test.php'], ['tests/probe-test.php']*2]:
-                suites['provider'] = paths
-                (root/'tests/suites.json').write_text(json.dumps(suites))
-                with mock.patch.object(runner, 'ROOT', root), self.assertRaises(ValueError): runner.manifest()
+            for written in [{**suites, 'provider': ['tests/missing-test.php']},
+                            {**suites, 'provider': ['tests/probe-test.php']*2}, {**suites, 'native': []}, incomplete]:
+                (root/'tests/suites.json').write_text(json.dumps(written))
+                with self.subTest(written=written), mock.patch.object(runner, 'ROOT', root), \
+                     self.assertRaises(ValueError): runner.manifest()
             suites['provider'] = ['tests/probe-test.php']
             (root/'tests/suites.json').write_text(json.dumps(suites))
-            with mock.patch.object(runner, 'ROOT', root): self.assertEqual(runner.manifest(), suites)
+            with mock.patch.object(runner, 'ROOT', root):
+                self.assertEqual(runner.manifest(), {**suites, 'native': []})
+
+    def test_manifest_assigns_unlisted_tests_to_native_and_refuses_misnamed_category_files(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); (root/'tests/Support').mkdir(parents=True)
+            for name in ['b-test.php', 'test_probe.py', 'a-test.php', 'Support/nested-test.php',
+                         'Support/Helper.php', 'helper.py', 'provider-test.php']:
+                (root/'tests'/name).write_text('')
+            suites = {name: [] for name in runner.CATEGORIES if name not in ['lint', 'native']}
+            suites['provider'] = ['tests/provider-test.php']
+            (root/'tests/suites.json').write_text(json.dumps(suites))
+            with mock.patch.object(runner, 'ROOT', root):
+                found = runner.manifest()
+            self.assertEqual(list(found), [name for name in runner.CATEGORIES if name != 'lint'])
+            self.assertEqual(found['native'], ['tests/Support/nested-test.php', 'tests/a-test.php',
+                                               'tests/b-test.php', 'tests/test_probe.py'])
+            self.assertEqual(found['provider'], ['tests/provider-test.php'])
+            for kind, name in [('mariadb', 'test_probe_mariadb.py'), ('runner', 'test_runner_probe.py'),
+                               ('package', 'test_package_probe.py')]:
+                with self.subTest(kind=kind):
+                    (root/'tests'/name).write_text('')
+                    with mock.patch.object(runner, 'ROOT', root), self.assertRaisesRegex(ValueError, f'tests/{name} in the {kind} suite'):
+                        runner.manifest()
+                    suites[kind] = [f'tests/{name}']
+                    (root/'tests/suites.json').write_text(json.dumps(suites))
+                    with mock.patch.object(runner, 'ROOT', root):
+                        self.assertEqual(runner.manifest()[kind], [f'tests/{name}'])
+            (root/'tests/probe-test.cjs').write_text('')
+            with mock.patch.object(runner, 'ROOT', root), self.assertRaisesRegex(ValueError, 'JavaScript'):
+                runner.manifest()
 
     def test_final_dependency_guard_error_keeps_command_results(self):
         for error_type in [ValueError, KeyError, TypeError]:
@@ -492,7 +527,7 @@ class RunnerTests(unittest.TestCase):
     def test_registered_javascript_is_explicitly_refused(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp); (root/'tests').mkdir(); (root/'tests/probe-test.cjs').write_text('throw Error()')
-            suites = {name: [] for name in runner.CATEGORIES if name != 'lint'}
+            suites = {name: [] for name in runner.CATEGORIES if name not in ['lint', 'native']}
             suites['ui'] = ['tests/probe-test.cjs']; (root/'tests/suites.json').write_text(json.dumps(suites))
             with mock.patch.object(runner, 'ROOT', root), self.assertRaisesRegex(ValueError, 'JavaScript'):
                 runner.manifest()
@@ -676,7 +711,7 @@ class RunnerTests(unittest.TestCase):
             path = ROOT/name
             self.assertFalse(private.intersection(Path(name).parts))
             self.assertFalse(path.is_symlink())
-            if path.is_file() and name != 'tests/suites.json': self.assertLessEqual(len(path.read_bytes().splitlines()), 800, name)
+            if path.is_file(): self.assertLessEqual(len(path.read_bytes().splitlines()), 800, name)
         self.assertEqual((ROOT/'LICENSE').read_bytes(), (ROOT/'Domains/LICENSE').read_bytes())
 
 

@@ -4,6 +4,7 @@
 import argparse
 from contextlib import contextmanager
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+import fnmatch
 import json
 import math
 import os
@@ -24,6 +25,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SUPERVISOR = Path(__file__).with_name('process_supervisor.py')
 CATEGORIES = ['lint', 'provider', 'contracts', 'native', 'ui', 'runner', 'package', 'mariadb']
 ORDER = ['lint', 'provider', 'contracts', 'runner', 'package', 'ui', 'native', 'mariadb']
+# Tests named for a category must be listed there, so they never fall back to native.
+NAMED = [('mariadb', 'tests/test_*_mariadb.py'), ('runner', 'tests/test_runner*.py'), ('package', 'tests/test_package*.py')]
 WORKER_MEMORY_MIB = 1024
 # About 85 s alone; parallel load pushed it past the 120 s native limit.
 SLOW_NATIVE = {'management-privacy-retirement-test.php', 'native-paid-baseline-test.php', 'transfer-completion-test.php'}
@@ -235,16 +238,24 @@ def hashes():
 
 
 def manifest():
-    suites = json.loads((ROOT/'tests/suites.json').read_text())
-    if set(suites) != set(CATEGORIES)-{'lint'}:
+    """Return every category's tests; a discovered test not listed in suites.json is native."""
+    listed = json.loads((ROOT/'tests/suites.json').read_text())
+    if set(listed) != set(CATEGORIES)-{'lint', 'native'}:
         raise ValueError('Suite categories are incomplete.')
-    paths = [p for names in suites.values() for p in names]
+    paths = [p for names in listed.values() for p in names]
     discovered = {str(p.relative_to(ROOT)) for pattern in ['*-test.php', 'test_*.py', '*-test.cjs']
                   for p in (ROOT/'tests').rglob(pattern)}
-    if any(p.endswith('.cjs') for p in paths):
+    if any(p.endswith('.cjs') for p in discovered):
         raise ValueError('JavaScript runner is not implemented.')
-    if len(paths) != len(set(paths)) or set(paths) != discovered or not paths:
-        raise ValueError('Missing, duplicate or unregistered suite.')
+    if len(paths) != len(set(paths)) or not set(paths) <= discovered:
+        raise ValueError('Missing or duplicate suite.')
+    native = sorted(discovered - set(paths))
+    for kind, pattern in NAMED:
+        if misplaced := [p for p in native if fnmatch.fnmatch(p, pattern)]:
+            raise ValueError(f'Register {", ".join(misplaced)} in the {kind} suite.')
+    suites = {kind: native if kind == 'native' else listed[kind] for kind in CATEGORIES if kind != 'lint'}
+    if not any(suites.values()):
+        raise ValueError('No registered suite.')
     return suites
 
 

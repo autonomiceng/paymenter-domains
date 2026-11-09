@@ -67,7 +67,7 @@ python3 scripts/test.py --jobs 1 --only \
   tests/test_installed_package_namesilo.py
 ```
 
-The runner validates every path against `tests/suites.json`, rejects duplicate or
+The runner validates every path against the test manifest, rejects duplicate or
 missing suite registrations, and records the exact selected and omitted tests. Keep
 this list unique and compare it with the direct references and transitive fixture
 consumers when the trigger files change. This command is focused evidence, not a full

@@ -46,9 +46,11 @@ Python 3, dpkg-deb and compatible system libraries are required; system PHP/Comp
 
 See [scheduling and fail-fast receipts](test-scheduling.md) for concurrency, memory reservations, ordering and measurements.
 
-`tests/suites.json` registers provider, contracts, native, UI, runner and package categories.
-All `*-test.php` and `test_*.py` paths must exist and be registered exactly once; `*-test.cjs`
-files are refused until a JavaScript runner exists. Lint covers every runtime/test PHP file.
+`tests/suites.json` lists the provider, contracts, UI, runner, package and MariaDB categories.
+Every other `*-test.php` and `test_*.py` file under `tests/` is native and runs in sorted order.
+Listed paths must exist and appear once. Files named `test_*_mariadb.py`, `test_runner*.py` or
+`test_package*.py` must be listed in that category; `*-test.cjs` files are refused until a
+JavaScript runner exists. Lint covers every runtime/test PHP file.
 Unknown, missing or explicitly unimplemented suites fail. Default runs execute all implemented
 categories, omitting native without a dependency. Empty categories are unimplemented; no UI suite exists.
 `--suite` selects categories and receipts disclose omissions. Synthetic tests do not prove provider acceptance.

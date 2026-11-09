@@ -1,8 +1,8 @@
 # Offline tests
 
-Run `scripts/test.py` after [bootstrap](../docs/testing.md). `suites.json` explicitly registers
-all executable tests; missing, duplicate and unregistered paths fail. `bootstrap.php` supplies
-the standalone autoloader and assertions. PHP suites use pinned PHP and disabled network/process
+Run `scripts/test.py` after [bootstrap](../docs/testing.md). `suites.json` lists the
+non-native categories and every other test file is native; missing and duplicate paths fail.
+`bootstrap.php` supplies the standalone autoloader and assertions. PHP suites use pinned PHP and disabled network/process
 entry points; Python checks use the standard library. Receipts identify omitted/unimplemented suites.
 
 Synthetic fixtures use example domains, documentation IPs and placeholder credentials. The provider
