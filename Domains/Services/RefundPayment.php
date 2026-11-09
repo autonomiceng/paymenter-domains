@@ -59,6 +59,8 @@ final class RefundPayment
             ? Operation::where('invoice_id', $op->invoice_id)->orderBy('id')->when(DB::transactionLevel() > 0, fn ($q) => $q->lockForUpdate())->get() : [$op];
         $done = [];
         foreach ($ops as $row) {
+            // An unreadable retained return stays with staff before its coverage is read.
+            if (ReceiptReturns::malformed($row)) { throw new \DomainException('Retained return plan needs review.'); }
             $f = $row->funding ?? [];
             foreach ([...(isset($f['refund']) ? [$f['refund']] : []), ...($f['late_credits'] ?? [])] as $credit) {
                 foreach ($credit['payments'] as $payment) { $done[$payment['id']] = ($done[$payment['id']] ?? 0) + $payment['amount_minor']; }

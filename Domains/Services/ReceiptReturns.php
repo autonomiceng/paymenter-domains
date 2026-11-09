@@ -114,7 +114,7 @@ final class ReceiptReturns
      * original-payment plan does not balance: the return then needs staff review. */
     public static function amount(mixed $return): ?int
     {
-        if(!is_array($return)||!is_array($payments=$return['payments']??[])){return null;}
+        if(!is_array($return)||!is_array($payments=$return['payments']??null)){return null;}
         foreach($payments as $p){if(!is_array($p)||!is_int($p['id']??null)||!is_int($p['amount_minor']??null)){return null;}}
         if(($return['to']??null)==='original_payment'&&self::bridge($return)===null){return null;}
         try{return PricingRule::minor($return['amount']??null);}catch(\Throwable){return null;}

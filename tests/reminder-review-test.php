@@ -60,7 +60,7 @@ $credit=\App\Models\Credit::firstOrCreate(['user_id'=>$d->user_id,'currency_code
 $privacy=\Paymenter\Extensions\Servers\Domains\Models\Operation::create(['domain_id'=>$d->id,'service_id'=>$d->service_id,'server_id'=>$d->server_id,
     'registrar_key'=>$d->registrar_key,'account_fingerprint'=>$d->account_fingerprint,'authority_generation'=>$d->authority_generation,'operation_key'=>'privacy-credit-notice',
     'action'=>'privacy_purchase','term'=>1,'funding_basis'=>'paid_invoice','state'=>'rejected','amount'=>'12.00','currency'=>'USD','payload'=>[],
-    'funding'=>['refund'=>['to'=>'account_credit','credit_id'=>$credit->id,'currency'=>'USD','amount'=>'12.00','at'=>$clock->now()->format(DATE_ATOM)]]]);
+    'funding'=>['refund'=>['to'=>'account_credit','credit_id'=>$credit->id,'currency'=>'USD','amount'=>'12.00','payments'=>[],'at'=>$clock->now()->format(DATE_ATOM)]]]);
 expect($reminders->remind($d->id),'Recorded credit sends during an already accepted renewal window');
 same(false,$reminders->remind($d->id),'Credit remains idempotent');
 $clock->instant=$clock->now()->modify('+3 days');$reminders->remind($d->id);

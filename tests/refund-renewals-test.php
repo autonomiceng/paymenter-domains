@@ -180,10 +180,16 @@ same(['pending',null],[$presenter->invoiceOutcome($user,(int)$bill->id)->money,$
 // Unreadable amounts and paid-row coverage are checked before any arithmetic: pending with no total, never an error.
 DB::table('domains_operations')->where('id',$card->id)->update(['funding'=>$valid]);$readable=$card->fresh()->funding;$late=$readable['late_credits'][0];
 foreach(['plan amount'=>[[...$late,'amount'=>'not-an-amount']],'payment coverage'=>[[...$late,'payments'=>[['amount_minor'=>'100']]]],
+    'missing payment coverage'=>[array_diff_key($late,['payments'=>true])],'null payment coverage'=>[[...$late,'payments'=>null]],
     'late credit amount'=>[$late,['amount'=>'not-an-amount','currency'=>'USD','payments'=>[],'to'=>'account_credit','credit_id'=>null,'at'=>$late['at']]]] as $kind=>$credits){
     DB::table('domains_operations')->where('id',$card->id)->update(['funding'=>\Illuminate\Support\Facades\Crypt::encryptString(json_encode([...$readable,'late_credits'=>$credits]))]);
     $outcome=$presenter->invoiceOutcome($user,(int)$bill->id);same(['pending',null],[$outcome->money,$outcome->amount],'Unreadable '.$kind.' leaves the invoice outcome pending with no total');
+    commerceReject(fn()=>\Paymenter\Extensions\Servers\Domains\Services\ReceiptReversals::forInvoice($bill));
 }
+// Coverage is checked before already credited payments are summed, so an unreadable entry is a review refusal, not an error.
+DB::table('domains_operations')->where('id',$card->id)->update(['funding'=>\Illuminate\Support\Facades\Crypt::encryptString(json_encode([...$readable,
+    'late_credits'=>[[...$late,'payments'=>[['id'=>$late['payments'][0]['id'],'amount_minor'=>[100]]]]]]))]);
+commerceReject(fn()=>DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Services\RefundPayment::lateUncredited($card->fresh(),\Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($d->fresh()))));
 // The credit writer checks plans before outstanding allocations, so a non-numeric allocation is a review refusal.
 DB::table('domains_operations')->where('id',$card->id)->update(['funding'=>\Illuminate\Support\Facades\Crypt::encryptString(json_encode([...$readable,
     'late_credits'=>[[...$late,'allocations'=>[[...$late['allocations'][0],'amount_minor'=>'not-an-amount']]]]]))]);

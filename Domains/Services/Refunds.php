@@ -141,8 +141,10 @@ final readonly class Refunds
         Cache::forever($cursor, $ids->count() === 100 ? $ids->last() : 0);
         foreach (Operation::whereIn('id', $ids)->orderBy('id')->get() as $op) {
             $paid = InvoiceTransaction::where('invoice_id', $op->invoice_id)->where('status', InvoiceTransactionStatus::Succeeded)->pluck('id')->all();
-            if (!ReceiptReturns::plans($op) && array_diff($paid, array_keys(RefundPayment::lateCredited($op))) === []) { continue; }
-            try { if ($this->creditClosed($op) !== null) { $credited[] = (int) $op->domain_id; continue; } }
+            try {
+                if (!ReceiptReturns::plans($op) && array_diff($paid, array_keys(RefundPayment::lateCredited($op))) === []) { continue; }
+                if ($this->creditClosed($op) !== null) { $credited[] = (int) $op->domain_id; continue; }
+            }
             catch (\Throwable $e) { RefundRepairs::failed((int)$op->id, $this->clock->now()->getTimestamp()); logger()->warning('Domains late payment stays with staff.', ['operation_id' => (int) $op->id, 'exception_class' => $e::class]); }
             app(AcquisitionRetirement::class)->inspect((int) $op->domain_id);
         }
