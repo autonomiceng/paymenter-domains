@@ -241,9 +241,13 @@ foreach (['on_hold'=>'On hold','in_progress'=>'In progress'] as $key=>$word) {
         $orders->update(['processing_enabled'=>!$enabled]);
         $p=Livewire::actingAs(Auth::user())->test(ListOperations::class)->filterTable('status',[$key]);
         $p->set('tableDeferredFilters',$p->get('tableFilters')); $flip($enabled); $p->call('applyTableFilters');
-        $column=$p->instance()->getTable()->getColumns()['state'];
+        $column=$p->instance()->getTable()->getColumns()['state'];$note=$p->instance()->getTable()->getColumns()['note'];
         foreach ($p->instance()->getTableRecords() as $record) {
-            if ($record->id===$queued->id) { $seen[$enabled?'on':'off'][]=$key; }
+            if ($record->id===$queued->id) {
+                $seen[$enabled?'on':'off'][]=$key;
+                // The note reads the same switches as the word: Orders off at the start, so the row says so.
+                if (str_contains((string)$note->record($record)->getState(),'Orders are off for this account.')!==($word==='On hold')) { $parity[]="$key, Orders turned ".($enabled?'on':'off').': the note reads "'.$note->record($record)->getState().'"'; }
+            }
             if (($shown=$column->record($record)->formatState($column->getState()))!==$word) { $parity[]="$key, Orders turned ".($enabled?'on':'off').": request #{$record->id} reads $shown"; }
         }
     }

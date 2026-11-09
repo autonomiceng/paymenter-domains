@@ -52,10 +52,12 @@ final class OperationQueries
      * With an ordersOffAccounts() snapshot it reads that, so every row of one list uses the same accounts. */
     public static function ordersOff(Operation $op, ?array $accounts=null): bool
     {
-        if ($accounts!==null&&count($accounts)<=self::SNAPSHOT_LIMIT) { return $op->account_fingerprint!==null&&isset($accounts[self::accountKey($op->server_id,$op->registrar_key,$op->account_fingerprint)]); }
+        if (self::snapshot($accounts)) { return $op->account_fingerprint!==null&&isset($accounts[self::accountKey($op->server_id,$op->registrar_key,$op->account_fingerprint)]); }
         return Account::where('processing_enabled',false)->where('server_id',$op->server_id)->where('registrar_key',$op->registrar_key)
             ->where('account_fingerprint',$op->account_fingerprint)->exists();
     }
+    /** A list holds a usable snapshot, so its rows read it instead of the accounts now. */
+    public static function snapshot(?array $accounts): bool { return $accounts!==null&&count($accounts)<=self::SNAPSHOT_LIMIT; }
     /** Most accounts a snapshot holds. The Status filter repeats each one in its SQL, so with more the list reads the switches live. */
     public const SNAPSHOT_LIMIT=20;
     /** The accounts with Orders off, read once. A list passes this to its Status filter and its row words.
@@ -77,7 +79,7 @@ final class OperationQueries
     { return (int)$server."\0".$registrar."\0".$fingerprint; }
     private static function whereOrdersOff(Builder $q, ?array $accounts): Builder
     {
-        if ($accounts!==null&&count($accounts)<=self::SNAPSHOT_LIMIT) {
+        if (self::snapshot($accounts)) {
             // Matches nothing until an account matches. An empty group would be dropped and match every request.
             return $q->where(function($q) use ($accounts) {
                 $q->whereRaw('0 = 1');

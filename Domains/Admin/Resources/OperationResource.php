@@ -56,7 +56,7 @@ class OperationResource extends Resource
             TextColumn::make('state')->label('Status')->badge()->color(fn($record)=>$status($record)['tone'])
                 ->extraAttributes(fn($record)=>StatusMark::attributes($status($record)['tone'],'request-'.$record->id))
                 ->formatStateUsing(fn($record)=>$status($record)['label']),
-            OneLine::apply(TextColumn::make('note')->label('Note')->color('gray')->state(fn($record)=>RequestFacts::reason($record,OperationQueries::ordersOff($record,$off),$grants)),OneLine::NOTE),
+            OneLine::apply(TextColumn::make('note')->label('Note')->color('gray')->state(fn($record)=>RequestFacts::reason($record,OperationQueries::ordersOff($record,$off),$grants,$off)),OneLine::NOTE),
             TextColumn::make('created_at')->label('Created')->formatStateUsing(fn($state)=>\Paymenter\Extensions\Servers\Domains\Admin\Support\Sheet::moment($state->getTimestamp()))->sortable()->visibleFrom('lg'),
             OneLine::apply(TextColumn::make('server_id')->label('Registrar account')->visibleFrom('xl')->formatStateUsing(fn($state)=>$servers[$state]??Missing::LABEL)
                 ->color(fn($state)=>isset($servers[$state])?null:Missing::COLOR)->description(fn($record)=>isset($servers[$record->server_id])?null:'Registrar account not found. Check Registrars.')),
