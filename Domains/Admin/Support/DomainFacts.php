@@ -71,7 +71,8 @@ final class DomainFacts
     public static function registered(Domain $d): bool { return $d->adoptionPending()||in_array($d->status,self::REGISTERED,true); }
     /** Nothing renews on these, so renewal facts do not apply. A cancellation's saved intent stays as a guard and is not shown. */
     public static function ended(Domain $d): bool { return in_array($d->status,['cancelled','registration_rejected','transfer_rejected'],true); }
-    public static function for(Domain $d): array
+    /** $notice is the page's notice (notice()) when the page already read it, false when not. */
+    public static function for(Domain $d, array|false|null $notice=false): array
     {
         Staff::requireView();
         $pending=$d->adoptionPending(); $registered=self::registered($d);
@@ -177,17 +178,17 @@ final class DomainFacts
             }
             if(isset($f['Last sync'])){$f['Last sync']['sub']=!self::ended($d)&&self::recordHold($d)!==null?null:$problem;}
         }
-        return self::alerts($d,$f);
+        return self::alerts($d,$f,$notice);
     }
     /** Safe cause text shared by the domain page and the list. Unknown saved kinds still need review. With the domain, a stopped sync names the control these staff have. */
     public static function alertCause(string $code, ?Domain $d=null): string
     { return $code==='observation_review'?'Sync stopped. '.self::stoppedStep($d):(ObligationAlerts::LABELS[$code]??'Domain alert needs review.'); }
     /** Puts each cause under its row, collecting causes without a row on the Open alerts row. */
-    private static function alerts(Domain $d, array $f): array
+    private static function alerts(Domain $d, array $f, array|false|null $notice=false): array
     {
         // The head names a held order, or the top alert when no notice takes its place, so a review alert on a row would only repeat them.
         $inputs=StaffDomainInputs::for([$d])[$d->id]; $status=self::status($d,$inputs);
-        $notice=self::notice($d); $resumeNotice=$notice['resume']??false;
+        if ($notice===false) { $notice=self::notice($d); } $resumeNotice=$notice['resume']??false;
         $op=$d->latestAcquisition; $named=$op&&in_array($op->state,['held','uncertain'],true)&&in_array($d->status,StaffDomainStatus::ACQUIRING,true)?(int)$op->id:(in_array($status['alert'],['operation_review','held_obligation'],true)&&($notice===null||($notice['resume']??false))?$status['request']:null);
         // One link at a time: another held request stays in the rail, and the head names it once this one clears.
         $rows=array_filter($inputs['alerts'],fn(array $a)=>!(in_array($a['code'],['operation_review','held_obligation'],true)&&$named!==null&&($a['request']===$named||$named===$status['request'])));
@@ -285,10 +286,11 @@ final class DomainFacts
      * Active can't stay green over a stopped sync or rows that need work. An amber or red state is already the mark, so its words get none of their own.
      * $held is the request holding changes. It comes first, then the request the status names, and no request names none.
      * @return array{tone:string,step:string|HtmlString|null} */
-    public static function head(Domain $d, array $status, array $facts, ?int $held=null): array
+    public static function head(Domain $d, array $status, array $facts, ?int $held=null, array|false|null $notice=false): array
     {
-        $notice=self::notice($d); $request=self::headRequest($d,$status,$held,$notice);
-        if (($notice['resume']??false)&&$request) { $notice['link']=['label'=>'Check request #'.$request,'url'=>self::requestUrl(['request'=>$request])]; }
+        if ($notice===false) { $notice=self::notice($d); } $request=self::headRequest($d,$status,$held,$notice);
+        // A stopped read names its request beside any invoice link late money added: staff need both.
+        if (($notice['resume']??false)&&$request) { $notice['action']=['label'=>'Check request #'.$request,'url'=>self::requestUrl(['request'=>$request])]; }
         $missing=array_filter($facts,fn(array $fact)=>$fact['value']===null&&!Missing::needsNothing($fact['sub']));
         $tone=$status['tone']==='success'&&(($notice['resume']??false)||$missing!==[])?'warning':$status['tone'];
         $mark=!in_array($tone,['warning','danger'],true);
@@ -315,9 +317,9 @@ final class DomainFacts
         return $facts;
     }
     /** The one request the head names, or null. A notice names one only beside Resume sync. Rows name no other (withProgress). */
-    public static function headRequest(Domain $d, array $status, ?int $held=null, ?array $notice=null): ?int
+    public static function headRequest(Domain $d, array $status, ?int $held=null, array|false|null $notice=false): ?int
     {
-        $notice??=self::notice($d);
+        if ($notice===false) { $notice=self::notice($d); }
         return $notice===null||($notice['resume']??false)?$held??$status['request']??(ObservationWork::resumeBlocked($d)!==null?$d->latestAcquisition?->id:null):null;
     }
     /** A notice in the head line: its words, then its links. */

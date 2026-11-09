@@ -56,4 +56,22 @@ $head('Payment activity after the order closed. Check the invoice and payments b
 DB::table('domains_obligation_alerts')->where('domain_id',$long->id)->where('code','acquisition_late_money')->update(['resolved_at'=>time()]);
 $replacement=$order->replicate();$replacement->fill(['operation_key'=>'notice-review-replacement','action'=>'renew','state'=>'rejected','safe_code'=>'refund_approved','invoice_id'=>$late->id,'policy'=>['renewal_replacement'=>['actor_id'=>null]]])->save();
 $head('Payment received after credit. Check the invoice.','Replacement invoice');
+// A stopped record read names its request beside the invoice link: staff need both.
+$observed=$long->fresh()->observation;unset($observed['record_failure']);$long->update(['observation'=>$observed]);
+\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::hold($long->fresh(),'glue_unavailable',new DateTimeImmutable('@'.time()));
+Illuminate\Support\Facades\Auth::setUser($money);$stopped=DomainFacts::notice($long->fresh());
+expect(($stopped['resume']??false)===true&&str_contains((string)$stopped['body'],'Payment received after credit.'),'The stopped read leads and the payment stays beside it');
+$step=(string)DomainFacts::head($long->fresh(),DomainFacts::status($long->fresh()),DomainFacts::for($long->fresh()),(int)$order->id)['step'];
+expect(str_contains($step,'href="'.e($invoiceUrl).'"'),'The invoice link stays beside a stopped read that names a request');
+expect(str_contains($step,'>Check request #'.$order->id.'</a>'),'The stopped read still names its request');
+// One page render reads the payment notice once. The replacement history loads its invoice items per read.
+$items=0;DB::listen(function($q)use(&$items):void{if(preg_match('/from "invoice_items" where "invoice_id" in/',$q->sql)){$items++;}});
+$page=Livewire::actingAs($money)->test(ViewDomain::class,['record'=>$long->id]);
+same(1,$items,'The page reads the payment notice once per render');
+// A refresh reads it again: the same page drops the notice once the payment is resolved.
+$view=$page->instance();expect(str_contains((string)$view->getSubheading(),'Payment received after credit.'),'The head shows the payment before it is resolved');
+DB::table('domains_operations')->where('id',$replacement->id)->update(['action'=>'register']);
+expect(str_contains((string)$view->getSubheading(),'Payment received after credit.'),'Within one render the head reuses the notice it read');
+$view->pollManagement();
+expect(!str_contains((string)$view->getSubheading(),'Payment received after credit.'),'A refresh reads the notice again');
 echo "Staff domain reminder review and fallback slots passed.\n";$nativeSuccessful=true;

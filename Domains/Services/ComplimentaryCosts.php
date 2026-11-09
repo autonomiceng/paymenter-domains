@@ -45,7 +45,7 @@ final class ComplimentaryCosts
     /** Release hold only retries a held cost: without an approval the same registrar cost holds it again. */
     public static function awaitingApproval(Operation $op):bool
     {
-        try { return $op->state==='held'&&$op->safe_code==='registrar_price_increased'&&isset($op->policy['account_complimentary'],$op->policy['complimentary_cost_review']); }
+        try { return isset($op->policy['account_complimentary'])&&self::unapproved($op); }
         catch (\Throwable) { return false; }
     }
     /** What is wrong and the one next step, for a held complimentary request whose registrar cost is above the usual. */
@@ -53,7 +53,15 @@ final class ComplimentaryCosts
     {
         $review=$op->policy['complimentary_cost_review']??null;
         $next=$canApprove?'Use Approve registrar cost to continue.':'Ask staff with domain cost, management and funding permissions to approve this cost.';
-        return $op->state==='held'&&$op->safe_code==='registrar_price_increased'&&$review?'Needs approval: registrar cost $'.$review['amount'].' is above the usual $'.$review['usual'].'. '.$next:null;
+        return self::unapproved($op)?'Needs approval: registrar cost $'.$review['amount'].' is above the usual $'.$review['usual'].'. '.$next:null;
+    }
+    /** A held cost review whose amount is still above the effective cap: an earlier approval of at least this amount already
+     * lets release send. An unreadable comparison still needs approval. */
+    private static function unapproved(Operation $op):bool
+    {
+        $review=$op->policy['complimentary_cost_review']??null;
+        if($op->state!=='held'||$op->safe_code!=='registrar_price_increased'||!$review){return false;}
+        try{return WriteMoney::compare((string)$review['amount'],self::cap($op,(string)$review['usual']))>0;}catch(\Throwable){return true;}
     }
     public static function approve(int $id,User $actor,string $amount,string $reason,Clock $clock):void
     {
