@@ -135,7 +135,8 @@ final class DomainPage
             // The row says there is nothing to do unless the page notice already says so,
             // or the status or notice gives the customer a step (an expired domain: contact support).
             $state !== null => ['value' => self::INVOICE['review'], 'tone' => 'info', 'note' => 'Renewal being checked.'.(self::reassure($d, self::notice($d, $support, $s)) ? ' '.Missing::NO_ACTION : '')],
-            (bool) $s?->renewalInvoiceMissing => ['missing' => true, 'cause' => 'Not issued yet'.($s->renewalIssueAt ? '. Expected '.self::date($s->renewalIssueAt).'.' : ''), 'fix' => $contact],
+            // An expired domain keeps a renewal invoice that was never issued, so the page never says it issues on a passed date.
+            $s !== null && ($s->renewalInvoiceMissing || $s->renewalInvoiceOverdue) => ['missing' => true, 'cause' => 'Not issued yet'.($s->renewalIssueAt ? '. Expected '.self::date($s->renewalIssueAt).'.' : ''), 'fix' => $contact],
             $s?->renewalIssueAt !== null => ['value' => 'Issues '.self::date($s->renewalIssueAt).($s->renewalDueAt ? '. Due '.self::date($s->renewalDueAt).'.' : '')],
             ($d->plannedRenewalDue ?? $s?->renewalDueAt) !== null => ['value' => 'Due '.self::date($d->plannedRenewalDue ?? $s->renewalDueAt)],
             $d->expiry === null => ['missing' => true, 'cause' => self::checkHeld($d) ? self::TEAM_CHECK : Missing::fills('after the next sync'), 'fix' => null],

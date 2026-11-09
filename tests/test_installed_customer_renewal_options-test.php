@@ -6,6 +6,7 @@ require __DIR__.'/Support/reconciliation-fixture.php';
 $cataloguePorts=$ports;
 require __DIR__.'/Support/owner-pages.php';
 use App\Models\{Invoice,Role};
+use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController;
@@ -25,6 +26,26 @@ $cataloguePorts->apply(new Paymenter\Extensions\Servers\Domains\Catalogue\FeedOb
 $staff=commerceUser();$role=Role::create(['name'=>'Funding reviewer','permissions'=>['admin.domains.manage','admin.domains.fund']]);$staff->update(['role_id'=>$role->id]);
 $request=Request::create('/domains/'.$d->id,'GET');$request->setUserResolver(fn()=>$user);$request->setLaravelSession($session);
 $render=fn()=>(new OwnedDomainController($owners))->show($request,$d->id)->render();
+// Renewal On and no renewal invoice yet: the page says when it issues, then that it is missing. After expiry the list shows Expired
+// and the page still says the invoice was never issued, never that it issues on a passed date.
+$dates=Paymenter\Extensions\Servers\Domains\Services\DomainBilling::calendarFor(['domain'=>$d->fresh(),'settings'=>$server->fresh()->settings]);
+$expires=$d->fresh()->provider_expires_at->format('Y-m-d');$at=$clock->instant;$contact=Paymenter\Extensions\Servers\Domains\Presentation\Missing::support(null);
+expect($d->fresh()->provenance!=='adopted'&&$dates['issue']<$expires,'A registered domain with its renewal invoice issued before expiry');
+$facts=static function(string $day)use($clock,$user,$d,$owners):array {
+    $clock->instant=new DateTimeImmutable($day.'T12:00:00Z');
+    $s=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,'managed',$d->id,$clock->now()->getTimestamp());
+    return [$s,Paymenter\Extensions\Servers\Domains\Presentation\DomainListRow::renewal($s),Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::nextInvoice($owners->present($d->fresh()),$s,null)];
+};
+$date=static fn(string $day)=>CarbonImmutable::parse($day,'UTC')->format('M j, Y');
+try{
+    [$s,$row,$next]=$facts((new DateTimeImmutable($dates['issue']))->modify('-1 day')->format('Y-m-d'));
+    same(['Issues '.$date($dates['issue']).'. Due '.$date($dates['due']).'.',false],[$next['value']??null,$row['invoiceMissing']],'Before its issue date the page says when the invoice issues');
+    [$s,$row,$next]=$facts((new DateTimeImmutable($dates['issue']))->modify('+1 day')->format('Y-m-d'));
+    same([true,'Not issued yet. Expected '.$date($dates['issue']).'.',$contact],[$row['invoiceMissing'],$next['cause']??null,$next['fix']??null],'Past its issue date the list and page say the invoice is missing');
+    [$s,$row,$next]=$facts((new DateTimeImmutable($expires))->modify('+1 day')->format('Y-m-d'));
+    same([false,false,'expired'],[$s->renewalInvoiceMissing,$row['invoiceMissing'],$s->statusState],'After expiry the list shows Expired, not a missing invoice');
+    same([true,'Not issued yet. Expected '.$date($dates['issue']).'.',$contact],[$next['missing']??false,$next['cause']??null,$next['fix']??null],'After expiry the page still says the invoice was never issued');
+}finally{$clock->instant=$at;}
 foreach([false,true] as $complimentary){
     if($complimentary){ComplimentaryAccounts::set($user->id,$staff,true,'Synthetic funding authorization',$clock);}
     $before=Invoice::count();same(0,DB::transactionLevel(),'Customer page starts outside financial locks');
@@ -52,6 +73,8 @@ expect(!$summary->renewalInvoiceMissing,'Funded complimentary renewal is not a m
 $row=Paymenter\Extensions\Servers\Domains\Presentation\DomainListRow::renewal($summary);
 same('Next invoice: Paid',$row['note'],'List and customer page agree on the issued renewal state');
 same('Paid',Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::nextInvoice($owners->present($d->fresh()),$summary,null)['value'],'Detail shows the same paid receipt');
+// An issued invoice is never called missing after expiry.
+try{[$s,$row,$next]=$facts((new DateTimeImmutable($expires))->modify('+1 day')->format('Y-m-d'));same(['Paid',false],[$next['value']??null,$s->renewalInvoiceOverdue],'After expiry an issued invoice keeps its own state');}finally{$clock->instant=$at;}
 // An informational receipt cannot hide a changed/nonzero line or a foreign owner.
 $item=$invoice->items()->sole();$item->forceFill(['price'=>'1.00'])->saveQuietly();
 $summary=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,'managed',$d->id,$clock->now()->getTimestamp());
