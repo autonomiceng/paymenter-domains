@@ -25,6 +25,10 @@ class ConversionRefusalTests(unittest.TestCase):
                     self.assertEqual(result.stderr, BRIDGE)
                     self.assertEqual(list(app.iterdir()), [])
 
+    def test_no_package_converter_remains(self):
+        self.assertFalse((ROOT/'scripts/conversion').exists())
+        self.assertEqual([p.name for p in (ROOT/'scripts').iterdir() if 'conver' in p.name], ['convert-enom-05.php'])
+
 
 if __name__ == '__main__':
     unittest.main()

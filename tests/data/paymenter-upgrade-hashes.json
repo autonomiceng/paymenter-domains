@@ -228,36 +228,6 @@
           "vendor/symfony/http-foundation/Request.php": "0be852b84fb890ae05faf7b62a84324b8176c7996e0ecc33f521990aaff415a0"
         }
       },
-      "historical-conversion": {
-        "consumers": [
-          "scripts/conversion/QuietWindow.php",
-          "scripts/conversion/Mapper.php",
-          "scripts/conversion/AppHost.php",
-          "scripts/conversion/AppInventory.php"
-        ],
-        "review": "Re-review private queue envelopes/reservations, generated maintenance fence and bypass rules, scheduler mutex discovery, reflected cache fields and persisted quiet-window observations before conversion.",
-        "files": {
-          "vendor/laravel/framework/src/Illuminate/Console/Scheduling/Schedule.php": "0a0668efb17d281ed35767fd4bef0e2076ee34d9e770b66951afcd484802745e",
-          "vendor/laravel/framework/src/Illuminate/Console/Scheduling/Event.php": "48ad3d94cf8779236cdf08eca62fa9e06a1b45cd9ef40465d577affb941a9758",
-          "vendor/laravel/framework/src/Illuminate/Console/Scheduling/CallbackEvent.php": "b716b3075b68716560d4d3f23985d8f467b76dc72c566ad644ecc297a6dd9b64",
-          "vendor/laravel/framework/src/Illuminate/Console/Scheduling/CacheEventMutex.php": "56a97585d5a8d353c5a3c5f78a526014c7ef3beeb3a75271a96d5497fa8da4b5",
-          "vendor/laravel/framework/src/Illuminate/Console/Scheduling/CacheSchedulingMutex.php": "ad731be4d4071eb0c344a667fee66c6693ff0bad1b620f19047c1ff6a9c33ae6",
-          "vendor/laravel/framework/src/Illuminate/Cache/DatabaseStore.php": "1df45d12a4d675d15b10353eff2f0c3457c6eab79e4ffe50fb85b6dffe2e6b34",
-          "vendor/laravel/framework/src/Illuminate/Cache/FileStore.php": "d8bece77ea6f9f38d9c71723c1895030d34301be0f142c858b7c06261c4d1b3d",
-          "vendor/laravel/framework/src/Illuminate/Queue/Queue.php": "51d6e9301df87ddb521520557d0e505e9a14231e2bc32be1d753e4648b4e7138",
-          "vendor/laravel/framework/src/Illuminate/Queue/DatabaseQueue.php": "70afabf220661e103d6242cca5273ed0cbf938320e2274459c0360bffa372c74",
-          "vendor/laravel/framework/src/Illuminate/Foundation/Console/DownCommand.php": "642c8be360560edc82c400230196a6c8954cfc9bce235707311d4a12050377eb",
-          "vendor/laravel/framework/src/Illuminate/Foundation/Console/stubs/maintenance-mode.stub": "a8dc7e2db39e3e41b20ccb5709ce726679ef69d7a4c78de4a7d63b6665e08289",
-          "vendor/laravel/framework/src/Illuminate/Foundation/FileBasedMaintenanceMode.php": "1624538dce9383bdc11508ec7cb3b789ca4310d13c9cbe3dbf9362fdda78497a",
-          "vendor/laravel/framework/src/Illuminate/Foundation/Http/Middleware/PreventRequestsDuringMaintenance.php": "de0043732f22cb58263fcb3c696bf21698f6ec41e864dfc4ea35b52f5f71738d",
-          "public/index.php": "e1ad0c43365cdef3ee38738ea7140804e90eaeb0a11102884e97cbd0848c26af",
-          "bootstrap/app.php": "216fa17cb432fbbf3aa7eeea86a45c70561cc9e0acc55ba1d00bf19f1dab53d2",
-          "config/cache.php": "8e51d6c7220f6ce2b989397e4543cfa4315aef461eb99a0322d55ccd957f6f04",
-          "config/queue.php": "c2846fd6a0a06a0d8fa5f599c4e0cf7e293d7de67b04dfbd72c9644f4ff47c24",
-          "config/database.php": "6864dd7490e095490e91d2e115af31293c07140f3fce00f876bc5a1971eeb5e0",
-          "vendor/laravel/framework/src/Illuminate/Cache/DatabaseLock.php": "05257b67976a203d0b45d8bf871671c8d4166f5a3e599326ce1f4ac0c9991ff8"
-        }
-      },
       "native-lifecycle": {
         "consumers": [
           "Domains/Services/NativeExpiry.php",
