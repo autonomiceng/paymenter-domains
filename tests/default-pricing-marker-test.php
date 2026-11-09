@@ -23,6 +23,9 @@ same(['published'=>2,'failed'=>[],'skipped'=>[]],$save(),'Start with current pub
 foreach(['null','true','1','"invalid"','{broken','{}','{"offer":1}','{"retailRule":'.\Paymenter\Extensions\Servers\Domains\Catalogue\Retail::VERSION.'}'] as $marker){
     DB::table('domains_tlds')->where('id',$target->id)->update(['catalogue_published_revision'=>$marker]);
     $siblingBefore=$state($sibling);
+    // A single-TLD read takes the bad marker as a publication still to come, as the batch read does.
+    $single=$ports->readOffers(new \Paymenter\Extensions\Servers\Domains\Catalogue\Query(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$target->server_id)->sole()),[$target->tld],'register'),\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0];
+    same([false,'publication_pending'],[$single->available,$single->reason],'A single-TLD read reads a bad marker as publication pending: '.$marker);
     same(['published'=>1,'failed'=>[],'skipped'=>[]],$save(),'An invalid retained marker is repaired by the repeated pricing save: '.$marker);
     $t=$target->fresh();$account=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$t->server_id)->sole();
     $policy=DB::table('domains_sales_policies')->where('tld',$t->tld)->first();

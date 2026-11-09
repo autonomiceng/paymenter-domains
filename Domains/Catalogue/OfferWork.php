@@ -350,7 +350,10 @@ final class OfferWork
             }
             $this->requestSoldFacts($b, $t->tld);
             $revision = $this->revision($b, $t->tld);
-            if ($t->catalogue_published_revision === null || !OfferState::equivalent(OfferState::decode($t->catalogue_published_revision), get_object_vars($revision))) {
+            // A marker that can't be read is republished like a stale one.
+            try { $published = OfferState::equivalent(OfferState::decode($t->catalogue_published_revision), get_object_vars($revision)); }
+            catch (\JsonException|\TypeError) { $published = false; }
+            if ($t->catalogue_published_revision === null || !$published) {
                 try { $writer->apply(Edit::republish($b, $t->tld), $revision); $touched[$t->tld] = true; }
                 catch (\Throwable $error) {
                     // An obsolete account claim still stops the turn; one failed projection cannot pin the scan.
