@@ -444,7 +444,9 @@ final class Writer implements Catalogue
         foreach ($command->costs as $cost) {
             if ($cost->observedAt > $now) { throw new \DomainException('Future cost observation.'); }
             $p = $prices->first(static fn ($p) => $p->action === $cost->action && (int) $p->term === $cost->term && $p->currency === 'USD');
-            $old = $p?->catalogue_observation === null ? null : OfferState::cost(OfferState::decode($p->catalogue_observation));
+            // A saved cost that can't be read has no time or value to compare, so this observation replaces it.
+            try { $old = $p?->catalogue_observation === null ? null : OfferState::cost(OfferState::decode($p->catalogue_observation)); }
+            catch (\Throwable) { $old = null; }
             if ($old && $old->observedAt > $cost->observedAt) { continue; }
             if ($old && $old->observedAt == $cost->observedAt) {
                 $a = OfferState::encodeCost($old); $b = OfferState::encodeCost($cost); unset($a['source_unit'], $b['source_unit']);

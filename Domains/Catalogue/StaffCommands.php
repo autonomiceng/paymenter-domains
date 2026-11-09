@@ -156,7 +156,7 @@ final class StaffCommands
         $b=AccountBindings::binding($account);
         $actions=($data['seller']??'')===''?[]:array_keys(array_filter(['register'=>(bool)($data['register']??false),'transfer'=>(bool)($data['transfer']??false)]));
         $target=Tld::where('server_id',$id)->where('tld',$t->tld)->first()??throw new \DomainException('Seller offer missing.');
-        if($actions!==[]&&!SellerAvailability::hasPrices($account,$target)){throw new \DomainException('Seller price missing.');}
+        if($actions!==[]&&($prices=SellerAvailability::state($account,$target))!==SellerAvailability::READY){throw new \DomainException($prices===SellerAvailability::UNREADABLE?'Seller price unreadable.':'Seller price missing.');}
         $intent=null;
         if($actions!==[]){
             $raw=OfferState::decode($target->catalogue_intent);$intent=$this->intent($raw)->allowSales($actions);
