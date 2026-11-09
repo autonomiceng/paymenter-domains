@@ -17,7 +17,7 @@
     @include('domains::partials.styles')
     @include('domains::partials.test-banner', ['test' => $testEnvironment])
     <div>
-        @if (!$guest && \Illuminate\Support\Facades\Route::has('domains.domains.index'))<a class="domains-back" href="{{ route('domains.domains.index') }}"><x-ri-arrow-left-s-line class="domains-i" aria-hidden="true" />Domains</a>@endif
+        @if (!$guest && \Paymenter\Extensions\Servers\Domains\Http\DomainList::reachable() && \Illuminate\Support\Facades\Route::has('domains.domains.index'))<a class="domains-back" href="{{ route('domains.domains.index') }}"><x-ri-arrow-left-s-line class="domains-i" aria-hidden="true" />Domains</a>@endif
         <div class="domains-head">
             <div>
                 <h1 class="domains-title">Domain prices</h1>
