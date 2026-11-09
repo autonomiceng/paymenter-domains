@@ -126,14 +126,12 @@ final class SiteDnsDefault
             ->from('domains_managed_public_config as c')->whereColumn('c.domain_id','domains_domains.id')->where('c.profile_id',$profileId)))->exists();
         if(!$watch&&!$managed){return;}
         if($managed){ManagedPublicReconciliation::restart();}
-        if($watch){DB::transaction(static function()use($profileId,$inherited):void {
-            DB::table('domains_watch_schedule')->insertOrIgnore(['scope'=>'enrollment']);
-            $q=DB::table('domains_watch_schedule')->where('scope','enrollment');$row=$q->lockForUpdate()->first();
-            $data=json_decode($row->data??'{}',true);$data=is_array($data)?$data:[];
-            $profiles=array_values(array_unique([...($data['refresh_profiles']??[]),...($profileId===null?[]:[$profileId])]));
-            $q->update(['cursor'=>0,'data'=>json_encode(['refresh_dns'=>$inherited||($data['refresh_dns']??false),
-                'refresh_profiles'=>$profiles,'restart'=>bin2hex(random_bytes(16))])]);
-        });}
+        if($watch){
+            $keys=[];$p=$profileId===null?null:WatchProfile::find($profileId);$d=$inherited?self::profile():null;
+            if($profileId!==null){$keys[WatchDnsRefresh::scope($profileId)]=$p?$p->id.':'.$p->revision:'missing';}
+            if($inherited){$keys[WatchDnsRefresh::DEFAULT]=$d?$d->id.':'.$d->revision:'none';}
+            WatchDnsRefresh::request($keys);
+        }
         DB::afterCommit(static fn()=>app(WatchWork::class)->reconcileDefaults($managed,$watch));
     }
 }

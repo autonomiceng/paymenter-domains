@@ -35,19 +35,48 @@ DB::transaction(fn()=>$selected->update(['revision'=>$selected->revision+1,'name
 expect($checks->begin($watch->id,$owner->id,'delegation',$now)!==null,'Editing the selected site template still refreshes inherited DNS work');
 expect($checks->begin($explicit->id,$owner->id,'delegation',$now)!==null,'Editing the site template also refreshes explicit assignments to it');
 $hold();
-// Interleave a real default restart after this batch has read its cursor, with eager processing disabled.
-app()->instance(WatchWork::class,new WatchWork($reader,new WatchDiscoveryWork(static fn()=>0),false,fn()=>$now));
+// A second template's edit lands after the batch consumed its first watch. The batch keeps its claim and page;
+// the edit waits for the next batch and never repeats the first template's finished refresh.
+$second=DB::transaction(fn()=>WatchProfile::create(['name'=>'Second DNS','enabled'=>true,'nameservers'=>['ns1.second.test','ns2.second.test'],
+    'website_endpoints'=>[],'email_endpoints'=>[],'edited_by'=>$owner->id,'reason'=>'Second explicit template']));
+DB::transaction(fn()=>WatchName::create(['user_id'=>$owner->id,'canonical_name'=>'second-placeholder.com','psl_revision'=>str_repeat('a',64),'state'=>'active',
+    'ns_profile_id'=>$second->id,'profile_revision'=>$second->revision,'expected_dns'=>'platform','notice_preferences'=>[]]));
+$quiet=new WatchWork($reader,new WatchDiscoveryWork(static fn()=>0),false,fn()=>$now);app()->instance(WatchWork::class,$quiet);
+$hold();DB::table('domains_watch_work')->where('watch_id',$explicit->id)->whereIn('kind',['delegation','points'])->update(['due_at'=>$now+3600,'backoff_until'=>$now+3600,'attempts'=>3,'claim'=>null,'lease_until'=>null]);
+DB::transaction(fn()=>$selected->update(['revision'=>$selected->revision+1,'nameservers'=>['ns1.batch.test','ns2.batch.test'],'edited_by'=>$owner->id,'reason'=>'Edit before the batch']));
 $restart=true;
-DB::listen(static function($query)use(&$restart):void {
-    if($restart && str_starts_with($query->sql,'select * from "domains_watch_names" where "id" > ?')){
-        $restart=false;SiteDnsDefault::reconcile();
+DB::listen(static function($query)use(&$restart,$second,$owner):void {
+    if($restart && str_starts_with($query->sql,'update "domains_watch_schedule" set "cursor" = ?')){
+        $restart=false;DB::afterCommit(static fn()=>DB::transaction(fn()=>$second->update(['revision'=>$second->revision+1,
+            'nameservers'=>['ns1.second-edit.test','ns2.second-edit.test'],'edited_by'=>$owner->id,'reason'=>'Edit during the batch'])));
     }
 });
-$work->reconcileDefaults();expect(!$restart,'Concurrent restart was injected after the enrollment cursor read');
-$data=json_decode(DB::table('domains_watch_schedule')->where('scope','enrollment')->value('data'),true);
-same(true,$data['refresh_dns']??false,'A newer default restart must survive the older enrollment batch');
-$work->reconcileDefaults();
-expect($checks->begin($watch->id,$owner->id,'delegation',$now)!==null,'The retained restart refreshes the inherited watch on the next batch');
+$work->reconcileDefaults();expect(!$restart,'The second template edit landed after the batch consumed its first watch');
+expect($checks->begin($explicit->id,$owner->id,'delegation',$now)!==null,'The active batch keeps its claim and refreshes the rest of its page');
+$hold();$work->reconcileDefaults();
+same(null,$checks->begin($watch->id,$owner->id,'delegation',$now),'The second template edit never repeats the finished first refresh');
+// Overlapping callbacks for one effective default refresh once; a check that began after the first keeps its claim.
+app()->instance(WatchWork::class,$work);
+DB::transaction(fn()=>$selected->update(['revision'=>$selected->revision+1,'nameservers'=>['ns1.overlap.test','ns2.overlap.test'],'edited_by'=>$owner->id,'reason'=>'Edit before the overlap']));
+$ticket=$checks->begin($watch->id,$owner->id,'delegation',$now);expect($ticket!==null,'The template edit refreshes the inherited watch');
+$claim=fn()=>DB::table('domains_watch_work')->where('watch_id',$watch->id)->where('kind','delegation')->value('claim');
+SiteDnsDefault::reconcile();
+same($ticket->claim,$claim(),'A repeated refresh of the same default keeps the check that began after the first');
+DB::transaction(fn()=>$selected->update(['revision'=>$selected->revision+1,'nameservers'=>['ns1.distinct.test','ns2.distinct.test'],'edited_by'=>$owner->id,'reason'=>'Distinct edit']));
+same(null,$claim(),'A distinct template revision still refreshes the inherited watch');
+// A reassignment after the page read decides with the new template, so the older refresh keeps its check.
+app()->instance(WatchWork::class,$quiet);$hold();
+DB::transaction(fn()=>$selected->update(['revision'=>$selected->revision+1,'nameservers'=>['ns1.moved.test','ns2.moved.test'],'edited_by'=>$owner->id,'reason'=>'Edit before the reassignment']));
+$moved=null;
+DB::listen(static function($query)use(&$moved,$watch,$second,$owner,$checks,$now):void {
+    if($moved===null && str_starts_with($query->sql,'select * from "domains_watch_names" where "id" > ?')){
+        $moved=false;
+        DB::table('domains_watch_names')->where('id',$watch->id)->update(['ns_profile_id'=>$second->id,'profile_revision'=>$second->fresh()->revision,'expected_dns'=>'platform','revision'=>DB::raw('revision + 1')]);
+        $checks->enroll($watch->id,$owner->id,$now);$moved=$checks->begin($watch->id,$owner->id,'delegation',$now);
+    }
+});
+$work->reconcileDefaults();expect($moved!==null && $moved!==false,'The reassigned watch began its new check after the page read');
+same($moved->claim,$claim(),'An older template refresh keeps the reassigned watch check');
 same([],$reader->calls,'Template maintenance makes no public DNS reads');
 expect(in_array(Schema::getColumnType('domains_watch_schedule','data'),['text','longtext'],true),'Installed scheduler data is text, never a JSON column');
 // A full enrollment batch advances with both a null payload and database-read JSON text.
@@ -57,8 +86,7 @@ for($i=1;$i<=25;$i++){
 }
 $schedule=DB::table('domains_watch_schedule')->where('scope','enrollment');$schedule->update(['cursor'=>0,'data'=>null]);
 $work->reconcileDefaults();$cursor=(int)(clone $schedule)->value('cursor');expect($cursor>0,'Native enrollment advances its first full batch from null data');
-SiteDnsDefault::reconcile();$work->reconcileDefaults();same($cursor,(int)(clone $schedule)->value('cursor'),'Native enrollment advances a full batch from saved JSON text');
-$work->reconcileDefaults();same(0,(int)(clone $schedule)->value('cursor'),'Native enrollment reaches the final watch and completes the sweep');
+$work->reconcileDefaults();same(0,(int)(clone $schedule)->value('cursor'),'Native enrollment advances from saved JSON text to the final watch and completes the sweep');
 same([],$reader->calls,'Enrollment cursor proof sends no DNS requests');
 // Without eligible managed holdings a site-wide refresh starts no managed sweep.
 PublicDnsQuota::seed($now);DB::table(PublicDnsQuota::TABLE)->where('id',1)->update(['sweep_due_at'=>$now+86400,'sweep_cursor'=>7]);
