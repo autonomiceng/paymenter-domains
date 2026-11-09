@@ -50,4 +50,16 @@ expect($signals->observe($id,$uid,'points'),'Long-chain cohort attempt saved as 
 same(10,count($fake->calls)-$before,'Long chains retain the ten-query ceiling');
 same((int)$next->id,(int)DB::table(ManagedPublicWorkSchema::TABLE)->where('kind','points')->value('source_cursor'),'Incomplete hosting attempt yields to the next cohort');
 expect(ManagedPublicObservation::orderByDesc('id')->first()->partial,'Truncated hosting cohort never infers complete false');
+// Suspended hosting cannot fill the related window ahead of a healthy link or count as more hosting.
+DB::table('services')->whereIn('id',WatchSource::where('managed_domain_id',$id)->where('state','managed_link')->pluck('service_id'))->update(['status'=>'suspended']);
+same(101,WatchSource::where('managed_domain_id',$id)->where('state','managed_link')->count(),'Over one hundred suspended links sort before the healthy one');
+$o=App\Models\Order::create(['user_id'=>$uid,'currency_code'=>'USD']);
+$healthy=App\Models\Service::create(['user_id'=>$uid,'order_id'=>$o->id,'product_id'=>$host->product_id,'plan_id'=>$host->plan_id,'status'=>'active','quantity'=>1,'price'=>'5.00','currency_code'=>'USD']);
+$healthy->properties()->create(['key'=>'domain','value'=>'shop.example.com']);
+DB::transaction(fn()=>WatchSource::create(['user_id'=>$uid,'service_id'=>$healthy->id,'map_id'=>$map->id,'map_revision'=>1,'hostname'=>'shop.example.com',
+    'registrable_name'=>'example.com','managed_domain_id'=>$id,'state'=>'managed_link','source_digest'=>hash('sha256','shop.example.com'),'last_seen_at'=>$time->now]));
+require dirname(__DIR__).'/Domains/routes/web.php';require dirname(__DIR__).'/Domains/routes/owned.php';app('router')->getRoutes()->refreshNameLookups();
+$summary=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($owner,'managed',$id,$time->now);
+same([(int)$healthy->id],array_column($summary->relatedServices,'id'),'Healthy hosting link survives over one hundred suspended links');
+same(0,$summary->relatedOverflow,'Suspended hosting never counts as more hosting');
 $nativeSuccessful=true;echo "Large managed source cohorts retain stable NS confirmation and bounded partial points rotation.\n";
