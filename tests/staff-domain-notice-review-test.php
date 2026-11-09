@@ -38,4 +38,22 @@ foreach (['auto-renew','alerts','neither'] as $slot) {
 }
 $page->callAction('notice_review');
 same('reviewed',DB::table('domains_reminder_deliveries')->where('delivery_key',hash('sha256','fallback-review'))->value('state'),'Fallback review handles the retained handoff');
+// A read problem leads the head, but late money and refunded-debt payments keep their words and invoice link beside it.
+$money=staffUser([Staff::VIEW,'admin.invoices.update']);
+$late=\App\Models\Invoice::withoutEvents(fn()=>\App\Models\Invoice::create(['user_id'=>$money->id,'currency_code'=>'USD','status'=>'paid','due_at'=>now()]));
+$order=$long->fresh()->latestAcquisition;DB::table('domains_operations')->where('id',$order->id)->update(['invoice_id'=>$late->id]);
+$observed=$long->fresh()->observation;$observed['record_failure']=['identity'=>\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::identity($long->fresh()),'code'=>'domain_not_in_account','at'=>time()];
+$long->update(['observation'=>$observed]);
+$invoiceUrl=\App\Admin\Resources\InvoiceResource::getUrl('edit',['record'=>$late->id]);
+$head=static function(string $payment,string $label)use($money,$long,$invoiceUrl):void {
+    $html=Livewire::actingAs($money)->test(ViewDomain::class,['record'=>$long->id])->html();$text=html_entity_decode(strip_tags($html),ENT_QUOTES);
+    expect(str_contains($text,'Domain is not in the registrar account.'),$label.': the read problem still leads');
+    expect(str_contains($text,$payment),$label.': the payment notice stays beside the read problem');
+    expect(str_contains($html,'href="'.e($invoiceUrl).'"'),$label.': the invoice link stays beside the read problem');
+};
+ObligationAlerts::record($long->fresh(),'acquisition_late_money',time(),$order->id);
+$head('Payment activity after the order closed. Check the invoice and payments before contacting the customer.','Late money');
+DB::table('domains_obligation_alerts')->where('domain_id',$long->id)->where('code','acquisition_late_money')->update(['resolved_at'=>time()]);
+$replacement=$order->replicate();$replacement->fill(['operation_key'=>'notice-review-replacement','action'=>'renew','state'=>'rejected','safe_code'=>'refund_approved','invoice_id'=>$late->id,'policy'=>['renewal_replacement'=>['actor_id'=>null]]])->save();
+$head('Payment received after credit. Check the invoice.','Replacement invoice');
 echo "Staff domain reminder review and fallback slots passed.\n";$nativeSuccessful=true;

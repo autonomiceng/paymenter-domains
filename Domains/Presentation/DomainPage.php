@@ -23,7 +23,7 @@ final class DomainPage
     { return str_contains($notice['text'] ?? '', self::NOTHING_TO_DO) || str_contains($notice['text'] ?? '', Missing::NO_ACTION); }
     /** True when the page may still say there is nothing to do: not said yet, and no step for the customer in the status or notice. */
     private static function reassure(OwnedDomain $d, ?array $notice): bool
-    { return !self::noActionSaid($notice) && !DomainStatus::asksCustomer($d->status) && !in_array($notice['tone'] ?? null, ['warn', 'bad'], true); }
+    { return !self::noActionSaid($notice) && !DomainStatus::asksCustomer($d->status) && !in_array($notice['tone'] ?? null, ['warn', 'bad'], true) && !($notice['asks'] ?? false); }
     public static function checkHeld(OwnedDomain $d): bool
     { return collect($d->management)->contains(fn ($section) => $section['recordCheckHeld'] ?? false); }
     /** The one notice at the top of the page: text, tone and its one action, or null when nothing needs doing.
@@ -35,7 +35,10 @@ final class DomainPage
         $contact = $support ? ['label' => 'Contact support', 'url' => $support] : null;
         $order = $d->order['state'] ?? null; $word = ($d->order['kind'] ?? null) === 'transfer' ? 'transfer' : 'registration';
         $renewalCheck=$d->renewNow['check']??$d->renewalInvoice['check']??null;
+        $nameservers = self::nameserverNotice($d, $s, $movedAt, $contact);
         $notice = match (true) {
+            // A nameserver step restores service, so it stays with its action and the renewal check is said beside it.
+            $renewalCheck!==null && $nameservers!==null => [...$nameservers, 'text' => $nameservers['text'].' '.($renewalCheck['brief'] ?? $renewalCheck['body'])],
             $renewalCheck!==null => ['tone'=>'info','text'=>$renewalCheck['body'],'action'=>$contact],
             $d->syncPaused => self::ours('Sync paused: the demo registrar is off. Nameservers show when it resumes.', $contact),
             $d->setupPending => self::ours('We’re confirming this domain. Changes and renewals start after that. If it expires soon, let us know.', $contact),
@@ -44,8 +47,7 @@ final class DomainPage
             $order === 'cancelled' && isset($d->order['credit']) => ['tone' => 'warn', 'text' => 'This order was cancelled. We added what you paid to account credit. You can apply it on an invoice.', 'action' => null],
             $order === 'cancelled' => ['tone' => 'warn', 'text' => 'This order was cancelled. Ask us to start it again.', 'action' => $contact],
             $order === 'failed' => ['tone' => 'bad', 'text' => 'This '.$word.' did not finish. Ask us to start it again.', 'action' => $contact],
-            in_array('watch.ns_changed', $s?->stateKeys ?? [], true) => ['tone' => 'warn', 'text' => $d->name.($s->dnsPreviouslyMatched?' stopped using ':' does not use ').DnsSignalLabels::nameservers().($s->dnsPreviouslyMatched?$movedAt:'').'.',
-                'action' => isset($d->management['nameservers']) ? ['label' => 'Change nameservers', 'url' => $d->actions['show'].'?edit=nameservers#edit-nameservers'] : $contact],
+            in_array('watch.ns_changed', $s?->stateKeys ?? [], true) => $nameservers,
             $setup && $phase === 'cutoff' && ($d->setup['contacts'] ?? false) => ['tone' => 'warn', 'text' => 'The auth code deadline passed. Update your details so we can finish the transfer.', 'action' => ['label' => 'Update details', 'url' => $setup]],
             $setup && ($d->setup['defaults'] ?? false) && !($d->setup['contacts'] ?? false) => ['tone' => 'info', 'text' => 'Choose nameservers before registration starts, or we use '.(implode(', ', $d->setup['defaultNameservers'] ?? []) ?: 'the registrar’s default nameservers').'.', 'action' => ['label' => 'Choose nameservers', 'url' => $setup]],
             (bool) $setup => ['tone' => 'warn', 'text' => 'Finish setup to start registration.', 'action' => ['label' => 'Finish setup', 'url' => $setup]],
@@ -57,7 +59,7 @@ final class DomainPage
             // An Off switch is why changes stop, so its own notice below wins over a stopped read, which the rows already say.
             self::checkHeld($d) && !($d->changesUnavailable && $d->changesRefused === DomainManagement::SWITCH_OFF) => self::ours(self::READ_HELD, $contact),
             $d->statusReason === DomainStatus::LATE => ['tone' => 'bad', 'text' => 'This domain has expired. '.DomainStatus::LATE.'.', 'action' => $contact],
-            $d->dnsCorrection => ['tone'=>'info','text'=>'The registered nameservers do not match the registration settings. '.(isset($d->management['nameservers'])?'Set up DNS with your provider, then change nameservers.':($contact?'Set up DNS with your provider, then contact support to change nameservers.':'Set up DNS with your provider. Nameserver changes are currently unavailable.')),'action'=>isset($d->management['nameservers'])?['label'=>'Change nameservers','url'=>$d->actions['show'].'?edit=nameservers#edit-nameservers']:$contact],
+            $d->dnsCorrection => $nameservers,
             self::initialRead($d) => ['tone'=>'info','text'=>self::INITIAL_READ,'action'=>null],
             $d->changesUnavailable && $d->changesRefused === DomainManagement::SWITCH_OFF => ['tone' => 'info', 'text' => 'Changes are on hold: DNS, nameservers and contacts are Off. Contact us to turn them on.', 'action' => $contact],
             $d->changesUnavailable && is_int($d->changesRefused) => ['tone' => 'info', 'text' => 'Changes are on hold until we finish checking an earlier request. '.self::NOTHING_TO_DO, 'action' => $contact],
@@ -69,6 +71,17 @@ final class DomainPage
             $notice['text'] = 'Complimentary. '.$notice['text'];
         }
         return $notice;
+    }
+    /** The nameserver step: the domain stopped using ours, or the registration settings were not applied. Null without one.
+     * asks: the customer has this step, even in a blue notice, so the page does not also say no action is needed. */
+    private static function nameserverNotice(OwnedDomain $d, ?DomainSummary $s, string $movedAt, ?array $contact): ?array
+    {
+        $change = isset($d->management['nameservers']) ? ['label' => 'Change nameservers', 'url' => $d->actions['show'].'?edit=nameservers#edit-nameservers'] : null;
+        if (in_array('watch.ns_changed', $s?->stateKeys ?? [], true)) {
+            return ['tone' => 'warn', 'text' => $d->name.($s->dnsPreviouslyMatched?' stopped using ':' does not use ').DnsSignalLabels::nameservers().($s->dnsPreviouslyMatched?$movedAt:'').'.', 'action' => $change ?? $contact, 'asks' => true];
+        }
+        if (!$d->dnsCorrection) { return null; }
+        return ['tone'=>'info','text'=>'The registered nameservers do not match the registration settings. '.($change?'Set up DNS with your provider, then change nameservers.':($contact?'Set up DNS with your provider, then contact support to change nameservers.':'Set up DNS with your provider. Nameserver changes are currently unavailable.')),'action'=>$change ?? $contact,'asks'=>true];
     }
     /** A notice for work that is ours: blue, with the way to reach us. */
     private static function ours(string $text, ?array $contact): array

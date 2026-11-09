@@ -57,6 +57,13 @@ $item=$invoice->items()->sole();$item->forceFill(['price'=>'1.00'])->saveQuietly
 $summary=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,'managed',$d->id,$clock->now()->getTimestamp());
 expect($summary->renewalInvoiceReview && !$summary->renewalInvoicePaid,'Changed complimentary receipt remains under review');
 same('Under review',Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::nextInvoice($owners->present($d->fresh()),$summary,null)['value'],'Changed receipt detail stays under review');
+// The customer's actual page keeps the refusal: the rendered Renewal card says Under review, never Paid, and moves nothing.
+$money=static fn():string=>serialize([DB::table('invoices')->get(),DB::table('invoice_items')->get(),DB::table('invoice_transactions')->get(),DB::table('credits')->get(),\Paymenter\Extensions\Servers\Domains\Models\Operation::all()->map->getRawOriginal()->all()]);
+$unchanged=$money();$dom=new DOMDocument;@$dom->loadHTML($render());
+$card=(new DOMXPath($dom))->query('//section[@id="renewal"]//dt[normalize-space(text())="Next invoice"]/following-sibling::dd[1]')->item(0);
+$card=trim(preg_replace('/\s+/',' ',(string)$card?->textContent));
+expect(str_starts_with($card,'Under review')&&!str_contains($card,'Paid'),'Rendered changed receipt stays under review, got: '.$card);
+same($unchanged,$money(),'Rendering the changed receipt moves no money and changes no request');
 $item->forceFill(['price'=>'0.00'])->saveQuietly();$invoice->forceFill(['user_id'=>$staff->id])->saveQuietly();
 $summary=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,'managed',$d->id,$clock->now()->getTimestamp());
 expect($summary->renewalInvoiceReview && !$summary->renewalInvoicePaid,'Foreign receipt cannot supply list payment state');

@@ -36,7 +36,8 @@ final class OperationActions
                     ->modalDescription($complimentaryClosure?'Closes this complimentary order and its service. Nothing is charged or credited.':self::description($name));
             }
             $account=$name==='release'&&!$contactRecovery&&$op->state==='held'?RequestFacts::account($op)['account']:null;
-            $sends=EnomTestRegistration::releaseSends($op,$account)?RequestFacts::sendWords($op,$account):null;
+            // A held complimentary cost comes back on release, so release sends nothing until the cost is approved.
+            $sends=EnomTestRegistration::releaseSends($op,$account)&&!\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::awaitingApproval($op)?RequestFacts::sendWords($op,$account):null;
             if($sends!==null){
                 $action->requiresConfirmation()->modalHeading('Send to Enom now?')->modalSubmitActionLabel('Release and send')->modalWidth('lg')
                     ->modalDescription("Sends the {$sends} to Enom within a few minutes. This can't be taken back.");

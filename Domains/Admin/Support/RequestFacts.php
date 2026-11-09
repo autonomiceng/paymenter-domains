@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus;
-use Paymenter\Extensions\Servers\Domains\Services\{BalanceRetries, EnomTestManagement, EnomTestRegistration, ManagementEvidence, ManagementProgress, OperationClaims, RegistrarCheck, RegistrationDns, RenewalCycles, RenewalReplacements, StaffOperationWrites, UnpaidAcquisitionProof, WriteHeld};
+use Paymenter\Extensions\Servers\Domains\Services\{BalanceRetries, ComplimentaryCosts, EnomTestManagement, EnomTestRegistration, ManagementEvidence, ManagementProgress, OperationClaims, RegistrarCheck, RegistrationDns, RenewalCycles, RenewalReplacements, StaffOperationWrites, UnpaidAcquisitionProof, WriteHeld};
 /** Request page facts and its one notice. A null fact value is Missing and its "_sub" key names the cause. */
 final class RequestFacts
 {
@@ -321,10 +321,13 @@ final class RequestFacts
             // Release hold puts paid work back in the queue, so the button says what it starts before staff press it.
             $queues=!$sends&&$open&&$account?->processing_enabled&&in_array($op->action,['register','transfer','renew'],true)&&OperationActions::relevant('release',$op);
             $next=$sends ? 'Release hold sends the '.self::sendWords($op,$account).' to Enom.' : ($queues ? 'Release hold queues the '.self::queueWords($op,$account).' to send to '.PaidUncertainty::registrar($op).'.' : null);
+            // Release does not approve a higher complimentary cost, so it is only a retry and approval is the way forward.
+            $approval=$open&&ComplimentaryCosts::awaitingApproval($op);
+            if ($approval) { $next=(OperationActions::relevant('release',$op)?'Release hold only retries the price check. ':'').'The '.($account?self::queueWords($op,$account):'request').' holds again while the registrar cost is above the usual. It goes ahead at this cost once the registrar cost is approved on the domain page.'; }
             if ($next!==null) { $body=$body===null?$next:$next.' '.$body; }
             if (($try=self::nextTry($op))!==null) { $body=$body===null?$try:$body.' '.$try; }
             return ['title'=>rtrim($reason??Labels::reason(null),'.').'.','body'=>$body,'tone'=>'warning','action'=>in_array($op->safe_code,WriteHeld::FINAL_REFUSALS,true)&&OperationActions::relevant('refund',$op)?'refund':(OperationActions::relevant('release',$op)?'release':null),
-                'link'=>match($op->safe_code){'renewal_invoice_unpaid'=>'invoice','renewal_funding_or_authority','automatic_spend_paused','renewal_spend_paused'=>'domain',default=>$fix?'registrars':null},'link_label'=>$fix];
+                'link'=>$approval?'domain':match($op->safe_code){'renewal_invoice_unpaid'=>'invoice','renewal_funding_or_authority','automatic_spend_paused','renewal_spend_paused'=>'domain',default=>$fix?'registrars':null},'link_label'=>$fix];
         }
         return null;
     }

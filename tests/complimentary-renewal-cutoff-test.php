@@ -39,5 +39,15 @@ $summary=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->on
 expect($summary!==null,'Native list summary exists');$row=Paymenter\Extensions\Servers\Domains\Presentation\DomainListRow::renewal($summary);
 expect(str_contains(json_encode($row),'Renewal did not finish')&&!str_contains(json_encode($row),'Under review'),'List and page share the closed outcome');
 $html=view('domains::partials.owner-renew',['domain'=>$dto,'summary'=>$summary,'support'=>'/support','keys'=>['auto-renew'=>'synthetic','renew'=>'synthetic']])->render();expect(str_contains($html,'Renewal did not finish')&&!str_contains($html,'Renewal being checked'),'Native owner Blade uses the terminal renewal outcome');
+// The owner's real Off switch keeps the closed outcome on the list, with the actual Off value; On returns it.
+$preference=new Paymenter\Extensions\Servers\Domains\Services\OwnerAutoRenew($clock);app('view')->share('errors',new Illuminate\Support\ViewErrorBag);
+foreach([false,true] as $on){
+    $preference->set($user,$d->id,$on);same($on,$d->fresh()->renewal_policy['owner_auto_renew'],'Owner switch saved: '.($on?'On':'Off'));
+    $summary=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,'managed',$d->id,$clock->now()->getTimestamp());
+    $row=Paymenter\Extensions\Servers\Domains\Presentation\DomainListRow::renewal($summary);
+    same([$on?'On':'Off','Renewal did not finish. Contact support.'],[$row['value'],$row['note']],'Closed renewal list row keeps the outcome with auto-renew '.($on?'On':'Off'));
+    $list=preg_replace('/\s+/',' ',html_entity_decode(strip_tags(view('domains::index',['domains'=>new Illuminate\Pagination\LengthAwarePaginator([$summary],1,25)])->render()),ENT_QUOTES));
+    expect(str_contains($list,'Renewal did not finish. Contact support.')&&!str_contains($list,'Cancels'),'Rendered list shows the closed outcome with auto-renew '.($on?'On':'Off'));
+}
 same($before,$nativeMoney(),'Rendering preserves Paid zero receipt and money history');same(0,$state->writes,'Closed renewal sends nothing');
 echo "Complimentary renewal cutoff preserves Paid receipt\n";$nativeSuccessful=true;
