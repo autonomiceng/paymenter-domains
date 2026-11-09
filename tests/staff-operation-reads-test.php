@@ -232,6 +232,10 @@ $unread($lost,'An Enom lost registration reply');
 $said=RegistrarCheck::forCustomer($lost->fresh());
 same('Registration pending',$said['title'],'Before the first read the customer sees the pending registration line');
 expect(!str_contains($said['body'],'Check status'),'Customers never see the staff Check status step');
+// A read our send check stops before sending is no read of this attempt.
+$observation->fault='send_guard';$reconcile->run($lost->id);$observation->fault='';
+same(false,$lost->fresh()->policy['status_check']['read_attempted'],'A read refused before sending is not a read of this attempt');
+$unread($lost,'A read refused before sending');
 $before=[$lost->attempt,$lost->funding,$lost->domain->reservation_name,$credit()];
 $reconcile->run($lost->id);
 expect(in_array(ReadCommand::Info,$observation->calls,true),'Automatic recovery reads the domain before staff ask for a case');
@@ -258,6 +262,13 @@ $policy=$lost->fresh()->policy;$policy['reconciliation']['polls']=OperationRecon
 $reconcile->run($lost->id);
 same([],$observation->calls,'The read limit stops another read');
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$lost->id])->assertActionVisible('enom_answer')->assertDontSee('Registrar check pending');
+// A refused read and a resume keep that earlier read of this attempt.
+$policy=$lost->fresh()->policy;$policy['reconciliation']['polls']=0;$lost->fresh()->update(['policy'=>$policy]);
+$observation->fault='send_guard';$reconcile->run($lost->id);$observation->fault='';
+same(true,$lost->fresh()->policy['status_check']['read_attempted'],'A refused read keeps the earlier read of this attempt');
+$policy=$lost->fresh()->policy;$policy['reconciliation']['polls']=OperationReconciliation::POLL_LIMIT;$lost->fresh()->update(['policy'=>$policy]);
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$lost->id])->callAction('resume_reads')->assertNotified('Status checks restarted')->assertActionVisible('enom_answer');
+same(true,$lost->fresh()->policy['status_check']['read_attempted'],'A resume keeps the earlier read of this attempt');
 // A lost renewal reply outside its history window can still read the domain.
 DB::table('domains_accounts')->where('server_id',$lost->server_id)->update(['processing_enabled'=>true]);
 [$lostRenew,$lostDomain,$binding]=$makeRenewal(placeholderComFixtureName('staff-lost-renewal-placeholder.com'));
@@ -266,6 +277,10 @@ $clock->instant=$clock->now()->modify('+25 hours');
 DB::table('domains_accounts')->where('server_id',$lostRenew->server_id)->update(['processing_enabled'=>false]);
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$lostRenew->id])->assertActionHidden('enom_answer')->assertSee('Registrar check pending')->assertDontSee('too old to check in its order history');
 $unread($lostRenew,'An Enom lost renewal reply');
+$state->during=static function(){throw new \Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit('send_guard');};
+(new RenewalCompletion($renewBindings,$clock))->run($lostRenew->id);$state->during=null;$state->calls=[];
+same(false,$lostRenew->fresh()->policy['status_check']['read_attempted'],'A renewal read refused before sending is not a read of this attempt');
+$unread($lostRenew,'A renewal read refused before sending');
 $before=[$lostRenew->attempt,$lostRenew->funding,$lostDomain->fresh()->provider_expires_at->format('Y-m-d'),$credit(),$state->writes];
 (new RenewalCompletion($renewBindings,$clock))->run($lostRenew->id);
 expect(in_array(ReadCommand::Info,$state->calls,true),'Automatic renewal recovery reads before staff ask for a case');

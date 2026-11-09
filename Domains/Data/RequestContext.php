@@ -25,6 +25,9 @@ final class RequestContext
 
     private int $completedReads = 0;
     public function completedReads(): int { return $this->completedReads; }
+    private int $exchanges = 0;
+    /** Physical exchanges entered, failed ones included. Reader construction, limiter and send refusals never count. */
+    public function exchanges(): int { return $this->exchanges; }
     /** Both real read clients use this scope once per physical request. */
     public function withinRead(AccountBinding $driver, \Closure $wire): mixed
     {
@@ -54,7 +57,10 @@ final class RequestContext
             $remaining = (int) floor(((float)$until->format('U.u') - (float)$this->clock->now()->format('U.u')) * 1000);
             if ($remaining < 1) { throw new \RuntimeException('Registrar request deadline reached.'); }
             if($this->current){($this->current)();}
-            return $wire($remaining);
+            // A refusal raised inside the wire before sending is not an exchange; any other failure may have reached the registrar.
+            $this->exchanges++;
+            try { return $wire($remaining); }
+            catch (\Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit|\Paymenter\Extensions\Servers\Domains\Services\LiveReservationLimit|\Paymenter\Extensions\Servers\Domains\Services\ReadDeferred $refused) { $this->exchanges--; throw $refused; }
         }
         finally { if ($token !== null) { $this->limiter->release($driver, $this->origin, $token); } }
     }
