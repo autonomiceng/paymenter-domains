@@ -49,7 +49,7 @@ same(['title'=>'Domain registered. Chosen nameservers not confirmed.','body'=>'T
     'The real staff request notice keeps the expected fallback quiet, without a staff task');
 $owned=$owners->present($d);$notice=\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::notice($owned,null);
 same('info',$notice['tone'],'Fallback is a quiet customer information note');
-expect(str_contains($notice['text'],'Your domain is registered')&&str_contains($notice['text'],'Set up DNS'),'Customer sees what happened and how to proceed');
+expect(str_contains($notice['text'],'The registered nameservers do not match the registration settings')&&str_contains($notice['text'],'Set up DNS'),'Customer sees what happened and how to proceed');
 expect(!collect($owned->progress)->contains('state','Under review'),'Refused DNS correction does not send customer to staff');
 // A registration template is not evidence of a hosted zone.
 $dns=\Illuminate\Support\Facades\DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::proven(\Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($d),null,null,collect(),[]));
