@@ -53,10 +53,20 @@ foreach(['missing','disabled','invalid'] as $unavailable){
     $section=$owners->present($d->fresh())->management['nameservers'];same([],$section['defaultServers'],'Unusable default exposes no substitute: '.$unavailable);
     same(false,$section['defaults'],'Unusable default offers no fill action: '.$unavailable);
     $page=(new \Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController($owners))->show($r,$d->id)->render();
-    same(1,substr_count($page,'Site default nameservers are not available. Enter your own nameservers.'),'Unusable default explains custom editing once');
+    // A saved set the registrar refuses has its own recovery; retrying cannot fix it.
+    $hint=$unavailable==='invalid'?'The site default nameservers can’t be used with '.$registrar.'. Enter your own nameservers, or contact support.':'Site default nameservers are not available. Enter your own nameservers.';
+    same(1,substr_count(html_entity_decode($page,ENT_QUOTES),$hint),'Unusable default explains custom editing once: '.$unavailable);
+    expect(!str_contains($page,'try again later'),'Unusable default is not called a lookup failure: '.$unavailable);
     $count=$d->operations()->count();$controller->manage($post('nameservers',['fill_site_default'=>'1']),$d->id,'nameservers');same($count,$d->operations()->count(),'Missing default queues no reset');
     $nsSave($manualServers);
 }
+// Thirteen hosts suit NameSilo; Enom takes at most twelve, so the same saved set has the invalid-default recovery there.
+$thirteen=array_map(fn($n)=>'ns'.$n.'.site.example.org',range(1,13));
+$siteProfile->enabled=true;$siteProfile->nameservers=$thirteen;$siteProfile->saveQuietly();
+$section=$owners->present($d->fresh())->management['nameservers'];
+same($free?$thirteen:[],$section['defaultServers'],'A 13-host saved default follows the registrar limit');
+same($free?null:'The site default nameservers can’t be used with Enom. Enter your own nameservers, or contact support.',$section['defaultError'],'Only Enom refuses the 13-host saved default');
+expect(isset($section['actions']['nameservers']),'Custom nameserver editing stays available with a 13-host saved default');
 $siteProfile->enabled=true;$siteProfile->nameservers=$siteServers;$siteProfile->saveQuietly();
 Setting::updateOrCreate(['key'=>SiteDnsDefault::KEY,'settingable_type'=>null,'settingable_id'=>null],['type'=>'string','encrypted'=>false,'value'=>(string)$siteProfile->id]);
 $session->forget(['errors','_old_input','domains_failed_form']);
