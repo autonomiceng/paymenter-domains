@@ -39,7 +39,7 @@ NativePrice::saving(static function($price)use(&$fail,$plans):void{if($fail&&in_
 $result=$save('40.00');same(['Synthetic second account #'.$second->serverId=>['.net']],$result['failed'],'Failure uses main account/TLD result shape');
 same('$40.00',$storefront->offer('com','register',1)['price'],'Healthy account stays published');commerceReject(fn()=>$storefront->offer('net','register',1));
 same('40.00',Pricing::rule($net->fresh())['fixed']['register'],'Failed account still adopts saved global rule');
-$text=(new ReflectionMethod(SettingsActions::class,'published'))->invoke(null,$result);expect(str_contains($text,'Use Sync prices under What you sell, then save again.'),'Failure keeps main retry wording');
+$text=(new ReflectionMethod(SettingsActions::class,'published'))->invoke(null,$result);expect(str_contains($text,'Check the exact missing cost or pricing rule on the TLD page. Sync prices is an optional retry.'),'Failure keeps main retry wording');
 $fail=false;$result=$save('40.00');same([],$result['failed'],'Saving again retries failed account');same('$40.00',$storefront->offer('net','register',1)['price'],'Retry completes failed native publication');
 // The same explicit all-accounts command must be fenced throughout the quiet conversion window.
 $staleReview=$review('default_pricing');advanceOfferGeneration();$before=StaffCommands::stamp(Review::ALL_ACCOUNTS);commerceReject(fn()=>$writes->run($staleReview,$data('50.00'),$now));same($before,StaffCommands::stamp(Review::ALL_ACCOUNTS),'Superseded review changes no rule, fee, intent, projection or audit');

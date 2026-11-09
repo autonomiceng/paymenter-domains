@@ -40,7 +40,7 @@ $ports->apply(new FeedObserved($b, 'com', [new Cost('register', 3, true, '7.0000
     'synthetic_annual', $clock->instant, $clock->instant->modify('+1 day'))]), $rev());
 $loaded = $ports->loadBatch([$query], Context::Public)[0][0]; $price = $loaded->price();
 $row = DB::table('domains_prices')->where('server_id', $b->serverId)->where('tld', 'com')->where('action', 'register')->where('term', 3)->sole();
-same([(int) $row->id, (int) $row->revision, '21.0000', '27.30', 'synthetic_annual'],
+same([(int) $row->id, (int) $row->revision, '21.0000', '28.60', 'synthetic_annual'],
     [$price->id, $price->revision, $price->wholesale, $price->retail, $price->source], 'Price DTO uses real row identity and exact normalized term total');
 same($clock->instant->format(DATE_ATOM), $price->observedAt->format(DATE_ATOM), 'Mapping does not freshen observation age');
 same($clock->instant->modify('+1 day')->format(DATE_ATOM), $price->freshUntil->format(DATE_ATOM), 'Mapping preserves original expiry');
@@ -65,7 +65,7 @@ commerceReject(fn () => DB::transaction(fn () => $ports->loadBatch([$holder], Co
 commerceReject(fn () => $ports->apply(Edit::republish($b, 'com'), $expected));
 $permission = true;
 $admission = new Query($b, ['com'], 'register', 3, expected: ['com' => $expected]);
-same('27.30', DB::transaction(fn () => $ports->loadBatch([$admission], Context::Locked)[0][0]->price())->retail,
+same('28.60', DB::transaction(fn () => $ports->loadBatch([$admission], Context::Locked)[0][0]->price())->retail,
     'Locked caller ports use current local account gates without a provider callback');
 $proof = Server::findOrFail($b->serverId)->settings()->where('key', 'domains_verified_credentials')->sole();
 $savedProof = $proof->value; $proof->update(['value' => 'synthetic revoked proof']);

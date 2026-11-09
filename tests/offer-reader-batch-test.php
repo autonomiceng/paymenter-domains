@@ -39,7 +39,7 @@ $writer->apply(Edit::seller($b, 'com', ['register', 'transfer']), $rev($b));
 $queries = [new Query($n, ['com', 'org'], 'register'), new Query($b, ['com'], 'register', 3)];
 $out = $reader->readBatch($queries, Context::Public);
 same([false, false, true], [$out[0][0]->available, $out[0][1]->available, $out[1][0]->available], 'Mixed accounts, missing offers and exact terms preserve input order');
-same('23.40', $out[1][0]->retail, 'Three-year total is not an annual or another-account fallback');
+same('28.60', $out[1][0]->retail, 'Three-year total is not an annual or another-account fallback');
 same(null, $out[1][0]->staffCost, 'Public results redact costs');
 same(false, $reader->readBatch([new Query($b, ['com'], 'register', 2)], Context::Public)[0][0]->available, 'Absent exact-term price cannot borrow a different term');
 same('unavailable', $out[0][0]->reason, 'Public results redact specific seller reasons');

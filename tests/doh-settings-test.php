@@ -57,14 +57,15 @@ $setRights = function ($permissions) use ($staff) { $staff->role()->first()->upd
 $setRights([]); Livewire::actingAs($staff)->test(Page::class)->assertForbidden();
 $setRights([Staff::VIEW, PublicSuffixList::MANAGE]); same(false, Page::canAccess(), 'Manage alone cannot view');
 $setRights([Staff::VIEW, PublicSuffixList::VIEW]);
-Livewire::actingAs($staff)->test(Page::class)->assertSee('cloudflare-dns.com')->assertSee(DohEndpoint::IP)->assertDontSee('Missing')->assertActionHidden('configure')->assertActionHidden('check');
+$configured=Livewire::actingAs($staff)->test(Page::class)->assertSee('cloudflare-dns.com')->assertSee(DohEndpoint::IP)->assertSee('Site DNS default')->assertActionHidden('configure')->assertActionHidden('check');
+expect(!str_contains(resolverSectionText($configured->html()),'Missing'),'Saved resolver has no missing state in its section');
 same(0, $calls, 'Rendering no query'); $setRights($rights);
 // The ? text must match FallbackDnsReader: a failed resolver query retries once with the server's resolver.
 // Filament serializes tooltip content for Alpine, including the apostrophe as \u0027.
 $hint = json_encode("If the resolver fails, checks retry once with the server's resolver.", JSON_HEX_APOS);
 Livewire::actingAs($staff)->test(Page::class)->assertSee(substr($hint, 1, -1), false)->assertDontSee('Connection and response failures use');
-$page = Livewire::actingAs($staff)->test(Page::class); $cachedCheck = $page->instance()->getCachedHeaderActions()[1]->getActionFunction();
-$cachedSave = $page->instance()->getCachedHeaderActions()[0]->getActionFunction();
+$page = Livewire::actingAs($staff)->test(Page::class); $cachedCheck = $page->instance()->getAction('check')->getActionFunction();
+$cachedSave = $page->instance()->getAction('configure')->getActionFunction();
 $setRights([Staff::VIEW, PublicSuffixList::VIEW]);
 foreach ([fn() => $cachedCheck(), fn() => $cachedSave(['url' => DohEndpoint::URL, 'ip' => DohEndpoint::IP])] as $callback) {
     try { $callback(); expect(false, 'Revoked action denied'); } catch (Symfony\Component\HttpKernel\Exception\HttpException $e) { same(403, $e->getStatusCode(), 'Fresh permission check'); }

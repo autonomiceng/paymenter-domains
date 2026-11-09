@@ -77,9 +77,17 @@ AcquisitionRetirement::retainClosure($rollback->fresh(),collect(),'paid',$clock-
 DB::transaction(fn()=>Paymenter\Extensions\Servers\Domains\Services\InvoiceFunding::lock((int)$rollback->invoice_id)->requireInitial($rollback->fresh(),$rollback->domain->fresh()));
 same(null,$invoicePresenter->invoiceOutcome($user,(int)$rollback->invoice_id),'A paid acquisition that can still run is not closed by a snapshot alone');
 $lateNative=$new(placeholderComFixtureName('native-cancel-paid-placeholder.com'),paid:false);$lateBill=App\Models\Invoice::findOrFail($lateNative->invoice_id);
+// Keep this real cancellation/late-payment case between native closure and ledger
+// retirement, as its presenter assertion requires. Automatic retirement now normally
+// completes during cancellation, so explicitly exercise its recoverable refusal.
+$lateRetirementRefused=false;
+Operation::updating(static function(Operation $op)use($lateNative,&$lateRetirementRefused):void {
+    if((int)$op->id===(int)$lateNative->id&&$op->state==='rejected'){$lateRetirementRefused=true;throw new DomainException('Synthetic delayed retirement');}
+});
 $lateCancel=ServiceCancellation::create(['service_id'=>$lateNative->service_id,'type'=>'immediate','reason'=>'Cancel before payment']);
 (new App\Listeners\CancellationCreatedListener)->handle(new App\Events\ServiceCancellation\Created($lateCancel));
-same('awaiting_payment',$lateNative->fresh()->state,'Native cancellation has not finished retirement');
+expect($lateRetirementRefused,'The native cancellation attempted automatic retirement');
+same('awaiting_payment',$lateNative->fresh()->state,'A refused retirement retains the native cancellation window');
 $lateOutcome=null;
 Illuminate\Support\Facades\Event::listen(App\Events\Invoice\Paid::class,static function($event)use($lateBill,$invoicePresenter,$user,&$lateOutcome):void {
     if($event->invoice->id===$lateBill->id){DB::afterCommit(static function()use($lateBill,$invoicePresenter,$user,&$lateOutcome):void {$lateOutcome=$invoicePresenter->invoiceOutcome($user,(int)$lateBill->id);});}

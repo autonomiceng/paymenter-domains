@@ -97,3 +97,12 @@ function setupAction(string $action,int $server): string|\Filament\Actions\Testi
     return in_array($action,['configure','enroll_sandbox'],true)?$action.'_'.$server
         :\Filament\Actions\Testing\TestAction::make($action.'_'.$server)->schemaComponent('account_'.$server,'content');
 }
+
+/** Read one rendered settings section without confusing it with another row's state. */
+function resolverSectionText(string $html): string
+{
+    $dom=new DOMDocument;@$dom->loadHTML($html);$xpath=new DOMXPath($dom);
+    $sections=$xpath->query('//section[.//*[self::h2 or self::h3][normalize-space(.)="DNS resolver"]]');
+    same(1,$sections->length,'The rendered page contains one DNS resolver section');
+    return $sections->item(0)->textContent;
+}

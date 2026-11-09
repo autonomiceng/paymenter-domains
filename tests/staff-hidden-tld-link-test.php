@@ -28,7 +28,7 @@ class HiddenLinkStaffPage extends Paymenter\Extensions\Servers\Domains\Admin\Pag
     {return $this->account?Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$this->account)->sole()):null;}
 }
 Livewire\Livewire::component('hidden-link-staff-page',HiddenLinkStaffPage::class);
-$page=Livewire\Livewire::actingAs($actor)->test(HiddenLinkStaffPage::class);
+$page=Livewire\Livewire::actingAs($actor)->test(HiddenLinkStaffPage::class)->filterTable('for_sale',false);
 same(26,$page->instance()->getTableRecords()->total(),'The omitted TLD is off the first page');
 $page->assertSee('No price for .zzbroken')->assertSee('Open .zzbroken')
     ->assertSeeHtml('href="'.e(Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource::getUrl('view',['record'=>$id])).'"');

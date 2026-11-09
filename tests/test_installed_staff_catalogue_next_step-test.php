@@ -17,7 +17,11 @@ $actor=staffUser(array_keys(Staff::permissions()));Auth::setUser($actor);
 $calls=0;$readable=true;
 $work=new OfferWork($ports->writer(),$clock,new AccountReadBudget($clock,25),static function()use(&$calls){$calls++;throw new LogicException('Rendering must not resolve a provider');},static fn()=>0);
 $source=new StaffCatalogue($ports,$clock,$work,static function()use(&$readable){return $readable;});
-$t=Tld::findOrFail($tlds[0]->id);$original=$t->getRawOriginal();
+$t=Tld::findOrFail($tlds[0]->id);
+$facts=\Paymenter\Extensions\Servers\Domains\Catalogue\TermSupport::attach('com',OfferState::facts($t->catalogue_facts),\Paymenter\Extensions\Servers\Domains\Catalogue\TermSupport::evidence($binding,'com'));
+DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>OfferState::encodeFacts($facts)]);
+$t->refresh();$original=$t->getRawOriginal();
+$factAuthority=hash('sha256',OfferState::json(\Paymenter\Extensions\Servers\Domains\Catalogue\TermSupport::evidence($binding,'com')));
 $priceRows=DB::table('domains_prices')->where('server_id',$binding->serverId)->where('tld','com')->get();
 $policy=(array)DB::table('domains_sales_policies')->where('tld','com')->first();
 $defaults=DB::table('domains_accounts')->where('server_id',$binding->serverId)->value('catalogue_defaults');
@@ -45,13 +49,14 @@ class NextStepStaffPage extends \Paymenter\Extensions\Servers\Domains\Admin\Page
 }
 \Livewire\Livewire::component('next-step-staff-page',NextStepStaffPage::class);
 $failures=[];
+$retry=$now->getTimestamp()+120;
 try {
 DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>null]);
 DB::table('domains_prices')->where('server_id',$binding->serverId)->where('tld','com')->where('action','register')->update(['retail'=>null]);
 [$table,$row]=nextTable();$cell=$table->cell($row,'register','price');
 same('Checking',$cell['text'],'Missing facts queue their own read rather than asking staff to sync');
 same('gray',$cell['tone'],'Automatic work is a waiting state');
-same('Next check '.SellTable::time($now->getTimestamp()).'.',$cell['next'],'Waiting shows when the queued check is due');
+same('Next check '.gmdate('M j, Y, g:i A',$now->getTimestamp()).' UTC.',$cell['next'],'Waiting shows when the queued check is due');
 same('queued',$work->status($binding,'com')['state'],'The existing lazy-facts queue receives the hint');
 $queued=DB::table('domains_observation_queues')->where('server_id',$binding->serverId)->value('offer_work');
 [$again,$row]=nextTable();$again->cell($row,'register','cost');$again->cell($row,'register','price');$again->status($row);
@@ -59,8 +64,8 @@ same($queued,DB::table('domains_observation_queues')->where('server_id',$binding
 same(0,$calls,'Staff rendering never resolves a provider or sends a request');
 // Existing retry dates survive repeated hints, so staff do not bypass the read budget/backoff.
 $retry=$now->getTimestamp()+120;
-$queue->update(['offer_work'=>OfferState::json(['facts'=>['com'=>['due_at'=>$retry,'tries'=>2,'failure'=>'read_failed']]])]);
-[$table,$row]=nextTable();same('Next check '.SellTable::time($retry).'.',$table->cell($row,'register','price')['next'],'Fact retry uses its existing due time');
+$queue->update(['offer_work'=>OfferState::json(['facts'=>['com'=>['authority'=>$factAuthority,'due_at'=>$retry,'tries'=>2,'failure'=>'read_failed']]])]);
+[$table,$row]=nextTable();same('Next check '.gmdate('M j, Y, g:i A',$retry).' UTC.',$table->cell($row,'register','price')['next'],'Fact retry uses its existing due time');
 
 } catch (Throwable $error) {$failures[]='Case 1: '.$error->getMessage();}
 try {
@@ -70,7 +75,7 @@ same($now->getTimestamp(),$work->status($binding)['due_at'],'A missing price que
 same('background',OfferState::decode($queue->value('offer_work'))['origin'],'Automatic price hints use the background allowance');
 $queued=$queue->value('offer_work');[$table,$row]=nextTable();$table->cell($row,'register','price');same($queued,$queue->value('offer_work'),'Price hints queue only once');
 $queue->update(['offer_work'=>OfferState::json(['feed_due'=>$retry,'tries'=>2])]);
-[$table,$row]=nextTable();same('Next check '.SellTable::time($retry).'.',$table->cell($row,'register','price')['next'],'Price hints preserve failure backoff');
+[$table,$row]=nextTable();same('Next check '.gmdate('M j, Y, g:i A',$retry).' UTC.',$table->cell($row,'register','price')['next'],'Price hints preserve failure backoff');
 
 } catch (Throwable $error) {$failures[]='Case 2: '.$error->getMessage();}
 try {
@@ -129,7 +134,7 @@ $beforeQueue=$queue->value('offer_work');
 try {
 $reset();$clearPrice();
 DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>null]);
-$queue->update(['offer_work'=>OfferState::json(['facts'=>['com'=>['unsupported'=>true,'due_at'=>null]]])]);
+$queue->update(['offer_work'=>OfferState::json(['facts'=>['com'=>['unsupported'=>true,'authority'=>$factAuthority,'due_at'=>null]]])]);
 [$table,$row]=nextTable();same('Checking',$table->cell($row,'register','price')['text'],'Even without a facts reader, the system fills prices before asking staff');
 foreach($priceRows as $price){DB::table('domains_prices')->where('id',$price->id)->update((array)$price);}
 [$table,$row]=nextTable();same('Ask the registrar to confirm terms for .com.',$table->status($row)['next'],'A missing facts reader gives a specific human step after prices are filled');
@@ -207,21 +212,21 @@ $status=$table->status($row);
 same('Fix the pricing rule in Edit prices on .com.',$status['next'],'Unreadable pricing asks for the saved rule to be fixed');
 expect($status['label']!=='Checking','A saved staff rule cannot be repaired by repeated publication');
 same(null,$work->status($binding)['due_at'],'Unreadable pricing does not queue a provider price read');
-$html=\Livewire\Livewire::actingAs($actor)->test(NextStepStaffPage::class)->assertSee('Left out')->html();
+$html=\Livewire\Livewire::actingAs($actor)->test(NextStepStaffPage::class)->filterTable('for_sale',false)->assertSee('Left out')->html();
 $dom=new DOMDocument;@$dom->loadHTML($html);$xpath=new DOMXPath($dom);
 $url=\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource::getUrl('view',['record'=>$t->id]);
-expect($xpath->query('//td[contains(@class,"domains-sell-status")]//a[@href="'.$url.'" and contains(.,"Fix the pricing rule in Edit prices on .com.")]')->length===1,'The table renders the invalid row with its visible Edit prices step and TLD link');
+expect($xpath->query('//td[contains(@class,"domains-sell-status") and (contains(.,"Fix the pricing rule in Edit prices on .com.") or .//*[contains(@x-tooltip,"Fix the pricing rule in Edit prices on .com.")])]//a[@href="'.$url.'"]')->length===1,'The table renders the invalid row with its Edit prices guidance and TLD link');
 } catch (Throwable $error) {$failures[]='Unreadable rule '.($pending?'pending':'current').': '.$error->getMessage();}
 }
 try {
 $reset();$clearPrice();$readable=false;
 $intent=OfferState::decode($original['catalogue_intent']);$intent['transfers']=false;DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_intent'=>OfferState::json($intent)]);
-$html=\Livewire\Livewire::actingAs($actor)->test(NextStepStaffPage::class)->assertSee('Missing')->html();
+$html=\Livewire\Livewire::actingAs($actor)->test(NextStepStaffPage::class)->filterTable('for_sale',false)->assertSee('Missing')->html();
 $dom=new DOMDocument;@$dom->loadHTML($html);$xpath=new DOMXPath($dom);
 expect($xpath->query('//*[contains(@class,"description") and contains(.,"Check account setup on Registrar account.")]')->length>0,'The next step is visible beside Missing, outside its tooltip');
 $url=\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$binding->serverId]);
 expect($xpath->query('//a[@href="'.$url.'" and contains(.,"Missing")]')->length>0,'Missing links to the account page that fixes setup');
-expect($xpath->query('//td[contains(@class,"domains-sell-status")]//a[@href="'.$url.'" and contains(.,"Check account setup on Registrar account.")]')->length===1,'The Status setup step links to Registrar account, like the money cell');
+expect($xpath->query('//td[contains(@class,"domains-sell-status") and (contains(.,"Check account setup on Registrar account.") or .//*[contains(@x-tooltip,"Check account setup on Registrar account.")])]//a[@href="'.$url.'"]')->length===1,'The Status setup step links to Registrar account, like the money cell');
 } catch (Throwable $error) {$failures[]='Account status link: '.$error->getMessage();}
 // Review probe C: exercise the actual Status anchors, including deliberate absence of a link.
 foreach(['cost limit','registrar cost','registrar terms','registrar requirements','price choice'] as $scenario){
@@ -239,7 +244,7 @@ case 'registrar cost':
     $next='Ask the registrar for a 1-year registration cost for .com.';break;
 case 'registrar terms':
     DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>null]);
-    $queue->update(['offer_work'=>OfferState::json(['facts'=>['com'=>['unsupported'=>true,'due_at'=>null]]])]);
+    $queue->update(['offer_work'=>OfferState::json(['facts'=>['com'=>['unsupported'=>true,'authority'=>$factAuthority,'due_at'=>null]]])]);
     $next='Ask the registrar to confirm terms for .com.';break;
 case 'registrar requirements':
     $facts=OfferState::decode($original['catalogue_facts']);$facts['requiresNameservers']=true;DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>OfferState::json($facts)]);
@@ -252,10 +257,12 @@ case 'price choice':
 [$table,$row]=nextTable();$status=$table->status($row);
 same($next,$status['next'],'The Status step names the action for '.$scenario);
 same($open,$status['open'],'The Status preserves the step destination for '.$scenario);
-$html=\Livewire\Livewire::actingAs($actor)->test(NextStepStaffPage::class)->html();
+$html=\Livewire\Livewire::actingAs($actor)->test(NextStepStaffPage::class)->filterTable('for_sale',false)->html();
 $dom=new DOMDocument;@$dom->loadHTML($html);$xpath=new DOMXPath($dom);
-$cell='//td[contains(@class,"domains-sell-status") and contains(.,"'.$next.'")]';
-same(1,$xpath->query($cell)->length,'The next step is visible in Status for '.$scenario);
+// Compact gray states carry the reason on hover; actionable colored states
+// show it as a description. Both retain the same destination.
+$cell='//td[contains(@class,"domains-sell-status") and (contains(.,"'.$next.'") or .//*[contains(@x-tooltip,"'.$next.'")])]';
+same(1,$xpath->query($cell)->length,'The current Status description or tooltip explains '.$scenario);
 if($url===null){same(0,$xpath->query($cell.'//a[@href]')->length,'Status has no unrelated TLD link for '.$scenario);}
 else{same(1,$xpath->query($cell.'//a[@href="'.$url.'"]')->length,'Status links to the TLD that fixes '.$scenario);}
 } catch (Throwable $error) {$failures[]='Status link '.$scenario.': '.$error->getMessage();}

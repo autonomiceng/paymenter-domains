@@ -48,13 +48,17 @@ same(13,count(array_filter($state->calls,fn($r)=>$r[0]==='CheckNSStatus')),'At m
 same(14,count($partial['glue']['records']),'Unchecked hosts retained explicitly partial');
 $state->calls=[];$ctx=new RequestContext($b,RequestOrigin::Background,$clock->now()->modify('+250 seconds'),new RequestBudget(25),$clock);$driver->discover(new ManagementRequest($b,'rotated-glue','discovery-placeholder.com','discovery',[],'456'),$ctx,$partial['glue']['records']);
 expect(in_array(['CheckNSStatus',['CheckNSName'=>'ns14.discovery-placeholder.com']],$state->calls,true),'Next turn rotates to previously unchecked child host');
-// Scheduled core reads never discover records, including after a record hold or resume.
+// Scheduled holding reads refresh records as well as core facts under the shared budget.
 require_once __DIR__.'/Support/observation-work.php';
 $work=observationFixtureScheduler($observer,$clock,activeFixturePorts($bindings));$work->enroll($d->server_id);
 $before=$d->fresh()->observation['records'];$io=count($state->calls);$domainIo=count($observation->calls);
 $clock->instant=$clock->now()->modify('+1 day');$work->tick(2);
-same($io,count($state->calls),'Daily work makes no glue, DNS, SRV or DS registrar reads');
-same($before,$d->fresh()->observation['records'],'Daily work preserves record timestamp and inventory');
+expect(count($state->calls)>$io,'Daily holding work refreshes registrar records');
+$daily=$d->fresh()->observation['records']['families'];
+foreach(['dns','srv','ds'] as $family){same($before['families'][$family],$daily[$family],'Daily work retains unchanged '.$family.' inventory');}
+same('partial',$daily['glue']['state'],'Known child refresh never claims full glue enumeration');
+same(['ns1.discovery-placeholder.com'=>'8.8.8.8'],$daily['glue']['records'],'Daily work refreshes the saved child candidate from the current registrar reply');
+same($clock->now()->format(DATE_ATOM),$d->fresh()->observation['records']['at'],'Daily work advances the successful record observation time');
 expect(in_array(\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Nameservers,array_slice($observation->calls,$domainIo),true),'Daily primary read still checks nameservers');
 $job=DB::table('domains_observation_work')->where('domain_id',$d->id)->sole();
 // An explicit sync can retry a failed record read, without a new staff recovery step.

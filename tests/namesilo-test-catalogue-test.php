@@ -40,7 +40,7 @@ function curl_exec($h): bool {
     $GLOBALS['nsCatalogueClock']->instant=$GLOBALS['nsCatalogueClock']->now()->modify('+1 second');
     return ($o[CURLOPT_WRITEFUNCTION])($h,$body)===strlen($body);
 }
-$clock=new FakeClock(new \DateTimeImmutable('2026-11-03T12:00:00Z'));app()->instance(Clock::class,$clock);$now=$clock->now();$GLOBALS['nsCatalogueClock']=$clock;
+$clock=new FakeClock(new \DateTimeImmutable('2026-11-03T12:00:00Z'));app()->instance(Clock::class,$clock);$now=$clock->now();$GLOBALS['nsCatalogueClock']=$clock;CallerRouting::reset();
 Currency::firstOrCreate(['code'=>'USD'],['name'=>'US Dollar','format'=>'1,000.00','prefix'=>'$','suffix'=>'']);
 Category::create(['name'=>'Domains','slug'=>'domains']);
 Setting::updateOrCreate(['key'=>'domains_pricing_default_rule','settingable_type'=>null,'settingable_id'=>null],

@@ -20,8 +20,8 @@ $hosting = commerceHosting(); commerceAdd($cart, $hosting, 'hosting');$checkout=
 same(1, Order::count(), 'Native order and all bindings commit together'); same(1, Invoice::count(), 'One shared native invoice');
 same(2, Domain::count(), 'Two global holdings bound'); same(2, Operation::count(), 'Two synchronous operations');
 $op = Operation::orderBy('id')->firstOrFail(); $domain = $op->domain; $service = $domain->service; $item = InvoiceItem::findOrFail($op->invoice_item_id);
-same(3, (int) $op->term, 'Operation keeps purchased multi-year term'); same('23.40', $op->amount, 'Acquisition amount frozen');
-same('23.40', $item->price, 'Native invoice keeps original checkout total');
+same(3, (int) $op->term, 'Operation keeps purchased multi-year term'); same('28.60', $op->amount, 'Acquisition amount frozen');
+same('28.60', $item->price, 'Native invoice keeps original checkout total');
 same($originalPlan, $op->policy['checkout']['plan_id'], 'Original native plan frozen');
 same(1, (int) $service->plan->billing_period, 'Same product annual service plan'); same($product->id, $service->product_id, 'Permanent product retained');
 same('10.40', number_format((float) $service->price, 2, '.', ''), 'Annual renewal uses holder retail');
@@ -112,11 +112,11 @@ $funded = static function () use ($op): array {
 $invoiceId = $op->invoice_id;
 $payment = static fn ($amount, $status = 'succeeded') => InvoiceTransaction::create(['invoice_id' => $invoiceId, 'amount' => $amount, 'fee' => '0.00', 'status' => $status]);
 commerceReject($funded); DB::table('invoices')->where('id', $invoiceId)->update(['status' => 'paid']); commerceReject($funded);
-$payment('23.40'); commerceReject($funded); // this domain line covered, mixed invoice not yet covered
+$payment('28.60'); commerceReject($funded); // this domain line covered, mixed invoice not yet covered
 $payment('12.80', 'processing'); $payment('12.80', 'failed'); commerceReject($funded);
-$payment('12.80'); $evidence = $funded(); same(3620, $evidence['invoice_total_minor'], 'Funding includes both domains AND hosting');
-same(3620, $evidence['succeeded_net_minor'], 'Only succeeded transactions contribute');
-$payment('-0.01'); commerceReject($funded); $payment('0.01'); same(3620, $funded()['succeeded_net_minor'], 'Signed successful adjustments net correctly');
+$payment('12.80'); $evidence = $funded(); same(4140, $evidence['invoice_total_minor'], 'Funding includes both domains AND hosting');
+same(4140, $evidence['succeeded_net_minor'], 'Only succeeded transactions contribute');
+$payment('-0.01'); commerceReject($funded); $payment('0.01'); same(4140, $funded()['succeeded_net_minor'], 'Signed successful adjustments net correctly');
 DB::table('invoices')->where('id', $invoiceId)->update(['status' => 'pending']); commerceReject($funded);
 DB::table('invoices')->where('id', $invoiceId)->update(['status' => 'paid']);
 DB::table('invoice_items')->where('id', $item->id)->update(['reference_id' => $service->id + 999]); commerceReject($funded);
@@ -126,7 +126,7 @@ DB::table('services')->where('id', $service->id)->update(['user_id' => $other->i
 DB::table('services')->where('id', $service->id)->update(['user_id' => $user->id]);
 DB::table('products')->where('id', $product->id)->update(['server_id' => $tlds[1]->server_id]); commerceReject($funded);
 DB::table('products')->where('id', $product->id)->update(['server_id' => $tlds[0]->server_id]);
-same(3620, $funded()['succeeded_net_minor'], 'Restored exact binding yields funding evidence only');
+same(4140, $funded()['succeeded_net_minor'], 'Restored exact binding yields funding evidence only');
 // Read-only recovery snapshots cannot alter the live funding context's captured native rows.
 DB::table('invoices')->where('id',$invoiceId)->update(['status'=>'pending']);
 DB::transaction(static function()use($op):void{
@@ -146,7 +146,7 @@ DB::transaction(static function()use($op):void{
     $context=InvoiceFunding::lock($op->invoice_id);$domain=$op->fresh()->domain;$facts=$context->initialFacts($domain);
     $facts['items']->first()->price='9999.00';$facts['orders']->first()->user_id=0;
     $facts['service']->user_id=0;$facts['product']->server_id=0;$facts['plan']->billing_period=99;
-    same(3620,$context->requirePaid($op->fresh(),$domain)['succeeded_net_minor'],'Detached rows preserve the live context');
+    same(4140,$context->requirePaid($op->fresh(),$domain)['succeeded_net_minor'],'Detached rows preserve the live context');
 });
 $expired = DB::transaction(static function () use ($invoiceId) {
     $context = InvoiceFunding::lock($invoiceId); commerceReject(static fn () => clone $context); return $context;
