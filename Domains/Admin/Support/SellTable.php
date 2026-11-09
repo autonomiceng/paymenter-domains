@@ -42,12 +42,28 @@ final class SellTable
         $candidates=$this->source()->rows($this->bindings,null)->addNestedWhereQuery($query->getQuery());
         $key=hash('sha256',$candidates->toSql().serialize($candidates->getBindings()));
         if(!isset($this->forSaleIds[$key])){
-            $this->forSaleIds[$key]=[];
+            $ids=[];
             foreach($candidates->get(['server_id','tld'])->chunk(500)as$rows){
-                array_push($this->forSaleIds[$key],...$this->source()->saleIds($this->tlds($rows->all())));
+                array_push($ids,...$this->source()->saleIds($this->tlds($rows->all())));
             }
+            $this->forSaleIds[$key]=self::membership($ids);
         }
-        return $query->whereIntegerInRaw('id',$this->forSaleIds[$key]);
+        [$from,$to,$bits]=$this->forSaleIds[$key];
+        if($bits===''){return $query->whereRaw('1=0');}
+        // One hex digit holds four ids, so the statement grows by a quarter byte per id and never by an id list.
+        // CASE keeps the unsigned subtraction away from ids below the range.
+        $id=$query->getQuery()->getGrammar()->wrap('id');$offset='('.$id.' - '.$from.')';
+        return $query->whereBetween('id',[$from,$to])
+            ->whereRaw("(case when $id between $from and $to then (((instr('0123456789abcdef', substr(?, ($offset >> 2) + 1, 1)) - 1) >> ($offset & 3)) & 1) else 0 end) = 1",[$bits]);
+    }
+    /** @param list<int> $ids
+     * @return array{0:int,1:int,2:string} first id, last id and one hex digit per four ids between them */
+    private static function membership(array $ids): array
+    {
+        if($ids===[]){return [0,0,''];}
+        $from=min($ids);$to=max($ids);$nibbles=array_fill(0,intdiv($to-$from,4)+1,0);
+        foreach($ids as $id){$nibbles[intdiv($id-$from,4)]|=1<<(($id-$from)%4);}
+        return [$from,$to,implode('',array_map('dechex',$nibbles))];
     }
     /** The viewer's rights, read once for this table build: a cell or a saved-price read never asks again. */
     private function grants(): StaffGrants { return $this->grants??=Staff::requireView(); }
