@@ -125,7 +125,7 @@ final class SiteDnsDefault
         // A site-wide change must also discover managed targets without an explicit config row.
         $managed=$managed||$inherited;
         if(!$watch&&!$managed){return;}
-        if($managed){PublicDnsQuota::seed(time());DB::table(PublicDnsQuota::TABLE)->where('id',1)->update(['sweep_due_at'=>0,'sweep_cursor'=>0]);}
+        if($managed){ManagedPublicReconciliation::restart();}
         if($watch){DB::transaction(static function()use($profileId,$inherited):void {
             DB::table('domains_watch_schedule')->insertOrIgnore(['scope'=>'enrollment']);
             $q=DB::table('domains_watch_schedule')->where('scope','enrollment');$row=$q->lockForUpdate()->first();
