@@ -93,7 +93,9 @@ final class DomainFacts
             $facts=$observation['facts']??null;
             $facts=is_array($facts)&&ObservationProjection::matches($d,$facts)?$facts:[];
             $unread=self::unread($d,$sync);
-            $f['In registrar account']=self::fact(ObservationRecords::held($d)&&($observation['record_hold']['reason']??null)==='ownership_drift'?'No':self::flag($facts['owned']??null,'Yes','No'),sub:isset($facts['owned'])?null:$unread);
+            // A current not-found read outranks older ownership facts; other read failures leave them as they were.
+            $absent=\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::absent($d)||ObservationRecords::held($d)&&($observation['record_hold']['reason']??null)==='ownership_drift';
+            $f['In registrar account']=self::fact($absent?'No':self::flag($facts['owned']??null,'Yes','No'),sub:$absent||isset($facts['owned'])?null:$unread);
             try { $contact=OwnedDomains::owner(OwnedDomains::contacts($d)); $none=$pending?self::unread($d,$sync):(Staff::can('admin.domains.manage')?self::ADD_CONTACTS:'Ask the customer to add them on the domain page'); }
             catch (\Throwable) { $contact=null; $none=self::UNREADABLE; }
             $f['Contacts']=self::fact($contact['name']??null,sub:$contact['email']??$none);

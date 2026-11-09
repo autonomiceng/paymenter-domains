@@ -16,6 +16,10 @@ $wire = new class($observation) implements Transport {
         if ($this->state->fault === 'send_guard') { throw new \Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit('send_guard'); }
         expect($timeoutMs > 0 && $timeoutMs <= 25000, 'Bounded read timeout'); $s = $this->state; $s->calls[] = $command;
         if ($s->during) { $hook = $s->during; $s->during = null; $hook(); }
+        if ($s->fault === 'absent' && $command === ReadCommand::Info) {
+            return '<interface-response><Command>'.$command->value.'</Command><ErrCount>1</ErrCount><Done>true</Done><errors><Err1>Domain name not found</Err1></errors>'
+                .'<ResponseCount>1</ResponseCount><responses><response><ResponseNumber>301029</ResponseNumber><ResponseString>Validation error; not found; domain name(s)</ResponseString></response></responses></interface-response>';
+        }
         $expiry = (2026 + ($s->expiryYears ?? $s->years)).'-10-18'; if ($s->fault === 'term') { $expiry = '2026-10-18'; }
         $item = '<Description>'.($s->fault === 'history-zero' ? 'unrelated.example.com' : $s->name).'</Description><ProductType>Register</ProductType><Quantity>'.$s->years.'</Quantity><Status>Successful</Status><OrderStatus>Closed</OrderStatus><AmountPaid>8.95</AmountPaid><ExpiryDateTime>'.$expiry.'</ExpiryDateTime>';
         $data = match ($command) {
