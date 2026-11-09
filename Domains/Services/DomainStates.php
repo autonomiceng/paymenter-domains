@@ -6,7 +6,8 @@ use Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 /** The one DomainStatus state for a customer domain. The Domains list, the domain page, the service card and
  * /services all resolve through here, so a domain carries the same label on every page.
- * Each method returns [state, reason]; a null reason keeps the status set's default. */
+ * managed() and watch() return [state, reason]; a null reason keeps the status set's default.
+ * project() builds the whole customer state (status, order, renewal and its invoice) the list and the page share. */
 final class DomainStates
 {
     /** Auto-renew off turns Active into Action required this many days before expiry. */
@@ -34,6 +35,67 @@ final class DomainStates
             $renewalOff && $expiry <= (new \DateTimeImmutable($today, new \DateTimeZone('UTC')))->modify('+'.self::WINDOW.' days')->format('Y-m-d') => ['renewal_off_expiring', null],
             default => ['active', null],
         };
+    }
+    /** One owned domain's customer state from batch-loaded inputs. The Domains list and the domain page both call this. */
+    public static function project(Domain $d, DomainStateInputs $in, \DateTimeImmutable $now): DomainState
+    {
+        $today = $now->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d'); $stops = $in->stops($d);
+        if ($d->adoptionPending()) { return new DomainState(['adoption_pending', null], [], null, $stops, '', true); }
+        $op = $in->acquisition($d); $policy = $stops['policy']; $off = RenewalStop::stopped($stops);
+        $order = $op ? OwnedDomains::order($d, $op, $in->invoice($op->invoice_id, $d), OwnedDomains::closed($in->service($d)?->status, $in->stopped($d))) : [];
+        $status = $policy === null ? ['needs_review', null] : OwnedDomains::orderStatus(self::managed($d, $op, $today, $off), $d, $order);
+        $renewal = $policy !== null && $d->status === 'active' ? ($off ? 'Off' : 'On') : '';
+        // Unreadable renewal settings show no renewal invoice: the status already says we are checking the domain.
+        try { $cycle = $policy === null ? [] : self::cycle($d, $in, $now); } catch (\Throwable) { $cycle = ['current' => ['status' => 'review']]; }
+        try { $calendar = $d->provider_expires_at ? DomainBilling::calendarFor(['domain' => $d, 'settings' => $in->settings($d)]) : null; } catch (\Throwable) { $calendar = null; }
+        $imported = $d->provenance === 'adopted' && $renewal === 'On' && !isset($cycle['current']) && $d->provider_expires_at !== null && ($calendar === null || $today >= $calendar['due']);
+        return new DomainState($status, $order, $op, $stops, $renewal, $off, $cycle['current'] ?? null, $cycle['retained'] ?? null, $cycle['due'] ?? null, $cycle['early'] ?? false, $calendar, $imported);
+    }
+    /** This expiry's renewal invoice as billing sees it: current (its pending invoice link or an owner status), or retained once
+     * settled when nothing replaces it, with the current invoice's due date. A renewal without an expiry is ours to check. */
+    public static function cycle(Domain $d, DomainStateInputs $in, \DateTimeImmutable $now): array
+    {
+        if (!$d->provider_expires_at) { return ['current' => $in->renewed($d) ? ['status' => 'review'] : null]; }
+        $cycle = $in->cycle($d);
+        if (!$cycle) { return []; }
+        $check = RegistrarCheck::forCustomer($cycle);
+        $review = ['status' => 'review', ...(($check['tone'] ?? null) === 'info' ? ['check' => $check] : [])];
+        if ($cycle->safe_code === 'renewal_cancelled_unpaid' || RenewalReplacements::reviewed($cycle, $d)) {
+            // A retired or refunded invoice permits a replacement only when billing's proof holds.
+            if ($in->unproven($d)) { return ['current' => ['status' => 'review']]; }
+            return ['retained' => RenewalCycles::closedEarly($cycle) ? null : ['status' => $cycle->safe_code === 'renewal_cancelled_unpaid' ? 'cancelled' : 'review']];
+        }
+        $l = $in->ledger($d, collect([$cycle]));
+        try { $invoice = DomainBilling::existingInvoice($cycle, $l, allowCancelled: true); } catch (\Throwable) { return ['current' => $review]; }
+        $due = $invoice->due_at?->format('Y-m-d');
+        if ($invoice->status === 'pending' && RenewalCycles::expiredInvoice($cycle, $now)) {
+            return ['current' => ['status' => RenewalCycles::canRetireUnpaid($cycle, $l) ? 'cancelled' : 'review'], 'due' => $due];
+        }
+        $current = match (self::issuedState($cycle, $invoice, $d, $l)) {
+            'pending' => ['invoice' => route('invoices.show', $invoice)],
+            'paid' => ['status' => 'paid', ...self::goes($cycle)],
+            'closed' => ['status' => 'closed'],
+            'cancelled' => ['status' => 'cancelled'],
+            default => $review };
+        return ['current' => $current, 'due' => $due, 'early' => isset($current['invoice']) && RenewalCycles::early($cycle, $now) !== null];
+    }
+    /** A checked renewal invoice as the owner reads it: pending (pay it), paid, closed, cancelled, or review while we check it.
+     * A cancelled invoice reads cancelled only when its ledger $l proves the renewal unpaid and unsent; otherwise we check it. */
+    public static function issuedState(Operation $cycle, \App\Models\Invoice $invoice, Domain $domain, array $l): string
+    {
+        return match (true) {
+            $invoice->status === 'cancelled' => RenewalCycles::canRetireUnpaid($cycle, $l) ? 'cancelled' : 'review',
+            $cycle->state === 'awaiting_payment' && $invoice->status === 'pending' => 'pending',
+            $cycle->funding_basis === 'complimentary' && FundsWaits::closedRenewal($cycle, $domain) => 'closed',
+            $invoice->status === 'paid' && in_array($cycle->state, ['awaiting_payment', 'queued', 'running', 'pending', 'succeeded'], true) => 'paid',
+            default => 'review',
+        };
+    }
+    /** goes: the fixed time a paid renewal waiting out Enom's 24-hour repeat refusal goes to the registrar (ISO, UTC). */
+    public static function goes(Operation $cycle): array
+    {
+        $until = RenewalRepeatWait::until($cycle);
+        return $until ? ['goes' => $until->setTimezone(new \DateTimeZone('UTC'))->format(DATE_ATOM)] : [];
     }
     /** A monitored domain: registry and nameserver findings first; Active only with a current registry expiry; otherwise no status.
      * @return array{0:string,1:?string}|null */

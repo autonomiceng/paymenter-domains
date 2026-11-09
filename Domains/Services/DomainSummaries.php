@@ -2,12 +2,12 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
-use App\Models\{User,Service,ServiceCancellation,Server,Invoice,InvoiceItem,InvoiceTransaction};
+use App\Models\{User,Service};
 use Illuminate\Support\Facades\{DB,Crypt};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts;
 use Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence;
 use Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels;
-use Paymenter\Extensions\Servers\Domains\Models\{Domain,WatchName,WatchDnsObservation,ManagedPublicObservation,WatchRegistryObservation,Adoption,Operation,Account};
+use Paymenter\Extensions\Servers\Domains\Models\{Domain,WatchName,WatchDnsObservation,ManagedPublicObservation,WatchRegistryObservation,Operation,Account};
 use Paymenter\Extensions\Servers\Domains\Presentation\{DomainSummary,Missing};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 /** Batched local projection. No transport, writes, locks, lazy model relations or actor cache. */
@@ -69,13 +69,9 @@ final class DomainSummaries
         $registry=$this->latest(WatchRegistryObservation::class,'watch_id',$wids,$c->staff?null:$uid);
         $work=['watch'=>DB::table('domains_watch_work')->whereIn('watch_id',$wids)->get()->groupBy('watch_id')->all(),
             'managed'=>DB::table(ManagedPublicWorkSchema::TABLE)->whereIn('domain_id',$dids)->whereNull('retired_at')->whereExists(fn($q)=>$q->selectRaw('1')->from('domains_domains as d')->whereColumn('d.id','domain_id')->whereColumn('d.authority_generation','generation'))->get()->groupBy('domain_id')->all()];
-        $adoptions=Adoption::whereIn('id',array_map(fn($d)=>$d->adoption_id,$c->domains))->get()->keyBy('id');
-        $cancels=ServiceCancellation::whereIn('service_id',array_map(fn($d)=>$d->service_id,$c->domains))->pluck('service_id')->all();
-        $intents=DB::table('domains_native_intents')->whereIn('service_id',array_map(fn($d)=>$d->service_id,$c->domains))->pluck('service_id')->all();
+        // Status, order and renewal: the same projection the domain page reads, loaded once for the batch.
+        $inputs=DomainStateInputs::load($c->domains,$c->services);$at=new \DateTimeImmutable('@'.$now);
         $testServers=Account::whereIn('server_id',array_map(fn($d)=>$d->server_id,$c->domains))->where('environment','test')->pluck('server_id')->all();
-        $servers=Server::with('settings')->whereIn('id',array_map(fn($d)=>$d->server_id,$c->domains))->get()->keyBy('id');
-        $cycles=Operation::whereIn('id',Operation::selectRaw('max(domains_operations.id)')->join('domains_domains as d','d.id','=','domains_operations.domain_id')->whereIn('d.id',$dids)->whereColumn('d.authority_generation','domains_operations.authority_generation')->whereColumn('d.account_fingerprint','domains_operations.account_fingerprint')->where('action','renew')->groupBy('domain_id'))->limit(250)->get()->groupBy('domain_id');
-        $acquisitions=Operation::whereIn('id',Operation::selectRaw('max(domains_operations.id)')->join('domains_domains as d','d.id','=','domains_operations.domain_id')->whereIn('d.id',$dids)->whereColumn('d.authority_generation','domains_operations.authority_generation')->whereColumn('d.account_fingerprint','domains_operations.account_fingerprint')->whereIn('action',['register','transfer'])->groupBy('domain_id'))->limit(250)->get()->keyBy('domain_id');
         $dnsChoices=collect();
         Operation::select('domains_operations.*')->join('domains_domains as d','d.id','=','domains_operations.domain_id')
             ->whereIn('d.id',$dids)->whereColumn('d.authority_generation','domains_operations.authority_generation')->whereColumn('d.account_fingerprint','domains_operations.account_fingerprint')
@@ -87,14 +83,11 @@ final class DomainSummaries
                     $dnsChoices->put($id,collect(array_filter($choices)));
                 }
             },'domains_operations.id','id');
-        $invoices=Invoice::where('user_id',$uid)->whereIn('id',$cycles->flatten()->pluck('invoice_id')->merge($acquisitions->pluck('invoice_id')))->get()->keyBy('id');
         $targets=[...$c->domains,...$c->watches];
         $scopes=array_map(fn($t)=>WatchNoticePreferences::scope((int)$t->user_id,$t instanceof WatchName?$t->canonical_name:$t->domain),$targets);
         $noticeStates=DB::table('domains_watch_notice_state')->whereIn('user_id',$c->staff?array_map(fn($w)=>$w->user_id,$c->watches):[$uid])->whereIn('scope',$scopes)->get()->keyBy('scope');
         $transferEndings=config('domains.watch_transfer.enabled',false) && $c->watches ? app(Storefront::class)->offeredTransferEndings(array_map(fn($w)=>$w->canonical_name,$c->watches)) : [];
-        $cycleInvoices=$cycles->flatten()->pluck('invoice_id');
-        $items=InvoiceItem::whereIn('invoice_id',$cycleInvoices)->get()->keyBy('id');
-        $transactions=InvoiceTransaction::whereIn('invoice_id',$cycleInvoices)->get();$out=[];
+        $out=[];
         foreach (['managed'=>$c->domains,'watch'=>$c->watches] as $kind=>$targets) {
             foreach ($targets as $id=>$t) {
                 $uid=(int)$t->user_id;$stamp=$c->stamp($kind,$id);$rows=$dns[$kind][$id]??collect();$jobs=$work[$kind][$id]??collect();$fresh=[];$signals=[];$lastKnown=[];
@@ -142,29 +135,24 @@ final class DomainSummaries
                     $pending=$t->adoptionPending();$registration='domain.registration.'.($pending?'unknown':(in_array($t->status,['active','expired','grace','redemption'],true)?'platform':'unknown'));
                     $states[]=$pending?'adopt.pending':match($t->status){'active'=>$t->provider_expires_at===null?'domain.review':($t->provider_expires_at->format('Y-m-d')<=gmdate('Y-m-d',$now)?'watch.expired':'domain.active'),'expired','grace'=>'domain.expired','redemption'=>'domain.redemption','registration_pending'=>'domain.pending','transfer_pending'=>'domain.transfer','cancelled'=>'domain.cancelled',default=>'domain.review'};
                     if (!$pending) { $expiry=$t->provider_expires_at?->format('Y-m-d');$precision=$expiry?'date':null;$source=$expiry?'Confirmed registration':null; }
-                    $op=$acquisitions[$id]??null;if(!$pending && $op && (int)$op->service_id===(int)$t->service_id && (int)$op->server_id===(int)$t->server_id && $op->registrar_key===$t->registrar_key){if($op->state==='awaiting_payment'){$states=['domain.awaiting_payment'];}elseif(in_array($op->state,['held','uncertain'],true)){$states=[$op->action==='register' && !in_array($op->safe_code,['contact_details_required','transfer_setup_review_required','nameservers_required'],true)?'domain.processing':'domain.review'];}}
-                    $s=$c->services[$t->service_id];$a=$adoptions[$t->adoption_id]??null;
-                    $policy=RenewalStop::policy($t);
-                    $off=$policy===null || $pending || ($policy['owner_auto_renew']??true)===false || ($t->provenance==='adopted' && (!$a || $a->do_not_renew)) || ($policy['renewals_stopped']??false) || in_array($s->id,[...$cancels,...$intents],true);
+                    $state=DomainStates::project($t,$inputs,$at);$op=$state->acquisition;
+                    if(!$pending && $op && (int)$op->service_id===(int)$t->service_id && (int)$op->server_id===(int)$t->server_id && $op->registrar_key===$t->registrar_key){if($op->state==='awaiting_payment'){$states=['domain.awaiting_payment'];}elseif(in_array($op->state,['held','uncertain'],true)){$states=[$op->action==='register' && !in_array($op->safe_code,['contact_details_required','transfer_setup_review_required','nameservers_required'],true)?'domain.processing':'domain.review'];}}
+                    $s=$c->services[$t->service_id];$a=$state->stops['adoption'];$off=$state->renewalOff;
                     $reminderOff=$t->provenance==='adopted' && $a && $a->do_not_renew;
                     if ($t->provenance==='adopted') { $states[]='adopt.provenance'; }
-                    if ($policy===null) { $states[]='domain.review'; } elseif ($off && !$pending) { $states[]='adopt.renewal_off'; }
+                    if ($state->stops['policy']===null) { $states[]='domain.review'; } elseif ($off && !$pending) { $states[]='adopt.renewal_off'; }
                     if (!$pending) { try { if ($s->currency_code==='USD') { $price=Storefront::money(RetailLine::decimal($s->price)); } } catch (\Throwable) {} }
                     if($t->price_mode==='complimentary'){$price=ComplimentaryAccounts::LABEL;}
-                    $cycle=($cycles[$id]??collect())->first(fn($o)=>(int)$o->authority_generation===(int)$t->authority_generation && (int)$o->service_id===(int)$t->service_id && (int)$o->server_id===(int)$t->server_id && $o->registrar_key===$t->registrar_key && $o->account_fingerprint===$t->account_fingerprint && $o->base_expires_at?->format('Y-m-d')===$expiry);
-                    if ($expiry && (!$off || $cycle && !RenewalCycles::closedEarly($cycle))) {
-                        if ($cycle && !RenewalCycles::closedEarly($cycle)) { $inv=$invoices[$cycle->invoice_id]??null;
-                            // List and detail validate every member of the issued renewal invoice.
-                            try { $ledger=['domain'=>$t,'invoices'=>$invoices,'items'=>$items,'transactions'=>$transactions];$inv=DomainBilling::existingInvoice($cycle,$ledger,allowCancelled:true);$due=$inv->due_at?->format('Y-m-d');
-                                $issued=OwnedDomains::issuedState($cycle,$inv,$t,$ledger);$renewalClosed=$issued==='closed';$invoiceReview=$issued==='review';$invoiceCancelled=$issued==='cancelled'; } catch (\Throwable) { $invoiceReview=true;$issued='review'; }
-                            $invoiceMissing=$due===null && !$invoiceReview;
-                            $invoicePaid=!$invoiceReview && !$invoiceMissing && $issued==='paid';
-                            $goes=$invoicePaid?(OwnedDomains::goes($cycle)['goes']??null):null; }
-                        else { try { $projected=true;$dates=DomainBilling::calendarFor(['domain'=>$t,'settings'=>$servers[$t->server_id]->settings]);$due=$dates['due'];$issue=$dates['issue'];$invoiceMissing=$issue<gmdate('Y-m-d',$now); } catch (\Throwable) {} }
-                    }
-                    $order=$pending||!$op?[]:OwnedDomains::order($t,$op,$invoices->get($op->invoice_id),OwnedDomains::closed($s->status,in_array($s->id,[...$cancels,...$intents],true)));
-                    $managedStatus=OwnedDomains::orderStatus(DomainStates::managed($t,$op,gmdate('Y-m-d',$now),$off),$t,$order);
-                    if ($policy===null) { $managedStatus=['needs_review',null]; }
+                    // The renewal invoice the page shows, in the same words; with none, the saved calendar's next one.
+                    if ($invoice=$state->invoice()) {
+                        $issued=$invoice['status']??'pending';$due=$state->due;
+                        $invoiceReview=$issued==='review';$renewalClosed=$issued==='closed';$invoiceCancelled=$issued==='cancelled';
+                        $invoiceMissing=$due===null && in_array($issued,['pending','paid'],true);
+                        $invoicePaid=$issued==='paid' && !$invoiceMissing;
+                        $goes=$invoicePaid?($invoice['goes']??null):null;
+                    } elseif ($expiry && !$off) { $projected=true;
+                        if ($state->calendar) { $due=$state->calendar['due'];$issue=$state->calendar['issue'];$invoiceMissing=$issue<gmdate('Y-m-d',$now); } }
+                    $order=$state->order;$managedStatus=$state->status;
                     $url=route('domains.domains.show',$id);
                     if ($due && $due<=gmdate('Y-m-d',$now)) { $due=null; }
                     // The renewal invoice is due before expiry; once expiry has passed the list shows Expired instead.
