@@ -42,6 +42,12 @@ final class ComplimentaryCosts
         $need=self::need($op,$canApprove);
         return $need===null?null:$need.' Nothing is charged until approval.';
     }
+    /** Release hold only retries a held cost: without an approval the same registrar cost holds it again. */
+    public static function awaitingApproval(Operation $op):bool
+    {
+        try { return $op->state==='held'&&$op->safe_code==='registrar_price_increased'&&isset($op->policy['account_complimentary'],$op->policy['complimentary_cost_review']); }
+        catch (\Throwable) { return false; }
+    }
     /** What is wrong and the one next step, for a held complimentary request whose registrar cost is above the usual. */
     public static function need(Operation $op,bool $canApprove=false):?string
     {
