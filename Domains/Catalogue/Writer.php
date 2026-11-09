@@ -396,7 +396,9 @@ final class Writer implements Catalogue
                 // Keep unreadable own pricing closed, including when the feed/facts change.
                 if (!$published) { $offer->catalogue_published_revision = null; }
                 if ($preserveRetained) { $offer->catalogue_retained_annual_retail = $annual; }
-                $prices = OfferState::query('domains_prices')->where('server_id', $id)->where('tld', $name)->get();
+                // A damaged saved cost stays out of the snapshot, so only its own offer stays closed.
+                $prices = OfferState::query('domains_prices')->where('server_id', $id)->where('tld', $name)->get()
+                    ->filter(static fn ($p) => OfferState::savedCost($p->catalogue_observation) !== null);
                 $snapshot = OfferState::snapshot($b, $offer, $d, $policy, $prices, $servers[$id]->enabled && ($this->ready)($b, $servers[$id], $account), $published);
                 $this->projection->write($offer, $snapshot, $now, $native, $published && $retailUpgrade);
                 $offer->catalogue_published_revision = $published ? OfferState::json($snapshot->revision) : null;
@@ -433,7 +435,7 @@ final class Writer implements Catalogue
         if ($command instanceof FactsObserved) {
             $old = OfferState::facts($target->catalogue_facts); $new = $command->facts;
             $costs = [];
-            foreach ($prices as $p) { if ($p->catalogue_observation !== null) { $costs[] = OfferState::cost(OfferState::decode($p->catalogue_observation)); } }
+            foreach ($prices as $p) { if (($cost = OfferState::savedCost($p->catalogue_observation)) !== null) { $costs[] = $cost; } }
             $new = (new FeedObserved($command->binding(), $command->tld(), $costs))->facts($new);
             if ($new->observedAt > $now) { throw new \DomainException('Future facts observation.'); }
             if ($old && $old->observedAt > $new->observedAt) { return false; }
@@ -479,8 +481,9 @@ final class Writer implements Catalogue
         }
         if ($changed && $target->catalogue_facts !== null) {
             $costs = [];
+            // A damaged cost the feed left out stays damaged; it can't undo the costs the feed replaced.
             foreach (OfferState::query('domains_prices')->where('server_id', $target->server_id)->where('tld', $target->tld)->where('currency', 'USD')->get() as $p) {
-                if ($p->catalogue_observation !== null) { $costs[] = OfferState::cost(OfferState::decode($p->catalogue_observation)); }
+                if (($cost = OfferState::savedCost($p->catalogue_observation)) !== null) { $costs[] = $cost; }
             }
             $target->catalogue_facts = OfferState::encodeFacts((new FeedObserved($command->binding(), $command->tld(), $costs))->facts(OfferState::facts($target->catalogue_facts)));
         }
@@ -506,15 +509,15 @@ final class Writer implements Catalogue
         if ($rule === null) { return false; }
         $freshness = \Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness::forAccount((int) $tld->server_id);
         $prices = OfferState::query('domains_prices')->where('server_id', $tld->server_id)->where('tld', $tld->tld)->where('currency', 'USD')->orderBy('id')->get();
-        $costs = [];
+        $costs = $readable = [];
         foreach ($prices as $p) {
-            if ($p->catalogue_observation !== null) {
-                $cost = $freshness->cost(OfferState::cost(OfferState::decode($p->catalogue_observation)));
-                $costs[$cost->key()] = $cost;
+            if (($cost = OfferState::savedCost($p->catalogue_observation)) !== null) {
+                $cost = $freshness->cost($cost); $costs[$cost->key()] = $cost; $readable[$p->id] = true;
             }
         }
         foreach ($prices as $p) {
-            if ($p->catalogue_observation === null) { continue; }
+            // A damaged cost keeps its row unchanged and its offer closed until a price sync replaces it.
+            if (!isset($readable[$p->id])) { continue; }
             $cost = $costs[$p->action.':'.$p->term];
             try { $retail = Retail::quote($cost, $rule, $costs); }
             catch (\InvalidArgumentException) { $retail = null; }

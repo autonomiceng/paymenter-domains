@@ -10,7 +10,7 @@ final class SellerAvailability
 {
     public const READY='ready';
     public const MISSING='missing';
-    /** A saved 1-year cost that can't be read and leaves the price path incomplete. A price sync replaces it. */
+    /** A saved 1-year cost that can't be read, even beside readable ones. A price sync replaces it. */
     public const UNREADABLE='unreadable';
     public static function hasPrices(Account $account,?Tld $t): bool {return self::state($account,$t)===self::READY;}
     public static function state(Account $account,?Tld $t): string
@@ -24,7 +24,8 @@ final class SellerAvailability
             catch(\Throwable){$unreadable=true;continue;}
             if($cost->enabled){$costs[$cost->action]=true;}
         }
-        if(isset($costs['renew'])&&(isset($costs['register'])||isset($costs['transfer']))){return self::READY;}
-        return $unreadable?self::UNREADABLE:self::MISSING;
+        // Name the damaged cost before the seller is chosen, so staff sync prices first instead of selling an offer it closes.
+        if($unreadable){return self::UNREADABLE;}
+        return isset($costs['renew'])&&(isset($costs['register'])||isset($costs['transfer']))?self::READY:self::MISSING;
     }
 }
