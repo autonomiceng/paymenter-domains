@@ -58,7 +58,7 @@ final class DomainStates
         if (!$d->provider_expires_at) { return ['current' => $in->renewed($d) ? ['status' => 'review'] : null]; }
         $cycle = $in->cycle($d);
         if (!$cycle) { return []; }
-        $check = RegistrarCheck::forCustomer($cycle);
+        $check = $in->check($cycle);
         $review = ['status' => 'review', ...(($check['tone'] ?? null) === 'info' ? ['check' => $check] : [])];
         if ($cycle->safe_code === 'renewal_cancelled_unpaid' || RenewalReplacements::reviewed($cycle, $d)) {
             // A retired or refunded invoice permits a replacement only when billing's proof holds.

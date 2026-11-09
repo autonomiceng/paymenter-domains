@@ -4,12 +4,12 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Models\{Credit, Invoice, InvoiceItem, InvoiceTransaction, Server, ServiceCancellation};
 use Illuminate\Support\Collection;
-use Paymenter\Extensions\Servers\Domains\Models\{Adoption, Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Models\{Account, Adoption, Domain, Operation};
 /** What DomainStates::project reads for a set of owned domains, in a fixed number of queries for up to 250 domains.
  * The Domains list loads a batch; the domain page loads its one domain. Reads only: no locks, writes or provider calls. */
 final class DomainStateInputs
 {
-    private Collection $acquisitions, $cycles, $invoices, $items, $transactions, $cancel, $adoptions, $servers;
+    private Collection $acquisitions, $cycles, $invoices, $items, $transactions, $cancel, $adoptions, $servers, $accounts;
     /** Domain ids without an expiry that have a renewal request in their generation. */
     private array $renewed = [];
     /** Domain ids whose retired renewal cycle fails billing's replacement proof. */
@@ -28,8 +28,10 @@ final class DomainStateInputs
             ->limit(250)->get()->keyBy('domain_id') : collect();
         // The current cycle: the newest request under this expiry's renewal key or one of its replacements.
         $keys = array_map(fn ($d) => RenewalCycles::key($d), array_filter($domains, fn ($d) => $d->provider_expires_at !== null));
+        // Groups of 25 domains keep the condition shallow: SQLite refuses one flat chain of 500 terms.
         $in->cycles = $keys ? Operation::whereIn('id', Operation::selectRaw('max(id)')->where('action', 'renew')->whereIn('domain_id', array_keys($keys))
-            ->where(function ($q) use ($keys): void { foreach ($keys as $key) { $q->orWhereLike('operation_key', $key, caseSensitive: true)->orWhereLike('operation_key', $key.':replacement:%', caseSensitive: true); } })
+            ->where(function ($q) use ($keys): void { foreach (array_chunk($keys, 25) as $group) { $q->orWhere(function ($q) use ($group): void {
+                foreach ($group as $key) { $q->orWhereLike('operation_key', $key, caseSensitive: true)->orWhereLike('operation_key', $key.':replacement:%', caseSensitive: true); } }); } })
             ->groupBy('domain_id'))->limit(250)->get()->keyBy('domain_id') : collect();
         $missing = array_keys(array_diff_key($domains, $keys));
         $in->renewed = $missing ? Operation::select('domain_id')->tap($current)->whereIn('d.id', $missing)->where('action', 'renew')->distinct()->limit(250)->pluck('domain_id')->map(fn ($id) => (int) $id)->all() : [];
@@ -40,7 +42,10 @@ final class DomainStateInputs
         $serviceIds = array_map(fn ($d) => (int) $d->service_id, array_values($domains));
         $in->cancel = NativeCancellation::withIntents(ServiceCancellation::whereIn('service_id', $serviceIds)->get(), $serviceIds, true);
         $in->adoptions = Adoption::whereIn('id', array_filter(array_map(fn ($d) => $d->adoption_id, $domains)))->get()->keyBy('id');
-        $in->servers = Server::with('settings')->whereIn('id', array_map(fn ($d) => $d->server_id, $domains))->get()->keyBy('id');
+        // A renewal still being confirmed reads its account, domain and server for the registrar check.
+        $waiting = $in->cycles->whereIn('state', ['running', 'pending', 'uncertain'])->each(fn ($op) => $op->setRelation('domain', $domains[$op->domain_id]));
+        $in->servers = Server::with('settings')->whereIn('id', [...array_map(fn ($d) => $d->server_id, $domains), ...$waiting->pluck('server_id')->all()])->get()->keyBy('id');
+        $in->accounts = $waiting->isEmpty() ? collect() : Account::whereIn('server_id', $waiting->pluck('server_id')->unique()->all())->get()->groupBy('server_id');
         $in->prove();
         return $in;
     }
@@ -82,6 +87,9 @@ final class DomainStateInputs
     public function stops(Domain $d): array
     { return ['domain' => $d, 'policy' => RenewalStop::policy($d), 'adoption' => $d->adoption_id === null ? null : $this->adoptions->get($d->adoption_id), 'cancel' => $this->cancel->where('service_id', $d->service_id)->values()]; }
     public function settings(Domain $d): ?Collection { return $this->servers->get($d->server_id)?->settings; }
+    /** The customer's registrar check line for this renewal request, from the batch. */
+    public function check(Operation $cycle): array
+    { return RegistrarCheck::forCustomer($cycle, ['accounts' => $this->accounts->get($cycle->server_id, collect()), 'server' => $this->servers->get($cycle->server_id)]); }
     /** The billing ledger for these renewal requests, from the batch. */
     public function ledger(Domain $d, Collection $ops): array
     { return self::slice($d, $this->service($d), $ops, ['invoices' => $this->invoices, 'items' => $this->items, 'transactions' => $this->transactions]); }

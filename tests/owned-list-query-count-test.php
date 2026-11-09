@@ -31,16 +31,27 @@ $measure=static function($actor)use($controller,$session):array {
     }
     return ['queries'=>count($queries),'batches'=>$batches,'total'=>$page->getData()['domains']->total(),'visible'=>storefrontDom($html)->query('//tbody/tr')->length];
 };
+// A renewal still being confirmed with the registrar: a sealed attempt with no answer, pending or uncertain.
+$baseOp=$base->operations()->sole();$started=$clock->now()->modify('-3 days');
+$renewing=static function(int $domain,int $service,string $key,int $i)use($clone,$baseOp,$started):void {
+    $attempt=['claim_key'=>'claim-'.$key,'dispatch_attempted_at'=>$started->modify('+10 seconds')->format(DATE_ATOM),'seal'=>'sealed'];
+    $clone('domains_operations',(int)$baseOp->id,['domain_id'=>$domain,'service_id'=>$service,'action'=>'renew','state'=>$i%2?'pending':'uncertain',
+        'operation_key'=>$key,'invoice_id'=>null,'invoice_item_id'=>null,'lease_expires_at'=>null,'started_at'=>$started->format('Y-m-d H:i:s'),
+        'request_fingerprint'=>hash('sha256',$key),'attempt'=>Illuminate\Support\Facades\Crypt::encryptString(json_encode($attempt,JSON_THROW_ON_ERROR))]);
+};
+$expiry=$clock->now()->modify('+200 days')->format('Y-m-d');
 $results=[];
-foreach (['managed','watch','mixed'] as $kind) {
+foreach (['managed','watch','mixed','renewing'] as $kind) {
     $actor=commerceUser();$counts=['managed'=>0,'watch'=>0];
     $managedOrder=$clone('orders',(int)$base->service->order_id,['user_id'=>$actor->id]);
     for ($i=1;$i<=1000;$i++) {
-        $managed=$kind==='managed'||($kind==='mixed'&&$i%2===1);
+        $managed=$kind==='managed'||$kind==='renewing'||($kind==='mixed'&&$i%2===1);
         $name=$kind.'-'.$i.'.example.com';
         if ($managed) {
             $service=$clone('services',(int)$base->service_id,['user_id'=>$actor->id,'order_id'=>$managedOrder]);
-            $clone('domains_domains',(int)$base->id,['user_id'=>$actor->id,'service_id'=>$service,'domain'=>$name,'reservation_name'=>$name,'sld'=>$kind.'-'.$i,'tld'=>'example.com']);
+            $domain=$clone('domains_domains',(int)$base->id,['user_id'=>$actor->id,'service_id'=>$service,'domain'=>$name,'reservation_name'=>$name,'sld'=>$kind.'-'.$i,'tld'=>'example.com',
+                ...($kind==='renewing'?['status'=>'active','provider_expires_at'=>$expiry.' 00:00:00']:[])]);
+            if ($kind==='renewing') { $renewing($domain,$service,'renew:'.$domain.':g'.$base->authority_generation.':'.$expiry,$i); }
         } else {
             $clone('domains_watch_names',(int)$watchBase->id,['user_id'=>$actor->id,'canonical_name'=>$name]);
         }

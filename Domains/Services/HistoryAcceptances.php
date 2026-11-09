@@ -10,11 +10,17 @@ use Paymenter\Extensions\Servers\Domains\Models\Account;
 final class HistoryAcceptances
 {
     public const KEY = 'domains_history_acceptance';
-    public static function load(AccountBinding $binding, Action $action = Action::Register): ?HistoryAcceptance
+    /** $loaded: this server with its settings already read, used only outside transactions (a writer reads it under lock). */
+    public static function load(AccountBinding $binding, Action $action = Action::Register, ?Server $loaded = null): ?HistoryAcceptance
     {
-        $query = Server::findOrFail($binding->serverId)->settings()->where('key', self::KEY.match ($action) { Action::Renew => '_renewal', Action::Transfer => '_transfer', default => '' });
-        if (DB::transactionLevel() > 0) { $query->lockForUpdate(); }
-        $setting = $query->first();
+        $key = self::KEY.match ($action) { Action::Renew => '_renewal', Action::Transfer => '_transfer', default => '' };
+        if ($loaded !== null && (int) $loaded->id === $binding->serverId && $loaded->relationLoaded('settings') && DB::transactionLevel() === 0) {
+            $setting = $loaded->settings->firstWhere('key', $key);
+        } else {
+            $query = Server::findOrFail($binding->serverId)->settings()->where('key', $key);
+            if (DB::transactionLevel() > 0) { $query->lockForUpdate(); }
+            $setting = $query->first();
+        }
         if (!$setting) { return null; }
         try {
             if (!$setting->encrypted) { throw new \DomainException; }
