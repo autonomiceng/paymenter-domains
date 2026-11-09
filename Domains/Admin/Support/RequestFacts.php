@@ -285,7 +285,8 @@ final class RequestFacts
             $parts=array_values(array_filter([$said?null:$facts['outcome'],$step['title']??null,$step['body']??null,$cause,$facts['auto_renew']??PaidUncertainty::holdSummary($op)]));
             if($said&&$step===null&&$cause===null){array_unshift($parts,self::CHECK_STATUS);}
             return ['title'=>array_shift($parts),'body'=>$parts===[]?null:implode(' ',$parts),'tone'=>'warning',...(($step['answer']??false)?['primary'=>'enom_answer']:[]),
-                'action'=>$recover?HistoryRecovery::NAME:($tooOld?null:(OperationActions::readLimit($op)&&in_array($op->action,['register','transfer','renew'],true)?'resume_reads':'recheck'))];
+                // Too old for history, but the first read of this attempt still comes before asking Enom.
+                'action'=>$recover?HistoryRecovery::NAME:($tooOld&&(RegistrarCheck::status($op)['outcome']??null)!=='not_checked'?null:(OperationActions::readLimit($op)&&in_array($op->action,['register','transfer','renew'],true)?'resume_reads':'recheck'))];
         }
         if ($op->state==='queued' && ($ready=self::readyMessage($op))!==null) {
             $ordersLink=!ManagementEvidence::retryable($op)||!self::account($op)['account']?->processing_enabled;
