@@ -196,7 +196,8 @@ class WhatYouSell extends Page implements HasTable
                 ->fillForm(function():array {try{$rule=$this->catalogue()->ruleFields((int)$this->account);}catch(\DomainException){return [];}return [...$rule,...(isset($rule['mode'])?['sell_new'=>$rule['mode']==='only'?'no':'yes']:[])];})->schema(fn()=>[
                     Radio::make('sell_new')->label('Sell new TLDs')->required()->inline()->options(['yes'=>'Yes','no'=>'No'])
                         ->hintAction(HelpHint::make("For every TLD you have not set yourself, including ones the registrar adds later. Yes: they sell, unless the row is set to Don't sell. No: only rows set to Sell are sold. To change rows, tick them and use Edit selected.")),
-                    TextInput::make('max_cost')->label('Cost limit')->numeric()->minValue(0)->prefix('USD')
+                    // Staff without Costs don't see the limit; their save keeps the saved one.
+                    TextInput::make('max_cost')->label('Cost limit')->numeric()->minValue(0)->prefix('USD')->visible(fn()=>$this->canSeeCosts())
                         ->hintAction(HelpHint::make('Skips a TLD when its register or renew cost, whichever is higher, is above this. Premium is per name, not per TLD: those names are checked at checkout.')),
                     TextInput::make('years')->label('Longest term')->integer()->required()->minValue(1)->maxValue(10)->suffix('years'),
                     Toggle::make('transfers')->label('Transfers'),
