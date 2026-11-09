@@ -13,6 +13,26 @@ class StaffSettingsWrites
         private readonly AccountBindings $bindings,private readonly bool $allowInjectedProbes=false) {}
     protected function catalogue(): ?\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCommands
     {return \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::resolve(\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCommands::class);}
+    /** The actual local Orders prerequisites, shared by the switch, its row and refusal toast. No prices or sends. */
+    public static function processingBlocker(Account $account): ?string
+    {
+        if(!in_array(config('cache.stores.'.config('cache.default').'.driver'),['redis','database','memcached'],true)){
+            return 'Use a shared cache (database, Redis or Memcached), then try Orders again.';
+        }
+        if(!in_array(config('session.driver'),['redis','database','memcached'],true)){
+            return 'Use shared sessions (database, Redis or Memcached), then try Orders again.';
+        }
+        if(!in_array(config('queue.connections.'.config('queue.default').'.driver'),['redis','database'],true)){
+            return 'Use a background queue (database or Redis), then start the queue worker.';
+        }
+        if((int)config('queue.connections.'.config('queue.default').'.retry_after',0)<900){
+            return 'Set the queue retry time to at least 900 seconds, then restart the queue worker.';
+        }
+        if(!app(RuntimePorts::class)->accepted($account)){
+            return 'The order runtime is not ready for this account. See Site setup in System checks.';
+        }
+        return null;
+    }
     public function connectionAvailable(?string $registrar=null): bool
     {return $this->allowInjectedProbes&&($registrar===null||$this->bindings->hasRegistrar($registrar));}
     /** Returns the publish summary for a default pricing change, otherwise null. */
@@ -85,11 +105,7 @@ class StaffSettingsWrites
                 if((bool)Account::where('server_id',$r->serverId)->lockForUpdate()->firstOrFail()->processing_enabled===$enabled){throw new \DomainException('Processing state unchanged.');}
                 $this->bindings->setProcessing($r->serverId,$enabled,function($server,$account):void {
                     Installation::legacy();
-                    $cache=config('cache.stores.'.config('cache.default').'.driver');
-                    if(!app(RuntimePorts::class)->accepted($account)||!in_array($cache,['redis','database','memcached'],true)
-                        ||!in_array(config('session.driver'),['redis','database','memcached'],true)
-                        ||!in_array(config('queue.connections.'.config('queue.default').'.driver'),['redis','database'],true)
-                        ||(int)config('queue.connections.'.config('queue.default').'.retry_after',0)<900){
+                    if(self::processingBlocker($account)!==null){
                         throw new \DomainException('Runtime acceptance and shared workers are required.');
                     }
                     $this->bindings->requireReadableLocked($server,$account);

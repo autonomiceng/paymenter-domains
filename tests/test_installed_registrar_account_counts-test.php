@@ -58,6 +58,7 @@ $listed=static function(string $href,string $list)use($staff):int {
 };
 $requests=$row('Registrar requests',$html);
 expect(preg_match('/\b5 open\b/',$requests['text'])===1,'Open requests count the listed open rows: '.$requests['text']);
+expect(str_contains($requests['text'],'1 awaiting payment, 1 on hold, 3 under review'),'Every open request status is in the breakdown: '.$requests['text']);
 same(5,$listed($requests['links']['View requests']['href']??'',ListOperations::class),'View requests opens exactly the open requests');
 $waiting=$requests['links']['1 on hold, 3 under review']??null;
 expect($waiting!==null,'Requests that wait on staff link to their rows: '.json_encode(array_keys($requests['links'])));
@@ -125,6 +126,7 @@ Cache::flush();
 // The account page's System checks row: its count and its View domains link.
 $alerts=Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::alerts($account);
 same('2',$alerts['value'],'The count is the alerting rows');
+same('Domains on this registrar account with open alerts. The sidebar counts all registrar accounts.',$alerts['help'],'The account row says it counts this account only');
 parse_str((string)parse_url((string)$alerts['buttons'][0]->getUrl(),PHP_URL_QUERY),$query);
 $records=Livewire::actingAs($staff)->withQueryParams($query)->test(ListDomains::class)->assertSuccessful()->instance()->getTableRecords();
 same([$live->id,$held->id],collect($records->items())->pluck('id')->sort()->values()->all(),'View domains opens exactly the alerting rows');

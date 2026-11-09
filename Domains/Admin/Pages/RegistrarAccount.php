@@ -96,6 +96,7 @@ class RegistrarAccount extends Page
         if ($a) {
             $id=(int)$s->id;
             $rows=array_column([...AccountChecklist::setup($a,$this->status()),...AccountChecklist::renewals($id),AccountChecklist::whois($a)??self::fact('WHOIS privacy','Free when supported by the TLD.')],null,'label');
+            $checks['failing']=[...AccountChecklist::pausedChecks($rows),...$checks['failing']];
             $pick=fn(string ...$labels)=>array_values(array_filter(array_map(fn(string $label)=>$rows[$label]??null,$labels)));
             $sections=[Sheet::section('Account',$this->rows('account',[...$this->accountRows($a),...$pick('API connection')]))];
             if(LiveActivationAction::offered($a)){
@@ -202,7 +203,11 @@ class RegistrarAccount extends Page
         $rows[]=[...self::fact('Domains',(string)Domain::where('server_id',$s->id)->count()),'buttons'=>[Sheet::link('view_domains','View domains',$domains)]];
         // Each count links to the list filtered to exactly its rows. On hold and Under review wait on staff, so they are amber.
         $requests=RegistrarFacts::requests((int)$s->id);$staff=array_filter($requests['staff']);
-        $waiting=$staff===[]?null:RegistrarFacts::tone(implode(', ',array_map(fn(string $key,int $n)=>$n.' '.strtolower(RequestFacts::STATUSES[$key][0]),array_keys($staff),$staff)),'warning',RegistrarFacts::requestsUrl((int)$s->id,array_keys($staff)));
+        // Every open status is in the breakdown; only the statuses that wait on staff are amber and linked.
+        $parts=[];
+        foreach(array_filter(array_diff_key($requests['statuses'],$requests['staff'])) as $key=>$n){$parts[]=e($n.' '.strtolower(RequestFacts::STATUSES[$key][0]));}
+        if($staff!==[]){$parts[]=RegistrarFacts::tone(implode(', ',array_map(fn(string $key,int $n)=>$n.' '.strtolower(RequestFacts::STATUSES[$key][0]),array_keys($staff),$staff)),'warning',RegistrarFacts::requestsUrl((int)$s->id,array_keys($staff)))->toHtml();}
+        $waiting=$parts===[]?null:new HtmlString(implode(', ',$parts));
         $rows[]=[...self::fact('Registrar requests',$requests['open'].' open',$waiting),'buttons'=>[Sheet::link('view_requests','View requests',RegistrarFacts::requestsUrl((int)$s->id,RegistrarFacts::OPEN_REQUESTS))]];
         if ($calls=RegistrarFacts::calls($a)) { $rows[]=[...self::fact($a->environment==='live'?'API calls, today (UTC)':'API calls, last 24 hours',$calls['value'],$calls['sub'],$calls['help']),'tone'=>$calls['tone'],'edit'=>true,'buttons'=>[\Paymenter\Extensions\Servers\Domains\Admin\Support\ApiCallLimitAction::make($a,$this->reviewStamp)]]; }
         $rows[]=[...self::fact('Prices stay current for',\Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness::forAccount((int)$s->id)->hours.' hours',null,'Prices sync daily. Older prices stop new orders until checked again.'),'edit'=>true,'buttons'=>[\Paymenter\Extensions\Servers\Domains\Admin\Support\PriceFreshnessAction::make($a,$this->reviewStamp)]];
