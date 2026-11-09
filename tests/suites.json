@@ -76,6 +76,7 @@
     "tests/test_offer_scheduler_mariadb.py",
     "tests/test_schema_mariadb.py",
     "tests/test_user_deletion_mariadb.py",
-    "tests/test_enom_send_limit_mariadb.py"
+    "tests/test_enom_send_limit_mariadb.py",
+    "tests/test_template_locks_mariadb.py"
   ]
 }

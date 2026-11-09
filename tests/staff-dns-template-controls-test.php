@@ -140,7 +140,8 @@ $check('Paused and linked assignments refuse independently',function()use($watch
 $check('Turn off and delete read assignments committed while they wait for the template lock',function()use($watch,$map,$make,$write,$manager):void{
     siteDnsFixture(null);$setting=(int)\App\Models\Setting::where('key',SiteDnsDefault::KEY)->whereNull('settingable_type')->value('id');
     // SQLite has no repeatable-read views. Model the write's older view: the assignment commits when the template
-    // row lock is taken, and from then on only locking reads see it.
+    // row lock is taken, and from then on only locking reads see it. tests/test_template_locks_mariadb.py proves the same
+    // order with two MariaDB connections, plus rollback on lock timeout and deadlock.
     $view=(object)['arm'=>null,'table'=>null,'key'=>null,'late'=>null];
     WatchProfile::addGlobalScope('late_assignment',static function($q)use($view):void{
         if($view->arm && $q->getQuery()->lock){$arm=$view->arm;$view->arm=null;[$view->table,$view->key,$view->late]=$arm();}
