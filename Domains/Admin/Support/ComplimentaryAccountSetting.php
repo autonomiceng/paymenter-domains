@@ -84,7 +84,7 @@ final class ComplimentaryAccountSetting extends Component implements HasActions,
     private static function lastChange(array $setting):HtmlString
     {
         $by=User::find($setting['actor'])?->name?:'Staff';
-        $at=view('domains::partials.moment',['at'=>\Carbon\CarbonImmutable::parse((string)$setting['at'],config('app.timezone','UTC'))->utc()])->render();
+        $at=view('domains::partials.moment',['at'=>ComplimentaryAccounts::instant((string)$setting['at'])])->render();
         return new HtmlString(e(($setting['enabled']?'Turned on by ':'Turned off by ').$by.', ').$at.e('. Reason: '.$setting['reason']));
     }
 }
