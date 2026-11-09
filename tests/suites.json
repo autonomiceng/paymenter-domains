@@ -65,6 +65,7 @@
     "tests/test_native.py",
     "tests/test_native_cache.py",
     "tests/test_schema_mariadb_guards.py",
+    "tests/test_conversion_refusal.py",
     "tests/test_runner_speed.py",
     "tests/test_retired_catalogue_references.py"
   ],

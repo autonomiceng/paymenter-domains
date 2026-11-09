@@ -11,7 +11,6 @@ authority still follows the existing retirement path.
 | --- | --- |
 | `Services/HoldingNativeIdentity.php`, including its marker refusal subtype | Both `HoldingLocks` and `HoldingIdentityLock`, their writer/adoption/native model consumers and fixtures; preserve missing action, missing ending and duplicate-marker writer assertions. |
 | `Services/ManagedPublicEnrollment.php` | Managed public observers, reconciliation, scheduler/health and transfer relink; preserve `transfer-completion-test.php` and its `Support/transfer-watch.php` fixture. |
-| `scripts/conversion/EvidenceHost.php` | Conversion application preflight, protected evidence collection, collector CLI and development-source packaging exclusions. |
 | Changed test files or shared support fixtures | The tests themselves, every requiring registered consumer, fixture policy and runner discovery checks. |
 
 The conservative lexical inventory contains 289 registered tests, including the

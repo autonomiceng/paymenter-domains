@@ -1,7 +1,7 @@
 # Candidate release, rollback and support
 
-Use this checklist with [runtime composition](runtime.md), the
-[conversion procedure](../scripts/conversion/README.md) and the
+Use this checklist with [runtime composition](runtime.md), the bridge 0.1.0
+[conversion procedure](https://github.com/autonomiceng/paymenter-domains/blob/89112442164558c4ab61ff32f210d1b102605112/scripts/conversion/README.md) and the
 [native lifecycle contract](design/native-lifecycle.md). Record the candidate commit,
 archive hash, environment, operator, time and independent acceptance receipts privately.
 Keep credentials, contact data, transfer codes and raw provider replies out of tickets.
@@ -11,8 +11,9 @@ Keep credentials, contact data, transfer codes and raw provider replies out of t
 1. Start from a clean reviewed commit. Run the complete offline runner described in
    [verification setup](testing.md), with its pinned native fixture. Retain `receipt.json`,
    selected/omitted suites and command counts; a partial or skipped run is not a green run.
-   Run the opt-in MariaDB conversion rehearsal separately where its prerequisites exist.
-   It qualifies conversion transactions and fencing, not checkout/worker concurrency.
+   Run the opt-in MariaDB conversion rehearsal from the bridge 0.1.0 checkout where its
+   prerequisites exist. It qualifies conversion transactions and fencing, not
+   checkout/worker concurrency.
 2. Build and verify a runtime archive in a fresh output directory:
 
    ```sh
@@ -144,13 +145,19 @@ physical calls. A TEST receipt never qualifies live writes.
 
 ## One-time conversion checkpoint order
 
-Follow the complete [profile procedure](../scripts/conversion/README.md), including its
+This package has no converter. Run the whole one-time conversion from a checkout of
+Domains bridge 0.1.0 at `891124421645`, with that checkout's converter, `source.json` pins,
+pinned PHP and tests:
+
+1. Convert with the bridge converter, `scripts/convert-enom-05.php` in that checkout.
+2. Install the bridge 0.1.0 package and run its checked catalogue conversion.
+3. Install this package as an upgrade from 0.1.0. It finishes offer retirement and keeps the
+   checked catalogue receipt.
+
+This package's `scripts/convert-enom-05.php` only refuses with these steps. Follow the
+complete bridge [profile procedure](https://github.com/autonomiceng/paymenter-domains/blob/89112442164558c4ab61ff32f210d1b102605112/scripts/conversion/README.md), including its
 Docker/Plesk sections where applicable. This summary does not replace process, cron,
 lock, web-entry-point or permission inspection.
-
-Run the whole procedure with the converter from Domains bridge 0.1.0 at `891124421645`,
-install that bridge, run its checked catalogue conversion, then install this package. This
-package's converter only verifies a finished installation and refuses a new target before any DDL.
 
 | Checkpoint | Required evidence before continuing |
 | --- | --- |
@@ -165,14 +172,14 @@ package's converter only verifies a finished installation and refuses a new targ
 | Verify | Repeat dry run with runtimes still parked reports complete/already-complete and matching digests; IDs/counts, native money, null native expiry, reservations, encrypted history, reminders/templates/preferences and permissions match |
 | Reopen | Install only Domains with all gates off; explicit recorded go/no-go before any entry point resumes; restore only intended workers/triggers, then maintenance |
 
-The converter defaults to dry run. Required arguments are `--app`, `--source`,
+The bridge converter defaults to dry run. Required arguments are `--app`, `--source`,
 `--source-revision` and `--evidence`. The dedicated profile requires `--units`; the
 app profile requires `--host-profile=app --operator-inventory`. Do not combine profiles.
 `--stage-schema` is separate from `--apply`; DDL is not an atomic rollback. An apply
 requires `--backup-marker`, whose database/files archives predate the marker and whose
 hashes and key proof match. A backup hash check does not prove a restore.
 
-The read-only evidence collector is a separate, explicitly authorized provider step.
+The bridge's read-only evidence collector is a separate, explicitly authorized provider step.
 It accepts no command-line credentials. TEST scope, account anchors, one-name live scope,
 private `0600` publication and replacement semantics are documented in the conversion
 procedure. Replacing a file does not accumulate earlier account proofs. Converter dry
@@ -244,7 +251,7 @@ and invoice due dates are separate facts.
 | Failed/partial managed-record read | Preserve the last successful inventory and watermarks. Inspect the current hold; use the supported audited Resume scheduled reads action, then require a complete current-identity read before editing |
 | Binding or key drift | Pause affected work, restore the original binding/key material and inspect authority. Re-verification with a different account does not rebind retained history |
 | Notification handoff unknown | Inspect the original claim/provider delivery independently and record staff review. Never release/resend the original claim; queue acceptance is not delivery proof |
-| Partial schema or conversion journal | Keep maintenance and workers stopped; restore/review exact schema/history or resume the guarded converter. No normal runtime repair or forced boot |
+| Partial schema or conversion journal | Keep maintenance and workers stopped; restore/review exact schema/history or resume the guarded bridge converter. No normal runtime repair or forced boot |
 
 Repeated switching must leave both holding accounts operational for read-only facts,
 financial reconciliation, renewals and reminders. Review account rotation lag, balance
