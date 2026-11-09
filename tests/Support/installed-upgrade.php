@@ -32,16 +32,27 @@ function seedInstalledUpgrade(): void
     foreach(Schema::getTableListing(null,false) as $table){if(str_starts_with($table,'domains_')){$populated[$table]=DB::table($table)->count();}}
     echo 'Baseline retained fixture rows: '.json_encode($populated)."\n";
 }
-function assertInstalledMigrationOrder(): void
+/**
+ * $migrations names the tree the loaded installer migrates from: the source checkout in native tests, the extracted
+ * copy in package tests. A different tree, or one missing $upgraded, fails before the applied order is compared.
+ * $upgraded is the migration an upgrade applied after the recorded history; the migrator runs it after that history.
+ */
+function assertInstalledMigrationOrder(string $migrations,?string $upgraded=null): void
 {
-    $files=glob(base_path('extensions/Servers/Domains/database/migrations/*.php'));sort($files);
+    $files=glob($migrations.'/*.php');sort($files);
     $expected=array_map(static fn($file)=>basename($file,'.php'),$files);
+    expect($expected!==[],'Migration order reads a tree with migrations: '.$migrations);
+    if($upgraded!==null){expect(in_array($upgraded,$expected,true),'Migration order tree includes '.$upgraded);}
+    $loaded=dirname((new ReflectionClass(\Paymenter\Extensions\Servers\Domains\Services\Installation::class))->getFileName(),2).'/database/migrations';
+    same(realpath($loaded),realpath($migrations),'Migration order reads the tree the loaded installer migrates from');
     $actual=DB::table('migrations')->whereIn('migration',$expected)->orderBy('id')->pluck('migration')->all();
-    same($expected,$actual,'Installed migrations applied exactly once in filename order');
-    if(is_file(base_path('extensions/Servers/Domains/database/migrations/2026_10_24_000040_index_operation_services.php'))){
+    if($upgraded!==null){$expected=[...array_values(array_diff($expected,[$upgraded])),$upgraded];}
+    same($expected,$actual,'Installed migrations applied exactly once in filename order'.($upgraded!==null?', then '.$upgraded:''));
+    $index=$migrations.'/2026_10_24_000040_index_operation_services.php';
+    if(is_file($index)){
         expect(Schema::hasIndex('domains_operations',['service_id']),'Installed upgrade indexes retained service operations');
         $indexes=Schema::getIndexes('domains_operations');
-        for($i=0;$i<2;$i++){(require base_path('extensions/Servers/Domains/database/migrations/2026_10_24_000040_index_operation_services.php'))->up();}
+        for($i=0;$i<2;$i++){(require $index)->up();}
         same($indexes,Schema::getIndexes('domains_operations'),'Repeated installed additive migration retains indexes');
     }
     if(class_exists(\Paymenter\Extensions\Servers\Domains\Services\UserDeletionSchema::class)){

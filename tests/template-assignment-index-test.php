@@ -17,7 +17,24 @@ DB::table('migrations')->where('migration',$migration)->delete();
 same([false,false,false],$indexed(),'The earlier install has no template assignment indexes');
 $installation->verify();
 $installation->install();same([true,true,true],$indexed(),'The upgrade adds the indexes before final schema verification');
-require __DIR__.'/Support/installed-upgrade.php';assertInstalledMigrationOrder();
+require __DIR__.'/Support/installed-upgrade.php';
+$source=dirname($path);assertInstalledMigrationOrder($source,$migration);
+// A copy is not the tree the installer loaded, and a tree without the new migration cannot prove its order.
+$refused=static function(string $tree)use($migration):string {
+    try{assertInstalledMigrationOrder($tree,$migration);}catch(RuntimeException $e){return $e->getMessage();}
+    throw new LogicException('Migration order accepted '.$tree);
+};
+$copy=sys_get_temp_dir().'/domains-migration-order-'.bin2hex(random_bytes(8));mkdir($copy,0700);
+try{
+    foreach(glob($source.'/*.php') as $file){copy($file,$copy.'/'.basename($file));}
+    same('Migration order reads the tree the loaded installer migrates from',$refused($copy),'A copied migration tree is refused');
+    unlink($copy.'/'.$migration.'.php');
+    same('Migration order tree includes '.$migration,$refused($copy),'A tree without the new migration is refused');
+}finally{foreach(glob($copy.'/*.php') as $file){unlink($file);}rmdir($copy);}
+// The loaded tree with the new migration missing from the applied sequence is refused too.
+$row=(array)DB::table('migrations')->where('migration',$migration)->sole();DB::table('migrations')->where('id',$row['id'])->delete();
+try{same('Installed migrations applied exactly once in filename order, then '.$migration,$refused($source),'An upgrade without the new migration record is refused');}
+finally{DB::table('migrations')->insert($row);}
 same($history,DB::table('migrations')->where('migration','!=',$migration)->orderBy('id')->get()->toJson(),'The upgrade keeps earlier migration history');
 $indexes=array_map(Schema::getIndexes(...),array_keys(TemplateAssignmentIndex::COLUMNS));$record=(array)DB::table('migrations')->where('migration',$migration)->sole();
 for($i=0;$i<2;$i++){(require $path)->up();$installation->install();$installation->verify();}
