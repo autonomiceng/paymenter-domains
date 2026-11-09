@@ -23,6 +23,8 @@ final class ObservationSchema
                 $t->unsignedBigInteger('cursor')->default(0); $t->unsignedBigInteger('turn')->default(0);
                 foreach (['refund','timeout'] as $kind) { $t->unsignedBigInteger($kind.'_cursor')->default(0); $t->unsignedBigInteger($kind.'_turn')->default(0); }
                 OfferSchema::retained($t, 'domains_observation_queues');
+                // Added last by its own migration, after the retained offer columns.
+                if (Schema::hasColumn(ClosureCursorSchema::TABLE, ClosureCursorSchema::COLUMN)) { ClosureCursorSchema::column($t); }
             },
             'domains_observation_work' => static function (Blueprint $t): void {
                 $t->id(); $t->unsignedBigInteger('server_id'); $t->string('account_fingerprint',64);

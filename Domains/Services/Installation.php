@@ -79,6 +79,9 @@ final class Installation
             $catalogueRecorded=in_array(LiveCatalogueSchema::MIGRATION,$ran,true);
             if(Schema::hasColumn(LiveReservationSchema::TABLE,'catalogue_used')&&!$catalogueRecorded){throw new \DomainException('Retained Live catalogue usage has no installation record.');}
             if($catalogueRecorded){LiveCatalogueSchema::verify();}
+            $closureRecorded=in_array(ClosureCursorSchema::MIGRATION,$ran,true);
+            if(Schema::hasTable(ClosureCursorSchema::TABLE)&&Schema::hasColumn(ClosureCursorSchema::TABLE,ClosureCursorSchema::COLUMN)&&!$closureRecorded){throw new \DomainException('Retained complimentary closure cursor has no installation record.');}
+            if($closureRecorded){ClosureCursorSchema::verify();}
             $retryRecorded=in_array(RenewalRetrySchema::MIGRATION,$ran,true);
             if(Schema::hasColumn('domains_operations','retry_number')&&!$retryRecorded){throw new \DomainException('Retained renewal retry storage has no installation record.');}
             if($retryRecorded){RenewalRetrySchema::verify();}
