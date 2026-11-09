@@ -548,8 +548,8 @@ final class DomainFacts
     public static function progress(array $progress, string $section, ?int $named=null): ?array
     {
         $row=$progress[\Paymenter\Extensions\Servers\Domains\Services\ManagementProgress::setting($section)]??null;
+        if ($row!==null&&!($row['pending']??false)&&($row['section']??$section)!==$section) { $row=$row['sections'][$section]??null; }
         if ($row===null||($row['settled']??false)||($row['replaced']??false)) { return null; }
-        if (!($row['pending']??false)&&($row['section']??$section)!==$section) { return null; }
         $stopped=isset($row['outcome']); $request=$stopped&&$row['id']===$named?$row['id']:null;
         $text=$stopped?StaffDomainStatus::sentence($row['outcome']).($request===null?'':' Check request #'.$request.'.'):$row['text'];
         return ['text'=>$text,'request'=>$request,'waiting'=>(bool)($row['pending']??false),'tone'=>$row['tone']??null];

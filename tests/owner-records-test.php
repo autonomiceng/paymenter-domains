@@ -94,9 +94,9 @@ Cache::flush();$r=$post('dns',['records'=>$rows,'preimage_digest'=>ManagementPay
 $op=$d->operations()->orderByDesc('id')->firstOrFail();same('succeeded',$management->run($op->id,$driver)->state,'Maximum DNS records through native controller');
 $dto=$owners->present($d->fresh());$long=new \Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(...[...get_object_vars($dto),'name'=>placeholderComFixtureName((str_repeat('a',51).'-placeholder').'.com')]);
 $html=view('domains::show',['domain'=>$long,'keys'=>array_fill_keys(['setup','recovery','code','renew','auto-renew',...\Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerActionController::ACTIONS],str_repeat('a',64))])->render();$dom=storefrontDom($html);
-// DNS and SRV share one setting; after the DNS save only its own section says Saved.
+// DNS and SRV share one setting but keep their own results: the DNS save says Saved. and SRV keeps its earlier save's result.
 expect(str_contains($dom->query('//li[@id="dns"]')->item(0)->textContent,'Saved.'),'The saved DNS section says Saved.');
-expect(!str_contains($dom->query('//li[@id="srv"]')->item(0)->textContent,'Saved.'),'The unchanged SRV section does not say Saved.');
+same(1,substr_count($dom->query('//li[@id="srv"]')->item(0)->textContent,'Saved.'),'The SRV section shows only its own earlier save');
 same(50,$dom->query('//li[@id="dns"]//tbody/tr')->length,'Maximum is bounded to 50 visible rows');expect(str_contains($html,(str_repeat('a',51).'-placeholder')),'Long label preserved');expect(!str_contains($html,'value="<synthetic>'),'Record values escaped');
 $ids=[];foreach($dom->query('//*[@id]')as$node){expect(!isset($ids[$node->getAttribute('id')]),'Unique field IDs');$ids[$node->getAttribute('id')]=true;}
 foreach($dom->query('//*[@aria-describedby]')as$node){foreach(explode(' ',$node->getAttribute('aria-describedby'))as$id){expect(isset($ids[$id]),'Every description exists');}}
@@ -108,6 +108,25 @@ same(0,$dom->query('//input[@name="confirmed"]')->length,'No form carries a hidd
 foreach(['account_fingerprint','provider_domain_id','old_ip','profile_id','cost']as$private){expect(!str_contains($html,'name="'.$private.'"'),'No private authority serialized');}
 expect(str_contains($html,'DNS records')&&str_contains($html,'SRV records')&&str_contains($html,'DNSSEC')&&str_contains($html,'Glue records')&&!str_contains($html,'Child nameservers'),'All supported sections rendered');
 expect(!preg_match('/As of \d{4}-\d{2}-\d{2}T/',strip_tags($html))&&str_contains($html,'data-domains-time'),'Read times follow the date rule');
+// DNS and SRV share pending work but keep their own finished results, on the owner page and for staff.
+$sectionText=fn($id)=>preg_replace('/\s+/u',' ',storefrontDom($page())->query('//li[@id="'.$id.'"]')->item(0)->textContent);$failed='change failed.';
+$staffRow=fn($section)=>\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::progress(\Paymenter\Extensions\Servers\Domains\Services\ManagementProgress::for($d->fresh()),$section);
+$srvForm=function()use($owners,$d){$m=$owners->present($d->fresh())->management['srv'];return [array_map(fn($r,$i)=>[...array_map('strval',array_diff_key($r,['host_id'=>true])),'_source'=>(string)$i],$m['records'],array_keys($m['records'])),$m['digest']];};
+$save=function(string $action,array $payload,bool $refused)use($controller,$post,$d,$management,$driver,$state):string{
+    Cache::flush();$state->fault=$refused?'refused':'';$controller->manage($post($action,$payload),$d->id,$action);
+    $op=$d->operations()->orderByDesc('id')->firstOrFail();same($action,$op->action,'One '.$action.' change is queued');$done=$management->run($op->id,$driver)->state;$state->fault='';return $done;
+};
+same('rejected',$save('dns',['records'=>[['name'=>'@','type'=>'TXT','address'=>'refused','mx_pref'=>'']],'preimage_digest'=>ManagementPayload::digest($state->dns)],true),'The registrar refuses the DNS change');
+expect(str_contains($sectionText('dns'),$failed)&&!str_contains($sectionText('srv'),$failed),'A DNS failure shows only in the DNS section');
+[$srvRows,$srvDigest]=$srvForm();$srvRows[0]['port']='8444';
+same('succeeded',$save('srv',['records'=>$srvRows,'preimage_digest'=>$srvDigest],false),'The SRV change completes at once');
+expect(str_contains($sectionText('srv'),'Saved.')&&!str_contains($sectionText('srv'),$failed),'The SRV section says Saved. right away');
+expect(str_contains($sectionText('dns'),$failed)&&!str_contains($sectionText('dns'),'Saved.'),'A later SRV save keeps the earlier DNS failure in its own section');
+same('Saved.',$staffRow('srv')['text']??null,'Staff read Saved. for SRV');expect(($staffRow('dns')['text']??'Saved.')!=='Saved.','Staff still read the DNS failure');
+[$srvRows,$srvDigest]=$srvForm();$srvRows[0]['port']='8445';
+same('rejected',$save('srv',['records'=>$srvRows,'preimage_digest'=>$srvDigest],true),'The registrar refuses the SRV change');
+expect(str_contains($sectionText('srv'),$failed)&&!str_contains($sectionText('srv'),'Saved.'),'An SRV failure shows in the SRV section');
+expect(str_contains($sectionText('dns'),$failed),'The DNS section keeps its own failure');
 // SRV whitespace must reach strict validation instead of being silently repaired by middleware.
 $before=Operation::count();$r=$post('srv',['records'=>[['service'=>'sip','protocol'=>'tcp','priority'=>'0','weight'=>'5','port'=>'443','target'=>' sip.example.com. ']],'preimage_digest'=>ManagementPayload::digest($state->srv,'srv')]);
 $response=$controller->manage($r,$d->id,'srv');same(422,$response->getStatusCode(),'Original SRV target whitespace is invalid');same($before,Operation::count(),'Trimming cannot turn invalid SRV input into a queued change');

@@ -40,7 +40,7 @@ final class ManagementProgress
         || in_array($op->state,['queued','awaiting_payment','running','pending','uncertain'],true) || ManagementEvidence::recoverable($op)); }
     public static function for(Domain $d): array
     {
-        $rows=[];$priorities=[];
+        $rows=[];$priorities=[];$finished=[];
         $scope=$d->operations()->whereIn('action',self::ACTIONS)
             ->where('authority_generation',$d->authority_generation)->where('account_fingerprint',$d->account_fingerprint);
         $latest=(clone $scope)->selectRaw('MAX(id)')->groupBy('action');
@@ -60,7 +60,13 @@ final class ManagementProgress
                 $row=['id'=>(int)$op->id,'pending'=>false,'slow'=>false,'unreadable'=>true,'text'=>self::UNREADABLE];
                 $priority=2;
             }
-            if(!isset($priorities[$key]) || $priority>$priorities[$key]){$rows[$key]=[...$row,'section'=>self::section($op->action)];$priorities[$key]=$priority;}
+            $section=self::section($op->action);
+            if(!isset($priorities[$key]) || $priority>$priorities[$key]){$rows[$key]=[...$row,'section'=>$section];$priorities[$key]=$priority;}
+            if(!$row['pending'] && (!isset($finished[$key][$section]) || $priority>$finished[$key][$section][1])){$finished[$key][$section]=[[...$row,'section'=>$section],$priority];}
+        }
+        // Pending work holds the whole setting. Otherwise each section of a shared setting keeps its own latest result.
+        foreach($rows as $key=>$row){
+            if(!$row['pending'] && count($finished[$key]??[])>1){$rows[$key]['sections']=array_map(fn($entry)=>$entry[0],$finished[$key]);}
         }
         return $rows;
     }
