@@ -480,7 +480,7 @@ final class SettingsActions
                 'Acceptance exceeds encrypted settings capacity.','Invalid catalogue acceptance.'=>'That is more TLDs than one account can save. Turn some off. Nothing was saved.',
                 'Settings changed. Reload this page.'=>$name==='enroll_sandbox'?'This expired, or someone else changed this account. '.self::NO_KEY_CHECK.' Try again.':'Someone else changed this. Nothing was saved. Try again.',
                 'Current staff permissions required.'=>$name==='enroll_sandbox'?'Your permissions changed. '.self::NO_KEY_CHECK:'Your permissions changed. Nothing was saved.',
-                'Runtime acceptance and shared workers are required.'=>'Orders can’t resume yet. See System checks on this page.',
+                'Runtime acceptance and shared workers are required.'=>($account=Account::where('server_id',$server)->first())?StaffSettingsWrites::processingBlocker($account)??'Orders setup changed. Reopen Orders and try again.':'This registrar account was removed. Choose another registrar.',
                 'Pause processing on every legacy Enom server before installing or enabling Domains.'=>'Pause orders on the old Enom accounts first.',
                 'TEST catalogue reads are unavailable.'=>'Sync prices is off for this account on this site. '.self::NOT_SENT,
                 'Catalogue ending is not accepted.'=>'Add this TLD under What you sell first. '.self::NOT_SENT,

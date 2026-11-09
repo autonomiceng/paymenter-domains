@@ -366,7 +366,14 @@ Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$empty->id]
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$demo->server_id])->assertSee('Demo NameSilo')->assertSee('Demo');
 // Orders paused: by staff, and by an unconfirmed paid request.
 DB::table('domains_accounts')->where('server_id',$silo->server_id)->update(['processing_enabled'=>false]);
-Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$silo->server_id])->assertSee('Orders paused')->assertSee('Paused by staff');
+// The head says Orders paused, so the Orders row (Off) gives only the actual setup step, the same one the refusal toast names.
+$siloBlocker=Paymenter\Extensions\Servers\Domains\Services\StaffSettingsWrites::processingBlocker($silo->fresh());
+$pausedHtml=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$silo->server_id])->assertSee('Orders paused')->assertSee('Paused by staff')
+    ->assertSee($siloBlocker??'Ready. Turn on Orders.')->html();
+same(1,substr_count($pausedHtml,'Orders paused')+substr_count($pausedHtml,'Orders are paused'),'Orders paused shows once on the account page');unset($pausedHtml);
+same($siloBlocker??'Orders setup changed. Reopen Orders and try again.',
+    Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions::refusal(new DomainException('Runtime acceptance and shared workers are required.'),'processing',[],(int)$silo->server_id),
+    'The Orders refusal names the same setup step as the row');
 DB::table('domains_accounts')->where('server_id',$silo->server_id)->update(['processing_enabled'=>true]);
 // Admit the second registrar's service too; retain its real request when arranging an uncertain result.
 $siloBinding=AccountBindings::binding($silo->fresh());
@@ -452,7 +459,7 @@ $assertActivate=function(string $state)use($bindings,$enom,$liveBinding,$activat
     expect(!$activationClass::current($liveBinding),$state.' activation is not current');
     $orders=$checklist()['Orders'];
     same(['Off','processing'],[$orders['value'],$orders['action']],$state.' activation leaves Orders paused with its existing switch');
-    expect(str_starts_with($orders['cause'],'Orders are paused. Use Activate to check setup and turn on Orders.'),$state.' activation sends Live Orders to Activate');
+    same('Use Activate to check setup and turn on Orders.',$orders['cause'],$state.' activation sends Live Orders to Activate');
     Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('Use Activate to check setup and turn on Orders.');
 };
 $assertActivate('Missing');gc_collect_cycles();gc_mem_caches();
@@ -460,11 +467,12 @@ $activation=App\Models\Server::findOrFail($enom->server_id)->settings()->firstOr
 $activation->encrypted=true;$activation->type='string';$activation->value=json_encode(['fingerprint'=>$liveBinding->fingerprint,'site'=>$site,
     'evidence'=>hash('sha256',json_encode($liveEvidence,JSON_THROW_ON_ERROR))],JSON_THROW_ON_ERROR);$activation->save();
 expect($activationClass::current($liveBinding),'The saved activation matches current evidence');
-expect(str_starts_with($checklist()['Orders']['cause'],'Orders are paused. Check setup, then turn on Orders.'),'Current activation keeps the normal Orders next step');
+same('Check setup, then turn on Orders.',$checklist()['Orders']['cause'],'Current activation keeps the normal Orders next step');
 config(['domains.enom_live.accounts.'.$enom->stable_identity.'.evidence.sha256'=>str_repeat('b',64)]);
 $assertActivate('Stale');gc_collect_cycles();gc_mem_caches();$activation->delete();
-same(['Off','Paused until setup is approved. Use Activate to see what is missing.',null],[$checklist()['Renewals']['value'],explode(' 1 managed domain',$checklist()['Renewals']['cause'])[0],$checklist()['Renewals']['action']],'Live turn-on is not a switch');
-$page=Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('Use Activate to see what is missing.')->assertActionDoesNotExist(setupAction('live_renewal',(int)$enom->server_id));
+same(['Off','Paused until setup is approved. Use Activate to see what is missing.',null],[$checklist()['Renewals']['value'],$checklist()['Renewals']['cause'],$checklist()['Renewals']['action']],'Live turn-on is not a switch');
+$page=Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('Use Activate to see what is missing.')
+    ->assertSee('Managed domains waiting')->assertSee('Open domain')->assertDontSee('attention while this is off')->assertActionDoesNotExist(setupAction('live_renewal',(int)$enom->server_id));
 Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions::setup((int)$enom->server_id,$page->instance()->reviewStamp,'live_renewal')->getActionFunction()([],$page->instance());
 same(0,App\Models\Server::findOrFail($enom->server_id)->settings()->where('key','domains_enom_live_renewal')->count(),'A Live switch with empty form data creates no acceptance');
 unset($page);gc_collect_cycles();gc_mem_caches();
@@ -481,9 +489,18 @@ config(['domains.enom_writes.management'=>true]);
 $offRows=$checklist();
 foreach(['Renewals'=>'test_renewal','DNS, nameservers and contacts'=>'test_management','Orders'=>'processing'] as $label=>$action){
     same(['Off',$action],[$offRows[$label]['value'],$offRows[$label]['action']],$label.' keeps its switch');
-    expect(str_contains(strtolower($offRows[$label]['cause']??''),'paused')&&str_contains(strtolower($offRows[$label]['cause']??''),'turn on'),$label.' explains the pause and next step');
-    same('warning',$offRows[$label]['tone'],$label.' warns about managed domains');
+    expect(str_contains(strtolower($offRows[$label]['cause']??''),'turn on'),$label.' says the next step');
+    // The row stays one plain line; System checks lists the managed domains that wait.
+    same([null,1],[$offRows[$label]['tone'],$offRows[$label]['paused']['count']??null],$label.' leaves its managed domain to System checks');
 }
+same('Turn on to bill and send renewals.',$offRows['Renewals']['cause'],'Renewals Off is one short line');
+$pausedChecks=Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::pausedChecks($offRows);
+same(1,count($pausedChecks),'One System checks row covers every Off switch');$waiting=$pausedChecks[0];
+same(['1','warning','Orders, Renewals and DNS, nameservers and contacts are off.','Open domain'],[$waiting['value'],$waiting['tone'],$waiting['cause'],$waiting['buttons'][0]->getLabel()],'System checks names the waiting domain and the Off switches');
+expect(str_ends_with((string)$waiting['buttons'][0]->getUrl(),'/'.Domain::where('server_id',$enom->server_id)->sole()->id),'The paused domain links to its page');
+// One Off switch reads as a plural name, and several domains link to the account's list.
+$oneOff=Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::pausedChecks([['label'=>'Renewals','paused'=>['count'=>2,'domain'=>null,'server'=>(int)$enom->server_id]]])[0];
+same(['2','Renewals are off.','View domains'],[$oneOff['value'],$oneOff['cause'],$oneOff['buttons'][0]->getLabel()],'One Off switch says Renewals are off');unset($pausedChecks,$waiting,$oneOff);
 same('Not available yet',$siloRows()['Renewals']['value'],'Legacy NameSilo cannot enable renewal billing without sending');
 $siloLive=App\Models\Server::create(['name'=>'Synthetic Live NameSilo','extension'=>'Domains','type'=>'server','enabled'=>true]);
 $siloLiveReview=new StaffSettingsReview($admin->id,(int)$siloLive->id,null,'configure',
@@ -492,12 +509,12 @@ $siloLiveReview=new StaffSettingsReview($admin->id,(int)$siloLive->id,null,'conf
 $bindings->configure((int)$siloLive->id,'namesilo',Environment::Live,['token'=>'synthetic-live-namesilo-orders'],$siloLiveReview);
 same('site_unbound',$bindings->configurationStatus((int)$siloLive->id),'Live NameSilo starts without a confirmed site');
 Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$siloLive->id])
-    ->assertSee('Orders are paused. Ask your site admin to confirm the Live site for this account.')
+    ->assertSee('Ask your site admin to confirm the Live site for this account.')
     ->assertActionDoesNotExist('activate_live');
 DB::table('domains_accounts')->where('server_id',$siloLive->id)->update(['live_site'=>$site]);
 same('matched',$bindings->configurationStatus((int)$siloLive->id),'Live NameSilo credentials and saved site match');
 $siloLiveRows=array_column(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup(Account::where('server_id',$siloLive->id)->sole(),['label'=>'Active','reason'=>null]),null,'label');
-same('Orders are paused. Use Activate to check setup and turn on Orders.',$siloLiveRows['Orders']['cause'],'Live NameSilo uses the shared Activate review');
+same('Use Activate to check setup and turn on Orders.',$siloLiveRows['Orders']['cause'],'Live NameSilo uses the shared Activate review');
 foreach($siloLiveRows as$row){expect($row['label']==='Reminder schedule'||trim((string)($row['help']??''))!=='','NameSilo row retains independent help: '.$row['label']);}
 foreach(['invoices','customer credit','Auto Pay','paid renewals'] as $effect){expect(str_contains($offRows['Renewals']['help'],$effect),'Renewals explains '.$effect);}
 $testBinding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::findOrFail($enom->id));
@@ -507,18 +524,17 @@ $late=$checklist()['Late renewal'];
 same(['Off','late_renewal'],[$late['value'],$late['action']],'Ready Test late renewal keeps its separate approval');
 expect(str_contains($late['cause'],'paused')&&str_contains($late['cause'],'expired domains')&&!str_contains($late['cause'],'evidence'),'Ready Test late renewal explains billing without asking for Live evidence');
 same(null,$late['tone'],'A future-expiry managed domain is not a Late renewal warning');
-expect(!str_contains($late['cause'],'managed domain'),'Late renewal does not count a healthy future-expiry domain');
+expect(!isset($late['paused']),'Late renewal does not count a healthy future-expiry domain');
 $domain=Domain::where('server_id',$enom->server_id)->sole();$savedExpiry=$domain->getRawOriginal('provider_expires_at');
 DB::table('domains_domains')->where('id',$domain->id)->update(['provider_expires_at'=>$clock->now()->modify('-1 day')->format('Y-m-d')]);
 $expiredLate=$checklist()['Late renewal'];
-same('warning',$expiredLate['tone'],'An expired managed domain needs Late renewal attention');
-expect(str_contains($expiredLate['cause'],'1 managed domain needs attention'),'Late renewal counts the expired managed domain');
+same(1,$expiredLate['paused']['count']??null,'Late renewal counts the expired managed domain');
+same('Late renewal is off.',Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::pausedChecks([$expiredLate])[0]['cause'],'Late renewal alone reads is off');
 DB::table('domains_domains')->where('id',$domain->id)->update(['provider_expires_at'=>$clock->now()->format('Y-m-d')]);
 foreach(['2026-10-18T12:00:00Z','2026-10-18T00:30:00Z'] as $expiryDay){
     app()->instance(Clock::class,new Paymenter\Extensions\Servers\Domains\Tests\FakeClock(new DateTimeImmutable($expiryDay)));
     $todayLate=$checklist()['Late renewal'];
-    same('warning',$todayLate['tone'],'Expiry today needs Late renewal attention at '.$expiryDay);
-    expect(str_contains($todayLate['cause'],'1 managed domain needs attention'),'Late renewal counts expiry today at '.$expiryDay);
+    same(1,$todayLate['paused']['count']??null,'Late renewal counts expiry today at '.$expiryDay);
 }
 app()->instance(Clock::class,$clock);
 DB::table('domains_domains')->where('id',$domain->id)->update(['provider_expires_at'=>$savedExpiry]);
