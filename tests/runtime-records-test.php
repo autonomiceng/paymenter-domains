@@ -27,9 +27,21 @@ same($finance,[$original->fresh()->getAttributes(),$d->fresh()->provider_expires
 // Held/stopped customer rows and the shared page notice explain recovery together.
 $p=$d->fresh()->observation;unset($p['records']);$d->fresh()->update(['observation'=>$p]);
 ObservationRecords::hold($d->fresh(),'records_unavailable',$clock->now());
+// Each family renders on a page of its own, so one family's row cannot stand in for the other's.
+$familyPage=static function(string $kind)use(&$d,$owners,$post):string {
+    storefrontViews();app('view')->getFinder()->flush();
+    $data=(new \Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController($owners))->show($post('dns'),$d->id)->getData();
+    $data['domain']=new \Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(...[...get_object_vars($data['domain']),'management'=>[$kind=>$data['domain']->management[$kind]]]);
+    return view('domains::show',$data)->render();
+};
 foreach(['held','stopped']as$readState){
  if($readState==='stopped'){\Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::current($d->fresh())->update(['safe_code'=>'read_unavailable','tries'=>5]);}
  $heldHtml=$page();same($readState==='stopped'?1:0,substr_count($heldHtml,e(\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::READ_HELD)),'Exactly one recovery notice only for stopped reads');same($readState==='stopped',str_contains($heldHtml,e(\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::READ_HELD)),'Only a stopped read needs the staff-recovery page notice');
- foreach(['dns','srv']as$kind){$quiet=storefrontDom($heldHtml)->query('//li[@id="'.$kind.'"]')->item(0);expect(!str_contains($quiet?->textContent??'',\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::TEAM_CHECK),'Quiet record row does not repeat the page recovery');$row=storefrontDom($heldHtml)->query('//li[@id="'.$kind.'"]')->item(0);expect($row!==null&&str_contains($row->textContent,'Missing'),$readState.' '.$kind.' row stays visible with its calm missing value');}
+ foreach(['dns'=>'srv','srv'=>'dns']as$kind=>$other){
+  $alone=$familyPage($kind);$dom=storefrontDom($alone);same(0,$dom->query('//li[@id="'.$other.'"]')->length,$readState.' '.$kind.' page renders that family alone');
+  $row=$dom->query('//li[@id="'.$kind.'"]')->item(0);expect($row!==null&&str_contains($row->textContent,'Missing'),$readState.' '.$kind.' row stays visible with its calm missing value');
+  expect(!str_contains($row->textContent,\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::TEAM_CHECK),$readState.' '.$kind.' row does not repeat the page recovery');
+  same($readState==='stopped'?1:0,substr_count($alone,e(\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::READ_HELD)),$readState.' '.$kind.' page says the recovery notice only for a stopped read');
+ }
 }
 echo "Native record producer gates, numeric DNS/SRV and source identity pairs passed.\n";$nativeSuccessful=true;

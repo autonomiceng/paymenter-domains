@@ -16,7 +16,8 @@ final class RecordFamilies
             $section=$management[$key]??['label'=>$family['label'],'actions'=>[],'url'=>null,'family_only'=>true];
             $section['family']=$family;
             // Missing inventory must not revoke controls already granted by the native management projection.
-            if(!$facts['current_read']){$management[$key]=$section;continue;}
+            // A legacy snapshot never read the settings families, so it cannot revoke their controls either.
+            if(!$facts['current_read']||($facts['settings'][$key]['expectation']??null)==='unknown'){$management[$key]=$section;continue;}
             if($family['state']!=='complete'){
                 // Keep already authorized Enom per-host additions and edits; a partial list grants no replacement.
                 $section['actions']=$key==='glue'&&($facts['registrar_key']??null)==='enom'&&$family['state']==='partial'?array_intersect_key($section['actions'],array_flip(['glue_add','glue_update','glue_delete'])):($key==='glue'?array_intersect_key($section['actions'],['glue_add'=>true]):[]);
@@ -50,7 +51,9 @@ final class RecordFamilies
                 $status['families']['dns']=[...$status['families']['dns'],'records'=>$dns['facts']['records'],'state'=>'complete','at'=>$dns['at']];
             }
         }
-        $initial=$readable&&!$cancelled&&$d->status==='active'&&$status['last_complete_at']===null&&!$hold&&!$status['read_code']&&!$status['read_stopped']&&!$status['records_paused'];
+        // Only queued, on-time read work can promise the first read; without it each family is Missing.
+        $initial=$readable&&!$cancelled&&$d->status==='active'&&$status['last_complete_at']===null&&!$hold&&!$status['read_code']&&!$status['read_stopped']&&!$status['records_paused']
+            &&$status['next_read']!==null&&!$status['read_overdue'];
         $rows=[];$caa=[];$caaAt=null;
         foreach(['settings'=>['nameservers'=>'Nameservers','contacts'=>'Contacts','flags'=>'Domain settings'],'families'=>['dns'=>'DNS records','srv'=>'SRV records','ds'=>'DS records','glue'=>'Glue records']] as $group=>$labels){
             foreach($labels as $kind=>$label){$f=$status[$group][$kind];$state=$f['expectation']==='unsupported'?'unsupported':$f['state'];

@@ -49,6 +49,18 @@ foreach(['dns'=>['records'=>[['name'=>'bad host','type'=>'A','address'=>'secret-
     if($action==='ds_add'){expect(str_contains($html,'value="secret-invalid-value"'),'Public DS draft retained');}
 
 }
+// Control: a current settings read still sets the nameserver editor. Only a legacy snapshot, which never read settings, leaves it to the native projection.
+app('view')->share('errors',new Illuminate\Support\ViewErrorBag());
+$nameserverForms=static fn()=>storefrontDom($page())->query('//form[contains(@action,"/manage/nameservers")]')->length;
+$legacyForms=$nameserverForms();expect($legacyForms>0,'A legacy snapshot keeps the native nameserver editor');
+$p=$d->fresh()->observation;$legacyRecords=$p['records'];expect(!isset($legacyRecords['settings']),'The fixture snapshot is the legacy format');
+foreach(['unknown'=>0,'complete'=>$legacyForms] as $settingsState=>$expected){
+    $p['records']=[...$legacyRecords,'format'=>1,'capability_revision'=>'enom-records-1','expected_families'=>array_fill_keys(['dns','srv','ds','glue'],'supported'),
+        'settings'=>array_fill_keys(['nameservers','contacts','flags'],['state'=>$settingsState,'facts'=>[]])];
+    $d->fresh()->update(['observation'=>$p]);
+    same($expected,$nameserverForms(),'A current '.$settingsState.' nameserver read sets the editor');
+}
+$p['records']=$legacyRecords;$d->fresh()->update(['observation'=>$p]);
 foreach ([['records'=>[]],['records'=>[null]],['records'=>[['name'=>'@','type'=>'A','address'=>'8.8.8.8']],'preimage_digest'=>'bad']] as $index=>$payload) {
     // JSON represents null rows and empty arrays that form encoding cannot express.
     $r=$post('dns',$payload+['preimage_digest'=>str_repeat('a',64)],true);$response=$controller->manage($r,$d->id,'dns');same(422,$response->getStatusCode(),'List error is a direct retry');

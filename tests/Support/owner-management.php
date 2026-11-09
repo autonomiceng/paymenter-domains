@@ -29,11 +29,13 @@ foreach($free?['srv','auth_code_display']:['dns','srv','ds','auth_code_display']
 if($free){same(['label'=>'DNSSEC','off'=>true,'actions'=>[],'url'=>null,'reason'=>\Paymenter\Extensions\Servers\Domains\Presentation\DsState::CUSTOMER,'progress'=>null,'records'=>null],$dto->management['ds'],'Unsupported DS stays visible without change controls');}
 if($free){same(['label'=>'DNS records','unavailable'=>true,'actions'=>[],'url'=>null,'records'=>null,'fixed'=>[],'asOf'=>null,'progress'=>null],$dto->management['dns'],'Dormant NameSilo DNS shows as not available');}
 if($free){ // Stopped reads never restart by themselves, so an unknown row names the step instead of a time.
-    $d->update(['observation'=>null]);$lockRow=static fn():string=>trim(preg_replace('/\s+/',' ',storefrontDom((new OwnedDomainController($owners))->show($r,$d->id)->render())->query('//li[@id="lock"]/span[@class="domains-row__v"]')->item(0)->textContent));
+    $d->update(['observation'=>null]);Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
+    // The first registrar read is queued work for this holding; only that can promise Checking.
+    $firstRead=Illuminate\Support\Facades\DB::table('domains_observation_work')->insertGetId(['server_id'=>$d->server_id,'account_fingerprint'=>$d->account_fingerprint,'domain_id'=>$d->id,'generation'=>$d->authority_generation,'phase'=>'holding','due_at'=>app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp()]);
+    $lockRow=static fn():string=>trim(preg_replace('/\s+/',' ',storefrontDom((new OwnedDomainController($owners))->show($r,$d->id)->render())->query('//li[@id="lock"]/span[@class="domains-row__v"]')->item(0)->textContent));
     same('Checking',$lockRow(),'An initial registrar read is Checking rather than Missing');
     expect(str_contains((new OwnedDomainController($owners))->show($r,$d->id)->render(),e(\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::INITIAL_READ)),'The real owner page explains the initial read');
-    Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
-    $stoppedRead=Illuminate\Support\Facades\DB::table('domains_observation_work')->insertGetId(['server_id'=>$d->server_id,'account_fingerprint'=>$d->account_fingerprint,'domain_id'=>$d->id,'generation'=>$d->authority_generation,'phase'=>'holding','due_at'=>0,'safe_code'=>'read_unavailable']);
+    Illuminate\Support\Facades\DB::table('domains_observation_work')->where('id',$firstRead)->update(['due_at'=>0,'safe_code'=>'read_unavailable']);$stoppedRead=$firstRead;
     same([],$owners->present($d->fresh())->management['dns']['actions'],'This registrar has no record changes');
     same('Missing',$lockRow(),'A stopped read promises no time; the page notice says it once');
     expect(str_contains((new OwnedDomainController($owners))->show($r,$d->id)->render(),e(\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::READ_HELD)),'A stopped read explains recovery in the rendered page notice'); // slop-sweep

@@ -27,9 +27,10 @@ final class SyntheticSequence extends ManagementProtocol {
     protected function readCommands():array {return ['snapshot'];} protected function validateRead(string $c,array $p):void {}
     protected function writeCommand(string $a):string {return 'change';} protected function origin(RequestContext $c):string {return 'synthetic';}
 }
-$wire=(object)['state'=>[],'writes'=>[],'lost'=>false,'during'=>null,'reads'=>0];
+$wire=(object)['state'=>[],'writes'=>[],'lost'=>false,'during'=>null,'reads'=>0,'unreadable'=>false];
 $exchangeSequence=static function($o,$cmd,$p,$timeout)use($wire):string {
     same(0,DB::transactionLevel(),'Sequence I/O remains outside native locks');
+    if($cmd==='snapshot'&&$wire->unreadable){throw new RuntimeException('Synthetic unreadable inventory');}
     if($cmd==='snapshot'){$wire->reads++;if($wire->during){$f=$wire->during;$wire->during=null;$f();}return json_encode($wire->state);}
     $wire->writes[]=$p['delta'];$wire->state[]=$p['delta'];if($wire->lost){throw new RuntimeException('Synthetic lost response');}return '{}';
 };
@@ -48,7 +49,7 @@ $setup=static function($label)use($restoreSequence,$fixtureDomain,$fixtureDomain
     same($fixtureDomainRaw,$d->getRawOriginal(),'Each sequence case starts from the exact completed native holding: '.$label);
     same($fixtureFinance,nativeFinancialSnapshot($fixtureOriginal),'Each sequence case restores all original native finance: '.$label);
     \App\Models\Server::findOrFail($d->server_id)->settings()->updateOrCreate(['key'=>'domains_dns_tools'],['value'=>true]);
-    $wire->state=[];$wire->writes=[];$wire->lost=false;$wire->during=null;
+    $wire->state=[];$wire->writes=[];$wire->lost=false;$wire->during=null;$wire->unreadable=false;
     return [$d,new SyntheticSequence($binding,$exchangeSequence)];
 };
 [$d,$driver]=$setup('durable-sequence');$intent=['changes'=>[1,2,3]];$nonce=hash('sha256','durable-sequence');
@@ -101,4 +102,17 @@ $op->update(['created_at'=>$created->copy()->subSeconds(120)]);
 $reads=$wire->reads;$progress=ManagementProgress::for($d)['dns'];
 expect(str_contains($progress['text'],'Contact support'),'Slow unclaimed sequence has a next step even when a write gate prevents claiming');
 expect($progress['pending'],'Slow unclaimed sequence retains the setting');same($reads,$wire->reads,'Progress reads only retained facts');
+// A middle step that used its five unsent preparation tries never reached the registrar, so an identical save replaces the sequence.
+[$d,$driver]=$setup('exhausted-step');$op=$submit($d,$driver,'dns',$intent);$management->run($op->id,$driver);same([1],$wire->writes,'The first change is confirmed');
+$steps=$d->operations()->where('action','dns')->orderBy('id')->get();$wire->unreadable=true;
+for($round=0;$round<8&&$steps[1]->fresh()->state!=='rejected';$round++){$clock->instant=$clock->now()->modify('+16 minutes');Cache::flush();$management->run($op->id,$driver);}
+$spent=$steps[1]->fresh();same(['rejected','management_preparation_failed',5],[$spent->state,$spent->safe_code,count($spent->attempt['management_deferrals'])],'The middle step closes after five unsent preparation tries');
+same('absent',$spent->attempt['seal'],'The closed step was never sealed');same([1],$wire->writes,'Preparation failures send nothing');
+$wire->unreadable=false;Cache::flush();$replacement=$submit($d,$driver,'dns',$intent);
+expect($replacement->id!==$op->id,'An identical save replaces the sequence held by an exhausted unsent step');
+same(['rejected','management_retired'],[$op->fresh()->state,$op->fresh()->safe_code],'The old request is retired');
+same('succeeded',$steps[0]->fresh()->state,'The confirmed first change stays confirmed');
+same($spent->attempt,array_diff_key($steps[1]->fresh()->attempt,['management_terminal'=>true]),'Retirement keeps the exhausted step history');
+same([1],$replacement->policy['management']['sequence']['preimage'],'The new sequence starts from the confirmed change');
+foreach($steps as $s){$management->run($s->id,$driver);}same([1],$wire->writes,'Old steps never send again');
 $nativeSuccessful=true;echo "Shared durable management sequence passed\n";
