@@ -71,16 +71,18 @@ try{
   $on=(bool)ComplimentaryAccounts::current($user->id)['enabled'];$changed=$line($staff,$user->id)->callAction($on?'turnOff':'turnOn',['reason'=>'Seasonal storage timestamp'])->assertHasNoActionErrors();
   expect(str_contains($changed->html(),'datetime="'.(new DateTimeImmutable($instant))->setTimezone(new DateTimeZone('UTC'))->format(DATE_ATOM).'"'),'Summer and winter retained timestamps keep their actual offset');
  }
- // The PHP zone is the one Paymenter restores from its settings; the app zone may differ. Each row keeps wall time in the PHP zone, whatever zone the clock answers in, and shows its real instant.
+ // The PHP zone is the one Paymenter restores from its settings; the app zone may differ. Each new row keeps UTC, whatever zone the clock answers in, and shows its real instant.
+ $utc=static fn(string $at)=>(new DateTimeImmutable($at))->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
  $store=static fn(string $at)=>(new DateTimeImmutable($at))->setTimezone(new DateTimeZone(date_default_timezone_get()))->format('Y-m-d H:i:s');
  foreach(['2026-11-02T12:30:00+09:00','2026-03-08T19:30:00+09:00']as$instant){
   config(['app.timezone'=>'America/Los_Angeles']);
   app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new \Paymenter\Extensions\Servers\Domains\Tests\FakeClock(new DateTimeImmutable($instant)));
   $on=(bool)ComplimentaryAccounts::current($user->id)['enabled'];$changed=$line($staff,$user->id)->callAction($on?'turnOff':'turnOn',['reason'=>'Clock zone differs'])->assertHasNoActionErrors();
-  same($store($instant),ComplimentaryAccounts::current($user->id)['at'],'The row keeps PHP-zone wall time: '.$instant);
+  same($utc($instant),ComplimentaryAccounts::current($user->id)['at'],'The row keeps UTC: '.$instant);
+  same('UTC',DB::table('domains_complimentary_accounts')->where('id',ComplimentaryAccounts::current($user->id)['id'])->value('time_zone'),'The row says it is UTC: '.$instant);
   expect(str_contains($changed->html(),'datetime="'.(new DateTimeImmutable($instant))->setTimezone(new DateTimeZone('UTC'))->format(DATE_ATOM).'"'),'The line shows the clock instant: '.$instant);
  }
- // Retained rows from before this change show their real instant on both sides of the autumn change and stay as written.
+ // Retained rows from before this change have no zone; they read as store-zone wall time on both sides of the autumn change and stay as written.
  foreach(['2026-11-01T07:30:00+00:00','2026-11-01T11:30:00+00:00']as$instant){
   config(['app.timezone'=>'America/Los_Angeles']);$wall=$store($instant);
   $id=DB::table('domains_complimentary_accounts')->insertGetId(['user_id'=>$user->id,'actor_id'=>$staff->id,'enabled'=>!ComplimentaryAccounts::current($user->id)['enabled'],'reason'=>'Retained change','created_at'=>$wall]);

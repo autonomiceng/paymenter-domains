@@ -30,17 +30,22 @@ final class ComplimentaryAccounts
             if(!$users->contains('id',$user)||!$staff?->hasPermission('admin.domains.fund')){throw new \DomainException('Domain funding permission required.');}
             if($seen!==null&&(self::current($user)['id']??0)!==$seen){throw new ComplimentaryAccountChanged('Complimentary domains changed after this opened');}
             if((self::current($user)['enabled']??false)===$enabled){return;}
-            DB::table('domains_complimentary_accounts')->insert(['user_id'=>$user,'actor_id'=>$staff->id,'enabled'=>$enabled,'reason'=>$reason,'created_at'=>self::stamp($clock->now())]);
+            DB::table('domains_complimentary_accounts')->insert(['user_id'=>$user,'actor_id'=>$staff->id,'enabled'=>$enabled,'reason'=>$reason,'created_at'=>self::stamp($clock->now()),'time_zone'=>self::ZONE]);
             self::audit($users->firstWhere('id',$user),$enabled,$reason);
             // Dedicated audited transition. No core service price or funded operation is rewritten.
             Domain::where('user_id',$user)->update(['price_mode'=>$enabled?'complimentary':'standard']);
         });
     }
-    /** Zone-less audit times are wall time in the store's PHP time zone, as SystemClock has always written them and as Paymenter keeps its own records, so retained rows keep their instant. Read them back only through instant(). */
+    /** New audit rows store UTC and mark it in time_zone. */
+    public const ZONE='UTC';
     public static function stamp(\DateTimeInterface $at):string
-    {return \DateTimeImmutable::createFromInterface($at)->setTimezone(new \DateTimeZone(date_default_timezone_get()))->format('Y-m-d H:i:s');}
-    public static function instant(string $stored):\Carbon\CarbonImmutable
-    {return \Carbon\CarbonImmutable::parse($stored,date_default_timezone_get())->utc();}
+    {return \DateTimeImmutable::createFromInterface($at)->setTimezone(new \DateTimeZone(self::ZONE))->format('Y-m-d H:i:s');}
+    /** A retained row without a zone is wall time in the store's PHP time zone, as SystemClock wrote it; it is read, never rewritten. */
+    public static function instant(string $stored,?string $zone=null):\Carbon\CarbonImmutable
+    {return \Carbon\CarbonImmutable::parse($stored,$zone??date_default_timezone_get())->utc();}
+    /** The instant of a current() setting, read with its row's own zone. */
+    public static function changedAt(array $setting):\Carbon\CarbonImmutable
+    {return self::instant((string)$setting['at'],DB::table('domains_complimentary_accounts')->where('id',$setting['id'])->value('time_zone'));}
     public static function nativeAuditAvailable():bool
     {return config('audit.enabled',true)&&class_exists(\OwenIt\Auditing\Events\AuditCustom::class)&&\Illuminate\Support\Facades\Event::hasListeners(\OwenIt\Auditing\Events\AuditCustom::class);}
     /** The same change in the customer's native Audit Log, through the auditing package's public custom event, as core's extension actions do. */

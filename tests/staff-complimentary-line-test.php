@@ -9,10 +9,10 @@ use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\ComplimentaryAccountSetting;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Services\{ComplimentaryAccountSchema,FoundationSchema};
+use Paymenter\Extensions\Servers\Domains\Services\{ComplimentaryAccountSchema,ComplimentaryTimeSchema,FoundationSchema};
 config(['audit.enabled'=>true,'audit.console'=>true,'settings.company_name'=>'Example Hosting (test)']);
 app()->instance(Clock::class,new class implements Clock {public function now():DateTimeImmutable{return new DateTimeImmutable('2026-11-06T18:52:00Z');}});
-staffPanel();FoundationSchema::install();ComplimentaryAccountSchema::install();ComplimentaryAccountSetting::boot();
+staffPanel();FoundationSchema::install();ComplimentaryAccountSchema::install();ComplimentaryTimeSchema::install();ComplimentaryAccountSetting::boot();
 $staff=staffUser(['admin.domains.fund','admin.users.viewAny','admin.users.view','admin.users.update']);$staff->update(['first_name'=>'Ilya','last_name'=>'Kravchenko']);
 $customer=App\Models\User::create(['first_name'=>'Demo','last_name'=>'Sandbox','email'=>'demo-sandbox@example.test','password'=>'synthetic-password']);
 $line=fn()=>Livewire::actingAs($staff)->test(ComplimentaryAccountSetting::class,['customer'=>$customer->id]);
@@ -60,14 +60,17 @@ same([4,'Second staff off',4],[DB::table('domains_complimentary_accounts')->wher
 // A same-state write changes nothing and adds no audit row.
 Paymenter\Extensions\Servers\Domains\Services\ComplimentaryAccounts::set($customer->id,$staff,false,'Again',app(Clock::class));
 same(4,$customer->audits()->count(),'No audit row for a change that did not happen');
-// A store in Los Angeles keeps each change as its local wall time and shows the clock's own instant, in summer and in winter.
+// A store in Los Angeles saves each change in UTC and shows the clock's own instant, in summer, in winter and in both runs of the repeated autumn hour.
 $priorZone=date_default_timezone_get();$priorAppZone=config('app.timezone');$priorClock=app(Clock::class);
 date_default_timezone_set('America/Los_Angeles');config(['app.timezone'=>'America/Los_Angeles']);
-try{foreach([['2026-07-01T03:30:00+00:00','2026-06-30 20:30:00'],['2026-11-06T18:52:00+00:00','2026-11-06 10:52:00']] as [$instant,$wall]){
+try{foreach([['2026-07-01T03:30:00+00:00','2026-07-01 03:30:00'],['2026-11-06T18:52:00+00:00','2026-11-06 18:52:00'],['2026-11-01T08:30:00+00:00','2026-11-01 08:30:00'],['2026-11-01T09:30:00+00:00','2026-11-01 09:30:00']] as [$instant,$utc]){
     app()->instance(Clock::class,new class($instant) implements Clock {public function __construct(private string $at){}public function now():DateTimeImmutable{return new DateTimeImmutable($this->at);}});
     $on=(bool)(Paymenter\Extensions\Servers\Domains\Services\ComplimentaryAccounts::current($customer->id)['enabled']??false);
     $line()->callAction($on?'turnOff':'turnOn',['reason'=>'Store time zone'])->assertHasNoActionErrors()->assertSeeHtml('<time datetime="'.$instant.'"');
-    same($wall,DB::table('domains_complimentary_accounts')->where('user_id',$customer->id)->orderByDesc('id')->value('created_at'),'The row keeps store-zone wall time: '.$instant);}}
+    same([$utc,'UTC'],array_values((array)DB::table('domains_complimentary_accounts')->where('user_id',$customer->id)->orderByDesc('id')->first(['created_at','time_zone'])),'The row keeps UTC: '.$instant);}
+    // Changing the store time zone later does not move a saved change.
+    date_default_timezone_set('Asia/Tokyo');config(['app.timezone'=>'Asia/Tokyo']);
+    $line()->assertSeeHtml('<time datetime="2026-11-01T09:30:00+00:00"');}
 finally{date_default_timezone_set($priorZone);config(['app.timezone'=>$priorAppZone]);app()->instance(Clock::class,$priorClock);}
 // Staff without the domain funding permission see nothing and cannot change it.
 $plain=staffUser(['admin.users.viewAny','admin.users.view','admin.users.update']);
