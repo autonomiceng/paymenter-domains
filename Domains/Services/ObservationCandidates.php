@@ -30,9 +30,10 @@ final class ObservationCandidates
     private static function closures(object $row, int $limit): array
     {
         $key='domains.complimentary-closure-cursor.'.$row->server_id;
+        try { $cursor=(int)Cache::get($key,0); } catch (\Throwable) { $cursor=0; }
         $ids=RefundCandidates::complimentary(Operation::where('server_id',$row->server_id)->where('account_fingerprint',$row->account_fingerprint)
-            ->where('id','>',(int)Cache::get($key,0)))->orderBy('id')->limit($limit)->pluck('id');
-        Cache::forever($key,$ids->count()===$limit?$ids->last():0);
+            ->where('id','>',$cursor))->orderBy('id')->limit($limit)->pluck('id');
+        try { Cache::forever($key,$ids->count()===$limit?$ids->last():0); } catch (\Throwable) { /* The paid page and the next turn do not depend on it. */ }
         return $ids->all();
     }
 }

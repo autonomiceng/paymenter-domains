@@ -94,6 +94,11 @@ for($turn=0;$turn<6;$turn++){
     $seen=[...$seen,...array_intersect($page,$unproven)];
 }
 same($unproven,array_values(array_unique(array_intersect($unproven,$seen))),'Each unproven complimentary refusal is rechecked within one cursor pass');
+// A cache outage loses only the complimentary cursor, never the scheduler turn or the paid page.
+$cacheManager=Illuminate\Support\Facades\Cache::getFacadeRoot();
+Illuminate\Support\Facades\Cache::swap(new class { public function __call($method,$arguments){throw new RuntimeException('Synthetic cache outage');} });
+try{$page=ObservationCandidates::next('refund')[$enom]??[];}finally{Illuminate\Support\Facades\Cache::swap($cacheManager);}
+expect(array_diff($paid,$page)===[]&&array_slice(array_values(array_intersect($page,$unproven)),0,1)===[$unproven[0]],'A cache outage restarts the complimentary page and keeps the paid page');
 same([$enom],array_keys(ObservationCandidates::next('refund',1)),'One account turn');
 same([$other],array_keys(ObservationCandidates::next('refund',1)),'The other account still gets the next turn');
 echo "Independent negative proof and null/presence/route refusal matrix passed\n"; $nativeSuccessful=true;
