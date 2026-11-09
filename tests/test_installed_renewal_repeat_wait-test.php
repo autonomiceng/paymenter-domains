@@ -89,6 +89,13 @@ $check($at($listHtml), 'customer list: the fixed time in the viewer\'s zone');
 $check(!str_contains($showText.$listText, 'Under review') && !str_contains($showText.$listText, 'request limit'), 'customer: no review or limit words');
 expect($failed === [], 'Repeat-renewal wait facts missing: '.implode('; ', $failed));
 
+// Turning off future renewal invoices preserves this already paid cycle, including its fixed time.
+$policy=$d->fresh()->renewal_policy;$d->update(['renewal_policy'=>[...$policy,'owner_auto_renew'=>false]]);
+$offSummary=(new DomainSummaries)->one($user,'managed',$d->id,$clock->now()->getTimestamp());
+same($goes->format(DATE_ATOM),DomainListRow::renewal($offSummary)['at'],'Off list retains the exact paid wait instant');
+$offHtml=view('domains::show',['domain'=>$owners->present($d->fresh()),'summary'=>$offSummary])->render();
+expect($at($offHtml)&&str_contains(strip_tags($offHtml),$customer),'Off detail retains paid cycle timing and assurance');
+$d->update(['renewal_policy'=>$policy]);
 // When the time comes it sends by itself, and the wait words leave every page.
 $clock->instant = $goes; Cache::flush();
 $state->expiry = '10/18/2028 5:00:00 AM'; $state->day = '10/18/2028'; $state->years = 2; $state->after = '2030-10-18'; $state->order = '9003'; $state->charge = '16.00';

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource;
 use Paymenter\Extensions\Servers\Domains\Services\AccountSpendingHolds;
 /** Read-only projection, never a settlement or spending-release authority. */
 final class PaidUncertainty
@@ -20,10 +21,34 @@ final class PaidUncertainty
     {
         $grants ??= Staff::requireView();
         if (!AccountSpendingHolds::matches($op)) { return null; }
+        return 'Paid domain changes on this '.self::registrar($op).' account wait until the result is known'.self::age($op).'. Registrations and renewals still check the balance before sending.';
+    }
+    private static function age(Operation $op): string
+    {
         $at=$op->started_at??$op->created_at;
         $hours=$at ? max(0,(int)floor((time()-$at->getTimestamp())/3600)) : null;
-        $age=match($hours){null=>'',0=>' (under 1 hour so far)',1=>' (1 hour so far)',default=>' ('.$hours.' hours so far)'};
-        return 'Paid domain changes on this '.self::registrar($op).' account wait until the result is known'.$age.'. Registrations and renewals still check the balance before sending.';
+        return match($hours){null=>'',0=>' (under 1 hour so far)',1=>' (1 hour so far)',default=>' ('.$hours.' hours so far)'};
+    }
+    /** The account-wide hold, said where staff look first: the Domains list and the registrar account page. Only a hold staff must clear shows:
+     * a request still with the registrar clears by itself. One line per account: the job first, as on a held domain's head, then what it holds.
+     * The count is the account's Under review requests, the rows its link opens. Null with none. */
+    public static function accounts(?int $server=null): ?\Illuminate\Support\HtmlString
+    {
+        Staff::requireView();
+        $held=OperationQueries::status(AccountSpendingHolds::query(Operation::query()),['under_review'])->when($server!==null,fn($q)=>$q->where('server_id',$server))
+            ->selectRaw('server_id, min(id) as first')->groupBy('server_id')->orderBy('server_id')->limit(100)->pluck('first','server_id');
+        $lines=[];
+        foreach ($held as $id=>$oldest) {
+            $review=OperationQueries::status(OperationResource::getEloquentQuery()->where('server_id',$id),['under_review']);
+            // A request the list can't show (an older registration of the domain) is still named, by itself.
+            $count=max(1,(clone $review)->count()); $first=$count===1?((int)(clone $review)->orderBy('id')->value('id') ?: (int)$oldest):0;
+            $name=e(\App\Models\Server::whereKey($id)->value('name') ?: 'this registrar account');
+            [$label,$url,$until]=$count===1
+                ? ['Check request #'.$first,DomainFacts::requestUrl(['request'=>$first]),'it is checked']
+                : ['Check '.$count.' requests',RegistrarFacts::requestsUrl((int)$id,['under_review']),'they are checked'];
+            $lines[]=($url?DomainFacts::requestLink($url,$label):e($label)).' Paid changes on '.$name.' are on hold until '.$until.'.';
+        }
+        return $lines?new \Illuminate\Support\HtmlString(implode('<br>',$lines)):null;
     }
     public static function title(Operation $op): string
     { return self::registrar($op).' has not confirmed this '.(['register'=>'registration','transfer'=>'transfer','renew'=>'renewal'][$op->action]??'change').'.'; }

@@ -227,6 +227,7 @@
     "tests/owner-nameservers-test.php",
     "tests/owner-renewal-test.php",
     "tests/owner-renewal-calendar-test.php",
+    "tests/owner-renewal-schedule-test.php",
     "tests/owner-renewal-retained-test.php",
     "tests/owner-auto-renew-test.php",
     "tests/owner-declutter-test.php",
@@ -792,7 +793,9 @@
     "tests/template-recovery-test.php",
     "tests/watch-discovery-hints-test.php",
     "tests/adoption-missing-template-test.php",
-    "tests/template-explicit-default-test.php"
+    "tests/template-explicit-default-test.php",
+    "tests/owner-default-confirm-test.php",
+    "tests/staff-monitoring-clock-test.php"
   ],
   "ui": [],
   "runner": [

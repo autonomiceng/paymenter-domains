@@ -5,11 +5,12 @@ namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus;
-use Paymenter\Extensions\Servers\Domains\Services\{BalanceRetries, EnomTestManagement, EnomTestRegistration, ManagementEvidence, ManagementProgress, OperationClaims, RegistrationDns, RenewalCycles, RenewalReplacements, StaffOperationWrites, UnpaidAcquisitionProof, WriteHeld};
+use Paymenter\Extensions\Servers\Domains\Services\{BalanceRetries, EnomTestManagement, EnomTestRegistration, ManagementEvidence, ManagementProgress, OperationClaims, RegistrarCheck, RegistrationDns, RenewalCycles, RenewalReplacements, StaffOperationWrites, UnpaidAcquisitionProof, WriteHeld};
 /** Request page facts and its one notice. A null fact value is Missing and its "_sub" key names the cause. */
 final class RequestFacts
 {
     public const NO_TIME='No time recorded. No action needed.';
+    private const CHECK_STATUS='Use Check status to ask the registrar for the result.';
     private const ORDERS_OFF='Orders are off for this account.';
     /** The step after a queued request's reason while Orders are off. A reason that already says so needs only the step. */
     public static function ordersStep(string $reason): string
@@ -125,7 +126,7 @@ final class RequestFacts
                 $closedUnsent=$op->state==='rejected'&&in_array($op->safe_code,['renewal_cancelled_unpaid',UnpaidAcquisitionProof::CODE],true)&&($a['send_state']??null)==='definitely_unsent'&&!array_key_exists('dispatch_attempted_at',$p);
                 if ($actual===null&&($closedUnsent||($op->state==='cancelled'&&$a===[]&&$op->started_at===null))) { [$actual,$quote]=['Not charged',null]; }
                 if ($paid||isset($c['actual'])) {
-                    $out['cost']=$actual;
+                    $out['cost']=$actual??($unknown&&$quote!==null?'Not confirmed':null);
                     $out['cost_sub']=$out['registrar_refund'] ?? $quote ?? ($actual===null ? 'No cost recorded. Check at the registrar.' : null);
                     if(\Paymenter\Extensions\Servers\Domains\Services\TransferRejections::proved($op,$op->domain)){
                         $answer=$p['enom_answer'];$out['cost_sub']='Registrar charge '.Labels::money($answer['charge']).'; registrar refund '.Labels::money($answer['registrar_refund']).'. We cover the failed fee.';
@@ -145,26 +146,31 @@ final class RequestFacts
     { return $account&&!$account->processing_enabled&&$reason!=='pre_send_interrupted'; }
     /** The one reason for a request, on every page: for a request stopped here what is true now, else the saved reason.
      * Lists call this per row, so they pass $ordersOff: a queued row is only stopped while Orders are off, and held rows are rare. */
-    public static function reason(Operation $op, bool $ordersOff=true): ?string
+    public static function reason(Operation $op, bool $ordersOff=true, ?StaffGrants $grants=null): ?string
     {
-        try { return ($op->state==='held'||$op->state==='queued'&&$ordersOff?self::readyMessage($op):null)??Labels::requestStatus($op)['reason']; }
-        catch (\Throwable) { return Labels::requestStatus($op)['reason']; }
+        try { return ($op->state==='held'||$op->state==='queued'&&$ordersOff?self::readyMessage($op):null)??Labels::requestStatus($op,grants:$grants)['reason']; }
+        catch (\Throwable) { return Labels::requestStatus($op,grants:$grants)['reason']; }
     }
     /** A request's status, in the customer's words. Orders off stop all queued work, so a queued request whose account has them off is held
      * for staff: it reads as held (RequestStatus::READS_AS), the same word as its domain and the Status filter. With its domain (passed, or loaded with the row) a change reads as
      * customer History does (ManagementProgress::statusKey), on the rail, the list and the request page. Lists pass $ordersOff as for reason(). */
-    /** Staff alone name a registration stopped here On hold; setup still waits on the customer. */
+    /** Staff alone name a registration stopped here, or a transfer staff held, On hold: one word for one hold. Setup still waits on the customer. */
     public const STATUSES = [...RequestStatus::SET, 'on_hold'=>['On hold','warning']];
-    public static function heldRegistration(Operation $op, bool $ordersOff=false): bool
-    { return $op->action==='register' && RequestStatus::readsAs($op->state,$op->safe_code,$ordersOff)==='held'; }
-    public static function status(Operation $op, bool $ordersOff=true, ?Domain $d=null): array
+    /** A transfer reads On hold only when staff held it; a transfer waiting on its old registrar keeps its own word. */
+    public const HELD_TRANSFER_CODE = 'staff_review_required';
+    public static function heldAcquisition(Operation $op, bool $ordersOff=false): bool
+    {
+        return RequestStatus::readsAs($op->state,$op->safe_code,$ordersOff)==='held'
+            && ($op->action==='register' || ($op->action==='transfer' && $op->state==='held' && $op->safe_code===self::HELD_TRANSFER_CODE));
+    }
+    public static function status(Operation $op, bool $ordersOff=true, ?Domain $d=null, ?StaffGrants $grants=null): array
     {
         $d??=$op->relationLoaded('domain')?$op->domain:null;
         $off=$ordersOff&&$op->state==='queued'&&OperationQueries::ordersOff($op);
-        $status=[...Labels::requestStatus($op,$off),'reason'=>self::reason($op,$ordersOff)];
+        $status=[...Labels::requestStatus($op,$off,$grants),'reason'=>self::reason($op,$ordersOff,$grants)];
         try { $key=$d?ManagementProgress::statusKey($op,$d,$off):null; } catch (\Throwable) { $key=null; }
         if ($key!==null) { [$status['label'],$status['tone']]=RequestStatus::SET[$key]; }
-        return self::heldRegistration($op,$off) ? [...$status,'label'=>'On hold','tone'=>'warning'] : $status;
+        return self::heldAcquisition($op,$off) ? [...$status,'label'=>'On hold','tone'=>'warning'] : $status;
     }
     /** Local readiness shared by request pages and domain lists. It never releases a hold. */
     public static function readyMessage(Operation $op): ?string
@@ -255,7 +261,13 @@ final class RequestFacts
         }
         if (isset($facts['outcome'])) {
             $recover=HistoryRecovery::offered($op);$tooOld=HistoryRecovery::tooOld($op);
-            return ['title'=>$facts['outcome'],'body'=>implode(' ',array_filter([$recover?HistoryRecovery::CAUSE:($tooOld?HistoryRecovery::TOO_OLD:null),isset($op->policy['status_check'])?implode('. ',\Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::for($op)):null,$facts['auto_renew']??PaidUncertainty::holdSummary($op)])),'tone'=>'warning',
+            $step=RegistrarCheck::step($op);
+            // History already says the result is unconfirmed, so then the notice leads with what to do. The answer step already says to ask Enom.
+            $said=$op->started_at&&StaffReviewHistory::sendEvent($op)===RequestStatus::UNCONFIRMED;
+            $cause=$recover?HistoryRecovery::CAUSE:($tooOld&&(RegistrarCheck::status($op)['outcome']??null)!=='awaiting_answer'?HistoryRecovery::TOO_OLD:null);
+            $parts=array_values(array_filter([$said?null:$facts['outcome'],$step['title']??null,$step['body']??null,$cause,$facts['auto_renew']??PaidUncertainty::holdSummary($op)]));
+            if($said&&$step===null&&$cause===null){array_unshift($parts,self::CHECK_STATUS);}
+            return ['title'=>array_shift($parts),'body'=>$parts===[]?null:implode(' ',$parts),'tone'=>'warning',...(($step['answer']??false)?['primary'=>'enom_answer']:[]),
                 'action'=>$recover?HistoryRecovery::NAME:($tooOld?null:(OperationActions::readLimit($op)&&in_array($op->action,['register','transfer','renew'],true)?'resume_reads':'recheck'))];
         }
         if ($op->state==='queued' && ($ready=self::readyMessage($op))!==null) {
@@ -292,7 +304,9 @@ final class RequestFacts
             if (($ready=self::readyMessage($op))!==null) { $reason=$ready;$fix=$account->processing_enabled?($op->safe_code==='registrar_balance_insufficient'?'Go to balance':null):self::ORDERS_SWITCH; }
             if(in_array($op->safe_code,BalanceRetries::READ_CODES,true)&&!BalanceRetries::pending($op)&&OperationActions::relevant('release',$op)){$body??=BalanceRetries::READ_STOPPED;}
             if(BalanceRetries::legacyHold($op)){$fix=null;if(OperationActions::relevant('release',$op)){$body??='Release to check this order again.';}}
-            $next=$sends ? 'Release hold sends the '.self::sendWords($op,$account).' to Enom.' : null;
+            // Release hold puts paid work back in the queue, so the button says what it starts before staff press it.
+            $queues=!$sends&&$open&&$account?->processing_enabled&&in_array($op->action,['register','transfer','renew'],true)&&OperationActions::relevant('release',$op);
+            $next=$sends ? 'Release hold sends the '.self::sendWords($op,$account).' to Enom.' : ($queues ? 'Release hold queues the '.self::queueWords($op,$account).' to send to '.PaidUncertainty::registrar($op).'.' : null);
             if ($next!==null) { $body=$body===null?$next:$next.' '.$body; }
             if (($try=self::nextTry($op))!==null) { $body=$body===null?$try:$body.' '.$try; }
             return ['title'=>rtrim($reason??Labels::reason(null),'.').'.','body'=>$body,'tone'=>'warning','action'=>in_array($op->safe_code,WriteHeld::FINAL_REFUSALS,true)&&OperationActions::relevant('refund',$op)?'refund':(OperationActions::relevant('release',$op)?'release':null),
@@ -311,6 +325,9 @@ final class RequestFacts
     /** What release sends, in the words staff see. */
     public static function sendWords(Operation $op, Account $account): string
     { return ($account->environment==='live'?'':'test ').($op->action==='transfer'?'transfer':'purchase'); }
+    /** What release queues: the request type, marked test on a test account. */
+    private static function queueWords(Operation $op, Account $account): string
+    { return ($account->environment==='live'?'':'test ').['register'=>'registration','transfer'=>'transfer','renew'=>'renewal'][$op->action]; }
     /** A closed unpaid order: no payment arrived, before or after it closed. */
     public static function neverPaid(Operation $op): bool
     {

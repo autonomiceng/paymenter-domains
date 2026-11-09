@@ -60,7 +60,7 @@ for ($i = 0; $i < 6; $i++) {
     $state->during = static function () use ($op): void { Cache::put('domains-write-slot:'.$op->account_fingerprint, true, 25); };
     $management->run($op->id, $driver); Cache::flush();
 }
-same('held', $op->fresh()->state, 'Sixth deferral stops preparation');
+same('rejected', $op->fresh()->state, 'Sixth deferral closes definitely-unsent nonbillable preparation');
 same(5, count($op->fresh()->attempt['management_deferrals']), 'Deferral history cannot grow past five');
 same(true, ManagementEvidence::idle($op->fresh()), 'Exhausted unsent operation retains its renewal-safe proof');
 $before = count($state->calls); $management->run($op->id, $driver);

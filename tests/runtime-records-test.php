@@ -29,7 +29,7 @@ $p=$d->fresh()->observation;unset($p['records']);$d->fresh()->update(['observati
 ObservationRecords::hold($d->fresh(),'records_unavailable',$clock->now());
 foreach(['held','stopped']as$readState){
  if($readState==='stopped'){\Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::current($d->fresh())->update(['safe_code'=>'read_unavailable','tries'=>5]);}
- $heldHtml=$page();same($readState==='stopped',str_contains($heldHtml,e(\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::READ_HELD)),'Only a stopped read needs the staff-recovery page notice');
- foreach(['dns','srv']as$kind){$row=storefrontDom($heldHtml)->query('//li[@id="'.$kind.'"]')->item(0);expect($row!==null&&str_contains($row->textContent,'Missing'),$readState.' '.$kind.' row stays visible with its calm missing value');}
+ $heldHtml=$page();same($readState==='stopped'?1:0,substr_count($heldHtml,e(\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::READ_HELD)),'Exactly one recovery notice only for stopped reads');same($readState==='stopped',str_contains($heldHtml,e(\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::READ_HELD)),'Only a stopped read needs the staff-recovery page notice');
+ foreach(['dns','srv']as$kind){$quiet=storefrontDom($heldHtml)->query('//li[@id="'.$kind.'"]')->item(0);expect(!str_contains($quiet?->textContent??'',\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::TEAM_CHECK),'Quiet record row does not repeat the page recovery');$row=storefrontDom($heldHtml)->query('//li[@id="'.$kind.'"]')->item(0);expect($row!==null&&str_contains($row->textContent,'Missing'),$readState.' '.$kind.' row stays visible with its calm missing value');}
 }
 echo "Native record producer gates, numeric DNS/SRV and source identity pairs passed.\n";$nativeSuccessful=true;

@@ -22,7 +22,7 @@ DB::enableQueryLog();DB::flushQueryLog();
 $page=Livewire::actingAs($viewer)->test(ListDomains::class)->assertSuccessful();
 $queries=DB::getQueryLog();DB::disableQueryLog();
 $opQueries=array_filter($queries,fn($q)=>str_contains($q['query'],'from "domains_operations"'));
-same(3,count($opQueries),'One acquisition query, one status read and one read of waiting requests for the rendered table page');
+same(5,count($opQueries),'Three domain-page batch queries and two queries for the account hold notice');
 $userReads=array_filter($queries,fn($q)=>str_contains($q['query'],'from "users"')&&str_contains($q['query'],'"email"'));
 same(1,count($userReads),'Customer descriptions use one eager query');
 $customer=trim($viewer->first_name.' '.$viewer->last_name)?:$viewer->email;

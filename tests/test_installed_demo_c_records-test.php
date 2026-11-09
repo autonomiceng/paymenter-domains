@@ -19,12 +19,20 @@ $record=['identity'=>ObservationRecords::identity($d),'at'=>'2026-11-04T09:00:00
     'settings'=>['nameservers'=>['state'=>'complete','facts'=>['nameservers'=>['ns1.example.net','ns2.example.net']]],'contacts'=>['state'=>'unknown','facts'=>[]],'flags'=>['state'=>'complete','facts'=>[]]]];
 $d->observation=['records'=>$record];$before=$d->getRawOriginal();$state=RecordFamilies::read($d,$now);
 $families=array_column($state['rows'],'state','kind');
+foreach([[null,false,true,2],[null,null,null,0],[false,false,false,3]]as[$privacy,$locked,$auto,$expected]){
+ $flagsRecord=$record;$flagsRecord['settings']['flags']=['state'=>'partial','facts'=>['privacy'=>$privacy,'locked'=>$locked,'provider_auto_renew'=>$auto]];
+ $probe=clone $d;$probe->observation=['records'=>$flagsRecord];$rows=RecordFamilies::read($probe,$now)['rows'];
+ $same($expected,collect($rows)->firstWhere('kind','flags')['count'],'Null flags are absent; false is an observed setting');
+}
+$nsHtml=view('domains::partials.nameserver-list',['servers'=>['ns10.example.net','ns2.example.net','ns1.example.net']])->render();
+$nsDom=storefrontDom($nsHtml);$same(['ns1.example.net','ns2.example.net','ns10.example.net'],array_map(fn($n)=>$n->textContent,iterator_to_array($nsDom->query('//span[contains(@class,"domains-mono")]'))),'Nameservers have stable natural presentation order');
+
 $same(['complete','unsupported','unknown','partial'],[$families['dns'],$families['srv'],$families['ds'],$families['glue']],'Each record family keeps its own state');
 $check($state['stale'],'Older than one day is stale');
 $owned=new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(name:$d->domain,status:'Active',tone:'ok',expiry:'2027-11-20',renewal:'On',renewalPrice:'$14.00',actions:['show'=>'/domains/1'],progress:[],setup:[],transfer:[],management:[],testEnvironment:false);
 $page=RecordFamilies::owner($owned,$state);
 $html=view('domains::partials.owner-management',['domain'=>$page])->render();
-foreach(['Complete','Partial','Missing','Unsupported','CAA','3600','Read-only','Checked'] as $text){$check(str_contains($html,$text),'Customer sees '.$text);}
+foreach(['Partial','Missing','Unsupported','CAA','3600','Read-only','Checked'] as $text){$check(str_contains($html,$text),'Customer sees '.$text);}
 $check(str_contains($html,'aria-label="DNS records"')&&str_contains($html,'TTL'),'CAA is in the DNS records table');
 $caaDom=storefrontDom($html);
 $same(1,$caaDom->query('//tr[td[normalize-space(.)="CAA"]]')->length,'The real DNS table contains the CAA row');
@@ -53,7 +61,7 @@ $pendingPage=new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(n
 $pendingHtml=view('domains::partials.owner-management',['domain'=>$pendingPage])->render();$check(str_contains($pendingHtml,'data-ds-state')&&str_contains($pendingHtml,'Nothing was sent.'),'Partial family metadata preserves pending DS status');
 // The family presentation can restrict a current read, but cannot revoke existing controls without one.
 $existing=[];foreach(['nameservers','contacts','dns','srv','glue','ds'] as $kind){$existing[$kind]=['label'=>$kind,'actions'=>[$kind=>'/domains/1/manage/'.$kind],'url'=>'/domains/1/manage/'.$kind,'records'=>[],'fixed'=>[]];}
-$existing['nameservers']+=['current'=>['ns1.example.net','ns2.example.net'],'max'=>13,'defaults'=>false];
+$existing['nameservers']+=['current'=>['ns1.example.net','ns2.example.net'],'max'=>13,'defaults'=>false,'registrar'=>'NameSilo'];
 $existing['dns']=[...$section,'url'=>'/domains/1/dns'];
 $editable=new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(...[...get_object_vars($owned),'management'=>$existing]);
 foreach(['never_read','wrong_identity','failed_read'] as $case){
@@ -69,11 +77,11 @@ foreach(['never_read','wrong_identity','failed_read'] as $case){
     $same(1,$ownerDom->query('//form[@action="/domains/1/dns"]')->length,$case.' keeps the supplied DNS editor on the owner page');
 }
 $partial=RecordFamilies::owner($editable,RecordFamilies::read($d,$now));$same([],$partial->management['contacts']['actions'],'A current partial contact read still holds whole-list editing');
-// r16: a complete family says its count beside the label; the value doesn't say it again.
+// A complete family shows its count once and retains the independent check time.
 $countDom=storefrontDom(view('domains::partials.owner-management',['domain'=>$partial,'caps'=>['dns'],'keys'=>['dns'=>str_repeat('b',64)]])->render());
 $countSub=trim($countDom->query('//li[@id="dns"]/span[@class="domains-row__l"]/span[@class="domains-sub"]')->item(0)?->textContent??'');
 $countValue=trim($countDom->query('//li[@id="dns"]/span[@class="domains-row__v"]')->item(0)?->textContent??'');
-$same([1,''],[preg_match('/^\d+ records? checked\./',$countSub),$countValue],'DNS says its record count once: '.json_encode([$countSub,$countValue]));
+$same([true,'1 record'],[str_starts_with($countSub,'Checked '),$countValue],'DNS says its record count once and keeps the check time: '.json_encode([$countSub,$countValue]));
 // customer-layout: as in the 390 mock, the "?" sits right after its label, before the status, and Edit sits beside the status.
 $same(1,$countDom->query('//li[@id="dns"]/span[@class="domains-row__l"]/span[@data-record-family]/preceding-sibling::span[@data-help]')->length,'The ? sits with its label, before the status');
 $same(1,$countDom->query('//li[@id="dns"]/span[@class="domains-row__a"]/a[normalize-space()="Edit"]')->length,'The DNS row has its Edit action');

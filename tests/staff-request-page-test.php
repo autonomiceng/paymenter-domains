@@ -132,7 +132,7 @@ Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$heldOp->id])
 
 // Paid and unconfirmed: the notice names the registrar and how long new orders have been paused.
 DB::table('domains_operations')->where('id',$heldOp->id)->update(['state'=>'uncertain','funding_basis'=>'paid_invoice','started_at'=>now()->subHours(73)]);
-Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$heldOp->id])->assertSee('NameSilo has not confirmed this transfer.')
+Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$heldOp->id])->assertSee('Use Check status to ask the registrar for the result.')->assertDontSee('has not confirmed this transfer')
     ->assertSee('Paid domain changes on this NameSilo account wait until the result is known (73 hours so far).')->assertSee('Check status')
     ->assertDontSee('Release hold')->assertDontSee('Account spending holds')->assertDontSee('Paid outcome review');
 

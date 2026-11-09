@@ -33,9 +33,14 @@ same(['url'=>route('domains.domains.renew',$d->id),'terms'=>[1],'order_by'=>'202
 $html=$page($d);
 foreach(['Renew now','Renew '.$d->domain,'>Domain<','>'.$d->domain.'<','>Years<',
     'You can renew online until <time datetime="2027-10-17">Oct 17, 2027</time>.','Create invoice','action="'.route('domains.domains.renew',$d->id).'"','name="_request_key"'] as $text){expect(str_contains($html,$text),'Owner form shows '.$text);}
+$assertRenewalForm=static function(string $html)use($d):void {
+ $dom=storefrontDom($html);$forms=$dom->query('//form[@method="POST" and @action="'.route('domains.domains.renew',$d->id).'"]');same(1,$forms->length,'One actual owner renewal POST form');
+ $form=$forms->item(0);same(1,$dom->query('.//input[@name="_request_key"]',$form)->length,'Request key belongs to that form');
+ $button=$dom->query('.//button[@type="submit" and not(@disabled)]',$form);same(1,$button->length,'Renewal form has one enabled submit');same('Create invoice',trim($button->item(0)->textContent),'Real submit creates the invoice');
+};$assertRenewalForm($html);
 $form=storefrontDom($html);$options=$form->query('//select[@id="renew-years"]/option');
 same(['1'],array_map(fn($option)=>$option->getAttribute('value'),iterator_to_array($options)),'Owner form offers exactly the supported annual term');
-same('1 year',trim((string)$options->item(0)?->textContent),'Owner form names the annual term');
+$option=$options->item(0);$total=$option?->getAttribute('data-total');expect($total!==''&&str_contains(trim($option->textContent),'1 year · '.$total),'Owner form visibly pairs the term and its exact total');
 foreach (range(2,10) as $years) { same(0,$form->query('//select[@id="renew-years"]/option[@value="'.$years.'"]')->length,'Unsupported longer term is not offered'); }
 same(range(1,10),DomainBilling::terms(new DateTimeImmutable('2027-10-18'),new DateTimeImmutable('2027-10-18T00:00:00Z')),'Horizon admits ten years from expiry day');
 same([1,2],DomainBilling::terms(new DateTimeImmutable('2035-08-01'),new DateTimeImmutable('2027-09-01T12:00:00Z')),'Far expiry narrows the term list');
@@ -78,7 +83,7 @@ foreach (['spending','anchor','prior','price','service','domain'] as $case) {
     if($case==='service'){$d->service->fresh()->update(['status'=>'suspended']);}
     if($case==='domain'){$d->update(['status'=>'needs_review']);}
     $unchanged=$ledger();same([],$owners->present($d->fresh())->renewNow,'Ineligible request hidden: '.$case);
-    expect(!str_contains($page($d),'Create invoice'),'Ineligible page has no request: '.$case);
+    $noRenewalForm($page($d),$d,'Ineligible page has no renewal form: '.$case);
     $refused($d,['years'=>'1'],OwnerRenewalController::UNAVAILABLE);same($unchanged,$ledger(),'Ineligible page and POST preserve debt: '.$case);
     DB::table('domains_domains')->where('id',$d->id)->update($rawDomain);
     if($prior){DB::table('domains_operations')->where('id',$prior->id)->delete();}
@@ -140,7 +145,7 @@ $clock->instant=new DateTimeImmutable('2027-09-01T12:00:00Z');$setting('domains_
 same(['status'=>'cancelled'],$cycle(),'Retired unpaid cycle remains visible with requests off');$setting('domains_manual_renewals_enabled',true);
 $server->settings()->updateOrCreate(['key'=>'domains_due_days'],['value'=>'invalid','type'=>'string']);same(['status'=>'cancelled'],$cycle(),'Retired unpaid cycle remains visible with invalid calendar');$server->settings()->where('key','domains_due_days')->delete();
 same([1],$cycle()['terms']??null,'Retired unpaid cycle offers a replacement request');
-$html=$page($d);expect(str_contains($html,'Create invoice')&&!str_contains($html,'Invoice cancelled'),'Retired page shows the form, not the status');
+$html=$page($d);expect(str_contains($html,'Create invoice')&&!str_contains($html,'Invoice cancelled'),'Retired page shows the form, not the status');$assertRenewalForm($html);
 // Replacement proof covers every debt, even beyond one page or under an unexpected key.
 $copies=[];$copyInvoices=[];$copyItems=[];
 $duplicate=static function(Operation $original,string $key,?string $base=null)use(&$copyInvoices,&$copyItems):Operation {

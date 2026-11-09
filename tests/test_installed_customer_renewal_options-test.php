@@ -56,8 +56,21 @@ same('Paid',Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::nextIn
 $item=$invoice->items()->sole();$item->forceFill(['price'=>'1.00'])->saveQuietly();
 $summary=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,'managed',$d->id,$clock->now()->getTimestamp());
 expect($summary->renewalInvoiceReview && !$summary->renewalInvoicePaid,'Changed complimentary receipt remains under review');
+same('Under review',Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::nextInvoice($owners->present($d->fresh()),$summary,null)['value'],'Changed receipt detail stays under review');
 $item->forceFill(['price'=>'0.00'])->saveQuietly();$invoice->forceFill(['user_id'=>$staff->id])->saveQuietly();
 $summary=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,'managed',$d->id,$clock->now()->getTimestamp());
 expect($summary->renewalInvoiceReview && !$summary->renewalInvoicePaid,'Foreign receipt cannot supply list payment state');
+same('Under review',Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::nextInvoice($owners->present($d->fresh()),$summary,null)['value'],'Foreign receipt detail stays under review');
 $invoice->forceFill(['user_id'=>$user->id])->saveQuietly();
+$held=\Paymenter\Extensions\Servers\Domains\Models\Operation::where('invoice_id',$invoice->id)->sole();$held->update(['state'=>'uncertain']);
+$summary=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,'managed',$d->id,$clock->now()->getTimestamp());
+expect($summary->renewalInvoiceReview&&!$summary->renewalInvoicePaid,'Held complimentary receipt remains Under review on list');
+same('Under review',Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::nextInvoice($owners->present($d->fresh()),$summary,null)['value'],'Held complimentary detail matches list');
+
+// Cancellation is only a presentation verdict after complete ledger membership validation.
+$held->update(['state'=>'awaiting_payment']);$invoice->forceFill(['status'=>'cancelled'])->saveQuietly();
+$summary=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,'managed',$d->id,$clock->now()->getTimestamp());
+// Complimentary cancelled receipts are not ordinary debt: they remain under review.
+same('Under review',Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::nextInvoice($owners->present($d->fresh()),$summary,null)['value'],'Cancelled complimentary receipt cannot masquerade as ordinary cancelled debt');
+
 $nativeSuccessful=true;echo "Native paid and complimentary customer renewal options passed.\n";

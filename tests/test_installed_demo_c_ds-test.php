@@ -17,7 +17,10 @@ $check(str_contains($html,'Off')&&str_contains($html,'DS changes are not offered
 $check(!str_contains($html,'domains-missing')&&!str_contains($html,'<form')&&!str_contains($html,'Registry'),'Off has no missing mark, editor or staff reason');
 $check(str_contains($html,'aria-disabled="true"'),'Blocked DS action remains visible');
 $check(str_contains(DsState::staff($d)['sub'],'Registry DS rules for this TLD have not been checked'),'Staff sees missing-registry-facts next step');
-foreach(['registration_pending','transfer_pending','expired','closed'] as $status){$d->status=$status;$check(!isset(DsState::owner($base,$d,true)->management['ds']),'No DS Off row on '.$status);}
+foreach(['registration_pending','transfer_pending','expired','closed'] as $status){$d->status=$status;$check(!isset(DsState::owner($base,$d,true)->management['ds']),'No DS Off row on '.$status);
+ $sub=DsState::staff($d)['sub']??'';$check(!str_contains($sub,'Use Sync now'),'Inactive domain never offers Sync now: '.$status);
+ if(str_ends_with($status,'pending')){$check(str_contains($sub,'after registration or transfer finishes'),'Pending acquisition explains when records can be read');}
+}
 $d->status='active';$check(!isset(DsState::owner($base,$d,false)->management['ds']),'No DS row without form/capability context');
 $d->registrar_key='enom';$check(!DsState::off($d),'NameSilo policy does not disable Enom DS');
 $op=new Operation(['id'=>84,'action'=>'ds_add','state'=>'queued','attempt'=>[],'policy'=>[],'created_at'=>now(),'authority_generation'=>1,'account_fingerprint'=>str_repeat('a',64)]);
@@ -62,7 +65,7 @@ $staffFact=DsState::staff($inventory);$check(str_contains($staffFact['sub'],'123
 $by=DsState::owner($base,$active,true)->progress;
 $same('Staff',$by[0]['by']??null,'DS history preserves staff attribution');
 $row=Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::row($held->operations()->where('action','ds_add')->sole(),$held,true);
-$check(str_contains($row['sub'],'Turn Orders on'),'Queued DS history preserves account pause guidance');
+$check(str_contains($row['sub'],'Turn them on in Registrars.'),'Queued DS history preserves account pause guidance');
 // Stored unreadable evidence must reach the DS-specific review state on both staff surfaces.
 $queued=$held->operations()->where('action','ds_add')->sole();
 foreach(['attempt','policy','funding'] as $field){

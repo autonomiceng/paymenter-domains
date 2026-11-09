@@ -116,7 +116,8 @@ $held=static function(string $name)use($new):\Paymenter\Extensions\Servers\Domai
 $ready=$held('staff-orders-ready-placeholder.com');\Illuminate\Support\Facades\Auth::setUser($staff);
 same('Not sent. It will retry automatically.',\Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::reason($ready),'Orders on: the reason is what happens next');
 $notice=\Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::notice($ready);
-expect(!isset($notice['link_label'])&&!str_contains((string)($notice['body']??''),'Release hold'),'No Orders switch and no Release wording while the system takes it back');
+expect(!isset($notice['link_label']),'Automatic readmission has no Orders switch');
+same('Release hold queues the test registration to send to Enom.',$notice['body']??null,'The optional release names the same paid request it queues');
 $dispatch->enqueue($ready->id);same(['queued',null],[$ready->fresh()->state,$ready->fresh()->safe_code],'Orders on readmits a paid request stopped by Orders off');
 $suspended=$held('staff-orders-suspended-placeholder.com');\Illuminate\Support\Facades\Auth::setUser($staff);\App\Models\Service::findOrFail($suspended->service_id)->update(['status'=>'suspended']);
 same('Not sent. This hold can’t be released. Cancel and refund it.',\Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::reason($suspended),'A suspended service cannot return, so staff are not told to wait');

@@ -311,6 +311,12 @@ same('gray',$ended['tone'],'An ended domain keeps its own tone');
 expect(!str_contains((string)$ended['step'],'Sync'),'An ended domain has no sync step');
 expect($value($active,'Last sync')!=='Read stopped','An ended domain does not ask for a resume');
 Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$active->id])->assertDontSee('Resume sync')->assertDontSee('Stopped until resumed')->assertDontSee('Next registrar read:')->assertDontSee('No read queued.')->assertDontSee('Sync this domain.')->assertDontSee('Registrar records are waiting for an update.');
+// Retained failure evidence is history even after the domain ends; it never schedules another read.
+$history=\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::read($active->fresh(),app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now());
+$history['failed_family']='dns';$history['staff_hold']='Saved registrar failure.';$history['at']='2026-10-20T15:05:00+00:00';
+$endedHistory=view('domains::partials.record-families',['recordFamilies'=>$history,'staff'=>true,'readScheduling'=>false])->render();
+expect(str_contains($endedHistory,'Last read failed for DNS records.')&&str_contains($endedHistory,'Saved registrar failure.'),'Ended records preserve historical failed family and cause');
+expect(str_contains($endedHistory,'Last registrar read:')&&!str_contains($endedHistory,'Next registrar read:')&&!str_contains($endedHistory,'Resume sync'),'Ended history has retained time without new scheduling');
 same(null,DomainFacts::sync($active->fresh()),'The list reads the same');
 DB::table('domains_domains')->where('id',$active->id)->update(['status'=>'active']);
 DB::table('domains_obligation_alerts')->where('domain_id',$active->id)->delete();

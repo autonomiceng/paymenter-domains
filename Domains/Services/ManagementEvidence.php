@@ -60,6 +60,15 @@ final class ManagementEvidence
     {return $op->state==='held'&&$op->safe_code==='management_unconfirmed'&&self::idle($op)
         &&($op->attempt['seal']??null)==='absent'&&isset($op->attempt['management_claim'])
         &&count($op->attempt['management_deferrals']??[])<5&&!isset($op->funding['refund']);}
+    /** Only exhausted, definitely-unsent, nonbillable preparation can close without a registrar result. */
+    public static function finishExhausted(Operation $op, \DateTimeImmutable $now): void
+    {
+        if($op->state==='held' && $op->safe_code==='management_unconfirmed' && $op->funding_basis==='non_billable_management'
+            && self::idle($op) && ($op->attempt['seal']??null)==='absent' && isset($op->attempt['management_claim'])
+            && count($op->attempt['management_deferrals']??[])===5){
+            $op->update(['state'=>'rejected','safe_code'=>'management_preparation_failed','completed_at'=>$now,'lease_expires_at'=>null]);
+        }
+    }
     public static function deferrals(array $a): bool
     { $h=array_key_exists('management_deferrals',$a)?$a['management_deferrals']:[];return is_array($h)&&array_is_list($h)&&count($h)<=5&&!array_filter($h,fn($v)=>!is_string($v)||!preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+00:00$/D',$v)); }
     public static function retryable(Operation $op): bool

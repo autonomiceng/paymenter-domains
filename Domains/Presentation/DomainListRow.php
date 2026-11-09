@@ -54,7 +54,8 @@ final class DomainListRow
     public static function renewal(DomainSummary $s): array
     {
         if ($s->kind === 'watch') { return ['value' => 'At your registrar', 'note' => null, 'invoiceMissing' => false, 'invoiceCause' => null, 'invoiceFix' => null]; }
-        if ($s->renewalOffShown()) {
+        if ($s->expiry===null && (in_array($s->statusState,['registration_rejected','transfer_rejected','cancelled'],true)||in_array($s->order['state']??null,['failed','cancelled'],true))) { return ['value'=>'','note'=>null,'invoiceMissing'=>false,'invoiceCause'=>null,'invoiceFix'=>null]; }
+        if ($s->renewalOffShown() && !$s->renewalInvoicePaid && !$s->renewalInvoiceReview && !$s->renewalInvoiceCancelled) {
             return ['value' => 'Off', 'note' => $s->expiry ? 'Cancels '.CarbonImmutable::parse(substr($s->expiry, 0, 10), 'UTC')->format('M j, Y') : null, 'invoiceMissing' => false, 'invoiceCause' => null, 'invoiceFix' => null];
         }
         if ($s->renewalClosed) { return ['value'=>'On','note'=>'Renewal did not finish. Contact support.','invoiceMissing'=>false,'invoiceCause'=>null,'invoiceFix'=>null]; }
@@ -63,7 +64,7 @@ final class DomainListRow
         $price = !$s->renewalInvoiceMissing && $s->renewalPrice && !($complimentary && str_starts_with(self::expires($s)['cause'] ?? '', 'Complimentary. '))
             ? $s->renewalPrice.($complimentary ? '' : '/yr') : null;
         // Under review is blue, as on the domain page: the check is ours.
-        return ['value' => 'On', 'note' => $s->renewalInvoicePaid ? 'Next invoice: Paid'.($s->renewalGoesAt ? '. '.RenewalRepeatWait::NOTHING.' '.RenewalRepeatWait::GOES : '') : ($s->renewalInvoiceReview ? 'Next invoice: Under review' : $price),
+        return ['value' => $s->renewalOffShown()?'Off':'On', 'note' => $s->renewalInvoiceCancelled?'Invoice cancelled':($s->renewalInvoicePaid ? 'Next invoice: Paid'.($s->renewalGoesAt ? '. '.RenewalRepeatWait::NOTHING.' '.RenewalRepeatWait::GOES : '') : ($s->renewalInvoiceReview ? 'Next invoice: Under review' : $price)),
             'noteState' => $s->renewalInvoiceReview ? ['label' => 'Under review', 'tone' => 'info'] : null,
             'at' => $s->renewalInvoicePaid ? $s->renewalGoesAt : null, 'invoiceMissing' => $s->renewalInvoiceMissing,
             'invoiceCause' => $s->renewalInvoiceMissing ? 'Not issued yet' : null, 'invoiceFix' => $s->renewalInvoiceMissing ? Missing::support($s->urls['support'] ?? null) : null];

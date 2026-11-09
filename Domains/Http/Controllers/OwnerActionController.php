@@ -74,6 +74,7 @@ final readonly class OwnerActionController
             if ($action==='nameservers' && ($p['fill_site_default']??null)==='1') {
                 $servers=\Paymenter\Extensions\Servers\Domains\Services\ManagementNameservers::defaults($d,$this->ports);
                 if (!$servers) { throw new OwnerFormValidation(['nameservers']); }
+                unset($p['confirmed']);$request->request->remove('confirmed');
                 $p['nameservers']=implode("\n",$servers);
                 $request->request->set('nameservers',$p['nameservers']);
             }

@@ -265,7 +265,7 @@ final readonly class OwnedDomains
         $renewNow = $this->renewNow($d, $forms);
         if ($adopted) {
             if (isset($renewNow['invoice'])) { $renewalInvoice = ['state' => 'pending', 'due' => $renewalDue]; }
-            elseif (isset($renewNow['status'])) { $renewalInvoice = ['state' => $renewNow['status'], ...array_intersect_key($renewNow, ['goes' => true])]; }
+            elseif (isset($renewNow['status'])) { $renewalInvoice = ['state' => $renewNow['status'], ...array_intersect_key($renewNow, ['goes' => true,'check'=>true])]; }
         }
         if ($adopted && $renewal === 'On' && $renewalInvoice === [] && $d->provider_expires_at) {
             try {
@@ -282,13 +282,20 @@ final readonly class OwnedDomains
                 ->map(fn ($i) => ['number' => $i->number ?? (string) $i->id, 'status' => $i->status === 'pending' ? 'Unpaid' : ucfirst($i->status), 'url' => route('invoices.show', $i),
                     'date' => substr((string) ($i->status === 'paid' && $i->succeeded_at ? $i->succeeded_at : $i->created_at), 0, 10)])->all();
         }
+        // Future invoices share billing's saved registrar calendar; retained invoices own their dates.
+        $schedule=[];
+        if ($renewal==='On' && $d->status==='active' && $d->provider_expires_at && !isset($renewNow['invoice']) && !isset($renewNow['status'])) {
+            try { $dates=DomainBilling::calendarFor(['domain'=>$d,'settings'=>\App\Models\Server::findOrFail($d->server_id)->settings]);
+                if ($dates['issue'] >= $this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d')) { $schedule=$dates; }
+            } catch (\Throwable) {}
+        }
         $test=Account::where('server_id',$d->server_id)->value('environment')==='test';
         if ($service) { $actions['autoPay']=route('services.show',$service->id).'#auto-pay'; }
         try { $dnsCorrection=RegistrationDns::pending($op,$d); } catch (\Throwable) { $dnsCorrection=false; }
         if($d->price_mode==='complimentary'){$price=ComplimentaryAccounts::LABEL;}
         $page=new OwnedDomain($d->domain,$pill['label'],$pill['tone'],$d->provider_expires_at?->format('Y-m-d'),$renewal,$price,
             $actions,$progress,$setup,$transfer,$management,$test,$unavailable,$renewalDue, changesRefused:$unavailable?$refused:null, adopted:$adopted, plannedRenewalDue:$plannedDue, history:$history, renewalInvoice:$renewalInvoice, originalDoNotRenew:$adopted && RenewalStop::adopted($renewalState),
-            order:$order, autoPay:$policy!==null&&RenewalAutoPay::ready($service), renewNow:$policy===null?[]:$renewNow,
+            renewalSchedule:$schedule, order:$order, autoPay:$policy!==null&&RenewalAutoPay::ready($service), renewNow:$policy===null?[]:$renewNow,
             renewalOff:$renewal==='Off'?RenewalStop::offReason($renewalState):null,
             autoRenew:$forms&&OwnerAutoRenew::available($renewalState)?['url'=>route('domains.domains.auto-renew',$d->id),'enabled'=>!RenewalStop::ownerOff($renewalState)]:[],
             dnsCorrection:$dnsCorrection, statusReason:$pill['reason'], refundTo:self::refundTo($d,$op,$order), rejectedAcquisition:$op?->state==='rejected'&&in_array($d->status,['registration_rejected','transfer_rejected'],true)?$op->action:null, earlyRenewal:$earlyRenewal, demo:DemoData::is($d), syncPaused:DemoData::syncPaused($d), owner:self::owner($contacts??[]),
@@ -364,6 +371,7 @@ final readonly class OwnedDomains
     public static function issuedState(Operation $cycle, Invoice $invoice, ?Domain $domain = null): string
     {
         return match (true) {
+            $invoice->status === 'cancelled' => 'cancelled',
             $cycle->state === 'awaiting_payment' && $invoice->status === 'pending' => 'pending',
             $domain !== null && $cycle->funding_basis === 'complimentary' && FundsWaits::closedRenewal($cycle, $domain) => 'closed',
             $invoice->status === 'paid' && in_array($cycle->state, ['awaiting_payment', 'queued', 'running', 'pending', 'succeeded'], true) => 'paid',
@@ -378,11 +386,11 @@ final readonly class OwnedDomains
             ->where(fn ($q) => $q->whereLike('operation_key', $key, caseSensitive: true)->orWhereLike('operation_key', $key.':replacement:%', caseSensitive: true))
             ->orderByDesc('id')->first();
         if (!$cycle) { return null; }
+        $check=RegistrarCheck::forCustomer($cycle);
+        $review=['status'=>'review',...(($check['tone']??null)==='info'?['check'=>$check]:[])];
         $l = self::renewalLedger($d, collect([$cycle]));
         if ($cycle->safe_code !== 'renewal_cancelled_unpaid' && !RenewalReplacements::reviewed($cycle, $d)) {
-            $invoice = $l['invoices']->firstWhere('id', $cycle->invoice_id);
-            if ($invoice?->status === 'cancelled' && (int) $invoice->user_id === (int) $d->user_id) { return ['status' => 'cancelled']; }
-            try { $invoice = DomainBilling::existingInvoice($cycle, $l); } catch (\Throwable) { return ['status' => 'review']; }
+            try { $invoice = DomainBilling::existingInvoice($cycle, $l, allowCancelled: true); } catch (\Throwable) { return $review; }
             if ($invoice->status === 'pending' && RenewalCycles::expiredInvoice($cycle, $now ?? app(Clock::class)->now())) {
                 return ['status' => RenewalCycles::canRetireUnpaid($cycle, $l) ? 'cancelled' : 'review'];
             }
@@ -390,7 +398,8 @@ final readonly class OwnedDomains
                 'pending' => ['invoice' => route('invoices.show', $invoice)],
                 'paid' => ['status' => 'paid', ...self::goes($cycle)],
                 'closed' => ['status' => 'closed'],
-                default => ['status' => 'review'] };
+                'cancelled' => ['status' => 'cancelled'],
+                default => $review };
         }
         // A retired or refunded debt permits a replacement only when billing's cycle proof holds.
         try {

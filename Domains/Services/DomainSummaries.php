@@ -45,7 +45,7 @@ final class DomainSummaries
     {
         $domainIds=array_unique($domainIds);$watchIds=array_unique($watchIds);
         if (count($domainIds)+count($watchIds)>250) { throw new \InvalidArgumentException('At most 250 targets per batch.'); }
-        return $this->summaries(new DomainSummaryContext((int)$owner->id,$domainIds,$watchIds),$now??time());
+        return $this->summaries(new DomainSummaryContext((int)$owner->id,$domainIds,$watchIds),$now??app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp());
     }
     /** The customer's domains: registered ones and the ones their hosting uses, without abandoned orders. Every customer list starts here. */
     public function listed(User $owner,int $now): array
@@ -58,7 +58,7 @@ final class DomainSummaries
     }
     /** Staff-only multi-owner watch projection. Customer batch() always retains its owner-scoped context. */
     public function staffWatches(array $watchIds,?int $now=null): array
-    { return $this->summaries(DomainSummaryContext::staffWatches(array_unique($watchIds)),$now??time()); }
+    { return $this->summaries(DomainSummaryContext::staffWatches(array_unique($watchIds)),$now??app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp()); }
     private function summaries(DomainSummaryContext $c,int $now): array
     {
         if ($c->staff && $c->domains) { throw new \LogicException('Staff watch context cannot include managed domains.'); }
@@ -98,7 +98,7 @@ final class DomainSummaries
         foreach (['managed'=>$c->domains,'watch'=>$c->watches] as $kind=>$targets) {
             foreach ($targets as $id=>$t) {
                 $uid=(int)$t->user_id;$stamp=$c->stamp($kind,$id);$rows=$dns[$kind][$id]??collect();$jobs=$work[$kind][$id]??collect();$fresh=[];$signals=[];$lastKnown=[];
-                $nameserverFact = null;
+                $nameserverFact = null;$invoiceCancelled=false;
                 if ($kind === 'managed') {
                     $nameserverFact = self::checkedNameservers($rows, $jobs, $t, $c->services[$t->service_id], $stamp, $now);
                     $stored = ObservationProjection::nameservers($t);
@@ -152,15 +152,15 @@ final class DomainSummaries
                     if (!$pending) { try { if ($s->currency_code==='USD') { $price=Storefront::money(RetailLine::decimal($s->price)); } } catch (\Throwable) {} }
                     if($t->price_mode==='complimentary'){$price=ComplimentaryAccounts::LABEL;}
                     $cycle=($cycles[$id]??collect())->first(fn($o)=>(int)$o->authority_generation===(int)$t->authority_generation && (int)$o->service_id===(int)$t->service_id && (int)$o->server_id===(int)$t->server_id && $o->registrar_key===$t->registrar_key && $o->account_fingerprint===$t->account_fingerprint && $o->base_expires_at?->format('Y-m-d')===$expiry);
-                    if (!$off && $expiry) {
+                    if ($expiry && (!$off || $cycle && !RenewalCycles::closedEarly($cycle))) {
                         if ($cycle && !RenewalCycles::closedEarly($cycle)) { $inv=$invoices[$cycle->invoice_id]??null;
                             // List and detail validate every member of the issued renewal invoice.
-                            try { $inv=DomainBilling::existingInvoice($cycle,['domain'=>$t,'invoices'=>$invoices,'items'=>$items,'transactions'=>$transactions]);$due=$inv->due_at?->format('Y-m-d');
-                                $issued=OwnedDomains::issuedState($cycle,$inv,$t);$renewalClosed=$issued==='closed';$invoiceReview=$issued==='review' && $inv->status!=='cancelled'; } catch (\Throwable) { $invoiceReview=true;$issued='review'; }
+                            try { $inv=DomainBilling::existingInvoice($cycle,['domain'=>$t,'invoices'=>$invoices,'items'=>$items,'transactions'=>$transactions],allowCancelled:true);$due=$inv->due_at?->format('Y-m-d');
+                                $issued=OwnedDomains::issuedState($cycle,$inv,$t);$renewalClosed=$issued==='closed';$invoiceReview=$issued==='review';$invoiceCancelled=$issued==='cancelled'; } catch (\Throwable) { $invoiceReview=true;$issued='review'; }
                             $invoiceMissing=$due===null && !$invoiceReview;
                             $invoicePaid=!$invoiceReview && !$invoiceMissing && $issued==='paid';
                             $goes=$invoicePaid?(OwnedDomains::goes($cycle)['goes']??null):null; }
-                        else { try { $projected=true;$timing=BillingCalendar::timing($servers[$t->server_id]->settings);$dates=BillingCalendar::dates($t->provider_expires_at->toDateTimeImmutable(),$timing['issue'],$timing['due']);$due=$dates['due'];$issue=$dates['issue'];$invoiceMissing=$issue<gmdate('Y-m-d',$now); } catch (\Throwable) {} }
+                        else { try { $projected=true;$dates=DomainBilling::calendarFor(['domain'=>$t,'settings'=>$servers[$t->server_id]->settings]);$due=$dates['due'];$issue=$dates['issue'];$invoiceMissing=$issue<gmdate('Y-m-d',$now); } catch (\Throwable) {} }
                     }
                     $order=$pending||!$op?[]:OwnedDomains::order($t,$op,$invoices->get($op->invoice_id),OwnedDomains::closed($s->status,in_array($s->id,[...$cancels,...$intents],true)));
                     $managedStatus=OwnedDomains::orderStatus(DomainStates::managed($t,$op,gmdate('Y-m-d',$now),$off),$t,$order);
@@ -188,7 +188,7 @@ final class DomainSummaries
                 foreach ($c->related($kind,$id) as $s) { if (!$c->validSource($s)) { continue; }$h=$c->services[$s->service_id];$p=$c->products[$h->product_id];
                     $related[]=['id'=>(int)$h->id,'label'=>$p->name,'url'=>route('services.show',$h->id)];$hosts[]=$s->hostname; }
                 $out[$kind.':'.$id]=new DomainSummary($kind==='watch'?$t->canonical_name:$t->domain,$kind==='watch'?$t->display_name:null,$kind,$registration,$keys,$signals['website']['value'],$signals['email']['value'],array_values(array_unique($states)),DomainSummaryStrings::all(),$expiry,$precision,$source,$fresh,$due,$price,$related,array_values(array_unique($hosts)),['detail'=>$url,'preferences'=>($kind==='watch' && $t->state==='active' && $stamp)||($kind==='managed' && !$pending && isset($c->configs[$id]) && $c->services[$t->service_id]->status==='active' && $expiry>gmdate('Y-m-d',$now))?route('domains.checks.show',['kind'=>$kind,'id'=>$id]):null,'invoiceHistory'=>$kind==='managed' && $pending?route('invoices'):null,'compareTransfer'=>config('domains.watch_transfer.enabled',false) && $kind==='watch' && $t->state==='active' && $t->registration==='external' && $factsCurrent && WatchTransferPolicy::window(substr($expiry??'',0,10),$now) && !in_array('watch.redemption',$states,true) && array_filter($transferEndings,fn($ending)=>str_ends_with($t->canonical_name,'.'.$ending))?route('domains.watch.transfer',$id):null,'support'=>Missing::supportUrl()],$off,$lastKnown,max(0,count($c->related($kind,$id))-3),$noticeKeys,$noticeDates,$reminderOff,$projected,$kind==='managed' && in_array($t->server_id,$testServers),$nameserverFact?->toArray(),$status,$reason,DemoData::is($t),
-                    $expiry?intdiv(strtotime(substr($expiry,0,10).' 00:00:00 UTC')-strtotime(gmdate('Y-m-d',$now).' 00:00:00 UTC'),86400):null,$invoiceMissing,$waits,$issue,$order,$kind==='managed'&&$op&&UnpaidAcquisitionProof::terminal($op,$t)&&RequestFacts::neverPaid($op),$dnsPreviouslyMatched,$invoicePaid,$invoiceReview,$goes,$renewalClosed);
+                    $expiry?intdiv(strtotime(substr($expiry,0,10).' 00:00:00 UTC')-strtotime(gmdate('Y-m-d',$now).' 00:00:00 UTC'),86400):null,$invoiceMissing,$waits,$issue,$order,$kind==='managed'&&$op&&UnpaidAcquisitionProof::terminal($op,$t)&&RequestFacts::neverPaid($op),$dnsPreviouslyMatched,$invoicePaid,$invoiceReview,$goes,$renewalClosed,$invoiceCancelled??false);
             }
         }
         return $out;

@@ -64,7 +64,8 @@ final class RegistrarFacts
     public static function requests(int $server): array
     {
         $count=fn(array $keys)=>OperationQueries::status(OperationResource::getEloquentQuery()->where('server_id',$server),$keys)->count();
-        return ['open'=>$count(self::OPEN_REQUESTS),'staff'=>array_combine(OperationResource::NEEDS_STAFF,array_map(fn(string $key)=>$count([$key]),OperationResource::NEEDS_STAFF))];
+        $statuses=array_combine(self::OPEN_REQUESTS,array_map(fn(string $key)=>$count([$key]),self::OPEN_REQUESTS));
+        return ['open'=>array_sum($statuses),'staff'=>array_intersect_key($statuses,array_flip(OperationResource::NEEDS_STAFF)),'statuses'=>$statuses];
     }
     /** The Registrar requests list for this account with these statuses ticked in its Status filter. Null without access. */
     public static function requestsUrl(int $server,array $statuses): ?string

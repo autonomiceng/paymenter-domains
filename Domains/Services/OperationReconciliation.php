@@ -33,6 +33,7 @@ final class OperationReconciliation
             try {
                 $binding = $this->authority($op, $domain, $all, $funding, $server, $account);
                 $attempt = ReconciliationEvidence::attempt($op, $domain, $binding);
+                $check->capture($op);
                 if ($op->action !== 'transfer' && $attempt->replyLost() && !$attempt->historyAcceptance?->covers($attempt, $this->clock->now())) {
                     $check->awaitingAnswer = $attempt->binding->registrarKey === 'enom' ? 'Enom' : 'NameSilo';
                     $check->answerAfter = (new \DateTimeImmutable($op->attempt['dispatch_attempted_at']))->modify('+24 hours')->getTimestamp();
@@ -79,6 +80,7 @@ final class OperationReconciliation
                 // One Enom charge can be a failed fee. It proves neither finality nor a settled refund.
                 if ($attempt->query->action->value === 'transfer' && $transfer !== \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Unknown) { $covered = true; }
                 $proof = ReconciliationEvidence::completion($attempt, $facts, $this->clock->now());
+                $check->observe($attempt,$facts,$proof!==null);
             }
         } catch (ReadDeferred) {
             $check->deferred = 'read_limit';

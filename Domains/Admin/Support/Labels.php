@@ -21,11 +21,11 @@ final class Labels
         };
     }
     /** Saved request status and cause. RequestFacts::reason adds what is true now. $ordersOff: Orders are off for this request's account. */
-    public static function requestStatus(\Paymenter\Extensions\Servers\Domains\Models\Operation $op, bool $ordersOff=false): array
+    public static function requestStatus(\Paymenter\Extensions\Servers\Domains\Models\Operation $op, bool $ordersOff=false, ?StaffGrants $grants=null): array
     {
         $status=\Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus::for(\Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus::readsAs($op->state,$op->safe_code,$ordersOff));
         if (($due=\Paymenter\Extensions\Servers\Domains\Services\RenewalCycles::early($op))!==null) { $status['reason']=\Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus::earlyRenewal($due); }
-        if ($op->safe_code!==null && isset(\Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus::STATES[$op->state])) { $status['reason']=self::operationReason($op); }
+        if ($op->safe_code!==null && isset(\Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus::STATES[$op->state])) { $status['reason']=self::operationReason($op,$grants); }
         return $status;
     }
     public static function action(?string $value): string
@@ -38,7 +38,7 @@ final class Labels
             'ds_add'=>'Add DNSSEC record','ds_delete'=>'Remove DNSSEC record','glue_add'=>'Add glue record',
             'glue_update'=>'Change glue record','glue_delete'=>'Remove glue record'][$value] ?? 'Other';
     }
-    public static function operationReason(\Paymenter\Extensions\Servers\Domains\Models\Operation $op): ?string
+    public static function operationReason(\Paymenter\Extensions\Servers\Domains\Models\Operation $op, ?StaffGrants $grants=null): ?string
     {
         if (($late=\Paymenter\Extensions\Servers\Domains\Services\RenewalCycles::lateNote($op))!==null) { return $late; }
         if(RequestFacts::quietRegistrationDns($op)){
@@ -65,14 +65,15 @@ final class Labels
         }
         // The domain page notice names one step for this hold. The reason names the same one, not Cancel or Release hold.
         if ($op->funding_basis==='complimentary'&&$op->safe_code==='registrar_price_increased') {
-            $costs=Staff::can(Staff::COSTS);
-            try { $need=\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::need($op,$costs&&Staff::can('admin.domains.fund')&&Staff::can('admin.domains.manage')); }
+            $grants??=Staff::requireView();$costs=$grants->costs;
+            try { $need=\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::need($op,$grants->approveCosts); }
             catch (\Throwable) { return DomainFacts::UNREADABLE; }
             if ($need!==null) { return $costs?$need:'Needs approval: registrar price increased. Ask staff with access to domain costs to review it.'; }
         }
         // Older checks retained a cap code even when the sending switch refused the read.
         if(in_array($op->safe_code,['enom_test_reconciliation_call_cap','enom_test_transfer_reconciliation_call_cap'],true)
             &&($op->policy['status_check']['reason']??null)==='send_guard'){return self::reason('enom_test_reconciliation_send_guard');}
+        if (($held=self::staffHold($op))!==null) { return $held; }
         $reason=self::reason($op->safe_code,$op->funding_basis==='complimentary');
         if ($reason===self::FEATURE_OFF) {
             return 'Not sent: '.(['renew'=>'Renewals','transfer'=>'Transfers','register'=>'Registrations'][$op->action]??'Changes').' off for this account';
@@ -83,6 +84,19 @@ final class Labels
             if($cache->get($key)==='live'){return 'Not sent: our daily call cap reached';}
         }
         return $reason===RequestStatus::UNCONFIRMED?(ManagementEvidence::outcome($op)??$reason):$reason;
+    }
+    /** "Put on hold by <name>" for a staff hold whose history saved a name; null otherwise. The request reason and the domain header both read it. */
+    public static function staffHold(\Paymenter\Extensions\Servers\Domains\Models\Operation $op): ?string
+    { return $op->state==='held'&&$op->safe_code==='staff_review_required'&&($by=self::holdActor($op))!==null?'Put on hold by '.$by:null; }
+    /** The stored display name on the latest hold in the request's staff history. Like StaffReviewHistory, actor_id is never resolved for display. */
+    private static function holdActor(\Paymenter\Extensions\Servers\Domains\Models\Operation $op): ?string
+    {
+        try { $history=$op->policy['staff_actions']??[]; } catch (\Throwable) { return null; }
+        if (!is_array($history)) { return null; }
+        foreach (array_reverse($history) as $entry) {
+            if (is_array($entry)&&($entry['action']??null)==='hold') { $name=$entry['actor_name']??null; return is_string($name)&&trim($name)!==''?trim($name):null; }
+        }
+        return null;
     }
     /** Details the registrar did not take as ordered, from the attempt and later reads. */
     private static function corrections(\Paymenter\Extensions\Servers\Domains\Models\Operation $op): string
@@ -136,6 +150,7 @@ final class Labels
             'registration_correction_required'=>'Not sent: contact details need fixing','registration_evidence_required'=>'Not sent: contact details need fixing',
             'transfer_setup_review_required'=>'Not sent: registrar account not set up','contacts_closed_unsent'=>'Cancelled before sending',
             'renewal_cancelled_unpaid'=>'Renewal cancelled: not paid','management_retired'=>'Cancelled',
+            'management_preparation_failed'=>RequestStatus::UNSENT.' Preparation failed. The customer can try again.',
             'management_unconfirmed'=>RequestStatus::UNCONFIRMED,'management_provider_refused'=>\Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus::REFUSED.' The customer can try again.',
             'management_deferred'=>null,'readback_confirmed'=>null,
             'auth_email_accepted'=>'Auth code email sent','actual_charge_changed'=>'Registrar charged a different amount',
@@ -153,7 +168,7 @@ final class Labels
             'registrar_balance_insufficient'=>'Not sent: registrar balance is too low. Add funds.','registry_details_unsupported'=>'Not sent: registry needs extra details',
             'renewal_funding_or_authority'=>'Not sent: renewal settings changed. Check the domain.','renewal_cost_overrun'=>'Not sent: cost above limit',
             'target_changed'=>'Not sent: domain status changed','term'=>'Not sent: term not supported','balance'=>'Not sent: low registrar balance',
-            'acquisition_cancelled_unpaid'=>'Order cancelled: not paid','registration_adopted'=>'Imported',
+            'cancelled'=>'Cancelled','acquisition_cancelled_unpaid'=>'Order cancelled: not paid','registration_adopted'=>'Imported',
             'registration_managed'=>null,'ready'=>null,
             'expiry_unknown'=>'Expiry missing at the registry','no_coverage'=>'No public registry for this TLD',
             'not_registered'=>'No registry record found','deadline'=>'Public check timed out',

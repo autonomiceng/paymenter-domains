@@ -8,6 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview;
 /** Plain text only. Policy is already loaded and its append-only history is capped at 100 entries. */
 final class StaffReviewHistory
 {
+    public const SENT = 'Sent to registrar';
     /** History rows in recorded order: time ("M j, Y H:i UTC" or null for Missing), event, reason sub-line and who.
      * Null when the saved history can't be read. A check's request and result phases show as one row. */
     public static function rows(Operation $op, ?StaffGrants $grants = null): ?array
@@ -27,7 +28,7 @@ final class StaffReviewHistory
                 'recheck'=>$phase==='read_failed'?'Status check failed':($phase==='read_requested'?'Status check requested':(isset($entry['check'])?\Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::words($entry['check'])['title']:'Status check finished')),
                 'resume_reads'=>'Status checks restarted', 'resume_observation'=>'Sync resumed',
                 'disposition'=>'Request closed', 'refund'=>'Cancelled',
-                'credit'=>'Refund checked', 'replacement'=>'Renewal invoice reissued', 'engine_hold'=>'Back on hold',
+                'credit'=>$op->funding_basis==='complimentary'?'Order closed':'Refund checked', 'replacement'=>'Renewal invoice reissued', 'engine_hold'=>'Back on hold',
                 default=>'Staff action',
             };
             $date=null; $at=$entry['at']??null;
@@ -66,7 +67,7 @@ final class StaffReviewHistory
         try { $a=$op->attempt??[]; } catch (\Throwable) { $a=[]; }
         $send=$a['transfer_terminal']['send_state']??$a['execution']['send_state']??$a['send_state']??null;
         if($send==='definitely_unsent'){return null;}
-        return $send==='sent'||in_array($op->state,['pending','succeeded'],true)?'Sent to registrar':RequestStatus::STATES['uncertain'][1];
+        return $send==='sent'||in_array($op->state,['pending','succeeded'],true)?self::SENT:RequestStatus::STATES['uncertain'][1];
     }
     public static function time(?\DateTimeInterface $at): ?string
     { return $at?\DateTimeImmutable::createFromInterface($at)->setTimezone(new \DateTimeZone('UTC'))->format('M j, Y H:i').' UTC':null; }

@@ -169,7 +169,7 @@ same(false,isset(DomainFacts::for($cases['past expiry'][0]->fresh())['Next invoi
 $d=$row('active',null,null,null,730); $paid=Invoice::withoutEvents(fn()=>Invoice::create(['user_id'=>$d->user_id,'currency_code'=>'USD','status'=>'paid','due_at'=>now()]));
 $stopped=$request($d,'renew','queued',[...$sent($d),'invoice_id'=>$paid->id]); $members['active'][]=$d->id;
 Account::where('server_id',$stopped->server_id)->update(['processing_enabled'=>false]);
-same('Not sent. Orders are off for this account. Turn Orders on in Registrars. Check request #'.$stopped->id.'.',DomainFacts::status($d->fresh())['step'],'Queued renewal says Orders are off on the domain');
+same('Not sent. Orders are off for this account. Turn them on in Registrars.',DomainFacts::status($d->fresh())['step'],'Queued renewal says Orders are off on the domain: '.DomainFacts::status($d->fresh())['step']);
 same('Not sent. Orders are off for this account.',RequestFacts::reason($stopped->fresh()),'Queued renewal says Orders are off on the request');
 Account::where('server_id',$stopped->server_id)->update(['processing_enabled'=>true]);
 // An inspection closes only what is proven cleared, and the alert never flips while a fix moves along.
@@ -304,7 +304,7 @@ $columns=$page->instance()->getTable()->getColumns(); $records=$page->instance()
 foreach ([$offTransfer,$offChange] as $d) {
     $op=$d->operations()->sole(); $line=RequestFacts::status($op); $status=DomainFacts::status($d->fresh());
     same('Under review',$line['label'],'The request reads its domain\'s word');
-    $read=['Under review',rtrim((string)$line['reason'],'.').'. Check request #'.$op->id.'.'];
+    $read=['Under review',rtrim((string)$line['reason'],'.').'.'.($op->state==='queued'?RequestFacts::ordersStep($line['reason']):' Check request #'.$op->id.'.')];
     same($read,[$status['label'],DomainFacts::statusLine($status)],'The heading keeps the customer word, then the request');
     same($read,[$columns['status']->record($records[$d->id])->getState(),$columns['note']->record($records[$d->id])->getState()],'The list reads as its request');
 }
@@ -315,4 +315,12 @@ same(['On hold','warning'],[DomainFacts::status($pol)['label'],DomainFacts::stat
 same(['Under review','info'],array_slice(array_values(\Paymenter\Extensions\Servers\Domains\Presentation\StatusPill::of('registration_held')),0,2),'Customer domain stays Under review in blue');
 expect(\Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::status(Operation::query(),['on_hold'])->whereKey($polOp->id)->exists(),'Staff On hold filter includes registration hold');
 expect(!\Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::status(Operation::query(),['under_review'])->whereKey($polOp->id)->exists(),'Staff Under review filter excludes registration hold');
+// A transfer held by staff uses the same status/filter and retained actor as a registration hold.
+$staffTransfer=$row('transfer_pending','transfer','held','staff_review_required');$heldOp=$staffTransfer->operations()->sole();
+$heldOp->update(['policy'=>['staff_actions'=>[['action'=>'hold','phase'=>'completed','actor_name'=>'Saved Operator','at'=>date(DATE_ATOM)]]]]);
+$heldOp=$heldOp->fresh();
+same('On hold',RequestFacts::status($heldOp)['label'],'Staff-held transfer shares On hold');
+expect(\Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::status(Operation::query(),['on_hold'])->whereKey($heldOp->id)->exists(),'Held-transfer filter matches presentation');
+same('Put on hold by Saved Operator',Labels::requestStatus($heldOp)['reason'],'Retained hold names its recorded actor');
+Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$staffTransfer->id])->assertSee('On hold')->assertSee('Saved Operator');
 $nativeSuccessful=true; echo "Staff domain status: customer words and one next step per row.\n";

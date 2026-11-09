@@ -98,10 +98,12 @@ class ViewOperation extends ViewRecord
             self::entry('Domain',$op->domain?->domain,url:$op->domain?self::url(fn()=>DomainResource::getUrl('view',['record'=>$op->domain_id])):null,cause:'Domain not found'),
             self::entry('Type',Labels::action($op->action)),
             self::entry('Registrar account',$account['value'],sub:$account['sub'],url:$setup,demo:$account['account']&&DemoData::is($account['account'])),
-            self::entry('Created',self::time($op->created_at),cause:RequestFacts::NO_TIME,at:$op->created_at),
         ];
-        // Sent to registrar is hidden while the request has not been sent.
-        if (($op->started_at || in_array($op->state,['running','pending','uncertain','succeeded'],true)) && ($sent=StaffReviewHistory::sendEvent($op))) { $rows[]=self::entry($sent,self::time($op->started_at),cause:RequestFacts::NO_TIME,at:$op->started_at); }
+        // History opens with Request created and its time, so Details says it only when History can't be read.
+        $history=StaffReviewHistory::rows($op,$grants);
+        if ($history===null) { $rows[]=self::entry('Created',self::time($op->created_at),cause:RequestFacts::NO_TIME,at:$op->created_at); }
+        // Sent to registrar is hidden while the request has not been sent. An unsure send is History's to say, once.
+        if (($op->started_at || in_array($op->state,['running','pending','uncertain','succeeded'],true)) && StaffReviewHistory::sendEvent($op)===StaffReviewHistory::SENT) { $rows[]=self::entry(StaffReviewHistory::SENT,self::time($op->started_at),cause:RequestFacts::NO_TIME,at:$op->started_at); }
         if (!($facts['unreadable']??false)) {
             if (isset($facts['registrar_reply'])) { $rows[]=self::entry('Registrar reply',$facts['registrar_reply']); }
             elseif (isset($facts['send_failure'])) { $rows[]=self::entry('Registrar reply',$facts['send_failure']); }
@@ -117,7 +119,7 @@ class ViewOperation extends ViewRecord
             }
         }
         $components[]=Sheet::section('Details',$rows);
-        return $schema->components([Sheet::split($components,[$this->history($op,StaffReviewHistory::rows($op,$grants))])]);
+        return $schema->components([Sheet::split($components,[$this->history($op,$history)])]);
     }
     /** The rail: what happened, newest first. The newest step carries the request's state. */
     private function history(Operation $op, ?array $rows): Section
@@ -141,6 +143,8 @@ class ViewOperation extends ViewRecord
         $acts=(bool)$action?->isVisible();
         $answer=$this->getAction('enom_answer',false);$answers=(bool)$answer?->isVisible();
         if ($link&&$link[1]) { $buttons[]=view('filament::components.button.index',['tag'=>'a','href'=>$link[1],'color'=>$acts||$answers?'gray':'primary','size'=>'sm','slot'=>new HtmlString(e($link[0]))])->render(); }
+        // When the notice's step is the registrar's answer, that button leads and Check status follows.
+        if ($answers&&($notice['primary']??null)==='enom_answer') { $buttons[]=$answer->color('primary')->size('sm')->toHtml(); $answers=false; if($acts){$buttons[]=Sheet::button($action)->toHtml();$acts=false;} }
         if ($acts) { $buttons[]=$action->color('primary')->size('sm')->toHtml(); }
         if ($answers) { $buttons[]=($acts?Sheet::button($answer):$answer->color('primary')->size('sm'))->toHtml(); }
         return Callout::make($notice['title'])->description($notice['body']??null)->status($notice['tone'])->columnSpanFull()

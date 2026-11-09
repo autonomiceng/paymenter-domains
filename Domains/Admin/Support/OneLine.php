@@ -10,12 +10,14 @@ use Illuminate\Contracts\Support\Htmlable;
  */
 final class OneLine
 {
-    /** A domain name: 24rem of mono. */
-    public const NAME=['domains-name-cell',38];
+    /** A domain name: 16rem of mono. */
+    public const NAME=['domains-name-cell',30];
     /** A person or account: 11rem. */
     public const SHORT=['domains-cut',18];
     /** A note or a longer name: 24rem. */
     public const LINE=['domains-line',44];
+    /** A list Note: 13rem, so the list's default columns fit inside its card at 1440px. */
+    public const NOTE=['domains-line domains-list-note',28];
     /** @param array{0:string,1:int} $kind */
     public static function apply(TextColumn $column, array $kind=self::LINE): TextColumn
     { return $column->tooltip(fn($state,TextColumn $column)=>self::tip(trim(self::text($state).' '.$column->getDescriptionBelow()),$kind[1]))->extraAttributes(['class'=>$kind[0]],merge:true); }

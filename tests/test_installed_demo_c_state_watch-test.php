@@ -2,7 +2,7 @@
 // Real encrypted WatchName relations and staff facts; no network or full list fixture is needed.
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require __DIR__.'/Support/watch-notices.php';
+require __DIR__.'/Support/watch-notices.php';require __DIR__.'/Support/storefront.php';
 use Illuminate\Support\Facades\Auth;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,WatchFacts};
 use Paymenter\Extensions\Servers\Domains\Models\WatchName;
@@ -11,6 +11,12 @@ $resource=\Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileRe
 $panel=\Filament\Facades\Filament::getCurrentPanel();$panel->resources([$resource]);
 \Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(fn()=>$resource::registerRoutes($panel));app('router')->getRoutes()->refreshNameLookups();
 $w=WatchName::findOrFail($id);$failures=[];
+$paused=clone $w;$paused->state='paused';$public=new \Paymenter\Extensions\Servers\Domains\Models\WatchDnsObservation(['check_kind'=>'points','started_at'=>1700000000,'completed_at'=>1700000001,'result'=>'complete','partial'=>false,'valid_until'=>1700000300,'facts'=>['queries'=>[]]]);
+$paused->setRelation('points',$public);
+$facts=WatchFacts::for($paused,['keys'=>[],'summary'=>null]);
+expect(isset($facts['Evidence']['Public DNS']),'Paused empty answers retain Public DNS evidence row');
+expect(str_contains((string)$facts['Evidence']['Public DNS']['sub'],'2023-11-14'),'The evidence row keeps its own public observation instant');
+
 foreach(['active','paused','retired'] as $state){
     $probe=clone $w;$probe->state=$state;$facts=WatchFacts::for($probe,['keys'=>[],'summary'=>null]);$encoded=json_encode($facts);
     $expected=match($state){'paused'=>'Paused','retired'=>'Monitoring stopped; no further checks',default=>'Fills in by itself after the next check'};
@@ -28,7 +34,8 @@ foreach(['paused'=>'Paused','retired'=>'Stopped']as$state=>$expected){
  $list=\Livewire\Livewire::test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\ListWatches::class);
  $record=$w->fresh();
  same($expected,$list->instance()->getTable()->getColumn('status')->record($record)->getState(),'The row names its monitoring state');
- $list->assertSee($expected);
+ $rowDom=storefrontDom($list->html());$nativeRow=$rowDom->query('//*[@*[name()="wire:key" and contains(.,".table.records.'.$id.'")]]')->item(0);
+ expect($nativeRow!==null&&str_contains($nativeRow->textContent,$expected),'The rendered row badge contains its state, independent of the filter options');
  foreach(['registration','delegation.dns','last_check']as$name){$column=$list->instance()->getTable()->getColumn($name)->record($record);
   // Status says Paused or Stopped once per row (ui-r15); the fact cells stay empty instead of repeating it.
   if(filled($column->getState())){$failures[]=$state.' '.$name.' still has Missing or repeats the row state';}
