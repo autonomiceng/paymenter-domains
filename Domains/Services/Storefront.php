@@ -61,7 +61,7 @@ class Storefront
             $mapping = $this->native->mapping($product);
             if ($mapping === null) { return ['plans'=>collect(), 'failed'=>false, 'persistent'=>false]; }
             $ending = $mapping['tld']->tld;
-            $offers = ($this->catalogue() ?? throw new \DomainException('Catalogue unavailable.'))->display([$ending]);
+            $offers = ($this->catalogue() ?? throw new \DomainException(OfferUpgrade::MESSAGE))->display([$ending]);
             $plans = collect($offers[$ending] ?? [])
                 ->filter(static fn ($offer) => $offer['product']->id === $product->id)
                 ->pluck('plan')->sortBy('billing_period')->values();

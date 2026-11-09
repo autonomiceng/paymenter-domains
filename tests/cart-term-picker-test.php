@@ -45,18 +45,36 @@ $case('read failure and retry',static function()use($broken,$render,$item):void{
     foreach(range(1,2)as$unused){$x=$render();expect(str_contains($x->evaluate('string(//body)'),'Reload this page to try again'),'Read failure is a retry state');same(1,$x->query('//button[@type="submit"][@disabled]')->length,'Failed read cannot submit');
         same(0,$x->query('//select[@name="term"]/option')->length,'Failed read asks for no replacement year');}
     same([['product_id'=>(int)$item->product_id,'cause'=>'unclassified']],$logs,'Diagnostic is bounded and contains no exception or customer details');
-    // Invalid saved upgrade state survives a reload: it gets support guidance and its own allowlisted cause.
+    // Saved upgrade state that a reload cannot repair, and a retained install still waiting for its upgrade, get
+    // support guidance and their own allowlisted cause. Each specialized state is encrypted and well formed, so the
+    // picker reaches its own check rather than the general one.
     $gate=Illuminate\Support\Facades\DB::table('settings')->whereNull('settingable_type')->whereNull('settingable_id')->where('key',Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::KEY);
     $saved=(clone $gate)->get();expect($saved->count()===1,'Fixture has one saved upgrade state');
-    (clone $gate)->update(['value'=>'Synthetic private damaged state','encrypted'=>false]);$broken->saved=true;
+    $generation=Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::generation();$hex=str_repeat('a',64);
+    $sealed=static fn(array $state)=>Illuminate\Support\Facades\Crypt::encryptString(json_encode($state,JSON_THROW_ON_ERROR));
+    $states=['catalogue_upgrade_state_invalid'=>['Synthetic private damaged state',false],
+        'catalogue_contract_invalid'=>[$sealed(['state'=>'active','generation'=>$generation,'contract'=>'Synthetic private contract','digest'=>$hex]),true],
+        'initialization_intent_invalid'=>[$sealed(['state'=>'initializing','generation'=>$generation,'intent'=>str_repeat('b',32),'manifest'=>'Synthetic private manifest']),true],
+        'catalogue_upgrade_required'=>[$sealed(['state'=>'legacy','generation'=>$generation+1]),true]];
+    // Tickets off: the link must be the configured contact, inside the failure sentence itself.
+    $support=[config('settings.tickets_disabled'),config('domains.support_url')];
+    config(['settings.tickets_disabled'=>true,'domains.support_url'=>'https://help.example.test/picker']);$broken->saved=true;
     try{
-        foreach(range(1,2)as$unused){$x=$render();$text=$x->evaluate('string(//body)');
-            expect(str_contains($text,'reloading this page will not fix it')&&!str_contains($text,'Reload this page to try again'),'Invalid saved state is not a retry state');
-            same(0,$x->query('//select[@name="term"]/option')->length,'Invalid saved state asks for no replacement year');
-            same(1,$x->query('//button[@type="submit"][@disabled]')->length,'Invalid saved state cannot submit');
-            expect(!str_contains($text,'Synthetic private'),'No saved state text reaches the customer');}
-    }finally{(clone $gate)->update(['value'=>$saved[0]->value,'encrypted'=>$saved[0]->encrypted]);$broken->saved=false;}
-    same([['product_id'=>(int)$item->product_id,'cause'=>'unclassified'],['product_id'=>(int)$item->product_id,'cause'=>'catalogue_upgrade_state_invalid']],$logs,'Invalid saved state logs its allowlisted cause once, with no private text');
+        foreach($states as $cause=>[$value,$encrypted]){
+            (clone $gate)->update(['value'=>$value,'encrypted'=>$encrypted]);
+            try{
+                foreach(range(1,2)as$unused){$x=$render();$text=$x->evaluate('string(//body)');
+                    expect(str_contains($text,'reloading this page will not fix it')&&!str_contains($text,'Reload this page to try again'),'Not a retry state: '.$cause);
+                    same(0,$x->query('//select[@name="term"]/option')->length,'Asks for no replacement year: '.$cause);
+                    same(1,$x->query('//button[@type="submit"][@disabled]')->length,'Cannot submit: '.$cause);
+                    expect(!str_contains($text,'Synthetic private'),'No saved state text reaches the customer: '.$cause);
+                    $status=$x->query('//p[@role="status"][contains(.,"reloading this page will not fix it")]');same(1,$status->length,'One persistent failure sentence: '.$cause);
+                    same(['https://help.example.test/picker'],array_map(static fn($a)=>$a->getAttribute('href'),iterator_to_array($x->query('.//a[normalize-space()="Contact support"]',$status->item(0)))),'The failure sentence links the configured support contact: '.$cause);}
+            }finally{(clone $gate)->update(['value'=>$saved[0]->value,'encrypted'=>$saved[0]->encrypted]);}
+        }
+    }finally{$broken->saved=false;config(['settings.tickets_disabled'=>$support[0],'domains.support_url'=>$support[1]]);}
+    same((clone $gate)->get()->map(static fn($row)=>(array)$row)->all(),$saved->map(static fn($row)=>(array)$row)->all(),'Each saved upgrade state fixture is restored');
+    same([['product_id'=>(int)$item->product_id,'cause'=>'unclassified'],...array_map(static fn($cause)=>['product_id'=>(int)$item->product_id,'cause'=>$cause],array_keys($states))],$logs,'Each saved state logs its allowlisted cause once over repeat renders, with no private text');
     $cache=Illuminate\Support\Facades\Cache::getFacadeRoot();$log=Illuminate\Support\Facades\Log::getFacadeRoot();
     $mockCache=Mockery::mock();$mockCache->shouldReceive('add')->once()->andReturn(true);Illuminate\Support\Facades\Cache::swap($mockCache);
     $mockLog=Mockery::mock(Psr\Log\LoggerInterface::class);$mockLog->shouldReceive('warning')->once()->andThrow(new RuntimeException('Synthetic logger failure'));Illuminate\Support\Facades\Log::swap($mockLog);

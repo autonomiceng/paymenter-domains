@@ -97,7 +97,12 @@ final class CartCheckoutRefresh
             try{
                 $cart=NativeCart::get();
                 if((int)$cart->id!==$before['cart']||(int)$cart->user_id!==$before['user']){return;}
-                if(!array_diff($before['ids'],$cart->items()->pluck('id')->all())){return;}
+                $now=$cart->items()->pluck('id')->all();
+                if(!array_diff($before['ids'],$now)){return;}
+                // The native reload starts from an empty line list, so a failed reload looks like a smaller cart.
+                // Recover only a gateway lookup failure after the lines reloaded; keep any other error.
+                $loaded=array_map('intval',NativeCart::items()->modelKeys());$now=array_map('intval',$now);sort($loaded);sort($now);
+                if($loaded!==$now||!self::gatewayLookup($error)){return;}
                 // Cart checkout never reads the gateway list; the next mount or checkout recalculates it.
                 $component->total=self::cartTotal();
             }catch(\Throwable){return;/* Keep the original native exception; no deletion or checkout retry. */}
@@ -169,6 +174,14 @@ final class CartCheckoutRefresh
         }
         $component->dispatch('cartUpdated');
         CartNotice::set($component, 'Domain removed', $removed->getMessage(), $removed->getMessage(), 'warning', $removed->names);
+    }
+
+    private static function gatewayLookup(\Throwable $error): bool
+    {
+        foreach ($error->getTrace() as $frame) {
+            if (($frame['class'] ?? null) === ExtensionHelper::class && ($frame['function'] ?? null) === 'getCheckoutGateways') { return true; }
+        }
+        return false;
     }
 
     private static function shownKey(): string
