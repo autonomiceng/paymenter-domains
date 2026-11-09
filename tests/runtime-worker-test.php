@@ -40,6 +40,28 @@ foreach(Domain::orderBy('id')->get() as $i=>$d){
     $ports->operation($op);same('awaiting_payment',$op->fresh()->state,'Unpaid job cannot permanently hold acquisition');
     $settingWriter=new StaffSettingsWrites($native,$sellers,$bindings);$bindings->setProcessing($a->server_id,false);
     config(['cache.default'=>'database','session.driver'=>'database','queue.default'=>'database','queue.connections.database.retry_after'=>900]);
+    if($b->registrarKey==='namesilo'){
+        // Each Orders prerequisite has its own words, on the Off row and in the refusal toast. Staff read the row.
+        $priorUser=Illuminate\Support\Facades\Auth::user();Illuminate\Support\Facades\Auth::setUser($staff);
+        $ordersStep=static fn()=>array_column(\Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup($a->fresh(),['label'=>'Active','reason'=>null]),null,'label')['Orders']['cause'];
+        $ordersToast=static fn()=>\Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions::refusal(new DomainException('Runtime acceptance and shared workers are required.'),'processing',[],(int)$a->server_id);
+        foreach([[['cache.default'=>'array'],'Use a shared cache (database, Redis or Memcached), then try Orders again.'],
+            [['session.driver'=>'array'],'Use shared sessions (database, Redis or Memcached), then try Orders again.'],
+            [['queue.default'=>'sync'],'Use a background queue (database or Redis), then start the queue worker.'],
+            [['queue.connections.database.retry_after'=>899],'Set the queue retry time to at least 900 seconds, then restart the queue worker.']] as [$unsupported,$words]){
+            config($unsupported);same([$words,$words],[$ordersStep(),$ordersToast()],'Orders names its own setup step: '.$words);config(['cache.default'=>'database','session.driver'=>'database','queue.default'=>'database','queue.connections.database.retry_after'=>900]);
+        }
+        same(['Ready. Turn on Orders.','Orders setup changed. Reopen Orders and try again.'],[$ordersStep(),$ordersToast()],'A ready account says so, and a refusal after setup changed asks to reopen Orders');
+        // A runtime that can't be built has its own words. Orders On has no next step, so it builds the runtime once fewer.
+        $built=0;$broken=new RuntimePorts;$broken->register($b->fingerprint,static function()use(&$built){$built++;throw new RuntimeException('Synthetic broken composition');});
+        app()->instance(RuntimePorts::class,$broken);$runtimeWords='The order runtime is not ready for this account. See Site setup in System checks.';
+        same([$runtimeWords,$runtimeWords],[$ordersStep(),$ordersToast()],'Orders names a runtime that cannot be built');
+        $built=0;$ordersStep();$offBuilds=$built;
+        DB::table('domains_accounts')->where('id',$a->id)->update(['processing_enabled'=>true]);
+        $built=0;same(null,$ordersStep(),'Orders On has no next step');same($offBuilds-1,$built,'Orders On skips the setup checks that build the runtime');
+        DB::table('domains_accounts')->where('id',$a->id)->update(['processing_enabled'=>false]);app()->instance(RuntimePorts::class,$ports);unset($broken);
+        $priorUser?Illuminate\Support\Facades\Auth::setUser($priorUser):Illuminate\Support\Facades\Auth::forgetUser();
+    }
     $processingReview=static function()use($staff,$a):Review{$stamp=Review::stamp($a->server_id,null);return new Review($staff->id,$a->server_id,null,'processing',Review::ticket($staff->id,$a->server_id,null,'processing',$stamp),'Reject unsupported runtime settings');};
     foreach([
         ['cache.default'=>'array'],['session.driver'=>'array'],['queue.default'=>'sync'],['queue.connections.database.retry_after'=>899],
