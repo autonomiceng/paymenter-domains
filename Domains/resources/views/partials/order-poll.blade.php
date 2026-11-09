@@ -11,9 +11,12 @@
     const first = 10000, longest = 60000, limited = 300000;
     const loaded = Date.now();
     let timer = null, stopped = false, reading = false, pace = first;
+    // A saved next read later than the longest wait is damaged and is ignored, so it can never stop this tab reading.
     const saved = () => {
-        try { const value = JSON.parse(window.localStorage.getItem(key) || 'null'); return value && typeof value.next === 'number' ? value : null; }
-        catch (_) { return null; }
+        try {
+            const value = JSON.parse(window.localStorage.getItem(key) || 'null');
+            return value && Number.isFinite(value.next) && value.next <= Date.now() + limited ? value : null;
+        } catch (_) { return null; }
     };
     const save = value => { try { window.localStorage.setItem(key, JSON.stringify(value)); } catch (_) { /* This tab still reads on its own. */ } };
     const later = wait => { window.clearTimeout(timer); timer = window.setTimeout(poll, wait); };
@@ -57,7 +60,7 @@
         const shared = saved(), now = Date.now();
         if (shared && changed(shared)) { reload(); return null; }
         if (shared && shared.next > now) { later(shared.next - now); return null; }
-        const delay = Math.min(Math.max(shared?.delay || first, pace), longest);
+        const delay = Math.min(Math.max(Number.isFinite(shared?.delay) ? shared.delay : first, pace), longest);
         const grown = pace = Math.min(Math.round(delay * 1.5), longest);
         save({...(shared || {}), next: now + delay, delay});
         return grown;
@@ -66,7 +69,8 @@
         let wait = grown;
         try {
             const {response, current} = await bounded(request);
-            if ([401, 403, 404, 419].includes(response.status) || response.redirected) { stopped = true; return; }
+            // Lost access and other refused reads stop reading. A request timeout (408) and a rate limit (429) are retried later.
+            if (response.redirected || (response.status >= 400 && response.status < 500 && ![408, 429].includes(response.status))) { stopped = true; return; }
             if (response.status === 429) {
                 const after = Number(response.headers?.get('Retry-After'));
                 wait = Math.min(Math.max(Number.isFinite(after) ? after * 1000 : 0, grown), limited);
