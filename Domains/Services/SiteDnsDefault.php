@@ -121,9 +121,9 @@ final class SiteDnsDefault
         if(!Schema::hasTable(PublicDnsQuota::TABLE) || !Schema::hasTable('domains_watch_schedule')){return;}
         $inherited=$inherited||$profileId===null;
         $watch=WatchName::where('state','active')->where(fn($q)=>$q->where('ns_profile_id',$profileId)->when($inherited,fn($q)=>$q->orWhereNull('ns_profile_id')))->exists();
-        $managed=Schema::hasTable('domains_managed_public_config') && \Paymenter\Extensions\Servers\Domains\Models\ManagedPublicConfig::where(fn($q)=>$q->where('profile_id',$profileId)->when($inherited,fn($q)=>$q->orWhereNull('profile_id')))->exists();
-        // A site-wide change must also discover managed targets without an explicit config row.
-        $managed=$managed||$inherited;
+        // A site-wide change also discovers eligible holdings without a config row; none means no sweep.
+        $managed=Schema::hasTable('domains_managed_public_config') && ManagedDnsSetup::eligible(time())->when(!$inherited,fn($q)=>$q->whereExists(fn($c)=>$c->selectRaw('1')
+            ->from('domains_managed_public_config as c')->whereColumn('c.domain_id','domains_domains.id')->where('c.profile_id',$profileId)))->exists();
         if(!$watch&&!$managed){return;}
         if($managed){ManagedPublicReconciliation::restart();}
         if($watch){DB::transaction(static function()use($profileId,$inherited):void {

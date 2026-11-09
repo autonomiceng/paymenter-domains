@@ -4,13 +4,18 @@ declare(strict_types=1);
 require __DIR__.'/Support/managed-public.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\{WatchProfile,ManagedPublicConfig};
-use Paymenter\Extensions\Servers\Domains\Services\{SiteDnsDefault,ManagedDnsSetup,ManagedPublicTarget,ManagedPublicReconciliation,ManagedPublicWorkSchema};
+use Paymenter\Extensions\Servers\Domains\Services\{SiteDnsDefault,ManagedDnsSetup,ManagedPublicTarget,ManagedPublicReconciliation,ManagedPublicWorkSchema,PublicDnsQuota};
 // Real holding/native-service fixture is required: enrollment checks immutable account and ownership evidence.
 extract(managedFixture(hosting:false));$id=(int)$d->id;$uid=(int)$owner->id;$now=$time->now;
 $default=DB::transaction(fn()=>WatchProfile::create(['name'=>'Deployment default','nameservers'=>['ns1.deployment.test','ns2.deployment.test'],
     'website_endpoints'=>[],'email_endpoints'=>[],'enabled'=>true,'edited_by'=>$staff->id,'reason'=>'Synthetic site policy']));
 $manager=staffUser(['admin.domains.view','admin.domains.manage-policy','admin.domains.settings.new_domain_dns',\Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites::VIEW,\Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites::MANAGE]);
+// A site default change still discovers an eligible holding that has no config row yet.
+DB::table('domains_managed_public_config')->where('domain_id',$id)->delete();
+$pool=fn()=>array_map('intval',array_values((array)DB::table(PublicDnsQuota::TABLE)->where('id',1)->select('sweep_due_at','sweep_cursor')->first()));
+PublicDnsQuota::seed($now);DB::table(PublicDnsQuota::TABLE)->where('id',1)->update(['sweep_due_at'=>$now+86400,'sweep_cursor'=>$id]);
 SiteDnsDefault::save($manager,$default->id);
+same([0,0],$pool(),'A site default change sweeps an eligible holding without a config row');
 same(0,ManagedDnsSetup::affected($now)->count(),'All eligible holdings inherit the site default before reconciliation');
 expect($signals->enqueue($id,$uid,$now),'Existing holding reconciles using the site reference');
 same($default->id,ManagedDnsSetup::profile($d,ManagedPublicConfig::find($id))->id,'Managed target resolves site reference');
@@ -34,4 +39,8 @@ app(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class)->boot();
 DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',$id)->delete();
 $d->fresh()->update(['status'=>'grace']);
 same(1,DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',$id)->count(),'Holding attachment event enrolls local DNS work before daily sweep');
+// Expired-only inventory: a site-wide refresh starts no managed sweep.
+DB::table('domains_domains')->where('id',$id)->update(['status'=>'expired']);
+DB::table(PublicDnsQuota::TABLE)->where('id',1)->update(['sweep_due_at'=>$now+86400,'sweep_cursor'=>$id]);
+SiteDnsDefault::reconcile();same([$now+86400,$id],$pool(),'An expired-only inventory starts no managed sweep');
 $nativeSuccessful=true;echo "Managed site DNS reference passed.\n";

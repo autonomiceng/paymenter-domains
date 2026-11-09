@@ -5,7 +5,7 @@ require __DIR__.'/Support/watch-dns.php';
 require __DIR__.'/Support/FakeDnsReader.php';
 use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Models\{WatchName,WatchProfile};
-use Paymenter\Extensions\Servers\Domains\Services\{SiteDnsDefault,WatchDnsChecks,WatchWork,WatchDiscoveryWork};
+use Paymenter\Extensions\Servers\Domains\Services\{SiteDnsDefault,WatchDnsChecks,WatchWork,WatchDiscoveryWork,PublicDnsQuota};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeDnsReader;
 // Native after-commit hooks and the durable enrollment cursor determine whether a real read can start.
 config(['domains.site_dns_default.nameservers'=>['ns1.beco.test','ns2.beco.test']]);extract(dnsFixture());
@@ -60,6 +60,10 @@ $work->reconcileDefaults();$cursor=(int)(clone $schedule)->value('cursor');expec
 SiteDnsDefault::reconcile();$work->reconcileDefaults();same($cursor,(int)(clone $schedule)->value('cursor'),'Native enrollment advances a full batch from saved JSON text');
 $work->reconcileDefaults();same(0,(int)(clone $schedule)->value('cursor'),'Native enrollment reaches the final watch and completes the sweep');
 same([],$reader->calls,'Enrollment cursor proof sends no DNS requests');
+// Without eligible managed holdings a site-wide refresh starts no managed sweep.
+PublicDnsQuota::seed($now);DB::table(PublicDnsQuota::TABLE)->where('id',1)->update(['sweep_due_at'=>$now+86400,'sweep_cursor'=>7]);
+SiteDnsDefault::reconcile();
+same([$now+86400,7],array_map('intval',array_values((array)DB::table(PublicDnsQuota::TABLE)->where('id',1)->select('sweep_due_at','sweep_cursor')->first())),'A default refresh with no eligible managed holdings leaves the managed sweep alone');
 // Compile the actual installer through Laravel's MySQL grammar for the disposable database proof.
 $nativeSchema=Schema::getFacadeRoot();$mysql=new \Illuminate\Database\MySqlConnection(DB::connection()->getPdo(),'watch_schedule_proof');
 try{
