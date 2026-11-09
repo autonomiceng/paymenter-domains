@@ -228,7 +228,7 @@ final class Labels
         $code=is_string($value) && strlen($value) <= 64 && preg_match('/^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/D', $value) ? ' ('.$value.')' : '';
         return \Paymenter\Extensions\Servers\Domains\Presentation\Missing::LABEL.$code.'. Check the request history.';
     }
-    public static function flag(mixed $value): string { return match ($value) { true=>'Yes', false=>'No', default=>'Missing' }; }
+    public static function flag(mixed $value): string { return Facts::flag($value,'Yes','No')??'Missing'; }
     public static function money(mixed $value): string
     {
         if (!is_string($value) || !preg_match('/^\d{1,18}(?:\.\d{1,8})?$/D', $value)) { return 'Unknown'; }
