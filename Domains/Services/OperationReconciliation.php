@@ -22,8 +22,8 @@ final class OperationReconciliation
     {
         OperationClaims::outside();
         $capture = $this->claims->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($check): ?array {
-            $check->capture($op);
             if (!$this->eligible($op)) { return null; }
+            $check->capture($op);
             $watch=TransferPolling::applies($op);$now=$this->clock->now()->getTimestamp();
             $manual=$watch&&($op->policy['reconciliation']['manual_check']??false);
             if($watch&&!TransferPolling::due($op,$now)){$check->deferred='scheduled';return null;}

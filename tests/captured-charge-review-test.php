@@ -177,5 +177,15 @@ $clock->instant=$ready->modify('-5 seconds');$state->during=static function()use
 $completion->run($lagged->id);$state->during=null;
 expect(in_array(\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Orders,$state->calls,true),'The renewal read reaches the order history');
 same(['uncertain',1],[$lagged->fresh()->state,$lagged->fresh()->policy['renewal_polls']??0],'A renewal read covered by history during the read counts once');
+// A late renewal check that finds the request already complete leaves the saved result alone.
+$armed=true;
+DB::listen(static function($query)use(&$armed,$lagged):void{
+    if(!$armed||!str_contains($query->sql,'domains_operations')){return;}
+    // Another check completes the renewal after this one passed its first eligibility check.
+    $armed=false;$row=\Paymenter\Extensions\Servers\Domains\Models\Operation::find($lagged->id);
+    $row->forceFill(['state'=>'succeeded','policy'=>[...$row->policy,'status_check'=>['outcome'=>'checked','at'=>1]]])->saveQuietly();
+});
+$completion->run($lagged->id);
+same(['succeeded','checked'],[$lagged->fresh()->state,$lagged->fresh()->policy['status_check']['outcome']],'A late renewal check keeps the completed result');
 DB::transaction(fn()=>HistoryAcceptances::revokeLocked($b,Action::Renew));
 echo "Native captured-charge observation and audited approval passed\n";$nativeSuccessful=true;

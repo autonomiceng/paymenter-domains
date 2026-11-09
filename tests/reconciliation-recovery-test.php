@@ -124,6 +124,16 @@ $observation->during = static function () use ($op, $clock, $observation, $recon
 };
 $reconcile->run($op->id); same('deferred', $op->fresh()->policy['status_check']['outcome'], 'A newer check keeps its result over the older check');
 $observation->during = null; $reconcile->run($op->id); same('checked', $op->fresh()->policy['status_check']['outcome'], 'The next check saves its own result');
+// A late check that finds the request already complete leaves the saved result alone.
+[$late] = $prepare(placeholderComFixtureName('late-check-placeholder.com'), 'captured'); $armed = true;
+DB::listen(static function ($query) use (&$armed, $late): void {
+    if (!$armed || !str_contains($query->sql, 'domains_operations')) { return; }
+    // Another check completes the request after this one passed its first eligibility check.
+    $armed = false; $row = Operation::find($late->id);
+    $row->forceFill(['state' => 'succeeded', 'policy' => [...$row->policy, 'status_check' => ['outcome' => 'checked', 'at' => 1]]])->saveQuietly();
+});
+$reconcile->run($late->id);
+same(['succeeded', 'checked'], [$late->fresh()->state, $late->fresh()->policy['status_check']['outcome']], 'A late check keeps the completed result');
 // A lost reply whose order history becomes readable during the read counts that read once.
 [$lag, $binding] = $prepare(placeholderComFixtureName('history-lag-placeholder.com'), 'absent');
 HistoryAcceptances::save(new HistoryAcceptance($binding, 'America/Los_Angeles', 600, 86400, 'enom_registration_v1'));

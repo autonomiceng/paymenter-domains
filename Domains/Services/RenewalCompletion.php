@@ -22,8 +22,8 @@ final readonly class RenewalCompletion
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
         $capture = DB::transaction(function () use ($seed, $id, $check) {
             $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
-            if ($op) { $check->capture($op); }
             if (!$op || !$this->eligible($op) || self::capturedChargeHeld($op)) { return null; }
+            $check->capture($op);
             $financial=CapturedChargeReview::hasProof($op);
             $policy = $op->policy; $policy['renewal_execution'] = ['staff_alert' => true, 'reason' => ($op->policy['renewal_polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT ? 'poll_limit_reached' : 'original_attempt_unresolved', 'refundable_later' => false];
             if(!$financial){$op->update(['state' => $op->state === 'running' ? 'uncertain' : $op->state, 'lease_expires_at' => null, 'policy' => $policy]);}

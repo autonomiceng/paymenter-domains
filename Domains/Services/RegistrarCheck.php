@@ -20,7 +20,7 @@ final class RegistrarCheck
     private ?array $seen = null;
     private int $started = 0;
     private array $facts = [];
-    /** Called under the check's first lock, before any early return, so every result names its attempt. */
+    /** Called under the check's first lock, after its eligibility check and before any other early return, so every result names its attempt. */
     public function capture(Operation $op): void
     {
         $this->identity=RegistrarAnswers::identity($op);$this->seen=$op->policy['status_check']??null;$this->started=$this->clock->now()->getTimestamp();
