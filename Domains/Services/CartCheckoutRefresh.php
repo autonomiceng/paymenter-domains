@@ -87,8 +87,9 @@ final class CartCheckoutRefresh
                 OrderContact::clear(); $returnEarly();
             } catch (\Throwable $e) { OrderContact::clear(); self::unavailable($component, $e); $returnEarly(); }
         });
-        // The native deletion commits before gateway recalculation. A failure there still changes the header.
-        Livewire::listen('exception',static function($component,$error):void {
+        // The native deletion commits before gateway recalculation. A failure there still changes the header,
+        // so log it and finish this response: a failed response would drop the badge update with it.
+        Livewire::listen('exception',static function($component,$error,$stopPropagation):void {
             if($component::class!==Cart::class){return;}
             $before=\Livewire\store($component)->get('domains.removal');
             \Livewire\store($component)->set('domains.removal',null);
@@ -96,8 +97,13 @@ final class CartCheckoutRefresh
             try{
                 $cart=NativeCart::get();
                 if((int)$cart->id!==$before['cart']||(int)$cart->user_id!==$before['user']){return;}
-                if(array_diff($before['ids'],$cart->items()->pluck('id')->all())){$component->dispatch('cartUpdated');}
-            }catch(\Throwable){/* Keep the original native exception; no deletion or checkout retry. */}
+                if(!array_diff($before['ids'],$cart->items()->pluck('id')->all())){return;}
+                // Cart checkout never reads the gateway list; the next mount or checkout recalculates it.
+                $component->total=self::cartTotal();
+            }catch(\Throwable){return;/* Keep the original native exception; no deletion or checkout retry. */}
+            // The removeProduct call closure then dispatches cartUpdated once, as after a clean removal.
+            \Illuminate\Support\Facades\Log::warning('Domains cart recalculation failed after removal.', ['exception_class' => $error::class]);
+            $stopPropagation();
         });
         // Themes without the notice include keep the toast, with the same words.
         Livewire::listen('render', static function ($component, $view) use ($admission) {
