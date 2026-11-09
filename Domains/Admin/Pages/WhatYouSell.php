@@ -127,7 +127,6 @@ class WhatYouSell extends Page implements HasTable
         $this->reviewStamp=$this->account?\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCommands::stamp($this->account):'';
         $this->flushCachedTableRecords();
     }
-    private function rule(): array {return $this->reads()->rule((int)$this->account);}
     /** Accounts with nothing to list still need a way to name a TLD. */
     public function addEnding(): void
     {
@@ -193,8 +192,8 @@ class WhatYouSell extends Page implements HasTable
             Action::make('sync_now')->label('Sync prices')->color('gray')->visible(fn()=>$this->canSync()&&($all()||$this->readable()))->disabled($all)->extraAttributes($blocked)->action(fn()=>$this->syncNow()),
             SettingsActions::defaultPricing(),
             Action::make('rule')->label('Default for new TLDs')->color('gray')->visible(fn()=>$this->mayEdit()&&($all()||$this->binding()!==null))->disabled($all)->extraAttributes($blocked)->modalSubmitActionLabel('Save terms')->modalFooterActions(self::cancelFirst())
-                // Saved defaults that can't be read open empty; saving replaces them whole.
-                ->fillForm(function():array {try{$rule=$this->rule();}catch(\Throwable){return [];}return [...$rule,'sell_new'=>$rule['mode']==='only'?'no':'yes'];})->schema(fn()=>[
+                // A saved default that can't be read opens empty, and the readable ones stay; saving replaces them whole.
+                ->fillForm(function():array {try{$rule=$this->catalogue()->ruleFields((int)$this->account);}catch(\DomainException){return [];}return [...$rule,...(isset($rule['mode'])?['sell_new'=>$rule['mode']==='only'?'no':'yes']:[])];})->schema(fn()=>[
                     Radio::make('sell_new')->label('Sell new TLDs')->required()->inline()->options(['yes'=>'Yes','no'=>'No'])
                         ->hintAction(HelpHint::make("For every TLD you have not set yourself, including ones the registrar adds later. Yes: they sell, unless the row is set to Don't sell. No: only rows set to Sell are sold. To change rows, tick them and use Edit selected.")),
                     TextInput::make('max_cost')->label('Cost limit')->numeric()->minValue(0)->prefix('USD')

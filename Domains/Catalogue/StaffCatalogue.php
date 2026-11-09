@@ -209,6 +209,19 @@ final class StaffCatalogue
         $i=new Intent(...array_intersect_key($d,get_object_vars(new Intent)));
         return ['mode'=>$i->defaultSell?'except':'only','max_cost'=>$grants->costs?$i->maxAnnualCost:null,'years'=>$i->defaultLongest,'transfers'=>$i->defaultTransfers];
     }
+    /** The saved defaults one by one for the form, so one bad value leaves the others to keep. Unreadable values are left out;
+     * a missing value reads as the built-in default. The cost limit is left out for staff without Costs. */
+    public function ruleFields(int $server): array
+    {
+        $grants=Staff::requireView();
+        try{$d=OfferState::decode(Account::where('server_id',$server)->sole()->catalogue_defaults);}catch(\JsonException|\TypeError){return [];}
+        $d+=get_object_vars(new Intent);$fields=[];
+        if(is_bool($d['defaultSell'])){$fields['mode']=$d['defaultSell']?'except':'only';}
+        if(is_int($d['defaultLongest'])&&$d['defaultLongest']>=1&&$d['defaultLongest']<=10){$fields['years']=$d['defaultLongest'];}
+        if(is_bool($d['defaultTransfers'])){$fields['transfers']=$d['defaultTransfers'];}
+        if($grants->costs&&($d['maxAnnualCost']===null||is_string($d['maxAnnualCost'])&&PricingRule::wholesale($d['maxAnnualCost'])!==null)){$fields['max_cost']=$d['maxAnnualCost'];}
+        return $fields;
+    }
     public function pricing(int $server,?Tld $t=null): array
     {
         Staff::requireView();return Pricing::rule($t);

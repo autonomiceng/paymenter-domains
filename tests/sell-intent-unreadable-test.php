@@ -69,9 +69,41 @@ $page=Livewire::actingAs($actor)->test(UnreadableIntentSellPage::class,['account
 $row=collect($page->instance()->getTableRecords()->items())->firstWhere('tld','com');
 same($reason,$page->instance()->getTable()->getColumn('status')->record($row)->getDescriptionBelow(),'Status names the account setting');
 same([],$page->instance()->savedPrices()['skipped'],'Bad account defaults leave no price out');
-$page->mountAction('rule')->assertHasNoActionErrors()->callMountedAction()->assertHasActionErrors(['sell_new','years']);
+$page->mountAction('rule')->assertActionDataSet(['sell_new'=>'no','years'=>null])->callMountedAction()->assertHasActionErrors(['years'])->assertHasNoActionErrors(['sell_new']);
 $page=Livewire::actingAs($actor)->test(UnreadableIntentSellPage::class,['account'=>$binding->serverId]);
 $page->callAction('rule',['sell_new'=>'yes','max_cost'=>null,'years'=>2,'transfers'=>true])->assertHasNoActionErrors()->assertNotified('Saved');
 same(2,OfferState::decode(DB::table('domains_accounts')->where('server_id',$binding->serverId)->value('catalogue_defaults'))['defaultLongest'],'Default for new TLDs replaces the bad defaults');
+$defaultsNow=static fn():array=>OfferState::decode(DB::table('domains_accounts')->where('server_id',$binding->serverId)->value('catalogue_defaults'));
+// One bad default leaves the other saved values in the form, so a save keeps them.
+$savedDefaults=$defaultsNow();
+DB::table('domains_accounts')->where('server_id',$binding->serverId)->update(['catalogue_defaults'=>OfferState::json([...$savedDefaults,'defaultSell'=>false,'defaultLongest'=>11,'defaultTransfers'=>true,'maxAnnualCost'=>'25.0000'])]);
+$page=Livewire::actingAs($actor)->test(UnreadableIntentSellPage::class,['account'=>$binding->serverId])->mountAction('rule')
+    ->assertActionDataSet(['sell_new'=>'no','max_cost'=>'25.0000','transfers'=>true,'years'=>null])->assertSchemaComponentVisible('max_cost');
+$page->setActionData(['years'=>4])->callMountedAction()->assertHasNoActionErrors()->assertNotified('Saved');
+same([false,4,true,'25.0000'],array_values(array_intersect_key($defaultsNow(),array_flip(['defaultSell','defaultLongest','defaultTransfers','maxAnnualCost']))),'Repairing one bad default keeps the valid cost limit, transfers and sell choice');
+// Defaults saved as broken JSON still open the form and save the repair.
+$published=$tlds[0]->fresh();$marker=OfferState::decode($published->catalogue_published_revision);
+DB::table('domains_tlds')->where('id',$published->id)->update(['catalogue_published_revision'=>OfferState::json([...$marker,'defaults'=>40])]);
+foreach(['{"defaultSell":','"text"'] as $bad){
+    DB::table('domains_accounts')->where('server_id',$binding->serverId)->update(['catalogue_defaults'=>$bad]);
+    $page=Livewire::actingAs($actor)->test(UnreadableIntentSellPage::class,['account'=>$binding->serverId])->assertSuccessful();
+    try{$page->callAction('rule',['sell_new'=>'yes','max_cost'=>'30','years'=>3,'transfers'=>false])->assertHasNoActionErrors()->assertNotified('Saved');}
+    catch(Throwable $error){throw new RuntimeException('Broken defaults '.$bad.': '.$error->getMessage(),0,$error);}
+    $repaired=$defaultsNow();
+    same([true,3,false],[$repaired['defaultSell'],$repaired['defaultLongest'],$repaired['defaultTransfers']],'Broken JSON defaults are replaced: '.$bad);
+    expect($repaired['_revision']>40,'The repaired revision moves past every saved publication, so none reads as current: '.$bad);
+}
+DB::table('domains_tlds')->where('id',$published->id)->update(['catalogue_published_revision'=>OfferState::json($marker)]);
+// An editor without Costs can't see the cost limit, so their save keeps it.
+$editor=staffUser(array_values(array_diff(array_keys(Staff::permissions()),[Staff::COSTS])));
+DB::table('domains_accounts')->where('server_id',$binding->serverId)->update(['catalogue_defaults'=>OfferState::json([...$defaultsNow(),'maxAnnualCost'=>'25.0000'])]);
+// The cost limit field is hidden from staff without Costs.
+$page=Livewire::actingAs($editor)->test(UnreadableIntentSellPage::class,['account'=>$binding->serverId])->mountAction('rule')->assertActionDataSet(['years'=>3])->assertSchemaComponentHidden('max_cost');
+$page->setActionData(['years'=>5])->callMountedAction()->assertHasNoActionErrors()->assertNotified('Saved');
+same([5,'25.0000'],[$defaultsNow()['defaultLongest'],$defaultsNow()['maxAnnualCost']],'A save without Costs keeps the saved cost limit');
+$review=new \Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview($editor->id,$binding->serverId,null,'acceptance',\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::ticket($editor->id,$binding->serverId,null,'acceptance',StaffCommands::stamp($binding->serverId)),'');
+$commands->run($review,['sell'=>['rule'=>['mode'=>'except','max_cost'=>'1','years'=>2,'transfers'=>false]]]);
+same([2,'25.0000'],[$defaultsNow()['defaultLongest'],$defaultsNow()['maxAnnualCost']],'The command ignores a cost limit sent by staff without Costs');
+Auth::setUser($actor);
 same(0,$reads->calls,'Page reads and refused saves make no provider calls');
 echo "What you sell isolates unreadable intent, names the TLD and refuses its save.\n";$nativeSuccessful=true;
