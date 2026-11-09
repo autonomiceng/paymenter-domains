@@ -16,6 +16,7 @@ final class SiteDnsDefault
     public const RETAINED='This template is saved for new domains but cannot be used. Choose another template for new domains first.';
     /** Settings writes refuse duplicates, so only someone with database access can remove the extra row. */
     public const DUPLICATE='The site DNS default is saved more than once. Ask your site admin to remove the extra setting.';
+    public const ASK='Ask staff who can change the site DNS default.';
     private static function query(): \Illuminate\Database\Eloquent\Builder
     { return Setting::whereNull('settingable_type')->whereNull('settingable_id')->where('key',self::KEY); }
     /** A locking read sees rows committed after an older read view opened. */
@@ -110,31 +111,44 @@ final class SiteDnsDefault
     /** Paused processing still represents a connected registrar and must support the saved default. */
     public static function validateRegistrars(array $nameservers): void
     {
+        if($rule=self::rule($nameservers)){throw new \DomainException($rule.' Update this DNS template or choose another one.');}
+    }
+    private static function rule(array $nameservers): ?string
+    {
         foreach(Account::orderBy('registrar_key')->distinct()->pluck('registrar_key') as $registrar){
             try{NewDomainDns::validate($registrar,$nameservers);}
-            catch(\InvalidArgumentException $e){
+            catch(\InvalidArgumentException){
                 $max=$registrar==='enom'?12:13;$label=$registrar==='enom'?'Enom':'NameSilo';
-                $rule=count($nameservers)<2||count($nameservers)>$max?$label.' takes 2 to '.$max.' nameservers.':$label.' needs valid nameserver hostnames.';
-                throw new \DomainException($rule.' Update this DNS template or choose another one.',0,$e);
+                return count($nameservers)<2||count($nameservers)>$max?$label.' takes 2 to '.$max.' nameservers.':$label.' needs valid nameserver hostnames.';
             }
         }
+        return null;
+    }
+    /** Deployment hosts, or why they cannot be used. Too many valid hosts is not a hostname problem. */
+    private static function deployment(array $names): array|string
+    {
+        try{return (new RoutingProfile($names,[],[]))->nameservers;}catch(\InvalidArgumentException|\TypeError){}
+        try{$hosts=array_unique(array_map(static fn($host)=>\Paymenter\Extensions\Servers\Domains\Dns\DnsQuery::hostname($host),array_values($names)));}
+        catch(\InvalidArgumentException|\TypeError){return 'Deployment nameserver hostnames are invalid.';}
+        return count($hosts)>13?'Deployment DNS default lists more than 13 nameservers.':'Deployment nameserver hostnames are invalid.';
     }
     /** Re-evaluate connected accounts on every read, including accounts added after installation.
      * Keep the saved reference and all domain/watch choices intact; only staff can replace the default.
      */
-    public static function refusal(): ?string
+    public static function refusal(bool $canEdit=true): ?string
     {
         $rows=self::rows();
         if($rows->count()>1){return self::DUPLICATE;}
         $p=self::usable($rows);
-        if($p){$names=$p->nameservers;}
+        if($p){$cause=self::rule($p->nameservers);$fix='Update this DNS template or choose another one.';}
         else{
             $names=config('domains.site_dns_default.nameservers');
             if(!is_array($names) || !$names){return null;}
-            try{$names=(new RoutingProfile($names,[],[]))->nameservers;}catch(\InvalidArgumentException|\TypeError){return 'Deployment nameserver hostnames are invalid. Create and turn on a compatible DNS template, then choose it as the site DNS default.';}
+            $names=self::deployment($names);
+            $cause=is_string($names)?$names:self::rule($names);$fix='Create and turn on a compatible DNS template, then choose it as the site DNS default.';
         }
-        try{self::validateRegistrars($names);}catch(\DomainException $e){return $e->getMessage().($p?'':' Create and turn on a compatible DNS template, then choose it as the site DNS default.');}
-        return null;
+        // Staff without the settings permission keep the cause and are sent to someone who can fix it.
+        return $cause===null?null:$cause.' '.($canEdit?$fix:self::ASK);
     }
     private static function write(WatchProfile $p): void
     {

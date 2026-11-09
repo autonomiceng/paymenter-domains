@@ -133,11 +133,11 @@ class RegistrarAccount extends Page
     /** The site DNS default as it applies here: its name, its nameservers and Change, which opens Domain monitoring settings where it is chosen. */
     private static function newDomainsUse(Account $a): array
     {
-        $default=SiteDnsDefault::profile();$refusal=SiteDnsDefault::refusal();
+        $canEdit=Staff::canEditDefaultDns();$default=SiteDnsDefault::profile();$refusal=SiteDnsDefault::refusal($canEdit);
         $names=$default&&!$refusal?'<span class="domains-mono">'.e(implode(', ',array_map('strval',(array)$default->nameservers))).'</span><br>':'';
         $row=self::fact('New domains use',$refusal?null:$default?->name,$refusal??($default
             ?new HtmlString($names.'New registrations get these nameservers from the start. Transfers keep the nameservers they already have.')
-            :'New registrations have no site-default nameservers. '.($a->registrar_key==='namesilo'?'NameSilo needs explicit nameservers before an order can be sent. ':'').'Choose one in Domain monitoring settings.'));
+            :'New registrations have no site-default nameservers. '.($a->registrar_key==='namesilo'?'NameSilo needs explicit nameservers before an order can be sent. ':'').($canEdit?'Choose one in Domain monitoring settings.':SiteDnsDefault::ASK)));
         try { $url=MonitoringSettings::canAccess()?MonitoringSettings::getUrl():null; } catch (\Throwable) { $url=null; }
         return [...$row,'buttons'=>$url?[Action::make('new_domains_use')->label('Change')->link()->size('sm')->url($url)]:[]];
     }

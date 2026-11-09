@@ -121,4 +121,22 @@ $empty=\Livewire\Livewire::actingAs($manager)->test($page)->mountAction('siteDef
 expect(str_contains(html_entity_decode(implode('', $empty->effects['partials']??[]).$empty->html(),ENT_QUOTES),'Create a DNS template in Domains > DNS templates, turn it on, then choose it here.'),'Empty selector explains create, enable and select');
 config(['domains.site_dns_default.nameservers'=>['invalid host','ns2.example.test']]);
 expect(str_contains((string)SiteDnsDefault::refusal(),'Create and turn on a compatible DNS template'),'An unusable deployment seed does not tell staff to edit a nonexistent saved template');
+// Too many valid deployment hosts is a count problem, not a hostname problem; registrar limits still apply below it.
+$hosts=static fn(int $count)=>array_map(static fn($n)=>'ns'.$n.'.deployment.test',range(1,$count));
+config(['domains.site_dns_default.nameservers'=>$hosts(14)]);$limit=(string)SiteDnsDefault::refusal();
+expect(str_contains($limit,'more than 13 nameservers')&&!str_contains(strtolower($limit),'hostname'),'Fourteen valid deployment hosts report the 13-host limit: '.$limit);
+expect(str_contains($limit,'Create and turn on a compatible DNS template, then choose it as the site DNS default.'),'The limit keeps template-selection recovery');
+config(['domains.site_dns_default.nameservers'=>[...$hosts(13),'bad host']]);
+expect(str_contains((string)SiteDnsDefault::refusal(),'hostnames are invalid'),'A malformed host among many is still a hostname problem');
+config(['domains.site_dns_default.nameservers'=>$hosts(13)]);
+expect(str_starts_with((string)SiteDnsDefault::refusal(),'Enom takes 2 to 12 nameservers.'),'Thirteen valid hosts keep the connected Enom limit');
+config(['domains.site_dns_default.nameservers'=>$hosts(12)]);same(null,SiteDnsDefault::refusal(),'Twelve valid hosts suit both connected registrars');
+// Read-only staff keep the cause and are sent to staff who can change the default.
+config(['domains.site_dns_default.nameservers'=>$hosts(14)]);
+\Livewire\Livewire::actingAs($viewer)->test($page)->assertSee('Deployment DNS default lists more than 13 nameservers.')->assertSee('Ask staff who can change the site DNS default.')->assertDontSee('Create and turn on a compatible DNS template');
+\Livewire\Livewire::actingAs($manager)->test($page)->assertSee('Create and turn on a compatible DNS template')->assertDontSee('Ask staff who can change the site DNS default.');
+DB::table('domains_watch_profiles')->where('id',$thirteen->id)->update(['enabled'=>true]);
+\App\Models\Setting::updateOrCreate(['key'=>SiteDnsDefault::KEY,'settingable_type'=>null,'settingable_id'=>null],['type'=>'string','encrypted'=>false,'value'=>(string)$thirteen->id]);
+same('Enom takes 2 to 12 nameservers. Update this DNS template or choose another one.',SiteDnsDefault::refusal(),'Editors are told to update or replace a saved default');
+\Livewire\Livewire::actingAs($viewer)->test($page)->assertSee('Enom takes 2 to 12 nameservers. Ask staff who can change the site DNS default.')->assertDontSee('Update this DNS template or choose another one.');
 $nativeSuccessful=true;echo "Site DNS installation default passed.\n";
