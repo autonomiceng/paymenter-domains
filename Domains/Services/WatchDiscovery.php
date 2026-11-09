@@ -65,7 +65,8 @@ final class WatchDiscovery
                 $watch=WatchName::where('user_id',$owner)->where('canonical_name',$name)->lockForUpdate()->first();
                 $attrs=['user_id'=>$owner,'service_id'=>$id,'map_id'=>$map->id,'map_revision'=>$map->revision,'hostname'=>$result->hostname,'registrable_name'=>$name,
                     'state'=>'managed_link','managed_domain_id'=>$domain->id,'source_digest'=>$digest,'last_seen_at'=>$now];
-                $this->source($old,$attrs,$now);
+                // The watch is linked below, so replacing its last source must not retire it first.
+                $this->source($old,$attrs,$now,$watch?->id);
                 if($watch){$watch->refresh();$this->change($watch,['state'=>'linked','managed_domain_id'=>$domain->id,'registration'=>in_array($domain->status,WatchManagedTarget::MANAGED,true)?'platform':null],'registration_managed',$now);$this->stop($watch,'registration_managed',$now);}
                 DB::afterCommit(fn()=>app(WatchWork::class)->enrollManaged((int)$domain->id,$owner));
             }elseif($retainedLink){
@@ -94,13 +95,13 @@ final class WatchDiscovery
         // A discovery heartbeat is not a change of source identity or public evidence.
         DB::table('domains_watch_sources')->where('id',$source->id)->update(['last_seen_at'=>$now]);
     }
-    private function source(?WatchSource $old,array $attrs,int $now): void
+    private function source(?WatchSource $old,array $attrs,int $now,?int $linking=null): void
     {
         $identity=array_diff_key($attrs,['last_seen_at'=>true]);
         if($old && $old->only(array_keys($identity))==$identity){$this->seen($old,$now);return;}
         $previous=$old?->watch_id;$old?->retire('hosting_source_changed');
         WatchSource::create($attrs);
-        if($previous && $previous!==($attrs['watch_id']??null)){$this->sync((int)$previous,$now);}
+        if($previous && $previous!==($attrs['watch_id']??null) && (int)$previous!==$linking){$this->sync((int)$previous,$now);}
     }
     private function held(?WatchSource $old,Service $s,WatchProductMap $map,string $digest,string $code,int $now): void
     {
