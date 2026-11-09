@@ -43,6 +43,7 @@ const browser = ({locks = true} = {}) => {
                 world.reads.push(world.now);
                 const answer = world.answers.shift() ?? {status: 200, body: {state, pending: true}};
                 if (answer.error) throw new Error('offline');
+                if (answer.stall) return new Promise(() => {});
                 return {status: answer.status, ok: answer.status >= 200 && answer.status < 300, redirected: answer.redirected ?? false,
                     headers: {get: name => (answer.headers ?? {})[name] ?? null}, json: async () => answer.body};
             }});
@@ -57,7 +58,8 @@ const browser = ({locks = true} = {}) => {
             if (!due) break;
             world.now = Math.max(world.now, due.timer.at);
             due.tab.timers = due.tab.timers.filter(timer => timer !== due.timer);
-            await due.timer.callback();
+            // A read that never answers must not stop the clock for the other tabs.
+            await Promise.race([due.timer.callback(), new Promise(done => setImmediate(done))]);
         }
         world.now = Math.max(world.now, moment);
     };
@@ -173,6 +175,20 @@ const minute = 60000;
     await world.until(world.now + 10 * minute);
     assert.ok(world.reads.length >= 1 && world.reads.length <= 15, 'A failing lock request still reads and backs off: ' + world.reads.length);
     assert.ok(!world.idle(unlocked), 'A failing lock request keeps reading');
+
+    // A read that never answers holds no lock: the other tab keeps reading, and the stalled tab gives up and reads again.
+    world = browser();
+    const stalled = world.open();
+    world.open();
+    world.answers.push({stall: true});
+    await world.until(world.now + 10000);
+    assert.equal(world.reads.length, 1, 'One tab starts a read that never answers');
+    assert.equal(world.held.size, 0, 'A read in flight holds no lock');
+    await world.until(world.now + 30000);
+    assert.ok(world.reads.length >= 2, 'The other tab reads while the first read hangs: ' + world.reads.length);
+    await world.until(world.now + 10 * minute);
+    assert.ok(world.reads.length >= 8 && world.reads.length <= 16, 'Reading keeps the shared pace after a stalled read: ' + world.reads.length);
+    assert.ok(!world.idle(stalled), 'The stalled tab keeps its timer after giving up');
 
     // Without browser storage each tab still backs off on its own.
     world = browser();

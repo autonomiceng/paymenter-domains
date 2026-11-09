@@ -21,6 +21,7 @@
     // A result read before this page loaded is older than the page itself.
     const changed = value => value.read > loaded && typeof value.state === 'string' && (value.state !== state || value.pending === false);
     // A Web Lock makes checking and saving the shared next read one step across tabs. Without one, each tab still keeps its own pace.
+    // The lock covers only that step, so a slow read never holds back the other tabs.
     const busy = {};
     const exclusive = async work => {
         const locks = window.navigator?.locks;
@@ -29,29 +30,47 @@
         try { return await locks.request(key, {ifAvailable: true}, lock => { if (!lock) return busy; started = true; return work(); }); }
         catch (error) { if (started) throw error; return work(); }
     };
+    // A read that does not answer in time counts as a failed read and is retried later.
+    const deadline = 30000;
+    const bounded = work => new Promise((resolve, reject) => {
+        const controller = typeof window.AbortController === 'function' ? new window.AbortController() : null;
+        const limit = window.setTimeout(() => { controller?.abort(); reject(new Error('Order status read timed out')); }, deadline);
+        const settle = done => value => { window.clearTimeout(limit); done(value); };
+        work(controller?.signal).then(settle(resolve), settle(reject));
+    });
+    const request = async signal => {
+        const response = await fetch(url, {credentials: 'same-origin', headers: {'Accept': 'application/json'}, cache: 'no-store', signal});
+        return {response, current: response.ok && !response.redirected ? await response.json() : null};
+    };
     const poll = async () => {
         if (stopped || reading || !script.isConnected || document.hidden) return;
         reading = true;
-        let result = null;
-        try { result = await exclusive(turn); } catch (_) { result = busy; } finally { reading = false; }
-        if (result === busy && !stopped) { const shared = saved(), now = Date.now(); later(shared && shared.next > now ? shared.next - now : pace); }
+        try {
+            let grown = busy;
+            try { grown = await exclusive(reserve); } catch (_) { /* Wait for the shared next read. */ }
+            if (grown === busy) { if (!stopped) { const shared = saved(), now = Date.now(); later(shared && shared.next > now ? shared.next - now : pace); } }
+            else if (grown !== null) await check(grown);
+        } finally { reading = false; }
     };
-    const turn = async () => {
+    // Returns the next wait once this tab has saved the shared next read, or null when no read is due.
+    const reserve = () => {
         const shared = saved(), now = Date.now();
-        if (shared && changed(shared)) { reload(); return; }
-        if (shared && shared.next > now) { later(shared.next - now); return; }
+        if (shared && changed(shared)) { reload(); return null; }
+        if (shared && shared.next > now) { later(shared.next - now); return null; }
         const delay = Math.min(Math.max(shared?.delay || first, pace), longest);
         const grown = pace = Math.min(Math.round(delay * 1.5), longest);
         save({...(shared || {}), next: now + delay, delay});
+        return grown;
+    };
+    const check = async grown => {
         let wait = grown;
         try {
-            const response = await fetch(url, {credentials: 'same-origin', headers: {'Accept': 'application/json'}, cache: 'no-store'});
+            const {response, current} = await bounded(request);
             if ([401, 403, 404, 419].includes(response.status) || response.redirected) { stopped = true; return; }
             if (response.status === 429) {
                 const after = Number(response.headers?.get('Retry-After'));
                 wait = Math.min(Math.max(Number.isFinite(after) ? after * 1000 : 0, grown), limited);
             } else if (response.ok) {
-                const current = await response.json();
                 if (!script.isConnected) return;
                 if (typeof current.state !== 'string' || typeof current.pending !== 'boolean') throw new Error('Invalid order status');
                 const read = Date.now();
@@ -60,7 +79,7 @@
                 later(grown);
                 return;
             }
-        } catch (_) { /* Retry local status after a temporary network failure. */ }
+        } catch (_) { /* Retry local status after a temporary network failure or a read that took too long. */ }
         save({...(saved() || {}), next: Date.now() + wait, delay: grown});
         later(wait);
     };
