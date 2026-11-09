@@ -120,7 +120,7 @@ final class DomainNotices
         if ($d->adoptionPending()) {
             return ['title'=>'Imported without purchase records. Check open invoices.','tone'=>'warning'];
         }
-        if (!DomainDecisions::ended($d)&&($hold=DomainDecisions::recordHold($d))!==null) { return $withPayment(['title'=>$hold,'body'=>DomainDecisions::restart($d),'tone'=>'warning','resume'=>true]); }
+        if (!DomainDecisions::ended($d)&&($hold=DomainDecisions::hold($d))!==null) { return $withPayment(['title'=>$hold['text'],'body'=>$hold['stopped']?DomainDecisions::restart($d):null,'tone'=>'warning','resume'=>true]); }
         if ($payment!==null) { return $payment; }
         if ($d->provenance==='adopted'&&($d->observation['adoption_review']['near_due']??false)===true&&!RenewalStop::stopped(RenewalStop::read($d))) {
             return ['title'=>'Imported after the invoice date. No renewal invoice was issued.','tone'=>'warning',

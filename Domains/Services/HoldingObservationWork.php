@@ -15,6 +15,14 @@ final class HoldingObservationWork
         DB::table('domains_observation_work')->insertOrIgnore(['server_id'=>$d->server_id,'account_fingerprint'=>$d->account_fingerprint,
             'domain_id'=>$d->id,'generation'=>$d->authority_generation,'phase'=>self::phase($d),'due_at'=>$now->getTimestamp()]);
     }
+    /** The first scheduled read has not finished: never tried, resumed or given a result, or leased on its first try. */
+    public static function firstReadPending(Domain $d): bool
+    {
+        if (!Schema::hasTable('domains_observation_work')) { return false; }
+        $job=self::current($d,true)->orderByDesc('id')->first();
+        if ($job===null||$job->safe_code!==null||(int)$job->resumes!==0) { return false; }
+        return (int)$job->tries===0||((int)$job->tries===1&&(int)$job->lease_until>app(Clock::class)->now()->getTimestamp());
+    }
     /** Only the current binding, generation and follow-up phase can stop this holding. */
     public static function stopped(Domain $d): bool
     {
