@@ -36,7 +36,10 @@ final class StaffWatchWrites
                 // Staff pause and resume; a watch ends only with its hosting service, never by a staff write.
                 if(!in_array($action,['pause','resume','profile','read','note'],true) || $row->managed_domain_id!==null || $row->state==='linked'){throw new \DomainException('This watch cannot be changed.');}
                 if($action==='pause' && $row->state==='active'){$row->state='paused';}
-                elseif($action==='resume' && $row->state==='paused'){$row->state='active';}
+                elseif($action==='resume' && WatchDiscovery::canResume($row)){
+                    // Resume saves staff intent; a suspended hosting service keeps the watch paused until it is active again.
+                    if(WatchDiscovery::hostingActive($id)){$row->state='active';}else{$data=['hosting'=>'suspended'];}
+                }
                 elseif($action==='profile' && in_array($row->state,['active','paused'],true)){
                     $profile=WatchProfile::whereKey((int)($input['profile']??0))->where('enabled',true)->lockForUpdate()->firstOrFail();
                     $row->ns_profile_id=$profile->id;$row->profile_revision=$profile->revision;

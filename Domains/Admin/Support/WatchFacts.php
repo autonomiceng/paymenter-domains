@@ -92,7 +92,7 @@ final class WatchFacts
         $running=$w->state==='active';
         $partial=array_filter($fresh,fn($f)=>$f['checkedAt']!==null && $f['partial'] && (!$f['stale']||!$running));
         $stale=$running?array_filter($fresh,fn($f)=>$f['stale']):[];
-        $retry=$running?' Checks retry automatically.':($w->state==='paused'?' Resume monitoring to check again.':'');
+        $retry=$running?' Checks retry automatically.':($w->state==='paused'?(\Paymenter\Extensions\Servers\Domains\Services\WatchDiscovery::canResume($w)?' Resume monitoring to check again.':' Checks start again when the hosting service is active.'):'');
         return [...self::fact(self::date($at),$failed?'Registry lookup failed.'.$retry:($partial?'Some checks failed.'.$retry:($stale?'Some results are waiting for the next check.':null)),
             $failed||$partial?'danger':null),'at'=>$at];
     }
