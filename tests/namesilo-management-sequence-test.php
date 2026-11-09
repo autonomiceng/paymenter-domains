@@ -56,6 +56,17 @@ $second=$submit($d,$driver,'contacts',$other);
 same('rejected',$first->fresh()->state,'A newer unsent choice retires the old request');
 $stages=$d->operations()->where('action','contact_profile')->orderBy('id')->get();
 same('rejected',$stages->first()->state,'The replaced prerequisite cannot remain queued');
+// A prerequisite that used its five unsent preparation tries never reached the registrar, so an identical save replaces the pair.
+[$d,,$original]=$holding('exhausted-prerequisite');$unreadable=false;
+$driver=new Management($binding,static function($origin,$cmd,$p,$ms)use(&$unreadable,$managementExchange){if($unreadable){throw new RuntimeException('Synthetic unreadable registrar');}return $managementExchange($origin,$cmd,$p,$ms);});
+$input=['role'=>'tech','contact'=>$original->payload['contacts']['tech']];$old=$submit($d,$driver,'contacts',$input);
+$step=$d->operations()->where('action','contact_profile')->sole();$unreadable=true;$sent=count($writes());
+for($round=0;$round<8&&$step->fresh()->state!=='rejected';$round++){$clock->instant=$clock->now()->modify('+16 minutes');Cache::flush();$management->run($old->id,$driver);}
+same(['rejected','management_preparation_failed','absent'],[$step->fresh()->state,$step->fresh()->safe_code,$step->fresh()->attempt['seal']],'The prerequisite closes unsealed after five unsent preparation tries');
+$unreadable=false;Cache::flush();$fresh=$submit($d,$driver,'contacts',$input);
+expect($fresh->id!==$old->id,'An identical save replaces a pair held by an exhausted unsent prerequisite');
+same(['rejected','rejected'],[$old->fresh()->state,$step->fresh()->state],'Replacement closes both old operations');
+$management->run($old->id,$driver);$management->run($step->id,$driver);same($sent,count($writes()),'The old pair never sends');
 // Reconstruction can recover a returned ID by reading only that ID. An unknown creation never replays.
 foreach(['default','mismatch','contactAdd','lost'] as $fault){
     [$d,$driver,$original]=$holding('sequence-'.$fault);$input=['role'=>'all','contact'=>$original->payload['contacts']['registrant']];

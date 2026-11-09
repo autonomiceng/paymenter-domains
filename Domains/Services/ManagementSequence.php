@@ -35,16 +35,16 @@ final class ManagementSequence
         $key=$op->policy['management']['prerequisite']['key']??null;
         return is_string($key) && ($operations->firstWhere('operation_key',$key)?->attempt??[])!==[] && !self::unsent($op,$operations);
     }
-    /** Only the retained unconsumed-grant proof permits replacement after sealing. */
+    /** Only the retained unconsumed-grant proof permits replacement after sealing. An exhausted unsealed step was never sent. */
     public static function unsent(Operation $parent, $operations): bool
     {
         if (isset($parent->policy['management']['sequence'])) {
             return self::members($parent,$operations)->contains(fn($child)=>ManagementEvidence::idle($child)
                 && ($child->safe_code==='management_definitely_unsent' && ($child->attempt['management_unsent']??false)===true
-                    || $child->state==='held' && ($child->attempt['seal']??'absent')==='absent'));
+                    || $child->state==='held' && ($child->attempt['seal']??'absent')==='absent' || ManagementEvidence::exhausted($child)));
         }
         $step=$operations->firstWhere('operation_key',$parent->policy['management']['prerequisite']['key']??null);
-        return $step && $step->safe_code==='management_definitely_unsent' && ($step->attempt['management_unsent']??false)===true && ManagementEvidence::idle($step);
+        return $step && ManagementEvidence::idle($step) && ($step->safe_code==='management_definitely_unsent' && ($step->attempt['management_unsent']??false)===true || ManagementEvidence::exhausted($step));
     }
     /** Close an untouched or proven-unsent prerequisite under the holding lock, retaining its seal. */
     public static function retirePrerequisite(Operation $parent, $operations, int $actor, \DateTimeImmutable $at): void
