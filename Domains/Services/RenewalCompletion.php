@@ -33,8 +33,10 @@ final readonly class RenewalCompletion
                 if (RegistrarCheck::lostReply($op, $attempt, $this->clock->now())) {
                     $check->awaitingAnswer = $attempt->binding->registrarKey === 'enom' ? 'Enom' : 'NameSilo';
                     $check->answerAfter = (new \DateTimeImmutable($op->attempt['dispatch_attempted_at']))->modify('+24 hours')->getTimestamp();
+                    // No read can find a captured charge that history no longer covers: the audited read is used up as unavailable.
+                    if ($financial) { CapturedChargeReview::retain($op, CapturedChargeReview::reserve($op, $this->clock), null, $this->clock); return null; }
                     // Enom can still read the domain before staff ask for a case; NameSilo waits for its answer.
-                    if ($attempt->binding->registrarKey !== 'enom' || $financial) { return null; }
+                    if ($attempt->binding->registrarKey !== 'enom') { return null; }
                 }
                 if (($op->policy['renewal_polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT) { return null; }
                 $read=$financial?CapturedChargeReview::reserve($op,$this->clock):null;
