@@ -60,11 +60,16 @@ final class ObservationRecords
         $family=RecordInventory::family('dns',$family,$d->registrar_key,$d->domain);
         if ($family['state']!=='complete' || ($capabilities['families']['dns']??null)!=='supported') { return; }
         $p=$d->observation??[];
-        $record=self::current($d,$now)??RecordFormat::read([
-            'identity'=>self::identity($d),'at'=>$now->format(DATE_ATOM),'sequence'=>0,
-            'format'=>1,'capability_revision'=>$capabilities['revision']??null,'expected_families'=>$capabilities['families'],
-            'families'=>array_fill_keys(RecordFormat::FAMILIES,['state'=>'unknown','records'=>[]]),
-        ],$d->registrar_key);
+        $meta=['format'=>1,'capability_revision'=>$capabilities['revision']??null,'expected_families'=>$capabilities['families']];
+        $record=self::current($d,$now);
+        if ($record===null) {
+            $record=RecordFormat::read(['identity'=>self::identity($d),'at'=>$now->format(DATE_ATOM),'sequence'=>0,...$meta,
+                'families'=>array_fill_keys(RecordFormat::FAMILIES,['state'=>'unknown','records'=>[]])],$d->registrar_key);
+        } elseif ($d->registrar_key==='namesilo' && !isset($record['format'])) {
+            // Reading a legacy NameSilo row discards DNS, so DNS saved into it would be lost. Upgrade it from the
+            // validated capabilities; families the legacy row never proved stay unknown.
+            $record=RecordFormat::read([...$record,...$meta],$d->registrar_key);
+        }
         if ($record===null) { return; }
         $at=$now->format(DATE_ATOM);
         $record['families']['dns']=[...$family,'at'=>$at,'last_good'=>['at'=>$at,'records'=>$family['records']]];

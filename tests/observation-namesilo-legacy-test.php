@@ -56,4 +56,24 @@ expect(count($state->calls)>0,'Scheduled NameSilo holding reaches its establishe
 same($finance,$snapshot(),'Legacy observation changes no native finance, service or operation');
 same([$expiry->format('Y-m-d'),$anchor,$revision],[$d->fresh()->provider_expires_at->format('Y-m-d'),$d->fresh()->renewal_policy,$d->fresh()->confirmed_revision],'Legacy refresh cannot invent a financial anchor or confirmed expiry');
 same(true,$d->fresh()->observation['facts']['owned'],'Verified legacy read stores ownership facts');
+// A confirmed readback from the explicitly supplied DNS adapter upgrades a legacy row; unproven families stay unknown.
+$glue=['ns1.legacy-observed-placeholder.com'=>['192.0.2.53']];$fresh=$d->fresh();$p=$fresh->observation??[];
+$p['records']=['identity'=>\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::identity($fresh),'at'=>$clock->now()->format(DATE_ATOM),'sequence'=>0,
+    'families'=>['dns'=>['state'=>'complete','records'=>[['name'=>'@','type'=>'A','address'=>'192.0.2.9','mx_pref'=>10]]],
+        'srv'=>['state'=>'complete','records'=>[]],'ds'=>['state'=>'complete','records'=>[]],'glue'=>['state'=>'complete','records'=>$glue]]];
+$fresh->update(['observation'=>$p]);
+same('unknown',\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::current($d->fresh(),$clock->now())['families']['dns']['state'],'Legacy NameSilo rows prove glue only');
+$noWire=static fn()=>throw new LogicException('No wire');
+$installed=(new \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Management($binding,$noWire))->observationCapabilities();
+$adapter=(new \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\DnsManagement($binding,$noWire))->observationCapabilities();
+$readback=['state'=>'complete','records'=>[['name'=>'@','type'=>'A','address'=>'192.0.2.1','mx_pref'=>10,'record_id'=>'made1','ttl'=>300]]];
+$before=$d->fresh()->observation['records'];
+\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::saveDnsReadback($d->fresh(),['sequence_preimage'=>$readback],$clock->now(),$installed);
+same($before,$d->fresh()->observation['records'],'The installed adapter saves no DNS readback');
+\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::saveDnsReadback($d->fresh(),['sequence_preimage'=>$readback],$clock->now(),$adapter);
+$saved=\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::current($d->fresh(),$clock->now());
+same(['complete',$readback['records']],[$saved['families']['dns']['state']??null,$saved['families']['dns']['records']??null],'Confirmed DNS readback survives a fresh read of the upgraded row');
+same($adapter['families'],$saved['expected_families']??null,'The upgraded row records the adapter capabilities');
+same(['unknown','unknown'],[$saved['families']['srv']['state'],$saved['families']['ds']['state']],'Unproven SRV and DS stay unknown');
+same(['complete',$glue],[$saved['families']['glue']['state'],$saved['families']['glue']['records']],'Legacy glue evidence is kept');
 $nativeSuccessful=true;echo "Legacy NameSilo holding reads remain independent of closed offer enrollment\n";
