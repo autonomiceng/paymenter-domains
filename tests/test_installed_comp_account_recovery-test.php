@@ -123,6 +123,7 @@ $check('complimentary price hold release only retries until its cost is approved
         $priced->update(['state'=>'held','safe_code'=>'registrar_price_increased','policy'=>[...$priced->policy,'complimentary_cost_review'=>['amount'=>'8.01','usual'=>'8.00']]]);
         Auth::login($staff);$op=$priced->fresh();$account=RequestFacts::account($op)['account'];
         expect(EnomTestRegistration::releaseSends($op,$account),'Release would send this complimentary registration to Enom');
+        expect(Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::awaitingApproval($op),'The held cost is above the usual with no approval');
         $release=static fn(Paymenter\Extensions\Servers\Domains\Models\Operation $op)=>collect(OperationActions::make($op,'price-check-stamp'))->first(fn($a)=>$a->getName()==='release')->getModalHeading();
         $body=(string)(RequestFacts::notice($op)['body']??'');
         expect(str_starts_with($body,'Release hold only retries the price check. The test registration holds again while the registrar cost is above the usual. It goes ahead at this cost once the registrar cost is approved on the domain page.'),'Without approval release is a retry: '.$body);
@@ -131,6 +132,7 @@ $check('complimentary price hold release only retries until its cost is approved
         // An approval that already covers this cost: release goes ahead, so the request says so and release asks first.
         DB::table('domains_complimentary_approvals')->insert(['operation_id'=>$op->id,'actor_id'=>$staff->id,'amount'=>'8.01','reason'=>'Approved exact registrar quote','created_at'=>$clock->now()->format('Y-m-d H:i:s')]);
         $op=$op->fresh();$body=(string)(RequestFacts::notice($op)['body']??'');
+        expect(EnomTestRegistration::releaseSends($op,$account)&&!Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::awaitingApproval($op),'The approval covers the held cost and release still sends');
         expect(str_starts_with($body,'Release hold sends the '),'With approval the request says release sends: '.$body);
         expect(!str_contains($body,'only retries the price check'),'With approval release is no longer called a retry');
         same('Send to Enom now?',$release($op),'With approval release asks before it sends');
