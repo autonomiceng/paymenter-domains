@@ -336,41 +336,35 @@ final class DomainFacts
                 'action'=>['label'=>'Check request #'.$op->id,'url'=>self::url(fn()=>OperationResource::getUrl('view',['record'=>$op->id]))]];
         }
         $read=\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($d);
+        // A read problem leads the head, but late money and its invoice stay beside it: staff resolve both.
+        $payment=self::paymentNotice($d);
+        $withPayment=static fn(array $notice):array=>$payment===null?$notice:[...$notice,
+            'body'=>trim(($notice['body']??'').' '.implode(' ',array_filter([$payment['title'],$payment['body']??null]))),
+            'tone'=>$payment['tone']==='danger'?'danger':$notice['tone'],'link'=>$payment['action']??null];
         if (!self::ended($d)&&$read['read_code']==='domain_not_in_account') {
             $name=\App\Models\Server::whereKey($d->server_id)->value('name');
-            return ['title'=>'Domain is not in the registrar account.','tone'=>'warning',
+            return $withPayment(['title'=>'Domain is not in the registrar account.','tone'=>'warning',
                 'body'=>(is_string($name)&&trim($name)!==''?'Assigned account: '.trim($name).'. Register or transfer the domain there. ':'Register or transfer the domain into the assigned registrar account. ')
                     .(self::syncNow($d)?'Then use Sync now.':'Ask staff who can sync this domain.'),
-                'action'=>['label'=>'Open registrar account','url'=>self::url(fn()=>RegistrarFacts::accountUrl((int)$d->server_id))]];
+                'action'=>['label'=>'Open registrar account','url'=>self::url(fn()=>RegistrarFacts::accountUrl((int)$d->server_id))]]);
         }
         if (!self::ended($d)&&$read['read_review']) {
             $name=trim((string)\App\Models\Server::whereKey($d->server_id)->value('name'));
             // A failed read is not ownership proof. Name the possible cause without stopping recovery.
             $account='The domain may not be in '.($name!==''?'the assigned account: '.$name.'.':'its assigned registrar account.').' Check the account.';
             if (!$read['read_stopped']&&$read['next_read']!==null) {
-                return ['title'=>'Registrar reads keep failing. Automatic retries continue.','tone'=>'warning',
-                    'body'=>$account.(self::syncNow($d)?' Use Sync now to retry sooner.':'')];
+                return $withPayment(['title'=>'Registrar reads keep failing. Automatic retries continue.','tone'=>'warning',
+                    'body'=>$account.(self::syncNow($d)?' Use Sync now to retry sooner.':'')]);
             }
-            return ['title'=>'Registrar reads keep failing.','tone'=>'warning',
-                'body'=>$account.(self::syncNow($d)?' Then use Sync now.':' Ask staff who can sync this domain.'),'action'=>['label'=>'Open registrar account','url'=>self::url(fn()=>RegistrarFacts::accountUrl((int)$d->server_id))]];
+            return $withPayment(['title'=>'Registrar reads keep failing.','tone'=>'warning',
+                'body'=>$account.(self::syncNow($d)?' Then use Sync now.':' Ask staff who can sync this domain.'),'action'=>['label'=>'Open registrar account','url'=>self::url(fn()=>RegistrarFacts::accountUrl((int)$d->server_id))]]);
         }
         // Sync cannot run until a pending import is confirmed, so the import notice comes first.
         if ($d->adoptionPending()) {
             return ['title'=>'Imported without purchase records. Check open invoices.','tone'=>'warning'];
         }
-        if (!self::ended($d)&&($hold=self::recordHold($d))!==null) { return ['title'=>$hold,'body'=>self::restart($d),'tone'=>'warning','resume'=>true]; }
-        if (AcquisitionPaymentReview::count($d)>0) {
-            $invoice=DB::table('domains_obligation_alerts as a')->join('domains_operations as o','o.id','=','a.operation_id')->where('a.domain_id',$d->id)
-                ->where('a.code','acquisition_late_money')->whereNull('a.resolved_at')->orderByDesc('a.id')->value('o.invoice_id');
-            return ['title'=>'Payment activity after the order closed.','body'=>'Check the invoice and payments before contacting the customer.','tone'=>'warning',
-                'action'=>self::invoiceAction($invoice)];
-        }
-        try {
-            if (RenewalReplacements::activity($d)) {
-                $invoice=$d->operations()->where('action','renew')->get()->first(fn(Operation $op)=>array_key_exists('renewal_replacement',$op->policy??[]))?->invoice_id;
-                return ['title'=>'Payment received after credit. Check the invoice.','tone'=>'warning','action'=>self::invoiceAction($invoice)];
-            }
-        } catch (\Throwable) { return ['title'=>self::UNREADABLE,'tone'=>'danger']; }
+        if (!self::ended($d)&&($hold=self::recordHold($d))!==null) { return $withPayment(['title'=>$hold,'body'=>self::restart($d),'tone'=>'warning','resume'=>true]); }
+        if ($payment!==null) { return $payment; }
         if ($d->provenance==='adopted'&&($d->observation['adoption_review']['near_due']??false)===true&&!RenewalStop::stopped(RenewalStop::read($d))) {
             return ['title'=>'Imported after the invoice date. No renewal invoice was issued.','tone'=>'warning',
                 'action'=>['label'=>'Open service','url'=>self::url(fn()=>\App\Admin\Resources\ServiceResource::getUrl('edit',['record'=>$d->service_id]))]];
@@ -383,6 +377,23 @@ final class DomainFacts
             try{$title=RequestFacts::readyMessage($op)??$title;}catch(\Throwable){}
             return ['title'=>$title,'tone'=>'warning','action'=>['label'=>'Check request #'.$op->id,'url'=>self::url(fn()=>OperationResource::getUrl('view',['record'=>$op->id]))]];
         }
+        return null;
+    }
+    /** Money that reached closed or refunded debt, with its invoice. */
+    private static function paymentNotice(Domain $d): ?array
+    {
+        if (AcquisitionPaymentReview::count($d)>0) {
+            $invoice=DB::table('domains_obligation_alerts as a')->join('domains_operations as o','o.id','=','a.operation_id')->where('a.domain_id',$d->id)
+                ->where('a.code','acquisition_late_money')->whereNull('a.resolved_at')->orderByDesc('a.id')->value('o.invoice_id');
+            return ['title'=>'Payment activity after the order closed.','body'=>'Check the invoice and payments before contacting the customer.','tone'=>'warning',
+                'action'=>self::invoiceAction($invoice)];
+        }
+        try {
+            if (RenewalReplacements::activity($d)) {
+                $invoice=$d->operations()->where('action','renew')->get()->first(fn(Operation $op)=>array_key_exists('renewal_replacement',$op->policy??[]))?->invoice_id;
+                return ['title'=>'Payment received after credit. Check the invoice.','tone'=>'warning','action'=>self::invoiceAction($invoice)];
+            }
+        } catch (\Throwable) { return ['title'=>self::UNREADABLE,'tone'=>'danger']; }
         return null;
     }
     /** The acquisition request owns recovery until this registration has been confirmed. */
