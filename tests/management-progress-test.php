@@ -80,6 +80,24 @@ $pending->update(['created_at'=>$pendingAt->copy()->subSeconds(119)]);
 $staffPage->call('pollManagement');expect(str_contains($staffPage->html(),'wire:poll.2s'),'Staff controls keep normal polling inside two minutes');
 $pending->update(['created_at'=>$pendingAt->copy()->subSeconds(120)]);
 $staffPage->call('pollManagement');expect(str_contains($staffPage->html(),'wire:poll.10s'),'Staff slow controls poll every ten seconds');
+// Background polling stops after its own bound. The change stays unresolved and shown as waiting.
+$followed=$clock->instant;$bound=15*60;$clock->instant=$followed->modify('+'.($bound-1).' seconds');
+$staffPage->call('pollManagement');expect(str_contains($staffPage->html(),'wire:poll.10s'),'Staff keep following a waiting change inside the bound');
+$clock->instant=$followed->modify('+'.$bound.' seconds');
+$before=$state->calls;$staffPage->call('pollManagement');same($before,$state->calls,'Stopping the poll calls no registrar');
+expect(!str_contains($staffPage->html(),'wire:poll.'),'Staff background polling stops at its bound');
+expect(str_contains($staffPage->html(),'A change is still waiting. Reload this page to check it again.'),'Staff are told the change still waits');
+expect(str_contains($staffPage->html(),'This is taking longer than usual.'),'The row keeps its waiting words');
+expect(ManagementProgress::for($d)['lock']['pending'],'Stopping the poll leaves the change unresolved');
+// Sync now keeps its own window while the change still waits.
+$syncKey=(new \Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords(0,(int)$d->id,$d->authority_generation,$d->account_fingerprint))->uniqueId().':pending';
+Cache::put($syncKey,true,60);$staffPage->call('pollManagement');
+expect(str_contains($staffPage->html(),'wire:poll.10s')&&str_contains($staffPage->html(),'Sync in progress.'),'A running sync keeps the page polling past the change bound');
+Cache::forget($syncKey);$staffPage->call('pollManagement');expect(!str_contains($staffPage->html(),'wire:poll.'),'The change bound still holds after the sync');
+// Reopening the page follows the waiting change again.
+$reopened=Livewire\Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$d->id]);
+expect(str_contains($reopened->html(),'wire:poll.10s'),'A reopened page follows the waiting change again');
+$clock->instant=$followed;
 same('succeeded',$management->run($pending->id,$driver)->state,'Staff sees the same confirmed result');
 $staffPage->call('pollManagement');expect(!str_contains($staffPage->html(),'wire:poll.'),'Staff completion stops polling');
 // Forms register work after commit and after the response, without queue-worker availability.

@@ -60,6 +60,15 @@ same([4,'Second staff off',4],[DB::table('domains_complimentary_accounts')->wher
 // A same-state write changes nothing and adds no audit row.
 Paymenter\Extensions\Servers\Domains\Services\ComplimentaryAccounts::set($customer->id,$staff,false,'Again',app(Clock::class));
 same(4,$customer->audits()->count(),'No audit row for a change that did not happen');
+// A store in Los Angeles keeps each change as its local wall time and shows the clock's own instant, in summer and in winter.
+$priorZone=date_default_timezone_get();$priorAppZone=config('app.timezone');$priorClock=app(Clock::class);
+date_default_timezone_set('America/Los_Angeles');config(['app.timezone'=>'America/Los_Angeles']);
+try{foreach([['2026-07-01T03:30:00+00:00','2026-06-30 20:30:00'],['2026-11-06T18:52:00+00:00','2026-11-06 10:52:00']] as [$instant,$wall]){
+    app()->instance(Clock::class,new class($instant) implements Clock {public function __construct(private string $at){}public function now():DateTimeImmutable{return new DateTimeImmutable($this->at);}});
+    $on=(bool)(Paymenter\Extensions\Servers\Domains\Services\ComplimentaryAccounts::current($customer->id)['enabled']??false);
+    $line()->callAction($on?'turnOff':'turnOn',['reason'=>'Store time zone'])->assertHasNoActionErrors()->assertSeeHtml('<time datetime="'.$instant.'"');
+    same($wall,DB::table('domains_complimentary_accounts')->where('user_id',$customer->id)->orderByDesc('id')->value('created_at'),'The row keeps store-zone wall time: '.$instant);}}
+finally{date_default_timezone_set($priorZone);config(['app.timezone'=>$priorAppZone]);app()->instance(Clock::class,$priorClock);}
 // Staff without the domain funding permission see nothing and cannot change it.
 $plain=staffUser(['admin.users.viewAny','admin.users.view','admin.users.update']);
 Livewire::actingAs($plain)->test(EditUser::class,['record'=>$customer->id])->assertDontSee('Standard domain prices')->assertDontSee('Partnership ended');

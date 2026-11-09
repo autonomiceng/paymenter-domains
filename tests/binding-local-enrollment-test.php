@@ -89,7 +89,7 @@ $wire->body = '{"request":{"operation":"getAccountBalance"},"reply":{"code":110,
 ini_set('zend.exception_ignore_args', '0');
 try { $local->configure(11, 'namesilo', Environment::Live, ['api_key' => 'placeholder-key-rejected'], $review(11)); expect(false, 'Rejected authentication accepted'); }
 catch (DomainException $error) {
-    same('Registrar key could not be confirmed.', $error->getMessage(), 'Rejected authentication has a safe reason');
+    same('Registrar refused the key.', $error->getMessage(), 'A documented key refusal keeps its safe reason');
     same(null, $error->getPrevious(), 'Authentication retains no credential-bearing cause');
     expect(!str_contains(print_r($error->getTrace(), true), 'placeholder-key-rejected'), 'Authentication failure trace hides credentials');
 }

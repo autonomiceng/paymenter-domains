@@ -78,10 +78,15 @@ foreach(['never_read','wrong_identity','failed_read'] as $case){
 }
 $partial=RecordFamilies::owner($editable,RecordFamilies::read($d,$now));$same([],$partial->management['contacts']['actions'],'A current partial contact read still holds whole-list editing');
 // A complete family shows its count once and retains the independent check time.
-$countDom=storefrontDom(view('domains::partials.owner-management',['domain'=>$partial,'caps'=>['dns'],'keys'=>['dns'=>str_repeat('b',64)]])->render());
+// A later DNS readback has its own time, different from the whole read and from every other family.
+$dnsAt='2026-11-04T11:15:00+00:00';$timed=clone $d;$t=$timed->observation;$t['records']['families']['dns']['at']=$dnsAt;$t['records']['families']['glue']['at']='2026-11-04T10:20:00+00:00';$timed->observation=$t;
+$timedFacts=RecordFamilies::read($timed,$now);$same([$dnsAt,'2026-11-04T09:00:00+00:00','2026-11-04T10:20:00+00:00'],[$timedFacts['families']['dns']['at'],$timedFacts['at'],$timedFacts['families']['glue']['at']],'The fixture DNS time differs from the read and its siblings');
+$countDom=storefrontDom(view('domains::partials.owner-management',['domain'=>RecordFamilies::owner($editable,$timedFacts),'caps'=>['dns'],'keys'=>['dns'=>str_repeat('b',64)]])->render());
 $countSub=trim($countDom->query('//li[@id="dns"]/span[@class="domains-row__l"]/span[@class="domains-sub"]')->item(0)?->textContent??'');
 $countValue=trim($countDom->query('//li[@id="dns"]/span[@class="domains-row__v"]')->item(0)?->textContent??'');
 $same([true,'0 records'],[str_starts_with($countSub,'Checked '),$countValue],'DNS says its record count once and keeps the check time: '.json_encode([$countSub,$countValue]));
+$dnsTimes=$countDom->query('//li[@id="dns"]/span[@class="domains-row__l"]/span[@class="domains-sub"]//time');
+$same([[$dnsAt,true]],array_map(fn($n)=>[$n->getAttribute('datetime'),trim($n->textContent)!==''],iterator_to_array($dnsTimes)),'The DNS row shows its own saved check time');
 // customer-layout: as in the 390 mock, the "?" sits right after its label, before the status, and Edit sits beside the status.
 $same(1,$countDom->query('//li[@id="dns"]/span[@class="domains-row__l"]/span[@data-record-family]/preceding-sibling::span[@data-help]')->length,'The ? sits with its label, before the status');
 $same(1,$countDom->query('//li[@id="dns"]/span[@class="domains-row__a"]/a[normalize-space()="Edit"]')->length,'The DNS row has its Edit action');
@@ -118,9 +123,13 @@ $same('192.0.2.99',$latest->management['dns']['inventory'][0]['address']??null,'
 app('view')->share('keys',array_fill_keys(Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerActionController::ACTIONS,str_repeat('a',64)));
 $latestDom=storefrontDom(view('domains::partials.owner-management',['domain'=>$latest])->render());
 expect(str_contains($latestDom->query('//li[@id="dns"]/span[@class="domains-row__v"]')->item(0)?->textContent??'','2 records'),'Current two-record editor count remains visible beside older one-record family evidence');
-$stoppedFacts=$failedFacts;$stoppedFacts['read_stopped']=true;$stoppedFacts['read_attempts']=5;$stoppedFacts['read_failed_at']='2026-11-05T10:00:00+00:00';$stoppedFacts['read_code']='read_failed';$stoppedFacts['read_cause']=\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::STOPPED_CAUSE;
-$stoppedText=preg_replace('/\s+/',' ',strip_tags(view('domains::partials.record-families',['recordFamilies'=>$stoppedFacts,'staff'=>true])->render()));
+$stoppedAt='2026-11-05T10:47:00+00:00';
+$stoppedFacts=$failedFacts;$stoppedFacts['read_stopped']=true;$stoppedFacts['read_attempts']=5;$stoppedFacts['read_failed_at']=$stoppedAt;$stoppedFacts['read_code']='read_failed';$stoppedFacts['read_cause']=\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::STOPPED_CAUSE;
+$stoppedHtml=view('domains::partials.record-families',['recordFamilies'=>$stoppedFacts,'staff'=>true])->render();
+$stoppedText=preg_replace('/\s+/',' ',strip_tags($stoppedHtml));
 expect(str_contains($stoppedText,'Stopped after 5 attempts. Last failure:'),'Stopped attempt and retained failure time have a visible separator');
+$stoppedTimes=storefrontDom($stoppedHtml)->query('//p[starts-with(normalize-space(.),"Next registrar read: Stopped")]//time');
+same([[$stoppedAt,true]],array_map(fn($n)=>[$n->getAttribute('datetime'),trim($n->textContent)!==''],iterator_to_array($stoppedTimes)),'The stopped read shows its retained failure time');
 expect($failures===[],implode("; ",$failures));
 // Enom partial glue is a bounded known-host check, not a promise of enumeration.
 $enom=clone $d;$enom->registrar_key='enom';$r=$record;$r['capability_revision']='enom-records-1';$r['identity']=ObservationRecords::identity($enom);$r['families']['glue']['candidates']=['ns1.orbit-example.com','ns2.orbit-example.com'];$enom->observation=['records'=>$r];

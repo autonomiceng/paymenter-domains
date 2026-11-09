@@ -35,7 +35,8 @@ foreach(['paused'=>'Paused','retired'=>'Stopped']as$state=>$expected){
  $record=$w->fresh();
  same($expected,$list->instance()->getTable()->getColumn('status')->record($record)->getState(),'The row names its monitoring state');
  $rowDom=storefrontDom($list->html());$nativeRow=$rowDom->query('//*[@*[name()="wire:key" and contains(.,".table.records.'.$id.'")]]')->item(0);
- expect($nativeRow!==null&&str_contains($nativeRow->textContent,$expected),'The rendered row badge contains its state, independent of the filter options');
+ $badges=$nativeRow===null?[]:array_map(fn($n)=>trim($n->textContent),iterator_to_array($rowDom->query('.//td[contains(concat(" ",normalize-space(@class)," ")," fi-ta-cell-status ")]//*[@data-beco-record="watch-'.$id.'"]/span[contains(concat(" ",normalize-space(@class)," ")," fi-badge ")]',$nativeRow)));
+ same([$expected],$badges,'The row status badge itself names its state, independent of the filter options');
  foreach(['registration','delegation.dns','last_check']as$name){$column=$list->instance()->getTable()->getColumn($name)->record($record);
   // Status says Paused or Stopped once per row (ui-r15); the fact cells stay empty instead of repeating it.
   if(filled($column->getState())){$failures[]=$state.' '.$name.' still has Missing or repeats the row state';}
@@ -45,4 +46,22 @@ foreach(['paused'=>'Paused','retired'=>'Stopped']as$state=>$expected){
  $html=preg_replace('~<script\b[^>]*>.*?</script>|<link\b[^>]*>~si','',$html);
  writeRenderArtifact((getenv('R14_RENDER_DIR')?:sys_get_temp_dir()).'/r14-watchlist-'.$state.'.html',str_replace('</head>','<style>'.file_get_contents($fixture.'/vendor/filament/filament/dist/theme.css').'</style>'.view('domains::partials.staff-styles')->render().'</head>',$html));
 }
+// The detail page: a paused name keeps its own earlier, empty Public DNS answer beside a later registry check.
+require dirname(__DIR__).'/Domains/routes/web.php';require dirname(__DIR__).'/Domains/routes/owned.php';app('router')->getRoutes()->refreshNameLookups();
+$detail=fn()=>storefrontDom(\Livewire\Livewire::test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\ViewWatch::class,['record'=>$id])->html());
+$times=fn(DOMXPath $dom,?DOMNode $in=null)=>array_map(fn($n)=>[$n->getAttribute('datetime'),trim($n->textContent)!==''],iterator_to_array($dom->query($in?'.//time':'//time',$in)));
+$publicRow=fn(DOMXPath $dom)=>$dom->query('//div[contains(concat(" ",normalize-space(@class)," ")," domains-row ")][.//*[@role="term" and normalize-space(.)="Public DNS"]]');
+\Illuminate\Support\Facades\DB::table('domains_watch_names')->where('id',$id)->update(['state'=>'active']);noticeRegistry($f,$now);
+\Illuminate\Support\Facades\DB::table('domains_watch_names')->where('id',$id)->update(['state'=>'paused']);
+$registryAt=gmdate('c',$now);$publicAt=1700000000;
+// Never observed: no Public DNS row at all, and nothing borrows the registry time for one.
+$never=$detail();
+same([0,[[$registryAt,true]]],[$publicRow($never)->length,$times($never)],'A paused name never checked by public DNS shows no Public DNS row');
+$w=WatchName::findOrFail($id);
+\Illuminate\Support\Facades\DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Models\WatchDnsObservation::create(['watch_id'=>$id,'user_id'=>$uid,'watch_revision'=>$w->revision,'profile_id'=>$profile->id,'profile_revision'=>$profile->revision,'psl_revision'=>$w->psl_revision,'mixed'=>false,'check_kind'=>'points','started_at'=>$publicAt,'completed_at'=>$publicAt+1,'result'=>'complete','partial'=>false,'valid_until'=>$publicAt+300,'facts'=>['version'=>1,'queries'=>[]],'digest'=>str_repeat('b',64),'source_digest'=>str_repeat('c',64)]));
+$saved=$detail();$row=$publicRow($saved)->item(0);
+same(1,$publicRow($saved)->length,'A paused name with an empty saved answer keeps its Public DNS row');
+same('Unknown',trim($row===null?'':$saved->query('.//*[@role="definition"]//div[contains(@class,"fi-in-text-item")]',$row)->item(0)?->textContent??''),'An empty answer is not shown as a confirmed empty record list');
+same([[gmdate('c',$publicAt),true]],$row===null?[]:$times($saved,$row),'The Public DNS row keeps its own earlier time, not the later registry check');
+expect(in_array([$registryAt,true],$times($saved),true),'The later registry check still shows on the page');
 expect($failures===[],implode('; ',$failures));$nativeSuccessful=true;echo "Watch missing facts respect stopped, paused and queued work.\n";

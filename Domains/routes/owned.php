@@ -16,8 +16,6 @@ Route::middleware(['web','auth',MustVerfiyEmail::class,'throttle:60,1,domains.ow
     Route::get('/domains/help',[\Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerHelpController::class,'show'])->name('domains.help');
     Route::get('/domains/watches/{id}/transfer',[\Paymenter\Extensions\Servers\Domains\Http\Controllers\WatchTransferController::class,'show'])->whereNumber('id')->name('domains.watch.transfer');
     Route::post('/domains/watches/{id}/transfer',[\Paymenter\Extensions\Servers\Domains\Http\Controllers\WatchTransferController::class,'check'])->whereNumber('id')->name('domains.watch.transfer-check')->block(10,10);
-    Route::get('/domains/{domain}/order-status',[Owner::class,'orderStatus'])->whereNumber('domain')->name('domains.domains.order-status');
-    Route::get('/domains/{domain}/management-status',[Owner::class,'status'])->whereNumber('domain')->name('domains.domains.management-status');
     Route::get('/domains/{domain}',[Owner::class,'show'])->whereNumber('domain')->name('domains.domains.show');
     Route::get('/domains/{domain}/setup',[Owner::class,'setup'])->whereNumber('domain')->name('domains.domains.setup');
     Route::get('/domains/{domain}/transfer-code',[Owner::class,'code'])->whereNumber('domain')->name('domains.domains.code');
@@ -25,4 +23,9 @@ Route::middleware(['web','auth',MustVerfiyEmail::class,'throttle:60,1,domains.ow
     Route::post('/domains/checks/{kind}/{id}',[\Paymenter\Extensions\Servers\Domains\Http\Controllers\WatchNoticeController::class,'save'])->where('kind','watch|managed')->whereNumber('id')->name('domains.checks.save')->block(10,10);
     Route::get('/domains/check-notices/deliveries/{delivery}',[\Paymenter\Extensions\Servers\Domains\Http\Controllers\WatchNoticeReviewController::class,'show'])->whereNumber('delivery')->name('domains.checks.review');
     Route::post('/domains/check-notices/deliveries/{delivery}',[\Paymenter\Extensions\Servers\Domains\Http\Controllers\WatchNoticeReviewController::class,'resend'])->whereNumber('delivery')->name('domains.checks.resend')->block(10,10);
+});
+// Open pages read their status on their own limit, so status reads never use up the limit for owner forms.
+Route::middleware(['web','auth',MustVerfiyEmail::class,'throttle:120,1,domains.status'])->group(function():void {
+    Route::get('/domains/{domain}/order-status',[Owner::class,'orderStatus'])->whereNumber('domain')->name('domains.domains.order-status');
+    Route::get('/domains/{domain}/management-status',[Owner::class,'status'])->whereNumber('domain')->name('domains.domains.management-status');
 });

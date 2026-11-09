@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainEditActions,DomainFacts,Staff};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainManagement,DomainObservation,ManagementForms,ObservationSchema,OwnedDomains,OwnerPorts};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainManagement,DomainObservation,ManagementForms,ManagementProgress,ObservationSchema,OwnedDomains,OwnerPorts};
 use Paymenter\Extensions\Servers\Domains\Services\{StaffOperationReview,StaffOperations};
 $view()->assertSee('Email auth code');
 $edit('Transfer lock','lock',['locked'=>'0'])->assertNotified(ManagementForms::REQUESTED);$finish($last('lock'));
@@ -35,5 +35,20 @@ $edit('DNS records','dns',['records'=>[$add]])->assertNotified(ManagementForms::
 $op=$last('dns');same(['www','A','8.8.4.4'],[$op->payload['records'][0]['name'],$op->payload['records'][0]['type'],$op->payload['records'][0]['address']],'Staff DNS row reaches the request');same((int)$actor->id,(int)$op->authorized_by,'DNS credited to staff');$finish($op);
 $edit('DNS records','srv',['records'=>[['service'=>'sip','protocol'=>'tcp','priority'=>'1','weight'=>'2','port'=>'5060','target'=>'sip.example.com.','_source'=>'']]])->assertNotified(ManagementForms::REQUESTED);
 $op=$last('srv');same('sip',$op->payload['records'][0]['service'],'Staff SRV row reaches the request');$finish($op);
+// DNS and SRV share one zone write: a finished SRV change shows only on the SRV row, and a waiting one on both rows.
+$row=static function(string $html,string $label):string{$doc=new DOMDocument();@$doc->loadHTML('<?xml encoding="UTF-8">'.$html);
+    return trim((string)(new DOMXPath($doc))->query('//*[contains(concat(" ",normalize-space(@class)," ")," fi-in-entry ")][.//*[@role="term"][normalize-space(.)="'.$label.'"]]')->item(0)?->textContent);};
+same(['srv',false],[ManagementProgress::for($d->fresh())['dns']['section'],ManagementProgress::for($d->fresh())['dns']['pending']],'The finished SRV change is the latest on the shared DNS setting');
+$html=$view()->html();
+expect(str_contains($row($html,'SRV records'),'Saved.'),'A finished SRV change shows on the SRV row');
+expect(!str_contains($row($html,'DNS records'),'Saved.'),'A finished SRV change is not shown beside DNS');
+DB::table('domains_operations')->where('id',$op->id)->update(['state'=>'queued']);
+try {
+    $waiting=ManagementProgress::for($d->fresh())['dns'];same([true,'srv'],[$waiting['pending'],$waiting['section']],'The SRV change waits on the shared DNS setting');
+    $html=$view()->html();
+    expect(str_contains($row($html,'DNS records'),$waiting['text'])&&str_contains($row($html,'SRV records'),$waiting['text']),'A waiting SRV change shows on both record rows');
+    expect(!isset(DomainEditActions::for($d->fresh())['rows']['DNS records']),'A waiting SRV change holds DNS and SRV edits');
+} finally { DB::table('domains_operations')->where('id',$op->id)->update(['state'=>'succeeded']); }
+same(['Edit','Edit SRV'],array_map(fn($action)=>$action->getLabel(),DomainEditActions::for($d->fresh())['rows']['DNS records']),'Both record edits return after the change finishes');
 
 echo "Staff native DNS and SRV record edits passed.\n";$nativeSuccessful=true;
