@@ -5,8 +5,11 @@ require __DIR__.'/Support/watch-discovery.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\{WatchName,WatchSource};
 $f=discoveryFixture();extract($f);$sweep();same(1,WatchName::count(),'Runtime discovery enrolls saved primary scalar');
-foreach(['https://www.example.com','a@example.com','example.com:443','example.com/path','192.0.2.1','*.example.com','example.com,example.net',"example.com\n",'example.com..','com','unknown.test','tenant.hosting.example.com','hosting.example.com','xn--example-placeholder.com','bücher.example','["example.com"]']as$value){
-    $property->update(['value'=>$value]);$sweep();$source=WatchSource::where('service_id',$service->id)->sole();same('held',$source->state,'Unsafe input is held: '.json_encode($value));same(null,$source->hostname,'Unsafe property never becomes a query hostname');same(null,$source->watch_id,'Unsafe input has no external work target');
+// Each hold keeps its exact reason, so a suffix list refusal cannot stand in for malformed input.
+$invalid='source_invalid';$suffix='suffix_unknown';$private='private_suffix';$idn='idn_held';
+foreach(['https://www.example.com'=>$invalid,'a@example.com'=>$invalid,'example.com:443'=>$invalid,'example.com/path'=>$invalid,'192.0.2.1'=>$invalid,'*.example.com'=>$invalid,'example.com,example.net'=>$invalid,"example.com\n"=>$invalid,'example.com..'=>$invalid,
+    'com'=>$suffix,'unknown.test'=>$suffix,'tenant.hosting.example.com'=>$private,'hosting.example.com'=>$private,'xn--example-placeholder.com'=>$idn,'bücher.example'=>$idn,'["example.com"]'=>$invalid]as$value=>$code){
+    $property->update(['value'=>$value]);$sweep();$source=WatchSource::where('service_id',$service->id)->sole();same('held',$source->state,'Unsafe input is held: '.json_encode($value));same($code,$source->safe_code,'Unsafe input keeps its hold reason: '.json_encode($value));same(null,$source->hostname,'Unsafe property never becomes a query hostname');same(null,$source->watch_id,'Unsafe input has no external work target');
 }
 $property->update(['value'=>'WWW.Example.COM.']);$sweep();same('www.example.com',WatchSource::where('service_id',$service->id)->value('hostname'),'Case and one root dot normalized');
 $property->delete();$sweep();same('held',WatchSource::where('service_id',$service->id)->value('state'),'Missing primary value cannot be guessed');$property=$service->properties()->create(['key'=>'domain','value'=>'www.example.com']);
