@@ -77,4 +77,18 @@ $enom=$connect('enom');$enomRule='Enom takes 2 to 12 nameservers. Update this DN
 $assertMissing($enom,$enomRule);$assertMissing($silo,$enomRule);
 same($thirteen->id,SiteDnsDefault::profile()->id,'Later Enom connection never replaces NameSilo-compatible default');
 $twelve=$make(12);$select($twelve,[$silo,$enom],$enomRule);
+// Staff who cannot change the site default see the cause on the registrar page and are sent to staff who can.
+$viewer=staffUser(array_values(array_diff(array_keys(Staff::permissions()),[SiteDnsDefault::MANAGE])));
+$readOnly=static function(Account $account,string $detail,string $hidden)use($viewer,$row):void {
+    $page=Livewire::actingAs($viewer)->test(RegistrarAccount::class,['account'=>$account->server_id])->assertSee($detail)->assertDontSee($hidden);
+    $entry=$row($page);same('Missing',$entry?->getState(),'A read-only Site DNS default row is Missing');
+    same('danger',$entry->getColor($entry->getState()),'A read-only Site DNS default row is red');
+    unset($entry,$page);gc_collect_cycles();gc_mem_caches();
+};
+$saved=Setting::where('key',SiteDnsDefault::KEY)->whereNull('settingable_type')->whereNull('settingable_id');
+(clone $saved)->update(['value'=>(string)$thirteen->id]);
+$readOnly($enom,'Enom takes 2 to 12 nameservers. '.SiteDnsDefault::ASK,'Update this DNS template or choose another one.');
+config(['domains.site_dns_default.nameservers'=>[]]);(clone $saved)->update(['value'=>'']);
+$readOnly($silo,'New registrations have no site-default nameservers. NameSilo needs explicit nameservers before an order can be sent. '.SiteDnsDefault::ASK,'Choose one in Domain monitoring settings.');
+$readOnly($enom,'New registrations have no site-default nameservers. '.SiteDnsDefault::ASK,'NameSilo needs explicit nameservers');
 $nativeSuccessful=true;echo "DNS default compatibility after registrar connection passed.\n";
