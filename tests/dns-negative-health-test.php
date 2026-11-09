@@ -14,7 +14,9 @@ DB::table('domains_watch_schedule')->updateOrInsert(['scope'=>'dispatch'],['prog
 DB::table('domains_watch_schedule')->insert(['scope'=>'health_managed_dns','cursor'=>$now-2*86400]);
 foreach(['nxdomain','nodata']as$reason){
     $query=new DnsQuery('example.com','NS');$fake->answers[$query->key()]=DnsAnswer::negative($query,60,$reason);
-    managedDue($d->id,$time->now);expect($signals->observe($d->id,$owner->id,'delegation'),'Managed negative DNS answer retained');
+    // Earlier failures leave nonzero attempts and a backoff that has just elapsed, so a reset is observable.
+    DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',$d->id)->where('kind','delegation')->update(['due_at'=>$time->now,'attempts'=>3,'backoff_until'=>$time->now]);
+    expect($signals->observe($d->id,$owner->id,'delegation'),'Managed negative DNS answer retained');
     expect(!$health->health($time->now)['outage'],'A valid negative DNS answer must not report a resolver outage');
     $row=ManagedPublicObservation::latest('id')->firstOrFail();
     same([null,'unknown','nameservers_missing'],[$row->dns,$row->result,$row->safe_code],'Absent nameservers never assert external DNS');
@@ -32,7 +34,7 @@ DB::transaction(fn()=>WatchSource::create(['user_id'=>$owner->id,'service_id'=>$
 $checks=new WatchDnsChecks(true);expect($checks->enroll($external->id,$owner->id,$time->now),'External watch enrolled');
 DB::table('domains_watch_schedule')->insert(['scope'=>'health_watch_dns','cursor'=>$now-2*86400]);
 foreach(['nxdomain','nodata']as$reason){
-    DB::table('domains_watch_work')->where('watch_id',$external->id)->where('kind','delegation')->update(['due_at'=>$time->now,'backoff_until'=>null]);
+    DB::table('domains_watch_work')->where('watch_id',$external->id)->where('kind','delegation')->update(['due_at'=>$time->now,'attempts'=>3,'backoff_until'=>$time->now]);
     $ticket=$checks->begin($external->id,$owner->id,'delegation',$time->now);expect($ticket!==null,'External negative check begins');
     $query=new DnsQuery('example.net','NS');$reading=DnsSignals::delegation('example.net',$profile->profile(),[$query->key()=>DnsAnswer::negative($query,60,$reason)]);
     expect($checks->finish($ticket,$reading,$time->now),'External negative answer retained');

@@ -41,8 +41,10 @@ final class WatchDiscovery
             $usable=$snapshot && $now>=(int)$snapshot->validated_at && $now<=(int)$snapshot->validated_at+PublicSuffixList::MAX_AGE_DAYS*86400 && $this->psl->parserUsable($snapshot);
             // A stale list stops new discovery, while retained identities and lifecycle cleanup still work.
             $known=!$usable && $same && $old->state!=='held'?WatchName::where('user_id',$service->user_id)->where('canonical_name',$old->registrable_name)->lockForUpdate()->first():null;
-            if(!$usable && $same && $old->state!=='held' && !$known){$this->seen($old,$now);$this->sync($old->watch_id,$now);return;}
-            $result=$known?new Registrable($old->hostname,$old->registrable_name,$known->psl_revision):new Held('psl_unavailable',$snapshot?->revision??str_repeat('0',64));
+            // A retained managed link rechecks its managed target with the name it already validated.
+            $retainedLink=!$usable && $same && $old->state==='managed_link' && !$known;
+            if(!$usable && $same && $old->state!=='held' && !$known && !$retainedLink){$this->seen($old,$now);$this->sync($old->watch_id,$now);return;}
+            $result=$known||$retainedLink?new Registrable($old->hostname,$old->registrable_name,$known?->psl_revision??''):new Held('psl_unavailable',$snapshot?->revision??str_repeat('0',64));
             if($usable){
                 if($this->parsed?->revision!==$snapshot->revision){$this->parsed=new PslSnapshot(PublicSuffixList::body($snapshot),$this->validator);}
                 $value=count($values)===1 && is_string($values[0])?$values[0]:null;
@@ -63,14 +65,18 @@ final class WatchDiscovery
                 $watch=WatchName::where('user_id',$owner)->where('canonical_name',$name)->lockForUpdate()->first();
                 $attrs=['user_id'=>$owner,'service_id'=>$id,'map_id'=>$map->id,'map_revision'=>$map->revision,'hostname'=>$result->hostname,'registrable_name'=>$name,
                     'state'=>'managed_link','managed_domain_id'=>$domain->id,'source_digest'=>$digest,'last_seen_at'=>$now];
-                $this->source($old,$attrs,$now);
+                // The watch is linked below, so replacing its last source must not retire it first.
+                $this->source($old,$attrs,$now,$watch?->id);
                 if($watch){$watch->refresh();$this->change($watch,['state'=>'linked','managed_domain_id'=>$domain->id,'registration'=>in_array($domain->status,WatchManagedTarget::MANAGED,true)?'platform':null],'registration_managed',$now);$this->stop($watch,'registration_managed',$now);}
                 DB::afterCommit(fn()=>app(WatchWork::class)->enrollManaged((int)$domain->id,$owner));
+            }elseif($retainedLink){
+                // Without a current suffix list, a link that lost its managed target waits rather than starting a new watch.
+                $this->held($old,$service,$map,$digest,'psl_unavailable',$now);return;
             }else{
                 $watch=WatchName::where('user_id',$owner)->where('canonical_name',$name)->lockForUpdate()->first();
                 if($service->status==='suspended' && (!$same || $old->state!=='watch')){$this->held($old,$service,$map,$digest,'service_suspended',$now);return;}
                 if(!$watch){$watch=WatchName::create(['user_id'=>$owner,'canonical_name'=>$name,'state'=>'active','psl_revision'=>$result->psl_revision,'notice_preferences'=>[]]);$this->audit($watch,'discovery_added',0,$now);}
-                if(in_array($watch->state,['retired','linked'],true)){$this->change($watch,['state'=>$this->staffPaused($watch)?'paused':'active','managed_domain_id'=>null,'registration'=>null,'registration_evidence'=>null,'psl_revision'=>$result->psl_revision],'discovery_returned',$now);}
+                if(in_array($watch->state,['retired','linked'],true)){$this->change($watch,['state'=>self::staffPaused($watch)?'paused':'active','managed_domain_id'=>null,'registration'=>null,'registration_evidence'=>null,'psl_revision'=>$result->psl_revision],'discovery_returned',$now);}
                 elseif($watch->psl_revision!==$result->psl_revision){$this->change($watch,['psl_revision'=>$result->psl_revision],'discovery_suffix_changed',$now);}
                 $this->source($old,['user_id'=>$owner,'service_id'=>$id,'map_id'=>$map->id,'map_revision'=>$map->revision,'hostname'=>$result->hostname,'registrable_name'=>$name,
                     'state'=>'watch','watch_id'=>$watch->id,'source_digest'=>$digest,'last_seen_at'=>$now],$now);
@@ -89,13 +95,13 @@ final class WatchDiscovery
         // A discovery heartbeat is not a change of source identity or public evidence.
         DB::table('domains_watch_sources')->where('id',$source->id)->update(['last_seen_at'=>$now]);
     }
-    private function source(?WatchSource $old,array $attrs,int $now): void
+    private function source(?WatchSource $old,array $attrs,int $now,?int $linking=null): void
     {
         $identity=array_diff_key($attrs,['last_seen_at'=>true]);
         if($old && $old->only(array_keys($identity))==$identity){$this->seen($old,$now);return;}
         $previous=$old?->watch_id;$old?->retire('hosting_source_changed');
         WatchSource::create($attrs);
-        if($previous && $previous!==($attrs['watch_id']??null)){$this->sync((int)$previous,$now);}
+        if($previous && $previous!==($attrs['watch_id']??null) && (int)$previous!==$linking){$this->sync((int)$previous,$now);}
     }
     private function held(?WatchSource $old,Service $s,WatchProductMap $map,string $digest,string $code,int $now): void
     {
@@ -104,7 +110,8 @@ final class WatchDiscovery
     }
     private function remove(?WatchSource $old,string $reason,int $now): void
     {if($old){$watch=$old->watch_id;$old->retire($reason);$this->sync($watch,$now);}}
-    private function staffPaused(WatchName $watch): bool
+    /** Whether staff intent is paused: the latest staff pause or resume, or a pause saved before staff writes were recorded. */
+    public static function staffPaused(WatchName $watch): bool
     {
         $last=WatchAudit::where('subject_type','watch')->where('subject_id',$watch->id)->whereIn('event',['staff_pause','staff_resume'])->orderByDesc('id')->value('event');
         return $last==='staff_pause' || ($last===null && $watch->state==='paused' && !WatchAudit::where('subject_type','watch')->where('subject_id',$watch->id)->where('event','discovery_paused')->exists());
@@ -113,13 +120,20 @@ final class WatchDiscovery
     {
         if(!$id){return;}$watch=WatchName::whereKey($id)->lockForUpdate()->first();if(!$watch || $watch->state==='linked'){return;}
         $sources=WatchSource::where('watch_id',$id)->where('state','watch');
-        $active=(clone $sources)->whereExists(fn($q)=>$q->selectRaw('1')->from('services as s')->join('orders as o','o.id','=','s.order_id')->join('domains_watch_product_maps as m','m.product_id','=','s.product_id')
-            ->whereColumn('s.id','domains_watch_sources.service_id')->whereColumn('s.user_id','domains_watch_sources.user_id')->whereColumn('o.user_id','s.user_id')
-            ->whereColumn('m.id','domains_watch_sources.map_id')->whereColumn('m.revision','domains_watch_sources.map_revision')->where('m.enabled',true)->where('s.status','active'))->exists();
-        $state=!$sources->exists()?'retired':(!$active || $this->staffPaused($watch)?'paused':'active');
+        $state=!$sources->exists()?'retired':(!self::hostingActive($id) || self::staffPaused($watch)?'paused':'active');
         $this->change($watch,['state'=>$state],'discovery_'.$state,$now);
         if($state!=='active'){$this->stop($watch,'discovery_'.$state,$now);}
         else{DB::afterCommit(fn()=>app(WatchWork::class)->enrollWatch($id,(int)$watch->user_id));}
+    }
+    /** Whether Resume can still change a paused watch: staff paused it, or an active hosting service can run it now. */
+    public static function canResume(WatchName $watch): bool
+    {return $watch->state==='paused' && (self::staffPaused($watch) || self::hostingActive((int)$watch->id));}
+    /** Whether an active hosting service on an enabled product line still names this watch. Without one, monitoring stays paused. */
+    public static function hostingActive(int $id): bool
+    {
+        return WatchSource::where('watch_id',$id)->where('state','watch')->whereExists(fn($q)=>$q->selectRaw('1')->from('services as s')->join('orders as o','o.id','=','s.order_id')->join('domains_watch_product_maps as m','m.product_id','=','s.product_id')
+            ->whereColumn('s.id','domains_watch_sources.service_id')->whereColumn('s.user_id','domains_watch_sources.user_id')->whereColumn('o.user_id','s.user_id')
+            ->whereColumn('m.id','domains_watch_sources.map_id')->whereColumn('m.revision','domains_watch_sources.map_revision')->where('m.enabled',true)->where('s.status','active'))->exists();
     }
     private function change(WatchName $watch,array $attrs,string $event,int $now): void
     {

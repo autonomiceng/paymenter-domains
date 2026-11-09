@@ -11,7 +11,7 @@ use Filament\Support\Enums\Width;
 use Illuminate\Support\Facades\Auth;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\{RoutingProfileResource,WatchResource};
 use Paymenter\Extensions\Servers\Domains\Models\{WatchName,WatchProductMap,WatchProfile};
-use Paymenter\Extensions\Servers\Domains\Services\{StaffWatchWrites as Writes,WatchProducts};
+use Paymenter\Extensions\Servers\Domains\Services\{StaffWatchWrites as Writes,WatchDiscovery,WatchProducts};
 /** Staff writes for monitored domains, DNS templates and hosting product lines. The ticket binds the revision the page loaded, so a stale page changes nothing. */
 final class WatchActions
 {
@@ -40,7 +40,9 @@ final class WatchActions
                     return;
                 }
                 $done=$kind==='profile'?match($action){'save'=>$id?'DNS template saved':'DNS template added','enable'=>'DNS template turned on','disable'=>'DNS template turned off','delete'=>'DNS template deleted'}:(self::DONE[$action]??'Saved');
-                Notification::make()->success()->title($done)->send();
+                // A resume saved while the hosting service is suspended keeps the domain paused until the service is active.
+                $waiting=$kind==='watch' && $action==='resume' && WatchName::whereKey($id)->value('state')==='paused';
+                Notification::make()->success()->title($waiting?'Monitoring will resume':$done)->body($waiting?WatchFindings::HOSTING_SUSPENDED:null)->send();
                 if($kind==='profile' && $action!=='delete'){
                     if($id){$livewire->refreshTemplate();}
                     return;
@@ -56,6 +58,7 @@ final class WatchActions
         return match($e->getMessage()){
             'The saved details changed. Reload and try again.','Reload and try again.','The watch state changed. Reload and try again.','Reload the disabled profile first.','Review the saved disabled mapping before enabling it.','The saved mapping changed.'=>$changed,
             'Enter one DNS target per line.'=>'Enter one value per line.',
+            Writes::UNREADABLE=>WatchFacts::TEMPLATE_UNAVAILABLE,
             'This watch cannot be changed.'=>"This domain can't be changed.",
             'Public checks are disabled or the asynchronous queue is unavailable.'=>'Monitoring is off or its queue is unavailable. Open Registrars → System checks and restore the background worker.',
             'This watch has no scheduled checks yet.'=>'The scheduler adds checks automatically. Open Registrars and check the background worker, then try Check now again.',
@@ -69,7 +72,8 @@ final class WatchActions
     {
         if(!in_array($w->state,['active','paused'],true)){return [];}$id=(int)$w->id;$can=fn(string $state)=>fn()=>$w->state===$state && Staff::can(Writes::VIEW)&&Staff::can(Writes::MANAGE);
         $main=[self::action('watch',$id,$revision,'read','Check now')->visible($can('active')),self::action('watch',$id,$revision,'pause','Pause monitoring')->color('gray')->visible($can('active')),
-            self::action('watch',$id,$revision,'resume','Resume monitoring')->color('gray')->visible($can('paused'))];
+            // Resume is hidden once staff intent is resumed and only the suspended hosting service keeps the watch paused.
+            self::action('watch',$id,$revision,'resume','Resume monitoring')->color('gray')->visible(fn()=>$can('paused')() && WatchDiscovery::canResume($w))];
         $more=[self::action('watch',$id,$revision,'profile','Change DNS template',[
                 Select::make('profile')->label('DNS template')->options(fn()=>self::templates())->default($w->ns_profile_id)->required(),
                 Select::make('expected_dns')->label('Expected nameservers')->options(['platform'=>WatchFindings::company(),'external'=>'Other'])->default($w->expected_dns)])->modalDescription('Future checks compare against this DNS template.')->modalSubmitActionLabel('Save'),

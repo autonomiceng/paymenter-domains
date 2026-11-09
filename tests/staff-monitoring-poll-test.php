@@ -89,8 +89,10 @@ $reload->call('pollCheck')->assertDontSee('wire:poll.5s',false)->assertSee('wire
 Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id])->assertDontSee('wire:poll.5s',false)->assertSee('wire:poll.60s="refreshFacts"',false)->assertNotified('Check is taking longer');
 \Carbon\Carbon::setTestNow();
 
-Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id])->callAction('retire',['reason'=>'Customer asked to stop'])->assertNotified('Saved');same('retired',WatchName::find($id)->state,'Stop saves');
-same('Stopped',WatchFindings::status(WatchName::find($id),[])['label'],'Stopped status');
+// Staff have no Stop: Pause is the supported way to halt checks, and the page then reads Paused.
+Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id])->assertActionDoesNotExist('retire')->callAction('pause')->assertNotified('Monitoring paused');same('paused',WatchName::find($id)->state,'Pause saves');
+same('Paused',WatchFindings::status(WatchName::find($id),[])['label'],'Paused status');
+Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id])->assertSee('Paused')->assertActionHidden('read')->assertActionHidden('pause')->assertActionVisible('resume')->assertDontSee('wire:poll.5s',false);
 
 
 $nativeSuccessful=true;echo "Staff monitoring polling passed\n";

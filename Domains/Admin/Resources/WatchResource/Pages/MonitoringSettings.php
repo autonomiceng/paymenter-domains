@@ -73,12 +73,12 @@ class MonitoringSettings extends Page
         abort_unless(self::canAccess(),403);
         [$endpoint,$reason,$forced]=app(DnsResolverSettings::class)->configuration();
         $default=\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::profile();
-        $refusal=\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::refusal();
+        $canEdit=Staff::canEditDefaultDns();$refusal=\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::refusal($canEdit);
         $fix=Staff::can(PublicSuffixList::MANAGE)?$this->edit('edit')->link():null;
         $resolver=TextEntry::make('resolver')->label('Resolver')->state($endpoint?->host??($forced?'Server default':Missing::LABEL))
             ->hintAction(HelpHint::make("If the resolver fails, checks retry once with the server's resolver."));
         return $schema->components([
-            ...(!$default||$refusal?[Callout::make($refusal??(Staff::canEditDefaultDns()?\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::MISSING:'Site DNS default is Missing. New domains have no nameservers to use. Ask staff who can change the site DNS default.'))->status('danger')->columnSpanFull()]:[]),
+            ...(!$default||$refusal?[Callout::make($refusal??($canEdit?\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::MISSING:'Site DNS default is Missing. New domains have no nameservers to use. '.\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::ASK))->status('danger')->columnSpanFull()]:[]),
             ...($forced?[Callout::make($reason)->status('danger')->columnSpanFull()]:[]),
             Sheet::split([Sheet::section('Monitoring',[
                 Sheet::row(MissingEntry::apply(TextEntry::make('site_dns')->label('Site DNS default')->state($refusal?Missing::LABEL:($default?->name??Missing::LABEL)),cause:$refusal??null)->belowContent($default?implode(', ',$default->nameservers):null)),

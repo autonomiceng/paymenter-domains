@@ -16,5 +16,16 @@ try{
   $detail=\Livewire\Livewire::actingAs($manager)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\ViewWatch::class,['record'=>$id]);
   $detail->assertSee('Expires in '.$expected.' days');
  }
+ // Next check reads Checking now until the lease ends on the injected clock, then the next due time.
+ $boundary=$testClock->now()->getTimestamp()+600;$due=$boundary+3600;
+ \Illuminate\Support\Facades\DB::table('domains_watch_work')->where('watch_id',$id)->update(['claim'=>null,'lease_until'=>null,'backoff_until'=>null,'due_at'=>$due]);
+ \Illuminate\Support\Facades\DB::table('domains_watch_work')->where('watch_id',$id)->where('kind','delegation')->update(['claim'=>str_repeat('d',64),'lease_until'=>$boundary]);
+ foreach([$boundary-1=>'Checking now',$boundary=>\Paymenter\Extensions\Servers\Domains\Admin\Support\WatchFacts::date($due)] as $at=>$next){
+  $testClock->instant=new DateTimeImmutable('@'.$at);
+  same($next,\Paymenter\Extensions\Servers\Domains\Admin\Support\WatchFacts::for(\Paymenter\Extensions\Servers\Domains\Models\WatchName::findOrFail($id))['Checks']['Next check']['value'],'Next check at lease end minus '.($boundary-$at).' seconds');
+  $detail=\Livewire\Livewire::actingAs($manager)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\ViewWatch::class,['record'=>$id]);
+  same($next,$detail->instance()->getSchema('infolist')->getComponentByStatePath('fact_'.md5('Next check'))->getState(),'Page Next check at lease end minus '.($boundary-$at).' seconds');
+ }
 }finally{app()->instance($clockKey,$originalClock);}
+same($originalClock,app($clockKey),'The real clock is restored');
 $nativeSuccessful=true;echo "Staff expiry has one clock across UTC midnight.\n";

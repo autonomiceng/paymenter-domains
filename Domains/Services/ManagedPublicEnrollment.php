@@ -93,9 +93,11 @@ final class ManagedPublicEnrollment
                 $changed=$changed || $inserted>0;
                 $w=$q->lockForUpdate()->first();
                 if ((int)$w->user_id!==$owner || $w->account_fingerprint!==$d->account_fingerprint) { throw new ManagedPublicIdentityChanged(); }
-                if (in_array($w->safe_code,['awaiting_acceptance','dns_not_configured','profile_unavailable'],true) || $w->retired_at!==null || (int)$w->profile_id!==(int)$profile->id || (int)$w->profile_revision!==(int)$profile->revision) {
+                $template=(int)$w->profile_id!==(int)$profile->id || (int)$w->profile_revision!==(int)$profile->revision;
+                if ($template || in_array($w->safe_code,['awaiting_acceptance','dns_not_configured','profile_unavailable'],true) || $w->retired_at!==null) {
+                    // A new template revision is new work; the old revision's retry delay does not apply to it.
                     $changed=true;$q->update(['safe_code'=>'ready','retired_at'=>null,'due_at'=>$now,'domain_revision'=>$d->confirmed_revision,'config_revision'=>$config->revision,
-                        'profile_id'=>$profile?->id,'profile_revision'=>$profile?->revision,'claim'=>null,'lease_until'=>null]);
+                        'profile_id'=>$profile?->id,'profile_revision'=>$profile?->revision,'claim'=>null,'lease_until'=>null,...($template?['attempts'=>0,'backoff_until'=>null]:[])]);
                 }
             }
             return $changed;

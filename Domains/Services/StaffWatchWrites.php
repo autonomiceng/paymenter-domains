@@ -10,6 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{WatchName,WatchAudit,WatchProfi
 final class StaffWatchWrites
 {
     public const VIEW='admin.domains.watch.view',MANAGE='admin.domains.watch.manage';
+    public const UNREADABLE='Saved DNS records cannot be read. Restore the template before changing it.';
     public static function ticket(int $actor,string $kind,int $id,int $revision,string $action): string
     { return Crypt::encryptString(json_encode(compact('actor','kind','id','revision','action')+['until'=>time()+600,'key'=>bin2hex(random_bytes(16))],JSON_THROW_ON_ERROR)); }
     public static function authorize(User $actor): void
@@ -29,13 +30,16 @@ final class StaffWatchWrites
             $class=match($kind){'watch'=>WatchName::class,'profile'=>WatchProfile::class,'mapping'=>WatchProductMap::class,default=>throw new \DomainException('Reload and try again.')};
             $row=$id?$class::whereKey($id)->lockForUpdate()->firstOrFail():new $class;
             if(($row->exists?(int)$row->revision:0)!==($t['revision']??null)){throw new \DomainException('The saved details changed. Reload and try again.');}
-            if($kind==='profile'&&$row->exists&&$row->readProfile()===null&&$action!=='delete'){throw new \DomainException('Saved DNS records cannot be read. Restore the template before changing it.');}
+            if($kind==='profile'&&$row->exists&&$row->readProfile()===null&&$action!=='delete'){throw new \DomainException(self::UNREADABLE);}
             $before=$row->exists?$row->revision:0;$data=[];
             if($kind==='watch'){
                 // Staff pause and resume; a watch ends only with its hosting service, never by a staff write.
                 if(!in_array($action,['pause','resume','profile','read','note'],true) || $row->managed_domain_id!==null || $row->state==='linked'){throw new \DomainException('This watch cannot be changed.');}
                 if($action==='pause' && $row->state==='active'){$row->state='paused';}
-                elseif($action==='resume' && $row->state==='paused'){$row->state='active';}
+                elseif($action==='resume' && WatchDiscovery::canResume($row)){
+                    // Resume saves staff intent; a suspended hosting service keeps the watch paused until it is active again.
+                    if(WatchDiscovery::hostingActive($id)){$row->state='active';}else{$data=['hosting'=>'suspended'];}
+                }
                 elseif($action==='profile' && in_array($row->state,['active','paused'],true)){
                     $profile=WatchProfile::whereKey((int)($input['profile']??0))->where('enabled',true)->lockForUpdate()->firstOrFail();
                     $row->ns_profile_id=$profile->id;$row->profile_revision=$profile->revision;
@@ -44,10 +48,10 @@ final class StaffWatchWrites
                     $latest=DB::table('domains_watch_staff_claims')->where('subject_type','watch')->where('subject_id',$id)->where('action','read')->where('claim','<>',$claim)->orderByDesc('created_at')->lockForUpdate()->first()?->created_at;
                     if($latest && $latest>time()-300){throw new \DomainException('A check was recently requested. Try again later.');}
                     if(!app(WatchWork::class)->active() || !app(WatchWork::class)->queueReady()){throw new \DomainException('Public checks are disabled or the asynchronous queue is unavailable.');}
-                    // Enqueue eligibility only: ordinary dispatcher performs the read outside this transaction.
+                    // Enqueue eligibility only: ordinary dispatcher performs the read outside this transaction. A missing-nameserver answer is a successful check.
                     $q=DB::table('domains_watch_work')->where('watch_id',$id);
                     if(!(clone$q)->exists()){throw new \DomainException('This watch has no scheduled checks yet.');}
-                    $count=$q->whereNull('claim')->where(fn($q)=>$q->whereNull('backoff_until')->orWhere('backoff_until','<=',time()))->where(fn($q)=>$q->whereNull('safe_code')->orWhereIn('safe_code',['ready','rotation']))->update(['due_at'=>time()]);$data=['eligible_rows'=>$count];
+                    $count=$q->whereNull('claim')->where(fn($q)=>$q->whereNull('backoff_until')->orWhere('backoff_until','<=',time()))->where(fn($q)=>$q->whereNull('safe_code')->orWhereIn('safe_code',['ready','rotation','nameservers_missing']))->update(['due_at'=>time()]);$data=['eligible_rows'=>$count];
                 }elseif($action!=='note'){throw new \DomainException('The watch state changed. Reload and try again.');}
             }elseif($kind==='mapping' && $action==='enable'){
                 $row=(new WatchMappings())->enable($actor,$id,$before,$reason);
@@ -57,7 +61,7 @@ final class StaffWatchWrites
                 if(!$row->exists || $row->enabled){throw new \DomainException('Reload the disabled profile first.');}$row->enabled=true;$row->edited_by=$actor->id;$row->reason=$reason;
             }elseif($kind==='profile' && in_array($action,['disable','delete'],true)){
                 if(!$row->exists){throw new \DomainException('Reload and try again.');}
-                if($reasonBlocked=DnsTemplateUsage::refusal((int)$row->id)){throw new \DomainException($reasonBlocked);}
+                if($reasonBlocked=DnsTemplateUsage::refusal((int)$row->id,true)){throw new \DomainException($reasonBlocked);}
                 if($action==='delete'){
                     // Delete only an unreferenced template here; watch history remains append-only.
                     WatchAudit::create(['subject_type'=>'dns_profile','subject_id'=>$row->id,'actor_id'=>$actor->id,

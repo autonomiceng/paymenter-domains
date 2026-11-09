@@ -95,17 +95,22 @@ final class WatchWork
         $data=json_decode($row->data??'{}',true);$data=is_array($data)?$data:[];
         if(($data['enrollment_until']??0)>$now){return 0;}
         $watches=WatchName::where('id','>',(int)$row->cursor)->orderBy('id')->limit(25)->get();
-        unset($data['enrollment_claim'],$data['enrollment_until']);
-        $payload=json_encode([...$data,'enrollment_claim'=>bin2hex(random_bytes(16)),'enrollment_until'=>$now+120]);
-        // Only the caller that still owns this snapshot may start refresh side effects.
-        if(!(clone $schedule)->where('cursor',(int)$row->cursor)->where('data',$row->data)->update(['data'=>$payload])){return 0;}
-        $cursor=(int)$row->cursor;
+        $cursor=(int)$row->cursor;unset($data['enrollment_claim'],$data['enrollment_until']);
+        // Only the caller that still owns this snapshot may start refresh side effects. Waiting refreshes join here.
+        $claim=DB::transaction(function()use($schedule,$row,$cursor,$data,$now):?array {
+            if(!(clone $schedule)->where('cursor',$cursor)->where('data',$row->data)->lockForUpdate()->first()){return null;}
+            $data=WatchDnsRefresh::claim(WatchDnsRefresh::normalize($data),$cursor);
+            $payload=json_encode([...$data,'enrollment_claim'=>bin2hex(random_bytes(16)),'enrollment_until'=>$now+120]);
+            (clone $schedule)->update(['data'=>$payload]);return [$data,$payload];
+        });
+        if(!$claim){return 0;}[$data,$payload]=$claim;
         $failed=false;foreach($watches as$w) {
             $owned=DB::transaction(function()use($payload,$cursor,$data,$w,$now):bool {
                 $q=DB::table('domains_watch_schedule')->where('scope','enrollment')->where('cursor',$cursor)->where('data',$payload);$row=$q->lockForUpdate()->first();
                 if(!$row || ($this->clock)()>=$now+120){return false;}
-                $refresh=$w->ns_profile_id===null?($data['refresh_dns']??false):in_array((int)$w->ns_profile_id,$data['refresh_profiles']??[],true);
-                if($refresh && $w->state==='active'){
+                // Decide with the current assignment; a template change after the page read keeps its own claim.
+                $current=WatchName::whereKey($w->id)->lockForUpdate()->first();
+                if($current && $current->state==='active' && WatchDnsRefresh::applies($data,$current->ns_profile_id===null?null:(int)$current->ns_profile_id,(int)$current->id)){
                     DB::table('domains_watch_work')->where('watch_id',$w->id)->whereIn('kind',['delegation','points'])
                         ->update(['due_at'=>$now,'claim'=>null,'lease_until'=>null,'backoff_until'=>null,'attempts'=>0,'safe_code'=>null]);
                 }
@@ -121,8 +126,7 @@ final class WatchWork
         }
         $complete=$watches->count()<25;
         (clone $schedule)->where('cursor',$cursor)->where('data',$payload)->update([
-            'cursor'=>$complete?0:$cursor,
-            'data'=>json_encode([...$data,'refresh_dns'=>!$complete&&($data['refresh_dns']??false),'refresh_profiles'=>$complete?[]:($data['refresh_profiles']??[])])]);
+            'cursor'=>$complete?0:$cursor,'data'=>json_encode(WatchDnsRefresh::release($data,$cursor,$complete))]);
         if ($failed) { throw new \RuntimeException(); }
         return $watches->count();
     }

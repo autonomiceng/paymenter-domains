@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels;
 use Paymenter\Extensions\Servers\Domains\Models\WatchName;
 use Paymenter\Extensions\Servers\Domains\Presentation\DomainSummary;
-use Paymenter\Extensions\Servers\Domains\Services\{DomainSummaries,StaffWatchWrites as Writes};
+use Paymenter\Extensions\Servers\Domains\Services\{DomainSummaries,StaffWatchWrites as Writes,WatchDiscovery};
 /** Staff monitored domain status over the customer DomainSummary state keys, so staff and customer read the same evidence. No transport or writes. */
 final class WatchFindings
 {
@@ -23,6 +23,10 @@ final class WatchFindings
             ->whereIn('event',['discovery_retired','discovery_active','staff_retire','staff_stop'])->orderByDesc('id')->value('event');
         return $event==='discovery_retired'?self::ENDED:'Monitoring has stopped';
     }
+    public const HOSTING_SUSPENDED='The hosting service is suspended. Monitoring resumes when it is active again.';
+    /** Why a paused domain is not checked when its hosting service, not staff, keeps it paused; null otherwise. */
+    public static function pausedReason(WatchName $watch): ?string
+    {return $watch->state==='paused' && !WatchDiscovery::hostingActive((int)$watch->id)?self::HOSTING_SUSPENDED:null;}
     /** Status filter options; Monitoring and Problem found read the first CAP active names. */
     public const STATUSES=['monitoring'=>'Monitoring','problem'=>'Problem found','paused'=>'Paused','stopped'=>'Stopped'];
     public const CAP=1000;

@@ -25,7 +25,7 @@ final class WatchFacts
         $c=WatchFindings::customers([$w->user_id])[$w->user_id];$profile=\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::watchProfile($w);
         $domain=['Customer'=>self::fact($c['label'],$c['email'],null,$c['url']),
             'Expected nameservers'=>self::fact(WatchFindings::who(\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::watchExpected($w)),cause:'Choose it in Change DNS template'),
-            'DNS template'=>self::fact($profile?->name,url:$profile?RoutingProfileResource::getUrl('view',['record'=>$profile->id]):null,cause:'Choose one in Change DNS template'),
+            'DNS template'=>self::fact($profile?->name,self::templateProblem($w,$profile),$profile&&self::templateProblem($w,$profile)?'warning':null,url:$profile?RoutingProfileResource::getUrl('view',['record'=>$profile->id]):null,cause:'Choose one in Change DNS template'),
             'Registrar'=>self::fact(WatchFindings::who($w->registration),cause:self::missingCause($w,'expiry'))];
         // Hidden when the registry does not publish an expiry date.
         if(!in_array('watch.no_coverage',$keys,true)){$domain['Expires']=self::expires($s,$keys,$active,$w);}
@@ -38,11 +38,12 @@ final class WatchFacts
         $lastMinute=($lastAt=(int)($last['at']??0))>0&&is_string($last['value'])&&$last['value']!==''?intdiv($lastAt,60):null;
         $checked=fn(int|string $at)=>intdiv($t=is_int($at)?$at:(int)strtotime($at),60)===$lastMinute?null:Sheet::moment($t,'Checked')->toHtml();
         if($active){$checks['Next check']=self::nextCheck($w);}
+        // Alerts are on only while monitoring runs. Pausing keeps the customer's saved choice for when monitoring resumes.
         $p=WatchNoticePreferences::read((int)$w->user_id,$w->canonical_name);$on=$p['account']['enabled']&&$p['target']['enabled'];
         // A failed customer alert says why and what to do; the staff alert links here.
         $failed=NoticeHealth::open('watch',(int)$w->id,$w->canonical_name);
-        $off=$w->state==='retired'?'Monitoring stopped':'The customer turns this on from their domain page';
-        $checks['Monitoring alerts']=self::fact($on&&$w->state!=='retired'?'On':'Off',implode(' · ',array_filter([$on&&$w->state!=='retired'?null:$off,$failed['text']??null]))?:null,$failed['tone']??null);
+        $off=match(true){!in_array($w->state,['active','paused'],true)=>'Monitoring stopped',$w->state==='paused'&&$on=>'Paused. Alerts resume with monitoring.',default=>'The customer turns this on from their domain page'};
+        $checks['Monitoring alerts']=self::fact($on&&$active?'On':'Off',implode(' · ',array_filter([$on&&$active?null:$off,$failed['text']??null]))?:null,$failed['tone']??null);
         // An empty string does not apply here and stays hidden; null is Missing.
         $shown=fn(array $facts)=>array_filter($facts,fn($f)=>$f['value']!=='');
         $e=\Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence::read(\Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence::domain($w),$w->points,$w->canonical_name);
@@ -67,6 +68,12 @@ final class WatchFacts
             $evidence[$label]=self::fact($e[$key]?implode('; ',$e[$key]):'Unknown',$at?($sub===''?null:new \Illuminate\Support\HtmlString($sub)):$sub);}
         return array_filter(['Domain'=>$shown($domain),'Checks'=>$shown($checks),'Evidence'=>$evidence]);
     }
+    /** A saved choice is never replaced automatically, including on a watch that returns after its template was turned off. */
+    private static function templateProblem(WatchName $w,?WatchProfile $profile): ?string
+    {
+        if(!$profile || $w->managed_domain_id!==null || \Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::usable($profile) || !in_array($w->state,['active','paused'],true)){return null;}
+        return ($profile->readProfile()===null?'Saved DNS records cannot be read.':'This template is off.').' Choose another in Change DNS template.';
+    }
     public static function missingCause(WatchName $w,?string $kind=null): string
     {
         if($w->state==='paused'){return 'Paused';}
@@ -85,7 +92,7 @@ final class WatchFacts
         $running=$w->state==='active';
         $partial=array_filter($fresh,fn($f)=>$f['checkedAt']!==null && $f['partial'] && (!$f['stale']||!$running));
         $stale=$running?array_filter($fresh,fn($f)=>$f['stale']):[];
-        $retry=$running?' Checks retry automatically.':($w->state==='paused'?' Resume monitoring to check again.':'');
+        $retry=$running?' Checks retry automatically.':($w->state==='paused'?(\Paymenter\Extensions\Servers\Domains\Services\WatchDiscovery::canResume($w)?' Resume monitoring to check again.':' Checks start again when the hosting service is active.'):'');
         return [...self::fact(self::date($at),$failed?'Registry lookup failed.'.$retry:($partial?'Some checks failed.'.$retry:($stale?'Some results are waiting for the next check.':null)),
             $failed||$partial?'danger':null),'at'=>$at];
     }

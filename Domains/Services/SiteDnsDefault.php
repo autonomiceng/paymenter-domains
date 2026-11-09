@@ -12,20 +12,47 @@ final class SiteDnsDefault
     public const KEY='domains_site_dns_template';
     public const MANAGE='admin.domains.settings.new_domain_dns';
     public const MISSING='Site DNS default is Missing. New domains have no nameservers to use. Choose a set with Change site DNS default.';
+    public const REPLACE='Choose another template for new domains first.';
+    public const RETAINED='This template is saved for new domains but cannot be used. Choose another template for new domains first.';
+    /** Settings writes refuse duplicates, so only someone with database access can remove the extra row. */
+    public const DUPLICATE='The site DNS default is saved more than once. Ask your site admin to remove the extra setting.';
+    public const ASK='Ask staff who can change the site DNS default.';
     private static function query(): \Illuminate\Database\Eloquent\Builder
     { return Setting::whereNull('settingable_type')->whereNull('settingable_id')->where('key',self::KEY); }
-    public static function profile(bool $lock=false): ?WatchProfile
+    /** A locking read sees rows committed after an older read view opened. */
+    private static function rows(bool $lock=false): \Illuminate\Support\Collection
+    { return self::query()->when($lock,fn($q)=>$q->lockForUpdate())->get(); }
+    private static function usable(\Illuminate\Support\Collection $rows,bool $lock=false): ?WatchProfile
     {
-        $rows=self::query()->when($lock,fn($q)=>$q->lockForUpdate())->get();
         if($rows->count()!==1 || $rows[0]->type!=='string' || $rows[0]->encrypted){return null;}
         $id=$rows[0]->value;
         $p=is_string($id)&&ctype_digit($id)?WatchProfile::whereKey($id)->when($lock,fn($q)=>$q->lockForUpdate())->first():null;
         return ManagedDnsSetup::usable($p)?$p:null;
     }
-    public static function uses(int $id): bool
+    private static function saves(\Illuminate\Support\Collection $rows,int $id): bool
+    { return $id>0 && $rows->contains(fn($row)=>$row->type==='string' && !$row->encrypted && $row->value===(string)$id); }
+    public static function profile(bool $lock=false): ?WatchProfile
+    { return self::usable(self::rows($lock),$lock); }
+    public static function uses(int $id,bool $lock=false): bool
+    { return self::saves(self::rows($lock),$id); }
+    /** Why a saved reference keeps this template, or null. Unusable and duplicate references stay protected. */
+    public static function usesRefusal(int $id,bool $lock=false): ?string
     {
-        if($id<1){return false;}$rows=self::query()->get();
-        return $rows->contains(fn($row)=>$row->type==='string' && !$row->encrypted && $row->value===(string)$id);
+        $rows=self::rows($lock);
+        if(!self::saves($rows,$id)){return null;}
+        if($rows->count()>1){return self::DUPLICATE;}
+        return self::usable($rows,$lock)?->id===$id?self::REPLACE:self::RETAINED;
+    }
+    /** DNS template list markers from one settings read. @return array<int,string> */
+    public static function marks(): array
+    {
+        $rows=self::rows();$live=self::usable($rows)?->id;$out=[];
+        foreach($rows as $row){
+            if($row->type!=='string' || $row->encrypted || !is_string($row->value) || !ctype_digit($row->value)){continue;}
+            $id=(int)$row->value;
+            $out[$id]=$id===$live?'Used for new domains':($rows->count()>1?'Saved for new domains more than once':'Saved for new domains but cannot be used');
+        }
+        return $out;
     }
     public static function watchProfile(WatchName $watch,bool $lock=false): ?WatchProfile
     {
@@ -84,34 +111,49 @@ final class SiteDnsDefault
     /** Paused processing still represents a connected registrar and must support the saved default. */
     public static function validateRegistrars(array $nameservers): void
     {
+        if($rule=self::rule($nameservers)){throw new \DomainException($rule.' Update this DNS template or choose another one.');}
+    }
+    private static function rule(array $nameservers): ?string
+    {
         foreach(Account::orderBy('registrar_key')->distinct()->pluck('registrar_key') as $registrar){
             try{NewDomainDns::validate($registrar,$nameservers);}
-            catch(\InvalidArgumentException $e){
+            catch(\InvalidArgumentException){
                 $max=$registrar==='enom'?12:13;$label=$registrar==='enom'?'Enom':'NameSilo';
-                $rule=count($nameservers)<2||count($nameservers)>$max?$label.' takes 2 to '.$max.' nameservers.':$label.' needs valid nameserver hostnames.';
-                throw new \DomainException($rule.' Update this DNS template or choose another one.',0,$e);
+                return count($nameservers)<2||count($nameservers)>$max?$label.' takes 2 to '.$max.' nameservers.':$label.' needs valid nameserver hostnames.';
             }
         }
+        return null;
+    }
+    /** Deployment hosts, or why they cannot be used. Too many valid hosts is not a hostname problem. */
+    private static function deployment(array $names): array|string
+    {
+        try{return (new RoutingProfile($names,[],[]))->nameservers;}catch(\InvalidArgumentException|\TypeError){}
+        try{$hosts=array_unique(array_map(static fn($host)=>\Paymenter\Extensions\Servers\Domains\Dns\DnsQuery::hostname($host),array_values($names)));}
+        catch(\InvalidArgumentException|\TypeError){return 'Deployment nameserver hostnames are invalid.';}
+        return count($hosts)>13?'Deployment DNS default lists more than 13 nameservers.':'Deployment nameserver hostnames are invalid.';
     }
     /** Re-evaluate connected accounts on every read, including accounts added after installation.
      * Keep the saved reference and all domain/watch choices intact; only staff can replace the default.
      */
-    public static function refusal(): ?string
+    public static function refusal(bool $canEdit=true): ?string
     {
-        $p=self::profile();
-        if($p){$names=$p->nameservers;}
+        $rows=self::rows();
+        if($rows->count()>1){return self::DUPLICATE;}
+        $p=self::usable($rows);
+        if($p){$cause=self::rule($p->nameservers);$fix='Update this DNS template or choose another one.';}
         else{
             $names=config('domains.site_dns_default.nameservers');
             if(!is_array($names) || !$names){return null;}
-            try{$names=(new RoutingProfile($names,[],[]))->nameservers;}catch(\InvalidArgumentException|\TypeError){return 'Deployment nameserver hostnames are invalid. Create and turn on a compatible DNS template, then choose it as the site DNS default.';}
+            $names=self::deployment($names);
+            $cause=is_string($names)?$names:self::rule($names);$fix='Create and turn on a compatible DNS template, then choose it as the site DNS default.';
         }
-        try{self::validateRegistrars($names);}catch(\DomainException $e){return $e->getMessage().($p?'':' Create and turn on a compatible DNS template, then choose it as the site DNS default.');}
-        return null;
+        // Staff without the settings permission keep the cause and are sent to someone who can fix it.
+        return $cause===null?null:$cause.' '.($canEdit?$fix:self::ASK);
     }
     private static function write(WatchProfile $p): void
     {
         $rows=self::query()->lockForUpdate()->get();
-        if($rows->count()>1){throw new \DomainException('Duplicate site DNS defaults need administrator review.');}
+        if($rows->count()>1){throw new \DomainException(self::DUPLICATE);}
         $s=$rows->first()??new Setting(['key'=>self::KEY,'settingable_type'=>null,'settingable_id'=>null]);
         $s->fill(['type'=>'string','encrypted'=>false,'value'=>(string)$p->id])->save();
     }
@@ -121,19 +163,17 @@ final class SiteDnsDefault
         if(!Schema::hasTable(PublicDnsQuota::TABLE) || !Schema::hasTable('domains_watch_schedule')){return;}
         $inherited=$inherited||$profileId===null;
         $watch=WatchName::where('state','active')->where(fn($q)=>$q->where('ns_profile_id',$profileId)->when($inherited,fn($q)=>$q->orWhereNull('ns_profile_id')))->exists();
-        $managed=Schema::hasTable('domains_managed_public_config') && \Paymenter\Extensions\Servers\Domains\Models\ManagedPublicConfig::where(fn($q)=>$q->where('profile_id',$profileId)->when($inherited,fn($q)=>$q->orWhereNull('profile_id')))->exists();
-        // A site-wide change must also discover managed targets without an explicit config row.
-        $managed=$managed||$inherited;
+        // A site-wide change also discovers eligible holdings without a config row; none means no sweep.
+        $managed=Schema::hasTable('domains_managed_public_config') && ManagedDnsSetup::eligible(time())->when(!$inherited,fn($q)=>$q->whereExists(fn($c)=>$c->selectRaw('1')
+            ->from('domains_managed_public_config as c')->whereColumn('c.domain_id','domains_domains.id')->where('c.profile_id',$profileId)))->exists();
         if(!$watch&&!$managed){return;}
-        if($managed){PublicDnsQuota::seed(time());DB::table(PublicDnsQuota::TABLE)->where('id',1)->update(['sweep_due_at'=>0,'sweep_cursor'=>0]);}
-        if($watch){DB::transaction(static function()use($profileId,$inherited):void {
-            DB::table('domains_watch_schedule')->insertOrIgnore(['scope'=>'enrollment']);
-            $q=DB::table('domains_watch_schedule')->where('scope','enrollment');$row=$q->lockForUpdate()->first();
-            $data=json_decode($row->data??'{}',true);$data=is_array($data)?$data:[];
-            $profiles=array_values(array_unique([...($data['refresh_profiles']??[]),...($profileId===null?[]:[$profileId])]));
-            $q->update(['cursor'=>0,'data'=>json_encode(['refresh_dns'=>$inherited||($data['refresh_dns']??false),
-                'refresh_profiles'=>$profiles,'restart'=>bin2hex(random_bytes(16))])]);
-        });}
+        if($managed){ManagedPublicReconciliation::restart();}
+        if($watch){
+            $keys=[];$p=$profileId===null?null:WatchProfile::find($profileId);$d=$inherited?self::profile():null;
+            if($profileId!==null){$keys[WatchDnsRefresh::scope($profileId)]=$p?$p->id.':'.$p->revision:'missing';}
+            if($inherited){$keys[WatchDnsRefresh::DEFAULT]=$d?$d->id.':'.$d->revision:'none';}
+            WatchDnsRefresh::request($keys);
+        }
         DB::afterCommit(static fn()=>app(WatchWork::class)->reconcileDefaults($managed,$watch));
     }
 }

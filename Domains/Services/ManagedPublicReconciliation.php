@@ -2,16 +2,29 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 /** Explicit scheduler seams; no native cron callback or network is registered here. */
 final readonly class ManagedPublicReconciliation
 {
     public function __construct(private ManagedPublicSignals $signals) {}
+    private const GENERATION='managed_sweep';
+    /** Start a new pass now. The generation keeps an older page from overwriting this restart. */
+    public static function restart(): void
+    {
+        DB::transaction(static function():void {
+            PublicDnsQuota::seed(time());DB::table('domains_watch_schedule')->insertOrIgnore(['scope'=>self::GENERATION]);
+            $g=DB::table('domains_watch_schedule')->where('scope',self::GENERATION);$row=(clone $g)->lockForUpdate()->first();
+            $g->update(['cursor'=>(int)$row->cursor+1]);
+            DB::table(PublicDnsQuota::TABLE)->where('id',1)->update(['sweep_due_at'=>0,'sweep_cursor'=>0]);
+        });
+    }
     /** One bounded page/tick; completion schedules the next daily pass. */
     public function sweep(int $now,int $limit=25): int
     {
         if (!$this->signals->enabled() || DB::transactionLevel()!==0 || $now<0 || $limit<1 || $limit>100) { return 0; }
+        $g=Schema::hasTable('domains_watch_schedule')?DB::table('domains_watch_schedule')->where('scope',self::GENERATION):null;
+        $generation=(int)($g?(clone $g)->value('cursor'):0);
         PublicDnsQuota::seed($now);$q=DB::table(PublicDnsQuota::TABLE)->where('id',1);$row=$q->first();
         if ((int)$row->sweep_due_at>$now) { return 0; }
         $domains=Domain::where('id','>',$row->sweep_cursor)->orderBy('id')->limit($limit)->get();
@@ -19,9 +32,12 @@ final readonly class ManagedPublicReconciliation
         // Deleted native/ledger rows must not leave immortal jobs. Retained normal history is unchanged.
         DB::table(ManagedPublicWorkSchema::TABLE)->whereNull('retired_at')->whereNotExists(fn($q)=>$q->selectRaw('1')->from('domains_domains as d')
             ->whereColumn('d.id',ManagedPublicWorkSchema::TABLE.'.domain_id'))->update(['retired_at'=>$now,'claim'=>null,'lease_until'=>null,'safe_code'=>'target_changed']);
-        // Optimistic cursor prevents a concurrent older page from rewinding a completed pass.
-        $q->where('sweep_cursor',$row->sweep_cursor)->where('sweep_due_at',$row->sweep_due_at)->update($domains->count()<$limit?
-            ['sweep_cursor'=>0,'sweep_due_at'=>$now+86400]:['sweep_cursor'=>$domains->last()->id]);
+        // Optimistic cursor prevents a concurrent older page from rewinding a completed pass or consuming a newer restart.
+        DB::transaction(function()use($g,$generation,$q,$row,$domains,$limit,$now):void {
+            if ($g && (int)(clone $g)->lockForUpdate()->value('cursor')!==$generation) { return; }
+            $q->where('sweep_cursor',$row->sweep_cursor)->where('sweep_due_at',$row->sweep_due_at)->update($domains->count()<$limit?
+                ['sweep_cursor'=>0,'sweep_due_at'=>$now+86400]:['sweep_cursor'=>$domains->last()->id]);
+        });
         return $domains->count();
     }
     /** Shared dispatch/health eligibility; dormant or obsolete managed targets are not outages. */

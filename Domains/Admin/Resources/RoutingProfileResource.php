@@ -21,9 +21,10 @@ class RoutingProfileResource extends WatchReadResource
     {
         // Long text: nameservers wrap to 2 lines (table standard). The full list is on hover and on the template.
         // The detail page has the monitoring switch. Only the single site choice supplies new registrations.
-        $read=false;$default=null;
-        $chosen=static function()use(&$read,&$default):?int {if(!$read){$default=\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::profile()?->id;$read=true;}return $default;};
-        $table=$table->columns([OneLine::apply(TextColumn::make('name')->label('Template')->description(fn($record)=>$chosen()===(int)$record->id?'Used for new domains':null)),TextColumn::make('nameservers')->label('Nameservers')->separator(', ')->wrap()->lineClamp(2)->fontFamily(FontFamily::Mono)
+        // Saved references that cannot be used are marked too, matching the guard that keeps them.
+        $marks=null;
+        $mark=static function(int $id)use(&$marks):?string {$marks??=\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::marks();return $marks[$id]??null;};
+        $table=$table->columns([OneLine::apply(TextColumn::make('name')->label('Template')->description(fn($record)=>$mark((int)$record->id))),TextColumn::make('nameservers')->label('Nameservers')->separator(', ')->wrap()->lineClamp(2)->fontFamily(FontFamily::Mono)
                 ->tooltip(fn($record)=>implode(', ',(array)$record->nameservers)?:null),
             TextColumn::make('enabled')->label('Status')->badge()->state(fn($record)=>self::status($record)['label'])->color(fn($record)=>self::status($record)['tone'])
                 ->extraAttributes(fn($record)=>StatusMark::attributes(self::status($record)['tone'],'template-'.$record->id))])

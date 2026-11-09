@@ -5,12 +5,22 @@ require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/managed-public.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\{ManagedPublicObservation,WatchName};
-use Paymenter\Extensions\Servers\Domains\Services\{ManagedPublicSignals,ManagedPublicReconciliation,ManagedPublicWorkSchema,PublicDnsQuota};
+use Paymenter\Extensions\Servers\Domains\Services\{ManagedPublicSignals,ManagedPublicReconciliation,ManagedPublicWorkSchema,PublicDnsQuota,SiteDnsDefault,WatchWork,WatchDiscoveryWork};
 extract(managedFixture());$id=(int)$d->id;$uid=(int)$owner->id;$now=$time->now;
 // Keep a proven hosting source to exercise both public work kinds; unhosted enrollment is covered in managed-dns-setup.
 $off=new ManagedPublicReconciliation(new ManagedPublicSignals($fake));same(0,$off->sweep($now),'Default-off sweep does not accept A3 rows');
 $sweep=new ManagedPublicReconciliation($signals);same(1,$sweep->sweep($now,1),'Bounded daily pass accepts old A3 rows');same(1,WatchName::count(),'Hosted holding keeps its predecessor watch');
 $work=DB::table(ManagedPublicWorkSchema::TABLE)->where('kind','delegation')->first();same('ready',$work->safe_code,'Existing A3 dormant row accepted only in enabled sweep');
+// A site default restart that lands while an older pass reads its page survives that pass.
+Paymenter\Extensions\Servers\Domains\Services\WatchScheduleSchema::install();
+app()->instance(WatchWork::class,new WatchWork($fake,new WatchDiscoveryWork(fn()=>0),false,fn()=>$now));
+$pool=fn()=>array_map('intval',array_values((array)DB::table(PublicDnsQuota::TABLE)->where('id',1)->select('sweep_due_at','sweep_cursor')->first()));
+$resumeAt=$pool();DB::table(PublicDnsQuota::TABLE)->where('id',1)->update(['sweep_due_at'=>0,'sweep_cursor'=>0]);
+$restart=true;
+DB::listen(static function($q)use(&$restart):void { if($restart && str_contains($q->sql,'from "domains_domains" where "id" > ?')){$restart=false;SiteDnsDefault::reconcile();} });
+$sweep->sweep($now);expect(!$restart,'Site default restart landed during the sweep page read');
+same([0,0],$pool(),'A newer restart survives the older sweep page');
+DB::table(PublicDnsQuota::TABLE)->where('id',1)->update(['sweep_due_at'=>$resumeAt[0],'sweep_cursor'=>$resumeAt[1]]);app()->forgetInstance(WatchWork::class);
 $fail=true;$configReads=0;
 DB::listen(static function($q)use(&$fail,&$configReads){
     if ($fail && str_contains($q->sql,'domains_managed_public_config') && str_starts_with($q->sql,'select') && ++$configReads===2) {
