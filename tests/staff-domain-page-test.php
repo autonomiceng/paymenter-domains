@@ -305,19 +305,24 @@ DB::table('domains_operations')->whereIn('id',[$done->id,$stuck->id,$closed->id,
 Auth::setUser($viewer);
 // Nothing syncs on a domain that has ended, so a stopped sync is no step and has no button.
 ObligationAlerts::record($active->fresh(),'observation_review',time());
+// Saved DNS failure evidence, read at its own time, is history once the domain ends.
+$beforeEnded=$active->fresh()->observation;$endedReadAt='2026-10-19T08:17:00+00:00';
+ObservationRecords::save($active->fresh(),['glue'=>['state'=>'partial','records'=>[$glueHost=>'8.8.8.8']]],new DateTimeImmutable($endedReadAt));
+ObservationRecords::hold($active->fresh(),'call_cap',new DateTimeImmutable('2026-10-19T08:20:00+00:00'),null,'dns');
 Auth::setUser($staff); DB::table('domains_domains')->where('id',$active->id)->update(['status'=>'cancelled']);
 $ended=DomainFacts::head($active->fresh(),DomainFacts::status($active->fresh()),DomainFacts::for($active->fresh()));
 same('gray',$ended['tone'],'An ended domain keeps its own tone');
 expect(!str_contains((string)$ended['step'],'Sync'),'An ended domain has no sync step');
 expect($value($active,'Last sync')!=='Read stopped','An ended domain does not ask for a resume');
-Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$active->id])->assertDontSee('Resume sync')->assertDontSee('Stopped until resumed')->assertDontSee('Next registrar read:')->assertDontSee('No read queued.')->assertDontSee('Sync this domain.')->assertDontSee('Registrar records are waiting for an update.')->assertSee('Registrar records');
+$endedHtml=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$active->id])->assertDontSee('Resume sync')->assertDontSee('Stopped until resumed')->assertDontSee('Next registrar read:')->assertDontSee('No read queued.')->assertDontSee('Sync this domain.')->assertDontSee('Registrar records are waiting for an update.')->assertSee('Registrar records')->html();
 // Retained failure evidence is history even after the domain ends; it never schedules another read.
-$history=\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::read($active->fresh(),app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now());
-$history['failed_family']='dns';$history['staff_hold']='Saved registrar failure.';$history['at']='2026-10-20T15:05:00+00:00';
-$endedHistory=view('domains::partials.record-families',['recordFamilies'=>$history,'staff'=>true,'readScheduling'=>false])->render();
-expect(str_contains($endedHistory,'Last read failed for DNS records.')&&str_contains($endedHistory,'Saved registrar failure.'),'Ended records preserve historical failed family and cause');
-expect(str_contains($endedHistory,'Last registrar read:')&&!str_contains($endedHistory,'Next registrar read:')&&!str_contains($endedHistory,'Resume sync'),'Ended history has retained time without new scheduling');
+require_once __DIR__.'/Support/storefront.php';$endedDom=storefrontDom($endedHtml);
+$failedLine=$endedDom->query('//p[contains(@class,"domains-hint") and starts-with(normalize-space(.),"Last read failed for")]');
+same(['Last read failed for DNS records. Account call limit reached.'],array_map(fn($n)=>trim(preg_replace('/\s+/',' ',$n->textContent)),iterator_to_array($failedLine)),'The ended page keeps the saved failed family and cause');
+$readLine=$endedDom->query('//p[contains(@class,"domains-hint") and starts-with(normalize-space(.),"Last registrar read:")]//time');
+same([[$endedReadAt,true]],array_map(fn($n)=>[$n->getAttribute('datetime'),trim($n->textContent)!==''],iterator_to_array($readLine)),'The ended page keeps the saved read time, not a later one');
 same(null,DomainFacts::sync($active->fresh()),'The list reads the same');
+$active->fresh()->update(['observation'=>$beforeEnded]);
 DB::table('domains_domains')->where('id',$active->id)->update(['status'=>'active']);
 DB::table('domains_obligation_alerts')->where('domain_id',$active->id)->delete();
 Auth::setUser($viewer);
