@@ -33,6 +33,19 @@ final class OfferState
         if (is_array($value)) { return $value; }
         return $value === null ? [] : json_decode($value, true, 32, JSON_THROW_ON_ERROR);
     }
+    /** Account defaults as a defaults save sees them. The save replaces them whole, so defaults that can't be decoded
+     * read as empty. Their revision then moves past every saved publication of the account, so none reads as current. */
+    public static function replaceableDefaults(mixed $value, int $server): array
+    {
+        try { $defaults = self::decode($value); if (is_int($defaults['_revision'] ?? 0)) { return $defaults; } }
+        catch (\JsonException|\TypeError) {}
+        $revision = 0;
+        foreach (\Illuminate\Support\Facades\DB::table('domains_tlds')->where('server_id', $server)->whereNotNull('catalogue_published_revision')->pluck('catalogue_published_revision') as $marker) {
+            try { $saved = self::decode($marker); } catch (\JsonException|\TypeError) { continue; }
+            if (is_int($saved['defaults'] ?? null)) { $revision = max($revision, $saved['defaults']); }
+        }
+        return ['_revision' => $revision];
+    }
     public static function money(mixed $value, int $scale): ?string
     {
         if (!is_string($value) && !is_int($value)) { return null; }

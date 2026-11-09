@@ -62,7 +62,9 @@ final class OfferReader
             $server = $servers[$id] ?? throw new \DomainException('Offer server disappeared.');
             $account = $accounts[$id] ?? throw new \DomainException('Offer account disappeared.');
             $binding->requireMatch(AccountBindings::binding($account));
-            $defaults[$id] = OfferState::decode($account->catalogue_defaults);
+            // Display leaves defaults it can't decode to each ending's own refusal, so a staff page still opens to repair them.
+            try { $defaults[$id] = OfferState::decode($account->catalogue_defaults); }
+            catch (\JsonException|\TypeError $error) { if (!$display) { throw $error; } $defaults[$id] = null; }
             foreach ($queries as $i => $query) {
                 if ($query->binding->serverId !== $id) { continue; }
                 ($this->authorize)($query, $context);
@@ -127,7 +129,7 @@ final class OfferReader
                         $key = $id.':'.$action;
                         $ready[$key] ??= $servers[$id]->enabled && $servers[$id]->extension === 'Domains'
                             && ($this->ready)($b, $servers[$id], $accounts[$id], $seed, $context);
-                        $snapshot = OfferState::snapshot($b, $tld, $defaults[$id], $policies[$name] ?? null, $rows, $ready[$key], freshness: $freshness[$id]);
+                        $snapshot = OfferState::snapshot($b, $tld, $defaults[$id] ?? throw new \DomainException('Account defaults unreadable.'), $policies[$name] ?? null, $rows, $ready[$key], freshness: $freshness[$id]);
                         foreach ($action === 'register' ? range(1, 10) : [1] as $term) {
                             // load() authorized this query's binding and context once; per-term reads add no new grant.
                             $q = new Query($b, [$name], $action, $term);
