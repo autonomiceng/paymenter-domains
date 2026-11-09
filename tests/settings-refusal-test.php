@@ -53,6 +53,7 @@ same('That is too many changes for one save. Save fewer at a time. Nothing was s
 same('Check this page, then try again. If it fails again, open System checks on the registrar account.', SettingsActions::refusal(new DomainException('Registrar key authentication failed.'), 'configure', ['registrar' => 'namesilo']), 'Refused key keeps its words');
 same("NameSilo didn't answer. Nothing was saved. Try again in a few minutes.", SettingsActions::refusal(new DomainException('Registrar did not answer.'), 'configure', ['registrar' => 'namesilo']), 'NameSilo no answer says so');
 same("Enom didn't answer. Nothing was saved. Try again in a few minutes.", SettingsActions::refusal(new DomainException('Registrar did not answer.'), 'configure', ['registrar' => 'enom']), 'Shared words name the registrar');
+same('Registrar key could not be confirmed. Nothing was saved. Check the API details and try again.', SettingsActions::refusal(new DomainException('Registrar key could not be confirmed.'), 'configure', ['registrar' => 'namesilo']), 'An unconfirmed key check has its own words');
 echo "Live and TEST refusal guidance and unknown fallback passed.\n";
 
 foreach(['default_pricing','override'] as $action){
