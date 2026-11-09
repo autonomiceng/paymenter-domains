@@ -14,10 +14,14 @@ class RegistrarAnswers
         $old=$op->getOriginal('policy')['enom_answer']??null;$new=$op->policy['enom_answer']??null;
         if($old!==$new&&($old!==null||self::$writing!==[$op->id,$new])){throw new \DomainException('Registrar answer requires a current audited review.');}
     }
+    /** Unreadable saved attempt data is never eligible, answered or offered for an answer. */
+    public static function readable(Operation $op): bool
+    {try{$op->attempt;return true;}catch(\Illuminate\Contracts\Encryption\DecryptException){return false;}}
     public static function identity(Operation $op): string
     {$attempt=$op->attempt??[];unset($attempt['reconciliation']);return hash('sha256',json_encode([$op->operation_key,$op->account_fingerprint,$op->authority_generation,$attempt,$op->request_fingerprint],JSON_THROW_ON_ERROR));}
     public static function capturedReference(Operation $op): ?string
     {
+        if (!self::readable($op)) { return null; }
         $a = $op->attempt ?? []; $id = $a['evidence']['registration']['orderReference'] ?? null;
         return $op->registrar_key === 'enom' && $op->action === 'register' && ($a['seal'] ?? null) === 'sealed'
             && ($a['execution']['disposition'] ?? null) === 'unknown' && ($a['execution']['send_state'] ?? null) === 'sent'
@@ -25,6 +29,7 @@ class RegistrarAnswers
     }
     public static function eligible(Operation $op,\DateTimeImmutable $now): bool
     {
+        if(!self::readable($op)){return false;}
         if($op->action==='transfer'){return TransferRejections::eligible($op);}
         try{$at=new \DateTimeImmutable($op->attempt['dispatch_attempted_at']??'invalid');}catch(\Throwable){return false;}
         return in_array($op->registrar_key,['enom','namesilo'],true)&&in_array($op->action,['register','renew'],true)
@@ -107,7 +112,7 @@ class RegistrarAnswers
     public static function answer(Operation $op,Domain $d): ?array
     {
         $a=$op->policy['enom_answer']??null;
-        return is_array($a)&&in_array($op->registrar_key,['enom','namesilo'],true)&&in_array($op->action,['register','renew','transfer'],true)
+        return is_array($a)&&self::readable($op)&&in_array($op->registrar_key,['enom','namesilo'],true)&&in_array($op->action,['register','renew','transfer'],true)
             &&$op->domain_id===$d->id&&$op->service_id===$d->service_id&&$op->server_id===$d->server_id&&$op->registrar_key===$d->registrar_key&&($a['identity']??null)===self::identity($op)
             &&($a['operation_key']??null)===$op->operation_key&&($a['fingerprint']??null)===$d->account_fingerprint
             &&($op->registrar_key!=='namesilo'||($a['account']??null)===['registrar'=>$op->registrar_key,'server_id'=>$op->server_id,'domain_id'=>$op->domain_id,'service_id'=>$op->service_id])

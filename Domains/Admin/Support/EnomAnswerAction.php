@@ -13,8 +13,9 @@ final class EnomAnswerAction
 {
     public const LABEL='Enter Enom’s answer';
     public static function label(Operation $op): string {return $op->registrar_key==='namesilo'?'Enter NameSilo’s answer':self::LABEL;}
+    /** Unreadable saved attempt data never offers the no-order answer. */
     private static function accepted(Operation $op): bool
-    {return Answers::capturedReference($op)!==null||isset($op->attempt['registration'])||isset($op->attempt['renewal']);}
+    {return !Answers::readable($op)||Answers::capturedReference($op)!==null||isset($op->attempt['registration'])||isset($op->attempt['renewal']);}
     /** One request's answer. The stamp is the settings review the page opened on. */
     public static function make(Operation $op,string $stamp): Action
     {
