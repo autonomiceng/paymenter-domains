@@ -87,7 +87,7 @@ final class ManagementProgress
             $op->state==='succeeded'=>'Saved.',
             $op->safe_code==='management_retired'=>'Replaced by your latest choice.',
             $op->action==='nameservers' && $op->safe_code==='management_provider_refused'=>RequestStatus::NAMESERVERS_REFUSED,
-            default=>(ManagementEvidence::outcome($op)===RequestStatus::UNSENT?RequestStatus::UNSENT:($op->action==='auth_code_email'?'The auth code email request failed.':'The '.strtolower(['lock'=>'Transfer lock','nameservers'=>'Nameservers','contacts'=>'Contacts','dns'=>'DNS records','privacy'=>'WHOIS privacy','ds'=>'DNSSEC','glue'=>'Glue records'][self::setting($op->action)]??'change').' change failed.')).self::TRY_AGAIN,
+            default=>(ManagementEvidence::outcome($op)===RequestStatus::UNSENT?RequestStatus::UNSENT:($op->action==='auth_code_email'?'The auth code email request failed.':'The '.(['lock'=>'transfer lock','nameservers'=>'nameservers','contacts'=>'contacts','dns'=>'DNS records','srv'=>'SRV records','privacy'=>'WHOIS privacy','ds'=>'DNSSEC','glue'=>'glue records'][self::section($op->action)]??'change').' change failed.')).self::TRY_AGAIN,
         };
         if($op->action==='auth_code_email' && $pending && $sent && !$slow){$text='Email request sent. Acceptance is not confirmed. We will keep checking.';}
         $settled=$op->state==='succeeded'&&$op->action!=='contact_profile'&&$op->updated_at->getTimestamp()<=now()->getTimestamp()-self::SETTLED_SECONDS;

@@ -71,6 +71,8 @@ final class ObservationRecords
             $record=RecordFormat::read([...$record,...$meta],$d->registrar_key);
         }
         if ($record===null) { return; }
+        // A versioned row read before DNS was supported would drop this DNS on the next read; other expectations stay.
+        if (isset($record['format'])) { $record['expected_families']['dns']='supported'; }
         $at=$now->format(DATE_ATOM);
         $record['families']['dns']=[...$family,'at'=>$at,'last_good'=>['at'=>$at,'records'=>$family['records']]];
         // Keep the whole-observation sequence: this single-family read cannot supersede other management evidence.

@@ -118,6 +118,7 @@ $save=function(string $action,array $payload,bool $refused)use($controller,$post
 };
 same('rejected',$save('dns',['records'=>[['name'=>'@','type'=>'TXT','address'=>'refused','mx_pref'=>'']],'preimage_digest'=>ManagementPayload::digest($state->dns)],true),'The registrar refuses the DNS change');
 expect(str_contains($sectionText('dns'),$failed)&&!str_contains($sectionText('srv'),$failed),'A DNS failure shows only in the DNS section');
+expect(str_contains($sectionText('dns'),'The DNS records change failed.'),'The DNS failure names DNS records');
 [$srvRows,$srvDigest]=$srvForm();$srvRows[0]['port']='8444';
 same('succeeded',$save('srv',['records'=>$srvRows,'preimage_digest'=>$srvDigest],false),'The SRV change completes at once');
 expect(str_contains($sectionText('srv'),'Saved.')&&!str_contains($sectionText('srv'),$failed),'The SRV section says Saved. right away');
@@ -126,6 +127,7 @@ same('Saved.',$staffRow('srv')['text']??null,'Staff read Saved. for SRV');expect
 [$srvRows,$srvDigest]=$srvForm();$srvRows[0]['port']='8445';
 same('rejected',$save('srv',['records'=>$srvRows,'preimage_digest'=>$srvDigest],true),'The registrar refuses the SRV change');
 expect(str_contains($sectionText('srv'),$failed)&&!str_contains($sectionText('srv'),'Saved.'),'An SRV failure shows in the SRV section');
+expect(str_contains($sectionText('srv'),'The SRV records change failed.'),'The SRV failure names SRV records, not DNS records');
 expect(str_contains($sectionText('dns'),$failed),'The DNS section keeps its own failure');
 // SRV whitespace must reach strict validation instead of being silently repaired by middleware.
 $before=Operation::count();$r=$post('srv',['records'=>[['service'=>'sip','protocol'=>'tcp','priority'=>'0','weight'=>'5','port'=>'443','target'=>' sip.example.com. ']],'preimage_digest'=>ManagementPayload::digest($state->srv,'srv')]);

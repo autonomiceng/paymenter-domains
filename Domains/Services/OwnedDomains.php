@@ -221,7 +221,7 @@ final readonly class OwnedDomains
             }
             // NameSilo: standard rows are editable, others are shown as read; the digest covers the whole saved list.
             if (isset($management['dns'])&&$d->registrar_key==='namesilo') {
-                $management['dns']=['fixed'=>$records['dns_fixed']??[],'digest'=>$records['dns_digest']??null,'types'=>Dns::STANDARD,'sources'=>true]+$management['dns'];
+                $management['dns']=['fixed'=>$records['dns_fixed']??[],'ttls'=>$records['dns_ttls']??[],'digest'=>$records['dns_digest']??null,'types'=>Dns::STANDARD,'sources'=>true]+$management['dns'];
             }
         }
         $renewal=$state->renewal; $price=null;

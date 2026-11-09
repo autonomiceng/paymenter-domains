@@ -43,6 +43,12 @@ expect(!str_contains($html,'original')&&!str_contains($html,'opaque'),'Provider 
 $fixed=array_map(fn($row)=>array_map($text,iterator_to_array($row->getElementsByTagName('td'))),iterator_to_array($dom->query('//li[@id="dns"]//*[@data-fixed-records]')));
 // A complete read lists CAA last with the other DNS records, and every read-only row shows the TTL that read returned.
 same([['_sip._tcp','SRV','5:5060:sip.example.com.','—','900','Read-only'],['@','CAA','0:issue:ca.example.com','—','600','Read-only']],$fixed,'Every read-only row has its type, value and read TTL');
+// Saved editable rows show the TTL they keep; blank rows get the registrar default.
+$ttls=fn($dom,$rows)=>array_map(fn($row)=>$text($row->getElementsByTagName('td')->item(4)),iterator_to_array($dom->query('//li[@id="dns"]//table[contains(@class,"domains-records")]/tbody/tr'.$rows)));
+same(['300','3600','7207'],$ttls($dom,'[@data-record]'),'Saved editable rows show the TTL the registrar read returned');
+same(['Registrar default','Registrar default'],$ttls($dom,'[not(@data-record)][not(@data-fixed-records)]'),'New rows say they get the registrar default');
+$access=[];foreach($dom->query('//li[@id="dns"]//table[contains(@class,"domains-dns-inventory")]/tbody/tr') as $row){$access[$text($row->getElementsByTagName('td')->item(1))]=$text($row->getElementsByTagName('td')->item(4));}
+same(['A'=>'Edit above','TXT'=>'Edit above','SRV'=>'Read-only','CNAME'=>'Edit above','CAA'=>'Read-only'],$access,'The records table marks only standard rows as editable');
 $notes=array_map($text,iterator_to_array($dom->query('//li[@id="dns"]//p[@class="domains-hint"]')));
 foreach(['SRV records can’t be changed here yet, because we can’t read their priority. Saving keeps them as they are. To change one, contact support.',
     'CAA records can’t be changed here yet. Saving keeps them as they are. To change one, contact support.'] as $note){expect(in_array($note,$notes,true),'Each read-only type has its complete reason and next step');}
@@ -54,7 +60,9 @@ $by=fn($type)=>array_values(array_filter($wire->records,fn($r)=>$r['type']===$ty
 same([$caa,$srv,$txt],[$by('CAA'),$by('SRV'),$by('TXT')],'Read-only rows and untouched TTLs stay exactly as they were');
 same(['192.0.2.2',300],[$by('A')['address'],$by('A')['ttl']],'The edited row keeps its own TTL');same(7207,$by('CNAME')['ttl'],'An untouched row keeps its TTL');
 $count=$d->operations()->count();$rows=$form();$rows[]=['name'=>'go','type'=>'URL','address'=>'https://example.com','mx_pref'=>'','_source'=>''];
-same(422,$post($rows)->getStatusCode(),'A type this registrar has no record for is refused in the form');same($count,$d->operations()->count(),'A refused type queues nothing');
+$kept=array_map(fn($r)=>(string)$by($r['type'])['ttl'],array_slice($rows,1,2));$rows[0]=[...$rows[0],'type'=>$rows[0]['type']==='A'?'TXT':'A','address'=>$rows[0]['type']==='A'?'v=spf1 a -all':'192.0.2.9'];
+$refused=$post($rows);same(422,$refused->getStatusCode(),'A type this registrar has no record for is refused in the form');
+same(['Registrar default',...$kept,'Registrar default'],array_slice($ttls(storefrontDom($refused->getContent()),'[not(@data-fixed-records)]'),0,4),'The returned form keeps each saved TTL, and a changed type or new row gets the default');same($count,$d->operations()->count(),'A refused type queues nothing');
 $wire->records=array_map(fn($r)=>$r['type']==='TXT'?[...$r,'ttl'=>301]:$r,$wire->records);$rows=$form();$rows[0]['address']='192.0.2.3';$post($rows);
 same($count,$d->operations()->count(),'Records changed at the registrar since the last read are not overwritten');same(['dnsUpdateRecord'],$wire->writes,'A stale form sends nothing');
 $wire->records=array_map(fn($r)=>$r['type']==='TXT'?$txt:$r,$wire->records);

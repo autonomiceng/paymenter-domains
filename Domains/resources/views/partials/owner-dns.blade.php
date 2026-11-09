@@ -6,6 +6,12 @@
     $describe = static fn (array $r): string => trim($isDns ? ($r['name'] ?? '').' '.($r['type'] ?? '').' '.($r['address'] ?? '') : '_'.($r['service'] ?? '').'._'.($r['protocol'] ?? '').' '.($r['target'] ?? '').' port '.($r['port'] ?? ''));
     $types = [''=>'Type','A'=>'A (IPv4)','AAAA'=>'AAAA (IPv6)','CNAME'=>'CNAME (alias)','MX'=>'MX (mail)','MXE'=>'MXE (mail IP)','TXT'=>'TXT (text)','URL'=>'URL (redirect)','FRAME'=>'FRAME (masked redirect)'];
     if (isset($section['types'])) { $types = array_intersect_key($types, array_flip(['', ...$section['types']])); }
+    // A saved row keeps the TTL it was read with unless its type changes; a new row gets the registrar default.
+    $ttl = static function ($index, array $record) use ($section, $draft) {
+        $from = $draft === null ? (isset($section['records'][$index]) ? $index : null) : (preg_match('/^[0-9]+$/D', (string) ($record['_source'] ?? '')) ? (int) $record['_source'] : null);
+        $kept = $from !== null && strtoupper((string) ($record['type'] ?? '')) === ($section['records'][$from]['type'] ?? null) ? ($section['ttls'][$from] ?? null) : null;
+        return $kept ?? $record['ttl'] ?? 'Registrar default';
+    };
 @endphp
 <p class="domains-hint">{{ $isDns ? 'Use @ for the domain itself. Alias and mail targets end with a dot.' : 'Enter the service without the leading underscore, such as sip. The target ends with a dot.' }}</p>
 <form method="POST" action="{{ $section['actions'][$cap] }}" class="domains-owner-form domains-record-form" data-confirm data-confirm-when="records-removed" data-current="{{ count($section['records']) }}">
@@ -27,7 +33,7 @@
 @include('domains::partials.record-field', ['key'=>$cap.'.records.'.$index.'.'.$field, 'id'=>$cap.'-'.$index.'-'.$field, 'name'=>'records['.$index.']['.$field.']', 'label'=>'Record '.($index+1).' '.($field==='mx_pref'?'MX priority':strtolower($fieldLabel)), 'current'=>$record[$field] ?? '', 'required'=>false, 'type'=>in_array($field,['mx_pref','priority','weight','port'])?'number':'text', 'limit'=>match($field){'address'=>2048,'service'=>14,'target'=>254,default=>253}, 'options'=>$field==='type'?$types:($field==='protocol'?[''=>'Protocol','tcp'=>'TCP','udp'=>'UDP']:null)])
 </td>
 @endforeach
-@if ($isDns)<td>{{ $record['ttl']??'Registrar default' }}</td>@endif
+@if ($isDns)<td>{{ $ttl($index, $record) }}</td>@endif
 <td>
 @if ((!$isDns || ($section['sources'] ?? false)) && (($draft !== null && ($record['_source'] ?? '') !== '') || ($draft === null && $index < count($section['records']))))<input type="hidden" name="records[{{ $index }}][_source]" value="{{ $draft !== null ? $record['_source'] : $index }}">@endif
 @if (($record['_delete'] ?? '') === '1' && isset($section['records'][$index]))<input type="hidden" name="records[{{ $index }}][_delete]" value="1">@elseif (isset($section['records'][$index]))<button type="submit" name="records[{{ $index }}][_delete]" value="1" formnovalidate class="domains-a domains-linkbtn" data-delete-record>Delete<span class="domains-sr"> record {{ $index + 1 }}</span></button>@endif</td>

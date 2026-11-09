@@ -8,15 +8,15 @@ final class DnsForm
 {
     /** The documented provider default, sent explicitly for a new row. */
     public const TTL=7207;
-    /** @return array{records:list<array>,fixed:list<array>,digest:string} Editable rows in saved order, read-only rows, and the list they came from. */
+    /** @return array{records:list<array>,ttls:list<int|null>,fixed:list<array>,digest:string} Editable rows in saved order, the TTL each keeps, read-only rows, and the list they came from. */
     public static function view(array $inventory): array
     {
-        $records=[];$fixed=[];
+        $records=[];$ttls=[];$fixed=[];
         foreach (self::rows($inventory) as $r) {
-            if (in_array($r['type'],Dns::STANDARD,true)) { $records[]=['name'=>$r['name'],'type'=>$r['type'],'address'=>$r['address'],'mx_pref'=>$r['mx_pref']]; }
+            if (in_array($r['type'],Dns::STANDARD,true)) { $records[]=['name'=>$r['name'],'type'=>$r['type'],'address'=>$r['address'],'mx_pref'=>$r['mx_pref']];$ttls[]=$r['ttl']??null; }
             else { $fixed[]=['name'=>$r['name'],'type'=>$r['type'],'address'=>$r['address'],'ttl'=>$r['ttl']??null]; }
         }
-        return ['records'=>$records,'fixed'=>$fixed,'digest'=>hash('sha256',json_encode(DnsSequence::records($inventory),JSON_THROW_ON_ERROR))];
+        return ['records'=>$records,'ttls'=>$ttls,'fixed'=>$fixed,'digest'=>hash('sha256',json_encode(DnsSequence::records($inventory),JSON_THROW_ON_ERROR))];
     }
     /** Why each read-only type stays as it is, and what to do instead. */
     public static function notes(array $fixed): array
