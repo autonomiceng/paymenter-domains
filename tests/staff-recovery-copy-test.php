@@ -9,6 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{CatalogueImportFailure,EnomTe
 app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock=new Paymenter\Extensions\Servers\Domains\Tests\FakeClock(new DateTimeImmutable('2026-10-24T12:00:00Z')));
 EnomTestSendLimitSchema::install();config(['domains.enom_test_sends_per_day'=>10,'domains.enom_test_sends_per_minute'=>100000]);
 $problems=[];
+same('Catalogue upgrade needed: install the Domains bridge and run the catalogue conversion.',Labels::reason('catalogue_upgrade_required'),'Catalogue upgrade cause has staff words');
 Paymenter\Extensions\Servers\Domains\Services\FoundationSchema::install();
 same('We stopped this before it reached Enom. Earlier reads may have been sent. Check API calls on the account page.',SettingsActions::refusal(new EnomTestCallLimit,'configure',['environment'=>'live']),'First Live configure refusal uses the submitted environment before an account row exists');
 foreach([new DomainException('Catalogue import unavailable.'),...array_map(fn($code)=>new CatalogueImportFailure($code),ReadFailure::CODES)] as $failure){

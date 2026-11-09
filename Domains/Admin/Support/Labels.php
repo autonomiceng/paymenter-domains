@@ -209,6 +209,7 @@ final class Labels
             'read_no_evidence'=>'Registrar sent no answer.','read_identity_changed'=>'Domain or account changed during the check.',
             'account_unavailable'=>'Registrar account not found','binding_mismatch'=>'Request does not match this registrar account.',
             'configuration_unverified'=>'Registrar account not checked yet.','encryption_unavailable'=>"Can't read saved credentials. Ask your site admin to check the encryption key.",'storage_unavailable'=>'Database error. Try again.',
+            'catalogue_upgrade_required'=>'Catalogue upgrade needed: install the Domains bridge and run the catalogue conversion.',
             'catalogue_call_capacity'=>self::priceSync('catalogue_call_capacity'),
             'catalogue_reader_unavailable'=>self::priceSync('catalogue_reader_unavailable'),'catalogue_acceptance_unavailable'=>self::priceSync('catalogue_acceptance_unavailable'),
             'catalogue_acceptance_changed'=>self::priceSync('catalogue_acceptance_changed'),'catalogue_evidence_missing'=>self::priceSync('catalogue_evidence_missing'),
