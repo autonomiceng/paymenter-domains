@@ -231,6 +231,7 @@ final class RequestFacts
         $facts ??= self::for($op);
         if ($facts['unreadable']??false) { return ['title'=>DomainFacts::UNREADABLE,'tone'=>'danger']; }
         $domain=$op->domain;
+        if(OperationActions::complimentaryCloseBlocked($op)){return ['title'=>'Close order is unavailable.','body'=>'Retained refusal evidence does not prove this order can be closed. Ask staff to review the original registrar outcome; nothing is charged or credited.','tone'=>'warning'];}
         if ($domain && in_array((int)$op->id,RenewalReplacements::activityIds($domain),true)) {
             return ['title'=>'Payment received after credit. Check the invoice.','tone'=>'warning','link'=>'invoice'];
         }

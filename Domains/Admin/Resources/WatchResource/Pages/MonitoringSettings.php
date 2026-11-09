@@ -50,6 +50,7 @@ class MonitoringSettings extends Page
         return Action::make('siteDefault')->label('Change site DNS default')->modalHeading('Site DNS default')
             ->schema([Select::make('profile')->label('DNS template')->required()
                 ->default(fn()=>\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::profile()?->id)
+                ->helperText('Create a DNS template in Domains > DNS templates, turn it on, then choose it here.')
                 ->options(fn()=>\Paymenter\Extensions\Servers\Domains\Models\WatchProfile::where('enabled',true)->get()->filter(fn($p)=>\Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::usable($p))->pluck('name','id')->all())])
             ->visible(fn()=>Staff::canEditDefaultDns())->action(function(array $data,Action $action):void {
                 abort_unless(Staff::canEditDefaultDns(),403);
@@ -77,12 +78,12 @@ class MonitoringSettings extends Page
         $resolver=TextEntry::make('resolver')->label('Resolver')->state($endpoint?->host??($forced?'Server default':Missing::LABEL))
             ->hintAction(HelpHint::make("If the resolver fails, checks retry once with the server's resolver."));
         return $schema->components([
-            ...(!$default||$refusal?[Callout::make($refusal??\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::MISSING)->status('danger')->columnSpanFull()]:[]),
+            ...(!$default||$refusal?[Callout::make($refusal??(Staff::canEditDefaultDns()?\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::MISSING:'Site DNS default is Missing. New domains have no nameservers to use. Ask staff who can change the site DNS default.'))->status('danger')->columnSpanFull()]:[]),
             ...($forced?[Callout::make($reason)->status('danger')->columnSpanFull()]:[]),
             Sheet::split([Sheet::section('Monitoring',[
                 Sheet::row(MissingEntry::apply(TextEntry::make('site_dns')->label('Site DNS default')->state($refusal?Missing::LABEL:($default?->name??Missing::LABEL)),cause:$refusal??null)->belowContent($default?implode(', ',$default->nameservers):null)),
                 Sheet::row(TextEntry::make('registrar_refresh')->label('Registrar refresh')->state('Daily')->belowContent('Daily refresh reads domain facts. Use Sync now on a domain to read DNS, SRV, DS and glue records. Unsupported families remain unsupported.')),
-                Sheet::row(TextEntry::make('public_checks')->label('Public DNS checks')->state('Nameservers at least every 6 hours, records daily')->belowContent('Failed checks retry by themselves.')),
+                Sheet::row(TextEntry::make('public_checks')->label('Public DNS checks')->state('Nameservers at least every 6 hours, records daily')->belowContent('Failed checks retry while monitoring and its background worker are on. Paused checks wait; resume monitoring first.')),
                 Sheet::row(TextEntry::make('read_failures')->label('Registrar read failures')->state('No separate alert switch')->belowContent('Shown on the domain page, beside Resume sync. There is no email alert for them.')),
                 Sheet::row(TextEntry::make('evidence')->label('Evidence')->state('Separate checks')->belowContent(\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::EVIDENCE))]),Sheet::section('DNS resolver',[Sheet::row(MissingEntry::apply($resolver,$fix,$forced?null:$reason)),
                 Sheet::row(TextEntry::make('bootstrap')->label('Resolver IP address')->state($endpoint?->ip))->visible($endpoint!==null)])],[]),

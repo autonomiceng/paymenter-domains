@@ -122,7 +122,7 @@ final class OperationActions
             // Complimentary orders have no payment for the refund sweep; retry only their unfinished closure.
             'credit'=>$op->state==='rejected'&&(($op->funding_basis==='paid_invoice'&&$op->safe_code!==UnpaidAcquisitionProof::CODE)
                 ||($op->funding_basis==='complimentary'&&in_array($op->action,['register','transfer'],true)&&($d=$op->domain)
-                    &&($d->status!==($op->action==='register'?'registration_rejected':'transfer_rejected')||$d->service?->status!==\App\Models\Service::STATUS_CANCELLED))),
+                    &&!self::complimentaryCloseBlocked($op)&&($d->status!==($op->action==='register'?'registration_rejected':'transfer_rejected')||$d->service?->status!==\App\Models\Service::STATUS_CANCELLED))),
             'replacement'=>$op->action==='renew'&&$op->state==='rejected',
             'disposition'=>self::closable($op),
             'resume_reads'=>in_array($op->action,['register','transfer','renew'],true)&&in_array($op->state,['running','pending','uncertain','held'],true)&&self::readLimit($op),
@@ -130,6 +130,12 @@ final class OperationActions
                 ?in_array($op->state,['running','pending','uncertain','held'],true)&&!self::readLimit($op)
                 :DomainManagement::canReconcile($op,app(Clock::class)->now()),
             default=>false};
+    }
+    /** Presentation only: the writer repeats returnability under HoldingLocks. */
+    public static function complimentaryCloseBlocked(Operation $op):bool
+    {
+        if($op->funding_basis!=='complimentary'||$op->state!=='rejected'||!in_array($op->action,['register','transfer'],true)){return false;}
+        try{\Paymenter\Extensions\Servers\Domains\Services\RefundProof::requireReturnable($op,$op->domain);return false;}catch(\Throwable){return true;}
     }
     /** A failed request with proof it ended, no end date and no earlier close. Closing records the review and changes nothing else. */
     private static function closable(Operation $op): bool

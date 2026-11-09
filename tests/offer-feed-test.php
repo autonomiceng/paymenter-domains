@@ -82,6 +82,7 @@ foreach ([Environment::Test, Environment::Live] as $environment) {
             $approvedRows['com']->costs, new DateTimeImmutable('2027-10-18'), $clock->now(), environment: $environment);
         same([true, '22.0000'], [$terms[2]['available'], $terms[2]['cost']], 'Real feed supplies annual support, reviewed evidence and exact two-year total');
     }
+    foreach($enomWire->calls as[$env,$command,$parameters,$timeout]){same($environment,$env,'Later feed and facts reads retain environment');expect($timeout>0&&$timeout<=25000,'Later reads retain a positive bounded deadline');}
     $clock->at = $savedTime;
 
     same('18.0000', $rows['co.uk']->costs['register:2']->total, 'Compound suffix and annual-to-term exact total');

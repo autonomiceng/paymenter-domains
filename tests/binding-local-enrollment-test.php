@@ -89,7 +89,7 @@ $wire->body = '{"request":{"operation":"getAccountBalance"},"reply":{"code":110,
 ini_set('zend.exception_ignore_args', '0');
 try { $local->configure(11, 'namesilo', Environment::Live, ['api_key' => 'placeholder-key-rejected'], $review(11)); expect(false, 'Rejected authentication accepted'); }
 catch (DomainException $error) {
-    same('Registrar key authentication failed.', $error->getMessage(), 'Rejected authentication has a safe reason');
+    same('Registrar key could not be confirmed.', $error->getMessage(), 'Rejected authentication has a safe reason');
     same(null, $error->getPrevious(), 'Authentication retains no credential-bearing cause');
     expect(!str_contains(print_r($error->getTrace(), true), 'placeholder-key-rejected'), 'Authentication failure trace hides credentials');
 }
@@ -102,7 +102,7 @@ foreach (['HTTP 503 page' => [503, '<html><body>Service Unavailable</body></html
     $before = count($wire->calls); $audit = count(StaffSettingsReview::historyRows(Server::findOrFail(11)));
     try { $local->configure(11, 'namesilo', Environment::Live, ['api_key' => 'placeholder-key-unanswered'], $review(11)); expect(false, $case.' accepted'); }
     catch (DomainException $error) {
-        same('Registrar did not answer.', $error->getMessage(), $case.' says the registrar did not answer');
+        same('Registrar key could not be confirmed.', $error->getMessage(), $case.' says the registrar did not answer');
         same(null, $error->getPrevious(), $case.' retains no cause');
     }
     same($before + 1, count($wire->calls), $case.' sends one read and no retry');

@@ -49,7 +49,11 @@ final class CartCheckoutRefresh
                 CartNotice::clear($component);
             }
             if ($method === 'removeProduct') {
-                return static function () use ($component): void { $component->dispatch('cartUpdated'); };
+                $cart=NativeCart::get();
+                \Livewire\store($component)->set('domains.removal',['cart'=>(int)$cart->id,'user'=>(int)$cart->user_id,'ids'=>$cart->items()->pluck('id')->all()]);
+                return static function () use ($component): void {
+                    \Livewire\store($component)->set('domains.removal',null);$component->dispatch('cartUpdated');
+                };
             }
             if ($method !== 'checkout') { return; }
             OrderContact::clear();
@@ -82,6 +86,18 @@ final class CartCheckoutRefresh
                     : 'Check the domain contact details below before payment.', 'error');
                 OrderContact::clear(); $returnEarly();
             } catch (\Throwable $e) { OrderContact::clear(); self::unavailable($component, $e); $returnEarly(); }
+        });
+        // The native deletion commits before gateway recalculation. A failure there still changes the header.
+        Livewire::listen('exception',static function($component,$error):void {
+            if($component::class!==Cart::class){return;}
+            $before=\Livewire\store($component)->get('domains.removal');
+            \Livewire\store($component)->set('domains.removal',null);
+            if(!is_array($before)){return;}
+            try{
+                $cart=NativeCart::get();
+                if((int)$cart->id!==$before['cart']||(int)$cart->user_id!==$before['user']){return;}
+                if(array_diff($before['ids'],$cart->items()->pluck('id')->all())){$component->dispatch('cartUpdated');}
+            }catch(\Throwable){/* Keep the original native exception; no deletion or checkout retry. */}
         });
         // Themes without the notice include keep the toast, with the same words.
         Livewire::listen('render', static function ($component, $view) use ($admission) {

@@ -795,7 +795,8 @@
     "tests/adoption-missing-template-test.php",
     "tests/template-explicit-default-test.php",
     "tests/owner-default-confirm-test.php",
-    "tests/staff-monitoring-clock-test.php"
+    "tests/staff-monitoring-clock-test.php",
+        "tests/staff-setup-guidance-test.php"
   ],
   "ui": [],
   "runner": [

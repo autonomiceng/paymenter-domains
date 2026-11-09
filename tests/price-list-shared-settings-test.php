@@ -15,6 +15,7 @@ $custom=$tlds[0]->replicate();$intent=OfferState::decode($custom->catalogue_inte
 $custom->fill(['tld'=>'org','catalogue_intent'=>OfferState::json([...$intent,'pricing_rule'=>PricingRule::validate([...PricingRule::DEFAULT,'mode'=>'markup_amount','markup'=>'1.25'])])])->save();
 $source=StaffCatalogue::routed();$list=new PriceList;
 $snapshot=static function():array{$rows=[];foreach(['domains_tlds','domains_prices','products','plans','prices','services','orders','invoices','invoice_items','invoice_transactions','credits'] as $table){$rows[$table]=DB::table($table)->orderBy('id')->get()->toJson();}return $rows;};$before=$snapshot();
+same([], $source->omissions(Tld::orderBy('id')->get()), 'Valid saved pricing is not omitted');
 foreach([
     [PricingRules::KEY,[...PricingRule::DEFAULT,'markup'=>[]],'default_rule',false],
     [PricingRules::KEY,[...PricingRule::DEFAULT,'mode'=>'fixed','fixed'=>['register'=>[],'renew'=>'2','transfer'=>'3']],'default_rule',false],
@@ -30,7 +31,7 @@ foreach([
         same($cause==='card_fee'?[]:[$custom->id],array_column($matrix['rows'],'id'),'A custom rule does not depend on an unreadable default');
         same([$cause],array_column($matrix['warnings'],'cause'),'One grouped warning retains the existing repair cause');
         $omitted=$source->omissions(Tld::orderBy('id')->get());same(count($expected),count($omitted),'Off-page omissions use the same settings validation');
-        Livewire::actingAs($actor)->test(WhatYouSell::class)->filterTable('for_sale',false)->assertSuccessful()->assertSee($cause==='card_fee'?'No prices for 2 TLDs':'No price for .com')->assertSee('Fix it in Default pricing at the top of this page.');
+        Livewire::actingAs($actor)->test(WhatYouSell::class)->filterTable('for_sale',false)->assertSuccessful()->assertSee('Prices left out')->assertSee('Fix it in Default pricing at the top of this page.');
         same($raw,DB::table('settings')->orderBy('id')->get()->toJson(),'Recovery reads retain corrupt settings bytes');same($before,$snapshot(),'Recovery reads change no prices, intent or finance');
     }finally{if($saved){DB::table('settings')->where('id',$saved->id)->update((array)$saved);}else{DB::table('settings')->whereNull('settingable_type')->where('key',$key)->delete();}}
 }

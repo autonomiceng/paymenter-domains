@@ -15,9 +15,9 @@ final readonly class CredentialAuthenticator implements \Paymenter\Extensions\Se
         try {
             $client = new RegistrarClient($credentials['api_key'], $environment === Environment::Live ? WireEnvironment::Live : WireEnvironment::Sandbox, $this->transport);
             $result = $client->execute(RegistrarRequest::balance(), RequestContext::Interactive, 10000);
-        } catch (\Throwable) { throw new \DomainException('Registrar key authentication failed.'); }
+        } catch (\Throwable) { throw new \DomainException(self::UNCONFIRMED); }
         // The client keeps no reply code unless NameSilo answered with JSON; refusal codes keep the refusal.
-        if ($result->outcome === Outcome::Unknown && $result->code === null) { throw new \DomainException(self::UNANSWERED); }
-        if ($result->outcome !== Outcome::Success) { throw new \DomainException('Registrar key authentication failed.'); }
+        if ($result->outcome === Outcome::Unknown && $result->code === null) { throw new \DomainException(self::UNCONFIRMED); }
+        if ($result->outcome !== Outcome::Success) { throw new \DomainException(self::UNCONFIRMED); }
     }
 }

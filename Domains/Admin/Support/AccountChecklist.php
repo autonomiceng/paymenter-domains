@@ -22,7 +22,7 @@ final class AccountChecklist
     /** The worker runs every minute; no run for this long means it stopped. */
     public const WORKER_STALE_SECONDS=900;
     public const TRANSFER_LABEL='Transfers (Experimental)';
-    private const PRICES='Prices refresh from the registrar once a day. Sync prices refreshes them now.';
+    private const PRICES='Prices refresh from the registrar once a day while the scheduler and queue worker run. Sync prices is an optional retry; it does not start background work.';
     private const PAYMENTS='Starts domain orders when an invoice is paid. If it fails, restart the queue worker.';
     private const EDITOR='Adds the domain fields and warnings to Paymenter’s service page. If it fails, update Paymenter or Domains.';
     private const WORKER='Runs background work every minute: sending orders, retries and domain checks. If it stops, start the scheduler and the queue worker.';
@@ -67,7 +67,7 @@ final class AccountChecklist
             $cause=$ready?'Late renewal is paused until you approve it. Turn on to allow billing for expired domains.':(EnomTestRenewal::accepted($binding)?'Ask your site admin to record Enom’s late renewal evidence.':'Late renewal is paused. Turn on Renewals first.');
             $rows[]=self::paused($a,self::row('Late renewal',$on?'On':'Off',$on?'success':null,$on?null:$cause,$ready||$on?'late_renewal':null,\Paymenter\Extensions\Servers\Domains\Services\EnomLateRenewal::HELP));
         }
-        if($a->registrar_key==='namesilo'){$rows[]=self::row('Late renewal','Not supported',null,'Late renewal is not offered for NameSilo.');}
+        if($a->registrar_key==='namesilo'){$rows[]=self::row('Late renewal','Not supported',null,'Late renewal is not offered for NameSilo.',null,'Renew expired domains only through a registrar-supported late renewal process. NameSilo late renewal is not available here.');}
         return $rows;
     }
     /** Live stays off until activation; sent transfers keep reconciling after revocation. */
@@ -178,6 +178,7 @@ final class AccountChecklist
         if($binding===null){return [...self::row('TLD prices',null,null,'Restore the API connection first.',null,self::PRICES),'buttons'=>[]];}
         if ($offers=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed()) {
             $status=$offers->progress((int)$a->server_id);
+            if(!empty($status['failure'])){return [...self::row('TLD prices','Sync failed','danger',TldFacts::syncCause($status['failure']).(isset($status['failed_at'])?', '.gmdate('M j, Y H:i',(int)$status['failed_at']).' UTC':'').'. Fix this cause first. Sync prices is an optional retry.',null,self::PRICES),'buttons'=>self::priceButtons($a)];}
             return [...self::row('TLD prices',ucfirst($status['state']),null,isset($status['succeeded_at'])?Sheet::moment((int)$status['succeeded_at'],'Updated'):'Not updated yet.',null,self::PRICES),'buttons'=>self::priceButtons($a)];
         }
         $failure=TldFacts::syncFailure((int)$a->server_id);
@@ -280,8 +281,8 @@ final class AccountChecklist
     /** Per-account check: the site must supply the registrar runtime. */
     public static function runtime(Account $a): array
     {
-        $help='Checks this site has a working connection for this registrar.';
-        if(app(RuntimePorts::class)->registered($a)){return self::row('Site setup','OK',null,'Ready for this registrar.',null,$help);}
+        $help='Checks the registrar runtime is registered on this site. API connection checks the saved credentials separately.';
+        if(app(RuntimePorts::class)->registered($a)){return self::row('Site setup','OK',null,'Runtime registered for this registrar.',null,$help);}
         $cause=\Paymenter\Extensions\Servers\Domains\Services\NameSiloSandbox::enrolled($a)
             ?'This account uses the old balance-only TEST connection. Connect an authenticated TEST account.'
             :"The registrar connection isn't set up on this site. Check the registrar's site settings, then connect the account again.";

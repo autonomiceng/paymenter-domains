@@ -87,7 +87,8 @@ final class SiteDnsDefault
         foreach(Account::orderBy('registrar_key')->distinct()->pluck('registrar_key') as $registrar){
             try{NewDomainDns::validate($registrar,$nameservers);}
             catch(\InvalidArgumentException $e){
-                $rule=$registrar==='enom'?'Enom takes 2 to 12 nameservers.':'NameSilo takes 2 to 13 nameservers.';
+                $max=$registrar==='enom'?12:13;$label=$registrar==='enom'?'Enom':'NameSilo';
+                $rule=count($nameservers)<2||count($nameservers)>$max?$label.' takes 2 to '.$max.' nameservers.':$label.' needs valid nameserver hostnames.';
                 throw new \DomainException($rule.' Update this DNS template or choose another one.',0,$e);
             }
         }
@@ -102,9 +103,9 @@ final class SiteDnsDefault
         else{
             $names=config('domains.site_dns_default.nameservers');
             if(!is_array($names) || !$names){return null;}
-            try{$names=(new RoutingProfile($names,[],[]))->nameservers;}catch(\InvalidArgumentException|\TypeError){return null;}
+            try{$names=(new RoutingProfile($names,[],[]))->nameservers;}catch(\InvalidArgumentException|\TypeError){return 'Deployment nameserver hostnames are invalid. Create and turn on a compatible DNS template, then choose it as the site DNS default.';}
         }
-        try{self::validateRegistrars($names);}catch(\DomainException $e){return $e->getMessage();}
+        try{self::validateRegistrars($names);}catch(\DomainException $e){return $e->getMessage().($p?'':' Create and turn on a compatible DNS template, then choose it as the site DNS default.');}
         return null;
     }
     private static function write(WatchProfile $p): void

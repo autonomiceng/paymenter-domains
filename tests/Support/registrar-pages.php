@@ -83,7 +83,7 @@ DB::table('domains_runtime_turns')->where('server_id',$enom->server_id)->delete(
 config(['settings.credits_enabled'=>false]);
 $credits=collect(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::system()['failing'])->firstWhere('label','Customer credits');
 expect($credits!==null&&str_contains((string)$credits['cause'],'Turn on Credits in Settings.'),'Hidden Credits page warns with the setting to change');
-expect(str_contains((string)$credits['cause'],'Credit refunds still reach the customer’s balance') && !str_contains((string)$credits['cause'],'Refunds stay'), 'Credits off explains the setting and refund destination without implying a refund failed');
+expect(str_contains((string)$credits['cause'],'Credit refunds still reach the customer’s balance') && str_contains((string)$credits['cause'],'customers can’t see it') && !str_contains((string)$credits['cause'],'Refunds stay'), 'Credits off explains the setting and refund destination without implying a refund failed');
 config(['settings.credits_enabled'=>true]);
 same(null,collect(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::system()['failing'])->firstWhere('label','Customer credits'),'Warning clears when customers can use Credits');
 
@@ -498,6 +498,7 @@ DB::table('domains_accounts')->where('server_id',$siloLive->id)->update(['live_s
 same('matched',$bindings->configurationStatus((int)$siloLive->id),'Live NameSilo credentials and saved site match');
 $siloLiveRows=array_column(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup(Account::where('server_id',$siloLive->id)->sole(),['label'=>'Active','reason'=>null]),null,'label');
 same('Orders are paused. Use Activate to check setup and turn on Orders.',$siloLiveRows['Orders']['cause'],'Live NameSilo uses the shared Activate review');
+foreach($siloLiveRows as$row){expect($row['label']==='Reminder schedule'||trim((string)($row['help']??''))!=='','NameSilo row retains independent help: '.$row['label']);}
 foreach(['invoices','customer credit','Auto Pay','paid renewals'] as $effect){expect(str_contains($offRows['Renewals']['help'],$effect),'Renewals explains '.$effect);}
 $testBinding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::findOrFail($enom->id));
 $review=new StaffSettingsReview($admin->id,(int)$enom->server_id,null,'test_renewal',StaffSettingsReview::ticket($admin->id,(int)$enom->server_id,null,'test_renewal',StaffSettingsReview::stamp((int)$enom->server_id,null)),'Approve test renewal setup');

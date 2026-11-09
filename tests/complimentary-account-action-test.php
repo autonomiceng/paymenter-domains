@@ -54,4 +54,34 @@ ComplimentaryAccounts::set($user->id,$staff,false,'Repeated end',$clock,Complime
 $line($staff,PHP_INT_MAX)->assertDontSee('Standard domain prices')->assertActionHidden('turnOn')->assertActionHidden('turnOff');
 $refused(fn()=>ComplimentaryAccounts::set(PHP_INT_MAX,$staff,true,'Unknown customer',$clock),'Domain funding permission required.');
 same($disabled,$rows(),'Unknown customer cannot create an audit entry');
+// Actual SystemClock writes native timezone-less timestamps in the configured PHP zone.
+$priorTimezone=date_default_timezone_get();$priorAppZone=config('app.timezone');
+try{
+ foreach(['America/Los_Angeles','UTC']as$zone){date_default_timezone_set($zone);config(['app.timezone'=>$zone]);
+  app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new \Paymenter\Extensions\Servers\Domains\Data\SystemClock);
+  $on=(bool)(ComplimentaryAccounts::current($user->id)['enabled']??false);
+  $changed=$line($staff,$user->id)->callAction($on?'turnOff':'turnOn',['reason'=>'Storage timezone check'])->assertHasNoActionErrors();
+  $stored=ComplimentaryAccounts::current($user->id);$instant=\Carbon\CarbonImmutable::parse($stored['at'],$zone)->utc()->format(DATE_ATOM);
+  expect(str_contains($changed->html(),'datetime="'.$instant.'"'),'Actual action renders the stored instant once in UTC: '.$zone);
+ }
+ foreach(['2026-07-01T12:00:00-07:00','2026-12-01T12:00:00-08:00']as$instant){
+  date_default_timezone_set('America/Los_Angeles');config(['app.timezone'=>'America/Los_Angeles']);
+  app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new class($instant) implements \Paymenter\Extensions\Servers\Domains\Contracts\Clock{public function __construct(private string $at){}public function now():DateTimeImmutable{return new DateTimeImmutable($this->at);}});
+  $on=(bool)ComplimentaryAccounts::current($user->id)['enabled'];$changed=$line($staff,$user->id)->callAction($on?'turnOff':'turnOn',['reason'=>'Seasonal storage timestamp'])->assertHasNoActionErrors();
+  expect(str_contains($changed->html(),'datetime="'.(new DateTimeImmutable($instant))->setTimezone(new DateTimeZone('UTC'))->format(DATE_ATOM).'"'),'Summer and winter retained timestamps keep their actual offset');
+ }
+}finally{date_default_timezone_set($priorTimezone);config(['app.timezone'=>$priorAppZone]);app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);}
+// Native audit disabled at provider boot means no listener; the extension still retains its history.
+\Illuminate\Support\Facades\Event::forget(\OwenIt\Auditing\Events\AuditCustom::class);config(['audit.enabled'=>false]);
+$on=(bool)ComplimentaryAccounts::current($user->id)['enabled'];
+$noAudit=$line($staff,$user->id)->mountAction($on?'turnOff':'turnOn')->call('$refresh');
+expect(str_contains(($noAudit->effects['partials']['action-modals.0']??'').$noAudit->html(),'Native audit logging is off'),'Confirmation explains the actual retained history');
+$noAudit->setActionData(['reason'=>'Native audit disabled'])->callMountedAction()->assertHasNoActionErrors();
+same('Native audit disabled',ComplimentaryAccounts::current($user->id)['reason'],'Disabled native auditing still retains the reason');
+// With native auditing active, a storage failure must still roll back the extension setting.
+config(['audit.enabled'=>true]);\Illuminate\Support\Facades\Event::listen(\OwenIt\Auditing\Events\AuditCustom::class,static fn()=>throw new RuntimeException('Synthetic audit failure'));
+$before=$rows();$on=(bool)ComplimentaryAccounts::current($user->id)['enabled'];
+try{ComplimentaryAccounts::set($user->id,$staff,!$on,'Refuse partial audit',$clock);expect(false,'Active audit failure propagates');}
+catch(RuntimeException $e){same('Synthetic audit failure',$e->getMessage(),'Actual audit error propagates');}
+same($before,$rows(),'Native audit failure rolls back the complimentary change');
 echo "Complimentary account action permissions, validation, audit and repeat saves passed\n";$nativeSuccessful=true;

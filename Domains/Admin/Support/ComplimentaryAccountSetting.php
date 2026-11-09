@@ -67,10 +67,10 @@ final class ComplimentaryAccountSetting extends Component implements HasActions,
     {
         return Action::make($name)->color('gray')->outlined()->size('sm')->modalWidth('md')->authorize(fn()=>self::allowed())
             ->visible(fn()=>$this->ready()&&(bool)(ComplimentaryAccounts::current($this->customer)['enabled']??false)!==$enabled)
-            ->schema([TextInput::make('reason')->label('Reason')->required()->maxLength(500)->helperText('Shown on this page and in the audit log.')])
+            ->schema([TextInput::make('reason')->label('Reason')->required()->maxLength(500)->helperText(fn()=>ComplimentaryAccounts::nativeAuditAvailable()?'Shown on this page and in the audit log.':'Native audit logging is off. The reason is retained in Domains history on this page.')])
             ->mountUsing(function(?Schema $schema):void {$this->seen=(int)(ComplimentaryAccounts::current($this->customer)['id']??0);$schema?->fill();})
             ->action(function(array $data)use($enabled):void {
-                try{ComplimentaryAccounts::set($this->customer,Auth::user(),$enabled,$data['reason'],app(Clock::class),$this->seen);}
+                try{ComplimentaryAccounts::set($this->customer,Auth::user(),$enabled,$data['reason'],app(Clock::class),$this->seen);if(!ComplimentaryAccounts::nativeAuditAvailable()){Notification::make()->warning()->title('Domain pricing saved')->body('Native audit logging is off. The change and reason are retained in Domains history on this page.')->send();}}
                 catch(ComplimentaryAccountChanged $e){Notification::make()->danger()->title($e->getMessage())->body('Reload the customer and check the current setting.')->send();}
                 catch(\DomainException $e){Notification::make()->danger()->title($e->getMessage())->send();}
             });
@@ -84,7 +84,7 @@ final class ComplimentaryAccountSetting extends Component implements HasActions,
     private static function lastChange(array $setting):HtmlString
     {
         $by=User::find($setting['actor'])?->name?:'Staff';
-        $at=view('domains::partials.moment',['at'=>\Carbon\CarbonImmutable::parse((string)$setting['at'],'UTC')])->render();
+        $at=view('domains::partials.moment',['at'=>\Carbon\CarbonImmutable::parse((string)$setting['at'],config('app.timezone','UTC'))->utc()])->render();
         return new HtmlString(e(($setting['enabled']?'Turned on by ':'Turned off by ').$by.', ').$at.e('. Reason: '.$setting['reason']));
     }
 }

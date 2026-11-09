@@ -60,6 +60,7 @@ $opened=Livewire\Livewire::actingAs($actor)->test(WhatYouSell::class);
 $key=$opened->instance()->getTableRecordKey($row);
 $opened->mountTableBulkAction('edit',[$key])->call('$refresh');
 $dialog=$opened->effects['partials']['action-modals.0']??'';
+expect(str_contains($dialog,'Grace')&&substr_count($dialog,'Review registry rules and safe deadlines before enabling grace renewal.')===1,'Mounted Terms dialog retains exactly one Grace review explanation');
 expect(str_contains($dialog,'Registration')&&str_contains($dialog,'Ordinary')&&str_contains($dialog,'Redemption'),'Opening the actual terms dialog renders both term and renewal rows');
 
 $prices=Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::termPrices($t);
@@ -108,8 +109,8 @@ $choices=['lines'=>[1=>['years'=>1,'first_year'=>'14.00','renewal'=>'14.00','tot
 $html=view('domains::partials.owner-renew',['domain'=>$domain,'summary'=>null,'support'=>null,'keys'=>['renew'=>str_repeat('a',64)],'renewalChoices'=>$choices])->render();
 foreach(['Domain','Expires','New expiry','Total','Next annual renewal','Create invoice','Nov 20, 2028','data-total="$28.00"','for the first year + $14.00 for the next year.'] as $text){expect(str_contains($html,$text),'Renewal renders '.$text);}
 expect(str_contains($html,'2 years: $28.00; new expiry Nov 20, 2029'),'No-script renewal shows every term total and expiry');
-expect(strpos($html,'>Cancel</a>')<strpos($html,'>Create invoice</button>'),'Cancel precedes payment');
-expect(strpos($html,'>Cancel</button>')<strpos($html,'>Create invoice</button>'),'Cancel is a button before payment');
+expect(strpos($html,'>Cancel</a>')!==false&&strpos($html,'>Create invoice</button>')!==false&&strpos($html,'>Cancel</a>')<strpos($html,'>Create invoice</button>'),'Cancel precedes payment');
+expect(strpos($html,'>Cancel</button>')!==false&&strpos($html,'>Create invoice</button>')!==false&&strpos($html,'>Cancel</button>')<strpos($html,'>Create invoice</button>'),'Cancel is a button before payment');
 expect(str_contains($html,'domains-total'),'Customer renewal total has shared prominent money treatment');
 expect(!str_contains($html,'exact-term')&&!str_contains($html,'registry'),'No staff eligibility reason in customer form');
 foreach([null,[],['lines'=>[]]] as $missingChoices){
@@ -121,7 +122,7 @@ foreach([null,[],['lines'=>[]]] as $missingChoices){
 }
 $result=storefrontData()['results'][0];$result['term']=1;$result['price']='$12.00';
 $html=view('domains::partials.result',['result'=>$result])->render();
-$x=storefrontDom($html);same('1 year',$x->query('//select/option')->item(0)->textContent,'Years select labels years, not prices');
+$x=storefrontDom($html);same('1 year · $12.00',$x->query('//select/option')->item(0)->textContent,'Years select shows the exact first term total');
 expect(str_contains($html,'data-total="$30.00"'),'Search retains each exact total for selection');
 $x=storefrontDom($html);same('Years',trim($x->query('//label')->item(0)->textContent),'Search labels Years');
 expect(str_contains($html,'>Total<')&&str_contains($html,'>Annual renewal<')&&str_contains($html,'>Add to cart</button>'),'Search total and annual renewal are labeled beside the choice');

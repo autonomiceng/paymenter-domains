@@ -11,6 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Jobs\RunPublicCheck;
 extract(dnsFixture());$now=1800000000;$fake=new FakeDnsReader();$seen=[];$discovery=new WatchDiscoveryWork(function($id,$product)use(&$seen){$seen[]=$id;});$sent=[];
 $beforeOff=DB::table('domains_watch_schedule')->orderBy('scope')->get()->toJson();
 $off=new WatchWork($fake,$discovery);same(0,$off->tick(),'Fresh install disabled');same($beforeOff,DB::table('domains_watch_schedule')->orderBy('scope')->get()->toJson(),'No dormant enrollment');
+same(0,DB::table('domains_watch_schedule')->where('scope','products')->count(),'Disabled discovery has no dormant products schedule');
 $work=new WatchWork($fake,$discovery,true,function()use(&$now){return $now;},function($hint)use(&$sent){$sent[]=$hint;});
 same(0,$work->tick(),'Sync queue refused');config(['queue.default'=>'database','queue.connections.database.driver'=>'database','queue.connections.database.retry_after'=>179]);same(0,$work->tick(),'Retry-after shorter than cleanup refused');config(['queue.connections.database.retry_after'=>180]);same('waiting',$work->status()['reason'],'Active queue without first turn is waiting');
 same(1,$work->tick(),'Registry enrollment independent of disabled profile');same([(int)$service->id],$seen,'Discovery invokes local producer');same(1,count($sent),'Due public job dispatched');same(0,$work->tick(),'Same minute turn coalesced');$now+=59;same(0,$work->tick(),'No early turn');$now++;expect($work->tick()<=10,'Next minute turn');

@@ -33,4 +33,17 @@ foreach([[$first,1],[$last,0],[$last,0]]as[$line,$remaining]){
     Illuminate\Support\Once::flush();app('request')->cookies->set('cart',$cart->ulid);
     $badge->onCartUpdated();same($remaining,$badge->cartCount,'Native header shows the remaining count without navigation');
 }
+// A native remove commits the deletion before recalculating the remaining line's gateway choices.
+$cart=commerceCart($user);$remove=commerceAdd($cart,$storefront->offer('com','register',1)['product'],'remove-recalc-placeholder.com');$keep=commerceAdd($cart,$storefront->offer('com','register',1)['product'],'keep-recalc-placeholder.com');
+Illuminate\Support\Once::flush();$page=Livewire\Livewire::actingAs($user)->withCookies(['cart'=>$cart->ulid])->test(App\Livewire\Cart::class);
+$missing=App\Models\Gateway::create(['name'=>'Synthetic missing gateway','type'=>'gateway','extension'=>'MissingFixtureGateway','enabled'=>true]);
+$caughtComponent=null;$caughtError=null;Livewire\Livewire::listen('exception',static function($component,$error)use(&$caughtComponent,&$caughtError):void{if($component::class===App\Livewire\Cart::class){$caughtComponent=$component;$caughtError=$error;}});
+Illuminate\Support\Once::flush();app('request')->cookies->set('cart',$cart->ulid);$orders=App\Models\Order::count();
+try{$page->call('removeProduct',$remove->id);}catch(Throwable $error){expect($error===$caughtError,'Original recalculation failure propagates unchanged');}
+expect($caughtComponent!==null&&$caughtError!==null,'The real native remove reached its post-delete failure');
+same(1,$cart->items()->count(),'The item deletion committed before recalculation failed');
+$events=collect(array_map(static fn($event)=>$event->serialize(),Livewire\store($caughtComponent)->get('dispatched',[])));
+same(1,$events->where('name','cartUpdated')->count(),'Post-delete failure still emits exactly one cart badge update');
+Illuminate\Support\Once::flush();app('request')->cookies->set('cart',$cart->ulid);$badge->onCartUpdated();same(1,$badge->cartCount,'Native badge reads the remaining authorized cart');
+same($orders,App\Models\Order::count(),'Error recovery never retries checkout');$missing->delete();
 $nativeSuccessful=true;echo "First checkout after removal passed.\n";

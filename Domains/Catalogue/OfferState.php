@@ -95,14 +95,19 @@ final class OfferState
     }
     public static function revision(object $tld, array $defaults, ?object $policy): Revision
     { return new Revision((int) $tld->catalogue_revision, $defaults['_revision'] ?? 0, (int) ($policy?->revision ?? 0)); }
-    public static function snapshot(AccountBinding $binding, object $tld, array $defaults, ?object $policy,
-        iterable $prices, bool $ready, bool $publishing = false, ?\Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness $freshness = null): Snapshot
+    public static function intent(object $tld,array $defaults):Intent
     {
         $raw = self::decode($tld->catalogue_intent); $intent = [];
         foreach (get_object_vars(new Intent) as $key => $unused) { if (array_key_exists($key, $raw)) { $intent[$key] = $raw[$key]; } }
         foreach (['defaultSell', 'defaultLongest', 'defaultTransfers', 'maxAnnualCost'] as $key) {
             if (array_key_exists($key, $defaults)) { $intent[$key] = $defaults[$key]; }
         }
+        return new Intent(...$intent);
+    }
+    public static function snapshot(AccountBinding $binding, object $tld, array $defaults, ?object $policy,
+        iterable $prices, bool $ready, bool $publishing = false, ?\Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness $freshness = null): Snapshot
+    {
+        $intent=get_object_vars(self::intent($tld,$defaults));
         $costs = $retail = [];
         $freshness ??= \Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness::forAccount($binding->serverId);
         foreach ($prices as $p) {

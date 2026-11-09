@@ -67,11 +67,11 @@ DB::table('domains_tlds')->where('id',$last[0]->id)->update(['catalogue_intent'=
 DB::table('domains_tlds')->where('id',$last[1]->id)->update(['catalogue_intent'=>\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::json(['sell'=>true,'pricing_rule'=>['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed'=>['register'=>'42.00','renew'=>'43.00','transfer'=>'44.00']]])]);
 $component=\Livewire\Livewire::actingAs($actor)->test(OfferStaffPage::class)->filterTable('for_sale',false)->assertSee('12.00');
 same(599,$component->instance()->getTableRecords()->total(),'Real rendered table preserves paginator');
-$component->assertSee('No price for .')->assertSee('It is on another page of this list.');
+$component->assertSee('Prices left out for .')->assertSee('It is on another page of this list.');
 same([],array_column($component->instance()->savedPrices()['skipped'],'id'),'Saved prices remain limited to the current page');
 expect(!collect($component->instance()->explanations())->contains(fn($e)=>in_array('.'.$last[1]->tld,$e['tlds'],true)),'Off-page formulas wait for their own page');
 $component->searchTable('com')->assertSee('12.00');same(1,$component->instance()->getTableRecords()->total(),'Real rendered search narrows converted identities');
-$component->assertDontSee('No price for .');same([],array_column($component->instance()->savedPrices()['skipped'],'id'),'Search excludes the unrelated warning');
+$component->assertDontSee('Prices left out for .');same([],array_column($component->instance()->savedPrices()['skipped'],'id'),'Search excludes the unrelated warning');
 expect(collect($component->instance()->explanations())->every(fn($e)=>$e['tlds']===['.com']),'Formula explanations follow the filtered list');
 // Apply each destination filter state in one real request; intermediate states have no assertions.
 $component->set(['tableSearch'=>'','tableFilters.no_cost'=>['isActive'=>true]]);same(598,$component->instance()->getTableRecords()->total(),'No-cost filter uses normalized observation');

@@ -1,13 +1,13 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering. Real engine, local Enom counter and native closure.
 declare(strict_types=1);
-require __DIR__.'/Support/operation-fixture.php';
+require __DIR__.'/Support/operation-fixture.php';require __DIR__.'/Support/staff-panel.php';staffPanel();app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
 use Illuminate\Support\Facades\{Cache,Crypt,DB};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Data\Environment;
 use Paymenter\Extensions\Servers\Domains\Services\{ComplimentaryAccounts,EnomTestSendLimit,EnomTestSendLimitSchema,FundsWaits,HolderPricing,NativeDomainGuard,OperationClaims,OperationTerminalProof,RefundProof};
 EnomTestSendLimitSchema::install();(new NativeDomainGuard(new HolderPricing($prices),$clock))->boot();
-$staff=commerceUser();$staff->update(['role_id'=>App\Models\Role::create(['name'=>'History closure','permissions'=>['admin.domains.fund']])->id]);
+$staff=commerceUser();$staff->update(['role_id'=>App\Models\Role::create(['name'=>'History closure','permissions'=>['admin.domains.fund','admin.domains.view','admin.domains.manage','admin.invoices.update','admin.domains.operations.credit']])->id]);
 ComplimentaryAccounts::set($user->id,$staff,true,'Synthetic history closure',$clock);$failures=[];
 foreach(['register','transfer']as$action){
     $clock->instant=$now;Cache::flush();$op=$new(placeholderComFixtureName('comp-history-'.$action.'-placeholder.com'),false,true,$action);
@@ -29,6 +29,14 @@ foreach(['register','transfer']as$action){
         same('held',$op->fresh()->state,'Damaged/sent history never closes: '.$action.':'.$case);same($money,$nativeMoney(),'Damaged history moves no money');
         DB::table('domains_operations')->where('id',$op->id)->update($virgin);
     }
+    // An interrupted/legacy rejected projection without terminal proof is not an actionable Close order.
+    DB::table('domains_operations')->where('id',$op->id)->update(['state'=>'rejected']);
+    $unsafe=$op->fresh();$retained=$unsafe->getRawOriginal();
+    $page=Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation::class,['record'=>$op->id]);
+    $page->assertActionHidden('credit')->assertSee('Close order is unavailable');
+    $page->call('mountAction','credit',[],[]);
+    same($retained,$op->fresh()->getRawOriginal(),'Hidden closure cannot alter refusal evidence');same($money,$nativeMoney(),'Unsafe closure moves no funds');
+    DB::table('domains_operations')->where('id',$op->id)->update($virgin);
     FundsWaits::sweep($account,$now->modify('+3 days'));$closed=$op->fresh();
     if([$closed->state,App\Models\Service::findOrFail($op->service_id)->status]!==['rejected','cancelled']){$failures[]=$action.': completed call history must close once';continue;}
     same($history,$closed->attempt['test_call_refusals'],'Exact call history survives completion');expect(OperationTerminalProof::safe($closed,$closed->domain),'Completed history proves terminal closure');

@@ -233,10 +233,10 @@ foreach(['later customer change','adopted customer nameservers','legacy without 
     DB::table('domains_managed_public_config')->where('domain_id',$id)->update($savedConfig);
 }
 $quietIntent=['expected'=>false,'notices'=>[],'portal'=>[],'summary'=>[]];
-$platformImportIntent=['expected'=>true,'notices'=>['ns_changed'],'portal'=>['ns_changed'],'summary'=>['watch.ns_pending'],'upgrade_intent'=>'platform',
-    'later_reads'=>[[true,[],['ns_changed'],['watch.ns_pending']],[true,[],['ns_changed'],['watch.ns_pending']]],'staff_platform'=>true];
+$platformImportIntent=['expected'=>true,'notices'=>['ns_changed'],'portal'=>['ns_changed'],'summary'=>['watch.ns_changed'],'upgrade_intent'=>'platform',
+    'later_reads'=>[[true,[],['ns_changed'],['watch.ns_changed']],[true,[],['ns_changed'],['watch.ns_changed']]],'staff_platform'=>true];
 $returnIntent=[
-    'expected'=>true,'notices'=>['ns_changed'],'portal'=>['ns_changed'],'summary'=>['watch.ns_pending'],'return_expected'=>true,
+    'expected'=>true,'notices'=>['ns_changed'],'portal'=>['ns_changed'],'summary'=>['watch.ns_changed'],'return_expected'=>true,
     'staff_external'=>false,'leave_again'=>[false,[],[],[]],'staff_platform'=>true];
 same(['later customer change'=>$quietIntent,'adopted customer nameservers'=>$quietIntent,'legacy without baseline'=>[...$quietIntent,'upgrade_intent'=>'external','later_reads'=>[[false,[],[],[]],[false,[],[],[]]],'staff_platform'=>true],
     'platform import without baseline'=>$platformImportIntent,'platform first public read'=>$platformImportIntent,
@@ -305,7 +305,7 @@ foreach(['inherited default','explicit equal default','legacy unmarked','domain 
         array_values(array_intersect($summary->stateKeys,['watch.ns_pending','watch.ns_changed']))];
     DB::table('domains_operations')->where('id',$registration->id)->delete();
 }
-$inheritedOrigin=['platform',true,['ns_changed'],['ns_changed'],['watch.ns_pending']];$explicitOrigin=['external',false,[],[],[]];
+$inheritedOrigin=['platform',true,['ns_changed'],['ns_changed'],['watch.ns_changed']];$explicitOrigin=['external',false,[],[],[]];
 same(['inherited default'=>$inheritedOrigin,'explicit equal default'=>$explicitOrigin,'legacy unmarked'=>$explicitOrigin,'domain override'=>$inheritedOrigin,'staff assignment'=>$explicitOrigin],
     $originResults,'Only inherited registrations follow the new comparison: '.json_encode($originResults));
 siteDnsFixture($default->id);
