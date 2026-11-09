@@ -268,6 +268,24 @@ same([],$next,'A request held for setup keeps its next step');
 DB::table('domains_operations')->where('id',$queued->id)->update(['state'=>'held','safe_code'=>'contact_details_required']);
 $filter('status',['action_required'])->assertCanSeeTableRecords([$queued]);
 $filter('status',['under_review'])->assertCanNotSeeTableRecords([$queued]);
+// The Domains list names each account whose paid changes are held, once. Its reads stay the same however many accounts are held.
+$saved=DB::table('domains_operations')->orderBy('id')->get(['id','state','safe_code']);
+$holds=static function(): array {
+    DB::connection()->flushQueryLog(); DB::connection()->enableQueryLog();
+    $html=(string)Paymenter\Extensions\Servers\Domains\Admin\Support\PaidUncertainty::accounts()?->toHtml();
+    $reads=count(DB::connection()->getQueryLog()); DB::connection()->disableQueryLog();
+    return [array_map(fn(string $line)=>trim(html_entity_decode(strip_tags($line))),explode('<br>',$html)),$reads];
+};
+$name=static fn(int $server)=>\App\Models\Server::whereKey($server)->value('name');
+DB::table('domains_operations')->whereIn('id',[$heldOp->id,$longOp->id])->update(['state'=>'uncertain','safe_code'=>null]);
+[$lines,$oneAccount]=$holds();
+same(['Check 2 requests Paid changes on '.$name($heldOp->server_id).' are on hold until they are checked.'],$lines,'One held account');
+DB::table('domains_operations')->where('id',$doneOp->id)->update(['state'=>'uncertain','safe_code'=>null]);
+[$lines,$twoAccounts]=$holds();
+same(['Check 2 requests Paid changes on '.$name($heldOp->server_id).' are on hold until they are checked.','Check request #'.$doneOp->id.' Paid changes on '.$name($doneOp->server_id).' are on hold until it is checked.'],
+    $lines,'Two held accounts, each named once');
+same($oneAccount,$twoAccounts,'Held accounts are read together, not one by one');
+foreach ($saved as $row) { DB::table('domains_operations')->where('id',$row->id)->update(['state'=>$row->state,'safe_code'=>$row->safe_code]); }
 // Unreadable saved data: one notice with its fix, never an "unavailable" value.
 DB::table('domains_operations')->where('id',$longOp->id)->update(['policy'=>'not-encrypted']);
 Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$longOp->id])->assertSee("Can't read saved data. Ask your site admin to check the encryption key.")->assertDontSee('unavailable');
