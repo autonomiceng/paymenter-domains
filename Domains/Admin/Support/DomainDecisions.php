@@ -98,7 +98,10 @@ final class DomainDecisions
             $absent=\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::absent($d)
                 ||$drift&&!\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::ownedAfter($d,$observation['record_hold']['at']??null);
             $f['In registrar account']=Facts::row($absent?'No':Facts::flag($facts['owned']??null,'Yes','No'),sub:$absent||isset($facts['owned'])?null:$unread);
-            try { $contact=OwnedDomains::owner(OwnedDomains::contacts($d)); $none=$pending?self::unread($d,$sync):(Staff::can('admin.domains.manage')?self::ADD_CONTACTS:'Ask the customer to add them on the domain page'); }
+            // Before the first registrar read, the customer page says Checking (RecordFamilies initial_read_pending); the staff row waits too.
+            try { $first=!$pending&&!$d->last_synced_at&&(\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::read($d,new \DateTimeImmutable())['initial_read_pending']??false); }
+            catch (\Throwable) { $first=false; }
+            try { $contact=OwnedDomains::owner(OwnedDomains::contacts($d)); $none=$pending?self::unread($d,$sync):($first?Missing::fills('after the first registrar read'):(Staff::can('admin.domains.manage')?self::ADD_CONTACTS:'Ask the customer to add them on the domain page')); }
             catch (\Throwable) { $contact=null; $none=self::UNREADABLE; }
             $f['Contacts']=Facts::row($contact['name']??null,sub:$contact['email']??$none);
             $nameservers=OwnedDomains::storedNameservers($d);

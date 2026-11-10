@@ -86,6 +86,8 @@ final class DomainNotices
         try { $d->observation; $d->renewal_policy; $d->snapshot; } catch (\Throwable) { return ['title'=>DomainDecisions::UNREADABLE,'tone'=>'danger']; }
         $op=$d->latestAcquisition;
         if(DomainDecisions::unconfirmedRegistration($d)&&$op){
+            // Sent and still inside the registrar's normal wait: the request reads In progress, so the head keeps the status step (Registration in progress).
+            if($op->state==='pending'){return null;}
             // Unreadable request data still names the request, so staff can open it.
             try { $facts=RequestFacts::for($op); } catch (\Throwable) { $facts=['unreadable'=>true]; }
             $unreadable=$facts['unreadable']??false;
