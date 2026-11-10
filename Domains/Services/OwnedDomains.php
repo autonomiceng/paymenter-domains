@@ -353,7 +353,12 @@ final readonly class OwnedDomains
     {
         if ($state->cycle !== null) { return $state->cycle; }
         if (!$d->provider_expires_at || !$forms) { return $state->retained ?? []; }
-        try { return ['url' => route('domains.domains.renew', $d->id), ...($this->billing ?? app(DomainBilling::class))->requestOptions($d)]; }
+        try {
+            $options = ['url' => route('domains.domains.renew', $d->id), ...($this->billing ?? app(DomainBilling::class))->requestOptions($d)];
+            // A renewal that would wait out the registrar's 24-hour limit says so before an invoice is made.
+            if ($repeat = RenewalRepeatWait::forDomain($d, $this->clock->now())) { $options['repeat_at'] = $repeat->format(DATE_ATOM); }
+            return $options;
+        }
         catch (\Throwable) { return $state->retained ?? []; }
     }
     /** Nameservers from the last confirmed registrar readback, in order, or null. Shared by the customer and staff domain pages. */
