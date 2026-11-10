@@ -13,19 +13,23 @@ for (const rendered of forms) {
         querySelectorAll: () => row.fields.filter(field => field.type !== 'hidden' && !('disabled' in field)).map(field => ({value: field.value || 'tcp'})),
     }));
     let opened = 0;
-    let escape, cancelClick;
+    let escape, cancelClick, closed;
     const cancelButton = {addEventListener(name, callback) { if (name === 'click') cancelClick = callback; }};
     const dialog = {
         open: false,
         showModal() { opened++; this.open = true; },
-        close() { this.open = false; },
+        close() { this.open = false; closed?.(); },
         querySelector: selector => selector === '[data-confirm-cancel]' ? cancelButton : null,
-        addEventListener(name, callback) { if (name === 'cancel') escape = callback; },
+        addEventListener(name, callback) { if (name === 'cancel') escape = callback; if (name === 'close') closed = callback; },
     };
+    // The DNS and SRV forms render inside their row's editor dialog; the warning takes the editor's place.
+    const behind = new Set();
+    const editor = {classList: {add: name => behind.add(name), remove: name => behind.delete(name)}};
     let submit;
     const form = {
         dataset: {confirmWhen: rendered.attrs['data-confirm-when'], current: rendered.attrs['data-current']},
         elements: {},
+        closest: selector => selector === 'dialog.domains-edit' ? editor : null,
         querySelector: selector => selector === '[data-confirm-dialog]' ? dialog : null,
         querySelectorAll: selector => ['tr[data-record]', 'tbody tr'].includes(selector) ? rows : [],
         addEventListener: (name, callback) => { if (name === 'submit') submit = callback; },
@@ -42,6 +46,7 @@ for (const rendered of forms) {
     const button = attrs => ({
         ...attrs,
         matches: selector => selector === '[data-delete-record]' && 'data-delete-record' in attrs,
+        hasAttribute: name => name in attrs,
         after(mark) {
             marks.push(mark);
             const index = rendered.buttons.filter(item => 'data-delete-record' in item).findIndex(item => item.name === attrs.name);
@@ -83,7 +88,10 @@ for (const rendered of forms) {
         assert.equal(opened, ++expectedOpened, 'Explicit Delete opens its confirmation dialog');
         assert.equal(remove.prevented, true, 'Explicit Delete waits for confirmation');
         assert.equal(clicked.hidden, true, 'Selected Delete is hidden until confirmation or cancel');
-        if (cancel === 'Esc') { escape(); dialog.open = false; } else { cancelClick(); }
+        assert.equal(behind.has('domains-edit--behind'), true, 'The warning takes the editor\'s place');
+        // Esc fires cancel, then the browser closes the dialog.
+        if (cancel === 'Esc') { escape(); dialog.close(); } else { cancelClick(); }
+        assert.equal(behind.size, 0, cancel + ' brings the editor back');
         assert.equal(marks.length, 0, cancel + ' removes every active marker');
         rows.forEach(row => assert.equal(row.mark, null, cancel + ' clears every row'));
         assert.equal(clicked.hidden, false, cancel + ' restores the selected Delete button');
