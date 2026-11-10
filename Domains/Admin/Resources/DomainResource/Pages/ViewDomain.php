@@ -325,6 +325,10 @@ class ViewDomain extends ViewRecord
             $html=fn(string|HtmlString $text)=>$text instanceof HtmlString?$text->toHtml():e($text);
             $words=$words===null?$line:new HtmlString($html($words).'<br>'.$html($line));
         }
+        if (isset($fact['retry'])) {
+            $retry=Sheet::moment($fact['retry'],'Next automatic retry:')->toHtml().'.';
+            $words=new HtmlString($words===null?$retry:($words instanceof HtmlString?$words->toHtml():e($words)).' '.$retry);
+        }
         if (!isset($fact['asOf'])) { return $words; }
         $read=Sheet::moment($fact['asOf'],'As of')->toHtml();
         return new HtmlString($words===null?$read:$read.'. '.($words instanceof HtmlString?$words->toHtml():e($words)));
@@ -354,6 +358,8 @@ class ViewDomain extends ViewRecord
         if ($fact['help']) { $entry->hintAction(HelpHint::make($fact['help'])); }
         if ($fact['demo']) { $entry->suffix(DemoData::tag(inline:true)); }
         $entry=MissingEntry::apply($entry,cause:$fact['value']===null?$fact['sub']:null,color:$fact['value']!==null&&($fact['alert']??false)?null:$fact['tone']);
+        // A timed retry follows the words in the viewer's time zone, under a red Missing too.
+        if (isset($fact['retry'])) { $entry->belowContent(self::below($fact)); }
         if (isset($fact['mark'])) { $entry=Sheet::state($entry,$fact['mark'],'lock-'.$this->getRecord()->id); }
         return $entry;
     }

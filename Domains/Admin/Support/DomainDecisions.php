@@ -181,7 +181,11 @@ final class DomainDecisions
             foreach(['Expires','In registrar account','Nameservers','Transfer lock','WHOIS privacy','Registrar auto-renew','DNS records'] as $label){
                 if(isset($f[$label]) && ($f[$label]['value']===null || $f[$label]['value']==='Not read yet')){$f[$label]['value']=null;$f[$label]['sub']=null;}
             }
-            if(isset($f['Last sync'])){$f['Last sync']['sub']=!self::ended($d)&&(self::hold($d)['stopped']??false)?null:$problem;}
+            if(isset($f['Last sync'])){
+                $stopped=!self::ended($d)&&(self::hold($d)['stopped']??false);
+                $f['Last sync']['sub']=$stopped?null:$problem[0];
+                if(!$stopped&&$problem[1]!==null){$f['Last sync']['retry']=$problem[1];}
+            }
         }
         return self::alerts($d,$f,$notice);
     }
@@ -357,15 +361,16 @@ final class DomainDecisions
         return $d->adoptionPending()?Missing::fills('after import'):match($sync) {'paused'=>Missing::fills('when sync resumes'),'failed'=>'Sync stopped. '.self::stoppedStep($d),
             default=>$d->last_synced_at?'Registrar did not return it. Check the domain at the registrar.':Missing::fills('within a day')};
     }
-    /** One safe failure cause and the actual automatic retry, or the stopped-read next step. */
-    private static function readProblem(Domain $d): ?string
+    /** One safe failure cause, or the stopped-read next step, and when the automatic retry runs. The page shows that time
+     * after the words in the viewer's time zone, as every other time there (ViewDomain::below).
+     * @return ?array{0:string,1:?int} */
+    private static function readProblem(Domain $d): ?array
     {
         try{$read=\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($d);}
-        catch(\Illuminate\Contracts\Encryption\DecryptException){return self::UNREADABLE;}
+        catch(\Illuminate\Contracts\Encryption\DecryptException){return [self::UNREADABLE,null];}
         if(!$read['read_code']){return null;}
-        return $read['read_cause'].' '.($read['read_stopped']?self::restart($d):($read['next_read']!==null
-            ?'Next automatic retry: '.gmdate('M j, Y, g:i A',$read['next_read']).' UTC.'
-            :'No registrar read is queued. Check the background worker.'));
+        if($read['read_stopped']){return [$read['read_cause'].' '.self::restart($d),null];}
+        return $read['next_read']!==null?[$read['read_cause'],(int)$read['next_read']]:[$read['read_cause'].' No registrar read is queued. Check the background worker.',null];
     }
     private const ASK_RESUME='Ask staff who can resume sync.';
     /** The step for a stopped sync off the page notice, chosen as restart() does: Sync now when the page shows it, else Resume sync, else who can. */
