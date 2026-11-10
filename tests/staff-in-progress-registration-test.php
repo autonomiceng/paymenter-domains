@@ -5,12 +5,15 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/staff-panel.php';
 use Illuminate\Support\Facades\{Auth, DB, Schema};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts, DomainHistory, Staff, StaffDomainInputs};
+use Livewire\Livewire;
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource;
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ListDomains;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts, DomainHistory, NavigationCount, Staff, StaffDomainInputs};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain};
 use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
 use Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts;
 staffPanel(); [, $seed]=staffData(); Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
-Auth::setUser(staffUser([Staff::VIEW,'admin.domains.manage']));
+$viewer=staffUser([Staff::VIEW,'admin.domains.manage']);Auth::setUser($viewer);
 Schema::disableForeignKeyConstraints();
 Account::where('server_id',$seed->server_id)->update(['processing_enabled'=>true]);
 $n=0;
@@ -43,8 +46,13 @@ foreach(['ds_add'=>['pending',$sent],'ds_delete'=>['queued',$created]] as $actio
 // A review alert left from before the send (a dispatch or balance refusal) does not put the domain under Open alerts.
 ObligationAlerts::record($d,'operation_review',time()-900,(int)$op->id);
 same([],StaffDomainInputs::for([$d->fresh()])[$d->id]['alerts'],'A request back with the registrar has no open review alert');
+// The real Open alerts filter and the uncached menu count agree with the row.
+$open=fn():array=>Livewire::actingAs($viewer)->test(ListDomains::class)->filterTable('alerts',true)->instance()->getTableRecords()->pluck('id')->all();
+$badge=function():int{NavigationCount::forget('domains');return (int)DomainResource::getNavigationBadge();};
+expect(!in_array($d->id,$open(),true),'The Open alerts filter leaves out a request back with the registrar');$quiet=$badge();
 DB::table('domains_operations')->where('id',$op->id)->update(['state'=>'uncertain']);
 same('operation_review',StaffDomainInputs::for([$d->fresh()])[$d->id]['alerts'][0]['code']??null,'An unconfirmed result still needs a check');
+expect(in_array($d->id,$open(),true),'The Open alerts filter shows an unconfirmed result');same($quiet+1,$badge(),'The menu count adds the unconfirmed result');
 // Domain 3 just completed: the first registrar read is queued, so Contacts wait for it instead of saying Missing.
 $active=$row('active','succeeded',['started_at'=>$sent,'completed_at'=>now()]);
 // The shared seed points at no customer account; give this domain a real one so only the read rows are in question.
