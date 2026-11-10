@@ -6,7 +6,7 @@ declare(strict_types=1);
 require __DIR__.'/Support/management-namesilo.php';
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\ObservationReader;
 use Paymenter\Extensions\Servers\Domains\Services\ObservationRecords;
-[$d,$driver,$original]=$holding('offered');
+[$d,$driver,$original]=$holding('offered');$ms->route='apibatch';
 $exchange=static function($origin,$cmd,$p,$timeout)use($managementExchange):string {
     // NameSilo refuses a DNS list for a domain that does not use its nameservers.
     if(in_array($cmd,['dnsListRecords','dnsSecListRecords'],true)){return json_encode(['request'=>['operation'=>$cmd],'reply'=>['code'=>280,'detail'=>'DNS not available']],JSON_THROW_ON_ERROR);}
