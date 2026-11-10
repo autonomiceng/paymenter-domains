@@ -22,7 +22,8 @@ $request=Illuminate\Http\Request::create('/domains/'.$d->id); $request->setUserR
 $html=(new Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController($owners))->show($request,$d->id)->render();
 $dom=storefrontDom($html);
 foreach (array_keys($waiting) as $key) {
-    if ($key==='privacy' && !Paymenter\Extensions\Servers\Domains\Presentation\PrivacyVisibility::SHOWN) { continue; } // The page hides privacy in every state.
+    // Auto-renew lives in the renewal card, and the page hides privacy in every state.
+    if ($key==='auto_renew_off' || $key==='privacy' && !Paymenter\Extensions\Servers\Domains\Presentation\PrivacyVisibility::SHOWN) { continue; }
     $row=$dom->query('//*[@id="'.$key.'"]')->item(0);
     expect($row!==null&&str_contains($row->textContent,'Opens when the nameservers change finishes.'),'Rendered row stays with its reason: '.$key);
 }
