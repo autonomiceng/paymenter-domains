@@ -20,7 +20,7 @@ same([['render' => 1]], $cache->remember($render), 'Current evidence reuses a wa
 $q = new Query($binding, ['com'], 'register');
 $ports->apply(Edit::defaults($binding, 'com', new Intent(defaultLongest: 3, defaultTransfers: true)), offerCommerceAsStaff(static fn () => $ports->readOffers($q, Context::Staff)[0]->revision));
 same([['render' => 2]], $cache->remember($render), 'Default revision fences public display even before republication');
-commerceReject(static fn () => $storefront->offer('com', 'register', 1));
+expect($storefront->offer('com', 'register', 1) !== null, 'A wider default keeps the published offer for sale until it republishes');
 $ports->apply(Edit::republish($binding, 'com'), offerCommerceAsStaff(static fn () => $ports->readOffers($q, Context::Staff)[0]->revision));
 same([['render' => 3]], $cache->remember($render), 'Publication advances the cache namespace');
 $before = $offers->cacheFence(); offerCommerceRotate($binding, 'cache-rotation-synthetic');

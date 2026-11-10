@@ -15,6 +15,9 @@ final class TldFacts
     /** A sync read this term and the registrar has no cost for it, so it does not sell it. Nothing to do. */
     public const NOT_OFFERED='Not offered';
     public const NO_SELLER='No registrar selected';
+    /** Followed by the account's name. */
+    public const OTHER_SELLER='New orders go to';
+    public const TERMS_FAILED="Set to sell; couldn't read registrar terms";
     /** Why a TLD is not for sale when no term has current prices. */
     public const NEEDS_SYNC='Registrar cost missing';
     public static function bound($query)
@@ -133,10 +136,11 @@ final class TldFacts
         $rows=self::bound(Tld::query()->where('tld',$t->tld))->with('server:id,name')->orderBy('server_id')->get();
         if($rows->isEmpty()){return new HtmlString('No prices yet');}
         $facts=self::page($rows,$grants);
-        $head=['Account','Pricing','Registration','Renewal','Transfer',...($grants->costs?['Cost']:[]),'Domains'];
+        // Each price shows the registrar cost for the same action under it, so no price reads against another action's cost.
+        $head=['Account','Pricing','Registration','Renewal','Transfer','Domains'];
         $html='<div class="domains-table-wrap"><table class="domains-table"><thead><tr>';
         foreach($head as $label){
-            $cell=$label==='Cost'?HelpHint::beside(e($label),'Registrations and transfers below cost are held. Renewals are billed.','About cost')->toHtml():e($label);
+            $cell=$label==='Registration'&&$grants->costs?HelpHint::beside(e($label),'Each price shows its registrar cost under it. Registrations and transfers below cost are held. Renewals are billed.','About cost')->toHtml():e($label);
             $html.='<th scope="col">'.$cell.'</th>';
         }
         $html.='</tr></thead><tbody>';
@@ -152,14 +156,14 @@ final class TldFacts
                 $gap=$gap||($state['value']!==null&&in_array($state['value'],[\Paymenter\Extensions\Servers\Domains\Presentation\Missing::LABEL,'Not for sale'],true));
                 return $html;
             };
+            $withCost=static fn(string $action)=>$price($action).($grants->costs?' <span class="domains-sub">Cost '.$price($action,'cost').'</span>':'');
             $transfers=!in_array('transfer',$fact['intent']['stops']??[],true)&&($fact['intent']['transfers']??$fact['intent']['defaultTransfers']??false);
-            $transfer=$first('transfer');$transfer=!($fact['unreadable']??false)&&!($fact['invalid_rule']??false)&&!$transfers&&($transfer['retail']??null)===null?'Off':$price('transfer');
+            $transfer=$first('transfer');$transfer=!($fact['unreadable']??false)&&!($fact['invalid_rule']??false)&&!$transfers&&($transfer['retail']??null)===null?'Off':$withCost('transfer');
             $name=(string)$row->server?->name;
             $account=(RegistrarFacts::accountLink((int)$row->server_id,$name)?->toHtml()??e($name)).($fact['demo']?' '.DemoData::tag(inline:true)->toHtml():'')
                 .($fact['seller']===(int)$row->server_id?' <span class="domains-table-tag">New orders</span>':'');
             $cells=self::cell($account,false).self::cell(e($fact['pricing']))
-                .self::cell($price('register')).self::cell($price('renew')).self::cell($transfer);
-            if($grants->costs){$cells.=self::cell($price('renew','cost'));}
+                .self::cell($withCost('register')).self::cell($withCost('renew')).self::cell($transfer);
             $cells.=self::cell(e((string)$fact['holders']));
             // Said in the page head: no registrar selected, or this TLD's own reason.
             if(($fact['seller']??null)===null&&$said!==self::NO_SELLER){$causes[]=self::NO_SELLER;}

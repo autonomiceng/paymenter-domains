@@ -34,8 +34,12 @@ $dom=new DOMDocument();@$dom->loadHTML($detail);$xpath=new DOMXPath($dom);$rende
 $all=Paymenter\Extensions\Servers\Domains\Models\Tld::where('tld','com')->orderBy('server_id')->get();same($all->count(),$rendered->length,'One rendered row per bound account');
 foreach($all as $i=>$row){
     $saved=TldFacts::prices($row,$grants);$first=static fn($action)=>collect($saved)->where('action',$action)->sortBy('term')->first();
-    $expected=[$first('register')['retail'],TldFacts::renewal($saved)['retail'],$first('transfer')['retail'],TldFacts::renewal($saved)['cost'],(string)TldFacts::holders($row)];
-    foreach($expected as $j=>$value){same($value,$xpath->evaluate('normalize-space(td['.($j+3).'])',$rendered->item($i)),'Detail values agree with saved reader');}
+    $cell=static fn(int $j):string=>$xpath->evaluate('normalize-space(td['.$j.'])',$rendered->item($i));
+    // Each price cell shows its price, then the cost for the same action.
+    expect(str_starts_with($cell(3),(string)$first('register')['retail'].' Cost '),'Detail registration agrees with saved reader');
+    same(TldFacts::renewal($saved)['retail'].' Cost '.TldFacts::renewal($saved)['cost'],$cell(4),'Detail renewal shows its own cost');
+    expect(str_starts_with($cell(5),(string)$first('transfer')['retail']),'Detail transfer agrees with saved reader');
+    same((string)TldFacts::holders($row),$cell(6),'Detail values agree with saved reader');
 }
 $viewerGrants=Paymenter\Extensions\Servers\Domains\Admin\Support\StaffGrants::current();
 Auth::setUser(staffUser([Staff::VIEW]));$withoutCosts=Staff::requireView();Auth::setUser($u);

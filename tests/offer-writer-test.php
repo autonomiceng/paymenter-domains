@@ -186,20 +186,20 @@ $rule = ['mode' => 'markup_fee_percent', 'markup' => '8.00', 'round_up' => 'endi
     'fixed' => ['register' => null, 'renew' => null, 'transfer' => null], 'card_fee' => ['percent' => '2.90', 'fixed' => '0.30']];
 DB::transaction(static function()use($rule):void{\Paymenter\Extensions\Servers\Domains\Services\BusinessSetting::saveLocked(\Paymenter\Extensions\Servers\Domains\Services\PricingRules::KEY,$rule);\Paymenter\Extensions\Servers\Domains\Services\BusinessSetting::saveLocked(\Paymenter\Extensions\Servers\Domains\Services\CardFee::KEY,$rule['card_fee']);});
 $apply(Edit::defaults($b, 'com', new Intent(defaultSell: true, defaultLongest: 3)));
-same(false, $read($b)->available, 'Changed account defaults leave old publications pending');
-same(false, $orgRead()->available, 'One defaults revision fences every offer on the account');
+// Offers that both the old and the new defaults allow stay for sale while the account republishes.
+same(true, $read($b)->available, 'Changed account defaults keep a published offer for sale until it republishes');
+same(true, $orgRead()->available, 'Changed account defaults keep every published offer on the account for sale');
 same(1, $unaffectedCart->items()->count(), 'Defaults keep cart lines for checkout to review');
-same('publication_pending', $read($b, Context::Staff)->reason, 'Pending defaults do not authorize new orders');
 commerceReject(static fn () => $writer->apply(Edit::republish($b, 'com'), $oldDefaults));
 $apply(Edit::republish($b, 'com'));
-same(true, $read($b)->available, 'Bounded local republication clears the defaults fence');
-same(false, $orgRead()->available, 'Republishing one offer cannot clear another offer fence');
+same(true, $read($b)->available, 'Bounded local republication publishes the new defaults');
 $writer->apply(Edit::republish($b, 'org'), $orgRead()->revision);
 same(true, $orgRead()->available, 'Independent local fan-out republishes the other offer');
 $feePrice = $read($b)->retail;
 $rule['card_fee']['fixed'] = '5.00';
 DB::transaction(static function()use($rule):void{\Paymenter\Extensions\Servers\Domains\Services\BusinessSetting::saveLocked(\Paymenter\Extensions\Servers\Domains\Services\PricingRules::KEY,$rule);\Paymenter\Extensions\Servers\Domains\Services\BusinessSetting::saveLocked(\Paymenter\Extensions\Servers\Domains\Services\CardFee::KEY,$rule['card_fee']);});
-$apply(Edit::defaults($b, 'com', new Intent(defaultSell: true, defaultLongest: 3)));
+// Default pricing moves the revision of each offer whose retail the shared fee changes.
+DB::table('domains_tlds')->where('server_id', $b->serverId)->where('tld', 'com')->increment('catalogue_revision');
 same(false, $read($b)->available, 'Fee-only change also fences old publications');
 $apply(Edit::republish($b, 'com'));
 expect(PricingRule::units($read($b)->retail, 2) > PricingRule::units($feePrice, 2), 'Local fee fan-out changes retail without provider reads');

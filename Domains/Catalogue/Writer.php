@@ -354,10 +354,11 @@ final class Writer implements Catalogue
             if ($this->current) { ($this->current)(); }
             if ($defaultsEdit) {
                 // Account defaults contain selling intent only. Rule and fee have one global store.
-                $defaults = [...get_object_vars($command->intent), '_revision' => $revision->defaults + 1];
+                $defaults = OfferState::nextDefaults($command->intent, $accounts[$binding->serverId]->catalogue_defaults, $revision->defaults);
                 DB::table('domains_accounts')->where('server_id', $binding->serverId)->update(['catalogue_defaults' => OfferState::json($defaults)]);
                 if (!$reviewed) { $this->audit($servers[$binding->serverId], $command, $revision, new Revision($revision->offer, $revision->defaults + 1, $revision->selection), $now); }
-                // All old publication revisions are now pending. B5 enumerates local republish commands.
+                // Every offer republishes under the new defaults. Until then each one sells only what both the old and
+                // the new defaults allow, so already sold TLDs stay on sale.
                 $this->afterCommit();
                 return new Revision($revision->offer, $revision->defaults + 1, $revision->selection);
             }

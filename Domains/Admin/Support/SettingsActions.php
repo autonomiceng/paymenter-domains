@@ -65,6 +65,14 @@ final class SettingsActions
             'probe'=>'Reads the balance once and shows it on this page.',
         };
     }
+    /** Change registrar on a TLD that already has one says what the change does to its sales before it is saved. */
+    private static function sellerDescription(int $tld): string
+    {
+        $t=\Paymenter\Extensions\Servers\Domains\Models\Tld::find($tld);
+        $p=$t?\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld',$t->tld)->first():null;
+        if($p===null||$p->server_id===null){return self::description('seller');}
+        return 'Choose the registrar for new orders. If you pick another account, new orders for .'.$t->tld.' stop until that account\'s terms and prices are checked, and open carts drop .'.$t->tld.'. Existing domains stay where they are.';
+    }
     /** The rest of what staff may want to know, behind the dialog's "?" helper. Null when the sentence says it all. */
     public static function details(string $name): ?string
     {
@@ -218,7 +226,7 @@ final class SettingsActions
             $out[]=Action::make($id.($setup&&$server!==Review::ALL_ACCOUNTS?'_'.$server:''))->label($label)->color(fn()=>$name==='processing'&&$processing()?'danger':'gray')->modalWidth('lg')
                 ->visible(fn()=>!($setup&&$blocked())&&(!in_array($name,Review::PUBLISHES,true)||self::canSee(Review::permission('publish')))&&self::canSee(Staff::POLICY)&&(collect(Review::rights($name))->every(fn($right)=>self::canSee($right))||($name==='override'&&self::canSee(Review::permission('remove_override'))))&&self::featureVisible($server,$name))
                 ->requiresConfirmation(!$switch||$popup)->modalHidden($switch&&!$popup)->modalHeading($setup?fn()=>$popup?$turn().' '.self::POPUPS[$id].'?':self::setupHeading($name,$registrar()!==null):$label)
-                ->modalDescription($popup?fn()=>self::switchWarning($id,$server):($switch?null:($name==='probe'?fn()=>self::description($name).($registrar()==='namesilo'?' '.self::details($name):''):($name==='configure'?fn(Action $action)=>($action->getRawData()['registrar']??null)==='namesilo'?'Checks the key with one balance read, then saves it. Orders stay paused. This does not confirm who owns the account.':self::description($name):self::description($name)))))
+                ->modalDescription($popup?fn()=>self::switchWarning($id,$server):($switch?null:($name==='probe'?fn()=>self::description($name).($registrar()==='namesilo'?' '.self::details($name):''):($name==='configure'?fn(Action $action)=>($action->getRawData()['registrar']??null)==='namesilo'?'Checks the key with one balance read, then saves it. Orders stay paused. This does not confirm who owns the account.':self::description($name):($name==='seller'&&$tld!==null?fn()=>self::sellerDescription((int)$tld):self::description($name))))))
                 ->modalSubmitActionLabel($setup?fn()=>$popup?$turn():self::submitLabel($name,$registrar()!==null):($name==='override'?'Save and publish':'Confirm'))->schema($switch?[]:$fields)
                 ->action(function(#[\SensitiveParameter] array $data,$livewire)use($id,$name,$server,$tld,$setup,$stamp,$switch){
                     try{$data=[...$data,...self::saved($id,$server)];
@@ -477,7 +485,9 @@ final class SettingsActions
         return $error instanceof EnomTestCallLimit?self::testRefusal($error,$name,$server,$data)
                 :match($error->getMessage()){\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE=>\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::STAFF,'The calculated price is too large.'=>'This makes a price too large to save. Lower the markup or the card fee. Nothing was changed.','Processing state unchanged.'=>'Orders are already set that way. Nothing changed.',
                 CardFee::INVALID=>'Enter a card fee from 0% to 99.99% and a fixed amount from $0 to $100,000, with up to two decimal places. Nothing was changed.',
-                'This TLD is hidden.'=>"That TLD isn't offered here. Nothing was saved.",'Choose at least one year.'=>'Tick at least one year. Nothing was saved.','Nothing to save.'=>'Nothing changed. Nothing was saved.',
+                'This TLD is hidden.'=>"That TLD isn't offered here. Nothing was saved.",
+                \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCommands::NO_SELLER=>'No registrar takes its new orders yet, so Sell would do nothing. Use Start selling on its TLD page to choose one. Nothing was saved.',
+                \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCommands::OTHER_SELLER=>'Another registrar account takes its new orders, so Sell here would do nothing. Use Change registrar on its TLD page to move it. Nothing was saved.','Choose at least one year.'=>'Tick at least one year. Nothing was saved.','Nothing to save.'=>'Nothing changed. Nothing was saved.',
                 'Acceptance exceeds encrypted settings capacity.','Invalid catalogue acceptance.'=>'That is more TLDs than one account can save. Turn some off. Nothing was saved.',
                 'Settings changed. Reload this page.'=>$name==='enroll_sandbox'?'This expired, or someone else changed this account. '.self::NO_KEY_CHECK.' Try again.':'Someone else changed this. Nothing was saved. Try again.',
                 'Current staff permissions required.'=>$name==='enroll_sandbox'?'Your permissions changed. '.self::NO_KEY_CHECK:'Your permissions changed. Nothing was saved.',

@@ -52,10 +52,31 @@ final class Evaluator
 
     private function reason(Snapshot $offer, Query $query, \DateTimeImmutable $now): ?string
     {
-        $intent = $offer->intent; $action = $query->action; $term = $query->term;
         if (!$offer->accountReady) { return 'account_unavailable'; }
         if (($staff = $this->staffReason($offer, $query)) !== null) { return $staff; }
-        if ($offer->publishedRevision === null || !$offer->revision->matches($offer->publishedRevision)) { return 'publication_pending'; }
+        $current = $offer->publishedRevision !== null && $offer->revision->matches($offer->publishedRevision);
+        $previous = $current ? null : $this->previous($offer);
+        if (!$current && $previous === null) { return 'publication_pending'; }
+        $reason = $this->evidenceReason($offer, $query, $now);
+        // A defaults change keeps on sale what the published catalogue sells while it republishes. What the change
+        // adds waits for its own publication, which also creates its native plans.
+        if ($previous !== null && $reason === null && $this->reason($previous, $query, $now) !== null) { return 'publication_pending'; }
+        return $reason;
+    }
+
+    /** The offer as published, when only account defaults changed since and the intent it was published under is known. */
+    private function previous(Snapshot $offer): ?Snapshot
+    {
+        $published = $offer->publishedRevision; $revision = $offer->revision;
+        if ($published === null || $offer->publishedIntent === null || $published->offer !== $revision->offer
+            || $published->selection !== $revision->selection || $published->retailRule !== $revision->retailRule) { return null; }
+        return new Snapshot($offer->feed, $offer->facts, $offer->publishedIntent, $revision, $revision, $offer->retail,
+            $offer->seller, $offer->sellerActions, $offer->accountReady, $offer->hidden, $offer->retainedAnnualRetail);
+    }
+
+    private function evidenceReason(Snapshot $offer, Query $query, \DateTimeImmutable $now): ?string
+    {
+        $intent = $offer->intent; $action = $query->action; $term = $query->term;
         $facts = $offer->facts;
         if ($facts === null) { return 'unknown_facts'; }
         if (!$facts->fresh($now)) { return 'stale_facts'; }

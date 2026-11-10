@@ -11,15 +11,22 @@ use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,CardFee,Prici
 /** Dormant translator. Writer owns the reviewed transaction; wake only enqueues bounded local work. */
 final class StaffCommands
 {
+    public const NO_SELLER='No registrar chosen for new orders.';
+    public const OTHER_SELLER='Another registrar account takes new orders.';
     public const ACTIONS=['acceptance','override','remove_override','default_pricing','tld_settings','seller','publish','import'];
     public function __construct(private readonly Writer $writer,private readonly AccountBindings $bindings,
         private readonly \Closure $wake,private readonly ?\Closure $sync=null) {}
 
-    /** Raw state hash includes unavailable credentials and every offer/publication revision. Never decrypts credentials. */
+    /** Columns only background price and terms reads and publication write. A staff save never depends on them being
+     * unchanged since the page opened: each command still checks its offer revision under the writer locks. */
+    private const BACKGROUND=['catalogue_revision'=>true,'catalogue_published_revision'=>true,'catalogue_facts'=>true];
+    /** Raw hash of what staff set: credentials, accounts, settings, TLD choices and the seller rows. Never decrypts credentials.
+     * Saved costs, terms and publication are left out, so background reads can't make a save look like someone else's change. */
     public static function stamp(int $server,?int $tld=null): string
     {
         $ending=$tld?Tld::whereKey($tld)->where('server_id',$server)->value('tld'):null;
         $raw=static fn($q)=>(DB::transactionLevel()>0?$q->lockForUpdate():$q)->get()->map(static fn($r)=>(array)$r)->all();
+        $staff=static fn($q)=>array_map(static fn(array $r)=>array_diff_key($r,self::BACKGROUND),$raw($q));
         $names=Tld::when($server!==Review::ALL_ACCOUNTS,fn($q)=>$q->where('server_id',$server))->when($tld,fn($q)=>$q->whereKey($tld))->pluck('tld');
         $ids=Server::where('extension','Domains')->orderBy('id')->pluck('id');
         return 'offer:'.hash('sha256',OfferState::json([UpgradeGate::generation(),
@@ -28,8 +35,7 @@ final class StaffCommands
             Account::whereIn('server_id',$ids)->orderBy('server_id')->get()->map(\Paymenter\Extensions\Servers\Domains\Services\ApiCallLimits::forAccount(...))->all(),
             $raw(DB::table('settings')->where('settingable_type',(new Server)->getMorphClass())->whereIn('settingable_id',$ids)
                 ->whereRaw("`key` NOT LIKE ? ESCAPE '!'",[str_replace('_','!_',Review::KEY).'%'])->orderBy('id')),
-            $raw(DB::table('domains_tlds')->when($ending,fn($q)=>$q->where('tld',$ending),fn($q)=>$q->when($server!==Review::ALL_ACCOUNTS,fn($q)=>$q->where('server_id',$server)))->orderBy('id')),
-            $raw(DB::table('domains_prices')->when($ending,fn($q)=>$q->where('tld',$ending),fn($q)=>$q->when($server!==Review::ALL_ACCOUNTS,fn($q)=>$q->where('server_id',$server)))->orderBy('id')),
+            $staff(DB::table('domains_tlds')->when($ending,fn($q)=>$q->where('tld',$ending),fn($q)=>$q->when($server!==Review::ALL_ACCOUNTS,fn($q)=>$q->where('server_id',$server)))->orderBy('id')),
             $raw(DB::table('domains_sales_policies')->whereIn('tld',$names)->orderBy('tld')),\Paymenter\Extensions\Servers\Domains\Services\BusinessSetting::stamp(DB::transactionLevel()>0),$server,$tld]));
     }
     public function publish(int $id,?Review $review=null): void
@@ -90,7 +96,8 @@ final class StaffCommands
                 $entries[]=[$command,$this->revision($target,$targetDefaults)];
             }catch(\DomainException|\InvalidArgumentException $e){$failed[$t->tld]=$e->getMessage();}
         }}
-        if($entries===[]&&count($failed)===1&&$review->action!=='acceptance'){throw new \DomainException(reset($failed));}
+        // Every picked TLD was refused for one reason: nothing is saved, and that reason is the refusal.
+        if($entries===[]&&$failed!==[]&&count(array_unique($failed))===1){throw new \DomainException(reset($failed));}
         if(count($entries)>25||$entries===[]){throw new \DomainException('Review 1 to 25 valid commands.');}
         if($review->action==='import'&&$this->sync===null){throw new \LogicException('Offer sync composition required.');}
         $review->input([...$data,...($sell===[]?[]:['changes'=>[],'rule'=>$sell['rule']??null,'rule_changed'=>false,'rows'=>[]])]);
@@ -116,6 +123,12 @@ final class StaffCommands
         $name=$t->tld;$choice=$sell['choices'][$name]??null;
         if(array_key_exists($name,$sell['choices']??[])){
             if(!in_array($choice,['sell','skip',null],true)){throw new \DomainException('Invalid sell choice.');}
+            // Sell does nothing until this account takes new orders for the TLD, so it is refused with the step that does.
+            if($choice==='sell'){
+                $policy=DB::table('domains_sales_policies')->where('tld',$name)->first();
+                if($policy===null||$policy->server_id===null){throw new \DomainException(self::NO_SELLER);}
+                if((int)$policy->server_id!==$binding->serverId){throw new \DomainException(self::OTHER_SELLER);}
+            }
             $raw['sell']=$choice===null?null:$choice==='sell';
         }
         $terms=$sell['terms'][$name]??[];

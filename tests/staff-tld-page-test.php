@@ -70,7 +70,16 @@ foreach([
     same(0,$editButtons($hidden->html())->length,'Missing price-edit or publish grants hides Edit prices');
 }
 Auth::setUser($u);
-same('.com',$page->instance()->getTitle(),'TLD page title is the TLD');
+same('.com on Enom TEST identity check',$page->instance()->getTitle(),'A TLD offered by two accounts is titled by its account');
+// The other account's page for the same TLD names its own account.
+$other=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$silo->id])->assertSuccessful();
+same('.com on OFFLINE DEMO NameSilo (synthetic)',$other->instance()->getTitle(),'Two pages for one TLD never share a title');
+// Each price shows the cost for the same action, so a price never reads against another action's cost.
+expect(!str_contains($page->html(),'<th scope="col">Cost'),'No single Cost column beside three prices');
+expect(substr_count($text($page->html()),'Cost USD ')>=2,'Registration and renewal each show their own cost');
+// Change registrar says what it does to sales before it is saved.
+$dialog=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$enom->id])->mountAction('seller')->call('$refresh');
+expect(str_contains($text($dialog->effects['partials']['action-modals.0']??''),'new orders for .com stop until that account\'s terms and prices are checked, and open carts drop .com'),'Change registrar warns that sales stop and carts drop the TLD');
 foreach(['For sale','Change registrar','More','Sales','Registrar for new orders','Existing domains stay with their registrar','Terms','1 to 3 years',
     'Price sync','Last updated','Oct 18, 2026','No update scheduled. Check Site setup on the Registrar account page, and the background worker.',
     'Prices by registrar account','Edit prices','Account','Pricing','Registration','Renewal','Transfer','Default pricing','New orders','History'] as $see){$page->assertSee($see);}
@@ -117,8 +126,12 @@ $dom=new DOMDocument();@$dom->loadHTML($detail);$xpath=new DOMXPath($dom);$rende
 $all=Paymenter\Extensions\Servers\Domains\Models\Tld::where('tld','com')->orderBy('server_id')->get();same($all->count(),$rendered->length,'One rendered row per bound account');
 foreach($all as $i=>$row){
     $saved=TldFacts::prices($row,$grants);$first=static fn($action)=>collect($saved)->where('action',$action)->sortBy('term')->first();
-    $expected=[$first('register')['retail'],TldFacts::renewal($saved)['retail'],$first('transfer')['retail'],TldFacts::renewal($saved)['cost'],(string)TldFacts::holders($row)];
-    foreach($expected as $j=>$value){same($value,$xpath->evaluate('normalize-space(td['.($j+3).'])',$rendered->item($i)),'Detail values agree with saved reader');}
+    $cell=static fn(int $j):string=>$xpath->evaluate('normalize-space(td['.$j.'])',$rendered->item($i));
+    // Each price cell shows its price, then the cost for the same action.
+    expect(str_starts_with($cell(3),(string)$first('register')['retail'].' Cost '),'Detail registration agrees with saved reader');
+    same(TldFacts::renewal($saved)['retail'].' Cost '.TldFacts::renewal($saved)['cost'],$cell(4),'Detail renewal shows its own cost');
+    expect(str_starts_with($cell(5),(string)$first('transfer')['retail']),'Detail transfer agrees with saved reader');
+    same((string)TldFacts::holders($row),$cell(6),'Detail values agree with saved reader');
 }
 $viewerGrants=Paymenter\Extensions\Servers\Domains\Admin\Support\StaffGrants::current();
 Auth::setUser(staffUser([Staff::VIEW]));$withoutCosts=Staff::requireView();Auth::setUser($u);

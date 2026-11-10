@@ -266,6 +266,7 @@ final class StaffCatalogue
         foreach($queries as $i=>$q){foreach($loaded[$i] as $name=>$offer){$offers[$q->binding->serverId.':'.$name]=$offer;}}
         $policies=DB::table('domains_sales_policies')->whereIn('tld',$tlds->pluck('tld'))->get()->keyBy('tld');
         $sellers=$policies->pluck('server_id','tld');
+        $accountNames=[];
         $refresh=DB::table('domains_observation_queues')->whereIn('server_id',$tlds->pluck('server_id'))->get()->keyBy('server_id');
         $holders=Domain::whereIn('server_id',$tlds->pluck('server_id'))->whereIn('tld',$tlds->pluck('tld'))->whereNotNull('reservation_name')
             ->selectRaw('server_id,tld,account_fingerprint,count(*) as holders')->groupBy('server_id','tld','account_fingerprint')->get()->keyBy(fn($r)=>$r->server_id.':'.$r->tld.':'.$r->account_fingerprint);
@@ -316,9 +317,17 @@ final class StaffCatalogue
                 &&\Paymenter\Extensions\Servers\Domains\Admin\Support\TldTerms::chosen($t,(array)$policy,$d);
             $chosen=$invalidRule?null:$chosen;
             if(!$selected&&!isset($sellers[$t->tld])){$label=TldFacts::NO_SELLER;}
+            // Another account takes this TLD's new orders: name it, so each account's page for one TLD tells the same story.
+            if(!$unreadable&&$reason==='seller_changed'&&isset($sellers[$t->tld])&&(int)$sellers[$t->tld]!==(int)$t->server_id){
+                $other=(int)$sellers[$t->tld];
+                $label=TldFacts::OTHER_SELLER.' '.($accountNames[$other]??=(string)(\App\Models\Server::whereKey($other)->value('name')?:'another registrar account'));
+            }
             $queue=$refresh[$t->server_id]??null;
             if($queue&&$queue->account_fingerprint!==$t->account_fingerprint){$queue=null;}
             $work=$queue?OfferState::decode($queue->offer_work):[];
+            // A terms read that failed says so, instead of checking with no end. The next try is in the row's refresh.
+            if(!$unreadable&&in_array($reason,['unknown_facts','stale_facts'],true)&&isset($work['facts'][$t->tld]['failed_at'])
+                &&str_ends_with($label,'checking registrar terms')){$label=TldFacts::TERMS_FAILED;}
             // Only seller-policy writes establish selection time; pricing revisions do not.
             $selectedAt=$policy?->updated_at;
             try{$selectedAt=$selectedAt?\Carbon\CarbonImmutable::parse($selectedAt)->getTimestamp():null;}catch(\Throwable){$selectedAt=null;}
@@ -348,7 +357,7 @@ final class StaffCatalogue
         catch(\Throwable){return [isset($d)&&is_array($d)?$d:[],true];}
     }
     private function publicDefaults(array $d,bool $costs): array
-    {unset($d['card_fee'],$d['pricing_rule']);if(!$costs){unset($d['maxAnnualCost']);}return $d;}
+    {unset($d['card_fee'],$d['pricing_rule'],$d['_history']);if(!$costs){unset($d['maxAnnualCost']);}return $d;}
     /** Shared settings are validated independently so a bad default cannot hide a valid own rule. */
     private static function pricingState(): array
     {
