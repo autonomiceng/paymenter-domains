@@ -52,18 +52,30 @@ $clock->instant = $completedAt->modify('+25 hours');
 expect(!isset($owners->present($d->fresh())->renewNow['repeat_at']), 'No wait once 24 hours have passed');
 
 $clock->instant=$completedAt->modify('+6 hours');
-// The preview and paid execution use the same completion even with five newer invalid candidates.
+// The preview and paid execution use the same completion beyond two pages of newer invalid candidates.
 $failures=[];
 $check=static function(bool $ok,string $message)use(&$failures):void{if(!$ok){$failures[]=$message;}};
 $decoys=[];
-for($i=0;$i<5;$i++){
+for($i=0;$i<205;$i++){
     $copy=$first->fresh()->replicate();$copy->fill(['operation_key'=>'repeat-decoy-'.$i,'invoice_id'=>null,'invoice_item_id'=>null,
         'completed_at'=>$completedAt->modify('+1 minute')]);$copy->save();$decoys[]=$copy->id;
 }
-$preview=Paymenter\Extensions\Servers\Domains\Services\RenewalRepeatWait::forDomain($d->fresh(),$clock->now())?->format(DATE_ATOM);
+DB::flushQueryLog();DB::connection()->enableQueryLog();
+try {
+    $preview=Paymenter\Extensions\Servers\Domains\Services\RenewalRepeatWait::forDomain($d->fresh(),$clock->now())?->format(DATE_ATOM);
+    $queries=DB::getQueryLog();
+} finally { DB::connection()->disableQueryLog();DB::flushQueryLog(); }
+$operationReads=array_values(array_filter($queries,fn($query)=>str_contains($query['query'],'from "domains_operations"')));
+$accountReads=array_values(array_filter($queries,fn($query)=>str_contains($query['query'],'from "domains_accounts"')));
+echo 'Repeat preview reads: '.count($operationReads).' operation, '.count($accountReads)." account.\n";
+$check(count($operationReads)>0&&count($operationReads)<=3,'Recent completions are read in bulk across the full history');
+foreach($operationReads as $query){
+    $check(preg_match('/limit ([0-9]+)/',$query['query'],$limit)===1&&(int)$limit[1]<=100,'Each repeat preview operation read is bounded to at most 100 rows');
+}
+$check(count($accountReads)===1,'The repeat preview reads its account once, not for each completion');
 $locked=DB::transaction(static fn()=>Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($d->fresh()));
 $executionWait=Paymenter\Extensions\Servers\Domains\Services\RenewalRepeatWait::next($locked['domain'],$locked['operations'],$clock->now(),Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($locked['account']));
-$check($preview!==null&&$executionWait!==null&&(new DateTimeImmutable($preview))->getTimestamp()===$executionWait->getTimestamp()&&$executionWait->getTimestamp()===$goes->getTimestamp(),'Five invalid recent rows do not hide the authoritative locked completion');
+$check($preview!==null&&$executionWait!==null&&(new DateTimeImmutable($preview))->getTimestamp()===$executionWait->getTimestamp()&&$executionWait->getTimestamp()===$goes->getTimestamp(),'Invalid recent rows beyond two pages do not hide the authoritative locked completion');
 Operation::whereIn('id',$decoys)->delete();
 // A lookup failure keeps settled invoice state and emits only a safe exception class.
 $failLookup=true;$lookupAttempts=0;$diagnostics=[];

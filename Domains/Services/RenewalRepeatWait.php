@@ -37,9 +37,9 @@ final class RenewalRepeatWait
     {
         if ($d->registrar_key !== 'enom') { return null; }
         try {
-            // Stream recent candidates: invalid rows must not hide an authoritative completion.
+            // Read recent candidates in bounded pages: invalid rows must not hide an authoritative completion.
             $ops = Operation::where('domain_id', $d->id)->where('action', 'renew')->whereNotNull('completed_at')
-                ->where('completed_at', '>', $now->setTimezone(new \DateTimeZone(date_default_timezone_get()))->modify('-'.self::HOURS.' hours'))->orderByDesc('completed_at')->cursor();
+                ->where('completed_at', '>', $now->setTimezone(new \DateTimeZone(date_default_timezone_get()))->modify('-'.self::HOURS.' hours'))->lazyByIdDesc(100);
             return self::next($d, $ops, $now, AccountBindings::binding(Account::where('server_id', $d->server_id)->sole()));
         } catch (\Throwable $error) {
             \Illuminate\Support\Facades\Log::warning('Domains renewal wait unavailable.', ['exception_class' => $error::class]);
