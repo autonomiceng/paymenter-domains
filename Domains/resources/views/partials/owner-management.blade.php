@@ -56,7 +56,7 @@
 <span class="domains-row__a"><a class="domains-a" data-dialog-open href="{{ $editUrl }}" aria-label="Edit nameservers">Edit</a></span>
 @php $nsValue = $confirmStep === 'nameservers' ? $retry['values']['nameservers'] : implode("\n", $section['current'] ?? []); @endphp
 @component('domains::partials.owner-edit', ['id' => $cap, 'title' => $label, 'open' => $editOpen, 'cancel' => $show])
-<form method="POST" action="{{ $section['url'] }}" class="domains-owner-form" data-confirm @if ($section['defaults'] ?? false) data-default-servers="{{ implode("\n", $section['defaultServers'] ?? []) }}" @endif>
+<form method="POST" action="{{ $section['url'] }}" class="domains-owner-form" data-confirm data-nameservers-max="{{ $section['max'] }}" @if ($section['letterEnding'] ?? false) data-nameservers-letter-ending="1" @endif @if ($section['defaults'] ?? false) data-default-servers="{{ implode("\n", $section['defaultServers'] ?? []) }}" @endif>
 @include('domains::partials.form-key', ['action' => 'nameservers'])
 <p class="domains-hint">Registrar: {{ $section['registrar'] }}.</p>
 @if (!($section['defaults'] ?? false))<p class="domains-hint">{{ $section['defaultError'] ?? \Paymenter\Extensions\Servers\Domains\Services\ManagementNameservers::MISSING }}</p>@endif

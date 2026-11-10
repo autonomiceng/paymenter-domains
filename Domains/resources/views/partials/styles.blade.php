@@ -440,6 +440,8 @@
 .domains .domains-cell-sub .domains-missing { font-weight:500; }
 .domains .domains-tone-text-warn { color: var(--e-warn); }
 .domains .domains-tone-text-bad { color: var(--e-bad); }
+.domains .domains-edit--behind { visibility: hidden; }
+.domains .domains-edit--behind [data-confirm-dialog] { visibility: visible; }
 .domains .domains-badge { white-space:normal; }
 .domains .domains-missing { display:inline-flex; align-items:center; gap:.375rem; color: var(--e-bad); font-weight:600; }
 .domains .domains-missing--calm { color:var(--e-muted); font-weight:500; }
