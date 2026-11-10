@@ -9,8 +9,10 @@ use Paymenter\Extensions\Servers\Domains\Models\Operation;
 final class RenewalRepeatWait
 {
     public const HOURS = 24;
+    /** Why it waits, in customer words. */
+    public const WHY = 'The registrar accepts one renewal of a domain every 24 hours.';
     /** Ends with the time, which each page draws in the viewer's time zone. */
-    public const GOES = 'The renewal goes to the registrar automatically at';
+    public const GOES = self::WHY.' The renewal goes to the registrar automatically at';
     public const NOTHING = 'Nothing more to pay or do.';
     /** Staff only: why it waits. Lists show it as the request's reason. */
     public const STAFF = 'Waiting: Enom refuses a second renewal of the same domain within 24 hours';

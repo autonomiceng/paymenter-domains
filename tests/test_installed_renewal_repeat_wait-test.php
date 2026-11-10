@@ -47,7 +47,8 @@ $check = static function (bool $ok, string $what) use (&$failed): void { if (!$o
 $at = static fn (string $html): bool => str_contains($html, 'datetime="'.$goes->format('Y-m-d\TH:i:s').'+00:00"');
 $text = static fn (string $html): string => trim(preg_replace('/\s+/', ' ', html_entity_decode(strip_tags(preg_replace('~<(style|script)\b[^>]*>.*?</\1>~si', '', $html)), ENT_QUOTES)));
 $staffWhy = 'Waiting: Enom refuses a second renewal of the same domain within 24 hours';
-$customer = 'Nothing more to pay or do. The renewal goes to the registrar automatically at';
+// Customers read why it waits, not only when it goes.
+$customer = 'Nothing more to pay or do. The registrar accepts one renewal of a domain every 24 hours. The renewal goes to the registrar automatically at';
 
 $check($op->safe_code === 'renewal_repeat_wait', 'reason: its own reason, not renewal_rate_limited (got '.$op->safe_code.')');
 $check(($op->policy['renewal_execution']['eligible_at'] ?? null) !== null

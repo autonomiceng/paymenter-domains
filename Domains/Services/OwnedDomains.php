@@ -61,8 +61,8 @@ final readonly class OwnedDomains
     /** A cancelled order nobody paid or is paying: a normal cancel with nothing to review. */
     private static function unpaidCancel(Operation $op, ?Invoice $invoice): array
     {
-        if ($op->state!=='awaiting_payment' || !$invoice || $invoice->status==='paid') { return []; }
-        $paying=\App\Models\InvoiceTransaction::where('invoice_id',$invoice->id)
+        if ($op->state!=='awaiting_payment' || $invoice?->status==='paid') { return []; }
+        $paying=$op->invoice_id!==null&&\App\Models\InvoiceTransaction::where('invoice_id',$op->invoice_id)
             ->whereIn('status',[\App\Enums\InvoiceTransactionStatus::Succeeded,\App\Enums\InvoiceTransactionStatus::Processing])->exists();
         return $paying ? [] : ['unpaid'=>true];
     }
@@ -171,6 +171,12 @@ final readonly class OwnedDomains
         foreach ($entries as $entry) {
             try {
                 if (($late=RenewalCycles::lateNote($entry))!==null) { $progress[]=['label'=>'Renewal','state'=>'Cancelled','date'=>$entry->updated_at?->toIso8601String(),'note'=>$late]; continue; }
+                if ($entry->action==='renew') {
+                    // A paid renewal is a change to the domain; an unpaid invoice is not one yet.
+                    $key=RequestStatus::key(RequestStatus::readsAs($entry->state,$entry->safe_code));
+                    if ($key!=='awaiting_payment') { $progress[]=['label'=>'Renewal','state'=>RequestStatus::SET[$key][0],'date'=>$entry->updated_at?->toIso8601String(),'note'=>null]; }
+                    continue;
+                }
                 $key=ManagementProgress::statusKey($entry,$d);
                 $label=self::CHANGES[$entry->action]??null;
                 if ($key===null || !$label) { continue; }

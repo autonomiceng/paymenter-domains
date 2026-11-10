@@ -30,7 +30,7 @@ foreach ($cases as $case=>[$status,$action,$state,$code]) {
     DB::table('domains_domains')->where('id',$d->id)->update(['status'=>$status,'provider_expires_at'=>null,'renewal_policy'=>null]);
     DB::table('domains_operations')->where('id',$op->id)->update(['action'=>$action,'state'=>$state,'safe_code'=>$code]);
     [$list]=$render();$row=$list->query('//tbody/tr')->item(0);
-    same('On',$norm($list->query('td[@data-label="Renewal"]/*[contains(@class,"domains-cell-main")]',$row)->item(0)),'Renewal cell: '.$case);
+    same('On',$norm($list->query('td[@data-label="Renewal invoices"]/*[contains(@class,"domains-cell-main")]',$row)->item(0)),'Renewal cell: '.$case);
 }
 
 // The list query count does not grow with rows on the page, whatever state the extra rows are in.

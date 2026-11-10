@@ -63,7 +63,6 @@ expect($refused, 'Background reads give way while a search waits for the slot');
 $search = $budget->acquire($b, RequestOrigin::Interactive); $budget->release($b, RequestOrigin::Interactive, $search);
 $budget->release($b, RequestOrigin::Background, $budget->acquire($b, RequestOrigin::Background));
 $lease = $budget->acquire($b, RequestOrigin::Background);
-$lease = $budget->acquire($b, RequestOrigin::Background);
 storefrontViews(); $controller = new StorefrontController($store);
 foreach (['register', 'transfer'] as $entry) {
     $r = Request::create('/domains/check', 'POST', ['domain' => $entry.'-busy-placeholder.com']);

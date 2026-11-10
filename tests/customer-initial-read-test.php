@@ -39,7 +39,7 @@ expect(!str_contains(strip_tags($html),'No registrar read is queued.'),'Customer
 // A row that says Checking has nothing current to change: its action is shown turned off until the read finishes.
 $lockPage=new OwnedDomain(name:$d->domain,status:'Active',tone:'ok',expiry:'2027-11-07',renewal:'On',renewalPrice:'$10.99',actions:['show'=>'/domains/73'],progress:[],setup:[],transfer:[],
     management:['lock'=>['label'=>'Transfer lock','state'=>null,'url'=>'/domains/73/lock','actions'=>['lock'=>'/domains/73/lock']]],testEnvironment:true);
-$dom=storefrontDom(view('domains::show',['domain'=>RecordFamilies::owner($lockPage,$facts),'summary'=>null])->render());
+$dom=storefrontDom(view('domains::show',['domain'=>RecordFamilies::owner($lockPage,$facts),'summary'=>null,'keys'=>['lock'=>'fixture-key']])->render());
 same(0,$dom->query('//li[@id="lock"]//a[contains(@href,"edit=lock")]')->length,'Checking lock row has no live Change link');
 same(1,$dom->query('//li[@id="lock"]//button[@disabled and normalize-space(.)="Change"]')->length,'Checking lock row shows Change turned off');
 expect(str_contains(DomainPage::INITIAL_READ,'Changes open when the check finishes.'),'The notice says why changes are off');
@@ -52,6 +52,11 @@ foreach(['no queued read'=>[null,false],'running read'=>[['due_at'=>$now->getTim
     same($checking,(DomainPage::notice(RecordFamilies::owner($page,$facts))['text']??null)===DomainPage::INITIAL_READ,$case.' sets the first-read notice');
     $families($facts,ucfirst($case),$checking);
 }
+// Staff: a read that is due but not started waits in the account's read queue; the line does not show a past time as the next read.
+$work(['due_at'=>$now->getTimestamp()-600]);$queued=RecordFamilies::read($d,$now);
+same(true,$queued['read_queued'],'A due read that has not started is queued');
+$staffLine=storefrontDom(view('domains::partials.record-families',['recordFamilies'=>$queued,'staff'=>true])->render())->query('//p[starts-with(normalize-space(.),"Next registrar read:")]');
+expect($staffLine->length===1&&str_contains($staffLine->item(0)->textContent,'Waiting its turn in the account’s read queue, due since'),'Staff read that a due read waits its turn');
 $work([]);
 $op=new Operation(['id'=>1,'action'=>'register','state'=>'succeeded','authority_generation'=>1,'account_fingerprint'=>$d->account_fingerprint,'payload'=>['nameservers'=>['ns1.example.net','ns2.example.net']],'attempt'=>['corrections'=>['nameservers'=>['state'=>'authorization_required']]],'policy'=>[]]);
 same(false,RegistrationDns::pending($op,$d),'An unconfirmed registration warning does not ask for DNS repairs');

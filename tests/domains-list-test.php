@@ -47,9 +47,9 @@ foreach ($cases as $case=>[$domain,$acquisition,$expires,$renewal,$sub,$expiresT
     if(str_starts_with($case,'register-')){
         same(1,$list->query('td[@data-label="Expires"]//*[contains(@class,"domains-missing--calm")]',$row)->length,'Pending registration needs nothing, so its Missing is calm');
     }
-    same($renewal,$norm($list->query('td[@data-label="Renewal"]/*[contains(@class,"domains-cell-main")]',$row)->item(0)),'Renewal value: '.$case);
-    if ($sub!==null) { same($sub,$norm($list->query('td[@data-label="Renewal"]/*[contains(@class,"domains-cell-sub")]',$row)->item(0)),'Renewal sub line: '.$case); }
-    else { expect(!str_contains((string)$cell($list,$row,'Renewal'),'Next invoice') && !str_contains((string)$cell($list,$row,'Renewal'),'Cancels'),'No invoice or cancel line: '.$case); }
+    same($renewal,$norm($list->query('td[@data-label="Renewal invoices"]/*[contains(@class,"domains-cell-main")]',$row)->item(0)),'Renewal value: '.$case);
+    if ($sub!==null) { same($sub,$norm($list->query('td[@data-label="Renewal invoices"]/*[contains(@class,"domains-cell-sub")]',$row)->item(0)),'Renewal sub line: '.$case); }
+    else { expect(!str_contains((string)$cell($list,$row,'Renewal invoices'),'Next invoice') && !str_contains((string)$cell($list,$row,'Renewal invoices'),'Cancels'),'No invoice or cancel line: '.$case); }
     if (str_contains($expires,'Contact support')) { same($support,$list->query('td[@data-label="Expires"]//a',$row)->item(0)?->getAttribute('href'),'Contact support links the ticket form: '.$case); }
     $page=$norm($list->query('//div[@class="domains"]')->item(0));
     foreach (['Expiry unknown','See details','Pending verification','Planned due','Renewal off','Manage','Apply','in your account','Related to your hosting'] as $old) { expect(!str_contains($page,$old),'Old list copy removed: '.$old.' ('.$case.')'); }
@@ -84,10 +84,10 @@ foreach (array_keys($rows) as $i=>$name) {
     same($name,$norm($dom->query('.//a[contains(@class,"domains-row-link")]',$row)->item(0)),'Row link text is the name: '.$name);
     same($tag===null?[]:[$tag],array_map(fn($n)=>trim($n->firstChild->textContent),iterator_to_array($dom->query('td[1]/span[contains(@class,"domains-demo-tag")]',$row))),'Demo or Test tag after the name: '.$name);
     same($expires,$cell($dom,$row,'Expires'),'Expires cell: '.$name);
-    same($renewal,$cell($dom,$row,'Renewal'),'Renewal cell: '.$name);
+    same($renewal,$cell($dom,$row,'Renewal invoices'),'Renewal cell: '.$name);
 }
 // The row says what the domain page says while we check a renewal, in the same blue.
-same(['Under review'],array_map($norm,iterator_to_array($dom->query('//tbody/tr[6]/td[@data-label="Renewal"]//*[contains(@class,"domains-tone-info")]'))),'Renewal under review is blue on the list');
+same(['Under review'],array_map($norm,iterator_to_array($dom->query('//tbody/tr[6]/td[@data-label="Renewal invoices"]//*[contains(@class,"domains-tone-info")]'))),'Renewal under review is blue on the list');
 // The summary lists every usable link and its overflow counts those past the first three, so four links show 3 more.
 same('Hosting: Starter hosting and 3 more',$norm($dom->query('//tbody/tr[4]/td[1]/*[contains(@class,"domains-cell-sub")]')->item(0)),'Hosting sub line counts every other service once');
 same('Hosting: Starter hosting',$norm($dom->query('//tbody/tr[5]/td[1]/*[contains(@class,"domains-cell-sub")]')->item(0)),'Hosting sub line names one service');

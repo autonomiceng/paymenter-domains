@@ -90,6 +90,13 @@ final class DomainBilling
                 \App\Helpers\ExtensionHelper::addPayment($invoice->id, null, amount: PricingRule::decimal($remaining), isCreditTransaction: true);
             }
             (new RenewalAutoPay($this->clock))->issued($operation, $invoice->fresh(), $l, $actor === null);
+            // Core's "new invoice" mail and bell row were held back above because the line did not exist yet. Send them once
+            // the invoice commits, unless credit or Auto Pay already paid it (the paid mail covers that).
+            $id = $invoice->id;
+            DB::afterCommit(static function () use ($id): void {
+                $issued = Invoice::find($id);
+                if ($issued && $issued->status === Invoice::STATUS_PENDING) { event(new \App\Events\Invoice\Finalized($issued, true)); }
+            });
             return $invoice->fresh();
         });
     }

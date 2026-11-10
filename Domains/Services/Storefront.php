@@ -136,7 +136,7 @@ class Storefront
         try { $transfer = $read->offer($ending, 'transfer', 1); } catch (\Throwable) {}
         // A taken name on Register links to the transfer search when we transfer the ending. It depends on the ending
         // only, so a local reservation still gets the same response.
-        if (!$transferOnly && $transfer) { $base['transferEnding'] = true; }
+        if (!$transferOnly && $transfer && TransferPrecheck::endingOpen($transfer['selection'])) { $base['transferEnding'] = true; }
         if (Domain::where('reservation_name', $name)->exists()) { return $transferOnly ? $this->transferRefusal($base, 'local_unavailable') : $base; }
         $offers = [];
         foreach (range(1, 10) as $term) {

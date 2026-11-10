@@ -116,6 +116,8 @@ final class DomainPage
         return ['missing' => false, 'tone' => $days <= 0 ? 'bad' : ($days <= 30 ? 'warn' : null), 'note' => $note];
     }
     /** The renewal invoice's state in words, the same on the domain page and the Domains list (DomainStates::cycle). */
+    /** The open renewal invoice's last charge failed, whether Auto Pay or a card made it. */
+    public const DECLINED = 'The last payment failed. Pay the invoice with another card.';
     public const INVOICE = ['paid' => 'Paid', 'review' => 'Under review', 'cancelled' => 'Invoice cancelled', 'closed' => 'Renewal did not finish'];
     /** What happens to the money once the registrar rejected the order, by OwnedDomain::$refundTo. */
     public const REFUND = ['original' => 'Any refund goes back to your original payment method.', 'credit' => 'Any refund goes to your account credit.',
@@ -132,7 +134,8 @@ final class DomainPage
         $due = $d->renewalDue ?? $d->renewalInvoice['due'] ?? null;
         if ($state === null && ($d->renewal !== 'On' || $d->setupPending || self::rejected($d))) { return null; }
         return match (true) {
-            $state === 'pending' => ['value' => $due ? ($d->earlyRenewal ? RequestStatus::earlyRenewal($due) : 'Due '.self::date($due)) : 'Due', 'action' => isset($d->renewNow['invoice']) ? ['label' => 'Pay invoice', 'url' => $d->renewNow['invoice']] : null],
+            $state === 'pending' => ['value' => $due ? ($d->earlyRenewal ? RequestStatus::earlyRenewal($due) : 'Due '.self::date($due)) : 'Due',
+                ...(($d->renewNow['declined'] ?? false) ? ['note' => self::DECLINED] : []), 'action' => isset($d->renewNow['invoice']) ? ['label' => 'Pay invoice', 'url' => $d->renewNow['invoice']] : null],
             $state === 'paid' => ['value' => self::INVOICE['paid'], ...(($goes = $d->renewNow['goes'] ?? $d->renewalInvoice['goes'] ?? null) ? ['note' => RenewalRepeatWait::NOTHING.' '.RenewalRepeatWait::GOES, 'at' => $goes] : [])],
             $state === 'closed' => ['value' => self::INVOICE['closed'], 'action' => $contact],
             $state === 'cancelled' => ['missing' => true, 'cause' => self::INVOICE['cancelled'], 'fix' => $contact],

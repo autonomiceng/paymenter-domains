@@ -15,9 +15,10 @@ app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clo
 $bind=['server_id'=>3,'registrar_key'=>'enom','account_fingerprint'=>str_repeat('a',64),'authority_generation'=>1];
 // Routine domains already finished a record read; the new one has not.
 $domain=static function(string $name,int $n,bool $read)use($bind):Domain {
-    $d=Domain::create([...$bind,'domain'=>$name.'.com','sld'=>$name,'tld'=>'com','user_id'=>800+$n,'service_id'=>800+$n,'status'=>'active','observation'=>[]]);
-    if($read){$d->update(['observation'=>['records'=>['identity'=>ObservationRecords::identity($d),'at'=>'2026-11-09T06:00:00+00:00',
-        'last_complete_at'=>'2026-11-09T06:00:00+00:00','sequence'=>0,'families'=>[]]]]);}
+    // The claim reads only domain rows and their work, so the fixture skips the account binding check.
+    $d=Domain::withoutEvents(static fn()=>Domain::create([...$bind,'domain'=>$name.'.com','sld'=>$name,'tld'=>'com','user_id'=>800+$n,'service_id'=>800+$n,'status'=>'active','observation'=>[]]));
+    if($read){Domain::withoutEvents(static fn()=>$d->update(['observation'=>['records'=>['identity'=>ObservationRecords::identity($d),'at'=>'2026-11-09T06:00:00+00:00',
+        'last_complete_at'=>'2026-11-09T06:00:00+00:00','sequence'=>0,'families'=>[]]]]));}
     return $d->fresh();
 };
 $work=static function(Domain $d,string $due)use($bind):int {

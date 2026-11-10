@@ -84,7 +84,7 @@ foreach(['split','returned','credited',null] as $index=>$expected){
         $html=view('domains::partials.owner-renew',['domain'=>$dto,'summary'=>null,'support'=>null])->render();$dom=storefrontDom($html);
         if(!str_contains($html,$action==='transfer'?'Not transferred':'Not registered')){$failures[]=$action.':'.$index.': real Blade lacks rejected expiry';}
         if($dom->query('//dd/span[contains(@class,"domains-sub") and not(normalize-space())]')->length){$failures[]=$action.':'.$index.': empty expiry subline';}
-        expect(!str_contains($html,'Renewal price')&&!str_contains($html,'<dt>Renewal '),'Rejected acquisitions offer no future renewal');
+        expect(!str_contains($html,'Renewal price')&&!str_contains($html,'<dt>Renewal invoices '),'Rejected acquisitions offer no future renewal');
         $summaries=new DomainSummaries;$now=$clock->now()->getTimestamp();
         foreach(['single'=>$summaries->one($user,'managed',$saved->domain_id,$now),'list'=>$summaries->listed($user,$now)['managed:'.$saved->domain_id]??null] as $kind=>$summary){
             expect($summary!==null,'Rejected acquisition has a '.$kind.' summary');

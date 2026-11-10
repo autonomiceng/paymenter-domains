@@ -26,7 +26,7 @@ foreach(['staff','cancellation'] as $stop){
     expect($session->get('errors')?->has('auto-renew')===true,'Hard stop returns safe HTTP error');
     same(false,$held->fresh()->renewal_policy['owner_auto_renew'],'Refused HTTP toggle changes nothing');
     $html=$page($held);expect(!str_contains($html,'form-auto-renew')&&!str_contains($html,'Turn off auto-renew'),'Hard stop hides switch HTML: '.$stop);
-    expect(preg_match('~<dt>Renewal .*?</dt><dd><span class="domains-card__v">Off</span> <span class="domains-row__a domains-card__a"><a class="domains-a" href="[^"]+">Contact support</a></span></dd>~s',$html)===1&&str_contains($html,'<span class="domains-sub">Cancels '),'Hard stop shows Off with Contact support and the cancel date: '.$stop);
+    expect(preg_match('~<dt>Renewal invoices .*?</dt><dd><span class="domains-card__v">Off</span> <span class="domains-row__a domains-card__a"><a class="domains-a" href="[^"]+">Contact support</a></span></dd>~s',$html)===1&&str_contains($html,'<span class="domains-sub">Cancels '),'Hard stop shows Off with Contact support and the cancel date: '.$stop);
     $cancel?->delete();
 }
 // All switch lifecycle refusals are checked at the write, independently of presentation.
