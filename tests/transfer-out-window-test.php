@@ -8,6 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain;
 use Paymenter\Extensions\Servers\Domains\Services\OwnedDomains;
 storefrontViews();
+require dirname(__DIR__).'/Domains/routes/web.php';require dirname(__DIR__).'/Domains/routes/owned.php';app('router')->getRoutes()->refreshNameLookups();
 $now=new DateTimeImmutable('2026-11-10T07:00:00+00:00');
 $op=static fn(string $action,string $state,?string $at)=>(new Operation)->forceFill(['action'=>$action,'state'=>$state,'completed_at'=>$at]);
 $line=OwnedDomains::transferOutFrom($op('register','succeeded','2026-11-10T06:52:00+00:00'),$now);
