@@ -116,9 +116,10 @@
             const refs = new Set((servers.getAttribute('aria-describedby') || '').split(' ').filter(Boolean));
             refs.add(id); servers.setAttribute('aria-describedby', [...refs].join(' ')); servers.focus();
         };
-        // The warning takes the editor's place instead of opening on top of it.
+        // The warning takes the editor's place instead of opening on top of it. A close event from reopening an open
+        // warning arrives after the warning is open again, so the editor stays hidden while it is.
         const editor = form.closest('dialog.domains-edit');
-        dialog.addEventListener('close', () => editor?.classList.remove('domains-edit--behind'));
+        dialog.addEventListener('close', () => { if (!dialog.open) editor?.classList.remove('domains-edit--behind'); });
         form.addEventListener('submit', event => {
             if (event.submitter?.name === 'confirmed') return;
             if (!event.submitter?.hasAttribute('formnovalidate')) {
