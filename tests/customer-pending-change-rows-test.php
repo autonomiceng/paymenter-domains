@@ -27,4 +27,6 @@ foreach (array_keys($waiting) as $key) {
     $row=$dom->query('//*[@id="'.$key.'"]')->item(0);
     expect($row!==null&&str_contains($row->textContent,'Opens when the nameservers change finishes.'),'Rendered row stays with its reason: '.$key);
 }
+$lower=new ReflectionMethod(Paymenter\Extensions\Servers\Domains\Services\OwnedDomains::class,'lowerKeepingAcronyms');
+foreach (['DNS records'=>'DNS records','WHOIS privacy'=>'WHOIS privacy','DNSSEC'=>'DNSSEC','Transfer lock'=>'transfer lock','Nameservers'=>'nameservers'] as $label=>$want) { same($want,$lower->invoke(null,$label),'Waiting label keeps acronyms: '.$label); }
 $nativeSuccessful=true; echo "Customer rows during a pending change passed.\n";

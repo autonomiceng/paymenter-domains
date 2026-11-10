@@ -271,7 +271,7 @@ final readonly class OwnedDomains
             // While one change runs the registrar takes no other (DomainManagement::available refuses with its id), so the rows
             // the registrar supports keep their values and say when they open.
             $busy=is_int($refused)?array_key_first(array_filter($progressBySetting,fn($row)=>$row['pending'])):null;
-            $busyLabel=$busy===null?null:mb_strtolower(collect($management)->first(fn($section,$key)=>ManagementProgress::setting($key)===$busy)['label']??str_replace('_',' ',$busy));
+            $busyLabel=$busy===null?null:self::lowerKeepingAcronyms(collect($management)->first(fn($section,$key)=>ManagementProgress::setting($key)===$busy)['label']??str_replace('_',' ',$busy));
             foreach ($management as $key=>&$section) {
                 $wanted=array_keys($section['actions']);
                 $section['actions']=array_intersect_key($section['actions'],array_flip($allowed));
@@ -391,5 +391,11 @@ final readonly class OwnedDomains
         if (!$d->provider_expires_at) { throw new \DomainException('A renewal cycle needs a confirmed expiry.'); }
         $cycle = DomainStates::cycle($d, DomainStateInputs::one($d), $now ?? app(Clock::class)->now());
         return $cycle['current'] ?? ($retained ? ($cycle['retained'] ?? null) : null);
+    }
+
+    /** Lowercase a row label for mid-sentence use, keeping acronyms such as DNS, WHOIS and DNSSEC. */
+    private static function lowerKeepingAcronyms(string $label): string
+    {
+        return (string) preg_replace_callback('/\S+/u', fn ($w) => mb_strlen($w[0]) > 1 && mb_strtoupper($w[0]) === $w[0] ? $w[0] : mb_strtolower($w[0]), $label);
     }
 }
