@@ -24,15 +24,18 @@ final class TestRuntime
         $revision=$bindings->credentialRevision($binding);$settings=NameSiloFeatureSettings::stamp($binding);
         return static function(AccountBinding $requested)use($binding,$bindings,$clock,$revision,$settings):array {
             $binding->requireMatch($requested);$bindings->requireCredentialRevision($binding,$revision);
-            $transport=new AdmittedTransport($binding,static function(bool $write)use($binding,$bindings,$revision,$settings):array {
+            $credentials=static function(bool $write)use($binding,$bindings,$revision,$settings):array {
                 OperationClaims::outside();
                 if(!self::enabled($binding)){throw new \DomainException('TEST NameSilo runtime unavailable.');}
                 if($write){$bindings->requireProcessing($binding);if($settings!==NameSiloFeatureSettings::stamp($binding)){throw new \DomainException('NameSilo settings changed.');}}
                 return $bindings->offerCredentials($binding,$revision);
-            });
+            };
+            $transport=new AdmittedTransport($binding,$credentials);
             $exchange=$transport->exchange();
+            // The order's contact is created inside the purchase's registration or transfer scope, so it needs its own send grant.
+            $profileTransport=new AdmittedTransport($binding,$credentials);
             $profiles=new RegistrationProfiles($binding,new OperationClaims($bindings,$clock),$clock,$exchange,
-                operations:new ProfileContactOperations($binding,new OperationClaims($bindings,$clock),$clock,$transport->reservation,$exchange));
+                operations:new ProfileContactOperations($binding,new OperationClaims($bindings,$clock),$clock,$profileTransport->reservation,$profileTransport->exchange()));
             $features=new WriteFeatures(registration:self::enabled($binding,'registration'),transfer:NameSiloFeatureSettings::accepted($binding,'transfer'),
                 renewal:NameSiloFeatureSettings::accepted($binding,'renewal'),management:NameSiloFeatureSettings::accepted($binding,'management'));
             $check=static function(AccountBinding $current)use($binding,$bindings,$revision,$settings):bool {
