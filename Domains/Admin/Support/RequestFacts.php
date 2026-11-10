@@ -195,9 +195,12 @@ final class RequestFacts
     public static function paidWaiting(Operation $op, ?array $accounts=null): ?string
     {
         if ($op->state!=='awaiting_payment' || !$op->invoice_id) { return null; }
-        if (\App\Models\Invoice::whereKey($op->invoice_id)->value('status')!=='paid') { return null; }
+        if (self::invoiceStatus($op)!=='paid') { return null; }
         return OperationQueries::ordersOff($op,$accounts)?'Paid. Not sent. '.self::ORDERS_OFF:self::PAID_GOES;
     }
+    /** Lists and history preload invoices once; detail callers may read their single invoice directly. */
+    private static function invoiceStatus(Operation $op): ?string
+    { return $op->relationLoaded('invoice')?$op->invoice?->status:\App\Models\Invoice::whereKey($op->invoice_id)->value('status'); }
     public const PAID_GOES='Paid. It goes to the registrar automatically. Nothing to do yet.';
     /** A paid request on its way, for the moments its saved state has no words: picked up, then sent, until the registrar answers. */
     private const PAID_MOVING=['queued'=>self::PAID_GOES,'running'=>'Paid. Sending to the registrar now. Nothing to do yet.',
@@ -205,7 +208,7 @@ final class RequestFacts
     private static function paidMoving(Operation $op): ?string
     {
         if (!isset(self::PAID_MOVING[$op->state]) || $op->funding_basis!=='paid_invoice' || !$op->invoice_id) { return null; }
-        return \App\Models\Invoice::whereKey($op->invoice_id)->value('status')==='paid'?self::PAID_MOVING[$op->state]:null;
+        return self::invoiceStatus($op)==='paid'?self::PAID_MOVING[$op->state]:null;
     }
     /** Local readiness shared by request pages and domain lists. It never releases a hold.
      * $accounts: a list's OperationQueries::ordersOffAccounts() snapshot, read for the Orders switch instead of the account now.

@@ -32,4 +32,13 @@ foreach(['queued'=>'Paid. It goes to the registrar automatically. Nothing to do 
 DB::table('domains_operations')->where('id',$op->id)->update(['state'=>'awaiting_payment','safe_code'=>null]);
 DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>false]);
 same('Paid. Not sent. Orders are off for this account.',RequestFacts::status($op->fresh())['reason'],'A paid request waiting on Orders says so');
+// List projections use one prefetched invoice batch for both status and reason.
+$page=Livewire::actingAs($staff)->test(ListOperations::class)->instance();
+$records=$page->getTableRecords();
+$off=Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::ordersOffAccounts();
+DB::flushQueryLog();DB::enableQueryLog();
+foreach($records as $record){RequestFacts::status($record,accounts:$off);RequestFacts::reason($record,accounts:$off);}
+$invoiceReads=array_filter(DB::getQueryLog(),fn($q)=>str_contains($q['query'],'from "invoices"'));
+DB::disableQueryLog();
+same([],$invoiceReads,'Already-loaded list rows do not read invoices per status, reason or column');
 $nativeSuccessful=true;echo "Staff paid request status passed\n";

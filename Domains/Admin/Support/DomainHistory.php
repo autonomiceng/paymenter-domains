@@ -14,7 +14,7 @@ final class DomainHistory
     /** @return list<Operation|array> */
     public static function entries(Domain $domain): array
     {
-        $rows=DomainQueries::operations($domain)->orderByDesc('id')->get()->all();
+        $rows=DomainQueries::operations($domain)->with('invoice:id,status')->orderByDesc('id')->get()->all();
         foreach ($rows as $op) {
             if(is_array($op)){continue;}
             try { $history=$op->policy['staff_actions']??[]; } catch (\Throwable) { continue; }

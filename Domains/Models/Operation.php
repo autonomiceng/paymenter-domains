@@ -198,5 +198,6 @@ class Operation extends Model
         static::deleting(static function (): never { throw new \DomainException('Operation ledger rows are retained.'); });
     }
 
+    public function invoice() { return $this->belongsTo(\App\Models\Invoice::class); }
     public function domain() { return $this->belongsTo(Domain::class); }
 }
