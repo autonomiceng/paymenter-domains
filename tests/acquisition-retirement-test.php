@@ -95,7 +95,7 @@ Illuminate\Support\Facades\Event::listen(App\Events\Invoice\Paid::class,static f
 DB::transaction(fn()=>App\Models\InvoiceTransaction::create(['invoice_id'=>$lateBill->id,'amount'=>$lateNative->amount,'fee'=>'0.00','status'=>'succeeded']));
 same(['acquisition_cancelled_unpaid','pending',null,[$lateNative->domain->domain]],[$lateOutcome?->kind,$lateOutcome?->money,$lateOutcome?->amount,$lateOutcome?->domains],'Paid mail sees native acquisition cancellation before terminal retirement');
 same('awaiting_payment',$lateNative->fresh()->state,'The money read does not finish refused retirement');
-// A cancelled service with its invoice still open stays pending for staff. Paying can't start it, so no page asks for the money.
+// A cancelled service cannot start an unpaid order, so no page asks for payment.
 // Nothing was paid, so the customer reads a plain cancel: Cancelled, no failure and no Contact support.
 require dirname(__DIR__).'/Domains/routes/owned.php';require dirname(__DIR__).'/Domains/routes/web.php';app('router')->getRoutes()->refreshNameLookups();
 $open=$new(placeholderComFixtureName('unpaid-open-invoice-placeholder.com'),paid:false);
@@ -108,6 +108,13 @@ $calm=$owned->present($open->domain->fresh());same(true,$calm->order['unpaid']??
 $note=Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::notice($calm);same(['info','This order was cancelled. Nothing was charged.',null],[$note['tone']??null,$note['text']??null,$note['action']??null],'The page says nothing was charged and asks for nothing');
 DB::table('services')->where('id',$open->service_id)->update(['status'=>'pending']);DB::table('domains_native_intents')->insert(['service_id'=>$open->service_id,'kind'=>'cancellation','created_at'=>now()]);
 same(['cancelled','Cancelled','Order cancelled'],$orderWords(),'A retained cancellation intent counts as cancelled');
+// A successful or in-flight payment prevents the unpaid-cancel message even before invoice status catches up.
+foreach(['processing','succeeded'] as $status){
+    App\Models\InvoiceTransaction::withoutEvents(fn()=>App\Models\InvoiceTransaction::create(['invoice_id'=>$open->invoice_id,'amount'=>'1.00','fee'=>'0.00','status'=>$status]));
+    same(['cancelled','Under review','Order cancelled'],$orderWords(),'A '.$status.' payment on a cancelled service needs review');
+    $paidCancel=$owned->present($open->domain->fresh());
+    same(false,$paidCancel->order['unpaid']??false,'Payment evidence never says nothing was charged');
+}
 // Native gateway reversals are expected closure activity, not new late money or a second Domains return.
 require __DIR__.'/Support/money-receipt.php';MoneyReceiptGateway::$lost=false;
 $gateway=App\Models\Gateway::create(['extension'=>'MoneyReceipt','name'=>'Money receipt fixture','type'=>'gateway','enabled'=>true]);
