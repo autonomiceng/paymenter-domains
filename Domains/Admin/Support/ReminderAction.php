@@ -17,7 +17,11 @@ final class ReminderAction
     {
         $row=Schema::hasTable('domains_reminder_schedules')?DB::table('domains_reminder_schedules')->where('server_id',$server)->first():null;
         $before=ReminderSchedules::storedDays($row?->before_days);$after=ReminderSchedules::storedDays($row?->after_days);
+        // Reminders email customers, so turning them on or off asks first, as the Orders and Renewals switches do.
+        $on=(bool)($row?->enabled??false);
         return Action::make('reminders_switch_'.$server)->visible(fn()=>Staff::can(Staff::POLICY)&&$row!==null&&$before!==null&&$after!==null)->arguments(['revision'=>$row?->revision])
+            ->requiresConfirmation()->modalHeading($on?'Turn off reminder emails?':'Turn on reminder emails?')->modalSubmitActionLabel($on?'Turn off':'Turn on')
+            ->modalDescription($on?'Customers stop getting renewal reminder emails for this account’s domains until you turn this back on.':'Customers start getting renewal reminder emails'.($before!==null&&$after!==null?' '.self::dayList($before,'before').' and '.self::dayList($after,'after').' expiry':'').'.')
             ->action(function(array $arguments)use($server,$row,$before,$after):void {
                 try{ReminderSchedules::save(Auth::user(),$server,(int)$arguments['revision'],!$row->enabled,implode(',',$before),implode(',',$after),$row->enabled?'Turned off':'Turned on');Notification::make()->success()->title('Reminders saved')->send();}
                 catch(\Throwable){Notification::make()->danger()->title("Couldn't save reminders")->body('Reload the account page, then try again.')->send();}
@@ -41,6 +45,8 @@ final class ReminderAction
                 catch(\Throwable){Notification::make()->danger()->title("Couldn't save reminders")->body('Reload the account page, then check the reminder days and your permissions before saving again.')->send();}
             });
     }
+    private static function dayList(array $days,string $when): string
+    { return $days===[]?'no days '.$when:implode(', ',$days).' '.(count($days)===1&&$days[0]===1?'day':'days').' '.$when; }
     private const HELP='Days from 0 to 365, separated by commas.';
     /** Names the first day the save would refuse, under the field. */
     private static function days(): \Illuminate\Contracts\Validation\ValidationRule

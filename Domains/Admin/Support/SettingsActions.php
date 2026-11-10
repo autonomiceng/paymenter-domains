@@ -21,7 +21,7 @@ final class SettingsActions
     private const NOT_SENT='Nothing was sent to the registrar.';
     /** Each switch clicks straight through; the audit keeps who, when, before and after. Popups: spends money or stops sales. */
     private const SWITCHES=['late_renewal','processing','renewals','test_renewal','test_management','test_transfer','live_renewal','live_management','live_transfer','renew_early'];
-    private const POPUPS=['late_renewal'=>'late renewal','processing'=>'orders','renewals'=>'renewals','test_renewal'=>'renewals','live_renewal'=>'renewals','test_transfer'=>'transfers','live_transfer'=>'transfers'];
+    private const POPUPS=['late_renewal'=>'late renewal','processing'=>'orders','renewals'=>'renewals','test_renewal'=>'renewals','live_renewal'=>'renewals','test_transfer'=>'transfers','live_transfer'=>'transfers','test_management'=>'DNS, nameservers and contacts','live_management'=>'DNS, nameservers and contacts'];
     /** Switch names saved by a writer action with a name of its own. */
     /** The largest margin the pricing dialogs take, as a percentage or a USD amount per year. Larger is almost always a typo. */
     private const MARGIN_MAX=500;
@@ -438,6 +438,7 @@ final class SettingsActions
         $on=self::switchOn($id,$server);
         return match($id){'late_renewal'=>$on?'Late renewal pauses until you turn this back on; unsent paid renewals return their payment at the deadline.':'Expired domains can renew for one year after fresh registrar checks.', 'processing'=>$on?'New orders and renewals wait until you turn this back on.':'New orders and renewals start going to the registrar.',
             'test_transfer','live_transfer'=>$on?'New transfers stop. Transfers already sent keep going.':'Customers can order transfers. Paid transfers go to the registrar, which takes the cost from this account’s balance.',
+            'test_management','live_management'=>$on?'Customers can’t change DNS records, nameservers or contacts on this account’s domains until you turn this back on. Changes already sent keep going.':'Customers can change DNS records, nameservers and contacts. Their changes go to the registrar.',
             'renewals'=>$on?'New renewal invoices stop. Issued invoices stay payable. Paid renewals still go to the registrar.':'Customers start getting renewal invoices and can renew early.',
             default=>$on?'New renewal invoices stop. Issued invoices stay payable. Paid renewals wait until you turn this back on.':'Customers start getting renewal invoices. Paid renewals go to the registrar, which takes the cost from this account’s balance.'};
     }

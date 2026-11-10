@@ -196,8 +196,13 @@ $page->unmountAction();
 $schedule=static fn()=>DB::table('domains_reminder_schedules')->where('server_id',$enom->server_id)->sole();$saved=$schedule();
 $switch=TestAction::make('reminders_switch_'.$enom->server_id)->schemaComponent('account_'.$enom->server_id,'content')->arguments(['revision'=>(int)$saved->revision]);
 $stale=Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSeeHtml('role="switch"')->assertSeeHtml('aria-label="Reminder emails"');
-Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->callAction($switch)->assertNotified('Reminders saved');
-same(!(bool)$saved->enabled,(bool)$schedule()->enabled,'One click flips reminders');
+// The switch reaches customers, so it asks first and says who it reaches; opening the question changes nothing.
+$asked=Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->mountAction($switch)->assertActionMounted($switch);
+same($saved->enabled?['Turn off reminder emails?','Customers stop getting renewal reminder emails for this account’s domains until you turn this back on.']:'Turn on reminder emails?',
+    $saved->enabled?[$asked->instance()->getMountedAction()->getModalHeading(),$asked->instance()->getMountedAction()->getModalDescription()]:$asked->instance()->getMountedAction()->getModalHeading(),'The Reminder emails switch asks first');
+same((bool)$saved->enabled,(bool)$schedule()->enabled,'Opening the question changes nothing');
+$asked->callMountedAction()->assertNotified('Reminders saved');unset($asked);
+same(!(bool)$saved->enabled,(bool)$schedule()->enabled,'Confirming flips reminders');
 $stale->callAction($switch)->assertNotified("Couldn't save reminders");same(!(bool)$saved->enabled,(bool)$schedule()->enabled,'A stale switch changes nothing');
 DB::table('domains_reminder_schedules')->where('server_id',$enom->server_id)->update((array)$saved);
 unset($stale);gc_collect_cycles();gc_mem_caches();
@@ -502,6 +507,9 @@ same(['Off','test_transfer'],[$checklist()['Transfers (Experimental)']['value'],
 // Ready Off shapes explain the pause and retain the existing turn-on actions.
 config(['domains.enom_writes.management'=>true]);
 $offRows=$checklist();
+// DNS, nameservers and contacts reaches customers, so its switch asks first, as Orders and Renewals do.
+$popups=(new ReflectionClassConstant(Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions::class,'POPUPS'))->getValue();
+same(['DNS, nameservers and contacts','DNS, nameservers and contacts'],[$popups['test_management']??null,$popups['live_management']??null],'The DNS, nameservers and contacts switch asks first');
 foreach(['Renewals'=>'test_renewal','DNS, nameservers and contacts'=>'test_management','Orders'=>'processing'] as $label=>$action){
     same(['Off',$action],[$offRows[$label]['value'],$offRows[$label]['action']],$label.' keeps its switch');
     expect(str_contains(strtolower($offRows[$label]['cause']??''),'turn on'),$label.' says the next step');
