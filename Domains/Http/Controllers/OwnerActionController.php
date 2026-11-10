@@ -66,6 +66,10 @@ final readonly class OwnerActionController
         abort_unless(in_array($action,self::ACTIONS,true),404);
         return $this->submit($request,$domain,$action,function($nonce)use($request,$domain,$action):void {
             $d=$this->owners->owned($request->user(),$domain); $p=$request->request->all();
+            // Like the staff editor, the form carries the saved details it opened on, so a newer save is never overwritten.
+            if ($action==='contacts' && !hash_equals(OwnedDomains::contactsDigest(OwnedDomains::contacts($d)),is_string($p['opened_contacts_digest']??null)?$p['opened_contacts_digest']:'')) {
+                throw new \Paymenter\Extensions\Servers\Domains\Services\OwnerFormStale;
+            }
             if (in_array($action,['dns','srv'],true)) {
                 $p=RawPost::body($request);
                 // The fixed-field draft uses these same raw records after validation errors.
@@ -111,6 +115,9 @@ final readonly class OwnerActionController
                 return response($view->with(['recoveryContact'=>$request->request->all()['contact']??[], 'saveAccount'=>($request->request->all()['save_account']??'0')==='1', 'errors'=>$errors]),422)->header('Cache-Control','no-store, private');
             }
             return $this->failed($request,$domain,$action,OwnerFormValidation::contact($error)->messages($owned->domain,registrar:$owned->registrar_key));
+        } catch (\Paymenter\Extensions\Servers\Domains\Services\OwnerFormStale) {
+            // Nothing typed is kept, so Edit opens on the current saved details.
+            return redirect()->route('domains.domains.show',$domain)->withErrors(['owner_action'=>\Paymenter\Extensions\Servers\Domains\Services\OwnerFormStale::MESSAGE]);
         } catch (\Throwable) { return $this->failed($request,$domain,$action,['owner_action'=>'We couldn’t save this change. Check the details and try again. If it keeps happening, contact support.']); }
     }
     private function failed(Request $request,int $domain,string $action,array $errors)

@@ -148,6 +148,7 @@
 @endphp
 <form method="POST" action="{{ $section['actions'][$action] }}" class="domains-owner-form">
 @include('domains::partials.form-key')
+<input type="hidden" name="opened_contacts_digest" value="{{ $section['digest'] ?? '' }}">
 @if (!$section['saved'])<p class="domains-hint">Enter the full details. We replace what's saved.</p>@endif
 <p class="domains-hint">We use these details for every contact on this domain.</p>
 @include('domains::partials.contact', ['prefix' => 'contact', 'values' => $section['saved'], 'useOld' => $contactFailed, 'errors' => $contactFailed ? $errors : new \Illuminate\Support\ViewErrorBag, 'idPrefix' => $action, 'section' => 'owner-'.$action, 'stateRequired' => $section['staged'], 'limits' => $section['limits'] ?? null])
