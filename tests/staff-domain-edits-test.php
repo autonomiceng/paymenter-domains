@@ -51,6 +51,10 @@ $edit('Transfer lock','lock',['locked'=>'0'])->assertNotified(ManagementForms::R
 // Contacts: one contact for every role, with the owner's warning and messages.
 $open('Contacts','contacts')->assertMountedActionModalSee(ManagementForms::CONTACTS_RISK);
 $saved=$owners->present($d->fresh())->management['contacts']['saved'];
+// The editor shows the saved phone as people write it, as the customer form does.
+$readablePhone=\Paymenter\Extensions\Servers\Domains\Services\ContactDetails::readablePhone($saved['phone'],$saved['country']);
+expect(preg_match('/^\+[0-9]{1,3}\.[0-9]+$/D',$saved['phone'])===1&&preg_match('/^\+[0-9]{1,3} /',$readablePhone)===1,'The saved phone is in registry form and reads with a space: '.$readablePhone);
+$open('Contacts','contacts')->assertActionDataSet(['phone'=>$readablePhone]);
 $count=$d->operations()->where('action','contacts')->count();
 $edit('Contacts','contacts',[...$saved,'email_address'=>'not-an-email'])->assertNotified("Couldn't save this change");
 same($count,$d->operations()->where('action','contacts')->count(),'Rejected contact queues nothing');
