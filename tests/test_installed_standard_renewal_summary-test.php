@@ -29,8 +29,9 @@ same('Paid',$detail($s)['value'],'Detail keeps the same retained paid cycle');
 $d->update(['renewal_policy'=>$policy]);
 // A cancelled invoice needs the same full membership checks on list and detail.
 $invoice->forceFill(['status'=>'cancelled'])->saveQuietly();$s=$summary();
-same('Invoice cancelled',DomainListRow::renewal($s)['note'],'Valid cancelled debt agrees on list');
-same('Invoice cancelled',$detail($s)['cause'],'Valid cancelled debt agrees on detail');
+// This invoice was paid, so cancelling it cannot prove the renewal unpaid and unsent: both stay under review.
+same('Next invoice: Under review',DomainListRow::renewal($s)['note'],'Valid cancelled debt agrees on list');
+same(['Under review',null],[$detail($s)['value'],$detail($s)['cause']??null],'Valid cancelled debt agrees on detail');
 $invoice->forceFill(['user_id'=>commerceUser()->id])->saveQuietly();$s=$summary();
 same('Under review',$detail($s)['value'],'Foreign cancelled invoice remains under review');
 same('Next invoice: Under review',DomainListRow::renewal($s)['note'],'Foreign cancellation is not trusted by list');

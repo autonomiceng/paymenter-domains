@@ -102,9 +102,10 @@ $turns=DB::table('domains_reminder_schedules')->orderBy('server_id')->pluck('tur
 same([],ReminderSchedules::next($clock->now()->getTimestamp()),'Five-minute cadence bounds repeat sweeps');
 // Exhausted saved observation work escalates from retained phase evidence, once per holding.
 [$x]=$make(placeholderComFixtureName('observation-exhausted-placeholder.com'));$follow=$x->observation['followup'];
-DB::table('domains_observation_work')->insert(['server_id'=>$x->server_id,'account_fingerprint'=>$x->account_fingerprint,
-    'domain_id'=>$x->id,'generation'=>$x->authority_generation,'phase'=>hash('sha256',$follow['operation_key']),
-    'due_at'=>$clock->now()->getTimestamp(),'safe_code'=>'budget_exhausted']);
+// Activation already queued this phase's first scheduled read; that same job runs out of budget.
+DB::table('domains_observation_work')->updateOrInsert(['domain_id'=>$x->id,'generation'=>$x->authority_generation,'phase'=>hash('sha256',$follow['operation_key'])],
+    ['server_id'=>$x->server_id,'account_fingerprint'=>$x->account_fingerprint,'due_at'=>$clock->now()->getTimestamp(),'safe_code'=>'budget_exhausted']);
+same(1,DB::table('domains_observation_work')->where('domain_id',$x->id)->count(),'One saved observation job per holding phase');
 $reminders->remind($x->id);$reminders->remind($x->id);
 same(1,DB::table('domains_obligation_alerts')->where('domain_id',$x->id)->where('code','observation_review')->count(),'Once-only pending/read escalation');
 // Offsets/customer data never contain registrar, account IDs, costs, payload or credentials.

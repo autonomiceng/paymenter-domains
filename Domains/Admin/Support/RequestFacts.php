@@ -154,9 +154,9 @@ final class RequestFacts
     { return $account!==null&&(OperationQueries::snapshot($accounts)?!OperationQueries::ordersOff($op,$accounts):(bool)$account->processing_enabled); }
     /** The one reason for a request, on every page: for a request stopped here what is true now, else the saved reason.
      * Lists call this per row, so they pass $ordersOff: a queued row is only stopped while Orders are off, and held rows are rare. */
-    public static function reason(Operation $op, bool $ordersOff=true, ?StaffGrants $grants=null, ?array $accounts=null): ?string
+    public static function reason(Operation $op, bool $ordersOff=true, ?StaffGrants $grants=null, ?array $accounts=null, ?array $release=null): ?string
     {
-        try { return ($op->state==='held'||$op->state==='queued'&&$ordersOff?self::readyMessage($op,$accounts):null)??Labels::requestStatus($op,grants:$grants)['reason']; }
+        try { return ($op->state==='held'||$op->state==='queued'&&$ordersOff?self::readyMessage($op,$accounts,$release):null)??Labels::requestStatus($op,grants:$grants)['reason']; }
         catch (\Throwable) { return Labels::requestStatus($op,grants:$grants)['reason']; }
     }
     /** A request's status, in the customer's words. Orders off stop all queued work, so a queued request whose account has them off is held
@@ -182,15 +182,21 @@ final class RequestFacts
         return self::heldAcquisition($op,$off) ? [...$status,'label'=>'On hold','tone'=>'warning'] : $status;
     }
     /** Local readiness shared by request pages and domain lists. It never releases a hold.
-     * $accounts: a list's OperationQueries::ordersOffAccounts() snapshot, read for the Orders switch instead of the account now. */
-    public static function readyMessage(Operation $op, ?array $accounts=null): ?string
+     * $accounts: a list's OperationQueries::ordersOffAccounts() snapshot, read for the Orders switch instead of the account now.
+     * $release: the alert count's page inputs (StaffDomainInputs). It needs only whether staff must act, so it reads nothing per request:
+     * accounts and invoice statuses come from the page, a held request (a balance hold included) always asks staff to act whatever its
+     * words, and the release check only chooses the wording of an Orders-off request. The words it returns are never shown. */
+    public static function readyMessage(Operation $op, ?array $accounts=null, ?array $release=null): ?string
     {
+        if ($release!==null && $op->state==='held') { return 'Not sent.'; }
+        $read=fn():?Account=>$release!==null&&array_key_exists($key=OperationQueries::accountKey($op->server_id,$op->registrar_key,$op->account_fingerprint),$release['accounts'])
+            ?$release['accounts'][$key]:self::account($op)['account'];
         if (ManagementEvidence::recoverable($op)) {
-            return self::ordersOn($op,self::account($op)['account'],$accounts)?'Not sent. It will retry automatically.':'Not sent. '.self::ORDERS_OFF;
+            return self::ordersOn($op,$read(),$accounts)?'Not sent. It will retry automatically.':'Not sent. '.self::ORDERS_OFF;
         }
         if (BalanceRetries::pending($op)) {
             $reason=OperationClaims::balanceAdmissionReason($op);
-            if(self::heldByOrders($reason,$op,self::account($op)['account'],$accounts)){return 'Not sent. '.self::ORDERS_OFF;}
+            if(self::heldByOrders($reason,$op,$read(),$accounts)){return 'Not sent. '.self::ORDERS_OFF;}
             if($reason){return rtrim(Labels::reason($reason,$op->funding_basis==='complimentary'),'.').'.';}
             if(in_array($op->safe_code,BalanceRetries::READ_CODES,true)){return Labels::reason($op->safe_code).'. It will retry automatically.';}
             if(BalanceRetries::legacyHold($op)){return Labels::operationReason($op).'.';}
@@ -199,15 +205,16 @@ final class RequestFacts
                 ?BalanceRetries::MESSAGE:'Not sent. It will retry automatically.';
         }
         if ($op->state!=='queued' && !($op->state==='held' && in_array($op->safe_code,['processing','usd_balance_required','enom_test_transfer_usd_balance_required'],true))) { return null; }
-        $account=self::account($op)['account'];$on=self::ordersOn($op,$account,$accounts);
+        $account=$read();$on=self::ordersOn($op,$account,$accounts);
         // Orders off held this and they are on now, so that is no longer the reason.
         $ordersBack=$op->state==='held'&&$op->safe_code==='processing'&&$on;
-        $owes=OperationActions::customerOwes($op);
+        $owes=OperationActions::customerOwes($op,$release['invoices']??null);
         if (!$account || $owes!==null) { return $ordersBack?($owes==='payment'?'Not sent. Customer has not paid the invoice.':'Not sent. Customer has not added the auth code.'):null; }
         if ($ordersBack && OperationClaims::ordersOffReturns($op)) { return 'Not sent. It will retry automatically.'; }
         // Orders off stops all queued work (RuntimeWork), for any request and whether or not it could send once they are on.
         $stopped=$op->state==='queued'&&!$on?'Not sent. '.self::ORDERS_OFF:($ordersBack?'Not sent. This hold can’t be released. Cancel and refund it.':null);
         if(ManagementEvidence::retryable($op)){return $stopped??'This change has already started and cannot be put on hold. It will retry automatically.';}
+        if ($release!==null) { return $stopped; }
         $review=clone $op;
         if ($review->state==='queued') { $review->state='held';$review->safe_code=OperationClaims::balanceRefusalRetryable($op)?'registrar_balance_insufficient':'staff_review_required'; }
         try {

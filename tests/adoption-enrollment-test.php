@@ -45,8 +45,9 @@ foreach (['active','paused'] as $state) {
     }
 }
 DB::table('domains_watch_names')->where('id',$watch->id)->update(['state'=>'active']);
-// Staff profile edits do not require an unbounded watch revision fan-out.
-DB::transaction(fn()=>$profile->fill(['nameservers'=>['ns3.platform.test'],'enabled'=>false,'revision'=>3,'reason'=>'Reviewed routing change'])->save());DB::transaction(fn()=>$profile->fill(['enabled'=>true,'revision'=>4,'reason'=>'Reviewed current routing profile'])->save());
+// Staff profile edits do not require an unbounded watch revision fan-out. An assigned template stays on.
+$watchRevision=$watch->fresh()->revision;DB::transaction(fn()=>$profile->fill(['nameservers'=>['ns3.platform.test'],'revision'=>3,'reason'=>'Reviewed routing change'])->save());DB::transaction(fn()=>$profile->fill(['revision'=>4,'reason'=>'Reviewed current routing profile'])->save());
+same($watchRevision,$watch->fresh()->revision,'Profile edit leaves the assigned watch revision alone');
 $fail=false; $enrollment=new AdoptionEnrollment($clock);
 // Simulate a database ignoring a required work insert without raising an exception.
 foreach([[ManagedPublicWorkSchema::TABLE,"new.kind='delegation'"],[ManagedPublicWorkSchema::TABLE,"new.kind='points'"],['domains_observation_queues','1'],['domains_observation_work','1']] as [$table,$condition]){

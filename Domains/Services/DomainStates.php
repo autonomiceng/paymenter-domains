@@ -48,7 +48,8 @@ final class DomainStates
         // Unreadable renewal settings show no renewal invoice: the status already says we are checking the domain.
         try { $cycle = $policy === null ? [] : self::cycle($d, $in, $now); } catch (\Throwable) { $cycle = ['current' => ['status' => 'review']]; }
         try { $calendar = $d->provider_expires_at ? DomainBilling::calendarFor(['domain' => $d, 'settings' => $in->settings($d)]) : null; } catch (\Throwable) { $calendar = null; }
-        $imported = $d->provenance === 'adopted' && $renewal === 'On' && !isset($cycle['current']) && $d->provider_expires_at !== null && ($calendar === null || $today >= $calendar['due']);
+        // Billing stops issuing on the clock's own date, so the projection uses that date too, not UTC.
+        $imported = $d->provenance === 'adopted' && $renewal === 'On' && !isset($cycle['current']) && $d->provider_expires_at !== null && ($calendar === null || $now->format('Y-m-d') >= $calendar['due']);
         return new DomainState($status, $order, $op, $stops, $renewal, $off, $cycle['current'] ?? null, $cycle['retained'] ?? null, $cycle['due'] ?? null, $cycle['early'] ?? false, $calendar, $imported);
     }
     /** This expiry's renewal invoice as billing sees it: current (its pending invoice link or an owner status), or retained once

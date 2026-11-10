@@ -23,17 +23,18 @@ final class DomainQueries
         return self::rows($q,fn(array $status)=>in_array($status['key'],$keys,true),$ordersOff);
     }
     /** Alerting rows: an open alert that still applies, on a row that asks staff to act. OK, outdated and ended rows are not alerting.
-     * The account page's count, the Open alerts filter and the menu badge all use this one rule. */
+     * The account page's count, the Open alerts filter and the menu badge all use this one rule.
+     * It asks only whether staff must act, so it reads a fixed number of queries per 200 rows (StaffDomainInputs $release). */
     public static function alerting(Builder $q): Builder
     {
-        return self::rows(self::openAlerts($q),fn(array $status,array $inputs)=>$inputs['alerts']!==[]&&$status['act']);
+        return self::rows(self::openAlerts($q),fn(array $status,array $inputs)=>$inputs['alerts']!==[]&&$status['act'],release:true);
     }
     /** Rows whose staff status (DomainFacts::status) and its inputs pass $keep. */
-    private static function rows(Builder $q, \Closure $keep, ?array $ordersOff=null): Builder
+    private static function rows(Builder $q, \Closure $keep, ?array $ordersOff=null, bool $release=false): Builder
     {
         $ids=[];
-        (clone $q)->reorder()->with('latestAcquisition')->chunkById(200,function ($page) use (&$ids,$keep,$ordersOff): void {
-            $inputs=StaffDomainInputs::for($page,$ordersOff);
+        (clone $q)->reorder()->with('latestAcquisition')->chunkById(200,function ($page) use (&$ids,$keep,$ordersOff,$release): void {
+            $inputs=StaffDomainInputs::for($page,$ordersOff,$release);
             foreach ($page as $d) {
                 if ($keep(DomainFacts::status($d,$inputs[$d->id]),$inputs[$d->id])) { $ids[]=$d->id; }
             }

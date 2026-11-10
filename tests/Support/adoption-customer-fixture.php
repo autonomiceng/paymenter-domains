@@ -66,9 +66,14 @@ foreach (['2027-10-12'=>'2027-10-13','2027-10-13'=>null,'2027-10-14'=>null] as $
  $projectionHtml=view('domains::show',['domain'=>$projected])->render();
  if($due===null){same('review',$projected->renewalInvoice['state'],'Cutoff requires support review');expect(!str_contains($projectionHtml,'An invoice will be issued'),'Cutoff never promises unissuable debt');}
 }
+// The list reads the clock the site binds, as production does. Both pages must agree with billing near midnight on either side of UTC.
+app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
 foreach (['2027-10-13T00:30:00+05:30'=>null,'2027-10-12T23:30:00-07:00'=>'2027-10-13'] as $local=>$due) {
  $clock->time=new DateTimeImmutable($local);$projected=$owners->present($d->fresh(),false);
  same($due,$projected->plannedRenewalDue,'Presentation uses actual billing clock date '.$local);
+ $listed=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($owner,'managed',$d->id,$clock->now()->getTimestamp());
+ same([$due===null,$due],[($projected->renewalInvoice['state']??null)==='review',$projected->plannedRenewalDue],'Detail reads the billing clock date '.$local);
+ same([$due===null,$due],[$listed->renewalInvoiceReview,$listed->renewalDueAt],'Domains list agrees with the domain page at '.$local);
 }
 }
 $clock->time=new DateTimeImmutable('2027-09-25T00:00:00Z');
@@ -77,7 +82,7 @@ $invoice=$billing->invoice($d->id,$owner);$op=Operation::where('invoice_id',$inv
 $product->server->settings()->updateOrCreate(['key'=>'domains_due_days'],['value'=>10,'type'=>'string']);
 if($part==='renewal'){
 $issued=$owners->present($d->fresh(),false);same('2027-10-13',$issued->renewalDue,'Issued due remains frozen after setting edit');same(null,$issued->plannedRenewalDue,'Issued debt hides projected replacement date');
-$issuedHtml=view('domains::show',['domain'=>$issued])->render();expect(str_contains($issuedHtml,'<dt>Next invoice</dt><dd><span class="domains-card__v">'.Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus::earlyRenewal('2027-10-13').'</span> <span class="domains-row__a domains-card__a"><a class="domains-a" href="'.route('invoices.show',$invoice).'">Pay invoice</a></span>'),'Actual issued-debt label');expect(!str_contains($issuedHtml,'An invoice will be issued'),'Issued debt never promises a second invoice');
+$issuedHtml=preg_replace('/\s+/',' ',view('domains::show',['domain'=>$issued])->render());expect(str_contains($issuedHtml,'<dt>Next invoice</dt><dd><span class="domains-card__v">'.Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus::earlyRenewal('2027-10-13').'</span> <span class="domains-row__a domains-card__a"><a class="domains-a" href="'.route('invoices.show',$invoice).'">Pay invoice</a></span>'),'Actual issued-debt label');expect(!str_contains($issuedHtml,'An invoice will be issued'),'Issued debt never promises a second invoice');
 $c=App\Models\ServiceCancellation::create(['service_id'=>$service->id,'type'=>'end_of_period','reason'=>'Stop the next renewal after issued debt']);
 $stopped=$owners->present($d->fresh(),false);same('Off',$stopped->renewal,'Later stop turns future renewal off');same(false,$stopped->originalDoNotRenew,'Later stop is distinct from original DNR');same('pending',$stopped->renewalInvoice['state'],'Issued debt remains visible after later stop');
 $stoppedHtml=view('domains::show',['domain'=>$stopped])->render();expect(preg_match('~<dt>Renewal .*?</dt><dd><span class="domains-card__v">Off</span> <span class="domains-row__a domains-card__a"><a class="domains-a" href="[^"]+">Contact support</a></span></dd>~s',$stoppedHtml)===1&&str_contains($stoppedHtml,'>Pay invoice</a>'),'Later stop asks for support');expect(!str_contains($stoppedHtml,'No renewal invoices or renewal reminders are scheduled.'),'Later stop never promises suppression of issued reminders');
@@ -111,7 +116,7 @@ foreach(['unpaid','refund'] as $replacementCase){
     expect(isset($dto->renewNow['url']),'Adopted replacement request admitted: '.$replacementCase);
     $form=storefrontDom($html);
     same(1,$form->query('//dialog[@id="edit-renew"]/form[@method="POST" and @action="'.$renewUrl.'"]')->length,'One adopted replacement form: '.$replacementCase);
-    same(1,$form->query('//dialog[@id="edit-renew"]//button[@type="submit" and normalize-space(.)="Continue to payment"]')->length,'Adopted replacement submit: '.$replacementCase);
+    same(1,$form->query('//dialog[@id="edit-renew"]//button[@type="submit" and normalize-space(.)="Create invoice"]')->length,'Adopted replacement submit: '.$replacementCase);
     same(1,$form->query('//dialog[@id="edit-renew"]//input[@name="_request_key"]')->length,'Adopted replacement has native intent: '.$replacementCase);
     same(['1'],array_map(static fn($option)=>$option->getAttribute('value'),iterator_to_array($form->query('//dialog[@id="edit-renew"]//select[@name="years"]/option'))),'Adopted replacement remains annual: '.$replacementCase);
     expect(!str_contains($html,'Renewal being checked')&&!str_contains($html,'Invoice cancelled'),'Adopted replacement page has no stale cycle status: '.$replacementCase);

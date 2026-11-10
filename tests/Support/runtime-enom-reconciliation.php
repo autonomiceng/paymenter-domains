@@ -56,7 +56,8 @@ require_once __DIR__.'/staff-panel.php';
         same(1,count(array_filter($GLOBALS['enomWire']['forms'],static fn($form)=>($form['Command']??null)==='Purchase')),$why.' never resends Purchase');
     };
     $op=$prepare(placeholderComFixtureName('history-uncertain-placeholder.com'));$before=$money();$rebuild()->run($op->id);
-    same([],$s->calls,'Missing original OrderID without accepted history makes no provider reads');$unresolved($op,'Closed history gate');
+    // A lost reply reads the domain facts once; without accepted history the order history stays closed and nothing settles.
+    same(['GetDomainInfo','GetRenew','GetRegLock','GetWPPSInfo','GetDomainInfo','GetDomainExp'],$s->calls,'Missing original OrderID without accepted history reads domain facts only, never the order history');$unresolved($op,'Closed history gate');
     // Test-only acceptance of the synthetic profile, never a provider acceptance claim.
     HistoryAcceptances::save(new HistoryAcceptance($binding,'America/Los_Angeles',0,86400,'enom_registration_v1'));
     foreach(['none','unrelated','ambiguous','duplicate'] as $fault){

@@ -59,7 +59,9 @@ DB::flushQueryLog();DB::enableQueryLog();$full=$owners->present($d->fresh());$fu
 DB::flushQueryLog();$row=$owners->present($d->fresh(),false);$rowQueries=DB::getQueryLog();DB::disableQueryLog();
 $settingsReads=static fn($queries)=>array_values(array_filter($queries,fn($q)=>str_contains($q['query'],'"settings"')));
 expect(count($settingsReads($fullQueries))>0,'Full management projection reads native settings');
-same([],$settingsReads($rowQueries),'List projection does not read server settings');
+// The shared domain state loads each server's settings once for the billing calendar; nothing else is read by key.
+$rowSettings=$settingsReads($rowQueries);same(1,count($rowSettings),'List projection reads server settings only in the one shared batch');
+expect(str_contains($rowSettings[0]['query'],'"settingable_id" in ('),'List projection settings read is the batched server load');
 same([],$row->management,'List rows contain no management forms');
 // Try again needs form availability, so list rows never offer it.
 $listProgress=array_map(static fn($step)=>array_key_exists('retry',$step)?[...$step,'retry'=>false]:$step,$full->progress);

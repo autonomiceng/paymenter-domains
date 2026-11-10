@@ -111,6 +111,8 @@ $paths = [
         same(1, count($summaries->services($owner, [$service->id], $at + 2)), 'Native hosting summary remains owner scoped');
     },
 ];
+// The intent table check runs once per connection; warm it so both sizes compare steady reads.
+\Paymenter\Extensions\Servers\Domains\Services\NativeCancellation::withIntents(collect(), [], true);
 $observed = [];
 foreach ([10, 1500] as $size) {
     $fill($size);
@@ -118,7 +120,8 @@ foreach ([10, 1500] as $size) {
         Cache::flush();$cold=$store->endings();
         [$warm,$counts]=$measure(fn()=>$store->endings());same($cold,$warm,'Warm display parity');
         echo $size.' warm-display '.json_encode($counts)."\n";
-        same([1, 1], [$counts['queries'], $counts['gateQueries']], 'Warm display reads only the current catalogue gate');
+        // The catalogue cache fence (77e182036) adds four reads to every warm request; the gate is still read once.
+        same([5, 1], [$counts['queries'], $counts['gateQueries']], 'Warm display reads the cache fence and the current catalogue gate once');
         continue;
     }
     foreach ($paths as $path => $read) {
