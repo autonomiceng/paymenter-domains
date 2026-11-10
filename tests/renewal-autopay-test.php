@@ -200,7 +200,11 @@ commerceReject(fn () => RenewalCycles::next($l));
 
 $declined = $holder('declined'); DomainRenewalGateway::$mode = 'false';
 $count = count(DomainRenewalGateway::$calls); $notifications = Notification::count();
+$finalized = []; Illuminate\Support\Facades\Event::listen(App\Events\Invoice\Finalized::class, function ($e) use (&$finalized) { $finalized[] = (int) $e->invoice->id; });
 $di = $billing->invoice($declined->id); $declinedOp = $operation($di);
+same([(int) $di->id], $finalized, 'An open renewal invoice sends the new invoice mail and bell row once');
+$current = Paymenter\Extensions\Servers\Domains\Services\DomainStates::cycle($declined->fresh(), Paymenter\Extensions\Servers\Domains\Services\DomainStateInputs::one($declined->fresh()), $clock->now())['current'];
+same(true, $current['declined'] ?? false, 'The owner page says the Auto Pay charge failed');
 same(['status'=>'declined','notification'=>'requested'], array_diff_key($declinedOp->funding['auto_pay_result'], ['at'=>true]), 'False return is a definite decline');
 same($notifications+1, Notification::count(), 'Decline requests the native payment-failed notification');
 same('pending', $di->fresh()->status, 'Declined invoice stays pending');
