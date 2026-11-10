@@ -33,7 +33,7 @@ final class StaffDomainStatus
      * An open alert names the step unless the row already has a specific one (a held request, an import) or has ended.
      * With no alert, an open renewal says what happens next on a domain that is otherwise Active.
      * @param array{key:string,label:string,tone:string,reason:?string} $shared
-     * @param list<array{code:string,request:?int}> $alerts
+     * @param list<array{code:string,request:?int,failed?:bool}> $alerts
      * @return array{key:string,label:string,tone:string,reason:?string,step:?string,request:?int,act:bool,alert:?string} $request is set when the step names one, $act when staff have a job here, $alert when the step is that open alert */
     public static function for(array $shared, string $state, Domain $d, ?Operation $op, array $alerts, ?Operation $renewal=null, ?Operation $waiting=null, bool $ordersOff=false, ?array $accounts=null, ?array $release=null): array
     {
@@ -106,6 +106,7 @@ final class StaffDomainStatus
         if (!$alert['request']) { return [$step, null]; }
         // Some causes already end by sending staff to the request. Name it there, once.
         $open = self::check($alert['request']);
+        if ($alert['failed']??false) { return ['Request failed.'.$open, $alert['request']]; }
         return [str_contains($step, ' Check the request.') ? str_replace(' Check the request.', $open, $step) : $step.$open, $alert['request']];
     }
     /** @return array{0:string,1:?int,2:bool} step, the request it names, and whether staff have a job here */

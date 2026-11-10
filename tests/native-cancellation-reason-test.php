@@ -27,9 +27,16 @@ $facts=Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::for($doma
 $head=Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::head($domain,Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::status($domain),$facts);
 // Request review leads over a cost alert, so the head owns the review step and its one request link.
 $step=(string)$head['step'];
-same('Expiry missing. Registrar request needs a check. Check request #'.$op->id.'.',html_entity_decode(strip_tags($step),ENT_QUOTES),'Domain head names the rejected request to check before the cost alert: '.$step);
+$text=html_entity_decode(strip_tags($step),ENT_QUOTES);
+expect(str_contains($text,'Request failed. Check request #'.$op->id.'.'),'Domain head names the failed request outcome');
+same('Expiry missing. Request failed. Check request #'.$op->id.'.',$text,'Domain head names the rejected request to check before the cost alert: '.$step);
 expect(str_contains($step,'>Check request #'.$op->id.'</a>'),'Domain head links to the rejected request');
 same(1,substr_count($step,'Check request #'.$op->id),'Domain head names this request exactly once');
 expect(!str_contains((string)$facts['Registrar']['sub'],'Check request'),'Registrar row leaves the request to the head');
+foreach ([['rejected','management_retired'],['held','staff_hold'],['uncertain','management_unconfirmed']] as [$state,$code]) {
+    DB::table('domains_operations')->where('id',$op->id)->update(['state'=>$state,'safe_code'=>$code]);
+    $status=Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::status($domain->fresh());
+    expect(!str_contains((string)$status['step'],'Request failed.'),'Closed, held and unconfirmed requests are not labelled failed: '.$state);
+}
 echo "Unverified cancellation reason passed.\n";
 $nativeSuccessful=true;
