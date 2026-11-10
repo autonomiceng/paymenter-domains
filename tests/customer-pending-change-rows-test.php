@@ -13,7 +13,7 @@ $during=$owners->present($d->fresh(),true)->management;
 expect($during['nameservers']['progress']['pending']??false,'The nameserver change is running');
 same(array_keys($before),array_keys($during),'Every row stays while the nameserver change runs');
 $waiting=array_filter($during,fn($section,$key)=>$key!=='nameservers'&&!$section['actions'],ARRAY_FILTER_USE_BOTH);
-expect($waiting!==[],'Other rows wait for the change');
+expect($waiting!==[],'Other rows wait for the change: '.json_encode(array_map(fn($x)=>[array_keys($x['actions']),$x['waiting']??null],$during)));
 foreach ($waiting as $key=>$section) { same('Opens when the nameservers change finishes.',$section['waiting']??null,'Row says when it opens: '.$key); }
 $request=Illuminate\Http\Request::create('/domains/'.$d->id); $request->setUserResolver(fn()=>$user); $request->setLaravelSession(app('request')->session());
 $html=(new Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController($owners))->show($request,$d->id)->render();
