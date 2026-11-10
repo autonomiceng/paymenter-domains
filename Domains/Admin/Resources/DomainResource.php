@@ -74,9 +74,9 @@ class DomainResource extends Resource
                 ->sortable(query: fn(Builder $query,string $direction)=>$query->orderBy('provider_expires_at',$direction))),
             // Renewal applies until the domain has ended, so pending and under-review rows show it too. A pending import bills nothing until import, as on the domain page.
             OneLine::apply(TextColumn::make('auto_renew')->label('Renewal')->state(fn(Domain $record,$livewire)=>DomainFacts::ended($record)?null:match(true) {
-                self::row($record,$livewire)['off']===null=>Missing::LABEL,$record->adoptionPending()||self::row($record,$livewire)['off']=>'Off',default=>'On'})
+                self::row($record,$livewire)['off']===null=>Missing::LABEL,$record->adoptionPending()||self::row($record,$livewire)['off']||self::row($record,$livewire)['accountOff']=>'Off',default=>'On'})
                 ->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::icon():null)
-                ->description(fn($state,Domain $record)=>$state===Missing::LABEL?DomainFacts::UNREADABLE_RENEWAL:($state==='Off'&&$record->adoptionPending()?'Until import':null))),
+                ->description(fn($state,Domain $record,$livewire)=>$state===Missing::LABEL?DomainFacts::UNREADABLE_RENEWAL:($state==='Off'&&$record->adoptionPending()?'Until import':($state==='Off'&&!self::row($record,$livewire)['off']&&self::row($record,$livewire)['accountOff']?'Account Renewals off':null)))),
             OneLine::apply(TextColumn::make('server_id')->label('Registrar')->state(fn(Domain $record)=>$record->server?$record->server->name.' #'.$record->server_id:Missing::LABEL)
                 ->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::icon():null)
                 ->description(fn(Domain $record,$state)=>$state===Missing::LABEL?DomainFacts::NO_ACCOUNT:(self::REGISTRARS[$record->registrar_key]??null))),
@@ -126,7 +126,7 @@ class DomainResource extends Resource
     { return DomainFacts::note(self::status($record,$livewire),self::row($record,$livewire)['sync'],self::row($record,$livewire)['noAccount'],$record); }
     private static function registered(Domain $record): bool
     { return DomainFacts::registered($record); }
-    /** 'off': true when automatic renewal is off, null when its saved data cannot be read. 'sync': DomainFacts::sync(). 'noAccount': no registrar account matches. */
+    /** 'off': true when automatic renewal is off, null when its saved data cannot be read. 'accountOff': the account's Renewals switch is off. 'sync': DomainFacts::sync(). 'noAccount': no registrar account matches. */
     private static function row(Domain $record, mixed $livewire): array
     {
         $records=method_exists($livewire,'getTableRecords')?$livewire->getTableRecords():collect([$record]);
@@ -138,10 +138,14 @@ class DomainResource extends Resource
             $accounts=Account::whereIn('server_id',$page->pluck('server_id')->unique()->values()->all())->get();
             $stopped=ObservationWork::stoppedIds($page);
             $inputs=StaffDomainInputs::for($page,is_object($livewire)?(self::$orders[$livewire]??null):null);
+            $accountOff=[];
             foreach ($page as $d) {
                 $account=$accounts->first(fn(Account $a)=>(int)$a->server_id===(int)$d->server_id&&$a->registrar_key===$d->registrar_key
                     &&$a->account_fingerprint===$d->account_fingerprint);
-                $cached[$d->id]=['inputs'=>$inputs[$d->id],'off'=>$inputs[$d->id]['off'],'sync'=>DomainFacts::sync($d,$account,isset($stopped[$d->id]),accountLoaded:true),'noAccount'=>$account===null];
+                // One switch read per account on the page, by the domain page's rule.
+                $byServer=$accounts->first(fn(Account $a)=>(int)$a->server_id===(int)$d->server_id&&$a->registrar_key===$d->registrar_key);
+                $off=$d->billing_managed&&$byServer?($accountOff[$byServer->id]??=DomainDecisions::accountRenewalsOff($d,$byServer)):false;
+                $cached[$d->id]=['inputs'=>$inputs[$d->id],'off'=>$inputs[$d->id]['off'],'accountOff'=>$off,'sync'=>DomainFacts::sync($d,$account,isset($stopped[$d->id]),accountLoaded:true),'noAccount'=>$account===null];
             }
             self::$rows[$records]=$cached;
         }

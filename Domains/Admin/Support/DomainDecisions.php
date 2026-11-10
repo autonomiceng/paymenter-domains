@@ -161,7 +161,8 @@ final class DomainDecisions
             $cancel=$renewal&&$renewal['cancel']->contains('service_id',$d->service_id);
             $off=match(true) {$renewal===null=>null,RenewalStop::adopted($renewal)=>'Set at import',$pending=>'Until import',
                 RenewalStop::blocksExisting($renewal)=>'Service cancellation pending',$cancel=>'Cancels at period end',
-                (bool)($policy['renewals_stopped']??false)=>'Stopped by staff',RenewalStop::ownerOff($renewal)=>self::ownerOff(),default=>null};
+                (bool)($policy['renewals_stopped']??false)=>'Stopped by staff',RenewalStop::ownerOff($renewal)=>self::ownerOff(),
+                self::accountRenewalsOff($d)=>self::ACCOUNT_RENEWALS_OFF,default=>null};
             $f['Renewal']=$renewal===null?Facts::row(null,sub:self::UNREADABLE_RENEWAL,help:self::help()['Renewal']):Facts::row($off?'Off':'On',sub:$off,help:self::help()['Renewal']);
             $f['Renewal price']=self::price($d,$service,$observation);
             $expired=$d->provider_expires_at&&$d->provider_expires_at->format('Y-m-d')<=gmdate('Y-m-d');
@@ -180,6 +181,16 @@ final class DomainDecisions
             if(isset($f['Last sync'])){$f['Last sync']['sub']=!self::ended($d)&&(self::hold($d)['stopped']??false)?null:$problem;}
         }
         return self::alerts($d,$f,$notice);
+    }
+    public const ACCOUNT_RENEWALS_OFF='Renewals are off for this registrar account. No renewal invoice goes out.';
+    /** The account's Renewals switch is off for a billed domain: the same rule as the account's Managed domains waiting row. */
+    public static function accountRenewalsOff(Domain $d, ?Account $account=null): bool
+    {
+        if (!$d->billing_managed||!$d->server_id) { return false; }
+        try {
+            $account??=Account::where('server_id',$d->server_id)->where('registrar_key',$d->registrar_key)->first();
+            return $account!==null&&!\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::on(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account));
+        } catch (\Throwable) { return false; }
     }
     /** Safe cause text shared by the domain page and the list. Unknown saved kinds still need review. With the domain, a stopped sync names the control these staff have. */
     public static function alertCause(string $code, ?Domain $d=null): string
