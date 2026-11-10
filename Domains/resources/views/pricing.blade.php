@@ -10,6 +10,7 @@
     $popular = ['com' => 0, 'net' => 1, 'org' => 2];
     usort($rows, static fn($a, $b) => ($popular[$a['tld']] ?? 3) <=> ($popular[$b['tld']] ?? 3) ?: strcmp($a['tld'], $b['tld']));
     $showTerms = collect($rows)->contains(fn($row) => $termRange($row['terms']) !== '1 year');
+    $firstYearDiffers = collect($rows)->contains(fn($row) => \Paymenter\Extensions\Servers\Domains\Presentation\FirstYearPrice::differs($row['register'] ?? null, $row['renew'] ?? null));
     $longerTerms = collect($rows)->contains(fn($row) => collect($row['terms'])->contains(fn($term) => $term > 1));
 @endphp
 <div class="container mt-14 mb-10">
@@ -73,7 +74,7 @@
             <p id="domains-price-empty" role="status" class="domains-panel__b" hidden>No TLDs match your filter.</p>
         </section>
         @include('domains::partials.price-filter')
-        <p class="domains-small domains-muted">Prices plus tax where applicable.@if ($longerTerms) Longer terms are priced per term; search for a name to see each total.@endif</p>
+        <p class="domains-small domains-muted">Prices plus tax where applicable.{{ $firstYearDiffers ? ' '.\Paymenter\Extensions\Servers\Domains\Presentation\FirstYearPrice::LIST : '' }}@if ($longerTerms) Longer terms are priced per term; search for a name to see each total.@endif</p>
     @endif
 </div>
 </div>

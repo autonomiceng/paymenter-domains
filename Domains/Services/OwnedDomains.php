@@ -53,11 +53,14 @@ final readonly class OwnedDomains
         $next=match (true) {
             $op->state==='held'&&in_array($op->safe_code,self::OWNER_HOLDS,true) => 'setup_required',
             $op->action==='transfer'&&!TransferInputs::validCode($op->payload['epp']??null) => 'awaiting_code',
-            $d->registrar_key!=='enom'&&!isset($op->policy['owner_setup'])&&in_array($op->state,['awaiting_payment','queued'],true)&&($op->attempt??[])===[] => 'setup_required',
+            // With default nameservers the registration goes ahead without the owner: choosing them is optional, never Action required.
+            $d->registrar_key!=='enom'&&!isset($op->policy['owner_setup'])&&in_array($op->state,['awaiting_payment','queued'],true)&&($op->attempt??[])===[] => self::defaultNameservers($op) ? 'setup_optional' : 'setup_required',
             default => null,
         };
         return $invoice?->status==='paid'&&in_array($op->state,['awaiting_payment','awaiting_code','queued','running','pending','held','uncertain'],true)?['state'=>'paid','kind'=>$kind,'next'=>$next,...($op->funding_basis==='complimentary'?['complimentary'=>true]:[]),...(isset($op->policy['status_check'])&&!isset($op->policy['status_check']['next_at'])?['check'=>RegistrarCheck::forCustomer($op)]:[])]:[];
     }
+    private static function defaultNameservers(Operation $op): bool
+    { try { return NewDomainDns::forOperation($op) !== []; } catch (\Throwable) { return false; } }
     /** A cancelled order nobody paid or is paying: a normal cancel with nothing to review. */
     private static function unpaidCancel(Operation $op, ?Invoice $invoice): array
     {
@@ -87,7 +90,7 @@ final readonly class OwnedDomains
         return match (true) {
             ($order['state']??null)==='cancelled' => [isset($order['credit'])||($order['returned']??false)||($order['unpaid']??false)?'cancelled':'needs_review','Order cancelled'],
             ($order['state']??null)==='failed' => [$order['kind']==='transfer'?'transfer_rejected':'registration_rejected',null],
-            ($order['state']??null)==='paid'&&$state[0]==='awaiting_payment' => [$order['next']??$d->status,null],
+            ($order['state']??null)==='paid'&&$state[0]==='awaiting_payment' => [in_array($order['next']??null,['setup_required','awaiting_code'],true)?$order['next']:$d->status,null],
             default => $state,
         };
     }
@@ -224,7 +227,7 @@ final readonly class OwnedDomains
                 $retail=\App\Models\Server::find($d->server_id)?->settings()->where('key','domains_privacy_price')->value('value');
                 try { $management['privacy']['price']=PricingRule::minor($retail)>0?Storefront::money(RetailLine::decimal($retail)):null; } catch(\Throwable) { $management['privacy']['price']=null; } }
             if ($caps) {
-                if (isset($management['nameservers'])) { $management['nameservers']['max']=$setup['maxNameservers']; $choice=ManagementNameservers::choice($d,$this->ports);$management['nameservers']['defaultServers']=$choice['servers'];$management['nameservers']['defaultError']=$choice['error'];
+                if (isset($management['nameservers'])) { $management['nameservers']['max']=$setup['maxNameservers']; $management['nameservers']['letterEnding']=$d->registrar_key==='namesilo'; $choice=ManagementNameservers::choice($d,$this->ports);$management['nameservers']['defaultServers']=$choice['servers'];$management['nameservers']['defaultError']=$choice['error'];
                     $management['nameservers']['defaults']=$management['nameservers']['defaultServers']!==[];
                     $management['nameservers']['registrar']=ManagementNameservers::registrar($d);
                     // Only a confirmed readback supplies current nameservers; otherwise the form starts empty.
@@ -265,7 +268,17 @@ final readonly class OwnedDomains
         if ($management && $forms) {
             $all=array_merge(...array_values(array_map(fn($section)=>array_keys($section['actions']),$management)));
             try { $allowed=Runtime::management($d,$this->engine)?->available($d->service->user,$d,$this->ports->forDomain($d),$all,$refused)??[]; } catch (\Throwable) { $allowed=[]; }
-            foreach ($management as $key=>&$section) { $section['actions']=array_intersect_key($section['actions'],array_flip($allowed)); if (!$section['actions'] && !isset($progressBySetting[ManagementProgress::setting($key)])) { unset($management[$key]); } } unset($section);
+            // While one change runs the registrar takes no other (DomainManagement::available refuses with its id), so the rows
+            // the registrar supports keep their values and say when they open.
+            $busy=is_int($refused)?array_key_first(array_filter($progressBySetting,fn($row)=>$row['pending'])):null;
+            $busyLabel=$busy===null?null:self::lowerKeepingAcronyms(collect($management)->first(fn($section,$key)=>ManagementProgress::setting($key)===$busy)['label']??str_replace('_',' ',$busy));
+            foreach ($management as $key=>&$section) {
+                $wanted=array_keys($section['actions']);
+                $section['actions']=array_intersect_key($section['actions'],array_flip($allowed));
+                if ($section['actions'] || isset($progressBySetting[ManagementProgress::setting($key)])) { continue; }
+                $supported=$caps!==null&&collect($wanted)->contains(fn($action)=>$caps->get(DomainManagement::capability($action))->support===Support::Supported);
+                if ($busyLabel!==null && $supported) { $section['waiting']='Opens when the '.$busyLabel.' change finishes.'; } else { unset($management[$key]); }
+            } unset($section);
             $unavailable=!array_filter($management,fn($section)=>$section['actions']) && !array_filter($progressBySetting,fn($row)=>$row['pending']);
         }
         if ($forms && $caps && $d->registrar_key==='namesilo' && $d->status==='active' && !isset($management['dns']) && $caps->get('dns')->support!==Support::Supported) {
@@ -340,7 +353,12 @@ final readonly class OwnedDomains
     {
         if ($state->cycle !== null) { return $state->cycle; }
         if (!$d->provider_expires_at || !$forms) { return $state->retained ?? []; }
-        try { return ['url' => route('domains.domains.renew', $d->id), ...($this->billing ?? app(DomainBilling::class))->requestOptions($d)]; }
+        try {
+            $options = ['url' => route('domains.domains.renew', $d->id), ...($this->billing ?? app(DomainBilling::class))->requestOptions($d)];
+            // A renewal that would wait out the registrar's 24-hour limit says so before an invoice is made.
+            if ($repeat = RenewalRepeatWait::forDomain($d, $this->clock->now())) { $options['repeat_at'] = $repeat->format(DATE_ATOM); }
+            return $options;
+        }
         catch (\Throwable) { return $state->retained ?? []; }
     }
     /** Nameservers from the last confirmed registrar readback, in order, or null. Shared by the customer and staff domain pages. */
@@ -373,5 +391,11 @@ final readonly class OwnedDomains
         if (!$d->provider_expires_at) { throw new \DomainException('A renewal cycle needs a confirmed expiry.'); }
         $cycle = DomainStates::cycle($d, DomainStateInputs::one($d), $now ?? app(Clock::class)->now());
         return $cycle['current'] ?? ($retained ? ($cycle['retained'] ?? null) : null);
+    }
+
+    /** Lowercase a row label for mid-sentence use, keeping acronyms such as DNS, WHOIS and DNSSEC. */
+    private static function lowerKeepingAcronyms(string $label): string
+    {
+        return (string) preg_replace_callback('/\S+/u', fn ($w) => mb_strlen($w[0]) > 1 && mb_strtoupper($w[0]) === $w[0] ? $w[0] : mb_strtolower($w[0]), $label);
     }
 }

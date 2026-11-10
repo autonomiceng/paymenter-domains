@@ -30,6 +30,7 @@ final class DomainListRow
             'paid' => ['missing' => true, ...match ($order['next'] ?? null) {
                 'awaiting_code' => ['cause' => $basis.'Add the auth code to start the transfer.', 'fix' => null],
                 'setup_required' => ['cause' => $basis.'Finish setup to start the '.$word.'.', 'fix' => null],
+                'setup_optional' => ['cause' => $basis.'We’re starting the '.$word.'. You can choose nameservers before it’s sent.', 'fix' => null],
                 // With no notice above it, a complimentary row says what the page notice says.
                 default => ['cause' => $complimentary ? $basis.'We’re finishing the '.$word.'. There’s nothing you need to do.' : Missing::fills(self::WAITS[$word]), 'fix' => null],
             }],

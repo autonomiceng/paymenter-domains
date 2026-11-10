@@ -38,17 +38,9 @@ final class RenewalExecution
             // Enom's Extend contract requires OverrideOrder for another renewal within 24 hours.
             // Wait from confirmed completion (later than the send), never bypass replay protection.
             // The time it may go is the latest such completion + 24 hours, stored once so pages show a fixed time.
-            if ($op->registrar_key === 'enom') {
-                $binding = AccountBindings::binding($l['account']); $until = null;
-                foreach ($l['operations'] as $prior) {
-                    if ($prior->action !== 'renew' || $prior->completed_at === null) { continue; }
-                    $ends = \DateTimeImmutable::createFromInterface($prior->completed_at)->modify('+'.RenewalRepeatWait::HOURS.' hours');
-                    if ($ends > $this->clock->now() && ($until === null || $ends > $until) && RenewalAuthority::completed($prior, $l['domain'], $binding)) { $until = $ends; }
-                }
-                if ($until !== null) {
-                    $this->hold($op, RenewalCode::Repeat->value, true, ['staff_alert' => false, 'eligible_at' => $until->format(DATE_ATOM)]);
-                    return null;
-                }
+            if ($op->registrar_key === 'enom' && ($until = RenewalRepeatWait::next($l['domain'], $l['operations'], $this->clock->now(), AccountBindings::binding($l['account']))) !== null) {
+                $this->hold($op, RenewalCode::Repeat->value, true, ['staff_alert' => false, 'eligible_at' => $until->format(DATE_ATOM)]);
+                return null;
             }
             $claim = bin2hex(random_bytes(16));
             $op->update(['policy' => [...$op->policy, 'renewal_admission' => ['key' => $claim, 'until' => $this->clock->now()->modify('+360 seconds')->format(DATE_ATOM)]]]);

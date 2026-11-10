@@ -90,7 +90,9 @@ final class StorefrontController extends Controller
         if ($replace && $result['status'] === 'available' && $replace['term'] !== null && isset($result['terms'][$replace['term']])) {
             $result['term'] = $replace['term']; $result['price'] = $result['terms'][$replace['term']];
         }
-        return response()->json(['status' => $result['status'], 'html' => view('domains::partials.result', ['result' => $result, 'first' => false, 'replace' => $replace])->render()]);
+        // The ending asked for is not sold: every row is another name, and its button says so.
+        return response()->json(['status' => $result['status'], 'html' => view('domains::partials.result', ['result' => $result, 'first' => false, 'replace' => $replace,
+            'instead' => $request->boolean('instead')])->render()]);
     }
 
     /** Native cart handoff through a neutral POST. No product/account ID in customer URLs or form values. */

@@ -56,7 +56,7 @@
         @if ($results)
             <section aria-labelledby="domains-results-heading">
                 <h2 id="domains-results-heading" class="domains-sr">Results for {{ $sld }}</h2>
-                <ul class="domains-results" data-domains-results="{{ route('domains.domains.check') }}" data-request-key="{{ $checkKey }}" @if ($replace ?? null) data-replace="{{ $replace['id'] }}" @endif @if ($years) data-years="{{ $years }}" @endif>
+                <ul class="domains-results" data-support-url="{{ \Paymenter\Extensions\Servers\Domains\Presentation\Missing::supportUrl() }}" data-domains-results="{{ route('domains.domains.check') }}" data-request-key="{{ $checkKey }}" @if ($replace ?? null) data-replace="{{ $replace['id'] }}" @endif @if ($notice) data-instead="1" @endif @if ($years) data-years="{{ $years }}" @endif>
                     @foreach ($results as $index => $result)
                         @include('domains::partials.result', ['first' => $index === 0])
                     @endforeach

@@ -76,6 +76,7 @@ final class ManagementProgress
         $since=$deferrals?new \DateTimeImmutable(end($deferrals)):$op->created_at;
         $pending=self::pending($op,$d);$slow=$pending && $since->getTimestamp()<=now()->getTimestamp()-120;
         $sent=($op->attempt['seal']??null)==='sealed';
+        $refused=!$pending && $op->action==='nameservers' && $op->safe_code==='management_provider_refused';
         $text=match(true){
             $slow=>"This is taking longer than usual. We'll keep trying.",
             $pending && $sent=>'Sent. Checking the result…',
@@ -86,15 +87,17 @@ final class ManagementProgress
             $op->state==='succeeded' && $op->action==='nameservers' && self::nameserversChanged($op,$d)=>'Nameservers changed after this request. Check them and change them if needed.',
             $op->state==='succeeded'=>'Saved.',
             $op->safe_code==='management_retired'=>'Replaced by your latest choice.',
-            $op->action==='nameservers' && $op->safe_code==='management_provider_refused'=>RequestStatus::NAMESERVERS_REFUSED,
+            $refused=>self::nameserversRefused($op),
             default=>(ManagementEvidence::outcome($op)===RequestStatus::UNSENT?RequestStatus::UNSENT:($op->action==='auth_code_email'?'The auth code email request failed.':'The '.(['lock'=>'transfer lock','nameservers'=>'nameservers','contacts'=>'contacts','dns'=>'DNS records','srv'=>'SRV records','privacy'=>'WHOIS privacy','ds'=>'DNSSEC','glue'=>'glue records'][self::section($op->action)]??'change').' change failed.')).self::TRY_AGAIN,
         };
         if($op->action==='auth_code_email' && $pending && $sent && !$slow){$text='Email request sent. Acceptance is not confirmed. We will keep checking.';}
-        $settled=$op->state==='succeeded'&&$op->action!=='contact_profile'&&$op->updated_at->getTimestamp()<=now()->getTimestamp()-self::SETTLED_SECONDS;
+        // A refused nameserver change stays until a later registrar read shows the nameservers in use. History keeps it.
+        $settled=$refused?self::readSince($op,$d):$op->state==='succeeded'&&$op->action!=='contact_profile'&&$op->updated_at->getTimestamp()<=now()->getTimestamp()-self::SETTLED_SECONDS;
         $replaced=$op->safe_code==='management_retired';
         // What staff read in place of $text, which speaks to the customer.
         $outcome=$pending||$replaced||$op->state==='succeeded'?null:ManagementEvidence::outcome($op)??RequestStatus::UNCONFIRMED;
-        $row=['id'=>(int)$op->id,'pending'=>$pending,'slow'=>$slow,'text'=>$text,'settled'=>$settled,'outcome'=>$outcome,'replaced'=>$replaced];
+        $row=['id'=>(int)$op->id,'pending'=>$pending,'slow'=>$slow,'text'=>$text,'settled'=>$settled,'outcome'=>$outcome,'replaced'=>$replaced,
+            ...($refused?['tone'=>'bad','support'=>true]:[])];
         return $row;
     }
 
@@ -145,6 +148,18 @@ final class ManagementProgress
             $row['tone']='warning';
         }
         return $row;
+    }
+    /** The customer's words for a refused nameserver change: what was refused and what to check. Staff keep RequestStatus::NAMESERVERS_REFUSED. */
+    private static function nameserversRefused(Operation $op): string
+    {
+        $servers=$op->policy['management']['input']['nameservers']??null;
+        $list=is_array($servers)?implode(', ',array_filter($servers,'is_string')):'';
+        return 'Not changed: the registrar refused '.($list!==''?$list:'these nameservers').'. Check that each one is a working nameserver, then try again.';
+    }
+    private static function readSince(Operation $op, Domain $d): bool
+    {
+        try { $current=ObservationProjection::nameservers($d); } catch (\Throwable) { return false; }
+        return $current!==null && $current->state==='observed' && $current->at!==null && new \DateTimeImmutable($current->at)>$op->updated_at;
     }
     private static function nameserversChanged(Operation $op, Domain $d): bool
     {

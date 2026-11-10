@@ -86,8 +86,45 @@
             servers.dispatchEvent(new Event('input', {bubbles: true})); servers.focus();
             if (live) live.textContent = live.dataset.nameserversFilled;
         });
+        // The same rules the server applies to a nameserver list (OwnerNameservers::parse), so a list it would refuse
+        // says why inside the editor and never reaches the warning.
+        const nameserverProblem = () => {
+            const max = Number(form.dataset.nameserversMax || 0);
+            if (!servers || !max) return '';
+            const lines = servers.value.split(/\r\n|\n|\r/).map(line => line.trim()).filter(Boolean);
+            if (lines.length < 2) return 'Enter at least 2 nameservers, one per line.';
+            if (lines.length > max) return 'Enter no more than ' + max + ' nameservers.';
+            const seen = [];
+            for (const line of lines) {
+                const host = (line.endsWith('.') ? line.slice(0, -1) : line).toLowerCase(), labels = host.split('.');
+                const valid = host.length <= 253 && labels.length > 1 && labels.every(label => /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(label))
+                    && !/^[0-9]{1,3}(\.[0-9]{1,3}){3}$/.test(host) && !(form.dataset.nameserversLetterEnding && !/[a-z]/.test(labels[labels.length - 1]));
+                if (!valid) return line.slice(0, 254) + " isn't a valid hostname. Use a name like ns1.example.com.";
+                if (seen.includes(host)) return host + ' is listed more than once.';
+                seen.push(host);
+            }
+            return '';
+        };
+        const showProblem = message => {
+            const id = servers.id + '-client-error';
+            let error = document.getElementById(id);
+            if (!error) {
+                error = document.createElement('p'); error.id = id; error.className = 'domains-error';
+                error.setAttribute('aria-live', 'polite'); servers.after(error);
+            }
+            error.textContent = message; servers.setAttribute('aria-invalid', 'true');
+            const refs = new Set((servers.getAttribute('aria-describedby') || '').split(' ').filter(Boolean));
+            refs.add(id); servers.setAttribute('aria-describedby', [...refs].join(' ')); servers.focus();
+        };
+        // The warning takes the editor's place instead of opening on top of it.
+        const editor = form.closest('dialog.domains-edit');
+        dialog.addEventListener('close', () => editor?.classList.remove('domains-edit--behind'));
         form.addEventListener('submit', event => {
             if (event.submitter?.name === 'confirmed') return;
+            if (!event.submitter?.hasAttribute('formnovalidate')) {
+                const problem = nameserverProblem();
+                if (problem) { event.preventDefault(); showProblem(problem); return; }
+            }
             if (event.submitter?.matches('[data-delete-record]')) {
                 const mark = Object.assign(document.createElement('input'), {type: 'hidden', name: event.submitter.name, value: '1'});
                 event.submitter.after(mark); event.submitter.hidden = true; added.push(mark);
@@ -97,6 +134,7 @@
             if (servers) fill('nameservers', servers.value.split(/\r?\n/).map(line => line.trim()).filter(Boolean));
             if (form.dataset.confirmWhen === 'records-removed') fill('removed', removed());
             if (dialog.open) dialog.close();
+            editor?.classList.add('domains-edit--behind');
             dialog.showModal();
         });
         const undo = () => { added.forEach(mark => { mark.previousElementSibling.hidden = false; mark.remove(); }); added = []; };
@@ -182,12 +220,13 @@
             row.querySelector('.domains-result__price').replaceChildren();
             row.querySelector('.domains-result__note').textContent = '';
             row.querySelector('.domains-result__action').replaceChildren();
-            let note = list.dataset.mode === 'transfer' ? 'We couldn’t check this transfer right now. Try again in a few minutes.' : '';
+            let note = list.dataset.mode === 'transfer' ? 'We couldn’t check this transfer right now. Try again in a few minutes.'
+                : 'We couldn’t check this name right now. Retry in a minute.';
             try {
                 const response = await fetch(list.dataset.domainsResults, {method: 'POST', credentials: 'same-origin',
                     headers: {'Content-Type': 'application/json', 'Accept': 'application/json',
                         'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''},
-                    body: JSON.stringify({domain: row.dataset.domain, ...(list.dataset.mode === 'transfer' ? {mode: 'transfer'} : {}), _request_key: list.dataset.requestKey, ...(list.dataset.replace ? {replace: list.dataset.replace} : {})})});
+                    body: JSON.stringify({domain: row.dataset.domain, ...(list.dataset.mode === 'transfer' ? {mode: 'transfer'} : {}), _request_key: list.dataset.requestKey, ...(list.dataset.replace ? {replace: list.dataset.replace} : {}), ...(list.dataset.instead ? {instead: 1} : {})})});
                 if (response.status === 429) note = 'Too many searches. Wait a minute, then retry.';
                 if (response.status === 419) note = 'This page expired. Reload to try again.';
                 if (!response.ok) throw new Error();
@@ -204,7 +243,7 @@
                 badge.className = list.dataset.mode === 'transfer' ? 'domains-result-label' : 'domains-badge domains-tone-warn'; badge.textContent = 'Couldn’t check'; status.append(badge);
                 row.querySelector('.domains-result__price').replaceChildren();
                 const message = row.querySelector('.domains-result__note'); message.textContent = note;
-                if (list.dataset.mode === 'transfer' && list.dataset.supportUrl) {
+                if (list.dataset.supportUrl && !/expired|Too many/.test(note)) {
                     const support = document.createElement('a'); support.className = 'domains-a';
                     support.href = list.dataset.supportUrl; support.textContent = 'Contact support'; message.append(' ', support);
                 }
