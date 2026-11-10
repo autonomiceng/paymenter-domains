@@ -37,7 +37,7 @@ commerceReject(fn()=>$price());
 // Past the limit the TLD is left for the background turn, and the save says so.
 same(['failed'=>[],'left'=>1],$commands->republishSold($binding->serverId,0),'A TLD past the limit is left for the background turn');
 commerceReject(fn()=>$price());
-same('1 more TLD goes back on sale in the background, about 25 a minute.',SettingsActions::republished(['failed'=>[],'pending'=>false,'left'=>1]),'The save says how many go back on sale later');
+same('1 more TLD goes back on sale in the background, up to 25 a minute.',SettingsActions::republished(['failed'=>[],'pending'=>false,'left'=>1]),'The save says how many go back on sale later');
 same(null,SettingsActions::republished(['failed'=>[],'pending'=>false,'left'=>0]),'Nothing left says nothing');
 // Within the limit it is published at once.
 same(['failed'=>[],'left'=>0],$commands->republishSold($binding->serverId),'Within the limit the TLD is published at once');
