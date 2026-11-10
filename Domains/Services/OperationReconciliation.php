@@ -35,6 +35,8 @@ final class OperationReconciliation
                 $binding = $this->authority($op, $domain, $all, $funding, $server, $account);
                 $attempt = ReconciliationEvidence::attempt($op, $domain, $binding);
                 if (RegistrarCheck::lostReply($op, $attempt, $this->clock->now())) {
+                    // NameSilo answered, but its order history does not list the order yet. Wait for it; nobody needs to ask NameSilo.
+                    if (RegistrarCheck::historyPending($attempt, $this->clock->now())) { $check->deferred = 'scheduled'; return null; }
                     $check->awaitingAnswer = $attempt->binding->registrarKey === 'enom' ? 'Enom' : 'NameSilo';
                     $check->answerAfter = (new \DateTimeImmutable($op->attempt['dispatch_attempted_at']))->modify('+24 hours')->getTimestamp();
                     // Enom can still read the domain before staff ask for a case; NameSilo waits for its answer.

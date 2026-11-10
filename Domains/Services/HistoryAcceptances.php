@@ -21,7 +21,7 @@ final class HistoryAcceptances
             if (DB::transactionLevel() > 0) { $query->lockForUpdate(); }
             $setting = $query->first();
         }
-        if (!$setting) { return null; }
+        if (!$setting) { return \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\TestOrderHistory::acceptance($binding, $action); }
         try {
             if (!$setting->encrypted) { throw new \DomainException; }
             $data = json_decode($setting->value, true, 16, JSON_THROW_ON_ERROR);

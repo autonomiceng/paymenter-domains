@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Data\AccountBinding;
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,SendFailure};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{CurlTransport,DeadlineTransport,Environment,RegistrarRequest,RequestContext,TransportResponse};
 use Paymenter\Extensions\Servers\Domains\Services\{LiveReservationLimit,LiveReservations,OperationClaims,ProviderSendGuard};
 /** Account-bound port. The installed binding factory supplies fresh, verified credentials on every call. */
@@ -104,9 +104,15 @@ final class AdmittedTransport implements DeadlineTransport
             if(!curl_setopt_array($handle,[CURLOPT_CONNECTTIMEOUT_MS=>min(8000,$remaining),CURLOPT_TIMEOUT_MS=>$remaining])){throw new \RuntimeException;}
             if($write){$this->reservation->consume($command,$parameters);}elseif($day!==LiveReservations::day()){throw new LiveReservationLimit;}
             if(hrtime(true)>=$deadline){throw new LiveReservationLimit;}
-            if(curl_exec($handle)===false||curl_getinfo($handle,CURLINFO_RESPONSE_CODE)!==200){throw new \RuntimeException;}
+            $sent=curl_exec($handle);$status=(int)curl_getinfo($handle,CURLINFO_RESPONSE_CODE);
+            if($sent===false||$status!==200){
+                // Staff see only the fixed failure kind of a purchase, such as its HTTP status; never the body or URL.
+                if(in_array($command,['registerDomain','transferDomain'],true)){throw SendFailure::curl($sent===false?curl_errno($handle):0,$status,$timeoutMs);}
+                throw new \RuntimeException;
+            }
             return new TransportResponse(200,$body);
         }catch(LiveReservationLimit){throw new LiveReservationLimit;}
+        catch(SendFailure $failure){throw new SendFailure($failure->category,$failure->timeoutMs);}
         catch(\Throwable){throw new \RuntimeException('NameSilo transport outcome unresolved.');}
         finally{if($handle!==null&&$handle!==false){curl_close($handle);}}
     }

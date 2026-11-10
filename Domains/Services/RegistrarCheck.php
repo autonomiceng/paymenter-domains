@@ -90,6 +90,13 @@ final class RegistrarCheck
     /** A lost reply that no accepted order history covers. Only the registrar's answer can settle it. */
     public static function lostReply(Operation $op, AttemptEvidence $attempt, \DateTimeImmutable $now): bool
     { return $op->action!=='transfer'&&$attempt->replyLost()&&!$attempt->historyAcceptance?->covers($attempt,$now); }
+    /** A NameSilo reply that arrived without an order number, before the order history can list the order. */
+    public static function historyPending(AttemptEvidence $attempt, \DateTimeImmutable $now): bool
+    {
+        $history=$attempt->historyAcceptance;
+        return $attempt->binding->registrarKey==='namesilo'&&$attempt->executionFacts!==null&&$history!==null
+            &&$now->getTimestamp()<$attempt->windowEnd->getTimestamp()+$history->lagSeconds;
+    }
     /** Enom still reads the domain on a lost reply; a NameSilo lost reply has nothing to read. */
     public static function unreadable(Operation $op, AttemptEvidence $attempt, \DateTimeImmutable $now): bool
     { return $attempt->binding->registrarKey!=='enom'&&self::lostReply($op,$attempt,$now); }

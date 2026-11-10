@@ -139,6 +139,17 @@ $grant->run('management',47,function()use($grant,$exchange,$origin):void {
     $grant->reserve('domainLock',['domain'=>'example.com']);$exchange($origin,'domainLock',['domain'=>'example.com'],20000);
 });
 same(3,$GLOBALS['wire']['sends'],'Registration, transfer and free management each send exactly once');
+// A failed purchase send keeps only its fixed failure kind, so staff can see the HTTP status without the body or URL.
+resetWire(['status'=>500]);
+$grant->run('registration',51,function()use($grant,$exchange,$origin):void {
+    $mapping=Api\PurchaseMapping::register('example.com',1,false,'123',['ns1.example.net','ns2.example.net']);
+    $grant->reserve($mapping->command,$mapping->parameters(),new Money('1.00','USD'));
+    $failure=null;try{$exchange($origin,$mapping->command,$mapping->parameters(),20000);}catch(\Paymenter\Extensions\Servers\Domains\Data\SendFailure $error){$failure=$error;}
+    same(['category'=>'http 500','timeout_ms'=>20000],$failure?->facts(),'Purchase HTTP error keeps only its status for staff');
+    same(null,$failure->getPrevious(),'No raw cause');expect(!str_contains($failure->getMessage().$failure->getTraceAsString(),'placeholder-api-key'),'Failure redacts credentials');
+    same(1,$GLOBALS['wire']['sends'],'Failed purchase is sent once');expect(!$grant->unconsumed(51),'Failed purchase consumes its grant');
+});
+resetWire();
 // Existing management discovery lists glue through the read path and pays for exactly one call.
 resetWire();$before=$used();$listed=false;
 try{$listed=$exchange($origin,'listRegisteredNameServers',['domain'=>'example.com'],20000)==='{}';}catch(LiveReservationLimit){}
