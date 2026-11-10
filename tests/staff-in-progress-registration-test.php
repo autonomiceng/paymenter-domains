@@ -39,6 +39,9 @@ DB::table('domains_operations')->where('id',$op->id)->update(['state'=>'uncertai
 same('operation_review',StaffDomainInputs::for([$d->fresh()])[$d->id]['alerts'][0]['code']??null,'An unconfirmed result still needs a check');
 // Domain 3 just completed: the first registrar read is queued, so Contacts wait for it instead of saying Missing.
 $active=$row('active','succeeded',['started_at'=>$sent,'completed_at'=>now()]);
+// The shared seed points at no customer account; give this domain a real one so only the read rows are in question.
+$customer=App\Models\User::create(['first_name'=>'Read','last_name'=>'Waiting','email'=>'read-waiting@example.test','password'=>'synthetic-password']);
+DB::table('domains_domains')->where('id',$active->id)->update(['user_id'=>$customer->id]);
 DB::table('domains_observation_work')->insert(['server_id'=>$active->server_id,'account_fingerprint'=>$active->account_fingerprint,'domain_id'=>$active->id,
     'generation'=>$active->authority_generation,'phase'=>'holding','due_at'=>time()]);
 $facts=DomainFacts::for($active->fresh());
