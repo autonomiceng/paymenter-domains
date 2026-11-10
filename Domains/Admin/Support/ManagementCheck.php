@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Presentation\StaffTime;
+use Paymenter\Extensions\Servers\Domains\Presentation\{RequestStatus,StaffTime};
 use Paymenter\Extensions\Servers\Domains\Services\ManagementReadRecovery;
 /** The latest registrar read of a DNS, nameserver or contact change, in staff words. The toast, notice and History share it. */
 final class ManagementCheck
@@ -22,9 +22,9 @@ final class ManagementCheck
             $at='Checked '.StaffTime::at((new \DateTimeImmutable($read['at']))->getTimestamp()).'.';
         }catch(\Throwable){return null;}
         $email=$op->action==='auth_code_email';
-        $confirmed=$op->state==='succeeded';$lost=$email&&($op->attempt['management_ack']['email_accepted']??null)!==true;
-        $detail=match(true){$confirmed=>$email?'The registrar accepted the auth code email request.':'The change is confirmed.',$lost=>self::EMAIL,
+        $confirmed=$op->state==='succeeded';$failed=$op->state==='rejected';$lost=$email&&($op->attempt['management_ack']['email_accepted']??null)!==true;
+        $detail=match(true){$confirmed=>$email?'The registrar accepted the auth code email request.':'The change is confirmed.',$failed=>Labels::operationReason($op)??RequestStatus::REFUSED.' The customer can try again.',$lost=>self::EMAIL,
             default=>'The registrar does not show this change yet. Automatic checks continue.'};
-        return ['title'=>$confirmed?self::CONFIRMED:self::UNCONFIRMED,'at'=>$at,'detail'=>$detail,'body'=>$at.' '.$detail,'confirmed'=>$confirmed];
+        return ['title'=>$confirmed?self::CONFIRMED:($failed?RequestStatus::SET['failed'][0]:self::UNCONFIRMED),'at'=>$at,'detail'=>$detail,'body'=>$at.' '.$detail,'confirmed'=>$confirmed];
     }
 }

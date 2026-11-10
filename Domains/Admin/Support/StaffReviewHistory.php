@@ -26,7 +26,7 @@ final class StaffReviewHistory
             $event=match($action) {
                 'hold'=>'Put on hold', 'release'=>$contactUpdate?'Contact details updated':'Hold released',
                 'recheck'=>$phase==='read_failed'?'Status check failed':($phase==='read_requested'?'Status check requested':(isset($entry['check'])?\Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::words($entry['check'])['title']
-                    :(isset($entry['management_check'])?(($entry['management_check']['confirmed']??false)===true?'Status check: change confirmed':'Status check: still unconfirmed'):'Status check finished'))),
+                    :(isset($entry['management_check'])?match($entry['management_check']['outcome']??(($entry['management_check']['confirmed']??false)===true?'confirmed':(($entry['after']['state']??null)==='rejected'?'failed':'unconfirmed'))){'confirmed'=>'Status check: change confirmed','failed'=>'Status check: failed',default=>'Status check: still unconfirmed'}:'Status check finished'))),
                 'resume_reads'=>'Status checks restarted', 'resume_observation'=>'Sync resumed',
                 'approve_charge'=>'Captured charge approved','disposition'=>'Request closed', 'refund'=>'Cancelled',
                 'credit'=>$op->funding_basis==='complimentary'?'Order closed':'Refund checked', 'replacement'=>'Renewal invoice reissued', 'engine_hold'=>'Back on hold',
