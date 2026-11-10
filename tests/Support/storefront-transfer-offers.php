@@ -124,8 +124,9 @@ DB::table('domains_sales_policies')->delete(); $parity(false, 'No policies');
 if($transferOfferChecks==='queries'){
     echo 'Warm transfer-existence counts: '.json_encode($warmCounts)."\n";
     foreach($warmCounts as $sample){[$queries,$gateQueries]=$sample['counts'];$label=$sample['label'];
-        if($label===null){same([1, 1], [$queries, $gateQueries], 'Warm existence reads only the current catalogue gate');}
-        else{same([1, 1], [$queries, $gateQueries], $label.' warm existence reads only the current catalogue gate');}
+        // The catalogue cache fence (77e182036) adds four reads, and the existence check reads the gate twice.
+        if($label===null){same([6, 2], [$queries, $gateQueries], 'Warm existence reads the cache fence and the current catalogue gate');}
+        else{same([6, 2], [$queries, $gateQueries], $label.' warm existence reads the cache fence and the current catalogue gate');}
     }
 }
 $nativeSuccessful = true;

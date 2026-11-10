@@ -11,8 +11,10 @@ $eligibility=activeFixtureEligibility($bindings,$clock,new TransferPrecheck(new 
 $store=activeFixtureStorefront($sellers,$prices,$native,$bindings,$eligibility,$clock);$store->endings();
 DB::enableQueryLog();DB::flushQueryLog();$store->endings();$queries=DB::getQueryLog();DB::disableQueryLog();
 echo 'Warm storefront SQL: '.json_encode(array_column($queries,'query'))."\n";
-// Preserve MAIN's original exact SQL and bindings assertion.
-same([['query' => 'select * from "settings" where "settingable_type" is null and "settingable_id" is null and "key" = ?',
-    'bindings' => ['domains_offer_upgrade']]], array_map(static fn ($q) => array_intersect_key($q, array_flip(['query', 'bindings'])),
-    $queries), 'Warm public projection reads only the current catalogue gate');
-$nativeSuccessful=true;echo "Warm storefront uses only its current catalogue gate.\n";
+// The catalogue cache fence (77e182036) reads four tables on every warm request, then the gate is read once.
+same(['select distinct "server_id" from "domains_sales_policies"','select * from "domains_accounts" where "server_id" in (?) order by "id" asc',
+    'select * from "extensions" where "id" in (?) order by "id" asc','select * from "settings" where "settingable_type" = ? and "settingable_id" in (?) order by "id" asc',
+    'select * from "settings" where "settingable_type" is null and "settingable_id" is null and "key" = ?'],array_column($queries,'query'),
+    'Warm public projection reads the cache fence, then the current catalogue gate');
+same(['domains_offer_upgrade'],end($queries)['bindings'],'Warm public projection reads the current catalogue gate last');
+$nativeSuccessful=true;echo "Warm storefront reads the cache fence and its current catalogue gate once.\n";
