@@ -37,7 +37,8 @@ final class RenewalRepeatWait
     {
         if ($d->registrar_key !== 'enom') { return null; }
         try {
-            $ops = Operation::where('domain_id', $d->id)->where('action', 'renew')->whereNotNull('completed_at')->get();
+            // The latest completions decide; next() keeps only the last 24 hours.
+            $ops = Operation::where('domain_id', $d->id)->where('action', 'renew')->whereNotNull('completed_at')->orderByDesc('completed_at')->limit(5)->get();
             return $ops->isEmpty() ? null : self::next($d, $ops, $now, AccountBindings::binding(Account::where('server_id', $d->server_id)->sole()));
         } catch (\Throwable) { return null; }
     }
