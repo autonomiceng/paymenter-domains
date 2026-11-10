@@ -44,6 +44,16 @@ $customer=App\Models\User::create(['first_name'=>'Read','last_name'=>'Waiting','
 DB::table('domains_domains')->where('id',$active->id)->update(['user_id'=>$customer->id]);
 DB::table('domains_observation_work')->insert(['server_id'=>$active->server_id,'account_fingerprint'=>$active->account_fingerprint,'domain_id'=>$active->id,
     'generation'=>$active->authority_generation,'phase'=>'holding','due_at'=>time()]);
+// Staff contacts and registrar records use the same injected time, including overdue work.
+$future=new DateTimeImmutable('+2 hours');
+app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new class($future) implements Paymenter\Extensions\Servers\Domains\Contracts\Clock {
+    public function __construct(private DateTimeImmutable $at){} public function now():DateTimeImmutable{return $this->at;}
+});
+$late=DomainFacts::for($active->fresh());
+expect(!Missing::needsNothing($late['Contacts']['sub']??null),'An overdue first read cannot promise contacts will fill automatically');
+$shared=DomainFacts::for($active->fresh(),families:['initial_read_pending'=>true]);
+expect(Missing::needsNothing($shared['Contacts']['sub']??null),'Contacts reuse the record state already read for the page');
+app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new Paymenter\Extensions\Servers\Domains\Data\SystemClock);
 $facts=DomainFacts::for($active->fresh());
 expect(array_key_exists('Contacts',$facts)&&$facts['Contacts']['value']===null,'This fixture has no saved contacts yet');
 expect(Missing::needsNothing($facts['Contacts']['sub']??null),'Contacts fill in after the first read: '.($facts['Contacts']['sub']??''));

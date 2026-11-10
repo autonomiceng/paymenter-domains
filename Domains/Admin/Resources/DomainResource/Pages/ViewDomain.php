@@ -93,7 +93,7 @@ class ViewDomain extends ViewRecord
     private function facts(): array
     {
         if ($this->facts!==null) { return $this->facts; }
-        $d=$this->getRecord(); $facts=self::withDnsSetup($d,DomainFacts::for($d,$this->notice())); $progress=$this->managementProgress();
+        $d=$this->getRecord(); $facts=self::withDnsSetup($d,DomainFacts::for($d,$this->notice(),$this->familyState())); $progress=$this->managementProgress();
         if ($this->edits()['authCode'] || isset($progress['auth_code_email'])) { $facts['Email auth code']=['value'=>'Goes to the '.OwnedDomains::authCodeRecipient($d),'sub'=>'Never shown here.','url'=>null,'tone'=>null,'help'=>'The code moves this domain to another registrar. We email it and never show it here.','demo'=>false]; }
         if ($this->edits()['held']) { $facts=DomainFacts::whileHeld($facts,$this->edits()['first']??null); }
         return $this->facts=DomainFacts::withProgress($facts,$progress,DomainFacts::headRequest($d,$this->status(),$this->edits()['request'],$this->notice()));

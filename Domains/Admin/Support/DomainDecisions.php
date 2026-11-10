@@ -70,7 +70,7 @@ final class DomainDecisions
     /** Nothing renews on these, so renewal facts do not apply. A cancellation's saved intent stays as a guard and is not shown. */
     public static function ended(Domain $d): bool { return in_array($d->status,['cancelled','registration_rejected','transfer_rejected'],true); }
     /** $notice is the page's notice (notice()) when the page already read it, false when not. */
-    public static function for(Domain $d, array|false|null $notice=false): array
+    public static function for(Domain $d, array|false|null $notice=false, ?array $families=null): array
     {
         Staff::requireView();
         $pending=$d->adoptionPending(); $registered=self::registered($d);
@@ -99,7 +99,7 @@ final class DomainDecisions
                 ||$drift&&!\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::ownedAfter($d,$observation['record_hold']['at']??null);
             $f['In registrar account']=Facts::row($absent?'No':Facts::flag($facts['owned']??null,'Yes','No'),sub:$absent||isset($facts['owned'])?null:$unread);
             // Before the first registrar read, the customer page says Checking (RecordFamilies initial_read_pending); the staff row waits too.
-            try { $first=!$pending&&!$d->last_synced_at&&(\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::read($d,new \DateTimeImmutable())['initial_read_pending']??false); }
+            try { $first=!$pending&&!$d->last_synced_at&&(($families??\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::read($d,app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()))['initial_read_pending']??false); }
             catch (\Throwable) { $first=false; }
             try { $contact=OwnedDomains::owner(OwnedDomains::contacts($d)); $none=$pending?self::unread($d,$sync):($first?Missing::fills('after the first registrar read'):(Staff::can('admin.domains.manage')?self::ADD_CONTACTS:'Ask the customer to add them on the domain page')); }
             catch (\Throwable) { $contact=null; $none=self::UNREADABLE; }
