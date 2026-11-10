@@ -18,7 +18,8 @@ $server=App\Models\Server::findOrFail($d->server_id);$server->settings()->update
 $dto=$owners->present($d->fresh());same(null,$dto->management['dns']['records'],'Unknown DNS is held, never an empty authoritative list');
 expect(!$dto->changesUnavailable,'Available DS/child-host additions suppress the settings-unavailable notice');
 $html=$page();$dom=storefrontDom($html);
-same(1,$dom->query('//form[contains(@action,"/manage/nameservers")]')->length,'A no-read active domain retains its existing nameserver editor');
+same(0,$dom->query('//form[contains(@action,"/manage/nameservers")]')->length,'A no-read active domain has no nameserver form until its first read finishes');
+same(1,$dom->query('//li[@id="nameservers"]/span[@class="domains-row__a"]/button[@disabled][normalize-space()="Edit"]')->length,'Its nameserver Edit shows, turned off');
 same(false,$dto->management['dns']['recordCheckHeld'],'An initial unread inventory is not a stopped read');
 $read=\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::read($d->fresh(),$clock->now());
 same('unknown',$read['families']['dns']['state'],'Unread DNS has no confirmed inventory');
@@ -29,10 +30,10 @@ foreach(['dns','ds'] as $kind){
 }
 same(0,$dom->query('//form[contains(@action,"/manage/dns")]')->length,'Unread DNS has no replacement form');
 same(0,$dom->query('//form[contains(@action,"/manage/srv")]')->length,'Unread SRV has no replacement form');
-same('Add DS record',trim((string)$dom->query('//li[@id="ds"]/span[@class="domains-row__a"]/a')->item(0)?->textContent),'Unknown DS still offers an addition');
-same(1,$dom->query('//form[contains(@action,"/manage/ds_add")]')->length,'Unknown DS permits fresh-preflight addition');
+same('Add DS record',trim((string)$dom->query('//li[@id="ds"]/span[@class="domains-row__a"]/button[@disabled]')->item(0)?->textContent),'Unknown DS shows its addition, turned off until the first read');
+same(0,$dom->query('//form[contains(@action,"/manage/ds_add")]')->length,'Unknown DS has no addition form before the first read');
 same(0,$dom->query('//form[contains(@action,"/manage/ds_delete")]')->length,'Unknown DS cannot imply deletable records');
-expect(str_contains($html,'Register your own nameservers, like ns1.example.com, with their IP addresses.'),'Glue records intro is one sentence');same(1,$dom->query('//form[contains(@action,"/manage/glue_add")]')->length,'Unknown glue permits verified additions');same(0,$dom->query('//form[contains(@action,"/manage/glue_update")]')->length,'Unknown glue never fabricates editable hosts');
+expect(!str_contains($html,'Register your own nameservers, like ns1.example.com, with their IP addresses.'),'The glue editor and its intro wait for the first read');same('Manage',trim((string)$dom->query('//li[@id="glue"]/span[@class="domains-row__a"]/button[@disabled]')->item(0)?->textContent),'Unknown glue shows Manage, turned off until the first read');same(0,$dom->query('//form[contains(@action,"/manage/glue_add")]')->length,'Unknown glue has no addition form before the first read');same(0,$dom->query('//form[contains(@action,"/manage/glue_update")]')->length,'Unknown glue never fabricates editable hosts');
 \Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
 $observer=new \Paymenter\Extensions\Servers\Domains\Services\DomainObservation($readBindings,$clock,new \Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget($clock),$ports);
 same('refreshed',$observer->run($d->id),'Initial producer proves complete empty records before editing');
@@ -64,7 +65,7 @@ foreach($cases as$action=>$payload){
 $known=$d->operations()->where('action','srv')->sole();$attempt=$known->attempt;$attempt['management_reads'][0]['facts']['records'][0]['host_id']=31;
 // Fixture-only encrypted evidence augmentation through SQL, avoiding any production evidence mutation path.
 $known->attempt=$attempt;Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$known->id)->update(['attempt'=>$known->getAttributes()['attempt']]);
-$html=$page();expect(!str_contains($html,'host_id')&&!str_contains($html,'HostID'),'Provider IDs stay out of HTML');
+$html=$page();expect(str_contains($html,'Register your own nameservers, like ns1.example.com, with their IP addresses.'),'Glue records intro is one sentence');expect(!str_contains($html,'host_id')&&!str_contains($html,'HostID'),'Provider IDs stay out of HTML');
 $form=storefrontDom($html);$formPath='//form[contains(@action,"/manage/srv")]';
 $renderDigest=$form->query($formPath.'//input[@name="preimage_digest"]')->item(0)->getAttribute('value');
 $record=$owners->present($d->fresh())->management['srv']['records'][0];$record['port']=8443;

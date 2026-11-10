@@ -25,6 +25,9 @@ foreach(['dns'=>['records'=>[['name'=>'bad host','type'=>'A','address'=>'secret-
     $before=Operation::count();$r=$post($action,$payload);$nonce=$r->request->get('_request_key');$response=$controller->manage($r,$d->id,$action);same($before,Operation::count(),'Invalid '.$action.' queues nothing');
     expect(!str_contains(serialize($session->all()),'secret-invalid-value'),'Submitted values never flashed');
     if($action==='nameservers'){
+        // The editor opens once the first registrar read finished, so the page can show the field errors.
+        $o=$d->fresh()->observation;$o['records']['last_complete_at']=$clock->now()->format(DATE_ATOM);
+        \Paymenter\Extensions\Servers\Domains\Models\Domain::withoutEvents(static fn()=>$d->fresh()->update(['observation'=>$o]));
         $errors=$session->get('errors');app('view')->share('errors',$errors);
         $html=(new \Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController($owners))->show($r,$d->id)->render();
     }else{same(422,$response->getStatusCode(),'Direct record retry has 422 status');$html=$response->getContent();}
