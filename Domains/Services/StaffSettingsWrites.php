@@ -52,7 +52,8 @@ class StaffSettingsWrites
         $now??=$clock->now();$r->input($data);
         if($r->action==='enom_answer'){EnomAnswers::record($r,$data,$now);return null;}
         if($r->action==='late_renewal'){EnomLateRenewal::review($r,$data);return null;}
-        if($r->action==='activate'){EnomLiveActivation::review($r,$data);return null;}
+        // Going live turns Orders on when they were off, which makes every offer stale, as resuming Orders does.
+        if($r->action==='activate'){return EnomLiveActivation::review($r,$data)?$this->republishSold($r->serverId):null;}
         if(in_array($r->action,['test_management','live_management'],true)){EnomTestManagement::review($r,$data);return null;}
         if(in_array($r->action,['test_renewal','live_renewal'],true)){EnomTestRenewal::review($r,$data);return null;}
         if(in_array($r->action,['test_transfer','live_transfer'],true)){EnomTestTransfer::review($r,$data);return null;}
@@ -155,10 +156,10 @@ class StaffSettingsWrites
     }
 
     /** Republish the TLDs the account sells after an account-wide change. Without the installed catalogue the
-     * background turn republishes them. @return array{failed:list<string>,pending:bool} */
+     * background turn republishes them. @return array{failed:list<string>,pending:bool,left?:int} */
     private function republishSold(int $server): array
     {
-        try{return ['failed'=>$this->catalogue()?->republishSold($server)??[],'pending'=>false];}
+        try{$done=$this->catalogue()?->republishSold($server)??['failed'=>[],'left'=>0];return ['failed'=>$done['failed'],'pending'=>false,'left'=>$done['left']];}
         catch(\Throwable $error){
             // The setting is saved. The background turn retries every pending offer.
             if(!$error instanceof \DomainException){\Illuminate\Support\Facades\Log::warning('Domains account republish failed.',['server_id'=>$server,'exception_class'=>$error::class]);}

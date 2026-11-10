@@ -368,9 +368,10 @@ final class SettingsActions
     /** Notification text after resuming Orders or changing price freshness: the TLDs whose prices are not on sale yet. */
     public static function republished(?array $summary): ?string
     {
-        $failed=$summary['failed']??[];
-        if($failed!==[]){return 'Prices for '.\Paymenter\Extensions\Servers\Domains\Presentation\TldNames::summary($failed).' are not published, so '.(count($failed)===1?'it is':'they are').' not for sale. Open Edit prices on the TLD and save.';}
-        return ($summary['pending']??false)?'Prices are not published yet, so TLDs are not for sale until the next background run. Open Edit prices on a TLD and save to publish it now.':null;
+        $failed=$summary['failed']??[];$left=(int)($summary['left']??0);
+        $later=$left>0?$left.' more '.($left===1?'TLD goes':'TLDs go').' back on sale in the background, about '.\Paymenter\Extensions\Servers\Domains\Catalogue\OfferWork::BATCH.' a minute.':null;
+        if($failed!==[]){return implode(' ',array_filter(['Prices for '.\Paymenter\Extensions\Servers\Domains\Presentation\TldNames::summary($failed).' are not published, so '.(count($failed)===1?'it is':'they are').' not for sale. Open Edit prices on the TLD and save.',$later]));}
+        return ($summary['pending']??false)?'Prices are not published yet, so TLDs are not for sale until the next background run. Open Edit prices on a TLD and save to publish it now.':$later;
     }
     /** Notification text after a Default pricing save. Each account that failed is named. */
     private static function published(array $summary): string

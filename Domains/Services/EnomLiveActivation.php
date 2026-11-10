@@ -83,13 +83,15 @@ final class EnomLiveActivation
         self::requireReady(Account::where('server_id',$b->serverId)->sole(),[$feature=>true]);
         if(in_array($feature,['renewal','transfer'],true)){HistoryAcceptances::saveLocked(self::history($b,self::evidence($b),$feature));}
     }
-    public static function review(StaffSettingsReview $r,array $data): void
+    /** @return bool whether Orders went from off to on, so every offer must be republished */
+    public static function review(StaffSettingsReview $r,array $data): bool
     {
         if($r->action!=='activate'||$r->tldId!==null||($data['confirmed']??null)!==true){throw new \DomainException('Confirm Activate on the registrar account.');}
         $features=[];foreach(self::FEATURES as $feature){if(!is_bool($data[$feature]??null)){throw new \DomainException('Choose the Live features to activate.');}$features[$feature]=$data[$feature];}
         $r->input($features);
-        $r->local(static function()use($r,$features):void {
-            $a=Account::where('server_id',$r->serverId)->sole();$b=AccountBindings::binding($a);
+        $resumed=false;
+        $r->local(static function()use($r,$features,&$resumed):void {
+            $resumed=false;$a=Account::where('server_id',$r->serverId)->sole();$b=AccountBindings::binding($a);
             if(!in_array($b->registrarKey,['enom','namesilo'],true)||$b->environment!==Environment::Live){throw new \DomainException('Live registrar account required.');}
             $enabling=self::enabling($a,$features);$receipt=self::receipt($a);
             if($enabling){
@@ -106,8 +108,9 @@ final class EnomLiveActivation
             $s=Server::findOrFail($r->serverId)->settings()->firstOrNew(['key'=>self::KEY]);
             $s->encrypted=true;$s->type='string';$s->value=json_encode([...$receipt,'registration'=>$features['registration']],JSON_THROW_ON_ERROR);$s->save();
             StorefrontCatalogueCache::invalidateAfterCommit();
-            if($enabling){app(AccountBindings::class)->setProcessing($r->serverId,true,static function($server,$account):void {app(AccountBindings::class)->requireReadableLocked($server,$account);});}
+            if($enabling){$resumed=!$a->processing_enabled;app(AccountBindings::class)->setProcessing($r->serverId,true,static function($server,$account):void {app(AccountBindings::class)->requireReadableLocked($server,$account);});}
         });
+        return $resumed;
     }
     public static function summary(Account $a,?array $features=null): array
     {
