@@ -83,7 +83,7 @@ $binding = new \Paymenter\Extensions\Servers\Domains\Data\AccountBinding('namesi
 $exchange = static fn () => throw new LogicException('No wire');
 $baseline = new \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Management($binding, $exchange);
 $dns = new \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\DnsManagement($binding, $exchange);
-same((new \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\ObservationReader($binding, $exchange))->observationCapabilities(),
+same((new \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\ObservationReader($binding, $exchange, records: true))->observationCapabilities(),
     $dns->observationCapabilities(), 'The DNS adapter reports what its read-only reader reads');
 same('supported', $dns->observationCapabilities()['families']['dns'], 'The DNS adapter reports DNS observation');
 same('unsupported', $baseline->observationCapabilities()['families']['dns'], 'The installed adapter still reports no DNS observation');

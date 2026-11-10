@@ -48,9 +48,14 @@ $verify = new class implements AccountVerifier { public function verify(Environm
 $registry->register('namesilo', ['token'], $verify, fn ($b, $c) => new Driver(new Client($b, $c['token'], $wire), ['renew'], $clock, 120),authenticator:new class implements \Paymenter\Extensions\Servers\Domains\Contracts\CredentialAuthenticator {public function authenticate(Environment $environment,array $credentials):void { /* Synthetic local authentication. */ }});
 $reconcile = new OperationReconciliation($claims, new AccountBindings($registry), $clock);
 $clock->instant = $clock->now()->modify('+600 seconds');
+// TEST accounts have built-in registration history; a Live deployment has none until it is saved.
+$environment = config('domains.namesilo_account.environment'); config(['domains.namesilo_account.environment' => 'live']);
 for ($i = 0; $i < 6; $i++) { $result = $reconcile->run($op->id); }
 same('pending', $result->state, 'Unaccepted no-ID history stays pending without consuming covered polls');
 same(0, $result->policy['reconciliation']['polls'], 'Absent acceptance cannot exhaust recovery');
+same(0, $wire->calls, 'Absent acceptance does no provider work');
+same(['awaiting_answer', 'NameSilo'], [$result->policy['status_check']['outcome'] ?? null, $result->policy['status_check']['registrar'] ?? null], 'Absent acceptance leaves the NameSilo answer step');
+config(['domains.namesilo_account.environment' => $environment]);
 HistoryAcceptances::save(new HistoryAcceptance($binding, 'America/Los_Angeles', 600, 86400, 'namesilo_registration_v1'));
 for ($i = 0; $i < 6; $i++) { $result = $reconcile->run($op->id); }
 same(0, $result->policy['reconciliation']['polls'], 'History lag cannot exhaust recovery'); same(0, $wire->calls, 'Uncovered history does no provider work');

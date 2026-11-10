@@ -34,14 +34,14 @@ $exchange=static function($w,$role):Closure {
         try{return \Paymenter\Extensions\Servers\Domains\Services\EnomTestCalls::withPurchase($binding,function()use($binding,$inner,$url,$command,$parameters,$timeoutMs):string {
                 \Paymenter\Extensions\Servers\Domains\Services\EnomTestCalls::reservePurchase($binding);
                 return $inner($url,$command,$parameters,$timeoutMs);
-            });}catch(\Throwable){throw new RuntimeException('Enom exchange failed.');}
+            });}catch(\Throwable){throw new RuntimeException('Registrar exchange failed.');}
     };
 };
 $origin='https://resellertest.enom.com/interface.asp';
 $deny=static function(#[SensitiveParameter] callable $call,string $label)use(&$count):void {
     resetWire();$before=$count;
     try{$call();throw new LogicException('Expected exchange refusal: '.$label);}catch(RuntimeException $e){
-        same('Enom exchange failed.',$e->getMessage(),'Sanitized refusal: '.$label);same(null,$e->getPrevious(),'No unsafe cause');
+        same('Registrar exchange failed.',$e->getMessage(),'Sanitized refusal: '.$label);same(null,$e->getPrevious(),'No unsafe cause');
         $trace=(string)$e.print_r($e->getTrace(),true).json_encode($e->getTrace());
         foreach(['SYNTHETIC-TOKEN','synthetic-uid','CONTACT-SENTINEL','EPP-SENTINEL'] as $secret){expect(!str_contains($trace,$secret),'No secret trace: '.$label);}
     }
@@ -51,7 +51,7 @@ $deny=static function(#[SensitiveParameter] callable $call,string $label)use(&$c
 resetWire();$beforeCount=$count;
 Illuminate\Support\Facades\DB::transaction(static function()use($exchange,$wire,$origin){
     try{$exchange($wire,'registration')($origin,'Purchase',[],1000);throw new LogicException('Expected transaction refusal');}
-    catch(RuntimeException $e){same('Enom exchange failed.',$e->getMessage(),'Transaction refusal sanitized');}
+    catch(RuntimeException $e){same('Registrar exchange failed.',$e->getMessage(),'Transaction refusal sanitized');}
 });
 same(0,$GLOBALS['enomWire']['inits'],'Transaction refusal before cURL');same($beforeCount,$count,'Transaction refusal before credentials');
 app()->offsetUnset(Runtime::class);$deny(fn()=>$exchange($wire,'registration')($origin,'Purchase',[],1000),'missing shared limiter');app()->instance(Runtime::class,new Runtime);
@@ -101,7 +101,7 @@ same($beforeUsed+1,$sends(),'Deadline-expired attempt stays counted');
 foreach([['initFail'=>true],['configFail'=>true],['execFail'=>true],['status'=>302],['status'=>500],['timeout'=>true],['chunks'=>[str_repeat('x',1048576),'x']]] as $failure){
     resetWire($failure);
     try{$exchange($wire,'registration')($origin,'Purchase',['Contact'=>'CONTACT-SENTINEL','AuthInfo1'=>'EPP-SENTINEL'],1200);throw new LogicException('Expected wire failure');}
-    catch(RuntimeException $e){same('Enom exchange failed.',$e->getMessage(),'Failure sanitized');$trace=(string)$e.print_r($e->getTrace(),true);foreach(['SYNTHETIC-TOKEN','synthetic-uid','CONTACT-SENTINEL','EPP-SENTINEL'] as $secret){expect(!str_contains($trace,$secret),'Transport trace redacted');}same(null,$e->getPrevious(),'No unsafe cause');}
+    catch(RuntimeException $e){same('Registrar exchange failed.',$e->getMessage(),'Failure sanitized');$trace=(string)$e.print_r($e->getTrace(),true);foreach(['SYNTHETIC-TOKEN','synthetic-uid','CONTACT-SENTINEL','EPP-SENTINEL'] as $secret){expect(!str_contains($trace,$secret),'Transport trace redacted');}same(null,$e->getPrevious(),'No unsafe cause');}
     expect(count($GLOBALS['enomWire']['forms'])<=1,'No retries');same($failure['initFail']??false?0:1,$GLOBALS['enomWire']['closed'],'Failure closes handle');
 }
 $head=substr($purchaseReply,0,-strlen('</interface-response>')).'<padding>';$tail='</padding></interface-response>';

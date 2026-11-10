@@ -6,7 +6,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{Environment,ExecutionRecord};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{Client,Driver};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DeadlineTransport,TransportResponse};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,EnomAnswers,HistoryAcceptances,OperationReconciliation,ReconciliationEvidence,Refunds,RenewalAuthority,StaffSettingsReview as Review,StaffSettingsWrites};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,EnomAnswers,HistoryAcceptances,OperationReconciliation,ReconciliationEvidence,Refunds,RegistrarCheck,RenewalAuthority,StaffSettingsReview as Review,StaffSettingsWrites};
 app()->instance(Clock::class,$clock);app()->instance(AccountBindings::class,$bindings);
 $staff=commerceUser();$role=App\Models\Role::create(['name'=>'Purchase answers','permissions'=>['admin.domains.view','admin.domains.manage-policy','admin.domains.settings.enom_answer','admin.domains.manage','admin.invoices.update']]);$staff->update(['role_id'=>$role->id]);
 $settings=new StaffSettingsWrites($native,$sellers,$bindings);
@@ -24,6 +24,7 @@ $wire=new class($wireState) implements DeadlineTransport {
             'orderDetails'=>['order_number'=>$s->fault==='id'?'9002':'9001','order_date'=>$s->fault==='time'?'2026-10-18 05:00:02':'2026-10-18 05:00:01','total'=>'99.00',
                 'order_details'=>[['description'=>($s->fault==='name'?'other.example.com':$s->name).' - registration','years_qty'=>$s->fault==='term'?'2':'1',
                     'status'=>$s->fault==='status'?'Credited':'Processed','subtotal'=>'99.00']]],
+            'listOrders'=>['order'=>[]],
             'getDomainInfo'=>['created'=>'2026-10-18','expires'=>$s->fault==='expiry'?'2026-10-18':'2027-10-18','status'=>'Active','auto_renew'=>'No','private'=>'No','locked'=>'Yes'],
             default=>throw new LogicException('Exact support order must not enumerate history'),
         };
@@ -40,9 +41,17 @@ foreach(['accepted','not_processed'] as $outcome){
     $wireState->name=$op->domain->domain;$wireState->calls=[];
     commerceReject(fn()=>$settings->run($review($op),$input($op,$outcome),$clock->now()));
     $clock->instant=$clock->now()->modify('+25 hours');
-    // Support is the fallback when no accepted history/timezone envelope exists.
+    // Support is the fallback when the order history cannot confirm the purchase.
     App\Models\Server::find($op->server_id)->settings()->where('key',HistoryAcceptances::KEY.'_register')->delete();
     expect(EnomAnswers::eligible($op,$clock->now()),'NameSilo no-ID purchase accepts a final account-bound support answer');
+    // TEST NameSilo registrations can read the built-in order history, so staff record an answer only after one status check.
+    $early=null;try{$settings->run($review($op),$input($op,$outcome),$clock->now());}catch(DomainException $e){$early=$e->getMessage();}
+    same('Use Check status to read this attempt first, then record the registrar’s answer.',$early,'An answer waits for one status check');
+    $reconcile->run($op->id);$op->refresh();
+    same('listOrders',$wireState->calls[0]??null,'One status check read the order history');expect(!in_array('registerDomain',$wireState->calls,true),'A status check never sends');
+    expect(RegistrarCheck::attempted($op),'The status check is saved for this attempt');
+    same(null,$op->attempt['reconciliation']??null,'An empty order history settles nothing');
+    $wireState->calls=[];
     if($outcome==='accepted'){
         $bad=$input($op,'not_processed');commerceReject(fn()=>$settings->run($review($op),$bad,$clock->now()));
         foreach(['','2026-10-18 05:00:01','2026-10-19T05:00:01-07:00'] as $date){$bad=$input($op,$outcome);$bad['processed_at']=$date;commerceReject(fn()=>$settings->run($review($op),$bad,$clock->now()));}

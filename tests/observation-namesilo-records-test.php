@@ -13,7 +13,7 @@ $nsExchange=static function($origin,$cmd,$p,$timeout)use($managementExchange,&$d
  if($cmd==='dnsSecListRecords'){return json_encode(['request'=>['operation'=>$cmd],'reply'=>['code'=>300,'detail'=>'ok','ds_record'=>[]]],JSON_THROW_ON_ERROR);}
  return $managementExchange($origin,$cmd,$p,$timeout);
 };
-$ns15=new \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\ObservationReader($binding,$nsExchange);
+$ns15=new \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\ObservationReader($binding,$nsExchange,records:true);
 $ctx=fn()=>new \Paymenter\Extensions\Servers\Domains\Data\RequestContext($binding,\Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background,$clock->now()->modify('+250 seconds'),new \Paymenter\Extensions\Servers\Domains\Data\RequestBudget(25),$clock,stopOnReadFailure:true);
 $request=new \Paymenter\Extensions\Servers\Domains\Data\ManagementRequest($binding,'ns15-ns',$d->domain,'discovery',[],domainId:$d->id);
 $ms->ids=array_fill_keys(['registrant','administrative','technical','billing'],'900001');

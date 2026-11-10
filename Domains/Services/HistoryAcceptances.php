@@ -6,6 +6,7 @@ use App\Models\Server;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, HistoryAcceptance};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
+use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\TestOrderHistory;
 /** Explicit, revocable account contract; future install/staff workflows supply validated acceptance. */
 final class HistoryAcceptances
 {
@@ -13,15 +14,8 @@ final class HistoryAcceptances
     /** $loaded: this server with its settings already read, used only outside transactions (a writer reads it under lock). */
     public static function load(AccountBinding $binding, Action $action = Action::Register, ?Server $loaded = null): ?HistoryAcceptance
     {
-        $key = self::KEY.match ($action) { Action::Renew => '_renewal', Action::Transfer => '_transfer', default => '' };
-        if ($loaded !== null && (int) $loaded->id === $binding->serverId && $loaded->relationLoaded('settings') && DB::transactionLevel() === 0) {
-            $setting = $loaded->settings->firstWhere('key', $key);
-        } else {
-            $query = Server::findOrFail($binding->serverId)->settings()->where('key', $key);
-            if (DB::transactionLevel() > 0) { $query->lockForUpdate(); }
-            $setting = $query->first();
-        }
-        if (!$setting) { return null; }
+        $setting = self::setting($binding, $action, $loaded);
+        if (!$setting) { return TestOrderHistory::acceptance($binding, $action); }
         try {
             if (!$setting->encrypted) { throw new \DomainException; }
             $data = json_decode($setting->value, true, 16, JSON_THROW_ON_ERROR);
@@ -29,6 +23,19 @@ final class HistoryAcceptances
                 || ($data['currency'] ?? null) !== 'USD') { throw new \DomainException; }
             return new HistoryAcceptance($binding, $data['timezone'], $data['lag'], $data['retention'], $data['vocabulary']);
         } catch (\Throwable) { throw new \DomainException('History acceptance is unavailable.'); }
+    }
+    /** No saved setting: the values in use are TestOrderHistory's built-in TEST values. */
+    public static function builtIn(AccountBinding $binding, Action $action): bool
+    { return self::setting($binding, $action, null) === null && TestOrderHistory::acceptance($binding, $action) !== null; }
+    private static function setting(AccountBinding $binding, Action $action, ?Server $loaded): mixed
+    {
+        $key = self::KEY.match ($action) { Action::Renew => '_renewal', Action::Transfer => '_transfer', default => '' };
+        if ($loaded !== null && (int) $loaded->id === $binding->serverId && $loaded->relationLoaded('settings') && DB::transactionLevel() === 0) {
+            return $loaded->settings->firstWhere('key', $key);
+        }
+        $query = Server::findOrFail($binding->serverId)->settings()->where('key', $key);
+        if (DB::transactionLevel() > 0) { $query->lockForUpdate(); }
+        return $query->first();
     }
     public static function save(HistoryAcceptance $acceptance, ?StaffSettingsReview $review = null): void
     {

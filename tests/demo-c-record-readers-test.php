@@ -96,7 +96,8 @@ foreach (['enom','namesilo'] as $registrar) {
         return '<interface-response><Command>'.$cmd.'</Command><ErrCount>0</ErrCount><Done>true</Done>'.$body.'</interface-response>';
     };
     $class='Paymenter\\Extensions\\Servers\\Domains\\Registrars\\'.($registrar==='enom'?'Enom':'NameSilo').'\\ObservationReader';
-    $reader=new $class($b,$wire);
+    // NameSilo DNS records are read only by the DNS adapter's reader; the deployed runtime does not offer them.
+    $reader=$registrar==='namesilo'?new $class($b,$wire,records:true):new $class($b,$wire);
     if ($registrar==='namesilo') {
         try { $reader->validate('nameservers',['nameservers'=>['ns1.dnsowl.com','ns2.dnsowl.com']],'example.com');expect(false,'Observation reader must refuse management writes'); }
         catch (DomainException $e) { same('Observation reader is read-only.',$e->getMessage(),'Observation reader refuses its inherited write command'); }

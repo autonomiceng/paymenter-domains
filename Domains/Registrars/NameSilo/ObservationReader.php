@@ -2,16 +2,20 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
-use Paymenter\Extensions\Servers\Domains\Data\{ManagementRequest,RequestContext};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,ManagementRequest,RequestContext};
 use Paymenter\Extensions\Servers\Domains\Services\{ContactDetails,ManagementPayload,ReadDeferred,EnomTestCallLimit,ReadFailure};
-/** Named reads only. DS read support comes from D's list parser; it grants no DS mutation (that stays on the policy map). */
+/** Named reads only. DNS records and DNSSEC are read only when $records is on: the deployed runtime does not offer them for
+ * NameSilo, so its sync reads nameservers, flags, glue and contacts and never reports the families it does not offer as failed.
+ * DS read support comes from D's list parser; it grants no DS mutation (that stays on the policy map). */
 final class ObservationReader extends Management
 {
+    public function __construct(AccountBinding $binding, #[\SensitiveParameter] \Closure $exchange, private readonly bool $records = false)
+    { parent::__construct($binding, $exchange); }
     public function observationCapabilities(): array
-    { return ['revision'=>'namesilo-records-1','families'=>['dns'=>'supported','srv'=>'unsupported','ds'=>'supported','glue'=>'supported']]; }
+    { return $this->records ? ['revision'=>'namesilo-records-1','families'=>['dns'=>'supported','srv'=>'unsupported','ds'=>'supported','glue'=>'supported']] : parent::observationCapabilities(); }
     protected function writeCommand(string $action): string
     { throw new \DomainException('Observation reader is read-only.'); }
-    protected function readCommands(): array { return [...parent::readCommands(),'dnsListRecords','dnsSecListRecords']; }
+    protected function readCommands(): array { return $this->records ? [...parent::readCommands(),'dnsListRecords','dnsSecListRecords'] : parent::readCommands(); }
     protected function validateRead(string $command,array $p): void
     { parent::validateRead(in_array($command,['dnsListRecords','dnsSecListRecords'],true)?'getDomainInfo':$command,$p); }
     public function discover(ManagementRequest $r,RequestContext $c,array $knownGlue=[]): array
@@ -29,11 +33,13 @@ final class ObservationReader extends Management
         $out['settings']['flags']=['state'=>in_array(null,$flags,true)?'partial':'complete','facts'=>$flags];
         $family='dns';
         try {
-            $out['dns']=Dns::inventory($this->read($r,$c,'dnsListRecords',['domain'=>$r->name]),$r->name);
-            if ($out['dns']['state']!=='complete') { throw new \DomainException('DNS incomplete.'); }
-            // Only an explicit list is complete; a missing collection stays unknown, never empty.
-            $family='ds';$out['ds']=Ds::inventory($this->read($r,$c,'dnsSecListRecords',['domain'=>$r->name]));
-            if ($out['ds']['state']!=='complete') { throw new \DomainException('DS incomplete.'); }
+            if ($this->records) {
+                $out['dns']=Dns::inventory($this->read($r,$c,'dnsListRecords',['domain'=>$r->name]),$r->name);
+                if ($out['dns']['state']!=='complete') { throw new \DomainException('DNS incomplete.'); }
+                // Only an explicit list is complete; a missing collection stays unknown, never empty.
+                $family='ds';$out['ds']=Ds::inventory($this->read($r,$c,'dnsSecListRecords',['domain'=>$r->name]));
+                if ($out['ds']['state']!=='complete') { throw new \DomainException('DS incomplete.'); }
+            }
             $family='glue';
             $reply=$this->reply(Glue::preserveAddresses($this->read($r,$c,'listRegisteredNameServers',['domain'=>$r->name])),'listRegisteredNameServers');
             $out['glue']=['state'=>'complete','records'=>Glue::records($reply,$r->name)];

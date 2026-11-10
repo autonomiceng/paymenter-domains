@@ -10,7 +10,7 @@ final class SendFailure extends \RuntimeException
     {
         if (!in_array($category, ['timeout','connect','tls','parse','other'], true) && !preg_match('/^http [1-5][0-9]{2}$/D', $category)
             || $timeoutMs < 1 || $timeoutMs > 25000) { throw new \InvalidArgumentException('Invalid send failure.'); }
-        parent::__construct('Enom exchange failed.');
+        parent::__construct('Registrar exchange failed.');
     }
     public static function curl(int $errno, int $status, int $timeoutMs): self
     {

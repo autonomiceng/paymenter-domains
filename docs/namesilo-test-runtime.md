@@ -39,6 +39,14 @@ and expiry. Unknown, expired, future or nonannual facts refuse. Rotation require
 revision; it cannot reuse prior sale-readiness authority. Staff intent, selected seller, current costs, annual
 renewal support, native publication and locked checkout checks still decide each sale.
 
+NameSilo's `registerDomain` reply has no order number, so a registration completes only when one matching order
+appears in NameSilo's order history. TEST accounts read that history with built-in values measured on OTE: order
+dates in UTC, a 120 second listing delay and 30 days of history. Until the delay passes, the request waits for its
+next check instead of asking staff to contact NameSilo. Each history read counts toward the limit of 5 reads, even
+when the history cannot confirm the order. After the fifth, checks stop and staff are asked to check with NameSilo and
+record its answer. A saved history setting replaces these values, and the staff settings review marks the built-in
+values as built in. A failed purchase send keeps only its fixed failure kind, such as `http 500`, for staff.
+
 No settings page or Live activation is added. Live deployment, site, controls, receipts and transport policy
 retain their existing gates; TEST evidence cannot authorize Live. Offline fixtures do not prove OTE or Live
 provider acceptance.
