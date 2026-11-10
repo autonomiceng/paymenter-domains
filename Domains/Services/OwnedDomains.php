@@ -100,13 +100,13 @@ final readonly class OwnedDomains
     /** The service is gone, or a cancellation or native intent stops it. */
     public static function closed(?string $serviceStatus, bool $stopped): bool
     { return !in_array($serviceStatus,['pending','active'],true)||$stopped; }
-    /** The status once the invoice is known: the request alone still says awaiting_payment until it is picked up. */
+    /** The status from current payment and saved inputs: the request can still await payment or a code until it is picked up. */
     public static function orderStatus(array $state, Domain $d, array $order): array
     {
         return match (true) {
             ($order['state']??null)==='cancelled' => [isset($order['credit'])||($order['returned']??false)||($order['unpaid']??false)?'cancelled':'needs_review','Order cancelled'],
             ($order['state']??null)==='failed' => [$order['kind']==='transfer'?'transfer_rejected':'registration_rejected',null],
-            ($order['state']??null)==='paid'&&$state[0]==='awaiting_payment' => [in_array($order['next']??null,['setup_required','awaiting_code'],true)?$order['next']:$d->status,null],
+            ($order['state']??null)==='paid'&&in_array($state[0],['awaiting_payment','awaiting_code'],true) => [in_array($order['next']??null,['setup_required','awaiting_code'],true)?$order['next']:$d->status,null],
             default => $state,
         };
     }

@@ -76,4 +76,32 @@ same([$next,[route('tickets.create')]],$expired(),'Tickets on: the expired notic
 config(['settings.tickets_disabled'=>true]);
 same([$next,[]],$expired(),'Tickets off: the same words, with no link to a 404');
 config(['settings.tickets_disabled'=>false]);
+// Saving a paid transfer code updates every customer status before a worker picks up the request.
+foreach ([0,1] as $registrar) {
+    $saved=$newTransfer(placeholderComFixtureName('saved-status-'.$registrar.'-placeholder.com'),$registrar,true,false);
+    same('awaiting_code',$saved->state,'Paid transfer starts waiting for the code');
+    same('Auth code needed',$owners->present($saved->domain->fresh())->statusReason,'Missing code still asks for action');
+    $post=Request::create('/domains/'.$saved->domain_id.'/code','POST',['transfer_code'=>'SyntheticSavedCode']);$post->setUserResolver(fn()=>$user);
+    $inputs->submitCode($post,$saved->id);
+    same('awaiting_code',$saved->fresh()->state,'Saving the code does not wait for a request-state update');
+    $dto=$owners->present($saved->domain->fresh());
+    same(['paid',null,true],[$dto->order['state'],$dto->order['next'],$dto->transfer['received']],'Saved code leaves no customer step');
+    same(['Pending transfer',null],[$dto->status,$dto->statusReason],'Saved code immediately clears the stale code request');
+    $detail=storefrontDom($controller->show($request(),$saved->domain_id)->render());
+    $header=$detail->query('//div[@class="domains-ph"]/span[@class="domains-pill"]')->item(0);
+    same(['Pending transfer'],$text($detail,'domains-status',$header),'Detail header agrees with the paid no-action notice');
+    same([],$text($detail,'domains-pill-reason',$header),'Detail no longer asks for a saved code');
+    $list=storefrontDom($controller->index($request())->render());
+    $row=$list->query('//tbody/tr[.//a[@href="'.route('domains.domains.show',$saved->domain_id).'"]]')->item(0);
+    expect($row!==null,'Saved transfer exists in the customer list');
+    same(['Pending transfer'],$text($list,'domains-status',$row),'List immediately clears the code request');
+    $native=app()->make(NativePresenter::class,['owned'=>$owners])->service($user,(int)$saved->service_id);
+    same(['Pending transfer',null],[$native?->status,$native?->statusReason],'Native service uses the same saved-code status');
+    // A real staff hold or uncertain send still has priority over the saved code.
+    foreach (['held'=>'Transfer on hold','uncertain'=>'Transfer not confirmed'] as $state=>$reason) {
+        DB::table('domains_operations')->where('id',$saved->id)->update(['state'=>$state,'safe_code'=>null]);
+        $dto=$owners->present($saved->domain->fresh());
+        same(['Under review',$reason],[$dto->status,$dto->statusReason],'Saved code preserves '.$state.' status');
+    }
+}
 $nativeSuccessful=true;
