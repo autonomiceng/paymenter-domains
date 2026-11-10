@@ -305,7 +305,7 @@ final class SettingsActions
             ->modalSubmitActionLabel('Sync prices')
             ->fillForm(fn()=>['review_key'=>Review::ticket((int)Auth::id(),$server,null,'import',Review::stamp($server,null))])
             ->schema([Hidden::make('review_key')])
-            ->action(function(#[\SensitiveParameter] array $data,$livewire)use($server){
+            ->action(function(#[\SensitiveParameter] array $data,$livewire)use($server,$tld){
                 try{
                     if(StaffCatalogue::routed()!==null){app(StaffSettingsWrites::class)->run(new Review((int)Auth::id(),$server,null,'import',(string)($data['review_key']??''),''),[]);}else{\Paymenter\Extensions\Servers\Domains\Jobs\SyncPrices::enqueue((int)Auth::id(),$server,(string)($data['review_key']??''));}
                     Notification::make()->success()->title('Price sync queued')->body(self::syncQueued($tld))->send();
