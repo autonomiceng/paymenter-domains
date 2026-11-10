@@ -213,7 +213,8 @@ final class SettingsActions
             }
             if($name==='renewal_billing'){
                 $billing=static fn()=>\Paymenter\Extensions\Servers\Domains\Services\RenewalBillingSettings::read($server);
-                $fields[]=TextInput::make('issue_days')->label('Issue invoices this many days before expiry')->integer()->minValue(2)->maxValue(365)->required()->default(fn()=>$billing()['issue_days']??21)->helperText('Default 21. Must be more than the due days; at most 365.');
+                $fields[]=TextInput::make('issue_days')->label('Issue invoices this many days before expiry')->integer()->minValue(2)->maxValue(365)->required()->default(fn()=>$billing()['issue_days']??21)->helperText('Default 21. Must be more than the due days; at most 365.')
+                    ->rule(fn(\Filament\Schemas\Components\Utilities\Get $get)=>FieldRules::rule(static function(mixed $value,\Closure $fail)use($get):void {$due=filter_var($get('due_days'),FILTER_VALIDATE_INT);if($due!==false&&filter_var($value,FILTER_VALIDATE_INT)!==false&&(int)$value<=$due){$fail('Must be more than the due days ('.$due.').');}}));
                 $fields[]=TextInput::make('due_days')->label('Invoices fall due this many days before expiry')->integer()->minValue(1)->maxValue(364)->required()->default(fn()=>$billing()['due_days']??7)->helperText('Default 7. At least 1.');
             }
             if($name==='unpaid_hold'){

@@ -58,6 +58,9 @@ foreach(['stale','permission','days','account'] as $failure){
         $callback([...$data,'revision'=>(int)$original['revision']]);
         Filament\Notifications\Notification::assertNotified(Filament\Notifications\Notification::make()->danger()->title("Couldn't save reminders")->body($recovery));
         $u->role()->first()->update(['permissions'=>[Staff::VIEW,Staff::POLICY]]);
+    }elseif($failure==='days'){
+        // A bad day is named under its field and the dialog keeps what was typed.
+        $page->setActionData($data)->callMountedAction()->assertHasActionErrors(['before'])->assertActionMounted($name);same('400',$page->get('mountedActions.0.data.before'),'The dialog keeps the typed days');
     }else{$page->setActionData($data)->callMountedAction()->assertHasNoActionErrors()->assertNotified(Filament\Notifications\Notification::make()->danger()->title("Couldn't save reminders")->body($recovery));}
     same($beforeFailure,(array)(clone $query)->sole(),'Refusal retains schedule and audit: '.$failure);
 }

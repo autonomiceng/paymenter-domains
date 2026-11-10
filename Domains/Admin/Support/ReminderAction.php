@@ -32,12 +32,24 @@ final class ReminderAction
             ->requiresConfirmation()->modalHeading('Edit reminders?')->modalSubmitActionLabel('Save')
             ->modalDescription('Set the days around expiry when reminders go out.')
             ->schema([Hidden::make('revision')->default($before!==null&&$after!==null?$row?->revision:null),
-                TextInput::make('before')->label('Days before expiry')->default($before===null?null:implode(',',$before))->placeholder($before===null?Missing::LABEL:null)->required()->maxLength(80),
-                TextInput::make('after')->label('Days after expiry')->default($after===null?null:implode(',',$after))->placeholder($after===null?Missing::LABEL:null)->required()->maxLength(80),
+                TextInput::make('before')->label('Days before expiry')->default($before===null?null:implode(',',$before))->placeholder($before===null?Missing::LABEL:null)->required()->maxLength(80)->rule(self::days())->helperText(self::HELP),
+                TextInput::make('after')->label('Days after expiry')->default($after===null?null:implode(',',$after))->placeholder($after===null?Missing::LABEL:null)->required()->maxLength(80)->rule(self::days())->helperText(self::HELP),
                 Textarea::make('reason')->label('Reason')->required()->minLength(5)->maxLength(500)->rows(2)->rules(['regex:'.StaffReason::SINGLE_LINE])->helperText('Use one line. Do not include credentials.')])
             ->action(function(array $data)use($server,$row):void {
                 try{if(!isset($data['revision'])){throw new \DomainException('Reviewed reminder revision required.');}ReminderSchedules::save(Auth::user(),$server,(int)$data['revision'],(bool)$row->enabled,(string)$data['before'],(string)$data['after'],trim((string)$data['reason']));Notification::make()->success()->title('Reminders saved')->send();}
+                catch(\InvalidArgumentException $e){Notification::make()->danger()->title("Couldn't save reminders")->body($e->getMessage())->send();throw new \Filament\Support\Exceptions\Halt();}
                 catch(\Throwable){Notification::make()->danger()->title("Couldn't save reminders")->body('Reload the account page, then check the reminder days and your permissions before saving again.')->send();}
             });
+    }
+    private const HELP='Days from 0 to 365, separated by commas.';
+    /** Names the first day the save would refuse, under the field. */
+    private static function days(): \Illuminate\Contracts\Validation\ValidationRule
+    {
+        return FieldRules::rule(static function(mixed $value,\Closure $fail):void {
+            foreach(preg_split('/[\s,]+/',trim((string)$value),-1,PREG_SPLIT_NO_EMPTY)?:[] as $part){
+                if(!ctype_digit($part)||(int)$part>365){$fail('"'.mb_strimwidth($part,0,20,'...').'" is not a day from 0 to 365.');return;}
+            }
+            try{ReminderSchedules::offsets((string)$value);}catch(\InvalidArgumentException $e){$fail($e->getMessage());}
+        });
     }
 }
