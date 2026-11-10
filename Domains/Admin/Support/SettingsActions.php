@@ -70,7 +70,7 @@ final class SettingsActions
             'renewal_billing'=>'Set when renewal invoices go out.',
             'unpaid_hold'=>'Set how long an unpaid new domain order keeps its name.',
             'default_pricing'=>'Sets the pricing every TLD uses unless it has its own, and the estimated card fee. Saving publishes new prices at once. Issued invoices keep their prices.',
-            'override'=>'Saving publishes these prices at once. Registrations and transfers below cost are not sold, and the TLD shows why. Renewals below cost are still billed, and each one adds an alert to its domain. Issued invoices keep their prices.',
+            'override'=>'Saving publishes these prices at once. Registrations and transfers below cost are not sold, and Edit prices and the price list show why for each term. Renewals below cost are still billed, and each one adds an alert to its domain. Issued invoices keep their prices.',
             'remove_override'=>'Uses Default pricing. Saving publishes the new prices at once. Issued invoices keep their prices.',
             'publish'=>'Publishes prices from saved costs and the current pricing. It does not refresh costs or change issued invoices.',
             'tld_settings'=>'Choose the years customers can buy and what is for sale.',

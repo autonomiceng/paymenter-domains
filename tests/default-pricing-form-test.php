@@ -48,6 +48,8 @@ $item('Item 2, below-cost words',function():void{
     $words=SettingsActions::description('override');
     expect(!str_contains($words,'alert staff'),'No claim that saving alerts staff');
     expect(str_contains($words,'Registrations and transfers below cost are not sold')&&str_contains($words,'each one adds an alert to its domain'),'Below-cost words say what happens');
+    // The TLD's status reads the one-year registration only, so the words name where each term's reason shows.
+    expect(str_contains($words,'Edit prices and the price list show why for each term')&&!str_contains($words,'the TLD shows why'),'Below-cost words name where the reason shows');
 });
 if($failed){throw new RuntimeException(implode("\n",$failed));}
 $nativeSuccessful=true;echo "Default pricing dialog passed.\n";
