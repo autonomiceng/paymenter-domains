@@ -294,8 +294,8 @@ final class CartCheckoutRefresh
     {
         $last = array_pop($names);
         $list = $last === null ? 'your domain' : ($names === [] ? $last : implode(', ', $names).' and '.$last);
-        return 'We couldn’t confirm the price and term for '.$list.' with the registrar, so checkout is paused. Try again in a few minutes, or remove '
-            .($names === [] ? 'it' : 'them').' from your cart.';
+        return 'We couldn’t confirm the price and term for '.$list.' with the registrar, so checkout is paused. Try again in a few minutes, or remove'
+            .($names === [] ? ' it from your cart.' : ' them from your cart.');
     }
 
     /** @return list<string> */
