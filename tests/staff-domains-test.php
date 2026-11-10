@@ -280,7 +280,7 @@ same(['alternate_reason','default_reason','fallback_reason','field_reason','held
 // Exclusions are per file and code: a new reason in any service still fails coverage.
 $excluded=[
     // These results have their own owner/money presenters, not operation reason labels.
-    'OwnedDomains.php'=>['closed','credited','paid','pending','returned','review','split'],
+    'OwnedDomains.php'=>['closed','credited','paid','pending','registration','returned','review','split'], // registration: a word in the transfer-out date line.
     'DomainStates.php'=>['closed','paid','pending','review'], // Renewal invoice states, shown by DomainPage::nextInvoice.
     'Storefront.php'=>['ending'],
     'ReceiptReturns.php'=>['credit','original','split'],
