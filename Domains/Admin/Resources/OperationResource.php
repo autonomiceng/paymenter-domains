@@ -46,7 +46,7 @@ class OperationResource extends Resource
         $statuses=array_map(fn($status)=>$status[0],RequestFacts::STATUSES); $servers=\App\Models\Server::pluck('name','id')->all();
         // One read of the Orders switches: the Status filter and every row's words use it, so they agree even if a switch changes meanwhile.
         $off=OperationQueries::ordersOffAccounts();
-        $status=fn(Operation $record)=>RequestFacts::status($record,grants:$grants,accounts:$off);
+        $status=fn(Operation $record)=>RequestFacts::status($record,OperationQueries::ordersOff($record,$off),grants:$grants,accounts:$off);
         EmptyTable::apply($table,'No registrar requests','Requests show here when a customer orders a domain.','No requests match');
         return TableColumns::choose($table,[
             TextColumn::make('id')->label('Request')->formatStateUsing(fn($state)=>'Request #'.$state)->sortable()

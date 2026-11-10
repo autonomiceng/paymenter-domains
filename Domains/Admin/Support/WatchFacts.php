@@ -16,7 +16,7 @@ final class WatchFacts
     public const DECRYPT="Can't read saved data. Ask your site admin.";
     public const TEMPLATE_UNAVAILABLE='Saved DNS records cannot be read. Ask your site admin to restore this template.';
     private static function gate(): void{abort_unless(Staff::can(Writes::VIEW),403);}
-    private static function fact(mixed $value,string|\Illuminate\Support\HtmlString|null $sub=null,?string $tone=null,?string $url=null,?string $cause=null,bool $check=false): array{return compact('value','sub','tone','url','cause','check');}
+    private static function fact(mixed $value,string|\Illuminate\Support\HtmlString|null $sub=null,?string $url=null,?string $tone=null,?string $cause=null,bool $check=false): array{return compact('value','sub','tone','url','cause','check');}
     /** @return array{Domain:array<string,array>,Checks:array<string,array>} */
     public static function for(WatchName $w,?array $row=null): array
     {
@@ -25,9 +25,9 @@ final class WatchFacts
         if(!$row){$s=$active?null:((new \Paymenter\Extensions\Servers\Domains\Services\DomainSummaries())->staffWatches([(int)$w->id])['watch:'.$w->id]??null);$row=$s?['keys'=>WatchFindings::keys($s),'summary'=>$s]:WatchFindings::summaries([$w])[$w->id];}
         $s=$row['summary'];$keys=$row['keys'];
         $c=WatchFindings::customers([$w->user_id])[$w->user_id];$profile=\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::watchProfile($w);
-        $domain=['Customer'=>self::fact($c['label'],$c['email'],null,$c['url']),
+        $domain=['Customer'=>self::fact($c['label'],$c['email'],url:$c['url']),
             'Expected nameservers'=>self::fact(WatchFindings::who(\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::watchExpected($w)),cause:'Choose it in Change DNS template'),
-            'DNS template'=>self::fact($profile?->name,self::templateProblem($w,$profile),$profile&&self::templateProblem($w,$profile)?'warning':null,url:$profile?RoutingProfileResource::getUrl('view',['record'=>$profile->id]):null,cause:'Choose one in Change DNS template'),
+            'DNS template'=>self::fact($profile?->name,self::templateProblem($w,$profile),tone:$profile&&self::templateProblem($w,$profile)?'warning':null,url:$profile?RoutingProfileResource::getUrl('view',['record'=>$profile->id]):null,cause:'Choose one in Change DNS template'),
             'Registrar'=>self::fact(WatchFindings::who($w->registration),cause:self::missingCause($w,'expiry'))];
         // Hidden when the registry does not publish an expiry date.
         if(!in_array('watch.no_coverage',$keys,true)){$domain['Expires']=self::expires($s,$keys,$active,$w);}
@@ -45,7 +45,7 @@ final class WatchFacts
         // A failed customer alert says why and what to do; the staff alert links here.
         $failed=NoticeHealth::open('watch',(int)$w->id,$w->canonical_name);
         $off=match(true){!in_array($w->state,['active','paused'],true)=>'Monitoring stopped',$w->state==='paused'&&$on=>'Paused. Alerts resume with monitoring.',default=>'The customer turns this on from their domain page'};
-        $checks['Monitoring alerts']=self::fact($on&&$active?'On':'Off',implode(' · ',array_filter([$on&&$active?null:$off,$failed['text']??null]))?:null,$failed['tone']??null);
+        $checks['Monitoring alerts']=self::fact($on&&$active?'On':'Off',implode(' · ',array_filter([$on&&$active?null:$off,$failed['text']??null]))?:null,tone:$failed['tone']??null);
         // An empty string does not apply here and stays hidden; null is Missing.
         $shown=fn(array $facts)=>array_filter($facts,fn($f)=>$f['value']!=='');
         $e=\Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence::read(\Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence::domain($w),$w->points,$w->canonical_name);
@@ -95,12 +95,11 @@ final class WatchFacts
         $partial=array_filter($fresh,fn($f)=>$f['checkedAt']!==null && $f['partial'] && (!$f['stale']||!$running));
         $stale=$running?array_filter($fresh,fn($f)=>$f['stale']):[];
         $retry=$running?' Checks retry automatically.':($w->state==='paused'?(\Paymenter\Extensions\Servers\Domains\Services\WatchDiscovery::canResume($w)?' Resume monitoring to check again.':' Checks start again when the hosting service is active.'):'');
-        return [...self::fact(self::date($at),$failed?'Registry lookup failed.'.$retry:($partial?'Some checks failed.'.$retry:($stale?'Some results are waiting for the next check.':null)),
-            $failed||$partial?'danger':null),'at'=>$at];
+        return [...self::fact(self::date($at),$failed?'Registry lookup failed.'.$retry:($partial?'Some checks failed.'.$retry:($stale?'Some results are waiting for the next check.':null)),tone:$failed||$partial?'danger':null),'at'=>$at];
     }
     public static function expires(?DomainSummary $s,array $keys,bool $active,?WatchName $watch=null): array
     {
-        if($s?->expiry){$soon=in_array('staff.expiring',$keys,true)||in_array('watch.expired',$keys,true);return self::fact(\Carbon\CarbonImmutable::parse($s->expiry)->format('M j, Y'),$soon?WatchFindings::expires($s->expiry):null,$soon?'warning':null);}
+        if($s?->expiry){$soon=in_array('staff.expiring',$keys,true)||in_array('watch.expired',$keys,true);return self::fact(\Carbon\CarbonImmutable::parse($s->expiry)->format('M j, Y'),$soon?WatchFindings::expires($s->expiry):null,tone:$soon?'warning':null);}
         return self::fact($active?null:'',cause:$watch?self::missingCause($watch,'expiry'):'No expiry result saved. Check the monitoring schedule.',check:$active);
     }
     private static function nextCheck(WatchName $w): array
@@ -116,7 +115,7 @@ final class WatchFacts
         $expected=\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::watchExpected($w);
         if(!\Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::usable(\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::watchProfile($w)) || !$expected){return self::fact($found?implode(', ',$found):WatchFindings::who($o->dns),'Choose a DNS template to compare nameservers.');}
         $same=$o->dns===$expected;
-        return self::fact($found?implode(', ',$found):WatchFindings::who($o->dns),$same?'Matches template':($expected==='platform'?$w->canonical_name.' does not use '.\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::nameservers().'.':'Does not match template'),$same?null:'warning');
+        return self::fact($found?implode(', ',$found):WatchFindings::who($o->dns),$same?'Matches template':($expected==='platform'?$w->canonical_name.' does not use '.\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::nameservers().'.':'Does not match template'),tone:$same?null:'warning');
     }
     private static function records(?DomainSummary $s,bool $active,string $missing): array
     {

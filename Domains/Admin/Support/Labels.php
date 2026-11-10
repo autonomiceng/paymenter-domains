@@ -209,6 +209,7 @@ final class Labels
             'read_no_evidence'=>'Registrar sent no answer.','read_identity_changed'=>'Domain or account changed during the check.',
             'account_unavailable'=>'Registrar account not found','binding_mismatch'=>'Request does not match this registrar account.',
             'configuration_unverified'=>'Registrar account not checked yet.','encryption_unavailable'=>"Can't read saved credentials. Ask your site admin to check the encryption key.",'storage_unavailable'=>'Database error. Try again.',
+            'catalogue_upgrade_required'=>'Catalogue upgrade needed: install the Domains bridge and run the catalogue conversion.',
             'catalogue_call_capacity'=>self::priceSync('catalogue_call_capacity'),
             'catalogue_reader_unavailable'=>self::priceSync('catalogue_reader_unavailable'),'catalogue_acceptance_unavailable'=>self::priceSync('catalogue_acceptance_unavailable'),
             'catalogue_acceptance_changed'=>self::priceSync('catalogue_acceptance_changed'),'catalogue_evidence_missing'=>self::priceSync('catalogue_evidence_missing'),
@@ -228,7 +229,7 @@ final class Labels
         $code=is_string($value) && strlen($value) <= 64 && preg_match('/^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/D', $value) ? ' ('.$value.')' : '';
         return \Paymenter\Extensions\Servers\Domains\Presentation\Missing::LABEL.$code.'. Check the request history.';
     }
-    public static function flag(mixed $value): string { return match ($value) { true=>'Yes', false=>'No', default=>'Missing' }; }
+    public static function flag(mixed $value): string { return Facts::flag($value,'Yes','No')??'Missing'; }
     public static function money(mixed $value): string
     {
         if (!is_string($value) || !preg_match('/^\d{1,18}(?:\.\d{1,8})?$/D', $value)) { return 'Unknown'; }

@@ -10,7 +10,7 @@ use Filament\Schemas\Schema;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource, OperationResource};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts, EnomAnswerAction, HistoryRecovery, Labels, MissingEntry, OperationActions, RegistrarFacts, RequestFacts, Sheet, Staff, StaffReviewHistory, StatusMark};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts, EnomAnswerAction, Facts, HistoryRecovery, Labels, MissingEntry, OperationActions, RegistrarFacts, RequestFacts, Sheet, Staff, StaffReviewHistory, StatusMark};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Services\{EnomAnswers, StaffOperationReview, StaffSettingsReview};
@@ -93,9 +93,9 @@ class ViewOperation extends ViewRecord
         $notice=RequestFacts::notice($op,$facts)??($this->getAction('enom_answer',false)?->isVisible()?['title'=>'Only '.($op->registrar_key==='namesilo'?'NameSilo':'Enom').' can confirm this result.','body'=>'Ask the registrar to check this attempt, then enter its answer.','tone'=>'warning']:null);
         if ($notice) { $components[]=$this->notice($notice); }
         $account=RequestFacts::account($op);
-        $setup=self::url(fn()=>RegistrarFacts::accountUrl((int)$op->server_id));
+        $setup=Facts::url(fn()=>RegistrarFacts::accountUrl((int)$op->server_id));
         $rows=[
-            self::entry('Domain',$op->domain?->domain,url:$op->domain?self::url(fn()=>DomainResource::getUrl('view',['record'=>$op->domain_id])):null,cause:'Domain not found'),
+            self::entry('Domain',$op->domain?->domain,url:$op->domain?Facts::url(fn()=>DomainResource::getUrl('view',['record'=>$op->domain_id])):null,cause:'Domain not found'),
             self::entry('Type',Labels::action($op->action)),
             self::entry('Registrar account',$account['value'],sub:$account['sub'],url:$setup,demo:$account['account']&&DemoData::is($account['account'])),
         ];
@@ -107,7 +107,7 @@ class ViewOperation extends ViewRecord
         if (!($facts['unreadable']??false)) {
             if (isset($facts['registrar_reply'])) { $rows[]=self::entry('Registrar reply',$facts['registrar_reply']); }
             elseif (isset($facts['send_failure'])) { $rows[]=self::entry('Registrar reply',$facts['send_failure']); }
-            if (array_key_exists('invoice',$facts)) { $rows[]=self::entry('Invoice',$facts['invoice'],sub:$facts['invoice_sub'],url:$op->invoice_id?self::invoiceUrl((int)$op->invoice_id):null); }
+            if (array_key_exists('invoice',$facts)) { $rows[]=self::entry('Invoice',$facts['invoice'],sub:$facts['invoice_sub'],url:$op->invoice_id?Facts::invoiceUrl((int)$op->invoice_id):null); }
             if (array_key_exists('cost',$facts)) { $rows[]=self::entry('Cost',$facts['cost'],sub:$facts['cost_sub']); }
             if (array_key_exists('auth_code',$facts)) {
                 $email=$op->domain?->service?->user?->email;
@@ -136,9 +136,9 @@ class ViewOperation extends ViewRecord
         $action=isset($notice['action'])?$this->getAction($notice['action'],false):null;
         $op=$this->getRecord();
         $link=match($notice['link']??null) {
-            'registrars'=>[$label=$notice['link_label']??'Open account',self::url(fn()=>RegistrarFacts::accountUrl((int)$op->server_id,RequestFacts::SWITCH_LINKS[$label]??null))],
-            'invoice'=>['Open invoice',$op->invoice_id?self::invoiceUrl((int)$op->invoice_id):null],
-            'domain'=>['Open domain',$op->domain?self::url(fn()=>DomainResource::getUrl('view',['record'=>$op->domain_id])):null],
+            'registrars'=>[$label=$notice['link_label']??'Open account',Facts::url(fn()=>RegistrarFacts::accountUrl((int)$op->server_id,RequestFacts::SWITCH_LINKS[$label]??null))],
+            'invoice'=>['Open invoice',$op->invoice_id?Facts::invoiceUrl((int)$op->invoice_id):null],
+            'domain'=>['Open domain',$op->domain?Facts::url(fn()=>DomainResource::getUrl('view',['record'=>$op->domain_id])):null],
             default=>null};
         $acts=(bool)$action?->isVisible();
         $answer=$this->getAction('enom_answer',false);$answers=(bool)$answer?->isVisible();
@@ -162,10 +162,4 @@ class ViewOperation extends ViewRecord
     }
     private static function time(?\DateTimeInterface $at): ?string
     { return StaffReviewHistory::time($at); }
-    private static function invoiceUrl(int $id): ?string
-    {
-        $invoice=\App\Models\Invoice::find($id);
-        return $invoice&&\App\Admin\Resources\InvoiceResource::canEdit($invoice)?self::url(fn()=>\App\Admin\Resources\InvoiceResource::getUrl('edit',['record'=>$id])):null;
-    }
-    private static function url(\Closure $make): ?string { try { return $make(); } catch (\Throwable) { return null; } }
 }
