@@ -25,12 +25,14 @@ function curl_exec($handle): bool {
     parse_str(parse_url($GLOBALS['wire']['options'][CURLOPT_URL],PHP_URL_QUERY),$p);
     $GLOBALS['wire']['parameters'][]=$p;
     if($GLOBALS['wire']['timeout']){throw new \RuntimeException($GLOBALS['wire']['options'][CURLOPT_URL]);}
+    if($GLOBALS['wire']['errno']!==0){return false;}
     foreach($GLOBALS['wire']['chunks'] as $chunk){if(($GLOBALS['wire']['options'][CURLOPT_WRITEFUNCTION])($handle,$chunk)!==strlen($chunk)){return false;}}
     return true;
 }
 function curl_getinfo($handle,int $option): int {return $GLOBALS['wire']['status'];}
 function curl_close($handle): void {++$GLOBALS['wire']['closed'];}
-function resetWire(array $overrides=[]): void {$GLOBALS['wire']=$overrides+['ns'=>0,'setopts'=>0,'secondSetopt'=>null,'options'=>[],'sends'=>0,'inits'=>0,'closed'=>0,'parameters'=>[],'timeout'=>false,'status'=>200,'chunks'=>['{}']];}
+function curl_errno($handle): int {return $GLOBALS['wire']['errno'];}
+function resetWire(array $overrides=[]): void {$GLOBALS['wire']=$overrides+['ns'=>0,'setopts'=>0,'secondSetopt'=>null,'options'=>[],'sends'=>0,'inits'=>0,'closed'=>0,'parameters'=>[],'timeout'=>false,'errno'=>0,'status'=>200,'chunks'=>['{}']];}
 ini_set('zend.exception_ignore_args','0');
 resetWire();(new Installation)->install();
 $clock=new FakeClock(new \DateTimeImmutable('2026-11-02T12:00:00Z'));app()->instance(Clock::class,$clock);
@@ -149,6 +151,25 @@ $grant->run('registration',51,function()use($grant,$exchange,$origin):void {
     same('Registrar exchange failed.',$failure->getMessage(),'Failure names no single registrar');same(null,$failure->getPrevious(),'No raw cause');expect(!str_contains($failure->getMessage().$failure->getTraceAsString(),'placeholder-api-key'),'Failure redacts credentials');
     same(1,$GLOBALS['wire']['sends'],'Failed purchase is sent once');expect(!$grant->unconsumed(51),'Failed purchase consumes its grant');
 });
+// A purchase that fails in cURL keeps its kind; a transfer keeps its HTTP status too.
+$kind=static function(string $feature,int $id,array $wire)use($grant,$exchange,$origin):?array {
+    resetWire($wire);$failure=null;
+    $grant->run($feature,$id,function()use($grant,$exchange,$origin,$feature,&$failure):void {
+        $mapping=$feature==='transfer'?Api\PurchaseMapping::transfer('example.com','placeholder-epp',true,'123',['ns1.example.net','ns2.example.net'])
+            :Api\PurchaseMapping::register('example.com',1,false,'123',['ns1.example.net','ns2.example.net']);
+        $grant->reserve($mapping->command,$mapping->parameters(),new Money('1.00','USD'));
+        try{$exchange($origin,$mapping->command,$mapping->parameters(),20000);}catch(\Paymenter\Extensions\Servers\Domains\Data\SendFailure $error){$failure=$error;}
+    });
+    return $failure?->facts();
+};
+foreach([[28,'timeout'],[7,'connect'],[60,'tls'],[3,'other']] as $n=>[$errno,$category]){
+    same(['category'=>$category,'timeout_ms'=>20000],$kind('registration',52+$n,['errno'=>$errno]),'Purchase cURL error '.$errno.' keeps its kind');
+}
+same(['category'=>'http 503','timeout_ms'=>20000],$kind('transfer',56,['status'=>503]),'Transfer HTTP error keeps its status');
+// A failed read keeps no kind: only purchases do.
+resetWire(['status'=>500]);$readFailure=null;
+try{$exchange($origin,'getDomainInfo',['domain'=>'example.com'],20000);}catch(\RuntimeException $error){$readFailure=$error;}
+same([\RuntimeException::class,'NameSilo transport outcome unresolved.'],[$readFailure===null?null:get_class($readFailure),$readFailure?->getMessage()],'A failed read is a plain unresolved outcome');
 resetWire();
 // Existing management discovery lists glue through the read path and pays for exactly one call.
 resetWire();$before=$used();$listed=false;
