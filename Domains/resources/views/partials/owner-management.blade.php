@@ -93,7 +93,7 @@
 @component('domains::partials.owner-edit', ['id' => $cap, 'title' => $label, 'open' => $editOpen, 'cancel' => $show])@include('domains::partials.owner-'.$cap)@endcomponent
 @endif
 @elseif ($cap === 'lock')
-<span class="domains-row__v">@if ($state === null)@if ($initial)@include('domains::partials.status-pill', ['pill'=>['label'=>'Checking','tone'=>'info']])@else @include('domains::partials.missing', ['cause' => $waits, 'calm' => $waits === null, 'fix' => null, 'stack' => true])@endif@else{{ $state ? 'On' : 'Off' }}@endif</span>
+<span class="domains-row__v">@if ($state === null)@if ($initial)@include('domains::partials.status-pill', ['pill'=>['label'=>'Checking','tone'=>'info']])@else @include('domains::partials.missing', ['cause' => $waits, 'calm' => $waits === null, 'fix' => null, 'stack' => true])@endif@else{{ $state ? 'On' : 'Off' }}@endif@if (isset($section['transferFrom'])) <span class="domains-sub">{{ $section['transferFrom'] }}</span>@endif</span>
 @if ($checking && $section['actions'])
 <span class="domains-row__a"><button class="domains-a domains-linkbtn" type="button" aria-disabled="true" disabled>Change</button></span>
 @elseif ($section['actions'])
@@ -157,7 +157,7 @@
 @endcomponent
 @endif
 @elseif ($cap === 'auth_code_email')
-<span class="domains-row__v"><span class="domains-muted">{{ isset($section['sender']) ? $section['sender'].' emails it' : 'We email it' }} to the {{ $section['recipient'] }}</span></span>
+<span class="domains-row__v"><span class="domains-muted">{{ isset($section['sender']) ? $section['sender'].' emails it' : 'We email it' }} to the {{ $section['recipient'] }}</span>@if (isset($section['transferFrom'])) <span class="domains-sub">{{ $section['transferFrom'] }}</span>@endif</span>
 @if ($section['actions'])
 <span class="domains-row__a"><button type="submit" form="form-auth_code_email" class="domains-a domains-linkbtn">Email code</button></span>
 <form id="form-auth_code_email" method="POST" action="{{ $section['url'] }}" class="domains-owner-form" data-confirm>
