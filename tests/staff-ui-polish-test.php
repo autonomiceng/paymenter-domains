@@ -65,13 +65,10 @@ $record=$fallback->instance()->getTableRecords()->keyBy('id')[$held->id];$column
 same([null,'Missing'],[$columns['customer']->record($record)->getState(),$columns['server_id']->record($record)->getState()],'Missing customer and registrar account keep the row');
 // Age grammar and exact staff copy; frozen timestamps avoid dependence on fixture business clocks.
 $op=clone $base;$op->state='uncertain';$op->funding_basis='paid_invoice';$op->safe_code=null;
-foreach([0=>' (under 1 hour so far)',1=>' (1 hour so far)',7=>' (7 hours so far)'] as $hours=>$age){
-    $op->started_at=\Carbon\CarbonImmutable::createFromTimestampUTC(time()-$hours*3600-30);
-    same('NameSilo has not confirmed this transfer.',PaidUncertainty::summary($op),'Paid uncertainty title snapshot');
-    same('Paid domain changes on this NameSilo account wait until the result is known'.$age.'. Registrations and renewals still check the balance before sending.',PaidUncertainty::holdSummary($op),'Paused orders copy '.$hours);
-}
-$op->started_at=null;$op->created_at=null;
-same('Paid domain changes on this NameSilo account wait until the result is known. Registrations and renewals still check the balance before sending.',PaidUncertainty::holdSummary($op),'Absent timestamps omit the age');
+// The account hold names the one thing it holds and the time it began, never an age that grows per request.
+$op->started_at=\Carbon\CarbonImmutable::createFromTimestampUTC(time()-7*3600-30);
+same('NameSilo has not confirmed this transfer.',PaidUncertainty::summary($op),'Paid uncertainty title snapshot');
+same(null,PaidUncertainty::holdSummary($op),'No hold line while WHOIS privacy is not sold');
 $op->attempt=[];
 same('NameSilo has not confirmed this transfer.',RequestFacts::for($op)['outcome'],'Uncertain request copy snapshot');
 same(['Start after payment','Paymenter payment events'],array_keys(NativePaidHooks::notices()),'Payment event labels snapshot');

@@ -16,6 +16,12 @@ final class Facts
         $invoice=\App\Models\Invoice::find($id);
         return $invoice&&\App\Admin\Resources\InvoiceResource::canEdit($invoice)?self::url(fn()=>\App\Admin\Resources\InvoiceResource::getUrl('edit',['record'=>$id])):null;
     }
+    /** The staff invoice name, as the staff invoice list shows it: its number (INV-26) once it has one, else "Proforma #" and its ID. */
+    public static function invoiceName(int $id): string
+    {
+        $number=\App\Models\Invoice::whereKey($id)->value('number');
+        return is_string($number)&&$number!==''?$number:'Proforma #'.$id;
+    }
     /** A saved true or false in words. Anything else is null, which shows Missing. */
     public static function flag(mixed $value, string $on='On', string $off='Off'): ?string { return is_bool($value)?($value?$on:$off):null; }
 }

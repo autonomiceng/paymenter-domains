@@ -20,7 +20,7 @@ final class BalanceRetries
     public const REVIEW_CODES=['balance_retry_funding_changed','balance_retry_authority_changed','balance_retry_setup_changed'];
     public const CODES=[...self::INITIAL_CODES,...self::REVIEW_CODES,'write_rate_limited','processing'];
     public const MESSAGE='Not sent: registrar balance is too low. Add funds. It will send automatically once funds are available.';
-    public const READ_STOPPED="It won't retry by itself. Release to try again, or cancel and add credit.";
+    public const READ_STOPPED="It won't retry by itself. Release to try again, or cancel and refund.";
     /** Work needing locked admission or diagnosis, even if its current proof can no longer authorize sending. */
     public static function pending(Operation $op): bool
     {

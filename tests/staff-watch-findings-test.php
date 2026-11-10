@@ -59,6 +59,14 @@ foreach(['active'=>' Checks retry automatically.','paused'=>' Resume monitoring 
         'freshness'=>array_map(fn($f)=>[...$f,'partial'=>false,'stale'=>true],$summary->freshness)]);
     same($state==='active'?'Some results are waiting for the next check.':null,WatchFacts::lastCheck($watch,$complete)['sub'],'Old complete results for '.$state);
 }
+// A failed last check never reads healthy: the status says Check failed in amber beside the red Last check line.
+$watch->state='active';$failedStatus=fn($summary)=>array_slice(WatchFindings::status($watch,[],null,summary:$summary),0,2);
+$watch->work->firstWhere('kind','expiry')->safe_code='read_unavailable';
+same(['label'=>'Check failed','tone'=>'warning'],$failedStatus($summary),'A failed registry lookup reads Check failed');
+$watch->work->firstWhere('kind','expiry')->safe_code=null;
+same(['label'=>'Monitoring','tone'=>'success'],$failedStatus($summary),'A passing last check stays Monitoring');
+same(['label'=>'Check failed','tone'=>'warning'],$failedStatus(new \Paymenter\Extensions\Servers\Domains\Presentation\DomainSummary(...[...get_object_vars($summary),
+    'freshness'=>array_map(fn($f)=>[...$f,'partial'=>true,'stale'=>false],$summary->freshness)])),'A partly failed check reads Check failed');
 // The Status filter selects exactly the rows with each status.
 $problem=array_map(fn($n)=>WatchName::find($w[$n]),['ns-changed','ns-pending','expired','expiring']);$monitoring=array_map(fn($n)=>WatchName::find($w[$n]),['healthy','stale','not-checked']);
 Livewire::actingAs($viewer)->test(ListWatches::class)->filterTable('status','problem')->assertCanSeeTableRecords($problem)->assertCanNotSeeTableRecords([...$monitoring,WatchName::find($w['paused'])])->assertCountTableRecords(count($problem));

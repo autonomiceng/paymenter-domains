@@ -134,7 +134,7 @@ Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$heldOp->id])
 // Paid and unconfirmed: the notice names the registrar and how long new orders have been paused.
 DB::table('domains_operations')->where('id',$heldOp->id)->update(['state'=>'uncertain','funding_basis'=>'paid_invoice','started_at'=>now()->subHours(73)]);
 Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$heldOp->id])->assertSee('Use Check status to ask the registrar for the result.')->assertDontSee('has not confirmed this transfer')
-    ->assertSee('Paid domain changes on this NameSilo account wait until the result is known (73 hours so far).')->assertSee('Check status')
+    ->assertDontSee('WHOIS privacy')->assertSee('Check status')
     ->assertDontSee('Release hold')->assertDontSee('Account spending holds')->assertDontSee('Paid outcome review');
 
 // Completed: Completed pill, no notice and no More menu.
@@ -313,10 +313,10 @@ $holds=static function(): array {
 $name=static fn(int $server)=>\App\Models\Server::whereKey($server)->value('name');
 DB::table('domains_operations')->whereIn('id',[$heldOp->id,$longOp->id])->update(['state'=>'uncertain','safe_code'=>null]);
 [$lines,$oneAccount]=$holds();
-same(['Check 2 requests Paid changes on '.$name($heldOp->server_id).' are on hold until they are checked.'],$lines,'One held account');
+same(['Check 2 requests Paid orders on '.$name($heldOp->server_id).' have no registrar result yet.'],$lines,'One held account');
 DB::table('domains_operations')->where('id',$doneOp->id)->update(['state'=>'uncertain','safe_code'=>null]);
 [$lines,$twoAccounts]=$holds();
-same(['Check 2 requests Paid changes on '.$name($heldOp->server_id).' are on hold until they are checked.','Check request #'.$doneOp->id.' Paid changes on '.$name($doneOp->server_id).' are on hold until it is checked.'],
+same(['Check 2 requests Paid orders on '.$name($heldOp->server_id).' have no registrar result yet.','Check request #'.$doneOp->id.' A paid order on '.$name($doneOp->server_id).' has no registrar result yet.'],
     $lines,'Two held accounts, each named once');
 same($oneAccount,$twoAccounts,'Held accounts are read together, not one by one');
 foreach ($saved as $row) { DB::table('domains_operations')->where('id',$row->id)->update(['state'=>$row->state,'safe_code'=>$row->safe_code]); }

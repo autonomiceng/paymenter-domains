@@ -41,10 +41,17 @@ same(['1',[$unreleased->id],[false,true]],$actual,
     'A released queued review counts nowhere; an unreleased review appears in the badge, filter and detail: '.json_encode($actual));
 // The read rule preserves the alert history, and the existing minute cache still avoids repeated count queries.
 same(2,DB::table('domains_obligation_alerts')->whereNull('resolved_at')->count(),'Read paths retain both alert rows');
+// Opening the list drops the cached count so the badge matches it (journeys-r2 item 2); the next menu read fills it again.
+same('1',DomainResource::getNavigationBadge(),'The badge refills with the list count');
 DB::connection()->flushQueryLog(); DB::connection()->enableQueryLog();
 same('1',DomainResource::getNavigationBadge(),'Warm badge retains the visible count');
 $domainReads=array_filter(DB::connection()->getQueryLog(),fn(array $q)=>str_contains($q['query'],'domains_'));
 same([],$domainReads,'Warm badge performs no domain-data reads');
 DB::connection()->disableQueryLog();
+// An unreadable encrypted funding record keeps an ended request's alert live.
+$op=$unreleased->operations()->sole();
+DB::table('domains_operations')->where('id',$op->id)->update(['funding'=>'unreadable funding']);
+$ended=clone $unreleased;$ended->status='cancelled';
+same(false,ObligationAlerts::outdated((object)['code'=>'operation_review'],$op->fresh(),collect(),$ended),'Unreadable funding preserves the alert without breaking the page');
 Carbon::setTestNow();
 $nativeSuccessful=true; echo "Open alerts agree across navigation, filter and detail.\n";

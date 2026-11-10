@@ -62,6 +62,15 @@ function staffRowsStandard(mixed $page, array $hidden=[], array $money=[]): void
         expect(str_contains($class,'domains-money')&&!str_contains($class,'domains-line')&&!str_contains($class,'domains-cut'),$name.': '.$key.' money is never cut');
     }
 }
+/** Turns the account Renewals switch on for these domains' servers, so a billed domain renews as the domain page says. */
+function staffRenewalsOn(\Paymenter\Extensions\Servers\Domains\Models\Domain ...$domains): void
+{
+    foreach (array_unique(array_map(fn($d) => (int) $d->server_id, $domains)) as $server) {
+        foreach ([\Paymenter\Extensions\Servers\Domains\Services\RenewalBillingSettings::SCHEDULED, \Paymenter\Extensions\Servers\Domains\Services\RenewalBillingSettings::MANUAL] as $key) {
+            \App\Models\Server::findOrFail($server)->settings()->updateOrCreate(['key' => $key], ['value' => '1', 'type' => 'boolean', 'encrypted' => false]);
+        }
+    }
+}
 function staffData(bool $ordinaryCompleted = false): array
 {
     \Paymenter\Extensions\Servers\Domains\Services\FoundationSchema::install();

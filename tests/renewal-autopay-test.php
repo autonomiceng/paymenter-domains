@@ -70,7 +70,7 @@ same($i->id, $billing->invoice($d->id, $user)->id, 'Owner existing path returns 
 same(1, count(DomainRenewalGateway::$calls), 'Neither existing path charges again');
 \Illuminate\Support\Facades\Auth::setUser(staffUser([\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::VIEW]));
 $grants = StaffGrants::current();
-same(['Auto Pay: submitted', 'Invoice #'.$op->invoice_id, 'Auto Pay: submitted', 'paid'], [RequestFacts::for($op, $grants)['auto_pay'], RequestFacts::for($op, $grants)['invoice'], RequestFacts::for($op, $grants)['invoice_sub'], $i->fresh()->status], 'Staff facts expose charge as the Invoice sub-line');
+same(['Auto Pay: submitted', $i->fresh()->number ?: 'Proforma #'.$op->invoice_id, 'Auto Pay: submitted', 'paid'], [RequestFacts::for($op, $grants)['auto_pay'], RequestFacts::for($op, $grants)['invoice'], RequestFacts::for($op, $grants)['invoice_sub'], $i->fresh()->status], 'Staff facts expose charge as the Invoice sub-line');
 commerceReject(fn () => $op->update(['funding'=>[]]));
 $op->refresh();
 commerceReject(fn () => $op->fresh()->update(['funding'=>['auto_pay'=>$op->funding['auto_pay']]]));
@@ -228,7 +228,7 @@ $count = count(DomainRenewalGateway::$calls);
 same(['Auto Pay: submitted','Auto Pay: submitted'],[RequestFacts::for($submittedOp,$grants)['auto_pay'],RequestFacts::for($submittedOp,$grants)['invoice_sub']],'Submitted Auto Pay labels agree');
 same('Auto Pay: charged',Labels::autoPay(['status'=>'charged']),'Legacy charged label remains supported');
 staffPanel();$autoPayStaff=staffUser(['admin.domains.view']);
-Livewire\Livewire::actingAs($autoPayStaff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation::class,['record'=>$submittedOp->id])->assertSee('Auto Pay: submitted')->assertSee('Invoice #'.$si->id);
+Livewire\Livewire::actingAs($autoPayStaff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation::class,['record'=>$submittedOp->id])->assertSee('Auto Pay: submitted')->assertSee($si->fresh()->number ?: 'Proforma #'.$si->id);
 
 same('submitted', $result['status'], 'Accepted payment can still be pending');
 same(['Auto Pay: submitted', 'pending'], [RequestFacts::for($submittedOp, $grants)['auto_pay'], $si->fresh()->status], 'Submission is not shown as paid');

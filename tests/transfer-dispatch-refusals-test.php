@@ -43,7 +43,7 @@ foreach (['premium','unknown','funds','changed','reverse','rules','profile','rda
     $state->rdap404=false; $state->during=null; $state->premium=false; $state->funds='100.00'; $state->available=true; $state->mode='';
     App\Models\Server::find($op->server_id)->settings()->where('key','domains_transfer_endings')->update(['value'=>'com']);
     if ($fault==='changed') {
-        Illuminate\Support\Facades\Auth::setUser($staff);same('refund',RequestFacts::notice($r)['action'],'A final refusal offers Cancel and add credit');
+        Illuminate\Support\Facades\Auth::setUser($staff);same('refund',RequestFacts::notice($r)['action'],'A final refusal offers Cancel and refund');
         $invoiceBefore = App\Models\Invoice::findOrFail($op->invoice_id)->getRawOriginal();
         $itemsBefore = Illuminate\Support\Facades\DB::table('invoice_items')->orderBy('id')->get()->toJson();
         $transactionsBefore = Illuminate\Support\Facades\DB::table('invoice_transactions')->orderBy('id')->get()->toJson();

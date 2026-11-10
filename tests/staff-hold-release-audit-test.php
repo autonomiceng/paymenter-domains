@@ -14,11 +14,14 @@ foreach(['Customer asked to wait','Customer confirmed the next attempt'] as $cyc
     $service->run($staff,$op->domain_id,$op->id,'hold',$ticket($op->fresh(),'hold'),$reason);
     same('held',$op->fresh()->state,'Native request is held before page release');
     $page=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id]);
-    $page->assertActionVisible('release')->mountAction('release')->assertActionNotMounted('release')
+    $page->assertActionVisible('release')->mountAction('release')->assertActionMounted('release')->assertDontSee('Reason');
+    same('held',$op->fresh()->state,'Opening the release confirmation keeps the hold');
+    same(2*$cycle+1,count($op->fresh()->policy['staff_actions']),'Opening confirmation writes no release audit');
+    $page->callMountedAction()->assertActionNotMounted('release')
         ->assertHasNoActionErrors()->assertNotified('Hold released')->assertDontSee('Reason');
     $page->assertDontSee('Put on hold by '.trim($staff->first_name.' '.$staff->last_name))->assertDontSee('On hold')
         ->assertSee('In progress')->assertSee('Hold released')->assertActionHidden('release')->assertActionVisible('hold');
-    same('queued',$op->fresh()->state,'Release runs immediately without a reason modal');
+    same('queued',$op->fresh()->state,'Confirmed release queues the request without asking for a reason');
     $audit=$op->fresh()->policy['staff_actions'];
     same(2*($cycle+1),count($audit),'Exactly one completed audit entry for each action');
     same(array_fill(0,count($audit),'completed'),array_column($audit,'phase'),'No provisional audit phases');
@@ -47,5 +50,5 @@ expect($links->length>0,'History renders an actual request link');
 $url=OperationResource::getUrl('view',['record'=>$op->id]);
 foreach($links as $link){same($url,$link->getAttribute('href'),'History links to this exact native request');}
 same($money,$nativeMoney(),'Hold and release retain all financial and queue rows');
-echo "Native Hold and Release: exact completed audit reasons, repeat cycles, no modal and History request link passed.\n";
+echo "Native Hold and Release: confirmation, exact completed audit reasons, repeat cycles, no reason field and History request link passed.\n";
 $nativeSuccessful=true;

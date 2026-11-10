@@ -129,6 +129,13 @@ final class ObligationAlerts
     {
         if($alert->code==='observation_review'){try{return !ObservationRecords::stopped($d);}catch(\Throwable){return false;}}
         if(!$op){return false;}
+        // A refusal before sending (dispatch, balance or claim checks) records a review alert. Once the request is sent and inside the registrar's
+        // normal wait it is In progress, so that alert is outdated; an unconfirmed result records a fresh one (retained()).
+        if(in_array($alert->code,self::REVIEW,true)&&in_array($op->state,['running','pending'],true)){try{if(!self::flagged($op,$operations,$d)){return true;}}catch(\Throwable){}}
+        // An ended domain whose request provably never went out and whose money is settled has nothing left to check: the order is over.
+        if(in_array($alert->code,self::REVIEW,true)&&in_array($d->status,['cancelled','registration_rejected','transfer_rejected'],true)){
+            try{if((array_key_exists('refund',$op->funding??[])||$op->funding_basis!=='paid_invoice')&&OperationTerminalProof::safe($op,$d)){return true;}}catch(\Throwable){}
+        }
         try{return $alert->code==='unknown_cost'&&($op->policy['price']['staff_alert']??null)==='retained_renewal'||in_array($alert->code,self::REVIEW,true)&&($op->state==='succeeded'&&!self::flagged($op,$operations,$d)||ManagementEvidence::recoverable($op));}
         catch(\Throwable){return false;}
     }

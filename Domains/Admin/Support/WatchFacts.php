@@ -84,13 +84,23 @@ final class WatchFacts
         return $w->work->contains(fn($row)=>($kind===null||$row->kind===$kind)&&($row->due_at!==null||$row->lease_until>app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp()))
             ?Missing::fills('after the next check'):'No check scheduled. Check the background worker.';
     }
+    private const EXPIRY_OK=['ready','rotation','no_coverage','not_registered','rate_limited','budget_exhausted','target_changed'];
+    private static function registryFailed(WatchName $w): bool
+    { $code=$w->work->firstWhere('kind','expiry')?->safe_code; return $code!==null && !in_array($code,self::EXPIRY_OK,true); }
+    /** The last check failed in whole or in part, by the rule Last check uses for its red line. The status never reads healthy beside it. */
+    public static function lastCheckFailed(WatchName $w,?DomainSummary $s): bool
+    {
+        if(!$s){return false;}
+        $running=$w->state==='active';
+        return self::registryFailed($w)||array_filter($s->freshness??[],fn($f)=>$f['checkedAt']!==null && $f['partial'] && (!$f['stale']||!$running))!==[];
+    }
     /** The latest check across nameservers, records and registry; 'from' names the checks made at that instant. Only failed checks are red; waiting or old evidence explains its next step. */
     public static function lastCheck(WatchName $w,?DomainSummary $s): array
     {
         $fresh=$s?->freshness??[];$at=max([0,...array_map(fn($f)=>(int)$f['checkedAt'],$fresh)]);
         if(!$s){$at=max((int)$w->delegation?->started_at,(int)$w->registry?->started_at);return [...self::fact($at?self::date($at):($w->state==='active'?null:''),cause:'No monitoring summary saved. Check the customer and domain records.'),'at'=>$at,'from'=>[]];}
         if(!$at){return self::fact(null,cause:self::missingCause($w));}
-        $failed=$w->work->firstWhere('kind','expiry')?->safe_code;$failed=$failed!==null && !in_array($failed,['ready','rotation','no_coverage','not_registered','rate_limited','budget_exhausted','target_changed'],true);
+        $failed=self::registryFailed($w);
         // A paused or stopped name reads as stale in every summary, so its saved failure still counts and it has no next check.
         $running=$w->state==='active';
         $partial=array_filter($fresh,fn($f)=>$f['checkedAt']!==null && $f['partial'] && (!$f['stale']||!$running));

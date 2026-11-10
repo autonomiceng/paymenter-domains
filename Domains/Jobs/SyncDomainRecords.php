@@ -113,6 +113,8 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
         $this->tryHistory($title);
         if (!Staff::allows(User::find($this->actor))) { return; }
         $route='filament.admin.resources.domains.view';
-        Notification::create(['user_id'=>$this->actor,'title'=>$title,'body'=>$body,'url'=>Route::has($route)?route($route,['record'=>$this->domain]):null]);
+        // Several syncs can finish in a row, so each bell item names its domain. The page compares the cached title, so the title stays as is.
+        $name=Domain::whereKey($this->domain)->value('domain');
+        Notification::create(['user_id'=>$this->actor,'title'=>$title,'body'=>is_string($name)&&$name!==''?$name.': '.$body:$body,'url'=>Route::has($route)?route($route,['record'=>$this->domain]):null]);
     }
 }

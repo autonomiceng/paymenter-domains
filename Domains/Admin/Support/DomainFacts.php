@@ -17,7 +17,7 @@ final class DomainFacts
     public static function help(): array { return DomainDecisions::help(); }
     public static function registered(Domain $d): bool { return DomainDecisions::registered($d); }
     public static function ended(Domain $d): bool { return DomainDecisions::ended($d); }
-    public static function for(Domain $d, array|false|null $notice=false): array { return DomainDecisions::for($d, $notice); }
+    public static function for(Domain $d, array|false|null $notice=false, ?array $families=null): array { return DomainDecisions::for($d, $notice, $families); }
     public static function alertCause(string $code, ?Domain $d=null): string { return DomainDecisions::alertCause($code, $d); }
     public static function status(Domain $d, ?array $inputs=null): array { return DomainDecisions::status($d, $inputs); }
     public static function listTone(array $status, ?string $sync, bool $noAccount=false): string { return DomainDecisions::listTone($status, $sync, $noAccount); }

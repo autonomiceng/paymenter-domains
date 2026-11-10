@@ -123,11 +123,11 @@ $recovery=Paymenter\Extensions\Servers\Domains\Admin\Support\HistoryRecovery::cl
 $staff->role->update(['permissions'=>array_values(array_diff($rights,['admin.domains.settings.history']))]);$request()->assertActionHidden($recovery::NAME);$staff->role->update(['permissions'=>$rights]);
 $other=$op->fresh();$other->action='register';expect(!$recovery::offered($other),'A registration read needs a captured order, so history cannot clear it');
 DB::table('domains_accounts')->where('server_id',$server->id)->update(['environment'=>'live']);expect(!$recovery::offered($op->fresh()),'Live history values are not confirmed');DB::table('domains_accounts')->where('server_id',$server->id)->update(['environment'=>'test']);
-// Past the read window the hold stays, and the page says what is left instead of offering a read that can't run.
+// Past the read window the hold stays and the page says what is left. Check status still reads what Enom shows for the domain.
 // After the domain read, the answer step is what is left; it replaces the too-old line.
 $sent=new DateTimeImmutable($op->fresh()->attempt['dispatch_attempted_at']);$now=$clock->at;$tooOld='Ask Enom to check this attempt, then enter its answer.';
 $clock->at=$sent->modify('+86399 seconds');$request()->assertActionVisible($recovery::NAME)->assertDontSee($tooOld);
-$clock->at=$sent->modify('+86400 seconds');$request()->assertActionHidden($recovery::NAME)->assertSee($tooOld)->assertDontSee('Check status');$clock->at=$now;
+$clock->at=$sent->modify('+86400 seconds');$request()->assertActionHidden($recovery::NAME)->assertSee($tooOld)->assertSee('Check status');$clock->at=$now;
 $request()->assertSee('Enom’s reply was lost.')->assertActionVisible($recovery::NAME)->callAction($recovery::NAME);
 $request()->assertActionHidden($recovery::NAME);
 $clock->at=$sent->modify('+1 day');$request()->assertSee($tooOld);$clock->at=$now;

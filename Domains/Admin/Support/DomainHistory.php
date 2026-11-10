@@ -47,13 +47,16 @@ final class DomainHistory
             if (!is_array($entry)||!in_array($entry['event']??null,$events,true)) { continue; }
             $rows[]=['__key'=>'sync-'.$i,'__order'=>$i+1,'time'=>self::at($entry['at']??null),'event'=>$entry['event'],'sub'=>null,'status'=>null,'by'=>'Staff'];
         }
-        $at=fn(Operation|array $r)=>($r instanceof Operation?$r->created_at:$r['time'])?->getTimestamp()??PHP_INT_MIN;
+        $at=fn(Operation|array $r)=>($r instanceof Operation?self::when($r):$r['time'])?->getTimestamp()??PHP_INT_MIN;
         $order=static fn(Operation|array $r)=>$r instanceof Operation?[$r->id,0]:[$r['__request']??0,$r['__order']??0];
         usort($rows,fn($a,$b)=>($at($b)<=>$at($a))?:($order($b)<=>$order($a)));
         return $rows;
     }
     public static function ordersOff(Domain $domain): bool
     { return !Account::where('server_id',$domain->server_id)->value('processing_enabled'); }
+    /** A request row's time: when it was sent while it waits on the registrar (the request page's Sent row), else when it was created. */
+    public static function when(Operation $op): ?\DateTimeInterface
+    { return $op->started_at!==null&&in_array($op->state,['running','pending','uncertain'],true)?$op->started_at:$op->created_at; }
     /** @return array{time:?\DateTimeInterface,event:string,sub:?string,status:?array,by:string} */
     public static function row(Operation|array $entry, Domain $domain, bool $ordersOff): array
     {
@@ -70,7 +73,7 @@ final class DomainHistory
             return ['time'=>$entry->created_at,'event'=>'Request #'.$entry->id.' DNSSEC','sub'=>$ds['text'],'status'=>['label'=>$ds['state'],'tone'=>$ds['tone']],'by'=>self::requester($entry,$domain)];
         }
         if ($entry->state==='queued'&&$ordersOff&&$reason!==null) { $reason=StaffDomainStatus::sentence($reason).RequestFacts::ordersStep($reason); }
-        return ['time'=>$entry->created_at,'event'=>'Request #'.$entry->id.' '.Labels::action($entry->action),
+        return ['time'=>self::when($entry),'event'=>'Request #'.$entry->id.' '.Labels::action($entry->action),
             'sub'=>$reason,
             'status'=>RequestFacts::status($entry,$ordersOff,$domain),'by'=>self::requester($entry,$domain)];
     }

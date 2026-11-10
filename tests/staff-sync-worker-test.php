@@ -47,6 +47,7 @@ foreach($work as $transaction){
 same(0,DB::table('jobs')->count(),'Worker consumes the job');
 same(0,DB::table('failed_jobs')->count(),'No failed queue job');
 same('Domain synced',App\Models\Notification::where('user_id',$actor->id)->latest('id')->value('title'),'Worker completes a registrar read');
+same($d->domain.': The saved records are up to date.',App\Models\Notification::where('user_id',$actor->id)->latest('id')->value('body'),'The bell item names the synced domain');
 same($clock->now()->format(DATE_ATOM),$d->fresh()->last_synced_at->format(DATE_ATOM),'Worker advances saved domain facts');
 $page->call('pollManagement')->assertSee('0 records')->assertDontSee('Not read yet')->assertSee('Domain synced');
 expect(str_contains($queuedHtml,'wire:poll.2s.keep-alive="pollManagement"'),'An open staff page must poll while its sync is queued');

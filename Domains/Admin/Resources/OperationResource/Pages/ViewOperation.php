@@ -108,6 +108,8 @@ class ViewOperation extends ViewRecord
             if (isset($facts['registrar_reply'])) { $rows[]=self::entry('Registrar reply',$facts['registrar_reply']); }
             elseif (isset($facts['send_failure'])) { $rows[]=self::entry('Registrar reply',$facts['send_failure']); }
             if (array_key_exists('invoice',$facts)) { $rows[]=self::entry('Invoice',$facts['invoice'],sub:$facts['invoice_sub'],url:$op->invoice_id?Facts::invoiceUrl((int)$op->invoice_id):null); }
+            // A refund or dispute on this invoice means money we no longer hold, so it reads amber beside the invoice.
+            if (isset($facts['payment_reversed'])) { $rows[]=self::entry('Payment',$facts['payment_reversed']['words'],cause:'Could not read refunds and disputes. Check the invoice payments.',act:$facts['payment_reversed']['act']); }
             if (array_key_exists('cost',$facts)) { $rows[]=self::entry('Cost',$facts['cost'],sub:$facts['cost_sub']); }
             if (array_key_exists('auth_code',$facts)) {
                 $email=$op->domain?->service?->user?->email;
@@ -145,14 +147,15 @@ class ViewOperation extends ViewRecord
         if ($link&&$link[1]) { $buttons[]=view('filament::components.button.index',['tag'=>'a','href'=>$link[1],'color'=>$acts||$answers?'gray':'primary','size'=>'sm','slot'=>new HtmlString(e($link[0]))])->render(); }
         // When the notice's step is the registrar's answer, that button leads and Check status follows.
         if ($answers&&($notice['primary']??null)==='enom_answer') { $buttons[]=$answer->color('primary')->size('sm')->toHtml(); $answers=false; if($acts){$buttons[]=Sheet::button($action)->toHtml();$acts=false;} }
-        if ($acts) { $buttons[]=$action->color('primary')->size('sm')->toHtml(); }
+        if ($acts) { $buttons[]=$action->color($notice['action']==='refund'?'danger':'primary')->size('sm')->toHtml(); }
         if ($answers) { $buttons[]=($acts?Sheet::button($answer):$answer->color('primary')->size('sm'))->toHtml(); }
         return Callout::make($notice['title'])->description($notice['body']??null)->status($notice['tone'])->columnSpanFull()
             ->footer($buttons?Sheet::buttons($buttons):null);
     }
-    private static function entry(string $label, ?string $value, ?string $sub=null, ?string $url=null, bool $demo=false, ?Action $fix=null, ?string $cause=null, array|Html $side=[], ?\DateTimeInterface $at=null): \Filament\Schemas\Components\Flex
+    private static function entry(string $label, ?string $value, ?string $sub=null, ?string $url=null, bool $demo=false, ?Action $fix=null, ?string $cause=null, array|Html $side=[], ?\DateTimeInterface $at=null, bool $act=false): \Filament\Schemas\Components\Flex
     {
         $entry=TextEntry::make('fact_'.md5($label))->label($label)->state($value)->url($url);
+        if ($act&&$value!==null) { $entry->extraAttributes(StatusMark::note(true)); }
         if ($value!==null&&$sub!==null) { $entry->belowContent($sub); }
         if ($at) { $entry->formatStateUsing(fn()=>Sheet::moment($at->getTimestamp())); }
         if ($demo) { $entry->suffix(DemoData::tag(inline:true)); }

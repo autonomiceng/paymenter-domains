@@ -57,7 +57,8 @@ final class RequestFacts
             if ($grants->metadata && ($reply=\Paymenter\Extensions\Servers\Domains\Data\RegistrarReply::fromArray($a['evidence']['registrarReply']??null))) { $out['registrar_reply']=$reply->words(); }
             $paid=$op->invoice_id||in_array($op->action,self::PAID_ACTIONS,true);
             if ($paid) {
-                $out['invoice']=$op->invoice_id ? 'Invoice #'.$op->invoice_id : null;
+                $out['invoice']=$op->invoice_id ? Facts::invoiceName((int)$op->invoice_id) : null;
+                if ($op->invoice_id) { $out['payment_reversed']=self::paymentReversed($op); }
                 $out['invoice_sub']=$op->invoice_id ? (array_key_exists('auto_pay',$f) ? Labels::autoPay($f['auto_pay_result']??$f['auto_pay']) : null) : 'No invoice linked. No action needed.';
             }
             if (array_key_exists('auto_pay',$f)) { $out['auto_pay']=Labels::autoPay($f['auto_pay_result']??$f['auto_pay']); }
@@ -87,7 +88,7 @@ final class RequestFacts
                     default=>'Check the invoice payment return.',
                 };
             }
-            elseif (array_key_exists('refund',$f)||array_key_exists('late_credits',$f)) { [$out['refund'],$out['refund_sub']]=['Credit added','Check the account credit']; }
+            elseif (array_key_exists('refund',$f)||array_key_exists('late_credits',$f)) { [$out['refund'],$out['refund_sub']]=self::creditWords($f); }
             elseif (RefundCandidates::matches($op,$f) || ($p['renewal_execution']['refundable_later']??false)===true) {
                 $out['refund']='No credit added'; $out['refund_fix']=$op->state==='held' ? 'refund' : 'credit';
             }
@@ -179,7 +180,16 @@ final class RequestFacts
         $status=[...Labels::requestStatus($op,$off,$grants),'reason'=>self::reason($op,$ordersOff,$grants,$accounts)];
         try { $key=$d?ManagementProgress::statusKey($op,$d,$off):null; } catch (\Throwable) { $key=null; }
         if ($key!==null) { [$status['label'],$status['tone']]=RequestStatus::SET[$key]; }
+        if ($paid=self::paidWaiting($op,$accounts)) { [$status['label'],$status['tone']]=RequestStatus::SET['in_progress'];$status['reason']=$paid; }
         return self::heldAcquisition($op,$off) ? [...$status,'label'=>'On hold','tone'=>'warning'] : $status;
+    }
+    /** The request still reads awaiting_payment until the paid invoice is picked up, as customers see it (OwnedDomains).
+     * Staff read that it is paid, and whether it goes out on its own or waits on Orders. Null when the invoice is not paid. */
+    public static function paidWaiting(Operation $op, ?array $accounts=null): ?string
+    {
+        if ($op->state!=='awaiting_payment' || !$op->invoice_id) { return null; }
+        if (\App\Models\Invoice::whereKey($op->invoice_id)->value('status')!=='paid') { return null; }
+        return OperationQueries::ordersOff($op,$accounts)?'Paid. Not sent. '.self::ORDERS_OFF:'Paid. It goes to the registrar automatically. Nothing to do yet.';
     }
     /** Local readiness shared by request pages and domain lists. It never releases a hold.
      * $accounts: a list's OperationQueries::ordersOffAccounts() snapshot, read for the Orders switch instead of the account now.
@@ -297,8 +307,8 @@ final class RequestFacts
             $parts=array_values(array_filter([$said?null:$facts['outcome'],$step['title']??null,$step['body']??null,$cause,$facts['auto_renew']??PaidUncertainty::holdSummary($op)]));
             if($said&&$step===null&&$cause===null){array_unshift($parts,self::CHECK_STATUS);}
             return ['title'=>array_shift($parts),'body'=>$parts===[]?null:implode(' ',$parts),'tone'=>'warning',...(($step['answer']??false)?['primary'=>'enom_answer']:[]),
-                // Too old for history, but the first read of this attempt still comes before asking Enom.
-                'action'=>$recover?HistoryRecovery::NAME:($tooOld&&(RegistrarCheck::status($op)['outcome']??null)!=='not_checked'?null:(OperationActions::readLimit($op)&&in_array($op->action,['register','transfer','renew'],true)?'resume_reads':'recheck'))];
+                // Check status stays on every unconfirmed request: a read past the history window still reports what the registrar shows.
+                'action'=>$recover?HistoryRecovery::NAME:(OperationActions::readLimit($op)&&in_array($op->action,['register','transfer','renew'],true)?'resume_reads':'recheck')];
         }
         if ($op->state==='queued' && ($ready=self::readyMessage($op))!==null) {
             $ordersLink=!ManagementEvidence::retryable($op)||!self::account($op)['account']?->processing_enabled;
@@ -313,7 +323,7 @@ final class RequestFacts
         if($op->state==='held'&&$review!==null){
             $payment=$review==='balance_retry_funding_changed';
             return ['title'=>rtrim(Labels::reason($review),'.').'.','tone'=>'warning',
-                'body'=>$payment?'Review the invoice. The system will check it again. If this order cannot go ahead, cancel it and add credit.':'Restore the original order details. The system will check them again. If this order cannot go ahead, review its cancellation.',
+                'body'=>$payment?'Review the invoice. The system will check it again. If this order cannot go ahead, cancel and refund it.':'Restore the original order details. The system will check them again. If this order cannot go ahead, review its cancellation.',
                 'link'=>$payment?'invoice':'domain','action'=>$payment?'refund':null];
         }
         if ($op->state==='held') {
@@ -358,6 +368,50 @@ final class RequestFacts
     /** What release sends, in the words staff see. */
     public static function sendWords(Operation $op, Account $account): string
     { return ($account->environment==='live'?'':'test ').($op->action==='transfer'?'transfer':'purchase'); }
+    /** The Release hold dialog: heading, button and what release starts. $sends: sendWords() when release sends to Enom at once. */
+    /** Refunds and disputes the gateway recorded on the request's own invoice, so staff see money we no longer hold.
+     * Null when there are none; ['words'=>null] when they could not be read. */
+    private static function paymentReversed(Operation $op): ?array
+    {
+        $invoice=\App\Models\Invoice::find($op->invoice_id); if (!$invoice) { return null; }
+        try { $rows=\Paymenter\Extensions\Servers\Domains\Services\ReceiptReversals::forInvoice($invoice); }
+        catch (\Throwable) { return ['words'=>null,'act'=>true]; }
+        $lines=[];$act=false;
+        foreach ($rows as $r) {
+            $amount=\Paymenter\Extensions\Servers\Domains\Services\Storefront::money(\Paymenter\Extensions\Servers\Domains\Services\PricingRule::decimal((int)$r['amount_minor']));
+            $line=match ([$r['kind']??null,$r['status']??null]) {
+                ['dispute','lost']=>$amount.' lost to a dispute',
+                ['dispute','open'],['dispute','inquiry']=>$amount.' under dispute. Submit evidence in Stripe before the deadline',
+                ['refund','refunded']=>$amount.' refunded to the original payment',
+                ['refund','open']=>'Refund of '.$amount.' in progress',
+                ['refund','failed']=>'Refund of '.$amount.' failed',
+                default=>null,
+            };
+            if ($line===null) { continue; }
+            $lines[]=$line.'.';
+            $act=$act||($r['needs_review']??false)||$r['kind']==='dispute'||$r['status']==='failed';
+        }
+        return $lines?['words'=>implode(' ',array_unique($lines)),'act'=>$act]:null;
+    }
+    /** Money returned as account credit: the amount, and why it is credit and not a refund to the payment. */
+    private static function creditWords(array $f): array
+    {
+        $minor=0;
+        foreach ([...(isset($f['refund'])?[$f['refund']]:[]),...($f['late_credits']??[])] as $p) { if (($p['to']??null)==='account_credit'&&is_numeric($p['amount']??null)) { $minor+=\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)$p['amount']); } }
+        $value=$minor>0?'Credit added: USD '.\Paymenter\Extensions\Servers\Domains\Services\PricingRule::decimal($minor):'Credit added';
+        $why=($f['refund']['bridge_reason']??null)==='gateway_return_unavailable'?'The original payment could not be refunded. ':'';
+        return [$value,$why.'Check the customer\'s account credit.'];
+    }
+    public static function releaseConfirmation(Operation $op, ?Account $account, ?string $sends, bool $contactRecovery): array
+    {
+        if ($sends!==null) { return ['Send to Enom now?','Release and send',"Sends the {$sends} to Enom within a few minutes. This can't be taken back."]; }
+        $registrar=PaidUncertainty::registrar($op);
+        $kind=$account&&in_array($op->action,['register','transfer','renew'],true)?self::queueWords($op,$account):'request';
+        if ($contactRecovery) { return ['Use updated account details?','Use updated account details',"Copies the customer's current account details into this request and releases the hold. The {$kind} then goes to {$registrar}."]; }
+        if ($account&&ComplimentaryCosts::awaitingApproval($op)) { return ['Release hold?','Release hold','Retries the price check. The '.$kind.' holds again while the registrar cost is above the usual.']; }
+        if ($account?->processing_enabled) { return ['Send to '.$registrar.' now?','Release and send',"Queues the {$kind} to send to {$registrar}, usually within a few minutes. Once sent, it can't be taken back."]; }
+        return ['Release hold?','Release hold','The '.$kind.' waits in the queue and goes to '.$registrar.' once Orders is on for this registrar account.'];
+    }
     /** What release queues: the request type, marked test on a test account. */
     private static function queueWords(Operation $op, Account $account): string
     { return ($account->environment==='live'?'':'test ').['register'=>'registration','transfer'=>'transfer','renew'=>'renewal'][$op->action]; }

@@ -20,7 +20,7 @@ $clock->instant=$clock->now()->modify('+61 seconds');
 $syncJob->handle(new DomainObservation($readBindings,$clock,$budget,$ports,static fn()=>false));
 $syncNotice=App\Models\Notification::where('user_id',$syncActor->id)->latest('id')->firstOrFail();
 same('Records not read',$syncNotice->title,'Closed record gate is not reported as Domain synced');
-same('Record checks are paused or not set up for this registrar account. Ask your site admin to check Processing and record-read setup, then press Sync now again.',$syncNotice->body,'Closed gate explains the missing record read and next step');
+same($d->domain.': Record checks are paused or not set up for this registrar account. Ask your site admin to check Processing and record-read setup, then press Sync now again.',$syncNotice->body,'Closed gate explains the missing record read and next step');
 same($syncInventory,$d->fresh()->observation['records'],'Closed gate leaves record inventory and timestamp unchanged');
 same($syncIo[0],count($state->calls),'Closed gate makes no record calls');
 expect(count($observation->calls)>$syncIo[1],'Closed record gate still allows core facts to refresh');

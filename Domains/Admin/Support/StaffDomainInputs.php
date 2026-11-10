@@ -5,6 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use App\Models\{Invoice, Service, ServiceCancellation};
 use Illuminate\Support\Facades\Schema;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Adoption, Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus;
 use Paymenter\Extensions\Servers\Domains\Services\{NativeCancellation, ObligationAlerts, OwnedDomains, RenewalCycles, RenewalStop};
 /** What the staff status and the Registration card read beyond the domain row, in one batch per page.
  * Hides nothing from history: the alert rows stay until an inspection closes them. */
@@ -14,7 +15,7 @@ final class StaffDomainInputs
     private const OPEN_RENEWAL=['awaiting_payment','queued','running','pending','held','uncertain'];
     /** @param iterable<Domain> $domains
      * @param ?array $ordersOff an OperationQueries::ordersOffAccounts() snapshot, shared with the list's Status filter. Null reads it when a row needs it.
-     * @return array<int,array{alerts:list<array{code:string,request:?int}>,late:bool,renewal:?Operation,off:?bool,invoice:?Invoice,closed:bool,waiting:?Operation,orders_off:bool,accounts:?array}> by domain id.
+     * @return array<int,array{alerts:list<array{code:string,request:?int,failed:bool}>,late:bool,renewal:?Operation,off:?bool,invoice:?Invoice,closed:bool,waiting:?Operation,orders_off:bool,accounts:?array}> by domain id.
      * off: automatic renewal is off, null when its saved data can't be read. invoice and closed: what OwnedDomains::order reads. waiting: the newest request not finished.
      * orders_off: Orders are off for the account of a queued registration or transfer request. accounts: the snapshot the row's note and step read.
      * $release: for the alert count, which needs only whether staff must act. Each row then carries release, the page's registrar accounts and
@@ -49,7 +50,12 @@ final class StaffDomainInputs
             $invoice=$invoices->get($d->latestAcquisition?->invoice_id);
             $live=$rows->reject(fn(object $a)=>$a->code==='renewal_unpaid'&&$replaced||$a->code==='observation_review'&&DomainFacts::ended($d)
                 ||ObligationAlerts::outdated($a,$a->operation_id===null?null:$ops->firstWhere('id',(int)$a->operation_id),$ops,$d));
-            $inputs[$d->id]=['alerts'=>$live->map(fn(object $a)=>['code'=>$a->code,'request'=>$a->operation_id===null?null:(int)$a->operation_id])->values()->all(),
+            $inputs[$d->id]=['alerts'=>$live->map(function(object $a)use($ops):array {
+                    $request=$a->operation_id===null?null:(int)$a->operation_id;
+                    $op=$request===null?null:$ops->firstWhere('id',$request);
+                    // The head and list keep the failed-request wording without another read per domain.
+                    return ['code'=>$a->code,'request'=>$request,'failed'=>$a->code==='operation_review'&&$op?->state==='rejected'&&!RequestStatus::closed($op->state,$op->safe_code)];
+                })->values()->all(),
                 'late'=>$rows->contains('code','acquisition_late_money'),
                 'renewal'=>$current&&in_array($current->state,self::OPEN_RENEWAL,true)?$current:null,'off'=>$off,
                 'invoice'=>(int)$invoice?->user_id===(int)$d->user_id?$invoice:null,'closed'=>OwnedDomains::closed($statuses->get($d->service_id),$stops->isNotEmpty()),'waiting'=>$waiting->get($d->id),

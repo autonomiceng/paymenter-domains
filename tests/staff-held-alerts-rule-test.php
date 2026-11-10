@@ -49,6 +49,11 @@ same(['1',[$unreleased->id],[['held alert'=>false],['links'=>[$held[$unreleased-
     'A released queued renewal hold counts nowhere; an unreleased one is in the badge and filter, its page links one held request and lists the renewal in the rail: '.json_encode($actual));
 // The read rule preserves the alert history, and the existing minute cache still avoids repeated count queries.
 same(2,DB::table('domains_obligation_alerts')->whereNull('resolved_at')->count(),'Read paths retain both alert rows');
+// Opening the list clears the menu cache; the first badge read after the page must fill it again.
+DB::connection()->flushQueryLog(); DB::connection()->enableQueryLog();
+same('1',DomainResource::getNavigationBadge(),'The badge refills with the list count');
+$coldReads=array_filter(DB::connection()->getQueryLog(),fn(array $q)=>str_contains($q['query'],'domains_'));
+expect($coldReads!==[],'Opening the list invalidates the previous badge count');
 DB::connection()->flushQueryLog(); DB::connection()->enableQueryLog();
 same('1',DomainResource::getNavigationBadge(),'Warm badge retains the visible count');
 $domainReads=array_filter(DB::connection()->getQueryLog(),fn(array $q)=>str_contains($q['query'],'domains_'));

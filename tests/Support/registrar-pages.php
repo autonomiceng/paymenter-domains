@@ -402,11 +402,11 @@ $renderedHead=static function(int $server)use($staff):array {
 };
 $heldHead=$renderedHead((int)$silo->server_id);$holdUrl=Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::requestUrl(['request'=>$held->id]);
 expect($holdUrl!==null,'The held request has a staff page');
-expect(str_contains($heldHead['text'],'Check request #'.$held->id.' Paid changes on '.App\Models\Server::findOrFail($silo->server_id)->name.' are on hold until it is checked.'),'The rendered head names the paid changes hold: '.$heldHead['text']);
+expect(str_contains($heldHead['text'],'Check request #'.$held->id.' A paid order on '.App\Models\Server::findOrFail($silo->server_id)->name.' has no registrar result yet.'),'The rendered head names the paid changes hold: '.$heldHead['text']);
 same($holdUrl,$heldHead['links']['Check request #'.$held->id]??null,'The hold links to its request');
 expect(!str_contains($heldHead['text'],'<a')&&!str_contains($heldHead['text'],'&lt;'),'The hold is markup, not escaped text');
 $clearHead=$renderedHead((int)$enom->server_id);
-expect(!str_contains($clearHead['text'],'Paid changes on'),'An account without a hold shows none: '.$clearHead['text']);unset($heldHead,$clearHead);gc_collect_cycles();gc_mem_caches();
+expect(!str_contains($clearHead['text'],'no registrar result yet'),'An account without a hold shows none: '.$clearHead['text']);unset($heldHead,$clearHead);gc_collect_cycles();gc_mem_caches();
 // The Balance sits by its label on the account sheet; money right-aligns only in table cells.
 $sheet=\Dom\HTMLDocument::createFromString(Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$silo->server_id])->html(),LIBXML_NOERROR);
 $money=iterator_to_array($sheet->querySelectorAll('.domains-money'));

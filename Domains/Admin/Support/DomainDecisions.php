@@ -70,7 +70,7 @@ final class DomainDecisions
     /** Nothing renews on these, so renewal facts do not apply. A cancellation's saved intent stays as a guard and is not shown. */
     public static function ended(Domain $d): bool { return in_array($d->status,['cancelled','registration_rejected','transfer_rejected'],true); }
     /** $notice is the page's notice (notice()) when the page already read it, false when not. */
-    public static function for(Domain $d, array|false|null $notice=false): array
+    public static function for(Domain $d, array|false|null $notice=false, ?array $families=null): array
     {
         Staff::requireView();
         $pending=$d->adoptionPending(); $registered=self::registered($d);
@@ -98,7 +98,10 @@ final class DomainDecisions
             $absent=\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::absent($d)
                 ||$drift&&!\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::ownedAfter($d,$observation['record_hold']['at']??null);
             $f['In registrar account']=Facts::row($absent?'No':Facts::flag($facts['owned']??null,'Yes','No'),sub:$absent||isset($facts['owned'])?null:$unread);
-            try { $contact=OwnedDomains::owner(OwnedDomains::contacts($d)); $none=$pending?self::unread($d,$sync):(Staff::can('admin.domains.manage')?self::ADD_CONTACTS:'Ask the customer to add them on the domain page'); }
+            // Before the first registrar read, the customer page says Checking (RecordFamilies initial_read_pending); the staff row waits too.
+            try { $first=!$pending&&!$d->last_synced_at&&(($families??\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::read($d,app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()))['initial_read_pending']??false); }
+            catch (\Throwable) { $first=false; }
+            try { $contact=OwnedDomains::owner(OwnedDomains::contacts($d)); $none=$pending?self::unread($d,$sync):($first?Missing::fills('after the first registrar read'):(Staff::can('admin.domains.manage')?self::ADD_CONTACTS:'Ask the customer to add them on the domain page')); }
             catch (\Throwable) { $contact=null; $none=self::UNREADABLE; }
             $f['Contacts']=Facts::row($contact['name']??null,sub:$contact['email']??$none);
             $nameservers=OwnedDomains::storedNameservers($d);
@@ -161,7 +164,8 @@ final class DomainDecisions
             $cancel=$renewal&&$renewal['cancel']->contains('service_id',$d->service_id);
             $off=match(true) {$renewal===null=>null,RenewalStop::adopted($renewal)=>'Set at import',$pending=>'Until import',
                 RenewalStop::blocksExisting($renewal)=>'Service cancellation pending',$cancel=>'Cancels at period end',
-                (bool)($policy['renewals_stopped']??false)=>'Stopped by staff',RenewalStop::ownerOff($renewal)=>self::ownerOff(),default=>null};
+                (bool)($policy['renewals_stopped']??false)=>'Stopped by staff',RenewalStop::ownerOff($renewal)=>self::ownerOff(),
+                self::accountRenewalsOff($d)=>self::ACCOUNT_RENEWALS_OFF,default=>null};
             $f['Renewal']=$renewal===null?Facts::row(null,sub:self::UNREADABLE_RENEWAL,help:self::help()['Renewal']):Facts::row($off?'Off':'On',sub:$off,help:self::help()['Renewal']);
             $f['Renewal price']=self::price($d,$service,$observation);
             $expired=$d->provider_expires_at&&$d->provider_expires_at->format('Y-m-d')<=gmdate('Y-m-d');
@@ -169,7 +173,7 @@ final class DomainDecisions
             if ($renewalInvoice) { $f['Next invoice']=Facts::row($renewalInvoice->due_at?'Due '.gmdate('M j, Y',strtotime(substr($renewalInvoice->due_at,0,10).' 00:00:00 UTC')):'Due'); }
             elseif (!$pending&&$d->status==='active'&&!$expired&&$renewal&&!$off) { $f['Next invoice']=self::nextInvoice($d); }
         }
-        if ($invoice) { $f['Open invoice']=Facts::row('Invoice #'.$invoice->id,sub:'Awaiting payment',url:Facts::invoiceUrl((int)$invoice->id)); }
+        if ($invoice) { $f['Open invoice']=Facts::row(Facts::invoiceName((int)$invoice->id),sub:'Awaiting payment',url:Facts::invoiceUrl((int)$invoice->id)); }
         // A failed read leaves the unread rows red Missing without a sentence each. Why, and what to do, is said once:
         // a stopped read in the page notice, a read still retrying on Last sync. Contacts come from saved requests, not the read,
         // so their Missing keeps its own step.
@@ -180,6 +184,16 @@ final class DomainDecisions
             if(isset($f['Last sync'])){$f['Last sync']['sub']=!self::ended($d)&&(self::hold($d)['stopped']??false)?null:$problem;}
         }
         return self::alerts($d,$f,$notice);
+    }
+    public const ACCOUNT_RENEWALS_OFF='Renewals are off for this registrar account. No renewal invoice goes out.';
+    /** The account's Renewals switch is off for a billed domain: the same rule as the account's Managed domains waiting row. */
+    public static function accountRenewalsOff(Domain $d, ?Account $account=null): bool
+    {
+        if (!$d->billing_managed||!$d->server_id) { return false; }
+        try {
+            $account??=Account::where('server_id',$d->server_id)->where('registrar_key',$d->registrar_key)->first();
+            return $account!==null&&!\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::on(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account));
+        } catch (\Throwable) { return false; }
     }
     /** Safe cause text shared by the domain page and the list. Unknown saved kinds still need review. With the domain, a stopped sync names the control these staff have. */
     public static function alertCause(string $code, ?Domain $d=null): string
@@ -328,12 +342,14 @@ final class DomainDecisions
             'contacts'=>'contacts','flags'=>'lock, auto-renew and privacy settings',default=>null };
     }
     /** 'paused' (demo registrar off under Enom Test mode), 'failed' (stopped after a failed check) or null. Shared by the page and the list. Nothing syncs on an ended domain, so it has neither.
-     * The list passes the account and stopped state it loaded for the whole page. $accountLoaded includes a missing account. */
+     * The list passes the account and stopped state it loaded for the whole page. $accountLoaded includes a missing account.
+     * While a registration is unconfirmed its request owns recovery (DomainNotices::notice), so no stopped sync is shown on the page or the list. */
     public static function sync(Domain $d, ?Account $account=null, ?bool $stopped=null, bool $accountLoaded=false): ?string
     {
         if (self::ended($d)) { return null; }
         if(!$accountLoaded){$account??=self::account($d);}
-        return $account&&DemoData::syncPaused($d,$account)?'paused':(($stopped??ObservationWork::stopped($d))?'failed':null);
+        if ($account&&DemoData::syncPaused($d,$account)) { return 'paused'; }
+        return !self::unconfirmedRegistration($d)&&($stopped??ObservationWork::stopped($d))?'failed':null;
     }
     /** Why a value read from the registrar is Missing. */
     public static function unread(Domain $d, ?string $sync): string

@@ -78,6 +78,6 @@ class ListWatches extends ListRecords
         if(($this->visible['records']??null)!==$records){$rows=collect(method_exists($records,'items')?$records->items():$records);
             $this->visible=['records'=>$records,'summaries'=>WatchFindings::summaries($rows),'customers'=>WatchFindings::customers($rows->pluck('user_id')->unique()->all())];}
         $row=$this->visible['summaries'][$record->id]??WatchFindings::summaries([$record])[$record->id];
-        return $row+['customer'=>$this->visible['customers'][$record->user_id]??WatchFindings::customers([$record->user_id])[$record->user_id],'status'=>WatchFindings::status($record,$row['keys'],$row['summary']?->expiry)];
+        return $row+['customer'=>$this->visible['customers'][$record->user_id]??WatchFindings::customers([$record->user_id])[$record->user_id],'status'=>WatchFindings::status($record,$row['keys'],$row['summary']?->expiry,summary:$row['summary'])];
     }
 }

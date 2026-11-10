@@ -27,7 +27,7 @@ expect(isset($d->fresh()->observation['facts']),'Candidate limit still saves cor
 same('child_host_limit',$d->fresh()->observation['record_hold']['reason'],'Candidate limit has its own recoverable cause');
 $notice=App\Models\Notification::where('user_id',$limitActor->id)->latest('id')->firstOrFail();
 same("Couldn't read all records",$notice->title,'Candidate limit never reports Domain synced');
-same("Missing: more than 50 child hosts to check. Ask your site admin to remove unused entries from this domain's saved discovery data, registrar nameservers and DNS templates so at most 50 child hosts remain, then use Sync now.",$notice->body,'Candidate-limit inbox gives the real limit and required source cleanup');
+same($d->domain.": Missing: more than 50 child hosts to check. Ask your site admin to remove unused entries from this domain's saved discovery data, registrar nameservers and DNS templates so at most 50 child hosts remain, then use Sync now.",$notice->body,'Candidate-limit inbox gives the real limit and required source cleanup');
 DB::table('domains_watch_profiles')->where('id',array_pop($profiles))->delete();
 $clock->instant=$clock->now()->modify('+61 seconds');$limitJob->handle($observer);
 expect(!ObservationRecords::held($d->fresh()),'Reducing candidates to50 allows successful discovery ('.($d->fresh()->observation['record_hold']['reason']??'none').'/'.($d->fresh()->observation['record_hold']['code']??'none').')');

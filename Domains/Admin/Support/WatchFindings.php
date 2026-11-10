@@ -53,11 +53,13 @@ final class WatchFindings
         return array_values(array_intersect(self::KEYS,$keys));
     }
     /** The monitored domain status set: label, tone and reason line. */
-    public static function status(WatchName $w,array $keys,?string $expiry=null,?int $now=null): array
+    public static function status(WatchName $w,array $keys,?string $expiry=null,?int $now=null,?DomainSummary $summary=null): array
     {
         if($w->state==='paused'){return ['label'=>'Paused','tone'=>'gray','reason'=>null];}
         if($w->state!=='active'){return ['label'=>'Stopped','tone'=>'gray','reason'=>$w->state==='linked'?(DnsSignalLabels::company() !== '' ? 'Registered at '.self::company() : 'Registered with us'):null];}
         foreach(self::PROBLEMS as $key=>$reason){if(in_array($key,$keys,true)){return ['label'=>'Problem found','tone'=>'warning','reason'=>$reason??self::expires($expiry,$now)];}}
+        // A failed last check is not healthy. Last check already says what failed, so the status gives no second reason.
+        if(WatchFacts::lastCheckFailed($w,$summary)){return ['label'=>'Check failed','tone'=>'warning','reason'=>null];}
         return ['label'=>'Monitoring','tone'=>'success','reason'=>null];
     }
     public static function expires(?string $expiry,?int $now=null): ?string

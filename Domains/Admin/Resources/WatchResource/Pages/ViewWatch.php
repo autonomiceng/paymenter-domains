@@ -57,7 +57,7 @@ class ViewWatch extends ViewRecord
     private function facts(): array
     {
         if(!$this->resolved){$w=$this->getRecord();$row=$w->state==='active'?WatchFindings::summaries([$w])[$w->id]:null;$facts=WatchFacts::for($w,$row);
-            $status=WatchFindings::status($w,$row['keys']??[],($row['summary']??null)?->expiry);
+            $status=WatchFindings::status($w,$row['keys']??[],($row['summary']??null)?->expiry,summary:$row['summary']??null);
             $this->resolved=['facts'=>$facts,'status'=>$status];}
         return $this->resolved;
     }

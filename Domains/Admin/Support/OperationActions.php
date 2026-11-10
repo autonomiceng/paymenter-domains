@@ -33,14 +33,17 @@ final class OperationActions
                 ->visible(fn()=>Staff::can(StaffOperationReview::permission($name))&&self::relevant($name,$op));
             if(in_array($name,[...self::REASON,'disposition'],true)){
                 $action->requiresConfirmation()->modalHeading($name==='disposition'?$label:$label.'?')->modalSubmitActionLabel($label)->modalWidth('lg')
-                    ->modalDescription($complimentaryClosure?'Closes this complimentary order and its service. Nothing is charged or credited.':self::description($name));
+                    ->modalDescription($complimentaryClosure?'Closes this complimentary order and its service. Nothing is charged or credited.':($name==='refund'?self::refundWords($op):self::description($name)));
+                // A destructive confirm is red wherever the action is shown, including as a notice button.
+                if($name==='refund'){$action->modalSubmitAction(fn(Action $submit)=>$submit->color('danger'));}
             }
             $account=$name==='release'&&!$contactRecovery&&$op->state==='held'?RequestFacts::account($op)['account']:null;
             // A held complimentary cost comes back on release, so release sends nothing until the cost is approved.
             $sends=EnomTestRegistration::releaseSends($op,$account)&&!\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::awaitingApproval($op)?RequestFacts::sendWords($op,$account):null;
-            if($sends!==null){
-                $action->requiresConfirmation()->modalHeading('Send to Enom now?')->modalSubmitActionLabel('Release and send')->modalWidth('lg')
-                    ->modalDescription("Sends the {$sends} to Enom within a few minutes. This can't be taken back.");
+            // Every release starts paid work again, so each one asks first and says what it starts.
+            if($name==='release'){
+                [$heading,$submit,$description]=RequestFacts::releaseConfirmation($op,$account,$sends,$contactRecovery);
+                $action->requiresConfirmation()->modalHeading($heading)->modalSubmitActionLabel($submit)->modalWidth('lg')->modalDescription($description);
             }
             if(in_array($name,self::REASON,true)){
                 $action->schema([Hidden::make('review_key')->default($ticket),
@@ -166,6 +169,12 @@ final class OperationActions
         if(($p['reconciliation']['reason']??null)==='transfer_deadline_passed'||($p['reconciliation']['final_check']??null)==='done'){return true;}
         if(\Paymenter\Extensions\Servers\Domains\Services\TransferPolling::expected($op)){return false;}
         return ($p['renewal_polls']??0)>=\Paymenter\Extensions\Servers\Domains\Services\OperationReconciliation::POLL_LIMIT||($p['reconciliation']['polls']??0)>=\Paymenter\Extensions\Servers\Domains\Services\OperationReconciliation::POLL_LIMIT;
+    }
+    /** Cancel and refund names the amount and where it goes before staff confirm. */
+    public static function refundWords(Operation $op): string
+    {
+        $amount=is_numeric($op->amount)&&(float)$op->amount>0?($op->currency?:'USD').' '.number_format((float)$op->amount,2,'.',''):'the payment';
+        return "Cancels this unsent request and refunds {$amount} to the original payment. If that payment can't be refunded, {$amount} is added to the customer's account credit instead.";
     }
     /** The confirmation text for each action that opens one. */
     public static function description(string $action): ?string

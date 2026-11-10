@@ -6,6 +6,8 @@ use Paymenter\Extensions\Servers\Domains\Presentation\{RequestStatus, TransferNo
 use Paymenter\Extensions\Servers\Domains\Services\ManagementEvidence;
 final class Labels
 {
+    /** The renewal check's catch-all: registrar facts moved during the check (a date boundary, a read, a rotation). It retries by itself, so it is not an account change. */
+    public const RENEWAL_RECHECK='Not sent yet: registrar details changed during the check. It will retry automatically.';
     /** The Invoice sub-line on the request page. */
     public static function autoPay(mixed $evidence): string
     {
@@ -143,7 +145,7 @@ final class Labels
             'renewal_admitted'=>null,'renewal_authority_invalid'=>'Not sent: registrar account changed',
             'renewal_anchor_changed'=>'Not sent: expiry date changed','renewal_prior_outcome_unresolved'=>RequestStatus::UNCONFIRMED,
             'automatic_spend_paused'=>'Not sent: orders paused for this domain','renewal_acceptance_required'=>'Not sent: Renewals off for this account',
-            'renewal_rate_limited'=>'Not sent: our request limit reached. Try later.','renewal_repeat_wait'=>\Paymenter\Extensions\Servers\Domains\Services\RenewalRepeatWait::STAFF,'renewal_binding_changed'=>'Not sent: registrar account changed',
+            'renewal_rate_limited'=>'Not sent: our request limit reached. Try later.','renewal_repeat_wait'=>\Paymenter\Extensions\Servers\Domains\Services\RenewalRepeatWait::STAFF,'renewal_binding_changed'=>self::RENEWAL_RECHECK,
             'renewal_reads_unavailable'=>'Status check failed','provider_membership_unconfirmed'=>'Not sent: domain not in registrar account',
             'provider_auto_renew_unconfirmed'=>'Not sent: registrar auto-renew may be on','renewal_restore_refused'=>'Not sent: domain in redemption',
             'renewal_state_unconfirmed'=>RequestStatus::UNCONFIRMED,'renewal_term_refused'=>'Not sent: term not supported',
@@ -171,8 +173,8 @@ final class Labels
             'enom_test_transfer_usd_balance_required'=>'Not sent: registrar balance needs another check','usd_balance_required'=>'Not sent: registrar balance needs another check',
             'configuration_unavailable'=>"Not sent: couldn't load the registrar account's settings",
             'write_rate_limited'=>'Not sent: our request limit reached. Try later.','write_acceptance_required'=>self::FEATURE_OFF,
-            'nameservers_required'=>'Not sent: nameservers missing','name_unavailable'=>'Not sent: name not available. Cancel and add credit.',
-            'premium_name'=>'Not sent: premium names not supported. Cancel and add credit.','order_not_supported'=>'Not sent: registrar does not support this order. Cancel and add credit.',
+            'nameservers_required'=>'Not sent: nameservers missing','name_unavailable'=>'Not sent: name not available. Cancel and refund.',
+            'premium_name'=>'Not sent: premium names not supported. Cancel and refund.','order_not_supported'=>'Not sent: registrar does not support this order. Cancel and refund.',
             'registrar_price_missing'=>'Not sent: registrar price missing','registrar_read_failed'=>"Not sent: couldn't read from the registrar",
             'registrar_balance_insufficient'=>'Not sent: registrar balance is too low. Add funds.','registry_details_unsupported'=>'Not sent: registry needs extra details',
             'renewal_funding_or_authority'=>'Not sent: renewal settings changed. Check the domain.','renewal_cost_overrun'=>'Not sent: cost above limit',
@@ -190,7 +192,7 @@ final class Labels
             'nameservers_missing'=>'Nameservers missing at the registry','srv'=>'SRV records',
             'rotation'=>'Check not finished. It continues on the next run.',
             'resolver_failed'=>'DNS resolver failed','invalid_answer'=>'DNS answer invalid','ambiguous_empty'=>'DNS answer incomplete',
-            'registrar_price_increased'=>'Not sent: the registrar price is above the limit saved with the order. Cancel'.($complimentary?'':' and add credit').', or use Release hold after the price falls.',
+            'registrar_price_increased'=>'Not sent: the registrar price is above the limit saved with the order. Cancel'.($complimentary?'':' and refund').', or use Release hold after the price falls.',
             'actual_cost_overrun'=>'Registrar cost is above the spending limit.','below_cost'=>'Registrar cost exceeds retail price',
             'confirmed'=>'Confirmed','correction_required'=>'Corrections needed','original_attempt_unresolved'=>'First try has no result yet.',
             'resumed'=>'Status checks resumed','transfer_rejection_contradiction'=>'Registrar says rejected, our records disagree.',

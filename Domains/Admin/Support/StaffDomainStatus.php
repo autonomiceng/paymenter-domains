@@ -33,7 +33,7 @@ final class StaffDomainStatus
      * An open alert names the step unless the row already has a specific one (a held request, an import) or has ended.
      * With no alert, an open renewal says what happens next on a domain that is otherwise Active.
      * @param array{key:string,label:string,tone:string,reason:?string} $shared
-     * @param list<array{code:string,request:?int}> $alerts
+     * @param list<array{code:string,request:?int,failed?:bool}> $alerts
      * @return array{key:string,label:string,tone:string,reason:?string,step:?string,request:?int,act:bool,alert:?string} $request is set when the step names one, $act when staff have a job here, $alert when the step is that open alert */
     public static function for(array $shared, string $state, Domain $d, ?Operation $op, array $alerts, ?Operation $renewal=null, ?Operation $waiting=null, bool $ordersOff=false, ?array $accounts=null, ?array $release=null): array
     {
@@ -106,6 +106,7 @@ final class StaffDomainStatus
         if (!$alert['request']) { return [$step, null]; }
         // Some causes already end by sending staff to the request. Name it there, once.
         $open = self::check($alert['request']);
+        if ($alert['failed']??false) { return ['Request failed.'.$open, $alert['request']]; }
         return [str_contains($step, ' Check the request.') ? str_replace(' Check the request.', $open, $step) : $step.$open, $alert['request']];
     }
     /** @return array{0:string,1:?int,2:bool} step, the request it names, and whether staff have a job here */
@@ -113,7 +114,8 @@ final class StaffDomainStatus
     {
         return match (true) {
             in_array($op->state, ['held', 'uncertain'], true) => [self::stopped($op, $accounts, $release), $op->id, true],
-            $op->state === 'awaiting_payment' => [Labels::requestStatus($op)['reason'], null, false],
+            // The alert count ($release) never shows these words and reads nothing per request, so it skips the paid invoice read.
+            $op->state === 'awaiting_payment' => [($release === null ? RequestFacts::paidWaiting($op, $accounts) : null) ?? Labels::requestStatus($op)['reason'], null, false],
             $op->state === 'queued' && ($ready = RequestFacts::readyMessage($op, $accounts, $release)) !== null => [$ready.self::ordersOrCheck($op, $ready, $accounts), $op->id, true],
             default => [self::RENEWING, null, false],
         };
@@ -129,11 +131,13 @@ final class StaffDomainStatus
     /** One step: a request that waits only on Orders names the switch, since its page says no more; any other names the request. */
     private static function ordersOrCheck(Operation $op, string $reason, ?array $accounts=null): string
     { return $op->state==='queued'&&OperationQueries::ordersOff($op,$accounts)?RequestFacts::ordersStep($reason):self::check($op->id); }
-    /** The first danger alert, else the oldest. */
+    /** A request to check leads, as in the domain page's head (DESIGN: the staff job reads Check request #N). Then the first danger alert, else the oldest. */
     private static function topAlert(array $alerts): array
     {
-        foreach ($alerts as $alert) { if ((DomainFacts::ALERTS[$alert['code']][1] ?? null) === 'danger') { return $alert; } }
-        return reset($alerts);
+        $requests = array_values(array_filter($alerts, fn(array $a) => ($a['request'] ?? null) !== null && in_array($a['code'], ['operation_review', 'held_obligation'], true)));
+        $pool = $requests !== [] ? $requests : array_values($alerts);
+        foreach ($pool as $alert) { if ((DomainFacts::ALERTS[$alert['code']][1] ?? null) === 'danger') { return $alert; } }
+        return $pool[0];
     }
     public static function sentence(string $text): string
     { return preg_match('/[.!?]\z/', $text) ? $text : $text.'.'; }
