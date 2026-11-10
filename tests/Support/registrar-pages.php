@@ -145,8 +145,13 @@ foreach($routes as $route){if($route->getName()!==$createName){$withoutCreate->a
 app('router')->setRoutes($withoutCreate);
 Livewire::actingAs($creator)->test(RegistrarSetup::class)->assertActionDoesNotExist('add_account');
 app('router')->setRoutes($routes);
-Livewire::actingAs($creator)->test(RegistrarSetup::class)->assertActionVisible('add_account')
-    ->assertActionHasUrl('add_account',\App\Admin\Resources\ServerResource::getUrl('create'));
+// Add registrar account names the account in a dialog and opens its page to connect, not the stock Create Server form.
+$added=Livewire::actingAs($creator)->test(RegistrarSetup::class)->assertActionVisible('add_account')->assertActionDoesNotHaveUrl('add_account',\App\Admin\Resources\ServerResource::getUrl('create'))
+    ->callAction('add_account',['name'=>'  Enom live account '])->assertHasNoActionErrors();
+$new=App\Models\Server::where('name','Enom live account')->sole();
+same(['Domains','server',true],[$new->extension,$new->type,(bool)$new->enabled],'The new account is a Domains server');
+$added->assertRedirect(RegistrarAccount::getUrl(['account'=>$new->id]));unset($added);
+Livewire::actingAs($creator)->test(RegistrarSetup::class)->callAction('add_account',['name'=>''])->assertHasActionErrors(['name'=>'required']);
 $creator->role()->first()->update(['permissions'=>[Staff::VIEW]]);$creator->unsetRelation('role');
 Livewire::actingAs($creator)->test(RegistrarSetup::class)->assertActionDoesNotExist('add_account');
 // Release the completed table before building the account forms.

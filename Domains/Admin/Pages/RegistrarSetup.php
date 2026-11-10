@@ -39,11 +39,24 @@ class RegistrarSetup extends Page implements HasTable
     { return [static::getRouteName(),RegistrarAccount::getRouteName(),RegistrarHistory::getRouteName(),RegistrarBalances::getRouteName(),ActivationStatus::getRouteName(),OperationResource::getRouteBaseName().'.*']; }
     public static function canAccess(): bool {return Staff::can();}
     public function mount(): void {Staff::requireView();}
+    /** Add registrar account: name it here, then connect it on its own page. The stock Create Server form asks for a Paymenter
+     * extension and shows no registrar fields, so staff landed on a page that never said what to do next. */
     protected function getHeaderActions(): array
     {
-        $resource=\App\Admin\Resources\ServerResource::class;$url=self::resourceUrl($resource,'create');
-        if($url===null||!$resource::canCreate()){return [];}
-        return [Action::make('add_account')->label('Add registrar account')->url($url)];
+        $resource=\App\Admin\Resources\ServerResource::class;
+        if(self::resourceUrl($resource,'create')===null||!$resource::canCreate()){return [];}
+        return [Action::make('add_account')->label('Add registrar account')->modalHeading('Add registrar account?')
+            ->modalDescription('Name the account. Next, on its page, use Connect account to choose the registrar and enter its API key.')
+            ->schema([\Filament\Forms\Components\TextInput::make('name')->label('Name')->placeholder('Enom live account')->required()->maxLength(255)])
+            ->modalSubmitActionLabel('Add')
+            ->action(function(array $data)use($resource):void {
+                if(!$resource::canCreate()){throw new \Illuminate\Auth\Access\AuthorizationException;}
+                $name=trim((string)$data['name']);
+                $server=Server::create(['name'=>$name,'extension'=>'Domains','type'=>'server','enabled'=>true]);
+                \App\Helpers\ExtensionHelper::call($server,'enabled',[$server],mayFail:true);
+                \Filament\Notifications\Notification::make()->success()->title('Registrar account added')->body('Use Connect account to finish.')->send();
+                $this->redirect(RegistrarAccount::getUrl(['account'=>$server->id]));
+            })];
     }
     public function content(Schema $schema): Schema
     {
