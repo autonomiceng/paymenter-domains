@@ -32,15 +32,19 @@ final class RenewalRepeatWait
         }
         return $until;
     }
-    /** next() for a page: reads the domain's renewals and account. Null when anything is missing. */
+    /** next() for a page. Read failures propagate so the caller keeps its retained invoice state. */
     public static function forDomain(Domain $d, \DateTimeImmutable $now): ?\DateTimeImmutable
     {
         if ($d->registrar_key !== 'enom') { return null; }
         try {
-            // The latest completions decide; next() keeps only the last 24 hours.
-            $ops = Operation::where('domain_id', $d->id)->where('action', 'renew')->whereNotNull('completed_at')->orderByDesc('completed_at')->limit(5)->get();
-            return $ops->isEmpty() ? null : self::next($d, $ops, $now, AccountBindings::binding(Account::where('server_id', $d->server_id)->sole()));
-        } catch (\Throwable) { return null; }
+            // Stream recent candidates: invalid rows must not hide an authoritative completion.
+            $ops = Operation::where('domain_id', $d->id)->where('action', 'renew')->whereNotNull('completed_at')
+                ->where('completed_at', '>', $now->setTimezone(new \DateTimeZone(date_default_timezone_get()))->modify('-'.self::HOURS.' hours'))->orderByDesc('completed_at')->cursor();
+            return self::next($d, $ops, $now, AccountBindings::binding(Account::where('server_id', $d->server_id)->sole()));
+        } catch (\Throwable $error) {
+            \Illuminate\Support\Facades\Log::warning('Domains renewal wait unavailable.', ['exception_class' => $error::class]);
+            throw $error;
+        }
     }
     /** The fixed time a waiting renewal may go, or null when it is not waiting on this. */
     public static function until(Operation $op): ?\DateTimeImmutable
