@@ -1,0 +1,31 @@
+{
+  "_doc": "Change-to-test map for scripts/affected.py. Tests within `depth` hops of a changed file are affected. A `core` file, or one that reaches more than a quarter of all tests within two hops, widens the slice; `explicit` adds tests no file reference finds; `no_tests` files never reach tests.",
+  "scan": ["Domains", "tests", "scripts"],
+  "covers": ["*"],
+  "depth": 1,
+  "core": [
+    "scripts/test.py",
+    "scripts/test_workers.py",
+    "scripts/php-test",
+    "tests/suites.json",
+    "Domains/routes/*",
+    "Domains/database/migrations/*",
+    "composer.json",
+    "composer.lock"
+  ],
+  "explicit": {
+    "Domains/database/migrations/*": [
+      "tests/test_installed_package_fresh.py",
+      "tests/test_installed_package_upgrade.py",
+      "tests/test_schema_mariadb.py"
+    ],
+    "Domains/Services/RenewalCycles.php": ["tests/cancelled-renewal-payment-test.php", "tests/late-renewal-test.php"],
+    "Domains/routes/*": ["tests/test_installed_package.py"],
+    "Domains/*.php": ["tests/test_installed_package.py"],
+    "tests/suites.json": ["tests/test_runner.py"],
+    "scripts/test.py": ["tests/test_runner.py"],
+    "scripts/test_workers.py": ["tests/test_runner.py"],
+    "scripts/php-test": ["tests/test_runner.py"]
+  },
+  "no_tests": ["*.md", "LICENSE", "*.png", "*.svg"]
+}

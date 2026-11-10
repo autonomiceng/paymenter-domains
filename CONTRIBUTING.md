@@ -10,4 +10,4 @@ Use synthetic examples, reserved names (`example.com`, `example.net`, `example.o
 
 Open focused pull requests with the problem, resulting behavior, verification performed, and remaining limits. Use Conventional Commits and the maintainer-configured author, committer, and signing settings. Preserve existing MIT notices in adapted source.
 
-Run `scripts/test.py` before committing. CI checks repository hygiene and synthetic offline PHP suites. Add native integration, UI and package checks with those features. Describe unrun checks explicitly; synthetic tests do not establish extension compatibility or provider acceptance.
+Run `scripts/test.py` before committing. CI checks repository hygiene, synthetic offline PHP suites and the native tests a change affects; every native test runs nightly. Add UI and package checks with those features. Describe unrun checks explicitly; synthetic tests do not establish extension compatibility or provider acceptance.

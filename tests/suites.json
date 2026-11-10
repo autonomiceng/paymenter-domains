@@ -70,7 +70,8 @@
     "tests/test_schema_mariadb_guards.py",
     "tests/test_conversion_refusal.py",
     "tests/test_runner_speed.py",
-    "tests/test_retired_catalogue_references.py"
+    "tests/test_retired_catalogue_references.py",
+    "tests/test_runner_affected.py"
   ],
   "package": [
     "tests/test_package.py"

@@ -111,7 +111,9 @@ migrates an in-memory database, blocks stray HTTP and removes the copy afterward
 schema/model/transaction/HTTP guards, manually invoked Domains foundation migrations, standalone retained-schema
 verification, global reservation/rollback and synthetic account/site/credential binding guards. These fixture-only
 checks have no Domains entry point, billing, production registrar identity verifier or installed extension; SQLite cannot prove MariaDB locking, concurrent checkout or financial correctness.
-CI runs standalone categories with cached pinned PHP, not native checks: supply their local dependency explicitly. No dependency checkout/download/bootstrap is automatic.
+Locally, supply the dependency explicitly: `scripts/test.py` never checks out, downloads or bootstraps it.
+
+CI runs the native suite too: see [native tests in CI](native-ci.md).
 
 ## Packaging and limits
 

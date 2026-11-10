@@ -1,0 +1,131 @@
+name: Native tests
+
+# Pull requests run the native tests their change affects (scripts/affected.py, called from ci.yml).
+# The scheduled run on main runs every native test and never blocks a pull request.
+on:
+  workflow_call:
+    inputs:
+      base:
+        description: Pick tests for changes since this ref.
+        type: string
+        default: ''
+      files:
+        description: Pick tests for these space-separated paths instead.
+        type: string
+        default: ''
+      all:
+        description: Run every native test.
+        type: boolean
+        default: false
+  schedule:
+    - cron: '23 11 * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    name: Plan
+    if: github.event_name != 'schedule' || github.repository == 'autonomiceng/paymenter-domains'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      count: ${{ steps.plan.outputs.count }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          filter: blob:none
+      - id: plan
+        name: Pick native tests
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          ALL: ${{ inputs.all }}
+          FILES: ${{ inputs.files }}
+          BASE: ${{ inputs.base }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [[ $EVENT == schedule || $ALL == true ]]; then
+            args=(--all)
+          elif [[ -n $FILES ]]; then
+            read -ra files <<< "$FILES"
+            args=(--files "${files[@]}")
+          elif [[ -n $BASE ]]; then
+            args=(--base "$BASE")
+          elif [[ $EVENT == pull_request ]]; then
+            args=(--base "$PR_BASE")
+          elif [[ $REF == refs/heads/main && -n $BEFORE && ! $BEFORE =~ ^0+$ ]]; then
+            args=(--base "$BEFORE")
+          else
+            args=(--base origin/main)
+          fi
+          python3 scripts/affected.py "${args[@]}" --github-output "$GITHUB_OUTPUT" | tee plan.txt
+          { echo '```'; cat plan.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+  test:
+    name: Native ${{ matrix.shard }}
+    needs: plan
+    if: needs.plan.outputs.count != '0'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    env:
+      PAYMENTER_TEST_APP: ${{ github.workspace }}/../paymenter-1.5.9
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: pin
+        name: Read the pinned Paymenter release
+        run: |
+          python3 -c 'import sys; sys.path.insert(0, "scripts"); import native; print(f"commit={native.COMMIT}\nlock={native.LOCK_SHA256}")' >> "$GITHUB_OUTPUT"
+          echo "PAYMENTER_TEST_APP=$(realpath -m "$PAYMENTER_TEST_APP")" >> "$GITHUB_ENV"
+      - id: app
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.PAYMENTER_TEST_APP }}
+          key: paymenter-native-${{ runner.os }}-${{ steps.pin.outputs.commit }}-${{ steps.pin.outputs.lock }}
+      - name: Install the pinned Paymenter release
+        if: steps.app.outputs.cache-hit != 'true'
+        env:
+          COMMIT: ${{ steps.pin.outputs.commit }}
+          COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ github.token }}"}}'
+        run: |
+          git clone --quiet --depth 1 --branch v1.5.9 https://github.com/Paymenter/Paymenter.git "$PAYMENTER_TEST_APP"
+          test "$(git -C "$PAYMENTER_TEST_APP" rev-parse HEAD)" = "$COMMIT"
+          composer install --working-dir="$PAYMENTER_TEST_APP" --no-scripts --no-plugins --no-interaction \
+            --prefer-dist --no-progress --ignore-platform-reqs
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cache/php-runtime/*.deb
+          key: domains-php-native-${{ runner.os }}-${{ hashFiles('scripts/php-runtime-packages.json') }}
+      - name: Install runtime system libraries
+        run: |
+          missing=()
+          for library in libxml2.so.2 libargon2.so.1 libsodium.so.23 libcurl.so.4 libgd.so.3; do
+            ldconfig -p | grep -q "$library" || missing+=("$library")
+          done
+          if (( ${#missing[@]} )); then
+            echo "Installing for: ${missing[*]}"
+            sudo apt-get update && sudo apt-get install -y libxml2 libargon2-1 libsodium23 libcurl4t64 libgd3
+          fi
+      - run: python3 scripts/bootstrap.py --download --native
+      - name: Run native tests
+        env:
+          TESTS: ${{ toJSON(matrix.tests) }}
+          DOMAINS_TEST_JOBS: 4
+        run: |
+          python3 -c 'import json, os, sys; os.execv(sys.executable, [sys.executable, "scripts/test.py", "--memory-mib", "8192", "--only", *json.loads(os.environ["TESTS"])])'
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: native-test-failures-${{ strategy.job-index }}
+          path: /tmp/domains-tests-*
+          include-hidden-files: true
+          if-no-files-found: ignore

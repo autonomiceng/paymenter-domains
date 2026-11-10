@@ -4,6 +4,17 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+    inputs:
+      native_base:
+        description: Native tests for changes since this ref (default main)
+        default: ''
+      native_files:
+        description: Native tests for these space-separated paths instead
+        default: ''
+      native_all:
+        description: Run every native test
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -99,3 +110,11 @@ jobs:
           php -r 'exit(PHP_VERSION_ID >= 80300 && PHP_VERSION_ID < 80400 ? 0 : 1);'
           find Domains -type f -name '*.php' -print0 | xargs -0 -r -n1 php -l
           php tests/php83-compatibility-test.php
+
+  native:
+    name: Native
+    uses: ./.github/workflows/native.yml
+    with:
+      base: ${{ inputs.native_base || '' }}
+      files: ${{ inputs.native_files || '' }}
+      all: ${{ inputs.native_all || false }}
