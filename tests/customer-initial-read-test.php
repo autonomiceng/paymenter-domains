@@ -40,7 +40,7 @@ expect(!str_contains(strip_tags($html),'No registrar read is queued.'),'Customer
 $lockPage=new OwnedDomain(name:$d->domain,status:'Active',tone:'ok',expiry:'2027-11-07',renewal:'On',renewalPrice:'$10.99',actions:['show'=>'/domains/73'],progress:[],setup:[],transfer:[],
     management:['lock'=>['label'=>'Transfer lock','state'=>null,'url'=>'/domains/73/lock','actions'=>['lock'=>'/domains/73/lock']],
         'nameservers'=>['label'=>'Nameservers','current'=>['ns1.example.net','ns2.example.net'],'url'=>'/domains/73/nameservers','actions'=>['nameservers'=>'/domains/73/nameservers']]],testEnvironment:true);
-$dom=storefrontDom(view('domains::show',['domain'=>RecordFamilies::owner($lockPage,$facts),'summary'=>null,'keys'=>['lock'=>'fixture-key']])->render());
+$dom=storefrontDom(view('domains::show',['domain'=>RecordFamilies::owner($lockPage,$facts),'summary'=>null,'keys'=>['lock'=>'fixture-key','nameservers'=>'fixture-key']])->render());
 same(0,$dom->query('//li[@id="lock"]//a[contains(@href,"edit=lock")]')->length,'Checking lock row has no live Change link');
 same(1,$dom->query('//li[@id="lock"]//button[@disabled and normalize-space(.)="Change"]')->length,'Checking lock row shows Change turned off');
 // Nameservers we sent at registration still show, but the row says Checking, so Edit waits too.
