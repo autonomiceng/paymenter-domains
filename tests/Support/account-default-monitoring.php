@@ -273,7 +273,15 @@ foreach(['absent','stale','unreadable newer']as$evidence){
     $choiceResults[$evidence]=[$notice['expected'],array_values(array_intersect($summary->stateKeys,['watch.ns_pending','watch.ns_changed']))];
 }
 same(array_fill_keys(['absent','stale','unreadable newer'],[false,[]]),$choiceResults,'Newest resolved choice survives unresolved, unreadable and wrong-identity successors: '.json_encode($choiceResults));
-DB::table('domains_operations')->whereIn('id',[$original->id,$resolved->id,$unresolved->id,$wrong->id,...$overflow])->delete();
+// The newest confirmed change ends the summary's history read: older retained requests are not paged through.
+$newest=Operation::create([...$choiceBase,'operation_key'=>'newest-resolved-choice','payload'=>$read['facts'],
+    'attempt'=>['seal'=>'sealed','management_reads'=>[[...$read,'operation_key'=>'newest-resolved-choice']]]]);
+DB::flushQueryLog();DB::enableQueryLog();
+(new \Paymenter\Extensions\Servers\Domains\Services\DomainSummaries())->one($owner,'managed',$id,$sampleAt+1);
+$historyPages=array_filter(DB::getQueryLog(),fn(array $q)=>str_contains($q['query'],'"domains_operations"."id" desc')&&in_array('nameservers',$q['bindings'],true));
+DB::disableQueryLog();DB::flushQueryLog();
+same(1,count($historyPages),'The summary reads one history page when the newest change is confirmed');
+DB::table('domains_operations')->whereIn('id',[$original->id,$resolved->id,$unresolved->id,$wrong->id,$newest->id,...$overflow])->delete();
 DB::table('domains_domains')->where('id',$id)->update(['observation'=>$authority['observation']]);
 DB::table('domains_managed_public_config')->where('domain_id',$id)->update($savedConfig);
 // Checkout inheritance follows a new account comparison; explicit and legacy customer choices keep theirs.
