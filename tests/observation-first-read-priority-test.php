@@ -42,4 +42,13 @@ same($routine[0],(int)($claim()->id??0),'Routine reads keep oldest-first order')
 DB::table('domains_observation_work')->update(['claim'=>null,'lease_until'=>0,'tries'=>0]);
 DB::table('domains_observation_work')->where('id',$first)->update(['due_at'=>$now->getTimestamp()+60]);
 same($routine[0],(int)($claim()->id??0),'A first read that is not due waits its turn');
+// An all-routine window keeps oldest-first order and reads domain rows in one batch.
+DB::table('domains_observation_work')->update(['claim'=>null,'lease_until'=>0,'tries'=>0]);
+for($n=10;$n<35;$n++){$routine[]=$work($domain('routine-window-placeholder-'.$n,$n,true),'2026-11-10T05:46:00+00:00');}
+DB::table('domains_observation_work')->where('id',$first)->update(['due_at'=>$now->getTimestamp()]);
+DB::flushQueryLog();DB::enableQueryLog();
+same($routine[0],(int)($claim()->id??0),'A first read beyond the 25-row window does not jump the queue');
+$reads=array_filter(DB::getQueryLog(),fn($q)=>str_contains($q['query'],'from "domains_domains"'));
+DB::disableQueryLog();
+same(1,count($reads),'The claim batch-loads its bounded domain window once');
 $nativeSuccessful=true;echo "First record read priority passed.\n";

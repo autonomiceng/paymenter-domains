@@ -200,8 +200,9 @@ final class HoldingObservationWork
             // Oldest due first, except that a new domain's first record read goes ahead of routine reads: its page says
             // "Checking" until that read finishes, while routine reads only refresh what the page already shows.
             $due=$q->orderBy('due_at')->orderBy('id')->limit(self::FIRST_READ_WINDOW)->lockForUpdate()->get(); if ($due->isEmpty()) { return null; }
-            $job=$due->first(fn($row)=>self::firstRecordRead((int)$row->domain_id)) ?? $due->first();
-            $d=Domain::find($job->domain_id);
+            $domains=Domain::whereIn('id',$due->pluck('domain_id'))->get()->keyBy('id');
+            $job=$due->first(fn($row)=>self::firstRecordRead($domains->get($row->domain_id))) ?? $due->first();
+            $d=$domains->get($job->domain_id);
             if($d&&TransferPolling::ownsObservation($d)){DB::table('domains_observation_work')->where('id',$job->id)->delete();return null;}
             if ($d && (!in_array($d->status,['active','registration_pending','transfer_pending'],true)||!ObservationEligibility::allows($d)||$d->account_fingerprint!==$job->account_fingerprint||$d->adoptionPending() || (int)$job->generation!==$d->authority_generation || $job->phase!==self::phase($d))) {
                 DB::table('domains_observation_work')->where('id',$job->id)->update(['safe_code'=>'superseded']); return null;
@@ -215,9 +216,8 @@ final class HoldingObservationWork
     /** Due rows the scheduler looks through for a first record read. */
     private const FIRST_READ_WINDOW=25;
     /** An active domain with no completed record read yet. Unreadable saved data is not a first read. */
-    private static function firstRecordRead(int $id): bool
+    private static function firstRecordRead(?Domain $d): bool
     {
-        $d=Domain::find($id);
         if (!$d||$d->status!=='active') { return false; }
         try { return (ObservationRecords::current($d)['last_complete_at']??null)===null; }
         catch (\Illuminate\Contracts\Encryption\DecryptException) { return false; }
