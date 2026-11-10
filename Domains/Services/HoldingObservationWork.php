@@ -215,11 +215,19 @@ final class HoldingObservationWork
     }
     /** Due rows the scheduler looks through for a first record read. */
     private const FIRST_READ_WINDOW=25;
-    /** An active domain with no completed record read yet. Unreadable saved data is not a first read. */
+    /**
+     * An active domain with no completed record read yet. Saved history that fails validation (unreadable, a time
+     * after now, a sequence ahead of management) is not a first read: it waits its turn like a routine read.
+     */
     private static function firstRecordRead(?Domain $d): bool
     {
         if (!$d||$d->status!=='active') { return false; }
-        try { return (ObservationRecords::current($d)['last_complete_at']??null)===null; }
+        try {
+            $saved=$d->observation['records']??null;
+            if (!is_array($saved)||($saved['identity']??null)!==ObservationRecords::identity($d)) { return true; }
+            $current=ObservationRecords::current($d);
+            return $current!==null&&($current['last_complete_at']??null)===null;
+        }
         catch (\Illuminate\Contracts\Encryption\DecryptException) { return false; }
     }
     private function finish(object $job, string $code, \Closure $guard, ?\Closure $credentials=null, ?string $credential=null): string
