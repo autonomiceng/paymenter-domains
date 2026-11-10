@@ -62,7 +62,7 @@ final class RequestFacts
             $paid=$op->invoice_id||in_array($op->action,self::PAID_ACTIONS,true);
             if ($paid) {
                 $out['invoice']=$op->invoice_id ? Facts::invoiceName((int)$op->invoice_id) : null;
-                if ($op->invoice_id) { $out['payment_reversed']=self::paymentReversed($op); }
+                if ($op->invoice_id) { $out['payment_reversed']=self::paymentReversed($op);$out['invoice_state']=self::invoiceState($op); }
                 $out['invoice_sub']=$op->invoice_id ? (array_key_exists('auto_pay',$f) ? Labels::autoPay($f['auto_pay_result']??$f['auto_pay']) : null) : 'No invoice linked. No action needed.';
             }
             if (array_key_exists('auto_pay',$f)) { $out['auto_pay']=Labels::autoPay($f['auto_pay_result']??$f['auto_pay']); }
@@ -392,6 +392,9 @@ final class RequestFacts
     /** The Release hold dialog: heading, button and what release starts. $sends: sendWords() when release sends to Enom at once. */
     /** Refunds and disputes the gateway recorded on the request's own invoice, so staff see money we no longer hold.
      * Null when there are none; ['words'=>null] when they could not be read. */
+    /** The invoice's current state in a word. A refund or dispute after payment has its own Payment row. */
+    private static function invoiceState(Operation $op): ?string
+    { return match(self::invoiceStatus($op)){'paid'=>'Paid','pending'=>'Not paid','cancelled'=>'Cancelled',default=>null}; }
     private static function paymentReversed(Operation $op): ?array
     {
         $invoice=\App\Models\Invoice::find($op->invoice_id); if (!$invoice) { return null; }

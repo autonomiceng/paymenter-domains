@@ -12,12 +12,14 @@ DB::table('domains_operations')->where('id',$op->id)->update(['state'=>'awaiting
 DB::table('invoices')->where('id',$op->invoice_id)->update(['status'=>'pending']);
 $unpaid=RequestFacts::status($op->fresh());
 same(['Awaiting payment','Customer has not paid the invoice. Not sent yet.'],[$unpaid['label'],$unpaid['reason']],'An unpaid request waits on the customer');
+same('Not paid',RequestFacts::for($op->fresh())['invoice_state']??null,'The invoice row says an open invoice is not paid');
 DB::table('invoices')->where('id',$op->invoice_id)->update(['status'=>'paid']);
 $account=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->sole();
 DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>true]);
 $paid=RequestFacts::status($op->fresh());
 same(['In progress','Paid. It goes to the registrar automatically. Nothing to do yet.'],[$paid['label'],$paid['reason']],'A paid request not yet picked up reads paid');
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertSee('Paid. It goes to the registrar automatically.')->assertDontSee('Customer has not paid the invoice');
+same('Paid',RequestFacts::for($op->fresh())['invoice_state']??null,'The invoice row says the invoice is paid');
 // The request list's Note reads what its Status column does: paid, never that the customer has not paid.
 $note=static function()use($staff,$op):?string{\Illuminate\Support\Facades\Auth::setUser($staff);
     return Livewire::actingAs($staff)->test(ListOperations::class)->instance()->getTable()->getColumn('note')->record($op->fresh())->getState();};

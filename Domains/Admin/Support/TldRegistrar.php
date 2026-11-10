@@ -3,7 +3,8 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use App\Models\Server;
-use Paymenter\Extensions\Servers\Domains\Catalogue\SellerAvailability;
+use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferState,SellerAvailability,Writer};
+use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Tld};
 /** Registrar-choice wording lives here so the TLD page and dialog use the same causes. */
 final class TldRegistrar
@@ -25,10 +26,20 @@ final class TldRegistrar
             $prices=SellerAvailability::state($account,$rows[$account->server_id]??null);
             if($prices!==SellerAvailability::READY){$reason=$prices===SellerAvailability::UNREADABLE?self::unreadablePrice($account->registrar_key,$ending):self::missingPrice($account->registrar_key,$ending);$disabled=true;}
             elseif(!$server->enabled||$server->extension!=='Domains'){$reason='This registrar account is off. Turn it on in Servers.';$disabled=true;}
+            elseif(($unsupported=self::unsupported($account,$rows[$account->server_id]??null,$ending))!==null){$reason=$unsupported;$disabled=true;}
             else{$reason=$account->processing_enabled?null:'Orders are paused. Turn on Orders on this registrar account.';}
             $out[(int)$account->server_id]=['label'=>(string)$server->name,'reason'=>$reason,'disabled'=>$disabled];
         }
         return $out;
+    }
+    /** A requirement in this account's current registrar terms that checkout can't meet, named as the TLD page names it.
+     * The save refuses it too, so a retry with this registrar can't work. Null when its terms allow a sale or are not current. */
+    private static function unsupported(Account $account,?Tld $row,string $ending): ?string
+    {
+        if($row===null){return null;}
+        try{$facts=OfferState::facts($row->catalogue_facts);}catch(\Throwable){return null;}
+        if(Writer::termsBlock($facts,(string)$account->registrar_key,$ending,false,1,false,app(Clock::class)->now())!=='unsupported_facts'){return null;}
+        return 'This registrar '.Writer::unsupportedCause($facts,(string)$account->registrar_key,$ending).' for .'.$ending.'. Choose another registrar.';
     }
     public static function refusal(\Throwable $error,array $data,?int $id): ?string
     {
@@ -40,6 +51,8 @@ final class TldRegistrar
             'Seller price unreadable.'=>self::unreadablePrice($account?->registrar_key??'',$ending),
             'Seller account missing.'=>'This registrar account was removed. Choose another registrar.',
             'Seller account off.'=>'This registrar account is off. Turn it on in Servers.',
+            'Explicit verified widening required.'=>$account&&($row=Tld::where('server_id',$account->server_id)->where('tld',$ending)->first())&&($unsupported=self::unsupported($account,$row,$ending))!==null
+                ?$unsupported.' Nothing was saved.':null,
             'Offer binding or conversion changed.','Price binding changed.','Seller offer group changed; retry.','Offer disappeared.'=>'Saved registrar prices changed. Reopen Change registrar and try again.',
             default=>null,
         };

@@ -107,7 +107,7 @@ class ViewOperation extends ViewRecord
         if (!($facts['unreadable']??false)) {
             if (isset($facts['registrar_reply'])) { $rows[]=self::entry('Registrar reply',$facts['registrar_reply']); }
             elseif (isset($facts['send_failure'])) { $rows[]=self::entry('Registrar reply',$facts['send_failure']); }
-            if (array_key_exists('invoice',$facts)) { $rows[]=self::entry('Invoice',$facts['invoice'],sub:$facts['invoice_sub'],url:$op->invoice_id?Facts::invoiceUrl((int)$op->invoice_id):null); }
+            if (array_key_exists('invoice',$facts)) { $rows[]=self::entry('Invoice',$facts['invoice'],sub:implode('. ',array_filter([$facts['invoice_state']??null,$facts['invoice_sub']]))?:null,url:$op->invoice_id?Facts::invoiceUrl((int)$op->invoice_id):null); }
             // A refund or dispute on this invoice means money we no longer hold, so it reads amber beside the invoice.
             if (isset($facts['payment_reversed'])) { $rows[]=self::entry('Payment',$facts['payment_reversed']['words'],cause:'Could not read refunds and disputes. Check the invoice payments.',act:$facts['payment_reversed']['act']); }
             if (array_key_exists('cost',$facts)) { $rows[]=self::entry('Cost',$facts['cost'],sub:$facts['cost_sub']); }

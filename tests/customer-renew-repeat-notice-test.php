@@ -42,6 +42,9 @@ $dialog = storefrontDom($html)->query('//dialog[@id="edit-renew"]//*[@data-renew
 $words = $dialog ? trim(preg_replace('/\s+/', ' ', $dialog->textContent)) : '';
 expect(str_starts_with($words, 'The registrar accepts one renewal of a domain every 24 hours. If you renew now, the renewal goes to the registrar automatically at'),
     'The Renew dialog says why it would wait before Create invoice: '.$words);
+same('form', $dialog?->parentNode?->nodeName, 'The note sits in the dialog form, beside its rows');
+expect(preg_match('/\.domains-dialog-sheet form > \.domains-hint \{[^}]*padding:0 1\.25rem/', file_get_contents(dirname(__DIR__).'/Domains/resources/views/partials/styles.blade.php')) === 1,
+    'The note has the same side padding as the dialog rows');
 expect($dialog !== null && str_contains($dialog->ownerDocument->saveHTML($dialog), 'datetime="'.$goes->format('Y-m-d\TH:i:s').'+00:00"'), 'The dialog gives the fixed time in the viewer\'s zone');
 same($writes, [$state->writes, count($state->calls), Operation::count()], 'Showing the wait sends and creates nothing');
 // A day later the dialog says nothing about a wait.

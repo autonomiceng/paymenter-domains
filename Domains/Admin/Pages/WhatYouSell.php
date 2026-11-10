@@ -324,10 +324,15 @@ class WhatYouSell extends Page implements HasTable
         if(!$this->otherNarrowing()){
             return $this->switchedOn('for_sale')&&$this->reads()->rows(null)->exists()?'No TLDs are for sale':'No prices yet';
         }
+        if($this->forSaleHides()){return self::NOT_FOR_SALE;}
         $only=$this->show()!==null&&!$this->hasTableSearch()&&!$this->switchedOn('country')&&!$this->switchedOn('no_cost');
         return $only&&$this->reads()->leftOutExplains($this->show())?self::LEFT_OUT:'No TLDs match';
     }
     private const LEFT_OUT='No prices to show. Some TLDs are left out.';
+    private const NOT_FOR_SALE='No TLDs for sale match';
+    /** For sale alone hides what the search finds, so turning it off, with the search kept, shows those TLDs. */
+    private function forSaleHides(): bool
+    {return $this->switchedOn('for_sale')&&$this->show()===null&&$this->getTableRecords()->isEmpty()&&$this->warningQuery()->exists();}
     private function focused(): bool {return $this->tld!==null&&$this->getTableSearch()===$this->tld;}
     private function switchedOn(string $filter): bool {return (bool)($this->getTableFilterState($filter)['isActive']??false);}
     private function otherNarrowing(): bool {return $this->hasTableSearch()||$this->show()!==null||$this->switchedOn('country')||$this->switchedOn('no_cost');}
@@ -338,6 +343,7 @@ class WhatYouSell extends Page implements HasTable
             $shared=SellTable::sharedCause($this->reads()->leftOutCauses((string)$this->show()));
             return $shared===null?"Their pricing can't be read. Clear filters, then open each one and use Edit prices.":$shared.' Fix it in Default pricing at the top of this page.';
         }
+        if($this->emptyHeading()===self::NOT_FOR_SALE){return 'Matching TLDs are not for sale. Turn off For sale to see them.';}
         if($this->otherNarrowing()){return null;}
         if($this->emptyHeading()==='No TLDs are for sale'){return 'Clear For sale to see every TLD.';}
         return $this->readerNeedsAttention()?'Check the registrar account to read prices.':'The first read runs by itself. To get prices now, use Sync prices.';
@@ -387,7 +393,9 @@ class WhatYouSell extends Page implements HasTable
             ->defaultSort('tld')->paginated([25,50,100])->defaultPaginationPageOption(25)->searchPlaceholder('Search TLDs')
             ->emptyStateHeading(fn()=>$this->emptyHeading())
             ->emptyStateDescription(fn()=>$this->emptyDescription())
-            ->emptyStateActions([Action::make('clear')->label(fn()=>$this->show()!==null||$this->switchedOn('country')||$this->switchedOn('no_cost')||$this->switchedOn('for_sale')?'Clear filters':'Clear search')->color('gray')
+            ->emptyStateActions([Action::make('show_not_for_sale')->label('Turn off For sale')->color('gray')
+                ->visible(fn()=>$this->emptyHeading()===self::NOT_FOR_SALE)->action(fn()=>$this->removeTableFilter('for_sale')),
+                Action::make('clear')->label(fn()=>$this->show()!==null||$this->switchedOn('country')||$this->switchedOn('no_cost')||$this->switchedOn('for_sale')?'Clear filters':'Clear search')->color('gray')
                 ->visible(fn()=>$this->narrowed()&&!$this->focused())->action(function():void {$this->removeTableFilters();$this->resetTableSearch();})])
             // Merged, so the panel skin's table class stays and this head matches every other table.
             ->extraAttributes(['class'=>'domains-sell-table'],merge:true)
