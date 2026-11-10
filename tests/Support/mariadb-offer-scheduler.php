@@ -13,7 +13,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Jobs\SyncPrices;
 use Paymenter\Extensions\Servers\Domains\Data\{Environment, RequestContext};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AccountReadBudget, DomainObservation, HoldingObservationWork, Installation, NativeCatalogue, ObservationWork, PriceCatalogue, PricingRules, RegistrarRegistry};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AccountReadBudget, DomainObservation, HoldingObservationWork, Installation, NativeCatalogue, PriceCatalogue, PricingRules, RegistrarRegistry};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 $phase = getenv('OFFER_PHASE'); $prefix = (string)getenv('SCHEMA_PREFIX');
 if ($phase === 'seed') {
@@ -71,9 +71,7 @@ elseif ($phase === 'first') { $scheduler->tick(1); }
 elseif ($phase === 'second') {
     $scheduler->sync($b); $out = $scheduler->tick(1);
     same('busy', $out[$b->serverId]['offer'], 'Independent connection cannot steal a live feed claim');
-    $refused = false;
-    try { (new ObservationWork($observer,$clock,$budget))->tick(1); } catch (DomainException) { $refused = true; }
-    same(true,$refused,'Legacy consumer is fenced in the same installed database');
+    expect(!is_file(dirname(__DIR__,2).'/Domains/Services/PriceSync.php'),'Legacy account consumer is deleted');
     $staff = User::sole();
     expect(Staff::allows($staff,'admin.domains.settings.import'),'Old queued job retains actual staff permission');
     $old = new SyncPrices($staff->id,$b->serverId,$b->fingerprint); $old->upgradeGeneration = 0; $old->handle();
