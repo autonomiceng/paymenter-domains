@@ -42,7 +42,7 @@ class Operation extends Model
             if (isset($old['renewal']) && $operation->isDirty(['base_expires_at', 'expected_expires_at'])) {
                 throw new \DomainException('Issued renewal expiry obligations are frozen.');
             }
-            foreach (['funds_wait_at', 'funds_wait_until', 'native_acquisition_cancelled_at', 'native_acquisition_closure', 'unpaid_retirement', 'account_complimentary', 'checkout', 'price', 'seller_revision', 'calendar', 'renewal', 'complimentary', 'management', 'privacy'] as $key) {
+            foreach (['funds_wait_at', 'funds_wait_until', 'native_acquisition_cancelled_at', 'native_acquisition_closure', 'held_order_refund', 'unpaid_retirement', 'account_complimentary', 'checkout', 'price', 'seller_revision', 'calendar', 'renewal', 'complimentary', 'management', 'privacy'] as $key) {
                 if (array_key_exists($key, $old) && ($new[$key] ?? null) !== $old[$key]) { throw new \DomainException('Checkout evidence is frozen.'); }
             }
             $old = $operation->getOriginal('cost') ?? []; $new = $operation->cost ?? [];
@@ -163,7 +163,7 @@ class Operation extends Model
             if (($old['seal'] ?? null) === 'sealed' && $operation->isDirty('payload')) {
                 throw new \DomainException('Sealed desired state is frozen.');
             }
-            foreach (['claim', 'seal', 'refund_authorization', 'held_order_refund', 'refund'] as $key) {
+            foreach (['claim', 'seal', 'refund_authorization', 'refund'] as $key) {
                 $before = $operation->getOriginal('funding') ?? []; $after = $operation->funding ?? [];
                 if (!$safeAttemptReset&&array_key_exists($key, $before) && (!array_key_exists($key, $after) || $after[$key] !== $before[$key])) {
                     throw new \DomainException('Claim funding evidence is frozen.');

@@ -32,10 +32,12 @@ final readonly class Refunds
             $audit = ['actor_id' => $staffId, 'reason' => $reason, 'at' => $this->clock->now()->format(DATE_ATOM),
                 'operation_key' => $op->operation_key, 'generation' => $op->authority_generation];
             // Retain the decision if credit fails; retryPending independently rechecks funding and negative proof.
-            // The customer pending-refund step belongs only to this paid held-order cancellation, never a zero receipt or registrar refusal.
             ContactRecovery::financialDisposition($op, ['state' => 'rejected', 'safe_code' => 'refund_approved',
-                'funding' => [...($op->funding ?? []), 'refund_authorization' => $audit,
-                    ...(in_array($op->action,['register','transfer'],true)&&$op->funding_basis==='paid_invoice'?['held_order_refund'=>true]:[])]]);
+                'funding' => [...($op->funding ?? []), 'refund_authorization' => $audit]]);
+            // The customer pending-refund step belongs only to this paid held-order cancellation, never a zero receipt or registrar refusal.
+            if(in_array($op->action,['register','transfer'],true)&&$op->funding_basis==='paid_invoice'){
+                $op->update(['policy'=>[...($op->policy??[]),'held_order_refund'=>true]]);
+            }
             if (in_array($op->action,['register','transfer'],true)&&(($op->attempt??[])===[]||($op->action==='transfer'&&($testUnsent||$claimedUnsent)))) {
                 $op->update(['attempt'=>OperationTerminalProof::rejectedAttempt($op,$l['domain'])]);
                 if($claimedUnsent&&!OperationTerminalProof::safe($op,$l['domain'])){throw new \DomainException('Terminal identity mismatch.');}

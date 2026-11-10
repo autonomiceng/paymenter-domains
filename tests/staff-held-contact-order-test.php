@@ -132,11 +132,11 @@ $page->callAction('refund',['reason'=>'Customer asked for a refund'])->assertHas
 same(['rejected','refund_approved'],[$op->fresh()->state,$op->fresh()->safe_code],'The cancel is kept');
 same(App\Models\Service::STATUS_CANCELLED,$serviceStatus($op),'The service stays cancelled when the refund fails');
 same(null,$op->fresh()->funding['refund']??null,'No refund was recorded');same($sends,MoneyReceiptGateway::$sends,'No refund was sent');
-same(true,$op->fresh()->funding['held_order_refund']??false,'The paid held-order cancellation records its own refund marker');
+same(true,$op->fresh()->policy['held_order_refund']??false,'The paid held-order cancellation records its own refund marker');
 $order=\Paymenter\Extensions\Servers\Domains\Services\OwnedDomains::order($op->domain->fresh(),$op->fresh(),App\Models\Invoice::findOrFail($op->invoice_id));
 same(true,$order['refund_pending']??false,'Only the marked held-order refund projects the pending customer step');
-$funding=$op->fresh()->funding;
-$refused(fn()=>$op->fresh()->update(['funding'=>array_diff_key($funding,['held_order_refund'=>true])]),'The held-order refund marker cannot be removed');
+$policy=$op->fresh()->policy;
+$refused(fn()=>$op->fresh()->update(['policy'=>array_diff_key($policy,['held_order_refund'=>true])]),'The held-order refund marker cannot be removed');
 $viaGateway($op,'receipt_held_contact_retry');
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertActionHidden('refund')->assertActionHidden('release')
     ->assertActionVisible('credit')->callAction('credit',['reason'=>'Payment receipt fixed'])->assertHasNoActionErrors()->assertNotified('Refund checked');
