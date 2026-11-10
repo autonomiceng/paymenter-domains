@@ -113,7 +113,8 @@ final class StaffDomainStatus
     {
         return match (true) {
             in_array($op->state, ['held', 'uncertain'], true) => [self::stopped($op, $accounts, $release), $op->id, true],
-            $op->state === 'awaiting_payment' => [Labels::requestStatus($op)['reason'], null, false],
+            // The alert count ($release) never shows these words and reads nothing per request, so it skips the paid invoice read.
+            $op->state === 'awaiting_payment' => [($release === null ? RequestFacts::paidWaiting($op, $accounts) : null) ?? Labels::requestStatus($op)['reason'], null, false],
             $op->state === 'queued' && ($ready = RequestFacts::readyMessage($op, $accounts, $release)) !== null => [$ready.self::ordersOrCheck($op, $ready, $accounts), $op->id, true],
             default => [self::RENEWING, null, false],
         };

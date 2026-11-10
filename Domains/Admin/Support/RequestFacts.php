@@ -180,7 +180,16 @@ final class RequestFacts
         $status=[...Labels::requestStatus($op,$off,$grants),'reason'=>self::reason($op,$ordersOff,$grants,$accounts)];
         try { $key=$d?ManagementProgress::statusKey($op,$d,$off):null; } catch (\Throwable) { $key=null; }
         if ($key!==null) { [$status['label'],$status['tone']]=RequestStatus::SET[$key]; }
+        if ($paid=self::paidWaiting($op,$accounts)) { [$status['label'],$status['tone']]=RequestStatus::SET['in_progress'];$status['reason']=$paid; }
         return self::heldAcquisition($op,$off) ? [...$status,'label'=>'On hold','tone'=>'warning'] : $status;
+    }
+    /** The request still reads awaiting_payment until the paid invoice is picked up, as customers see it (OwnedDomains).
+     * Staff read that it is paid, and whether it goes out on its own or waits on Orders. Null when the invoice is not paid. */
+    public static function paidWaiting(Operation $op, ?array $accounts=null): ?string
+    {
+        if ($op->state!=='awaiting_payment' || !$op->invoice_id) { return null; }
+        if (\App\Models\Invoice::whereKey($op->invoice_id)->value('status')!=='paid') { return null; }
+        return OperationQueries::ordersOff($op,$accounts)?'Paid. Not sent. '.self::ORDERS_OFF:'Paid. It goes to the registrar automatically. Nothing to do yet.';
     }
     /** Local readiness shared by request pages and domain lists. It never releases a hold.
      * $accounts: a list's OperationQueries::ordersOffAccounts() snapshot, read for the Orders switch instead of the account now.
