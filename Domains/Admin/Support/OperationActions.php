@@ -9,7 +9,7 @@ use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\{Auth,Log};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement,EnomTestRegistration,ManagementEvidence,ObservationRecords,ObservationWork,OperationFailure,OperationTerminalProof,StaffOperationReview,StaffOperations,StaffOperationWrites,StaffReviewRefused,StaffSyncReview,TransferInputs,UnpaidAcquisitionProof};
+use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement,EnomTestRegistration,ManagementEvidence,ObservationRecords,ObservationWork,OperationFailure,OperationTerminalProof,ReceiptReturns,StaffOperationReview,StaffOperations,StaffOperationWrites,StaffReviewRefused,StaffSyncReview,TransferInputs,UnpaidAcquisitionProof};
 final class OperationActions
 {
     /** Toast titles, named for the action. */
@@ -185,10 +185,11 @@ final class OperationActions
         return "Cancels this unsent request and refunds {$amount} to the original payment. If that payment can't be refunded, {$amount} is added to the customer's account credit instead.";
     }
     /** Cancel and refund commits the cancel before any money moves. When the refund then fails, say both facts and the
-     * retry, which reuses the same refund. Null when the cancel did not commit either. */
+     * retry, which reuses the same refund. Null when the cancel did not commit or the refund has finished. */
     public static function refundPending(?Operation $op,string $code): ?Notification
     {
         if($op?->state!=='rejected'||!isset($op->funding['refund_authorization'])){return null;}
+        if(isset($op->funding['refund'])&&!ReceiptReturns::malformed($op)&&ReceiptReturns::outstanding($op)===0){return null;}
         $ended=in_array($op->action,['register','transfer'],true)?'The order and its service are cancelled.':'The request is cancelled.';
         $where=isset($op->funding['refund'])?" The payment provider hasn't confirmed the refund.":" The refund hasn't gone through (ref {$code}).";
         return Notification::make()->warning()->title('Cancelled, refund not finished')

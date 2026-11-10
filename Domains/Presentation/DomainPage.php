@@ -95,6 +95,11 @@ final class DomainPage
     {
         if ($d->expiry === null) {
             if ($s?->abandoned) { return ['missing' => false, 'tone' => null, 'note' => null]; }
+            // The service ends before its refund. Keep the cancelled order's support step until the money is returned.
+            if (($d->order['state'] ?? null) === 'cancelled' && !isset($d->order['credit'])
+                && !($d->order['returned'] ?? false) && !($d->order['unpaid'] ?? false)) {
+                return DomainListRow::orderExpires($d->order, $support);
+            }
             if (self::rejected($d)) {
                 $transfer = $d->rejectedAcquisition === 'transfer' || $d->statusReason === DomainStatus::STATES['transfer_rejected'][1];
                 return ['missing' => false, 'tone' => null, 'value' => $transfer ? 'Not transferred' : 'Not registered',

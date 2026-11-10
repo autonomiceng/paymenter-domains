@@ -155,4 +155,18 @@ same(['held','contact_profile_proof_required'],[$held->fresh()->state,$held->fre
 same($money,[$nativeMoney(),$serviceStatus($held),MoneyReceiptGateway::$sends],'No money moves and the service is unchanged');
 same($before+1,$sent->contactAdd,'Nothing more is sent');
 echo "Both actions are refused once anything reached NameSilo.\n";
+
+// The saved contact step is bound to the original payload, so changed details cannot be released with it.
+$op=$heldOrder('held-contact-details-changed-placeholder.com');
+$payload=$op->payload;$payload['contacts']['registrant']['first_name']='Changed';
+\Paymenter\Extensions\Servers\Domains\Services\ContactSetup::recoveryWrite(fn()=>$op->update(['payload'=>$payload]));$op=$op->fresh();
+$before=[$nativeMoney(),$sent->contactAdd,$sent->registerDomain,$op->attempt];
+expect(!StaffOperationWrites::canRelease($op,$clock->now()),'Changed order details cannot release the saved contact step');
+expect(OperationActions::relevant('refund',$op),'A changed unsent order can still be cancelled and refunded');
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertActionHidden('release')
+    ->assertActionVisible('refund')->assertSee('The contact step cannot be retried with these order details. Cancel and refund this order.');
+$refused(fn()=>$run($op,'release'),'The writer also refuses changed details');
+same(['held','contact_profile_proof_required'],[$op->fresh()->state,$op->fresh()->safe_code],'Changed details stay held');
+same($before,[$nativeMoney(),$sent->contactAdd,$sent->registerDomain,$op->fresh()->attempt],'Refused release changes no money or send evidence');
+echo "Changed details cannot release a saved contact step.\n";
 $nativeSuccessful=true;

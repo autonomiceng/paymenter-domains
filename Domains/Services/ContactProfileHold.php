@@ -9,6 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Operation,ProfileContactOperati
 final class ContactProfileHold
 {
     public const CODE='contact_profile_proof_required';
+    public const RETRY_BLOCKED='The contact step cannot be retried with these order details. Cancel and refund this order.';
     /** Nothing reached NameSilo for this order. $retry also requires the contact step to be able to run again, which
      * only a waiting contact row can: a proved-unsent row stays unsent, so a release would only hold again. */
     public static function unsent(Operation $op,bool $retry=false): bool
@@ -25,6 +26,7 @@ final class ContactProfileHold
         catch(\Illuminate\Database\QueryException){return false;} // No contact ledger installed: no proof.
         $r=$row?->attempt??[];
         if(!$row||$row->authority_generation!==$op->authority_generation||$row->account_fingerprint!==$op->account_fingerprint
+            ||($retry&&$row->payload_digest!==OperationClaims::payloadDigest($op))
             ||($r['parent_claim']??null)!==$a['claim_key']||isset($r['dispatch_at'])||isset($r['provider_id'])){return false;}
         if($row->state==='ready'){return ($r['seal']??null)==='absent'&&($r['send_state']??null)==='definitely_unsent'&&!isset($r['worker_key']);}
         return !$retry&&$row->state==='unsent'&&($r['execution']??null)==='definitely_unsent';

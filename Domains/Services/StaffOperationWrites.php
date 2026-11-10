@@ -64,6 +64,10 @@ final class StaffOperationWrites
         $retry=false;$balanceRetry=OperationClaims::balanceRefusalRetryable($op);
         // A paid NameSilo order held at its contact step, with nothing sent, goes back once as the same claim.
         $contactRetry=$op->safe_code===ContactProfileHold::CODE&&ContactProfileHold::unsent($op,retry:true);
+        // The retained contact step cannot send different details; cancellation still uses its unsent proof.
+        if($op->safe_code===ContactProfileHold::CODE&&!$contactRetry&&ContactProfileHold::unsent($op)){
+            throw new \DomainException(ContactProfileHold::RETRY_BLOCKED);
+        }
         if(!$balanceRetry&&!$contactRetry&&!in_array($op->safe_code,$ordinary,true)&&!self::renewalAdmissionHold($op)){
             $testRegistration=in_array($op->action,['register','transfer'],true)&&$op->registrar_key==='enom'&&in_array($account?->environment,['test','live'],true)
                 &&($op->action==='transfer'?EnomTestTransfer::deploymentEnabled():EnomTestRegistration::deploymentEnabled());
