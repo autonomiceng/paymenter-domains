@@ -1,7 +1,7 @@
 @php
 $inventory=array_values(array_filter($section['inventory']??[],fn($r)=>($r['type']??null)!=='CAA'));
 foreach($section['caa']??[] as $caa){$inventory[]=['name'=>$caa['name'],'type'=>'CAA','address'=>$caa['value'],'ttl'=>$caa['ttl']];}
-$readOnly=static fn(array $record)=>$record['type']==='CAA' || (isset($section['types']) && !in_array($record['type'], $section['types'], true)) || !$section['actions'];
+$readOnly=static fn(array $record)=>$record['type']==='CAA' || (isset($section['types']) && !in_array($record['type'], $section['types'], true)) || empty($section['actions']);
 @endphp
 @if ($inventory)
 @if ($section['caa_at'] ?? null)<p class="domains-hint">Last confirmed CAA: @include('domains::partials.moment',['at'=>$section['caa_at']]). These are historical records.</p>@endif
