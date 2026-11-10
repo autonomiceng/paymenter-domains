@@ -179,7 +179,7 @@ $reset();$clearPrice();
 $facts=OfferState::decode($original['catalogue_facts']);$facts['requiresNameservers']=true;DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>OfferState::json($facts)]);
 [$table,$row]=nextTable();same('Checking',$table->cell($row,'register','price')['text'],'The system fills missing prices before asking about known registrar requirements');
 foreach($priceRows as $price){DB::table('domains_prices')->where('id',$price->id)->update((array)$price);}
-[$table,$row]=nextTable();same('Ask the registrar to confirm renewal and nameserver requirements for .com.',$table->status($row)['next'],'The requirements step names exactly what to ask after prices are filled');
+[$table,$row]=nextTable();same('This registrar needs nameservers at registration for .com. Use Change registrar to sell it through another account.',$table->status($row)['next'],'The requirements step names exactly what to ask after prices are filled');
 $public=$ports->readOffers(new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,['com'],'register'),\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Public)[0];same('unavailable',$public->reason,'Customers keep the generic public decision without staff reasons');
 } catch (Throwable $error) {$failures[]='Requirements: '.$error->getMessage();}
 try {
@@ -248,7 +248,7 @@ case 'registrar terms':
     $next='Ask the registrar to confirm terms for .com.';break;
 case 'registrar requirements':
     $facts=OfferState::decode($original['catalogue_facts']);$facts['requiresNameservers']=true;DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>OfferState::json($facts)]);
-    $next='Ask the registrar to confirm renewal and nameserver requirements for .com.';break;
+    $next='This registrar needs nameservers at registration for .com. Use Change registrar to sell it through another account.';break;
 case 'price choice':
     DB::table('domains_prices')->where('server_id',$binding->serverId)->where('tld','com')->where('action','register')->update(['retail'=>'0.00']);
     $next='Set a positive registration price in Edit prices on .com.';$open='tld';

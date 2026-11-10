@@ -190,11 +190,24 @@ final class TldFacts
     /** The one fix for each reason a TLD with a saved price is not for sale. */
     public const FIXES=['Cost out of date'=>'See the next refresh on this TLD.','Cost missing'=>'The registrar price feed must supply the exact cost.','Prices not published'=>'Open Edit prices and save.','Below cost'=>'Raise the price in Edit prices.','Price missing'=>'Open Edit prices and save.','Prices need checking'=>'Check the registrar account and the last refresh failure.',self::RENEWALS_OFF=>'Turn on Renewals on the registrar account page.',self::NO_SELLER=>'Open the TLD and use Change registrar.'];
     public const ASK_SELLER='Ask staff who can change the registrar.';
+    /** What a registrar asks that checkout can't meet, after "this registrar". Writer::unsupportedCause picks one. */
+    public const UNSUPPORTED=["needs registry details checkout doesn't collect",'needs nameservers at registration','renews only automatically',
+        "doesn't confirm renewals can be sent",'has requirements checkout cannot meet'];
+    public const SELL_ELSEWHERE='Use Change registrar to sell it through another account.';
+    /** A sales reason that names an unmet registrar requirement: the fix is another registrar, not this one. */
+    public static function unsupported(?string $reason): bool
+    {
+        if($reason===null||!preg_match("/^(?:This registrar|Set to sell, but this registrar) (.+)$/D",$reason,$m)){return false;}
+        return in_array($m[1],self::UNSUPPORTED,true);
+    }
     /** Change registrar needs both rights, so registrar hints name it only to staff who can use it. */
     public static function canChangeSeller(): bool
     {return Staff::can(Staff::POLICY)&&Staff::can(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::permission('seller'));}
     public static function fixText(string $reason,?bool $changeSeller=null):string
-    {return $reason===self::NO_SELLER&&!($changeSeller??self::canChangeSeller())?self::ASK_SELLER:(self::FIXES[$reason]??'');}
+    {
+        if(self::unsupported($reason)){return ($changeSeller??self::canChangeSeller())?self::SELL_ELSEWHERE:self::ASK_SELLER;}
+        return $reason===self::NO_SELLER&&!($changeSeller??self::canChangeSeller())?self::ASK_SELLER:(self::FIXES[$reason]??'');
+    }
     /** For sale or Not for sale, with the reason it is not for sale. */
     public static function salesState(Tld $t, ?StaffGrants $grants = null): array
     {return self::snapshot($t,$grants)['sales'];}

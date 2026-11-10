@@ -76,7 +76,7 @@ class ViewTld extends ViewRecord
         // Edit prices can't repair the account's defaults; the reason names where to.
         if($s['invalid']&&$s['kind']==='account_defaults'){return null;}
         if($s['invalid']||in_array($s['reason'],['Below cost','Price missing','Prices not published'],true)){return 'override';}
-        return in_array($s['reason'],['No registrar selected','Not offered by this registrar'],true)?'seller':null;
+        return in_array($s['reason'],['No registrar selected','Not offered by this registrar'],true)||TldFacts::unsupported($s['reason'])?'seller':null;
     }
     /** Staff words for the head. Off on purpose is gray, a job for staff is amber, our own checks are blue. */
     private function headLine(): HtmlString

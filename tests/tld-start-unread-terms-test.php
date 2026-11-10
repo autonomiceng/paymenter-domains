@@ -44,12 +44,16 @@ expect(str_contains($head($page),'Set to sell; checking registrar terms'),'The h
 // Fresh terms need nameservers at registration, which checkout can't send. It stays set to sell, so Stop selling stays.
 $facts([1,3],0,true);
 $page=Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->assertActionHidden('start_selling')->assertActionVisible('stop_selling');
-same("Set to sell, but this registrar's requirements aren't supported",TldFacts::salesState($t->fresh())['reason'],'The TLD list says .com is set to sell but blocked');
-expect(str_contains($head($page),"Set to sell, but this registrar's requirements aren't supported"),'The head says .com is set to sell but blocked: '.$head($page));
+same(['label'=>'Not for sale','tone'=>'warning','reason'=>'Set to sell, but this registrar needs nameservers at registration'],TldFacts::salesState($t->fresh()),'The TLD list names the requirement .com fails, with the amber mark');
+expect(str_contains($head($page),'Set to sell, but this registrar needs nameservers at registration'),'The head names the requirement: '.$head($page));
+same('Use Change registrar to sell it through another account.',TldFacts::fixText(TldFacts::salesState($t->fresh())['reason'],true),'The list Note says what to do');
+same(TldFacts::ASK_SELLER,TldFacts::fixText(TldFacts::salesState($t->fresh())['reason'],false),'Staff who cannot change the registrar are told who can');
+$change=collect($page->instance()->getCachedHeaderActions())->first(fn($a)=>$a instanceof \Filament\Actions\Action&&$a->getName()==='seller');
+same(['Change registrar','primary'],[$change?->getLabel(),$change?->getColor()],'Change registrar is the one action for a requirement this registrar fails');
 // Stopped by staff with the same terms: Start selling can't lift the block, and the words drop "Set to sell".
 $ports->apply(Edit::override($binding,'com',new Intent(sell:true,stops:['register','transfer'])),$offer('register')->revision);
 $page=Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->assertActionHidden('start_selling')->assertActionHidden('stop_selling');
-same("This registrar's requirements aren't supported",TldFacts::salesState($t->fresh())['reason'],'A stopped .com names the block without Set to sell');
+same('This registrar needs nameservers at registration',TldFacts::salesState($t->fresh())['reason'],'A stopped .com names the block without Set to sell');
 // Fresh terms take only 3-year registrations, longer than .com's 1 year, so they rule the sale out. Start selling is not offered; the head names the block
 // and its fix holds the primary spot.
 $ports->apply(Edit::override($binding,'com',new Intent(longest:1,stops:[])),$offer('register')->revision);

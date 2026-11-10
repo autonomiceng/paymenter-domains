@@ -291,6 +291,19 @@ final class Writer implements Catalogue
             ? null : 'Explicit verified widening required.';
     }
 
+    /** The registrar requirement behind 'unsupported_facts', in plain words: the first one that blocks the sale. */
+    public static function unsupportedCause(?Facts $facts, string $registrarKey, string $tld): string
+    {
+        return match (true) {
+            $facts === null => \Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::UNSUPPORTED[4],
+            !\Paymenter\Extensions\Servers\Domains\Services\RegistryInputs::supported($registrarKey, $tld, $facts->registryFields) => \Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::UNSUPPORTED[0],
+            $facts->requiresNameservers !== false => \Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::UNSUPPORTED[1],
+            $facts->autoRenewOnly !== false => \Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::UNSUPPORTED[2],
+            $facts->renewalSafe !== true => \Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::UNSUPPORTED[3],
+            default => \Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::UNSUPPORTED[4],
+        };
+    }
+
     /** Why fresh registrar terms rule out a sale: 'unsupported_facts', 'unsupported_term', or null. Staff pages ask
      * this too, so they offer only what this writer saves. Unknown or expired terms never block: the review queues a
      * read of the sold set, and the evaluator holds the sale until it lands. */
