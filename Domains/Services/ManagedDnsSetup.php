@@ -22,16 +22,22 @@ final class ManagedDnsSetup
             ->whereExists(fn($q)=>$q->selectRaw('1')->from('domains_accounts as a')->whereColumn('a.server_id','domains_domains.server_id')
                 ->whereColumn('a.account_fingerprint','domains_domains.account_fingerprint')->whereColumn('a.registrar_key','domains_domains.registrar_key'));
     }
+    /** One advisory snapshot for related counts; never retained across requests or used to authorize writes. */
+    public static function configuration(): array
+    {
+        return ['usable'=>WatchProfile::where('enabled',true)->get()->filter(fn($p)=>self::usable($p))->modelKeys(),
+            'default'=>SiteDnsDefault::profile()?->id];
+    }
     /** Same effective choice for dispatch, health and setup notices, including before the daily sweep. */
     /** $inherited true keeps only domains that follow the site default, false only domains with their own usable template. */
-    public static function configured($q,string $domainColumn,string $ownerColumn,bool $missing=false,?int $profile=null,?bool $inherited=null): mixed
+    public static function configured($q,string $domainColumn,string $ownerColumn,bool $missing=false,?int $profile=null,?bool $inherited=null,?array $configuration=null): mixed
     {
-        $usable=WatchProfile::where('enabled',true)->get()->filter(fn($p)=>self::usable($p))->modelKeys();
+        $configuration??=self::configuration();$usable=$configuration['usable'];
         $profiles=$profile===null?$usable:array_values(array_intersect($usable,[$profile]));
         $comparison=fn($c)=>$c->selectRaw('1')->from('domains_domains as configured_domain')
             ->leftJoin('domains_managed_public_config as c',fn($j)=>$j->on('c.domain_id','=','configured_domain.id')->on('c.user_id','=','configured_domain.user_id'))
             ->whereColumn('configured_domain.id',$domainColumn)->whereColumn('configured_domain.user_id',$ownerColumn)
-            ->where(fn($p)=>$p->when($inherited!==true,fn($p)=>$p->whereIn('c.profile_id',$profiles))->when($inherited!==false,fn($p)=>$p->orWhere(fn($d)=>$d->where(fn($c)=>$c->whereNull('c.profile_id')->orWhereNotIn('c.profile_id',$usable))->whereRaw(in_array(SiteDnsDefault::profile()?->id,$profiles,true)?'1=1':'1=0'))));
+            ->where(fn($p)=>$p->when($inherited!==true,fn($p)=>$p->whereIn('c.profile_id',$profiles))->when($inherited!==false,fn($p)=>$p->orWhere(fn($d)=>$d->where(fn($c)=>$c->whereNull('c.profile_id')->orWhereNotIn('c.profile_id',$usable))->whereRaw(in_array($configuration['default'],$profiles,true)?'1=1':'1=0'))));
         return $missing?$q->whereNotExists($comparison):$q->whereExists($comparison);
     }
     public static function affected(int $now): Builder

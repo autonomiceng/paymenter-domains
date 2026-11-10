@@ -47,4 +47,24 @@ $config=ManagedPublicConfig::find($id);same($old->id,$config->dns_episode['prede
 $checks=new WatchDnsChecks(true);expect(!$checks->begin($watch->id,$uid,'delegation',$now),'Managed watch jobs cannot restart');
 $fake->answers['example.com|NS']=managedNs();expect($signals->observe($id,$uid,'delegation'),'Fresh read independent of lost hint');same($now,ManagedPublicObservation::sole()->started_at,'Fresh managed read has its own timestamp');
 expect($signals->enqueue($id,$uid,$now),'Relink idempotent');same(2,DB::table(ManagedPublicWorkSchema::TABLE)->count(),'Idempotent managed work');same(1,$hints,'Observe and unchanged reconciliation do not recursively dispatch hints');
+// An explicit usable template counts as owned configuration; inherited domains remain a separate count.
+DB::table('domains_managed_public_config')->where('domain_id',$id)->update(['profile_id'=>$profile->id]);
+$usage=\Paymenter\Extensions\Servers\Domains\Admin\Support\WatchFacts::class;
+same(['checked'=>1,'inherited'=>0,'unchecked'=>0],$usage::usage($profile->id),'Explicit registered template uses the non-inherited query');
+DB::table('domains_managed_public_config')->where('domain_id',$id)->update(['profile_id'=>null]);
+same(['checked'=>1,'inherited'=>1,'unchecked'=>0],$usage::usage($profile->id),'The same holding inherits the default exactly once');
+foreach([['explicit.example.com',$profile->id],['inherited.example.com',null]] as [$name,$assigned]){
+    DB::transaction(fn()=>WatchName::create(['user_id'=>$uid,'canonical_name'=>$name,'psl_revision'=>str_repeat('a',64),'state'=>'active',
+        'ns_profile_id'=>$assigned,'profile_revision'=>$assigned?2:0,'expected_dns'=>'platform','notice_preferences'=>[]]));
+}
+$templates=[$profile->id];
+foreach(range(1,3) as $n){$templates[]=DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Models\WatchProfile::create(['name'=>'Other usage '.$n,'enabled'=>true,
+    'nameservers'=>['ns.other'.$n.'.example'],'website_endpoints'=>[],'email_endpoints'=>[],'edited_by'=>$staff->id,'reason'=>'Synthetic usage template']))->id;}
+foreach($templates as $template){
+    DB::flushQueryLog();DB::enableQueryLog();$actual=$usage::usage($template);$queries=DB::getQueryLog();DB::disableQueryLog();
+    same($template===$profile->id?['checked'=>3,'inherited'=>2,'unchecked'=>0]:['checked'=>0,'inherited'=>0,'unchecked'=>0],$actual,'Combined usage counts each domain once');
+    $reads=fn(string $table)=>count(array_filter($queries,fn($q)=>str_starts_with($q['query'],'select')&&str_contains($q['query'],'from "'.$table.'"')));
+    expect($reads('domains_watch_profiles')<=2,'Own and inherited counts share at most two profile reads');
+    expect($reads('settings')<=1,'Own and inherited counts share one default read');
+}
 $nativeSuccessful=true;echo "Atomic generic relink, unsent suppression, continuity-only predecessor and lost postcommit hint passed.\n";

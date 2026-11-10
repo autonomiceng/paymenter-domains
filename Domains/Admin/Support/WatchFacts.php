@@ -156,22 +156,22 @@ final class WatchFacts
     public static function usage(int $id): array
     {
         self::gate();
-        $usable=\Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::usable(WatchProfile::find($id));
-        $live=$usable && \Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::profile()?->id===$id;
-        $watches=fn(bool $own,bool $inherit)=>WatchName::where(fn($q)=>$q->when($own,fn($q)=>$q->where('ns_profile_id',$id))->when($inherit,fn($q)=>$q->orWhereNull('ns_profile_id')))->whereIn('state',['active','paused']);
+        $setup=\Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::configuration();
+        $usable=in_array($id,$setup['usable'],true);$live=$usable&&$setup['default']===$id;
+        $watches=WatchName::whereIn('state',['active','paused']);
         // A registered domain already counted through its own monitored name counts once.
-        $count=fn(bool $own,bool $inherit)=>$watches($own,$inherit)->count()
-            + \Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::configured(
-                \Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::eligible(app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp()),'domains_domains.id','domains_domains.user_id',profile:$id,inherited:$own&&$inherit?null:$inherit)
-                ->whereNotExists(fn($q)=>$q->selectRaw('1')->from('domains_watch_names as predecessor')
-                    ->whereColumn('predecessor.user_id','domains_domains.user_id')->whereColumn('predecessor.canonical_name','domains_domains.reservation_name')
-                    ->where(fn($q)=>$q->where('predecessor.ns_profile_id',$id)->when($live,fn($q)=>$q->orWhereNull('predecessor.ns_profile_id')))->whereIn('predecessor.state',['active','paused']))->count();
+        $domains=\Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::eligible(app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp())
+            ->whereNotExists(fn($q)=>$q->selectRaw('1')->from('domains_watch_names as predecessor')
+                ->whereColumn('predecessor.user_id','domains_domains.user_id')->whereColumn('predecessor.canonical_name','domains_domains.reservation_name')
+                ->where(fn($q)=>$q->where('predecessor.ns_profile_id',$id)->when($live,fn($q)=>$q->orWhereNull('predecessor.ns_profile_id')))->whereIn('predecessor.state',['active','paused']));
+        $count=fn(bool $inherited)=>(clone $watches)->when($inherited,fn($q)=>$q->whereNull('ns_profile_id'),fn($q)=>$q->where('ns_profile_id',$id))->count()
+            + \Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::configured(clone $domains,'domains_domains.id','domains_domains.user_id',profile:$id,inherited:$inherited,configuration:$setup)->count();
         if(!$usable){
             // Registered domains fall back to the site DNS default; a monitored name keeps its choice and waits.
-            return ['checked'=>0,'inherited'=>0,'unchecked'=>$watches(true,false)->count()];
+            return ['checked'=>0,'inherited'=>0,'unchecked'=>(clone $watches)->where('ns_profile_id',$id)->count()];
         }
-        $inherited=$live?$count(false,true):0;
-        return ['checked'=>$count(true,false)+$inherited,'inherited'=>$inherited,'unchecked'=>0];
+        $inherited=$live?$count(true):0;
+        return ['checked'=>$count(false)+$inherited,'inherited'=>$inherited,'unchecked'=>0];
     }
     /** The Monitored domains note: why the count moves with the site DNS default, or why chosen domains are not checked. */
     public static function usageNote(array $u): ?string
