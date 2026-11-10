@@ -28,11 +28,17 @@ final class HolderPricing implements NativeRepriceGuard
      * use, not the price saved when the domain was last billed. That saved price is the fallback when no quote can be read. */
     public static function shown(Domain $domain, Service $service, \DateTimeImmutable $now, array &$memo = []): string
     {
-        if ($domain->price_mode === 'standard' && $service->currency_code === 'USD' && ($user = $service->user) !== null) {
-            try {
-                $key = $domain->server_id.'|'.$domain->account_fingerprint.'|'.$domain->tld.'|'.$user->id;
-                return $memo[$key] ??= NativeDomainGuard::gross(app(self::class)->renewal($domain, 'USD', $now)->retail, HoldingNativeLocks::tax($user));
-            } catch (\Throwable) { /* Show the saved price instead. */ }
+        if ($domain->price_mode === 'standard' && $service->currency_code === 'USD') {
+            $key = $domain->server_id.'|'.$domain->account_fingerprint.'|'.$domain->tld.'|'.$service->user_id;
+            if (!array_key_exists($key, $memo)) {
+                $memo[$key] = null;
+                try {
+                    if (($user = $service->user) !== null) {
+                        $memo[$key] = NativeDomainGuard::gross(app(self::class)->renewal($domain, 'USD', $now)->retail, HoldingNativeLocks::tax($user));
+                    }
+                } catch (\Throwable) { /* Show each service's saved price instead. */ }
+            }
+            if ($memo[$key] !== null) { return $memo[$key]; }
         }
         return RetailLine::decimal($service->price);
     }

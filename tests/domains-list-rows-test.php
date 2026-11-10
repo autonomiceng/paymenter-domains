@@ -6,7 +6,7 @@ require_once __DIR__.'/Support/reserved-fixtures.php';
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController;
-use Paymenter\Extensions\Servers\Domains\Services\{AdoptionSchema, HistoryLinkSchema};
+use Paymenter\Extensions\Servers\Domains\Services\{AdoptionSchema, HistoryLinkSchema, HolderPricing};
 
 $op=$newTransfer(placeholderComFixtureName('rows-placeholder.com'),0,false,false); $d=$op->domain; storefrontViews();
 AdoptionSchema::install(); HistoryLinkSchema::install();
@@ -16,6 +16,11 @@ $norm=static fn(?DOMNode $n)=>$n?preg_replace('/\s+/',' ',trim($n->textContent))
 $render=static function()use($controller,$request):array{
     DB::flushQueryLog();DB::enableQueryLog();$html=$controller->index($request())->render();$n=count(DB::getQueryLog());DB::disableQueryLog();DB::flushQueryLog();
     return [storefrontDom($html),$n];
+};
+$withoutQuote=static function()use($render):array{
+    $holder=app(HolderPricing::class);
+    app()->bind(HolderPricing::class,static fn()=>throw new DomainException('Synthetic missing renewal quote.'));
+    try{return $render();}finally{app()->instance(HolderPricing::class,$holder);}
 };
 
 // A page past the end doesn't claim only cancelled domains exist.
@@ -37,9 +42,11 @@ foreach ($cases as $case=>[$status,$action,$state,$code]) {
 DB::table('domains_domains')->where('id',$d->id)->update(['status'=>'active','provider_expires_at'=>now()->addDays(200)->format('Y-m-d 00:00:00')]);
 DB::table('domains_operations')->where('id',$op->id)->update(['action'=>'transfer','state'=>'succeeded','safe_code'=>null]);
 [$list,$before]=$render();same(1,$list->query('//tbody/tr')->length,'One row');
+[, $fallbackBefore]=$withoutQuote();
 $clone=function(string $table,int $id,array $changes):int{$row=(array)DB::table($table)->where('id',$id)->first();unset($row['id']);return (int)DB::table($table)->insertGetId([...$row,...$changes]);};
+$savedPrices=[$d->domain=>'$'.number_format((float)$d->service->price,2,'.','')];
 for ($i=0;$i<8;$i++) {
-    $name=placeholderComFixtureName('rows'.$i.'-placeholder.com');$service=$clone('services',(int)$d->service_id,[]);
+    $name=placeholderComFixtureName('rows'.$i.'-placeholder.com');$service=$clone('services',(int)$d->service_id,['price'=>20+$i]);$savedPrices[$name]='$'.number_format(20+$i,2,'.','');
     [$status,$action,$state,$code]=[['active','transfer','succeeded',null],...array_values($cases)][$i%7];
     $id=$clone('domains_domains',$d->id,['domain'=>$name,'reservation_name'=>$name,'sld'=>'rows'.$i.'-placeholder','service_id'=>$service,'status'=>$status]);
     $clone('domains_operations',$op->id,['domain_id'=>$id,'service_id'=>$service,'operation_key'=>'rows-'.$i,'invoice_id'=>null,'invoice_item_id'=>null,'action'=>$action,'state'=>$state,'safe_code'=>$code]);
@@ -47,4 +54,9 @@ for ($i=0;$i<8;$i++) {
 [$list,$after]=$render();
 same(9,$list->query('//tbody/tr')->length,'Nine rows on one page');
 same($before,$after,'No queries per additional row');
+// A missing quote keeps each service's own saved price without repeating the failed read for every row.
+[$fallback,$fallbackAfter]=$withoutQuote();
+same($fallbackBefore,$fallbackAfter,'No queries per additional row when the renewal quote is missing');
+same(9,$fallback->query('//tbody/tr')->length,'Nine rows without a renewal quote');
+foreach($fallback->query('//tbody/tr') as $row){$name=$norm($fallback->query('td[1]/a',$row)->item(0));same(true,str_contains($norm($row),$savedPrices[$name].'/yr'),'Missing quote keeps the saved price for '.$name);}
 echo "Client Domains list: Renewal on every state and a fixed query count passed.\n";$nativeSuccessful=true;
