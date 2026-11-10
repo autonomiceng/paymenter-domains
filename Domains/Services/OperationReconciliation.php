@@ -35,14 +35,17 @@ final class OperationReconciliation
                 $binding = $this->authority($op, $domain, $all, $funding, $server, $account);
                 $attempt = ReconciliationEvidence::attempt($op, $domain, $binding);
                 if (RegistrarCheck::lostReply($op, $attempt, $this->clock->now())) {
-                    // NameSilo answered, but its order history does not list the order yet. Wait for it; nobody needs to ask NameSilo.
+                    // NameSilo's order history does not list the order yet. Wait for it; nobody needs to ask NameSilo.
                     if (RegistrarCheck::historyPending($attempt, $this->clock->now())) { $check->deferred = 'scheduled'; return null; }
-                    $check->awaitingAnswer = $attempt->binding->registrarKey === 'enom' ? 'Enom' : 'NameSilo';
-                    $check->answerAfter = (new \DateTimeImmutable($op->attempt['dispatch_attempted_at']))->modify('+24 hours')->getTimestamp();
+                    self::askRegistrar($check, $op, $attempt);
                     // Enom can still read the domain before staff ask for a case; NameSilo waits for its answer.
                     if ($attempt->binding->registrarKey !== 'enom') { return null; }
                 }
-                if (($op->policy['reconciliation']['polls'] ?? 0) >= self::POLL_LIMIT && !TransferPolling::expected($op) && !$manual && !($watch&&TransferPolling::expired($op,$now))) { return null; }
+                if (($op->policy['reconciliation']['polls'] ?? 0) >= self::POLL_LIMIT && !TransferPolling::expected($op) && !$manual && !($watch&&TransferPolling::expired($op,$now))) {
+                    // The order history could not confirm a lost reply within the read limit, so only the registrar's answer can settle it.
+                    if ($op->action !== 'transfer' && $attempt->replyLost()) { self::askRegistrar($check, $op, $attempt); }
+                    return null;
+                }
                 if($watch){TransferPolling::reserve($op,$now);$op->refresh();}
                 $requestedNameservers = null;
                 if ($op->action === 'transfer' && $op->registrar_key === 'namesilo' && ($op->payload['nameservers'] ?? [])) {
@@ -95,11 +98,20 @@ final class OperationReconciliation
             $callCapBlocked = true;
         } catch (\Throwable) {} // Safe retained alert; transport/contract failures do not manufacture facts.
         $readStarted=!$watch||$limiter->admissions()>0;
+        // An order history read of a lost reply counts toward the read limit even when it cannot confirm the order.
+        $historyRead=!$covered&&!$callCapBlocked&&$attempt->query->action->value!=='transfer'&&$attempt->replyLost()
+            &&($attempt->historyAcceptance?->covers($attempt,$this->clock->now())??false)&&($check->context?->exchanges()??0)>0;
         if (!$covered) {
             if (!$callCapBlocked) {
-                return $this->claims->locked($id,function($op,$domain)use($stamp,$watch,$readStarted):Operation {
+                return $this->claims->locked($id,function($op,$domain)use($stamp,$watch,$readStarted,$historyRead,$attempt,$check):Operation {
                     if(!$this->eligible($op)||self::stamp($op,$domain)!==$stamp){return $op;}
                     $policy=TransferPolling::finished($op->policy,$readStarted);
+                    if($historyRead){
+                        $policy['reconciliation']['polls']=($policy['reconciliation']['polls']??0)+1;$check->counted=true;
+                        $limit=$policy['reconciliation']['polls']>=self::POLL_LIMIT;
+                        $policy['reconciliation']['reason']=$limit?'poll_limit_reached':'original_attempt_unresolved';
+                        if($limit){self::askRegistrar($check,$op,$attempt);}
+                    }
                     if($watch){$policy['reconciliation']['staff_alert']=true;$policy['reconciliation']['reason']=($policy['reconciliation']['final_check']??null)==='done'?'transfer_deadline_passed':'transfer_status_unavailable';}
                     elseif(in_array($op->safe_code,['enom_test_reconciliation_call_cap','enom_test_transfer_reconciliation_call_cap','enom_test_reconciliation_send_guard'],true)){$policy['reconciliation']['reason']='reconciliation_required';$op->safe_code='reconciliation_required';}
                     if($op->action==='transfer'){$policy['reconciliation']['read_failed']=true;}
@@ -201,6 +213,12 @@ final class OperationReconciliation
             $policy['reconciliation']['polls'] = 0; $policy['reconciliation']['reason'] = 'resumed';
             $op->update(['policy' => $policy]); RegistrarCheck::resumed($op, $this->clock->now()->getTimestamp()); $review?->record($l); return $op;
         }, $review?->actorId);
+    }
+    /** Staff ask the registrar to check this attempt and can record its answer 24 hours after the send. */
+    private static function askRegistrar(RegistrarCheck $check, Operation $op, \Paymenter\Extensions\Servers\Domains\Data\AttemptEvidence $attempt): void
+    {
+        $check->awaitingAnswer = $attempt->binding->registrarKey === 'enom' ? 'Enom' : 'NameSilo';
+        $check->answerAfter = (new \DateTimeImmutable($op->attempt['dispatch_attempted_at']))->modify('+24 hours')->getTimestamp();
     }
     /** Retry zero-wire capacity refusals promptly; preserve pacing after a read and any existing anomaly. */
     private function deferred(int $id,string $stamp,bool $noWire): Operation

@@ -146,7 +146,7 @@ $grant->run('registration',51,function()use($grant,$exchange,$origin):void {
     $grant->reserve($mapping->command,$mapping->parameters(),new Money('1.00','USD'));
     $failure=null;try{$exchange($origin,$mapping->command,$mapping->parameters(),20000);}catch(\Paymenter\Extensions\Servers\Domains\Data\SendFailure $error){$failure=$error;}
     same(['category'=>'http 500','timeout_ms'=>20000],$failure?->facts(),'Purchase HTTP error keeps only its status for staff');
-    same(null,$failure->getPrevious(),'No raw cause');expect(!str_contains($failure->getMessage().$failure->getTraceAsString(),'placeholder-api-key'),'Failure redacts credentials');
+    same('Registrar exchange failed.',$failure->getMessage(),'Failure names no single registrar');same(null,$failure->getPrevious(),'No raw cause');expect(!str_contains($failure->getMessage().$failure->getTraceAsString(),'placeholder-api-key'),'Failure redacts credentials');
     same(1,$GLOBALS['wire']['sends'],'Failed purchase is sent once');expect(!$grant->unconsumed(51),'Failed purchase consumes its grant');
 });
 resetWire();
