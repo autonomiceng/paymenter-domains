@@ -42,5 +42,10 @@ same(null,SettingsActions::republished(['failed'=>[],'pending'=>false,'left'=>0]
 // Within the limit it is published at once.
 same(['failed'=>[],'left'=>0],$commands->republishSold($binding->serverId),'Within the limit the TLD is published at once');
 same($before,$price(),'.com is back on sale');
+// A saved setting without the installed catalogue must say publication is still pending.
+$unavailable=new class($native,$sellers,$bindings) extends StaffSettingsWrites {protected function catalogue():?StaffCommands{return null;}};
+$result=$unavailable->run($review('price_freshness'),['hours'=>72],$now);
+same(['failed'=>[],'pending'=>true],$result,'Missing catalogue leaves publication pending');
+expect(SettingsActions::republished($result)!==null,'The save explains that prices are not published yet');
 $nativeSuccessful=true;
 echo "Account republish limit: ok\n";

@@ -159,7 +159,11 @@ class StaffSettingsWrites
      * background turn republishes them. @return array{failed:list<string>,pending:bool,left?:int} */
     private function republishSold(int $server): array
     {
-        try{$done=$this->catalogue()?->republishSold($server)??['failed'=>[],'left'=>0];return ['failed'=>$done['failed'],'pending'=>false,'left'=>$done['left']];}
+        try{
+            $catalogue=$this->catalogue();
+            if($catalogue===null){return ['failed'=>[],'pending'=>true];}
+            $done=$catalogue->republishSold($server);return ['failed'=>$done['failed'],'pending'=>false,'left'=>$done['left']];
+        }
         catch(\Throwable $error){
             // The setting is saved. The background turn retries every pending offer.
             if(!$error instanceof \DomainException){\Illuminate\Support\Facades\Log::warning('Domains account republish failed.',['server_id'=>$server,'exception_class'=>$error::class]);}
