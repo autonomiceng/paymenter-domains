@@ -97,7 +97,8 @@ same(14,count($expiryResults),'Every expired blocker and control is read twice')
 same($expiryExpected,$expiryResults,'Expired renewal status requires complete unpaid-retirement proof: '.json_encode($expiryResults,JSON_THROW_ON_ERROR));
 foreach(['processing','succeeded','failed'] as $paymentState){
     $id=DB::table('invoice_transactions')->insertGetId(['invoice_id'=>$invoice->id,'amount'=>'1.00','fee'=>'0.00','status'=>$paymentState,'created_at'=>now(),'updated_at'=>now()]);
-    $unchanged=$ledger();same(['invoice'=>route('invoices.show',$invoice)],$owners->present($d->fresh())->renewNow,'Pending invoice remains payable with partial or unsettled payment: '.$paymentState);
+    // A failed latest charge keeps the invoice payable and also says the charge was declined.
+    $unchanged=$ledger();same(['invoice'=>route('invoices.show',$invoice),...($paymentState==='failed'?['declined'=>true]:[])],$owners->present($d->fresh())->renewNow,'Pending invoice remains payable with partial or unsettled payment: '.$paymentState);
     same($unchanged,$ledger(),'Payment presentation preserves evidence: '.$paymentState);DB::table('invoice_transactions')->where('id',$id)->delete();
 }
 foreach(['queued','running','pending','uncertain'] as $operationState){
