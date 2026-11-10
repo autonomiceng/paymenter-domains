@@ -183,10 +183,8 @@ The default rule (`domains_pricing_default_rule`) and the card fee (`domains_car
 one business-wide global setting each, read through `BusinessSetting`; overrides remain on
 each bound TLD. Retail tables remain separate across accounts. Republishing returns failed
 endings and continues.
-`MarginPolicy` assesses per-year published list retail against per-year term costs before
-tax/discount (same currency): below-cost acquisition terms
-are held with staff alerts; below-cost renewals continue with alerts. These assessments
-are publication inputs, never obligation/dispatch floors or complimentary authority.
+Below-cost renewals continue with a staff alert (`ObligationAlerts`), and the staff price list
+filters below-cost TLDs. Margin checks are never obligation/dispatch floors or complimentary authority.
 Unknown costs prevent new price publication; renewals retain prior retail with an alert,
 never a billing/dispatch hold. `RetailLine` checks positive net totals independently of margin;
 a positive discounted cart line may be below cost. Currency conversion and provider rounding are not inferred.

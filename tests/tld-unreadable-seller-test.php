@@ -42,5 +42,31 @@ same('8.0000',Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode(
 expect(SellerAvailability::hasPrices($account,$bad->fresh()),'Repaired evidence is usable');
 $query()->update(['catalogue_observation'=>$saved]);
 expect(SellerAvailability::hasPrices(Account::where('server_id',$bad->server_id)->sole(),$bad),'Valid evidence remains usable');
+// A damaged annual cost beside readable registration and renewal costs still gets its sync step before selection.
+$row=fn(object $t,string $action,int $term)=>DB::table('domains_prices')->where('server_id',$t->server_id)->where('action',$action)->where('term',$term);
+$transfer=$row($bad,'transfer',1)->value('catalogue_observation');$row($bad,'transfer',1)->update(['catalogue_observation'=>'{']);
+same(SellerAvailability::UNREADABLE,SellerAvailability::state(Account::where('server_id',$bad->server_id)->sole(),$bad->fresh()),'A damaged annual transfer is named even beside healthy registration and renewal');
+same(['reason'=>$unreadable[1],'disabled'=>true],array_intersect_key(Paymenter\Extensions\Servers\Domains\Admin\Support\TldRegistrar::choices($good->id)[$bad->server_id],['reason'=>1,'disabled'=>1]),'Registrar choice gives the sync step for the damaged transfer');
+expect(SellerAvailability::hasPrices(Account::where('server_id',$good->server_id)->sole(),$good->fresh()),'The healthy sibling account stays selectable');
+$row($bad,'transfer',1)->update(['catalogue_observation'=>$transfer]);
+// A feed that repairs the renewal persists although a different saved cost it leaves out is damaged. That one stays closed.
+$codec=Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::class;
+foreach([[$bad,$good,'transfer',1],[$good,$bad,'register',3]] as [$t,$sibling,$action,$term]){
+    $t=$t->fresh();$account=Account::where('server_id',$t->server_id)->sole();$b=Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account);
+    $kept=$row($t,$action,$term)->value('catalogue_observation');
+    $row($t,$action,$term)->update(['catalogue_observation'=>'{']);$row($t,'renew',1)->update(['catalogue_observation'=>'{']);
+    $damaged=$row($t,$action,$term)->first();$siblingPrices=DB::table('domains_prices')->where('server_id',$sibling->server_id)->orderBy('id')->get()->toJson();
+    $ports->apply(new Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($b,'com',[new Paymenter\Extensions\Servers\Domains\Catalogue\Cost('renew',1,true,'9.5000',Paymenter\Extensions\Servers\Domains\Data\CostUnit::TermTotal,'synthetic',$fresh,$fresh->modify('+1 day'))]),
+        $codec::revision($t,$codec::decode($account->catalogue_defaults),DB::table('domains_sales_policies')->where('tld','com')->first()));
+    $renew=$codec::query('domains_prices')->where('server_id',$t->server_id)->where('action','renew')->where('term',1)->sole();
+    same(['9.5000','9.5000'],[$codec::decode($renew->catalogue_observation)['total'],$codec::money($renew->wholesale,4)],'The repaired renewal is saved and published at its exact cost: '.$t->registrar_key);
+    same((array)$damaged,(array)$row($t,$action,$term)->first(),'The damaged '.$action.' cost it left out is unchanged');
+    $offers=$ports->displayBatch([new Paymenter\Extensions\Servers\Domains\Catalogue\Query($b,['com'],$action)])[0]['com']??[];
+    expect(!($offers[$action.':'.$term]->decision->available??false),'The damaged '.$action.' offer stays closed');
+    $sb=Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id',$sibling->server_id)->sole());
+    expect(isset($ports->displayBatch([new Paymenter\Extensions\Servers\Domains\Catalogue\Query($sb,['com'],$action)])[0]['com'][$action.':'.$term]),'The healthy sibling account still reads its '.$action.' offer');
+    same($siblingPrices,DB::table('domains_prices')->where('server_id',$sibling->server_id)->orderBy('id')->get()->toJson(),'The healthy sibling account keeps its prices');
+    $row($t,$action,$term)->update(['catalogue_observation'=>$kept]);
+}
 same(0,$reads->calls,'Registrar choices do not read providers');
 $nativeSuccessful=true;echo "Unreadable seller prices stay isolated.\n";

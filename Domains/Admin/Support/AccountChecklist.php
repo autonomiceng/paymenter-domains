@@ -105,15 +105,19 @@ final class AccountChecklist
         return $help.(!$billing['scheduled']&&$billing['manual']?' Invoices are owner-requested only; scheduled billing is off.':'');
     }
     /** Orders stop or start every registrar request on this account. Saved credentials must match before they can start.
-     * Off already says they are paused, as the page head does, so the cause gives only the next step. */
+     * Off already says they are paused, as the page head does, so the cause gives only the next step. On has no next step,
+     * so it skips the setup checks, which can build the order runtime. */
     private static function orders(Account $a): array
     {
         $on=(bool)$a->processing_enabled;
-        $status=$on?'matched':app(AccountBindings::class)->configurationStatus((int)$a->server_id);
-        $cause=match(true){$status==='site_unbound'&&$a->registrar_key==='namesilo'=>'Ask your site admin to confirm the Live site for this account.',
-            $status==='site_unbound'||(!$on&&$status==='matched'&&$a->environment==='live'&&!EnomLiveActivation::current(AccountBindings::binding($a)))=>'Use Activate to check setup and turn on Orders.',
+        return self::paused($a,self::row('Orders',$on?'On':'Off',$on?'success':null,$on?null:self::ordersStep($a),'processing','Lets this account send requests to the registrar. Off stops everything: new orders, renewals and changes. They wait and go out when it is back on.'));
+    }
+    private static function ordersStep(Account $a): string
+    {
+        $status=app(AccountBindings::class)->configurationStatus((int)$a->server_id);
+        return match(true){$status==='site_unbound'&&$a->registrar_key==='namesilo'=>'Ask your site admin to confirm the Live site for this account.',
+            $status==='site_unbound'||($status==='matched'&&$a->environment==='live'&&!EnomLiveActivation::current(AccountBindings::binding($a)))=>'Use Activate to check setup and turn on Orders.',
             $status==='matched'=>$a->registrar_key==='namesilo'?(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsWrites::processingBlocker($a)??'Ready. Turn on Orders.'):'Check setup, then turn on Orders.',default=>'Fix the API connection first.'};
-        return self::paused($a,self::row('Orders',$on?'On':'Off',$on?'success':null,$on?null:$cause,'processing','Lets this account send requests to the registrar. Off stops everything: new orders, renewals and changes. They wait and go out when it is back on.'));
     }
     /** An Off feature needs attention when this account already manages domains. The row keeps its one line;
      * pausedChecks() lists the domains in System checks. No settings change here. */
@@ -130,16 +134,19 @@ final class AccountChecklist
         return $row;
     }
     /** One System checks row for managed domains that wait on Off switches, linked to the domain or the account's list.
-     * Each count is a subset of the account's managed domains, so the largest is the total. @return list<array> */
+     * Each count is a subset of the account's managed domains, so the largest is the total. Late renewal counts only
+     * expired domains, so beside other switches it gives its own count. @return list<array> */
     public static function pausedChecks(array $rows): array
     {
         $paused=array_values(array_filter($rows,fn(array $row)=>isset($row['paused'])));
         if(!$paused){return [];}
         $top=array_reduce($paused,fn(?array $carry,array $row)=>$carry===null||$row['paused']['count']>$carry['count']?$row['paused']:$carry);
         ['count'=>$count,'domain'=>$domain,'server'=>$server]=$top;
-        $labels=array_column($paused,'label');$last=array_pop($labels);
+        $late=array_values(array_filter($paused,fn(array $row)=>$row['label']==='Late renewal'))[0]['paused']['count']??null;
+        $labels=array_values(array_diff(array_column($paused,'label'),['Late renewal']));$last=array_pop($labels);
         // Switch names are plural (Orders, Renewals) except Late renewal.
-        $off=($labels?implode(', ',$labels).' and ':'').$last.' '.(!$labels&&$last==='Late renewal'?'is':'are').' off.';
+        $off=match(true){$last===null=>'Late renewal is off.',
+            default=>($labels?implode(', ',$labels).' and ':'').$last.' are off.'.($late===null?'':' Late renewal is also off for '.$late.' expired '.($late===1?'domain':'domains').'.')};
         try{$url=$domain!==null?DomainResource::getUrl('view',['record'=>$domain]):DomainResource::getUrl('index',['filters'=>['server_id'=>['value'=>(string)$server]]]);}catch(\Throwable){$url=null;}
         return [[...self::row('Managed domains waiting',(string)$count,'warning',$off,null,'Managed domains on this account that wait until these switches are on.'),
             'buttons'=>[Action::make('paused_domains')->label($domain!==null?'Open domain':'View domains')->link()->size('sm')->url($url)->visible($url!==null)]]];

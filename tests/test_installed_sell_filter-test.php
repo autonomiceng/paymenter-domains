@@ -27,4 +27,18 @@ foreach(['own'=>false,'default'=>true] as $filter=>$defaults){
     expect(!str_contains($page->html(),'see above'),'Empty filter must not point at a missing callout');
     $page->searchTable('missing')->assertSee('No TLDs match');
 }
+// A matching healthy TLD keeps the filtered page nonempty. The left-out TLD keeps its warning and stays out of the table.
+$codec=Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::class;
+// The fixture's own copy still holds the readable intent the loop above replaced.
+$sibling=$tlds[0]->replicate();$sibling->tld='net';$sibling->save();
+foreach(['own'=>false,'default'=>true] as $filter=>$defaults){
+    DB::table('domains_tlds')->where('id',$tlds[0]->id)->update(['catalogue_intent'=>'{"sell":','use_default_rule'=>$defaults]);
+    $rule=$defaults?null:['mode'=>'markup_amount','markup'=>'1.25','round_up'=>'none'];
+    DB::table('domains_tlds')->where('id',$sibling->id)->update(['catalogue_intent'=>$codec::json([...$codec::decode($sibling->catalogue_intent),'pricing_rule'=>$rule]),
+        'use_default_rule'=>$defaults,...($defaults?[]:['pricing_mode'=>'markup_amount','markup'=>'1.25','round_up'=>'none'])]);
+    $page=Livewire::actingAs($actor)->test(EmptyFilterSellPage::class,['account'=>$binding->serverId])->filterTable('for_sale',false)->filterTable('show',$filter);
+    same(['net'],collect($page->instance()->getTableRecords()->items())->pluck('tld')->all(),'Show lists only the matching healthy TLD: '.$filter);
+    $page->assertSee('Prices left out for .com')->assertSee('It is not shown on this page. Open it to fix the pricing.');
+    $page->searchTable('net')->assertDontSee('Prices left out');
+}
 $nativeSuccessful=true;echo "Empty price filters explain omissions without pointing at a missing callout.\n";

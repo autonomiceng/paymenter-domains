@@ -50,7 +50,14 @@ $assertMissing=static function(Account $account,string $rule)use($staff,$row):vo
         unset($entry,$page);gc_collect_cycles();gc_mem_caches();
     }
 };
-$select=static function(WatchProfile $profile,array $accounts,string $oldRule)use($staff,$row):void {
+// The rendered New domains use row: its text and its links by label.
+$dnsRow=static function(string $html):array {
+    $rows=array_values(array_filter(iterator_to_array(Dom\HTMLDocument::createFromString($html,LIBXML_NOERROR)->querySelectorAll('.domains-row')),fn($node)=>str_contains($node->textContent,'New domains use')));
+    same(1,count($rows),'The page has one New domains use row');$links=[];
+    foreach($rows[0]->querySelectorAll('a[href]') as $a){$links[trim(preg_replace('/\s+/',' ',$a->textContent))]=$a->getAttribute('href');}
+    return ['text'=>trim(preg_replace('/\s+/',' ',$rows[0]->textContent)),'links'=>$links];
+};
+$select=static function(WatchProfile $profile,array $accounts,string $oldRule)use($staff,$row,$dnsRow):void {
     $domains=Domain::orderBy('id')->get()->toJson();$watches=WatchName::orderBy('id')->get()->toJson();
     Livewire::actingAs($staff)->test(MonitoringSettings::class)->callAction('siteDefault',['profile'=>$profile->id])->assertHasNoActionErrors();
     same($profile->id,SiteDnsDefault::profile()?->id,'Staff selection is the only default change');
@@ -61,7 +68,9 @@ $select=static function(WatchProfile $profile,array $accounts,string $oldRule)us
         $entry=$row($page);same($profile->name,$entry?->getState(),'Valid staff choice clears Missing on each native page');
         // The account page names what new domains get, with its nameservers and Change, as in the approved mock.
         if($class===RegistrarAccount::class){same('New domains use',$entry->getLabel(),'Account row says what new domains use');
-            $page->assertSee(implode(', ',$profile->nameservers))->assertSee('New registrations get these nameservers from the start. Transfers keep the nameservers they already have.')->assertSeeHtml('href="'.e(MonitoringSettings::getUrl()).'"');}
+            $dns=$dnsRow($page->html());
+            foreach([implode(', ',$profile->nameservers),'New registrations use these nameservers unless the customer chooses others. Transfers keep the nameservers they already have.'] as $text){expect(str_contains($dns['text'],$text),'The DNS row says: '.$text);}
+            same(['Change'=>MonitoringSettings::getUrl()],$dns['links'],'The DNS row links Change to Domain monitoring settings');}
         expect($entry->getColor($entry->getState())!=='danger','Valid default is no longer red');
         unset($entry,$page);gc_collect_cycles();gc_mem_caches();
     }
@@ -77,6 +86,20 @@ $enom=$connect('enom');$enomRule='Enom takes 2 to 12 nameservers. Update this DN
 $assertMissing($enom,$enomRule);$assertMissing($silo,$enomRule);
 same($thirteen->id,SiteDnsDefault::profile()->id,'Later Enom connection never replaces NameSilo-compatible default');
 $twelve=$make(12);$select($twelve,[$silo,$enom],$enomRule);
+// Change needs both Domain monitoring settings and the right to change the default there; the writer still refuses the rest.
+$all=array_keys(Staff::permissions());
+foreach(['view only'=>[Staff::VIEW],'no settings page'=>array_values(array_diff($all,[\Paymenter\Extensions\Servers\Domains\Admin\Pages\PublicSuffixList::VIEW])),
+    'no domain policy'=>array_values(array_diff($all,[Staff::POLICY])),'no site DNS default'=>array_values(array_diff($all,[SiteDnsDefault::MANAGE])),'full'=>$all] as $case=>$grants){
+    $user=staffUser($grants);$full=$case==='full';
+    $dns=$dnsRow(Livewire::actingAs($user)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSuccessful()->html());
+    expect(str_contains($dns['text'],$twelve->name),'Every staff member sees the default: '.$case);
+    same($full?['Change'=>MonitoringSettings::getUrl()]:[],$dns['links'],'The DNS row offers Change only with full rights: '.$case);
+    if($full||$case==='no settings page'){continue;}
+    try{SiteDnsDefault::save($user,$thirteen->id);expect(false,'The writer refuses without edit rights: '.$case);}
+    catch(Symfony\Component\HttpKernel\Exception\HttpException $error){same(403,$error->getStatusCode(),'The writer refuses without edit rights: '.$case);}
+    same($twelve->id,SiteDnsDefault::profile()?->id,'A refused change keeps the default: '.$case);
+    unset($dns);gc_collect_cycles();gc_mem_caches();
+}
 // Staff who cannot change the site default see the cause on the registrar page and are sent to staff who can.
 $viewer=staffUser(array_values(array_diff(array_keys(Staff::permissions()),[SiteDnsDefault::MANAGE])));
 $readOnly=static function(Account $account,string $detail,string $hidden)use($viewer,$row):void {

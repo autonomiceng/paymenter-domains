@@ -68,22 +68,24 @@ foreach (['no-acceptance', 'window', 'zero', 'multiple'] as $fault) {
     same($calls, [$preflight->calls, $writer->calls], 'Refused history and execution never replay a write: '.$fault);
     same($money, $nativeMoney(), 'Refused history leaves native money unchanged: '.$fault);
     same(in_array($fault, ['zero', 'multiple'], true), in_array(ReadCommand::Orders, $observation->calls, true), 'Only accepted covering history reaches discovery: '.$fault);
-    if (in_array($fault, ['no-acceptance', 'window'], true)) { same([], $observation->calls, 'Unaccepted history makes no provider reads: '.$fault); }
+    // A lost Enom reply still reads the domain facts, never order history (Orders is checked above).
+    if (in_array($fault, ['no-acceptance', 'window'], true)) { same([], array_values(array_diff(array_map(fn($c)=>$c->name, $observation->calls), ['Info', 'Renewal', 'Lock', 'Privacy', 'Expiry'])), 'Unaccepted history reads only domain facts: '.$fault); }
 }
 [$op] = $prepare(reservedFixtureName('timestamp-boundary.example.com'));
 $beforeUpdate = Illuminate\Support\Carbon::parse($op->getRawOriginal('updated_at'));
 // Eloquent samples time for the model, then again for the UPDATE when the first
 // timestamp equals the original and is omitted from the dirty attributes.
+// The status check saves its order first, with both samples in the start second, so the boundary falls on the unresolved alert.
 $nativeDates = new class($beforeUpdate) extends Carbon\Factory {
     public int $reads = 0;
     public function __construct(private Illuminate\Support\Carbon $start) { parent::__construct(); }
     public function now($timezone = null): Illuminate\Support\Carbon
     {
-        return $this->start->copy()->addSeconds($this->reads++ === 0 ? 0 : 1);
+        return $this->start->copy()->addSeconds($this->reads++ < 3 ? 0 : 1);
     }
 };
 $observation->during = static function () use ($op, $beforeUpdate, $nativeDates): void {
-    same(2, $nativeDates->reads, 'Model and query builder sampled opposite sides of a second boundary');
+    same(4, $nativeDates->reads, 'Model and query builder sampled opposite sides of a second boundary');
     same($beforeUpdate->copy()->addSecond()->format('Y-m-d H:i:s'), $op->fresh()->getRawOriginal('updated_at'),
         'Unresolved alert persisted the later query-builder timestamp');
 };

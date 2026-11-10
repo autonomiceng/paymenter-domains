@@ -178,10 +178,12 @@ final class SellTable
         $keep=array_flip($held);
         return PriceList::explain(array_filter($this->saved()['rows'],static fn(array $row):bool=>isset($keep[$row['server_id'].':'.ltrim($row['tld'],'.')])));
     }
-    /** Narrows the table to the TLDs a price filter keeps. The same read as the CSV, so both list the same rows. */
-    public function only(Builder $query,string $filter): Builder
+    /** Narrows the table to the TLDs a price filter keeps. The same read as the CSV, so both list the same rows.
+     * Warning candidates also keep the TLDs the filter left out, so their warning stays when other rows match. */
+    public function only(Builder $query,string $filter,bool $leftOut=false): Builder
     {
-        $kept=collect($this->kept($filter)['rows'])->groupBy('server_id');
+        $read=$this->kept($filter);
+        $kept=collect([...$read['rows'],...($leftOut?$read['skipped']:[])])->groupBy('server_id');
         return $kept->isEmpty()?$query->whereRaw('1=0'):$query->where(function($any)use($kept){
             foreach($kept as $server=>$rows){$any->orWhere(fn($one)=>$one->where('server_id',$server)->whereIn('tld',$rows->map(fn(array $r)=>ltrim($r['tld'],'.'))->all()));}
         });

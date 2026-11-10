@@ -46,6 +46,8 @@ class WhatYouSell extends Page implements HasTable
     #[Locked] public string $reviewStamp='';
     /** One request only, so a long list stays out of the page state. */
     private ?SellTable $reads=null;
+    /** True only while warningQuery() builds its query. */
+    private bool $warningCandidates=false;
     private ?array $accountNames=null;
     /** @var array<int,bool> */
     private array $readers=[];
@@ -114,11 +116,12 @@ class WhatYouSell extends Page implements HasTable
     {
         return $this->reads??=new SellTable($this->bindings(),$this->years(),$this->canSeeCosts(),fn()=>$this->getTableRecords()->items(),$this->account===self::ALL,$this->catalogue(),fn()=>$this->warningQuery());
     }
-    /** Search and the other filters narrow pricing warnings with the table. For sale does not: it drops exactly the rows that can't be priced. */
+    /** Search and the other filters narrow pricing warnings with the table. For sale does not: it drops exactly the rows that can't be priced.
+     * Show still narrows them, but keeps the TLDs it left out because their pricing can't be read. */
     private function warningQuery(): \Illuminate\Database\Eloquent\Builder
     {
-        $filters=is_array($this->tableFilters)?$this->tableFilters:[];$this->tableFilters=[...$filters,'for_sale'=>['isActive'=>false]];
-        try{return $this->getFilteredTableQuery();}finally{$this->tableFilters=$filters;}
+        $filters=is_array($this->tableFilters)?$this->tableFilters:[];$this->tableFilters=[...$filters,'for_sale'=>['isActive'=>false]];$this->warningCandidates=true;
+        try{return $this->getFilteredTableQuery();}finally{$this->tableFilters=$filters;$this->warningCandidates=false;}
     }
     private function reload(): void
     {
@@ -260,11 +263,13 @@ class WhatYouSell extends Page implements HasTable
                 ->description(new HtmlString(view('domains::admin.sell-note',['warning'=>$warning])->render()))
                 ->footer($one===null?null:$button('Open '.$one['tld'],TldResource::getUrl('view',['record'=>$one['id']])));
         }
-        if(($hidden=$this->reads()->hiddenWarnings())['count']>0){
+        // An empty Show filter's own message already names the left-out TLDs and their fix.
+        $explained=$this->show()!==null&&$this->getTableRecords()->isEmpty()&&$this->emptyHeading()===self::LEFT_OUT;
+        if(!$explained&&($hidden=$this->reads()->hiddenWarnings())['count']>0){
             $count=$hidden['count'];$one=$count===1;$shared=SellTable::sharedCause($hidden['causes']);
             $said=$shared!==null&&array_diff($hidden['causes'],array_column($saved['warnings'],'cause'))===[];
-            // With For sale on, a left-out TLD may be off this list as well as on another page.
-            $where=($one?'It is':'They are').($this->switchedOn('for_sale')?' not shown on this page.':' on another page of this list.');
+            // With For sale or Show on, a left-out TLD may be off this list as well as on another page.
+            $where=($one?'It is':'They are').($this->switchedOn('for_sale')||$this->show()!==null?' not shown on this page.':' on another page of this list.');
             $fix=$shared===null?'Open '.($one?'it':'each one').' to fix the pricing.':($said?'':$shared.' Fix it in Default pricing at the top of this page.');
             $more=$count-count($hidden['rows']);
             $components[]=Callout::make($one?'Prices left out for '.$hidden['rows'][0]['tld']:'Prices left out for '.number_format($count).($saved['warnings']===[]?'':' more').' TLDs')->warning()->columnSpanFull()
@@ -352,7 +357,7 @@ class WhatYouSell extends Page implements HasTable
                 Filter::make('no_cost')->label('No cost yet')->query(fn($query)=>$query->whereNull('register_cost')),
                 SelectFilter::make('show')->label('Show')->placeholder(PriceList::FILTERS['all'])->visible($costs)->options(array_diff_key(PriceList::FILTERS,['all'=>true]))
                     ->indicateUsing(fn(array $state)=>($value=self::showFilter($state['value']??null))===null?null:PriceList::FILTERS[$value])
-                    ->query(fn($query,array $data)=>($value=self::showFilter($data['value']??null))===null?$query:$this->reads()->only($query,$value)),
+                    ->query(fn($query,array $data)=>($value=self::showFilter($data['value']??null))===null?$query:$this->reads()->only($query,$value,$this->warningCandidates)),
             ])
             ->columns([
                 TextColumn::make('tld')->label('TLD')->extraCellAttributes(['class'=>'domains-sell-pin'])->extraHeaderAttributes(['class'=>'domains-sell-pin'])->weight('medium')->fontFamily('mono')->sortable()->formatStateUsing(fn(string $state)=>'.'.$state)

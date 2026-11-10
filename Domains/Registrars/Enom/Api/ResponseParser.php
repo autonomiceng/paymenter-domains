@@ -73,12 +73,6 @@ final class ResponseParser
             $payload = $command === ReadCommand::Orders ? ['orderlist', 'ordercount'] : ['order'];
             $data['history_complete'] = !array_diff(array_keys($data), ['command', 'errcount', 'done', 'rrpcode', 'responsecode', 'errors', ...$payload]);
         }
-        if ($command === ReadCommand::DomainsByNameserver) {
-            $names = $this->domainNames($data['getalldomains'] ?? null);
-            if ($names === null) { return new ProtocolResult('unknown', 'invalid_domain_list'); }
-            // No account IDs, contacts or other account response fields survive this projection.
-            $data = ['domains' => $names];
-        }
         // Payload-specific validation belongs to each named read normalizer, never to acknowledgement alone.
         return new ProtocolResult('success', $code, $data, strlen($body));
     }
@@ -154,32 +148,6 @@ final class ResponseParser
             if(is_array($value)&&!$this->noPurchaseFacts($value)){return false;}
         }
         return true;
-    }
-
-    /** GetAllDomains has no documented pagination. Refuse more than 200 results, never truncate.
-     * eNom API command catalog, pp. 180-182: https://cp.enom.com/download/APICommandCatalogEnom.pdf
-     */
-    private function domainNames(mixed $container): ?array
-    {
-        if ($container === '') { return []; }
-        if (!is_array($container) || array_is_list($container)
-            || array_diff(array_keys($container), ['domaindetail', 'userrequeststatus'])
-            || isset($container['userrequeststatus']) && !is_string($container['userrequeststatus'])) { return null; }
-        if (!array_key_exists('domaindetail', $container)) { return []; }
-        $rows = $container['domaindetail'];
-        if (!is_array($rows)) { return null; }
-        $rows = array_is_list($rows) ? $rows : [$rows];
-        if (count($rows) > 200) { return null; }
-        $names = [];
-        foreach ($rows as $row) {
-            if (!is_array($row) || !is_string($name = $row['domainname'] ?? null)) { return null; }
-            $name = strtolower($name);
-            if (strlen($name) > 253 || !str_contains($name, '.') || str_ends_with($name, '.')
-                || !filter_var($name, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME)
-                || filter_var($name, FILTER_VALIDATE_IP) || isset($names[$name])) { return null; }
-            $names[$name] = true;
-        }
-        return array_keys($names);
     }
 
     /** Indexed Text rows use the same internal shape as the documented XML products. */

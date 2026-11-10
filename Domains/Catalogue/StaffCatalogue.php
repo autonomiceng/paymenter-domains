@@ -378,12 +378,30 @@ final class StaffCatalogue
         }
         return $out;
     }
+    /** Readable saved costs for one term, by TLD id and action:term, from rows bound to the TLD's current account.
+     * For staff figures only, when a TLD has no offers to read them from; never a sale decision. */
+    private static function boundCosts(Collection $tlds,int $years): array
+    {
+        $out=[];
+        foreach($tlds->groupBy('server_id') as $id=>$rows){
+            $a=Account::where('server_id',$id)->sole();
+            $bound=$rows->filter(fn($t)=>$t->catalogue_converted&&$t->account_fingerprint===$a->account_fingerprint&&$t->registrar_key===$a->registrar_key)->keyBy('tld');
+            if($bound->isEmpty()){continue;}
+            foreach(DB::table('domains_prices')->where('server_id',$id)->whereIn('tld',$bound->keys()->all())->where('term',$years)->where('currency','USD')
+                ->where('account_fingerprint',$a->account_fingerprint)->where('registrar_key',$a->registrar_key)->orderBy('id')->get() as $p){
+                $cost=OfferState::savedCost($p->catalogue_observation);
+                if($cost===null||$cost->action!==$p->action||$cost->term!==(int)$p->term){continue;}
+                $out[(int)$bound[$p->tld]->id][$cost->key()]=$cost->total;
+            }
+        }
+        return $out;
+    }
     /** The matrix/CSV contract uses the exact same page snapshots, chunked without an unbounded SQL IN. */
     public function matrix(Collection $tlds,int $years,string $filter='all'): array
     {
         $grants=Staff::requireView();abort_unless($grants->costs,403);$rows=[];$accounts=[];$skipped=[];$warnings=[];
         $state=self::pricingState();$fee=$state['fee'];$default=$state['default'];
-        foreach($tlds->chunk(100) as $chunk){$page=$this->pageFor($chunk,$grants);$settings=[];
+        foreach($tlds->chunk(100) as $chunk){$page=$this->pageFor($chunk,$grants);$settings=[];$bound=null;
             foreach($chunk as $t){$s=$page[$t->id];$id=(int)$t->server_id;$own=$s['own'];
                 if($filter==='default'&&$own||$filter==='own'&&!$own){continue;}
                 if(!isset($settings[$id])){$a=Account::where('server_id',$id)->sole();$d=OfferState::decode($a->catalogue_defaults);$settings[$id]=[$d,Server::whereKey($id)->value('name')];}
@@ -398,7 +416,10 @@ final class StaffCatalogue
                 $rule=Pricing::rule($t,$default,$fee);
                 $row=[...$identity,'prices'=>[],
                     'formula'=>'Price = '.PricingRule::describe($rule).($rule['mode']==='fixed'?', times years.':', per year, times years.'),'fee'=>$fee,'fee_in_price'=>$rule['mode']==='markup_fee_percent'];$below=$loss=false;
-                foreach(PriceList::ACTIONS as $action=>$unused){$offer=$s['offers'][$action.':'.$years]??null;$cost=$offer?->observation()?->total;$price=$offer?->staffRetail();
+                foreach(PriceList::ACTIONS as $action=>$unused){$offer=$s['offers'][$action.':'.$years]??null;$price=$offer?->staffRetail();
+                    // A TLD with no offers to read, such as under bad account defaults, still shows its saved costs and losses. Sales stay closed.
+                    $cost=$s['offers']!==[]||$action!=='register'&&$years!==1?$offer?->observation()?->total
+                        :(($bound??=self::boundCosts($chunk,$years))[(int)$t->id][$action.':'.$years]??null);
                     if($action==='renew'&&$years===1){$price=OfferState::money($t->catalogue_retained_annual_retail,2);}
                     $profit=$price!==null&&$cost!==null?CardFee::profit($price,$cost,$fee):null;$under=$price!==null&&$cost!==null&&!PricingRule::covers($price,$cost);$loses=$profit!==null&&str_starts_with($profit,'-');$below|=$under;$loss|=$loses;
                     $row['prices'][$action]=['price'=>$price,'cost'=>$cost,'profit'=>$profit,'revision'=>$offer?->decision->revision->offer,'below_cost'=>$under,'loses_money'=>$loses,

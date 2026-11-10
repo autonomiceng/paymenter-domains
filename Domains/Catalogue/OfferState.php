@@ -75,6 +75,13 @@ final class OfferState
         return new Cost($v['action'], $v['term'], $v['enabled'], $v['total'], CostUnit::from($v['source_unit'] ?? 'term_total'),
             $v['source'], new \DateTimeImmutable($v['observed_at']), new \DateTimeImmutable($v['fresh_until']), $v['currency'], normalized: true);
     }
+    /** A saved cost, or null when there is none or it can't be read. Writers skip a damaged one, so its offer stays
+     * closed while the other saved costs publish. A price sync replaces it. */
+    public static function savedCost(mixed $observation): ?Cost
+    {
+        if ($observation === null) { return null; }
+        try { return self::cost(self::decode($observation)); } catch (\Throwable) { return null; }
+    }
     public static function encodeCost(Cost $c): array
     {
         return ['action' => $c->action, 'term' => $c->term, 'enabled' => $c->enabled, 'total' => $c->total,

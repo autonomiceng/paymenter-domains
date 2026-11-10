@@ -367,13 +367,13 @@ Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$demo->serv
 // Orders paused: by staff, and by an unconfirmed paid request.
 DB::table('domains_accounts')->where('server_id',$silo->server_id)->update(['processing_enabled'=>false]);
 // The head says Orders paused, so the Orders row (Off) gives only the actual setup step, the same one the refusal toast names.
-$siloBlocker=Paymenter\Extensions\Servers\Domains\Services\StaffSettingsWrites::processingBlocker($silo->fresh());
+$savedCache=config('cache.default');config(['cache.default'=>'array']);$cacheStep='Use a shared cache (database, Redis or Memcached), then try Orders again.';
 $pausedHtml=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$silo->server_id])->assertSee('Orders paused')->assertSee('Paused by staff')
-    ->assertSee($siloBlocker??'Ready. Turn on Orders.')->html();
+    ->assertSee($cacheStep)->html();
 same(1,substr_count($pausedHtml,'Orders paused')+substr_count($pausedHtml,'Orders are paused'),'Orders paused shows once on the account page');unset($pausedHtml);
-same($siloBlocker??'Orders setup changed. Reopen Orders and try again.',
-    Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions::refusal(new DomainException('Runtime acceptance and shared workers are required.'),'processing',[],(int)$silo->server_id),
+same($cacheStep,Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions::refusal(new DomainException('Runtime acceptance and shared workers are required.'),'processing',[],(int)$silo->server_id),
     'The Orders refusal names the same setup step as the row');
+config(['cache.default'=>$savedCache]);
 DB::table('domains_accounts')->where('server_id',$silo->server_id)->update(['processing_enabled'=>true]);
 // Admit the second registrar's service too; retain its real request when arranging an uncertain result.
 $siloBinding=AccountBindings::binding($silo->fresh());
@@ -393,6 +393,20 @@ $ports->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::seller($enom
 // A paid request waiting for the registrar shows on the Registrar requests row, never as the account's state.
 Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertDontSee('Request #'.$held->id.' unconfirmed');
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$silo->server_id])->assertSee('Registrar requests')->assertSee('1 under review');
+// The rendered head shows the account-wide hold as a working link under the status, not as escaped markup; the other account has none.
+$renderedHead=static function(int $server)use($staff):array {
+    $html=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server])->assertSuccessful()->html();
+    $heads=\Dom\HTMLDocument::createFromString($html,LIBXML_NOERROR)->querySelectorAll('.fi-header-subheading');same(1,count($heads),'The page has one subheading');
+    $links=[];foreach($heads[0]->querySelectorAll('a[href]') as $a){$links[trim($a->textContent)]=$a->getAttribute('href');}
+    return ['text'=>trim(preg_replace('/\s+/',' ',$heads[0]->textContent)),'links'=>$links];
+};
+$heldHead=$renderedHead((int)$silo->server_id);$holdUrl=Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::requestUrl(['request'=>$held->id]);
+expect($holdUrl!==null,'The held request has a staff page');
+expect(str_contains($heldHead['text'],'Check request #'.$held->id.' Paid changes on '.App\Models\Server::findOrFail($silo->server_id)->name.' are on hold until it is checked.'),'The rendered head names the paid changes hold: '.$heldHead['text']);
+same($holdUrl,$heldHead['links']['Check request #'.$held->id]??null,'The hold links to its request');
+expect(!str_contains($heldHead['text'],'<a')&&!str_contains($heldHead['text'],'&lt;'),'The hold is markup, not escaped text');
+$clearHead=$renderedHead((int)$enom->server_id);
+expect(!str_contains($clearHead['text'],'Paid changes on'),'An account without a hold shows none: '.$clearHead['text']);unset($heldHead,$clearHead);gc_collect_cycles();gc_mem_caches();
 // The Balance sits by its label on the account sheet; money right-aligns only in table cells.
 $sheet=\Dom\HTMLDocument::createFromString(Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$silo->server_id])->html(),LIBXML_NOERROR);
 $money=iterator_to_array($sheet->querySelectorAll('.domains-money'));
@@ -530,6 +544,24 @@ DB::table('domains_domains')->where('id',$domain->id)->update(['provider_expires
 $expiredLate=$checklist()['Late renewal'];
 same(1,$expiredLate['paused']['count']??null,'Late renewal counts the expired managed domain');
 same('Late renewal is off.',Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::pausedChecks([$expiredLate])[0]['cause'],'Late renewal alone reads is off');
+// A second managed domain that has not expired waits on Orders but not on Late renewal; the summary keeps the two counts apart.
+$future=Domain::create(['server_id'=>$domain->server_id,'registrar_key'=>'enom','account_fingerprint'=>Account::findOrFail($enom->id)->account_fingerprint,
+    'domain'=>'registrars-future.com','sld'=>'registrars-future','tld'=>'com','user_id'=>$domain->user_id,'service_id'=>990001,'status'=>'active','billing_managed'=>true,
+    'provider_expires_at'=>$clock->now()->modify('+200 days')->format('Y-m-d')]);
+$mixedRows=$checklist();$listUrl=Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource::getUrl('index',['filters'=>['server_id'=>['value'=>(string)$enom->server_id]]]);
+same(['Off',2],[$mixedRows['Orders']['value'],$mixedRows['Orders']['paused']['count']??null],'Orders counts every managed domain');
+same([1,$domain->id],[$mixedRows['Late renewal']['paused']['count']??null,$mixedRows['Late renewal']['paused']['domain']??null],'Late renewal counts only the expired domain');
+$mixed=Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::pausedChecks([$mixedRows['Orders'],$mixedRows['Late renewal']])[0];
+same(['2','Orders are off. Late renewal is also off for 1 expired domain.','View domains',$listUrl],[$mixed['value'],$mixed['cause'],$mixed['buttons'][0]->getLabel(),$mixed['buttons'][0]->getUrl()],'Mixed expiry dates name each subset and link the account list');
+$lateOnly=Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::pausedChecks([$mixedRows['Late renewal']])[0];
+same(['1','Late renewal is off.','Open domain'],[$lateOnly['value'],$lateOnly['cause'],$lateOnly['buttons'][0]->getLabel()],'Late renewal alone counts the expired domain');
+expect(str_ends_with((string)$lateOnly['buttons'][0]->getUrl(),'/'.$domain->id),'Late renewal alone links the expired domain, not the healthy one');
+$ordersOnly=Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::pausedChecks([$mixedRows['Orders']])[0];
+same(['2','Orders are off.',$listUrl],[$ordersOnly['value'],$ordersOnly['cause'],$ordersOnly['buttons'][0]->getUrl()],'Orders alone counts every managed domain');
+$manyLate=Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::pausedChecks([['label'=>'Orders','paused'=>['count'=>5,'domain'=>null,'server'=>(int)$enom->server_id]],
+    ['label'=>'Renewals','paused'=>['count'=>5,'domain'=>null,'server'=>(int)$enom->server_id]],['label'=>'Late renewal','paused'=>['count'=>3,'domain'=>null,'server'=>(int)$enom->server_id]]])[0];
+same(['5','Orders and Renewals are off. Late renewal is also off for 3 expired domains.'],[$manyLate['value'],$manyLate['cause']],'Several expired domains are counted apart from the total');
+DB::table('domains_domains')->where('id',$future->id)->update(['billing_managed'=>false]);unset($mixedRows,$mixed,$lateOnly,$ordersOnly,$manyLate);
 DB::table('domains_domains')->where('id',$domain->id)->update(['provider_expires_at'=>$clock->now()->format('Y-m-d')]);
 foreach(['2026-10-18T12:00:00Z','2026-10-18T00:30:00Z'] as $expiryDay){
     app()->instance(Clock::class,new Paymenter\Extensions\Servers\Domains\Tests\FakeClock(new DateTimeImmutable($expiryDay)));

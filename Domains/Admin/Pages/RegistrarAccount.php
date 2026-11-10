@@ -130,15 +130,16 @@ class RegistrarAccount extends Page
         }
         return $system;
     }
-    /** The site DNS default as it applies here: its name, its nameservers and Change, which opens Domain monitoring settings where it is chosen. */
+    /** The site DNS default as it applies here: its name, its nameservers and Change, which opens Domain monitoring settings where it is chosen.
+     * Change and the fix text need both that page and the right to change the default; other staff are told who can. */
     private static function newDomainsUse(Account $a): array
     {
-        $canEdit=Staff::canEditDefaultDns();$default=SiteDnsDefault::profile();$refusal=SiteDnsDefault::refusal($canEdit);
+        $canEdit=Staff::canEditDefaultDns()&&MonitoringSettings::canAccess();$default=SiteDnsDefault::profile();$refusal=SiteDnsDefault::refusal($canEdit);
         $names=$default&&!$refusal?'<span class="domains-mono">'.e(implode(', ',array_map('strval',(array)$default->nameservers))).'</span><br>':'';
         $row=self::fact('New domains use',$refusal?null:$default?->name,$refusal??($default
-            ?new HtmlString($names.'New registrations get these nameservers from the start. Transfers keep the nameservers they already have.')
+            ?new HtmlString($names.'New registrations use these nameservers unless the customer chooses others. Transfers keep the nameservers they already have.')
             :'New registrations have no site-default nameservers. '.($a->registrar_key==='namesilo'?'NameSilo needs explicit nameservers before an order can be sent. ':'').($canEdit?'Choose one in Domain monitoring settings.':SiteDnsDefault::ASK)));
-        try { $url=MonitoringSettings::canAccess()?MonitoringSettings::getUrl():null; } catch (\Throwable) { $url=null; }
+        try { $url=$canEdit?MonitoringSettings::getUrl():null; } catch (\Throwable) { $url=null; }
         return [...$row,'buttons'=>$url?[Action::make('new_domains_use')->label('Change')->link()->size('sm')->url($url)]:[]];
     }
     /** A value with no fix of its own. */
