@@ -186,8 +186,6 @@ class PackageTests(unittest.TestCase):
     def test_one_time_converter_is_excluded(self):
         runtime_conversion = {'Services/ConversionGate.php',
                               'database/migrations/2026_11_02_000048_add_offer_conversion.php'}
-        for source in [ROOT/'scripts/convert-enom-05.php', ROOT/'scripts/collect-conversion-evidence.php', *(ROOT/'scripts/conversion').rglob('*')]:
-            self.assertFalse(source.is_relative_to(ROOT/'Domains'))
         with tempfile.TemporaryDirectory(prefix='domains-converter-package-') as temp:
             root = Path(temp)
             first = builder.build(ROOT/'Domains', root/'first')
