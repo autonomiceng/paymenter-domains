@@ -41,7 +41,7 @@ same(['Request #'.$ops[0]->id.' unconfirmed'],PaidUncertainty::for($held),'Accou
 $accountHold=PaidUncertainty::accounts((int)$ops[0]->server_id);expect($accountHold!==null,'Fixture holds paid changes on the account');
 $accountPage=new \Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount;$accountPage->account=(int)$ops[0]->server_id;$accountHead=$accountPage->getSubheading();
 expect(str_contains((string)($accountHead instanceof \Illuminate\Contracts\Support\Htmlable?$accountHead->toHtml():$accountHead),$accountHold->toHtml()),'Registrar account head names the paid changes hold');
-expect(preg_match('/ \((under 1 hour|1 hour|\d+ hours) so far\)\. Registrations/',PaidUncertainty::holdSummary($ops[0]))===1,'Account-wide hold includes age');
+expect(preg_match('/ \(on hold since [A-Z][a-z]{2} \d{1,2}, \d{4}, \d{1,2}:\d{2} [AP]M [A-Z]{2,5}\)\.$/D',(string)PaidUncertainty::holdSummary($ops[0]))===1,'Account-wide hold includes when it began');
 same(null,RequestFacts::for($ops[1])['reason'],'Absent reason remains absent');
 $completed=clone $ops[0];$completed->state='succeeded';$completed->attempt=['execution'=>null];same([null,null],[RequestFacts::for($completed)['outcome'],RequestFacts::notice($completed)],'Completed readback has no unconfirmed notice');
 $completed->attempt=['seal'=>'sealed','execution'=>['provider_reference'=>'SYNTHETIC-ORDER']];

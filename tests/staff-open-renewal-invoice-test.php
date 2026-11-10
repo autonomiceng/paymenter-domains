@@ -23,7 +23,7 @@ $renewal=Operation::create(['domain_id'=>$d->id,'service_id'=>$d->service_id,'se
 $privacy=Invoice::withoutEvents(fn()=>Invoice::create(['user_id'=>$d->user_id,'currency_code'=>'USD','status'=>'pending','due_at'=>$due->copy()->addDay()]));
 $privacyOp=$renewal->replicate();$privacyOp->fill(['operation_key'=>'staff-open-privacy','invoice_id'=>$privacy->id,'action'=>'privacy_renew']);$privacyOp->save();
 $line='Due '.$due->format('M j, Y');$facts=DomainFacts::for($d->fresh());
-same([$line,'Invoice #'.$invoice->id],[$facts['Next invoice']['value'],$facts['Open invoice']['value']],'An issued renewal invoice takes precedence over the future issue date');
+same([$line,'Proforma #'.$invoice->id],[$facts['Next invoice']['value'],$facts['Open invoice']['value']],'An issued renewal invoice takes precedence over the future issue date');
 Livewire\Livewire::actingAs($actor)->test(ViewDomain::class,['record'=>$d->id])->assertSee($line)->assertDontSee($planned);
 $policy=$d->renewal_policy??[];$d->update(['renewal_policy'=>[...$policy,'owner_auto_renew'=>false]]);
 same($line,DomainFacts::for($d->fresh())['Next invoice']['value'],'Turning off future renewals does not hide an already-issued invoice');
@@ -35,5 +35,5 @@ $renewal->update(['state'=>'rejected','safe_code'=>'renewal_cancelled_unpaid']);
 $invoice->update(['status'=>'cancelled']);$invoice->update(['status'=>'pending']);
 $facts=DomainFacts::for($d->fresh());
 same($planned,$facts['Next invoice']['value'],'Reopened debt for a closed renewal cannot replace the future schedule');
-same('Invoice #'.$privacy->id,$facts['Open invoice']['value'],'Closed renewal debt cannot displace another open invoice');
+same('Proforma #'.$privacy->id,$facts['Open invoice']['value'],'Closed renewal debt cannot displace another open invoice');
 $nativeSuccessful=true;echo "Staff Next invoice reflects the open renewal invoice.\n";

@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{PaidUncertainty, Staff};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Presentation\StaffTime;
-staffPanel(); staffData();
+staffPanel(); staffData(); Paymenter\Extensions\Servers\Domains\Services\BalanceSchema::install();
 $setupPanel=\Filament\Facades\Filament::getPanel('admin');
 \Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($setupPanel->getPath())->middleware($setupPanel->getMiddleware())
     ->group(function()use($setupPanel){RegistrarSetup::registerRoutes($setupPanel);Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::registerRoutes($setupPanel);});

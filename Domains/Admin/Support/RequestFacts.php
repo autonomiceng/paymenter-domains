@@ -57,7 +57,8 @@ final class RequestFacts
             if ($grants->metadata && ($reply=\Paymenter\Extensions\Servers\Domains\Data\RegistrarReply::fromArray($a['evidence']['registrarReply']??null))) { $out['registrar_reply']=$reply->words(); }
             $paid=$op->invoice_id||in_array($op->action,self::PAID_ACTIONS,true);
             if ($paid) {
-                $out['invoice']=$op->invoice_id ? 'Invoice #'.$op->invoice_id : null;
+                $out['invoice']=$op->invoice_id ? Facts::invoiceName((int)$op->invoice_id) : null;
+                if ($op->invoice_id) { $out['payment_reversed']=self::paymentReversed($op); }
                 $out['invoice_sub']=$op->invoice_id ? (array_key_exists('auto_pay',$f) ? Labels::autoPay($f['auto_pay_result']??$f['auto_pay']) : null) : 'No invoice linked. No action needed.';
             }
             if (array_key_exists('auto_pay',$f)) { $out['auto_pay']=Labels::autoPay($f['auto_pay_result']??$f['auto_pay']); }
@@ -359,6 +360,30 @@ final class RequestFacts
     public static function sendWords(Operation $op, Account $account): string
     { return ($account->environment==='live'?'':'test ').($op->action==='transfer'?'transfer':'purchase'); }
     /** The Release hold dialog: heading, button and what release starts. $sends: sendWords() when release sends to Enom at once. */
+    /** Refunds and disputes the gateway recorded on the request's own invoice, so staff see money we no longer hold.
+     * Null when there are none; ['words'=>null] when they could not be read. */
+    private static function paymentReversed(Operation $op): ?array
+    {
+        $invoice=\App\Models\Invoice::find($op->invoice_id); if (!$invoice) { return null; }
+        try { $rows=\Paymenter\Extensions\Servers\Domains\Services\ReceiptReversals::forInvoice($invoice); }
+        catch (\Throwable) { return ['words'=>null,'act'=>true]; }
+        $lines=[];$act=false;
+        foreach ($rows as $r) {
+            $amount=\Paymenter\Extensions\Servers\Domains\Services\Storefront::money(\Paymenter\Extensions\Servers\Domains\Services\PricingRule::decimal((int)$r['amount_minor']));
+            $line=match ([$r['kind']??null,$r['status']??null]) {
+                ['dispute','lost']=>$amount.' lost to a dispute',
+                ['dispute','open'],['dispute','inquiry']=>$amount.' under dispute. Submit evidence in Stripe before the deadline',
+                ['refund','refunded']=>$amount.' refunded to the original payment',
+                ['refund','open']=>'Refund of '.$amount.' in progress',
+                ['refund','failed']=>'Refund of '.$amount.' failed',
+                default=>null,
+            };
+            if ($line===null) { continue; }
+            $lines[]=$line.'.';
+            $act=$act||($r['needs_review']??false)||$r['kind']==='dispute'||$r['status']==='failed';
+        }
+        return $lines?['words'=>implode(' ',array_unique($lines)),'act'=>$act]:null;
+    }
     public static function releaseConfirmation(Operation $op, ?Account $account, ?string $sends, bool $contactRecovery): array
     {
         if ($sends!==null) { return ['Send to Enom now?','Release and send',"Sends the {$sends} to Enom within a few minutes. This can't be taken back."]; }

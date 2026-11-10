@@ -169,7 +169,7 @@ final class DomainDecisions
             if ($renewalInvoice) { $f['Next invoice']=Facts::row($renewalInvoice->due_at?'Due '.gmdate('M j, Y',strtotime(substr($renewalInvoice->due_at,0,10).' 00:00:00 UTC')):'Due'); }
             elseif (!$pending&&$d->status==='active'&&!$expired&&$renewal&&!$off) { $f['Next invoice']=self::nextInvoice($d); }
         }
-        if ($invoice) { $f['Open invoice']=Facts::row('Invoice #'.$invoice->id,sub:'Awaiting payment',url:Facts::invoiceUrl((int)$invoice->id)); }
+        if ($invoice) { $f['Open invoice']=Facts::row(Facts::invoiceName((int)$invoice->id),sub:'Awaiting payment',url:Facts::invoiceUrl((int)$invoice->id)); }
         // A failed read leaves the unread rows red Missing without a sentence each. Why, and what to do, is said once:
         // a stopped read in the page notice, a read still retrying on Last sync. Contacts come from saved requests, not the read,
         // so their Missing keeps its own step.
