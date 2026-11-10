@@ -26,7 +26,9 @@
     // While the demo registrar is paused, synced values are unknown: nothing to do until it resumes.
     $paused = $domain->syncPaused && in_array($cap, ['nameservers', 'dns', 'srv', 'glue', 'ds', 'lock', 'privacy'], true);
     // Until the first registrar read finishes, a row that says Checking has nothing current to change. Its action shows, turned off; the page notice says why.
-    $checking = $initial && match ($cap) { 'nameservers' => !($section['current'] ?? []), 'glue', 'ds' => $records === null, 'lock', 'privacy' => $state === null, 'contacts' => !$domain->owner, default => false };
+    // A row whose family label says Checking counts too, even when it already shows the values we sent at registration.
+    $checking = $initial && (match ($cap) { 'nameservers' => !($section['current'] ?? []), 'glue', 'ds' => $records === null, 'lock', 'privacy' => $state === null, 'contacts' => !$domain->owner, default => false }
+        || ($familyState === 'unknown' && (($section['family']['initial_read_pending'] ?? false) || ($section['family']['read_checking'] ?? false))));
 @endphp
 @continue($section === null && !($cap === 'nameservers' && $domain->syncPaused))
 <li @class(['domains-row', 'domains-row--pending' => $section['progress']['pending'] ?? false]) id="{{ $cap }}">
