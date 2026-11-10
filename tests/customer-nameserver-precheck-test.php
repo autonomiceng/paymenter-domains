@@ -11,7 +11,8 @@ $max=$owners->present($d->fresh(),true)->management['nameservers']['max'];
 $request=Illuminate\Http\Request::create('/domains/'.$d->id); $request->setUserResolver(fn()=>$user); $request->setLaravelSession(app('request')->session());
 $html=(new Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController($owners))->show($request,$d->id)->render();
 $form=storefrontDom($html)->query('//dialog[@id="edit-nameservers"]//form[@data-confirm]')->item(0);
-expect($form!==null,'The nameserver editor renders');
+$row=storefrontDom($html)->query('//*[@id="nameservers"]')->item(0);
+expect($form!==null,'The nameserver editor renders: '.json_encode(array_keys($owners->present($d->fresh(),true)->management['nameservers']['actions']??[])).' '.trim(preg_replace('/\s+/',' ',$row?->textContent??'no row')));
 same((string)$max,$form->getAttribute('data-nameservers-max'),'The editor carries the server limit');
 // Every refusal the browser can give uses the server's words.
 $script=file_get_contents(dirname(__DIR__).'/Domains/resources/views/partials/client-script.blade.php');
