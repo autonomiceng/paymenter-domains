@@ -51,7 +51,7 @@ $ids=[];
 for($i=0;$i<26;$i++){$copy=$tlds[0]->fresh()->replicate();$copy->tld='bulk'.chr(97+$i);$copy->save();$ids[]=$copy->id;}
 $before=StaffCommands::stamp($binding->serverId);
 $page=Livewire::actingAs($actor)->test(UnreadableIntentSellPage::class,['account'=>$binding->serverId])->filterTable('for_sale',false);
-try{$page->callTableBulkAction('edit',$ids,['choice'=>'skip','longest'=>'keep','transfer'=>'keep'])->assertNotNotified('Saved');}
+try{$page->callTableBulkAction('edit',$ids,['choice'=>'skip','longest'=>'keep','transfer'=>'keep'])->assertNotified(Filament\Notifications\Notification::make()->danger()->persistent()->title('Nothing was saved')->body('You selected 26 TLDs. Edit selected saves 25 or fewer at a time. To sell every TLD you have not set yourself, use Default for new TLDs.'));}
 catch(Throwable $error){throw new RuntimeException('Bulk selection 26: '.$error->getMessage(),0,$error);}
 same($before,StaffCommands::stamp($binding->serverId),'Oversized selection never changes intent, prices or audit');
 // Start the separate valid-boundary interaction with fresh mounted form state and review ticket.
