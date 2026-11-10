@@ -80,7 +80,8 @@ final class RegistrarFacts
                 });
         } catch (\Throwable) { return null; }
         if ($selling) { return null; }
-        if ($reasons===[]) { return 'No TLDs are for sale. Choose what you sell.'; }
+        // A standby account that takes orders has a second fix: turn its Orders off.
+        if ($reasons===[]) { return 'No TLDs are for sale. Choose what you sell, or turn Orders off.'; }
         uasort($reasons,static fn(array $x,array $y)=>count($y)<=>count($x));
         $label=(string)array_key_first($reasons);
         return 'No TLDs are for sale. '.$label.' for '.\Paymenter\Extensions\Servers\Domains\Presentation\TldNames::summary($reasons[$label]).'. '.(TldFacts::FIXES[$label]??'Open the TLD to see what it needs.');
