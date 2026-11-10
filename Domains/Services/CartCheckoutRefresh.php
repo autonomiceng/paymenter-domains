@@ -19,6 +19,7 @@ final class CartCheckoutRefresh
                 $held = session()->get(self::shownKey().'.lines', session()->get(self::shownKey(), []));
                 $review = session()->get(self::shownKey().'.review');
                 $admission->refresh();
+                CartNotice::clearCheck($component);
                 if(ComplimentaryAccounts::authorization((int)\Illuminate\Support\Facades\Auth::id())){self::show($component,self::cartTotal());}
                 // A new price may extend the review; the customer's own term/quantity edit invalidates it.
                 $choices = static fn (array $lines) => array_map(static fn (array $line) => [$line['plan_id'], $line['quantity']], $lines);
@@ -52,6 +53,7 @@ final class CartCheckoutRefresh
             \Livewire\store($component)->set('domains.offers', $memo['domains_offers'] ?? null);
             \Livewire\store($component)->set('domains.shown', $memo['domains_shown'] ?? null);
             CartNotice::restore($component, $memo['domains_notice'] ?? null);
+            CartNotice::restore($component, $memo['domains_check_notice'] ?? null);
         });
         Livewire::listen('call', static function ($component, $method, $params, $context, $returnEarly) use ($admission) {
             if ($component::class !== Cart::class) { return; }
@@ -70,7 +72,7 @@ final class CartCheckoutRefresh
             OrderContact::clear();
             if (!\Illuminate\Support\Facades\Auth::check()) { return; }
             try {
-                try { $admission->refresh(); }
+                try { $admission->refresh(); CartNotice::clearCheck($component); }
                 catch (CartLinesRemoved $e) { self::removed($component, $e); $returnEarly(); return; }
                 if ($params !== []) { OrderContact::begin(\Illuminate\Support\Facades\Auth::user(), $params[0] ?? null); }
                 foreach ($admission->contactTlds() as $tld) { OrderContact::capture(\Illuminate\Support\Facades\Auth::user(), $tld); }
@@ -164,12 +166,13 @@ final class CartCheckoutRefresh
             $context->addMemo('domains_offers', $offers);
             try { $shown = self::shown(); } catch (\Throwable) { $shown = null; }
             $context->addMemo('domains_shown', $shown);
+            $notice = CartNotice::review($component);
+            $context->addMemo('domains_notice', ($notice['title'] ?? null) === 'Your cart changed' ? $notice : null);
+            $context->addMemo('domains_check_notice', \Livewire\store($component)->get('domains.check_notice'));
             if ($shown !== null) {
                 $lines = self::snapshot($shown);
                 session()->put(self::shownKey().'.lines', $lines);
-                $notice = CartNotice::get($component);
                 $review = ($notice['title'] ?? null) === 'Your cart changed' ? ['notice' => $notice, 'shown' => $lines] : null;
-                $context->addMemo('domains_notice', $review['notice'] ?? null);
                 if ($review) { session()->put(self::shownKey().'.review', $review); }
                 else { session()->forget(self::shownKey().'.review'); }
             }
@@ -184,6 +187,7 @@ final class CartCheckoutRefresh
             \Illuminate\Support\Facades\Log::warning('Domains cart recalculation failed after removal.', ['exception_class' => $error::class]);
         }
         $component->dispatch('cartUpdated');
+        CartNotice::clearCheck($component);
         CartNotice::set($component, 'Domain removed', $removed->getMessage(), $removed->getMessage(), 'warning', $removed->names);
     }
 
@@ -206,7 +210,7 @@ final class CartCheckoutRefresh
 
     private static function priceNotice(Cart $component, array $was, ?CartLinesRemoved $removed = null): void
     {
-        $previous = CartNotice::get($component);
+        $previous = CartNotice::review($component);
         if (($previous['title'] ?? null) === 'Your cart changed') {
             // Keep pending details for unchanged lines; a new change replaces that line's old amount.
             $was = array_replace(array_intersect_key($previous['was'] ?? [], self::shown()), $was);
@@ -281,22 +285,27 @@ final class CartCheckoutRefresh
     {
         \Illuminate\Support\Facades\Log::warning('Domains checkout check unavailable.', CartHandoffFailure::context($e,'checkout_check'));
         if ($e instanceof \App\Exceptions\DisplayException) { $component->notify($e->getMessage(), 'error'); return; }
-        if ($e instanceof CheckoutRefreshTimeout || $e instanceof ReadDeferred) {
-            CartNotice::set($component, 'We could not get your price', 'Try again shortly.', 'We could not get your price. Try again shortly.', 'error');
-            return;
-        }
         // The cart's own notice, so the reason stays above the lines; Checkout runs this check again before any payment.
         $names = self::domainNames();
-        CartNotice::set($component, self::UNCHECKED_TITLE, self::unchecked($names), self::unchecked($names), 'error', $names);
+        if ($e instanceof CheckoutRefreshTimeout || $e instanceof ReadDeferred) {
+            $text = 'We could not get the price for '.($names ? implode(', ', $names) : 'your domain').'. Try again shortly. You can also remove '
+                .(count($names) > 1 ? 'them' : 'it').' from your cart.';
+            CartNotice::set($component, 'We could not get your price', $text, 'We could not get your price. '.$text, 'error', $names);
+            return;
+        }
+        $registrar = $e instanceof EligibilityUnconfirmed;
+        $text = self::unchecked($names, $registrar);
+        CartNotice::set($component, self::UNCHECKED_TITLE, $text, $text, 'error', $names);
     }
 
     public const UNCHECKED_TITLE = 'We couldn’t confirm your domain';
     /** Why checkout waits and what the customer can do, naming each domain line. */
-    public static function unchecked(array $names): string
+    public static function unchecked(array $names, bool $registrar = true): string
     {
         $last = array_pop($names);
         $list = $last === null ? 'your domain' : ($names === [] ? $last : implode(', ', $names).' and '.$last);
-        return 'We couldn’t confirm the price and term for '.$list.' with the registrar, so checkout is paused. Try again in a few minutes, or remove'
+        return ($registrar ? 'We couldn’t confirm the price and term for '.$list.' with the registrar' : 'Ordering is temporarily unavailable for '.$list)
+            .', so checkout is paused. Try again in a few minutes, or remove'
             .($names === [] ? ' it from your cart.' : ' them from your cart.');
     }
 
