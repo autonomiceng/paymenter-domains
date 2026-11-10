@@ -32,6 +32,14 @@ $head=DomainFacts::head($d,DomainFacts::status($d),DomainFacts::for($d));
 expect(!in_array($head['tone'],['warning','danger'],true),'The head is not amber or red during a normal send: '.$head['tone']);
 expect(str_contains(strip_tags((string)$head['step']),'Registration in progress'),'The head says the registration is in progress: '.strip_tags((string)$head['step']));
 same($sent->getTimestamp(),DomainHistory::row($op,$d,false)['time']?->getTimestamp(),'The activity row is dated when the request was sent, as the request page says');
+// A DNSSEC request row uses the same time: when it was sent while it waits on the registrar, else when it was created.
+$created=now()->subDays(3)->startOfSecond();
+foreach(['ds_add'=>['pending',$sent],'ds_delete'=>['queued',$created]] as $action=>[$state,$expected]){
+    $ds=$op->replicate()->fill(['operation_key'=>'in-progress-'.$action,'action'=>$action,'state'=>$state,'started_at'=>$state==='pending'?$sent:null,'policy'=>['management'=>['section'=>'dnssec']]]);
+    $ds->save();DB::table('domains_operations')->where('id',$ds->id)->update(['created_at'=>$created]);
+    same($expected->getTimestamp(),DomainHistory::row($ds->fresh(),$d,false)['time']?->getTimestamp(),'The '.$action.' row is dated as the request page says');
+    DB::table('domains_operations')->where('id',$ds->id)->delete();
+}
 // A review alert left from before the send (a dispatch or balance refusal) does not put the domain under Open alerts.
 ObligationAlerts::record($d,'operation_review',time()-900,(int)$op->id);
 same([],StaffDomainInputs::for([$d->fresh()])[$d->id]['alerts'],'A request back with the registrar has no open review alert');

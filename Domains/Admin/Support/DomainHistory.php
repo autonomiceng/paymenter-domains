@@ -70,7 +70,7 @@ final class DomainHistory
         }
         if($dsAction&&!$idle){
             $ds=\Paymenter\Extensions\Servers\Domains\Presentation\DsState::event($entry,$domain,true);
-            return ['time'=>$entry->created_at,'event'=>'Request #'.$entry->id.' DNSSEC','sub'=>$ds['text'],'status'=>['label'=>$ds['state'],'tone'=>$ds['tone']],'by'=>self::requester($entry,$domain)];
+            return ['time'=>self::when($entry),'event'=>'Request #'.$entry->id.' DNSSEC','sub'=>$ds['text'],'status'=>['label'=>$ds['state'],'tone'=>$ds['tone']],'by'=>self::requester($entry,$domain)];
         }
         if ($entry->state==='queued'&&$ordersOff&&$reason!==null) { $reason=StaffDomainStatus::sentence($reason).RequestFacts::ordersStep($reason); }
         return ['time'=>self::when($entry),'event'=>'Request #'.$entry->id.' '.Labels::action($entry->action),
