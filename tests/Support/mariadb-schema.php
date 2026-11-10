@@ -72,10 +72,10 @@ Schema::table('domains_adoptions', static fn ($t) => $t->dropColumn('unexpected'
 $guardServer=\App\Models\Server::create(['name'=>'Freshness guard','type'=>'server','extension'=>'Domains','enabled'=>true]);
 Schema::create('domains_freshness_guard',static function($table):void {$table->id();$table->unsignedBigInteger('server_id');});
 DB::table('domains_freshness_guard')->insert(['server_id'=>$guardServer->id]);
-try{(new \ReflectionMethod(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class,'freshSandbox'))
+try{(new \ReflectionMethod(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class,'freshEnrollment'))
     ->invoke(app(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class),(int)$guardServer->id);
     throw new LogicException('Prefixed retained Domains table passed the fresh-server guard');
-}catch(DomainException $error){same('Sandbox enrollment requires a fresh server.',$error->getMessage(),'Prefixed retained table blocks sandbox enrollment');}
+}catch(DomainException $error){same('Account enrollment requires a fresh server.',$error->getMessage(),'Prefixed retained table blocks account enrollment');}
 Schema::drop('domains_freshness_guard');$guardServer->newQuery()->whereKey($guardServer->id)->delete();
 $evidenceDatesBootstrapped = true;
 require dirname(__DIR__).'/evidence-dates-upgrade-test.php';

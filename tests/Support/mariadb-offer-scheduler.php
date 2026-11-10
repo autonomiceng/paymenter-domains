@@ -34,14 +34,14 @@ if ($phase === 'seed') {
     $b = $bindings->configure($server->id, 'enom', Environment::Test, ['token'=>'synthetic-account']);
     $role = Role::create(['name'=>'Synthetic import staff','permissions'=>[Staff::VIEW,Staff::POLICY,'admin.domains.settings.import']]);
     User::create(['first_name'=>'Synthetic','last_name'=>'Staff','email'=>'race-staff@example.test','password'=>'synthetic-password','role_id'=>$role->id]);
-    (new \Paymenter\Extensions\Servers\Domains\Tests\OfferFixture)->batch($b); (new UpgradeGate)->pause();
+    (new \Paymenter\Extensions\Servers\Domains\Tests\OfferFixture)->batch($b);
     Schema::create('offer_fixture_reads', static function ($t): void { $t->id(); });
 } else { $b = \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::sole()); }
 $generation = UpgradeGate::generation();
 $guard = static function (?int $server = null) use ($generation): void {
     if (DB::transactionLevel() > 0) {
         Server::where('extension','Domains')->orderBy('id')->lockForUpdate()->get();
-        Account::orderBy('server_id')->lockForUpdate()->get(); UpgradeGate::paused($generation);
+        Account::orderBy('server_id')->lockForUpdate()->get(); UpgradeGate::active($generation);
     } elseif (UpgradeGate::generation() !== $generation) { throw new DomainException('Synthetic stale generation'); }
 };
 $feed = new class implements PricedFeed {
