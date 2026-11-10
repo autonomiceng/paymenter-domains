@@ -1,8 +1,9 @@
 # MIT, Copyright (c) 2026 Autonomic Engineering.
-"""Affected-test selection for pull request CI: reach, widening, cap and shards."""
+"""Affected-test selection for pull request CI: reach, widening, cap, shards, pushes and the status check."""
 import importlib.util
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -81,6 +82,109 @@ class AffectedTests(unittest.TestCase):
         self.assertEqual(sorted(slow), [0, 1, 1])
         self.assertEqual(affected.shards(tests, 100, 3), [sorted(tests)])
         self.assertEqual(affected.shards([], 4, 3), [])
+
+
+def run_git(root, *args):
+    return subprocess.run(['git', '-C', str(root), '-c', 'user.name=t', '-c', 'user.email=t@example.com', *args],
+                          check=True, capture_output=True, text=True).stdout.strip()
+
+
+def commit(root, path, text):
+    (root/path).parent.mkdir(parents=True, exist_ok=True)
+    (root/path).write_text(text)
+    run_git(root, 'add', path)
+    run_git(root, 'commit', '-q', '-m', path)
+    return run_git(root, 'rev-parse', 'HEAD')
+
+
+class PushChanges(unittest.TestCase):
+    """The workflow passes a push's `before`; the selection must see every path the push changed."""
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.temp = Path(temp.name)
+        self.root = self.temp/'repo'
+        subprocess.run(['git', 'init', '-q', '-b', 'main', str(self.root)], check=True)
+        self.base = commit(self.root, 'scripts/test.py', 'print("runner")\n')
+        patch = mock.patch.object(affected, 'ROOT', self.root)
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def test_rollback_push_sees_the_changes_it_removes(self):
+        fixed = commit(self.root, 'scripts/test.py', 'print("fixed runner")\n')
+        run_git(self.root, 'reset', '-q', '--hard', self.base)
+        self.assertEqual(affected.changed_files(fixed), [])  # HEAD is the merge base: a merge base hides it
+        self.assertEqual(affected.push_changes(fixed), ['scripts/test.py'])
+
+    def test_force_push_to_another_history_compares_trees(self):
+        run_git(self.root, 'checkout', '-q', '-b', 'old')
+        old = commit(self.root, 'Domains/Old.php', '<?php\n')
+        run_git(self.root, 'checkout', '-q', 'main')
+        commit(self.root, 'Domains/New.php', '<?php\n')
+        self.assertEqual(affected.push_changes(old), ['Domains/New.php', 'Domains/Old.php'])
+
+    def test_force_push_fetches_the_commit_it_dropped(self):
+        upstream = self.root
+        dropped = commit(upstream, 'Domains/Dropped.php', '<?php\n')
+        run_git(upstream, 'reset', '-q', '--hard', self.base)
+        run_git(upstream, 'config', 'uploadpack.allowAnySHA1InWant', 'true')
+        run_git(upstream, 'config', 'uploadpack.allowFilter', 'true')
+        clone = self.temp/'clone'
+        subprocess.run(['git', 'clone', '-q', upstream.as_uri(), str(clone)], check=True)
+        with mock.patch.object(affected, 'ROOT', clone):
+            self.assertFalse(affected.has_commit(dropped))
+            self.assertEqual(affected.push_changes(dropped), ['Domains/Dropped.php'])
+
+    def test_unknown_pushed_over_commit_fails_closed(self):
+        with self.assertRaisesRegex(SystemExit, 'cannot fetch the pushed-over commit'):
+            affected.push_changes('1'*40)
+
+    def test_new_branch_compares_with_the_merge_base_of_main(self):
+        run_git(self.root, 'update-ref', 'refs/remotes/origin/main', self.base)
+        run_git(self.root, 'checkout', '-q', '-b', 'topic')
+        commit(self.root, 'Domains/Topic.php', '<?php\n')
+        run_git(self.root, 'checkout', '-q', 'main')
+        main_only = commit(self.root, 'Domains/Main.php', '<?php\n')
+        run_git(self.root, 'update-ref', 'refs/remotes/origin/main', main_only)
+        run_git(self.root, 'checkout', '-q', 'topic')
+        self.assertEqual(affected.push_changes('0'*40), ['Domains/Topic.php'])
+        self.assertEqual(affected.push_changes(''), ['Domains/Topic.php'])
+
+
+class StatusCheck(unittest.TestCase):
+    """`Native / Status` is the one check a branch rule can require, whatever the shard count."""
+
+    def test_verdict_passes_only_a_good_plan_with_passing_or_no_tests(self):
+        self.assertEqual(affected.verdict('success', '8', 'success')[0], True)
+        self.assertEqual(affected.verdict('success', '0', 'skipped')[0], True)
+        for plan, count, tests in [('success', '8', 'failure'), ('success', '8', 'cancelled'),
+                                   ('success', '8', 'skipped'), ('failure', '', 'skipped'),
+                                   ('cancelled', '', 'skipped'), ('success', '', 'skipped'),
+                                   ('success', '0', 'failure'), ('skipped', '0', 'skipped')]:
+            with self.subTest(plan=plan, count=count, tests=tests):
+                self.assertEqual(affected.verdict(plan, count, tests)[0], False)
+
+    def test_verdict_command_exit_status(self):
+        script = str(ROOT/'scripts/affected.py')
+        run = lambda *a: subprocess.run([sys.executable, script, '--verdict', *a], capture_output=True, text=True)
+        self.assertEqual(run('success', '0', 'skipped').returncode, 0)
+        failed = run('success', '3', 'failure')
+        self.assertEqual(failed.returncode, 1)
+        self.assertIn('fail: 3 native test(s): failure', failed.stdout)
+
+    def test_workflow_runs_status_after_every_outcome_and_fails_pipelines(self):
+        workflow = (ROOT/'.github/workflows/native.yml').read_text()
+        job = workflow.split('\n  status:\n', 1)[1]
+        self.assertIn('name: Status', job)
+        self.assertIn('needs: [plan, test]', job)
+        self.assertIn('if: always()', job)
+        self.assertIn('scripts/affected.py --verdict "$PLAN" "$COUNT" "$TESTS"', job)
+        self.assertIn('PLAN: ${{ needs.plan.result }}', job)
+        self.assertIn('TESTS: ${{ needs.test.result }}', job)
+        self.assertIn('defaults:\n  run:\n    shell: bash\n', workflow)
+        self.assertIn('args=(--push "$BEFORE")', workflow)
+        self.assertNotIn('args=(--base "$BEFORE")', workflow)
 
 
 if __name__ == '__main__':

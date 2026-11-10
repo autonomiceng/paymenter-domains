@@ -2,6 +2,7 @@ name: Native tests
 
 # Pull requests run the native tests their change affects (scripts/affected.py, called from ci.yml).
 # The scheduled run on main runs every native test and never blocks a pull request.
+# Require the "Native / Status" check: shard names change with the plan, Status does not.
 on:
   workflow_call:
     inputs:
@@ -22,6 +23,11 @@ on:
 
 permissions:
   contents: read
+
+# bash -eo pipefail: a failing step in a pipeline fails the step.
+defaults:
+  run:
+    shell: bash
 
 jobs:
   plan:
@@ -58,9 +64,9 @@ jobs:
             args=(--base "$BASE")
           elif [[ $EVENT == pull_request ]]; then
             args=(--base "$PR_BASE")
-          elif [[ $EVENT == push && -n $BEFORE && ! $BEFORE =~ ^0+$ ]]; then
-            # A push tests what it changed; a pull request run covers the whole branch.
-            args=(--base "$BEFORE")
+          elif [[ $EVENT == push ]]; then
+            # What the push changed, force pushes included; a new branch: its change since main.
+            args=(--push "$BEFORE")
           else
             args=(--base origin/main)
           fi
@@ -138,3 +144,21 @@ jobs:
           path: /tmp/domains-tests-*
           include-hidden-files: true
           if-no-files-found: ignore
+
+  status:
+    name: Status
+    needs: [plan, test]
+    if: always() && (github.event_name != 'schedule' || github.repository == 'autonomiceng/paymenter-domains')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - name: Check the plan and every shard
+        env:
+          PLAN: ${{ needs.plan.result }}
+          COUNT: ${{ needs.plan.outputs.count }}
+          TESTS: ${{ needs.test.result }}
+        run: python3 scripts/affected.py --verdict "$PLAN" "$COUNT" "$TESTS"

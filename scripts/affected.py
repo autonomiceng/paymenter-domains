@@ -29,10 +29,45 @@ def git(*args):
     return subprocess.run(['git', *args], cwd=ROOT, capture_output=True, text=True, check=True).stdout
 
 
-def changed_files(base):
+def changed_files(base, merge_base=True):
+    """Paths that differ from `base`, or from its merge base with HEAD: a branch's own change."""
     revision = git('rev-parse', '--verify', '--end-of-options', base+'^{commit}').strip()
-    merge_base = git('merge-base', revision, 'HEAD').strip()
-    return sorted(filter(None, git('diff', '--name-only', '--no-renames', merge_base, 'HEAD', '--').split('\n')))
+    if merge_base:
+        revision = git('merge-base', revision, 'HEAD').strip()
+    return sorted(filter(None, git('diff', '--name-only', '--no-renames', revision, 'HEAD', '--').split('\n')))
+
+
+def has_commit(revision):
+    return subprocess.run(['git', 'cat-file', '-e', '--end-of-options', revision+'^{commit}'], cwd=ROOT,
+                          capture_output=True).returncode == 0
+
+
+def push_changes(before, main_ref='origin/main', remote='origin'):
+    """Paths a push changed, compared tree to tree.
+
+    A merge base would hide a force push or rollback: when HEAD is an ancestor of `before`, the merge base is
+    HEAD and nothing looks changed. A commit a force push dropped is fetched by id. A new branch (all-zero
+    `before`) is compared with the merge base of `main_ref`.
+    """
+    if not before.strip('0'):
+        return changed_files(main_ref)
+    if not has_commit(before):
+        subprocess.run(['git', 'fetch', '--quiet', '--no-tags', '--filter=blob:none', remote, before], cwd=ROOT,
+                       capture_output=True)
+        if not has_commit(before):
+            raise SystemExit(f'cannot fetch the pushed-over commit {before}; run with --base or --all')
+    return changed_files(before, merge_base=False)
+
+
+def verdict(plan, count, tests):
+    """One stable native result: the plan must succeed, and its tests must pass unless it picked none."""
+    if plan != 'success':
+        return False, f'native test plan {plan or "missing"}'
+    if count == '0':
+        return (tests == 'skipped'), f'no native test affected (tests {tests})'
+    if not count.isdigit():
+        return False, f'native test plan gave no count ({count!r})'
+    return tests == 'success', f'{count} native test(s): {tests}'
 
 
 def load_runner():
@@ -201,14 +236,23 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument('--base', help='Pick tests for changes since the merge base with this ref.')
+    source.add_argument('--push', metavar='BEFORE', help='Pick tests for what a push changed since BEFORE '
+                        '(tree to tree, so force pushes count; all zeros: a new branch, against --main).')
+    source.add_argument('--verdict', nargs=3, metavar=('PLAN', 'COUNT', 'TESTS'),
+                        help='Exit 0 when the plan job result, its count and the test jobs result pass.')
     source.add_argument('--files', nargs='*', help='Pick tests for these changed paths.')
     source.add_argument('--all', action='store_true', help='Every test in the suite.')
+    parser.add_argument('--main', default='origin/main', help='Main branch ref for --push on a new branch.')
     parser.add_argument('--suite', default='native')
     parser.add_argument('--cap', type=int, default=120, help='Most tests one change runs; nearest tests are kept first.')
     parser.add_argument('--shard-size', type=int, default=20)
     parser.add_argument('--max-shards', type=int, default=6)
     parser.add_argument('--github-output', type=Path, help='Append matrix=, count= and summary= lines here.')
     args = parser.parse_args()
+    if args.verdict:
+        passed, message = verdict(*args.verdict)
+        print(('pass: ' if passed else 'fail: ') + message)
+        return 0 if passed else 1
     runner = load_runner()
     listed = runner.manifest()
     if args.suite not in listed:
@@ -218,7 +262,10 @@ def main():
     if args.all:
         files, tests, notes = [], sorted(suite_tests), ['every test in the suite']
     else:
-        files = sorted(set(args.files)) if args.files is not None else changed_files(args.base)
+        if args.files is not None:
+            files = sorted(set(args.files))
+        else:
+            files = push_changes(args.push, args.main) if args.push is not None else changed_files(args.base)
         spec = json.loads(MAP.read_text())
         ranked, affected, notes = pick(files, spec, all_tests, suite_tests)
         tests, note = capped(ranked, affected, args.cap)
