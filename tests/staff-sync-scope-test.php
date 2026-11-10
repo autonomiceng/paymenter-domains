@@ -18,11 +18,14 @@ same('You can keep working. Check sync progress on What you sell.',SettingsActio
 // Run the action itself: queueing must not turn into a failure notification afterwards.
 Illuminate\Support\Facades\Queue::fake();
 config(['queue.default'=>'database','queue.connections.database.driver'=>'database','queue.connections.database.retry_after'=>900]);
+$probe=new ReflectionProperty(Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::class,'probe');
+$probe->setValue(null,[]);
 $livewire=new class {public array $mountedActions=['sync'];};
 foreach ([(string)$t->tld,null] as $scope) {
     (SettingsActions::syncAll($server,tld:$scope)->getActionFunction())([], $livewire);
     Filament\Notifications\Notification::assertNotified(Filament\Notifications\Notification::make()->success()->title('Price sync queued')->body(SettingsActions::syncQueued($scope)));
     same([],$livewire->mountedActions,'The completed action closes its dialog');
 }
+$probe->setValue(null,null);
 Illuminate\Support\Facades\Queue::assertPushed(Paymenter\Extensions\Servers\Domains\Jobs\SyncPrices::class);
 $nativeSuccessful=true;echo "Staff sync scope passed\n";
