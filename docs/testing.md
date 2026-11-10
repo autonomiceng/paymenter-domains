@@ -35,8 +35,8 @@ It compares Register/Transfer/Retry geometry with prior inline-flex/normal-wrap/
 ## Rendered layout check (UI suite)
 
 The `ui` suite runs `tests/test_rendered_layout.py` in the native fixture, so default runs with `PAYMENTER_TEST_APP`
-include it and a failure fails the run. It renders the staff Domains list, the staff monitoring list and the client
-domain page with real Blade, then runs `scripts/check-name-and-heading.cjs` in Chromium. It needs the setup above:
+include it and a failure fails the run. It renders the staff Domains list, the staff monitoring list, the DNS
+monitoring setup list and the client domain page with real Blade, then runs `scripts/check-name-and-heading.cjs` in Chromium. It needs the setup above:
 `NODE_PATH` (Playwright) and `CHROME_BIN`, which the runner passes to this suite only. It runs alone and needs a 2048 MiB budget.
 
 ```sh
@@ -49,14 +49,15 @@ and Note must be a one-line block box cut with a painted "...". The widths are t
 included: a name exactly 326px and a customer exactly 120px; a Note fills the rest of the row, at least 160px. In the
 Domains list, those cells are no wider than their items, the table fits its card at 1440px, and the page never scrolls
 sideways (narrower, the table scrolls inside its card).
-The Domains list uses real long values: each item keeps its full text, its tooltip has all of it, and keyboard focus on
-the row link shows it in place. The client domain heading must keep its clamp(1.125rem, 5vw, 1.5rem) size and
+The Domains and DNS monitoring setup lists use real long values: each item keeps its full text and its tooltip has all
+of it. Keyboard focus shows every cut item in place, in the monitoring list too: focus on the row link, or, where rows
+open nothing (DNS monitoring setup), on the cut text itself, which is in the tab order with a focus ring. The client domain heading must keep its clamp(1.125rem, 5vw, 1.5rem) size and
 18 by 20px status mark at 320/390/768/1280px in both modes. Scripts are off, so the check shows Filament's main area
 that a script would fade in. It is not a screenshot beside the approved mock.
 
-A host panel can render the Domains list in its own skin: set `DOMAINS_PANEL_SETUP` to a PHP file that is given
+A host panel can render the staff lists in its own skin: set `DOMAINS_PANEL_SETUP` to a PHP file that is given
 `$panel`, configures it (table class, layout, its sheet as a `panels::styles.after` hook) and returns its built theme
-stylesheet. Then render with `R14_RENDER_DIR=OUT scripts/render-reminders.py OUT` and the three render files from
+stylesheet. Then render with `R14_RENDER_DIR=OUT scripts/render-reminders.py OUT` and the render files from
 `tests/test_rendered_layout.py`, and run `node scripts/check-name-and-heading.cjs OUT`. Its receipt lists the Domain,
 Customer and Note column widths at each viewport, to compare with the mock. Without it, the render uses Filament's stock theme.
 

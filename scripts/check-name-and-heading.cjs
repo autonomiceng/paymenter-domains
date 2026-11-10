@@ -57,7 +57,8 @@ async function main() {
     // px: its exact width, or with fill its least width, filling its cell. column: the list's Note takes the spare width.
     // full: the text a reader gets, or true for a text only its tooltip states (a note shows its step first).
     // Screen readers read the whole text and the tooltip shows it. long: replace a short fixture value.
-    async function measure(name, item, px, width, { full, long, fill, column } = {}) {
+    // focus: check the keyboard reveal also without full (it always runs with full).
+    async function measure(name, item, px, width, { full, long, fill, column, focus } = {}) {
         measured++;
         const got = await item.evaluate((item, long) => {
             if (long) {
@@ -73,7 +74,7 @@ async function main() {
             const tip = item.querySelector('[x-tooltip]')?.getAttribute('x-tooltip').match(/content:\s*'((?:[^'\\]|\\.)*)'/);
             return { display: style.display, overflow: style.overflowX, textOverflow: style.textOverflow, whiteSpace: style.whiteSpace,
                 maxWidth: style.maxWidth, clientWidth: item.clientWidth, scrollWidth: item.scrollWidth, lines: tops.size,
-                text: item.textContent, tooltip: tip ? JSON.parse(`"${tip[1]}"`) : null, link: Boolean(item.closest('a[href]')),
+                text: item.textContent, tooltip: tip ? JSON.parse(`"${tip[1]}"`) : null,
                 width: item.getBoundingClientRect().width, cell: cellInner(item.closest('td')) };
             function cellInner(cell) {
                 const style = getComputedStyle(cell), side = edge => parseFloat(style[`padding${edge}`]) + parseFloat(style[`border${edge}Width`]);
@@ -111,18 +112,23 @@ async function main() {
         const clipped = await item.screenshot({ animations: 'disabled' });
         await item.evaluate(item => { item.style.textOverflow = ''; });
         check(!cut.equals(clipped), `${name}: the cut text ends in a painted ellipsis`);
-        if (full === undefined) return;
-        // Keyboard focus on the row link shows the whole text in place.
-        check(got.link, `${name}: the item is inside a row link`);
-        if (!got.link) return;
+        if (full === undefined && !focus) return;
+        // Keyboard focus shows the whole text in place: focus on the row's link or button, or, in a row that opens
+        // nothing, on the cut text itself, which is then in the tab order and shows a focus ring.
         const focused = await item.evaluate(item => {
-            const link = item.closest('a[href]'); link.focus();
-            const style = getComputedStyle(item), result = { visible: link.matches(':focus-visible'), whiteSpace: style.whiteSpace,
-                clientWidth: item.clientWidth, scrollWidth: item.scrollWidth };
-            link.blur();
+            const target = item.closest('a[href], button') ?? (item.tabIndex >= 0 && item.hasAttribute('tabindex') ? item : null);
+            if (!target) return null;
+            target.focus();
+            const style = getComputedStyle(item), ring = getComputedStyle(target);
+            const result = { visible: target.matches(':focus-visible'), self: target === item, ring: ring.outlineStyle !== 'none' && parseFloat(ring.outlineWidth) > 0,
+                whiteSpace: style.whiteSpace, clientWidth: item.clientWidth, scrollWidth: item.scrollWidth };
+            target.blur();
             return result;
         });
-        check(focused.visible, `${name}: the row link takes keyboard focus`);
+        check(focused !== null, `${name}: keyboard focus can reach the cut text (a row link or button, or the text itself)`);
+        if (!focused) return;
+        check(focused.visible, `${name}: the ${focused.self ? 'cut text' : 'row link'} takes keyboard focus`);
+        if (focused.self) check(focused.ring, `${name}: the focused cut text shows a focus ring`);
         check(focused.whiteSpace === 'normal' && focused.scrollWidth <= focused.clientWidth,
             `${name}: keyboard focus shows the full text (${focused.whiteSpace}, ${focused.scrollWidth}px in ${focused.clientWidth}px)`);
     }
@@ -165,9 +171,16 @@ async function main() {
                 for (const [kind, px] of [NAME, PERSON]) {
                     const items = page.locator(`.fi-ta-text-item.${kind}`);
                     check(await items.count() === 1, `${at}, ${kind}: one rendered item`);
-                    if (await items.count() === 1) await measure(`${at}, ${kind}`, items, px, width, { long: LONG });
+                    if (await items.count() === 1) await measure(`${at}, ${kind}`, items, px, width, { long: LONG, focus: true });
                 }
             }
+            // The DNS monitoring setup list: its rows open nothing, so each cut text must take focus itself.
+            const managed = `Staff DNS monitoring setup list, ${order}, ${width}px`;
+            check(await open('staff-managed-dns.html', width, order), `${managed}: one staff sheet and one theme, reordered`);
+            const account = 'maximiliana.featherstonehaugh-worthington@example.test';
+            const customers = page.locator(`.fi-ta-text-item.${PERSON[0]}`).filter({ hasText: account });
+            check(await customers.count() === 1, `${managed}, ${PERSON[0]}: one rendered long item`);
+            if (await customers.count() === 1) await measure(`${managed}, ${PERSON[0]}`, customers, PERSON[1], width, { full: account });
         }
         // The customer domain heading: clamp(1.125rem, 5vw, 1.5rem), and the head-size status mark.
         for (const mode of ['dark', 'light']) for (const width of [320, 390, 768, 1280]) {

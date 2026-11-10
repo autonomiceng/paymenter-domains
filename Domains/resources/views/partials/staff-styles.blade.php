@@ -26,7 +26,8 @@
 .domains-line,.domains-name-cell{max-width:24rem}
 /* The approved staff table's columns, padding included: a domain name 326px and a customer 120px (above). A list Note takes the rest of the row, and 160px when the table scrolls inside its card. Notes lead with their step; the tooltip has the rest. */
 .domains-name-cell{max-width:326px}.domains-line.domains-list-note{max-width:none;width:160px;min-width:100%}.domains-note-cell{width:100%}
-a:focus-visible :is(.domains-cut,.domains-line,.domains-name-cell),a:focus-visible :is(.domains-cut,.domains-line,.domains-name-cell)>*{white-space:normal;overflow-wrap:anywhere}
+/* Focus on the row's link or button, or on a cut text in a row that opens nothing (OneLine), shows the whole text. */
+:is(a,button):focus-visible :is(.domains-cut,.domains-line,.domains-name-cell),:is(a,button):focus-visible :is(.domains-cut,.domains-line,.domains-name-cell)>*,:is(.domains-cut,.domains-line,.domains-name-cell)[tabindex]:focus-visible,:is(.domains-cut,.domains-line,.domains-name-cell)[tabindex]:focus-visible>*{white-space:normal;overflow-wrap:anywhere}
 .domains-line.fi-ta-text-has-descriptions{display:flex;align-items:baseline;gap:.375rem}.domains-line.fi-ta-text-has-descriptions>.fi-ta-text-item{flex:none}.domains-line.fi-ta-text-has-descriptions>.fi-ta-text-description{min-width:0}
 .domains-money{font-variant-numeric:tabular-nums;white-space:nowrap}.fi-ta-cell .domains-money{text-align:end}
 .domains-watch-header .fi-ac{flex-wrap:wrap}

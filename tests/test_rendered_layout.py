@@ -9,8 +9,10 @@ import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-# Each writes its pages into the directory: the monitoring list (by R14_RENDER_DIR), the domain page and the Domains list.
-RENDERS = ['tests/test_installed_demo_c_state_watch-test.php', 'tests/domain-page-render.php', 'tests/staff-list-render.php']
+# Each writes its pages into the directory: the monitoring list (by R14_RENDER_DIR), the domain page, the Domains list
+# and the DNS monitoring setup list.
+RENDERS = ['tests/test_installed_demo_c_state_watch-test.php', 'tests/domain-page-render.php', 'tests/staff-list-render.php',
+           'tests/managed-dns-render.php']
 CHECK = 'scripts/check-name-and-heading.cjs'
 
 
@@ -24,7 +26,7 @@ def main():
             result = subprocess.run([str(ROOT/'scripts/php-test'), path, output], cwd=ROOT, env=env,
                                     capture_output=True, text=True, timeout=120)
             assert result.returncode == 0, f'{path} did not render:\n{result.stdout}\n{result.stderr}'
-        for page in ['staff-domains-list.html', 'r14-watchlist-paused.html', 'r14-watchlist-retired.html',
+        for page in ['staff-domains-list.html', 'staff-managed-dns.html', 'r14-watchlist-paused.html', 'r14-watchlist-retired.html',
                      'domain-page-invoice-due-dark.html', 'domain-page-invoice-due-light.html']:
             assert (Path(output)/page).is_file(), f'Missing render: {page}'
         result = subprocess.run([node, str(ROOT/CHECK), output], cwd=ROOT, env=env,
@@ -38,7 +40,7 @@ def main():
         assert result.returncode == 0 and receipt.get('complete') is True and receipt.get('failures') == [], \
             f'{CHECK} failed with exit {result.returncode}'
         # Every expected item was found and measured: a check that finds nothing is not a pass.
-        assert receipt.get('measured', 0) >= 56, f'Too few rendered items measured: {receipt.get("measured")}'
+        assert receipt.get('measured', 0) >= 62, f'Too few rendered items measured: {receipt.get("measured")}'
     print('Rendered staff lists and domain heading hold their layout in Chromium.')
 
 
