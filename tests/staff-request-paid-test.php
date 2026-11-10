@@ -29,6 +29,13 @@ foreach(['queued'=>'Paid. It goes to the registrar automatically. Nothing to do 
     DB::table('domains_operations')->where('id',$op->id)->update(['state'=>$state,'safe_code'=>null]);
     same([$words,$words],[$note(),RequestFacts::status($op->fresh())['reason']],'A paid '.$state.' request says where it is');
 }
+// A paid transfer still waiting on its auth code is not on its way, so it never says it goes on its own.
+$saved=DB::table('domains_operations')->where('id',$op->id)->first(['action','payload']);
+DB::table('domains_operations')->where('id',$op->id)->update(['state'=>'queued','safe_code'=>null,'action'=>'transfer']);
+$transfer=$op->fresh();$transfer->payload=[...($transfer->payload??[]),'epp'=>''];
+same('code',Paymenter\Extensions\Servers\Domains\Admin\Support\OperationActions::customerOwes($transfer),'Fixture: the transfer has no auth code');
+expect(!str_contains((string)RequestFacts::reason($transfer,false),'goes to the registrar automatically'),'A transfer without its auth code does not read as on its way');
+DB::table('domains_operations')->where('id',$op->id)->update(['action'=>$saved->action,'payload'=>$saved->payload]);
 DB::table('domains_operations')->where('id',$op->id)->update(['state'=>'awaiting_payment','safe_code'=>null]);
 DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>false]);
 same('Paid. Not sent. Orders are off for this account.',RequestFacts::status($op->fresh())['reason'],'A paid request waiting on Orders says so');

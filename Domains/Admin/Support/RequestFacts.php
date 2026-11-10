@@ -208,6 +208,8 @@ final class RequestFacts
     private static function paidMoving(Operation $op): ?string
     {
         if (!isset(self::PAID_MOVING[$op->state]) || $op->funding_basis!=='paid_invoice' || !$op->invoice_id) { return null; }
+        // A queued transfer without a valid auth code waits on the customer (OperationActions::customerOwes), so it is not on its way.
+        if ($op->state==='queued' && $op->action==='transfer' && !\Paymenter\Extensions\Servers\Domains\Services\TransferInputs::validCode($op->payload['epp']??null)) { return null; }
         return self::invoiceStatus($op)==='paid'?self::PAID_MOVING[$op->state]:null;
     }
     /** Local readiness shared by request pages and domain lists. It never releases a hold.
