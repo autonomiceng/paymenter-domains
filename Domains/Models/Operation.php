@@ -163,7 +163,7 @@ class Operation extends Model
             if (($old['seal'] ?? null) === 'sealed' && $operation->isDirty('payload')) {
                 throw new \DomainException('Sealed desired state is frozen.');
             }
-            foreach (['claim', 'seal', 'refund_authorization', 'refund'] as $key) {
+            foreach (['claim', 'seal', 'refund_authorization', 'held_order_refund', 'refund'] as $key) {
                 $before = $operation->getOriginal('funding') ?? []; $after = $operation->funding ?? [];
                 if (!$safeAttemptReset&&array_key_exists($key, $before) && (!array_key_exists($key, $after) || $after[$key] !== $before[$key])) {
                     throw new \DomainException('Claim funding evidence is frozen.');

@@ -4,19 +4,33 @@
 declare(strict_types=1);
 require __DIR__.'/Support/operation-fixture.php';
 require __DIR__.'/Support/staff-panel.php';
+require __DIR__.'/Support/owner-pages.php';
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation;
 use App\Models\{Credit,Invoice,InvoiceTransaction,Role,Service};
 use Paymenter\Extensions\Servers\Domains\Contracts\{Clock,AdmittedRegistrarDriver};
 use Paymenter\Extensions\Servers\Domains\Data\{DriverResult,Disposition,SendState,ResultReason,Evidence};
+use Paymenter\Extensions\Servers\Domains\Presentation\DomainPage;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,ComplimentaryAccounts,DomainOperations,NativeDomainGuard,HolderPricing,RegistrarAnswers,Refunds,StaffOperations,StaffOperationReview,StaffSettingsReview as Review,StaffSettingsWrites};
 (new NativeDomainGuard(new HolderPricing($prices),$clock))->boot();
 app()->instance(Clock::class,$clock);app()->instance(AccountBindings::class,$bindings);app()->instance(Refunds::class,new Refunds($clock));
 $staff=commerceUser();$staff->update(['role_id'=>Role::create(['name'=>'Complimentary closure','permissions'=>[
-    'admin.domains.view','admin.domains.manage','admin.domains.fund','admin.domains.manage-policy','admin.domains.settings.enom_answer','admin.invoices.update','admin.domains.operations.credit']])->id]);
+    'admin.domains.view','admin.domains.manage','admin.domains.fund','admin.domains.manage-policy','admin.domains.settings.enom_answer','admin.invoices.update','admin.domains.operations.credit','admin.domains.operations.refund']])->id]);
 ComplimentaryAccounts::set($user->id,$staff,true,'Audited closure account',$clock);
 staffPanel();$settings=new StaffSettingsWrites($native,$sellers,$bindings);
+// No money is owed on a held complimentary order: both the page and direct staff action refuse a refund.
+$held=$new(placeholderComFixtureName('comp-held-refund-placeholder.com'),false);
+$held->update(['state'=>'held','safe_code'=>'staff_review_required']);
+$before=[$held->fresh()->getRawOriginal(),$held->domain->fresh()->getRawOriginal(),$nativeMoney()];
+$expiry=DomainPage::expires($owners->present($held->domain->fresh()),null,'https://support.example.com');
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$held->id])->assertActionHidden('refund');
+$ticket=StaffOperationReview::ticket($staff->id,$held->domain_id,$held->id,'refund',StaffOperationReview::stamp($held,$held->domain),$clock);
+$failure=null;try{(new StaffOperations($clock))->run($staff,$held->domain_id,$held->id,'refund',$ticket,'Review complimentary order cancellation');}
+catch(\Paymenter\Extensions\Servers\Domains\Services\OperationRefused $error){$failure=$error;}
+same('This request has no paid invoice.',$failure?->getMessage(),'The staff refund writer refuses a complimentary order with current permission');
+same($before,[$held->fresh()->getRawOriginal(),$held->domain->fresh()->getRawOriginal(),$nativeMoney()],'A refused complimentary refund changes no order or money');
+same($expiry,DomainPage::expires($owners->present($held->domain->fresh()),null,'https://support.example.com'),'A refused complimentary refund leaves the customer page unchanged');
 $supportWriter=new class($writer) implements AdmittedRegistrarDriver {
     public function __construct(private $inner){}
     public function register($op,$context):DriverResult{return $this->inner->register($op,$context);}
@@ -74,6 +88,11 @@ foreach(['register','transfer']as$action){
     same($attempt,$op->attempt,'Support closure preserves the original sealed attempt');
     same('paid',Invoice::findOrFail($op->invoice_id)->status,'The zero receipt stays Paid');
     expect(!isset($op->funding['refund']),'No refund is invented for an account-funded order');
+    // The real zero-receipt closure and its rendered page must not imply a refund is owed.
+    $dto=$owners->present($op->domain->fresh());$expiry=DomainPage::expires($dto,null,'https://support.example.com');
+    $value=$action==='register'?'Not registered':'Not transferred';
+    same([false,$value],[$expiry['missing'],$expiry['value']??null],'A closed complimentary '.$action.' keeps its completed expiry wording');
+    expect(str_contains(view('domains::partials.owner-renew',['domain'=>$dto,'summary'=>null,'support'=>null])->render(),$value),'The customer page renders the closed complimentary '.$action.' result');
     $closed=[$op->fresh()->getRawOriginal(),$op->domain->fresh()->getRawOriginal(),Service::findOrFail($op->service_id)->getRawOriginal()];
     app(Refunds::class)->retryPending();
     same($closed,[$op->fresh()->getRawOriginal(),$op->domain->fresh()->getRawOriginal(),Service::findOrFail($op->service_id)->getRawOriginal()],'The paid refund sweep leaves a closed complimentary operation, domain and service untouched');
