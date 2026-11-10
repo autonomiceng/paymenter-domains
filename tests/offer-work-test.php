@@ -16,7 +16,7 @@ use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{Driver, OfferFeed};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ReadCommand, Transport};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{Client as NsClient, Driver as NsDriver, OfferFeed as NsFeed};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DeadlineTransport, Environment as NsEnvironment, RegistrarRequest, RequestContext as NsContext, TransportResponse};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget, Installation, OfferWorkSchema, PricingRule};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget, ClosureCursorSchema, Installation, OfferWorkSchema, PricingRule};
 
 // Real SQLite queue/writer/projection is needed for durable claims, restart and scoped publication.
 // Only the wire and clock are fake; no provider runtime or active scheduler is registered.
@@ -309,8 +309,9 @@ $worker->accountTurn($n->serverId);
 same('unsupported',$worker->status($n,'com')['state'],'The promoted hint reaches the existing unsupported-reader path');
 // Upgrade an actual retained B2 schema, preserving all catalogue/native identities.
 $ids = Tld::orderBy('id')->pluck('id')->all();
-Schema::table('domains_observation_queues', static fn ($t) => $t->dropColumn(['offer_work', 'offer_claim', 'offer_lease', 'offer_turn']));
-DB::table('migrations')->where('migration', OfferWorkSchema::MIGRATION)->delete();
+// B2 predates the later complimentary closure cursor too, so the upgrade adds both in migration order.
+Schema::table('domains_observation_queues', static fn ($t) => $t->dropColumn(['offer_work', 'offer_claim', 'offer_lease', 'offer_turn', ClosureCursorSchema::COLUMN]));
+DB::table('migrations')->whereIn('migration', [OfferWorkSchema::MIGRATION, ClosureCursorSchema::MIGRATION])->delete();
 (new Installation)->install(); (new Installation)->install();
 same($ids, Tld::orderBy('id')->pluck('id')->all(), 'Retained upgrade and repeated install preserve offer IDs');
 $nativeSuccessful = true;

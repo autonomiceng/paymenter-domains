@@ -281,6 +281,7 @@ same(['alternate_reason','default_reason','fallback_reason','field_reason','held
 $excluded=[
     // These results have their own owner/money presenters, not operation reason labels.
     'OwnedDomains.php'=>['closed','credited','paid','pending','returned','review','split'],
+    'DomainStates.php'=>['closed','paid','pending','review'], // Renewal invoice states, shown by DomainPage::nextInvoice.
     'Storefront.php'=>['ending'],
     'ReceiptReturns.php'=>['credit','original','split'],
     // Storefront maps these RDAP transfer checks to customer guidance.
@@ -316,6 +317,7 @@ $excluded=[
     // Shared workers also emit phase names and audit events without a request reason.
     'ObservationWork.php'=>['holding'], // Work phase identity.
     'HoldingObservationWork.php'=>['holding','idle','configuration_restored','records_incomplete'], // Phase, turn result, audit event and HoldingReadRetry cause.
+    'HoldingReadRetry.php'=>['records_incomplete'], // Read stop code, shown by its own read_cause.
     'SiteDnsDefault.php'=>['platform'], // Inherited DNS intent, as in ManagedDnsSetup.
     'AccountComplimentaryRenewals.php'=>['account_complimentary'], // Funding authorization reason, not request safe_code.
     'AdoptionRenewalEligibility.php'=>['imported_renewal_unproven'], // Import eligibility snapshot; requireBilling refuses independently.
