@@ -235,12 +235,12 @@ final class RequestFacts
         if (!$on) { return 'Ready to send. '.self::ORDERS_OFF; }
         return $op->state==='held' ? 'Ready to send. Release the hold.' : null;
     }
-    /** When a timed retry runs next. Nothing once it is due: the next tick takes it. */
-    private static function nextTry(Operation $op): ?string
+    /** When a timed retry runs next, in the viewer's time zone like every other time here. Nothing once it is due: the next tick takes it. */
+    private static function nextTry(Operation $op): ?\Illuminate\Support\HtmlString
     {
         if (!BalanceRetries::pending($op)) { return null; }
         $due=(int)\Illuminate\Support\Facades\DB::table('domains_runtime_operations')->where('operation_id',$op->id)->value('due_at');
-        return $due>app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp()?'Next try '.gmdate('M j, Y H:i',$due).' UTC.':null;
+        return $due>app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp()?new \Illuminate\Support\HtmlString(Sheet::moment($due,'Next try')->toHtml().'.'):null;
     }
     /** Only a financially confirmed, nameserver-only registration fallback needs no staff task. */
     public static function quietRegistrationDns(Operation $op): bool
@@ -351,7 +351,7 @@ final class RequestFacts
             $approval=$open&&ComplimentaryCosts::awaitingApproval($op);
             if ($approval) { $next=(OperationActions::relevant('release',$op)?'Release hold only retries the price check. ':'').'The '.($account?self::queueWords($op,$account):'request').' holds again while the registrar cost is above the usual. It goes ahead at this cost once the registrar cost is approved on the domain page.'; }
             if ($next!==null) { $body=$body===null?$next:$next.' '.$body; }
-            if (($try=self::nextTry($op))!==null) { $body=$body===null?$try:$body.' '.$try; }
+            if (($try=self::nextTry($op))!==null) { $body=new \Illuminate\Support\HtmlString(($body===null?'':e($body).' ').$try->toHtml()); }
             return ['title'=>rtrim($reason??Labels::reason(null),'.').'.','body'=>$body,'tone'=>'warning','action'=>in_array($op->safe_code,WriteHeld::FINAL_REFUSALS,true)&&OperationActions::relevant('refund',$op)?'refund':(OperationActions::relevant('release',$op)?'release':null),
                 'link'=>$approval?'domain':match($op->safe_code){'renewal_invoice_unpaid'=>'invoice','renewal_funding_or_authority','automatic_spend_paused','renewal_spend_paused'=>'domain',default=>$fix?'registrars':null},'link_label'=>$fix];
         }
