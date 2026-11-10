@@ -1,6 +1,7 @@
 @if ($domain->transfer['received'])<p class="domains-notice domains-notice--ok" role="status">{{ $domain->transfer['open'] && !$domain->transfer['paid'] ? 'Auth code saved. The transfer starts after the invoice is paid.' : \Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerActionController::CODE_SAVED }}</p>@endif
 @if ($domain->transfer['open'])
 <p>Your current registrar gives you the auth code (also called EPP code).</p>
+@if (!$domain->transfer['paid'] && !$domain->transfer['received'])<p>The transfer starts after the invoice is paid.</p>@endif
 <form method="POST" action="{{ $domain->actions['codeSave'] }}" autocomplete="off" class="domains-owner-form">
 @include('domains::partials.form-key', ['action' => 'code'])
 <label for="transfer-code-input" class="domains-label">Auth code</label>
