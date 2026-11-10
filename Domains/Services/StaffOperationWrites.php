@@ -62,7 +62,9 @@ final class StaffOperationWrites
             'configuration_unavailable','balance','renewal_funding_or_authority','renewal_invoice_unpaid','renewal_spend_paused','renewal_authority_invalid','transfer_setup_review_required',
             'registrar_price_missing','registrar_price_increased','registrar_read_failed','registrar_balance_insufficient'];
         $retry=false;$balanceRetry=OperationClaims::balanceRefusalRetryable($op);
-        if(!$balanceRetry&&!in_array($op->safe_code,$ordinary,true)&&!self::renewalAdmissionHold($op)){
+        // A paid NameSilo order held at its contact step, with nothing sent, goes back once as the same claim.
+        $contactRetry=$op->safe_code===ContactProfileHold::CODE&&ContactProfileHold::unsent($op,retry:true);
+        if(!$balanceRetry&&!$contactRetry&&!in_array($op->safe_code,$ordinary,true)&&!self::renewalAdmissionHold($op)){
             $testRegistration=in_array($op->action,['register','transfer'],true)&&$op->registrar_key==='enom'&&in_array($account?->environment,['test','live'],true)
                 &&($op->action==='transfer'?EnomTestTransfer::deploymentEnabled():EnomTestRegistration::deploymentEnabled());
             $testOnly=['pre_send_interrupted','seal_authority_invalid','claim_authority_invalid','nameservers_required','write_rate_limited',
@@ -78,7 +80,7 @@ final class StaffOperationWrites
         $testRetry=OperationClaims::testCallRefusalRetryable($op);
         // The balance predicate already validates strict unsent proof under its original shortfall reason.
         if(!$balanceRetry){
-            if($testRetry||OperationClaims::accountGuardRetryable($op)) { RefundProof::requireUnsent($op,$l['domain']); }
+            if($testRetry||$contactRetry||OperationClaims::accountGuardRetryable($op)) { RefundProof::requireUnsent($op,$l['domain']); }
             else { self::virgin($op,$l); }
         }
         if(($op->action==='renew'?RenewalStop::blocksRenewal($l):$l['cancel']->contains('service_id',$op->service_id))||!in_array($l['service']->status,['pending','active'],true)) { throw new \DomainException('Service lifecycle changed.'); }

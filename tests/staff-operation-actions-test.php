@@ -50,9 +50,10 @@ same(null,$op->domain->fresh()->reservation_name,'Proven unsent registration rel
 // A failed native credit keeps the audited rejection; the separately permitted UI retry succeeds once.
 $retry=$held('staff-credit-retry-placeholder.com'); $before=$credit();
 DB::unprepared("CREATE TRIGGER staff_credit_fail BEFORE UPDATE ON credits BEGIN SELECT RAISE(ABORT, 'synthetic failure'); END");
-$retryPage=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$retry->id])->assertActionVisible('refund')->callAction('refund',['reason'=>'Customer cancelled unsent order'])->assertHasNoActionErrors()->assertNotified(Notification::make()->danger()->title("Couldn't update request")->body('Reload the page and try again. Ref database_failure.'))
+$retryPage=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$retry->id])->assertActionVisible('refund')->callAction('refund',['reason'=>'Customer cancelled unsent order'])->assertHasNoActionErrors()->assertNotified(Notification::make()->warning()->title('Cancelled, refund not finished')->body("The order and its service are cancelled. The refund hasn't gone through (ref database_failure). Use Retry refund. It reuses this refund, so the customer is never refunded twice."))
     ->assertSee('Cancelled')->assertSee('No credit added')->assertDontSee('Cancelled, credit added')->assertDontSee('On hold')->assertDontSee($holdText)
     ->assertActionHidden('refund')->assertActionHidden('release')->assertActionVisible('credit');
+same(App\Models\Service::STATUS_CANCELLED,App\Models\Service::findOrFail($retry->service_id)->status,'The service is cancelled before the credit');
 echo "Failed credit retained.\n";
 DB::unprepared('DROP TRIGGER staff_credit_fail'); same('rejected',$retry->fresh()->state,'Decision survives failed credit');same($before,$credit(),'Failed credit atomic');
 $retryPage->assertActionVisible('credit')->callAction('credit',['reason'=>'Retry verified retained credit'])->assertHasNoActionErrors()->assertNotified('Refund checked')

@@ -64,7 +64,9 @@ final class OperationActions
                 }catch(\Throwable $error){
                     $code=OperationFailure::code($error);
                     Log::warning('Domains staff operation refused.',['reason'=>$code,'action'=>$name,'operation_id'=>(int)$op->id]);
-                    Notification::make()->danger()->title(self::FAILED)->body(OperationFailure::known($error)?->message() ?? 'Reload the page and try again. Ref '.$code.'.')->send();}
+                    $why=OperationFailure::known($error)?->message() ?? 'Reload the page and try again. Ref '.$code.'.';
+                    $cancelled=$name==='refund'?self::refundPending($op->fresh(),$code):null;
+                    ($cancelled??Notification::make()->danger()->title(self::FAILED)->body($why))->send();}
             });
         }
         return $out;
@@ -123,7 +125,9 @@ final class OperationActions
             // Release needs what the customer still owes, so a hold here would have no way back.
             'hold'=>StaffOperationWrites::canHold($op)&&self::customerOwes($op)===null,
             'release'=>StaffOperationWrites::canRelease($op,app(Clock::class)->now()),
-            'refund'=>$op->state==='held'&&$op->funding_basis==='paid_invoice',
+            // A contact step hold offers it only while nothing went to NameSilo; the writer repeats that proof under locks.
+            'refund'=>$op->state==='held'&&$op->funding_basis==='paid_invoice'
+                &&($op->safe_code!==\Paymenter\Extensions\Servers\Domains\Services\ContactProfileHold::CODE||\Paymenter\Extensions\Servers\Domains\Services\ContactProfileHold::unsent($op)),
             // A closed unpaid order released its name, so Refunds can never credit it. Late money goes through the payment review.
             // Complimentary orders have no payment for the refund sweep; retry only their unfinished closure.
             'credit'=>$op->state==='rejected'&&(($op->funding_basis==='paid_invoice'&&$op->safe_code!==UnpaidAcquisitionProof::CODE)
@@ -170,11 +174,25 @@ final class OperationActions
         if(\Paymenter\Extensions\Servers\Domains\Services\TransferPolling::expected($op)){return false;}
         return ($p['renewal_polls']??0)>=\Paymenter\Extensions\Servers\Domains\Services\OperationReconciliation::POLL_LIMIT||($p['reconciliation']['polls']??0)>=\Paymenter\Extensions\Servers\Domains\Services\OperationReconciliation::POLL_LIMIT;
     }
-    /** Cancel and refund names the amount and where it goes before staff confirm. */
+    /** Cancel and refund names the amount and where it goes before staff confirm. A new order and its service end first. */
     public static function refundWords(Operation $op): string
     {
         $amount=is_numeric($op->amount)&&(float)$op->amount>0?($op->currency?:'USD').' '.number_format((float)$op->amount,2,'.',''):'the payment';
+        if(in_array($op->action,['register','transfer'],true)){
+            $registrar=PaidUncertainty::registrar($op);
+            return "Cancels this order and its service, then refunds {$amount} to the original payment. If that payment can't be refunded, {$amount} goes to the customer's account credit. Nothing was sent to {$registrar}, so there is no registrar cost.";
+        }
         return "Cancels this unsent request and refunds {$amount} to the original payment. If that payment can't be refunded, {$amount} is added to the customer's account credit instead.";
+    }
+    /** Cancel and refund commits the cancel before any money moves. When the refund then fails, say both facts and the
+     * retry, which reuses the same refund. Null when the cancel did not commit either. */
+    public static function refundPending(?Operation $op,string $code): ?Notification
+    {
+        if($op?->state!=='rejected'||!isset($op->funding['refund_authorization'])){return null;}
+        $ended=in_array($op->action,['register','transfer'],true)?'The order and its service are cancelled.':'The request is cancelled.';
+        $where=isset($op->funding['refund'])?" The payment provider hasn't confirmed the refund.":" The refund hasn't gone through (ref {$code}).";
+        return Notification::make()->warning()->title('Cancelled, refund not finished')
+            ->body($ended.$where.' Use Retry refund. It reuses this refund, so the customer is never refunded twice.');
     }
     /** The confirmation text for each action that opens one. */
     public static function description(string $action): ?string

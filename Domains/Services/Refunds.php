@@ -40,6 +40,12 @@ final readonly class Refunds
             }
             AcquisitionRetirement::retainClosure($op,$l['transactions']->where('invoice_id',$op->invoice_id),
                 $l['invoices']->firstWhere('id',$op->invoice_id)?->status,$this->clock->now());
+            // The order and its service end in this commit, before any money moves: a refund that fails later leaves
+            // a cancelled service and a retryable refund, never a refund for a live service.
+            if (in_array($op->action, ['register', 'transfer'], true)) {
+                $l['domain']->update(['status' => $op->action === 'transfer' ? 'transfer_rejected' : 'registration_rejected']);
+                NativeDomainGuard::terminal($l, $op);
+            }
             $review?->record($l);
         });
         return $this->creditRejected($id);
