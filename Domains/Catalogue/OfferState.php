@@ -168,6 +168,17 @@ final class OfferState
         foreach ($saved as $value) { if (!is_int($value) || $value < 0) { return null; } }
         return new Revision($saved['offer'], $saved['defaults'], $saved['selection'], $saved['retailRule'] ?? 0);
     }
+    /** The account sells this TLD to new customers: staff chose to sell it and its sales policy sends registrations or
+     * transfers here. Costs, terms and publication are left out. */
+    public static function sold(AccountBinding $binding, object $tld, array $defaults, ?object $policy): bool
+    {
+        $intent = self::decode($tld->catalogue_intent); $stops = $intent['stops'] ?? [];
+        if (($intent['salesPaused'] ?? false) || !($intent['sell'] ?? $defaults['defaultSell'] ?? true) || in_array('renew', $stops, true)) { return false; }
+        if (!$policy || (int) $policy->server_id !== $binding->serverId || $policy->account_fingerprint !== $binding->fingerprint
+            || $policy->registrar_key !== $binding->registrarKey) { return false; }
+        return $policy->register_enabled && !in_array('register', $stops, true)
+            || $policy->transfer_enabled && ($intent['transfers'] ?? $defaults['defaultTransfers'] ?? false) && !in_array('transfer', $stops, true);
+    }
     public static function revision(object $tld, array $defaults, ?object $policy): Revision
     { return new Revision((int) $tld->catalogue_revision, $defaults['_revision'] ?? 0, (int) ($policy?->revision ?? 0)); }
     public static function intent(object $tld,array $defaults):Intent

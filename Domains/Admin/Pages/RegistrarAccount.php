@@ -128,6 +128,7 @@ class RegistrarAccount extends Page
         if ($a) {
             $runtime=AccountChecklist::runtime($a);$system[$runtime['value']===null?'failing':'passing'][]=$runtime;
             $alerts=AccountChecklist::alerts($a);$system[$alerts['tone']==='success'?'passing':'failing'][]=$alerts;
+            if($this->status()['label']===AccountStatus::SET['not_selling'][0]){$system['failing'][]=AccountChecklist::notSelling($a,$this->status()['reason']);}
 
         }
         return $system;

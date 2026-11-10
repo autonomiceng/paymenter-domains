@@ -51,6 +51,19 @@ final readonly class ReadOffer implements \JsonSerializable
             $this->row, $this->context, $this->freshness, orderCost: $costs[$q->action.':'.$q->term] ?? null);
     }
 
+    /** Staff preview only: why this sale would stay closed once these prices are published, or null when it would sell.
+     * Publication ends a pending publication; every other guard still applies. */
+    public function afterPublishing(array $retail, \DateTimeImmutable $now): ?string
+    {
+        if ($this->context !== Context::Staff) { throw new \LogicException('Staff snapshot required.'); }
+        $s = $this->snapshot ?? throw new \LogicException('Preview snapshot missing.');
+        $q = $this->query ?? throw new \LogicException('Preview query missing.');
+        $retail = array_filter(array_intersect_key($retail, $s->costs), static fn ($price) => is_string($price));
+        $snapshot = new Snapshot($s->feed, $s->facts, $s->intent, $s->revision, $s->revision, array_replace($s->retail, $retail),
+            $s->seller, $s->sellerActions, $s->accountReady, $s->hidden, $s->retainedAnnualRetail);
+        return (new Evaluator)->evaluate($snapshot, $q, Context::Staff, $now)->reason;
+    }
+
     /** Staff stopped this sale or deselected this seller; unknown or stale data never counts. */
     public function closed(): bool
     { return $this->snapshot !== null && $this->query !== null && (new Evaluator)->closed($this->snapshot, $this->query); }

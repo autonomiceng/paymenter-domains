@@ -254,9 +254,9 @@ final class SettingsActions
                         $default=$name==='override'&&($data['pricing']??null)==='default';
                         $r=new Review((int)Auth::id(),$server,$tld,$default?'remove_override':$name,(string)($data[$default?'default_key':'review_key']??''),trim((string)($data['reason']??'')));
                         $summary=app(StaffSettingsWrites::class)->run($r,$data);$account=Account::where('server_id',$server)->first();
-                        Notification::make()->status(($summary['audit_failed']??false)||($summary['failed']??[])!==[]?'warning':'success')->title(match(true){($summary['audit_failed']??false)=>"Saved, but the result wasn't recorded",$name==='processing'=>$account->processing_enabled?'Orders resumed':'Orders paused',$name==='probe'=>'Balance updated',
+                        Notification::make()->status(($summary['audit_failed']??false)||($summary['failed']??[])!==[]||($summary['pending']??false)?'warning':'success')->title(match(true){($summary['audit_failed']??false)=>"Saved, but the result wasn't recorded",$name==='processing'=>$account->processing_enabled?'Orders resumed':'Orders paused',$name==='probe'=>'Balance updated',
                                 $name==='enroll_sandbox'=>'Account connected',$name==='override'=>'Prices published',$setup=>'Saved',default=>'Change recorded'})
-                            ->body($name==='processing'||$name==='probe'?null:($name==='default_pricing'?self::published($summary):($name==='enroll_sandbox'?'NameSilo accepted the key. Orders are paused and no TLDs are chosen yet.':null)))->send();
+                            ->body($name==='processing'?self::republished($summary):($name==='probe'?null:($name==='default_pricing'?self::published($summary):($name==='enroll_sandbox'?'NameSilo accepted the key. Orders are paused and no TLDs are chosen yet.':null))))->send();
                         if($name==='processing'){$livewire->redirect(\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$server]));}
                     }catch(\Throwable $error){
                         if($error instanceof \DomainException&&$error->getMessage()==='Terms unchanged.'){Notification::make()->info()->title('Nothing to save')->body('These terms are the same as before.')->send();return;}
@@ -364,6 +364,13 @@ final class SettingsActions
         $count=$reach['default'];$waiting=$reach['waiting'];
         if($count===0){return 'No TLDs use Default pricing yet.';}
         return $count.' '.($count===1?'TLD uses':'TLDs use').' Default pricing.'.($waiting===[]?'':' Costs are missing for '.\Paymenter\Extensions\Servers\Domains\Presentation\TldNames::summary($waiting).'. '.(count($waiting)===1?'Its prices stay':'Their prices stay').' the same until you sync prices.');
+    }
+    /** Notification text after resuming Orders or changing price freshness: the TLDs whose prices are not on sale yet. */
+    public static function republished(?array $summary): ?string
+    {
+        $failed=$summary['failed']??[];
+        if($failed!==[]){return 'Prices for '.\Paymenter\Extensions\Servers\Domains\Presentation\TldNames::summary($failed).' are not published, so '.(count($failed)===1?'it is':'they are').' not for sale. Open Edit prices on the TLD and save.';}
+        return ($summary['pending']??false)?'Prices are not published yet, so TLDs are not for sale until the next background run. Open Edit prices on a TLD and save to publish it now.':null;
     }
     /** Notification text after a Default pricing save. Each account that failed is named. */
     private static function published(array $summary): string

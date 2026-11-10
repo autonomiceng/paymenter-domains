@@ -42,18 +42,26 @@ final readonly class CatalogueFreshness
         return new Cost($cost->action, $cost->term, $cost->enabled, $cost->total, $cost->sourceUnit, $cost->source,
             $cost->observedAt, $cost->observedAt->modify('+'.$this->maxAge().' seconds'), $cost->currency, normalized: true);
     }
-    public static function save(StaffSettingsReview $review, array $data): void
+    /** Saves the hours and returns whether they changed. Only a change ages saved costs differently, so only a change
+     * makes the account's offers republish. */
+    public static function save(StaffSettingsReview $review, array $data): bool
     {
-        $review->local(static function () use ($review, $data): void {
+        $changed = false;
+        $review->local(static function () use ($review, $data, &$changed): void {
             if ($review->action !== 'price_freshness' || $review->tldId !== null) { throw new \DomainException('Account freshness review required.'); }
             $hours = filter_var($data['hours'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 24, 'max_range' => 168]]);
             if ($hours === false) { throw new \DomainException('Enter 24 to 168 hours.'); }
             $server = Server::whereKey($review->serverId)->lockForUpdate()->firstOrFail();
             $row = $server->settings()->where('key', self::KEY)->lockForUpdate()->first() ?? $server->settings()->make(['key' => self::KEY]);
+            // A saved value that can't be read is replaced, and counts as a change.
+            try { $changed = self::forAccounts([$review->serverId], true)[$review->serverId]->hours !== $hours; }
+            catch (\DomainException|\InvalidArgumentException) { $changed = true; }
             $row->value = (string) $hours; $row->type = 'integer'; $row->encrypted = false; $row->save();
+            if (!$changed) { return; }
             \Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id', $review->serverId)
                 ->where('catalogue_converted', true)->increment('catalogue_revision');
             StorefrontCatalogueCache::invalidateAfterCommit();
         });
+        return $changed;
     }
 }

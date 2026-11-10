@@ -135,7 +135,7 @@ final class OfferReader
                             $q = new Query($b, [$name], $action, $term);
                             $d = $evaluator->evaluate($snapshot, $q, $context, $now);
                             $row = $rows->first(static fn ($p) => $p->action === $action && (int)$p->term === $term && $p->currency === 'USD');
-                            $batch[$name][$action.':'.$term] = new ReadOffer($d, $b, $row, $context, $freshness[$id]);
+                            $batch[$name][$action.':'.$term] = new ReadOffer($d, $b, $row, $context, $freshness[$id], $snapshot, $q);
                         }
                     }
                 } catch (\Throwable) { $batch[$name] = []; } // One malformed ending cannot poison its siblings.

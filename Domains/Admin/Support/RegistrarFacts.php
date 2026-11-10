@@ -54,7 +54,36 @@ final class RegistrarFacts
         $turn=Schema::hasTable('domains_runtime_turns')?DB::table('domains_runtime_turns')->where('server_id',$server->id)->value('account_fingerprint'):null;
         if ($turn!==null&&$turn!==$account->account_fingerprint) { return AccountStatus::for('configuration_unavailable'); }
         if (DemoData::paused($account)) { return AccountStatus::for($configuration,false,AccountStatus::DEMO_PAUSED); }
+        if ($account->processing_enabled&&($why=self::notSelling($account))!==null) { return AccountStatus::notSelling($why); }
         return AccountStatus::for($configuration,(bool)$account->processing_enabled);
+    }
+    /** Why an account sells no TLD to new customers, with the fix, or null while it sells one (or its sales can't be read).
+     * Only TLDs whose new orders go to this account can sell, so only those are read, and the first one for sale ends the read.
+     * The most common reason names the cause; its fix is the one the TLD page gives. */
+    public static function notSelling(Account $account): ?string
+    {
+        $selling=false;$reasons=[];
+        try {
+            $catalogue=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed();
+            if ($catalogue===null) { return null; }
+            $b=AccountBindings::binding($account);
+            $chosen=DB::table('domains_sales_policies')->where('server_id',$account->server_id)->where('account_fingerprint',$b->fingerprint)->where('registrar_key',$b->registrarKey)
+                ->where(fn($q)=>$q->where('register_enabled',true)->orWhere('transfer_enabled',true))->pluck('tld');
+            \Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$account->server_id)->where('account_fingerprint',$b->fingerprint)->where('registrar_key',$b->registrarKey)
+                ->where('catalogue_converted',true)->whereIn('tld',$chosen)->orderBy('id')->chunkById(100,function($rows)use($catalogue,&$selling,&$reasons):bool {
+                    $page=$catalogue->page($rows);
+                    foreach ($rows as $t) {
+                        if (in_array(true,$page[$t->id]['acquisition'],true)) { $selling=true;return false; }
+                        $reasons[$page[$t->id]['sales']['reason']??'Check TLD settings'][]=$t->tld;
+                    }
+                    return true;
+                });
+        } catch (\Throwable) { return null; }
+        if ($selling) { return null; }
+        if ($reasons===[]) { return 'No TLDs are for sale. Choose what you sell.'; }
+        uasort($reasons,static fn(array $x,array $y)=>count($y)<=>count($x));
+        $label=(string)array_key_first($reasons);
+        return 'No TLDs are for sale. '.$label.' for '.\Paymenter\Extensions\Servers\Domains\Presentation\TldNames::summary($reasons[$label]).'. '.(TldFacts::FIXES[$label]??'Open the TLD to see what it needs.');
     }
     /** Registrar requests list words that are still open: all but Completed, Failed and Cancelled. */
     public const OPEN_REQUESTS=['awaiting_payment','action_required','in_progress','on_hold','under_review'];

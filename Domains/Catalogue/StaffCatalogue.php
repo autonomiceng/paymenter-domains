@@ -146,15 +146,20 @@ final class StaffCatalogue
     /** Form preview uses the same Staff evidence, never legacy wholesale or acceptance. */
     public function preview(Tld $t,array $rule): array
     {
-        $out=[];$offers=$this->snapshots(collect([$t]))[$t->id]['offers'];$costs=self::costs($offers);
-        foreach($offers as $offer){$d=$offer->decision;$cost=$offer->observation();if($cost===null){continue;}
+        $out=[];$offers=$this->snapshots(collect([$t]))[$t->id]['offers'];$costs=self::costs($offers);$now=$this->clock->now();$quotes=[];
+        foreach($offers as $key=>$offer){$d=$offer->decision;$cost=$offer->observation();if($cost===null){continue;}
             $new=Retail::quote($cost,$rule,$costs);
             // Publication preserves contractual annual renewal retail without a fresh positive quote.
-            if($d->action==='renew'&&$d->term===1&&($new===null||PricingRule::units($new,2)<1||!$cost->fresh($this->clock->now()))){$new=OfferState::money($t->catalogue_retained_annual_retail,2);}
-            $total=Retail::cost($cost,$costs);
+            if($d->action==='renew'&&$d->term===1&&($new===null||PricingRule::units($new,2)<1||!$cost->fresh($now))){$new=OfferState::money($t->catalogue_retained_annual_retail,2);}
+            $quotes[$key]=$new;
+        }
+        foreach($offers as $key=>$offer){$d=$offer->decision;$cost=$offer->observation();if($cost===null){continue;}
+            $new=$quotes[$key];$total=Retail::cost($cost,$costs);
             $under=$new!==null&&$total!==null&&!PricingRule::covers($new,$total);
-            $out[]=['action'=>$d->action,'term'=>$d->term,'cost'=>$total,'current'=>$offer->staffRetail(),'new'=>$new,'synced'=>$cost->fresh($this->clock->now()),
-                'hold'=>$d->action==='renew'?null:($under?'below_cost':$d->reason),'alert'=>$d->action==='renew'&&$under?'below_cost':null];
+            // Saving publishes these prices, so the row shows what stops the sale after that, not that it waits for publication.
+            try{$after=$offer->afterPublishing(array_filter($quotes,static fn($q)=>$q!==null&&PricingRule::units($q,2)>=1),$now);}catch(\Throwable){$after=$d->reason;}
+            $out[]=['action'=>$d->action,'term'=>$d->term,'cost'=>$total,'current'=>$offer->staffRetail(),'new'=>$new,'synced'=>$cost->fresh($now),
+                'hold'=>$d->action==='renew'?null:($under?'below_cost':$after),'alert'=>$d->action==='renew'&&$under?'below_cost':null];
         }
         return $out;
     }

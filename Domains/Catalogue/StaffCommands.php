@@ -47,6 +47,33 @@ final class StaffCommands
         $d=OfferState::decode(Account::where('server_id',$t->server_id)->sole()->catalogue_defaults);
         $this->writer->apply(Edit::republish($b,$t->tld),$this->revision($t,$d));
     }
+    /** After an account-wide change made every offer stale, republish at once the TLDs this account sells, the way Edit
+     * prices > Save and publish does, so customers keep buying them. The background turn still covers the rest.
+     * Returns the TLDs that could not be published; each one keeps its reason on its TLD page. @return list<string> */
+    public function republishSold(int $server): array
+    {
+        if(DB::transactionLevel()!==0){throw new \LogicException('Staff commands require the outer writer.');}
+        $account=Account::where('server_id',$server)->sole();$b=AccountBindings::binding($account);$failed=[];
+        $policies=DB::table('domains_sales_policies')->where('server_id',$server)->where('account_fingerprint',$b->fingerprint)->where('registrar_key',$b->registrarKey)
+            ->where(fn($q)=>$q->where('register_enabled',true)->orWhere('transfer_enabled',true))->get()->keyBy('tld');
+        $rows=Tld::where('server_id',$server)->where('account_fingerprint',$b->fingerprint)->where('registrar_key',$b->registrarKey)
+            ->where('catalogue_converted',true)->whereIn('tld',$policies->keys())->orderBy('id')->get();
+        foreach($rows as $t){
+            try{
+                $d=OfferState::decode(Account::where('server_id',$server)->sole()->catalogue_defaults);
+                if(!OfferState::sold($b,$t,$d,$policies[$t->tld])){continue;}
+                $revision=$this->revision($t,$d);
+                try{$current=OfferState::equivalent(OfferState::decode($t->catalogue_published_revision),get_object_vars($revision));}catch(\JsonException|\TypeError){$current=false;}
+                if($current){continue;}
+                $this->writer->apply(Edit::republish($b,$t->tld),$revision);
+            }catch(\Throwable $error){
+                // One TLD that can't publish must not stop its siblings; it stays pending for the background turn.
+                if(!$error instanceof \DomainException){\Illuminate\Support\Facades\Log::warning('Domains account republish failed.',['tld_id'=>(int)$t->id,'exception_class'=>$error::class]);}
+                $failed[]=$t->tld;
+            }
+        }
+        return $failed;
+    }
     public function run(Review $review,array $data): array
     {
         if(!in_array($review->action,self::ACTIONS,true)){throw new \DomainException('Unsupported catalogue action.');}

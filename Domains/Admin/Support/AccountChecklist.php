@@ -324,6 +324,13 @@ final class AccountChecklist
         return [...self::row('Domain alerts',(string)$count,'warning',null,null,$help),
             'buttons'=>[Action::make('domain_alerts')->label('View domains')->link()->size('sm')->url($url)->visible($url!==null)]];
     }
+    /** The System checks row for an account with Orders on that sells no TLD: the cause and fix, and a link to What you sell. */
+    public static function notSelling(Account $a,string $reason): array
+    {
+        try { $url=WhatYouSell::getUrl(['account'=>$a->server_id]); } catch (\Throwable) { $url=null; }
+        return [...self::row('Sales',AccountStatus::SET['not_selling'][0],'warning',$reason,null,'Whether customers can buy any TLD from this account while Orders is on.'),
+            'buttons'=>[Action::make('not_selling_'.$a->server_id)->label('Open What you sell')->link()->size('sm')->url($url)->visible($url!==null)]];
+    }
     /** Domain monitoring is on only when the runtime composes it; then its checks need the queue WatchWork::queueReady() accepts. */
     private static function queueTooShort(): bool
     {

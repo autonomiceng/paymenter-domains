@@ -26,8 +26,8 @@ final class PriceFreshnessAction
             ->action(static function(array $data)use($server):void {
                 try{
                     $r=new Review((int)Auth::id(),$server,null,'price_freshness',(string)($data['review_key']??''),trim((string)($data['reason']??'')));
-                    app(StaffSettingsWrites::class)->run($r,$data);
-                    Notification::make()->success()->title('Price freshness saved')->send();
+                    $summary=app(StaffSettingsWrites::class)->run($r,$data);$body=SettingsActions::republished($summary);
+                    Notification::make()->status($body===null?'success':'warning')->title('Price freshness saved')->body($body)->send();
                 }catch(\Throwable $e){Notification::make()->danger()->title("Couldn't save price freshness")->body($e instanceof \DomainException?$e->getMessage():'Reload the account page, then try again.')->send();}
             });
     }
