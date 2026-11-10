@@ -18,7 +18,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement, ObligationA
 App\Models\Setting::updateOrCreate(['key'=>'company_name','settingable_type'=>null,'settingable_id'=>null],['value'=>'Example Hosting','type'=>'string','encrypted'=>false]);config(['settings.company_name'=>'Example Hosting']);
 
 (new Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
-staffPanel(); [$held,$active,$long]=staffData(); Paymenter\Extensions\Servers\Domains\Services\PslReviewSchema::install();
+staffPanel(); [$held,$active,$long]=staffData(); staffRenewalsOn($held,$active,$long); Paymenter\Extensions\Servers\Domains\Services\PslReviewSchema::install();
 Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
 app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new Paymenter\Extensions\Servers\Domains\Data\SystemClock);
 $viewer=staffUser([Staff::VIEW]); Auth::setUser($viewer);

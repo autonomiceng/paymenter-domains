@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\{Auth,DB};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts,Staff};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain;
-staffPanel();[, $d]=staffData(true);$actor=staffUser([Staff::VIEW]);Auth::setUser($actor);
+staffPanel();[, $d]=staffData(true);staffRenewalsOn($d);$actor=staffUser([Staff::VIEW]);Auth::setUser($actor);
 $owner=App\Models\User::create(['first_name'=>'Invoice','last_name'=>'Owner','email'=>'staff-renewal-owner@example.test','password'=>'synthetic-password']);
 DB::table('domains_domains')->where('id',$d->id)->update(['user_id'=>$owner->id]);$d=$d->fresh();
 $planned=today()->addDays(120-21)->format('M j, Y');$due=today()->addDays(100);
