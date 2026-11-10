@@ -14,7 +14,9 @@
         'CA' => \Paymenter\Extensions\Servers\Domains\Services\ContactDetails::stateCodes('CA')];
     $value = function (string $field) use ($useOld, $values, $errorPrefix) {
         $v = !empty($useOld) ? old($errorPrefix.'.'.$field, '') : ($values[$field] ?? '');
-        return is_string($v) ? $v : '';
+        $v = is_string($v) ? $v : '';
+        // Saved phones are stored in registry form; show them as people write them. Retained input stays as typed.
+        return $field === 'phone' && empty($useOld) ? \Paymenter\Extensions\Servers\Domains\Services\ContactDetails::readablePhone($v, is_string($values['country'] ?? null) ? $values['country'] : '') : $v;
     };
     $layout = [
         'first_name' => ['First name', 'given-name', 'text', ''], 'last_name' => ['Last name', 'family-name', 'text', ''],

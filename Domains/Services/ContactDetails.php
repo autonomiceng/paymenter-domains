@@ -89,6 +89,16 @@ final class ContactDetails
         return count($matches) === 1 ? $matches[0] : '';
     }
 
+    /** A saved phone as people write it: +1.6502530000, or NameSilo's 6502530000 for the US and Canada, reads +1 650-253-0000.
+     * Validation turns the readable form back into the same saved value. Anything else is returned unchanged. */
+    public static function readablePhone(string $value, string $country = ''): string
+    {
+        if (in_array(strtoupper($country), ['US', 'CA'], true) && preg_match('/^[2-9][0-9]{2}[2-9][0-9]{6}$/D', $value)) { $value = '+1.'.$value; }
+        if (!preg_match('/^\+([1-9][0-9]{0,2})\.([0-9]{4,14})$/D', $value, $parts)) { return $value; }
+        if ($parts[1] === '1' && strlen($parts[2]) === 10) { return '+1 '.substr($parts[2], 0, 3).'-'.substr($parts[2], 3, 3).'-'.substr($parts[2], 6); }
+        return '+'.$parts[1].' '.$parts[2];
+    }
+
     private static function phone(string $value, string $country): ?string
     {
         if (preg_match('/^\+([1-9][0-9]{0,2})[. -]+([0-9() -]+)$/D', $value, $parts)) {

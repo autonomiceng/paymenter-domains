@@ -25,7 +25,7 @@ $management=static function(array $more=[]):array {
     $m['ds']+=['records'=>[],'recordCheckHeld'=>false];$m['ds']['actions']=['ds_add'=>'/domains/1/manage/ds_add','ds_delete'=>'/domains/1/manage/ds_delete'];
     $m['lock']['state']=true;
     $m['privacy']+=['free'=>false,'price'=>'$8.00','state'=>false];$m['privacy']['actions']=['privacy_enable'=>'/domains/1/manage/privacy_enable','privacy_disable'=>'/domains/1/manage/privacy_disable','privacy_purchase'=>'/domains/1/manage/privacy_purchase'];
-    $m['contacts']+=['staged'=>false,'limits'=>\Paymenter\Extensions\Servers\Domains\Services\ContactDetails::limits('enom'),'saved'=>['first_name'=>'Jane','country'=>'US'],'role'=>'registrant','approved'=>null];
+    $m['contacts']+=['staged'=>false,'limits'=>\Paymenter\Extensions\Servers\Domains\Services\ContactDetails::limits('enom'),'saved'=>['first_name'=>'Jane','country'=>'US','phone'=>'+1.6502530000'],'role'=>'registrant','approved'=>null];
     $m['auth_code_email']['recipient']='owner';
     return array_replace_recursive($m,$more);
 };
@@ -103,7 +103,7 @@ same(1,$dom->query('//li[@id="lock"]//form[@data-confirm]//dialog[not(@open)]//b
 foreach(['Email the auth code?','We’ll email it to the owner.']as$t){expect(str_contains($html,$t),'Auth code dialog: '.$t);}
 same(1,$dom->query('//li[@id="auth_code_email"]//dialog//button[@name="confirmed"][normalize-space(.)="Email auth code"]')->length,'Auth code dialog button');
 same(0,$dom->query('//li[@id="contacts"]//select[@name="role"]')->length,'One contact form, no role to pick');
-same(['Jane','US'],[$dom->query('//li[@id="contacts"]//input[@name="contact[first_name]"]')->item(0)->getAttribute('value'),$dom->query('//li[@id="contacts"]//select[@name="contact[country]"]/option[@selected]')->item(0)->getAttribute('value')],'Dialog opens on the owner details');
+same(['Jane','US','+1 650-253-0000'],[$dom->query('//li[@id="contacts"]//input[@name="contact[first_name]"]')->item(0)->getAttribute('value'),$dom->query('//li[@id="contacts"]//select[@name="contact[country]"]/option[@selected]')->item(0)->getAttribute('value'),$dom->query('//li[@id="contacts"]//input[@name="contact[phone]"]')->item(0)->getAttribute('value')],'Dialog opens on the owner details, with the saved phone readable');
 $forms=static fn(DOMXPath $x)=>array_map(static fn($f)=>[$f->getAttribute('action'),$norm($x->query('.//button[@type="submit"]',$f)->item(0))],iterator_to_array($x->query('//li[@id="contacts"]//form')));
 $isolated=['staged'=>true,'actions'=>['contacts'=>'/domains/1/manage/contacts']];
 $d=$domain(['management'=>$management(['contacts'=>$isolated])]);$dom=storefrontDom($render($d,$summary($d)));
