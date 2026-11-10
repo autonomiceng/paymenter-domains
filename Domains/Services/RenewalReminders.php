@@ -28,8 +28,10 @@ final class RenewalReminders
         if($op&&in_array($op->state,['held','uncertain'],true)){$alert('held_obligation',(int)$op->id);if(!$expired){return null;}}
         if(!$expired&&$op&&in_array($op->state,['queued','running','pending','succeeded'],true)){return null;}
         $settings=$l['settings']->pluck('value','key');
+        // Billing refuses an unproven import, so the missing invoice is expected: staff see why instead.
+        $unproven=AdoptionRenewalEligibility::unproven($d);
         if(!$expired&&!$op&&$renewOn){try{$calendar=DomainBilling::calendarFor($l);}catch(\Throwable){$alert('reminder_failed');return null;}
-            if($day->format('Y-m-d')>=($complimentary?$calendar['due']:$calendar['issue'])){if(!$retired){$alert($complimentary?'missing_execution':'missing_obligation');}return null;}}
+            if($day->format('Y-m-d')>=($complimentary?$calendar['due']:$calendar['issue'])){if(!$retired){$alert($unproven?'imported_renewal_unproven':($complimentary?'missing_execution':'missing_obligation'));}return null;}}
         if(!$expired&&$unknown&&!$op&&$renewOn&&!$complimentary){return null;}
         $offsets=[...json_decode($schedule->before_days,true,8,JSON_THROW_ON_ERROR),...array_map(fn($v)=>-$v,json_decode($schedule->after_days,true,8,JSON_THROW_ON_ERROR))];
         $due=array_filter($offsets,fn($offset)=>$offset>=$days&&$offset-$days<=2&&(($days<0)==($offset<0)));
@@ -58,8 +60,8 @@ final class RenewalReminders
             if($days<0||$offset!==30){return null;}
             if(!filter_var($settings->get('domains_billing_enabled',false),FILTER_VALIDATE_BOOLEAN)
                 ||!$l['account']->processing_enabled||$d->price_mode!=='standard'||($d->renewal_policy['automatic_spend_paused']??false)
-                ||($d->renewal_policy['billing_anchor']['expiry']??null)!==$expiry->format('Y-m-d')){$alert('missing_obligation');return null;}
-            try{DomainBilling::requireAuthority($l,$bindings);}catch(\Throwable){$alert('missing_obligation');return null;}
+                ||($d->renewal_policy['billing_anchor']['expiry']??null)!==$expiry->format('Y-m-d')){$alert($unproven?'imported_renewal_unproven':'missing_obligation');return null;}
+            try{DomainBilling::requireAuthority($l,$bindings);}catch(\Throwable){$alert($unproven?'imported_renewal_unproven':'missing_obligation');return null;}
             $data['invoice_on']=CarbonImmutable::parse($calendar['issue'])->format('F j, Y');
         }
         if(!$expired&&$complimentary&&$renewOn&&$offset!==30){return null;}

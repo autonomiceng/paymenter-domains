@@ -15,10 +15,15 @@ final class AdoptionRenewalEligibility
         return $registrar === 'enom' ? ['eligible'=>true,'reason'=>null]
             : ['eligible'=>false,'reason'=>'imported_renewal_unproven'];
     }
+    /** An import whose renewal we refuse to bill, so no invoice or free renewal request will appear for it. */
+    public static function unproven(Domain $domain): bool
+    {
+        return ($domain->adoption_id !== null || $domain->provenance === 'adopted')
+            && !self::forRegistrar($domain->registrar_key)['eligible'];
+    }
     public static function requireBilling(Domain $domain): void
     {
-        if (($domain->adoption_id !== null || $domain->provenance === 'adopted')
-            && !self::forRegistrar($domain->registrar_key)['eligible']) {
+        if (self::unproven($domain)) {
             throw new \DomainException('Imported renewal eligibility is not proven.');
         }
     }

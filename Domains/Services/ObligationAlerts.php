@@ -26,6 +26,7 @@ final class ObligationAlerts
         'renewal_unpaid'=>'Unpaid renewal invoice cancelled. Talk to the customer about renewal.',
         'missing_execution'=>'Free renewal request missing. Check before expiry.',
         'missing_obligation'=>'Renewal invoice missing. Check billing before expiry.',
+        'imported_renewal_unproven'=>AdoptionRenewalEligibility::STAFF,
         'held_obligation'=>'Renewal on hold. Check the request before expiry.',
         'invalid_invoice'=>'Renewal invoice needs a check: owner, line and due date.',
         'below_cost'=>'Below cost. Billing continues. Check the margin.',
