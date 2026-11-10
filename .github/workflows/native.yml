@@ -58,7 +58,8 @@ jobs:
             args=(--base "$BASE")
           elif [[ $EVENT == pull_request ]]; then
             args=(--base "$PR_BASE")
-          elif [[ $REF == refs/heads/main && -n $BEFORE && ! $BEFORE =~ ^0+$ ]]; then
+          elif [[ $EVENT == push && -n $BEFORE && ! $BEFORE =~ ^0+$ ]]; then
+            # A push tests what it changed; a pull request run covers the whole branch.
             args=(--base "$BEFORE")
           else
             args=(--base origin/main)
