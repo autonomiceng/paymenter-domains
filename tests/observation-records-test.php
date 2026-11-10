@@ -64,7 +64,7 @@ require_once __DIR__.'/Support/staff-panel.php';
 // Completion queued this exact holding already; model its first automatic retry in place.
 $existing=\Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::current($d)->sole();
 DB::table('domains_observation_work')->where('id',$existing->id)->update(['due_at'=>$clock->now()->getTimestamp()+60,'safe_code'=>'read_failed','tries'=>1]);
-same(null,\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::recordHold($d->fresh()),'Scheduled recovery has no stopped-read notice');
+same('SRV records held until the registrar check retries at '.(new DateTimeImmutable('@'.($clock->now()->getTimestamp()+60)))->setTimezone($clock->now()->getTimezone())->format('M j, Y, g:i A T').'.',\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::recordHold($d->fresh()),'Scheduled recovery shows the hold until the retry, not a stopped read');
 $partialJob=\Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::current($d)->sole();
 DB::table('domains_observation_work')->where('id',$partialJob->id)->update(['safe_code'=>'records_incomplete']);
 same("Sync stopped: couldn't read SRV records. Other domain facts were saved. Use Sync now to try again.",\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::recordHold($d->fresh()),'Staff record notice names the stopped read');
