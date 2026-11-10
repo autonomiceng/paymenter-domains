@@ -4,6 +4,7 @@ declare(strict_types=1);
 // A first-year price that differs from the renewal price says why, on search results and on the price list.
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/storefront.php';
+require dirname(__DIR__).'/Domains/routes/web.php';
 storefrontViews();
 $why = 'Registrars price the first year and renewals separately.';
 $data = storefrontData();
