@@ -540,6 +540,7 @@
 .domains .domains-row__a .domains-a { display: inline-flex; align-items: center; min-height: 2rem; padding: 0 .75rem; border: 1px solid var(--e-line); border-radius: .375rem; color: var(--e-fg); white-space: nowrap; }
 .domains .domains-sub { display: block; margin-top: .1875rem; font-size: .75rem; font-weight: 400; color: var(--e-muted); }
 .domains .domains-linkbtn { padding: 0; border: 0; background: none; font: inherit; cursor: pointer; }
+.domains .domains-linkbtn:disabled { opacity: .5; cursor: not-allowed; }
 .domains .domains-inline { display: inline; margin: 0; }
 .domains .domains-card > div { position: relative; display: flex; flex-wrap: wrap; justify-content: space-between; gap: .25rem .75rem; padding: .5rem 0; border-bottom: 1px solid var(--e-line); }
 .domains .domains-card > div:last-child { border-bottom: 0; }

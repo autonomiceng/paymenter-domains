@@ -33,7 +33,7 @@ final class DomainListRow
                 // With no notice above it, a complimentary row says what the page notice says.
                 default => ['cause' => $complimentary ? $basis.'We’re finishing the '.$word.'. There’s nothing you need to do.' : Missing::fills(self::WAITS[$word]), 'fix' => null],
             }],
-            'cancelled' => isset($order['credit']) ? ['missing' => false, 'tone' => null, 'note' => null] : ['missing' => true, 'cause' => 'Order cancelled', 'fix' => Missing::support($support)],
+            'cancelled' => isset($order['credit']) || ($order['unpaid'] ?? false) ? ['missing' => false, 'tone' => null, 'note' => null] : ['missing' => true, 'cause' => 'Order cancelled', 'fix' => Missing::support($support)],
             'failed' => ['missing' => true, 'cause' => ucfirst($word).' did not finish', 'fix' => Missing::support($support)],
             default => null,
         };

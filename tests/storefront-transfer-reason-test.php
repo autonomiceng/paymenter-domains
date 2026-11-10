@@ -45,7 +45,9 @@ $assertRefusal = static function (array $result, string $reason) : void {
     expect(!str_contains($result['html'], '>Taken<'), 'Transfer refusal does not say Taken');
 };
 $assertRefusal($check(), 'Unlock this domain at your current registrar, then try again.');
-same('taken', $check(false)['status'], 'Registration search keeps its Taken result');
+$taken=$check(false); same('taken', $taken['status'], 'Registration search keeps its Taken result');
+// Someone who owns the name gets a way forward from Register: the transfer search for that name.
+expect(str_contains($taken['html'],'href="'.e(route('domains.domains.transfer',['name'=>'transfer-placeholder','tld'=>'com'])).'"')&&str_contains($taken['html'],'Transfer it here'),'A taken name on Register links to the transfer search');
 $public->states = ['active']; $public->created = $now->modify('-30 days')->format(DATE_ATOM);
 $assertRefusal($check(), 'registered less than 60 days ago');
 $public->created = '2020-01-01T00:00:00Z'; $public->transferred = $now->modify('-30 days')->format(DATE_ATOM);
@@ -60,6 +62,7 @@ $flags=$store->check('transfer-placeholder.com',true);same([false,true],[$flags[
 $unsupported=$check();$assertRefusal($unsupported, 'We don’t offer transfers for this ending.');
 expect(str_contains($unsupported['html'],'href="https://support.example.test/domains"')&&str_contains($unsupported['html'],'Contact support'),'Unsupported ending offers the configured safe support link');
 expect(!str_contains($unsupported['html'],'Register this domain'),'An unsupported ending does not imply registration is available');
+expect(!str_contains($check(false)['html'],'Transfer it here'),'An ending we do not transfer has no transfer link on Register');
 $setting->update(['value' => 'com']);
 $state->transferable='unknown';
 $flags=$store->check('transfer-placeholder.com',true);same(['transfer_unconfirmed',false,true],[$flags['status'],$flags['register'],$flags['support']],'Unknown registrar eligibility stays unconfirmed with support and no registration offer');

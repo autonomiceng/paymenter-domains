@@ -142,7 +142,8 @@ final class UpgradeGate
         }
         DB::table('domains_read_budgets')->lockForUpdate()->orderBy('id')->chunk(250, static function ($rows): void {
             foreach ($rows as $row) {
-                if (json_decode($row->leases, true, 32, JSON_THROW_ON_ERROR) !== []) {
+                // A waiting search marker is not a reservation.
+                if (array_diff_key(json_decode($row->leases, true, 32, JSON_THROW_ON_ERROR), [\Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget::WAITING => true]) !== []) {
                     throw new \DomainException('Catalogue upgrade requires released read reservations.');
                 }
             }

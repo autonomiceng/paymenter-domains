@@ -32,6 +32,9 @@ final class StorefrontController extends Controller
             elseif (self::endsWithAny($parsed['ending'], $names)) {
                 $parsed['error'] = 'Enter the name without a subdomain, for example '.$parsed['ending'].'.';
             } else { $notice = '.'.$parsed['ending'].' isn’t available here. We offer '.self::listEndings($names).'.'; }
+        } elseif ($chosen !== '' && !in_array($chosen, $names, true) && preg_match('/^[a-z0-9-]{1,63}(\.[a-z0-9-]{1,63})?$/D', $chosen)) {
+            // A link that names an ending we do not sell says so above the other endings.
+            $notice = '.'.$chosen.' isn’t available here. We offer '.self::listEndings($names).'.';
         }
         $sld = $parsed['sld']; $error = $parsed['error']; $results = [];
         if ($sld !== null && $error === null) {

@@ -235,6 +235,8 @@ final class DomainDecisions
         $inputs??=StaffDomainInputs::for([$d])[$d->id]; $op=$d->latestAcquisition;
         // Saved request data that can't be read must not break the list.
         try { $order=OwnedDomains::order($d,$op,$inputs['invoice'],$inputs['closed']); } catch (\Throwable) { $order=[]; }
+        // The customer reads an unpaid cancel as plain Cancelled. Staff still check the closed order until it is retired.
+        unset($order['unpaid']);
         [$state,$reason]=OwnedDomains::orderStatus(DomainStates::managed($d,$op,gmdate('Y-m-d'),(bool)$inputs['off']),$d,$order);
         $shared=['key'=>DomainStatus::key($state),...DomainStatus::for($state,$reason)];
         if ($inputs['late']) { return StaffDomainStatus::late($shared); }

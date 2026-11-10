@@ -19,7 +19,8 @@ final class AccountReadBudget implements ReadLimiter
     {
         if($calls<1||$calls>60){throw new \InvalidArgumentException('Invalid read group.');}
         OperationClaims::outside();
-        return DB::transaction(function () use ($binding,$origin,$calls): string {
+        $refusal=null;
+        $token=DB::transaction(function () use ($binding,$origin,$calls,&$refusal): ?string {
             $a=Account::where('server_id',$binding->serverId)->lockForUpdate()->firstOrFail();
             $binding->requireMatch(AccountBindings::binding($a));
             $now=$this->micros(); $q=DB::table('domains_read_budgets');
@@ -33,9 +34,18 @@ final class AccountReadBudget implements ReadLimiter
             $cap=$binding->registrarKey==='namesilo'&&$origin===RequestOrigin::Background?2:1;
             $window=$row?(int)$row->window_at:$now; $used=$row?(int)$row->used:0;
             if ($now-$window>=60000000) { $window=$now; $used=0; }
+            // Enom searches and background reads share one slot. A search that found it busy leaves a short marker,
+            // and background reads give way until it expires, so the search gets the next free slot.
+            $waiting=isset($leases[self::WAITING]);
+            if ($origin===RequestOrigin::Background && $route==='enom' && $waiting) { $refusal='Account read budget unavailable.'; return null; }
             if ($active>=$cap || $used+$calls>($origin===RequestOrigin::Background?$this->backgroundLimit:$this->interactiveLimit)) {
-                throw new ReadDeferred('Account read budget unavailable.');
+                if ($origin===RequestOrigin::Interactive && $route==='enom' && $active>=$cap && $row) {
+                    $leases[self::WAITING]=['route'=>self::WAITING,'until'=>$now+self::WAIT_MICROS];
+                    (clone $q)->where('server_id',$binding->serverId)->update(['leases'=>json_encode($leases,JSON_THROW_ON_ERROR)]);
+                }
+                $refusal='Account read budget unavailable.'; return null;
             }
+            if ($origin===RequestOrigin::Interactive && $waiting) { unset($leases[self::WAITING]); }
             if ($binding->registrarKey==='namesilo' && $origin===RequestOrigin::Interactive && $row && $now<(int)$row->next_api_at) {
                 throw new ReadDeferred('Account read budget unavailable.', (int)$row->next_api_at-$now);
             }
@@ -44,7 +54,14 @@ final class AccountReadBudget implements ReadLimiter
                 'next_api_at'=>$binding->registrarKey==='namesilo'&&$origin===RequestOrigin::Interactive?$now+1000000:($row->next_api_at??0)];
             $q->updateOrInsert(['server_id'=>$binding->serverId],$values); return $token;
         });
+        // Thrown after commit, so a waiting search keeps its marker.
+        if ($token===null) { throw new ReadDeferred($refusal??'Account read budget unavailable.'); }
+        return $token;
     }
+    /** Lease key of a waiting Enom search. It never counts as a lease of its own. */
+    public const WAITING='search_waiting';
+    /** Longer than one search admission pause, shorter than a background retry. */
+    private const WAIT_MICROS=2000000;
     public function release(AccountBinding $binding, RequestOrigin $origin, string $token): void
     {
         OperationClaims::outside();

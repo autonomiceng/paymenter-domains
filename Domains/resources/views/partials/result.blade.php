@@ -45,6 +45,6 @@
         @elseif ($state === 'in_cart')<a class="domains-btn domains-btn--secondary" href="{{ route('cart') }}">Go to cart</a>
         @elseif (in_array($state, ['error', 'busy', 'transfer_unconfirmed'], true))<button type="button" class="domains-btn domains-btn--secondary" data-domains-retry>Retry</button>@endif
     </div>
-    <p class="domains-result__note domains-small domains-muted">{{ $result['message'] ?? '' }}@if ($result['register'] ?? false) <a class="domains-a" href="{{ route('domains.domains.search', ['name' => $result['domain']]) }}">Register this domain</a>@endif
+    <p class="domains-result__note domains-small domains-muted">{{ $result['message'] ?? '' }}@if ($result['register'] ?? false) <a class="domains-a" href="{{ route('domains.domains.search', ['name' => $result['domain']]) }}">Register this domain</a>@endif@if ($state === 'taken' && ($result['transferEnding'] ?? false)) Own it? <a class="domains-a" href="{{ route('domains.domains.transfer', ['name' => $result['sld'], 'tld' => $result['tld']]) }}">Transfer it here</a>@endif
         @if ($result['support'] ?? false)@php($support = \Paymenter\Extensions\Servers\Domains\Presentation\Missing::supportUrl())@if ($support) <a class="domains-a" href="{{ $support }}">Contact support</a>@endif @endif</p>
 </li>

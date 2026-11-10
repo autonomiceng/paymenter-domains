@@ -34,6 +34,17 @@ foreach($tlds as $i=>$t){
     $op->update(['state'=>'held','safe_code'=>'staff_review_required']);$dto=$presenter->service($user,$d->service_id);same(['Under review','We are on it, nothing for you to do'],[$dto->status,$dto->statusReason],'Customer held registration stays under review');
     $class='Paymenter\\Extensions\\Servers\\Domains\\Registrars\\'.($i?'NameSilo':'Enom').'\\Management';$actionable=new OwnedDomains($clock,new OwnerPorts(static fn($b)=>new $class($b,static fn()=>throw new RuntimeException('No presenter I/O.'))));
     $op->update(['safe_code'=>'contact_details_required']);same(['Action required','Finish setup'],[$actionable->present($d->fresh())->status,$actionable->present($d->fresh())->statusReason],'Actionable held registration requests attention');\Paymenter\Extensions\Servers\Domains\Services\ContactSetup::recoveryWrite(fn()=>$op->update(['safe_code'=>'staff_review_required']));
+    // A paid Enom registration goes ahead with default nameservers. Its nameserver choice is optional, so the service row reads as pending, not as waiting for the customer.
+    $invoiceStatus=DB::table('invoices')->where('id',$op->invoice_id)->value('status');DB::table('invoices')->where('id',$op->invoice_id)->update(['status'=>'paid']);
+    \Paymenter\Extensions\Servers\Domains\Services\ContactSetup::recoveryWrite(fn()=>$op->update(['state'=>'queued','safe_code'=>null]));
+    $paid=$actionable->present($d->fresh());$row=(new NativePresenter($actionable,app(NativeCatalogue::class),app(HolderPricing::class)))->service($user,$d->service_id);
+    if(!$i){
+        expect(isset($paid->actions['setup'])&&$paid->setup['defaults'],'Fixture: the paid Enom registration offers an optional nameserver choice');
+        expect(!isset($row->actions['setup']),'A paid Enom registration does not ask the service row for details');
+        expect(isset($row->actions['show']),'The service row still links to the domain page');
+    }else{ same(isset($paid->actions['setup']),isset($row->actions['setup']),'A required setup stays on the service row'); }
+    DB::table('invoices')->where('id',$op->invoice_id)->update(['status'=>$invoiceStatus]);
+    \Paymenter\Extensions\Servers\Domains\Services\ContactSetup::recoveryWrite(fn()=>$op->update(['state'=>'held','safe_code'=>'staff_review_required']));
     same(null,$presenter->service($foreign,$d->service_id),'Foreign service denied');same([],$presenter->invoice($foreign,$op->invoice_id),'Foreign invoice denied');
     expect(isset($presenter->invoice($user,$op->invoice_id)[$op->invoice_item_id]),'Exact invoice-item binding projected');
     \App\Models\Currency::firstOrCreate(['code'=>'EUR'],['name'=>'Euro','format'=>'1,000.00','prefix'=>'€','suffix'=>'']);DB::table('invoices')->where('id',$op->invoice_id)->update(['currency_code'=>'EUR']);same([],$presenter->invoice($user,$op->invoice_id),'Changed invoice currency refused');DB::table('invoices')->where('id',$op->invoice_id)->update(['currency_code'=>'USD']);

@@ -47,9 +47,9 @@ final readonly class OwnedDomains
         if ($op->safe_code===UnpaidAcquisitionProof::CODE&&isset($op->funding['late_credits'])) { return ['state'=>'cancelled','kind'=>$kind,'credit'=>true]; }
         if (!in_array($d->status,['registration_pending','transfer_pending'],true)) { return []; }
         if ($op->state==='rejected') { return RequestStatus::closed($op->state,$op->safe_code)?[]:['state'=>'failed','kind'=>$kind]; }
-        if ($closed && in_array($op->state,['awaiting_payment','awaiting_code','queued'],true)) { return ['state'=>'cancelled','kind'=>$kind]; }
+        if ($closed && in_array($op->state,['awaiting_payment','awaiting_code','queued'],true)) { return ['state'=>'cancelled','kind'=>$kind,...self::unpaidCancel($op,$invoice)]; }
         if ($op->state==='awaiting_payment' && $invoice?->status==='pending') { return ['state'=>'unpaid','kind'=>$kind,'invoice'=>route('invoices.show',$invoice)]; }
-        if ($op->state==='awaiting_payment' && $invoice?->status==='cancelled') { return ['state'=>'cancelled','kind'=>$kind]; }
+        if ($op->state==='awaiting_payment' && $invoice?->status==='cancelled') { return ['state'=>'cancelled','kind'=>$kind,...self::unpaidCancel($op,$invoice)]; }
         $next=match (true) {
             $op->state==='held'&&in_array($op->safe_code,self::OWNER_HOLDS,true) => 'setup_required',
             $op->action==='transfer'&&!TransferInputs::validCode($op->payload['epp']??null) => 'awaiting_code',
@@ -57,6 +57,14 @@ final readonly class OwnedDomains
             default => null,
         };
         return $invoice?->status==='paid'&&in_array($op->state,['awaiting_payment','awaiting_code','queued','running','pending','held','uncertain'],true)?['state'=>'paid','kind'=>$kind,'next'=>$next,...($op->funding_basis==='complimentary'?['complimentary'=>true]:[]),...(isset($op->policy['status_check'])&&!isset($op->policy['status_check']['next_at'])?['check'=>RegistrarCheck::forCustomer($op)]:[])]:[];
+    }
+    /** A cancelled order nobody paid or is paying: a normal cancel with nothing to review. */
+    private static function unpaidCancel(Operation $op, ?Invoice $invoice): array
+    {
+        if ($op->state!=='awaiting_payment' || !$invoice || $invoice->status==='paid') { return []; }
+        $paying=\App\Models\InvoiceTransaction::where('invoice_id',$invoice->id)
+            ->whereIn('status',[\App\Enums\InvoiceTransactionStatus::Succeeded,\App\Enums\InvoiceTransactionStatus::Processing])->exists();
+        return $paying ? [] : ['unpaid'=>true];
     }
     /** Where a rejected registration or transfer's money goes, for the customer page: see OwnedDomain::$refundTo. */
     public static function refundTo(Domain $d, ?Operation $op, array $order): ?string
@@ -77,7 +85,7 @@ final readonly class OwnedDomains
     public static function orderStatus(array $state, Domain $d, array $order): array
     {
         return match (true) {
-            ($order['state']??null)==='cancelled' => [isset($order['credit'])||($order['returned']??false)?'cancelled':'needs_review','Order cancelled'],
+            ($order['state']??null)==='cancelled' => [isset($order['credit'])||($order['returned']??false)||($order['unpaid']??false)?'cancelled':'needs_review','Order cancelled'],
             ($order['state']??null)==='failed' => [$order['kind']==='transfer'?'transfer_rejected':'registration_rejected',null],
             ($order['state']??null)==='paid'&&$state[0]==='awaiting_payment' => [$order['next']??$d->status,null],
             default => $state,

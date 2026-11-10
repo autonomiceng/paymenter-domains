@@ -36,6 +36,13 @@ $families($facts,'Queued first read',true);
 $html=view('domains::show',['domain'=>$initial,'summary'=>null])->render();
 expect(storefrontDom($html)->query('//*[contains(concat(" ",normalize-space(@class)," ")," domains-missing ")]')->length===0,'Initial domain page has no Missing marks, including transfer lock');
 expect(!str_contains(strip_tags($html),'No registrar read is queued.'),'Customers do not see staff queue instructions');
+// A row that says Checking has nothing current to change: its action is shown turned off until the read finishes.
+$lockPage=new OwnedDomain(name:$d->domain,status:'Active',tone:'ok',expiry:'2027-11-07',renewal:'On',renewalPrice:'$10.99',actions:['show'=>'/domains/73'],progress:[],setup:[],transfer:[],
+    management:['lock'=>['label'=>'Transfer lock','state'=>null,'url'=>'/domains/73/lock','actions'=>['lock'=>'/domains/73/lock']]],testEnvironment:true);
+$dom=storefrontDom(view('domains::show',['domain'=>RecordFamilies::owner($lockPage,$facts),'summary'=>null])->render());
+same(0,$dom->query('//li[@id="lock"]//a[contains(@href,"edit=lock")]')->length,'Checking lock row has no live Change link');
+same(1,$dom->query('//li[@id="lock"]//button[@disabled and normalize-space(.)="Change"]')->length,'Checking lock row shows Change turned off');
+expect(str_contains(DomainPage::INITIAL_READ,'Changes open when the check finishes.'),'The notice says why changes are off');
 // Only queued work that is on time can promise the first read. Otherwise each family is Missing.
 foreach(['no queued read'=>[null,false],'running read'=>[['due_at'=>$now->getTimestamp()-7200,'lease_until'=>$now->getTimestamp()+300,'claim'=>str_repeat('c',32)],true],
     'overdue read'=>[['due_at'=>$now->getTimestamp()-7200],false],'paused records'=>[['safe_code'=>'records_disabled'],false],

@@ -68,6 +68,11 @@ same(['com'], array_column($store->endings(), 'tld'), 'Only selected seller endi
     expect(str_contains((string) $typed['notice'], '.unsold isn’t available here.') && !in_array('unsold', array_column($typed['results'], 'tld'), true), 'A typed unsold TLD is refused');
     $transferred = $transfer->show($req(['name' => 'example.unsold'], 'GET'))->getData();
     same(['We don’t offer transfers for .unsold domains. Contact support for help transferring this domain.', []], [$transferred['error'], $transferred['results']], 'Transfer names the unsupported TLD and gives a next step');
+    // A link that names an ending we do not transfer gets that answer, never a verdict on the same name at .com.
+    $linked = $transfer->show($req(['name' => 'example', 'tld' => 'unsold'], 'GET'))->getData();
+    same(['We don’t offer transfers for .unsold domains. Contact support for help transferring this domain.', []], [$linked['error'], $linked['results']], 'A transfer link with an unsupported ending says so instead of checking .com');
+    expect(str_contains((string) $forged['notice'], '.unsold isn’t available here.'), 'Register says a linked unsold ending is not offered');
+    same('We don’t offer transfers for this ending. Contact support for help transferring this domain.', $transfer->show($req(['name' => 'example', 'tld' => '<b>'], 'GET'))->getData()['error'], 'A malformed ending is not echoed');
     $policies::where('tld', 'com')->update(['register_enabled' => false]);
     Illuminate\Support\Facades\Cache::flush();
     same('ai', $controller->search($req([], 'GET'))->getData()['preferred'], 'Without .com the first TLD A to Z stays the default');
