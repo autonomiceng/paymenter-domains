@@ -106,6 +106,9 @@ final readonly class OwnedDomains
     /** Who gets the auth code email. */
     public static function authCodeRecipient(Domain $d): string
     { return $d->registrar_key==='namesilo'?'admin contact email':'registrant email'; }
+    /** Who sends it: the registrar mails the code itself, so no mail from us follows. */
+    public static function authCodeSender(Domain $d): string
+    { return $d->registrar_key==='namesilo'?'NameSilo':'Enom'; }
     /** The domain and registrar take this change at all, whatever a switch says right now. */
     private static function supported(Domain $d, ?Capabilities $caps, string $cap): bool
     { return $d->status==='active' && $d->service?->status==='active' && $caps?->get($cap==='srv'?'dns':$cap)->support===Support::Supported; }
@@ -218,7 +221,7 @@ final readonly class OwnedDomains
                     // Only a confirmed readback supplies current nameservers; otherwise the form starts empty.
                     $management['nameservers']['current']=self::storedNameservers($d); }
                 if (isset($management['contacts'])) { $management['contacts']+=self::contactForm($d,$contacts)+['digest'=>hash('sha256',json_encode($contacts,JSON_THROW_ON_ERROR))]; }
-                if (isset($management['auth_code_email'])) { $management['auth_code_email']['recipient']=self::authCodeRecipient($d); }
+                if (isset($management['auth_code_email'])) { $management['auth_code_email']['recipient']=self::authCodeRecipient($d); $management['auth_code_email']['sender']=self::authCodeSender($d); }
                 // Lock and privacy as last read from the registrar (a confirmed change first, then the sync); null until read.
                 foreach (['lock'=>'locked','privacy'=>'privacy'] as $cap=>$fact) { if (isset($management[$cap])) { $management[$cap]['state']=self::storedFlag($d,$cap,$fact); } }
             }

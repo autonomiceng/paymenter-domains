@@ -157,13 +157,13 @@
 @endcomponent
 @endif
 @elseif ($cap === 'auth_code_email')
-<span class="domains-row__v"><span class="domains-muted">We email it to the {{ $section['recipient'] }}</span></span>
+<span class="domains-row__v"><span class="domains-muted">{{ isset($section['sender']) ? $section['sender'].' emails it' : 'We email it' }} to the {{ $section['recipient'] }}</span></span>
 @if ($section['actions'])
 <span class="domains-row__a"><button type="submit" form="form-auth_code_email" class="domains-a domains-linkbtn">Email code</button></span>
 <form id="form-auth_code_email" method="POST" action="{{ $section['url'] }}" class="domains-owner-form" data-confirm>
 @include('domains::partials.form-key', ['action' => 'auth_code_email'])
 @include('domains::partials.owner-confirm', ['id' => 'auth_code_email', 'open' => $confirmStep === 'auth_code_email', 'cancel' => $show, 'title' => 'Email the auth code?', 'button' => 'Email auth code', 'tone' => 'primary',
-    'risk' => 'We’ll email it to the '.$section['recipient'].'.'])
+    'risk' => (isset($section['sender']) ? $section['sender'].' emails it' : 'We’ll email it').' to the '.$section['recipient'].'.'])
 </form>
 @endif
 @endif
