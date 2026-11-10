@@ -22,9 +22,23 @@ $probe=new ReflectionProperty(Paymenter\Extensions\Servers\Domains\Catalogue\Cal
 $probe->setValue(null,[]);
 $livewire=new class {public array $mountedActions=['sync'];};
 foreach ([(string)$t->tld,null] as $scope) {
+    $livewire->mountedActions=['sync'];
+    session()->forget('filament.notifications');
     (SettingsActions::syncAll($server,tld:$scope)->getActionFunction())([], $livewire);
     Filament\Notifications\Notification::assertNotified(Filament\Notifications\Notification::make()->success()->title('Price sync queued')->body(SettingsActions::syncQueued($scope)));
     same([],$livewire->mountedActions,'The completed action closes its dialog');
+}
+// Refused enqueue reports danger only, and still closes the mounted dialog.
+config(['queue.connections.database.retry_after'=>1]);
+foreach([(string)$t->tld,null] as $scope){
+    session()->forget('filament.notifications');$livewire->mountedActions=['sync'];
+    (SettingsActions::syncAll($server,tld:$scope)->getActionFunction())([],$livewire);
+    $notifications=session('filament.notifications',[]);
+    same(1,count($notifications),'Refused sync sends exactly one notification');
+    $notice=reset($notifications);
+    same(["Couldn't sync prices",'danger',sprintf(Paymenter\Extensions\Servers\Domains\Jobs\SyncPrices::WORKER,75)],
+        [$notice['title'],$notice['status'],$notice['body']],'Refused sync sends danger without success');
+    same([],$livewire->mountedActions,'Refused sync closes the dialog');
 }
 $probe->setValue(null,null);
 Illuminate\Support\Facades\Queue::assertPushed(Paymenter\Extensions\Servers\Domains\Jobs\SyncPrices::class);
