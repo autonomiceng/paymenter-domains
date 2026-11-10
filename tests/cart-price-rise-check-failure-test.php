@@ -23,10 +23,10 @@ foreach([true,false] as $risen){
     if($risen){
         same('Your cart changed',$notice['title']??null,'A price rise shows the cart changed notice when the check fails');
         same([$line->id=>'1.00'],$notice['was']??null,'The notice keeps the price the customer last saw');
-        expect(!in_array(CartCheckoutRefresh::unchecked(['risen-price-placeholder.com']),$messages($component),true),'A price rise does not say the domain could not be checked');
+        expect(!in_array('We couldn’t confirm the price and term for risen-price-placeholder.com with the registrar, so checkout is paused. Try again in a few minutes, or remove it from your cart.',$messages($component),true),'A price rise does not say the domain could not be checked');
     }else{
         expect(($notice['title']??null)!=='Your cart changed'&&($notice['was']??[])===[],'No price change shows no cart changed notice');
-        same([CartCheckoutRefresh::UNCHECKED_TITLE,'We couldn’t confirm the price and term for risen-price-placeholder.com with the registrar, so checkout is paused. Try again in a few minutes, or remove it from your cart.',['risen-price-placeholder.com']],
+        same(['We couldn’t confirm your domain','We couldn’t confirm the price and term for risen-price-placeholder.com with the registrar, so checkout is paused. Try again in a few minutes, or remove it from your cart.',['risen-price-placeholder.com']],
             [$notice['title']??null,$notice['text']??null,$notice['names']??null],'A failed check with no price change says why checkout waits, in the cart notice');
         same([],$messages($component),'The reason is the cart notice, not a passing toast');
     }
