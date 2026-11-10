@@ -6,7 +6,57 @@ require_once __DIR__.'/Support/staff-panel.php';
 use Illuminate\Support\Facades\{Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment,ManagementRequest,RequestBudget,RequestContext,RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{Glue as NameSiloGlue,Management as NameSiloManagement,ObservationReader as NameSiloObservationReader};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,ObservationProjection,ObservationRecords,ObservationSchema,ObservationWork,OwnerRecords,ReadDeferred};
+// Empty TEST list captured on 2026-11-10; only the request IP is replaced with a documentation address.
+$emptyGlueReply='{"request":{"operation":"listRegisteredNameServers","ip":"192.0.2.10"},"reply":{"code":300,"detail":"success"}}';
+$glueReply=$emptyGlueReply;$glueCalls=[];
+$glueBinding=new AccountBinding('namesilo',1,Environment::Test,'synthetic-account');
+$glueWire=static function($origin,$command,$parameters,$timeout)use(&$glueReply,&$glueCalls):string {
+ same('https://ote.namesilo.com/apibatch',$origin,'Glue observation stays on the TEST background route');
+ expect($timeout>0&&$timeout<=25000,'Glue observation wire has a bounded deadline');$glueCalls[]=$command;
+ if($command==='listRegisteredNameServers'){same(['domain'=>'example.com'],$parameters,'Glue read names the bound domain');return $glueReply;}
+ $reply=['code'=>300,'detail'=>'synthetic']+match($command){
+  'getDomainInfo'=>['created'=>'2020-01-01','expires'=>'2028-01-01','status'=>'Active','locked'=>'Yes','private'=>'No','auto_renew'=>'No',
+   'nameservers'=>[['nameserver'=>'ns1.dnsowl.com'],['nameserver'=>'ns2.dnsowl.com']],
+   'contact_ids'=>array_fill_keys(['registrant','administrative','technical','billing'],'900001')],
+  'contactList'=>['contact'=>['contact_id'=>'900001','first_name'=>'Synthetic','last_name'=>'Person','company'=>'','address'=>'1 Example Street','address2'=>'',
+   'city'=>'Portland','state'=>'OR','zip'=>'97201','country'=>'US','email'=>'synthetic@example.com','phone'=>'+1.5035550123']],
+  default=>throw new LogicException('Unexpected glue observation command'),
+ };
+ return json_encode(['request'=>['operation'=>$command],'reply'=>$reply],JSON_THROW_ON_ERROR);
+};
+$glueReader=new NameSiloObservationReader($glueBinding,$glueWire);
+$glueContext=fn()=>new RequestContext($glueBinding,RequestOrigin::Background,$clock->now()->modify('+250 seconds'),new RequestBudget(25),$clock,stopOnReadFailure:true);
+$glueRequest=new ManagementRequest($glueBinding,'empty-glue','example.com','discovery',[]);
+$knownGlue=['ns1.example.com'=>'8.8.8.8'];
+$emptyGlue=$glueReader->discover($glueRequest,$glueContext(),$knownGlue);
+same(['state'=>'complete','records'=>[]],$emptyGlue['glue'],'Captured successful omitted hosts proves zero observed glue');
+same('complete',$emptyGlue['settings']['contacts']['state'],'Empty glue does not leave contacts Missing');
+same(['registrant','admin','tech','auxbilling'],array_keys($emptyGlue['settings']['contacts']['facts']['contacts']),'All four contact roles are observed');
+same(['getDomainInfo','listRegisteredNameServers','contactList'],$glueCalls,'Empty glue reads the shared contact once and sends no writes');
+expect(!isset($emptyGlue['failure_code'])&&!isset($emptyGlue['failed_family']),'Captured empty glue has no observation failure');
+try {NameSiloGlue::records(json_decode($emptyGlueReply,true,24,JSON_THROW_ON_ERROR)['reply'],'example.com');expect(false,'Shared glue parser must reject omitted hosts');}
+catch(DomainException $e){same('Glue list unavailable.',$e->getMessage(),'Shared glue parser remains strict');}
+try {(new NameSiloManagement($glueBinding,$glueWire))->discover($glueRequest,$glueContext());expect(false,'Management must reject omitted hosts');}
+catch(DomainException $e){same('Glue list unavailable.',$e->getMessage(),'Management glue read remains strict');}
+foreach([
+ ['request'=>['operation'=>'listRegisteredNameServers'],'reply'=>['code'=>280,'detail'=>'failed']],
+ ['request'=>['operation'=>'getDomainInfo'],'reply'=>['code'=>300,'detail'=>'success']],
+ ['request'=>['operation'=>'listRegisteredNameServers'],'reply'=>['code'=>300]],
+ ['request'=>['operation'=>'listRegisteredNameServers'],'reply'=>['code'=>300,'detail'=>'success','hosts'=>'invalid']],
+]as$badGlue){
+ $glueReply=json_encode($badGlue,JSON_THROW_ON_ERROR);$glueCalls=[];
+ $failedGlue=$glueReader->discover($glueRequest,$glueContext(),$knownGlue);
+ same(['state'=>'partial','records'=>$knownGlue],$failedGlue['glue'],'An invalid glue reply never proves an empty list');
+ same('glue',$failedGlue['failed_family'],'An invalid glue reply retains its failed family');
+ same('complete',$failedGlue['settings']['contacts']['state'],'A failed glue read does not block independent contacts');
+ same(['getDomainInfo','listRegisteredNameServers','contactList'],$glueCalls,'Contact read follows a failed glue read without writes');
+}
+$glueReply='{"request":{"operation":"listRegisteredNameServers"},"reply":{"code":300,"detail":"success","hosts":[{"host":"ns2","ip":"8.8.4.4"}]}}';
+$nextGlue=$glueReader->discover($glueRequest,$glueContext(),$knownGlue);
+same(['state'=>'complete','records'=>['ns2.example.com'=>'8.8.4.4']],$nextGlue['glue'],'A later successful list replaces old glue after a failed read');
+expect(!isset($nextGlue['failure_code'])&&!isset($nextGlue['failed_family']),'A later valid reply clears the glue failure');
 // Independent watermark/glue scenario starts from proven empty record lists.
 $state->dns=[];$state->srv=[];$state->ds=[];$clock->instant=$clock->now()->modify('+61 seconds');same('refreshed',$observer->run($d->id,readRecords:true),'Empty current record premise');
 // Same-clock management readbacks overlay only after the snapshot sequence watermark.
