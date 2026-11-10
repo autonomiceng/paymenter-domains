@@ -268,13 +268,16 @@ final readonly class OwnedDomains
         if ($management && $forms) {
             $all=array_merge(...array_values(array_map(fn($section)=>array_keys($section['actions']),$management)));
             try { $allowed=Runtime::management($d,$this->engine)?->available($d->service->user,$d,$this->ports->forDomain($d),$all,$refused)??[]; } catch (\Throwable) { $allowed=[]; }
-            // While one change runs the registrar takes no other, so the other rows keep their values and say when they open.
-            $busy=array_key_first(array_filter($progressBySetting,fn($row)=>$row['pending']));
+            // While one change runs the registrar takes no other (DomainManagement::available refuses with its id), so the rows
+            // the registrar supports keep their values and say when they open.
+            $busy=is_int($refused)?array_key_first(array_filter($progressBySetting,fn($row)=>$row['pending'])):null;
             $busyLabel=$busy===null?null:mb_strtolower(collect($management)->first(fn($section,$key)=>ManagementProgress::setting($key)===$busy)['label']??str_replace('_',' ',$busy));
             foreach ($management as $key=>&$section) {
+                $wanted=array_keys($section['actions']);
                 $section['actions']=array_intersect_key($section['actions'],array_flip($allowed));
                 if ($section['actions'] || isset($progressBySetting[ManagementProgress::setting($key)])) { continue; }
-                if ($busyLabel!==null) { $section['waiting']='Opens when the '.$busyLabel.' change finishes.'; } else { unset($management[$key]); }
+                $supported=$caps!==null&&collect($wanted)->contains(fn($action)=>$caps->get(DomainManagement::capability($action))->support===Support::Supported);
+                if ($busyLabel!==null && $supported) { $section['waiting']='Opens when the '.$busyLabel.' change finishes.'; } else { unset($management[$key]); }
             } unset($section);
             $unavailable=!array_filter($management,fn($section)=>$section['actions']) && !array_filter($progressBySetting,fn($row)=>$row['pending']);
         }
