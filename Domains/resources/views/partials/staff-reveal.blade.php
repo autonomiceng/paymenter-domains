@@ -1,10 +1,11 @@
-{{-- MIT, Copyright (c) 2026 Autonomic Engineering. Staff one-line texts (OneLine) that the browser cuts: in a row that opens nothing, a cut text takes a tab stop, kept right as text, widths and fonts change; keyboard focus on a cut text, or on the row link around it, shows the whole text in an overlay that leaves the table as it is. --}}
+{{-- MIT, Copyright (c) 2026 Autonomic Engineering. Staff one-line texts (OneLine) that the browser cuts: in a row that opens nothing, a cut text takes a tab stop, kept right as text, widths and fonts change; keyboard focus on a cut text, or on the row link around it, shows the whole text in an overlay that leaves the table as it is. An overlay too tall for the screen scrolls by wheel, arrow and Page keys, and focus stays on the text. --}}
 <script data-domains-reveal data-navigate-once>
 (() => {
     if (window.domainsReveal) return;
     window.domainsReveal = true;
     const ITEMS = '.domains-cut,.domains-line,.domains-name-cell', OWN = 'data-domains-focus';
     const observed = new WeakSet();
+    const SCROLL = 'data-domains-scroll', KEYS = { ArrowDown: [1, 'line'], ArrowUp: [-1, 'line'], PageDown: [1, 'page'], PageUp: [-1, 'page'] };
     let overlay = null, anchor = null, queued = false;
     // Cut: the item, or a block inside it, is narrower than its text. Inline children have no box of their own.
     const cut = item => [item, ...item.children].some(box => box.clientWidth > 0 && box.scrollWidth > box.clientWidth);
@@ -35,6 +36,8 @@
         const below = box.bottom + gap, above = box.top - gap - height;
         const top = below + height <= innerHeight - edge ? below : above >= edge ? above : innerHeight - edge - height;
         overlay.style.top = `${Math.max(edge, top)}px`;
+        // Only an overlay whose text still overflows takes the mouse (to scroll); otherwise hover reaches the rows under it.
+        overlay.toggleAttribute(SCROLL, overlay.scrollHeight > overlay.clientHeight);
     }
     function show(items) {
         if (!overlay?.isConnected) {
@@ -42,10 +45,13 @@
             overlay.className = 'domains-reveal';
             // Screen readers already read the whole text in the cell.
             overlay.setAttribute('aria-hidden', 'true');
+            // A press on it would move focus off the text and close it.
+            overlay.addEventListener('mousedown', event => event.preventDefault());
         }
         overlay.textContent = items.map(item => item.innerText.replace(/\s+/g, ' ').trim()).join('\n');
         anchor = items[0];
         overlay.hidden = false;
+        overlay.scrollTop = 0;
         place();
     }
     function hide() {
@@ -58,8 +64,17 @@
         items.length ? show(items) : hide();
     });
     document.addEventListener('focusout', hide);
-    document.addEventListener('keydown', event => { if (event.key === 'Escape') hide(); });
-    addEventListener('scroll', place, true);
+    // While the text (or its row link) keeps focus, arrow and Page keys scroll an overflowing overlay, and fall through to
+    // the page when it cannot scroll further. Tab still moves on, and Escape closes it.
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape') return hide();
+        const [way, size] = KEYS[event.key] ?? [];
+        if (!way || !anchor || !overlay.hasAttribute(SCROLL) || event.altKey || event.ctrlKey || event.metaKey) return;
+        const before = overlay.scrollTop, line = parseFloat(getComputedStyle(overlay).lineHeight) || 20;
+        overlay.scrollTop += way * (size === 'line' ? line : Math.max(line, overlay.clientHeight - line));
+        if (overlay.scrollTop !== before) event.preventDefault();
+    });
+    addEventListener('scroll', ({ target }) => { if (target !== overlay) place(); }, true);
     addEventListener('resize', place);
     new MutationObserver(records => { if (records.some(record => !overlay?.contains(record.target))) queue(); })
         .observe(document.documentElement, { childList: true, subtree: true, characterData: true });

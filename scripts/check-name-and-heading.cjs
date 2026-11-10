@@ -23,6 +23,8 @@ const SCOPES = ['lists', 'managed'];
 const FONT = 'vendor/dompdf/dompdf/lib/fonts/DejaVuSans.ttf';
 // The longest valid address: a 64-character local part and labels of 63, 63, 56 and 4 characters (254 in all).
 const LONGEST = `${'l'.repeat(64)}@${'a'.repeat(63)}.${'b'.repeat(63)}.${'c'.repeat(56)}.test`;
+// The same shape in wide letters: taller than a 225px screen, so the overlay must scroll.
+const WIDEST = `${'W'.repeat(64)}@${'W'.repeat(63)}.${'W'.repeat(63)}.${'W'.repeat(56)}.test`;
 // Two frames: the reveal script's queued scan and its resize observer have run.
 const frames = () => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)));
 
@@ -253,36 +255,85 @@ async function main() {
 
     // A short screen (320 by 225 CSS px, 400% zoom of 1280 by 900): the longest address, focused near the top, has no room
     // below or above. Its overlay stays inside the viewport and shows all of it.
-    async function shortScreen(name, item) {
-        await page.setViewportSize({ width: 320, height: 225 });
-        const got = await item.evaluate(async (item, longest) => {
+    // Short screens: 320 by 225 (1280 by 900 at 400%) and 640 by 450 (at 200%), with the longest valid address in narrow
+    // and in wide letters. The overlay stays inside the viewport and every part of the address can be read: it fits, or
+    // it takes the mouse and scrolls by wheel and by arrow and Page keys while the text keeps focus.
+    async function shortScreen(name, located) {
+        // A handle, not the locator: the locator finds the item by the text these cases replace.
+        const item = await located.elementHandle();
+        for (const [width, height] of [[320, 225], [640, 450]]) for (const address of [LONGEST, WIDEST]) {
+            await page.setViewportSize({ width, height });
+            await shortAddress(`${name}, ${width} by ${height}, ${address === LONGEST ? 'narrow' : 'wide'} letters`, item, address);
+        }
+    }
+
+    async function shortAddress(name, item, address) {
+        const state = () => item.evaluate(item => {
+            const overlay = [...document.querySelectorAll('.domains-reveal')].find(node => !node.hidden && node.getClientRects().length);
+            const box = overlay?.getBoundingClientRect();
+            return { focused: document.activeElement === item, page: scrollY, view: [innerWidth, innerHeight],
+                overlay: overlay ? { text: overlay.textContent, box: [box.left, box.top, box.right, box.bottom], scroll: overlay.scrollTop,
+                    room: overlay.scrollHeight - overlay.clientHeight, sideways: overlay.scrollWidth > overlay.clientWidth,
+                    mouse: getComputedStyle(overlay).pointerEvents !== 'none' } : null };
+        });
+        const anchor = await item.evaluate(async (item, address) => {
             const settle = () => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)));
             const walker = document.createTreeWalker(item, NodeFilter.SHOW_TEXT);
             let node;
             while ((node = walker.nextNode()) && !node.textContent.trim());
-            node.textContent = longest;
+            node.textContent = address;
             // Room to scroll the text to 60px from the top.
             document.body.style.paddingBottom = '1000px';
             await settle();
             scrollBy(0, item.getBoundingClientRect().top - 60);
             await settle();
-            const anchor = item.getBoundingClientRect();
             item.focus({ preventScroll: true, focusVisible: true });
             await settle();
-            const overlay = [...document.querySelectorAll('.domains-reveal')].find(node => !node.hidden && node.getClientRects().length);
-            const box = overlay?.getBoundingClientRect();
-            const result = { anchor: [anchor.top, anchor.bottom], view: [innerWidth, innerHeight], focused: document.activeElement === item,
-                overlay: overlay ? { text: overlay.textContent, box: [box.left, box.top, box.right, box.bottom],
-                    all: overlay.scrollHeight <= overlay.clientHeight && overlay.scrollWidth <= overlay.clientWidth } : null };
-            item.blur();
-            return result;
-        }, LONGEST);
-        check(got.focused && got.overlay !== null, `${name}: on a short screen, focus shows the overlay`);
-        if (!got.overlay) return;
-        const [left, top, right, bottom] = got.overlay.box, [width, height] = got.view;
+            const box = item.getBoundingClientRect();
+            return [box.top, box.bottom];
+        }, address);
+        const shown = await state();
+        check(shown.focused && shown.overlay !== null, `${name}: focus shows the overlay`);
+        if (!shown.overlay) return;
+        const [left, top, right, bottom] = shown.overlay.box, [width, height] = shown.view;
         check(left >= 0 && top >= 0 && right <= width && bottom <= height,
-            `${name}: on a short screen, the overlay stays inside the viewport (${got.overlay.box.map(Math.round)} in ${width} by ${height}, text at ${got.anchor.map(Math.round)})`);
-        check(got.overlay.all && words(got.overlay.text) === LONGEST, `${name}: on a short screen, the overlay shows the whole address`);
+            `${name}: the overlay stays inside the viewport (${shown.overlay.box.map(Math.round)} in ${width} by ${height}, text at ${anchor.map(Math.round)})`);
+        check(words(shown.overlay.text) === address && !shown.overlay.sideways, `${name}: the overlay holds the whole address, wrapped`);
+        if (shown.overlay.room <= 0) check(!shown.overlay.mouse, `${name}: an overlay that fits leaves the mouse to the rows under it`);
+        else {
+            check(shown.overlay.mouse, `${name}: an overflowing overlay takes the mouse`);
+            const keys = async key => {
+                for (let presses = 0; presses < 40; presses++) {
+                    const now = await state();
+                    if (!now.overlay || (key.endsWith('Down') ? now.overlay.scroll >= now.overlay.room - 1 : now.overlay.scroll <= 0)) break;
+                    await page.keyboard.press(key);
+                }
+                return state();
+            };
+            for (const [down, up] of [['PageDown', 'PageUp'], ['ArrowDown', 'ArrowUp']]) {
+                const end = await keys(down);
+                check(end.focused && end.overlay && end.overlay.scroll >= end.overlay.room - 1 && end.page === shown.page,
+                    `${name}: ${down} scrolls the overlay to the end of the address, the text keeps focus, the page stays`);
+                const start = await keys(up);
+                check(start.focused && start.overlay && start.overlay.scroll <= 0, `${name}: ${up} scrolls the overlay back to the start`);
+            }
+            await page.mouse.move((left + right) / 2, (top + bottom) / 2);
+            for (let turns = 0; turns < 10; turns++) await page.mouse.wheel(0, 120);
+            await item.evaluate(() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done))));
+            const wheeled = await state();
+            check(wheeled.focused && wheeled.overlay && wheeled.overlay.scroll >= wheeled.overlay.room - 1 && wheeled.page === shown.page,
+                `${name}: the mouse wheel scrolls the overlay to the end, not the page`);
+            await page.mouse.down();
+            await page.mouse.up();
+            check((await state()).focused, `${name}: a press on the overlay keeps focus on the text`);
+            await page.mouse.move(0, 0);
+        }
+        await page.keyboard.press('Escape');
+        const closed = await state();
+        check(closed.focused && closed.overlay === null, `${name}: Escape closes the overlay`);
+        await page.keyboard.press('Tab');
+        check(!(await state()).focused, `${name}: Tab moves on (no focus trap)`);
+        await item.evaluate(item => item.blur());
     }
 
     try {
