@@ -372,8 +372,9 @@ class ViewDomain extends ViewRecord
     private static function complimentaryTerms(Domain $d): array
     {
         if(!Staff::can('admin.domains.manage')||!Staff::can('admin.domains.fund')||!Staff::can(Staff::COSTS)||$d->status!=='active'||$d->service?->status!=='active'){return [];}
-        if(self::renewalUnsettled($d)){return [];}
-        try{if(\Paymenter\Extensions\Servers\Domains\Services\RenewalStop::stopped(\Paymenter\Extensions\Servers\Domains\Services\RenewalStop::read($d))||($d->renewal_policy['automatic_spend_paused']??false)){return [];}
+        // A renewal row that cannot be read is unsettled as far as this offer goes.
+        try{if(self::renewalUnsettled($d)){return [];}
+            if(\Paymenter\Extensions\Servers\Domains\Services\RenewalStop::stopped(\Paymenter\Extensions\Servers\Domains\Services\RenewalStop::read($d))||($d->renewal_policy['automatic_spend_paused']??false)){return [];}
             return array_filter(app(\Paymenter\Extensions\Servers\Domains\Services\RenewalCycles::class)->complimentaryOptions((int)$d->id,Auth::user())['terms'],fn($t)=>$t['cost']!==null);
         }catch(\Throwable){return [];}
     }
