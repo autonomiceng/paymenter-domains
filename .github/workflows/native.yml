@@ -119,9 +119,14 @@ jobs:
       - name: Run native tests
         env:
           TESTS: ${{ toJSON(matrix.tests) }}
-          DOMAINS_TEST_JOBS: 4
+        # Up to four workers, never more than tests: each worker copies the whole fixture first.
         run: |
-          python3 -c 'import json, os, sys; os.execv(sys.executable, [sys.executable, "scripts/test.py", "--memory-mib", "8192", "--only", *json.loads(os.environ["TESTS"])])'
+          python3 - <<'EOF'
+          import json, os, sys
+          tests = json.loads(os.environ['TESTS'])
+          os.environ['DOMAINS_TEST_JOBS'] = str(min(4, len(tests)))
+          os.execv(sys.executable, [sys.executable, 'scripts/test.py', '--memory-mib', '8192', '--only', *tests])
+          EOF
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
