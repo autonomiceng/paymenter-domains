@@ -28,7 +28,7 @@ final class DomainListRow
         return match ($order['state'] ?? null) {
             'unpaid' => ['missing' => true, 'cause' => ucfirst($word).' starts after you pay', 'fix' => ['label' => 'Pay invoice', 'url' => $order['invoice'], 'button' => true]],
             'paid' => ['missing' => true, ...match ($order['next'] ?? null) {
-                'awaiting_code' => ['cause' => $basis.'Add the auth code to start the transfer.', 'fix' => null],
+                'awaiting_code' => ['cause' => Missing::fills(self::WAITS[$word]), 'fix' => null],
                 'setup_required' => ['cause' => $basis.'Finish setup to start the '.$word.'.', 'fix' => null],
                 'setup_optional' => ['cause' => $basis.'We’re starting the '.$word.'. You can choose nameservers before it’s sent.', 'fix' => null],
                 // With no notice above it, a complimentary row says what the page notice says.
