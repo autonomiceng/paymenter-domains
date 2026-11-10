@@ -17,6 +17,8 @@
     if ($state === 'idle') { $statusClass = 'domains-checking'; }
     // Replace mode (Change on the cart): the chosen name takes over that cart line.
     $replace ??= null;
+    // The ending asked for is not sold here, so this row is a different name.
+    $instead ??= false;
 @endphp
 <li class="domains-result {{ ($first ?? false) ? 'is-first' : '' }}" data-domains-result data-domain="{{ $result['domain'] }}" data-state="{{ $state }}">
     <div class="domains-result__name"><span>{{ $result['sld'] }}</span><wbr><span class="domains-tld">.{{ $result['tld'] }}</span>@if ($result['testEnvironment'] ?? false) <span class="domains-badge domains-tone-muted">Test</span>@endif</div>
@@ -40,7 +42,11 @@
                 <div><dt>Total</dt><dd class="domains-result__price"><strong>{{ $result['price'] }}</strong></dd></div>
                 <div><dt>Annual renewal</dt><dd>{{ $result['renew'] }} / year</dd></div>
                 </dl>
+                @if ($instead && !$replace && $state === 'available')
+                <button type="submit" class="domains-btn domains-btn--secondary">Add {{ $result['domain'] }} instead</button>
+                @else
                 <button type="submit" class="domains-btn domains-btn--{{ $state === 'available' ? 'primary' : 'secondary' }}" aria-label="{{ $replace ? 'Use '.$result['domain'].($replace['name'] ? ' instead of '.$replace['name'] : '') : ($state === 'available' ? 'Add '.$result['domain'].' to cart' : 'Transfer '.$result['domain'].' to us') }}">{{ $replace ? 'Use this name' : ($state === 'available' ? 'Add to cart' : 'Transfer') }}</button>
+                @endif
             </form>
         @elseif ($state === 'in_cart')<a class="domains-btn domains-btn--secondary" href="{{ route('cart') }}">Go to cart</a>
         @elseif (in_array($state, ['error', 'busy', 'transfer_unconfirmed'], true))<button type="button" class="domains-btn domains-btn--secondary" data-domains-retry>Retry</button>@endif

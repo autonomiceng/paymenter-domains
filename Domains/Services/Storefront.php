@@ -150,7 +150,7 @@ class Storefront
         if ($driver->binding()->fingerprint !== $selection->fingerprint) { throw new \DomainException('Search account changed.'); }
         $started = $this->clock->now();
         // Installed contexts share interactive headroom with background work.
-        $context = new RequestContext($driver->binding(), RequestOrigin::Interactive, $started->modify('+10 seconds'), new RequestBudget(1), $this->clock, Runtime::limiter());
+        $context = new RequestContext($driver->binding(), RequestOrigin::Interactive, $started->modify('+'.self::SEARCH_SECONDS.' seconds'), new RequestBudget(1), $this->clock, Runtime::limiter());
         $query = new Query($name, Action::Register, $offers ? (int) array_key_first($offers) : 1);
         $r = null; $admitUntil = $started->modify('+'.self::ADMISSION_SECONDS.' seconds');
         // A refusal here is local admission only: no request reached the registrar. Background reads give way to a waiting
@@ -166,11 +166,14 @@ class Storefront
         $driver->binding()->requireMatch($r->binding);
         $this->catalogue()?->validate($selection);
         if ($r->disposition !== Disposition::Accepted || $context->now() >= $context->deadline) {
-            \Illuminate\Support\Facades\Log::warning('Domains search failed.',CartHandoffFailure::context(new EligibilityUnconfirmed($r->registrarCode),'search'));
-            return $transferOnly?$this->transferRefusal($base):[...$base,'status'=>'error'];
+            // Safe diagnostics only: whether the answer came too late, and the read's disposition.
+            \Illuminate\Support\Facades\Log::warning('Domains search failed.',[...CartHandoffFailure::context(new EligibilityUnconfirmed($r->registrarCode),'search'),
+                'read_disposition' => $r->disposition->value, 'deadline_passed' => $context->now() >= $context->deadline,
+                'seconds' => $context->now()->getTimestamp() - $started->getTimestamp()]);
+            return $transferOnly?$this->transferRefusal($base):$this->unchecked($base);
         }
         if ($r->evidence()->premium === true) { return $transferOnly ? $this->transferRefusal($base, 'premium') : [...$base, 'status' => 'premium']; }
-        if ($r->evidence()->premium !== false || $r->evidence()->available === null) { return $transferOnly?$this->transferRefusal($base):[...$base,'status'=>'error']; }
+        if ($r->evidence()->premium !== false || $r->evidence()->available === null) { return $transferOnly?$this->transferRefusal($base):$this->unchecked($base); }
         if ($r->evidence()->available) {
             if ($transferOnly) { return $this->transferRefusal($base, 'transfer_not_registered'); }
             if (!$offers) { return [...$base, 'status' => 'held']; }
@@ -230,7 +233,16 @@ class Storefront
             'support' => !$known || in_array($reason, ['local_unavailable', 'ending', 'Transfer ending is not accepted.', 'transfer_maximum_term', 'premium', 'premium_name'], true)];
     }
 
-    /** Admission waits for one search: up to 25 short waits and 4 seconds, leaving the rest of the 10 second deadline for the read. */
+    /** A failed registrar check always says why and what to do next. */
+    private function unchecked(array $base): array
+    {
+        return [...$base, 'status' => 'error', 'support' => true,
+            'message' => 'We couldn’t get an answer from the registrar for this name. Retry in a minute.'];
+    }
+
+    /** One search may take this long in all. Enom TEST sometimes needs more than 10 seconds to answer a Check. */
+    private const SEARCH_SECONDS = 20;
+    /** Admission waits for one search: up to 25 short waits and 4 seconds, leaving the rest of the search deadline for the read. */
     private const ADMISSION_WAITS = 25;
     private const ADMISSION_SECONDS = 4;
     /** Short pause while another read holds the slot; no provider call or lock is held. */

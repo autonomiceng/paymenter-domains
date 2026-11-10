@@ -182,12 +182,13 @@
             row.querySelector('.domains-result__price').replaceChildren();
             row.querySelector('.domains-result__note').textContent = '';
             row.querySelector('.domains-result__action').replaceChildren();
-            let note = list.dataset.mode === 'transfer' ? 'We couldn’t check this transfer right now. Try again in a few minutes.' : '';
+            let note = list.dataset.mode === 'transfer' ? 'We couldn’t check this transfer right now. Try again in a few minutes.'
+                : 'We couldn’t check this name right now. Retry in a minute.';
             try {
                 const response = await fetch(list.dataset.domainsResults, {method: 'POST', credentials: 'same-origin',
                     headers: {'Content-Type': 'application/json', 'Accept': 'application/json',
                         'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''},
-                    body: JSON.stringify({domain: row.dataset.domain, ...(list.dataset.mode === 'transfer' ? {mode: 'transfer'} : {}), _request_key: list.dataset.requestKey, ...(list.dataset.replace ? {replace: list.dataset.replace} : {})})});
+                    body: JSON.stringify({domain: row.dataset.domain, ...(list.dataset.mode === 'transfer' ? {mode: 'transfer'} : {}), _request_key: list.dataset.requestKey, ...(list.dataset.replace ? {replace: list.dataset.replace} : {}), ...(list.dataset.instead ? {instead: 1} : {})})});
                 if (response.status === 429) note = 'Too many searches. Wait a minute, then retry.';
                 if (response.status === 419) note = 'This page expired. Reload to try again.';
                 if (!response.ok) throw new Error();
@@ -204,7 +205,7 @@
                 badge.className = list.dataset.mode === 'transfer' ? 'domains-result-label' : 'domains-badge domains-tone-warn'; badge.textContent = 'Couldn’t check'; status.append(badge);
                 row.querySelector('.domains-result__price').replaceChildren();
                 const message = row.querySelector('.domains-result__note'); message.textContent = note;
-                if (list.dataset.mode === 'transfer' && list.dataset.supportUrl) {
+                if (list.dataset.supportUrl && !/expired|Too many/.test(note)) {
                     const support = document.createElement('a'); support.className = 'domains-a';
                     support.href = list.dataset.supportUrl; support.textContent = 'Contact support'; message.append(' ', support);
                 }
