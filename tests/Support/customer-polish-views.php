@@ -25,8 +25,10 @@ use Paymenter\Extensions\Servers\Domains\Services\DomainSummaryStrings;
         same(['Every TLD we sell, with its register, renew and transfer price per year.'], array_map(fn($n) => $n->textContent, iterator_to_array($dom->query('//p[@class="domains-lede"]'))), 'D7 lede states the annual unit once');
         same(1, substr_count(strip_tags($html), 'per year'), 'D7 annual unit is said once');
         expect(!str_contains($html, '/yr'), 'D7 pricing never duplicates the annual suffix');
-        expect(str_contains($html, 'Prices plus tax where applicable.</p>') || str_contains($html, 'Prices plus tax where applicable. '.\Paymenter\Extensions\Servers\Domains\Presentation\FirstYearPrice::LIST.'</p>'),
-            'D7 annual footnote: tax, and why Register and Renew differ only when they do');
+        // These rows register for less than they renew, so the footnote says why; equal prices are in storefront-first-year-note-test.
+        $differs = collect($rows)->contains(fn ($r) => ($r['register'] ?? null) !== null && ($r['renew'] ?? null) !== null && $r['register'] !== $r['renew']);
+        same([true, 1], [$differs, substr_count($html, 'Prices plus tax where applicable. '.\Paymenter\Extensions\Servers\Domains\Presentation\FirstYearPrice::LIST.'</p>')],
+            'D7 annual footnote: tax, and why Register and Renew differ');
         expect(!str_contains($html, 'Longer terms are priced'), 'D7 annual pricing has no longer-term footnote');
     }
     $rows = $data['endings']; $rows[0]['terms'] = [2]; $rows[1]['terms'] = []; $rows[1]['renew'] = null;
