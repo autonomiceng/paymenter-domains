@@ -42,6 +42,12 @@ $registry->registerBoundReader($b, static function ($binding, $credentials) use 
 $seconds = 12;
 try { $status = $store->check('slow-placeholder.com')['status']; } catch (Throwable $e) { $status = 'refused: '.$e->getMessage(); }
 same('available', $status, 'A Check that answers after 12 seconds still finds the name available');
+// The search allows 20 seconds in all: an answer just inside counts. Past it the wire refuses the late answer, and the
+// check request fails with the reply covered below.
+foreach ([19 => 'available', 21 => 'refused: Registrar request deadline reached.'] as $seconds => $expected) {
+    try { $status = $store->check('slow-'.$seconds.'-placeholder.com')['status']; } catch (Throwable $e) { $status = 'refused: '.$e->getMessage(); }
+    same($expected, $status, 'A Check that answers after '.$seconds.' seconds');
+}
 // A Check cut off by the deadline comes back unknown from the transport; the row says why and what to do next.
 $seconds = 0; $disposition = Paymenter\Extensions\Servers\Domains\Data\Disposition::Unknown;
 config(['settings.tickets_disabled' => true, 'domains.support_url' => 'https://support.example.test/help']);
