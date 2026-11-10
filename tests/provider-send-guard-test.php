@@ -34,7 +34,7 @@ foreach([\Paymenter\Extensions\Servers\Domains\Data\Environment::Test,\Paymenter
             ReadCommand::Balance,ReadCommand::Tlds,ReadCommand::Expired=>[],
             ReadCommand::Order=>['OrderID'=>'123'],ReadCommand::Transfer=>['TransferOrderID'=>'123'],
             ReadCommand::Orders=>['BeginDate'=>'10/01/2026','EndDate'=>'10/02/2026','Start'=>1],
-            ReadCommand::HostStatus=>['CheckNSName'=>'ns1.example.com'],
+            ReadCommand::HostStatus=>['CheckNSName'=>'ns1.example.com'],ReadCommand::DomainsByNameserver=>['NameServer'=>'ns1.example.com'],
             ReadCommand::ProductPrice=>['TLD'=>'com','ProductType'=>10,'Years'=>1],
             ReadCommand::RetailPricing=>['TLDOnly'=>1,'Years'=>1],
             ReadCommand::DomainPricing=>['UseQtyEngine'=>1,'Years'=>1],

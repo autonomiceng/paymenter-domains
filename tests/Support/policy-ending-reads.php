@@ -111,6 +111,8 @@ $paths = [
         same(1, count($summaries->services($owner, [$service->id], $at + 2)), 'Native hosting summary remains owner scoped');
     },
 ];
+// The intent table check runs once per connection; warm it so both sizes compare steady reads.
+\Paymenter\Extensions\Servers\Domains\Services\NativeCancellation::withIntents(collect(), [], true);
 $observed = [];
 foreach ([10, 1500] as $size) {
     $fill($size);

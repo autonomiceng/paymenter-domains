@@ -52,9 +52,20 @@ foreach([null,new HistoryAcceptance($binding,'America/Los_Angeles',120,86400,'en
     $attempt=new AttemptEvidence($binding,$historyAttempt->query,'history-uncovered',1,ExecutionRecord::RecordedNull,SendState::PossiblySent,
         $historyAttempt->windowStart,$historyAttempt->windowEnd,seal:DispatchSeal::Sealed,historyAcceptance:$uncovered);
     expect(!($uncovered?->covers($attempt,$historyNow)??false),'Negative has no covering history acceptance');$beforeHistory=count($GLOBALS['enomWire']['forms']);
-    try{$generalReader->reconcile($attempt,$historyContext);throw new LogicException('Missing or lagging history acceptance must refuse before reads.');}
+    // A sealed attempt that may have been sent reads its domain facts, but uncovered history keeps the order history closed.
+    $uncoveredResult=$generalReader->reconcile($attempt,$historyContext);$uncoveredSent=array_column(array_slice($GLOBALS['enomWire']['forms'],$beforeHistory),'Command');
+    same(['GetDomainInfo','GetRenew','GetRegLock','GetWPPSInfo','GetDomainInfo','GetDomainExp'],$uncoveredSent,'Uncovered history reads domain facts but never the order history');
+    $uncoveredFacts=$uncoveredResult->result()->evidence();
+    same([false,[],Paymenter\Extensions\Servers\Domains\Data\Disposition::Unknown],
+        [$uncoveredFacts->historyComplete,$uncoveredFacts->candidates,$uncoveredResult->disposition],'Uncovered history never settles the attempt');
+}
+// Without a sealed attempt that may have been sent, uncovered history still refuses before any read.
+foreach([[ExecutionRecord::Absent,DispatchSeal::Absent,SendState::DefinitelyUnsent],[ExecutionRecord::RecordedNull,DispatchSeal::Unknown,SendState::PossiblySent]]as[$execution,$seal,$send]){
+    $attempt=new AttemptEvidence($binding,$historyAttempt->query,'history-unsent',1,$execution,$send,
+        $historyAttempt->windowStart,$historyAttempt->windowEnd,seal:$seal,historyAcceptance:null);$beforeHistory=count($GLOBALS['enomWire']['forms']);
+    try{$generalReader->reconcile($attempt,$historyContext);throw new LogicException('Unsent or unsealed attempt without history acceptance must refuse before reads.');}
     catch(DomainException $error){same('Captured TEST Purchase OrderID is required.',$error->getMessage(),'Uncovered history cannot substitute for a captured order');}
-    same($beforeHistory,count($GLOBALS['enomWire']['forms']),'Uncovered history sends no registrar request');
+    same($beforeHistory,count($GLOBALS['enomWire']['forms']),'Uncovered history on an unsent attempt sends no registrar request');
 }
 $closedQuery=new Paymenter\Extensions\Servers\Domains\Data\Query('closed-poll.example',Action::Register,1);$beforeClosed=count($GLOBALS['enomWire']['forms']);
 foreach([fn()=>$generalReader->quote($closedQuery,$readContext),fn()=>$generalReader->readDomain('closed-poll.example',$readContext),
@@ -181,9 +192,13 @@ $before=count($GLOBALS['enomWire']['forms']);$worker->operation($op->id);same($b
 same('registration_pending',$paused->domain->fresh()->status,'Processing-off paid TEST reservation remains registration pending');
 same('active',$op->domain->fresh()->status,'Captured-order registration completes to active before scheduler check');
 app(ObservationWork::class)->enroll((int)$server->id);$usedBeforePoll=enomTestSendCount();
+$queuedBefore=DB::table('domains_observation_work')->where('server_id',$server->id)->get(['id','domain_id','tries'])->map(fn($r)=>(array)$r)->all();
 $before=count($GLOBALS['enomWire']['forms']);$observation=app(ObservationWork::class)->tick();
 same('read_deferred',$observation[$server->id]['holding']??null,'Opted-in TEST registration skips general domain observation');
-same(0,DB::table('domains_observation_work')->where('server_id',$server->id)->count(),'General observation creates no queued domain reads');
+// Activation queues one first read of the new domain; the general tick adds none and runs none.
+$queued=DB::table('domains_observation_work')->where('server_id',$server->id)->get(['id','domain_id','tries'])->map(fn($r)=>(array)$r)->all();
+same($queuedBefore,$queued,'General observation creates no queued domain reads');
+same([[(int)$op->domain_id,0]],array_map(fn(array $r)=>[(int)$r['domain_id'],(int)$r['tries']],$queued),'Only the untried activation read of the new domain is queued');
 same($before,count($GLOBALS['enomWire']['forms']),'Observation tick sends no Enom reads');same($usedBeforePoll,enomTestSendCount(),'Observation tick reserves no Enom calls');
 $turn=DB::table('domains_runtime_turns')->where('server_id',$server->id)->first();
 if(!$turn){DB::table('domains_runtime_turns')->insert(['server_id'=>$server->id,'account_fingerprint'=>$binding->fingerprint,'operation_cursor'=>0,'domain_cursor'=>0,'tld_cursor'=>0,'turn'=>0,'due_at'=>0,'finished_at'=>0]);}
@@ -246,6 +261,9 @@ app(Paymenter\Extensions\Servers\Domains\Services\StaffOperations::class)->run($
 $used=enomTestSendCount();config(['domains.enom_test_sends_per_day'=>$used+5]);
 $runtimeTurn=DB::table('domains_runtime_turns')->where('server_id',$server->id)->first();if($runtimeTurn){DB::table('domains_runtime_turns')->where('id',$runtimeTurn->id)->update(['operation_cursor'=>0,'due_at'=>0]);}
 DB::table('domains_runtime_operations')->insertOrIgnore(['operation_id'=>$capOp->id]);DB::table('domains_runtime_operations')->where('operation_id',$capOp->id)->update(['due_at'=>0]);
+// Facts refreshes are covered separately; the synthetic fixture costs cannot rebuild renewal terms, so keep them not due here.
+$offerQueue=DB::table('domains_observation_queues')->where('server_id',$server->id);$work=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($offerQueue->value('offer_work'));
+foreach(array_keys($work['facts']??[]) as $ending){$work['facts'][$ending]['due_at']=$clock->now()->getTimestamp()+86400;}$offerQueue->update(['offer_work'=>json_encode($work,JSON_THROW_ON_ERROR)]);
 $before=count($GLOBALS['enomWire']['forms']);Cache::flush();Queue::fake();app(RuntimeWork::class)->tick();
 Queue::assertPushed(Paymenter\Extensions\Servers\Domains\Jobs\RunOperation::class,static fn($job)=>$job->operationId===$capOp->id);
 $worker->operation($capOp->id);

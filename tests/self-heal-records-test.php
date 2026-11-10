@@ -71,11 +71,13 @@ $recordPage=view('domains::partials.record-families',['recordFamilies'=>\Payment
 expect(str_contains($recordPage,'Last registrar read:')&&str_contains($recordPage,'Next registrar read:'),'Existing record rows show last and next reads');
 // The real closed gate must not replace an ownership-drift result with a healthy daily receipt.
 $readBindings->setProcessing($d->server_id,false);$observation->fault='owner';$q->update(['due_at'=>0]);$state->calls=[];
-for($try=1;$try<=5;$try++){
- $result=$worker->turn($queue,$guard);$job=(clone $q)->sole();
- $check($result===($try===5?'budget_exhausted':'unresolved'),'Closed-gate drift preserves unresolved retry/exhaustion at attempt '.$try);
- $check((int)$job->tries===$try,'Closed-gate drift keeps its failure count at attempt '.$try);
- $clock->instant=$clock->now()->setTimestamp((int)$job->due_at);
+// An active domain missing from the registrar account stops at its first read; later turns send nothing.
+$result=$worker->turn($queue,$guard);$job=(clone $q)->sole();
+$check($result==='domain_not_in_account','Closed-gate drift stops with the missing-domain cause');
+$check((int)$job->tries===1&&$job->safe_code==='domain_not_in_account','Closed-gate drift keeps its failure count and cause');
+for($try=2;$try<=5;$try++){
+ $clock->instant=$clock->now()->setTimestamp(max((int)$job->due_at,$clock->now()->getTimestamp()+3600));
+ $check($worker->turn($queue,$guard)==='idle'&&(int)(clone $q)->sole()->tries===1,'Stopped drift is not retried at turn '.$try);
 }
 $check(($d->fresh()->observation['drift']??false)===true,'Drift facts remain visible');
 $check(HoldingObservationWork::stopped($d->fresh()),'Closed-gate drift stops after bounded retries');

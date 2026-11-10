@@ -51,8 +51,9 @@ function storefrontQueryChecks(array $fixture, Storefront $store): void
         same($store->offer($ending, 'transfer', 1)['price'], $tenRows[$ending]['transfer'], 'Transfer matches strict current-price resolution');
     }
     same([1 => '$20.00'], $oneCheck['terms'], 'One-term check price parity');
-    same([1 => '$20.00', 2 => '$40.00', 3 => '$60.00', 4 => '$80.00', 5 => '$100.00',
-        6 => '$120.00', 7 => '$140.00', 8 => '$160.00', 9 => '$180.00', 10 => '$200.00'], $tenCheck['terms'], 'Ten-term exact price parity');
+    // Each term total is the first registration year plus renewal years at $21.00.
+    same([1 => '$20.00', 2 => '$41.00', 3 => '$62.00', 4 => '$83.00', 5 => '$104.00',
+        6 => '$125.00', 7 => '$146.00', 8 => '$167.00', 9 => '$188.00', 10 => '$209.00'], $tenCheck['terms'], 'Ten-term exact price parity');
     echo 'Cold catalogue reads: one term '.$oneQueries.', ten terms '.$tenQueries.'; check one '.$oneCheckQueries.', check ten '.$tenCheckQueries.".\n";
     expect($oneQueries > 0 && $tenQueries <= $oneQueries + 3 && $tenQueries <= 240, 'Cold catalogue query growth is bounded: '.$oneQueries.' / '.$tenQueries);
     expect($oneCheckQueries > 0 && $tenCheckQueries <= $oneCheckQueries + 1 && $tenCheckQueries <= 85, 'Interactive catalogue query growth is bounded: '.$oneCheckQueries.' / '.$tenCheckQueries);
@@ -80,6 +81,12 @@ function storefrontQueryChecks(array $fixture, Storefront $store): void
         if($reason==='unit'){
             expect(!isset($rows['qnet']),'Malformed normalized unit closes the ending instead of interpreting retained costs');
             same('held',$store->check('example.qnet')['status'],'Check rejects malformed normalized unit');
+        }elseif(in_array($reason,['unknown_cost','unknown_retail','future','unsynced'],true)){
+            // Longer registrations are priced from the first registration year, so losing its evidence closes every registration term.
+            same([],$rows['qnet']['terms'],'Current '.$reason.' closes every registration term priced from the first year');
+            same(null,$rows['qnet']['register'],'Current '.$reason.' never leaks retained native annual price');
+            same($before,$reads->calls,'Invalid-term catalogue is local only');
+            $result=$store->check('example.qnet');expect(($result['terms']??[])===[]&&!isset($result['term']),'Check offers no registration term without first-year evidence');
         }else{
             same(range(2,10),$rows['qnet']['terms'],'Current '.$reason.' rejects only the invalid term');
             same(null,$rows['qnet']['register'],'Current '.$reason.' never leaks retained native annual price');
@@ -97,8 +104,9 @@ function storefrontQueryChecks(array $fixture, Storefront $store): void
     $annualPrice = $native->product($catalogueTlds['qnet'], 'register')->plans()->where('billing_period', 1)->sole()->prices()->sole();
     DB::table('domains_prices')->where('id', $termPrice->id)->update(['retail' => '0.00']);
     DB::table('prices')->where('id', $annualPrice->id)->update(['price' => '0.00']);
-    same(range(2, 10), array_column(storefrontFreshEndings($store), null, 'tld')['qnet']['terms'], 'Matching zero retail is never an acquisition offer');
-    same(2, $store->check('example.qnet')['term'], 'Check refuses zero retail and keeps valid longer terms');
+    // Zero first-year retail is never an offer, and the longer terms priced from that year close with it.
+    same([], array_column(storefrontFreshEndings($store), null, 'tld')['qnet']['terms'], 'Matching zero retail is never an acquisition offer');
+    $zeroCheck = $store->check('example.qnet'); expect(($zeroCheck['terms'] ?? []) === [] && !isset($zeroCheck['term']), 'Check refuses zero retail and the terms priced from it');
     commerceReject(static fn () => $store->offer('qnet', 'register', 1));
     DB::table('domains_prices')->where('id', $termPrice->id)->update((array) $termPrice);
     DB::table('prices')->where('id', $annualPrice->id)->update(['price' => '20.00']);

@@ -14,6 +14,8 @@ use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
 function commerceFixture(bool $eligible = false, ?Closure $activation = null, Environment $environment = Environment::Test, string $ending = 'com', bool $active = true, ?Closure $authorize = null, array $registrars = ['enom','namesilo'], bool $nameSiloLocal = true, array $identities = []): array
 {
     if(!app()->bound(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)){app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new \Paymenter\Extensions\Servers\Domains\Tests\FakeClock(new DateTimeImmutable('2026-10-18T12:00:00Z')));}
+    // Installation republishes the retail rule through the runtime, so register it first as every production caller does.
+    if ($active && !app()->bound(\Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class)) { \Paymenter\Extensions\Servers\Domains\Services\Runtime::register(); }
     if ($active) { (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class);app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\RuntimePorts::class);
         // Fresh empty ports keep the installed catalogue contract, without retaining provider factories.
         $runtimePorts=new \Paymenter\Extensions\Servers\Domains\Services\RuntimePorts;

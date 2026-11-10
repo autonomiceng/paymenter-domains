@@ -19,6 +19,8 @@ config(['domains.namesilo_sandbox_enrollment.enabled'=>true]);
 $balanceClock=new Paymenter\Extensions\Servers\Domains\Tests\FakeClock(new DateTimeImmutable('2026-10-21 12:00:00',new DateTimeZone('UTC')));
 app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$balanceClock);
 // Prepare retained C6 catalogue behavior before exercising the extension lifecycle.
+// Installation republishes the retail rule through the runtime, so register it first as every production caller does.
+Paymenter\Extensions\Servers\Domains\Services\Runtime::register();
 (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
 (new Paymenter\Extensions\Servers\Domains\Domains)->installed();(new Paymenter\Extensions\Servers\Domains\Domains)->boot();
 same(['namesilo'],app(RegistrarRegistry::class)->keys(),'Production boot composes sandbox only');

@@ -19,15 +19,19 @@ $assertFamily=static function(string $label,?int $queued=null,?string $cause=nul
  foreach($familyViews() as $surface=>$html){
   $dom=new DOMDocument;@$dom->loadHTML('<?xml encoding="utf-8" ?>'.$html);$xp=new DOMXPath($dom);
   $nodes=$xp->query('//span[@data-record-family="'.$kind.'"]');expect($nodes->length>0,$surface.' renders the '.$kind.' family');
-  foreach($nodes as $node){same($label,trim($node->textContent),$surface.' family label: expected '.$label.', got '.trim($node->textContent));
+  // Customers see no mark for a complete read; the row says how many records it found.
+  $shown=$surface==='customer'&&$label==='Complete'?'':$label;
+  foreach($nodes as $node){same($shown,trim($node->textContent),$surface.' family label: expected '.$shown.', got '.trim($node->textContent));
+   if($shown!==$label){same(1,$xp->query('./following-sibling::span[contains(@class,"domains-row__v") and normalize-space(.)="0 records"]',$node->parentNode)->length,'Customer complete family shows its record count');}
    $calm=$surface==='customer'&&str_contains($html,e(\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::READ_HELD));
    same($label==='Missing'&&!$calm?1:0,$xp->query('.//svg',$node)->length,$surface.' warning icon only for Missing without a held-read page notice');
    if($label==='Missing'&&$calm){same(1,$xp->query('.//span[contains(@class,"domains-missing--calm")]',$node)->length,'The held-read page notice leaves the customer family calm');}
    $row=$node->parentNode;
-   // ui-r15 R3: the queued time and the cause are said once above the rows, not on each row.
-   if($queued!==null){expect($xp->query('//time[@datetime="'.gmdate(DATE_ATOM,$queued).'"]')->length>0&&$xp->query('.//time',$row)->length===0,$surface.' shows queued time once, above the rows');}
-   // ui-r15 R4: once the read stopped, the staff page notice says the cause; the records head keeps the count and code.
-   if($cause!==null&&$stopped&&$surface==='staff'){expect(!str_contains($dom->textContent,$cause)&&str_contains($dom->textContent,'Stopped after 5 attempts.'),'staff records head leaves the stopped cause to the page notice');}
+   // ui-r15 R3: the queued read and the cause are said once above the rows, not on each row. Before the first read
+   // customers see that we are checking with the registrar; staff see the queued time.
+   if($queued!==null){expect(($surface==='customer'?substr_count($html,e(\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::INITIAL_READ))===1:$xp->query('//time[@datetime="'.gmdate(DATE_ATOM,$queued).'"]')->length>0)&&$xp->query('.//time',$row)->length===0,$surface.' shows the queued read once, above the rows');}
+   // Once the read stopped, the staff records head keeps the count, the cause in words and the time, said once.
+   if($cause!==null&&$stopped&&$surface==='staff'){expect(substr_count($dom->textContent,'Stopped after 5 attempts. '.$cause)===1&&substr_count($dom->textContent,$cause)===1,'staff records head says the stopped count and cause once');}
    elseif($cause!==null&&$stopped&&$surface==='customer'){same(1,substr_count($dom->textContent,\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::READ_HELD),'The customer stopped-read notice is said once');expect(!str_contains($dom->textContent,$cause),'Customer notice does not repeat the staff failure cause');}
    elseif($cause!==null){expect(str_contains($dom->textContent,$cause)&&!str_contains($row->textContent,$cause),$surface.' shows safe cause once, above the rows');}
   }
