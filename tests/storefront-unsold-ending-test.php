@@ -9,6 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter;
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\StorefrontController;
 use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AccountReadBudget, Runtime, Storefront};
+require dirname(__DIR__).'/Domains/routes/web.php';
 extract(commerceFixture(true));
 $eligibility = activeFixtureEligibility($bindings, $clock);
 $store = new class($sellers, $prices, $native, $bindings, $eligibility, $clock) extends Storefront {

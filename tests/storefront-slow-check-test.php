@@ -23,13 +23,15 @@ $b = AccountBindings::binding(Paymenter\Extensions\Servers\Domains\Models\Accoun
 // Each synthetic Check takes $seconds on the shared clock, as a slow registrar answer does.
 $seconds = 0;
 $registry = (new ReflectionProperty($bindings, 'registry'))->getValue($bindings);
-$registry->registerBoundReader($b, static function ($binding, $credentials) use (&$seconds, $clock) {
+$disposition = Paymenter\Extensions\Servers\Domains\Data\Disposition::Accepted;
+$registry->registerBoundReader($b, static function ($binding, $credentials) use (&$seconds, &$disposition, $clock) {
     $driver = new Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar($binding,
         new Paymenter\Extensions\Servers\Domains\Data\Capabilities($binding, []),
         new Paymenter\Extensions\Servers\Domains\Data\DriverResult($binding,
-            Paymenter\Extensions\Servers\Domains\Data\Disposition::Accepted,
+            $disposition,
             Paymenter\Extensions\Servers\Domains\Data\SendState::Sent,
-            Paymenter\Extensions\Servers\Domains\Data\ResultReason::Acknowledged,
+            $disposition === Paymenter\Extensions\Servers\Domains\Data\Disposition::Accepted
+                ? Paymenter\Extensions\Servers\Domains\Data\ResultReason::Acknowledged : Paymenter\Extensions\Servers\Domains\Data\ResultReason::Unresolved,
             new Paymenter\Extensions\Servers\Domains\Data\Evidence(premium: false, available: true)));
     $driver->beforeRead = static function ($method, $ctx) use (&$seconds, $clock) {
         $ctx->withinClaimedWire($ctx->binding, static function () use (&$seconds, $clock) { $clock->instant = $clock->instant->modify('+'.$seconds.' seconds'); });
@@ -40,8 +42,8 @@ $registry->registerBoundReader($b, static function ($binding, $credentials) use 
 $seconds = 12;
 try { $status = $store->check('slow-placeholder.com')['status']; } catch (Throwable $e) { $status = 'refused: '.$e->getMessage(); }
 same('available', $status, 'A Check that answers after 12 seconds still finds the name available');
-// A Check that never answers in time says why and what to do next.
-$seconds = 30;
+// A Check cut off by the deadline comes back unknown from the transport; the row says why and what to do next.
+$seconds = 0; $disposition = Paymenter\Extensions\Servers\Domains\Data\Disposition::Unknown;
 config(['settings.tickets_disabled' => true, 'domains.support_url' => 'https://support.example.test/help']);
 storefrontViews(); $controller = new StorefrontController($store);
 $r = Request::create('/domains/check', 'POST', ['domain' => 'late-placeholder.com']);
