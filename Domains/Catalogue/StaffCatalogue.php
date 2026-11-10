@@ -431,12 +431,16 @@ final class StaffCatalogue
             $a=Account::where('server_id',$id)->sole();
             $bound=$rows->filter(fn($t)=>$t->catalogue_converted&&$t->account_fingerprint===$a->account_fingerprint&&$t->registrar_key===$a->registrar_key)->keyBy('tld');
             if($bound->isEmpty()){continue;}
-            foreach(DB::table('domains_prices')->where('server_id',$id)->whereIn('tld',$bound->keys()->all())->where('term',$years)->where('currency','USD')
+            $saved=[];
+            foreach(DB::table('domains_prices')->where('server_id',$id)->whereIn('tld',$bound->keys()->all())->whereIn('term',array_unique([1,$years]))->where('currency','USD')
                 ->where('account_fingerprint',$a->account_fingerprint)->where('registrar_key',$a->registrar_key)->orderBy('id')->get() as $p){
                 $cost=OfferState::savedCost($p->catalogue_observation);
                 if($cost===null||$cost->action!==$p->action||$cost->term!==(int)$p->term){continue;}
-                $out[(int)$bound[$p->tld]->id][$cost->key()]=$cost->total;
+                $saved[(int)$bound[$p->tld]->id][$cost->key()]=$cost;
             }
+            foreach($saved as $tld=>$costs){foreach($costs as $key=>$cost){
+                if($cost->term===$years){$out[$tld][$key]=Retail::cost($cost,$costs);}
+            }}
         }
         return $out;
     }
