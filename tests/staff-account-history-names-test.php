@@ -35,4 +35,37 @@ same([['time'=>'2026-11-10T04:10:03+00:00','change'=>'Prices published for 3 TLD
 $daily=[['time'=>'2026-11-10T04:10:00+00:00','change'=>'Prices published','reason'=>'.com: Prices recalculated using the current pricing and sales settings.','by'=>'System','tld'=>'com'],
     ['time'=>'2026-11-09T04:10:00+00:00','change'=>'Prices published','reason'=>'.com: Prices recalculated using the current pricing and sales settings.','by'=>'System','tld'=>'com']];
 same([[...array_diff_key($daily[0],['tld'=>1])],[...array_diff_key($daily[1],['tld'=>1])]],TldFacts::group($daily),'Daily system runs stay separate rows');
+// Runs stop at staff rows, other system kinds, or rows without a TLD.
+$staff=[...$rows[3],'time'=>'2026-11-10T04:10:02+00:00'];
+foreach([[$rows[0],$staff,$rows[2]],[$rows[0],[...$rows[1],'change'=>'Prices synced'],$rows[2]],[$rows[0],array_diff_key($rows[1],['tld'=>1]),$rows[2]]] as $separate){
+    $expected=array_map(fn($r)=>array_diff_key($r,['tld'=>1]),$separate);
+    same($expected,TldFacts::group($separate),'An intervening row ends the system run');
+}
+// Mixed audit sources sort by instant; a raw invalid time stays readable at the end.
+$account=App\Models\Server::findOrFail($server);
+foreach(['2026-11-10 01:30:00-05:00'=>'Synthetic newest','2026-11-10T06:00:00Z'=>'Synthetic oldest','zz-invalid-time'=>'Synthetic invalid'] as $at=>$action){
+    Illuminate\Support\Facades\DB::transaction(fn()=>Review::append($account,['key'=>'synthetic-'.$action,'at'=>$at,'action'=>$action,'phase'=>'completed','actor_id'=>$u->id,'reason'=>'Readable retained detail','input'=>[],'before'=>[],'after'=>[]]));
+}
+$reminder=Illuminate\Support\Facades\DB::table('domains_reminder_schedules')->where('server_id',$server);
+$saved=(clone $reminder)->sole();$audit=decrypt($saved->audit);$audit[0]['at']='2026-11-10 06:15:00 UTC';
+$reminder->update(['audit'=>encrypt([$audit[0]])]);
+$history=TldFacts::accountHistory($server);
+$selected=array_values(array_filter($history,fn($r)=>str_starts_with($r['change'],'Synthetic ')||str_starts_with($r['change'],'Reminder emails')));
+// Existing unreadable reminder history is not an empty history, and reading never repairs it.
+$panel=\Filament\Facades\Filament::getCurrentPanel();
+Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(fn()=>\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarHistory::registerRoutes($panel));
+app('router')->getRoutes()->refreshNameLookups();
+foreach(['broken ciphertext',encrypt('not an array'),encrypt(null)] as $unreadable){
+    $reminder->update(['audit'=>$unreadable]);
+    same(null,TldFacts::accountHistory($server),'Unreadable reminder history makes the combined history unreadable');
+    \Livewire\Livewire::actingAs($u)->test(\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarHistory::class,['account'=>$server])
+        ->assertSee(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::UNREADABLE)->assertDontSee('No changes yet');
+    same($unreadable,(clone $reminder)->value('audit'),'Reading preserves the saved unreadable audit');
+}
+$reminder->update(['audit'=>encrypt([])]);
+expect(is_array(TldFacts::accountHistory($server)),'An empty readable reminder audit keeps settings history');
+$reminder->delete();expect(is_array(TldFacts::accountHistory($server)),'A missing reminder row keeps settings history');
+Illuminate\Support\Facades\Schema::drop('domains_reminder_schedules');expect(is_array(TldFacts::accountHistory($server)),'A missing reminder table keeps settings history');
+same(['Synthetic newest','Reminder emails turned off','Synthetic oldest','Synthetic invalid'],array_column($selected,'change'),'Parsed audit times sort newest first with invalid times last');
+same(['zz-invalid-time','Readable retained detail'],[$selected[3]['time'],$selected[3]['reason']],'An invalid audit time retains its details');
 $nativeSuccessful=true;echo "Staff account history names passed\n";

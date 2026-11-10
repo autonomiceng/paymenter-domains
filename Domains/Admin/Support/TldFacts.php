@@ -294,10 +294,14 @@ final class TldFacts
     public static function accountHistory(int $serverId): ?array
     {
         $rows=self::history($serverId);if($rows===null){return null;}
-        $rows=[...$rows,...self::reminderHistory($serverId)];
-        usort($rows,static fn(array $a,array $b)=>strcmp($b['time'],$a['time']));
+        $reminders=self::reminderHistory($serverId);if($reminders===null){return null;}
+        $rows=[...$rows,...$reminders];
+        usort($rows,static fn(array $a,array $b)=>self::historyTime($b['time'])<=>self::historyTime($a['time']));
         return self::group($rows);
     }
+    /** Unparseable retained times sort after dated rows, with their details intact. */
+    private static function historyTime(string $time): int
+    { $at=trim($time)===''?false:strtotime($time);return $at===false?PHP_INT_MIN:$at; }
     /** Seconds between two rows of one system run. Runs further apart, such as daily ones, stay separate rows. */
     private const RUN_GAP=60;
     /** Rows newest first. A run of system rows of one kind, one per TLD, becomes one row naming the TLDs. */
@@ -330,12 +334,12 @@ final class TldFacts
         return null;
     }
     /** Reminder emails switch and schedule changes, from the reminder schedule's own audit. */
-    private static function reminderHistory(int $serverId): array
+    private static function reminderHistory(int $serverId): ?array
     {
         try{
             $row=\Illuminate\Support\Facades\Schema::hasTable('domains_reminder_schedules')?\Illuminate\Support\Facades\DB::table('domains_reminder_schedules')->where('server_id',$serverId)->first():null;
-            $audit=$row?decrypt($row->audit):[];if(!is_array($audit)){return [];}
-        }catch(\Throwable){return [];}
+            $audit=$row?decrypt($row->audit):[];if(!is_array($audit)){return null;}
+        }catch(\Throwable){return null;}
         $names=Staff::can('admin.users.view')?\App\Models\User::whereIn('id',array_column($audit,'actor_id'))->get(['id','first_name','last_name','email'])->mapWithKeys(fn($u)=>[$u->id=>trim($u->first_name.' '.$u->last_name)?:$u->email])->all():[];
         $days=static fn($json)=>implode(', ',(array)(\Paymenter\Extensions\Servers\Domains\Services\ReminderSchedules::storedDays($json)??[]))?:'none';
         return array_values(array_filter(array_map(static function($e)use($names,$days):?array {
