@@ -44,12 +44,21 @@ NODE_PATH=/path/to/node_modules CHROME_BIN=/path/to/chrome PAYMENTER_TEST_APP=/c
   scripts/test.py --suite ui
 ```
 
-At 1440, 900 and 390px, with the staff sheet after Filament's theme (as installed) and before it, each long name,
-customer and Note must be a one-line block box exactly 16rem, 11rem or 13rem wide, cut with a painted "...".
+At 1440, 900 and 390px, with the staff sheet after the theme (as installed) and before it, each long name, customer
+and Note must be a one-line block box cut with a painted "...". The widths are the approved staff table's, padding
+included: a name exactly 326px and a customer exactly 120px; a Note fills the rest of the row, at least 160px. In the
+Domains list, those cells are no wider than their items, the table fits its card at 1440px, and the page never scrolls
+sideways (narrower, the table scrolls inside its card).
 The Domains list uses real long values: each item keeps its full text, its tooltip has all of it, and keyboard focus on
 the row link shows it in place. The client domain heading must keep its clamp(1.125rem, 5vw, 1.5rem) size and
 18 by 20px status mark at 320/390/768/1280px in both modes. Scripts are off, so the check shows Filament's main area
 that a script would fade in. It is not a screenshot beside the approved mock.
+
+A host panel can render the Domains list in its own skin: set `DOMAINS_PANEL_SETUP` to a PHP file that is given
+`$panel`, configures it (table class, layout, its sheet as a `panels::styles.after` hook) and returns its built theme
+stylesheet. Then render with `R14_RENDER_DIR=OUT scripts/render-reminders.py OUT` and the three render files from
+`tests/test_rendered_layout.py`, and run `node scripts/check-name-and-heading.cjs OUT`. Its receipt lists the Domain,
+Customer and Note column widths at each viewport, to compare with the mock. Without it, the render uses Filament's stock theme.
 
 Run `python3 scripts/bootstrap.py --download` once, then `scripts/test.py` fully offline.
 PHP **8.4.27** (Debian `8.4.27-1~deb13u1`, Linux x86_64) is pinned by archive SHA-256;

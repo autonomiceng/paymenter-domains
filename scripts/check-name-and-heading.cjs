@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 // Run by tests/test_rendered_layout.py in the ui suite, or by hand on a render directory (docs/testing.md).
-// Real rendered pages, real stylesheets: long staff list text stays inside its exact column width and ends in a
-// painted "..." with its full text kept, in either stylesheet order; the customer domain heading and its status mark keep their sizes.
+// Real rendered pages, real stylesheets: long staff list text stays inside the approved table's column widths and ends in
+// a painted "..." with its full text kept, in either stylesheet order; the customer domain heading and its status mark keep their sizes.
 const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require('playwright');
 
 const LONG = 'a-very-long-customer-subdomain-label-that-keeps-going.example-hosting-company.com';
-// Staff column contracts in rem (staff-styles.blade.php, OneLine.php).
-const NAME = ['domains-name-cell', 16], PERSON = ['domains-cut', 11], NOTE = ['domains-list-note', 13];
+// Staff column contracts in px, padding included (staff-styles.blade.php, OneLine.php): the approved staff table gives a
+// domain name 326px and a customer 120px; a list Note takes the rest of the row, and 160px when the table scrolls.
+const NAME = ['domains-name-cell', 326], PERSON = ['domains-cut', 120], NOTE = ['domains-list-note', 160];
 // The staff sheet as installed (after Filament's theme), and before it, as a skin or another load order may place it.
 const ORDERS = ['staff sheet after theme', 'staff sheet before theme'];
 const words = text => text.replace(/\s+/g, ' ').trim();
@@ -27,7 +28,7 @@ async function main() {
     await context.route('**/*', route => { requests.push(route.request().url()); return route.abort(); });
     const page = await context.newPage();
     page.setDefaultTimeout(10000);
-    const failures = [];
+    const failures = [], columns = {};
     let measured = 0;
     const check = (condition, message) => { if (!condition) failures.push(message); };
 
@@ -43,21 +44,29 @@ async function main() {
         return page.evaluate(() => {
             const styles = [...document.querySelectorAll('style')];
             const staff = styles.filter(style => style.textContent.includes('.domains-name-cell{'));
-            // Filament's built theme: the Tailwind build that styles table text items.
-            const theme = styles.filter(style => style.textContent.startsWith('/*! tailwindcss') && style.textContent.includes('.fi-ta-text-item'));
-            if (staff.length !== 1 || theme.length !== 1 || staff[0] === theme[0]) return false;
+            // The panel's built theme: the largest sheet, the Tailwind build that styles table text items.
+            const theme = styles.filter(style => style !== staff[0] && style.textContent.includes('.fi-ta-text-item'))
+                .sort((a, b) => b.textContent.length - a.textContent.length).slice(0, 1);
+            if (staff.length !== 1 || theme.length !== 1) return false;
             theme[0].before(staff[0]);
             return Boolean(staff[0].compareDocumentPosition(theme[0]) & Node.DOCUMENT_POSITION_FOLLOWING);
         });
     }
 
-    // One staff list text item: a one-line block box inside its exact width contract, cut with a painted "...".
+    // One staff list text item: a one-line block box inside its width contract, cut with a painted "...".
+    // px: its exact width, or with fill its least width, filling its cell. column: the list's Note takes the spare width.
     // full: the text a reader gets, or true for a text only its tooltip states (a note shows its step first).
     // Screen readers read the whole text and the tooltip shows it. long: replace a short fixture value.
-    async function measure(name, item, rem, width, { full, long } = {}) {
+    async function measure(name, item, px, width, { full, long, fill, column } = {}) {
         measured++;
         const got = await item.evaluate((item, long) => {
-            if (long) [...item.childNodes].find(node => node.nodeType === 3 && node.textContent.trim()).textContent = long;
+            if (long) {
+                // The first nonblank text, inside its tooltip span when it has one.
+                const walker = document.createTreeWalker(item, NodeFilter.SHOW_TEXT);
+                let node;
+                while ((node = walker.nextNode()) && !node.textContent.trim());
+                node.textContent = long;
+            }
             const style = getComputedStyle(item), range = document.createRange(); range.selectNodeContents(item);
             const tops = new Set([...range.getClientRects()].filter(r => r.width && r.height).map(r => Math.round(r.top)));
             // Filament writes the tooltip as Js::from(): a JSON string body in single quotes.
@@ -65,18 +74,29 @@ async function main() {
             return { display: style.display, overflow: style.overflowX, textOverflow: style.textOverflow, whiteSpace: style.whiteSpace,
                 maxWidth: style.maxWidth, clientWidth: item.clientWidth, scrollWidth: item.scrollWidth, lines: tops.size,
                 text: item.textContent, tooltip: tip ? JSON.parse(`"${tip[1]}"`) : null, link: Boolean(item.closest('a[href]')),
-                rem: parseFloat(getComputedStyle(document.documentElement).fontSize) };
+                width: item.getBoundingClientRect().width, cell: cellInner(item.closest('td')) };
+            function cellInner(cell) {
+                const style = getComputedStyle(cell), side = edge => parseFloat(style[`padding${edge}`]) + parseFloat(style[`border${edge}Width`]);
+                return cell.getBoundingClientRect().width - side('Left') - side('Right');
+            }
         }, long ?? null);
-        const limit = rem * got.rem;
         // Filament's -webkit-box paints no ellipsis.
         check(got.display === 'block', `${name}: the item is a block box, got ${got.display}`);
         check(got.textOverflow === 'ellipsis', `${name}: text-overflow is ellipsis, got ${got.textOverflow}`);
         check(got.overflow === 'hidden', `${name}: overflow is hidden, got ${got.overflow}`);
         check(got.whiteSpace === 'nowrap', `${name}: white-space is nowrap, got ${got.whiteSpace}`);
         check(got.lines === 1, `${name}: one line, got ${got.lines}`);
-        check(got.maxWidth === `${limit}px`, `${name}: max-width is ${rem}rem (${limit}px), got ${got.maxWidth}`);
-        // The long text fills the column: exactly the contract, never wider.
-        check(Math.abs(got.clientWidth - limit) <= .5, `${name}: exactly ${rem}rem wide, got ${got.clientWidth}px`);
+        if (fill) {
+            // A Note fills its cell: the rest of the row, never narrower than its contract.
+            check(got.maxWidth === 'none', `${name}: no max-width, got ${got.maxWidth}`);
+            check(got.clientWidth >= px - .5, `${name}: at least ${px}px wide, got ${got.clientWidth}px`);
+        } else {
+            check(got.maxWidth === `${px}px`, `${name}: max-width is ${px}px, got ${got.maxWidth}`);
+            // The long text fills the column: exactly the contract, never wider.
+            check(Math.abs(got.clientWidth - px) <= .5, `${name}: exactly ${px}px wide, got ${got.clientWidth}px`);
+        }
+        // The column is the item: the table gives its spare width to the Note, not to a cut name.
+        if (column) check(Math.abs(got.cell - got.width) <= .5, `${name}: its cell is no wider than the item (${got.cell}px for ${got.width}px)`);
         check(got.scrollWidth > got.clientWidth, `${name}: the long text is cut (${got.scrollWidth}px in ${got.clientWidth}px)`);
         if (full !== undefined) {
             // The cut is visual only: the whole text stays in the item, and the tooltip carries all of it.
@@ -112,29 +132,40 @@ async function main() {
             // The staff Domains list with real long values: name, customer and Note, each with its tooltip.
             const where = `Staff Domains list, ${order}, ${width}px`;
             check(await open('staff-domains-list.html', width, order), `${where}: one staff sheet and one theme, reordered`);
+            // Wide, the table fits its card; narrower, it scrolls inside its card and the page does not (table standard, Phones).
+            const fit = await page.evaluate(() => {
+                const table = document.querySelector('.fi-ta-table'), card = table.closest('.fi-ta-content-ctn') ?? table.parentElement;
+                const head = label => [...table.querySelectorAll('thead th')].find(th => th.textContent.trim() === label)?.getBoundingClientRect().width;
+                return { card: card.clientWidth, table: card.scrollWidth, page: document.documentElement.scrollWidth, view: innerWidth,
+                    columns: ['Domain', 'Customer', 'Note'].map(label => Math.round(head(label) * 10) / 10) };
+            });
+            columns[`${order}, ${width}px`] = fit.columns;
+            check(fit.page <= fit.view, `${where}: no page scroll (${fit.page}px in ${fit.view}px)`);
+            if (width === 1440) check(fit.table <= fit.card, `${where}: the table fits its card (${fit.table}px in ${fit.card}px)`);
             const expected = [[NAME, 'long-domain-long-domain-long-domain-long-domain-long-domain-end.example.com'],
                 [PERSON, 'Maximiliana-Alexandrina Featherstonehaugh-Worthington'], [NOTE, null]];
-            for (const [[kind, rem], value] of expected) {
+            for (const [[kind, px], value] of expected) {
                 const name = `${where}, ${kind}`;
-                const items = page.locator(`.fi-ta-text-item.${kind}`).filter({ has: page.locator('[x-tooltip]') });
+                // Every Note with text; the one long name and customer. Each must carry its tooltip (measure).
+                const items = page.locator(`.fi-ta-text-item.${kind}`).filter({ hasText: value ?? /\S/ });
                 const count = await items.count();
                 if (kind === NOTE[0]) {
                     // Every held row has a note: check each one.
                     check(count >= 1, `${name}: a rendered note`);
-                    for (let i = 0; i < count; i++) await measure(`${name} ${i + 1}`, items.nth(i), rem, width, { full: true });
+                    for (let i = 0; i < count; i++) await measure(`${name} ${i + 1}`, items.nth(i), px, width, { full: true, fill: true, column: true });
                     continue;
                 }
                 check(count === 1, `${name}: one rendered long item, got ${count}`);
-                if (count === 1) await measure(name, items, rem, width, { full: value });
+                if (count === 1) await measure(name, items, px, width, { full: value, column: true });
             }
             // The monitoring list's name and person items, with a name too long for its column.
             for (const state of ['paused', 'retired']) {
                 const at = `Staff monitoring list, ${state}, ${order}, ${width}px`;
                 check(await open(`r14-watchlist-${state}.html`, width, order), `${at}: one staff sheet and one theme, reordered`);
-                for (const [kind, rem] of [NAME, PERSON]) {
+                for (const [kind, px] of [NAME, PERSON]) {
                     const items = page.locator(`.fi-ta-text-item.${kind}`);
                     check(await items.count() === 1, `${at}, ${kind}: one rendered item`);
-                    if (await items.count() === 1) await measure(`${at}, ${kind}`, items, rem, width, { long: LONG });
+                    if (await items.count() === 1) await measure(`${at}, ${kind}`, items, px, width, { long: LONG });
                 }
             }
         }
@@ -160,7 +191,7 @@ async function main() {
             check(JSON.stringify(got.mark) === JSON.stringify(['18px', '20px']), `${name}: head status mark 18 by 20px, got ${JSON.stringify(got.mark)}`);
         }
         check(requests.length === 0, 'Fixtures must not attempt any network resources');
-        console.log(JSON.stringify({ complete: failures.length === 0, browser: browser.version(), measured, failures }));
+        console.log(JSON.stringify({ complete: failures.length === 0, browser: browser.version(), measured, columns, failures }));
         process.exitCode = failures.length ? 1 : 0;
     } finally { await context.close(); await browser.close(); }
 }
