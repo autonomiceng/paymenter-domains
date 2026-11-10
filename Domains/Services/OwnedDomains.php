@@ -113,7 +113,7 @@ final readonly class OwnedDomains
         if (!$op || $op->state!=='succeeded' || !in_array($op->action,['register','transfer'],true) || !$op->completed_at) { return null; }
         $at=$op->completed_at; $from=(new \DateTimeImmutable($at instanceof \DateTimeInterface ? $at->format(DATE_ATOM) : (string) $at))->setTimezone(new \DateTimeZone('UTC'))->modify('+60 days');
         if ($from<=$now) { return null; }
-        return 'Transfers to another registrar open on '.$from->format('M j, Y').', 60 days after '.($op->action==='register'?'registration':'the transfer').'.';
+        return 'Transfers to another registrar open on '.$from->format('M j, Y').($op->action==='register'?', 60 days after registration.':', 60 days after the transfer.');
     }
     /** Who sends it: the registrar mails the code itself, so no mail from us follows. */
     public static function authCodeSender(Domain $d): string
