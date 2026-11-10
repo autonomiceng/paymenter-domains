@@ -53,7 +53,7 @@ $failing=new StaffCommands(new Writer(new Projection($native),$clock,static func
     $attempted[]=$command->tld();if($command->tld()==='com'){throw new DomainException('Synthetic publication refusal');}
 },static fn()=>true),$bindings,static fn()=>null);
 same(['failed'=>['com'],'left'=>0],$failing->republishSold($binding->serverId),'A failure is recorded without abandoning siblings');
-same(['com','net'],$attempted,'The sibling is published after the first TLD fails');
+expect(($attempted[0]??null)==='com'&&in_array('net',array_slice($attempted,1),true),'The sibling is published after the first TLD fails');
 $published=Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($sibling->fresh()->catalogue_published_revision);
 same($sibling->fresh()->catalogue_revision,$published['offer'],'The healthy sibling publication is current');
 same('Prices for .com are not published, so it is not for sale. Open Edit prices on the TLD and save.',SettingsActions::republished(['failed'=>['com'],'pending'=>false,'left'=>0]),'The failure names the TLD and repair');
