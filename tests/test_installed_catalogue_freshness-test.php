@@ -9,7 +9,7 @@ require __DIR__.'/Support/staff-tlds.php';
 require __DIR__.'/Support/offer-commerce.php';
 use Illuminate\Support\Facades\{Auth,DB};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
-use Paymenter\Extensions\Servers\Domains\Catalogue\{Context,Edit,Intent,OfferState,OfferWork,Query};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{Context,Edit,Intent,OfferState,OfferWork,Query,StaffCommands};
 use Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,StaffSettingsReview as Review,StaffSettingsWrites};
 extract(offerCommerceFixture());tldPanel();pinStaffClock($now);
@@ -28,9 +28,13 @@ same('7.80',\Paymenter\Extensions\Servers\Domains\Services\RetailLine::decimal($
 $worker=new OfferWork($ports->writer(),$clock,new AccountReadBudget($clock,25),static fn()=>throw new LogicException('Freshness repair must stay local'),static fn()=>0);
 $worker->wake($binding);$worker->accountTurn($binding->serverId);
 $review=new Review($actor->id,$binding->serverId,null,'price_freshness',Review::ticket($actor->id,$binding->serverId,null,'price_freshness',Review::stamp($binding->serverId,null)),'Synthetic freshness recovery');
-(new StaffSettingsWrites($native,$sellers,$bindings))->run($review,['hours'=>72]);
+// The save republishes what the account sells at once, through the same writer as this fixture's storefront.
+$writes=new class($native,$sellers,$bindings) extends StaffSettingsWrites {public StaffCommands $commands;protected function catalogue():?StaffCommands{return $this->commands;}};
+$writes->commands=new StaffCommands($ports->writer(),$bindings,static fn()=>null);
+same(['failed'=>[],'pending'=>false,'left'=>0],$writes->run($review,['hours'=>72]),'Saving longer freshness republishes every sold TLD');
+same('$20.00',$storefront->offer('com','register',1)['price'],'Saving longer freshness republishes the recovered native offer at once');
 $worker->accountTurn($binding->serverId);
-same('$20.00',$storefront->offer('com','register',1)['price'],'Saving longer freshness republishes the recovered native offer');
+same('$20.00',$storefront->offer('com','register',1)['price'],'The background turn keeps the republished native offer');
 same($nativeId,$plan->prices()->where('currency_code','USD')->sole()->id,'Freshness recovery retains the native price identity');
 same(72,CatalogueFreshness::forAccount($binding->serverId)->hours,'Reviewed account policy remains saved');
 $nativeSuccessful=true;

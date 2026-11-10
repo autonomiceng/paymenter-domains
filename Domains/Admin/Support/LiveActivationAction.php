@@ -57,8 +57,8 @@ final class LiveActivationAction
             })->action(function(array $data)use($id):void {
                 try{
                     $r=new Review((int)Auth::id(),$id,null,'activate',(string)($data['review_key']??''),'Approved the Live spending summary.');
-                    app(StaffSettingsWrites::class)->run($r,[...$data,'confirmed'=>true]);
-                    Notification::make()->success()->title('Live features activated')->send();
+                    $body=SettingsActions::republished(app(StaffSettingsWrites::class)->run($r,[...$data,'confirmed'=>true]));
+                    Notification::make()->status($body===null?'success':'warning')->title('Live features activated')->body($body)->send();
                 }catch(\DomainException $e){Notification::make()->danger()->title('Could not activate')->body($e->getMessage())->send();}
                 catch(\Throwable $e){\Illuminate\Support\Facades\Log::warning('Domains activation failed.',['exception_class'=>$e::class]);Notification::make()->danger()->title('Could not activate')->body('Reload the registrar account and check the missing setup.')->send();}
             });

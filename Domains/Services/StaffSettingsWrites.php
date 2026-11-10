@@ -35,7 +35,8 @@ class StaffSettingsWrites
     }
     public function connectionAvailable(?string $registrar=null): bool
     {return $this->allowInjectedProbes&&($registrar===null||$this->bindings->hasRegistrar($registrar));}
-    /** Returns the publish summary for a default pricing change, otherwise null. */
+    /** Returns the publish summary for a default pricing change, or the TLDs left unpublished after resuming Orders or
+     * changing price freshness, otherwise null. */
     public function run(StaffSettingsReview $r,#[\SensitiveParameter] array $data,?\DateTimeImmutable $now=null): ?array
     {
         if(in_array($r->action,\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCommands::ACTIONS,true)){return ($this->catalogue() ?? throw new \DomainException(OfferUpgrade::MESSAGE))->run($r,$data);}
@@ -51,12 +52,13 @@ class StaffSettingsWrites
         $now??=$clock->now();$r->input($data);
         if($r->action==='enom_answer'){EnomAnswers::record($r,$data,$now);return null;}
         if($r->action==='late_renewal'){EnomLateRenewal::review($r,$data);return null;}
-        if($r->action==='activate'){EnomLiveActivation::review($r,$data);return null;}
+        // Going live turns Orders on when they were off, which makes every offer stale, as resuming Orders does.
+        if($r->action==='activate'){return EnomLiveActivation::review($r,$data)?$this->republishSold($r->serverId):null;}
         if(in_array($r->action,['test_management','live_management'],true)){EnomTestManagement::review($r,$data);return null;}
         if(in_array($r->action,['test_renewal','live_renewal'],true)){EnomTestRenewal::review($r,$data);return null;}
         if(in_array($r->action,['test_transfer','live_transfer'],true)){EnomTestTransfer::review($r,$data);return null;}
         if($r->action==='renewal_billing'){RenewalBillingSettings::save($r,$data);return null;}
-        if($r->action==='price_freshness'){\Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness::save($r,$data);return null;}
+        if($r->action==='price_freshness'){return \Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness::save($r,$data)?$this->republishSold($r->serverId):null;}
         if($r->action==='call_limits'){ApiCallLimits::save($r,$data);return null;}
         if($r->action==='unpaid_hold'){UnpaidHoldSetting::save($r,$data);return null;}
         if($r->action==='enroll_sandbox'){
@@ -110,7 +112,9 @@ class StaffSettingsWrites
                     }
                     $this->bindings->requireReadableLocked($server,$account);
                 });
-            });return null;
+            });
+            // Resuming made every offer stale. What the account sold before the pause goes back on sale now.
+            return $enabled?$this->republishSold($r->serverId):null;
         }
         if($r->action==='history'&&($data['accept']??false)===true){
             $a=Account::where('server_id',$r->serverId)->firstOrFail();$binding=AccountBindings::binding($a);
@@ -151,6 +155,21 @@ class StaffSettingsWrites
         return null;
     }
 
+    /** Republish the TLDs the account sells after an account-wide change. Without the installed catalogue the
+     * background turn republishes them. @return array{failed:list<string>,pending:bool,left?:int} */
+    private function republishSold(int $server): array
+    {
+        try{
+            $catalogue=$this->catalogue();
+            if($catalogue===null){return ['failed'=>[],'pending'=>true];}
+            $done=$catalogue->republishSold($server);return ['failed'=>$done['failed'],'pending'=>false,'left'=>$done['left']];
+        }
+        catch(\Throwable $error){
+            // The setting is saved. The background turn retries every pending offer.
+            if(!$error instanceof \DomainException){\Illuminate\Support\Facades\Log::warning('Domains account republish failed.',['server_id'=>$server,'exception_class'=>$error::class]);}
+            return ['failed'=>[],'pending'=>true];
+        }
+    }
     /** Rule and fee save together. Then each account publishes on its own, and saving again retries what failed. */
 
 

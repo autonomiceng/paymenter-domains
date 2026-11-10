@@ -42,6 +42,12 @@ final class StaffCatalogue
         foreach($tlds as $t){$rows[$t->server_id.':'.$t->tld]=$page[$t->id];}
         return $this->nextSteps($tlds,$rows,$action,$term);
     }
+    /** The next step for a registrar requirement checkout can't meet: name it, and sell through another registrar. */
+    private static function unsupportedNext(Tld $t,?Facts $facts=null): string
+    {
+        if($facts===null){try{$facts=OfferState::facts($t->catalogue_facts);}catch(\Throwable){$facts=null;}}
+        return 'This registrar '.Writer::unsupportedCause($facts,(string)$t->registrar_key,(string)$t->tld).' for .'.$t->tld.'. '.(TldFacts::canChangeSeller()?TldFacts::SELL_ELSEWHERE:TldFacts::ASK_SELLER);
+    }
     private function nextStep(Tld $t,array $offers,string $action,int $term,array &$once): array
     {
         $offer=$offers[$action.':'.$term]??null;$reason=$offer?->decision->reason;$now=$this->clock->now();
@@ -58,7 +64,7 @@ final class StaffCatalogue
         if(in_array($reason,self::STARTS,true)){
             try{$block=$this->start($t)['block'];}catch(\Throwable){return $missing('Check saved settings on .'.$t->tld.'.');}
             return match($block){null=>$step('off','Use Start selling on .'.$t->tld.'.','tld'),
-                'unsupported_facts'=>$missing('Ask the registrar to confirm renewal and nameserver requirements for .'.$t->tld.'.',null),
+                'unsupported_facts'=>$missing(self::unsupportedNext($t),'tld'),
                 default=>$step('off','Not offered by this registrar for this term.')};
         }
         // Account reads and queue hints are per account, so the rows of one page share them.
@@ -88,8 +94,8 @@ final class StaffCatalogue
         };
         if($facts?->fresh($now)&&!in_array($term,$facts->terms[$action]??[],true)&&!$expiredRefusal($action.':'.$term)){return $step('off','Not offered by this registrar for this term.');}
         if($facts?->fresh($now)&&!in_array(1,$facts->terms['renew']??[],true)&&!$expiredRefusal('renew:1')){return $step('off','This registrar does not offer annual renewal for this TLD.');}
-        if($reason==='unsupported_facts'){$human=$missing('Ask the registrar to confirm renewal and nameserver requirements for .'.$t->tld.'.',null);}
-        $costs=[];foreach($offers as $offer){if($c=$offer->observation()){$costs[$c->key()]=$c;}}
+        if($reason==='unsupported_facts'){$human=$missing(self::unsupportedNext($t,$facts),'tld');}
+        $costs=self::costs($offers);
         foreach(Retail::terms($action,$term) as [$needed,$years]){
             $key=$needed.':'.$years;
             $cost=$offers[$key]??null;$observation=$cost?->observation();
@@ -137,18 +143,29 @@ final class StaffCatalogue
             ?'Allow '.($action==='register'?'registrations':'transfers').' in More → Change registrar on .'.$t->tld.'.'
             :'Choose the registrar in More on .'.$t->tld.'.';
     }
+    /** Each offer's saved cost, keyed by action and term. */
+    private static function costs(array $offers): array
+    {
+        $costs=[];foreach($offers as $offer){if($c=$offer->observation()){$costs[$c->key()]=$c;}}
+        return $costs;
+    }
     /** Form preview uses the same Staff evidence, never legacy wholesale or acceptance. */
     public function preview(Tld $t,array $rule): array
     {
-        $out=[];$offers=$this->snapshots(collect([$t]))[$t->id]['offers'];$costs=[];
-        foreach($offers as $offer){if($cost=$offer->observation()){$costs[$cost->key()]=$cost;}}
-        foreach($offers as $offer){$d=$offer->decision;$cost=$offer->observation();if($cost===null){continue;}
+        $out=[];$offers=$this->snapshots(collect([$t]))[$t->id]['offers'];$costs=self::costs($offers);$now=$this->clock->now();$quotes=[];
+        foreach($offers as $key=>$offer){$d=$offer->decision;$cost=$offer->observation();if($cost===null){continue;}
             $new=Retail::quote($cost,$rule,$costs);
             // Publication preserves contractual annual renewal retail without a fresh positive quote.
-            if($d->action==='renew'&&$d->term===1&&($new===null||PricingRule::units($new,2)<1||!$cost->fresh($this->clock->now()))){$new=OfferState::money($t->catalogue_retained_annual_retail,2);}
-            $under=$new!==null&&$cost->total!==null&&!PricingRule::covers($new,$cost->total);
-            $out[]=['action'=>$d->action,'term'=>$d->term,'cost'=>$cost->total,'current'=>$offer->staffRetail(),'new'=>$new,'synced'=>$cost->fresh($this->clock->now()),
-                'hold'=>$d->action==='renew'?null:($under?'below_cost':$d->reason),'alert'=>$d->action==='renew'&&$under?'below_cost':null];
+            if($d->action==='renew'&&$d->term===1&&($new===null||PricingRule::units($new,2)<1||!$cost->fresh($now))){$new=OfferState::money($t->catalogue_retained_annual_retail,2);}
+            $quotes[$key]=$new;
+        }
+        foreach($offers as $key=>$offer){$d=$offer->decision;$cost=$offer->observation();if($cost===null){continue;}
+            $new=$quotes[$key];$total=Retail::cost($cost,$costs);
+            $under=$new!==null&&$total!==null&&!PricingRule::covers($new,$total);
+            // Saving publishes these prices, so the row shows what stops the sale after that, not that it waits for publication.
+            try{$after=$offer->afterPublishing(array_filter($quotes,static fn($q)=>$q!==null&&PricingRule::units($q,2)>=1),$now);}catch(\Throwable){$after=$d->reason;}
+            $out[]=['action'=>$d->action,'term'=>$d->term,'cost'=>$total,'current'=>$offer->staffRetail(),'new'=>$new,'synced'=>$cost->fresh($now),
+                'hold'=>$d->action==='renew'?null:($under?'below_cost':$after),'alert'=>$d->action==='renew'&&$under?'below_cost':null];
         }
         return $out;
     }
@@ -241,11 +258,18 @@ final class StaffCatalogue
         $ids=[];$once=[];
         foreach($tlds as$t){
             try{self::ruleOnce($t,$once);}catch(\Throwable){continue;}
-            foreach($offers[$t->server_id.':'.$t->tld]??[]as$offer){
-                if(in_array($offer->decision->action,['register','transfer'],true)&&$offer->decision->available){$ids[]=(int)$t->id;break;}
-            }
+            if(in_array(true,self::storefront($offers[$t->server_id.':'.$t->tld]??[]),true)){$ids[]=(int)$t->id;}
         }
         return $ids;
+    }
+    /** The storefront's rule (AcquisitionOffers::display): a registration or transfer sells only with a current annual
+     * renewal on the same account. Staff "For sale" follows it, so both agree.
+     * @return array{register:bool,transfer:bool} the actions the storefront offers */
+    private static function storefront(array $offers): array
+    {
+        $renewal=isset($offers['renew:1'])&&$offers['renew:1']->decision->available;$sold=['register'=>false,'transfer'=>false];
+        foreach($offers as$offer){if($renewal&&isset($sold[$offer->decision->action])&&$offer->decision->available){$sold[$offer->decision->action]=true;}}
+        return $sold;
     }
     /** Each call is at most one table page. Same evaluator and observation evidence as the public adapter. */
     public function page(Collection $tlds): array { return $this->pageFor($tlds,Staff::requireView()); }
@@ -266,6 +290,7 @@ final class StaffCatalogue
         foreach($queries as $i=>$q){foreach($loaded[$i] as $name=>$offer){$offers[$q->binding->serverId.':'.$name]=$offer;}}
         $policies=DB::table('domains_sales_policies')->whereIn('tld',$tlds->pluck('tld'))->get()->keyBy('tld');
         $sellers=$policies->pluck('server_id','tld');
+        $accountNames=[];
         $refresh=DB::table('domains_observation_queues')->whereIn('server_id',$tlds->pluck('server_id'))->get()->keyBy('server_id');
         $holders=Domain::whereIn('server_id',$tlds->pluck('server_id'))->whereIn('tld',$tlds->pluck('tld'))->whereNotNull('reservation_name')
             ->selectRaw('server_id,tld,account_fingerprint,count(*) as holders')->groupBy('server_id','tld','account_fingerprint')->get()->keyBy(fn($r)=>$r->server_id.':'.$r->tld.':'.$r->account_fingerprint);
@@ -285,6 +310,7 @@ final class StaffCatalogue
             if(!$invalidRule&&$badDefaults){$invalidRule=true;$ruleKind='account_defaults';}
             $all=$unreadable?[]:($offers[$t->server_id.':'.$t->tld]??[]);$prices=[];
             if($holderRenewal!==null&&!isset($all['renew:1'])){$prices[]=['action'=>'renew','term'=>1,'retail'=>TldFacts::money($holderRenewal),'flags'=>[],'synced'=>false,'observed'=>null,...($grants->costs?['cost'=>null]:[])];}
+            $costs=self::costs($all);
             foreach($all as $offer){$decision=$offer->decision;$cost=$offer->observation();$flags=[];
                 if($decision->reason!==null){$flags[]=$decision->reason;}
                 if($cost!==null&&!$cost->enabled){$flags[]='not_offered';}
@@ -295,11 +321,17 @@ final class StaffCatalogue
                 if($decision->action==='renew'&&$decision->term===1&&$holderRenewal!==null){$retail=$holderRenewal;}
                 $prices[]=['action'=>$decision->action,'term'=>$decision->term,'retail'=>$retail===null?null:TldFacts::money($retail),
                     'flags'=>$flags,'synced'=>$cost!==null,'observed'=>$cost?->observedAt,
-                    ...($grants->costs?['cost'=>$cost?->total===null?null:TldFacts::money($cost->total,4)]:[])];
+                    ...($grants->costs?['cost'=>$cost?->total===null?null:TldFacts::money(Retail::cost($cost,$costs),4)]:[])];
             }
             $register=collect($all)->first(fn($o)=>$o->decision->action==='register'&&$o->decision->available);
             $transfer=$all['transfer:1']??null;$chosen=$register??($transfer?->decision->available?$transfer:null);
             $reason=(in_array('register',$raw['stops']??[],true)?$transfer?->decision->reason:($all['register:1']->decision->reason??null))??'unknown_facts';
+            // Staff can sell it, but the storefront can't: name what it waits for instead of saying For sale.
+            $sold=self::storefront($all);
+            if($chosen!==null&&!in_array(true,$sold,true)){
+                $renewal=$all['renew:1']??null;$chosen=null;
+                $reason=($renewal?->decision->reason??'account_unavailable')==='account_unavailable'?'renewals_off':$renewal->decision->reason;
+            }
             try{$facts=OfferState::facts($t->catalogue_facts);}catch(\Throwable){$facts=null;}
             // One state for the TLD list and its page: a stop that Start selling can't lift names the terms block, and
             // a TLD the account doesn't sell by default says so.
@@ -310,15 +342,23 @@ final class StaffCatalogue
                 elseif($reason==='staff_stopped'&&($raw['sell']??null)===null&&!($d['defaultSell']??true)&&($raw['stops']??[])===[]
                     &&!\Paymenter\Extensions\Servers\Domains\Services\EndingChoices::hidden($t->tld)){$reason='not_sold_by_default';}
             }
-            $label=match($reason){'staff_stopped','staff_term_stopped','renewal_stopped'=>'Stopped by staff','not_sold_by_default'=>'Not sold by default','seller_changed'=>'No registrar selected','publication_pending'=>'Prices not published','stale_price'=>'Cost out of date','below_cost'=>'Below cost','unknown_price'=>'Cost missing','unknown_facts','stale_facts'=>'Set to sell; checking registrar terms','unsupported_facts'=>($stopped?'This':'Set to sell, but this')." registrar's requirements aren't supported",'unsupported_term','provider_disabled'=>'Not offered by this registrar','unpublished_price'=>'Price missing','account_unavailable'=>'Check registrar account','cost_limit'=>'Over the cost limit',default=>'Check TLD settings'};
+            $label=match($reason){'staff_stopped','staff_term_stopped','renewal_stopped'=>'Stopped by staff','not_sold_by_default'=>'Not sold by default','seller_changed'=>'No registrar selected','publication_pending'=>'Prices not published','renewals_off'=>TldFacts::RENEWALS_OFF,'stale_price'=>'Cost out of date','below_cost'=>'Below cost','unknown_price'=>'Cost missing','unknown_facts','stale_facts'=>'Set to sell; checking registrar terms','unsupported_facts'=>($stopped?'This':'Set to sell, but this').' registrar '.Writer::unsupportedCause($facts,(string)$t->registrar_key,(string)$t->tld),'unsupported_term','provider_disabled'=>'Not offered by this registrar','unpublished_price'=>'Price missing','account_unavailable'=>'Check registrar account','cost_limit'=>'Over the cost limit',default=>'Check TLD settings'};
             $policy=$policies[$t->tld]??null;
             $selected=!$unreadable&&$policy&&(int)$policy->server_id===(int)$t->server_id&&$policy->account_fingerprint===$t->account_fingerprint&&$policy->registrar_key===$t->registrar_key
                 &&\Paymenter\Extensions\Servers\Domains\Admin\Support\TldTerms::chosen($t,(array)$policy,$d);
             $chosen=$invalidRule?null:$chosen;
             if(!$selected&&!isset($sellers[$t->tld])){$label=TldFacts::NO_SELLER;}
+            // Another account takes this TLD's new orders: name it, so each account's page for one TLD tells the same story.
+            if(!$unreadable&&$reason==='seller_changed'&&isset($sellers[$t->tld])&&(int)$sellers[$t->tld]!==(int)$t->server_id){
+                $other=(int)$sellers[$t->tld];
+                $label=TldFacts::OTHER_SELLER.' '.($accountNames[$other]??=(string)(\App\Models\Server::whereKey($other)->value('name')?:'another registrar account'));
+            }
             $queue=$refresh[$t->server_id]??null;
             if($queue&&$queue->account_fingerprint!==$t->account_fingerprint){$queue=null;}
             $work=$queue?OfferState::decode($queue->offer_work):[];
+            // A terms read that failed says so, instead of checking with no end. The next try is in the row's refresh.
+            if(!$unreadable&&in_array($reason,['unknown_facts','stale_facts'],true)&&isset($work['facts'][$t->tld]['failed_at'])
+                &&str_ends_with($label,'checking registrar terms')){$label=TldFacts::TERMS_FAILED;}
             // Only seller-policy writes establish selection time; pricing revisions do not.
             $selectedAt=$policy?->updated_at;
             try{$selectedAt=$selectedAt?\Carbon\CarbonImmutable::parse($selectedAt)->getTimestamp():null;}catch(\Throwable){$selectedAt=null;}
@@ -333,7 +373,7 @@ final class StaffCatalogue
             $error=['invalid_rule_kind'=>$ruleKind];
             $out[$t->id]=['selected'=>(bool)$selected,'invalid_rule'=>$invalidRule,...$error,
                 'refresh'=>$refreshed,
-                'prices'=>$prices,'acquisition'=>['register'=>$register!==null,'transfer'=>$transfer?->decision->available??false],'sales'=>['label'=>$chosen?'For sale':'Not for sale','tone'=>$chosen?'success':'gray','reason'=>$chosen?null:($invalidRule?TldFacts::ruleProblem($error):$label)],
+                'prices'=>$prices,'acquisition'=>$sold,'sales'=>['label'=>$chosen?'For sale':'Not for sale','tone'=>$chosen?'success':(!$invalidRule&&TldFacts::unsupported($label)?'warning':'gray'),'reason'=>$chosen?null:($invalidRule?TldFacts::ruleProblem($error):$label)],
                 'seller'=>isset($sellers[$t->tld])?(int)$sellers[$t->tld]:null,'holders'=>(int)($holders[$t->server_id.':'.$t->tld.':'.$t->account_fingerprint]->holders??0),
                 'demo'=>\Paymenter\Extensions\Servers\Domains\Support\DemoData::is($accounts[$t->server_id]),'intent'=>array_intersect_key(get_object_vars($unreadable?new Intent:OfferState::intent($t,$badDefaults?[]:$d)),array_flip(['sell','longest','transfers','stops','defaultTransfers','salesPaused'])),'defaults'=>$this->publicDefaults($d,$grants->costs),
                 'unreadable'=>$unreadable,'own'=>$own,'pricing'=>!$own?'Default pricing':(($raw['pricing_rule']['mode']??$t->pricing_mode)==='fixed'?'Fixed price':'Custom markup'),'offers'=>$all,'facts'=>$facts];
@@ -348,7 +388,7 @@ final class StaffCatalogue
         catch(\Throwable){return [isset($d)&&is_array($d)?$d:[],true];}
     }
     private function publicDefaults(array $d,bool $costs): array
-    {unset($d['card_fee'],$d['pricing_rule']);if(!$costs){unset($d['maxAnnualCost']);}return $d;}
+    {unset($d['card_fee'],$d['pricing_rule'],$d['_history']);if(!$costs){unset($d['maxAnnualCost']);}return $d;}
     /** Shared settings are validated independently so a bad default cannot hide a valid own rule. */
     private static function pricingState(): array
     {
@@ -416,9 +456,10 @@ final class StaffCatalogue
                 $rule=Pricing::rule($t,$default,$fee);
                 $row=[...$identity,'prices'=>[],
                     'formula'=>'Price = '.PricingRule::describe($rule).($rule['mode']==='fixed'?', times years.':', per year, times years.'),'fee'=>$fee,'fee_in_price'=>$rule['mode']==='markup_fee_percent'];$below=$loss=false;
+                $costs=self::costs($s['offers']);
                 foreach(PriceList::ACTIONS as $action=>$unused){$offer=$s['offers'][$action.':'.$years]??null;$price=$offer?->staffRetail();
                     // A TLD with no offers to read, such as under bad account defaults, still shows its saved costs and losses. Sales stay closed.
-                    $cost=$s['offers']!==[]||$action!=='register'&&$years!==1?$offer?->observation()?->total
+                    $cost=$s['offers']!==[]||$action!=='register'&&$years!==1?(($observed=$offer?->observation())===null?null:Retail::cost($observed,$costs))
                         :(($bound??=self::boundCosts($chunk,$years))[(int)$t->id][$action.':'.$years]??null);
                     if($action==='renew'&&$years===1){$price=OfferState::money($t->catalogue_retained_annual_retail,2);}
                     $profit=$price!==null&&$cost!==null?CardFee::profit($price,$cost,$fee):null;$under=$price!==null&&$cost!==null&&!PricingRule::covers($price,$cost);$loses=$profit!==null&&str_starts_with($profit,'-');$below|=$under;$loss|=$loses;

@@ -45,6 +45,26 @@ $reject(fn () => $bindings->reader(10));
 same($before, count($wire->calls), 'Composition refusal performs no authentication');
 $revision = $local->credentialRevision($localBinding);
 $local->requireCredentialRevision($localBinding, $revision);
+// Real encrypted settings and a grammar that records SQLite's omitted locks are needed here.
+$conn = DB::connection(); $grammar = $conn->getQueryGrammar();
+$strict = new class($conn) extends \Illuminate\Database\Query\Grammars\SQLiteGrammar {
+    public array $locks = [];
+    protected function compileLock(\Illuminate\Database\Query\Builder $query, $value)
+    { $this->locks[] = $query->from; return ''; }
+};
+$checkRevisions = static function () use ($local, $localBinding, $revision): void {
+    same($revision, $local->holdingCredentialRevision($localBinding), 'Holding checks retain the local credential revision');
+    same($revision, $local->offerCredentialRevision($localBinding), 'Offer checks retain the local credential revision');
+    $local->requireOfferReadiness($localBinding, Server::findOrFail(10), Account::where('server_id', 10)->sole());
+};
+$conn->setQueryGrammar($strict);
+try {
+    $checkRevisions();
+    same([], $strict->locks, 'Read-only credential checks never attempt a row lock');
+    DB::transaction($checkRevisions);
+    expect(in_array('settings', $strict->locks, true), 'Transactional credential checks retain settings row locks');
+} finally { $conn->setQueryGrammar($grammar); }
+same($before, count($wire->calls), 'Credential checks never contact the registrar');
 foreach (Server::findOrFail(10)->settings()->get() as $setting) {
     expect($setting->encrypted, 'Enrollment secrets, revision and audit are encrypted on first save');
     expect(!str_contains($setting->getRawOriginal('value'), 'placeholder-key-one'), 'Enrollment stores no plaintext credentials');

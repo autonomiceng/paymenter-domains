@@ -83,6 +83,12 @@ same(2,count($batch['rows']),'One batch applies both valid identities');same($au
 $org=Tld::where('server_id',$binding->serverId)->where('tld','org')->sole();
 // Existing rows: fresh .com can widen while expired .org is returned as a business refusal.
 $run('seller',['seller'=>(string)$binding->serverId,'register'=>true,'transfer'=>true],$id);
+// Sell needs this account to take the TLD's new orders, so .org gets the same seller row as .com.
+$policy=(array)DB::table('domains_sales_policies')->where('tld','com')->first();unset($policy['id']);DB::table('domains_sales_policies')->insert([...$policy,'tld'=>'org']);
+// Sell where another account takes the new orders would do nothing, so it is refused with that reason.
+DB::table('domains_sales_policies')->where('tld','org')->update(['server_id'=>$binding->serverId+1000]);
+try{$run('acceptance',['sell'=>['choices'=>['org'=>'sell']]]);expect(false,'Sell for another account is refused');}catch(DomainException $e){same(StaffCommands::OTHER_SELLER,$e->getMessage(),'Sell where another account takes new orders is refused');}
+DB::table('domains_sales_policies')->where('tld','org')->update(['server_id'=>$binding->serverId]);
 $f=OfferState::facts($org->catalogue_facts);$expired=new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts($f->terms,$f->registryFields,$f->renewalSafe,$f->requiresNameservers,$f->autoRenewOnly,$f->source,$now->modify('-2 days'),$now->modify('-1 day'));
 DB::table('domains_tlds')->where('id',$org->id)->update(['catalogue_facts'=>OfferState::encodeFacts($expired)]);
 // Expired evidence may retain pending staff intent but cannot authorize a public offer.

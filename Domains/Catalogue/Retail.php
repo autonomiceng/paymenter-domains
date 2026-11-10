@@ -20,6 +20,19 @@ final class Retail
             ...($action === 'register' && $term > 1 ? [['register', 1]] : [])];
     }
 
+    /** What one sale of this term costs, for staff cost, profit and the below-cost check. Enom quotes one yearly rate for
+     * 2 to 4, 5 to 9 and 10 year registrations; registries charge the first year at the registration cost and later years
+     * at the renewal cost, the way the price is built. Use the higher of the two, so neither rule sells at a loss.
+     * Spending limits keep the registrar's own quote. */
+    public static function cost(Cost $cost, array $costs = []): ?string
+    {
+        if (!$cost->enabled || $cost->total === null || $cost->action !== 'register' || $cost->term === 1) { return $cost->total; }
+        $first = $costs['register:1'] ?? null; $renew = $costs['renew:1'] ?? null;
+        if (!$first?->enabled || !$renew?->enabled || $first->total === null || $renew->total === null) { return $cost->total; }
+        $built = PricingRule::units($first->total) + PricingRule::units($renew->total) * ($cost->term - 1);
+        return PricingRule::decimal(max(PricingRule::units($cost->total), $built), 4);
+    }
+
     public static function quote(Cost $cost, array $rule, array $costs = []): ?string
     {
         if (!$cost->enabled) { return null; }

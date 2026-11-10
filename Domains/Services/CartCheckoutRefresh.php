@@ -34,7 +34,16 @@ final class CartCheckoutRefresh
                 $was = self::changedAmounts($held);
                 if ($was) { self::priceNotice($component, $was, $e); }
             }
-            catch (\Throwable $e) { self::unavailable($component, $e); }
+            catch (\Throwable $e) {
+                // A new price still shows, rise or drop, and the next view would forget the old one. Checkout checks the
+                // domain again and says so if that still fails, so the price notice replaces the domain-check message here.
+                try { $was = self::changedAmounts($held ?? []); } catch (\Throwable) { $was = []; }
+                if (!$was || $e instanceof \App\Exceptions\DisplayException) { self::unavailable($component, $e); }
+                if ($was) {
+                    if (!$e instanceof \App\Exceptions\DisplayException) { \Illuminate\Support\Facades\Log::warning('Domains checkout check unavailable.', CartHandoffFailure::context($e,'checkout_check')); }
+                    try { self::changed($component, self::cartTotal(), $was); } catch (\Throwable) { self::priceNotice($component, $was); }
+                }
+            }
         });
         Livewire::listen('hydrate', static function ($component, $memo): void {
             if ($component::class !== Cart::class) { return; }

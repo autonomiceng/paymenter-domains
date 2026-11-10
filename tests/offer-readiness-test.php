@@ -30,7 +30,8 @@ DB::table('domains_tlds')->where('id',$tlds[0]->id)->update(['catalogue_facts'=>
 $r=$ready->review($a,$features);
 expect($r['failures']!==[]&&$r['missing']!==null,'Unknown facts refuse Activate and name the failed row');
 expect(collect($r['costs'])->contains('tld','net'),'A failed ending retains readable sibling readiness');
-expect($stamp!==$ready->stamp($a),'Independent fact changes stale the review stamp');
+// A background terms read never stales the review; locked Activate reads the facts again below.
+same($stamp,$ready->stamp($a),'A background fact change leaves the review stamp');
 same($r,DB::transaction(fn()=>$ready->review($a,$features,true)),'Display and strict locked readiness use the same offer decisions');
 foreach(['null','{"stops":"register"}'] as $malformed){
     DB::table('domains_tlds')->where('id',$tlds[0]->id)->update(['catalogue_intent'=>$malformed]);

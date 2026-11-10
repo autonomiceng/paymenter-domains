@@ -27,8 +27,10 @@ use Paymenter\Extensions\Servers\Domains\Services\{EndingChoices,PriceList,Staff
 /** What you sell: the rule and the TLD table. Reads only our own table. Only the fill reads from a registrar. */
 class WhatYouSell extends Page implements HasTable
 {
-    use InteractsWithTable;
+    use InteractsWithTable {handleTableFilterUpdates as private filamentFilterUpdates;}
     private const KEEP='keep';
+    /** One save reviews at most this many TLDs. */
+    private const MOST=25;
     /** The account choice that reads every account. Saves belong to one account, so this view is read-only. */
     public const ALL=0;
     protected static string|\BackedEnum|null $navigationIcon='heroicon-o-check-circle';
@@ -61,6 +63,9 @@ class WhatYouSell extends Page implements HasTable
         $this->keepChoices();
         $this->reload();
     }
+    /** This page reads its rows before Filament applies a filter change, so the change starts a fresh list. Otherwise the
+     * table keeps the old rows while Select all counts the new filter's rows. */
+    protected function handleTableFilterUpdates(): void {$this->filamentFilterUpdates();$this->reload();}
     public function updatedAccount(): void {$this->startList();}
     public function updatedYears(): void {$this->startList();}
     /** An address or a stale form can name anything, so a choice stays one this page offers. */
@@ -143,7 +148,7 @@ class WhatYouSell extends Page implements HasTable
     /** One save for the selection. Fields left as they are stay out of it, so each row keeps what it had. */
     private function bulkEdit(array $data,array $tlds): void
     {
-        if(count($tlds)>25){Notification::make()->warning()->title('Pick at most 25 TLDs')->body('Select 25 or fewer TLDs, then try again.')->send();return;}
+        if(count($tlds)>self::MOST){Notification::make()->danger()->persistent()->title('Nothing was saved')->body(self::tooMany(count($tlds)))->send();return;}
         $terms=[...(($data['longest']??self::KEEP)===self::KEEP?[]:['longest'=>(int)$data['longest']]),...($data['transfer']===self::KEEP?[]:['transfer'=>$data['transfer']==='on'])];
         $sell=[...($data['choice']===self::KEEP?[]:['choices'=>array_fill_keys($tlds,$data['choice']==='rule'?null:$data['choice'])]),...($terms===[]?[]:['terms'=>array_fill_keys($tlds,$terms)])];
         if($sell===[]){Notification::make()->title('No changes')->send();return;}
@@ -163,14 +168,39 @@ class WhatYouSell extends Page implements HasTable
             return;
         }
         $this->reload();
+        $saved=array_keys($summary['rows']??[]);
         if(($summary['failed']??[])===[]){
-            Notification::make()->success()->title('Saved')->body('Sales start as prices arrive, once orders are on.')
+            Notification::make()->success()->title('Saved')->body(self::savedText($sell,$saved))
                 ->actions([Action::make('open_account')->label('Open registrar account')->link()->url(RegistrarAccount::getUrl(['account'=>$server]))])->send();
-        }elseif(($summary['rows']??[])!==[]){
-            $saved=array_map(static fn($ending)=>'.'.$ending,array_keys($summary['rows']));
-            Notification::make()->warning()->title('Partly saved')->body('Saved: '.implode(', ',$saved).'. Other TLDs were not saved. See the errors below.')->send();
+        }elseif($saved!==[]){
+            Notification::make()->warning()->title('Partly saved')->body(self::savedText($sell,$saved).' Other TLDs were not saved. See the errors below.')->send();
         }
-        foreach($summary['failures']??[] as $ending=>$message){Notification::make()->danger()->title("Couldn't save")->body('.'.$ending.': '.SettingsActions::refusal(new \DomainException($message),'acceptance',[],$server))->send();}
+        // One message per reason, naming its TLDs, so a large refusal stays readable.
+        $reasons=[];
+        foreach($summary['failures']??[] as $ending=>$message){$reasons[$message][]='.'.$ending;}
+        foreach($reasons as $message=>$endings){Notification::make()->danger()->persistent()->title("Couldn't save")->body(self::names($endings).': '.SettingsActions::refusal(new \DomainException($message),'acceptance',[],$server))->send();}
+    }
+    /** @param list<string> $endings */
+    private static function names(array $endings): string
+    {return count($endings)>3?implode(', ',array_slice($endings,0,3)).' and '.(count($endings)-3).' more':implode(', ',$endings);}
+    /** What the save did, said for the TLDs it saved. */
+    private static function savedText(array $sell,array $saved): string
+    {
+        if(isset($sell['rule'])){
+            return $sell['rule']['mode']==='only'
+                ?'Only TLDs set to Sell are sold. Others that sold by default stop now.'
+                :'TLDs you have not set yourself go on sale as their prices are published. TLDs for sale now stay on sale.';
+        }
+        $names=self::names(array_map(static fn($ending)=>'.'.$ending,$saved));
+        $choices=array_intersect_key($sell['choices']??[],array_flip($saved));
+        $choice=count(array_unique(array_map(static fn($c)=>$c??'rule',$choices)))===1?(reset($choices)??'rule'):null;
+        if($choices===[]){return 'Saved the terms for '.$names.'.';}
+        return match($choice){
+            'sell'=>$names.' go'.(count($saved)===1?'es':'').' on sale once '.(count($saved)===1?'its':'their').' registrar terms and prices are checked and orders are on.',
+            'skip'=>$names.(count($saved)===1?' is':' are').' no longer for sale.',
+            'rule'=>$names.' now follow'.(count($saved)===1?'s':'').' Default for new TLDs.',
+            default=>'Saved the choices for '.$names.'.',
+        };
     }
     /** The same fill the schedule runs. Sends reads only, keeps the last good rows if one fails. */
     public function syncNow(): void
@@ -182,7 +212,17 @@ class WhatYouSell extends Page implements HasTable
         catch(\Throwable $error){
             Notification::make()->danger()->title("Couldn't start sync")->body(\Paymenter\Extensions\Servers\Domains\Jobs\SyncPrices::isQueueRefusal($error)?$error->getMessage():'Check the registrar account under Registrars, then try again.')->send();return;
         }
-        Notification::make()->success()->title('Price sync queued')->body('You can keep working. The result will appear in your notifications.')->send();
+        Notification::make()->success()->title('Price sync queued')->body('You can keep working. Sync progress shows on this page.')->send();
+    }
+    private static function tooMany(int $count): string
+    {return 'You selected '.$count.' TLDs. Edit selected saves '.self::MOST.' or fewer at a time. To sell every TLD you have not set yourself, use Default for new TLDs.';}
+    /** The dialog names the TLDs it saves, so a selection the filter hides can't change unseen. */
+    private static function selection(\Illuminate\Support\Collection $records): ?string
+    {
+        $count=$records->count();if($count<2){return null;}
+        if($count>self::MOST){return self::tooMany($count);}
+        $names=$records->take(5)->map(fn(OfferRow $record)=>'.'.$record->tld)->all();
+        return 'Saves these '.$count.' TLDs: '.implode(', ',$names).($count>5?' and '.($count-5).' more.':'.');
     }
     /** Filament puts Save first in a form dialog; these read Cancel, then Save. */
     private static function cancelFirst(): \Closure
@@ -379,6 +419,8 @@ class WhatYouSell extends Page implements HasTable
                 // The table counts the selection in the browser, so the button reads it there. Select all works with filters.
                 BulkAction::make('edit')->label(new HtmlString('Edit <span x-text="getSelectedRecordsCount()"></span> selected'))->visible(fn()=>$this->canEdit())->deselectRecordsAfterCompletion()
                     ->modalHeading(fn($records)=>$records->count()===1?'Edit terms: .'.$records->first()->tld:'Edit '.$records->count().' TLDs')->modalSubmitActionLabel('Save terms')->modalFooterActionsAlignment(\Filament\Support\Enums\Alignment::End)->modalWidth('3xl')
+                    ->modalDescription(fn($records)=>self::selection($records))
+                    ->modalSubmitAction(fn(Action $action,$records)=>$records->count()>self::MOST?$action->disabled()->extraAttributes(['aria-disabled'=>'true']):$action)
                     ->schema(fn($records)=>$this->editFields($records->count()===1?$records->first():null))
                     ->action(fn(array $data,$records)=>$this->bulkEdit($data,$records->filter(fn(OfferRow $record)=>$this->reads()->blocked($record)===null)->pluck('tld')->all())),
             ]);

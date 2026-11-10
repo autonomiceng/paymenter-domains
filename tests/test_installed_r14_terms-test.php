@@ -27,7 +27,8 @@ if(str_contains($modal,'Sync prices to read these term totals')){$errors[]='Term
 DB::table('domains_prices')->where('id',$termPrice->id)->update(['retail'=>$termPrice->retail,'catalogue_observation'=>\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::json(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::encodeCost($stale))]);
 $stalePage=Livewire::actingAs($actor)->test(WhatYouSell::class);
 $stalePage->mountTableBulkAction('edit',[$key])->call('$refresh');$staleModal=$stalePage->effects['partials']['action-modals.0']??'';
-foreach(['Customer total $'.number_format((float)$termPrice->retail,2,'.',''),'Registrar cost $18.00','Out of date.']as$text){if(!str_contains($staleModal,$text)){$errors[]='Expired saved total lacks '.$text;}}
+// The first year costs $6 and two renewals cost $8 each, above the saved three-year quote of $18.
+foreach(['Customer total $'.number_format((float)$termPrice->retail,2,'.',''),'Registrar cost $22.00','Out of date.']as$text){if(!str_contains($staleModal,$text)){$errors[]='Expired saved total lacks '.$text;}}
 
 // r16: two separate missing ranges say why once, on the first.
 $gaps=view('domains::admin.term-prices',['prices'=>array_map(fn($term)=>['term'=>$term,'current'=>in_array($term,[1,2,5,10],true)?'10.99':null,'cost'=>in_array($term,[1,2,5,10],true)?'8.9500':null,'synced'=>in_array($term,[1,2,5,10],true)],range(1,10))])->render();

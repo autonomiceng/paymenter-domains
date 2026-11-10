@@ -23,6 +23,8 @@ final class SettingsActions
     private const SWITCHES=['late_renewal','processing','renewals','test_renewal','test_management','test_transfer','live_renewal','live_management','live_transfer','renew_early'];
     private const POPUPS=['late_renewal'=>'late renewal','processing'=>'orders','renewals'=>'renewals','test_renewal'=>'renewals','live_renewal'=>'renewals','test_transfer'=>'transfers','live_transfer'=>'transfers'];
     /** Switch names saved by a writer action with a name of its own. */
+    /** The largest margin the pricing dialogs take, as a percentage or a USD amount per year. Larger is almost always a typo. */
+    private const MARGIN_MAX=500;
     private const SHARED=['renew_early'=>'renewal_billing','renewals'=>'renewal_billing'];
     /** Keep one snapshot per form, including empty arrays and absent rows. */
     private static function cached(\Closure $read): \Closure
@@ -47,6 +49,18 @@ final class SettingsActions
         $current=$snapshot['user'];
         return $current!==null&&$current->hasPermission(Staff::VIEW)&&$current->hasPermission($permission);
     }
+    /** Why a margin can't be used, or null when it can. Matches the field's own rules so the preview never shows a price for it.
+     * The limit applies to a new margin only: a larger saved one, which the server takes, stays usable for other edits. */
+    private static function margin(mixed $value, mixed $saved = null): ?string
+    {
+        if($value===null||is_string($value)&&trim($value)===''){return 'Enter a margin.';}
+        if(!is_scalar($value)||!preg_match('/^-?[0-9]+(\.[0-9]+)?$/D',trim((string)$value))){return 'Enter a number.';}
+        $value=trim((string)$value);
+        if($value[0]==='-'&&preg_match('/[1-9]/',$value)){return 'Enter 0 or more.';}
+        $kept=is_string($saved)&&is_numeric($saved)&&bccomp($value,$saved,2)===0;
+        if(!$kept&&bccomp(ltrim($value,'-'),(string)self::MARGIN_MAX,2)>0){return 'Enter '.self::MARGIN_MAX.' or less.';}
+        return preg_match('/\.[0-9]{3,}$/',$value)?'Use at most two decimal places.':null;
+    }
     /** The one plain sentence a settings dialog opens with. Detail lives in details(). */
     public static function description(string $name): string
     {
@@ -54,7 +68,7 @@ final class SettingsActions
             'renewal_billing'=>'Set when renewal invoices go out.',
             'unpaid_hold'=>'Set how long an unpaid new domain order keeps its name.',
             'default_pricing'=>'Sets the pricing every TLD uses unless it has its own, and the estimated card fee. Saving publishes new prices at once. Issued invoices keep their prices.',
-            'override'=>'Saving publishes these prices at once. Registrations and transfers below cost are not sold; renewals below cost are still billed. Both alert staff. Issued invoices keep their prices.',
+            'override'=>'Saving publishes these prices at once. Registrations and transfers below cost are not sold, and the TLD shows why. Renewals below cost are still billed, and each one adds an alert to its domain. Issued invoices keep their prices.',
             'remove_override'=>'Uses Default pricing. Saving publishes the new prices at once. Issued invoices keep their prices.',
             'publish'=>'Publishes prices from saved costs and the current pricing. It does not refresh costs or change issued invoices.',
             'tld_settings'=>'Choose the years customers can buy and what is for sale.',
@@ -64,6 +78,14 @@ final class SettingsActions
             'configure'=>'Checks these credentials with one read, then saves them. Saving pauses orders until you resume them.',
             'probe'=>'Reads the balance once and shows it on this page.',
         };
+    }
+    /** Change registrar on a TLD that already has one says what the change does to its sales before it is saved. */
+    private static function sellerDescription(int $tld): string
+    {
+        $t=\Paymenter\Extensions\Servers\Domains\Models\Tld::find($tld);
+        $p=$t?\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld',$t->tld)->first():null;
+        if($p===null||$p->server_id===null){return self::description('seller');}
+        return 'Choose the registrar for new orders. If you pick another account, new orders for .'.$t->tld.' stop until that account\'s terms and prices are checked, and open carts drop .'.$t->tld.'. Existing domains stay where they are.';
     }
     /** The rest of what staff may want to know, behind the dialog's "?" helper. Null when the sentence says it all. */
     public static function details(string $name): ?string
@@ -117,8 +139,11 @@ final class SettingsActions
                             fn($key)=>self::canSee(Review::permission($key==='default'?'remove_override':'override')),ARRAY_FILTER_USE_KEY))
                         ->default(fn()=>((StaffCatalogue::routed()!==null?!StaffCatalogue::routed()->own(Tld::findOrFail($tld)):(Tld::find($tld)?->use_default_rule??true))&&self::canSee(Review::permission('remove_override')))||!self::canSee(Review::permission('override'))?'default':'custom');
                 }
-                $fields[]=Select::make('mode')->label('Pricing')->options(['markup_percent'=>'Add a percentage to cost','markup_fee_percent'=>'Add a percentage to cost and card fee','markup_amount'=>'Add an amount to cost','fixed'=>'Set my own price'])->required()->live()->default(fn()=>$rule()['mode']??null)->visible($own);
+                $fields[]=Select::make('mode')->label('Pricing')->options(['markup_percent'=>'Add a percentage to cost','markup_fee_percent'=>'Add a percentage to cost and card fee','markup_amount'=>'Add an amount to cost',
+                    // One own price for every TLD ignores each TLD's cost, so own prices are set per TLD only.
+                    ...($name==='default_pricing'?[]:['fixed'=>'Set my own price'])])->required()->live()->default(fn()=>$rule()['mode']??null)->visible($own);
                 $fields[]=TextInput::make('markup')->label(fn($get)=>$get('mode')==='markup_amount'?'Amount to add (USD)':'Percentage to add')->default(fn()=>$rule()['markup']??null)->required()->maxLength(12)->live(debounce:500)
+                    ->rule(static fn():\Closure=>static function(string $attribute,mixed $value,\Closure $fail)use($rule):void{if(($error=self::margin($value,$rule()['markup']??null))!==null){$fail($error);}})
                     ->visible(fn($get)=>$own($get)&&$get('mode')!=='fixed');
                 $fields[]=Select::make('round_up')->label('Round up')->options(PricingRule::ROUNDING_LABELS)->default(fn()=>$rule()['round_up']??null)->required()->live()
                     ->visible(fn($get)=>$own($get)&&$get('mode')!=='fixed');
@@ -131,14 +156,16 @@ final class SettingsActions
                     $fields[]=\Filament\Schemas\Components\Text::make('An estimate per payment. International cards and refunds can cost more, so set it a little high.')->key('fee_note');
                 }
                 $newFee=static fn($get)=>CardFee::validate(['percent'=>$get('fee_percent'),'fixed'=>$get('fee_fixed')]);
-                $entered=static function($get)use($name,$default,$saved,$newFee):?array{
+                $entered=static function($get)use($name,$default,$saved,$newFee,$rule):?array{
                     if($name==='override'&&$get('pricing')==='default'){return $default();}
+                    if($get('mode')!=='fixed'&&self::margin($get('markup'),$rule()['markup']??null)!==null){return null;}
                     try{return PricingRule::validate(['mode'=>$get('mode'),'markup'=>$get('markup')??'0','round_up'=>$get('round_up')??'none',
                         'fixed'=>['register'=>$get('fixed_register'),'renew'=>$get('fixed_renew'),'transfer'=>$get('fixed_transfer')],
                         ...($get('mode')==='markup_fee_percent'?['card_fee'=>$name==='override'?$saved():$newFee($get)]:[])]);}
                     catch(\Throwable){return null;}
                 };
-                $fields[]=\Filament\Schemas\Components\Text::make(fn($get)=>($r=$entered($get))===null?'Enter prices to see what customers pay.':'Customer pays: '.PricingRule::describe($r))->key('formula');
+                $fields[]=\Filament\Schemas\Components\Text::make(fn($get)=>($r=$entered($get))!==null?'Customer pays: '.PricingRule::describe($r)
+                    :($get('mode')!=='fixed'&&($bad=self::margin($get('markup'),$rule()['markup']??null))!==null?$bad:'Enter prices to see what customers pay.'))->key('formula');
                 if($name==='override'){$fields[]=\Filament\Schemas\Components\Html::make(fn($get)=>self::preview($tld,$entered($get)))->key('preview');}
                 else{
                     $reach=self::cached(static fn()=>self::reach());
@@ -218,7 +245,7 @@ final class SettingsActions
             $out[]=Action::make($id.($setup&&$server!==Review::ALL_ACCOUNTS?'_'.$server:''))->label($label)->color(fn()=>$name==='processing'&&$processing()?'danger':'gray')->modalWidth('lg')
                 ->visible(fn()=>!($setup&&$blocked())&&(!in_array($name,Review::PUBLISHES,true)||self::canSee(Review::permission('publish')))&&self::canSee(Staff::POLICY)&&(collect(Review::rights($name))->every(fn($right)=>self::canSee($right))||($name==='override'&&self::canSee(Review::permission('remove_override'))))&&self::featureVisible($server,$name))
                 ->requiresConfirmation(!$switch||$popup)->modalHidden($switch&&!$popup)->modalHeading($setup?fn()=>$popup?$turn().' '.self::POPUPS[$id].'?':self::setupHeading($name,$registrar()!==null):$label)
-                ->modalDescription($popup?fn()=>self::switchWarning($id,$server):($switch?null:($name==='probe'?fn()=>self::description($name).($registrar()==='namesilo'?' '.self::details($name):''):($name==='configure'?fn(Action $action)=>($action->getRawData()['registrar']??null)==='namesilo'?'Checks the key with one balance read, then saves it. Orders stay paused. This does not confirm who owns the account.':self::description($name):self::description($name)))))
+                ->modalDescription($popup?fn()=>self::switchWarning($id,$server):($switch?null:($name==='probe'?fn()=>self::description($name).($registrar()==='namesilo'?' '.self::details($name):''):($name==='configure'?fn(Action $action)=>($action->getRawData()['registrar']??null)==='namesilo'?'Checks the key with one balance read, then saves it. Orders stay paused. This does not confirm who owns the account.':self::description($name):($name==='seller'&&$tld!==null?fn()=>self::sellerDescription((int)$tld):self::description($name))))))
                 ->modalSubmitActionLabel($setup?fn()=>$popup?$turn():self::submitLabel($name,$registrar()!==null):($name==='override'?'Save and publish':'Confirm'))->schema($switch?[]:$fields)
                 ->action(function(#[\SensitiveParameter] array $data,$livewire)use($id,$name,$server,$tld,$setup,$stamp,$switch){
                     try{$data=[...$data,...self::saved($id,$server)];
@@ -227,9 +254,9 @@ final class SettingsActions
                         $default=$name==='override'&&($data['pricing']??null)==='default';
                         $r=new Review((int)Auth::id(),$server,$tld,$default?'remove_override':$name,(string)($data[$default?'default_key':'review_key']??''),trim((string)($data['reason']??'')));
                         $summary=app(StaffSettingsWrites::class)->run($r,$data);$account=Account::where('server_id',$server)->first();
-                        Notification::make()->status(($summary['audit_failed']??false)||($summary['failed']??[])!==[]?'warning':'success')->title(match(true){($summary['audit_failed']??false)=>"Saved, but the result wasn't recorded",$name==='processing'=>$account->processing_enabled?'Orders resumed':'Orders paused',$name==='probe'=>'Balance updated',
+                        Notification::make()->status(($summary['audit_failed']??false)||($summary['failed']??[])!==[]||($summary['pending']??false)?'warning':'success')->title(match(true){($summary['audit_failed']??false)=>"Saved, but the result wasn't recorded",$name==='processing'=>$account->processing_enabled?'Orders resumed':'Orders paused',$name==='probe'=>'Balance updated',
                                 $name==='enroll_sandbox'=>'Account connected',$name==='override'=>'Prices published',$setup=>'Saved',default=>'Change recorded'})
-                            ->body($name==='processing'||$name==='probe'?null:($name==='default_pricing'?self::published($summary):($name==='enroll_sandbox'?'NameSilo accepted the key. Orders are paused and no TLDs are chosen yet.':null)))->send();
+                            ->body($name==='processing'?self::republished($summary):($name==='probe'?null:($name==='default_pricing'?self::published($summary):($name==='enroll_sandbox'?'NameSilo accepted the key. Orders are paused and no TLDs are chosen yet.':null))))->send();
                         if($name==='processing'){$livewire->redirect(\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$server]));}
                     }catch(\Throwable $error){
                         if($error instanceof \DomainException&&$error->getMessage()==='Terms unchanged.'){Notification::make()->info()->title('Nothing to save')->body('These terms are the same as before.')->send();return;}
@@ -267,23 +294,30 @@ final class SettingsActions
         try{if(($catalogue=StaffCatalogue::routed())!==null){return $account!==null&&$catalogue->readable(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account));}return $account!==null&&\Paymenter\Extensions\Servers\Domains\Services\TestCatalogue::enabled(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account));}
         catch(\Throwable){return false;}
     }
-    public static function syncAll(int $server,bool $named=false): Action
+    /** Sync reads every TLD on the account, so a TLD page's button says so: it never looks like a one-row sync. The result
+     * lands on the page staff are on, so the toast points there instead of promising a notice the worker doesn't send. */
+    public static function syncAll(int $server,bool $named=false,?string $tld=null): Action
     {
         return Action::make('sync_prices_'.$server)->label(fn()=>'Sync prices'.($named?': '.(\App\Models\Server::find($server)?->name ?? 'Server #'.$server):''))->color('gray')
             ->visible(fn()=>self::canSee(Staff::POLICY)&&self::canSee(Review::permission('import'))&&self::syncOffered(Account::where('server_id',$server)->first()))
-            ->requiresConfirmation()->modalHeading('Sync prices')->modalDescription(fn()=>self::syncDescription($server))->modalSubmitActionLabel('Sync prices')
+            ->requiresConfirmation()->modalHeading($tld===null?'Sync prices':'Sync prices for every TLD on this account?')
+            ->modalDescription(fn()=>$tld===null?self::syncDescription($server):'Gets current costs from the registrar for every TLD this account sells, not only .'.$tld.'. It runs in the background.')
+            ->modalSubmitActionLabel('Sync prices')
             ->fillForm(fn()=>['review_key'=>Review::ticket((int)Auth::id(),$server,null,'import',Review::stamp($server,null))])
             ->schema([Hidden::make('review_key')])
-            ->action(function(#[\SensitiveParameter] array $data,$livewire)use($server){
+            ->action(function(#[\SensitiveParameter] array $data,$livewire)use($server,$tld){
                 try{
                     if(StaffCatalogue::routed()!==null){app(StaffSettingsWrites::class)->run(new Review((int)Auth::id(),$server,null,'import',(string)($data['review_key']??''),''),[]);}else{\Paymenter\Extensions\Servers\Domains\Jobs\SyncPrices::enqueue((int)Auth::id(),$server,(string)($data['review_key']??''));}
-                    Notification::make()->success()->title('Price sync queued')->body('You can keep working. The result will appear in your notifications.')->send();
+                    Notification::make()->success()->title('Price sync queued')->body(self::syncQueued($tld))->send();
                 }catch(\Throwable $error){
                     if(!$error instanceof \DomainException){\Illuminate\Support\Facades\Log::warning('Domains price sync failed.',['exception_class'=>$error::class]);}
                     Notification::make()->danger()->title("Couldn't sync prices")->body(\Paymenter\Extensions\Servers\Domains\Jobs\SyncPrices::isQueueRefusal($error)?$error->getMessage():self::refusal($error,'import',[],$server))->send();
                 }finally{$livewire->mountedActions=[];}
             });
     }
+    /** The queued toast: where the result shows. The worker sends no result notice, so it never promises one. */
+    public static function syncQueued(?string $tld): string
+    { return 'You can keep working. '.($tld===null?'Check sync progress on What you sell.':'Last updated on this page changes when it finishes.'); }
     /** Live preview: each sold term's cost, current price and the price saving would publish. */
     private static function preview(?int $tld,?array $rule): \Illuminate\Support\HtmlString
     {
@@ -337,6 +371,14 @@ final class SettingsActions
         $count=$reach['default'];$waiting=$reach['waiting'];
         if($count===0){return 'No TLDs use Default pricing yet.';}
         return $count.' '.($count===1?'TLD uses':'TLDs use').' Default pricing.'.($waiting===[]?'':' Costs are missing for '.\Paymenter\Extensions\Servers\Domains\Presentation\TldNames::summary($waiting).'. '.(count($waiting)===1?'Its prices stay':'Their prices stay').' the same until you sync prices.');
+    }
+    /** Notification text after resuming Orders or changing price freshness: the TLDs whose prices are not on sale yet. */
+    public static function republished(?array $summary): ?string
+    {
+        $failed=$summary['failed']??[];$left=(int)($summary['left']??0);
+        $later=$left>0?$left.' more '.($left===1?'TLD goes':'TLDs go').' back on sale in the background, about '.\Paymenter\Extensions\Servers\Domains\Catalogue\OfferWork::BATCH.' a minute.':null;
+        if($failed!==[]){return implode(' ',array_filter(['Prices for '.\Paymenter\Extensions\Servers\Domains\Presentation\TldNames::summary($failed).' are not published, so '.(count($failed)===1?'it is':'they are').' not for sale. Open Edit prices on the TLD and save.',$later]));}
+        return ($summary['pending']??false)?'Prices are not published yet, so TLDs are not for sale until the next background run. Open Edit prices on a TLD and save to publish it now.':$later;
     }
     /** Notification text after a Default pricing save. Each account that failed is named. */
     private static function published(array $summary): string
@@ -477,7 +519,9 @@ final class SettingsActions
         return $error instanceof EnomTestCallLimit?self::testRefusal($error,$name,$server,$data)
                 :match($error->getMessage()){\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE=>\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::STAFF,'The calculated price is too large.'=>'This makes a price too large to save. Lower the markup or the card fee. Nothing was changed.','Processing state unchanged.'=>'Orders are already set that way. Nothing changed.',
                 CardFee::INVALID=>'Enter a card fee from 0% to 99.99% and a fixed amount from $0 to $100,000, with up to two decimal places. Nothing was changed.',
-                'This TLD is hidden.'=>"That TLD isn't offered here. Nothing was saved.",'Choose at least one year.'=>'Tick at least one year. Nothing was saved.','Nothing to save.'=>'Nothing changed. Nothing was saved.',
+                'This TLD is hidden.'=>"That TLD isn't offered here. Nothing was saved.",
+                \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCommands::NO_SELLER=>'No registrar takes its new orders yet, so Sell would do nothing. Use Start selling on its TLD page to choose one. Nothing was saved.',
+                \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCommands::OTHER_SELLER=>'Another registrar account takes its new orders, so Sell here would do nothing. Use Change registrar on its TLD page to move it. Nothing was saved.','Choose at least one year.'=>'Tick at least one year. Nothing was saved.','Nothing to save.'=>'Nothing changed. Nothing was saved.',
                 'Acceptance exceeds encrypted settings capacity.','Invalid catalogue acceptance.'=>'That is more TLDs than one account can save. Turn some off. Nothing was saved.',
                 'Settings changed. Reload this page.'=>$name==='enroll_sandbox'?'This expired, or someone else changed this account. '.self::NO_KEY_CHECK.' Try again.':'Someone else changed this. Nothing was saved. Try again.',
                 'Current staff permissions required.'=>$name==='enroll_sandbox'?'Your permissions changed. '.self::NO_KEY_CHECK:'Your permissions changed. Nothing was saved.',

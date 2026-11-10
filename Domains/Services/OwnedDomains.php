@@ -252,7 +252,7 @@ final readonly class OwnedDomains
             }
         }
         $renewal=$state->renewal; $price=null;
-        try { if($service?->currency_code==='USD'){$price=Storefront::money(RetailLine::decimal($service->price));} } catch(\Throwable){}
+        try { if($service?->currency_code==='USD'){$price=Storefront::money(HolderPricing::shown($d,$service,$this->clock->now()));} } catch(\Throwable){}
         foreach ($management as $key=>&$section) {
             $section['url']=route('domains.domains.manage',[$d->id,$key]); $section['actions']=[];
             $intents=match($key) { 'contacts'=>['contacts'],

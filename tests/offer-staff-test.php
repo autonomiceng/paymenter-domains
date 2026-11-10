@@ -59,11 +59,13 @@ same($before,$state(),'Consumed review has no intent, native, audit or key write
 foreach(['expired','stale','permission'] as $failure){
     $r=$review('override',$id);
     if($failure==='expired'){$ticket=Review::ticket($actor->id,$binding->serverId,$id,'override',StaffCommands::stamp($binding->serverId,$id));$raw=json_decode(Crypt::decryptString($ticket),true);$raw['until']=time()-1;$r=$review('override',$id,Crypt::encryptString(json_encode($raw)));}
-    if($failure==='stale'){DB::table('domains_tlds')->where('id',$id)->increment('catalogue_revision');}
+    // A staff choice saved since the page opened stales the review. Background revisions do not (offer-staff-stamp-test.php).
+    if($failure==='stale'){DB::table('domains_tlds')->where('id',$id)->update(['catalogue_intent'=>OfferState::json(['sell'=>true,'stops'=>['register']])]);}
     $permissions=$actor->role()->first()->permissions;
     if($failure==='permission'){$actor->role()->first()->update(['permissions'=>[Staff::VIEW]]);}
     $before=$state();try{$staff->run($r,$rule);expect(false,$failure.' review refused');}catch(DomainException){}
     same($before,$state(),$failure.' has no intent/native/audit/key side effects');
+    if($failure==='stale'){DB::table('domains_tlds')->where('id',$id)->update(['catalogue_intent'=>$originalIntent]);}
     $actor->role()->first()->update(['permissions'=>$permissions]);
 }
 // Force a native projection write to fail, after intent mutation. The complete reviewed unit rolls back.

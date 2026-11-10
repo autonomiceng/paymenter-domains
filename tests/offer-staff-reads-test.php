@@ -104,7 +104,7 @@ $m=new ReflectionMethod(\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYo
 $editable=$component->instance();$m->invoke($editable,['choices'=>['com'=>'skip','missing'=>'skip']]);
 expect(collect(session('filament.notifications',[]))->contains(fn($n)=>$n['title']==="Couldn't save"&&str_contains($n['body'],'.missing')),'Page must report the missing row as well as saving its valid sibling');
 expect(!collect(session('filament.notifications',[]))->contains(fn($n)=>$n['title']==='Saved'),'A partially failed batch cannot report unqualified success');
-expect(collect(session('filament.notifications',[]))->contains(fn($n)=>$n['title']==='Partly saved'&&$n['body']==='Saved: .com. Other TLDs were not saved. See the errors below.'),'A mixed batch identifies exactly the saved endings');
+expect(collect(session('filament.notifications',[]))->contains(fn($n)=>$n['title']==='Partly saved'&&$n['body']==='.com is no longer for sale. Other TLDs were not saved. See the errors below.'),'A mixed batch identifies exactly the saved endings');
 same(false,\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($t->fresh()->catalogue_intent)['sell'],'Valid sibling remains saved when reporting missing row');
 $actor->role()->first()->update(['permissions'=>[Staff::VIEW]]);$redacted=$source->page(collect([$t->fresh()]));
 foreach($redacted[$t->id]['prices'] as $price){expect(!array_key_exists('cost',$price),'Revoked cost permission redacts snapshot');}

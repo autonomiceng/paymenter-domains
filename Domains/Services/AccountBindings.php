@@ -521,7 +521,8 @@ final class AccountBindings
     private function secret(int $serverId, string $key, ?Server $lockedServer = null, bool $advisory = false): string
     {
         $query = ($lockedServer ?? $this->server($serverId))->settings()->where('key', $key);
-        if ($lockedServer && !$advisory) { $query->lockForUpdate(); }
+        // Shared validation also serves GETs; settings locks join only a caller transaction.
+        if ($lockedServer && !$advisory && DB::transactionLevel() > 0) { $query->lockForUpdate(); }
         $setting = $query->first();
         if (!$setting || !$setting->encrypted || !is_string($setting->value) || $setting->value === '') {
             throw new \DomainException('Encrypted registrar settings are required.');

@@ -54,6 +54,33 @@ final class OfferState
         }
         return [...array_intersect_key($defaults, $readable), '_revision' => $revision];
     }
+    /** Account defaults keep the selling defaults of their last few revisions, so an offer published under one of them
+     * can still be read as published while a later defaults change republishes the account. */
+    public const DEFAULTS_KEPT = 20;
+    private const DEFAULT_KEYS = ['defaultSell', 'defaultLongest', 'defaultTransfers', 'maxAnnualCost'];
+    /** The saved defaults a defaults save writes: the new intent, the next revision, and the old defaults kept by revision.
+     * Old defaults that can't be read aren't kept, so offers published under them republish before they sell again. */
+    public static function nextDefaults(Intent $intent, mixed $saved, int $revision): array
+    {
+        $kept = [];
+        try {
+            $old = self::decode($saved);
+            if (is_int($old['_revision'] ?? 0) && ($old['_revision'] ?? 0) === $revision) {
+                $kept = is_array($old['_history'] ?? null) ? $old['_history'] : [];
+                $kept[$revision] = array_intersect_key(get_object_vars(self::intent((object) ['catalogue_intent' => null], $old)), array_flip(self::DEFAULT_KEYS));
+            }
+        } catch (\Throwable) { $kept = []; }
+        ksort($kept, SORT_NUMERIC);
+        return [...get_object_vars($intent), '_revision' => $revision + 1, '_history' => array_slice($kept, -self::DEFAULTS_KEPT, null, true)];
+    }
+    /** The selling defaults saved at a past revision, or null when they weren't kept or can't be read. */
+    private static function keptDefaults(array $defaults, int $revision): ?array
+    {
+        $old = is_array($defaults['_history'] ?? null) ? ($defaults['_history'][$revision] ?? null) : null;
+        if (!is_array($old)) { return null; }
+        $old = array_intersect_key($old, array_flip(self::DEFAULT_KEYS));
+        return count($old) === count(self::DEFAULT_KEYS) ? $old : null;
+    }
     public static function money(mixed $value, int $scale): ?string
     {
         if (!is_string($value) && !is_int($value)) { return null; }
@@ -141,6 +168,17 @@ final class OfferState
         foreach ($saved as $value) { if (!is_int($value) || $value < 0) { return null; } }
         return new Revision($saved['offer'], $saved['defaults'], $saved['selection'], $saved['retailRule'] ?? 0);
     }
+    /** The account sells this TLD to new customers: staff chose to sell it and its sales policy sends registrations or
+     * transfers here. Costs, terms and publication are left out. */
+    public static function sold(AccountBinding $binding, object $tld, array $defaults, ?object $policy): bool
+    {
+        $intent = self::decode($tld->catalogue_intent); $stops = $intent['stops'] ?? [];
+        if (($intent['salesPaused'] ?? false) || !($intent['sell'] ?? $defaults['defaultSell'] ?? true) || in_array('renew', $stops, true)) { return false; }
+        if (!$policy || (int) $policy->server_id !== $binding->serverId || $policy->account_fingerprint !== $binding->fingerprint
+            || $policy->registrar_key !== $binding->registrarKey) { return false; }
+        return $policy->register_enabled && !in_array('register', $stops, true)
+            || $policy->transfer_enabled && ($intent['transfers'] ?? $defaults['defaultTransfers'] ?? false) && !in_array('transfer', $stops, true);
+    }
     public static function revision(object $tld, array $defaults, ?object $policy): Revision
     { return new Revision((int) $tld->catalogue_revision, $defaults['_revision'] ?? 0, (int) ($policy?->revision ?? 0)); }
     public static function intent(object $tld,array $defaults):Intent
@@ -165,6 +203,10 @@ final class OfferState
         }
         $revision = self::revision($tld, $defaults, $policy);
         $published = $publishing ? null : self::published($tld->catalogue_published_revision);
+        $publishedIntent = null;
+        if ($published !== null && $published->defaults !== $revision->defaults && ($kept = self::keptDefaults($defaults, $published->defaults)) !== null) {
+            try { $publishedIntent = self::intent($tld, $kept); } catch (\Throwable) { $publishedIntent = null; }
+        }
         $selected = $policy && (int) $policy->server_id === $binding->serverId
             && $policy->registrar_key === $binding->registrarKey && $policy->account_fingerprint === $binding->fingerprint;
         $actions = [];
@@ -174,6 +216,6 @@ final class OfferState
         return new Snapshot(new FeedObserved($binding, $tld->tld, $costs), $facts, new Intent(...$intent),
             $revision, $publishing ? $revision : $published, $retail, $selected ? $binding : null, $actions,
             $ready, hidden: EndingChoices::hidden($tld->tld),
-            retainedAnnualRetail: OfferState::money($tld->catalogue_retained_annual_retail, 2));
+            retainedAnnualRetail: OfferState::money($tld->catalogue_retained_annual_retail, 2), publishedIntent: $publishedIntent);
     }
 }

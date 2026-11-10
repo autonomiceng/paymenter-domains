@@ -86,15 +86,8 @@ final class OfferWork
     {
         $t = Tld::where('server_id', $binding->serverId)->where('tld', $tld)->sole();
         $this->offerBinding($binding, $t);
-        $intent = OfferState::decode($t->catalogue_intent);
-        $defaults = OfferState::decode($this->account($binding)->catalogue_defaults);
-        if (($intent['salesPaused'] ?? false) || !($intent['sell'] ?? $defaults['defaultSell'] ?? true) || in_array('renew', $intent['stops'] ?? [], true)) { return false; }
-        $policy = DB::table('domains_sales_policies')->where('server_id', $binding->serverId)->where('tld', $tld)
-            ->where('account_fingerprint', $binding->fingerprint)->where('registrar_key', $binding->registrarKey)->first();
-        if (!$policy || !($policy->register_enabled && !in_array('register', $intent['stops'] ?? [], true)
-            || $policy->transfer_enabled && ($intent['transfers'] ?? $defaults['defaultTransfers'] ?? false)
-                && !in_array('transfer', $intent['stops'] ?? [], true))) { return false; }
-        return true;
+        return OfferState::sold($binding, $t, OfferState::decode($this->account($binding)->catalogue_defaults),
+            DB::table('domains_sales_policies')->where('tld', $tld)->first());
     }
 
     /** Safe local status; no cost, credentials, raw error or acceptance-list copies. */

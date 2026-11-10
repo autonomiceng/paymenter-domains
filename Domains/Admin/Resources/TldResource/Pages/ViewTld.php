@@ -76,7 +76,7 @@ class ViewTld extends ViewRecord
         // Edit prices can't repair the account's defaults; the reason names where to.
         if($s['invalid']&&$s['kind']==='account_defaults'){return null;}
         if($s['invalid']||in_array($s['reason'],['Below cost','Price missing','Prices not published'],true)){return 'override';}
-        return in_array($s['reason'],['No registrar selected','Not offered by this registrar'],true)?'seller':null;
+        return in_array($s['reason'],['No registrar selected','Not offered by this registrar'],true)||TldFacts::unsupported($s['reason'])?'seller':null;
     }
     /** Staff words for the head. Off on purpose is gray, a job for staff is amber, our own checks are blue. */
     private function headLine(): HtmlString
@@ -89,10 +89,11 @@ class ViewTld extends ViewRecord
         $link=static fn(?string $url,string $label)=>$url?new HtmlString(e($reason).'. <a class="domains-link" href="'.e($url).'">'.e($label).'</a>'):$reason;
         $step=match($reason){
             'Cost missing','Cost out of date'=>$reason.'. Use Sync prices below.',
-            'Check registrar account'=>$link(RegistrarFacts::accountUrl((int)$t->server_id),'Open the registrar account'),
+            'Check registrar account',TldFacts::RENEWALS_OFF=>$link(RegistrarFacts::accountUrl((int)$t->server_id),'Open the registrar account'),
             'Over the cost limit'=>$link(\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::getUrl(['account'=>$t->server_id]),'Change it in What you sell'),
             'No registrar selected'=>'No registrar selected. '.($this->settings()['seller']->isVisible()?'Choose a registrar for new orders.':'Ask staff who can change the registrar.'),
-            default=>$reason};
+            TldFacts::TERMS_FAILED=>$reason.'. Sync prices tries again now.',
+            default=>str_starts_with($reason,TldFacts::OTHER_SELLER.' ')?$reason.'. This account keeps its existing domains.':$reason};
         return StatusMark::line($tone,'Not for sale','tld-'.$t->id,$step);
     }
     /** Sales reasons for a stop that Start selling lifts. */
@@ -195,11 +196,24 @@ class ViewTld extends ViewRecord
             });
     }
     public function overrideAction(): Action {return $this->settings()['override'];}
-    public function syncPricesAction(): Action {return SettingsActions::syncAll((int)$this->getRecord()->server_id)->name('syncPrices');}
+    public function syncPricesAction(): Action {return SettingsActions::syncAll((int)$this->getRecord()->server_id,tld:(string)$this->getRecord()->tld)->name('syncPrices');}
     protected function fillForm(): void {$this->data=[];}
-    public function getTitle(): string {Staff::requireView();return '.'.$this->getRecord()->tld;}
+    public function getTitle(): string {Staff::requireView();return '.'.$this->getRecord()->tld.(($a=$this->account())!==null?' on '.$a:'');}
     public function getHeading(): HtmlString
-    {return new HtmlString('<span class="font-mono domains-mono">'.e($this->getTitle()).'</span>');}
+    {
+        $a=$this->account();
+        return new HtmlString('<span class="font-mono domains-mono">.'.e($this->getRecord()->tld).'</span>'.($a!==null?' <span class="domains-tld-account">on '.e($a).'</span>':''));
+    }
+    private ?string $accountName=null;private bool $accountRead=false;
+    /** A TLD has a page on each registrar account that offers it. Then the page names its account, so two pages never
+     * share one title. */
+    private function account(): ?string
+    {
+        if($this->accountRead){return $this->accountName;}
+        $t=$this->getRecord();$this->accountRead=true;
+        $shared=\Paymenter\Extensions\Servers\Domains\Models\Tld::where('tld',$t->tld)->where('server_id','!=',$t->server_id)->exists();
+        return $this->accountName=$shared?((string)(\App\Models\Server::whereKey($t->server_id)->value('name')?:'') ?: null):null;
+    }
     public function getSubheading(): string|Htmlable|null
     {return $this->headLine();}
     /** @return list<NavigationItem> */

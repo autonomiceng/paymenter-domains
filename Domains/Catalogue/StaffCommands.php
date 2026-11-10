@@ -11,15 +11,23 @@ use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,CardFee,Prici
 /** Dormant translator. Writer owns the reviewed transaction; wake only enqueues bounded local work. */
 final class StaffCommands
 {
+    public const NO_SELLER='No registrar chosen for new orders.';
+    public const OTHER_SELLER='Another registrar account takes new orders.';
     public const ACTIONS=['acceptance','override','remove_override','default_pricing','tld_settings','seller','publish','import'];
     public function __construct(private readonly Writer $writer,private readonly AccountBindings $bindings,
         private readonly \Closure $wake,private readonly ?\Closure $sync=null) {}
 
-    /** Raw state hash includes unavailable credentials and every offer/publication revision. Never decrypts credentials. */
+    /** Columns only background price and terms reads and publication write. A staff save never depends on them being
+     * unchanged since the page opened: each command still checks its offer revision under the writer locks. Publishing
+     * rewrites the kept renewal price, so a save made while the last one is still publishing is not someone else's change. */
+    private const BACKGROUND=['catalogue_revision'=>true,'catalogue_published_revision'=>true,'catalogue_facts'=>true,'catalogue_retained_annual_retail'=>true];
+    /** Raw hash of what staff set: credentials, accounts, settings, TLD choices and the seller rows. Never decrypts credentials.
+     * Saved costs, terms and publication are left out, so background reads can't make a save look like someone else's change. */
     public static function stamp(int $server,?int $tld=null): string
     {
         $ending=$tld?Tld::whereKey($tld)->where('server_id',$server)->value('tld'):null;
         $raw=static fn($q)=>(DB::transactionLevel()>0?$q->lockForUpdate():$q)->get()->map(static fn($r)=>(array)$r)->all();
+        $staff=static fn($q)=>array_map(static fn(array $r)=>array_diff_key($r,self::BACKGROUND),$raw($q));
         $names=Tld::when($server!==Review::ALL_ACCOUNTS,fn($q)=>$q->where('server_id',$server))->when($tld,fn($q)=>$q->whereKey($tld))->pluck('tld');
         $ids=Server::where('extension','Domains')->orderBy('id')->pluck('id');
         return 'offer:'.hash('sha256',OfferState::json([UpgradeGate::generation(),
@@ -28,8 +36,7 @@ final class StaffCommands
             Account::whereIn('server_id',$ids)->orderBy('server_id')->get()->map(\Paymenter\Extensions\Servers\Domains\Services\ApiCallLimits::forAccount(...))->all(),
             $raw(DB::table('settings')->where('settingable_type',(new Server)->getMorphClass())->whereIn('settingable_id',$ids)
                 ->whereRaw("`key` NOT LIKE ? ESCAPE '!'",[str_replace('_','!_',Review::KEY).'%'])->orderBy('id')),
-            $raw(DB::table('domains_tlds')->when($ending,fn($q)=>$q->where('tld',$ending),fn($q)=>$q->when($server!==Review::ALL_ACCOUNTS,fn($q)=>$q->where('server_id',$server)))->orderBy('id')),
-            $raw(DB::table('domains_prices')->when($ending,fn($q)=>$q->where('tld',$ending),fn($q)=>$q->when($server!==Review::ALL_ACCOUNTS,fn($q)=>$q->where('server_id',$server)))->orderBy('id')),
+            $staff(DB::table('domains_tlds')->when($ending,fn($q)=>$q->where('tld',$ending),fn($q)=>$q->when($server!==Review::ALL_ACCOUNTS,fn($q)=>$q->where('server_id',$server)))->orderBy('id')),
             $raw(DB::table('domains_sales_policies')->whereIn('tld',$names)->orderBy('tld')),\Paymenter\Extensions\Servers\Domains\Services\BusinessSetting::stamp(DB::transactionLevel()>0),$server,$tld]));
     }
     public function publish(int $id,?Review $review=null): void
@@ -39,6 +46,38 @@ final class StaffCommands
         $b=AccountBindings::binding(Account::where('server_id',$t->server_id)->sole());
         $d=OfferState::decode(Account::where('server_id',$t->server_id)->sole()->catalogue_defaults);
         $this->writer->apply(Edit::republish($b,$t->tld),$this->revision($t,$d));
+    }
+    /** TLDs one staff save publishes before it answers. Each is one locked write, so hundreds could outrun the request;
+     * the rest go back on sale in the background turn (OfferWork::BATCH a minute). */
+    public const REPUBLISH_NOW = 50;
+    /** After an account-wide change made every offer stale, republish at once the TLDs this account sells, the way Edit
+     * prices > Save and publish does, so customers keep buying them. The background turn still covers the rest.
+     * Returns the TLDs that could not be published (each one keeps its reason on its TLD page) and how many sold TLDs
+     * were left for the background turn past $limit. @return array{failed:list<string>,left:int} */
+    public function republishSold(int $server,int $limit=self::REPUBLISH_NOW): array
+    {
+        if(DB::transactionLevel()!==0){throw new \LogicException('Staff commands require the outer writer.');}
+        $account=Account::where('server_id',$server)->sole();$b=AccountBindings::binding($account);$failed=[];$done=0;$left=0;
+        $policies=DB::table('domains_sales_policies')->where('server_id',$server)->where('account_fingerprint',$b->fingerprint)->where('registrar_key',$b->registrarKey)
+            ->where(fn($q)=>$q->where('register_enabled',true)->orWhere('transfer_enabled',true))->get()->keyBy('tld');
+        $rows=Tld::where('server_id',$server)->where('account_fingerprint',$b->fingerprint)->where('registrar_key',$b->registrarKey)
+            ->where('catalogue_converted',true)->whereIn('tld',$policies->keys())->orderBy('id')->get();
+        foreach($rows as $t){
+            try{
+                $d=OfferState::decode(Account::where('server_id',$server)->sole()->catalogue_defaults);
+                if(!OfferState::sold($b,$t,$d,$policies[$t->tld])){continue;}
+                $revision=$this->revision($t,$d);
+                try{$current=OfferState::equivalent(OfferState::decode($t->catalogue_published_revision),get_object_vars($revision));}catch(\JsonException|\TypeError){$current=false;}
+                if($current){continue;}
+                if($done>=$limit){$left++;continue;}
+                $done++;$this->writer->apply(Edit::republish($b,$t->tld),$revision);
+            }catch(\Throwable $error){
+                // One TLD that can't publish must not stop its siblings; it stays pending for the background turn.
+                if(!$error instanceof \DomainException){\Illuminate\Support\Facades\Log::warning('Domains account republish failed.',['tld_id'=>(int)$t->id,'exception_class'=>$error::class]);}
+                $failed[]=$t->tld;
+            }
+        }
+        return ['failed'=>$failed,'left'=>$left];
     }
     public function run(Review $review,array $data): array
     {
@@ -90,7 +129,8 @@ final class StaffCommands
                 $entries[]=[$command,$this->revision($target,$targetDefaults)];
             }catch(\DomainException|\InvalidArgumentException $e){$failed[$t->tld]=$e->getMessage();}
         }}
-        if($entries===[]&&count($failed)===1&&$review->action!=='acceptance'){throw new \DomainException(reset($failed));}
+        // Every picked TLD was refused for one reason: nothing is saved, and that reason is the refusal.
+        if($entries===[]&&$failed!==[]&&count(array_unique($failed))===1){throw new \DomainException(reset($failed));}
         if(count($entries)>25||$entries===[]){throw new \DomainException('Review 1 to 25 valid commands.');}
         if($review->action==='import'&&$this->sync===null){throw new \LogicException('Offer sync composition required.');}
         $review->input([...$data,...($sell===[]?[]:['changes'=>[],'rule'=>$sell['rule']??null,'rule_changed'=>false,'rows'=>[]])]);
@@ -116,6 +156,12 @@ final class StaffCommands
         $name=$t->tld;$choice=$sell['choices'][$name]??null;
         if(array_key_exists($name,$sell['choices']??[])){
             if(!in_array($choice,['sell','skip',null],true)){throw new \DomainException('Invalid sell choice.');}
+            // Sell does nothing until this account takes new orders for the TLD, so it is refused with the step that does.
+            if($choice==='sell'){
+                $policy=DB::table('domains_sales_policies')->where('tld',$name)->first();
+                if($policy===null||$policy->server_id===null){throw new \DomainException(self::NO_SELLER);}
+                if((int)$policy->server_id!==$binding->serverId){throw new \DomainException(self::OTHER_SELLER);}
+            }
             $raw['sell']=$choice===null?null:$choice==='sell';
         }
         $terms=$sell['terms'][$name]??[];

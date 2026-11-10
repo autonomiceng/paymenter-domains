@@ -101,10 +101,10 @@ class RegistrarSetup extends Page implements HasTable
         $a=Account::where('server_id',$s->id)->first();$status=RegistrarFacts::status($s,$a);$connected=RegistrarFacts::connected($a,$status);
         $balance=$connected?RegistrarFacts::balance($a):null;
         return $this->rows[$s->id]=['account'=>$a,'status'=>$status,'connected'=>$connected,'domains'=>Domain::where('server_id',$s->id)->count(),
-            'demo'=>$a!==null&&DemoData::is($a),'balance'=>$balance,'note'=>self::note($status['reason'],$balance,$a,\Paymenter\Extensions\Servers\Domains\Admin\Support\PaidUncertainty::accountStep((int)$s->id))];
+            'demo'=>$a!==null&&DemoData::is($a),'balance'=>$balance,'note'=>self::note($status['reason'],$balance,$a,\Paymenter\Extensions\Servers\Domains\Admin\Support\PaidUncertainty::accountStep((int)$s->id),$status['act']??false)];
     }
     /** The account's Note: why it is in this state, then any job on its money, each with its step. @return array{text:?string,act:bool} */
-    private static function note(?string $reason,?array $b,?Account $account,?string $held=null): array
+    private static function note(?string $reason,?array $b,?Account $account,?string $held=null,bool $act=false): array
     {
         // Requests under review hold the account, so the row says so first, in amber, as its banner does.
         $jobs=$b===null?($held?[$held]:[]):array_filter([$held,
@@ -115,7 +115,8 @@ class RegistrarSetup extends Page implements HasTable
         $gap=$b===null?null:RegistrarFacts::dueGap($account,$b);
         if ($gap!==null&&$gap['act']) { $jobs[]=$gap['text']; }
         $parts=array_map(StaffDomainStatus::sentence(...),array_filter([$reason,...$jobs,$gap!==null&&!$gap['act']?$gap['text']:null]));
-        return ['text'=>$parts===[]?null:implode(' ',$parts),'act'=>$jobs!==[]];
+        // A reason staff must act on (an account that sells nothing) is a job too.
+        return ['text'=>$parts===[]?null:implode(' ',$parts),'act'=>$act||$jobs!==[]];
     }
     private static function accounts(): Builder { return Server::query()->where('extension','Domains'); }
     private static function resourceUrl(string $resource,string $page): ?string

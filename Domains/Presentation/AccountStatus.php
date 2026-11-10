@@ -10,7 +10,7 @@ final class AccountStatus
     public const TEST_MODE_OFF = 'Test mode turned off on this site';
     /** key => [label, tone] */
     public const SET = [
-        'active' => ['Active', 'success'], 'orders_paused' => ['Orders paused', 'warning'],
+        'active' => ['Active', 'success'], 'orders_paused' => ['Orders paused', 'warning'], 'not_selling' => ['Nothing for sale', 'warning'],
         'not_connected' => ['Not connected', 'gray'], 'connection_failed' => ['Connection failed', 'danger'],
     ];
     /** AccountBindings::configurationStatus() => [status key, default reason line] */
@@ -28,5 +28,12 @@ final class AccountStatus
         if ($key === 'active' && !$processing) { [$key, $default] = ['orders_paused', 'Paused by staff']; }
         [$label, $tone] = self::SET[$key];
         return ['label' => $label, 'tone' => $tone, 'reason' => $reason ?? $default];
+    }
+    /** A connected account with Orders on that sells no TLD. $reason names the cause and its fix, so staff must act.
+     * @return array{label:string,tone:string,reason:string,act:true} */
+    public static function notSelling(string $reason): array
+    {
+        [$label, $tone] = self::SET['not_selling'];
+        return ['label' => $label, 'tone' => $tone, 'reason' => $reason, 'act' => true];
     }
 }

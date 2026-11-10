@@ -1,0 +1,32 @@
+<?php
+// A price rise shows "Your cart changed" even when the domain check on cart load fails. MIT, Copyright (c) 2026 Autonomic Engineering.
+declare(strict_types=1);
+require __DIR__.'/native-app.php';require __DIR__.'/Support/commerce.php';require __DIR__.'/Support/native-commerce.php';require __DIR__.'/Support/offer-commerce.php';
+use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission,CartCheckoutRefresh,CartNotice,EligibilityUnconfirmed};
+extract(offerCommerceFixture());$user=commerceUser();$cart=commerceCart($user);
+$line=commerceAdd($cart,$storefront->offer('com','register',1)['product'],'risen-price-placeholder.com');
+Illuminate\Support\Once::flush();app('request')->cookies->set('cart',$cart->ulid);
+// The registrar check is not confirmed on this load; checkout runs it again before payment.
+$admission=new class($native,$sellers,$eligibility,$clock) extends CartAdmission {
+    public function refresh():void {throw new EligibilityUnconfirmed(null);}
+};
+CartCheckoutRefresh::boot($admission);
+$listeners=(new ReflectionProperty(Livewire\EventBus::class,'listeners'))->getValue(app(Livewire\EventBus::class));
+$mount=end($listeners['mount']);
+$messages=static fn($component)=>collect(array_map(static fn($event)=>$event->serialize(),Livewire\store($component)->get('dispatched',[])))
+    ->where('name','notify')->map(static fn($event)=>$event['params'][0]['message']??'')->values()->all();
+foreach([true,false] as $risen){
+    Livewire\store($component=new App\Livewire\Cart)->set('dispatched',[]);
+    // The customer last saw 1.00, so the current line price is a rise.
+    session()->put('domains.cart_shown.'.$cart->ulid,$risen?[$line->id=>['plan_id'=>(int)$line->plan_id,'quantity'=>(int)$line->quantity,'amount'=>'1.00']]:[]);
+    $mount($component);$notice=CartNotice::get($component);
+    if($risen){
+        same('Your cart changed',$notice['title']??null,'A price rise shows the cart changed notice when the check fails');
+        same([$line->id=>'1.00'],$notice['was']??null,'The notice keeps the price the customer last saw');
+        expect(!in_array('We could not check this domain. Edit or remove it from your cart, then try checkout again.',$messages($component),true),'A price rise does not say the domain could not be checked');
+    }else{
+        same(null,$notice,'No price change shows no cart changed notice');
+        same(['We could not check this domain. Edit or remove it from your cart, then try checkout again.'],$messages($component),'A failed check with no price change still says so');
+    }
+}
+$nativeSuccessful=true;echo "Cart price rise with a failed check passed.\n";
