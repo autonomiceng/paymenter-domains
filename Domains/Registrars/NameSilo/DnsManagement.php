@@ -15,7 +15,7 @@ class DnsManagement extends Management
     }
     private readonly ObservationReader $reader;
     public function __construct(AccountBinding $binding, #[\SensitiveParameter] \Closure $exchange, array $dsFacts=[])
-    { parent::__construct($binding,$exchange,$dsFacts);$this->reader=new ObservationReader($binding,$exchange); }
+    { parent::__construct($binding,$exchange,$dsFacts);$this->reader=new ObservationReader($binding,$exchange,records:true); }
     /** Refresh through this adapter uses the read-only reader, so it reports and returns the same complete DNS and settings. */
     public function observationCapabilities(): array { return $this->reader->observationCapabilities(); }
     public function discover(ManagementRequest $r,RequestContext $c,array $knownGlue=[]): array { return $this->reader->discover($r,$c,$knownGlue); }
