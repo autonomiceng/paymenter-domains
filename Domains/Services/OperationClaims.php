@@ -198,6 +198,10 @@ final class OperationClaims
             }
             if ($ready->query->action === Action::Transfer) { $attempt['transfer_admission'] = $ready->transfer; }
             $op->update(['attempt' => $attempt, 'funding' => [...$op->funding, 'seal' => $paid]]);
+            // A retry's backoff paces only this send. Once it may be sent, status checks keep their own schedule.
+            if (array_key_exists('balance_retry', $op->policy ?? [])) {
+                DB::table('domains_runtime_operations')->where('operation_id', $op->id)->where('due_at', '>', $now->getTimestamp())->update(['due_at' => $now->getTimestamp()]);
+            }
             return $op;
         });
     }

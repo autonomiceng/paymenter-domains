@@ -154,6 +154,9 @@ foreach(['cutoff','funded','short','paused','two_ticks','transfer','read_cap','s
             }
             $worker->operation($op->id);$worker->operation($op->id);
             same($before+1,$state->sends,$case.': funds send once without Release hold');
+            // The retry backoff paces resends only; a sent order gets its normal status checks.
+            $sent=$op->fresh()->state;$wait=$due($op)-$clock->now()->getTimestamp();
+            same([true,true],[in_array($sent,['pending','uncertain','running'],true),$wait<=300],$case.': the status check waits '.$wait.'s, not the retry backoff');
             if($case==='sent_cap'){
                 same('sealed',$op->fresh()->attempt['seal'],'A refusal after sending retains the seal');
                 expect(!Paymenter\Extensions\Servers\Domains\Services\BalanceRetries::candidate($op->fresh()),'Possibly sent work cannot retry for balance');
