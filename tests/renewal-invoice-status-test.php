@@ -40,6 +40,19 @@ same($invoiceRow,$oldInvoice->fresh()->getAttributes(),'Old cancelled invoice st
 Livewire::actingAs($staff)->test(RequestsRelationManager::class,['ownerRecord'=>$d->fresh(),'pageClass'=>ViewDomain::class])
     ->assertSee('Search changes')->assertSee('Request #'.$old->id)->assertSee('Renewal cancelled: not paid');
 
+// Latest payment status is read from the transaction batch.
+foreach (['failed'=>true,'processing'=>false] as $paymentStatus=>$declined) {
+    App\Models\InvoiceTransaction::withoutEvents(fn()=>App\Models\InvoiceTransaction::create(['invoice_id'=>$replacement->id,'amount'=>'1.00','fee'=>'0.00','status'=>$paymentStatus]));
+    $domain=$d->fresh();$inputs=Paymenter\Extensions\Servers\Domains\Services\DomainStateInputs::one($domain);
+    DB::flushQueryLog();DB::enableQueryLog();
+    $current=Paymenter\Extensions\Servers\Domains\Services\DomainStates::cycle($domain,$inputs,$clock->now())['current'];
+    $reads=array_filter(DB::getQueryLog(),fn($q)=>str_contains($q['query'],'invoice_transactions'));
+    DB::disableQueryLog();
+    same($declined,$current['declined']??false,'The newest transaction determines the decline message');
+    same([],$reads,'Projecting a batched renewal does not query its transactions again');
+}
+DB::table('invoice_transactions')->where('invoice_id',$replacement->id)->update(['status'=>'failed']);
+
 // If the replacement is itself cancelled, it becomes the latest unpaid renewal again.
 $cycles->retireUnpaid($replacementOp->id);
 $reminders->remind($d->id);$reminders->remind($d->id);

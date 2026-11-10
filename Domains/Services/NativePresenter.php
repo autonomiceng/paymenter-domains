@@ -17,7 +17,10 @@ final readonly class NativePresenter
         $result=[];
         foreach(Domain::whereIn('service_id',$ids)->where('user_id',$owner->id)->whereHas('service',fn($q)=>$q->where('user_id',$owner->id))
             ->with(['service.cancellation','service.user'])->get() as $d){$dto=$this->owned->present($d,false);
-                $result[(int)$d->service_id]=new OwnedDomain(...[...get_object_vars($dto),'serviceStatus'=>$d->service->status==='cancelled'?'Cancelled':null]);}
+                // Service rows offer setup only when the order waits for it. An optional nameserver choice stays on the domain page,
+                // so a paid registration that goes ahead on its own reads as pending, not as waiting for the customer.
+                $actions=\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::optionalSetup($dto)?array_diff_key($dto->actions,['setup'=>true]):$dto->actions;
+                $result[(int)$d->service_id]=new OwnedDomain(...[...get_object_vars($dto),'actions'=>$actions,'serviceStatus'=>$d->service->status==='cancelled'?'Cancelled':null]);}
         return $result;
     }
     /** Neutral watch/managed summaries for hosting rows; preserve the original domain-only adapter. */

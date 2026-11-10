@@ -8,7 +8,10 @@ use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement, RenewalRepe
 /** The client domain page: its one notice and the Renewal card rows, from the page DTOs alone. */
 final class DomainPage
 {
-    public const INITIAL_READ = 'Checking with the registrar. This usually takes a few minutes.';
+    public const INITIAL_READ = 'Checking with the registrar. This usually takes a few minutes. Changes open when the check finishes.';
+    /** The setup step only lets the owner choose nameservers before a paid registration starts: it goes ahead without them. */
+    public static function optionalSetup(OwnedDomain $d): bool
+    { return isset($d->actions['setup']) && ($d->setup['defaults'] ?? false) && !($d->setup['contacts'] ?? false); }
     public static function initialRead(OwnedDomain $d): bool
     { return collect($d->management)->contains(fn ($section) => $section['family']['initial_read_pending'] ?? false); }
     /** The cause on each value while reads are stopped. The page notice carries the one fix, so the rows stay calm. */
@@ -45,11 +48,12 @@ final class DomainPage
             $order === 'unpaid' => ['tone' => 'warn', 'text' => 'This order isn’t paid yet. Pay the invoice to start the '.$word.'.', 'action' => ['label' => 'Pay invoice', 'url' => $d->order['invoice'], 'button' => true]],
             $order === 'cancelled' && isset($d->order['return']) => ['tone' => 'warn', 'text' => 'This order was cancelled. '.$d->order['return'], 'action' => $contact],
             $order === 'cancelled' && isset($d->order['credit']) => ['tone' => 'warn', 'text' => 'This order was cancelled. We added what you paid to account credit. You can apply it on an invoice.', 'action' => null],
+            $order === 'cancelled' && ($d->order['unpaid'] ?? false) => ['tone' => 'info', 'text' => 'This order was cancelled. Nothing was charged.', 'action' => null],
             $order === 'cancelled' => ['tone' => 'warn', 'text' => 'This order was cancelled. Ask us to start it again.', 'action' => $contact],
             $order === 'failed' => ['tone' => 'bad', 'text' => 'This '.$word.' did not finish. Ask us to start it again.', 'action' => $contact],
             in_array('watch.ns_changed', $s?->stateKeys ?? [], true) => $nameservers,
             $setup && $phase === 'cutoff' && ($d->setup['contacts'] ?? false) => ['tone' => 'warn', 'text' => 'The auth code deadline passed. Update your details so we can finish the transfer.', 'action' => ['label' => 'Update details', 'url' => $setup]],
-            $setup && ($d->setup['defaults'] ?? false) && !($d->setup['contacts'] ?? false) => ['tone' => 'info', 'text' => 'Choose nameservers before registration starts, or we use '.(implode(', ', $d->setup['defaultNameservers'] ?? []) ?: 'the registrar’s default nameservers').'.', 'action' => ['label' => 'Choose nameservers', 'url' => $setup]],
+            $setup && self::optionalSetup($d) => ['tone' => 'info', 'text' => 'Choose nameservers before registration starts, or we use '.(implode(', ', $d->setup['defaultNameservers'] ?? []) ?: 'the registrar’s default nameservers').'.', 'action' => ['label' => 'Choose nameservers', 'url' => $setup]],
             (bool) $setup => ['tone' => 'warn', 'text' => 'Finish setup to start registration.', 'action' => ['label' => 'Finish setup', 'url' => $setup]],
             isset($d->actions['code']) && ($d->transfer['open'] ?? false) && !($d->transfer['received'] ?? false) => ['tone' => 'warn', 'text' => 'Enter the auth code from your current registrar.', 'action' => ['label' => 'Enter auth code', 'url' => $d->actions['code']]],
             ($d->transfer['notice']['tone'] ?? null) === 'warning' => ['tone' => 'warn', 'text' => $d->transfer['notice']['title'].' '.$d->transfer['notice']['body'], 'action' => $contact],
@@ -104,7 +108,7 @@ final class DomainPage
         }
         $days = $d->daysLeft ?? $s?->daysLeft ?? (int) CarbonImmutable::now('UTC')->startOfDay()->diffInDays(CarbonImmutable::parse($d->expiry, 'UTC'), false);
         $note = match (true) {
-            ($d->renewNow['status'] ?? $d->renewalInvoice['state'] ?? null) === 'paid' => 'Updates when the renewal completes',
+            ($d->renewNow['status'] ?? $d->renewalInvoice['state'] ?? null) === 'paid' => self::EXPIRY_PENDING,
             $d->renewalOff !== null => 'Cancels '.self::date($d->expiry),
             $days > 0 && $days <= 30 => 'In '.$days.($days === 1 ? ' day' : ' days'),
             default => null,
@@ -112,6 +116,10 @@ final class DomainPage
         return ['missing' => false, 'tone' => $days <= 0 ? 'bad' : ($days <= 30 ? 'warn' : null), 'note' => $note];
     }
     /** The renewal invoice's state in words, the same on the domain page and the Domains list (DomainStates::cycle). */
+    /** The open renewal invoice's last charge failed, whether Auto Pay or a card made it. */
+    /** Beside the current expiry while a paid renewal is under way, so it never reads as the new date. */
+    public const EXPIRY_PENDING = 'Current date. The new one shows once the renewal completes.';
+    public const DECLINED = 'The last payment failed. Pay the invoice with another card.';
     public const INVOICE = ['paid' => 'Paid', 'review' => 'Under review', 'cancelled' => 'Invoice cancelled', 'closed' => 'Renewal did not finish'];
     /** What happens to the money once the registrar rejected the order, by OwnedDomain::$refundTo. */
     public const REFUND = ['original' => 'Any refund goes back to your original payment method.', 'credit' => 'Any refund goes to your account credit.',
@@ -128,7 +136,8 @@ final class DomainPage
         $due = $d->renewalDue ?? $d->renewalInvoice['due'] ?? null;
         if ($state === null && ($d->renewal !== 'On' || $d->setupPending || self::rejected($d))) { return null; }
         return match (true) {
-            $state === 'pending' => ['value' => $due ? ($d->earlyRenewal ? RequestStatus::earlyRenewal($due) : 'Due '.self::date($due)) : 'Due', 'action' => isset($d->renewNow['invoice']) ? ['label' => 'Pay invoice', 'url' => $d->renewNow['invoice']] : null],
+            $state === 'pending' => ['value' => $due ? ($d->earlyRenewal ? RequestStatus::earlyRenewal($due) : 'Due '.self::date($due)) : 'Due',
+                ...(($d->renewNow['declined'] ?? false) ? ['note' => self::DECLINED] : []), 'action' => isset($d->renewNow['invoice']) ? ['label' => 'Pay invoice', 'url' => $d->renewNow['invoice']] : null],
             $state === 'paid' => ['value' => self::INVOICE['paid'], ...(($goes = $d->renewNow['goes'] ?? $d->renewalInvoice['goes'] ?? null) ? ['note' => RenewalRepeatWait::NOTHING.' '.RenewalRepeatWait::GOES, 'at' => $goes] : [])],
             $state === 'closed' => ['value' => self::INVOICE['closed'], 'action' => $contact],
             $state === 'cancelled' => ['missing' => true, 'cause' => self::INVOICE['cancelled'], 'fix' => $contact],

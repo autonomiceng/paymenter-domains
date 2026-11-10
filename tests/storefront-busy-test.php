@@ -42,12 +42,26 @@ $registry->registerBoundReader($b, static function ($binding, $credentials) use 
     return $driver;
 });
 $lease = $budget->acquire($b, RequestOrigin::Background);
-$store->onWait = static fn () => $budget->release($b, RequestOrigin::Background, $lease);
+// Background reads run back to back on the one Enom slot, so a search can find it busy several times in a row.
+$store->onWait = static function () use ($store, $budget, $b, &$lease): void {
+    if ($store->waits === 3) { $budget->release($b, RequestOrigin::Background, $lease); }
+};
 try { $result = $store->check('busy-placeholder.com'); }
 catch (Throwable $e) { throw new RuntimeException('A brief busy slot must recover instead of failing the customer search', 0, $e); }
-same('available', $result['status'], 'Search succeeds after the worker releases its slot');
-same(1, $store->waits, 'One bounded wait'); same(1, $wire, 'Only one admitted exchange');
+same('available', $result['status'], 'Search succeeds when the slot frees on a later wait');
+same(3, $store->waits, 'The search stops waiting once it is admitted'); same(1, $wire, 'Only one admitted exchange');
+// A refused search leaves a short marker: background reads give way, so the next free slot goes to the search.
 $store->onWait = null; $store->waits = 0;
+$lease = $budget->acquire($b, RequestOrigin::Background);
+try { $budget->acquire($b, RequestOrigin::Interactive); throw new LogicException('A held slot must refuse the search'); }
+catch (Paymenter\Extensions\Servers\Domains\Services\ReadDeferred) {}
+$budget->release($b, RequestOrigin::Background, $lease);
+$refused = false;
+try { $budget->acquire($b, RequestOrigin::Background); } catch (Paymenter\Extensions\Servers\Domains\Services\ReadDeferred) { $refused = true; }
+expect($refused, 'Background reads give way while a search waits for the slot');
+// The search takes the slot and clears the marker; background reads then go on as before.
+$search = $budget->acquire($b, RequestOrigin::Interactive); $budget->release($b, RequestOrigin::Interactive, $search);
+$budget->release($b, RequestOrigin::Background, $budget->acquire($b, RequestOrigin::Background));
 $lease = $budget->acquire($b, RequestOrigin::Background);
 storefrontViews(); $controller = new StorefrontController($store);
 foreach (['register', 'transfer'] as $entry) {
@@ -61,6 +75,6 @@ foreach (['register', 'transfer'] as $entry) {
     expect(!str_contains($data['html'], 'Couldn’t check'), 'Busy is not reported as a failed check');
     expect(str_contains($data['html'], 'data-domains-retry'), 'Customer can retry '.$entry);
 }
-same(2, $store->waits, 'Each check retries at most once'); same(1, $wire, 'Held slot admits no sends');
+same(50, $store->waits, 'Each check waits a bounded number of times'); same(1, $wire, 'Held slot admits no sends');
 $budget->release($b, RequestOrigin::Background, $lease);
 $nativeSuccessful = true; echo "Storefront busy-slot recovery and plain retry results passed.\n";

@@ -95,6 +95,7 @@ final class RecordFamilies
         if($cancelled){$status['stale']=false;}
         // Only a family the registrar once confirmed has last confirmed data to keep.
         $status['retained']=collect($rows)->contains(fn($row)=>$row['last_good_at']!==null||in_array($row['state'],['complete','partial'],true));
-        return [...$status,'initial_read_pending'=>$initial,'registrar_key'=>$d->registrar_key,'cancelled_without_records'=>$cancelled,'not_at_registrar'=>$notYet,'current_read'=>$currentRead,'rows'=>$rows,'caa'=>$caa,'caa_at'=>$caaAt,'staff_hold'=>match($hold){'budget_exhausted','call_cap'=>'Account call limit reached.','caa_unsupported'=>'CAA records cannot be read from Enom here. Manage DNS at Enom.',default=>null}];
+        // A due read that has not started waits its turn in the account's read queue: staff read that, not a past time as the next read.
+        return [...$status,'read_queued'=>$status['next_read']!==null&&$status['next_read']<=$now->getTimestamp(),'initial_read_pending'=>$initial,'registrar_key'=>$d->registrar_key,'cancelled_without_records'=>$cancelled,'not_at_registrar'=>$notYet,'current_read'=>$currentRead,'rows'=>$rows,'caa'=>$caa,'caa_at'=>$caaAt,'staff_hold'=>match($hold){'budget_exhausted','call_cap'=>'Account call limit reached.','caa_unsupported'=>'CAA records cannot be read from Enom here. Manage DNS at Enom.',default=>null}];
     }
 }

@@ -130,7 +130,7 @@ $shows=static function(array $texts,string $label)use($page,$d):void {$html=$pag
     foreach($texts as $text){expect(str_contains($html,$text),$label.' shows '.$text);}
     expect(!str_contains($html,'Create invoice')&&!str_contains($html,'Pay invoice'),$label.' shows no form or link');};
 DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'paid']);same(['status'=>'paid'],$cycle(),'Paid cycle shows payment received');
-$shows(['Paid','Updates when the renewal completes'],'Paid page');
+$shows(['Paid','Current date. The new one shows once the renewal completes.'],'Paid page');
 DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'pending']);DB::table('domains_operations')->where('id',$op->id)->update(['state'=>'held']);
 same(['status'=>'review'],$cycle(),'Held cycle shows review');$shows(['Under review','Renewal being checked. No action needed.'],'Review page');
 DB::table('domains_operations')->where('id',$op->id)->update(['state'=>'awaiting_payment']);DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'cancelled']);$cancelled=$ledger();

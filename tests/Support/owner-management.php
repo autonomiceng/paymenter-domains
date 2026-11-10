@@ -21,7 +21,7 @@ same($forms->length,$dom->query('//form/input[@name="_token"]')->length,'Every f
 same($forms->length,$dom->query('//form/input[@name="_request_key"]')->length,'Every form has single-use intent');
 same(0,$dom->query('//input[@type="checkbox"]')->length,'Owner management forms have no checkboxes');
 same(1,$dom->query('//li[@id="contacts"]/span[contains(@class,"domains-row__v")][contains(.,"'.$registrant['email_address'].'")]')->length,'Owner row shows the registrant email');
-if(isset($dto->management['auth_code_email'])){same($free?'We email it to the admin contact email':'We email it to the registrant email',trim(preg_replace('/\s+/',' ',$dom->query('//li[@id="auth_code_email"]/span[contains(@class,"domains-row__v")]')->item(0)->textContent)),'Auth code row names who receives the code');}
+if(isset($dto->management['auth_code_email'])){same($free?'NameSilo emails it to the admin contact email':'Enom emails it to the registrant email',trim(preg_replace('/\s+/',' ',$dom->query('//li[@id="auth_code_email"]/span[contains(@class,"domains-row__v")]/span[contains(@class,"domains-muted")]')->item(0)->textContent)),'Auth code row names who receives the code');}
 same(0,$dom->query('//input[@name="confirmed"]')->length,'No form carries a ticked or hidden confirmation');
 foreach(['nameservers','lock','auth_code_email']as$risky){if(isset($dto->management[$risky])&&!($risky==='lock'&&($dto->management['lock']['state']??null)===false)){same(1,$dom->query('//li[@id="'.$risky.'"]//form[@data-confirm]//dialog[@data-confirm-dialog][not(@open)]//button[@name="confirmed"]')->length,'Risky action has a closed confirm dialog: '.$risky);}}
 foreach(['contacts']as$plain){if(isset($dto->management[$plain])){same(1,$dom->query('//li[@id="'.$plain.'"]')->length,'Plain action row rendered: '.$plain);same(0,$dom->query('//li[@id="'.$plain.'"]//dialog[@data-confirm-dialog]|//li[@id="'.$plain.'"]//form[@data-confirm]')->length,'Plain action has no confirm step: '.$plain);}}
@@ -32,7 +32,9 @@ if($free){ // Stopped reads never restart by themselves, so an unknown row names
     $d->update(['observation'=>null]);Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
     // The first registrar read is queued work for this holding; only that can promise Checking.
     $firstRead=Illuminate\Support\Facades\DB::table('domains_observation_work')->insertGetId(['server_id'=>$d->server_id,'account_fingerprint'=>$d->account_fingerprint,'domain_id'=>$d->id,'generation'=>$d->authority_generation,'phase'=>'holding','due_at'=>app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp()]);
-    $lockRow=static fn():string=>trim(preg_replace('/\s+/',' ',storefrontDom((new OwnedDomainController($owners))->show($r,$d->id)->render())->query('//li[@id="lock"]/span[@class="domains-row__v"]')->item(0)->textContent));
+    // The state alone; a transfer-out date line may follow it.
+    $lockRow=static function()use($owners,$r,$d):string{$dom=storefrontDom((new OwnedDomainController($owners))->show($r,$d->id)->render());$v=$dom->query('//li[@id="lock"]/span[@class="domains-row__v"]')->item(0);
+        foreach(iterator_to_array($dom->query('.//span[contains(@class,"domains-sub")]',$v)) as $sub){$sub->parentNode->removeChild($sub);}return trim(preg_replace('/\s+/',' ',$v->textContent));};
     same('Checking',$lockRow(),'An initial registrar read is Checking rather than Missing');
     expect(str_contains((new OwnedDomainController($owners))->show($r,$d->id)->render(),e(\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::INITIAL_READ)),'The real owner page explains the initial read');
     Illuminate\Support\Facades\DB::table('domains_observation_work')->where('id',$firstRead)->update(['due_at'=>0,'safe_code'=>'read_unavailable']);$stoppedRead=$firstRead;

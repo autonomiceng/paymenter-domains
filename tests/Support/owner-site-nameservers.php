@@ -15,6 +15,9 @@ $nsSection=$owners->present($d->fresh())->management['nameservers'];
 same($siteServers,$nsSection['defaultServers'],'Existing-domain management uses the saved site default for either registrar');
 same(true,$nsSection['defaults'],'Either registrar offers a usable site default');
 $registrar=$free?'NameSilo':'Enom';
+// An existing domain whose first registrar read finished: its rows are not Checking, so the editor opens.
+$readAt=$clock->now()->format(DATE_ATOM);
+\Paymenter\Extensions\Servers\Domains\Models\Domain::withoutEvents(static fn()=>$d->fresh()->update(['observation'=>[...($d->fresh()->observation??[]),'records'=>['identity'=>\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::identity($d->fresh()),'at'=>$readAt,'last_complete_at'=>$readAt,'sequence'=>0,'families'=>[]]]]));
 $editor=storefrontDom((new \Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController($owners))->show($r,$d->id)->render());
 same(1,$editor->query('//dialog[@id="edit-nameservers"]/form/p[normalize-space()="Registrar: '.$registrar.'."]')->length,'Editor identifies the bound registrar once');
 same(0,$editor->query('//input[@name="use_default"]|//button[@name="use_default"]')->length,'Customer UI has no registrar-reset field');

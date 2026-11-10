@@ -18,11 +18,18 @@ final readonly class OwnedTransferController
         $error=$request->query->has('name') && trim($raw)==='' ? 'Enter a domain name.' : $parsed['error'];
         if ($parsed['ending']!==null) {
             if (in_array($parsed['ending'],$names,true)) { $preferred=$parsed['ending']; }
-            else { $error='We don’t offer transfers for .'.$parsed['ending'].' domains. Contact support for help transferring this domain.'; }
+            else { $error=self::endingRefused($parsed['ending']); }
+        } elseif (is_string($chosen) && $chosen!=='' && !in_array($chosen,$names,true) && $error===null) {
+            // A link that names an ending we do not transfer gets that answer, never a check of a different name.
+            $error=self::endingRefused(preg_match('/^[a-z0-9-]{1,63}(\.[a-z0-9-]{1,63})?$/D',$chosen)?$chosen:null);
         }
         $sld=$parsed['sld']; $results=$sld!==null&&$error===null&&$preferred!==null
             ? [['domain'=>$sld.'.'.$preferred,'sld'=>$sld,'tld'=>$preferred,'status'=>'idle','testEnvironment'=>collect($endings)->firstWhere('tld',$preferred)['testEnvironment']]] : [];
         return view('domains::transfer',compact('endings','preferred','sld','error','results')+['name'=>$raw,
             'testEnvironment'=>$this->storefront->testEnvironment($endings),'checkKey'=>FormKeys::issue($request,'search')]);
+    }
+    private static function endingRefused(?string $ending): string
+    {
+        return ($ending===null?'We don’t offer transfers for this ending.':'We don’t offer transfers for .'.$ending.' domains.').' Contact support for help transferring this domain.';
     }
 }

@@ -13,9 +13,11 @@ $state->fault='';app(ObservationWork::class)->resume($job->id,'staff_records_res
 $p=$d->fresh()->observation;unset($p['records']);$d->fresh()->update(['observation'=>$p]);$html=$page();same(['Checking',''],[trim(storefrontDom($html)->query('//li[@id="dns"]//span[@data-record-family="dns"]')->item(0)?->textContent??''),trim(storefrontDom($html)->query('//li[@id="dns"]/span[@class="domains-row__v"]')->item(0)->textContent)],'Unheld unknown record says Checking once, beside the label');expect(!str_contains($html,'our team resumes'),'Unheld note has no false manual hold');
 $neutral=storefrontDom($html);
 $registrarLines=$neutral->query('//dialog[@id="edit-nameservers"]/form/p[normalize-space()="Registrar: Enom."]|//dialog[@id="confirm-nameservers"]/p[normalize-space()="Registrar: Enom."]');
-same(2,$registrarLines->length,'Only the nameserver editor and confirmation identify the registrar');
+same(0,$registrarLines->length,'While the first read is pending the nameserver editor is closed, so nothing names the registrar');
 foreach(iterator_to_array($registrarLines) as $line){$line->parentNode->removeChild($line);}
 $visible=strip_tags(preg_replace('~<(style|script)\b[^>]*>.*?</\1>~si','',$neutral->document->saveHTML()));
+// The auth code row and its confirm name who sends the code, because no mail from us follows.
+same(2,substr_count($visible,'Enom emails it to the registrant email'),'The auth code row and confirm name the sender');$visible=str_replace('Enom emails it to the registrant email','',$visible);
 foreach(['enom','namesilo']as$name){expect(!str_contains(strtolower($visible),$name),'Customer copy stays registrar-neutral');}
 // A failed ordinary read while processing is off stops scheduled work without a record hold.
 $bindings->setProcessing($d->server_id,false);$observation->fault='info_missing';$dueRecords();$runtimePorts->initialManagedRecordObservations();

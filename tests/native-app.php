@@ -32,6 +32,17 @@ foreach ($loader->getClassMap() as $class => $unused) {
 $loader->addClassMap($fixtureClasses);
 $loader->addPsr4('App\\', $fixture.'/app/', true);
 $loader->addPsr4('Paymenter\\Extensions\\Servers\\Domains\\', dirname(__DIR__).'/Domains/', true);
+// Table listings on SQLite with dbstat sum every page for a size no code reads. Fresh installation lists
+// tables twice per migration, about two seconds per test; list them without sizes.
+Illuminate\Database\Connection::resolverFor('sqlite', static fn ($pdo, $database, $prefix, $config) =>
+    new class($pdo, $database, $prefix, $config) extends Illuminate\Database\SQLiteConnection {
+        protected function getDefaultSchemaGrammar()
+        {
+            return new class($this) extends Illuminate\Database\Schema\Grammars\SQLiteGrammar {
+                public function compileDbstatExists() { return 'select 0 as enabled'; }
+            };
+        }
+    });
 $app = require $fixture.'/bootstrap/app.php';
 $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 config(['hashing.bcrypt.rounds' => 4, 'audit.enabled' => false, 'settings.mail_disabled' => true,

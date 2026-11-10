@@ -132,13 +132,16 @@ class Storefront
         $base = ['domain' => $name, 'sld' => substr($name, 0, -strlen($ending)-1), 'tld' => $ending, 'status' => 'taken',
             'testEnvironment' => $this->testEndings([['tld' => $ending]]) !== []];
         if ($transferOnly) { $base['transferPage'] = true; }
+        $read = $this->reader(); $transfer = null;
+        try { $transfer = $read->offer($ending, 'transfer', 1); } catch (\Throwable) {}
+        // A taken name on Register links to the transfer search when we transfer the ending. It depends on the ending
+        // only, so a local reservation still gets the same response.
+        if (!$transferOnly && $transfer && TransferPrecheck::endingOpen($transfer['selection'])) { $base['transferEnding'] = true; }
         if (Domain::where('reservation_name', $name)->exists()) { return $transferOnly ? $this->transferRefusal($base, 'local_unavailable') : $base; }
-        $offers = []; $read = $this->reader();
+        $offers = [];
         foreach (range(1, 10) as $term) {
             try { $offers[$term] = $read->offer($ending, 'register', $term); } catch (\Throwable) {}
         }
-        $transfer = null;
-        try { $transfer = $read->offer($ending, 'transfer', 1); } catch (\Throwable) {}
         if (!$offers && !$transfer) { return $transferOnly ? $this->transferRefusal($base, 'ending') : [...$base, 'status' => 'held']; }
         if ($transferOnly && !$transfer) { return $this->transferRefusal($base, 'ending'); }
         if (!$offers) { return $this->transferResult($name, $transfer, $base, $transferOnly); }
@@ -149,14 +152,16 @@ class Storefront
         // Installed contexts share interactive headroom with background work.
         $context = new RequestContext($driver->binding(), RequestOrigin::Interactive, $started->modify('+10 seconds'), new RequestBudget(1), $this->clock, Runtime::limiter());
         $query = new Query($name, Action::Register, $offers ? (int) array_key_first($offers) : 1);
-        try { $r = $driver->availability($query, $context); }
-        catch (ReadDeferred) {
-            // Retry only local admission, once, through the same single-slot guard and absolute deadline.
+        $r = null; $admitUntil = $started->modify('+'.self::ADMISSION_SECONDS.' seconds');
+        // A refusal here is local admission only: no request reached the registrar. Background reads give way to a waiting
+        // search, so keep asking for the same single slot for a few seconds, inside the same absolute deadline.
+        for ($wait = 0; ; $wait++) {
+            try { $r = $driver->availability($query, $context); break; }
+            catch (ReadDeferred) {}
+            if ($wait >= self::ADMISSION_WAITS) { return [...$base, 'status' => 'busy']; }
             $this->waitForRead();
-            if ($this->clock->now() >= $context->deadline) { return [...$base, 'status' => 'busy']; }
+            if ($this->clock->now() >= $admitUntil) { return [...$base, 'status' => 'busy']; }
             $context = new RequestContext($driver->binding(), RequestOrigin::Interactive, $context->deadline, new RequestBudget(1), $this->clock, Runtime::limiter());
-            try { $r = $driver->availability($query, $context); }
-            catch (ReadDeferred) { return [...$base, 'status' => 'busy']; }
         }
         $driver->binding()->requireMatch($r->binding);
         $this->catalogue()?->validate($selection);
@@ -225,8 +230,11 @@ class Storefront
             'support' => !$known || in_array($reason, ['local_unavailable', 'ending', 'Transfer ending is not accepted.', 'transfer_maximum_term', 'premium', 'premium_name'], true)];
     }
 
-    /** Small grace period for an in-flight background read; no provider call or lock is held. */
-    protected function waitForRead(): void { usleep(100000); }
+    /** Admission waits for one search: up to 25 short waits and 4 seconds, leaving the rest of the 10 second deadline for the read. */
+    private const ADMISSION_WAITS = 25;
+    private const ADMISSION_SECONDS = 4;
+    /** Short pause while another read holds the slot; no provider call or lock is held. */
+    protected function waitForRead(): void { usleep(150000); }
 
     /** Server-only resolution; links and forms never carry native identities. Cart admission rechecks independently. */
     public function offer(string $ending, string $action, int $term): array

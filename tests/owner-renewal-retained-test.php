@@ -15,7 +15,7 @@ $op=Operation::where('domain_id',$d->id)->where('action','renew')->sole();$invoi
 same(route('invoices.show',$invoice),$response->getTargetUrl(),'Retained-cycle fixture starts with an issued owner invoice');
 // Retained cycles remain visible under every gate that prevents creating a new invoice.
 $cycleStates=['pending'=>['state'=>'awaiting_payment','result'=>['invoice'=>route('invoices.show',$invoice)],'heading'=>'Pay invoice'],
-    'paid'=>['state'=>'pending','result'=>['status'=>'paid'],'heading'=>'Updates when the renewal completes'],
+    'paid'=>['state'=>'pending','result'=>['status'=>'paid'],'heading'=>'Current date. The new one shows once the renewal completes.'],
     'cancelled'=>['state'=>'awaiting_payment','result'=>['status'=>'cancelled'],'heading'=>'Invoice cancelled'],
     'held'=>['state'=>'held','result'=>['status'=>'review'],'heading'=>'Renewal being checked. No action needed.']];
 foreach(['manual','stop','service','domain','cutoff','calendar'] as $gate){
@@ -97,7 +97,8 @@ same(14,count($expiryResults),'Every expired blocker and control is read twice')
 same($expiryExpected,$expiryResults,'Expired renewal status requires complete unpaid-retirement proof: '.json_encode($expiryResults,JSON_THROW_ON_ERROR));
 foreach(['processing','succeeded','failed'] as $paymentState){
     $id=DB::table('invoice_transactions')->insertGetId(['invoice_id'=>$invoice->id,'amount'=>'1.00','fee'=>'0.00','status'=>$paymentState,'created_at'=>now(),'updated_at'=>now()]);
-    $unchanged=$ledger();same(['invoice'=>route('invoices.show',$invoice)],$owners->present($d->fresh())->renewNow,'Pending invoice remains payable with partial or unsettled payment: '.$paymentState);
+    // A failed latest charge keeps the invoice payable and also says the charge was declined.
+    $unchanged=$ledger();same(['invoice'=>route('invoices.show',$invoice),...($paymentState==='failed'?['declined'=>true]:[])],$owners->present($d->fresh())->renewNow,'Pending invoice remains payable with partial or unsettled payment: '.$paymentState);
     same($unchanged,$ledger(),'Payment presentation preserves evidence: '.$paymentState);DB::table('invoice_transactions')->where('id',$id)->delete();
 }
 foreach(['queued','running','pending','uncertain'] as $operationState){

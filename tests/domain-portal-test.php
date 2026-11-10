@@ -12,7 +12,7 @@ $request=static function($actor,array $data=[],string $method='GET')use($session
 $controller=new WatchNoticeController();$list=app(OwnedDomainController::class);
 $html=$list->index($request($owner))->render();$dom=storefrontDom($html);$row=$dom->query('//tbody/tr')->item(0);
 same(1,$dom->query('//tbody/tr')->length,'Hosting domain joins the one Domains list');same(url('/domains/checks/watch/'.$id),$dom->query('.//a[contains(@class,"domains-row-link")]/@href',$row)->item(0)?->value,'Hosting row links its domain page');
-same('At your registrar',trim($dom->query('td[@data-label="Renewal"]',$row)->item(0)?->textContent??''),'Hosting row renews at its registrar');expect(str_starts_with(trim($dom->query('td[1]/*[contains(@class,"domains-cell-sub")]',$row)->item(0)?->textContent??''),'Hosting: '),'Hosting row names its service');
+same('',trim($dom->query('td[@data-label="Renewal invoices"]',$row)->item(0)?->textContent??''),'A hosting row has no renewal invoices to show');expect(str_starts_with(trim($dom->query('td[1]/*[contains(@class,"domains-cell-sub")]',$row)->item(0)?->textContent??''),'Hosting: '),'Hosting row names its service');
 expect(!str_contains($html,'Related to your hosting')&&!str_contains($html,'No domains yet'),'No separate hosting section and no empty state beside a hosting row');expect(str_contains($html,'example.com'),'Related name is visible');$foreignDom=storefrontDom($list->index($request($other))->render());
 same(1,$foreignDom->query('//section[@aria-label="Your domains"]')->length,'Foreign account receives the Domains list');
 same(0,$foreignDom->query('//section[@aria-label="Your domains"]//tbody/tr')->length,'Foreign account sees no domain rows');

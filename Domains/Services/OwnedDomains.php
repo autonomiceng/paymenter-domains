@@ -47,9 +47,9 @@ final readonly class OwnedDomains
         if ($op->safe_code===UnpaidAcquisitionProof::CODE&&isset($op->funding['late_credits'])) { return ['state'=>'cancelled','kind'=>$kind,'credit'=>true]; }
         if (!in_array($d->status,['registration_pending','transfer_pending'],true)) { return []; }
         if ($op->state==='rejected') { return RequestStatus::closed($op->state,$op->safe_code)?[]:['state'=>'failed','kind'=>$kind]; }
-        if ($closed && in_array($op->state,['awaiting_payment','awaiting_code','queued'],true)) { return ['state'=>'cancelled','kind'=>$kind]; }
+        if ($closed && in_array($op->state,['awaiting_payment','awaiting_code','queued'],true)) { return ['state'=>'cancelled','kind'=>$kind,...self::unpaidCancel($op,$invoice)]; }
         if ($op->state==='awaiting_payment' && $invoice?->status==='pending') { return ['state'=>'unpaid','kind'=>$kind,'invoice'=>route('invoices.show',$invoice)]; }
-        if ($op->state==='awaiting_payment' && $invoice?->status==='cancelled') { return ['state'=>'cancelled','kind'=>$kind]; }
+        if ($op->state==='awaiting_payment' && $invoice?->status==='cancelled') { return ['state'=>'cancelled','kind'=>$kind,...self::unpaidCancel($op,$invoice)]; }
         $next=match (true) {
             $op->state==='held'&&in_array($op->safe_code,self::OWNER_HOLDS,true) => 'setup_required',
             $op->action==='transfer'&&!TransferInputs::validCode($op->payload['epp']??null) => 'awaiting_code',
@@ -57,6 +57,14 @@ final readonly class OwnedDomains
             default => null,
         };
         return $invoice?->status==='paid'&&in_array($op->state,['awaiting_payment','awaiting_code','queued','running','pending','held','uncertain'],true)?['state'=>'paid','kind'=>$kind,'next'=>$next,...($op->funding_basis==='complimentary'?['complimentary'=>true]:[]),...(isset($op->policy['status_check'])&&!isset($op->policy['status_check']['next_at'])?['check'=>RegistrarCheck::forCustomer($op)]:[])]:[];
+    }
+    /** A cancelled order nobody paid or is paying: a normal cancel with nothing to review. */
+    private static function unpaidCancel(Operation $op, ?Invoice $invoice): array
+    {
+        if ($op->state!=='awaiting_payment' || $invoice?->status==='paid') { return []; }
+        $paying=$op->invoice_id!==null&&\App\Models\InvoiceTransaction::where('invoice_id',$op->invoice_id)
+            ->whereIn('status',[\App\Enums\InvoiceTransactionStatus::Succeeded,\App\Enums\InvoiceTransactionStatus::Processing])->exists();
+        return $paying ? [] : ['unpaid'=>true];
     }
     /** Where a rejected registration or transfer's money goes, for the customer page: see OwnedDomain::$refundTo. */
     public static function refundTo(Domain $d, ?Operation $op, array $order): ?string
@@ -77,7 +85,7 @@ final readonly class OwnedDomains
     public static function orderStatus(array $state, Domain $d, array $order): array
     {
         return match (true) {
-            ($order['state']??null)==='cancelled' => [isset($order['credit'])||($order['returned']??false)?'cancelled':'needs_review','Order cancelled'],
+            ($order['state']??null)==='cancelled' => [isset($order['credit'])||($order['returned']??false)||($order['unpaid']??false)?'cancelled':'needs_review','Order cancelled'],
             ($order['state']??null)==='failed' => [$order['kind']==='transfer'?'transfer_rejected':'registration_rejected',null],
             ($order['state']??null)==='paid'&&$state[0]==='awaiting_payment' => [$order['next']??$d->status,null],
             default => $state,
@@ -98,6 +106,18 @@ final readonly class OwnedDomains
     /** Who gets the auth code email. */
     public static function authCodeRecipient(Domain $d): string
     { return $d->registrar_key==='namesilo'?'admin contact email':'registrant email'; }
+    /** Registries block transfers out for 60 days after a registration or a transfer in. The line under Transfer lock and
+     * Auth code until then; null once the window passed or when we did not register or transfer the domain ourselves. */
+    public static function transferOutFrom(?Operation $op, \DateTimeImmutable $now): ?string
+    {
+        if (!$op || $op->state!=='succeeded' || !in_array($op->action,['register','transfer'],true) || !$op->completed_at) { return null; }
+        $at=$op->completed_at; $from=(new \DateTimeImmutable($at instanceof \DateTimeInterface ? $at->format(DATE_ATOM) : (string) $at))->setTimezone(new \DateTimeZone('UTC'))->modify('+60 days');
+        if ($from<=$now) { return null; }
+        return 'Transfers to another registrar open on '.$from->format('M j, Y').($op->action==='register'?', 60 days after registration.':', 60 days after the transfer.');
+    }
+    /** Who sends it: the registrar mails the code itself, so no mail from us follows. */
+    public static function authCodeSender(Domain $d): string
+    { return $d->registrar_key==='namesilo'?'NameSilo':'Enom'; }
     /** The domain and registrar take this change at all, whatever a switch says right now. */
     private static function supported(Domain $d, ?Capabilities $caps, string $cap): bool
     { return $d->status==='active' && $d->service?->status==='active' && $caps?->get($cap==='srv'?'dns':$cap)->support===Support::Supported; }
@@ -163,6 +183,12 @@ final readonly class OwnedDomains
         foreach ($entries as $entry) {
             try {
                 if (($late=RenewalCycles::lateNote($entry))!==null) { $progress[]=['label'=>'Renewal','state'=>'Cancelled','date'=>$entry->updated_at?->toIso8601String(),'note'=>$late]; continue; }
+                if ($entry->action==='renew') {
+                    // A paid renewal is a change to the domain; an unpaid invoice is not one yet.
+                    $key=RequestStatus::key(RequestStatus::readsAs($entry->state,$entry->safe_code));
+                    if ($key!=='awaiting_payment') { $progress[]=['label'=>'Renewal','state'=>RequestStatus::SET[$key][0],'date'=>$entry->updated_at?->toIso8601String(),'note'=>null]; }
+                    continue;
+                }
                 $key=ManagementProgress::statusKey($entry,$d);
                 $label=self::CHANGES[$entry->action]??null;
                 if ($key===null || !$label) { continue; }
@@ -204,7 +230,8 @@ final readonly class OwnedDomains
                     // Only a confirmed readback supplies current nameservers; otherwise the form starts empty.
                     $management['nameservers']['current']=self::storedNameservers($d); }
                 if (isset($management['contacts'])) { $management['contacts']+=self::contactForm($d,$contacts)+['digest'=>hash('sha256',json_encode($contacts,JSON_THROW_ON_ERROR))]; }
-                if (isset($management['auth_code_email'])) { $management['auth_code_email']['recipient']=self::authCodeRecipient($d); }
+                if (isset($management['auth_code_email'])) { $management['auth_code_email']['recipient']=self::authCodeRecipient($d); $management['auth_code_email']['sender']=self::authCodeSender($d); }
+                if ($from=self::transferOutFrom($op,$this->clock->now())) { foreach (['lock','auth_code_email'] as $k) { if (isset($management[$k])) { $management[$k]['transferFrom']=$from; } } }
                 // Lock and privacy as last read from the registrar (a confirmed change first, then the sync); null until read.
                 foreach (['lock'=>'locked','privacy'=>'privacy'] as $cap=>$fact) { if (isset($management[$cap])) { $management[$cap]['state']=self::storedFlag($d,$cap,$fact); } }
             }

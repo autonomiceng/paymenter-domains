@@ -77,6 +77,9 @@ final class DomainStateInputs
     /** The owner's own invoice, or null. */
     public function invoice(?int $id, Domain $d): ?Invoice
     { $invoice = $this->invoices->get($id); return $invoice && (int) $invoice->user_id === (int) $d->user_id ? $invoice : null; }
+    /** The newest payment attempt, from the same transaction batch as the renewal ledger. */
+    public function latestTransactionStatus(Invoice $invoice): mixed
+    { return $this->transactions->where('invoice_id', $invoice->id)->sortByDesc('id')->first()?->status; }
     public function service(Domain $d): ?\App\Models\Service { return $this->services[$d->service_id] ?? null; }
     public function cycle(Domain $d): ?Operation { return $this->cycles->get($d->id); }
     public function renewed(Domain $d): bool { return in_array((int) $d->id, $this->renewed, true); }
