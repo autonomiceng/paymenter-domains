@@ -20,7 +20,7 @@ $before=$rows();Schema::table('domains_operations',static fn(Blueprint $t)=>$t->
 DB::table('migrations')->where('migration',$migration)->delete();
 expect(!$hasIndex(),'Older fixture has no service index');
 $installation->install();expect($hasIndex(),'Upgrade adds service index before final schema verification');
-require __DIR__.'/Support/installed-upgrade.php';assertInstalledMigrationOrder();
+require __DIR__.'/Support/installed-upgrade.php';assertInstalledMigrationOrder(dirname($path),$migration);
 same($before,$rows(),'Upgrade retains operation identities and evidence');
 same($history,DB::table('migrations')->where('migration','!=',$migration)->orderBy('id')->get()->toJson(),'Upgrade retains earlier migration history');
 $indexes=Schema::getIndexes('domains_operations');$record=(array)DB::table('migrations')->where('migration',$migration)->sole();

@@ -82,10 +82,14 @@ final class DomainHistory
         return array_map(function(Operation|array $entry) use($domain,$off,$request,$said): array {
             $row=self::row($entry,$domain,$off);
             $sub=$row['sub']?StaffDomainStatus::sentence($row['sub']):null;
-            if ($sub!==null&&$said!==null&&$entry instanceof Operation&&(int)$entry->id===$request&&str_contains($said,$sub)) { $sub=null; }
+            if (self::repeatsHead($entry,$sub,$request,$said)) { $sub=null; }
             return Sheet::event($row['event'],$sub,$row['time']?->getTimestamp(),$row['by'],$row['status']['tone']??'gray',$row['status']['label']??null);
         },$entries);
     }
+    /** Whether a row's reason sentence only repeats the head: $said is the page's status line, which names request $request.
+     * Other requests, and every status, keep their words. */
+    public static function repeatsHead(Operation|array $entry, ?string $sentence, ?int $request, ?string $said): bool
+    { return $sentence!==null&&$said!==null&&$entry instanceof Operation&&(int)$entry->id===$request&&str_contains($said,$sentence); }
     /** A management request names who asked for it. Everything else runs on its own. */
     private static function requester(Operation $op, Domain $domain): string
     {

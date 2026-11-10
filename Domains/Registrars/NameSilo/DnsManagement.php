@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
-use Paymenter\Extensions\Servers\Domains\Data\{Capabilities,Capability,ManagementRequest,ManagementResult,RequestContext,Support};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Capabilities,Capability,ManagementRequest,ManagementResult,RequestContext,Support};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\Outcome;
 /** Dormant opt-in adapter: no runtime factory or UI selects this class. */
 class DnsManagement extends Management
@@ -13,9 +13,12 @@ class DnsManagement extends Management
         foreach (['nameservers','contacts','lock','privacy','auto_renew_off','auth_code_email','glue','ds','auth_code_display'] as $action) { $actions[$action]=$base->get($action); }
         return new Capabilities($this->binding,$actions,$base->privacy);
     }
-    /** A confirmed DNS readback is a complete dnsListRecords inventory, so DNS observation is supported; other families keep the baseline. */
-    public function observationCapabilities(): array
-    { $base=parent::observationCapabilities();$base['families']['dns']='supported';return $base; }
+    private readonly ObservationReader $reader;
+    public function __construct(AccountBinding $binding, #[\SensitiveParameter] \Closure $exchange, array $dsFacts=[])
+    { parent::__construct($binding,$exchange,$dsFacts);$this->reader=new ObservationReader($binding,$exchange); }
+    /** Refresh through this adapter uses the read-only reader, so it reports and returns the same complete DNS and settings. */
+    public function observationCapabilities(): array { return $this->reader->observationCapabilities(); }
+    public function discover(ManagementRequest $r,RequestContext $c,array $knownGlue=[]): array { return $this->reader->discover($r,$c,$knownGlue); }
     public function sequences(string $action): bool { return $action==='dns'; }
     public function validate(string $action,array $payload,string $name): array
     {

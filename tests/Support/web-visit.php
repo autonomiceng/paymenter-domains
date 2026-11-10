@@ -4,7 +4,7 @@ declare(strict_types=1);
 use Illuminate\Cookie\CookieValuePrefix;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-function webVisit(?App\Models\User $who, string $path): Symfony\Component\HttpFoundation\Response
+function webVisit(?App\Models\User $who, string $path, array $headers=[]): Symfony\Component\HttpFoundation\Response
 {
     $app=app();$jar=[];
     config(['session.driver'=>'file','session.files'=>getenv('PAYMENTER_TEST_FIXTURE').'/storage/framework/sessions']);
@@ -15,7 +15,8 @@ function webVisit(?App\Models\User $who, string $path): Symfony\Component\HttpFo
         $jar[config('session.cookie')]=$app['encrypter']->encrypt(CookieValuePrefix::create(config('session.cookie'),$app['encrypter']->getKey()).session()->getId(),false);
         $app['auth']->forgetGuards();$app['session']->forgetDrivers();
     }
-    $kernel=$app->make(Illuminate\Contracts\Http\Kernel::class);$request=Request::create('http://domains-tests.invalid'.$path,'GET',[],$jar);
+    $kernel=$app->make(Illuminate\Contracts\Http\Kernel::class);$server=[];foreach($headers as $name=>$value){$server['HTTP_'.strtoupper(str_replace('-','_',$name))]=$value;}
+    $request=Request::create('http://domains-tests.invalid'.$path,'GET',[],$jar,[],$server);
     // No terminate: its callbacks reload site settings from the database, dropping the settings a test chose.
     return $kernel->handle($request);
 }

@@ -55,7 +55,7 @@ final class OwnerRecords
         $primaryFailed=($d->observation['record_failure']['identity']??null)===ObservationRecords::identity($d);
         foreach (['dns','srv','ds'] as $kind) {
             try {
-                if ($kind==='dns' && $d->registrar_key==='namesilo') { $view=self::nameSilo($d,$facts); if ($view) { ['records'=>$out['dns'],'fixed'=>$out['dns_fixed'],'digest'=>$out['dns_digest']]=DnsForm::view($view); } continue; }
+                if ($kind==='dns' && $d->registrar_key==='namesilo') { $view=self::nameSilo($d,$facts); if ($view) { ['records'=>$out['dns'],'ttls'=>$out['dns_ttls'],'fixed'=>$out['dns_fixed'],'digest'=>$out['dns_digest']]=DnsForm::view($view); } continue; }
                 if (in_array($kind,['dns','srv'],true)&&($primaryFailed||!$inventory||($inventory['families'][$kind]['state']??null)!=='complete')) { continue; }
                 $rows=$facts[$kind]['facts']['records']??null;
                 if (!is_array($rows)||!array_is_list($rows)||count($rows)>50) { continue; }

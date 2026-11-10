@@ -36,9 +36,10 @@ final class WatchFacts
         $checks=['Nameservers'=>self::nameservers($w),'DNS records'=>self::records($s,$active,$missing)];
         if(!in_array('watch.no_coverage',$keys,true)){$checks['Registry']=in_array('watch.not_registered',$keys,true)?self::fact('Not registered',tone:'warning'):self::fact(($s?->freshness['registry']['checkedAt']??null)?'Registered':null,cause:self::missingCause($w,'expiry'));}
         $last=self::lastCheck($w,$s);$last['check']=$active && $last['value']===null;$checks['Last check']=$last;
-        // Last check already says when; a saved answer from that same minute needs no second Checked time.
-        $lastMinute=($lastAt=(int)($last['at']??0))>0&&is_string($last['value'])&&$last['value']!==''?intdiv($lastAt,60):null;
-        $checked=fn(int|string $at)=>intdiv($t=is_int($at)?$at:(int)strtotime($at),60)===$lastMinute?null:Sheet::moment($t,'Checked')->toHtml();
+        // Last check already says when. Only the saved DNS answer that Last check describes drops its second Checked time;
+        // another check in the same minute keeps its own.
+        $lastPoints=($lastAt=(int)($last['at']??0))>0&&is_string($last['value'])&&$last['value']!==''&&in_array('points',$last['from']??[],true);
+        $checked=fn(int|string $at,bool $points=false)=>$points&&$lastPoints&&($t=is_int($at)?$at:(int)strtotime($at))===$lastAt?null:Sheet::moment(is_int($at)?$at:(int)strtotime($at),'Checked')->toHtml();
         if($active){$checks['Next check']=self::nextCheck($w);}
         // Alerts are on only while monitoring runs. Pausing keeps the customer's saved choice for when monitoring resumes.
         $p=WatchNoticePreferences::read((int)$w->user_id,$w->canonical_name);$on=$p['account']['enabled']&&$p['target']['enabled'];
@@ -53,7 +54,7 @@ final class WatchFacts
         if($w->points && $s?->website===null && $s?->email===null && $e['public']){
             $at=$e['public_at'];
             $checks['DNS records']=self::fact(implode('; ',$e['public']),
-                new \Illuminate\Support\HtmlString(($e['public_stale']?'Historical answers. ':'').($at&&($when=$checked($at))!==null?$when.'. ':'').
+                new \Illuminate\Support\HtmlString(($e['public_stale']?'Historical answers. ':'').($at&&($when=$checked($at,true))!==null?$when.'. ':'').
                 ($profile?'DNS template comparison is unavailable for these saved records.':'Choose a DNS template to compare these records.')));
         }
         // Registrar records exist only for a domain we register. The Domain section says their state once.
@@ -66,7 +67,7 @@ final class WatchFacts
         // Saved answers only. Registrar records with no values are already Unknown in the Domain section.
         $evidence=[];foreach(['public'=>'Public DNS','registrar'=>'Registrar records'] as $key=>$label){
             if(!$e[$key]&&($key==='registrar'||(!$active&&$e['public_at']===null))){continue;}
-            $at=$e[$key.'_at'];$sub=$at?rtrim(($key==='public'&&$e['public_stale']?'Historical answers. ':'').($checked($at)??'')):'No saved observation.';
+            $at=$e[$key.'_at'];$sub=$at?rtrim(($key==='public'&&$e['public_stale']?'Historical answers. ':'').($checked($at,$key==='public')??'')):'No saved observation.';
             $evidence[$label]=self::fact($e[$key]?implode('; ',$e[$key]):'Unknown',$at?($sub===''?null:new \Illuminate\Support\HtmlString($sub)):$sub);}
         return array_filter(['Domain'=>$shown($domain),'Checks'=>$shown($checks),'Evidence'=>$evidence]);
     }
@@ -83,11 +84,11 @@ final class WatchFacts
         return $w->work->contains(fn($row)=>($kind===null||$row->kind===$kind)&&($row->due_at!==null||$row->lease_until>app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp()))
             ?Missing::fills('after the next check'):'No check scheduled. Check the background worker.';
     }
-    /** The latest check across nameservers, records and registry. Only failed checks are red; waiting or old evidence explains its next step. */
+    /** The latest check across nameservers, records and registry; 'from' names the checks made at that instant. Only failed checks are red; waiting or old evidence explains its next step. */
     public static function lastCheck(WatchName $w,?DomainSummary $s): array
     {
         $fresh=$s?->freshness??[];$at=max([0,...array_map(fn($f)=>(int)$f['checkedAt'],$fresh)]);
-        if(!$s){$at=max((int)$w->delegation?->started_at,(int)$w->registry?->started_at);return [...self::fact($at?self::date($at):($w->state==='active'?null:''),cause:'No monitoring summary saved. Check the customer and domain records.'),'at'=>$at];}
+        if(!$s){$at=max((int)$w->delegation?->started_at,(int)$w->registry?->started_at);return [...self::fact($at?self::date($at):($w->state==='active'?null:''),cause:'No monitoring summary saved. Check the customer and domain records.'),'at'=>$at,'from'=>[]];}
         if(!$at){return self::fact(null,cause:self::missingCause($w));}
         $failed=$w->work->firstWhere('kind','expiry')?->safe_code;$failed=$failed!==null && !in_array($failed,['ready','rotation','no_coverage','not_registered','rate_limited','budget_exhausted','target_changed'],true);
         // A paused or stopped name reads as stale in every summary, so its saved failure still counts and it has no next check.
@@ -95,7 +96,7 @@ final class WatchFacts
         $partial=array_filter($fresh,fn($f)=>$f['checkedAt']!==null && $f['partial'] && (!$f['stale']||!$running));
         $stale=$running?array_filter($fresh,fn($f)=>$f['stale']):[];
         $retry=$running?' Checks retry automatically.':($w->state==='paused'?(\Paymenter\Extensions\Servers\Domains\Services\WatchDiscovery::canResume($w)?' Resume monitoring to check again.':' Checks start again when the hosting service is active.'):'');
-        return [...self::fact(self::date($at),$failed?'Registry lookup failed.'.$retry:($partial?'Some checks failed.'.$retry:($stale?'Some results are waiting for the next check.':null)),tone:$failed||$partial?'danger':null),'at'=>$at];
+        return [...self::fact(self::date($at),$failed?'Registry lookup failed.'.$retry:($partial?'Some checks failed.'.$retry:($stale?'Some results are waiting for the next check.':null)),tone:$failed||$partial?'danger':null),'at'=>$at,'from'=>array_keys(array_filter($fresh,fn($f)=>(int)$f['checkedAt']===$at))];
     }
     public static function expires(?DomainSummary $s,array $keys,bool $active,?WatchName $watch=null): array
     {

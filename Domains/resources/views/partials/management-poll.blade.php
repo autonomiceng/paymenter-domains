@@ -8,7 +8,8 @@
         let slow = Date.now() - started >= 30000;
         try {
             const response = await fetch(url, {credentials: 'same-origin', headers: {'Accept': 'application/json'}, cache: 'no-store'});
-            if (response.status === 401 || response.status === 403 || response.status === 404) return;
+            // Lost access, a sign-in or verification redirect and other refused reads stop polling. 408 and 429 are retried later.
+            if (response.redirected || (response.status >= 400 && response.status < 500 && ![408, 429].includes(response.status))) return;
             if (response.ok) {
                 const rows = await response.json();
                 for (const control of document.querySelectorAll('[data-management-pending]')) {

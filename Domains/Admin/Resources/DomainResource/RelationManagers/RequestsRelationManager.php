@@ -15,19 +15,28 @@ class RequestsRelationManager extends RelationManager
     protected static ?string $title = 'History';
     protected static bool $isLazy = false;
     public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool { return Staff::can(); }
+    /** The request the domain page head names, and the head's words, passed by the page (ViewDomain::getRelationManagers).
+     * Reactive: the page keeps this tab mounted, so each page render passes the current head again. The browser cannot set them. */
+    #[\Livewire\Attributes\Reactive]
+    public ?int $headRequest=null;
+    #[\Livewire\Attributes\Reactive]
+    public ?string $headSaid=null;
     public function table(Table $table): Table
     {
         Staff::requireView();
         $domain=$this->getOwnerRecord();
-        return HistoryTable::apply($table,fn()=>self::rows($domain),'No history yet')->heading(null)->recordAction(null);
+        return HistoryTable::apply($table,fn()=>self::rows($domain,$this->headRequest,$this->headSaid),'No history yet')->heading(null)->recordAction(null);
     }
-    /** @return list<array{time:?string,change:string,reason:?string,by:string,url:?string}> */
-    private static function rows(Domain $domain): array
+    /** The request the head names keeps its status here, but not the reason the head already says (DomainHistory::repeatsHead).
+     * @return list<array{time:?string,change:string,reason:?string,by:string,url:?string}> */
+    private static function rows(Domain $domain, ?int $request, ?string $said): array
     {
         $off=DomainHistory::ordersOff($domain);
-        return array_map(function(Operation|array $entry)use($domain,$off): array {
+        return array_map(function(Operation|array $entry)use($domain,$off,$request,$said): array {
             $row=DomainHistory::row($entry,$domain,$off);
-            $detail=array_filter([$row['status']['label']??null,$row['sub']]);
+            $sub=$row['sub']?StaffDomainStatus::sentence($row['sub']):null;
+            if (DomainHistory::repeatsHead($entry,$sub,$request,$said)) { $sub=null; }
+            $detail=array_filter([$row['status']['label']??null,$sub]);
             return ['time'=>self::utc($row['time']),'change'=>$row['event'],'reason'=>$detail===[]?null:implode(' ',array_map(StaffDomainStatus::sentence(...),$detail)),
                 'by'=>$row['by'],'url'=>$entry instanceof Operation?OperationResource::getUrl('view',['record'=>$entry]):null];
         },DomainHistory::entries($domain));

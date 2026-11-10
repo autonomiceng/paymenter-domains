@@ -155,5 +155,15 @@ expect(!isset(OwnerRecords::forDomain($d->fresh())['dns']),'Edits stay closed un
 // A complete read clears the failure.
 $state->fault='';$clock->instant=$clock->now()->modify('+61 seconds');$observer->run($d->id,readRecords:true);
 expect(!isset($d->fresh()->observation['record_failure']),'A complete read clears the saved failure');same('Yes',$membership(),'Recovered membership');
+// Record checks off: a newer ownership-only read of the same identity answers membership, while the ownership hold stays for the next record read.
+$observation->fault='owner';$clock->instant=$clock->now()->modify('+61 seconds');
+same('domain_not_in_account',$observer->run($d->id,readRecords:true),'Ownership loss stops the read');
+$drift=$d->fresh()->observation['record_hold'];same('ownership_drift',$drift['reason'],'Ownership loss holds the records');same('No',$membership(),'The ownership hold answers membership');
+$observation->fault='';$state->calls=[];$clock->instant=$clock->now()->modify('+61 seconds');$observer->run($d->id,readRecords:false);
+same([true,$clock->now()->format(DATE_ATOM)],[$d->fresh()->observation['facts']['owned'],$d->fresh()->observation['facts']['at']],'The ownership-only read saves newer ownership');
+same([],$state->calls,'Record checks off read no records');same($drift,$d->fresh()->observation['record_hold'],'Record checks off keep the ownership hold');
+same('Yes',$membership(),'A newer ownership-only read answers membership');
+$state->fault='';$clock->instant=$clock->now()->modify('+61 seconds');$observer->run($d->id,readRecords:true);
+expect(!ObservationRecords::held($d->fresh()),'A complete record read clears the ownership hold');same('Yes',$membership(),'Membership after the record read');
 DB::table('domains_observation_work')->where('id',$readJob->id)->update(array_diff_key((array)$readJob,['id'=>true]));\Illuminate\Support\Facades\Auth::login($user);
 $nativeSuccessful=true;echo "Initial inventory, sync jobs, sequences, partial failure and authority passed.\n";

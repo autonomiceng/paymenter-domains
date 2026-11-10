@@ -62,4 +62,4 @@ foreach(['default_pricing','override'] as $action){
     same('No price can cover the card fee with this markup. Lower the markup or the card fee. Nothing was changed.',SettingsActions::refusal(new InvalidArgumentException('This percentage cannot cover the card fee. Lower the markup or card fee.'),$action),'Impossible fee gives the correct remedy');
 }
 
-same('Enter a card fee from 0% to 99.99% and a fixed amount from $0 to $100,000, with up to two decimal places. Nothing was changed.',SettingsActions::refusal(new DomainException('Invalid card fee.'),'default_pricing'),'Card fee input refusal gives exact range and decimal guidance');
+same('Enter a card fee from 0% to 99.99% and a fixed amount from $0 to $100,000, with up to two decimal places. Nothing was changed.',SettingsActions::refusal(new InvalidArgumentException(Paymenter\Extensions\Servers\Domains\Services\CardFee::INVALID),'default_pricing'),'Card fee input refusal gives exact range and decimal guidance');

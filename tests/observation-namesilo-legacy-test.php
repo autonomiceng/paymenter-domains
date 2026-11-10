@@ -76,4 +76,45 @@ same(['complete',$readback['records']],[$saved['families']['dns']['state']??null
 same($adapter['families'],$saved['expected_families']??null,'The upgraded row records the adapter capabilities');
 same(['unknown','unknown'],[$saved['families']['srv']['state'],$saved['families']['ds']['state']],'Unproven SRV and DS stay unknown');
 same(['complete',$glue],[$saved['families']['glue']['state'],$saved['families']['glue']['records']],'Legacy glue evidence is kept');
+// A versioned row saved before DNS was supported takes a confirmed DNS readback and keeps it on the next read.
+$records=\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::class;
+$p=$d->fresh()->observation;unset($p['records']);$p['management_sequence']=2;$d->fresh()->update(['observation'=>$p]);
+$t0=$clock->now();$records::save($d->fresh(),['glue'=>['state'=>'complete','records'=>['ns1.legacy-observed-placeholder.com'=>'8.8.8.8']]],$t0,$installed);
+$versioned=$records::current($d->fresh(),$t0);
+same(['unsupported',2,$t0->format(DATE_ATOM)],[$versioned['expected_families']['dns'],$versioned['sequence'],$versioned['at']],'Fixture: a versioned row from before DNS support');
+$later=$t0->modify('+5 minutes');
+$confirmed=['state'=>'complete','records'=>[['name'=>'@','type'=>'A','address'=>'192.0.2.2','mx_pref'=>10,'record_id'=>'made2','ttl'=>300]]];
+$records::saveDnsReadback($d->fresh(),['sequence_preimage'=>$confirmed],$later,$adapter);
+$saved=$records::current($d->fresh(),$later);
+same(['complete',$confirmed['records'],$later->format(DATE_ATOM)],[$saved['families']['dns']['state']??null,$saved['families']['dns']['records']??null,$saved['families']['dns']['at']??null],'Confirmed DNS and its checked time survive a fresh read of the versioned row');
+same([...$installed['families'],'dns'=>'supported'],$saved['expected_families'],'Only the DNS expectation changes');
+same([$t0->format(DATE_ATOM),2],[$saved['at'],$saved['sequence']],'The whole-observation time and sequence stay');
+same(['unknown','unknown'],[$saved['families']['srv']['state'],$saved['families']['ds']['state']],'Unsupported siblings stay unknown');
+same([$versioned['families']['glue']['state'],$versioned['families']['glue']['records']],[$saved['families']['glue']['state'],$saved['families']['glue']['records']],'Saved glue evidence stays');
+// Refresh through the explicitly supplied DNS adapter reads complete DNS and settings and sends no change.
+$clock->instant=$later->modify('+1 minute');$adapterCalls=[];
+$contact=['first_name'=>'Synthetic','last_name'=>'Person','company'=>'','address'=>'1 Example Street','address2'=>'','city'=>'Portland','state'=>'OR','zip'=>'97201','country'=>'US','email'=>'synthetic@example.com','phone'=>'+1.5035550123'];
+$adapterExchange=static function($origin,$cmd,$p,$timeout)use(&$adapterCalls,$contact):string {
+    $adapterCalls[]=$cmd;
+    if($cmd==='listRegisteredNameServers'){return '{"request":{"operation":"listRegisteredNameServers"},"reply":{"code":300,"detail":"success","hosts":[{"host":"ns1","ip":"8.8.8.8"}]}}';}
+    $reply=['code'=>300,'detail'=>'synthetic']+match($cmd){
+        'getDomainInfo'=>['created'=>'2020-01-01','expires'=>'2028-01-01','status'=>'Active','auto_renew'=>'No','private'=>'No','locked'=>'Yes',
+            'nameservers'=>[['nameserver'=>'ns1.provider.example.net'],['nameserver'=>'ns2.provider.example.net']],'contact_ids'=>array_fill_keys(['registrant','administrative','technical','billing'],'900001')],
+        'dnsListRecords'=>['resource_record'=>[['record_id'=>'fresh1','type'=>'A','host'=>'legacy-observed-placeholder.com','value'=>'192.0.2.3','ttl'=>'300','distance'=>'0']]],
+        'dnsSecListRecords'=>['ds_record'=>[]],
+        'contactList'=>['contact'=>[...$contact,'contact_id'=>$p['contact_id']]],
+        default=>throw new LogicException('Refresh must not send '.$cmd),
+    };
+    return json_encode(['request'=>['operation'=>$cmd],'reply'=>$reply],JSON_THROW_ON_ERROR);
+};
+$port=new \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\DnsManagement($binding,$adapterExchange);
+$refresh=new DomainObservation($readBindings,$clock,new AccountReadBudget($clock),observationReader:static fn($b)=>$port);
+$refreshCode=$refresh->run($d->id);
+same([],array_values(array_diff($adapterCalls,['getDomainInfo','dnsListRecords','dnsSecListRecords','listRegisteredNameServers','contactList'])),'Refresh through the DNS adapter only reads');
+expect(in_array('dnsListRecords',$adapterCalls,true),'Refresh reads the DNS list');
+$refreshed=$records::current($d->fresh(),$clock->now());
+same(['complete',[['name'=>'@','type'=>'A','address'=>'192.0.2.3','mx_pref'=>10,'record_id'=>'fresh1','ttl'=>300]]],[$refreshed['families']['dns']['state']??null,$refreshed['families']['dns']['records']??null],'Refresh replaces confirmed DNS with the complete registrar list, never unknown');
+same(['complete','complete','complete'],[$refreshed['settings']['nameservers']['state']??null,$refreshed['settings']['contacts']['state']??null,$refreshed['settings']['flags']['state']??null],'Refresh reads complete settings');
+same($port->observationCapabilities()['families'],$refreshed['expected_families'],'The refreshed row records what the adapter reads');
+same([false,'refreshed'],[$records::held($d->fresh()),$refreshCode],'A complete refresh holds nothing');
 $nativeSuccessful=true;echo "Legacy NameSilo holding reads remain independent of closed offer enrollment\n";

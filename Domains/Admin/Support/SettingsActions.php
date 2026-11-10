@@ -476,7 +476,7 @@ final class SettingsActions
         if($error instanceof EnomTestCallLimit&&(Account::where('server_id',$server)->value('environment')??($data['environment']??null))==='live'){return 'We stopped this before it reached Enom. Earlier reads may have been sent. Check API calls on the account page.';}
         return $error instanceof EnomTestCallLimit?self::testRefusal($error,$name,$server,$data)
                 :match($error->getMessage()){\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE=>\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::STAFF,'The calculated price is too large.'=>'This makes a price too large to save. Lower the markup or the card fee. Nothing was changed.','Processing state unchanged.'=>'Orders are already set that way. Nothing changed.',
-                'Invalid card fee.'=>'Enter a card fee from 0% to 99.99% and a fixed amount from $0 to $100,000, with up to two decimal places. Nothing was changed.',
+                CardFee::INVALID=>'Enter a card fee from 0% to 99.99% and a fixed amount from $0 to $100,000, with up to two decimal places. Nothing was changed.',
                 'This TLD is hidden.'=>"That TLD isn't offered here. Nothing was saved.",'Choose at least one year.'=>'Tick at least one year. Nothing was saved.','Nothing to save.'=>'Nothing changed. Nothing was saved.',
                 'Acceptance exceeds encrypted settings capacity.','Invalid catalogue acceptance.'=>'That is more TLDs than one account can save. Turn some off. Nothing was saved.',
                 'Settings changed. Reload this page.'=>$name==='enroll_sandbox'?'This expired, or someone else changed this account. '.self::NO_KEY_CHECK.' Try again.':'Someone else changed this. Nothing was saved. Try again.',
@@ -506,7 +506,7 @@ final class SettingsActions
                 'Existing sandbox enrollment unavailable.'=>'Another test account’s saved details can’t be read, so we can’t check this key. Restore those details, then try again. '.self::NOT_SENT,
                 'Sandbox enrollment unavailable.'=>'NameSilo test accounts are off on this site, and live NameSilo accounts can’t be connected. '.self::NOT_SENT,
                 'Sandbox enrollment is immutable.'=>'This older test enrollment cannot rotate its key. Connect a new registrar account to use a different key. '.self::NOT_SENT,
-                'Sandbox enrollment requires a fresh server.'=>'This registrar account already has saved settings, records or domains. Use a new registrar account. '.self::NOT_SENT,
+                \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::FRESH_SERVER=>'This registrar account already has saved settings, records or domains. Use a new registrar account. '.self::NO_KEY_CHECK,
                 'Invalid sandbox enrollment input.'=>'Check the label and key. The label must be one line of up to 128 bytes with no spaces at the start or end, and can’t contain the key. The key can be up to 256 characters, with no spaces or control characters. '.self::NOT_SENT,
                 'Sandbox key check failed.'=>'Nothing was saved. NameSilo did not confirm the key. It may be wrong, or the reply may be missing or unclear. Check the key and try again. Trying again may send another key check.',
                 'Sandbox enrollment could not be saved.'=>self::SAVED_OUTCOME_UNKNOWN,

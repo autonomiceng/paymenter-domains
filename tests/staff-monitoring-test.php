@@ -62,5 +62,26 @@ $saved=fn(int $at)=>\Illuminate\Support\Facades\DB::table($record->points->getTa
 expect(str_contains((string)WatchFacts::for(WatchName::find($id))['Evidence']['Public DNS']['sub'],'Checked'),'An older saved answer keeps its Checked time');
 $saved($lastAt);
 same(null,WatchFacts::for(WatchName::find($id))['Evidence']['Public DNS']['sub'],'Evidence does not repeat the Last check time');
+// Separate checks seconds apart in one minute each keep their own time; only the DNS answer Last check describes drops it.
+$times=fn($html)=>array_map(fn($n)=>$n->getAttribute('datetime'),iterator_to_array(storefrontDom('<div id="times">'.$html.'</div>')->query('//*[@id="times"]//time')));
+$minute=(intdiv($lastAt,60)+1)*60;$registryId=(int)DB::table('domains_watch_registry')->where('watch_id',$id)->max('id');
+$registry=fn(int $at)=>DB::table('domains_watch_registry')->where('id',$registryId)->update(['started_at'=>$at,'completed_at'=>$at+1]);
+$registry($minute+40);$saved($minute+10);$facts=WatchFacts::for(WatchName::find($id));
+same($minute+40,$facts['Checks']['Last check']['at'],'A newer registry check supplies Last check');
+same([gmdate('c',$minute+10)],$times($facts['Evidence']['Public DNS']['sub']),'An earlier DNS answer in the same minute keeps its own Checked time');
+$saved($minute+50);$facts=WatchFacts::for(WatchName::find($id));
+same([$minute+50,null],[$facts['Checks']['Last check']['at'],$facts['Evidence']['Public DNS']['sub']],'The DNS answer that supplies Last check shows no second time');
+$saved($minute-3600);same([gmdate('c',$minute-3600)],$times(WatchFacts::for(WatchName::find($id))['Evidence']['Public DNS']['sub']),'Older evidence keeps its Checked time');
+// With no template to compare, saved answers fill DNS records with their own exact time, even beside a newer check in the same minute.
+$registry($minute+40);$template=WatchName::find($id)->ns_profile_id;DB::table('domains_watch_names')->where('id',$id)->update(['ns_profile_id'=>null]);
+$untemplated=WatchName::find($id);same(null,\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::watchProfile($untemplated),'No DNS template applies');
+$untemplated->setRelation('points',new \Paymenter\Extensions\Servers\Domains\Models\WatchDnsObservation(['check_kind'=>'points','started_at'=>$minute+17,'completed_at'=>$minute+18,'result'=>'complete','partial'=>false,'valid_until'=>$minute+300,
+    'facts'=>['queries'=>[['name'=>$untemplated->canonical_name,'type'=>'A','records'=>[['value'=>'192.0.2.10']]]]]]));
+$records=WatchFacts::for($untemplated,['keys'=>[],'summary'=>null])['Checks']['DNS records'];
+same('A @ → 192.0.2.10',$records['value'],'Saved answers fill DNS records without a template');
+same([gmdate('c',$minute+17)],$times($records['sub']),'DNS records keeps the saved answer time');
+$recordsText=trim(preg_replace('/\s+/',' ',html_entity_decode(strip_tags((string)$records['sub']),ENT_QUOTES|ENT_HTML5)));
+expect(str_starts_with($recordsText,'Historical answers. Checked ')&&str_ends_with($recordsText,'. Choose a DNS template to compare these records.'),'DNS records says Checked and how to compare: '.$recordsText);
+DB::table('domains_watch_names')->where('id',$id)->update(['ns_profile_id'=>$template]);$saved($lastAt);
 
 $nativeSuccessful=true;echo "Staff monitoring list and details passed\n";

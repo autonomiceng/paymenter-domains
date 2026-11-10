@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\{Artisan,Auth,Cache,DB,Queue};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain;
 use Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,ObservationSchema};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,HoldingObservationWork,ObservationRecords,ObservationSchema};
 ObservationSchema::install();[$d,$driver]=$holding(placeholderComFixtureName('staff-sync-placeholder.com'));
 staffPanel();$actor=staffUser([Staff::VIEW,'admin.domains.manage']);Auth::setUser($actor);
 App\Models\Server::findOrFail($d->server_id)->settings()->updateOrCreate(['key'=>'domains_dns_tools'],['value'=>'1']);
@@ -115,6 +115,29 @@ Artisan::call('queue:work',['--stop-when-empty'=>true,'--sleep'=>0,'--tries'=>1]
 same('Domain synced',SyncDomainRecords::result($d->fresh())['title'],'Manual sync completes under its own lease');
 $row=DB::table('domains_observation_work')->where('id',$work)->first();
 same([null,0,'refreshed'],[$row->claim,(int)$row->lease_until,$row->safe_code],'Manual completion releases its lease and records the read');
+// The same manual claim stops at its lease boundary, well before the observer's own read deadline.
+$clock->instant=$clock->now()->modify('+61 seconds');
+$facts=static function()use($d,$clock):array { $f=$d->fresh(); $p=$f->observation??[]; unset($p['sync_history']);
+    return [$f->last_synced_at?->format(DATE_ATOM),$p,ObservationRecords::current($f,$clock->now())]; };
+$saved=$facts();
+same('complete',$saved[2]['families']['dns']['state']??null,'The prior read left a complete inventory');
+same(true,SyncDomainRecords::enqueue($actor->id,$d->fresh()),'Manual sync queues before its lease expiry');
+$started=$clock->now();$expired=null;$observation->during=static function()use($work,$clock,$started,&$expired):void {
+    $row=DB::table('domains_observation_work')->where('id',$work)->first();
+    same(true,HoldingObservationWork::ownsManual($work,$row->claim,$clock->now()),'The running manual read owns its live lease');
+    $boundary=$clock->now()->getTimestamp()+1;
+    DB::table('domains_observation_work')->where('id',$work)->update(['lease_until'=>$boundary]);
+    $clock->instant=$clock->now()->modify('+1 second');
+    same($boundary,$clock->now()->getTimestamp(),'The clock reaches the lease boundary exactly');
+    expect($clock->now()<$started->modify('+250 seconds'),'The lease expires inside the observer read window');
+    $expired=HoldingObservationWork::ownsManual($work,$row->claim,$clock->now());
+};
+Artisan::call('queue:work',['--stop-when-empty'=>true,'--sleep'=>0,'--tries'=>1]);
+same($saved,$facts(),'An expired manual lease saves no facts, inventory or sync time');
+same('Sync stopped',SyncDomainRecords::result($d->fresh())['title'],'An expired manual lease reports a stopped sync');
+same(false,$expired,'An unchanged manual claim no longer owns its expired lease');
+$row=DB::table('domains_observation_work')->where('id',$work)->first();
+same([null,0],[$row->claim,(int)$row->lease_until],'The expired manual read releases its own claim');
 same(0,DB::table('failed_jobs')->count(),'Missing-account reads finish without failed queue jobs');
 // An ownership read can finish with drift. That is an outcome, not a successful record sync.
 $observation->fault='';$observation->expiryYears=2;$clock->instant=$clock->now()->modify('+61 seconds');

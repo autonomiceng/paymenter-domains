@@ -57,6 +57,8 @@ class RecordForms(HTMLParser):
                 self.form['rows'].append(self.row)
         if tag in ('input', 'select') and self.row is not None:
             self.row['fields'].append(attrs)
+        if tag == 'td' and 'data-saved-ttl' in attrs and self.row is not None:
+            self.row['ttl'] = attrs
         if tag == 'button' and attrs.get('type') == 'submit':
             self.form['buttons'].append(attrs)
 
@@ -118,6 +120,11 @@ def main():
         scripts = InlineScripts()
         scripts.feed((Path(temporary)/'show-records.html').read_text())
         checked = subprocess.run([node, str(ROOT/'tests/Support/record-submit.js')],
+                                 input=json.dumps({'forms': records.forms, 'script': scripts.scripts[0]}),
+                                 capture_output=True, text=True, timeout=10)
+        assert checked.returncode == 0, checked.stdout + checked.stderr
+        print(checked.stdout.strip())
+        checked = subprocess.run([node, str(ROOT/'tests/Support/record-ttl.js')],
                                  input=json.dumps({'forms': records.forms, 'script': scripts.scripts[0]}),
                                  capture_output=True, text=True, timeout=10)
         assert checked.returncode == 0, checked.stdout + checked.stderr

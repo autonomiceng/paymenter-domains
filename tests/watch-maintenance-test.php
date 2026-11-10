@@ -163,4 +163,11 @@ same(1,$outage()['alert_attempts'],'Recovered monitoring rearms a fresh episode'
 expect($episode!==$outage()['alert_key'],'Recovered monitoring uses a new episode receipt identity');
 $m->tick($at+660);same(false,$outage()['alert_pending'],'Replacement retries recover without duplicate receipts');
 
+// Summer daylight saving time: a July outage reads PDT in the alert and the monitoring notice, for the same instant.
+$july=(int)strtotime('2027-07-15T07:00:00Z');$julyAt='Jul 15, 2027, 12:00 AM PDT';
+DB::table('domains_watch_schedule')->where('scope','dispatch')->update(['alert_at'=>null,'progress_at'=>$july]);
+$h=$m->health($july+600);same(['dispatch_overdue',$july],[$h['reason'],$h['since']],'July outage starts at the last progress');
+same('Monitoring checks have not run since '.$julyAt.'. Ask your site admin to restart them.',WatchMaintenance::notice($h)['text'],'July notice reads PDT');
+App\Models\Notification::where('title','Domain monitoring stopped')->delete();$m->tick($july+600);
+staffAlerts('Domain monitoring stopped','Checks have not run since '.$julyAt.'.',route('filament.admin.resources.domain-watch.index'),$staff);
 $nativeSuccessful=true;echo "Two missed turns, day-long outage, deduplicated health and ninety-day retained last-good/notice evidence passed.\n";

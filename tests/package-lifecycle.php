@@ -129,7 +129,7 @@ if($phase==='bridge-seed'){
         app(Installation::class)->verify();
         same((int)getenv('PACKAGE_MIGRATIONS'),count(glob(base_path('extensions/Servers/Domains/database/migrations/*.php'))),'Installed migration inventory');
         foreach(glob(base_path('extensions/Servers/Domains/database/migrations/*.php')) as $migration){same(1,DB::table('migrations')->where('migration',basename($migration,'.php'))->count(),'Native install ran each extension migration once');}
-        assertInstalledMigrationOrder();
+        assertInstalledMigrationOrder(base_path('extensions/Servers/Domains/database/migrations'));
         same(0,Account::count(),'Fresh package creates no activated accounts');
         if($phase!=='retained-install'&&getenv('PACKAGE_CATALOGUE_MODE')==='retained-legacy'){same('legacy',Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::routeState()['state'],'Lifecycle scenario retains the unconverted catalogue through native installation');}
         if(getenv('PACKAGE_CATALOGUE_MODE')==='fresh-active'){same('active',Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::routeState()['state'],'Fresh native installation activates the offer catalogue');}
@@ -271,7 +271,7 @@ if($phase==='bridge-seed'){
     same($before,array_slice($after,0,count($before)),'Original migration history unchanged');
     same((int)getenv('PACKAGE_MIGRATIONS'),count(glob(base_path('extensions/Servers/Domains/database/migrations/*.php'))),'Installed additive migration count');
     foreach(glob(base_path('extensions/Servers/Domains/database/migrations/*.php')) as $migration){same(1,DB::table('migrations')->where('migration',basename($migration,'.php'))->count(),'Each installed migration ran once');}
-    assertInstalledMigrationOrder();
+    assertInstalledMigrationOrder(base_path('extensions/Servers/Domains/database/migrations'));
     if(class_exists(Paymenter\Extensions\Servers\Domains\Services\EnomLive::class)){
         $oldLiveConfig=config('domains.enom_live');$oldIdentity=config('domains.enom_identity.environment');$oldUrl=config('app.url');
         if(getenv('PACKAGE_STANDING_UPGRADE')){

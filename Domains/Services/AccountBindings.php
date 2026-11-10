@@ -12,6 +12,8 @@ use Paymenter\Extensions\Servers\Domains\Models\Account;
 // Binding policy adapted from Enom d2c55e2 Services/RuntimeGuard.php.
 final class AccountBindings
 {
+    /** Refusal when the server already holds Domains state; staff text keys on this constant. */
+    public const FRESH_SERVER = 'Account enrollment requires a fresh server.';
     private const CREDENTIALS = 'domains_credentials';
     private const VERIFIED = 'domains_verified_credentials';
 
@@ -209,10 +211,10 @@ final class AccountBindings
             if(!str_starts_with($table,'domains_')||in_array($table,[StaffSettingsReview::KEYS,AuditArchives::TABLE],true)
                 ||!Schema::hasColumn($table,'server_id')){continue;}
             $q=DB::table($table)->where('server_id',$serverId);if($lock){$q->lockForUpdate();}
-            if($q->exists()){throw new \DomainException('Account enrollment requires a fresh server.');}
+            if($q->exists()){throw new \DomainException(self::FRESH_SERVER);}
         }
         $q=$server->settings()->whereRaw("`key` LIKE ? ESCAPE '!'",['domains!_%'])->whereNotIn('key',[StaffSettingsReview::KEY,'domains_setup_note',NameSiloAccountGuard::EXPECTED]);
-        if($lock){$q->lockForUpdate();}if($q->exists()){throw new \DomainException('Account enrollment requires a fresh server.');}
+        if($lock){$q->lockForUpdate();}if($q->exists()){throw new \DomainException(self::FRESH_SERVER);}
     }
 
     private function uniqueSandboxKey(#[\SensitiveParameter] array $candidate,bool $lock=false): void
