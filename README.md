@@ -21,21 +21,19 @@ Build with `python3 scripts/build.py --output-dir /fresh/output`, then verify th
 ```text
 Domains/    Native runtime and distributable license
 docs/       Public development conventions and verification guidance
-scripts/    Pinned PHP bootstrap, offline test runner and separate conversion tooling
+scripts/    Pinned PHP bootstrap and offline test runner
 tests/      Synthetic provider, transport and native package acceptance
 .github/    CI, contribution templates, and dependency update configuration
 ```
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md), [extension conventions](docs/paymenter-extension-conventions.md), and [verification guidance](docs/testing.md). See the [API contract](docs/design/api-contract.md), [runtime boundaries](docs/runtime.md), and [parity gates](docs/design/parity.md). Offline native SQLite acceptance does not establish shared-database locking, real provider acceptance or a production deployment.
 
-## Conversion evidence
+## One-time conversion
 
-The development-only [conversion evidence collector](scripts/conversion/README.md#collecting-conversion-evidence)
-collects read-only Enom ownership proof during the stopped conversion window. Rehearse
-with TEST accounts; live use requires explicit staff-controlled, one-name-at-a-time
-scope and a single retained Enom account. Multi-account rollout needs a separate
-reviewed prerequisite; successive files do not accumulate proof.
-Keep its `0600` evidence file private and delete it after conversion and private verification.
+This package has no converter. Convert a legacy Enom installation with the converter and
+evidence collector from Domains bridge 0.1.0 at `891124421645`, then install this package
+as an upgrade. The [release runbook](docs/release-runbook.md#one-time-conversion-checkpoint-order)
+lists the steps.
 
 ## Public suffix list review
 
