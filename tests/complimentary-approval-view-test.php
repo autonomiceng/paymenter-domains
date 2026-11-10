@@ -96,10 +96,10 @@ $check('Exact stored approval costs',static function()use($staff,$d,$fractional)
     $page->mountAction('approveComplimentaryCost')->setActionData(['reason'=>'Approve the exact displayed amount']);
     expect(str_contains((string)$page->instance()->getAction('approveComplimentaryCost')->getModalDescription(),$message),'The approval modal preserves both stored decimal amounts');
     expect(str_contains($page->effects['partials']['action-modals.0']??'',$message),'The rendered approval modal shows the exact amount to authorize');
-    // The clock answers in another zone; the approval row still keeps store-zone wall time.
+    // The clock answers in another zone; the approval row keeps UTC and says so.
     $clock=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class);$prior=$clock->instant;$clock->instant=$prior->setTimezone(new DateTimeZone('Asia/Tokyo'));
     try{$page->callMountedAction()->assertHasNoActionErrors()->assertNotified('Registrar cost approved');}finally{$clock->instant=$prior;}
-    same($prior->setTimezone(new DateTimeZone(date_default_timezone_get()))->format('Y-m-d H:i:s'),DB::table('domains_complimentary_approvals')->where('operation_id',$fractional->id)->sole()->created_at,'The approval keeps store-zone wall time');
+    same([$prior->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s'),'UTC'],array_values((array)DB::table('domains_complimentary_approvals')->where('operation_id',$fractional->id)->first(['created_at','time_zone'])),'The approval keeps UTC');
     same('queued',$fractional->fresh()->state,'The displayed exact quote can be approved');
     same(0,\Paymenter\Extensions\Servers\Domains\Services\WriteMoney::compare('8.0040',DB::table('domains_complimentary_approvals')->where('operation_id',$fractional->id)->sole()->amount),'The approval audit retains the exact displayed amount');
 });

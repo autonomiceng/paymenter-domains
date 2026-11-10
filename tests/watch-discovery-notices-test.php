@@ -14,6 +14,20 @@ same(['suppressed','suppressed','accepted','uncertain'],DB::table('domains_watch
 same(['discovery_retired','discovery_retired'],DB::table('domains_watch_deliveries')->where('state','suppressed')->orderBy('id')->pluck('safe_code')->all(),'Real retirement keeps its own reason');
 same(0,DB::table('domains_watch_work')->where('watch_id',$w->id)->whereNotNull('claim')->count(),'Retirement invalidates work claims');
 DB::table('services')->where('id',$service->id)->update(['status'=>'active']);$sweep();same('active',$w->fresh()->state,'A returning domain is monitored again');same('resolved',DB::table('domains_watch_notices')->where('id',$id)->value('state'),'Return never replays a closed old notice');same([],$dns->calls,'Notice lifecycle is local only');
+// A suspended hosting service pauses the watch: unhanded deliveries stop, the customer's saved choice stays, and return replays nothing.
+$scope=Paymenter\Extensions\Servers\Domains\Services\WatchNoticePreferences::scope($owner->id,$w->canonical_name);
+foreach([$scope,Paymenter\Extensions\Servers\Domains\Services\WatchNoticePreferences::account($owner->id)] as $key){DB::table('domains_watch_preferences')->insertOrIgnore(['scope'=>$key,'user_id'=>$owner->id,'enabled'=>true]);}
+$preferences=Paymenter\Extensions\Servers\Domains\Services\WatchNoticePreferences::read($owner->id,$w->canonical_name);
+$pausedId=DB::table('domains_watch_notices')->insertGetId(['notice_key'=>str_repeat('f',64),'scope'=>str_repeat('b',64),'target_kind'=>'watch','watch_id'=>$w->id,'user_id'=>$owner->id,'kind'=>'expiring','family'=>'registry','episode_key'=>str_repeat('9',64),'observation_id'=>3,'state'=>'open','first_seen_at'=>$clock->at,'last_seen_at'=>$clock->at,'data'=>Crypt::encryptString('{}')]);
+DB::table('domains_watch_deliveries')->insert(['notice_id'=>$pausedId,'user_id'=>$owner->id,'channel'=>'mail','delivery_key'=>hash('sha256','paused-mail'),'template_key'=>'domains_watch_expiring','state'=>'reserved','reserved_at'=>$clock->at]);
+DB::table('services')->where('id',$service->id)->update(['status'=>'suspended']);$sweep();
+same('paused',$w->fresh()->state,'A suspended hosting service pauses the watch');
+same([['suppressed','discovery_paused']],DB::table('domains_watch_deliveries')->where('notice_id',$pausedId)->get(['state','safe_code'])->map(fn($r)=>[$r->state,$r->safe_code])->all(),'Pause stops the unhanded delivery');
+same('suppressed',DB::table('domains_watch_notices')->where('id',$pausedId)->value('state'),'Pause closes the unhanded notice');
+same($preferences,Paymenter\Extensions\Servers\Domains\Services\WatchNoticePreferences::read($owner->id,$w->canonical_name),'Pause keeps the saved alert choice');
+DB::table('services')->where('id',$service->id)->update(['status'=>'active']);$sweep();
+same(['active','suppressed','suppressed'],[$w->fresh()->state,DB::table('domains_watch_notices')->where('id',$pausedId)->value('state'),DB::table('domains_watch_deliveries')->where('notice_id',$pausedId)->value('state')],'Resume replays no paused notice');
+same($preferences,Paymenter\Extensions\Servers\Domains\Services\WatchNoticePreferences::read($owner->id,$w->canonical_name),'Resume keeps the saved alert choice');
 // Replacing the last hosting source with a managed link keeps the managed reason, so the managed notice can reuse unhanded channels.
 $managedId=DB::table('domains_watch_notices')->insertGetId(['notice_key'=>str_repeat('d',64),'scope'=>str_repeat('b',64),'target_kind'=>'watch','watch_id'=>$w->id,'user_id'=>$owner->id,'kind'=>'expiring','family'=>'registry','episode_key'=>str_repeat('e',64),'observation_id'=>2,'state'=>'open','first_seen_at'=>$clock->at,'last_seen_at'=>$clock->at,'data'=>Crypt::encryptString('{}')]);
 foreach(['app'=>'reserved','mail'=>'render_failed']as$channel=>$state){DB::table('domains_watch_deliveries')->insert(['notice_id'=>$managedId,'user_id'=>$owner->id,'channel'=>$channel,'delivery_key'=>hash('sha256','managed-'.$channel),'template_key'=>'domains_watch_expiring','state'=>$state,'reserved_at'=>$clock->at]);}

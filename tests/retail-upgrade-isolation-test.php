@@ -34,5 +34,16 @@ same((string)$good,(string)DB::table('prices')->where('id',$pausedPrice->id)->va
 expect(isset(OfferState::decode($tlds[1]->fresh()->catalogue_published_revision)['offer']),'Install replaces the incomplete marker');
 same(true,OfferState::decode($tlds[1]->fresh()->catalogue_intent)['salesPaused']??null,'Install keeps sales paused');
 $after=$tlds[1]->fresh()->getRawOriginal();(new Installation)->install();same($after,$tlds[1]->fresh()->getRawOriginal(),'Repeated install leaves the repaired TLD alone');
+same((string)$good,(string)DB::table('prices')->where('id',$pausedPrice->id)->value('price'),'Repeated install keeps the repaired native price');
+// A marker with every current key is still malformed with an extra key or a revision that is not an integer: install repairs it the same way.
+$complete=OfferState::decode($tlds[1]->fresh()->catalogue_published_revision);
+foreach(['extra key'=>[...$complete,'extra'=>1],'text revision'=>[...$complete,'offer'=>(string)$complete['offer']],'fractional revision'=>[...$complete,'defaults'=>$complete['defaults']+0.5]] as $case=>$marker){
+    DB::table('domains_tlds')->where('id',$paused->id)->update(['catalogue_published_revision'=>OfferState::json($marker)]);
+    DB::table('prices')->where('id',$pausedPrice->id)->update(['price'=>'0.01']);
+    (new Installation)->install();
+    same((string)$good,(string)DB::table('prices')->where('id',$pausedPrice->id)->value('price'),'Install repairs the paused kept native price: '.$case);
+    expect(OfferState::currentPublication($tlds[1]->fresh()->catalogue_published_revision),'Install replaces the malformed marker with a complete current one: '.$case);
+    same(true,OfferState::decode($tlds[1]->fresh()->catalogue_intent)['salesPaused']??null,'Install keeps sales paused: '.$case);
+}
 same($invoices,DB::table('invoice_items')->orderBy('id')->get()->toJson(),'Install leaves invoices unchanged');
 echo "Native install isolates failed retail publications and preserves unopened rows\n";$nativeSuccessful=true;

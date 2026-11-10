@@ -32,6 +32,9 @@ $observation=$d->fresh()->getRawOriginal('observation');DB::table('domains_domai
 $check('staff unreadable observation',fn()=>$view()->assertSuccessful()->assertSee(DomainFacts::UNREADABLE));DB::table('domains_domains')->where('id',$d->id)->update(['observation'=>$observation]);
 $acquisition=$d->operations()->whereIn('action',['register','transfer'])->orderByDesc('id')->firstOrFail();$payload=$acquisition->getRawOriginal('payload');DB::table('domains_operations')->where('id',$acquisition->id)->update(['payload'=>'batch6-explicit-unreadable-fixture']);
 $check('staff unreadable contacts',function()use($view,$d):void{$view()->assertSuccessful()->assertSee(DomainFacts::UNREADABLE);expect(!isset(DomainEditActions::for($d->fresh())['rows']['Contacts']),'No contact edit without a current digest');});DB::table('domains_operations')->where('id',$acquisition->id)->update(['payload'=>$payload]);
+$attempt=$acquisition->fresh()->getRawOriginal('attempt');DB::table('domains_operations')->where('id',$acquisition->id)->update(['attempt'=>'d29-explicit-unreadable-fixture']);
+$check('staff unreadable attempt',function()use($view,$acquisition,$actor):void{$view()->assertSuccessful();foreach(['transfer','register'] as $action){DB::table('domains_operations')->where('id',$acquisition->id)->update(['action'=>$action]);Livewire::actingAs($actor)->test(ViewOperation::class,['record'=>$acquisition->id])->assertSuccessful()->assertActionHidden('enom_answer');}});
+DB::table('domains_operations')->where('id',$acquisition->id)->update(['attempt'=>$attempt,'action'=>$acquisition->action]);
 same([],$unreadable,'Unreadable saved data renders without granting an edit or renewal');
 
 echo "Unreadable staff and customer domain pages passed.\n";$nativeSuccessful=true;

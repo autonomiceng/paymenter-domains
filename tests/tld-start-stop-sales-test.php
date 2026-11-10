@@ -90,7 +90,7 @@ $case('term-limit recovery',static function()use($reset,$t,$catalogue):void{
     $step=$catalogue->recovery(collect([$t->fresh()]),'register',3)[$t->server_id.':com'];
     expect(str_contains($step['next'],'Edit terms')&&!str_contains($step['next'],'Start selling'),'Term-limit recovery names the available editor');
 });
-$case('paused readiness',static function()use($reset,$actor,$t,$binding,$ports):void{
+$case('paused readiness',static function()use($reset,$actor,$t,$binding,$ports,$now):void{
     $reset(['sell'=>true,'transfers'=>true],true);
     Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->mountAction('stop_selling')->callMountedAction()->assertNotified('Change recorded');
     same(true,StaffCatalogue::routed()->setting($t->fresh(),'enabled'),'A sales pause keeps the TLD enabled for renewals');
@@ -108,6 +108,16 @@ $case('paused readiness',static function()use($reset,$actor,$t,$binding,$ports):
     same(true,StaffCatalogue::routed()->setting($t->fresh(),'enabled'),'The term save keeps the TLD enabled for renewals');
     $ready=Paymenter\Extensions\Servers\Domains\Catalogue\OfferReadiness::routed()->review(Account::where('server_id',$binding->serverId)->sole(),['registration'=>true,'transfer'=>true]);
     same([[],[]],[$ready['costs'],$ready['failures']],'Activation readiness is unchanged by the paused term save');
+    // Fresh registrar terms that rule out a safe renewal refuse widening the paused term and change nothing.
+    $savedFacts=$t->fresh()->getRawOriginal('catalogue_facts');
+    Illuminate\Support\Facades\DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::encodeFacts(new Facts(['register'=>[1,3,10],'renew'=>[1],'transfer'=>[1]],[],false,false,false,'synthetic',$now,$now->modify('+1 day')))]);
+    $flags=static fn()=>[$t->fresh()->catalogue_intent,(array)Illuminate\Support\Facades\DB::table('domains_sales_policies')->where('tld','com')->first(['register_enabled','transfer_enabled','revision'])];$before=$flags();
+    $review=new Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview($actor->id,$binding->serverId,null,'acceptance',
+        Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::ticket($actor->id,$binding->serverId,null,'acceptance',Paymenter\Extensions\Servers\Domains\Catalogue\StaffCommands::stamp($binding->serverId)),'');
+    $refused=false;try{$saved=app(StaffSettingsWrites::class)->run($review,['sell'=>['terms'=>['com'=>['longest'=>10]]]]);$refused=($saved['failures']??[])!==[];}catch(DomainException){$refused=true;}
+    expect($refused,'A longer paused term against fresh unsupported terms is refused');
+    same($before,$flags(),'The refused save keeps the intent, the pause and the seller flags');
+    Illuminate\Support\Facades\DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>$savedFacts]);
 });
 $case('paused automatic facts',static function()use($binding):void{
     $q=Illuminate\Support\Facades\DB::table('domains_observation_queues')->where('server_id',$binding->serverId);$work=Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode((clone $q)->value('offer_work'));unset($work['facts']['com']);$q->update(['offer_work'=>json_encode($work)]);

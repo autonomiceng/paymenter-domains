@@ -33,11 +33,23 @@ $changed=static function(array $edit)use($facts):string{$f=json_decode($facts,tr
 foreach(['missing'=>null,
     'stale'=>$changed(['observedAt'=>$now->modify('-2 days')->format(DATE_ATOM),'freshUntil'=>$now->modify('-1 second')->format(DATE_ATOM)]),
     'unsupported'=>str_replace('"transfer":[1]','"transfer":[]',$facts)] as $case=>$json){
+    // Each case starts from transfers off, so its own save or refusal is proved.
+    $setFacts($facts);$run('acceptance',['sell'=>['terms'=>['com'=>['transfer'=>false]]]]);
+    $before=json_decode(DB::table('domains_tlds')->where('id',$tlds[0]->id)->value('catalogue_intent'),true);same(false,$before['transfers']??null,$case.' starts with transfers off');$offHint=$hint();
     $setFacts($json);
-    try{$run('acceptance',['sell'=>['terms'=>['com'=>['transfer'=>true]]]]);}catch(DomainException){/* Widening against current unsupported terms is refused outright. */}
+    if($case==='unsupported'){
+        // Widening against current unsupported terms is refused outright and saves nothing.
+        $refused=false;try{$run('acceptance',['sell'=>['terms'=>['com'=>['transfer'=>true]]]]);}catch(DomainException){$refused=true;}
+        expect($refused,$case.' registrar terms refuse Transfers On');
+        same($before,json_decode(DB::table('domains_tlds')->where('id',$tlds[0]->id)->value('catalogue_intent'),true),$case.' registrar terms keep the saved intent');
+    }else{
+        // Unknown terms save the pending intent; current terms decide the seller row later.
+        $run('acceptance',['sell'=>['terms'=>['com'=>['transfer'=>true]]]]);
+        same(true,json_decode(DB::table('domains_tlds')->where('id',$tlds[0]->id)->value('catalogue_intent'),true)['transfers']??null,$case.' registrar terms save the pending transfer intent');
+    }
     same(0,(int)$policy()->transfer_enabled,$case.' registrar terms leave the seller row transfer flag off');
     $setFacts($facts);
-    same('Allow transfers in More → Change registrar on .com.',$hint(),$case.' terms: the staff hint names the real next step');
+    same($case==='unsupported'?$offHint:'Allow transfers in More → Change registrar on .com.',$hint(),$case.' terms: the staff hint names the real next step');
 }
 // Transfer intent is checked against current terms even while the seller row has transfers off.
 $intentOf=static fn()=>json_decode(DB::table('domains_tlds')->where('id',$tlds[0]->id)->value('catalogue_intent'),true);
@@ -46,7 +58,7 @@ $transferIntent=static function()use($writer,$review,$binding,$revision,$intentO
     $writer->reviewed($review('acceptance'),[[Edit::override($binding,'com',$intent),$revision()]],static fn()=>StaffCommands::stamp($binding->serverId,null));
 };
 $unsupported=str_replace('"transfer":[1]','"transfer":[]',$facts);
-// The unknown-terms cases above saved the intent; start again from transfers off.
+// Start again from transfers off.
 $run('acceptance',['sell'=>['terms'=>['com'=>['transfer'=>false]]]]);
 same([false,0],[$intentOf()['transfers']??null,(int)$policy()->transfer_enabled],'Transfers start off');
 $setFacts($unsupported);$before=$intentOf();

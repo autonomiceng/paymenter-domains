@@ -233,6 +233,15 @@ def git_tree():
         return None, 'not a Git checkout'
 
 
+def unchanged_tree(checkout):
+    """The tree is evidence only when the same clean checkout held before and after."""
+    tree, tree_error = checkout
+    if tree is None:
+        return tree, tree_error
+    after, after_error = git_tree()
+    return (tree, None) if after == tree else (None, after_error or 'checkout changed during the run')
+
+
 def hashes():
     return native.hashes(ROOT/'Domains')
 
@@ -520,11 +529,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                                 if (not result['cancelled'] and ((result['exit'] != 0 and not result['skipped'])
                                                                  or not result['runtime_unchanged']))
                                 or (result['cancelled'] and result.get('guard_complete') and not result['runtime_unchanged']))
-        # The tree is evidence only when the same clean checkout held before and after.
-        tree, tree_error = checkout
-        if tree is not None:
-            after, after_error = git_tree()
-            tree, tree_error = (tree, None) if after == tree else (None, after_error or 'checkout changed during the run')
+        tree, tree_error = unchanged_tree(checkout)
         first_failure = failures[0] if failures else next(iter(failed_indexes), None)
         timings['run'] = time.monotonic() - started_run
         planned = {argv[-1] for kind, argv in commands if kind != 'lint'}
@@ -726,8 +731,10 @@ def main():
                    jobs_explicit=jobs_explicit, lint_base=args.lint_base, checkout=checkout)
     except BaseException as error:
         if not (output/'receipt.json').exists():
+            # Setup can change the checkout too, so recheck it as a completed run does.
+            tree, tree_error = unchanged_tree(checkout)
             (output/'receipt.json').write_text(json.dumps({'complete': False, 'phase': 'setup', 'error_type': type(error).__name__, 'selected_suites': selected,
-                                                          'git_tree': checkout[0], 'git_tree_error': checkout[1],
+                                                          'git_tree': tree, 'git_tree_error': tree_error,
                                                           'only_tests': args.only or [], 'lint_base': args.lint_base, 'timings': timings})+'\n')
             print('Setup failed; receipt: '+str(output/'receipt.json'), file=sys.stderr)
         raise

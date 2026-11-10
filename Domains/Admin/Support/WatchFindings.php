@@ -24,9 +24,14 @@ final class WatchFindings
         return $event==='discovery_retired'?self::ENDED:'Monitoring has stopped';
     }
     public const HOSTING_SUSPENDED='The hosting service is suspended. Monitoring resumes when it is active again.';
-    /** Why a paused domain is not checked when its hosting service, not staff, keeps it paused; null otherwise. */
+    /** Staff paused it too, so the active hosting service alone does not resume it. */
+    public const HOSTING_SUSPENDED_STAFF_PAUSED='The hosting service is suspended. Resume monitoring to start checks when it is active again.';
+    /** Why a paused domain is not checked when its hosting service is suspended; null otherwise. */
     public static function pausedReason(WatchName $watch): ?string
-    {return $watch->state==='paused' && !WatchDiscovery::hostingActive((int)$watch->id)?self::HOSTING_SUSPENDED:null;}
+    {
+        if($watch->state!=='paused' || WatchDiscovery::hostingActive((int)$watch->id)){return null;}
+        return WatchDiscovery::staffPaused($watch)?self::HOSTING_SUSPENDED_STAFF_PAUSED:self::HOSTING_SUSPENDED;
+    }
     /** Status filter options; Monitoring and Problem found read the first CAP active names. */
     public const STATUSES=['monitoring'=>'Monitoring','problem'=>'Problem found','paused'=>'Paused','stopped'=>'Stopped'];
     public const CAP=1000;

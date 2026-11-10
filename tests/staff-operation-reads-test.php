@@ -292,6 +292,12 @@ expect(in_array(ReadCommand::Info,$state->calls,true),'Automatic renewal recover
 same(false,$lostRenew->fresh()->policy['status_check']['facts']['charge_confirmed'],'A later expiry is not proof of this renewal charge');
 same($before,[$lostRenew->fresh()->attempt,$lostRenew->fresh()->funding,$lostDomain->fresh()->provider_expires_at->format('Y-m-d'),$credit(),$state->writes],'Unknown renewal cost keeps its original authority and money');
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$lostRenew->id])->assertActionVisible('recheck')->assertActionVisible('enom_answer');
+// Unreadable saved attempt data renders the request page without an answer form or a send.
+$storedAttempt=$lostRenew->fresh()->getRawOriginal('attempt');$writes=$state->writes;
+DB::table('domains_operations')->where('id',$lostRenew->id)->update(['attempt'=>'d29-explicit-unreadable-fixture']);
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$lostRenew->id])->assertSuccessful()->assertActionHidden('enom_answer')->assertSee($lostDomain->domain);
+same([false,$writes],[RegistrarAnswers::ready($lostRenew->fresh(),$clock->now()),$state->writes],'Unreadable attempt is never ready for an answer and sends nothing');
+DB::table('domains_operations')->where('id',$lostRenew->id)->update(['attempt'=>$storedAttempt]);
 echo "Native staff actions: permissions, confirmations, reasons, audit, stale/replay/binding, read-only reconciliation, credit and cycle replacement passed.\n";
 }catch(Throwable $error){throw new RuntimeException($error->getMessage().' at '.implode(' > ',array_map(static fn($frame)=>($frame['file']??'').':'.($frame['line']??0),$error->getTrace())),0,$error);}
 $nativeSuccessful=true;
