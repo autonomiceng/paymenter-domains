@@ -59,7 +59,7 @@ final class DomainPage
             ($d->transfer['notice']['tone'] ?? null) === 'warning' => ['tone' => 'warn', 'text' => $d->transfer['notice']['title'].' '.$d->transfer['notice']['body'], 'action' => $contact],
             $order === 'paid' && isset($d->order['check']) => ['tone' => $d->order['check']['tone'] ?? 'warn', 'text' => $d->order['check']['title'].'. '.$d->order['check']['body'], 'action' => $contact],
             // A complimentary order has nothing paid, so it says what it is, as its receipt does.
-            $order === 'paid' && !isset($d->order['next']) => self::ours((($d->order['complimentary'] ?? false) ? 'Complimentary. ' : 'Paid. ').'We’re finishing the '.$word.'. '.self::NOTHING_TO_DO, $contact),
+            $order === 'paid' && in_array($d->order['next'] ?? null, [null, 'setup_optional'], true) => self::ours((($d->order['complimentary'] ?? false) ? 'Complimentary. ' : 'Paid. ').'We’re finishing the '.$word.'. '.self::NOTHING_TO_DO, $contact),
             // An Off switch is why changes stop, so its own notice below wins over a stopped read, which the rows already say.
             self::checkHeld($d) && !($d->changesUnavailable && $d->changesRefused === DomainManagement::SWITCH_OFF) => self::ours(self::READ_HELD, $contact),
             $d->statusReason === DomainStatus::LATE => ['tone' => 'bad', 'text' => 'This domain has expired. '.DomainStatus::LATE.'.', 'action' => $contact],

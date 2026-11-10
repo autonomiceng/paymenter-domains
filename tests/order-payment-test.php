@@ -87,6 +87,14 @@ same('Paid. Add the auth code to start the transfer.',DomainListRow::orderExpire
 // slop-sweep: a complimentary order says so, as its page notice does.
 same(['Complimentary. Finish setup to start the registration.','Complimentary. Add the auth code to start the transfer.'],[DomainListRow::orderExpires(['state'=>'paid','kind'=>'registration','next'=>'setup_required','complimentary'=>true],null)['cause'],DomainListRow::orderExpires(['state'=>'paid','kind'=>'transfer','next'=>'awaiting_code','complimentary'=>true],null)['cause']],'Complimentary Expires names no payment');
 same(null,DomainPage::notice($owned(['state'=>'paid','kind'=>'registration','next'=>'setup_required']),'/tickets/create'),'Never says nothing to do while a step is left');
+// A paid NameSilo registration with default nameservers goes ahead by itself: choosing nameservers is optional, never Action required.
+$optional=OwnedDomains::order($d(['registrar_key'=>'namesilo']),$op(['registrar_key'=>'namesilo','state'=>'queued','payload'=>['nameservers'=>['ns1.provider.example','ns2.provider.example']]]),$invoice('paid'));
+same(['paid','setup_optional'],[$optional['state'],$optional['next']],'Default nameservers make setup optional');
+same('registration_pending',OwnedDomains::orderStatus(['awaiting_payment',null],$d(['registrar_key'=>'namesilo']),$optional)[0],'Optional setup keeps Pending registration');
+same('Paid. We’re starting the registration. You can choose nameservers before it’s sent.',DomainListRow::orderExpires($optional,'/tickets/create')['cause'],'Expires says the choice is optional');
+same('Paid. We’re finishing the registration. There’s nothing you need to do.',DomainPage::notice($owned($optional),'/tickets/create')['text'],'Without the setup link the paid notice shows');
+$needed=OwnedDomains::order($d(['registrar_key'=>'namesilo']),$op(['registrar_key'=>'namesilo','state'=>'queued']),$invoice('paid'));
+same('setup_required',OwnedDomains::orderStatus(['awaiting_payment',null],$d(['registrar_key'=>'namesilo']),$needed)[0],'Without default nameservers the owner must still finish setup');
 $notice=DomainPage::notice($owned($paid),'/tickets/create');
 same('Paid. We’re finishing the registration. There’s nothing you need to do.',$notice['text'],'Paid notice says it plainly');
 // slop-sweep: a complimentary order was never paid, so its notice says Complimentary, as staff and the invoice do.

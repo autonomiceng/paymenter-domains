@@ -53,11 +53,14 @@ final readonly class OwnedDomains
         $next=match (true) {
             $op->state==='held'&&in_array($op->safe_code,self::OWNER_HOLDS,true) => 'setup_required',
             $op->action==='transfer'&&!TransferInputs::validCode($op->payload['epp']??null) => 'awaiting_code',
-            $d->registrar_key!=='enom'&&!isset($op->policy['owner_setup'])&&in_array($op->state,['awaiting_payment','queued'],true)&&($op->attempt??[])===[] => 'setup_required',
+            // With default nameservers the registration goes ahead without the owner: choosing them is optional, never Action required.
+            $d->registrar_key!=='enom'&&!isset($op->policy['owner_setup'])&&in_array($op->state,['awaiting_payment','queued'],true)&&($op->attempt??[])===[] => self::defaultNameservers($op) ? 'setup_optional' : 'setup_required',
             default => null,
         };
         return $invoice?->status==='paid'&&in_array($op->state,['awaiting_payment','awaiting_code','queued','running','pending','held','uncertain'],true)?['state'=>'paid','kind'=>$kind,'next'=>$next,...($op->funding_basis==='complimentary'?['complimentary'=>true]:[]),...(isset($op->policy['status_check'])&&!isset($op->policy['status_check']['next_at'])?['check'=>RegistrarCheck::forCustomer($op)]:[])]:[];
     }
+    private static function defaultNameservers(Operation $op): bool
+    { try { return NewDomainDns::forOperation($op) !== []; } catch (\Throwable) { return false; } }
     /** A cancelled order nobody paid or is paying: a normal cancel with nothing to review. */
     private static function unpaidCancel(Operation $op, ?Invoice $invoice): array
     {
@@ -87,7 +90,7 @@ final readonly class OwnedDomains
         return match (true) {
             ($order['state']??null)==='cancelled' => [isset($order['credit'])||($order['returned']??false)||($order['unpaid']??false)?'cancelled':'needs_review','Order cancelled'],
             ($order['state']??null)==='failed' => [$order['kind']==='transfer'?'transfer_rejected':'registration_rejected',null],
-            ($order['state']??null)==='paid'&&$state[0]==='awaiting_payment' => [$order['next']??$d->status,null],
+            ($order['state']??null)==='paid'&&$state[0]==='awaiting_payment' => [in_array($order['next']??null,['setup_required','awaiting_code'],true)?$order['next']:$d->status,null],
             default => $state,
         };
     }
