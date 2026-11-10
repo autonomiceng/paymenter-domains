@@ -10,7 +10,7 @@ $before=$owners->present($d->fresh(),true)->management;
 expect(count($before)>1,'The fixture shows more than one setting');
 $op=$submit($d,$driver,'nameservers',['nameservers'=>['ns1.example.net','ns2.example.net']]);
 // An unclear registrar answer leaves the change unresolved, which blocks every other change.
-$state->fault='empty_ack'; same('uncertain',$management->run($op->id,$driver)->state,'The registrar answer stays unclear');
+$state->fault='empty_ack'; $sent=$management->run($op->id,$driver); same('uncertain',$sent->state,'The registrar answer stays unclear: '.$sent->state.' '.json_encode($sent->attempt));
 $during=$owners->present($d->fresh(),true)->management;
 expect($during['nameservers']['progress']['pending']??false,'The nameserver change is running');
 same(array_keys($before),array_keys($during),'Every row stays while the nameserver change runs');
