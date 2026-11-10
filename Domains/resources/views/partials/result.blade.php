@@ -40,7 +40,8 @@
                 @else<input type="hidden" name="term" value="{{ $result['term'] }}">{{ $result['term'] }} {{ $result['term']===1 ? 'year' : 'years' }}@endif
                 </dd></div>
                 <div><dt>Total</dt><dd class="domains-result__price"><strong>{{ $result['price'] }}</strong></dd></div>
-                <div><dt>Annual renewal</dt><dd>{{ $result['renew'] }} / year</dd></div>
+                @php $firstYear = $state === 'available' ? \Paymenter\Extensions\Servers\Domains\Presentation\FirstYearPrice::note($result['terms'][1] ?? null, $result['renew'] ?? null) : null; @endphp
+                <div><dt>Annual renewal</dt><dd>{{ $result['renew'] }} / year@if ($firstYear)<span class="domains-sub" data-first-year-note>{{ $firstYear }}</span>@endif</dd></div>
                 </dl>
                 @if ($instead && !$replace && $state === 'available')
                 <button type="submit" class="domains-btn domains-btn--secondary">Add {{ $result['domain'] }} instead</button>
