@@ -77,4 +77,27 @@ foreach (['register', 'transfer'] as $entry) {
 }
 same(50, $store->waits, 'Each check waits a bounded number of times'); same(1, $wire, 'Held slot admits no sends');
 $budget->release($b, RequestOrigin::Background, $lease);
+// A waiting marker lapses on its own. With no search admitted, background reads go on once it expires.
+$clock->instant = $clock->instant->modify('+61 seconds');
+$lease = $budget->acquire($b, RequestOrigin::Background);
+try { $budget->acquire($b, RequestOrigin::Interactive); throw new LogicException('A held slot must refuse the search'); }
+catch (Paymenter\Extensions\Servers\Domains\Services\ReadDeferred) {}
+$budget->release($b, RequestOrigin::Background, $lease);
+$leases = static fn (): array => json_decode((string) Illuminate\Support\Facades\DB::table('domains_read_budgets')->where('server_id', $b->serverId)->value('leases'), true);
+same([AccountReadBudget::WAITING], array_keys($leases()), 'Fixture: only the waiting marker is left');
+// A catalogue upgrade drains with only the marker left: it is not a reservation.
+if (!Illuminate\Support\Facades\Schema::hasTable('domains_observation_work')) { Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install(); }
+$drained = static function (): ?string {
+    try { Illuminate\Support\Facades\DB::transaction(static fn () => (new ReflectionMethod(Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::class, 'drained'))->invoke(null)); return null; }
+    catch (DomainException $e) { return $e->getMessage(); }
+};
+same(null, $drained(), 'A waiting search marker does not block a catalogue upgrade');
+$refused = false;
+try { $budget->acquire($b, RequestOrigin::Background); } catch (Paymenter\Extensions\Servers\Domains\Services\ReadDeferred) { $refused = true; }
+expect($refused, 'Background reads give way while the marker lasts');
+$clock->instant = $clock->instant->modify('+3 seconds');
+$lease = $budget->acquire($b, RequestOrigin::Background);
+same([$lease], array_keys($leases()), 'Once the marker expires a background read is admitted without any search, and the marker is gone');
+same('Catalogue upgrade requires released read reservations.', $drained(), 'A real read reservation still blocks a catalogue upgrade');
+$budget->release($b, RequestOrigin::Background, $lease);
 $nativeSuccessful = true; echo "Storefront busy-slot recovery and plain retry results passed.\n";
