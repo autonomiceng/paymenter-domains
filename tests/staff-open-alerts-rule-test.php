@@ -48,5 +48,10 @@ same('1',DomainResource::getNavigationBadge(),'Warm badge retains the visible co
 $domainReads=array_filter(DB::connection()->getQueryLog(),fn(array $q)=>str_contains($q['query'],'domains_'));
 same([],$domainReads,'Warm badge performs no domain-data reads');
 DB::connection()->disableQueryLog();
+// An unreadable encrypted funding record keeps an ended request's alert live.
+$op=$unreleased->operations()->sole();
+DB::table('domains_operations')->where('id',$op->id)->update(['funding'=>'unreadable funding']);
+$ended=clone $unreleased;$ended->status='cancelled';
+same(false,ObligationAlerts::outdated((object)['code'=>'operation_review'],$op->fresh(),collect(),$ended),'Unreadable funding preserves the alert without breaking the page');
 Carbon::setTestNow();
 $nativeSuccessful=true; echo "Open alerts agree across navigation, filter and detail.\n";
