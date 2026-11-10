@@ -4,6 +4,7 @@
 - `python3 scripts/bootstrap.py --native`: verify/cache additional native modules, without downloading.
 - `scripts/test.py`: registered offline suites and lint; optional `--suite`, private JSON receipts.
 - `scripts/php-test`: runner-only wrapper disabling network/process functions.
+- `scripts/affected.py`: tests a change affects and their CI shards, from `tests/affected.json`.
 - `scripts/native.py`: pinned pristine dependency guard and disposable fixture copy; no downloads.
 - `scripts/build.py`: synthetic package boundary support; current foundation lacks an entry point.
 

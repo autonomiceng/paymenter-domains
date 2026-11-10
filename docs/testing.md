@@ -54,7 +54,9 @@ receipt lists the Domain, Customer and Note column widths.
 Run `python3 scripts/bootstrap.py --download` once, then `scripts/test.py` fully offline.
 PHP **8.4.27** (Debian `8.4.27-1~deb13u1`, Linux x86_64) is pinned by archive SHA-256;
 hashes came from Debian security downloads on 2026-10-22. ICU `76.1-4` was re-downloaded
-and verified against its unchanged pin/hash. Native runs load gd and bcmath; GD needs host
+and verified against its unchanged pin/hash. libzip `1.11.3-2` (Debian trixie, `libzip.so.5` for the zip
+extension) is bundled for hosts without it; its hash matches the trixie package index (2026-11-09).
+Native runs load gd and bcmath; GD needs host
 `libgd3` (`libgd.so.3`) and dependencies, which are not bundled. Native bootstrap verifies
 GD loads and retains loader errors; provider-only bootstrap neither loads nor requires GD.
 Every run verifies/re-extracts archives; missing/corrupt caches fail without downloading.
@@ -111,7 +113,9 @@ migrates an in-memory database, blocks stray HTTP and removes the copy afterward
 schema/model/transaction/HTTP guards, manually invoked Domains foundation migrations, standalone retained-schema
 verification, global reservation/rollback and synthetic account/site/credential binding guards. These fixture-only
 checks have no Domains entry point, billing, production registrar identity verifier or installed extension; SQLite cannot prove MariaDB locking, concurrent checkout or financial correctness.
-CI runs standalone categories with cached pinned PHP, not native checks: supply their local dependency explicitly. No dependency checkout/download/bootstrap is automatic.
+Locally, supply the dependency explicitly: `scripts/test.py` never checks out, downloads or bootstraps it.
+
+CI runs the native suite too: see [native tests in CI](native-ci.md).
 
 ## Packaging and limits
 
@@ -234,7 +238,6 @@ bounded reads outside locks and no invoice/operation/native-expiry mutation. Nam
 holder still refuses its unknown restoration-safe path; no synthetic Active/date inference enables it.
 Paid/unpaid/complimentary funding and caps remain25, invoice/calendar24 and reminders38; SQLite
 fixtures do not establish MariaDB races, installed runtime composition or live account acceptance39.
-
 
 Slice23b `renewal-namesilo-test` extends native no-ID reconciliation with ordinary admission,
 superseding slice23's blanket NameSilo refusal described above. It covers matching actual charges,
@@ -635,7 +638,6 @@ recovery in `Support/late-contact-matrix.php` commits and explicitly retains the
 without adding queued jobs. Synthetic clocks and SQLite do not establish production lock latency.
 
 Operation clock regressions cover elapsed fall-back boundaries and native datetime round trips. Operation rate regressions cover unchanged preclaim states, the durable 60-second retry, one eventual send and staff release of disabled writes.
-
 
 ## Opt-in MariaDB suite
 
