@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts;
-$op=$held('staff-request-invoice-placeholder.com');
+$op=$held('staff-request-invoice-placeholder.com');\Illuminate\Support\Facades\Auth::setUser($staff);
 // An unpaid bill has no number yet: it reads Proforma #id, never a bare id that another bill's INV number could match.
 DB::table('invoices')->where('id',$op->invoice_id)->update(['number'=>null]);
 same('Proforma #'.$op->invoice_id,RequestFacts::for($op->fresh())['invoice'],'An unnumbered invoice reads Proforma #id');

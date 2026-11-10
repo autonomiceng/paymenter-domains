@@ -33,7 +33,8 @@ expect(!str_contains($line($longOp),'Registrations and renewals'),'The line neve
 $list=Livewire::test(RegistrarSetup::class)->instance();
 $server=$list->getTableRecords()->firstWhere('id',$heldOp->server_id);
 $note=$list->getTable()->getColumn('note')->record($server);
-same('Check 2 requests. Paid WHOIS privacy orders wait.',$note->getState(),'The list Note names the held account step');
+// This fixture account has no loadable settings, so the Note also says that; the held step must be there in its own words.
+expect(str_contains((string)$note->getState(),'Check 2 requests. Paid WHOIS privacy orders wait.'),'The list Note names the held account step: '.$note->getState());
 same('warn',$note->getExtraAttributes()['data-beco-tone']??null,'The held Note is amber');
 echo "Account hold words passed.\n";
 $nativeSuccessful=true;
