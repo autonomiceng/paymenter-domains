@@ -297,8 +297,8 @@ final class RequestFacts
             $parts=array_values(array_filter([$said?null:$facts['outcome'],$step['title']??null,$step['body']??null,$cause,$facts['auto_renew']??PaidUncertainty::holdSummary($op)]));
             if($said&&$step===null&&$cause===null){array_unshift($parts,self::CHECK_STATUS);}
             return ['title'=>array_shift($parts),'body'=>$parts===[]?null:implode(' ',$parts),'tone'=>'warning',...(($step['answer']??false)?['primary'=>'enom_answer']:[]),
-                // Too old for history, but the first read of this attempt still comes before asking Enom.
-                'action'=>$recover?HistoryRecovery::NAME:($tooOld&&(RegistrarCheck::status($op)['outcome']??null)!=='not_checked'?null:(OperationActions::readLimit($op)&&in_array($op->action,['register','transfer','renew'],true)?'resume_reads':'recheck'))];
+                // Check status stays on every unconfirmed request: a read past the history window still reports what the registrar shows.
+                'action'=>$recover?HistoryRecovery::NAME:(OperationActions::readLimit($op)&&in_array($op->action,['register','transfer','renew'],true)?'resume_reads':'recheck')];
         }
         if ($op->state==='queued' && ($ready=self::readyMessage($op))!==null) {
             $ordersLink=!ManagementEvidence::retryable($op)||!self::account($op)['account']?->processing_enabled;
@@ -358,6 +358,17 @@ final class RequestFacts
     /** What release sends, in the words staff see. */
     public static function sendWords(Operation $op, Account $account): string
     { return ($account->environment==='live'?'':'test ').($op->action==='transfer'?'transfer':'purchase'); }
+    /** The Release hold dialog: heading, button and what release starts. $sends: sendWords() when release sends to Enom at once. */
+    public static function releaseConfirmation(Operation $op, ?Account $account, ?string $sends, bool $contactRecovery): array
+    {
+        if ($sends!==null) { return ['Send to Enom now?','Release and send',"Sends the {$sends} to Enom within a few minutes. This can't be taken back."]; }
+        $registrar=PaidUncertainty::registrar($op);
+        $kind=$account&&in_array($op->action,['register','transfer','renew'],true)?self::queueWords($op,$account):'request';
+        if ($contactRecovery) { return ['Use updated account details?','Use updated account details',"Copies the customer's current account details into this request and releases the hold. The {$kind} then goes to {$registrar}."]; }
+        if ($account&&ComplimentaryCosts::awaitingApproval($op)) { return ['Release hold?','Release hold','Retries the price check. The '.$kind.' holds again while the registrar cost is above the usual.']; }
+        if ($account?->processing_enabled) { return ['Send to '.$registrar.' now?','Release and send',"Queues the {$kind} to send to {$registrar}, usually within a few minutes. Once sent, it can't be taken back."]; }
+        return ['Release hold?','Release hold','The '.$kind.' waits in the queue and goes to '.$registrar.' once Orders is on for this registrar account.'];
+    }
     /** What release queues: the request type, marked test on a test account. */
     private static function queueWords(Operation $op, Account $account): string
     { return ($account->environment==='live'?'':'test ').['register'=>'registration','transfer'=>'transfer','renew'=>'renewal'][$op->action]; }

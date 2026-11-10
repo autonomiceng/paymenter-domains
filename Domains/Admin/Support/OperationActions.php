@@ -38,9 +38,10 @@ final class OperationActions
             $account=$name==='release'&&!$contactRecovery&&$op->state==='held'?RequestFacts::account($op)['account']:null;
             // A held complimentary cost comes back on release, so release sends nothing until the cost is approved.
             $sends=EnomTestRegistration::releaseSends($op,$account)&&!\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::awaitingApproval($op)?RequestFacts::sendWords($op,$account):null;
-            if($sends!==null){
-                $action->requiresConfirmation()->modalHeading('Send to Enom now?')->modalSubmitActionLabel('Release and send')->modalWidth('lg')
-                    ->modalDescription("Sends the {$sends} to Enom within a few minutes. This can't be taken back.");
+            // Every release starts paid work again, so each one asks first and says what it starts.
+            if($name==='release'){
+                [$heading,$submit,$description]=RequestFacts::releaseConfirmation($op,$account,$sends,$contactRecovery);
+                $action->requiresConfirmation()->modalHeading($heading)->modalSubmitActionLabel($submit)->modalWidth('lg')->modalDescription($description);
             }
             if(in_array($name,self::REASON,true)){
                 $action->schema([Hidden::make('review_key')->default($ticket),

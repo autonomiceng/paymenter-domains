@@ -101,12 +101,13 @@ class RegistrarSetup extends Page implements HasTable
         $a=Account::where('server_id',$s->id)->first();$status=RegistrarFacts::status($s,$a);$connected=RegistrarFacts::connected($a,$status);
         $balance=$connected?RegistrarFacts::balance($a):null;
         return $this->rows[$s->id]=['account'=>$a,'status'=>$status,'connected'=>$connected,'domains'=>Domain::where('server_id',$s->id)->count(),
-            'demo'=>$a!==null&&DemoData::is($a),'balance'=>$balance,'note'=>self::note($status['reason'],$balance,$a)];
+            'demo'=>$a!==null&&DemoData::is($a),'balance'=>$balance,'note'=>self::note($status['reason'],$balance,$a,\Paymenter\Extensions\Servers\Domains\Admin\Support\PaidUncertainty::accountStep((int)$s->id))];
     }
     /** The account's Note: why it is in this state, then any job on its money, each with its step. @return array{text:?string,act:bool} */
-    private static function note(?string $reason,?array $b,?Account $account): array
+    private static function note(?string $reason,?array $b,?Account $account,?string $held=null): array
     {
-        $jobs=$b===null?[]:array_filter([
+        // Requests under review hold the account, so the row says so first, in amber, as its banner does.
+        $jobs=$b===null?($held?[$held]:[]):array_filter([$held,
             $b['value']===null?$b['cause']:null,
             $b['value']!==null&&$b['low']?'Low balance. Add funds.':null,
         ]);

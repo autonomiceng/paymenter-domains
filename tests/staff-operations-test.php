@@ -34,8 +34,8 @@ $costs=staffUser([Staff::VIEW,Staff::COSTS]);
 Livewire::actingAs($costs)->test(ViewOperation::class,['record'=>$ops[2]->id])->assertSee('Ask NameSilo support for a refund');
 // The orders-paused line sits in the request notice, not the domain page.
 Livewire::actingAs($viewer)->test(ViewOperation::class,['record'=>$ops[0]->id])->assertSee('NameSilo has not confirmed this transfer.')
-    ->assertSee('Paid domain changes on this NameSilo account wait until the result is known');
-Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->assertSuccessful()->assertDontSee('Paid domain changes on this NameSilo account wait');
+    ->assertSee('Until it is settled, only paid WHOIS privacy orders on this NameSilo account wait');
+Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->assertSuccessful()->assertDontSee('only paid WHOIS privacy orders on this NameSilo account wait');
 same(['Request #'.$ops[0]->id.' unconfirmed'],PaidUncertainty::for($held),'Account-wide hold names the request');
 // The registrar account page says the account-wide hold under its status, as the Domains list does.
 $accountHold=PaidUncertainty::accounts((int)$ops[0]->server_id);expect($accountHold!==null,'Fixture holds paid changes on the account');
