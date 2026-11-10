@@ -1,5 +1,5 @@
 <?php
-// The account-wide hold: one true sentence, one time for every request on the account, and the Registrars list says it too.
+// The account-wide hold: no line for a product we don't sell, and the Registrars list names the step without it.
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/native-app.php';
@@ -9,7 +9,6 @@ use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{PaidUncertainty, Staff};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Presentation\StaffTime;
 staffPanel(); staffData(); Paymenter\Extensions\Servers\Domains\Services\BalanceSchema::install();
 $setupPanel=\Filament\Facades\Filament::getPanel('admin');
 \Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($setupPanel->getPath())->middleware($setupPanel->getMiddleware())
@@ -25,16 +24,14 @@ $oldest=now()->subHours(223)->startOfMinute();
 DB::table('domains_operations')->where('id',$heldOp->id)->update(['state'=>'uncertain','safe_code'=>null,'funding_basis'=>'paid_invoice','started_at'=>$oldest]);
 DB::table('domains_operations')->where('id',$longOp->id)->update(['state'=>'uncertain','safe_code'=>null,'funding_basis'=>'paid_invoice','started_at'=>now()->subHours(152)]);
 $line=fn(Operation $op)=>(string)PaidUncertainty::holdSummary($op->fresh());
-$expected='Until it is settled, only paid WHOIS privacy orders on this '.PaidUncertainty::registrar($heldOp).' account wait (on hold since '.StaffTime::at($oldest->getTimestamp()).').';
-same($expected,$line($heldOp),'The hold names what it holds and when the account hold began');
-same($line($heldOp),$line($longOp),'Every request on the account gives the same hold time');
-expect(!str_contains($line($longOp),'Registrations and renewals'),'The line never says paid changes wait and registrations go out in one breath');
+same(['',''],[$line($heldOp),$line($longOp)],'While WHOIS privacy is not sold the request has no hold line');
 // The Registrars list shows the held account's step in amber, not a clear row.
 $list=Livewire::test(RegistrarSetup::class)->instance();
 $server=$list->getTableRecords()->firstWhere('id',$heldOp->server_id);
 $note=$list->getTable()->getColumn('note')->record($server);
 // This fixture account has no loadable settings, so the Note also says that; the held step must be there in its own words.
-expect(str_contains((string)$note->getState(),'Check 2 requests. Paid WHOIS privacy orders wait.'),'The list Note names the held account step: '.$note->getState());
+expect(str_contains((string)$note->getState(),'Check 2 requests. No registrar result yet.'),'The list Note names the held account step: '.$note->getState());
+expect(!str_contains((string)$note->getState(),'WHOIS privacy'),'The list Note never names WHOIS privacy');
 same('warn',$note->getExtraAttributes()['data-beco-tone']??null,'The held Note is amber');
 echo "Account hold words passed.\n";
 $nativeSuccessful=true;

@@ -5,6 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource;
 use Paymenter\Extensions\Servers\Domains\Services\AccountSpendingHolds;
+use Paymenter\Extensions\Servers\Domains\Presentation\PrivacyVisibility;
 /** Read-only projection, never a settlement or spending-release authority. */
 final class PaidUncertainty
 {
@@ -17,11 +18,12 @@ final class PaidUncertainty
         return self::title($op);
     }
     /** The notice line for the account-wide spending hold. The hold stops only paid management orders (WHOIS privacy), never
-     * registrations, renewals or transfers, so the line says that once. Its time is the account hold's: the oldest request holding it. */
+     * registrations, renewals or transfers, so the line says that once. Its time is the account hold's: the oldest request holding it.
+     * While WHOIS privacy is not sold the hold stops nothing a customer can order, so there is no line. */
     public static function holdSummary(Operation $op, ?StaffGrants $grants = null): ?string
     {
         $grants ??= Staff::requireView();
-        if (!AccountSpendingHolds::matches($op)) { return null; }
+        if (!PrivacyVisibility::SHOWN || !AccountSpendingHolds::matches($op)) { return null; }
         return 'Until it is settled, only paid WHOIS privacy orders on this '.self::registrar($op).' account wait'.self::since($op).'.';
     }
     /** When the account hold began: the oldest request on this account that holds it. Every request on the account shows this one time. */
@@ -41,16 +43,18 @@ final class PaidUncertainty
     {
         $lines=[];
         foreach (self::holds($server) as $h) {
-            $lines[]=($h['url']?DomainFacts::requestLink($h['url'],$h['label']):e($h['label'])).' Paid WHOIS privacy orders on '.e($h['name']).' wait until '.$h['until'].'.';
+            $lines[]=($h['url']?DomainFacts::requestLink($h['url'],$h['label']):e($h['label'])).' '.e(PrivacyVisibility::SHOWN
+                ? 'Paid WHOIS privacy orders on '.$h['name'].' wait until '.$h['until'].'.'
+                : ($h['count']===1?'A paid order on '.$h['name'].' has':'Paid orders on '.$h['name'].' have').' no registrar result yet.');
         }
         return $lines?new \Illuminate\Support\HtmlString(implode('<br>',$lines)):null;
     }
     /** The Registrars list Note for a held account: the same step as its banner, so the list never shows the account as clear. */
     public static function accountStep(int $server): ?string
     {
-        return ($h=self::holds($server)[0]??null)?$h['label'].'. Paid WHOIS privacy orders wait.':null;
+        return ($h=self::holds($server)[0]??null)?$h['label'].(PrivacyVisibility::SHOWN?'. Paid WHOIS privacy orders wait.':'. No registrar result yet.'):null;
     }
-    /** @return list<array{label:string,url:?string,until:string,name:string}> */
+    /** @return list<array{label:string,url:?string,until:string,name:string,count:int}> */
     private static function holds(?int $server): array
     {
         Staff::requireView();
@@ -70,7 +74,7 @@ final class PaidUncertainty
             [$label,$url,$until]=$count===1
                 ? ['Check request #'.$first,DomainFacts::requestUrl(['request'=>$first]),'it is checked']
                 : ['Check '.$count.' requests',RegistrarFacts::requestsUrl((int)$id,['under_review']),'they are checked'];
-            $out[]=['label'=>$label,'url'=>$url,'until'=>$until,'name'=>(string)($names->get($id) ?: 'this registrar account')];
+            $out[]=['label'=>$label,'url'=>$url,'until'=>$until,'name'=>(string)($names->get($id) ?: 'this registrar account'),'count'=>$count];
         }
         return $out;
     }
@@ -80,8 +84,8 @@ final class PaidUncertainty
     /** Requests holding paid management changes on this domain's registrar account. */
     public static function for(Domain $d): array
     {
-        $grants=Staff::requireView();
-        return self::rows(AccountSpendingHolds::query(Operation::where('account_fingerprint',$d->account_fingerprint)),fn($op)=>self::holdSummary($op,$grants)?'Request #'.$op->id.' unconfirmed':null);
+        Staff::requireView();
+        return self::rows(AccountSpendingHolds::query(Operation::where('account_fingerprint',$d->account_fingerprint)),fn($op)=>AccountSpendingHolds::matches($op)?'Request #'.$op->id.' unconfirmed':null);
     }
     /** Paid requests on this domain's registrar account whose result is not known. */
     public static function reviews(Domain $d): array

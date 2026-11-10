@@ -32,24 +32,24 @@ Livewire::actingAs($viewer)->test(ViewOperation::class,['record'=>$ops[2]->id])-
     ->assertSee('Registrar rejected the transfer')->assertDontSee('Ask NameSilo support for a refund')->assertDontSee('No staff release');
 $costs=staffUser([Staff::VIEW,Staff::COSTS]);
 Livewire::actingAs($costs)->test(ViewOperation::class,['record'=>$ops[2]->id])->assertSee('Ask NameSilo support for a refund');
-// The orders-paused line sits in the request notice, not the domain page.
+// No orders-paused line names WHOIS privacy, a product we don't sell.
 Livewire::actingAs($viewer)->test(ViewOperation::class,['record'=>$ops[0]->id])->assertSee('NameSilo has not confirmed this transfer.')
-    ->assertSee('Until it is settled, only paid WHOIS privacy orders on this NameSilo account wait');
-Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->assertSuccessful()->assertDontSee('only paid WHOIS privacy orders on this NameSilo account wait');
+    ->assertDontSee('WHOIS privacy');
+Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->assertSuccessful()->assertDontSee('WHOIS privacy');
 same(['Request #'.$ops[0]->id.' unconfirmed'],PaidUncertainty::for($held),'Account-wide hold names the request');
 // The registrar account page says the account-wide hold under its status, as the Domains list does.
 $accountHold=PaidUncertainty::accounts((int)$ops[0]->server_id);expect($accountHold!==null,'Fixture holds paid changes on the account');
 $accountPage=new \Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount;$accountPage->account=(int)$ops[0]->server_id;$accountHead=$accountPage->getSubheading();
 expect(str_contains((string)($accountHead instanceof \Illuminate\Contracts\Support\Htmlable?$accountHead->toHtml():$accountHead),$accountHold->toHtml()),'Registrar account head names the paid changes hold');
-expect(preg_match('/ \(on hold since [A-Z][a-z]{2} \d{1,2}, \d{4}, \d{1,2}:\d{2} [AP]M [A-Z]{2,5}\)\.$/D',(string)PaidUncertainty::holdSummary($ops[0]))===1,'Account-wide hold includes when it began');
+same(null,PaidUncertainty::holdSummary($ops[0]),'No orders-paused line while WHOIS privacy is not sold');
 same(null,RequestFacts::for($ops[1])['reason'],'Absent reason remains absent');
 $completed=clone $ops[0];$completed->state='succeeded';$completed->attempt=['execution'=>null];same([null,null],[RequestFacts::for($completed)['outcome'],RequestFacts::notice($completed)],'Completed readback has no unconfirmed notice');
 $completed->attempt=['seal'=>'sealed','execution'=>['provider_reference'=>'SYNTHETIC-ORDER']];
 same(null,RequestFacts::for($completed)['outcome'],'Confirmed completion takes precedence over sealed send history');
 // Engine and staff share all-generation spending holds; paid terminal review is a separate fact.
-same(null,PaidUncertainty::holdSummary($ops[2]),'Sent rejection is paid outcome review, not an in-flight spending hold');
+expect(!Paymenter\Extensions\Servers\Domains\Services\AccountSpendingHolds::matches($ops[2]),'Sent rejection is paid outcome review, not an in-flight spending hold');
 $nonCurrent=$ops[0]->replicate();$nonCurrent->operation_key='non-current-generation-complimentary';$nonCurrent->funding_basis='complimentary';$nonCurrent->save();DB::table('domains_operations')->where('id',$nonCurrent->id)->update(['authority_generation'=>2]);$nonCurrent->refresh();
-expect(PaidUncertainty::holdSummary($nonCurrent)!==null,'Complimentary in-flight request blocks spending too');
+expect(Paymenter\Extensions\Servers\Domains\Services\AccountSpendingHolds::matches($nonCurrent),'Complimentary in-flight request blocks spending too');
 expect(str_contains(implode(' ',PaidUncertainty::for($held)),'Request #'.$nonCurrent->id),'Non-current generations remain visible in account hold facts');
 foreach(Operation::all() as $candidate){same(AccountSpendingHolds::query(Operation::whereKey($candidate->id))->exists(),AccountSpendingHolds::matches($candidate),'Engine/projection hold parity');}
 foreach(Operation::all() as $candidate){same(\Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::paidUncertainty(Operation::whereKey($candidate->id))->exists(),PaidUncertainty::summary($candidate)!==null,'Paid review SQL/projection parity');}
