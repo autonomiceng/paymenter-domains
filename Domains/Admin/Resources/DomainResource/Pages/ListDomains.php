@@ -9,6 +9,8 @@ class ListDomains extends ListRecords
     protected static string $resource = DomainResource::class;
     protected static ?\Filament\Pages\Enums\SubNavigationPosition $subNavigationPosition=\Filament\Pages\Enums\SubNavigationPosition::Top;
     public function getSubNavigation(): array { return \Paymenter\Extensions\Servers\Domains\Admin\Support\StaffTabs::domains('Domains'); }
+    /** The list's Open alerts filter and the menu badge count the same domains; opening the list refreshes the badge so both say one number. */
+    public function mount(): void { parent::mount(); \Paymenter\Extensions\Servers\Domains\Admin\Support\NavigationCount::forget('domains'); }
     public function getTitle(): string { return 'Domains'; }
     public function getBreadcrumbs(): array { return []; }
     public function getSubheading(): ?\Illuminate\Contracts\Support\Htmlable { return \Paymenter\Extensions\Servers\Domains\Admin\Support\PaidUncertainty::accounts(); }

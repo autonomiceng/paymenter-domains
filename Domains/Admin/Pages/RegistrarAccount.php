@@ -42,6 +42,8 @@ class RegistrarAccount extends Page
         abort_unless(Server::where('extension','Domains')->whereKey($account)->exists(),404);
         $this->account=$account;$this->reviewStamp=StaffSettingsReview::stamp($account,null);
         $switch=request()->query('switch');$this->switch=is_string($switch)&&isset(RegistrarFacts::SWITCHES[$switch])?$switch:null;
+        // The Domain alerts row counts by the badge's rule, so the badge is refreshed here too.
+        \Paymenter\Extensions\Servers\Domains\Admin\Support\NavigationCount::forget('domains');
     }
     protected function server(): Server { return Server::where('extension','Domains')->findOrFail($this->account); }
     private function record(): ?Account { return Account::where('server_id',$this->account)->first(); }
