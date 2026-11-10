@@ -294,23 +294,30 @@ final class SettingsActions
         try{if(($catalogue=StaffCatalogue::routed())!==null){return $account!==null&&$catalogue->readable(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account));}return $account!==null&&\Paymenter\Extensions\Servers\Domains\Services\TestCatalogue::enabled(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account));}
         catch(\Throwable){return false;}
     }
-    public static function syncAll(int $server,bool $named=false): Action
+    /** Sync reads every TLD on the account, so a TLD page's button says so: it never looks like a one-row sync. The result
+     * lands on the page staff are on, so the toast points there instead of promising a notice the worker doesn't send. */
+    public static function syncAll(int $server,bool $named=false,?string $tld=null): Action
     {
         return Action::make('sync_prices_'.$server)->label(fn()=>'Sync prices'.($named?': '.(\App\Models\Server::find($server)?->name ?? 'Server #'.$server):''))->color('gray')
             ->visible(fn()=>self::canSee(Staff::POLICY)&&self::canSee(Review::permission('import'))&&self::syncOffered(Account::where('server_id',$server)->first()))
-            ->requiresConfirmation()->modalHeading('Sync prices')->modalDescription(fn()=>self::syncDescription($server))->modalSubmitActionLabel('Sync prices')
+            ->requiresConfirmation()->modalHeading($tld===null?'Sync prices':'Sync prices for every TLD on this account?')
+            ->modalDescription(fn()=>$tld===null?self::syncDescription($server):'Gets current costs from the registrar for every TLD this account sells, not only .'.$tld.'. It runs in the background.')
+            ->modalSubmitActionLabel('Sync prices')
             ->fillForm(fn()=>['review_key'=>Review::ticket((int)Auth::id(),$server,null,'import',Review::stamp($server,null))])
             ->schema([Hidden::make('review_key')])
             ->action(function(#[\SensitiveParameter] array $data,$livewire)use($server){
                 try{
                     if(StaffCatalogue::routed()!==null){app(StaffSettingsWrites::class)->run(new Review((int)Auth::id(),$server,null,'import',(string)($data['review_key']??''),''),[]);}else{\Paymenter\Extensions\Servers\Domains\Jobs\SyncPrices::enqueue((int)Auth::id(),$server,(string)($data['review_key']??''));}
-                    Notification::make()->success()->title('Price sync queued')->body('You can keep working. The result will appear in your notifications.')->send();
+                    Notification::make()->success()->title('Price sync queued')->body(self::syncQueued($tld))->send();
                 }catch(\Throwable $error){
                     if(!$error instanceof \DomainException){\Illuminate\Support\Facades\Log::warning('Domains price sync failed.',['exception_class'=>$error::class]);}
                     Notification::make()->danger()->title("Couldn't sync prices")->body(\Paymenter\Extensions\Servers\Domains\Jobs\SyncPrices::isQueueRefusal($error)?$error->getMessage():self::refusal($error,'import',[],$server))->send();
                 }finally{$livewire->mountedActions=[];}
             });
     }
+    /** The queued toast: where the result shows. The worker sends no result notice, so it never promises one. */
+    public static function syncQueued(?string $tld): string
+    { return 'You can keep working. '.($tld===null?'Check sync progress on What you sell.':'Last updated on this page changes when it finishes.'); }
     /** Live preview: each sold term's cost, current price and the price saving would publish. */
     private static function preview(?int $tld,?array $rule): \Illuminate\Support\HtmlString
     {

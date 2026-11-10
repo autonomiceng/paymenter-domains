@@ -196,7 +196,7 @@ class ViewTld extends ViewRecord
             });
     }
     public function overrideAction(): Action {return $this->settings()['override'];}
-    public function syncPricesAction(): Action {return SettingsActions::syncAll((int)$this->getRecord()->server_id)->name('syncPrices');}
+    public function syncPricesAction(): Action {return SettingsActions::syncAll((int)$this->getRecord()->server_id,tld:(string)$this->getRecord()->tld)->name('syncPrices');}
     protected function fillForm(): void {$this->data=[];}
     public function getTitle(): string {Staff::requireView();return '.'.$this->getRecord()->tld.(($a=$this->account())!==null?' on '.$a:'');}
     public function getHeading(): HtmlString
