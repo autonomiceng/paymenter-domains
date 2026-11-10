@@ -239,7 +239,6 @@ holder still refuses its unknown restoration-safe path; no synthetic Active/date
 Paid/unpaid/complimentary funding and caps remain25, invoice/calendar24 and reminders38; SQLite
 fixtures do not establish MariaDB races, installed runtime composition or live account acceptance39.
 
-
 Slice23b `renewal-namesilo-test` extends native no-ID reconciliation with ordinary admission,
 superseding slice23's blanket NameSilo refusal described above. It covers matching actual charges,
 changed-charge refusal and prevention of admission-proof backfill, as well as
@@ -639,7 +638,6 @@ recovery in `Support/late-contact-matrix.php` commits and explicitly retains the
 without adding queued jobs. Synthetic clocks and SQLite do not establish production lock latency.
 
 Operation clock regressions cover elapsed fall-back boundaries and native datetime round trips. Operation rate regressions cover unchanged preclaim states, the durable 60-second retry, one eventual send and staff release of disabled writes.
-
 
 ## Opt-in MariaDB suite
 
