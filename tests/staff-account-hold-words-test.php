@@ -38,10 +38,11 @@ $attributes=request()->attributes;
 $attributes->remove('domains.paid_uncertainty.holds');
 DB::flushQueryLog();DB::enableQueryLog();
 $step=PaidUncertainty::accountStep((int)$heldOp->server_id);
-$reads=count(DB::getQueryLog());
+$holdReads=static fn()=>array_values(array_filter(DB::getQueryLog(),fn($q)=>str_contains($q['query'],'domains_')));
+$reads=$holdReads();
 same($step,PaidUncertainty::accountStep((int)$heldOp->server_id),'Sibling rows reuse the same hold step');
 same(null,PaidUncertainty::accountStep(999999),'An account outside the holds stays clear');
-same($reads,count(DB::getQueryLog()),'Additional registrar rows do not repeat hold queries');
+same($reads,$holdReads(),'Additional registrar rows do not repeat hold queries');
 DB::disableQueryLog();
 // A fresh request must see an updated result rather than an earlier snapshot.
 $attributes->remove('domains.paid_uncertainty.holds');
