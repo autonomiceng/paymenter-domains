@@ -6,7 +6,7 @@ require __DIR__.'/native-app.php';
 require __DIR__.'/Support/storefront.php';
 require dirname(__DIR__).'/Domains/routes/web.php';
 storefrontViews();
-$why = 'Registrars price the first year and renewals separately.';
+$why = 'Registrars price registration and renewal separately.';
 $data = storefrontData();
 $text = static fn (string $html): string => trim(preg_replace('/\s+/', ' ', html_entity_decode(strip_tags($html), ENT_QUOTES)));
 // Search: the available row names both prices and why they differ.
@@ -18,7 +18,7 @@ same(0, storefrontDom(view('domains::search', $data)->render())->query('//*[@dat
 // Price list: one sentence under the table.
 $rows = storefrontData()['endings'];
 $list = $text(view('domains::pricing', ['rows' => $rows, 'guest' => true, 'testEnvironment' => false])->render());
-expect(str_contains($list, 'Prices plus tax where applicable. '.$why.' Register is the price of the first year; Renew is the price of each later year.'), 'The price list says why Register and Renew differ');
+expect(str_contains($list, 'Prices plus tax where applicable. '.$why.' Renew is the price of each year after registration.'), 'The price list says why Register and Renew differ');
 $same = array_map(static fn ($row) => [...$row, 'renew' => $row['register']], $rows);
 expect(!str_contains($text(view('domains::pricing', ['rows' => $same, 'guest' => true, 'testEnvironment' => false])->render()), $why), 'Equal prices need no sentence');
 $nativeSuccessful = true; echo "First-year price note passed.\n";

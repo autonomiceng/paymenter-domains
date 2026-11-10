@@ -5,9 +5,9 @@ namespace Paymenter\Extensions\Servers\Domains\Presentation;
 /** The first year and renewals are priced apart, and often differ. Search results and the price list say so in the same words. */
 final class FirstYearPrice
 {
-    public const WHY = 'Registrars price the first year and renewals separately.';
+    public const WHY = 'Registrars price registration and renewal separately.';
     /** Under the price list, when any ending's first year differs from its renewal. */
-    public const LIST = self::WHY.' Register is the price of the first year; Renew is the price of each later year.';
+    public const LIST = self::WHY.' Renew is the price of each year after registration.';
     /** A search result's note, or null when both prices are the same or one is unknown. */
     public static function note(?string $first, ?string $renew): ?string
     {

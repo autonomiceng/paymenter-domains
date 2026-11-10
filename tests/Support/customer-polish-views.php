@@ -25,7 +25,8 @@ use Paymenter\Extensions\Servers\Domains\Services\DomainSummaryStrings;
         same(['Every TLD we sell, with its register, renew and transfer price per year.'], array_map(fn($n) => $n->textContent, iterator_to_array($dom->query('//p[@class="domains-lede"]'))), 'D7 lede states the annual unit once');
         same(1, substr_count(strip_tags($html), 'per year'), 'D7 annual unit is said once');
         expect(!str_contains($html, '/yr'), 'D7 pricing never duplicates the annual suffix');
-        expect(str_contains($html, 'Prices plus tax where applicable.</p>'), 'D7 annual footnote is one sentence');
+        expect(str_contains($html, 'Prices plus tax where applicable.</p>') || str_contains($html, 'Prices plus tax where applicable. '.\Paymenter\Extensions\Servers\Domains\Presentation\FirstYearPrice::LIST.'</p>'),
+            'D7 annual footnote: tax, and why Register and Renew differ only when they do');
         expect(!str_contains($html, 'Longer terms are priced'), 'D7 annual pricing has no longer-term footnote');
     }
     $rows = $data['endings']; $rows[0]['terms'] = [2]; $rows[1]['terms'] = []; $rows[1]['renew'] = null;
