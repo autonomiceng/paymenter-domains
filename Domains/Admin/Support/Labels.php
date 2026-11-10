@@ -179,7 +179,7 @@ final class Labels
             'registrar_balance_insufficient'=>'Not sent: registrar balance is too low. Add funds.','registry_details_unsupported'=>'Not sent: registry needs extra details',
             'renewal_funding_or_authority'=>'Not sent: renewal settings changed. Check the domain.','renewal_cost_overrun'=>'Not sent: cost above limit',
             'target_changed'=>'Not sent: domain status changed','term'=>'Not sent: term not supported','balance'=>'Not sent: low registrar balance',
-            'cancelled'=>'Cancelled','acquisition_cancelled_unpaid'=>'Order cancelled: not paid','registration_adopted'=>'Imported',
+            'cancelled'=>'Cancelled','acquisition_cancelled_unpaid'=>'Order cancelled: not paid','registration_adopted'=>'Imported','imported_renewal_unproven'=>\Paymenter\Extensions\Servers\Domains\Services\AdoptionRenewalEligibility::STAFF,
             'registration_managed'=>null,'ready'=>null,
             'expiry_unknown'=>'Expiry missing at the registry','no_coverage'=>'No public registry for this TLD',
             'not_registered'=>'No registry record found','deadline'=>'Public check timed out',

@@ -64,5 +64,6 @@ try {$badFactory($binding,[],$clock);expect(false,'Foreign runtime refuses');}ca
 same($before,count($wire->calls),'Factory construction and mismatch perform no reads');
 expect(!str_contains(json_encode($reader->read('example.com','com')),'example.com'),'Readback projection hides private domain facts');
 $details=['renewal_eligibility'=>['eligible'=>false,'reason'=>'imported_renewal_unproven']];
-same('Renewal not confirmed yet. Run Check to see if this domain can renew here.',\Paymenter\Extensions\Servers\Domains\Data\Adoption\Review::renewalNotice($details),'Staff review never promises an unproven imported renewal');
+same('Renewal not confirmed for imports from this registrar. We send no renewal invoices, so it expires unless renewed at the registrar.',\Paymenter\Extensions\Servers\Domains\Data\Adoption\Review::renewalNotice($details),'Staff review never promises an unproven imported renewal or a Check that cannot change it');
+same(\Paymenter\Extensions\Servers\Domains\Data\Adoption\Review::renewalNotice($details),\Paymenter\Extensions\Servers\Domains\Admin\Support\Labels::reason('imported_renewal_unproven'),'The staff reason line uses the same words');
 echo "NameSilo import normalizes owned state, nullable reference and date precision without writes.\n";

@@ -7,6 +7,8 @@ use Paymenter\Extensions\Servers\Domains\Models\Domain;
 /** Import ownership/state is independent of domain-specific renewal cost and non-premium proof. */
 final class AdoptionRenewalEligibility
 {
+    /** Staff words for imported_renewal_unproven. Check cannot change it: the refusal is per registrar. */
+    public const STAFF = 'Renewal not confirmed for imports from this registrar. We send no renewal invoices, so it expires unless renewed at the registrar.';
     /** NS16 must supply validated domain-specific evidence before replacing this refusal. No config bypass. */
     public static function forRegistrar(string $registrar): array
     {

@@ -320,7 +320,6 @@ $excluded=[
     'HoldingReadRetry.php'=>['records_incomplete'], // Read stop code, shown by its own read_cause.
     'SiteDnsDefault.php'=>['platform'], // Inherited DNS intent, as in ManagedDnsSetup.
     'AccountComplimentaryRenewals.php'=>['account_complimentary'], // Funding authorization reason, not request safe_code.
-    'AdoptionRenewalEligibility.php'=>['imported_renewal_unproven'], // Import eligibility snapshot; requireBilling refuses independently.
     'RegistrarAnswers.php'=>['registrar_not_processed'], // Refund authorization audit reason, not request safe_code.
     'SellRule.php'=>['limit','sell','skipped','waiting'], // Row decisions, shown by What you sell.
     'EnomTestCalls.php'=>['send_check'],'EnomTestCallLimit.php'=>['send_check'], // Refusal reasons, shown by SettingsActions::testRefusal.
