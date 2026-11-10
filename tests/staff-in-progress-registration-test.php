@@ -42,7 +42,7 @@ $active=$row('active','succeeded',['started_at'=>$sent,'completed_at'=>now()]);
 DB::table('domains_observation_work')->insert(['server_id'=>$active->server_id,'account_fingerprint'=>$active->account_fingerprint,'domain_id'=>$active->id,
     'generation'=>$active->authority_generation,'phase'=>'holding','due_at'=>time()]);
 $facts=DomainFacts::for($active->fresh());
-same(null,$facts['Contacts']['value']??'no contacts row','This fixture has no saved contacts yet');
+expect(array_key_exists('Contacts',$facts)&&$facts['Contacts']['value']===null,'This fixture has no saved contacts yet');
 expect(Missing::needsNothing($facts['Contacts']['sub']??null),'Contacts fill in after the first read: '.($facts['Contacts']['sub']??''));
 $head=DomainFacts::head($active->fresh(),DomainFacts::status($active->fresh()),$facts);
 expect(!str_contains((string)$head['step'],'Some details are Missing'),'No "Some details are Missing" while the first read runs: '.$head['step']);
