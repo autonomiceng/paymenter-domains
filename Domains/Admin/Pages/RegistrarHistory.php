@@ -17,5 +17,5 @@ class RegistrarHistory extends RegistrarAccount implements HasTable
     public static function canAccess(): bool { return Staff::can(Staff::POLICY); }
     public static function getRoutePath(Panel $panel): string { return '/registrar-account/{account}/history'; }
     public function content(Schema $schema): Schema { Staff::requireView();return $schema->components([EmbeddedTable::make()]); }
-    public function table(Table $table): Table { return HistoryTable::apply($table,fn()=>TldFacts::history($this->account)); }
+    public function table(Table $table): Table { return HistoryTable::apply($table,fn()=>TldFacts::accountHistory($this->account)); }
 }

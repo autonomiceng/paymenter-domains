@@ -146,16 +146,40 @@ final class WatchFacts
         $rows=[...array_map(fn($r)=>[...$r,'by'=>$names[$r['actor']]??'Staff #'.$r['actor']],$rows),...\Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence::history($w)];
         usort($rows,fn($a,$b)=>strtotime($b['time'])<=>strtotime($a['time']));return $rows;
     }
-    public static function usedBy(int $id): int
+    /** Domains checked against this template now. */
+    public static function usedBy(int $id): int{return self::usage($id)['checked'];}
+    /**
+     * Domains checked against this template now, how many of them only follow the site DNS default (they move with
+     * it), and, for a template that can't be used, how many domains still chose it and are not checked.
+     * @return array{checked:int,inherited:int,unchecked:int}
+     */
+    public static function usage(int $id): array
     {
         self::gate();
-        $inherited=\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::uses($id);
-        return WatchName::where(fn($q)=>$q->where('ns_profile_id',$id)->when($inherited,fn($q)=>$q->orWhereNull('ns_profile_id')))->whereIn('state',['active','paused'])->count()
+        $usable=\Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::usable(WatchProfile::find($id));
+        $live=$usable && \Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::profile()?->id===$id;
+        $watches=fn(bool $own,bool $inherit)=>WatchName::where(fn($q)=>$q->when($own,fn($q)=>$q->where('ns_profile_id',$id))->when($inherit,fn($q)=>$q->orWhereNull('ns_profile_id')))->whereIn('state',['active','paused']);
+        // A registered domain already counted through its own monitored name counts once.
+        $count=fn(bool $own,bool $inherit)=>$watches($own,$inherit)->count()
             + \Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::configured(
-                \Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::eligible(app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp()),'domains_domains.id','domains_domains.user_id',profile:$id)
+                \Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::eligible(app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp()),'domains_domains.id','domains_domains.user_id',profile:$id,inherited:$own&&$inherit?null:$inherit)
                 ->whereNotExists(fn($q)=>$q->selectRaw('1')->from('domains_watch_names as predecessor')
                     ->whereColumn('predecessor.user_id','domains_domains.user_id')->whereColumn('predecessor.canonical_name','domains_domains.reservation_name')
-                    ->where(fn($q)=>$q->where('predecessor.ns_profile_id',$id)->when($inherited,fn($q)=>$q->orWhereNull('predecessor.ns_profile_id')))->whereIn('predecessor.state',['active','paused']))->count();
+                    ->where(fn($q)=>$q->where('predecessor.ns_profile_id',$id)->when($live,fn($q)=>$q->orWhereNull('predecessor.ns_profile_id')))->whereIn('predecessor.state',['active','paused']))->count();
+        if(!$usable){
+            // Registered domains fall back to the site DNS default; a monitored name keeps its choice and waits.
+            return ['checked'=>0,'inherited'=>0,'unchecked'=>$watches(true,false)->count()];
+        }
+        $inherited=$live?$count(false,true):0;
+        return ['checked'=>$count(true,false)+$inherited,'inherited'=>$inherited,'unchecked'=>0];
+    }
+    /** The Monitored domains note: why the count moves with the site DNS default, or why chosen domains are not checked. */
+    public static function usageNote(array $u): ?string
+    {
+        $n=fn(int $count,string $one,string $many)=>$count.' '.($count===1?$one:$many);
+        if($u['unchecked']>0){return $n($u['unchecked'],'domain uses','domains use').' this template and '.($u['unchecked']===1?'is':'are').' not checked while it is off. Turn it on or choose another template for '.($u['unchecked']===1?'it':'them').'.';}
+        if($u['inherited']>0){return $n($u['inherited'],'domain has','domains have').' no template of '.($u['inherited']===1?'its':'their').' own and '.($u['inherited']===1?'follows':'follow').' the site DNS default. '.($u['inherited']===1?'It moves':'They move').' to the new default when it changes.';}
+        return null;
     }
     /** For plain text. The watch page shows the same instants in the viewer's zone through each fact's 'at'. */
     public static function date(?int $at): string{return $at?gmdate('M j, Y, g:i A',$at).' UTC':Missing::LABEL;}

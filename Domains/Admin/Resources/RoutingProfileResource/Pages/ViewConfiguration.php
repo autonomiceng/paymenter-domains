@@ -52,7 +52,7 @@ class ViewConfiguration extends ViewRecord
             Sheet::section('Records',[$nameservers,$row('Website records',$profile?self::records($profile->website):Missing::LABEL),$row('Email records',$profile?self::records($profile->email):Missing::LABEL)]),
             Sheet::section('Used by',[
                 Sheet::row(TextEntry::make('new_domains_use')->label('New domains use')->state(SiteDnsDefault::profile()?->name??Missing::LABEL)),
-                $row('Monitored domains',(string)WatchFacts::usedBy((int)$r->id)),
+                Sheet::row(TextEntry::make('monitored_domains')->label('Monitored domains')->state((string)($usage=WatchFacts::usage((int)$r->id))['checked'])->belowContent(WatchFacts::usageNote($usage))->extraAttributes(['class'=>'domains-wrap'])),
                 Sheet::row(TextEntry::make('monitoring')->label('Monitoring')->state($r->enabled?'On':'Off')
                     ->belowContent(DnsTemplateUsage::refusal((int)$r->id)??($profile===null?WatchFacts::TEMPLATE_UNAVAILABLE:'Monitoring checks domains against this template.')),
                     [$this->enableAction(),$this->disableAction()]),

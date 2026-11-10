@@ -31,7 +31,10 @@ final class WatchActions
                 try{(new Writes())->run(Auth::user(),$kind,$id,$action,Writes::ticket((int)Auth::id(),$kind,$id,$revision,$action),$reason,$data+$arguments);}
                 catch(\DomainException|\InvalidArgumentException|\Illuminate\Database\QueryException|\Illuminate\Database\Eloquent\ModelNotFoundException $e){
                     if($action==='read' && $e instanceof \DomainException && $e->getMessage()==='A check was recently requested. Try again later.'){$livewire->waitForCheck();}
-                    Notification::make()->warning()->title(self::error($kind,$e))->send();return;
+                    Notification::make()->warning()->title(self::error($kind,$e))->send();
+                    // A refused template save keeps the dialog open with what was typed.
+                    if($kind==='profile'&&$action==='save'){throw new \Filament\Support\Exceptions\Halt();}
+                    return;
                 }
                 if($action==='read'){
                     $livewire->waitForCheck();
@@ -138,10 +141,11 @@ final class WatchActions
     {
         if($row&&$row->readProfile()===null){return self::action('profile',(int)$row->id,$revision,'save','Edit')->color('gray')->disabled()->tooltip(WatchFacts::TEMPLATE_UNAVAILABLE);}
         // A short form: one note says one value per line, and the record groups are headed, not boxed.
-        $lines=fn(string $name,string $label,array $value)=>Textarea::make($name)->label($label)->default(implode("\n",$value))->maxLength(8192)->rows(2);
-        $fields=[TextInput::make('name')->label('Name')->default($row?->name)->required()->maxLength(128),$lines('nameservers','Nameservers',$row?->nameservers??[])];
+        // Each box checks its lines in the dialog and names the bad one, so a mistake keeps the dialog and what was typed.
+        $lines=fn(string $name,string $label,array $value,?\Illuminate\Contracts\Validation\ValidationRule $rule=null)=>Textarea::make($name)->label($label)->default(implode("\n",$value))->maxLength(8192)->rows(2)->rule($rule??FieldRules::hostname());
+        $fields=[TextInput::make('name')->label('Name')->default($row?->name)->required()->maxLength(128)->rule(FieldRules::check(fn($name)=>Writes::requireUniqueName((string)$name,$row?->id))),$lines('nameservers','Nameservers',$row?->nameservers??[])];
         foreach(['website_endpoints'=>'Website','email_endpoints'=>'Email'] as $key=>$label){$value=$row?->$key??[];
-            $fields[]=Fieldset::make($label.' records')->contained(false)->columns(1)->schema([$lines($key,'Hostnames',$value['exact']??[]),$lines($key.'_suffix','Hostname suffixes',$value['suffix']??[]),$lines($key.'_ips','IP addresses',$value['ips']??[])]);}
+            $fields[]=Fieldset::make($label.' records')->contained(false)->columns(1)->schema([$lines($key,'Hostnames',$value['exact']??[]),$lines($key.'_suffix','Hostname suffixes',$value['suffix']??[]),$lines($key.'_ips','IP addresses',$value['ips']??[],FieldRules::ip())]);}
         $note=($row?'Future checks use these records. Monitoring stays on if this template is on. ':'').self::ONE_PER_LINE;
         return self::action('profile',(int)($row?->id??0),$row?$revision:0,'save',$row?'Edit':'Add DNS template',$fields)->modalHeading($row?'Edit DNS template':'Add DNS template')
             ->modalDescription($note)->modalWidth(Width::Medium)->modalSubmitActionLabel('Save')->color($row?'gray':'primary');

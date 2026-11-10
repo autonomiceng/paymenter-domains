@@ -244,6 +244,8 @@ final class TldFacts
             $names=Staff::can('admin.users.view')?\App\Models\User::whereIn('id',array_column($rows,'actor_id'))->get(['id','first_name','last_name','email'])->mapWithKeys(fn($u)=>[$u->id=>trim($u->first_name.' '.$u->last_name)?:$u->email])->all():[];
             return array_map(static function($r)use($names,$tldId,$ending){
                 $change=self::CHANGES[$r['action']]??$r['action'];
+                // The Renewals and Customer can renew early switches save the renewal schedule; name the switch that changed.
+                if($r['action']==='Edit renewal schedule'){$change=self::scheduleChange((array)($r['before']['renewal_billing']??[]),(array)($r['after']['renewal_billing']??[]))??$change;}
                 if($r['action']==='Sync TLD prices'&&is_string($r['input']['ending']??null)){$change.=' for .'.$r['input']['ending'];}
                 $detail=[];
                 if($r['action']==='catalogue_republish'){$detail[]='.'. $r['tld'].': Prices recalculated using the current pricing and sales settings.';}
@@ -283,9 +285,65 @@ final class TldFacts
                 if(str_ends_with($phase,'_requested')){$change.=': started';}elseif(str_ends_with($phase,'_refused')){$change.=': refused';}elseif($phase==='publication_completed'){$change.=': publishing finished';}
                 try{$at=\Carbon\CarbonImmutable::parse((string)$r['at'])->utc()->toIso8601String();}catch(\Throwable){$at=(string)$r['at'];}
                 $reason=(string)($r['reason']??''); // Catalogue observation audits have no staff-entered reason.
-                return ['time'=>$at,'change'=>$change,'reason'=>implode('. ',[...$detail,...($reason===''?[]:[$reason])]),'by'=>$r['actor_id']===null?'System':($names[$r['actor_id']]??'Staff #'.$r['actor_id'])];
+                return ['time'=>$at,'change'=>$change,'reason'=>implode('. ',[...$detail,...($reason===''?[]:[$reason])]),'by'=>$r['actor_id']===null?'System':($names[$r['actor_id']]??'Staff #'.$r['actor_id']),...(isset($r['tld'])?['tld'=>(string)$r['tld']]:[])];
             },array_reverse(array_values($rows)));
         }catch(\Throwable){return null;}
+    }
+    /** Account history: settings and price changes plus reminder email changes, newest first. Back-to-back system
+     * runs of one kind read as one row with a count, so they don't push staff changes off the first page. */
+    public static function accountHistory(int $serverId): ?array
+    {
+        $rows=self::history($serverId);if($rows===null){return null;}
+        $rows=[...$rows,...self::reminderHistory($serverId)];
+        usort($rows,static fn(array $a,array $b)=>strcmp($b['time'],$a['time']));
+        return self::group($rows);
+    }
+    /** Rows newest first. A run of system rows of one kind, one per TLD, becomes one row naming the TLDs. */
+    public static function group(array $rows): array
+    {
+        $out=[];
+        foreach($rows as $row){
+            $last=count($out)-1;
+            if(isset($row['tld'])&&$row['by']==='System'&&$last>=0&&$out[$last]['by']==='System'&&($out[$last]['kind']??$out[$last]['change'])===$row['change']&&isset($out[$last]['tlds'])){
+                $out[$last]['tlds'][]=$row['tld'];continue;
+            }
+            $out[]=isset($row['tld'])&&$row['by']==='System'?[...$row,'kind'=>$row['change'],'tlds'=>[$row['tld']]]:$row;
+        }
+        return array_map(static function(array $row):array {
+            if(!isset($row['tlds'])){return $row;}
+            $tlds=array_values(array_unique($row['tlds']));$change=$row['kind'];unset($row['tlds'],$row['kind'],$row['tld']);
+            if(count($tlds)===1){return [...$row,'change'=>$change];}
+            $note=($at=strpos($row['reason'],': '))!==false?substr($row['reason'],$at+2):'';
+            return [...$row,'change'=>$change.' for '.count($tlds).' TLDs','reason'=>trim(\Paymenter\Extensions\Servers\Domains\Presentation\TldNames::summary($tlds).': '.$note,' :')];
+        },$out);
+    }
+    /** Which renewal switch a schedule save changed, or null for an edit of the days. */
+    private static function scheduleChange(array $before,array $after): ?string
+    {
+        $changed=static fn(string $key)=>array_key_exists($key,$before)&&array_key_exists($key,$after)&&$before[$key]!==$after[$key];
+        if($changed('issue_days')||$changed('due_days')){return null;}
+        if($changed('scheduled')){return 'Renewals turned '.($after['scheduled']?'on':'off');}
+        if($changed('manual')){return 'Customer can renew early turned '.($after['manual']?'on':'off');}
+        return null;
+    }
+    /** Reminder emails switch and schedule changes, from the reminder schedule's own audit. */
+    private static function reminderHistory(int $serverId): array
+    {
+        try{
+            $row=\Illuminate\Support\Facades\Schema::hasTable('domains_reminder_schedules')?\Illuminate\Support\Facades\DB::table('domains_reminder_schedules')->where('server_id',$serverId)->first():null;
+            $audit=$row?decrypt($row->audit):[];if(!is_array($audit)){return [];}
+        }catch(\Throwable){return [];}
+        $names=Staff::can('admin.users.view')?\App\Models\User::whereIn('id',array_column($audit,'actor_id'))->get(['id','first_name','last_name','email'])->mapWithKeys(fn($u)=>[$u->id=>trim($u->first_name.' '.$u->last_name)?:$u->email])->all():[];
+        $days=static fn($json)=>implode(', ',(array)(\Paymenter\Extensions\Servers\Domains\Services\ReminderSchedules::storedDays($json)??[]))?:'none';
+        return array_values(array_filter(array_map(static function($e)use($names,$days):?array {
+            if(!is_array($e)||!is_string($e['at']??null)){return null;}
+            $b=(array)($e['before']??[]);$a=(array)($e['after']??[]);
+            $change=($b['enabled']??null)!==($a['enabled']??null)?'Reminder emails turned '.(($a['enabled']??false)?'on':'off'):'Reminder schedule changed';
+            $detail=$change==='Reminder schedule changed'?'Days before expiry: '.$days($a['before_days']??null).'; days after: '.$days($a['after_days']??null):'';
+            $reason=(string)($e['reason']??'');if(in_array($reason,['Turned on','Turned off'],true)){$reason='';}
+            try{$at=\Carbon\CarbonImmutable::parse($e['at'])->utc()->toIso8601String();}catch(\Throwable){return null;}
+            return ['time'=>$at,'change'=>$change,'reason'=>implode('. ',array_filter([$detail,$reason])),'by'=>isset($e['actor_id'])?($names[$e['actor_id']]??'Staff #'.$e['actor_id']):'System'];
+        },$audit)));
     }
     /** Plain causes for the stored catalogue failure codes. */
     public const CAUSES=['read_failed'=>'Registrar read failed','read_unavailable'=>'Registrar read failed',

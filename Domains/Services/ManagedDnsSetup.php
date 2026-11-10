@@ -23,14 +23,15 @@ final class ManagedDnsSetup
                 ->whereColumn('a.account_fingerprint','domains_domains.account_fingerprint')->whereColumn('a.registrar_key','domains_domains.registrar_key'));
     }
     /** Same effective choice for dispatch, health and setup notices, including before the daily sweep. */
-    public static function configured($q,string $domainColumn,string $ownerColumn,bool $missing=false,?int $profile=null): mixed
+    /** $inherited true keeps only domains that follow the site default, false only domains with their own usable template. */
+    public static function configured($q,string $domainColumn,string $ownerColumn,bool $missing=false,?int $profile=null,?bool $inherited=null): mixed
     {
         $usable=WatchProfile::where('enabled',true)->get()->filter(fn($p)=>self::usable($p))->modelKeys();
         $profiles=$profile===null?$usable:array_values(array_intersect($usable,[$profile]));
         $comparison=fn($c)=>$c->selectRaw('1')->from('domains_domains as configured_domain')
             ->leftJoin('domains_managed_public_config as c',fn($j)=>$j->on('c.domain_id','=','configured_domain.id')->on('c.user_id','=','configured_domain.user_id'))
             ->whereColumn('configured_domain.id',$domainColumn)->whereColumn('configured_domain.user_id',$ownerColumn)
-            ->where(fn($p)=>$p->whereIn('c.profile_id',$profiles)->orWhere(fn($d)=>$d->where(fn($c)=>$c->whereNull('c.profile_id')->orWhereNotIn('c.profile_id',$usable))->whereRaw(in_array(SiteDnsDefault::profile()?->id,$profiles,true)?'1=1':'1=0')));
+            ->where(fn($p)=>$p->when($inherited!==true,fn($p)=>$p->whereIn('c.profile_id',$profiles))->when($inherited!==false,fn($p)=>$p->orWhere(fn($d)=>$d->where(fn($c)=>$c->whereNull('c.profile_id')->orWhereNotIn('c.profile_id',$usable))->whereRaw(in_array(SiteDnsDefault::profile()?->id,$profiles,true)?'1=1':'1=0'))));
         return $missing?$q->whereNotExists($comparison):$q->whereExists($comparison);
     }
     public static function affected(int $now): Builder

@@ -77,7 +77,7 @@ final class StaffWatchWrites
             }elseif($action==='save'){
                 $row->edited_by=$actor->id;$row->reason=$reason;
                 if($kind==='profile'){
-                    $row->name=(string)($input['name']??'');
+                    $row->name=(string)($input['name']??'');self::requireUniqueName($row->name,$row->exists?(int)$row->id:null);
                     $row->nameservers=self::lines($input['nameservers']??'');
                     foreach(['website_endpoints','email_endpoints'] as $field){$row->$field=['exact'=>self::lines($input[$field]??''),'ips'=>self::lines($input[$field.'_ips']??''),'suffix'=>self::lines($input[$field.'_suffix']??'')];}
                 }else{
@@ -91,6 +91,14 @@ final class StaffWatchWrites
                 'event'=>$action==='read'?'staff_read_requested':'staff_'.$action,'reason'=>$reason,'before_revision'=>(string)$before,'after_revision'=>(string)$row->revision,'data'=>$data,'created_at'=>now()]);}
 
         });
+    }
+    /** Templates are told apart by name in every list and choice, so two may not share one (ignoring case and spaces). */
+    public static function requireUniqueName(string $name,?int $except=null): void
+    {
+        $key=mb_strtolower(trim(preg_replace('/\s+/u',' ',$name)??$name));
+        foreach(WatchProfile::when($except,fn($q)=>$q->whereKeyNot($except))->pluck('name') as $other){
+            if(mb_strtolower(trim(preg_replace('/\s+/u',' ',(string)$other)??(string)$other))===$key){throw new \DomainException('A DNS template named "'.trim($name).'" already exists. Choose another name.');}
+        }
     }
     private static function lines(mixed $value): array
     { if(!is_string($value) || strlen($value)>8192){throw new \DomainException('Enter one DNS target per line.');}return array_values(array_filter(array_map('trim',preg_split('/\R/',$value)))); }
