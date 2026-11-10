@@ -12,6 +12,8 @@ final class CardFee
     /** Reads a saved rule's own fields: no valid markup is refused with this fee. */
     public const NONE=['percent'=>'0.00','fixed'=>'0.00'];
     public const KEY='domains_card_fee';
+    /** Refusal for an entered fee out of range or malformed; staff text keys on this constant. */
+    public const INVALID='Enter a card fee below 100% and a fixed amount from 0 to 100000.';
     public static function validate(array $fee): array
     {
         foreach(['percent','fixed'] as $key){
@@ -19,7 +21,7 @@ final class CardFee
         }
         $percent=PricingRule::units((string)($fee['percent']??''),2);
         $fixed=PricingRule::units((string)($fee['fixed']??''),2);
-        if($percent>=10000||$fixed>10000000){throw new \InvalidArgumentException('Enter a card fee below 100% and a fixed amount from 0 to 100000.');}
+        if($percent>=10000||$fixed>10000000){throw new \InvalidArgumentException(self::INVALID);}
         return ['percent'=>PricingRule::decimal($percent),'fixed'=>PricingRule::decimal($fixed)];
     }
     public static function describe(array $fee): string

@@ -43,7 +43,11 @@ same(['percent'=>'10.00','fixed'=>'1.00'],CardFee::read(),'Denied fee change sav
 Auth::setUser($u);
 $before=$rows();
 try{$writer->run(pricingReview($u->id),pricingForm(['fee_percent'=>'100','fee_fixed'=>'0']),$now);expect(false,'A 100% card fee must be refused');}
-catch(InvalidArgumentException $e){same('Enter a card fee below 100% and a fixed amount from 0 to 100000.',$e->getMessage(),'Exact current card-fee validation');}
+catch(InvalidArgumentException $e){same('Enter a card fee below 100% and a fixed amount from 0 to 100000.',$e->getMessage(),'Exact current card-fee validation');
+    same('Enter a card fee from 0% to 99.99% and a fixed amount from $0 to $100,000, with up to two decimal places. Nothing was changed.',
+        Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions::refusal($e,'default_pricing'),'Staff see the card fee range');}
+try{$writer->run(pricingReview($u->id),pricingForm(['fee_percent'=>'2.999','fee_fixed'=>'0']),$now);expect(false,'A three-decimal card fee must be refused');}
+catch(InvalidArgumentException $e){same('Enter a card fee below 100% and a fixed amount from 0 to 100000.',$e->getMessage(),'A malformed card fee gets the same refusal');}
 same($before,$rows(),'Invalid fee leaves publications alone');same(['percent'=>'10.00','fixed'=>'1.00'],CardFee::read(),'Invalid fee leaves setting alone');
 // Default followers republish while an ordinary own rule on the same account stays unchanged.
 $writer->run(pricingReview($u->id),pricingForm($feeRule),$now);

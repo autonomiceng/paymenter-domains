@@ -33,7 +33,7 @@ $review=static function(Server $s,string $action='enroll_sandbox')use($staff):Re
     return new Review($staff->id,$s->id,null,$action,Review::ticket($staff->id,$s->id,null,$action,Review::stamp($s->id,null)),'Review sandbox enrollment');
 };
 $input=['environment'=>'test','label'=>'sandbox@example.test','api_key'=>'candidate-ote-key','confirmed'=>true];
-$refuse=static function(#[SensitiveParameter] callable $work,string $message,?string $expected=null):void {
+$refuse=static function(#[SensitiveParameter] callable $work,string $message,?string $expected=null):Throwable {
     $caught=null;try{$work();}catch(Throwable $e){$caught=$e;}
     expect($caught!==null,'Refusal required: '.$message);
     $text=(string)$caught;
@@ -47,6 +47,7 @@ $refuse=static function(#[SensitiveParameter] callable $work,string $message,?st
     foreach(['synthetic-ote-key','candidate-ote-key','wrong-key','sandbox@example.test','rotated-key','racing-key','9876.54'] as $secret){expect(!str_contains($text,$secret),'No secret in exception or argument trace: '.$message);}
     same(null,$caught->getPrevious(),'No retained provider exception');
     if($expected!==null){same($expected,$caught->getMessage(),'Exact safe refusal: '.$message);}
+    return $caught;
 };
 same(true,$writes->connectionAvailable('namesilo'),'NameSilo OTE reader is available');same(false,$writes->connectionAvailable('enom'),'NameSilo-only opt-in does not enable Enom reads');
 $unsupported=$nativeServer();same('not_configured',$bindings->configurationStatus((int)$unsupported->id),'Fresh server account binding is not configured');expect(!Account::where('server_id',$unsupported->id)->exists(),'Fresh server has no account or Enrollment row');
@@ -215,7 +216,9 @@ $retained=$fresh();foreach(['domains_domains','domains_tlds','domains_prices','d
     DB::table($table)->insert($row);$n=$GLOBALS['enrollmentCalls'];$refuse(fn()=>$attempt([],$retained),'Retained '.$table);same($n,$GLOBALS['enrollmentCalls'],'Retained data refuses before read');DB::table($table)->where('server_id',$retained->id)->delete();
 }
 $retained=$fresh();$retained->settings()->create(['key'=>'domains_catalogue_acceptance','value'=>'retained acceptance','encrypted'=>true,'type'=>'string']);
-$n=$GLOBALS['enrollmentCalls'];$refuse(fn()=>$attempt([],$retained),'Retained acceptance');same($n,$GLOBALS['enrollmentCalls'],'Retained acceptance sends nothing');
+$n=$GLOBALS['enrollmentCalls'];$error=$refuse(fn()=>$attempt([],$retained),'Retained acceptance');same($n,$GLOBALS['enrollmentCalls'],'Retained acceptance sends nothing');
+same('This registrar account already has saved settings, records or domains. Use a new registrar account. No key check was sent and nothing was saved.',
+    SettingsActions::refusal($error,'enroll_sandbox',[],$retained->id),'Staff learn a new registrar account is needed');
 $s=$enrolledServer;$GLOBALS['enrollmentMode']='ok';
 // Model and service guards independently refuse rotation, relabeling, synthetic rebinding and promotion.
 $n=$GLOBALS['enrollmentCalls'];$before=$a->getRawOriginal();

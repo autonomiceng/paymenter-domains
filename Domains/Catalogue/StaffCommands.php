@@ -45,7 +45,8 @@ final class StaffCommands
         if(!in_array($review->action,self::ACTIONS,true)){throw new \DomainException('Unsupported catalogue action.');}
         if(DB::transactionLevel()!==0){throw new \LogicException('Staff commands require the outer writer.');}
         if($review->action==='default_pricing'){
-            $fee=CardFee::validate(['percent'=>$data['fee_percent']??'', 'fixed'=>$data['fee_fixed']??'']);
+            try{$fee=CardFee::validate(['percent'=>$data['fee_percent']??'', 'fixed'=>$data['fee_fixed']??'']);}
+            catch(\InvalidArgumentException){throw new \InvalidArgumentException(CardFee::INVALID);}
             $review->input($data);return $this->writer->defaultPricing($review,$this->rule($data,$fee),$fee);
         }
         $account=Account::where('server_id',$review->serverId)->sole();$binding=AccountBindings::binding($account);
