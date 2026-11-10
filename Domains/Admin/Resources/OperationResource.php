@@ -51,11 +51,12 @@ class OperationResource extends Resource
         return TableColumns::choose($table,[
             TextColumn::make('id')->label('Request')->formatStateUsing(fn($state)=>'Request #'.$state)->sortable()
                 ->suffix(fn(Operation $record)=>self::demo($record)?DemoData::tag(inline:true):null),
-            OneLine::apply(TextColumn::make('domain.domain')->label('Domain')->searchable()->fontFamily('mono'),OneLine::NAME),
-            TextColumn::make('action')->label('Type')->formatStateUsing(fn($state)=>Labels::action($state)),
+            // Status sits beside the request number so a 390px phone shows both before the table scrolls.
             TextColumn::make('state')->label('Status')->badge()->color(fn($record)=>$status($record)['tone'])
                 ->extraAttributes(fn($record)=>StatusMark::attributes($status($record)['tone'],'request-'.$record->id))
                 ->formatStateUsing(fn($record)=>$status($record)['label']),
+            OneLine::apply(TextColumn::make('domain.domain')->label('Domain')->searchable()->fontFamily('mono'),OneLine::NAME),
+            TextColumn::make('action')->label('Type')->formatStateUsing(fn($state)=>Labels::action($state)),
             OneLine::apply(TextColumn::make('note')->label('Note')->color('gray')->state(fn($record)=>RequestFacts::reason($record,OperationQueries::ordersOff($record,$off),$grants,$off)),OneLine::NOTE),
             TextColumn::make('created_at')->label('Created')->formatStateUsing(fn($state)=>\Paymenter\Extensions\Servers\Domains\Admin\Support\Sheet::moment($state->getTimestamp()))->sortable()->visibleFrom('lg'),
             OneLine::apply(TextColumn::make('server_id')->label('Registrar account')->visibleFrom('xl')->formatStateUsing(fn($state)=>$servers[$state]??Missing::LABEL)
