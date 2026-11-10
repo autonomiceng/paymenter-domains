@@ -32,7 +32,9 @@ if($free){ // Stopped reads never restart by themselves, so an unknown row names
     $d->update(['observation'=>null]);Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
     // The first registrar read is queued work for this holding; only that can promise Checking.
     $firstRead=Illuminate\Support\Facades\DB::table('domains_observation_work')->insertGetId(['server_id'=>$d->server_id,'account_fingerprint'=>$d->account_fingerprint,'domain_id'=>$d->id,'generation'=>$d->authority_generation,'phase'=>'holding','due_at'=>app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp()]);
-    $lockRow=static fn():string=>trim(preg_replace('/\s+/',' ',storefrontDom((new OwnedDomainController($owners))->show($r,$d->id)->render())->query('//li[@id="lock"]/span[@class="domains-row__v"]')->item(0)->textContent));
+    // The state alone; a transfer-out date line may follow it.
+    $lockRow=static function()use($owners,$r,$d):string{$dom=storefrontDom((new OwnedDomainController($owners))->show($r,$d->id)->render());$v=$dom->query('//li[@id="lock"]/span[@class="domains-row__v"]')->item(0);
+        foreach(iterator_to_array($dom->query('.//span[contains(@class,"domains-sub")]',$v)) as $sub){$sub->parentNode->removeChild($sub);}return trim(preg_replace('/\s+/',' ',$v->textContent));};
     same('Checking',$lockRow(),'An initial registrar read is Checking rather than Missing');
     expect(str_contains((new OwnedDomainController($owners))->show($r,$d->id)->render(),e(\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::INITIAL_READ)),'The real owner page explains the initial read');
     Illuminate\Support\Facades\DB::table('domains_observation_work')->where('id',$firstRead)->update(['due_at'=>0,'safe_code'=>'read_unavailable']);$stoppedRead=$firstRead;
