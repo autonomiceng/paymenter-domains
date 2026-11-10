@@ -27,6 +27,29 @@ $dom=storefrontDom($html); $history=trim(preg_replace('/\s+/',' ',$dom->query('/
 expect(str_contains($history,$expected)&&!str_contains($history,'Try again')&&!str_contains($history,'to make this change'),'Rendered History retains one consistent next step');
 $row=storefrontDom($html)->query('//*[@id="nameservers"]')->item(0);
 expect(str_contains($row->C14N(),'domains-tone-text-bad')&&str_contains($row->textContent,'Contact support'),'Rendered row shows the refusal in red with Contact support');
+// Older and equal observations do not clear a refused request.
+$saved=$d->fresh()->observation??[];
+foreach(['-1 minute','+0 seconds'] as $offset){
+    $at=$op->fresh()->updated_at->modify($offset)->format(DATE_ATOM);
+    $d->forceFill(['observation'=>array_replace_recursive($saved,['sections'=>['nameservers'=>Paymenter\Extensions\Servers\Domains\Services\ObservationProjection::section($d,
+        ['operation_key'=>'observation','at'=>$at,'facts'=>['nameservers'=>['dns1.registrar.example','dns2.registrar.example']]])]])])->save();
+    $dto=$owners->present($d->fresh(),true);$row=$dto->management['nameservers']['progress'];
+    same(['bad',true,false],[$row['tone'],$row['support'],$row['settled']],'Only a strictly newer read clears refusal: '.$offset);
+    same($expected,$dto->progress[0]['note'],'History keeps refusal: '.$offset);
+    $dom=storefrontDom((new Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController($owners))->show($request,$d->id)->render());
+    $row=$dom->query('//*[@id="nameservers"]')->item(0);
+    expect(str_contains($row->C14N(),'domains-tone-text-bad')&&str_contains($row->textContent,'Contact support'),'Older/equal read keeps red refusal and support');
+}
+// A projection exception also keeps the refusal. The same stored operation supplies the History above.
+$unreadable=new class extends Paymenter\Extensions\Servers\Domains\Models\Domain {
+    public function getForeignKey(){return 'domain_id';}
+    public function getAttribute($key){if($key==='observation'){throw new RuntimeException('Synthetic projection failure');}return parent::getAttribute($key);}
+};
+$unreadable->setRawAttributes($d->fresh()->getAttributes(),true);
+$row=ManagementProgress::for($unreadable)['nameservers'];
+same(['bad',true,false],[$row['tone'],$row['support'],$row['settled']],'Projection failure retains red refusal and support');
+expect(str_contains($row['text'],'Not changed:')&&str_contains($row['text'],'try again.'),'Projection failure retains retry guidance');
+
 // A later registrar read of the nameservers ends the row's notice. History keeps the refusal.
 $at=$op->fresh()->updated_at->modify('+1 minute')->format(DATE_ATOM);
 $d->forceFill(['observation'=>array_replace_recursive($d->fresh()->observation??[],['sections'=>['nameservers'=>Paymenter\Extensions\Servers\Domains\Services\ObservationProjection::section($d->fresh(),

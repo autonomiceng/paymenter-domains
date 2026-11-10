@@ -29,4 +29,27 @@ foreach (array_keys($waiting) as $key) {
 }
 $lower=new ReflectionMethod(Paymenter\Extensions\Servers\Domains\Services\OwnedDomains::class,'lowerKeepingAcronyms');
 foreach (['DNS records'=>'DNS records','WHOIS privacy'=>'WHOIS privacy','DNSSEC'=>'DNSSEC','Transfer lock'=>'transfer lock','Nameservers'=>'nameservers'] as $label=>$want) { same($want,$lower->invoke(null,$label),'Waiting label keeps acronyms: '.$label); }
+// Unsupported settings are filtered before pending work makes supported rows wait.
+$limitedPorts=new Paymenter\Extensions\Servers\Domains\Services\OwnerPorts(static fn($binding)=>new class($binding,static fn()=>throw new LogicException('No provider I/O')) extends Paymenter\Extensions\Servers\Domains\Contracts\ManagementProtocol {
+    public function capabilities(): Paymenter\Extensions\Servers\Domains\Data\Capabilities {
+        return new Paymenter\Extensions\Servers\Domains\Data\Capabilities($this->binding,
+            array_fill_keys(['nameservers','contacts'],new Paymenter\Extensions\Servers\Domains\Data\Capability(Paymenter\Extensions\Servers\Domains\Data\Support::Supported))
+            +['lock'=>new Paymenter\Extensions\Servers\Domains\Data\Capability(Paymenter\Extensions\Servers\Domains\Data\Support::Unsupported)]);
+    }
+    public function validate(string $action,array $payload,string $name):array {return $payload;}
+    public function prepare(Paymenter\Extensions\Servers\Domains\Data\ManagementRequest $r,Paymenter\Extensions\Servers\Domains\Data\RequestContext $c):array {throw new LogicException('No I/O');}
+    public function observe(Paymenter\Extensions\Servers\Domains\Data\ManagementRequest $r,Paymenter\Extensions\Servers\Domains\Data\RequestContext $c):Paymenter\Extensions\Servers\Domains\Data\ManagementResult {throw new LogicException('No I/O');}
+    protected function apply(Paymenter\Extensions\Servers\Domains\Data\ManagementRequest $r,Paymenter\Extensions\Servers\Domains\Data\RequestContext $c):Paymenter\Extensions\Servers\Domains\Data\ManagementResult {throw new LogicException('No I/O');}
+    protected function readCommands():array {return [];}
+    protected function validateRead(string $command,array $parameters):void {throw new LogicException('No I/O');}
+    protected function writeCommand(string $action):string {throw new LogicException('No I/O');}
+    protected function origin(Paymenter\Extensions\Servers\Domains\Data\RequestContext $c):string {throw new LogicException('No I/O');}
+});
+$limited=new Paymenter\Extensions\Servers\Domains\Services\OwnedDomains($clock,$limitedPorts,$management,$ownerBilling);
+$dto=$limited->present($d->fresh(),true);
+expect(!isset($dto->management['lock']),'An unsupported lock has no DTO row while nameservers are pending');
+same('Opens when the nameservers change finishes.',$dto->management['contacts']['waiting']??null,'A supported contacts row still waits');
+$html=(new Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController($limited))->show($request,$d->id)->render();$dom=storefrontDom($html);
+same(0,$dom->query('//*[@id="lock"]')->length,'The unsupported lock is absent from rendered rows');
+expect(str_contains($dom->query('//*[@id="contacts"]')->item(0)?->textContent??'','Opens when the nameservers change finishes.'),'The supported contacts row renders its wait');
 $nativeSuccessful=true; echo "Customer rows during a pending change passed.\n";

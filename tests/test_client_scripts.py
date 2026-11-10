@@ -129,6 +129,12 @@ def main():
                                  capture_output=True, text=True, timeout=10)
         assert checked.returncode == 0, checked.stdout + checked.stderr
         print(checked.stdout.strip())
+        checked = subprocess.run([node, str(ROOT/'tests/Support/nameserver-submit.js')],
+                                 input=json.dumps({'form': json.loads((Path(temporary)/'nameserver-form.json').read_text()),
+                                                   'script': scripts.scripts[0]}),
+                                 capture_output=True, text=True, timeout=10)
+        assert checked.returncode == 0, checked.stdout + checked.stderr
+        print(checked.stdout.strip())
         scripts = InlineScripts()
         scripts.feed((Path(temporary)/'search.html').read_text())
         checked = subprocess.run([node, str(ROOT/'tests/Support/search-summary.js')],
