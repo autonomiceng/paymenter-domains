@@ -15,13 +15,21 @@ final class HoldingObservationWork
         DB::table('domains_observation_work')->insertOrIgnore(['server_id'=>$d->server_id,'account_fingerprint'=>$d->account_fingerprint,
             'domain_id'=>$d->id,'generation'=>$d->authority_generation,'phase'=>self::phase($d),'due_at'=>$now->getTimestamp()]);
     }
-    /** The first scheduled read has not finished: never tried, resumed or given a result, or leased on its first try. */
-    public static function firstReadPending(Domain $d): bool
+    /**
+     * What the current read waits for, and when it is due. 'first': the first scheduled read has not finished (never tried, resumed
+     * or given a result, or leased on its first try). 'retry': a failed or recovered read tries again. 'next': the next routine read,
+     * daily or a follow-up. A closed record gate reads no records, so it has no read for a held family to wait for.
+     * @return array{wait:'first'|'retry'|'next',due:int}|null
+     */
+    public static function nextRead(Domain $d): ?array
     {
-        if (!Schema::hasTable('domains_observation_work')) { return false; }
+        if (!Schema::hasTable('domains_observation_work')) { return null; }
         $job=self::current($d,true)->orderByDesc('id')->first();
-        if ($job===null||$job->safe_code!==null||(int)$job->resumes!==0) { return false; }
-        return (int)$job->tries===0||((int)$job->tries===1&&(int)$job->lease_until>app(Clock::class)->now()->getTimestamp());
+        if ($job===null||$job->safe_code==='records_disabled') { return null; }
+        $first=$job->safe_code===null&&(int)$job->resumes===0
+            &&((int)$job->tries===0||((int)$job->tries===1&&(int)$job->lease_until>app(Clock::class)->now()->getTimestamp()));
+        $retry=$job->safe_code===null||in_array($job->safe_code,HoldingReadRetry::TRANSIENT,true);
+        return ['wait'=>$first?'first':($retry?'retry':'next'),'due'=>(int)$job->due_at];
     }
     /** Only the current binding, generation and follow-up phase can stop this holding. */
     public static function stopped(Domain $d): bool

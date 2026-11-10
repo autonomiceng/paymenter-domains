@@ -177,7 +177,7 @@ final class DomainDecisions
             foreach(['Expires','In registrar account','Nameservers','Transfer lock','WHOIS privacy','Registrar auto-renew','DNS records'] as $label){
                 if(isset($f[$label]) && ($f[$label]['value']===null || $f[$label]['value']==='Not read yet')){$f[$label]['value']=null;$f[$label]['sub']=null;}
             }
-            if(isset($f['Last sync'])){$f['Last sync']['sub']=!self::ended($d)&&self::recordHold($d)!==null?null:$problem;}
+            if(isset($f['Last sync'])){$f['Last sync']['sub']=!self::ended($d)&&(self::hold($d)['stopped']??false)?null:$problem;}
         }
         return self::alerts($d,$f,$notice);
     }
@@ -286,14 +286,14 @@ final class DomainDecisions
         return $read['read_cause']??'Registrar read stopped.';
     }
     public static function recordHold(Domain $d): ?string { return self::hold($d)['text']??null; }
-    /** The record hold or stopped read staff see, and whether it stopped. A hold set before the first scheduled read shows at once; that read then gives its cause. */
+    /** The record hold or stopped read staff see, and whether it stopped. A hold shows at once while the next scheduled read waits; that read then gives its cause. */
     public static function hold(Domain $d): ?array
     {
         Staff::requireView();
         try {
             if (!ObservationRecords::stopped($d)) {
-                if (!ObservationRecords::held($d)||!HoldingObservationWork::firstReadPending($d)) { return null; }
-                return ['text'=>ucfirst(self::familyName($d->observation['record_hold']['family']??null)??'DNS records').' held while the first registrar check runs.','stopped'=>false];
+                if (!ObservationRecords::held($d)||($next=HoldingObservationWork::nextRead($d))===null) { return null; }
+                return ['text'=>ucfirst(self::familyName($d->observation['record_hold']['family']??null)??'DNS records').' held '.self::untilRead($next).'.','stopped'=>false];
             }
             if (!ObservationRecords::held($d)) { return ['text'=>self::readCause($d),'stopped'=>true]; }
             return ['text'=>ObservationRecords::limitNotice($d)??match($d->observation['record_hold']['reason']??null) {
@@ -303,6 +303,15 @@ final class DomainDecisions
                 'caa_unsupported'=>"Sync stopped: this domain has CAA records, which can't be read from Enom here. Other domain facts were saved. Manage this domain's DNS at Enom.",
                 default=>'Sync stopped: DNS record check failed.' },'stopped'=>true];
         } catch (\Throwable) { return ['text'=>self::UNREADABLE,'stopped'=>true]; }
+    }
+    /** When a held family is read again, in the site clock. A due time that has passed means the read runs as soon as the worker gets to it. */
+    private static function untilRead(array $next): string
+    {
+        $now=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now();
+        $at=$next['due']>$now->getTimestamp()?(new \DateTimeImmutable('@'.$next['due']))->setTimezone($now->getTimezone())->format('M j, Y, g:i A T'):null;
+        return match($next['wait']) { 'first'=>'while the first registrar check runs',
+            'retry'=>'until the registrar check retries'.($at===null?'':' at '.$at),
+            default=>'until the next registrar check'.($at===null?' runs':' at '.$at) };
     }
     /** Staff copy for a record hold that names the family whose read failed; DNS (or an unnamed legacy hold) keeps its wording. */
     private static function unreadFamily(mixed $family): string
