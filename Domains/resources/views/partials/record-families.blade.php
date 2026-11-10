@@ -20,7 +20,7 @@
 @endif
 @if ($staff && !($recordFamilies['cancelled_without_records'] ?? false))<p class="domains-hint">Last complete read: @if ($recordFamilies['last_complete_at'])@include('domains::partials.moment',['at'=>$recordFamilies['last_complete_at']])@else Unknown @endif</p>@endif
 @if ($recordFamilies['cancelled_without_records'] ?? false)
-<p class="domains-hint">Registration cancelled; no registrar records to check</p>
+<p class="domains-hint">{{ ($recordFamilies['cancelled_without_records'] ?? null) === 'transfer' ? 'Transfer' : 'Registration' }} cancelled; no registrar records to check</p>
 @elseif ($part === null)
 <dl class="domains-card">
 @foreach ($recordFamilies['rows'] as $family)

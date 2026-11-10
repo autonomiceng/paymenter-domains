@@ -37,9 +37,12 @@ final class RecordFamilies
             $currentRead=$status['at']!==null&&($d->observation['record_failure']['identity']??null)!==ObservationRecords::identity($d);}
         catch(\Illuminate\Contracts\Encryption\DecryptException){$readable=false;$empty=clone $d;$empty->observation=[];$status=ObservationProjection::recordStatus($empty,$now);$hold=null;$currentRead=false;}
         $cancelled=false;
-        if($readable&&$d->status==='cancelled'&&empty($d->observation['records'])&&$status['at']===null&&$d->provider_domain_id===null&&$d->provider_order_id===null&&$d->provider_expires_at===null){
+        if($readable&&in_array($d->status,['cancelled','registration_rejected','transfer_rejected'],true)&&empty($d->observation['records'])&&$status['at']===null&&$d->provider_domain_id===null&&$d->provider_order_id===null&&$d->provider_expires_at===null){
             $ops=$d->operations;
-            $cancelled=$ops->count()===1&&\Paymenter\Extensions\Servers\Domains\Services\UnpaidAcquisitionProof::terminal($ops->first(),$d);
+            // An unpaid order that never went out, or a paid one whose every request closed without registering or moving the name.
+            $never=$ops->count()===1&&\Paymenter\Extensions\Servers\Domains\Services\UnpaidAcquisitionProof::terminal($ops->first(),$d)
+                ||$ops->isNotEmpty()&&$ops->every(fn($op)=>in_array($op->state,['rejected','disposed','cancelled'],true)&&$op->provider_order_id===null&&$op->confirmed_expires_at===null);
+            $cancelled=$never?($ops->contains('action','transfer')?'transfer':'registration'):false;
         }
         // A registration or transfer that has not finished has nothing at the registrar to read yet. Staff read that once, not a Missing per family.
         // Registration failures belong to the acquisition request; active domains keep their read recovery lines.

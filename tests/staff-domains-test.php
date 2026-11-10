@@ -203,7 +203,7 @@ same('NameSilo has not confirmed this transfer.',RequestFacts::notice($op)['titl
 expect(!isset(RequestFacts::for($op)['registrar_refund']),'Registrar refund shows only once the request failed or was cancelled');
 $op->state='rejected'; $facts=RequestFacts::for($op);
 same('Ask NameSilo support for a refund',$facts['registrar_refund'],'NameSilo manual refund indicator');
-same(['Credit added','Check the account credit'],[$facts['refund'],$facts['refund_sub']],'Customer credit is retained separately');
+same(['Credit added',"Check the customer's account credit."],[$facts['refund'],$facts['refund_sub']],'Customer credit is retained separately');
 expect(!str_contains($facts['registrar_refund'],'credit'),'Registrar refund does not duplicate customer-credit wording');
 $op->state='rejected'; $op->safe_code='transfer_code_timeout';
 expect(!isset(RequestFacts::for($op)['registrar_refund']),'Local unsent rejection does not imply a registrar charge');

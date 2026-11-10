@@ -88,7 +88,7 @@ final class RequestFacts
                     default=>'Check the invoice payment return.',
                 };
             }
-            elseif (array_key_exists('refund',$f)||array_key_exists('late_credits',$f)) { [$out['refund'],$out['refund_sub']]=['Credit added','Check the account credit']; }
+            elseif (array_key_exists('refund',$f)||array_key_exists('late_credits',$f)) { [$out['refund'],$out['refund_sub']]=self::creditWords($f); }
             elseif (RefundCandidates::matches($op,$f) || ($p['renewal_execution']['refundable_later']??false)===true) {
                 $out['refund']='No credit added'; $out['refund_fix']=$op->state==='held' ? 'refund' : 'credit';
             }
@@ -314,7 +314,7 @@ final class RequestFacts
         if($op->state==='held'&&$review!==null){
             $payment=$review==='balance_retry_funding_changed';
             return ['title'=>rtrim(Labels::reason($review),'.').'.','tone'=>'warning',
-                'body'=>$payment?'Review the invoice. The system will check it again. If this order cannot go ahead, cancel it and add credit.':'Restore the original order details. The system will check them again. If this order cannot go ahead, review its cancellation.',
+                'body'=>$payment?'Review the invoice. The system will check it again. If this order cannot go ahead, cancel and refund it.':'Restore the original order details. The system will check them again. If this order cannot go ahead, review its cancellation.',
                 'link'=>$payment?'invoice':'domain','action'=>$payment?'refund':null];
         }
         if ($op->state==='held') {
@@ -383,6 +383,15 @@ final class RequestFacts
             $act=$act||($r['needs_review']??false)||$r['kind']==='dispute'||$r['status']==='failed';
         }
         return $lines?['words'=>implode(' ',array_unique($lines)),'act'=>$act]:null;
+    }
+    /** Money returned as account credit: the amount, and why it is credit and not a refund to the payment. */
+    private static function creditWords(array $f): array
+    {
+        $minor=0;
+        foreach ([...(isset($f['refund'])?[$f['refund']]:[]),...($f['late_credits']??[])] as $p) { if (($p['to']??null)==='account_credit'&&is_numeric($p['amount']??null)) { $minor+=\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)$p['amount']); } }
+        $value=$minor>0?'Credit added: USD '.\Paymenter\Extensions\Servers\Domains\Services\PricingRule::decimal($minor):'Credit added';
+        $why=($f['refund']['bridge_reason']??null)==='gateway_return_unavailable'?'The original payment could not be refunded. ':'';
+        return [$value,$why.'Check the customer\'s account credit.'];
     }
     public static function releaseConfirmation(Operation $op, ?Account $account, ?string $sends, bool $contactRecovery): array
     {
