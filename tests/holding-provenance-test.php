@@ -48,10 +48,10 @@ foreach ([['status'=>'adoption_pending','provenance'=>null],['status'=>'active',
     $visible=strip_tags(preg_replace('~<(style|script)\b[^>]*>.*?</\1>~si','',$html));
     foreach(['Enom','NameSilo','unmanaged'] as $text){expect(!str_contains($visible,$text),'Neutral held page: '.$text);}
     Illuminate\Support\Facades\Auth::setUser($staff);same('Imported without purchase records. Check open invoices.',DomainFacts::notice($d)['title'],'Staff see reason');
-    same('Invoice #'.$invoice->id,DomainFacts::for($d)['Open invoice']['value'],'Staff sees retained payable renewal');
+    same(\Paymenter\Extensions\Servers\Domains\Admin\Support\Facts::invoiceName((int)$invoice->id),DomainFacts::for($d)['Open invoice']['value'],'Staff sees retained payable renewal');
     $registration=$d->operations()->where('action','register')->sole();DB::table('invoices')->where('id',$registration->invoice_id)->update(['status'=>'pending']);
     DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'paid']);
-    same('Invoice #'.$registration->invoice_id,DomainFacts::for($d)['Open invoice']['value'],'Open registration invoice also visible');
+    same(\Paymenter\Extensions\Servers\Domains\Admin\Support\Facts::invoiceName((int)$registration->invoice_id),DomainFacts::for($d)['Open invoice']['value'],'Open registration invoice also visible');
     DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'pending']);
     DB::table('invoices')->where('id',$registration->invoice_id)->update(['status'=>'paid']);
     DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->delete();

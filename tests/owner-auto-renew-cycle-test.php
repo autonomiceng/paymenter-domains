@@ -31,7 +31,7 @@ $clock->instant=new DateTimeImmutable('2028-09-27T12:00:00Z');same(null,$billing
 $save($d,true);$next=$billing->invoice($d->id);expect($next->id!==$invoice->id,'On inside next billing window issues next debt');
 same($next->id,$billing->invoice($d->id)->id,'Scheduled retry reuses next debt');
 staffPanel();Auth::login(staffUser([Staff::VIEW]));$save($d,false);
-$facts=DomainFacts::for($d->fresh());same([['Off','Turned off by customer'],['Invoice #'.$next->id,'Awaiting payment']],[[$facts['Renewal']['value'],$facts['Renewal']['sub']],[$facts['Open invoice']['value'],$facts['Open invoice']['sub']]],'Staff distinguishes owner Off; issued invoices stay payable');
+$facts=DomainFacts::for($d->fresh());same([['Off','Turned off by customer'],[\Paymenter\Extensions\Servers\Domains\Admin\Support\Facts::invoiceName((int)$next->id),'Awaiting payment']],[[$facts['Renewal']['value'],$facts['Renewal']['sub']],[$facts['Open invoice']['value'],$facts['Open invoice']['sub']]],'Staff distinguishes owner Off; issued invoices stay payable');
 Livewire\Livewire::test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager::class,['ownerRecord'=>$d->fresh(),'pageClass'=>Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class])
     ->assertSee('Auto-renew turned off')->assertSee(trim($user->first_name.' '.$user->last_name)?:'Customer');
 $staffActor=staffUser([Staff::VIEW]);
