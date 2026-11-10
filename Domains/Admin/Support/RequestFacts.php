@@ -157,7 +157,10 @@ final class RequestFacts
      * Lists call this per row, so they pass $ordersOff: a queued row is only stopped while Orders are off, and held rows are rare. */
     public static function reason(Operation $op, bool $ordersOff=true, ?StaffGrants $grants=null, ?array $accounts=null, ?array $release=null): ?string
     {
-        try { return ($op->state==='held'||$op->state==='queued'&&$ordersOff?self::readyMessage($op,$accounts,$release):null)??Labels::requestStatus($op,grants:$grants)['reason']; }
+        try {
+            return ($op->state==='held'||$op->state==='queued'&&$ordersOff?self::readyMessage($op,$accounts,$release):null)
+                ??self::paidWaiting($op,$accounts)??Labels::requestStatus($op,grants:$grants)['reason']??self::paidMoving($op);
+        }
         catch (\Throwable) { return Labels::requestStatus($op,grants:$grants)['reason']; }
     }
     /** A request's status, in the customer's words. Orders off stop all queued work, so a queued request whose account has them off is held
@@ -189,7 +192,16 @@ final class RequestFacts
     {
         if ($op->state!=='awaiting_payment' || !$op->invoice_id) { return null; }
         if (\App\Models\Invoice::whereKey($op->invoice_id)->value('status')!=='paid') { return null; }
-        return OperationQueries::ordersOff($op,$accounts)?'Paid. Not sent. '.self::ORDERS_OFF:'Paid. It goes to the registrar automatically. Nothing to do yet.';
+        return OperationQueries::ordersOff($op,$accounts)?'Paid. Not sent. '.self::ORDERS_OFF:self::PAID_GOES;
+    }
+    public const PAID_GOES='Paid. It goes to the registrar automatically. Nothing to do yet.';
+    /** A paid request on its way, for the moments its saved state has no words: picked up, then sent, until the registrar answers. */
+    private const PAID_MOVING=['queued'=>self::PAID_GOES,'running'=>'Paid. Sending to the registrar now. Nothing to do yet.',
+        'pending'=>'Paid. Sent to the registrar. Waiting for it to confirm. Nothing to do yet.'];
+    private static function paidMoving(Operation $op): ?string
+    {
+        if (!isset(self::PAID_MOVING[$op->state]) || $op->funding_basis!=='paid_invoice' || !$op->invoice_id) { return null; }
+        return \App\Models\Invoice::whereKey($op->invoice_id)->value('status')==='paid'?self::PAID_MOVING[$op->state]:null;
     }
     /** Local readiness shared by request pages and domain lists. It never releases a hold.
      * $accounts: a list's OperationQueries::ordersOffAccounts() snapshot, read for the Orders switch instead of the account now.
