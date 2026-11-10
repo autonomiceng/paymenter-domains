@@ -18,6 +18,8 @@ final class TldFacts
     /** Followed by the account's name. */
     public const OTHER_SELLER='New orders go to';
     public const TERMS_FAILED="Set to sell; couldn't read registrar terms";
+    /** Registrations here need annual renewals on the same account, and its Renewals switch is off. */
+    public const RENEWALS_OFF='Renewals are off for this account';
     /** Why a TLD is not for sale when no term has current prices. */
     public const NEEDS_SYNC='Registrar cost missing';
     public static function bound($query)
@@ -186,7 +188,7 @@ final class TldFacts
     /** Saving What you sell records how orders are sent. Older saves catch up with one save, only where orders are offered. */
 
     /** The one fix for each reason a TLD with a saved price is not for sale. */
-    public const FIXES=['Cost out of date'=>'See the next refresh on this TLD.','Cost missing'=>'The registrar price feed must supply the exact cost.','Prices not published'=>'Open Edit prices and save.','Below cost'=>'Raise the price in Edit prices.','Price missing'=>'Open Edit prices and save.','Prices need checking'=>'Check the registrar account and the last refresh failure.',self::NO_SELLER=>'Open the TLD and use Change registrar.'];
+    public const FIXES=['Cost out of date'=>'See the next refresh on this TLD.','Cost missing'=>'The registrar price feed must supply the exact cost.','Prices not published'=>'Open Edit prices and save.','Below cost'=>'Raise the price in Edit prices.','Price missing'=>'Open Edit prices and save.','Prices need checking'=>'Check the registrar account and the last refresh failure.',self::RENEWALS_OFF=>'Turn on Renewals on the registrar account page.',self::NO_SELLER=>'Open the TLD and use Change registrar.'];
     public const ASK_SELLER='Ask staff who can change the registrar.';
     /** Change registrar needs both rights, so registrar hints name it only to staff who can use it. */
     public static function canChangeSeller(): bool

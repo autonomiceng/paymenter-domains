@@ -89,7 +89,7 @@ class ViewTld extends ViewRecord
         $link=static fn(?string $url,string $label)=>$url?new HtmlString(e($reason).'. <a class="domains-link" href="'.e($url).'">'.e($label).'</a>'):$reason;
         $step=match($reason){
             'Cost missing','Cost out of date'=>$reason.'. Use Sync prices below.',
-            'Check registrar account'=>$link(RegistrarFacts::accountUrl((int)$t->server_id),'Open the registrar account'),
+            'Check registrar account',TldFacts::RENEWALS_OFF=>$link(RegistrarFacts::accountUrl((int)$t->server_id),'Open the registrar account'),
             'Over the cost limit'=>$link(\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::getUrl(['account'=>$t->server_id]),'Change it in What you sell'),
             'No registrar selected'=>'No registrar selected. '.($this->settings()['seller']->isVisible()?'Choose a registrar for new orders.':'Ask staff who can change the registrar.'),
             TldFacts::TERMS_FAILED=>$reason.'. Sync prices tries again now.',
