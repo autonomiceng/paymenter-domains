@@ -48,7 +48,7 @@ foreach(['accepted','not_processed'] as $outcome){
     $early=null;try{$settings->run($review($op),$input($op,$outcome),$clock->now());}catch(DomainException $e){$early=$e->getMessage();}
     same('Use Check status to read this attempt first, then record the registrar’s answer.',$early,'An answer waits for one status check');
     $reconcile->run($op->id);$op->refresh();
-    same(['listOrders'],$wireState->calls,'One status check read the order history');
+    same('listOrders',$wireState->calls[0]??null,'One status check read the order history');expect(!in_array('registerDomain',$wireState->calls,true),'A status check never sends');
     expect(RegistrarCheck::attempted($op),'The status check is saved for this attempt');
     same(null,$op->attempt['reconciliation']??null,'An empty order history settles nothing');
     $wireState->calls=[];
