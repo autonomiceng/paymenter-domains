@@ -298,20 +298,23 @@ final class TldFacts
         usort($rows,static fn(array $a,array $b)=>strcmp($b['time'],$a['time']));
         return self::group($rows);
     }
+    /** Seconds between two rows of one system run. Runs further apart, such as daily ones, stay separate rows. */
+    private const RUN_GAP=60;
     /** Rows newest first. A run of system rows of one kind, one per TLD, becomes one row naming the TLDs. */
     public static function group(array $rows): array
     {
         $out=[];
         foreach($rows as $row){
             $last=count($out)-1;
-            if(isset($row['tld'])&&$row['by']==='System'&&$last>=0&&$out[$last]['by']==='System'&&($out[$last]['kind']??$out[$last]['change'])===$row['change']&&isset($out[$last]['tlds'])){
-                $out[$last]['tlds'][]=$row['tld'];continue;
+            if(isset($row['tld'])&&$row['by']==='System'&&$last>=0&&$out[$last]['by']==='System'&&($out[$last]['kind']??$out[$last]['change'])===$row['change']&&isset($out[$last]['tlds'])
+                &&abs(strtotime((string)$out[$last]['oldest'])-strtotime((string)$row['time']))<=self::RUN_GAP){
+                $out[$last]['tlds'][]=$row['tld'];$out[$last]['oldest']=$row['time'];continue;
             }
-            $out[]=isset($row['tld'])&&$row['by']==='System'?[...$row,'kind'=>$row['change'],'tlds'=>[$row['tld']]]:$row;
+            $out[]=isset($row['tld'])&&$row['by']==='System'?[...$row,'kind'=>$row['change'],'tlds'=>[$row['tld']],'oldest'=>$row['time']]:$row;
         }
         return array_map(static function(array $row):array {
             if(!isset($row['tlds'])){return $row;}
-            $tlds=array_values(array_unique($row['tlds']));$change=$row['kind'];unset($row['tlds'],$row['kind'],$row['tld']);
+            $tlds=array_values(array_unique($row['tlds']));$change=$row['kind'];unset($row['tlds'],$row['kind'],$row['tld'],$row['oldest']);
             if(count($tlds)===1){return [...$row,'change'=>$change];}
             $note=($at=strpos($row['reason'],': '))!==false?substr($row['reason'],$at+2):'';
             return [...$row,'change'=>$change.' for '.count($tlds).' TLDs','reason'=>trim(\Paymenter\Extensions\Servers\Domains\Presentation\TldNames::summary($tlds).': '.$note,' :')];
