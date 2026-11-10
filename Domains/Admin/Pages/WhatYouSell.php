@@ -212,7 +212,7 @@ class WhatYouSell extends Page implements HasTable
         catch(\Throwable $error){
             Notification::make()->danger()->title("Couldn't start sync")->body(\Paymenter\Extensions\Servers\Domains\Jobs\SyncPrices::isQueueRefusal($error)?$error->getMessage():'Check the registrar account under Registrars, then try again.')->send();return;
         }
-        Notification::make()->success()->title('Price sync queued')->body('You can keep working. The result will appear in your notifications.')->send();
+        Notification::make()->success()->title('Price sync queued')->body('You can keep working. Sync progress shows on this page.')->send();
     }
     private static function tooMany(int $count): string
     {return 'You selected '.$count.' TLDs. Edit selected saves '.self::MOST.' or fewer at a time. To sell every TLD you have not set yourself, use Default for new TLDs.';}
