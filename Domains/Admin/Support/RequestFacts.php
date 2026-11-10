@@ -399,7 +399,9 @@ final class RequestFacts
         catch (\Throwable) { return ['words'=>null,'act'=>true]; }
         $lines=[];$act=false;
         foreach ($rows as $r) {
-            $amount=\Paymenter\Extensions\Servers\Domains\Services\Storefront::money(\Paymenter\Extensions\Servers\Domains\Services\PricingRule::decimal((int)$r['amount_minor']));
+            // Missing or invalid money is a payment read problem: never show it as zero.
+            if (!is_int($r['amount_minor']??null) || $r['amount_minor']<0) { return ['words'=>null,'act'=>true]; }
+            $amount=\Paymenter\Extensions\Servers\Domains\Services\Storefront::money(\Paymenter\Extensions\Servers\Domains\Services\PricingRule::decimal($r['amount_minor']));
             $line=match ([$r['kind']??null,$r['status']??null]) {
                 ['dispute','lost']=>$amount.' lost to a dispute',
                 ['dispute','open'],['dispute','inquiry']=>$amount.' under dispute. Submit evidence in Stripe before the deadline',

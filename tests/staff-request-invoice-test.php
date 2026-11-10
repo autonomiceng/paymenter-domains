@@ -19,7 +19,10 @@ Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->asse
 class StaffInvoiceReversalGateway extends \App\Classes\Extension\Gateway {
     public static array $observations=[];
     public function pay(\App\Models\Invoice $invoice,$total){return '';}
-    public function receiptReversals(\App\Models\Invoice $invoice,string $receipt):array {return self::$observations[$receipt]??[];}
+    public function receiptReversals(\App\Models\Invoice $invoice,string $receipt):array {
+        if((self::$observations[$receipt]??null)==='unreadable'){throw new RuntimeException('Synthetic gateway read failure');}
+        return self::$observations[$receipt]??[];
+    }
 }
 class_alias(StaffInvoiceReversalGateway::class,'Paymenter\\Extensions\\Gateways\\StaffInvoiceReversal\\StaffInvoiceReversal');
 $gateway=\App\Models\Gateway::create(['extension'=>'StaffInvoiceReversal','name'=>'Reversal fixture','type'=>'gateway','enabled'=>true]);
@@ -33,5 +36,36 @@ $html=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])
 $at=strpos($html,'$10.99 lost to a dispute.');$before=substr($html,max(0,$at-3000),3000);
 preg_match_all('/data-beco-tone="([a-z]+)"/',$before,$tones);
 same('warn',end($tones[1])?:null,'The lost dispute reads amber');
+// Every recognised refund and dispute state has its words, and only disputes, failures and flagged rows ask staff to act.
+$row=static fn(array $over)=>[['kind'=>'refund','id'=>'re_staff','status'=>'refunded','needs_review'=>false,
+    'invoice_id'=>(int)$invoice->id,'user_id'=>(int)$invoice->user_id,'payment_intent_id'=>'pi_staff_invoice','currency'=>strtolower($invoice->currency_code),
+    'amount_minor'=>1099,'credited_minor'=>0,'credit_balance_minor'=>0,...$over]];
+$cases=[
+    'open dispute'=>[['kind'=>'dispute','status'=>'open'],['words'=>'$10.99 under dispute. Submit evidence in Stripe before the deadline.','act'=>true]],
+    'inquiry'=>[['kind'=>'dispute','status'=>'inquiry'],['words'=>'$10.99 under dispute. Submit evidence in Stripe before the deadline.','act'=>true]],
+    'refunded'=>[[],['words'=>'$10.99 refunded to the original payment.','act'=>false]],
+    'refunded for review'=>[['needs_review'=>true],['words'=>'$10.99 refunded to the original payment.','act'=>true]],
+    'refund in progress'=>[['status'=>'open'],['words'=>'Refund of $10.99 in progress.','act'=>false]],
+    'refund failed'=>[['status'=>'failed'],['words'=>'Refund of $10.99 failed.','act'=>true]],
+    'unknown state'=>[['status'=>'pending_review'],null],
+    // Missing or invalid money is a payment read problem, never zero dollars.
+    'missing amount'=>[['amount_minor'=>null],['words'=>null,'act'=>true]],
+    'invalid amount'=>[['amount_minor'=>'10.99'],['words'=>null,'act'=>true]],
+    'negative amount'=>[['amount_minor'=>-1099],['words'=>null,'act'=>true]],
+];
+$actual=[];
+foreach($cases as $name=>[$over,$expected]){
+    $observed=$row($over);if(array_key_exists('amount_minor',$over)&&$over['amount_minor']===null){unset($observed[0]['amount_minor']);}
+    StaffInvoiceReversalGateway::$observations['pi_staff_invoice']=$observed;
+    $actual[$name]=RequestFacts::for($op->fresh())['payment_reversed']??null;
+}
+same(array_map(fn($case)=>$case[1],$cases),$actual,'Reversal words follow each state: '.json_encode($actual));
+StaffInvoiceReversalGateway::$observations['pi_staff_invoice']=[];
+same(null,RequestFacts::for($op->fresh())['payment_reversed']??null,'No reversal rows show nothing');
+// A gateway read failure and missing money both show the payment cause on the page, not a key notice.
+foreach(['gateway failure'=>'unreadable','missing amount'=>$row(['amount_minor'=>'unknown'])] as $name=>$observed){
+    StaffInvoiceReversalGateway::$observations['pi_staff_invoice']=$observed;
+    Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertSee('Could not read refunds and disputes. Check the invoice payments.')->assertDontSee('encryption key');
+}
 echo "Request invoice name and reversal passed.\n";
 $nativeSuccessful=true;
