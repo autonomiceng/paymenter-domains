@@ -12,9 +12,11 @@ final class DomainListRow
     public static function hosting(DomainSummary $s): ?string
     {
         if (!$s->relatedServices) { return null; }
-        $more = count($s->relatedServices) - 1 + $s->relatedOverflow;
+        $more = self::moreHosting($s);
         return 'Hosting: '.$s->relatedServices[0]['label'].($more > 0 ? ' and '.$more.' more' : '');
     }
+    /** Usable hosting links after the first. The summary lists every one; its overflow counts those past its first three. */
+    public static function moreHosting(DomainSummary $s): int { return max(0, count($s->relatedServices) - 1); }
     /** Missing Expires while an order is open: the pay button, that it's paid, or support. Null when the order doesn't decide it.
      * $funding false: the page notice already says Complimentary, so the cause doesn't say it again. */
     public static function orderExpires(array $order, ?string $support, bool $funding = true): ?array

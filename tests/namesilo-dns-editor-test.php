@@ -13,6 +13,23 @@ use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\DnsManagement;
 use Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence;
 use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement,ObservationProjection,OwnedDomains,OwnerPorts,OwnerSetup,Refunds,TransferInputs};
+// A middle change that used its five unsent tries keeps the editor after a settings change, and a fresh save finishes the rest.
+$setup('dns-drift',[$a,$txt,$caa,$srv]);$seed=$submit($d,$driver,'dns',['records'=>[$a,$txt,$cname]]);Cache::flush();$management->run($seed->id,$driver);
+$rows=$form();$rows[0]['address']='192.0.2.5';$rows[1]['address']='v=spf1 a -all';$rows[]=['name'=>'mail','type'=>'A','address'=>'192.0.2.6','mx_pref'=>'','_source'=>''];$post($rows);$op=$latest();
+$steps=$d->operations()->where('action','dns')->where('id','<=',$op->id)->orderByDesc('id')->limit(3)->get()->reverse()->values();
+Cache::flush();$management->run($op->id,$driver);same('succeeded',$steps[0]->fresh()->state,'The first change is confirmed');$wire->fault='missing';
+for($round=0;$round<8&&$steps[1]->fresh()->state!=='rejected';$round++){$clock->instant=$clock->now()->modify('+16 minutes');Cache::flush();$management->run($op->id,$driver);}
+same(['rejected','management_preparation_failed','queued'],[$steps[1]->fresh()->state,$steps[1]->fresh()->safe_code,$op->fresh()->state],'The middle change stops after five unsent tries');
+$wire->fault='';\App\Models\Server::findOrFail($d->server_id)->settings()->create(['key'=>'synthetic_revision','value'=>'changed']);Cache::flush();
+$want='Request #'.$op->id.': 1 of 3 changes verified. The remaining changes were not sent. Save again to retry.';
+$row=(new OwnedDomainController($owners))->status($request(),$d->id)->getData(true)['dns']??null;same([$want,false],[$row['text']??null,$row['pending']??null],'Owner polling says the rest was not sent and frees the row');
+$dom=$page();same($want,$text($dom->query('//li[@id="dns"]//*[@role="status"]')->item(0)),'The owner page says the same and how to retry');same(0,$dom->query('//li[@id="dns"]//*[@data-management-pending]')->length,'The unsent request does not hold the row');
+same(1,$dom->query('//li[@id="dns"]//a[@data-dialog-open]')->length,'The owner can open the DNS editor');same(1,$dom->query('//li[@id="dns"]//form')->length,'The editor form is on the page');
+$wire->writes=[];$rows=$form();$at=fn($type)=>array_search($type,array_column($rows,'type'),true);
+same('192.0.2.5',$rows[$at('A')]['address'],'The editor shows the confirmed change');$rows[$at('TXT')]['address']='v=spf1 a -all';$rows[]=['name'=>'mail','type'=>'A','address'=>'192.0.2.6','mx_pref'=>'','_source'=>''];$post($rows);$fresh=$latest();
+expect($fresh->id!==$op->id,'A fresh save replaces the unsent request');same('management_retired',$op->fresh()->safe_code,'The old request is closed');
+for($i=0;$i<3&&$fresh->fresh()->state!=='succeeded';$i++){Cache::flush();$management->run($fresh->id,$driver);}
+same('succeeded',$fresh->fresh()->state,'The fresh request completes');same(['dnsUpdateRecord','dnsAddRecord'],$wire->writes,'Only the remaining changes are sent');
 // The opt-in adapter edits standard rows in the shared editor; CAA and SRV stay read-only.
 $setup('dns-form',[$a,$txt,$caa,$srv]);
 $seed=$submit($d,$driver,'dns',['records'=>[$a,$txt,$cname]]);Cache::flush();same('succeeded',$management->run($seed->id,$driver)->state,'Synthetic seed save completes');$wire->writes=[];
@@ -24,7 +41,8 @@ same(['','A','AAAA','CNAME','MX','TXT'],array_map(fn($o)=>$o->getAttribute('valu
 same(['0','1','2'],array_map(fn($i)=>$i->getAttribute('value'),iterator_to_array($dom->query('//li[@id="dns"]//input[contains(@name,"[_source]")]'))),'Saved rows carry their place, not a provider ID');
 expect(!str_contains($html,'original')&&!str_contains($html,'opaque'),'Provider record IDs stay server-side');
 $fixed=array_map(fn($row)=>array_map($text,iterator_to_array($row->getElementsByTagName('td'))),iterator_to_array($dom->query('//li[@id="dns"]//*[@data-fixed-records]')));
-same([['@','CAA','0:issue:ca.example.com','—','Unknown','Read-only'],['_sip._tcp','SRV','5:5060:sip.example.com.','—','Unknown','Read-only']],$fixed,'Every read-only row has its type and value');
+// A complete read lists CAA last with the other DNS records, and every read-only row shows the TTL that read returned.
+same([['_sip._tcp','SRV','5:5060:sip.example.com.','—','900','Read-only'],['@','CAA','0:issue:ca.example.com','—','600','Read-only']],$fixed,'Every read-only row has its type, value and read TTL');
 $notes=array_map($text,iterator_to_array($dom->query('//li[@id="dns"]//p[@class="domains-hint"]')));
 foreach(['SRV records can’t be changed here yet, because we can’t read their priority. Saving keeps them as they are. To change one, contact support.',
     'CAA records can’t be changed here yet. Saving keeps them as they are. To change one, contact support.'] as $note){expect(in_array($note,$notes,true),'Each read-only type has its complete reason and next step');}
@@ -51,7 +69,8 @@ $staffPage()->callAction(TestAction::make('edit_dns')->schemaComponent('fact_'.m
 $op=$latest();same((int)$staff->id,(int)$op->authorized_by,'The staff save is one request');Cache::flush();$management->run($op->id,$driver);
 $progress('Request #'.$op->id.': 1 change verified.');same($caa,$by('CAA'),'Staff edits keep read-only rows');
 // Saved records stay counted when DNS is closed again, and both sides still say why and what to do.
-$driver=$ordinary;$row=$text($page()->query('//li[@id="dns"]/span[contains(@class,"domains-row__v")]')->item(0));
-expect(str_starts_with($row,'4 records')&&str_contains($row,'As of ')&&str_ends_with($row,$off),'Owner keeps the count and gets the reason and next step');same(0,$page()->query('//li[@id="dns"]//form')->length,'No records form with saved records either');
+// The confirmed save is the last records check, so the owner page gives its time once in the Checked line.
+$driver=$ordinary;$dom=$page();$row=$text($dom->query('//li[@id="dns"]/span[contains(@class,"domains-row__v")]')->item(0));$checked=$text($dom->query('//p[starts-with(normalize-space(.),"Checked ")]')->item(0));
+expect(str_starts_with($row,'4 records')&&str_starts_with($checked,'Checked ')&&str_ends_with($row,$off),'Owner keeps the count and its time and gets the reason and next step');same(0,$page()->query('//li[@id="dns"]//form')->length,'No records form with saved records either');
 $html=html_entity_decode($staffPage()->html(),ENT_QUOTES|ENT_HTML5);expect(str_contains($html,'4 records')&&str_contains($html,'As of ')&&str_contains($html,$off),'Staff keep the count and get the reason and next step');
 $nativeSuccessful=true;echo "namesilo-dns-editor-test.php passed\n";

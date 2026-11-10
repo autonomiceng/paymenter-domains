@@ -14,7 +14,8 @@ final class SyntheticSequence extends ManagementProtocol {
     public function sequences(string $action):bool {return true;}
     public function plan(ManagementRequest $r,RequestContext $c):array {
         $before=json_decode($this->read($r,$c,'snapshot',[]),true,flags:JSON_THROW_ON_ERROR);
-        return ['preimage'=>$before,'steps'=>array_map(fn($i)=>['action'=>'dns','input'=>['delta'=>$i]],$r->payload()['changes'])];
+        $changes=array_values(array_diff($r->payload()['changes'],$before)); // Like a real inventory plan, only what is still missing.
+        return ['preimage'=>$before,'steps'=>array_map(fn($i)=>['action'=>'dns','input'=>['delta'=>$i]],$changes)];
     }
     public function prepare(ManagementRequest $r,RequestContext $c):array {
         same($r->sequence()['preimage'],json_decode($this->read($r,$c,'snapshot',[]),true,flags:JSON_THROW_ON_ERROR),'Each child rechecks the retained complete preimage');return $r->payload();
@@ -115,4 +116,8 @@ same('succeeded',$steps[0]->fresh()->state,'The confirmed first change stays con
 same($spent->attempt,array_diff_key($steps[1]->fresh()->attempt,['management_terminal'=>true]),'Retirement keeps the exhausted step history');
 same([1],$replacement->policy['management']['sequence']['preimage'],'The new sequence starts from the confirmed change');
 foreach($steps as $s){$management->run($s->id,$driver);}same([1],$wire->writes,'Old steps never send again');
+same([2,3],array_column(array_column($replacement->policy['management']['sequence']['steps'],'input'),'delta'),'The new sequence holds only the remaining changes');
+for($i=0;$i<3&&$replacement->fresh()->state!=='succeeded';$i++){Cache::flush();$management->run($replacement->id,$driver);}
+same('succeeded',$replacement->fresh()->state,'The replacement completes');same([1,2,3],$wire->writes,'Only the remaining changes are sent, each once');
+same('Request #'.$replacement->id.': all 2 changes verified.',ManagementProgress::for($d)['dns']['text'],'Progress reports the replacement');
 $nativeSuccessful=true;echo "Shared durable management sequence passed\n";

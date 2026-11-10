@@ -71,17 +71,18 @@ final class DomainManagement
         $plan=null;$sequenceStamp=null;
         if ($driver->sequences($action)) {
             if ($paid || $correction!==null) { throw new \DomainException('Sequenced billing or correction unsupported.'); }
-            [$input,$sequenceStamp,$binding,$configuration,$existing]=DB::transaction(function()use($seed,$actor,$action,$payload,$nonce,$driver):array {
+            [$input,$sequenceStamp,$binding,$configuration,$existing,$confirmed]=DB::transaction(function()use($seed,$actor,$action,$payload,$nonce,$driver):array {
                 $l=HoldingLocks::take($seed,(int)$actor->id);$this->authority($l,(int)$actor->id,$action,$driver);
                 $input=$driver->validate($action,$payload,$l['domain']->domain);$key='manage:'.$seed->id.':'.$nonce;
                 $input=$driver->freeze($key,$l['domain']->domain,$action,$input,(int)$seed->id);
                 $old=$l['operations']->firstWhere('operation_key',$key);
                 if ($old && ($old->action!==$action || (int)$old->authorized_by!==(int)$actor->id
                     || ($old->policy['management']['intent']??null)!==$input)) { throw new \DomainException('Management key reused.'); }
-                return [$input,$l['stamp'],AccountBindings::binding($l['account']),ManagementSequence::configuration($l),$old];
+                return [$input,$l['stamp'],AccountBindings::binding($l['account']),ManagementSequence::configuration($l),$old,ManagementSequence::confirmed($l,$action,$input)];
             });
             if ($existing) { return $existing; }
-            $r=new ManagementRequest($binding,'manage:'.$seed->id.':'.$nonce,$seed->domain,$action,$input,$seed->provider_domain_id,domainId:(int)$seed->id);
+            $r=new ManagementRequest($binding,'manage:'.$seed->id.':'.$nonce,$seed->domain,$action,$input,$seed->provider_domain_id,domainId:(int)$seed->id,
+                sequence:$confirmed?['confirmed'=>$confirmed]:null);
             $plan=$driver->plan($r,new RequestContext($binding,RequestOrigin::Interactive,$deadline,new RequestBudget(10),$this->clock,Runtime::limiter()));
             $plan['configuration']=$configuration;
         }
@@ -343,6 +344,8 @@ final class DomainManagement
             $projection=$l['domain']->observation??[]; $sequence=($projection['management_sequence']??0)+1;
             $entry = ['sequence'=>$sequence,'operation_key' => $op->operation_key, 'generation' => $op->authority_generation, 'action' => $op->action,
                 'at' => $this->clock->now()->format(DATE_ATOM), 'correction_link' => $op->policy['management']['correction_link'] ?? null, 'confirmed' => $confirmed, 'email_accepted' => $email, 'facts' => $result->facts()];
+            // A newer saved inventory stays the record source: this older confirmed read keeps its history but ranks no higher than it.
+            if ($newer && in_array($op->action,['dns','srv','ds_add','ds_delete','glue_add','glue_update','glue_delete'],true) && ($inventory=ObservationRecords::current($l['domain']))!==null) { $entry['sequence']=min($sequence,$inventory['sequence']); }
             $refused=$result->refused&&!$confirmed&&!$email;$terminal=$refused&&$op->funding_basis==='non_billable_management';
             $history = $op->attempt['management_reads'] ?? [];
             $recovery=$op->attempt['management_recovery']??null;
@@ -362,7 +365,8 @@ final class DomainManagement
                     $projection['record_reads'][$facts['host']]=['identity'=>ObservationRecords::identity($l['domain']),...$entry];
                 }
             }
-            $projection['management_sequence']=$sequence; $l['domain']->update(['observation'=>$projection]);
+            // A read ranked below the newer inventory is not a later read, so a long history does not treat that inventory as stale.
+            $projection['management_sequence']=max($projection['management_sequence']??0,$entry['sequence']); $l['domain']->update(['observation'=>$projection]);
             if ($op->action==='dns' && $ok && $confirmed && !$newer && ManagementEvidence::resolved($op,$l['domain'])) {
                 ObservationRecords::saveDnsReadback($l['domain'],$facts,$this->clock->now(),$driver->observationCapabilities());
             }

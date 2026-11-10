@@ -59,5 +59,11 @@ $state->afterWrite=static function()use(&$op,$d,$driver,$clock,$newer):void {
 };
 same('succeeded',$management->run($op->id,$driver)->state,'The write still confirms from its own readback');
 same($newer,ObservationRecords::current($d->fresh(),$clock->now())['families']['dns']['records'],'An older write readback cannot replace newer saved DNS records');
+same($newer,\Paymenter\Extensions\Servers\Domains\Services\ObservationProjection::sections($d->fresh())['dns']['facts']['records']??null,'The DNS editor shows the newer saved records, not the older readback');
+$reads=$op->fresh()->attempt['management_reads'];same($next,end($reads)['facts']['records']??null,'The older confirmed readback stays in the request history');
+// More than 100 requests on the domain: the older readback is not a read after the saved records, so they still show.
+foreach(range(1,100) as $i){$filler=$op->fresh()->replicate();$filler->operation_key=$op->operation_key.':history:'.$i;$filler->save();}
+same($newer,\Paymenter\Extensions\Servers\Domains\Services\ObservationProjection::sections($d->fresh())['dns']['facts']['records']??null,'A long request history keeps the newer saved DNS records');
+same(ObservationRecords::current($d->fresh(),$clock->now())['sequence'],$d->fresh()->observation['management_sequence'],'The older readback does not advance past the saved records');
 
 $nativeSuccessful=true;echo "Confirmed DNS readback refreshes the customer summary.\n";

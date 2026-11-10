@@ -51,7 +51,9 @@ final class ManagedPublicTarget
     }
     private function sources(int $id,int $cursor,bool $lock): array
     {
-        $base=WatchSource::where('managed_domain_id',$id)->where('state','managed_link');
+        // Suspended hosting is never checked, so it never takes a place in the bounded cohort or its rotation.
+        $base=WatchSource::where('managed_domain_id',$id)->where('state','managed_link')
+            ->whereExists(fn($q)=>$q->selectRaw('1')->from('services')->whereColumn('services.id','domains_watch_sources.service_id')->where('services.status','active'));
         $prefix=(clone $base)->orderBy('id')->limit(101)->get();$overflow=$prefix->count()>100;
         if (!$overflow) { return [$lock?(clone $base)->orderBy('id')->limit(101)->lockForUpdate()->get():$prefix,false]; }
         $next=(clone $base)->where('id','>',$cursor)->orderBy('id')->first();$key=$next?->id??$prefix->first()->id;

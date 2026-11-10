@@ -22,8 +22,8 @@ final readonly class RenewalCompletion
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
         $capture = DB::transaction(function () use ($seed, $id, $check) {
             $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
-            if ($op) { $check->capture($op); }
             if (!$op || !$this->eligible($op) || self::capturedChargeHeld($op)) { return null; }
+            $check->capture($op);
             $financial=CapturedChargeReview::hasProof($op);
             $policy = $op->policy; $policy['renewal_execution'] = ['staff_alert' => true, 'reason' => ($op->policy['renewal_polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT ? 'poll_limit_reached' : 'original_attempt_unresolved', 'refundable_later' => false];
             if(!$financial){$op->update(['state' => $op->state === 'running' ? 'uncertain' : $op->state, 'lease_expires_at' => null, 'policy' => $policy]);}
@@ -64,13 +64,13 @@ final readonly class RenewalCompletion
         } catch (EnomTestCallLimit $error) { $check->deferred = $error->reason === 'send_guard' ? 'send_guard' : 'send_limit';
         } catch (\Throwable) {}
         if (!$financialRead && !$covered && !$autoRenewUnconfirmed && !$autoRenewConfirmed) { return Operation::findOrFail($id); }
-        return DB::transaction(function () use ($seed, $id, $stamp, $proof, $attempt, $covered, $autoRenewUnconfirmed, $autoRenewConfirmed,$financialRead) {
+        return DB::transaction(function () use ($seed, $id, $stamp, $proof, $attempt, $covered, $autoRenewUnconfirmed, $autoRenewConfirmed,$financialRead,$check) {
             $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id); $d = $l['domain'];
             if (!$op || !$this->eligible($op) || $l['stamp'] !== $stamp || ($proof && $proof['provider_domain_id'] !== $d->provider_domain_id)) { return $op; }
             try { $this->bindings->requireReadableLocked($l['server'], $l['account']); RenewalFunding::requireCurrent($op, $l, true); }
             catch (\Throwable) { return $op; }
             if($financialRead){CapturedChargeReview::retain($op,$financialRead,$proof,$this->clock);return $op;}
-            $policy = $op->policy; $policy['renewal_polls'] = ($policy['renewal_polls'] ?? 0) + ($covered ? 1 : 0);
+            $policy = $op->policy; $policy['renewal_polls'] = ($policy['renewal_polls'] ?? 0) + ($covered ? 1 : 0); $check->counted = $covered;
             if (!$proof) {
                 $policy['renewal_execution']['reason'] = $autoRenewUnconfirmed ? 'provider_auto_renew_unconfirmed'
                     : ($policy['renewal_polls'] >= OperationReconciliation::POLL_LIMIT ? 'poll_limit_reached' : 'original_attempt_unresolved');

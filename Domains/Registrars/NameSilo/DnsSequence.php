@@ -19,9 +19,7 @@ final class DnsSequence
             if ($old && !in_array($old['type'],Dns::STANDARD,true)) {
                 if ($old!==$record) { throw new \DomainException('This DNS record cannot be changed.'); } continue;
             }
-            $wire=DnsMapping::add($name,$record)->parameters();
-            $after=['name'=>$wire['rrhost']===''?'@':$wire['rrhost'],'type'=>$record['type'],'address'=>$wire['rrvalue'],
-                'mx_pref'=>$wire['rrdistance']??10,...($id===null?[]:['record_id'=>$id]),'ttl'=>$wire['rrttl']];
+            $after=self::after($name,$record,$id);
             if ($old) {
                 DnsMapping::update($name,$old,$after);
                 if ($after!==$old) { $updates[]=['kind'=>'update','before'=>$old,'after'=>$after]; }
@@ -34,6 +32,48 @@ final class DnsSequence
         $steps=[...$updates,...$deletes,...$adds];
         if (!$steps || count($steps)>50 || count($before)-count($deletes)+count($adds)>50) { throw new \DomainException('No bounded DNS changes to save.'); }
         return $steps;
+    }
+    /**
+     * A replaced identical request keeps the rows its earlier changes added. A desired row without an ID takes the ID
+     * that one earlier add confirmed, only while that exact row is still in the inventory.
+     */
+    public static function correlate(string $name,array $inventory,array $desired,array $confirmed): array
+    { return self::reuse($name,$inventory,$desired,$confirmed)[0]; }
+    /**
+     * Also returns each reused row as a carried entry, so a later identical replacement keeps it without reading back
+     * through every earlier request. A carried row is reused again only while it is unchanged in the inventory.
+     */
+    public static function reuse(string $name,array $inventory,array $desired,array $confirmed): array
+    {
+        $now=self::records($inventory);$named=[];$made=[];$kept=[];
+        foreach ($desired as $record) { if (is_array($record) && isset($record['record_id'])) { $named[$record['record_id']]=true; } }
+        foreach ($confirmed as $step) {
+            if (is_array($step['row']??null)) { $row=$step['row']; }
+            else {
+                $delta=$step['input']['delta']??null;
+                if (!is_array($delta) || ($delta['kind']??null)!=='add' || !is_array($step['before']??null) || !is_array($step['after']??null)) { continue; }
+                try { $new=array_diff_key(self::records($step['after']),self::records($step['before'])); } catch (\DomainException) { continue; }
+                if (count($new)!==1) { continue; }
+                $row=reset($new);$wanted=$delta['after'];unset($wanted['record_id']);$actual=$row;unset($actual['record_id']);
+                if ($wanted!==$actual) { continue; }
+            }
+            $id=$row['record_id']??null;$wanted=$row;unset($wanted['record_id']);
+            if (is_string($id) && ($now[$id]??null)===$row && !isset($named[$id])) { $named[$id]=true;$made[]=[$id,$wanted,$row]; }
+        }
+        foreach ($desired as $i=>$record) {
+            if (!$made || !is_array($record) || array_key_exists('record_id',$record) || !in_array($record['type']??null,Dns::STANDARD,true)) { continue; }
+            try { $after=self::after($name,$record,null); } catch (\DomainException) { continue; }
+            foreach ($made as $k=>[$id,$wanted,$row]) {
+                if ($wanted===$after) { $desired[$i]['record_id']=$id;$kept[]=['row'=>$row];unset($made[$k]);break; }
+            }
+        }
+        return [$desired,$kept];
+    }
+    private static function after(string $name,array $record,mixed $id): array
+    {
+        $wire=DnsMapping::add($name,$record)->parameters();
+        return ['name'=>$wire['rrhost']===''?'@':$wire['rrhost'],'type'=>$record['type'],'address'=>$wire['rrvalue'],
+            'mx_pref'=>$wire['rrdistance']??10,...($id===null?[]:['record_id'=>$id]),'ttl'=>$wire['rrttl']];
     }
     public static function mapping(string $name,array $delta): DnsMapping
     {

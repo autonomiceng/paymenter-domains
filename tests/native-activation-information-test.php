@@ -16,9 +16,21 @@ foreach(['register','transfer'] as $action){
     if($action==='register'){expect(!str_contains($body,'transfer')&&!str_contains($body,'auth code'),'Registration confirmation has no transfer instructions');}
     else{expect(str_contains($body,'transfer')&&str_contains($body,'auth code')&&!str_contains($body,'Registrations'),'Transfer confirmation has only transfer instructions');}
 }
-$product->email_template=(new ReflectionClass(NativeActivationInformation::class))->getConstant('PREVIOUS');
+$previous=(new ReflectionClass(NativeActivationInformation::class))->getConstant('PREVIOUS');
+// A product initialized by an earlier release still has the previous default and no upgrade record.
+$product->settings()->where('key','domains_activation_information_upgraded')->delete();
+$product->email_template=$previous;
 NativeActivationInformation::initialize($product);
 same(NativeActivationInformation::TEXT,$product->email_template,'An initialized product upgrades only the previous default');
+// Staff who then put the previous text back keep it on every later publication.
+$product->email_template=$previous;
+NativeActivationInformation::initialize($product);NativeActivationInformation::initialize($product);
+same($previous,$product->email_template,'The upgrade runs once, so a deliberate restoration stays');
+// A product first initialized now never needs the upgrade, so the previous text saved later stays too.
+$fresh=Product::create(['category_id'=>$category->id,'name'=>'Domain later','slug'=>'later']);
+NativeActivationInformation::initialize($fresh);same(NativeActivationInformation::TEXT,$fresh->email_template,'A new product starts with the current default');
+$fresh->email_template=$previous;NativeActivationInformation::initialize($fresh);
+same($previous,$fresh->email_template,'A new product keeps the previous text staff chose');
 $product->email_template='Custom registration instructions.';
 NativeActivationInformation::initialize($product);
 same('Custom registration instructions.',$product->email_template,'Staff instructions survive publication');

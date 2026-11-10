@@ -25,6 +25,7 @@ final class ManagedPublicSchema
         $t->unsignedBigInteger('revision')->default(1); $t->json('notice_preferences');
         $t->unsignedBigInteger('origin_watch_id')->nullable(); $t->json('dns_episode')->nullable();
         $t->unsignedBigInteger('edited_by')->nullable(); $t->text('reason')->nullable(); $t->timestamps();
+        TemplateAssignmentIndex::define($t,'domains_managed_public_config');
     }
     private static function observations(Blueprint $t): void
     {

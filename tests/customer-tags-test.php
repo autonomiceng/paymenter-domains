@@ -47,8 +47,8 @@ foreach(['none'=>[false,false],'Test'=>[false,true],'Demo'=>[true,false],'Demo a
         same($demo?DemoData::TOOLTIP:DemoData::TEST_TOOLTIP,$node?->getAttribute('title'),'Tooltip explains the tag: '.$case);
     }
 }
-// Shared by every request type and by test registrar accounts, so it names no operation.
-same('Registrar test environment. Nothing here is real and no money moves.',DemoData::TEST_TOOLTIP,'Test tooltip');
+// Shared by every request type and by test registrar accounts, so it names no operation. Registrar test mode never stops billing, so the tag never promises that no money moves.
+same('Registrar test environment. Nothing is real at the registrar, but invoices are still real, and paying one charges you.',DemoData::TEST_TOOLTIP,'Test tooltip');
 
 // Hosting domains: the related list tags seeded watches (domain-portal-test covers their details and hosting pages). Watches never use a registrar test mode.
 $strings=DomainSummaryStrings::all();

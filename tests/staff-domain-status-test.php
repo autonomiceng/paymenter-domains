@@ -354,14 +354,29 @@ foreach (['on_hold'=>'On hold','pending_registration'=>'Pending registration'] a
         $accounts->update(['processing_enabled'=>!$enabled]);
         $page=Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($queuedOff->domain)->filterTable('status',[$key]);
         $page->set('tableDeferredFilters',$page->get('tableFilters')); $flip($enabled); $page->call('applyTableFilters');
-        $column=$page->instance()->getTable()->getColumns()['status'];
+        $column=$page->instance()->getTable()->getColumns()['status'];$note=$page->instance()->getTable()->getColumns()['note'];
         foreach ($page->instance()->getTableRecords() as $record) {
-            if ($record->id===$queuedOff->id) { $seen[$enabled?'on':'off'][]=$key; }
+            if ($record->id===$queuedOff->id) {
+                $seen[$enabled?'on':'off'][]=$key;
+                // The step reads the same switches as the word: On hold names the Orders switch, a moving registration does not.
+                $step=(string)$note->record($record)->getState();
+                if ((str_contains($step,'Orders are off for this account.')&&str_contains($step,'Turn them on in Registrars.'))!==($label==='On hold')) { $parity[]="$key, Orders turned ".($enabled?'on':'off').": the step reads \"$step\""; }
+            }
             if (($shown=$column->record($record)->getState())!==$label) { $parity[]="$key, Orders turned ".($enabled?'on':'off').": {$record->domain} reads $shown"; }
         }
     }
 }
 same([],$parity,'Every row the domain Status filter keeps reads that status');
 ksort($seen); same(['off'=>['pending_registration'],'on'=>['on_hold']],$seen,'The list reads the switches as they were when it started');
+// Each list render reads the Orders switches once for every row's word, note and step, never once per row.
+$accounts->update(['processing_enabled'=>false]);$moreOff=[$row('registration_pending','register','queued'),$row('registration_pending','register','queued')];
+DB::enableQueryLog();DB::flushQueryLog();
+$page=Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable('w2-case-')->set('tableRecordsPerPage',100);
+$notes=$page->instance()->getTable()->getColumns()['note'];$built=$page->instance()->getTableRecords()->keyBy('id');
+foreach([$queuedOff,...$moreOff] as $d){$notes->record($built[$d->id])->getState();}
+$switches=array_values(array_filter(DB::getQueryLog(),static fn(array $q)=>str_contains($q['query'],'domains_accounts')&&str_contains($q['query'],'processing_enabled')));DB::disableQueryLog();
+$perRow=array_filter(array_column($switches,'query'),static fn(string $sql)=>!str_contains($sql,'limit '.(\Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::SNAPSHOT_LIMIT+1)));
+expect($switches!==[],'The list reads the Orders switches');
+same([],array_values($perRow),'Three queued registrations read the Orders switches from the list snapshot, never per row');
 $accounts->update(['processing_enabled'=>true]);
 $nativeSuccessful=true; echo "Staff domain status: customer words and one next step per row.\n";

@@ -66,6 +66,7 @@ final class HoldingObservationWork
     {
         if (!Schema::hasTable('domains_observation_work')) { return [0,'']; }
         return DB::transaction(function()use($d,$now,$seconds): ?array {
+            self::lockAccount((int)$d->server_id);
             self::queueInitial($d,$now);
             $job=self::current($d)->lockForUpdate()->first();
             if (!$job) { return [0,'']; }
@@ -80,8 +81,15 @@ final class HoldingObservationWork
     {
         if ($claim==='') { return true; }
         $q=DB::table('domains_observation_work')->where('id',$id)->where('claim',$claim)->where('lease_until','>',$now->getTimestamp());
-        return (DB::transactionLevel()>0?$q->lockForUpdate():$q)->exists();
+        if (DB::transactionLevel()===0) { return $q->exists(); }
+        $server=DB::table('domains_observation_work')->where('id',$id)->value('server_id');
+        if ($server===null) { return false; }
+        self::lockAccount((int)$server);
+        return $q->lockForUpdate()->exists();
     }
+    /** Server, then account, then work rows: the order scheduler discovery and its lease check use. */
+    private static function lockAccount(int $server): void
+    { \App\Models\Server::whereKey($server)->lockForUpdate()->first(); Account::where('server_id',$server)->lockForUpdate()->first(); }
     /** Releases only this manual lease; a scheduler claim taken after expiry keeps its own. */
     public static function releaseManual(int $id, string $claim): void
     { if ($claim!=='') { DB::table('domains_observation_work')->where('id',$id)->where('claim',$claim)->update(['claim'=>null,'lease_until'=>0]); } }

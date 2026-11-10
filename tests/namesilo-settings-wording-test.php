@@ -31,6 +31,10 @@ $revision=app(Paymenter\Extensions\Servers\Domains\Services\AccountBindings::cla
 foreach([
     'refused key'=>['ok','wrong-key','NameSilo refused this API key. Nothing was saved. Check the key, its account type and any IP limit set on it.'],
     'unclear reply'=>['missing_balance','synthetic-unclear-key','Registrar key could not be confirmed. Nothing was saved. Check the API details and try again.'],
+    'IP limit refusal'=>['code_113','synthetic-ip-key','NameSilo refused this API key. Nothing was saved. Check the key, its account type and any IP limit set on it.'],
+    'card profile refusal'=>['code_117','synthetic-card-key','Registrar key could not be confirmed. Nothing was saved. Check the API details and try again.'],
+    'funds refusal'=>['code_119','synthetic-funds-key','Registrar key could not be confirmed. Nothing was saved. Check the API details and try again.'],
+    'request refusal'=>['code_108','synthetic-request-key','Registrar key could not be confirmed. Nothing was saved. Check the API details and try again.'],
     'no reply'=>['throw','synthetic-silent-key','Registrar key could not be confirmed. Nothing was saved. Check the API details and try again.'],
 ] as $case=>[$mode,$key,$words]){
     $GLOBALS['enrollmentMode']=$mode;$calls=$GLOBALS['enrollmentCalls'];

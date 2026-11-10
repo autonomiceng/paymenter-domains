@@ -241,15 +241,48 @@ foreach (['on_hold'=>'On hold','in_progress'=>'In progress'] as $key=>$word) {
         $orders->update(['processing_enabled'=>!$enabled]);
         $p=Livewire::actingAs(Auth::user())->test(ListOperations::class)->filterTable('status',[$key]);
         $p->set('tableDeferredFilters',$p->get('tableFilters')); $flip($enabled); $p->call('applyTableFilters');
-        $column=$p->instance()->getTable()->getColumns()['state'];
+        $column=$p->instance()->getTable()->getColumns()['state'];$note=$p->instance()->getTable()->getColumns()['note'];
         foreach ($p->instance()->getTableRecords() as $record) {
-            if ($record->id===$queued->id) { $seen[$enabled?'on':'off'][]=$key; }
+            if ($record->id===$queued->id) {
+                $seen[$enabled?'on':'off'][]=$key;
+                // The note reads the same switches as the word: Orders off at the start, so the row says so.
+                if (str_contains((string)$note->record($record)->getState(),'Orders are off for this account.')!==($word==='On hold')) { $parity[]="$key, Orders turned ".($enabled?'on':'off').': the note reads "'.$note->record($record)->getState().'"'; }
+            }
             if (($shown=$column->record($record)->formatState($column->getState()))!==$word) { $parity[]="$key, Orders turned ".($enabled?'on':'off').": request #{$record->id} reads $shown"; }
         }
     }
 }
 same([],$parity,'Every row the request Status filter keeps reads that status');
 ksort($seen); same(['off'=>['in_progress'],'on'=>['on_hold']],$seen,'The list reads the switches as they were when it started');
+// Glyph widths and the table width decide where a note is cut, so every nonempty note keeps its full text in a tooltip.
+$list=Livewire::actingAs(Auth::user())->test(ListOperations::class)->set('tableRecordsPerPage',100);$noteColumn=$list->instance()->getTable()->getColumns()['note'];$cell=null;
+foreach ($list->instance()->getTableRecords() as $record) {
+    $cell=$noteColumn->record($record);$text=trim(html_entity_decode(strip_tags((string)$cell->getState())));
+    if ($text==='') { same(null,$cell->getTooltip($cell->getState()),'An empty note has no tooltip');continue; }
+    // The table passes each item's state, as here.
+    expect(str_starts_with((string)$cell->getTooltip($cell->getState()),$text),'The note tooltip has the full note: '.$text);
+}
+expect($cell!==null,'The list has a note');
+// Twenty wide letters fill more of a tight column than many longer notes, so a short note keeps its tooltip too.
+$wide='WWWWWWWWWW MMMMMMMMMM';same($wide,$cell->getTooltip($wide),'A short wide note has its full text in the tooltip');
+// Many accounts with Orders off: the Status filter's statement stays the same size, however many there are.
+$orders->update(['processing_enabled'=>false]);
+$statement=static function(array $keys) use ($filter): array {
+    DB::enableQueryLog(); DB::flushQueryLog(); $page=$filter('status',$keys); $log=DB::getQueryLog(); DB::disableQueryLog();
+    $log=array_filter($log,static fn(array $q)=>str_contains($q['query'],'domains_operations'));
+    return [$page,max(array_map(static fn(array $q)=>count($q['bindings']),$log)),max(array_map(static fn(array $q)=>strlen($q['query']),$log))];
+};
+[,$fewBindings,$fewBytes]=$statement(['under_review','on_hold']);
+for($n=0;$n<60;$n++){App\Models\Server::forceCreate(['id'=>500+$n,'name'=>'Paused registrar','extension'=>'Domains','type'=>'server','enabled'=>true]);
+    Paymenter\Extensions\Servers\Domains\Models\Account::withVerifiedBindingWrite(static fn()=>Paymenter\Extensions\Servers\Domains\Models\Account::create(['server_id'=>500+$n,'registrar_key'=>'enom','environment'=>'test','stable_identity'=>'PAUSED-ACCOUNT-'.$n]));}
+DB::table('domains_accounts')->where('server_id','>=',500)->update(['processing_enabled'=>false]);
+[$page,$manyBindings,$manyBytes]=$statement(['under_review','on_hold']);
+expect($manyBindings<=$fewBindings&&$manyBytes<=$fewBytes+200,"61 paused accounts keep the statement bounded: $fewBindings/$fewBytes then $manyBindings/$manyBytes");
+same(null,Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::ordersOffAccounts(),'Past the limit the list reads the switches live');
+$page->assertCanSeeTableRecords([$queued]);
+same('On hold',$page->instance()->getTable()->getColumns()['state']->record($queued->fresh())->formatState($page->instance()->getTable()->getColumns()['state']->getState()),'The row still reads its status');
+$filter('status',['in_progress'])->assertCanNotSeeTableRecords([$queued]);
+DB::table('domains_accounts')->where('server_id','>=',500)->delete(); App\Models\Server::where('id','>=',500)->delete();
 $orders->update(['processing_enabled'=>true]);
 DB::table('domains_operations')->where('id',$queued->id)->update(['action'=>$heldOp->action]);
 // Held for setup reads Action required, as its domain does, with the next step it already shows.

@@ -146,13 +146,17 @@ final class RequestFacts
         return $out;
     }
     /** Nothing retries while Orders are off, so that is the one line to show, on every page. A send in doubt still comes first. */
-    private static function heldByOrders(?string $reason, ?Account $account): bool
-    { return $account&&!$account->processing_enabled&&$reason!=='pre_send_interrupted'; }
+    private static function heldByOrders(?string $reason, Operation $op, ?Account $account, ?array $accounts=null): bool
+    { return $account&&!self::ordersOn($op,$account,$accounts)&&$reason!=='pre_send_interrupted'; }
+    /** Orders are on for the request's account. A list passes its OperationQueries::ordersOffAccounts() snapshot, so the note
+     * and step it builds agree with the word and Status filter that read the same snapshot. */
+    private static function ordersOn(Operation $op, ?Account $account, ?array $accounts): bool
+    { return $account!==null&&(OperationQueries::snapshot($accounts)?!OperationQueries::ordersOff($op,$accounts):(bool)$account->processing_enabled); }
     /** The one reason for a request, on every page: for a request stopped here what is true now, else the saved reason.
      * Lists call this per row, so they pass $ordersOff: a queued row is only stopped while Orders are off, and held rows are rare. */
-    public static function reason(Operation $op, bool $ordersOff=true, ?StaffGrants $grants=null): ?string
+    public static function reason(Operation $op, bool $ordersOff=true, ?StaffGrants $grants=null, ?array $accounts=null): ?string
     {
-        try { return ($op->state==='held'||$op->state==='queued'&&$ordersOff?self::readyMessage($op):null)??Labels::requestStatus($op,grants:$grants)['reason']; }
+        try { return ($op->state==='held'||$op->state==='queued'&&$ordersOff?self::readyMessage($op,$accounts):null)??Labels::requestStatus($op,grants:$grants)['reason']; }
         catch (\Throwable) { return Labels::requestStatus($op,grants:$grants)['reason']; }
     }
     /** A request's status, in the customer's words. Orders off stop all queued work, so a queued request whose account has them off is held
@@ -172,20 +176,21 @@ final class RequestFacts
     {
         $d??=$op->relationLoaded('domain')?$op->domain:null;
         $off=$ordersOff&&$op->state==='queued'&&OperationQueries::ordersOff($op,$accounts);
-        $status=[...Labels::requestStatus($op,$off,$grants),'reason'=>self::reason($op,$ordersOff,$grants)];
+        $status=[...Labels::requestStatus($op,$off,$grants),'reason'=>self::reason($op,$ordersOff,$grants,$accounts)];
         try { $key=$d?ManagementProgress::statusKey($op,$d,$off):null; } catch (\Throwable) { $key=null; }
         if ($key!==null) { [$status['label'],$status['tone']]=RequestStatus::SET[$key]; }
         return self::heldAcquisition($op,$off) ? [...$status,'label'=>'On hold','tone'=>'warning'] : $status;
     }
-    /** Local readiness shared by request pages and domain lists. It never releases a hold. */
-    public static function readyMessage(Operation $op): ?string
+    /** Local readiness shared by request pages and domain lists. It never releases a hold.
+     * $accounts: a list's OperationQueries::ordersOffAccounts() snapshot, read for the Orders switch instead of the account now. */
+    public static function readyMessage(Operation $op, ?array $accounts=null): ?string
     {
         if (ManagementEvidence::recoverable($op)) {
-            return self::account($op)['account']?->processing_enabled?'Not sent. It will retry automatically.':'Not sent. '.self::ORDERS_OFF;
+            return self::ordersOn($op,self::account($op)['account'],$accounts)?'Not sent. It will retry automatically.':'Not sent. '.self::ORDERS_OFF;
         }
         if (BalanceRetries::pending($op)) {
-            $reason=OperationClaims::balanceAdmissionReason($op);$account=self::account($op)['account'];
-            if(self::heldByOrders($reason,$account)){return 'Not sent. '.self::ORDERS_OFF;}
+            $reason=OperationClaims::balanceAdmissionReason($op);
+            if(self::heldByOrders($reason,$op,self::account($op)['account'],$accounts)){return 'Not sent. '.self::ORDERS_OFF;}
             if($reason){return rtrim(Labels::reason($reason,$op->funding_basis==='complimentary'),'.').'.';}
             if(in_array($op->safe_code,BalanceRetries::READ_CODES,true)){return Labels::reason($op->safe_code).'. It will retry automatically.';}
             if(BalanceRetries::legacyHold($op)){return Labels::operationReason($op).'.';}
@@ -194,14 +199,14 @@ final class RequestFacts
                 ?BalanceRetries::MESSAGE:'Not sent. It will retry automatically.';
         }
         if ($op->state!=='queued' && !($op->state==='held' && in_array($op->safe_code,['processing','usd_balance_required','enom_test_transfer_usd_balance_required'],true))) { return null; }
-        $account=self::account($op)['account'];
+        $account=self::account($op)['account'];$on=self::ordersOn($op,$account,$accounts);
         // Orders off held this and they are on now, so that is no longer the reason.
-        $ordersBack=$op->state==='held'&&$op->safe_code==='processing'&&$account?->processing_enabled;
+        $ordersBack=$op->state==='held'&&$op->safe_code==='processing'&&$on;
         $owes=OperationActions::customerOwes($op);
         if (!$account || $owes!==null) { return $ordersBack?($owes==='payment'?'Not sent. Customer has not paid the invoice.':'Not sent. Customer has not added the auth code.'):null; }
         if ($ordersBack && OperationClaims::ordersOffReturns($op)) { return 'Not sent. It will retry automatically.'; }
         // Orders off stops all queued work (RuntimeWork), for any request and whether or not it could send once they are on.
-        $stopped=$op->state==='queued'&&!$account->processing_enabled?'Not sent. '.self::ORDERS_OFF:($ordersBack?'Not sent. This hold can’t be released. Cancel and refund it.':null);
+        $stopped=$op->state==='queued'&&!$on?'Not sent. '.self::ORDERS_OFF:($ordersBack?'Not sent. This hold can’t be released. Cancel and refund it.':null);
         if(ManagementEvidence::retryable($op)){return $stopped??'This change has already started and cannot be put on hold. It will retry automatically.';}
         $review=clone $op;
         if ($review->state==='queued') { $review->state='held';$review->safe_code=OperationClaims::balanceRefusalRetryable($op)?'registrar_balance_insufficient':'staff_review_required'; }
@@ -210,7 +215,7 @@ final class RequestFacts
             if (($op->registrar_key==='enom'&&EnomTestRegistration::localHoldReason(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account),$op)!==null)
                 || !\Paymenter\Extensions\Servers\Domains\Services\AcquisitionSetup::ready($op)) { return $stopped; }
         } catch (\Throwable) { return $stopped; }
-        if (!$account->processing_enabled) { return 'Ready to send. '.self::ORDERS_OFF; }
+        if (!$on) { return 'Ready to send. '.self::ORDERS_OFF; }
         return $op->state==='held' ? 'Ready to send. Release the hold.' : null;
     }
     /** When a timed retry runs next. Nothing once it is due: the next tick takes it. */
@@ -285,7 +290,8 @@ final class RequestFacts
             $parts=array_values(array_filter([$said?null:$facts['outcome'],$step['title']??null,$step['body']??null,$cause,$facts['auto_renew']??PaidUncertainty::holdSummary($op)]));
             if($said&&$step===null&&$cause===null){array_unshift($parts,self::CHECK_STATUS);}
             return ['title'=>array_shift($parts),'body'=>$parts===[]?null:implode(' ',$parts),'tone'=>'warning',...(($step['answer']??false)?['primary'=>'enom_answer']:[]),
-                'action'=>$recover?HistoryRecovery::NAME:($tooOld?null:(OperationActions::readLimit($op)&&in_array($op->action,['register','transfer','renew'],true)?'resume_reads':'recheck'))];
+                // Too old for history, but the first read of this attempt still comes before asking Enom.
+                'action'=>$recover?HistoryRecovery::NAME:($tooOld&&(RegistrarCheck::status($op)['outcome']??null)!=='not_checked'?null:(OperationActions::readLimit($op)&&in_array($op->action,['register','transfer','renew'],true)?'resume_reads':'recheck'))];
         }
         if ($op->state==='queued' && ($ready=self::readyMessage($op))!==null) {
             $ordersLink=!ManagementEvidence::retryable($op)||!self::account($op)['account']?->processing_enabled;
@@ -295,7 +301,7 @@ final class RequestFacts
         if ($op->state==='held'&&$op->safe_code==='management_unconfirmed'&&ManagementEvidence::idle($op)) { return self::unsent($op); }
         $review=BalanceRetries::pending($op)?OperationClaims::balanceAdmissionReason($op)
             :(in_array($op->safe_code,BalanceRetries::REVIEW_CODES,true)?$op->safe_code:null);
-        if(BalanceRetries::pending($op)&&self::heldByOrders($review,self::account($op)['account'])){$review=null;}
+        if(BalanceRetries::pending($op)&&self::heldByOrders($review,$op,self::account($op)['account'])){$review=null;}
         if($op->state==='held'&&$review==='pre_send_interrupted'){return ['title'=>rtrim(Labels::reason($review),'.').'.','body'=>'Check status before retrying or cancelling this request.','tone'=>'warning','action'=>'recheck'];}
         if($op->state==='held'&&$review!==null){
             $payment=$review==='balance_retry_funding_changed';

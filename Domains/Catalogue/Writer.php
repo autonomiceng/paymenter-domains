@@ -199,7 +199,7 @@ final class Writer implements Catalogue
             $accepted = $refused = [];
             foreach ($entries as $i => [$command, $expected]) {
                 $t = Tld::where('server_id', $command->binding()->serverId)->where('tld', $command->tld())->sole();
-                $d = OfferState::decode(Account::where('server_id', $t->server_id)->sole()->catalogue_defaults);
+                $d = $this->defaults($command, $t);
                 OfferState::revision($t, $d, DB::table('domains_sales_policies')->where('tld', $t->tld)->first())->requireMatch($expected);
                 $reason = $this->intentRefusal($command, $t, $d);
                 if ($command->kind === 'override' && in_array('renew', $command->intent->stops, true)
@@ -214,7 +214,7 @@ final class Writer implements Catalogue
             foreach ($entries as $i => [$command, $expected]) {
                 if (!isset($accepted[$i])) { continue; }
                 $t = Tld::where('server_id', $command->binding()->serverId)->where('tld', $command->tld())->sole();
-                $d = OfferState::decode(Account::where('server_id', $t->server_id)->sole()->catalogue_defaults);
+                $d = $this->defaults($command, $t);
                 $policy = DB::table('domains_sales_policies')->where('tld', $t->tld)->first();
                 $current = OfferState::revision($t, $d, $policy);
                 if ($command->kind === 'defaults') {
@@ -222,7 +222,8 @@ final class Writer implements Catalogue
                     $newDefaults['maxAnnualCost'] = PricingRule::wholesale($newDefaults['maxAnnualCost']);
                     // Saved defaults that can't be read always differ from the valid ones replacing them.
                     try {
-                        $oldDefaults = get_object_vars(new Intent(...array_intersect_key($d, get_object_vars(new Intent))));
+                        $saved = OfferState::decode(Account::where('server_id', $t->server_id)->sole()->catalogue_defaults);
+                        $oldDefaults = get_object_vars(new Intent(...array_intersect_key($saved, get_object_vars(new Intent))));
                         $oldDefaults['maxAnnualCost'] = PricingRule::wholesale($oldDefaults['maxAnnualCost']);
                         $defaultsChanged = !OfferState::equivalent($oldDefaults, $newDefaults);
                     } catch (\Throwable) { $defaultsChanged = true; }
@@ -252,6 +253,13 @@ final class Writer implements Catalogue
             $review->record('completed', ['rows' => array_keys($results), 'failures' => $refused]);
             return ['rows' => $results, 'failures' => $refused];
         });
+    }
+
+    /** A defaults save replaces defaults that can't be read; every other command still needs them readable. */
+    private function defaults(Edit $command, Tld $t): array
+    {
+        $raw = Account::where('server_id', $t->server_id)->sole()->catalogue_defaults;
+        return $command->kind === 'defaults' ? OfferState::replaceableDefaults($raw, (int) $t->server_id) : OfferState::decode($raw);
     }
 
     /** Staff may record pending intent; the evaluator still requires independent evidence before selling. */
@@ -326,7 +334,8 @@ final class Writer implements Catalogue
             $offers = Tld::where('tld', $name)->whereIn('server_id', $ids)->select('*')->selectRaw('CAST(catalogue_retained_annual_retail AS CHAR) AS catalogue_retained_annual_retail')->orderBy('id')->lockForUpdate()->get();
             $rows = OfferState::query('domains_prices')->whereIn('server_id', $ids)->where('tld', $name)->orderBy('id')->lockForUpdate()->get();
             $target = $offers->firstWhere('server_id', $binding->serverId) ?? throw new \DomainException('Offer disappeared.');
-            $defaults = OfferState::decode($accounts[$binding->serverId]->catalogue_defaults);
+            $defaults = $defaultsEdit ? OfferState::replaceableDefaults($accounts[$binding->serverId]->catalogue_defaults, $binding->serverId)
+                : OfferState::decode($accounts[$binding->serverId]->catalogue_defaults);
             $revision = OfferState::revision($target, $defaults, $policy); $revision->requireMatch($expectedRevision);
             foreach ($offers as $offer) {
                 $account = $accounts[$offer->server_id]; $server = $servers[$offer->server_id];

@@ -13,11 +13,15 @@ final class WatchDnsRefresh
     public const PENDING='enrollment_refresh';
     public const DEFAULT='default';
     public static function scope(?int $profile): string { return $profile===null?self::DEFAULT:'profile:'.$profile; }
-    /** @param array<string,string> $keys scope => effective template id and revision */
-    public static function request(array $keys): void
+    /**
+     * @param callable():array<string,string> $read scope => effective template id and revision. It runs in this
+     * transaction with locking reads before the request row lock, so a delayed older callback reads the current
+     * revision and never queues a key a newer request already started.
+     */
+    public static function request(callable $read): void
     {
-        if(!$keys){return;}
-        DB::transaction(static function()use($keys):void {
+        DB::transaction(static function()use($read):void {
+            $keys=$read();if(!$keys){return;}
             DB::table('domains_watch_schedule')->insertOrIgnore(['scope'=>self::PENDING]);
             $q=DB::table('domains_watch_schedule')->where('scope',self::PENDING);$row=$q->lockForUpdate()->first();
             $pending=self::decode($row->data)['pending']??[];$pending=is_array($pending)?$pending:[];

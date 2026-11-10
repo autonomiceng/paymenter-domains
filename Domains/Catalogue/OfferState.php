@@ -33,6 +33,27 @@ final class OfferState
         if (is_array($value)) { return $value; }
         return $value === null ? [] : json_decode($value, true, 32, JSON_THROW_ON_ERROR);
     }
+    /** Account defaults as a defaults save sees them. The save replaces them whole, so defaults that can't be decoded
+     * read as empty, and a bad revision keeps only the readable defaults beside it, above all the cost limit.
+     * The revision then moves past every saved publication of the account, so none reads as current. */
+    public static function replaceableDefaults(mixed $value, int $server): array
+    {
+        try { $defaults = self::decode($value); if (is_int($defaults['_revision'] ?? 0)) { return $defaults; } }
+        catch (\JsonException|\TypeError) { $defaults = []; }
+        $readable = array_filter([
+            'defaultSell' => is_bool($defaults['defaultSell'] ?? null),
+            'defaultLongest' => is_int($defaults['defaultLongest'] ?? null) && $defaults['defaultLongest'] >= 1 && $defaults['defaultLongest'] <= 10,
+            'defaultTransfers' => is_bool($defaults['defaultTransfers'] ?? null),
+            'maxAnnualCost' => array_key_exists('maxAnnualCost', $defaults)
+                && ($defaults['maxAnnualCost'] === null || PricingRule::wholesale($defaults['maxAnnualCost']) !== null),
+        ]);
+        $revision = 0;
+        foreach (\Illuminate\Support\Facades\DB::table('domains_tlds')->where('server_id', $server)->whereNotNull('catalogue_published_revision')->pluck('catalogue_published_revision') as $marker) {
+            try { $saved = self::decode($marker); } catch (\JsonException|\TypeError) { continue; }
+            if (is_int($saved['defaults'] ?? null)) { $revision = max($revision, $saved['defaults']); }
+        }
+        return [...array_intersect_key($defaults, $readable), '_revision' => $revision];
+    }
     public static function money(mixed $value, int $scale): ?string
     {
         if (!is_string($value) && !is_int($value)) { return null; }
@@ -103,6 +124,16 @@ final class OfferState
         foreach ($saved as $value) { if (!is_int($value) || $value < 0) { return false; } }
         return $saved['retailRule'] === Retail::VERSION;
     }
+    /** The saved publication, or null when there is none or it can't be read. Null reads as publication pending,
+     * so a bad marker never counts as current. A marker without retailRule predates retail versions. */
+    private static function published(mixed $marker): ?Revision
+    {
+        try { $saved = self::decode($marker); } catch (\JsonException|\TypeError) { return null; }
+        $keys = array_keys($saved); sort($keys);
+        if (!in_array($keys, [['defaults', 'offer', 'selection'], ['defaults', 'offer', 'retailRule', 'selection']], true)) { return null; }
+        foreach ($saved as $value) { if (!is_int($value) || $value < 0) { return null; } }
+        return new Revision($saved['offer'], $saved['defaults'], $saved['selection'], $saved['retailRule'] ?? 0);
+    }
     public static function revision(object $tld, array $defaults, ?object $policy): Revision
     { return new Revision((int) $tld->catalogue_revision, $defaults['_revision'] ?? 0, (int) ($policy?->revision ?? 0)); }
     public static function intent(object $tld,array $defaults):Intent
@@ -126,11 +157,7 @@ final class OfferState
             if ($p->retail !== null) { $retail[$c->key()] = OfferState::money($p->retail, 2) ?? throw new \DomainException('Invalid published retail.'); }
         }
         $revision = self::revision($tld, $defaults, $policy);
-        $published = null;
-        if (!$publishing && $tld->catalogue_published_revision !== null) {
-            $saved = self::decode($tld->catalogue_published_revision);
-            $published = new Revision(...[...$saved, 'retailRule' => $saved['retailRule'] ?? 0]);
-        }
+        $published = $publishing ? null : self::published($tld->catalogue_published_revision);
         $selected = $policy && (int) $policy->server_id === $binding->serverId
             && $policy->registrar_key === $binding->registrarKey && $policy->account_fingerprint === $binding->fingerprint;
         $actions = [];

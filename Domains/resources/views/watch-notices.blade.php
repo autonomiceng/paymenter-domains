@@ -13,7 +13,7 @@
 @endphp
 <nav class="domains-crumb" aria-label="Breadcrumb"><a href="{{ route('domains.domains.index') }}">Domains</a> / {{ $name }}</nav>
 <div class="domains-ph"><h1 class="domains-mono">{{ $name }}{{ \Paymenter\Extensions\Servers\Domains\Support\DemoData::label($summary->demo, $summary->testEnvironment) }}</h1>@if ($pill = \Paymenter\Extensions\Servers\Domains\Presentation\StatusPill::summary($summary))<span class="domains-pill">@include('domains::partials.status-pill', ['pill' => $notice ? [...$pill, 'reason' => null] : $pill])@include('domains::partials.help', ['id' => 'status', 'label' => 'Status', 'helpText' => 'We check the public registry and nameservers daily.'])</span>@endif
-@if ($summary->relatedServices)<p class="domains-ph__sub">Hosting: <a class="domains-a" href="{{ $summary->relatedServices[0]['url'] }}">{{ $summary->relatedServices[0]['label'] }}</a>@if (($more = count($summary->relatedServices) - 1 + $summary->relatedOverflow) > 0) and {{ $more }} more @endif</p>@endif</div>
+@if ($summary->relatedServices)<p class="domains-ph__sub">Hosting: <a class="domains-a" href="{{ $summary->relatedServices[0]['url'] }}">{{ $summary->relatedServices[0]['label'] }}</a>@if (($more = \Paymenter\Extensions\Servers\Domains\Presentation\DomainListRow::moreHosting($summary)) > 0) and {{ $more }} more @endif</p>@endif</div>
 @if (session('watch_saved'))<div class="domains-notice domains-notice--ok" role="status"><span class="domains-notice__tx">{{ session('watch_saved') }}</span></div>@endif
 @error('preferences')<div class="domains-notice domains-notice--bad" role="alert"><span class="domains-notice__tx">{{ $message }}</span></div>@enderror
 @if ($notice)

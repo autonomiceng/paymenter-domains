@@ -169,10 +169,13 @@ final class SiteDnsDefault
         if(!$watch&&!$managed){return;}
         if($managed){ManagedPublicReconciliation::restart();}
         if($watch){
-            $keys=[];$p=$profileId===null?null:WatchProfile::find($profileId);$d=$inherited?self::profile():null;
-            if($profileId!==null){$keys[WatchDnsRefresh::scope($profileId)]=$p?$p->id.':'.$p->revision:'missing';}
-            if($inherited){$keys[WatchDnsRefresh::DEFAULT]=$d?$d->id.':'.$d->revision:'none';}
-            WatchDnsRefresh::request($keys);
+            // Settings, then templates, as the default save locks them.
+            WatchDnsRefresh::request(static function()use($profileId,$inherited):array {
+                $keys=[];$d=$inherited?self::profile(true):null;
+                if($inherited){$keys[WatchDnsRefresh::DEFAULT]=$d?$d->id.':'.$d->revision:'none';}
+                if($profileId!==null){$p=WatchProfile::whereKey($profileId)->lockForUpdate()->first();$keys[WatchDnsRefresh::scope($profileId)]=$p?$p->id.':'.$p->revision:'missing';}
+                return $keys;
+            });
         }
         DB::afterCommit(static fn()=>app(WatchWork::class)->reconcileDefaults($managed,$watch));
     }

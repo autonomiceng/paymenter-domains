@@ -64,6 +64,22 @@ SiteDnsDefault::reconcile();
 same($ticket->claim,$claim(),'A repeated refresh of the same default keeps the check that began after the first');
 DB::transaction(fn()=>$selected->update(['revision'=>$selected->revision+1,'nameservers'=>['ns1.distinct.test','ns2.distinct.test'],'edited_by'=>$owner->id,'reason'=>'Distinct edit']));
 same(null,$claim(),'A distinct template revision still refreshes the inherited watch');
+// A delayed older callback reads the template under the request lock. A newer edit that lands during that read waits
+// for the lock, so the older callback never queues its revision after the newer one started a check.
+$newer=null;$delayed=true;
+DB::listen(static function($query)use(&$delayed,&$newer,$selected,$owner,$checks,$watch,$now):void {
+    if(!$delayed || !str_starts_with($query->sql,'select * from "domains_watch_profiles"')){return;}
+    $delayed=false;
+    $edit=static function()use(&$newer,$selected,$owner,$checks,$watch,$now):void {
+        DB::transaction(fn()=>$selected->update(['revision'=>$selected->revision+1,'nameservers'=>['ns1.newer.test','ns2.newer.test'],'edited_by'=>$owner->id,'reason'=>'Newer edit']));
+        $newer=$checks->begin($watch->id,$owner->id,'delegation',$now);
+    };
+    DB::transactionLevel()>0?DB::afterCommit($edit):$edit();
+});
+SiteDnsDefault::reconcile();
+expect(!$delayed && $newer!==null,'The newer revision began its check while the older callback ran');
+same($newer->claim,$claim(),'A delayed older callback keeps the check the newer revision began');
+same(null,DB::table('domains_watch_schedule')->where('scope','enrollment_refresh')->value('data'),'A delayed older callback queues no stale revision');
 // A reassignment after the page read decides with the new template, so the older refresh keeps its check.
 app()->instance(WatchWork::class,$quiet);$hold();
 DB::transaction(fn()=>$selected->update(['revision'=>$selected->revision+1,'nameservers'=>['ns1.moved.test','ns2.moved.test'],'edited_by'=>$owner->id,'reason'=>'Edit before the reassignment']));
@@ -88,6 +104,33 @@ $schedule=DB::table('domains_watch_schedule')->where('scope','enrollment');$sche
 $work->reconcileDefaults();$cursor=(int)(clone $schedule)->value('cursor');expect($cursor>0,'Native enrollment advances its first full batch from null data');
 $work->reconcileDefaults();same(0,(int)(clone $schedule)->value('cursor'),'Native enrollment advances from saved JSON text to the final watch and completes the sweep');
 same([],$reader->calls,'Enrollment cursor proof sends no DNS requests');
+// A template refresh keeps its consumed progress across pages, and a template edited between pages gets real work.
+$template=static fn(string $name)=>DB::transaction(fn()=>WatchProfile::create(['name'=>$name,'enabled'=>true,'nameservers'=>['ns1.'.$name.'.test','ns2.'.$name.'.test'],
+    'website_endpoints'=>[],'email_endpoints'=>[],'edited_by'=>$owner->id,'reason'=>'Paged refresh']));
+$assigned=static function(string $name,WatchProfile $p)use($owner,$now):int {
+    $w=DB::transaction(fn()=>WatchName::create(['user_id'=>$owner->id,'canonical_name'=>$name,'psl_revision'=>str_repeat('a',64),'state'=>'active',
+        'ns_profile_id'=>$p->id,'profile_revision'=>$p->revision,'expected_dns'=>'platform','notice_preferences'=>[]]))->fresh();
+    foreach(['delegation','points'] as $kind){DB::table('domains_watch_work')->insert(['watch_id'=>$w->id,'kind'=>$kind,'due_at'=>$now+3600,
+        'backoff_until'=>$now+3600,'watch_revision'=>(int)$w->revision,'attempts'=>3,'cursor'=>0]);}
+    return (int)$w->id;
+};
+$pagedP=$template('paged-p');$pagedQ=$template('paged-q');$pIds=[];
+for($i=1;$i<=30;$i++){$pIds[]=$assigned('paged-'.$i.'.com',$pagedP);}
+$qId=$assigned('paged-q.com',$pagedQ);$all=[...$pIds,$qId];
+$due=static fn()=>DB::table('domains_watch_work')->whereIn('watch_id',$all)->where('kind','delegation')->where('due_at',$now)->orderBy('watch_id')->pluck('watch_id')->map(fn($id)=>(int)$id)->all();
+$holdPaged=static fn()=>DB::table('domains_watch_work')->whereIn('watch_id',$all)->update(['due_at'=>$now+3600]);
+$schedule->update(['cursor'=>$pIds[0]-1,'data'=>null]);
+DB::transaction(fn()=>$pagedP->update(['revision'=>$pagedP->revision+1,'nameservers'=>['ns1.paged-p2.test','ns2.paged-p2.test'],'edited_by'=>$owner->id,'reason'=>'Paged edit']));
+same([],$due(),'A template edit waits for the next batch');
+$work->reconcileDefaults();
+same(array_slice($pIds,0,25),$due(),'The first page refreshes only the first 25 watches of the edited template');
+$holdPaged();
+DB::transaction(fn()=>$pagedQ->update(['revision'=>$pagedQ->revision+1,'nameservers'=>['ns1.paged-q2.test','ns2.paged-q2.test'],'edited_by'=>$owner->id,'reason'=>'Edit between pages']));
+$work->reconcileDefaults();
+same([...array_slice($pIds,25),$qId],$due(),'The next page finishes the first template and refreshes the joined template without repeating the first page');
+$holdPaged();
+$work->reconcileDefaults();$work->reconcileDefaults();
+same([],$due(),'The wrapped pass stops at each refresh start and repeats no finished watch');
 // Without eligible managed holdings a site-wide refresh starts no managed sweep.
 PublicDnsQuota::seed($now);DB::table(PublicDnsQuota::TABLE)->where('id',1)->update(['sweep_due_at'=>$now+86400,'sweep_cursor'=>7]);
 SiteDnsDefault::reconcile();

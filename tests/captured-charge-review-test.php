@@ -165,4 +165,27 @@ config(['domains.enom_identity.environment'=>null]);[$seed,$d,$b]=$makeRenewal(p
 $comp=$cycles->complimentary($d->id,$staff,2,new Money('16.00','USD'),'staff_reviewed');$clock->instant=new DateTimeImmutable('2027-10-18T11:59:00Z');config(['domains.enom_identity.environment'=>'test']);Cache::flush();
 config(['domains.enom_identity.environment'=>'test']);[$engine,$writer,$completion]=$compose($b);$state->years=2;$state->after='2029-10-18';$state->charge='16.00';same('pending',$engine->run($comp->id,$writer)->state,'Complimentary exact two-year send');$state->expiry='2029-10-18';
 same(['succeeded','2029-10-18','0.00'],[$completion->run($comp->id)->state,$d->fresh()->provider_expires_at->format('Y-m-d'),$comp->amount],'Exact complimentary charge completes without the approval action');
+// A lost renewal reply whose order history becomes readable during the read counts that read once.
+app()->instance(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class,$bindings);config(['domains.enom_identity.environment'=>null]);
+[$lagged,$d,$b]=$makeRenewal(placeholderComFixtureName('history-lag-renewal-placeholder.com'));
+config(['domains.enom_identity.environment'=>'test']);[$engine,$writer,$completion]=$compose($b);$clock->instant=new DateTimeImmutable('2027-10-18T11:59:00Z');
+$state->lost=true;same('uncertain',$engine->run($lagged->id,$writer)->state,'Lost one-year renewal reply');$state->lost=false;$state->after='2027-10-18';$state->calls=[];
+HistoryAcceptances::save(new HistoryAcceptance($b,'America/Los_Angeles',600,9*86400,'enom_renewal_v1'));
+app()->instance(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class,$renewBindings);
+$ready=\Paymenter\Extensions\Servers\Domains\Services\ReconciliationEvidence::attempt($lagged->fresh(),$d->fresh(),$b)->windowEnd->modify('+600 seconds');
+$clock->instant=$ready->modify('-5 seconds');$state->during=static function()use($clock,$ready):void{$clock->instant=$ready;};
+$completion->run($lagged->id);$state->during=null;
+expect(in_array(\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Orders,$state->calls,true),'The renewal read reaches the order history');
+same(['uncertain',1],[$lagged->fresh()->state,$lagged->fresh()->policy['renewal_polls']??0],'A renewal read covered by history during the read counts once');
+// A late renewal check that finds the request already complete leaves the saved result alone.
+$armed=true;
+DB::listen(static function($query)use(&$armed,$lagged):void{
+    if(!$armed||!str_contains($query->sql,'domains_operations')){return;}
+    // Another check completes the renewal after this one passed its first eligibility check.
+    $armed=false;$row=\Paymenter\Extensions\Servers\Domains\Models\Operation::find($lagged->id);
+    $row->forceFill(['state'=>'succeeded','policy'=>[...$row->policy,'status_check'=>['outcome'=>'checked','at'=>1]]])->saveQuietly();
+});
+$completion->run($lagged->id);
+same(['succeeded','checked'],[$lagged->fresh()->state,$lagged->fresh()->policy['status_check']['outcome']],'A late renewal check keeps the completed result');
+DB::transaction(fn()=>HistoryAcceptances::revokeLocked($b,Action::Renew));
 echo "Native captured-charge observation and audited approval passed\n";$nativeSuccessful=true;

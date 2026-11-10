@@ -59,6 +59,17 @@ same(array_slice($expected,50,25),array_map(static fn($row)=>(int)$row->id,$page
 echo json_encode(['members'=>count($expected),'membership_bytes'=>$bytes])."\n";
 expect(count($expected)>800&&$bytes<1024,'Membership adds under 1 KiB to the page statement for '.count($expected).' members, got '.$bytes.' bytes');
 foreach($intents as $id=>$intent){DB::table('domains_tlds')->where('id',$id)->update(['catalogue_intent'=>$intent]);}
+// Sparse ids: the membership grows with the members, never with the span between their ids.
+$moved=[];
+foreach([1000,1001,1499] as $i=>$step){$id=(int)DB::table('domains_tlds')->where('server_id',$b->serverId)->orderBy('id')->skip($step)->value('id');$moved[$id]=4000000000+$i*977000003;}
+foreach($moved as $id=>$far){DB::table('domains_tlds')->where('id',$id)->update(['id'=>$far]);}
+DB::table('domains_tlds')->whereIn('id',array_values($moved))->limit(1)->update(['catalogue_intent'=>'{"sell":false}']);
+$expected=DB::table('domains_tlds')->where('server_id',$b->serverId)->where('catalogue_intent','not like','%"sell":false%')->orderBy('tld')->pluck('id')->map(static fn($id)=>(int)$id)->all();
+$memory=memory_get_usage();$table=new SellTable([$b->serverId=>$b],1,true,static fn()=>[],false,$source);$query=$table->forSale($table->rows(null));
+same($expected,(clone $query)->orderBy('tld')->pluck('id')->map(static fn($id)=>(int)$id)->all(),'Sparse membership is exact');
+$bytes=$size($query)-$size($table->rows(null));echo json_encode(['sparse_members'=>count($expected),'membership_bytes'=>$bytes,'memory'=>memory_get_usage()-$memory])."\n";
+expect(count($expected)===1499&&$bytes<2048,'Ids billions apart add under 2 KiB, got '.$bytes.' bytes');
+foreach($moved as $id=>$far){DB::table('domains_tlds')->where('id',$far)->update(['id'=>$id,'catalogue_intent'=>$intents[$id]]);}
 $fresh=new SellTable([$b->serverId=>$b],1,true,static fn()=>[],false,$source);
 same(1500,$fresh->forSale($fresh->rows(null))->count(),'Restored intents restore membership');
 same(0,$fresh->forSale($fresh->rows(null)->where('id','<',0))->count(),'An empty candidate scope keeps no rows');

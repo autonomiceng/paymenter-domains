@@ -16,7 +16,7 @@ $cart->items()->create(['product_id'=>$hosting->id,'plan_id'=>$hosting->plans()-
 $mixed=Domain::where('domain','paid-mixed-placeholder.com')->sole()->operations()->sole();$invoice=Invoice::findOrFail($mixed->invoice_id);
 $template=new App\Models\NotificationTemplate;$template->forceFill(Database\Seeders\EmailTemplateSeeder::mapping['new_server_created']);
 $mail=(new App\Mail\Mail($template,['service'=>$mixed->domain->service,'user'=>$user]))->render();
-expect(str_contains($mail,'Your domain registration or transfer is in progress.')&&str_contains($mail,'Transfers can take several days.'),'Native activation mail renders approved product information');
+expect(str_contains($mail,'Your domain registration is in progress.')&&!str_contains($mail,'transfer')&&!str_contains($mail,'auth code'),'Native registration mail renders approved product information without transfer instructions');
 expect(str_contains($mail,'href="'.e(route('services.show',$mixed->service_id)).'"'),'Native activation mail links to the service page');
 foreach(['Staff-owned wording','',null]as$text){$product->fresh()->update(['email_template'=>$text]);activeFixtureRepublish($native,$tlds[0]->id,$clock->now());same($text,$product->fresh()->email_template,'Publication preserves staff edit including blank/null');}
 $transferProduct=$native->product($tlds[0],'transfer');$transferProduct->update(['email_template'=>'Existing staff information']);

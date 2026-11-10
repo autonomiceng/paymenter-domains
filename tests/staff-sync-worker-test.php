@@ -25,7 +25,25 @@ $clock->instant=$clock->now()->modify('+61 seconds');
 $page->callAction('sync_now')->assertNotified('Sync queued')->assertSee('Sync requested')->assertSee('Sync in progress')->assertActionDisabled('sync_now');
 same(1,DB::table('jobs')->count(),'One queued job');
 $queuedHtml=$page->html();
-Artisan::call('queue:work',['--stop-when-empty'=>true,'--sleep'=>0,'--tries'=>1]);
+// Sync now locks the account before the read work, the order scheduler discovery uses, so the two cannot deadlock.
+$connection=DB::connection();$grammar=$connection->getQueryGrammar();$transactions=0;
+Illuminate\Support\Facades\Event::listen(Illuminate\Database\Events\TransactionBeginning::class,static function()use(&$transactions):void{if(DB::transactionLevel()===1){$transactions++;}});
+$trace=new class($connection,$transactions) extends Illuminate\Database\Query\Grammars\SQLiteGrammar {
+    public array $reads=[];
+    public function __construct($connection,private int &$transactions){parent::__construct($connection);}
+    public function compileSelect(Illuminate\Database\Query\Builder $query){
+        if($query->lock&&DB::transactionLevel()>0){$this->reads[]=[$this->transactions,$query->from];}
+        return parent::compileSelect($query);
+    }
+};
+$connection->setQueryGrammar($trace);
+try{Artisan::call('queue:work',['--stop-when-empty'=>true,'--sleep'=>0,'--tries'=>1]);}finally{$connection->setQueryGrammar($grammar);}
+$work=array_values(array_unique(array_column(array_filter($trace->reads,fn($r)=>$r[1]==='domains_observation_work'),0)));
+expect($work!==[],'Sync now checks its read work under a lock');
+foreach($work as $transaction){
+    $tables=array_column(array_filter($trace->reads,fn($r)=>$r[0]===$transaction),1);
+    expect(array_search('domains_accounts',$tables,true)!==false&&array_search('domains_accounts',$tables,true)<array_search('domains_observation_work',$tables,true),'Sync now locks the account before its read work');
+}
 same(0,DB::table('jobs')->count(),'Worker consumes the job');
 same(0,DB::table('failed_jobs')->count(),'No failed queue job');
 same('Domain synced',App\Models\Notification::where('user_id',$actor->id)->latest('id')->value('title'),'Worker completes a registrar read');

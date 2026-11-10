@@ -9,8 +9,8 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, ManagedPublicC
 final class DemoData
 {
     public const TOOLTIP = 'Demo data. Seeded for testing. Nothing is sent to a registrar and no money moves.';
-    /** Shared by domains of every request type and by test registrar accounts, so it names no operation. */
-    public const TEST_TOOLTIP = 'Registrar test environment. Nothing here is real and no money moves.';
+    /** Shared by domains of every request type and by test registrar accounts, so it names no operation. Registrar test mode is not a billing safeguard: its domains are priced and invoiced like any other. */
+    public const TEST_TOOLTIP = 'Registrar test environment. Nothing is real at the registrar, but invoices are still real, and paying one charges you.';
     public const BANNER = 'Test system. Records tagged Demo are seeded examples.';
     public const ACCOUNTS = ['enom' => 'demo-enom', 'namesilo' => 'demo-namesilo'];
     // Exact prior identities remain readable; new seeds use ACCOUNTS.

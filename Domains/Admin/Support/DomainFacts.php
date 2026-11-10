@@ -237,7 +237,7 @@ final class DomainFacts
         [$state,$reason]=OwnedDomains::orderStatus(DomainStates::managed($d,$op,gmdate('Y-m-d'),(bool)$inputs['off']),$d,$order);
         $shared=['key'=>DomainStatus::key($state),...DomainStatus::for($state,$reason)];
         if ($inputs['late']) { return StaffDomainStatus::late($shared); }
-        return StaffDomainStatus::for($shared,$state,$d,$op,$inputs['alerts'],$inputs['renewal'],$inputs['waiting'],$inputs['orders_off']??false);
+        return StaffDomainStatus::for($shared,$state,$d,$op,$inputs['alerts'],$inputs['renewal'],$inputs['waiting'],$inputs['orders_off']??false,$inputs['accounts']??null);
     }
     /** The list's status tone. A stopped sync or a missing registrar account is a job for staff, as in the domain's head. */
     public static function listTone(array $status, ?string $sync, bool $noAccount=false): string
@@ -548,8 +548,8 @@ final class DomainFacts
     public static function progress(array $progress, string $section, ?int $named=null): ?array
     {
         $row=$progress[\Paymenter\Extensions\Servers\Domains\Services\ManagementProgress::setting($section)]??null;
+        if ($row!==null&&!($row['pending']??false)&&($row['section']??$section)!==$section) { $row=$row['sections'][$section]??null; }
         if ($row===null||($row['settled']??false)||($row['replaced']??false)) { return null; }
-        if (!($row['pending']??false)&&($row['section']??$section)!==$section) { return null; }
         $stopped=isset($row['outcome']); $request=$stopped&&$row['id']===$named?$row['id']:null;
         $text=$stopped?StaffDomainStatus::sentence($row['outcome']).($request===null?'':' Check request #'.$request.'.'):$row['text'];
         return ['text'=>$text,'request'=>$request,'waiting'=>(bool)($row['pending']??false),'tone'=>$row['tone']??null];

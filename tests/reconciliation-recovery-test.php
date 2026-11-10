@@ -124,4 +124,33 @@ $observation->during = static function () use ($op, $clock, $observation, $recon
 };
 $reconcile->run($op->id); same('deferred', $op->fresh()->policy['status_check']['outcome'], 'A newer check keeps its result over the older check');
 $observation->during = null; $reconcile->run($op->id); same('checked', $op->fresh()->policy['status_check']['outcome'], 'The next check saves its own result');
+// Two checks that start in the same second keep the later one's result, whichever finishes first.
+$sameSecond = static function (bool $laterFirst) use ($op, $clock): string {
+    $earlier = new \Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck($clock); $later = new \Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck($clock);
+    foreach ([$earlier, $later] as $check) { DB::transaction(fn () => $check->capture(Operation::whereKey($op->id)->lockForUpdate()->sole())); }
+    $later->deferred = 'read_limit';
+    foreach ($laterFirst ? [$later, $earlier] : [$earlier, $later] as $check) { $check->finish($op->fresh()); }
+    return $op->fresh()->policy['status_check']['outcome'];
+};
+same('deferred', $sameSecond(false), 'A later check in the same second replaces an earlier check that finished first');
+same('deferred', $sameSecond(true), 'An earlier check in the same second never replaces a later one');
+// A late check that finds the request already complete leaves the saved result alone.
+[$late] = $prepare(placeholderComFixtureName('late-check-placeholder.com'), 'captured'); $armed = true;
+DB::listen(static function ($query) use (&$armed, $late): void {
+    if (!$armed || !str_contains($query->sql, 'domains_operations')) { return; }
+    // Another check completes the request after this one passed its first eligibility check.
+    $armed = false; $row = Operation::find($late->id);
+    $row->forceFill(['state' => 'succeeded', 'policy' => [...$row->policy, 'status_check' => ['outcome' => 'checked', 'at' => 1]]])->saveQuietly();
+});
+$reconcile->run($late->id);
+same(['succeeded', 'checked'], [$late->fresh()->state, $late->fresh()->policy['status_check']['outcome']], 'A late check keeps the completed result');
+// A lost reply whose order history becomes readable during the read counts that read once.
+[$lag, $binding] = $prepare(placeholderComFixtureName('history-lag-placeholder.com'), 'absent');
+HistoryAcceptances::save(new HistoryAcceptance($binding, 'America/Los_Angeles', 600, 86400, 'enom_registration_v1'));
+$ready = \Paymenter\Extensions\Servers\Domains\Services\ReconciliationEvidence::attempt($lag->fresh(), $lag->domain->fresh(), $binding)->windowEnd->modify('+600 seconds');
+$clock->instant = $ready->modify('-5 seconds'); $observation->fault = 'history-zero'; $observation->during = static function () use ($clock, $ready): void { $clock->instant = $ready; };
+$reconcile->run($lag->id); $observation->fault = '';
+same(true, in_array(\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Orders, $observation->calls, true), 'The read reaches the order history');
+same(1, $lag->fresh()->policy['reconciliation']['polls'] ?? 0, 'A read covered by history during the read counts once');
+DB::transaction(fn () => HistoryAcceptances::revokeLocked($binding, \Paymenter\Extensions\Servers\Domains\Data\Action::Register));
 echo "Double completion-persistence failure recovers only unique original provider charge without replay\n"; $nativeSuccessful = true;

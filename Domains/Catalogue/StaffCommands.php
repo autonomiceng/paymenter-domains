@@ -56,13 +56,18 @@ final class StaffCommands
         $defaults=$review->action==='acceptance'&&isset($sell['rule']);
         $rows=(clone $query)->when($names!==[],fn($q)=>$q->whereIn('tld',$names))->orderBy('id')->limit($names===[]?1:25)->get();
         if($rows->isEmpty()){throw new \DomainException('Converted TLD required.');}
-        $d=OfferState::decode($account->catalogue_defaults);$entries=[];$failed=[];
+        $entries=[];$failed=[];
         foreach($names as $name){if(!$rows->contains('tld',$name)){$failed[$name]='Converted TLD required.';}}
         if($defaults){
             // A new rule replaces the saved defaults whole, so unreadable old defaults never block their repair.
-            $intent=Intent::fromRule($sell['rule']);
+            $saved=OfferState::replaceableDefaults($account->catalogue_defaults,$review->serverId);$intent=Intent::fromRule($sell['rule']);
+            // Staff without Costs never see the cost limit, so their save keeps the saved one. The revision check catches a change since.
+            if(!\App\Models\User::with('role')->find($review->actorId)?->hasPermission(\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::COSTS)){
+                $cost=PricingRule::wholesale($saved['maxAnnualCost']??null);
+                $intent=new Intent($intent->defaultSell,$intent->defaultLongest,$intent->defaultTransfers,$cost);
+            }
             $command=Edit::defaults($binding,$rows->first()->tld,$intent);
-            $entries[]=[$command,$this->revision($rows->first(),$d)];
+            $entries[]=[$command,$this->revision($rows->first(),$saved)];
         }
         if(!$defaults||$names!==[]){foreach($rows as $t){
             if($defaults&&!in_array($t->tld,$names,true)){continue;}

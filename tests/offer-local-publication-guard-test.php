@@ -32,4 +32,10 @@ same(null,$native->product($later,'register'),'No later TLD publishes after auth
 $current=true;$clock->instant=$clock->now()->modify('+61 seconds');$worker->accountTurn($server);
 expect($native->product($first,'register')!==null,'A later authorized turn retries the rolled-back TLD');
 expect($native->product($later,'register')!==null,'A later authorized turn publishes the remaining TLD');
+// A saved publication marker that can't be read is republished, not a stop for the account's whole scan.
+foreach(['{broken','null'] as $marker){
+    DB::table('domains_tlds')->where('id',$first->id)->update(['catalogue_published_revision'=>$marker]);
+    $clock->instant=$clock->now()->modify('+61 seconds');$worker->accountTurn($server);
+    expect(OfferState::currentPublication(DB::table('domains_tlds')->where('id',$first->id)->value('catalogue_published_revision')),'A later turn republishes the TLD with an unreadable marker: '.$marker);
+}
 $nativeSuccessful=true;echo "Local publication failures preserve account authority and durable recovery\n";

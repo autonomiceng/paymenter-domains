@@ -11,6 +11,7 @@ final class WatchSchema
         $t->id(); $t->unsignedBigInteger('product_id')->unique(); $t->string('property_key', 64);
         $t->boolean('enabled')->default(false); $t->unsignedBigInteger('expected_ns_profile_id')->nullable();
         $t->unsignedBigInteger('revision')->default(1); $t->unsignedBigInteger('edited_by'); $t->text('reason'); $t->timestamps();
+        TemplateAssignmentIndex::define($t,'domains_watch_product_maps');
     }
     private static function names(Blueprint $t): void
     {
@@ -20,7 +21,7 @@ final class WatchSchema
         $t->string('expected_dns', 16)->nullable(); $t->unsignedBigInteger('ns_profile_id')->nullable();
         $t->unsignedBigInteger('profile_revision')->default(0); $t->unsignedBigInteger('managed_domain_id')->nullable();
         $t->unsignedBigInteger('created_by')->nullable(); $t->json('notice_preferences'); $t->unsignedBigInteger('last_observation_id')->nullable();
-        $t->timestamps(); $t->unique(['user_id', 'canonical_name']);
+        $t->timestamps(); $t->unique(['user_id', 'canonical_name']); TemplateAssignmentIndex::define($t,'domains_watch_names');
     }
     private static function sources(Blueprint $t): void
     {

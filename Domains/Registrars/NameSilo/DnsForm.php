@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 use Paymenter\Extensions\Servers\Domains\Services\OwnerFormValidation;
-/** The shared records editor over a saved complete inventory. IDs and TTLs stay server-side; rows we can't edit stay as read. */
+/** The shared records editor over a saved complete inventory. Provider IDs stay server-side; rows we can't edit stay as read, with their read TTL. */
 final class DnsForm
 {
     /** The documented provider default, sent explicitly for a new row. */
@@ -14,7 +14,7 @@ final class DnsForm
         $records=[];$fixed=[];
         foreach (self::rows($inventory) as $r) {
             if (in_array($r['type'],Dns::STANDARD,true)) { $records[]=['name'=>$r['name'],'type'=>$r['type'],'address'=>$r['address'],'mx_pref'=>$r['mx_pref']]; }
-            else { $fixed[]=['name'=>$r['name'],'type'=>$r['type'],'address'=>$r['address']]; }
+            else { $fixed[]=['name'=>$r['name'],'type'=>$r['type'],'address'=>$r['address'],'ttl'=>$r['ttl']??null]; }
         }
         return ['records'=>$records,'fixed'=>$fixed,'digest'=>hash('sha256',json_encode(DnsSequence::records($inventory),JSON_THROW_ON_ERROR))];
     }
