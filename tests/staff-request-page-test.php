@@ -160,7 +160,7 @@ Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$longOp->id])
 // Gateway return facts keep their title but direct staff to the invoice/gateway, never to support.
 foreach(['review'=>'Refund needs a check','pending'=>'Refund processing','refunded'=>'Refunded'] as $result=>$title){
     $row=Operation::find($longOp->id);$row->forceFill(['funding'=>[
-        'refund'=>['amount'=>'1.00','to'=>'original_payment','bridge_minor'=>0,'allocations'=>[['key'=>'staff-return','amount_minor'=>100]]],
+        'refund'=>['amount'=>'1.00','to'=>'original_payment','bridge_minor'=>0,'payments'=>[['id'=>1,'amount_minor'=>100]],'allocations'=>[['key'=>'staff-return','amount_minor'=>100]]],
         'receipt_return_results'=>['staff-return'=>['state'=>$result]]]])->saveQuietly();
     $facts=RequestFacts::for($row);same($title,$facts['refund'],'Staff keeps the gateway return title');
     expect(!str_contains($facts['refund_sub'],'Contact support')&&!str_contains($facts['refund_sub'],'We are returning'),'Staff guidance does not address the customer');

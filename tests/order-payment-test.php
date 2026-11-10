@@ -38,7 +38,7 @@ same([],$rejected('acquisition_cancelled_unpaid'),'Unpaid close is not a failed 
 // A completed gateway return cancels the order without calling it account credit.
 foreach(['refunded','credited','pending','reserved','review'] as $result){
     $returned=OwnedDomains::order($d(),$op(['state'=>'rejected','safe_code'=>'refund_approved','funding'=>[
-        'refund'=>['amount'=>'1.00','to'=>'original_payment','bridge_minor'=>0,'allocations'=>[['key'=>'return-key','amount_minor'=>100]]],
+        'refund'=>['amount'=>'1.00','to'=>'original_payment','bridge_minor'=>0,'payments'=>[['id'=>1,'amount_minor'=>100]],'allocations'=>[['key'=>'return-key','amount_minor'=>100]]],
         'receipt_return_results'=>['return-key'=>['state'=>$result]]]]),$invoice('paid'));
     same(in_array($result,['refunded','credited'],true)?'Cancelled':'Under review',$pill($returned)['label'],'Gateway return pill agrees with '.$result);
     expect(!isset($returned['credit']),'A gateway return does not set the account credit marker');
@@ -123,7 +123,7 @@ foreach(['register'=>'registration','transfer'=>'transfer'] as $action=>$kind){
         }
     }
 }
-$transferCredit=OwnedDomains::order($d(['status'=>'transfer_rejected']),$op(['action'=>'transfer','state'=>'rejected','safe_code'=>'transfer_fee_absorbed','funding'=>['refund'=>['to'=>'account_credit','amount'=>'12.00']]]),$invoice('paid'));
+$transferCredit=OwnedDomains::order($d(['status'=>'transfer_rejected']),$op(['action'=>'transfer','state'=>'rejected','safe_code'=>'transfer_fee_absorbed','funding'=>['refund'=>['to'=>'account_credit','amount'=>'12.00','payments'=>[['id'=>1,'amount_minor'=>1200]]]]]),$invoice('paid'));
 same('This order was cancelled. We added what you paid to account credit. You can apply it on an invoice.',DomainPage::notice($owned($transferCredit),'/tickets/create')['text']??null,'The rejected transfer page confirms the recorded credit bridge');
 
 // History: a Failed row has a reason and a next step, and every row can show its date.

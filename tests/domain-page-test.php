@@ -192,6 +192,9 @@ same('Nov 2, 2026 In 10 days Renew now',$card($dom,'Expires'),'Expires soon');
 same('domains-btn domains-btn--primary domains-btn--sm',$dom->query('//dt[normalize-space(text())="Expires"]/following-sibling::dd[1]/span[contains(@class,"domains-card__a")]/a[.="Renew now"]')->item(0)?->getAttribute('class'),'Near expiry Renew now leads, still in its row');
 same(1,$dom->query('//section[@id="renewal"]//dd//*[contains(@class,"domains-tone-text-warn")]')->length,'Warn colour within 30 days');
 same('Missing Contact support Not issued yet. Expected Oct 3, 2026.',$card($dom,'Next invoice'),'Missing names the expected date');
+// Expired with renewal On: the list shows Expired, and the page still says the invoice due before expiry was never issued.
+$d=$domain(['status'=>'Expired','tone'=>'bad','expiry'=>'2026-10-01']);$dom=storefrontDom($render($d,$summary($d,['daysLeft'=>-21,'renewalInvoiceOverdue'=>true,'renewalIssueAt'=>'2026-09-01'])));
+same('Missing Contact support Not issued yet. Expected Sep 1, 2026.',$card($dom,'Next invoice'),'An expired domain never says its invoice issues on a passed date');
 // Planned, due, paid and cancelled invoices.
 // Renewal On: Auto Pay has its own row and says what it does to the renewal invoice.
 $on=$domain(['renewal'=>'On','actions'=>['show'=>'/domains/1','autoPay'=>'/services/1#auto-pay']]);

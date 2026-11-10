@@ -5,8 +5,9 @@ declare(strict_types=1);
 require __DIR__.'/Support/operation-fixture.php';
 use App\Models\{Credit,Invoice,InvoiceTransaction,Role,Service};
 use Illuminate\Support\Facades\{Auth,DB};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{OperationActions,RequestFacts};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain};
-use Paymenter\Extensions\Servers\Domains\Services\{ComplimentaryAccounts,FundsWaits,HoldingLocks,OwnerPorts,OwnerSetup,StaffOperationReview,StaffOperations,TransferNotifications};
+use Paymenter\Extensions\Servers\Domains\Services\{ComplimentaryAccounts,EnomTestRegistration,FundsWaits,HoldingLocks,OwnerPorts,OwnerSetup,StaffOperationReview,StaffOperations,TransferNotifications};
 (new Paymenter\Extensions\Servers\Domains\Services\NativeDomainGuard(new Paymenter\Extensions\Servers\Domains\Services\HolderPricing($prices),$clock))->boot();
 Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
 $staff=commerceUser();$staff->update(['role_id'=>Role::create(['name'=>'Complimentary recovery','permissions'=>['admin.domains.view','admin.domains.manage','admin.domains.fund','admin.domains.operations.release']])->id]);
@@ -113,6 +114,29 @@ $check('complimentary missing-code transfer closes exactly at its cutoff without
     same(null,$transfers->expireMissingCode($closed->id),'Repeated timeout adds no credit');
     same($terminal,$closed->fresh()->getRawOriginal(),'Repeated timeout preserves terminal evidence');
     same($before,$money(),'Repeated timeout preserves native money history');
+});
+$check('complimentary price hold release only retries until its cost is approved',function()use($newRegistration,$staff,$clock,$now):void {
+    // A complimentary Enom TEST registration that release would send, held on a registrar cost above the usual. The order needs a current offer.
+    $prior=$clock->instant;$clock->instant=$now;
+    try{
+        $priced=$newRegistration(placeholderComFixtureName('comp-price-check-placeholder.com'));
+        $priced->update(['state'=>'held','safe_code'=>'registrar_price_increased','policy'=>[...$priced->policy,'complimentary_cost_review'=>['amount'=>'8.01','usual'=>'8.00']]]);
+        Auth::login($staff);$op=$priced->fresh();$account=RequestFacts::account($op)['account'];
+        expect(EnomTestRegistration::releaseSends($op,$account),'Release would send this complimentary registration to Enom');
+        $release=static fn(Paymenter\Extensions\Servers\Domains\Models\Operation $op)=>collect(OperationActions::make($op,'price-check-stamp'))->first(fn($a)=>$a->getName()==='release')->getModalHeading();
+        $body=(string)(RequestFacts::notice($op)['body']??'');
+        expect(str_starts_with($body,'Release hold only retries the price check. The test registration holds again while the registrar cost is above the usual. It goes ahead at this cost once the registrar cost is approved on the domain page.'),'Without approval release is a retry: '.$body);
+        expect(!str_contains($body,'Release hold sends'),'Without approval the request never says release sends');
+        expect($release($op)!=='Send to Enom now?','Without approval release asks nothing about sending');
+        // An approval that already covers this cost: release goes ahead, so the request says so and release asks first.
+        DB::table('domains_complimentary_approvals')->insert(['operation_id'=>$op->id,'actor_id'=>$staff->id,'amount'=>'8.01','reason'=>'Approved exact registrar quote','created_at'=>$clock->now()->format('Y-m-d H:i:s')]);
+        $op=$op->fresh();$body=(string)(RequestFacts::notice($op)['body']??'');
+        expect(str_starts_with($body,'Release hold sends the '),'With approval the request says release sends: '.$body);
+        expect(!str_contains($body,'only retries the price check'),'With approval release is no longer called a retry');
+        same('Send to Enom now?',$release($op),'With approval release asks before it sends');
+        DB::table('domains_complimentary_approvals')->where('operation_id',$op->id)->delete();
+        $op->update(['state'=>'rejected','safe_code'=>'staff_review_required']);
+    }finally{$clock->instant=$prior;}
 });
 same(0,InvoiceTransaction::count(),'All recovery paths leave complimentary receipts without payments');same(0,Credit::count(),'No refund credit is invented');
 same(0,$writer->calls,'No recovery action sends to the registrar');

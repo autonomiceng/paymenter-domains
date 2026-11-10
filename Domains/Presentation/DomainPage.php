@@ -111,6 +111,8 @@ final class DomainPage
         };
         return ['missing' => false, 'tone' => $days <= 0 ? 'bad' : ($days <= 30 ? 'warn' : null), 'note' => $note];
     }
+    /** The renewal invoice's state in words, the same on the domain page and the Domains list (DomainStates::cycle). */
+    public const INVOICE = ['paid' => 'Paid', 'review' => 'Under review', 'cancelled' => 'Invoice cancelled', 'closed' => 'Renewal did not finish'];
     /** What happens to the money once the registrar rejected the order, by OwnedDomain::$refundTo. */
     public const REFUND = ['original' => 'Any refund goes back to your original payment method.', 'credit' => 'Any refund goes to your account credit.',
         'split' => 'Any refund goes back to your original payment method where it can, and to your account credit otherwise.',
@@ -127,13 +129,14 @@ final class DomainPage
         if ($state === null && ($d->renewal !== 'On' || $d->setupPending || self::rejected($d))) { return null; }
         return match (true) {
             $state === 'pending' => ['value' => $due ? ($d->earlyRenewal ? RequestStatus::earlyRenewal($due) : 'Due '.self::date($due)) : 'Due', 'action' => isset($d->renewNow['invoice']) ? ['label' => 'Pay invoice', 'url' => $d->renewNow['invoice']] : null],
-            $state === 'paid' => ['value' => 'Paid', ...(($goes = $d->renewNow['goes'] ?? $d->renewalInvoice['goes'] ?? null) ? ['note' => RenewalRepeatWait::NOTHING.' '.RenewalRepeatWait::GOES, 'at' => $goes] : [])],
-            $state === 'closed' => ['value' => 'Renewal did not finish', 'action' => $contact],
-            $state === 'cancelled' => ['missing' => true, 'cause' => 'Invoice cancelled', 'fix' => $contact],
+            $state === 'paid' => ['value' => self::INVOICE['paid'], ...(($goes = $d->renewNow['goes'] ?? $d->renewalInvoice['goes'] ?? null) ? ['note' => RenewalRepeatWait::NOTHING.' '.RenewalRepeatWait::GOES, 'at' => $goes] : [])],
+            $state === 'closed' => ['value' => self::INVOICE['closed'], 'action' => $contact],
+            $state === 'cancelled' => ['missing' => true, 'cause' => self::INVOICE['cancelled'], 'fix' => $contact],
             // The row says there is nothing to do unless the page notice already says so,
             // or the status or notice gives the customer a step (an expired domain: contact support).
-            $state !== null => ['value' => 'Under review', 'tone' => 'info', 'note' => 'Renewal being checked.'.(self::reassure($d, self::notice($d, $support, $s)) ? ' '.Missing::NO_ACTION : '')],
-            (bool) $s?->renewalInvoiceMissing => ['missing' => true, 'cause' => 'Not issued yet'.($s->renewalIssueAt ? '. Expected '.self::date($s->renewalIssueAt).'.' : ''), 'fix' => $contact],
+            $state !== null => ['value' => self::INVOICE['review'], 'tone' => 'info', 'note' => 'Renewal being checked.'.(self::reassure($d, self::notice($d, $support, $s)) ? ' '.Missing::NO_ACTION : '')],
+            // An expired domain keeps a renewal invoice that was never issued, so the page never says it issues on a passed date.
+            $s !== null && ($s->renewalInvoiceMissing || $s->renewalInvoiceOverdue) => ['missing' => true, 'cause' => 'Not issued yet'.($s->renewalIssueAt ? '. Expected '.self::date($s->renewalIssueAt).'.' : ''), 'fix' => $contact],
             $s?->renewalIssueAt !== null => ['value' => 'Issues '.self::date($s->renewalIssueAt).($s->renewalDueAt ? '. Due '.self::date($s->renewalDueAt).'.' : '')],
             ($d->plannedRenewalDue ?? $s?->renewalDueAt) !== null => ['value' => 'Due '.self::date($d->plannedRenewalDue ?? $s->renewalDueAt)],
             $d->expiry === null => ['missing' => true, 'cause' => self::checkHeld($d) ? self::TEAM_CHECK : Missing::fills('after the next sync'), 'fix' => null],

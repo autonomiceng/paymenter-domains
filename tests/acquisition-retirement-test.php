@@ -120,6 +120,28 @@ $returns->creditRetired($account);$retirement->inspect($automatic->domain_id);
 expect(UnpaidAcquisitionProof::terminal($automatic->fresh(),$automatic->domain->fresh()),'Return results preserve retained no-send proof');
 same(0,DB::table('domains_obligation_alerts')->where('domain_id',$automatic->domain_id)->whereIn('code',['refund_repair','acquisition_late_money'])->whereNull('resolved_at')->count(),'Expected gateway reversal creates no new repair step');
 same(1,MoneyReceiptGateway::$sends,'Gateway owns the only closed acquisition return');
+// The closed-order sweep checks a malformed retained plan before outstanding allocations: staff repair, no error, money or gateway call.
+$staysLogs=[];\Illuminate\Support\Facades\Log::listen(static function($event)use(&$staysLogs,$automatic):void {if($event->message==='Domains late payment stays with staff.'&&($event->context['operation_id']??null)===(int)$automatic->id){$staysLogs[]=$event->context;}});
+$validRaw=$automatic->fresh()->getRawOriginal('funding');$bad=$automatic->fresh()->funding;$bad['late_credits'][0]['allocations'][0]=[...$bad['late_credits'][0]['allocations'][0],'amount_minor'=>'not-an-amount','key'=>'domains:closed:unobserved'];
+DB::table('domains_operations')->where('id',$automatic->id)->update(['funding'=>Illuminate\Support\Facades\Crypt::encryptString(json_encode($bad))]);
+$rows=static fn(string $table)=>DB::table($table)->orderBy('id')->get()->map(static fn($row)=>(array)$row)->all();$money=[$rows('credits'),$rows('invoice_transactions')];$calls=[MoneyReceiptGateway::$statusCalls,MoneyReceiptGateway::$sends];
+same([],$returns->creditRetired($account),'A malformed closed-order plan is not reported as credited');
+same([],$staysLogs,'A malformed closed-order plan is checked before allocation arithmetic');
+expect(DB::table('domains_obligation_alerts')->where('operation_id',$automatic->id)->where('code','refund_repair')->whereNull('resolved_at')->exists(),'A malformed closed-order plan keeps a staff repair');
+same($money[0],$rows('credits'),'A malformed closed-order plan adds no credit');
+same($money[1],$rows('invoice_transactions'),'A malformed closed-order plan writes no payment row');
+same($calls,[MoneyReceiptGateway::$statusCalls,MoneyReceiptGateway::$sends],'A malformed closed-order plan calls no gateway');
+// An account-credit return with unreadable coverage is checked before the sweep reads what it credited: staff repair, no error.
+Paymenter\Extensions\Servers\Domains\Services\RefundRepairs::resolved((int)$automatic->id,$clock->now()->getTimestamp());$creditOnly=$automatic->fresh()->funding;
+$creditOnly['late_credits']=[['payments'=>[['id'=>(int)App\Models\InvoiceTransaction::where('transaction_id','receipt_closed_auto')->value('id'),'amount_minor'=>[100]]],
+    'amount'=>'1.00','currency'=>'USD','to'=>'account_credit','credit_id'=>null,'at'=>$clock->now()->format(DATE_ATOM)]];
+DB::table('domains_operations')->where('id',$automatic->id)->update(['funding'=>Illuminate\Support\Facades\Crypt::encryptString(json_encode($creditOnly))]);
+same([],$returns->creditRetired($account),'Unreadable account-credit coverage is not reported as credited');
+same([DomainException::class],array_column($staysLogs,'exception_class'),'Unreadable account-credit coverage is a review refusal, not an error');
+expect(DB::table('domains_obligation_alerts')->where('operation_id',$automatic->id)->where('code','refund_repair')->whereNull('resolved_at')->exists(),'Unreadable account-credit coverage keeps a staff repair');
+same([$money[0],$money[1]],[$rows('credits'),$rows('invoice_transactions')],'Unreadable account-credit coverage moves no money');
+same($calls,[MoneyReceiptGateway::$statusCalls,MoneyReceiptGateway::$sends],'Unreadable account-credit coverage calls no gateway');
+DB::table('domains_operations')->where('id',$automatic->id)->update(['funding'=>$validRaw]);
 // A refused close rolls back the replacement invoice too; never return a payment link to it.
 // Native rows and the retirement transaction are required to reproduce the rolled-back invoice ID.
 $cart=commerceCart($user);commerceAdd($cart,$product,placeholderComFixtureName('unpaid-reissue-rollback-placeholder.com'));

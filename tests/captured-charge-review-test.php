@@ -131,6 +131,30 @@ Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->asse
 $done=$op->fresh();same(['succeeded','2029-10-18'],[$done->state,$d->fresh()->provider_expires_at->format('Y-m-d')],'History approval completes only the proved expiry');
 same($rawProof,[$done->getRawOriginal('attempt'),$done->getRawOriginal('cost')],'History approval preserves original encrypted bytes');same($writes,$state->writes,'History approval sends nothing');
 expect($d->fresh()->renewal_policy['automatic_spend_paused'],'History approval keeps future spending paused');DB::transaction(fn()=>HistoryAcceptances::revokeLocked($b,Action::Renew));
+// History that stops covering the attempt cannot approve, even from an open dialog, and an audited read after that is used up as unavailable.
+$clockBefore=$clock->instant;app()->instance(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class,$bindings);config(['domains.enom_identity.environment'=>null]);
+[$seed,$d,$b]=$makeRenewal(placeholderComFixtureName('captured-history-expired-placeholder.com'),false);$cycles->retireUnpaid($seed->id);
+$clock->instant=new DateTimeImmutable('2027-09-27T12:00:00Z');$review($d);$op=$cycles->complimentary($d->id,$staff,2,new Money('20.00','USD'),'staff_reviewed');
+$state->years=2;$state->after='2029-10-18';$state->expiry='10/18/2027 5:00:00 AM';$state->charge='16.01';$state->fail=null;$clock->instant=new DateTimeImmutable('2027-10-18T11:59:00Z');Cache::flush();config(['domains.enom_identity.environment'=>'test']);
+[$engine,$writer,$completion]=$compose($b);$state->lost=true;same('uncertain',$engine->run($op->id,$writer)->state,'Lost two-year reply before history expires');$state->lost=false;$writes=$state->writes;$accept();
+$clock->instant=$clock->now()->modify('+10 minutes');$state->expiry='2029-10-18';
+app()->instance(\Paymenter\Extensions\Servers\Domains\Services\RenewalCompletion::class,$completion);app()->instance(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class,$renewBindings);
+$held=$completion->run($op->id);same('accepted_history',$held->attempt['reconciliation']['source']??null,'Current history proves the captured charge');
+$rawProof=[$held->getRawOriginal('attempt'),$held->getRawOriginal('cost')];$work=$renewalRuntime($b,$engine,$writer,$completion);
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('resume_reads');(new \Paymenter\Extensions\Servers\Domains\Jobs\RunOperation($op->id))->handle($work);
+$dialog=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertActionVisible('approve_charge')->mountAction('approve_charge')->setActionData(['reason'=>'Approve before history expires']);
+$clock->instant=$clock->now()->modify('+9 days');$before=[$op->fresh()->getRawOriginal(),$d->fresh()->getRawOriginal()];
+expect(!\Paymenter\Extensions\Servers\Domains\Services\CapturedChargeReview::approvable($op->fresh()),'Expired history is not approvable');
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertActionHidden('approve_charge');
+$dialog->callMountedAction();same($before,[$op->fresh()->getRawOriginal(),$d->fresh()->getRawOriginal()],'History that expires while the dialog is open cannot approve');
+$observed=count($op->fresh()->policy['captured_charge_observations']);$reads=count($op->fresh()->policy['captured_charge_reads']);
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('resume_reads');$calls=count($state->calls);(new \Paymenter\Extensions\Servers\Domains\Jobs\RunOperation($op->id))->handle($work);
+$fresh=$op->fresh();same([$reads+1,$observed+1,null],[count($fresh->policy['captured_charge_reads']),count($fresh->policy['captured_charge_observations']),collect($fresh->policy['captured_charge_observations'])->last()['proof']],'The audited read after expiry is retained as unavailable');
+same($calls,count($state->calls),'Expired history makes no registrar read');$calls=count($state->calls);$completion->run($op->id);same([$calls,$observed+1],[count($state->calls),count($op->fresh()->policy['captured_charge_observations'])],'The used read is not taken again');
+$notice=\Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::notice($op->fresh());
+same(null,$notice['action'],'Expired history offers no read that cannot settle the charge');expect(str_contains($notice['body'],'Ask Enom if this renewal went through.'),'Expired history names the next step');
+same([$rawProof,'uncertain',true],[[$fresh->getRawOriginal('attempt'),$fresh->getRawOriginal('cost')],$fresh->state,$d->fresh()->renewal_policy['automatic_spend_paused']],'Expired history keeps the frozen proof, cost, hold and spending pause');
+same($writes,$state->writes,'Expired history sends nothing');DB::transaction(fn()=>HistoryAcceptances::revokeLocked($b,Action::Renew));$clock->instant=$clockBefore;
 // Ordinary exact-charge paid completion still uses its frozen two-year total and no staff approval.
 app()->instance(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class,$bindings);config(['domains.enom_identity.environment'=>null]);
 [$paid,$d,$b,$invoice]=$makeRenewal(placeholderComFixtureName('captured-paid-control-placeholder.com'),true,2,beforeBill:$review);

@@ -20,7 +20,7 @@ use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 class ViewDomain extends ViewRecord
 {
     public function getHeader(): ?\Illuminate\Contracts\View\View { return view('domains::staff.domain-header'); }
-    public function pollManagement(): void { Staff::requireView(); $this->getRecord()->refresh(); $this->edits=$this->facts=$this->domainStatus=$this->families=null; }
+    public function pollManagement(): void { Staff::requireView(); $this->getRecord()->refresh(); $this->edits=$this->facts=$this->domainStatus=$this->families=$this->head=null; $this->notice=false; }
     #[\Livewire\Attributes\Locked]
     public ?int $resumeStarted=null;
     public function syncPending(): bool
@@ -61,6 +61,8 @@ class ViewDomain extends ViewRecord
     private ?array $facts = null;
     private ?array $domainStatus = null;
     private ?array $head = null;
+    /** The head notice, read once per request (false: not read yet). Refresh and actions clear it. */
+    private array|false|null $notice = false;
     #[\Livewire\Attributes\Locked]
     public string $complimentaryCostStamp='';
     public function getTitle(): string { Staff::requireView(); return (string)$this->getRecord()->domain; }
@@ -74,19 +76,20 @@ class ViewDomain extends ViewRecord
         $d=$this->getRecord(); $head=$this->head();
         return StatusMark::line($head['tone'],$this->status()['label'],'domain-'.$d->id,$head['step']);
     }
-    private function head(): array { return $this->head??=DomainFacts::head($this->getRecord(),$this->status(),$this->facts(),$this->edits()['request']); }
+    private function head(): array { return $this->head??=DomainFacts::head($this->getRecord(),$this->status(),$this->facts(),$this->edits()['request'],$this->notice()); }
     /** The head's step as plain text, so rows and Activity can leave out what it already says. */
     private function said(): ?string
     { $step=$this->head()['step']; return $step===null?null:html_entity_decode(strip_tags($step instanceof Htmlable?$step->toHtml():$step),ENT_QUOTES|ENT_HTML5); }
     private function edits(): array { return $this->edits??=DomainEditActions::for($this->getRecord()); }
     private function status(): array { return $this->domainStatus??=DomainFacts::status($this->getRecord()); }
+    private function notice(): ?array { if ($this->notice===false) { $this->notice=DomainFacts::notice($this->getRecord()); } return $this->notice; }
     private function facts(): array
     {
         if ($this->facts!==null) { return $this->facts; }
-        $d=$this->getRecord(); $facts=self::withDnsSetup($d,DomainFacts::for($d)); $progress=$this->managementProgress();
+        $d=$this->getRecord(); $facts=self::withDnsSetup($d,DomainFacts::for($d,$this->notice())); $progress=$this->managementProgress();
         if ($this->edits()['authCode'] || isset($progress['auth_code_email'])) { $facts['Email auth code']=['value'=>'Goes to the '.OwnedDomains::authCodeRecipient($d),'sub'=>'Never shown here.','url'=>null,'tone'=>null,'help'=>'The code moves this domain to another registrar. We email it and never show it here.','demo'=>false]; }
         if ($this->edits()['held']) { $facts=DomainFacts::whileHeld($facts,$this->edits()['first']??null); }
-        return $this->facts=DomainFacts::withProgress($facts,$progress,DomainFacts::headRequest($d,$this->status(),$this->edits()['request']));
+        return $this->facts=DomainFacts::withProgress($facts,$progress,DomainFacts::headRequest($d,$this->status(),$this->edits()['request'],$this->notice()));
     }
     protected function afterActionCalled(Action $action): void
     {
@@ -245,7 +248,7 @@ class ViewDomain extends ViewRecord
         $own=array_intersect_key($facts,array_flip(DomainFacts::SECTIONS[self::HELD_SECTION]));$own['DS records']=\Paymenter\Extensions\Servers\Domains\Presentation\DsState::staff($d);
         $rows=[$view('head')];$shown=[];
         // SRV has no row of its own in the facts, so its change line comes straight from the stored progress.
-        $srv=DomainFacts::progress($this->managementProgress(),'srv',DomainFacts::headRequest($d,$this->status(),$edits['request']));
+        $srv=DomainFacts::progress($this->managementProgress(),'srv',DomainFacts::headRequest($d,$this->status(),$edits['request'],$this->notice()));
         foreach (($state['cancelled_without_records']??false)||($state['not_at_registrar']??null)!==null?[]:$state['rows'] as $family) {
             $label=$family['label'];$fact=$own[$label]??null;$shown[]=$label;
             $rows[]=$this->familyRow($family,$fact,$fact!==null&&$label!=='DS records'?$this->side($label,$fact,$edits,null):[],$state['at']??null,$family['kind']==='srv'?$srv:null);
@@ -279,7 +282,7 @@ class ViewDomain extends ViewRecord
     {
         $entries=DomainHistory::entries($d);
         $url=DomainResource::getUrl('view',['record'=>$d->id,'relation'=>'0']);
-        return Sheet::section('Activity',[$entries===[]?Text::make('No history yet'):Sheet::trace(DomainHistory::steps($d,array_slice($entries,0,Sheet::RAIL_STEPS),DomainFacts::headRequest($d,$this->status(),$this->edits()['request']),$this->said()))],
+        return Sheet::section('Activity',[$entries===[]?Text::make('No history yet'):Sheet::trace(DomainHistory::steps($d,array_slice($entries,0,Sheet::RAIL_STEPS),DomainFacts::headRequest($d,$this->status(),$this->edits()['request'],$this->notice()),$this->said()))],
             after:$entries===[]?[]:[Sheet::link('view_history','View all '.count($entries),$url)]);
     }
     /** A row's action column: its edits or its link. Renewal and Last sync draw the page's own actions. */

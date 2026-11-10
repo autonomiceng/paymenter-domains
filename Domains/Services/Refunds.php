@@ -51,7 +51,7 @@ final readonly class Refunds
             $review?->local(static fn()=>null);$review=null; // Consume the bound staff review before gateway recovery.
             $returned = ReceiptReturns::resume($id, $this->clock->now());
             $seen->refresh();
-            if (ReceiptReturns::outstanding($seen)>0 || ReceiptReturns::malformed($seen) || (!RefundProof::retired($seen, $seen->domain)&&!FundsWaits::closedRenewal($seen,$seen->domain))) { return $returned; }
+            if (ReceiptReturns::malformed($seen) || ReceiptReturns::outstanding($seen)>0 || (!RefundProof::retired($seen, $seen->domain)&&!FundsWaits::closedRenewal($seen,$seen->domain))) { return $returned; }
         }
         $seed = $seen->domain()->firstOrFail();
         try { $result = DB::transaction(function () use ($seed, $id, $review): ?array {
@@ -141,8 +141,10 @@ final readonly class Refunds
         Cache::forever($cursor, $ids->count() === 100 ? $ids->last() : 0);
         foreach (Operation::whereIn('id', $ids)->orderBy('id')->get() as $op) {
             $paid = InvoiceTransaction::where('invoice_id', $op->invoice_id)->where('status', InvoiceTransactionStatus::Succeeded)->pluck('id')->all();
-            if (!ReceiptReturns::plans($op) && array_diff($paid, array_keys(RefundPayment::lateCredited($op))) === []) { continue; }
-            try { if ($this->creditClosed($op) !== null) { $credited[] = (int) $op->domain_id; continue; } }
+            try {
+                if (!ReceiptReturns::plans($op) && array_diff($paid, array_keys(RefundPayment::lateCredited($op))) === []) { continue; }
+                if ($this->creditClosed($op) !== null) { $credited[] = (int) $op->domain_id; continue; }
+            }
             catch (\Throwable $e) { RefundRepairs::failed((int)$op->id, $this->clock->now()->getTimestamp()); logger()->warning('Domains late payment stays with staff.', ['operation_id' => (int) $op->id, 'exception_class' => $e::class]); }
             app(AcquisitionRetirement::class)->inspect((int) $op->domain_id);
         }
@@ -151,7 +153,10 @@ final readonly class Refunds
     private function creditClosed(Operation $seen): ?array
     {
         $returned=ReceiptReturns::plans($seen)?ReceiptReturns::resume((int)$seen->id, $this->clock->now()):null;
-        $fresh=$seen->fresh(); if (ReceiptReturns::outstanding($fresh)>0 || ReceiptReturns::malformed($fresh)) { return null; }
+        $fresh=$seen->fresh();
+        // An unreadable return stays with staff before any allocation arithmetic; resume() records a plan's repair itself.
+        if (ReceiptReturns::malformed($fresh)) { RefundRepairs::failed((int)$seen->id, $this->clock->now()->getTimestamp()); return null; }
+        if (ReceiptReturns::outstanding($fresh)>0) { return null; }
         $result = DB::transaction(function () use ($seen): ?array {
             $l = HoldingLocks::take($seen->domain()->firstOrFail(), released: true); $op = $l['operations']->firstWhere('id', $seen->id);
             if (!$op || !UnpaidAcquisitionProof::terminal($op, $l['domain'])) { throw new \DomainException('Closed order proof is unavailable.'); }

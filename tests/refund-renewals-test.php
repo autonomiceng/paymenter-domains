@@ -176,7 +176,25 @@ $outcome=$presenter->invoiceOutcome($user,(int)$bill->id);same(['returned','$1.0
 // An unbalanced retained plan stays pending and with staff: no finished outcome, no credit, no gateway call.
 $valid=$card->fresh()->getRawOriginal('funding');$unbalanced=$card->fresh()->funding;$unbalanced['late_credits'][0]['bridge_minor']=1;
 DB::table('domains_operations')->where('id',$card->id)->update(['funding'=>\Illuminate\Support\Facades\Crypt::encryptString(json_encode($unbalanced))]);
-same('pending',$presenter->invoiceOutcome($user,(int)$bill->id)->money,'An unbalanced return plan is not reported as finished');
+same(['pending',null],[$presenter->invoiceOutcome($user,(int)$bill->id)->money,$presenter->invoiceOutcome($user,(int)$bill->id)->amount],'An unbalanced return plan is not reported as finished and has no total');
+// Unreadable amounts and paid-row coverage are checked before any arithmetic: pending with no total, never an error.
+DB::table('domains_operations')->where('id',$card->id)->update(['funding'=>$valid]);$readable=$card->fresh()->funding;$late=$readable['late_credits'][0];
+foreach(['plan amount'=>[[...$late,'amount'=>'not-an-amount']],'payment coverage'=>[[...$late,'payments'=>[['amount_minor'=>'100']]]],
+    'missing payment coverage'=>[array_diff_key($late,['payments'=>true])],'null payment coverage'=>[[...$late,'payments'=>null]],
+    'late credit amount'=>[$late,['amount'=>'not-an-amount','currency'=>'USD','payments'=>[],'to'=>'account_credit','credit_id'=>null,'at'=>$late['at']]]] as $kind=>$credits){
+    DB::table('domains_operations')->where('id',$card->id)->update(['funding'=>\Illuminate\Support\Facades\Crypt::encryptString(json_encode([...$readable,'late_credits'=>$credits]))]);
+    $outcome=$presenter->invoiceOutcome($user,(int)$bill->id);same(['pending',null],[$outcome->money,$outcome->amount],'Unreadable '.$kind.' leaves the invoice outcome pending with no total');
+    commerceReject(fn()=>\Paymenter\Extensions\Servers\Domains\Services\ReceiptReversals::forInvoice($bill));
+}
+// Coverage is checked before already credited payments are summed, so an unreadable entry is a review refusal, not an error.
+DB::table('domains_operations')->where('id',$card->id)->update(['funding'=>\Illuminate\Support\Facades\Crypt::encryptString(json_encode([...$readable,
+    'late_credits'=>[[...$late,'payments'=>[['id'=>$late['payments'][0]['id'],'amount_minor'=>[100]]]]]]))]);
+commerceReject(fn()=>DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Services\RefundPayment::lateUncredited($card->fresh(),\Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($d->fresh()))));
+// The credit writer checks plans before outstanding allocations, so a non-numeric allocation is a review refusal.
+DB::table('domains_operations')->where('id',$card->id)->update(['funding'=>\Illuminate\Support\Facades\Crypt::encryptString(json_encode([...$readable,
+    'late_credits'=>[[...$late,'allocations'=>[[...$late['allocations'][0],'amount_minor'=>'not-an-amount']]]]]))]);
+commerceReject(fn()=>DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Services\RefundPayment::lateUncredited($card->fresh(),\Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($d->fresh()))));
+DB::table('domains_operations')->where('id',$card->id)->update(['funding'=>\Illuminate\Support\Facades\Crypt::encryptString(json_encode($unbalanced))]);
 $sends=MoneyReceiptGateway::$sends;same(null,$refunds->creditRejected($card->id),'An unbalanced return plan is not credited');
 same([$before,$sends],[$credit(),MoneyReceiptGateway::$sends],'An unbalanced return plan moves no money and calls no gateway');
 expect(DB::table('domains_obligation_alerts')->where('operation_id',$card->id)->where('code','refund_repair')->whereNull('resolved_at')->exists(),'An unbalanced return plan keeps its staff repair');

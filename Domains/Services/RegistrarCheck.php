@@ -141,8 +141,9 @@ final class RegistrarCheck
     /** The one date format these lines use, the staff pages' own: Nov 4, 2026, 1:53 PM PST. */
     private static function at(int $at): string
     { return \Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at($at); }
-    /** Older lost replies need no worker turn to expose their existing answer step. Read only. */
-    public static function status(Operation $op): ?array
+    /** Older lost replies need no worker turn to expose their existing answer step. Read only.
+     * $known: batch-loaded reads for customer lists, the server's 'accounts' and its 'server' with settings. Its domain relation is set. */
+    public static function status(Operation $op, ?array $known = null): ?array
     {
         $check = $op->policy['status_check'] ?? null;
         if (isset($check['attempt_identity']) && !hash_equals(RegistrarAnswers::identity($op),(string)$check['attempt_identity'])) { $check=null; }
@@ -154,11 +155,11 @@ final class RegistrarCheck
         try {
             $now = app(Clock::class)->now();
             if ($op->state === 'running' && $op->lease_expires_at !== null && $op->lease_expires_at > $now) { return $check; }
-            $account = Account::where('server_id', $op->server_id)->sole();
+            $account = $known === null ? Account::where('server_id', $op->server_id)->sole() : $known['accounts']->sole();
             $domain = $op->domain;
             if ($op->account_fingerprint !== $account->account_fingerprint || $op->account_fingerprint !== $domain->account_fingerprint
                 || $op->authority_generation !== $domain->authority_generation) { return $check; }
-            $attempt = ReconciliationEvidence::attempt($op, $domain, AccountBindings::binding($account));
+            $attempt = ReconciliationEvidence::attempt($op, $domain, AccountBindings::binding($account), $known['server'] ?? null);
             if (self::lostReply($op, $attempt, $now)) {
                 if ($op->registrar_key==='enom'&&!self::attempted($op)) { return ['outcome'=>'not_checked']; }
                 return [...($check??[]),'outcome'=>'awaiting_answer', 'registrar'=>$attempt->binding->registrarKey === 'enom' ? 'Enom' : 'NameSilo',
@@ -168,14 +169,14 @@ final class RegistrarCheck
         return $check;
     }
     /** Customers wait for our registrar check; recording the answer is a staff task. */
-    public static function forCustomer(Operation $op): array
+    public static function forCustomer(Operation $op, ?array $known = null): array
     {
-        $check = self::status($op);
+        $check = self::status($op, $known);
         // Before the first read the customer sees the same pending line; Check status is a staff button.
         if (($check['outcome'] ?? null) === 'not_checked' && is_string($op->attempt['dispatch_attempted_at'] ?? null)) {
             $check = ['outcome'=>'awaiting_answer','answer_after'=>(new \DateTimeImmutable($op->attempt['dispatch_attempted_at']))->modify('+24 hours')->getTimestamp()];
         }
-        if (($check['outcome'] ?? null) !== 'awaiting_answer') { return self::for($op); }
+        if (($check['outcome'] ?? null) !== 'awaiting_answer') { return self::words($check, $op->state === 'succeeded'); }
         $kind = match ($op->action) { 'transfer' => 'transfer', 'renew' => 'renewal', default => 'registration' };
         $confirming = 'We’re confirming this '.$kind.' with the registrar.';
         $after = 'Contact support if it’s still pending after '.(new \DateTimeImmutable('@'.(int)($check['answer_after']??0)))->setTimezone(new \DateTimeZone('America/Los_Angeles'))->format('M j, g:i A').' PT.';

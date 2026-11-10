@@ -64,7 +64,7 @@ final class CapturedChargeReview
         if(!is_array($reads)||!array_is_list($reads)||!$reads||!is_array($observations)||!array_is_list($observations)||!$observations){return false;}$read=end($reads);$seen=end($observations);
         $attempt=ReconciliationEvidence::attempt($op,$op->domain()->firstOrFail(),AccountBindings::binding(Account::where('server_id',$op->server_id)->sole()));
         return $read['resume']===count($p['renewal_resumptions']??[])&&$seen['key']===$read['key']&&$seen['attempt_hash']===self::identity($op)
-            &&self::sameProof($seen['proof'],$op->attempt['reconciliation']??null)&&self::supported($op,$attempt)&&!isset($p['captured_charge_approval']);}catch(\Throwable){return false;}
+            &&self::sameProof($seen['proof'],$op->attempt['reconciliation']??null)&&self::supported($op,$attempt,app(Clock::class)->now())&&!isset($p['captured_charge_approval']);}catch(\Throwable){return false;}
     }
     /** The same complete proof, or the same order read again after the registrar confirmed auto-renew Off. The frozen proof keeps its correction. */
     private static function sameProof(mixed $seen,mixed $frozen):bool
@@ -73,12 +73,14 @@ final class CapturedChargeReview
         $rest=static fn(array $proof)=>array_diff_key($proof,['observed_corrections'=>true]);
         return $seen===$frozen||(($seen['observed_corrections']??null)===[]&&($frozen['observed_corrections']??null)===['auto_renew']&&$rest($seen)===$rest($frozen));
     }
-    /** Approval needs the proof source the original attempt supports: its captured TEST order, or order history this account still accepts. */
-    private static function supported(Operation $op,AttemptEvidence $attempt):bool
+    /** Approval needs the proof source the original attempt supports: its captured TEST order, or order history this account
+     * still accepts and that still covers the attempt now. */
+    private static function supported(Operation $op,AttemptEvidence $attempt,\DateTimeImmutable $now):bool
     {
         $source=$op->attempt['reconciliation']['source']??null;
         if($attempt->binding->environment!==Environment::Test){return false;}
-        return $attempt->executionFacts&&$attempt->providerReference!==null?$source==='captured_order':$source==='accepted_history'&&$attempt->historyAcceptance!==null;
+        return $attempt->executionFacts&&$attempt->providerReference!==null?$source==='captured_order'
+            :$source==='accepted_history'&&($attempt->historyAcceptance?->covers($attempt,$now)??false);
     }
     public static function approve(Operation $op,array $l,AccountBindings $bindings,Clock $clock):void
     {
@@ -86,7 +88,7 @@ final class CapturedChargeReview
         if(!self::approvable($op)){throw new StaffReviewRefused('Read the original charge again. A different or unavailable result cannot approve the captured expense.');}
         $d=$l['domain'];$binding=AccountBindings::binding($l['account']);$proof=$op->attempt['reconciliation'];$charge=$proof['charge']??null;
         $bindings->requireReadableLocked($l['server'],$l['account']);RenewalFunding::requireCurrent($op,$l,true);
-        if(!self::supported($op,ReconciliationEvidence::attempt($op,$d,$binding))
+        if(!self::supported($op,ReconciliationEvidence::attempt($op,$d,$binding),$clock->now())
             ||$proof['operation_key']!==$op->operation_key||$proof['generation']!==$op->authority_generation||$proof['fingerprint']!==$op->account_fingerprint
             ||$proof['query']!==['name'=>$d->domain,'action'=>'renew','years'=>$op->term]||$proof['provider_domain_id']!==$d->provider_domain_id
             ||$charge!==($op->cost['actual']??null)||($charge['currency']??null)!=='USD'||!is_string($proof['order_reference']??null)

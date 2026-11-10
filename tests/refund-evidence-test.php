@@ -64,6 +64,8 @@ foreach(['accepted','null','absent'] as $mode){
 }
 // Complimentary refusals without retained proof come first by ID, yet a later paid return still gets its turn.
 Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
+// The complimentary closure cursor arrives in its own migration (older code keeps it in the cache).
+if(is_file(dirname(__DIR__).'/Domains/Services/ClosureCursorSchema.php')){Paymenter\Extensions\Servers\Domains\Services\ClosureCursorSchema::install();}
 foreach(Paymenter\Extensions\Servers\Domains\Models\Account::orderBy('server_id')->get() as $a){DB::table('domains_observation_queues')->insertOrIgnore(['server_id'=>$a->server_id,'account_fingerprint'=>$a->account_fingerprint]);}
 $unproven=[];
 for($i=0;$i<25;$i++){
@@ -86,19 +88,26 @@ same($retained[0],$held()[0],'Unproven complimentary refusals stay unchanged');
 foreach($unproven as $id){$row=Operation::findOrFail($id);expect(!RefundCandidates::automatic($row),'Unproven complimentary refusal stays out of native refund locks');commerceReject(fn()=>$refunds->creditRejected($id));}
 same($retained[0],$held()[0],'Direct credit still refuses unproven complimentary refusals');
 // A smaller page still rechecks every complimentary refusal within a bounded number of turns, after its cursor wraps.
+// The cursor lives on the queue row, so losing the cache before every turn never restarts the page.
 $seen=[];
 for($turn=0;$turn<6;$turn++){
+    Illuminate\Support\Facades\Cache::flush();
     $page=ObservationCandidates::next('refund',8,10)[$enom]??[];
     expect(array_diff($paid,$page)===[],'Every turn keeps the paid page: '.$turn);
     expect(count(array_intersect($page,$unproven))<=10,'Complimentary review stays within its page: '.$turn);
     $seen=[...$seen,...array_intersect($page,$unproven)];
 }
-same($unproven,array_values(array_unique(array_intersect($unproven,$seen))),'Each unproven complimentary refusal is rechecked within one cursor pass');
-// A cache outage loses only the complimentary cursor, never the scheduler turn or the paid page.
+same($unproven,array_values(array_unique(array_intersect($unproven,$seen))),'Each unproven complimentary refusal is rechecked within one cursor pass, through repeated cache loss');
+// A cache outage keeps the paid page and the complimentary page's place.
+$comp=RefundCandidates::complimentary(Operation::where('server_id',$enom))->orderBy('id')->pluck('id')->all();
+$cursor=static fn():int=>Illuminate\Support\Facades\Schema::hasColumn('domains_observation_queues','complimentary_cursor')?(int)DB::table('domains_observation_queues')->where('server_id',$enom)->value('complimentary_cursor'):0;
+for($i=0;$i<2&&$cursor()===0;$i++){ObservationCandidates::next('refund',8,10);}
+$at=$cursor();expect($at>0,'The complimentary page stopped partway, with its place on the queue row');
 $cacheManager=Illuminate\Support\Facades\Cache::getFacadeRoot();
 Illuminate\Support\Facades\Cache::swap(new class { public function __call($method,$arguments){throw new RuntimeException('Synthetic cache outage');} });
-try{$page=ObservationCandidates::next('refund')[$enom]??[];}finally{Illuminate\Support\Facades\Cache::swap($cacheManager);}
-expect(array_diff($paid,$page)===[]&&array_slice(array_values(array_intersect($page,$unproven)),0,1)===[$unproven[0]],'A cache outage restarts the complimentary page and keeps the paid page');
+try{$page=ObservationCandidates::next('refund',8,10)[$enom]??[];}finally{Illuminate\Support\Facades\Cache::swap($cacheManager);}
+expect(array_diff($paid,$page)===[],'A cache outage keeps the paid page');
+same(array_slice(array_values(array_filter($comp,static fn(int $id)=>$id>$at)),0,10),array_values(array_diff($page,$paid)),'A cache outage continues the complimentary page from its place');
 same([$enom],array_keys(ObservationCandidates::next('refund',1)),'One account turn');
 same([$other],array_keys(ObservationCandidates::next('refund',1)),'The other account still gets the next turn');
 echo "Independent negative proof and null/presence/route refusal matrix passed\n"; $nativeSuccessful=true;

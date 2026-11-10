@@ -59,6 +59,8 @@ final class RefundPayment
             ? Operation::where('invoice_id', $op->invoice_id)->orderBy('id')->when(DB::transactionLevel() > 0, fn ($q) => $q->lockForUpdate())->get() : [$op];
         $done = [];
         foreach ($ops as $row) {
+            // An unreadable retained return stays with staff before its coverage is read.
+            if (ReceiptReturns::malformed($row)) { throw new \DomainException('Retained return plan needs review.'); }
             $f = $row->funding ?? [];
             foreach ([...(isset($f['refund']) ? [$f['refund']] : []), ...($f['late_credits'] ?? [])] as $credit) {
                 foreach ($credit['payments'] as $payment) { $done[$payment['id']] = ($done[$payment['id']] ?? 0) + $payment['amount_minor']; }
@@ -76,9 +78,10 @@ final class RefundPayment
         $peers=$op->safe_code===UnpaidAcquisitionProof::CODE?Operation::where('invoice_id',$op->invoice_id)->orderBy('id')->lockForUpdate()->get():[$op];
         $outstanding=0;
         foreach($peers as $peer){
+            if(ReceiptReturns::malformed($peer)){throw new \DomainException('Retained return plan needs review.');}
             $outstanding+=ReceiptReturns::outstanding($peer);
             foreach([...(isset($peer->funding['refund'])?[$peer->funding['refund']]:[]),...($peer->funding['late_credits']??[])] as $p){
-                $local+=($p['to']??null)==='original_payment'?(ReceiptReturns::bridge($p)??throw new \DomainException('Retained return plan needs review.')):PricingRule::minor($p['amount']);
+                $local+=($p['to']??null)==='original_payment'?ReceiptReturns::bridge($p):PricingRule::minor($p['amount']);
             }
         }
         $left = $net - $local - $outstanding;

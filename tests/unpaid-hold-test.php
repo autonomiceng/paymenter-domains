@@ -153,7 +153,7 @@ $refunds=app(Refunds::class);$account=Account::where('server_id',$serverId)->sol
 for($i=0;$i<110;$i++){
     $invoiceId=DB::table('invoices')->insertGetId([...array_diff_key($invoiceRow,['id'=>1]),'number'=>null]);
     $paidId=DB::table('invoice_transactions')->insertGetId(['invoice_id'=>$invoiceId,'amount'=>'1.00','fee'=>'0.00','status'=>'succeeded']);
-    DB::table('domains_operations')->insert([...array_diff_key($model,['id'=>1]),'operation_key'=>'settled-'.$i,'invoice_id'=>$invoiceId,'invoice_item_id'=>null,'funding'=>Illuminate\Support\Facades\Crypt::encryptString(json_encode(['late_credits'=>[['payments'=>[['id'=>$paidId,'amount_minor'=>100]]]]]))]);
+    DB::table('domains_operations')->insert([...array_diff_key($model,['id'=>1]),'operation_key'=>'settled-'.$i,'invoice_id'=>$invoiceId,'invoice_item_id'=>null,'funding'=>Illuminate\Support\Facades\Crypt::encryptString(json_encode(['late_credits'=>[['payments'=>[['id'=>$paidId,'amount_minor'=>100]],'amount'=>'1.00','currency'=>'USD','to'=>'account_credit','credit_id'=>null,'at'=>'2026-10-21T10:00:00+00:00']]]))]);
 }
 $behind=$new(placeholderComFixtureName('late-behind-placeholder.com'),paid:false);$shut($behind);ExtensionHelper::addPayment($behind->invoice_id,null,amount:$behind->amount);ExtensionHelper::addPayment($parts->invoice_id,null,amount:'0.25');$before=$cash();
 foreach(range(1,3) as $pass){$refunds->creditRetired($account);}
