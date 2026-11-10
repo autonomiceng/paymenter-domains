@@ -22,7 +22,8 @@ $action=$page->instance()->getAction('refund');
 expect(str_contains((string)$action->getModalDescription(),'refunds '.$amount.' to the original payment'),'The dialog names the amount and where it goes: '.$action->getModalDescription());
 same('danger',$action->getModalSubmitAction()?->getColor(),'The destructive confirm is red');
 // The result names the amount and why it went to credit.
-$page->callAction('refund',['reason'=>'Registrar does not support this order'])->assertHasNoActionErrors()
+$page->callAction('refund',['reason'=>'Registrar does not support this order'])->assertHasNoActionErrors();
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])
     ->assertSee('Credit added: '.$amount)->assertSee('The original payment could not be refunded.');
 // The cancelled domain (domain 43) is over: no request check and no Missing registrar records.
 $domain=$op->domain()->firstOrFail();
