@@ -17,7 +17,7 @@
 .domains-missing__cause{margin-inline-start:.5rem;color:var(--beco-fg-2,var(--gray-500))}
 .domains-note{min-width:14rem;max-width:24rem;overflow-wrap:anywhere}
 .domains-narrow{max-width:12rem}
-/* Staff rows are one line: long text ends in "..." and its tooltip has all of it. Keyboard focus shows it in place. */
+/* Staff rows are one line: long text ends in "..." and its tooltip has all of it. Keyboard focus shows it in an overlay. */
 .domains-cut,.domains-cut>*,.domains-line,.domains-line>*,.domains-name-cell,.domains-name-cell>*{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* Filament lays every table text item out as a line-clamp -webkit-box, where the browser paints no "...". One-line cells and their text items are plain blocks; the text item rule beats Filament's in any order. */
 .domains-cut,.domains-line,.domains-name-cell{display:block}
@@ -26,8 +26,10 @@
 .domains-line,.domains-name-cell{max-width:24rem}
 /* The approved staff table's columns, padding included: a domain name 326px and a customer 120px (above). A list Note takes the rest of the row, and 160px when the table scrolls inside its card. Notes lead with their step; the tooltip has the rest. */
 .domains-name-cell{max-width:326px}.domains-line.domains-list-note{max-width:none;width:160px;min-width:100%}.domains-note-cell{width:100%}
-/* Focus on the row's link or button, or on a cut text in a row that opens nothing (OneLine), shows the whole text. */
-:is(a,button):focus-visible :is(.domains-cut,.domains-line,.domains-name-cell),:is(a,button):focus-visible :is(.domains-cut,.domains-line,.domains-name-cell)>*,:is(.domains-cut,.domains-line,.domains-name-cell)[tabindex]:focus-visible,:is(.domains-cut,.domains-line,.domains-name-cell)[tabindex]:focus-visible>*{white-space:normal;overflow-wrap:anywhere}
+/* Keyboard focus on a cut text, or on the row link around it, shows the whole text over the page (staff-reveal), so no cell or row changes size. */
+.domains-reveal{position:fixed;z-index:60;max-width:min(24rem,calc(100vw - 16px));padding:6px 10px;border:1px solid var(--beco-line,color-mix(in srgb,currentColor 20%,transparent));border-radius:6px;background:var(--beco-card-2,#fff);color:var(--beco-fg,#111827);box-shadow:0 4px 12px rgb(0 0 0/.2);font-size:.875rem;line-height:1.25rem;white-space:pre-line;overflow-wrap:anywhere;pointer-events:none}
+.dark .domains-reveal{background:var(--beco-card-2,#18181b);color:var(--beco-fg,#fff)}
+.domains-reveal[hidden]{display:none}
 .domains-line.fi-ta-text-has-descriptions{display:flex;align-items:baseline;gap:.375rem}.domains-line.fi-ta-text-has-descriptions>.fi-ta-text-item{flex:none}.domains-line.fi-ta-text-has-descriptions>.fi-ta-text-description{min-width:0}
 .domains-money{font-variant-numeric:tabular-nums;white-space:nowrap}.fi-ta-cell .domains-money{text-align:end}
 .domains-watch-header .fi-ac{flex-wrap:wrap}

@@ -54,7 +54,7 @@ foreach(['paused'=>'Paused','retired'=>'Stopped']as$state=>$expected){
  }
  $html=\Illuminate\Support\Facades\Blade::render('<x-filament-panels::layout :livewire="$page">{!! $body !!}</x-filament-panels::layout>',['page'=>$list->instance(),'body'=>$list->html()]);
  $html=preg_replace('~<script\b[^>]*>.*?</script>|<link\b[^>]*>~si','',$html);
- writeRenderArtifact((getenv('R14_RENDER_DIR')?:sys_get_temp_dir()).'/r14-watchlist-'.$state.'.html',str_replace('</head>','<style>'.file_get_contents($fixture.'/vendor/filament/filament/dist/theme.css').'</style>'.view('domains::partials.staff-styles')->render().'</head>',$html));
+ writeRenderArtifact((getenv('R14_RENDER_DIR')?:sys_get_temp_dir()).'/r14-watchlist-'.$state.'.html',str_replace(['</head>','</body>'],['<style>'.file_get_contents($fixture.'/vendor/filament/filament/dist/theme.css').'</style>'.view('domains::partials.staff-styles')->render().'</head>',view('domains::partials.staff-reveal')->render().'</body>'],$html));
 }
 // The detail page: a paused name keeps its own earlier, empty Public DNS answer beside a later registry check.
 require dirname(__DIR__).'/Domains/routes/web.php';require dirname(__DIR__).'/Domains/routes/owned.php';app('router')->getRoutes()->refreshNameLookups();

@@ -5,7 +5,8 @@ namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Filament\Tables\Columns\TextColumn;
 use Illuminate\Contracts\Support\Htmlable;
 /**
- * Staff rows are one line. Long text ends in "..." (staff-styles) and the tooltip has all of it, when it may be cut.
+ * Staff rows are one line. Long text ends in "..." (staff-styles) and the tooltip has all of it, when it may be cut;
+ * keyboard focus shows it too (staff-reveal).
  * A description sits after the value on the same line, so a Missing keeps its next step beside it.
  */
 final class OneLine
@@ -24,18 +25,9 @@ final class OneLine
     public static function apply(TextColumn $column, array $kind=self::LINE): TextColumn
     {
         if (isset($kind[2])) { $column->extraCellAttributes(['class'=>$kind[2]],merge:true); }
-        $tip=fn($state,TextColumn $column)=>self::tip(trim(self::text($state).' '.$column->getDescriptionBelow()),$kind[1]);
-        // Keyboard focus shows a cut text in place (staff-styles). A row that opens nothing has no link or button to
-        // focus, so the cut text takes focus itself.
-        return $column->tooltip($tip)->extraAttributes(['class'=>$kind[0]],merge:true)
-            ->extraAttributes(fn($state,TextColumn $column,$record)=>$tip($state,$column)!==null&&!self::opens($column,$record)?['tabindex'=>'0']:[],merge:true);
-    }
-    /** Whether Filament wraps this cell in a link or button (tables index.blade.php). */
-    private static function opens(TextColumn $column, mixed $record): bool
-    {
-        if ($column->isClickDisabled()||$record===null) { return false; }
-        $table=$column->getTable();
-        return filled($column->getUrl())||filled($column->getAction())||filled($table->getRecordUrl($record))||filled($table->getRecordAction($record));
+        // Only the browser knows whether a text is cut, so staff-reveal gives a cut text in a row that opens nothing its tab
+        // stop, and shows the whole text over the table on keyboard focus.
+        return $column->tooltip(fn($state,TextColumn $column)=>self::tip(trim(self::text($state).' '.$column->getDescriptionBelow()),$kind[1]))->extraAttributes(['class'=>$kind[0]],merge:true);
     }
     /** The full text when it is longer than $fits characters. With $fits 0, any nonempty text. */
     public static function tip(mixed $text, int $fits): ?string

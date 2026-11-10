@@ -34,32 +34,20 @@ It compares Register/Transfer/Retry geometry with prior inline-flex/normal-wrap/
 
 ## Rendered layout check (UI suite)
 
-The `ui` suite runs `tests/test_rendered_layout.py` in the native fixture, so default runs with `PAYMENTER_TEST_APP`
-include it and a failure fails the run. It renders the staff Domains list, the staff monitoring list, the DNS
-monitoring setup list and the client domain page with real Blade, then runs `scripts/check-name-and-heading.cjs` in Chromium. It needs the setup above:
-`NODE_PATH` (Playwright) and `CHROME_BIN`, which the runner passes to this suite only. It runs alone and needs a 2048 MiB budget.
-
-```sh
-NODE_PATH=/path/to/node_modules CHROME_BIN=/path/to/chrome PAYMENTER_TEST_APP=/canonical/path/to/paymenter-1.5.9 \
-  scripts/test.py --suite ui
-```
-
-At 1440, 900 and 390px, with the staff sheet after the theme (as installed) and before it, each long name, customer
-and Note must be a one-line block box cut with a painted "...". The widths are the approved staff table's, padding
-included: a name exactly 326px and a customer exactly 120px; a Note fills the rest of the row, at least 160px. In the
-Domains list, those cells are no wider than their items, the table fits its card at 1440px, and the page never scrolls
-sideways (narrower, the table scrolls inside its card).
-The Domains and DNS monitoring setup lists use real long values: each item keeps its full text and its tooltip has all
-of it. Keyboard focus shows every cut item in place, in the monitoring list too: focus on the row link, or, where rows
-open nothing (DNS monitoring setup), on the cut text itself, which is in the tab order with a focus ring. The client domain heading must keep its clamp(1.125rem, 5vw, 1.5rem) size and
-18 by 20px status mark at 320/390/768/1280px in both modes. Scripts are off, so the check shows Filament's main area
-that a script would fade in. It is not a screenshot beside the approved mock.
-
-A host panel can render the staff lists in its own skin: set `DOMAINS_PANEL_SETUP` to a PHP file that is given
-`$panel`, configures it (table class, layout, its sheet as a `panels::styles.after` hook) and returns its built theme
-stylesheet. Then render with `R14_RENDER_DIR=OUT scripts/render-reminders.py OUT` and the render files from
-`tests/test_rendered_layout.py`, and run `node scripts/check-name-and-heading.cjs OUT`. Its receipt lists the Domain,
-Customer and Note column widths at each viewport, to compare with the mock. Without it, the render uses Filament's stock theme.
+`scripts/test.py --suite ui` renders staff pages with real Blade and measures them in Chromium with
+`scripts/check-name-and-heading.cjs`: `tests/test_rendered_layout.py` (Domains and monitoring lists, client domain page)
+and `tests/test_rendered_managed_dns.py` (DNS monitoring setup list). Default runs with `PAYMENTER_TEST_APP` include it.
+It needs `NODE_PATH` (Playwright) and `CHROME_BIN`, which the runner passes to this suite only; it runs alone (2048 MiB).
+At 1440, 900 and 390px, with the staff sheet after the theme and before it, each long name, customer and Note is one
+line cut with a painted "...": a name exactly 326px, a customer 120px, a Note the rest of the row and at least 160px
+(the approved table, padding included). Domains list cells are no wider than their items, the table fits its card at
+1440px, and the page never scrolls sideways. Each item and its tooltip keep the full text. Only the staff reveal script
+runs: keyboard focus on a row link, or on a cut text in a row that opens nothing (the only texts with their own tab stop,
+kept while cut), shows the full text in a fixed overlay, and no cell or row moves. The client domain heading keeps
+clamp(1.125rem, 5vw, 1.5rem) and an 18 by 20px status mark at 320/390/768/1280px in both modes. For a host skin, set
+`DOMAINS_PANEL_SETUP` to a PHP file that is given `$panel`, configures it and returns its built theme; render with
+`R14_RENDER_DIR=OUT scripts/render-reminders.py OUT` and both tests' render files, then run the check on `OUT`. Its
+receipt lists the Domain, Customer and Note column widths.
 
 Run `python3 scripts/bootstrap.py --download` once, then `scripts/test.py` fully offline.
 PHP **8.4.27** (Debian `8.4.27-1~deb13u1`, Linux x86_64) is pinned by archive SHA-256;

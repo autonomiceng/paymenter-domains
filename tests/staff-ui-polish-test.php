@@ -30,14 +30,8 @@ $page->assertSee('Under review')->assertSee('Old registrar needs approval')->ass
 $instance=$page->instance();$columns=$instance->getTable()->getColumns();
 $records=$instance->getTableRecords()->keyBy('id');
 foreach([$held,$active,$uncertain] as $domain){assertDomainNameOneLine($page->html(),$domain->domain,'Domains list '.$domain->domain);}
-// The adoption list links each row to its view page, which OneLine reads to know the row already takes focus.
-$panel=\Filament\Facades\Filament::getCurrentPanel();
-\Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(fn()=>\Paymenter\Extensions\Servers\Domains\Admin\Resources\PendingAdoptionResource::registerRoutes($panel));
-app('router')->getRoutes()->refreshNameLookups();app('router')->getRoutes()->refreshActionLookups();
 $pending=\Paymenter\Extensions\Servers\Domains\Admin\Resources\PendingAdoptionResource::table(\Filament\Tables\Table::make($instance))->getColumn('domain');
-$pendingHtml=$pending->record($records[$uncertain->id])->toEmbeddedHtml();
-assertDomainNameOneLine($pendingHtml,$uncertain->domain,'Adoption pending list');
-expect(!str_contains($pendingHtml,'tabindex'),'A linked row adds no tab stop for its cut name');
+assertDomainNameOneLine($pending->record($records[$uncertain->id])->toEmbeddedHtml(),$uncertain->domain,'Adoption pending list');
 assertDomainNameWraps(Livewire::actingAs($viewer)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$uncertain->id])->instance()->getHeading()->toHtml(),$uncertain->domain,'Domain page title','title');
 foreach([[$held,'Under review','Old registrar needs approval. Check request #'.$held->operations()->sole()->id.'.'],[$uncertain,'Under review','Old registrar needs approval. Check request #'.$uncertain->operations()->sole()->id.'.'],[$active,'Under review','Check the domain and its requests.']] as [$domain,$label,$reason]){
     $record=$records[$domain->id];$column=$columns['status']->record($record);

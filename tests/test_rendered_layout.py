@@ -9,27 +9,32 @@ import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-# Each writes its pages into the directory: the monitoring list (by R14_RENDER_DIR), the domain page, the Domains list
-# and the DNS monitoring setup list.
-RENDERS = ['tests/test_installed_demo_c_state_watch-test.php', 'tests/domain-page-render.php', 'tests/staff-list-render.php',
-           'tests/managed-dns-render.php']
 CHECK = 'scripts/check-name-and-heading.cjs'
+# Per scope: the render files, each writing its pages into the directory, the pages, and the least measured items. lists:
+# the monitoring list (by R14_RENDER_DIR), the domain page and the Domains list. managed: the DNS monitoring setup list,
+# alone in tests/test_rendered_managed_dns.py so each run keeps memory headroom.
+SCOPES = {
+    'lists': (['tests/test_installed_demo_c_state_watch-test.php', 'tests/domain-page-render.php', 'tests/staff-list-render.php'],
+              ['staff-domains-list.html', 'r14-watchlist-paused.html', 'r14-watchlist-retired.html',
+               'domain-page-invoice-due-dark.html', 'domain-page-invoice-due-light.html'], 56),
+    'managed': (['tests/managed-dns-render.php'], ['staff-managed-dns.html'], 6),
+}
 
 
-def main():
+def main(scope='lists'):
+    renders, pages, least = SCOPES[scope]
     node = shutil.which('node')
     assert node, 'Node.js is required for the rendered layout check'
     assert os.environ.get('PAYMENTER_TEST_FIXTURE'), 'Run through scripts/test.py with PAYMENTER_TEST_APP'
     with tempfile.TemporaryDirectory(prefix='domains-layout-') as output:
         env = dict(os.environ, R14_RENDER_DIR=output)
-        for path in RENDERS:
+        for path in renders:
             result = subprocess.run([str(ROOT/'scripts/php-test'), path, output], cwd=ROOT, env=env,
                                     capture_output=True, text=True, timeout=120)
             assert result.returncode == 0, f'{path} did not render:\n{result.stdout}\n{result.stderr}'
-        for page in ['staff-domains-list.html', 'staff-managed-dns.html', 'r14-watchlist-paused.html', 'r14-watchlist-retired.html',
-                     'domain-page-invoice-due-dark.html', 'domain-page-invoice-due-light.html']:
+        for page in pages:
             assert (Path(output)/page).is_file(), f'Missing render: {page}'
-        result = subprocess.run([node, str(ROOT/CHECK), output], cwd=ROOT, env=env,
+        result = subprocess.run([node, str(ROOT/CHECK), output, scope], cwd=ROOT, env=env,
                                 capture_output=True, text=True, timeout=150)
         sys.stdout.write(result.stdout)
         sys.stderr.write(result.stderr)
@@ -40,8 +45,9 @@ def main():
         assert result.returncode == 0 and receipt.get('complete') is True and receipt.get('failures') == [], \
             f'{CHECK} failed with exit {result.returncode}'
         # Every expected item was found and measured: a check that finds nothing is not a pass.
-        assert receipt.get('measured', 0) >= 62, f'Too few rendered items measured: {receipt.get("measured")}'
-    print('Rendered staff lists and domain heading hold their layout in Chromium.')
+        assert receipt.get('scopes') == [scope], f'The check ran {receipt.get("scopes")}, not {scope}'
+        assert receipt.get('measured', 0) >= least, f'Too few rendered items measured: {receipt.get("measured")}'
+    print(f'Rendered staff pages ({scope}) hold their layout in Chromium.')
 
 
 if __name__ == '__main__':
