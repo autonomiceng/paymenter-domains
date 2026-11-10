@@ -361,7 +361,7 @@ final class StaffCatalogue
             if($queue&&$queue->account_fingerprint!==$t->account_fingerprint){$queue=null;}
             $work=$queue?OfferState::decode($queue->offer_work):[];
             // A terms read that failed says so, instead of checking with no end. The next try is in the row's refresh.
-            if(!$unreadable&&in_array($reason,['unknown_facts','stale_facts'],true)&&isset($work['facts'][$t->tld]['failed_at'])
+            if(!$unreadable&&in_array($reason,['unknown_facts','stale_facts'],true)&&!empty($work['facts'][$t->tld]['failure'])
                 &&str_ends_with($label,'checking registrar terms')){$label=TldFacts::TERMS_FAILED;}
             // Only seller-policy writes establish selection time; pricing revisions do not.
             $selectedAt=$policy?->updated_at;
