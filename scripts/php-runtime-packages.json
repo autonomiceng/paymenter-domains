@@ -36,6 +36,11 @@
     "native": true
   },
   {
+    "url": "https://deb.debian.org/debian/pool/main/libz/libzip/libzip5_1.11.3-2_amd64.deb",
+    "sha256": "efaa26f7a0fd7575427f44cd97d8b72eadd7e0852f0621e29a22685da487c204",
+    "native": true
+  },
+  {
     "url": "https://deb.debian.org/debian-security/pool/updates/main/p/php8.4/php8.4-zip_8.4.27-1~deb13u1_amd64.deb",
     "sha256": "f27b6900e5cdee5a606eb8680c504ba7c5d0aa6ef1c446eb60367749a4f8fc6b",
     "native": true

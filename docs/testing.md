@@ -54,7 +54,9 @@ receipt lists the Domain, Customer and Note column widths.
 Run `python3 scripts/bootstrap.py --download` once, then `scripts/test.py` fully offline.
 PHP **8.4.27** (Debian `8.4.27-1~deb13u1`, Linux x86_64) is pinned by archive SHA-256;
 hashes came from Debian security downloads on 2026-10-22. ICU `76.1-4` was re-downloaded
-and verified against its unchanged pin/hash. Native runs load gd and bcmath; GD needs host
+and verified against its unchanged pin/hash. libzip `1.11.3-2` (Debian trixie, `libzip.so.5` for the zip
+extension) is bundled for hosts without it; its hash matches the trixie package index (2026-11-09).
+Native runs load gd and bcmath; GD needs host
 `libgd3` (`libgd.so.3`) and dependencies, which are not bundled. Native bootstrap verifies
 GD loads and retains loader errors; provider-only bootstrap neither loads nor requires GD.
 Every run verifies/re-extracts archives; missing/corrupt caches fail without downloading.
