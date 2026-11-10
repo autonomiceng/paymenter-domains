@@ -14,6 +14,8 @@ final class DomainStateInputs
     private array $renewed = [];
     /** Domain ids whose retired renewal cycle fails billing's replacement proof. */
     private array $unproven = [];
+    /** @var list<int> OwnedDomains::paying over the transaction batch. */
+    private array $paying = [];
     /** @param array<int,Domain> $domains id => domain; @param array<int,\App\Models\Service> $services id => service */
     private function __construct(private array $domains, private array $services) {}
     public static function one(Domain $d): self
@@ -38,7 +40,10 @@ final class DomainStateInputs
         $cycleInvoices = $in->cycles->pluck('invoice_id')->filter()->all();
         $in->invoices = Invoice::whereIn('id', [...$cycleInvoices, ...$in->acquisitions->pluck('invoice_id')->filter()->all()])->get()->keyBy('id');
         $in->items = InvoiceItem::whereIn('invoice_id', $cycleInvoices)->get();
-        $in->transactions = InvoiceTransaction::whereIn('invoice_id', $cycleInvoices)->get();
+        // An unpaid order's payments too: a cancelled order says nothing was charged only when no payment came in or is on its way.
+        $ordered = $in->acquisitions->where('state', 'awaiting_payment')->pluck('invoice_id')->filter()->all();
+        $in->transactions = InvoiceTransaction::whereIn('invoice_id', array_values(array_unique([...$cycleInvoices, ...$ordered])))->get();
+        $in->paying = OwnedDomains::paying($in->transactions);
         $serviceIds = array_map(fn ($d) => (int) $d->service_id, array_values($domains));
         $in->cancel = NativeCancellation::withIntents(ServiceCancellation::whereIn('service_id', $serviceIds)->get(), $serviceIds, true);
         $in->adoptions = Adoption::whereIn('id', array_filter(array_map(fn ($d) => $d->adoption_id, $domains)))->get()->keyBy('id');
@@ -80,6 +85,8 @@ final class DomainStateInputs
     /** The newest payment attempt, from the same transaction batch as the renewal ledger. */
     public function latestTransactionStatus(Invoice $invoice): mixed
     { return $this->transactions->where('invoice_id', $invoice->id)->sortByDesc('id')->first()?->status; }
+    /** Invoice ids with a payment that succeeded or is processing, for OwnedDomains::order. */
+    public function paying(): array { return $this->paying; }
     public function service(Domain $d): ?\App\Models\Service { return $this->services[$d->service_id] ?? null; }
     public function cycle(Domain $d): ?Operation { return $this->cycles->get($d->id); }
     public function renewed(Domain $d): bool { return in_array((int) $d->id, $this->renewed, true); }
