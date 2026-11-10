@@ -11,6 +11,6 @@ native test and never blocks a pull request. `tests/affected.json` maps changes 
 - Widened: a `core` file adds the whole suite; a file that reaches more than a quarter of all tests within two hops
   adds every test within two hops.
 - Capped at 120 tests per pull request, affected tests first, then the nearest widened ones. The plan step names
-  what the cap left out; the nightly run covers it. At most four shards of about 30 tests run at once.
+  what the cap left out; the nightly run covers it. At most six shards of about 20 tests run at once.
 
 Run `python3 scripts/affected.py --base main` to see a branch's selection, or `--files PATH...` for given paths.
