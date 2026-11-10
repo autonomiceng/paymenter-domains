@@ -50,7 +50,7 @@
         </form>
 
         @if ($notice)
-            <div class="domains-notice domains-notice--warn" role="status"><x-ri-information-fill aria-hidden="true" /><div>{{ $notice }} Here’s <strong>{{ $sld }}</strong> with each of them.</div></div>
+            <div class="domains-notice domains-notice--warn" role="status"><x-ri-information-fill aria-hidden="true" /><div>{{ $notice }}@if ($sld) Here’s <strong>{{ $sld }}</strong> with each of them.@endif</div></div>
         @endif
 
         @if ($results)

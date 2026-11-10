@@ -72,6 +72,11 @@ same(['com'], array_column($store->endings(), 'tld'), 'Only selected seller endi
     $linked = $transfer->show($req(['name' => 'example', 'tld' => 'unsold'], 'GET'))->getData();
     same(['We don’t offer transfers for .unsold domains. Contact support for help transferring this domain.', []], [$linked['error'], $linked['results']], 'A transfer link with an unsupported ending says so instead of checking .com');
     expect(str_contains((string) $forged['notice'], '.unsold isn’t available here.'), 'Register says a linked unsold ending is not offered');
+    // A link with only an unsold ending keeps the notice, but there is no name to show with each ending.
+    $plain = static fn ($response): string => trim(preg_replace('/\s+/', ' ', html_entity_decode(strip_tags($response->render()), ENT_QUOTES)));
+    $bare = $plain($controller->search($req(['tld' => 'unsold'], 'GET')));
+    expect(str_contains($bare, '.unsold isn’t available here.') && !str_contains($bare, 'with each of them'), 'An unsold ending without a name has no name sentence');
+    expect(str_contains($plain($controller->search($req(['name' => 'example', 'tld' => 'unsold'], 'GET'))), 'Here’s example with each of them.'), 'An unsold ending with a name shows that name with each ending');
     same('We don’t offer transfers for this ending. Contact support for help transferring this domain.', $transfer->show($req(['name' => 'example', 'tld' => '<b>'], 'GET'))->getData()['error'], 'A malformed ending is not echoed');
     $policies::where('tld', 'com')->update(['register_enabled' => false]);
     Illuminate\Support\Facades\Cache::flush();
