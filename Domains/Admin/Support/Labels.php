@@ -19,7 +19,8 @@ final class Labels
                 'service_inactive'=>'service not active', 'renewal_off'=>'auto-renew off', 'owner_auto_renew_off'=>'auto-renew off', 'authority_changed'=>'account changed',
                 'invoice_settled'=>'already paid', 'no_agreement'=>'no saved payment method', 'foreign_agreement'=>'payment method belongs to another customer',
                 'gateway_missing'=>'gateway missing', 'gateway_disabled'=>'gateway off', 'agreement_changed'=>'payment method changed'][$evidence['reason'] ?? ''] ?? null) ? ': '.$skip : ''),
-            default => 'Auto Pay: result missing',
+            // Auto Pay never retries an unknown charge, so staff check the gateway before any other payment.
+            default => 'Auto Pay: result missing. Check your payment gateway for this charge before taking payment again.',
         };
     }
     /** Saved request status and cause. RequestFacts::reason adds what is true now. $ordersOff: Orders are off for this request's account. */

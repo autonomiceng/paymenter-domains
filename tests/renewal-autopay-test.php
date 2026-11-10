@@ -122,7 +122,7 @@ same('pending', $failInvoice->fresh()->status, 'Failed charge leaves invoice pen
 same(['status'=>'unknown'], array_diff_key($failOp->funding['auto_pay_result'], ['at'=>true]), 'Lost response remains unknown');
 same($notifications, Notification::count(), 'Unknown collection sends no payment-failed notification');
 same([['Domains renewal Auto Pay outcome unknown; staff review required.', []]], $warnings, 'Warning contains no customer data or exception details');
-same(['Auto Pay: result missing', 'pending'], [RequestFacts::for($failOp, $grants)['auto_pay'], $failInvoice->fresh()->status], 'Unknown collection visible to staff');
+same(['Auto Pay: result missing. Check your payment gateway for this charge before taking payment again.', 'pending'], [RequestFacts::for($failOp, $grants)['auto_pay'], $failInvoice->fresh()->status], 'Unknown collection visible to staff');
 commerceReject(fn () => $cycles->retireUnpaid($failOp->id));
 commerceReject(fn () => $cycles->retireUnpaid($failOp->id));
 same('pending', $failInvoice->fresh()->status, 'Unknown charge cannot retire unpaid debt');
@@ -181,7 +181,7 @@ same('uncertain', $uncertainOp->funding['auto_pay']['status'], 'Precharge marker
 same(null, $uncertainOp->funding['auto_pay_result']??null, 'Uncertain outcome is not manufactured');
 $count = count(DomainRenewalGateway::$calls); $billing->invoice($uncertain->id);
 same($count, count(DomainRenewalGateway::$calls), 'Uncertain marker blocks scheduler retry');
-same('Auto Pay: result missing', Labels::autoPay($uncertainOp->funding['auto_pay']), 'Staff sees the uncertain charge as Missing');
+same('Auto Pay: result missing. Check your payment gateway for this charge before taking payment again.', Labels::autoPay($uncertainOp->funding['auto_pay']), 'Staff sees the uncertain charge as Missing');
 expect(!RenewalCycles::virgin($uncertainOp), 'Unresolved collection is not unattempted');
 expect(!FinancialAdjustments::unattemptedFunding($uncertainOp), 'Unresolved funding blocks unpaid retirement');
 commerceReject(fn () => $cycles->retireUnpaid($uncertainOp->id));
