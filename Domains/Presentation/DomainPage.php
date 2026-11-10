@@ -95,8 +95,8 @@ final class DomainPage
     {
         if ($d->expiry === null) {
             if ($s?->abandoned) { return ['missing' => false, 'tone' => null, 'note' => null]; }
-            // The service ends before its refund. Keep the cancelled order's support step until the money is returned.
-            if (($d->order['state'] ?? null) === 'cancelled' && !isset($d->order['credit'])
+            // The service ends before a refund is recorded. Until then, keep the cancelled order's support step.
+            if (($d->order['state'] ?? null) === 'cancelled' && !isset($d->order['credit']) && !isset($d->order['return'])
                 && !($d->order['returned'] ?? false) && !($d->order['unpaid'] ?? false)) {
                 return DomainListRow::orderExpires($d->order, $support);
             }

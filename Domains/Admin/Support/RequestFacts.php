@@ -54,8 +54,8 @@ final class RequestFacts
             }
             $p=$op->policy??[]; $a=$op->attempt??[]; $f=$op->funding??[];
             if($op->state==='held'&&$op->safe_code===ContactProfileHold::CODE
-                &&ContactProfileHold::unsent($op)&&!ContactProfileHold::unsent($op,retry:true)){
-                $out['contact_recovery']=ContactProfileHold::RETRY_BLOCKED;
+                &&($blocked=ContactProfileHold::releaseBlocked($op))!==null){
+                $out['contact_recovery']=$blocked;
             }
             if ($grants->metadata && ($failure=\Paymenter\Extensions\Servers\Domains\Data\SendFailure::words($a['send_failure']??null))) { $out['send_failure']=$failure; }
             if ($grants->metadata && ($reply=\Paymenter\Extensions\Servers\Domains\Data\RegistrarReply::fromArray($a['evidence']['registrarReply']??null))) { $out['registrar_reply']=$reply->words(); }

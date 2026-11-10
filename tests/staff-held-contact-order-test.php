@@ -169,4 +169,21 @@ $refused(fn()=>$run($op,'release'),'The writer also refuses changed details');
 same(['held','contact_profile_proof_required'],[$op->fresh()->state,$op->fresh()->safe_code],'Changed details stay held');
 same($before,[$nativeMoney(),$sent->contactAdd,$sent->registerDomain,$op->fresh()->attempt],'Refused release changes no money or send evidence');
 echo "Changed details cannot release a saved contact step.\n";
+
+// A completed unsent contact step cannot run again, even though its saved order details still match.
+$op=$heldOrder('held-contact-ended-placeholder.com');
+$row=ProfileContactOperation::where('operation_id',$op->id)->sole();
+ProfileContactOperation::writing(fn()=>$row->update(['state'=>'sealed','attempt'=>[...$row->attempt,
+    'seal'=>'sealed','send_state'=>'possibly_sent','worker_key'=>str_repeat('a',32),'lease_until'=>$clock->now()->format(DATE_ATOM)]]));
+ProfileContactOperation::writing(fn()=>$row->update(['state'=>'unsent','attempt'=>[...$row->attempt,'execution'=>'definitely_unsent']]));
+same(OperationClaims::payloadDigest($op),$row->fresh()->payload_digest,'The ended contact step still matches the order details');
+$before=[$nativeMoney(),$sent->contactAdd,$sent->registerDomain,$op->attempt,$row->fresh()->attempt];
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertActionHidden('release')->assertActionVisible('refund')
+    ->assertDontSee('The contact step cannot be retried with these order details.')
+    ->assertSee('This contact step has ended and cannot be retried. Cancel and refund this order.');
+try{$run($op,'release');throw new LogicException('An ended contact step cannot be released');}
+catch(DomainException $error){same('This contact step has ended and cannot be retried. Cancel and refund this order.',$error->getMessage(),'The writer names the ended step without blaming unchanged details');}
+same(['held','contact_profile_proof_required'],[$op->fresh()->state,$op->fresh()->safe_code],'The ended contact step stays held');
+same($before,[$nativeMoney(),$sent->contactAdd,$sent->registerDomain,$op->fresh()->attempt,$row->fresh()->attempt],'An ended contact step changes no money or send evidence');
+echo "An ended contact step does not blame unchanged order details.\n";
 $nativeSuccessful=true;

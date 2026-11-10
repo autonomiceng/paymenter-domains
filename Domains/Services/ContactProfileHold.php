@@ -10,6 +10,14 @@ final class ContactProfileHold
 {
     public const CODE='contact_profile_proof_required';
     public const RETRY_BLOCKED='The contact step cannot be retried with these order details. Cancel and refund this order.';
+    public const RETRY_ENDED='This contact step has ended and cannot be retried. Cancel and refund this order.';
+    /** A saved step cannot be reopened or send different details. The offer and writer give the same cause. */
+    public static function releaseBlocked(Operation $op): ?string
+    {
+        if(!self::unsent($op)||self::unsent($op,retry:true)){return null;}
+        $matches=ProfileContactOperation::where('operation_id',$op->id)->value('payload_digest')===OperationClaims::payloadDigest($op);
+        return $matches?self::RETRY_ENDED:self::RETRY_BLOCKED;
+    }
     /** Nothing reached NameSilo for this order. $retry also requires the contact step to be able to run again, which
      * only a waiting contact row can: a proved-unsent row stays unsent, so a release would only hold again. */
     public static function unsent(Operation $op,bool $retry=false): bool
