@@ -339,12 +339,14 @@ final class DomainDecisions
             'contacts'=>'contacts','flags'=>'lock, auto-renew and privacy settings',default=>null };
     }
     /** 'paused' (demo registrar off under Enom Test mode), 'failed' (stopped after a failed check) or null. Shared by the page and the list. Nothing syncs on an ended domain, so it has neither.
-     * The list passes the account and stopped state it loaded for the whole page. $accountLoaded includes a missing account. */
+     * The list passes the account and stopped state it loaded for the whole page. $accountLoaded includes a missing account.
+     * While a registration is unconfirmed its request owns recovery (DomainNotices::notice), so no stopped sync is shown on the page or the list. */
     public static function sync(Domain $d, ?Account $account=null, ?bool $stopped=null, bool $accountLoaded=false): ?string
     {
         if (self::ended($d)) { return null; }
         if(!$accountLoaded){$account??=self::account($d);}
-        return $account&&DemoData::syncPaused($d,$account)?'paused':(($stopped??ObservationWork::stopped($d))?'failed':null);
+        if ($account&&DemoData::syncPaused($d,$account)) { return 'paused'; }
+        return !self::unconfirmedRegistration($d)&&($stopped??ObservationWork::stopped($d))?'failed':null;
     }
     /** Why a value read from the registrar is Missing. */
     public static function unread(Domain $d, ?string $sync): string

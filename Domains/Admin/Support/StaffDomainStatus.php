@@ -129,11 +129,13 @@ final class StaffDomainStatus
     /** One step: a request that waits only on Orders names the switch, since its page says no more; any other names the request. */
     private static function ordersOrCheck(Operation $op, string $reason, ?array $accounts=null): string
     { return $op->state==='queued'&&OperationQueries::ordersOff($op,$accounts)?RequestFacts::ordersStep($reason):self::check($op->id); }
-    /** The first danger alert, else the oldest. */
+    /** A request to check leads, as in the domain page's head (DESIGN: the staff job reads Check request #N). Then the first danger alert, else the oldest. */
     private static function topAlert(array $alerts): array
     {
-        foreach ($alerts as $alert) { if ((DomainFacts::ALERTS[$alert['code']][1] ?? null) === 'danger') { return $alert; } }
-        return reset($alerts);
+        $requests = array_values(array_filter($alerts, fn(array $a) => ($a['request'] ?? null) !== null && in_array($a['code'], ['operation_review', 'held_obligation'], true)));
+        $pool = $requests !== [] ? $requests : array_values($alerts);
+        foreach ($pool as $alert) { if ((DomainFacts::ALERTS[$alert['code']][1] ?? null) === 'danger') { return $alert; } }
+        return $pool[0];
     }
     public static function sentence(string $text): string
     { return preg_match('/[.!?]\z/', $text) ? $text : $text.'.'; }
