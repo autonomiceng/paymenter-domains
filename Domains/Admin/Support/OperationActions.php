@@ -74,10 +74,11 @@ final class OperationActions
             $action==='release'&&$op->state!=='held'=>'Hold already released',$action==='hold'&&$op->state==='held'=>'Already on hold',default=>'This request changed'})
             ->body('Nothing new was done. This page is now up to date.');
     }
-    /** What only the customer can give, whatever the state: 'payment', 'code' or null. */
-    public static function customerOwes(Operation $op): ?string
+    /** What only the customer can give, whatever the state: 'payment', 'code' or null.
+     * $statuses: invoice statuses by id that a list read for its page (null for a missing invoice). Without the request's invoice there, it is read now. */
+    public static function customerOwes(Operation $op, ?array $statuses=null): ?string
     {
-        if($op->invoice_id!==null&&\App\Models\Invoice::whereKey($op->invoice_id)->value('status')!=='paid'){return 'payment';}
+        if($op->invoice_id!==null&&($statuses!==null&&array_key_exists((int)$op->invoice_id,$statuses)?$statuses[(int)$op->invoice_id]:\App\Models\Invoice::whereKey($op->invoice_id)->value('status'))!=='paid'){return 'payment';}
         return $op->action==='transfer'&&!TransferInputs::validCode($op->payload['epp']??null)?'code':null;
     }
     /** Domain recovery reuses the current request's bound, audited review ticket. Any domain can stop syncing, so one with no request is reviewed on the domain. */

@@ -183,10 +183,12 @@ final class RequestFacts
     }
     /** Local readiness shared by request pages and domain lists. It never releases a hold.
      * $accounts: a list's OperationQueries::ordersOffAccounts() snapshot, read for the Orders switch instead of the account now.
-     * $release: the alert count's page inputs (StaffDomainInputs). Their accounts are read once per page, and the release check is
-     * skipped: it only chooses the wording of a held or Orders-off request, never whether staff must act on it. */
+     * $release: the alert count's page inputs (StaffDomainInputs). It needs only whether staff must act, so it reads nothing per request:
+     * accounts and invoice statuses come from the page, a held request (a balance hold included) always asks staff to act whatever its
+     * words, and the release check only chooses the wording of an Orders-off request. The words it returns are never shown. */
     public static function readyMessage(Operation $op, ?array $accounts=null, ?array $release=null): ?string
     {
+        if ($release!==null && $op->state==='held') { return 'Not sent.'; }
         $read=fn():?Account=>$release!==null&&array_key_exists($key=OperationQueries::accountKey($op->server_id,$op->registrar_key,$op->account_fingerprint),$release['accounts'])
             ?$release['accounts'][$key]:self::account($op)['account'];
         if (ManagementEvidence::recoverable($op)) {
@@ -206,7 +208,7 @@ final class RequestFacts
         $account=$read();$on=self::ordersOn($op,$account,$accounts);
         // Orders off held this and they are on now, so that is no longer the reason.
         $ordersBack=$op->state==='held'&&$op->safe_code==='processing'&&$on;
-        $owes=OperationActions::customerOwes($op);
+        $owes=OperationActions::customerOwes($op,$release['invoices']??null);
         if (!$account || $owes!==null) { return $ordersBack?($owes==='payment'?'Not sent. Customer has not paid the invoice.':'Not sent. Customer has not added the auth code.'):null; }
         if ($ordersBack && OperationClaims::ordersOffReturns($op)) { return 'Not sent. It will retry automatically.'; }
         // Orders off stops all queued work (RuntimeWork), for any request and whether or not it could send once they are on.

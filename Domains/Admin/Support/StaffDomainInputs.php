@@ -17,8 +17,8 @@ final class StaffDomainInputs
      * @return array<int,array{alerts:list<array{code:string,request:?int}>,late:bool,renewal:?Operation,off:?bool,invoice:?Invoice,closed:bool,waiting:?Operation,orders_off:bool,accounts:?array}> by domain id.
      * off: automatic renewal is off, null when its saved data can't be read. invoice and closed: what OwnedDomains::order reads. waiting: the newest request not finished.
      * orders_off: Orders are off for the account of a queued registration or transfer request. accounts: the snapshot the row's note and step read.
-     * $release: for the alert count, which needs only whether staff must act. Each row then carries release, the page's registrar accounts read
-     * once, and RequestFacts::readyMessage skips its wording-only release check, so the count reads a fixed number of queries per page. */
+     * $release: for the alert count, which needs only whether staff must act. Each row then carries release, the page's registrar accounts and
+     * request invoice statuses read once, and RequestFacts::readyMessage skips its wording-only reads, so the count reads a fixed number of queries per page. */
     public static function for(iterable $domains, ?array $ordersOff=null, bool $release=false): array
     {
         $domains=collect($domains); $ids=$domains->pluck('id')->all();
@@ -38,7 +38,8 @@ final class StaffDomainInputs
         $adoptions=$adoptionIds?Adoption::whereIn('id',$adoptionIds)->get()->keyBy('id'):collect();
         $invoices=Invoice::whereIn('id',$domains->map(fn(Domain $d)=>$d->latestAcquisition?->invoice_id)->filter()->unique()->all())->get(['id','user_id','status'])->keyBy('id');
         $waiting=Operation::query()->whereIn('domain_id',$ids)->whereIn('state',[...StaffDomainStatus::MOVING,'held','uncertain'])->orderBy('id')->get()->keyBy('domain_id');
-        $accounts=$release?['accounts'=>self::accounts([...$domains->all(),...$domains->pluck('latestAcquisition')->filter()->all(),...$operations->flatten(1)->all(),...$waiting->all()])]:null;
+        $requests=[...$domains->pluck('latestAcquisition')->filter()->all(),...$operations->flatten(1)->all(),...$waiting->all()];
+        $accounts=$release?['accounts'=>self::accounts([...$domains->all(),...$requests]),'invoices'=>self::invoiceStatuses($requests)]:null;
         $inputs=[];
         foreach ($domains as $d) {
             $ops=$operations[$d->id]??collect(); $rows=$open[$d->id]??collect(); $current=RenewalCycles::current($d,$ops)->last();
@@ -56,6 +57,15 @@ final class StaffDomainInputs
                 ...($accounts?['release'=>$accounts]:[])];
         }
         return $inputs;
+    }
+    /** Each request invoice's status in one query, by invoice id; null when the invoice is missing.
+     * @param list<Operation> $requests
+     * @return array<int,?string> */
+    private static function invoiceStatuses(array $requests): array
+    {
+        $ids=array_values(array_unique(array_map('intval',array_filter(array_map(fn(Operation $op)=>$op->invoice_id,$requests),fn($id)=>$id!==null))));
+        if (!$ids) { return []; }
+        return array_replace(array_fill_keys($ids,null),Invoice::whereIn('id',$ids)->pluck('status','id')->all());
     }
     /** The registrar account of each domain and request, in one query, keyed by OperationQueries::accountKey. A missing account maps to null.
      * @param list<Domain|Operation> $rows
