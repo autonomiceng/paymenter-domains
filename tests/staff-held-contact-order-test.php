@@ -23,7 +23,12 @@ foreach(array_keys(StaffOperationReview::ACTIONS) as $action){$all[]=StaffOperat
 $staff=staffUser($all);Auth::login($staff);$service=new StaffOperations($clock);
 $ticket=fn(Operation $op,string $action)=>StaffOperationReview::ticket($staff->id,$op->domain_id,$op->id,$action,StaffOperationReview::stamp($op->fresh(),$op->domain->fresh()),$clock);
 $run=fn(Operation $op,string $action,?string $key=null)=>$service->run($staff,$op->domain_id,$op->id,$action,$key??$ticket($op,$action),'Customer order reviewed by staff');
-$refused=static function(callable $work,string $label):void {try{$work();}catch(Throwable){return;}throw new LogicException($label);};
+// Each refusal must be the expected one, so a type error or an unrelated failure cannot pass for it.
+$refused=static function(callable $work,string $label,string $message):void {
+    try{$work();}catch(DomainException $e){if($e->getMessage()===$message){return;}throw new LogicException($label.' (unexpected refusal: '.$e->getMessage().')',0,$e);}
+    throw new LogicException($label);
+};
+$changed='This request changed. Reload the page and try again.';$original='This hold requires its original recovery or evidence path.';
 
 // The order's own contact grant, as the installed runtime gives it: a local cap refusal stops before any send.
 $grants=new class($binding) implements WriteReservation {
@@ -87,7 +92,7 @@ same(['queued',null],[$op->fresh()->state,$op->fresh()->safe_code],'Release clea
 same($op->attempt,$op->fresh()->attempt,'Release keeps the unsent claim');
 $history=$op->fresh()->policy['staff_actions'];$audit=end($history);
 same(['release','contact_profile_proof_required','queued'],[$audit['action'],$audit['before']['reason'],$audit['after']['state']],'Release writes one audit row');
-$refused(fn()=>$run($op->fresh(),'release',$key),'A double click on Release is refused');
+$refused(fn()=>$run($op->fresh(),'release',$key),'A double click on Release is refused',$changed);
 same(1,count($op->fresh()->policy['staff_actions']),'A double click writes no second audit row');
 $done=$execute($op->fresh());
 expect(in_array($done->state,['pending','uncertain'],true),'The released order is sent');
@@ -95,7 +100,7 @@ same([1,1],[$sent->contactAdd,$sent->registerDomain],'Release sends the contact 
 $clock->instant=$clock->now()->modify('+60 seconds');$execute($op->fresh());
 same([1,1],[$sent->contactAdd,$sent->registerDomain],'Running the worker again sends nothing more');
 expect(!StaffOperationWrites::canRelease($op->fresh(),$clock->now())&&!OperationActions::relevant('refund',$op->fresh()),'Both actions are gone once the order was sent');
-$refused(fn()=>$run($op->fresh(),'refund'),'Cancel and refund is refused after a send');
+$refused(fn()=>$run($op->fresh(),'refund'),'Cancel and refund is refused after a send','Only held unpaid-to-provider requests may be closed.');
 same(null,$op->fresh()->funding['refund_authorization']??null,'No refund after a send');
 echo "Release sends a held contact step order once.\n";
 
@@ -115,9 +120,9 @@ same(['rejected','refund_approved','original_payment'],[$op->fresh()->state,$op-
 same($sends+1,MoneyReceiptGateway::$sends,'One refund');
 $history=$op->fresh()->policy['staff_actions'];
 same(['refund','contact_profile_proof_required','rejected'],[end($history)['action'],end($history)['before']['reason'],end($history)['after']['state']],'Cancel and refund writes one audit row');
-$refused(fn()=>$run($op->fresh(),'refund',$key),'A double click on Cancel and refund is refused');
-$refused(fn()=>$run($op->fresh(),'refund'),'A second Cancel and refund is refused');
-$refused(fn()=>$run($op->fresh(),'release'),'Release is refused after Cancel and refund');
+$refused(fn()=>$run($op->fresh(),'refund',$key),'A double click on Cancel and refund is refused',$changed);
+$refused(fn()=>$run($op->fresh(),'refund'),'A second Cancel and refund is refused','Invalid retained refund disposition.');
+$refused(fn()=>$run($op->fresh(),'release'),'Release is refused after Cancel and refund',$original);
 same($sends+1,MoneyReceiptGateway::$sends,'Retries never refund twice');
 same(1,count($op->fresh()->policy['staff_actions']),'Refused clicks write no audit row');
 same([1,1],[$sent->contactAdd,$sent->registerDomain],'Cancel and refund sends nothing to NameSilo');
@@ -136,7 +141,7 @@ same(true,$op->fresh()->policy['held_order_refund']??false,'The paid held-order 
 $order=\Paymenter\Extensions\Servers\Domains\Services\OwnedDomains::order($op->domain->fresh(),$op->fresh(),App\Models\Invoice::findOrFail($op->invoice_id));
 same(true,$order['refund_pending']??false,'Only the marked held-order refund projects the pending customer step');
 $policy=$op->fresh()->policy;
-$refused(fn()=>$op->fresh()->update(['policy'=>array_diff_key($policy,['held_order_refund'=>true])]),'The held-order refund marker cannot be removed');
+$refused(fn()=>$op->fresh()->update(['policy'=>array_diff_key($policy,['held_order_refund'=>true])]),'The held-order refund marker cannot be removed','Checkout evidence is frozen.');
 $viaGateway($op,'receipt_held_contact_retry');
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertActionHidden('refund')->assertActionHidden('release')
     ->assertActionVisible('credit')->callAction('credit',['reason'=>'Payment receipt fixed'])->assertHasNoActionErrors()->assertNotified('Refund checked');
@@ -157,7 +162,7 @@ $held=$held->fresh();$money=[$nativeMoney(),$serviceStatus($held),MoneyReceiptGa
 expect(!StaffOperationWrites::canRelease($held,$clock->now())&&!OperationActions::relevant('refund',$held),'Neither action is offered after a contact send');
 try{$run($held,'refund');throw new LogicException('Cancel and refund must be refused after a contact send');}
 catch(Paymenter\Extensions\Servers\Domains\Services\OperationRefused $error){same('The registrar may have received this request.',$error->getMessage(),'Refusal says why');}
-$refused(fn()=>$run($held->fresh(),'release'),'Release is refused after a contact send');
+$refused(fn()=>$run($held->fresh(),'release'),'Release is refused after a contact send',$original);
 same(['held','contact_profile_proof_required'],[$held->fresh()->state,$held->fresh()->safe_code],'The hold is kept');
 same($money,[$nativeMoney(),$serviceStatus($held),MoneyReceiptGateway::$sends],'No money moves and the service is unchanged');
 same($before+1,$sent->contactAdd,'Nothing more is sent');
@@ -172,7 +177,7 @@ expect(!StaffOperationWrites::canRelease($op,$clock->now()),'Changed order detai
 expect(OperationActions::relevant('refund',$op),'A changed unsent order can still be cancelled and refunded');
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertActionHidden('release')
     ->assertActionVisible('refund')->assertSee('The contact step cannot be retried with these order details. Cancel and refund this order.');
-$refused(fn()=>$run($op,'release'),'The writer also refuses changed details');
+$refused(fn()=>$run($op,'release'),'The writer also refuses changed details','The contact step cannot be retried with these order details. Cancel and refund this order.');
 same(['held','contact_profile_proof_required'],[$op->fresh()->state,$op->fresh()->safe_code],'Changed details stay held');
 same($before,[$nativeMoney(),$sent->contactAdd,$sent->registerDomain,$op->fresh()->attempt],'Refused release changes no money or send evidence');
 echo "Changed details cannot release a saved contact step.\n";
