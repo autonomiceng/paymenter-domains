@@ -62,7 +62,7 @@ final class DomainSummaries
     private function summaries(DomainSummaryContext $c,int $now): array
     {
         if ($c->staff && $c->domains) { throw new \LogicException('Staff watch context cannot include managed domains.'); }
-        $uid=$c->owner;
+        $uid=$c->owner;$renewals=[];
         $dids=array_keys($c->domains);$wids=array_keys($c->watches);
         $setupIds=$dids?ManagedDnsSetup::affected($now)->whereIn('domains_domains.id',$dids)->pluck('domains_domains.id')->all():[];
         $dns=['watch'=>$this->latest(WatchDnsObservation::class,'watch_id',$wids,$c->staff?null:$uid),'managed'=>$this->latest(ManagedPublicObservation::class,'domain_id',$dids,$uid)];
@@ -142,7 +142,7 @@ final class DomainSummaries
                     $reminderOff=$t->provenance==='adopted' && $a && $a->do_not_renew;
                     if ($t->provenance==='adopted') { $states[]='adopt.provenance'; }
                     if ($state->stops['policy']===null) { $states[]='domain.review'; } elseif ($off && !$pending) { $states[]='adopt.renewal_off'; }
-                    if (!$pending) { try { if ($s->currency_code==='USD') { $price=Storefront::money(RetailLine::decimal($s->price)); } } catch (\Throwable) {} }
+                    if (!$pending) { try { if ($s->currency_code==='USD') { $price=Storefront::money(HolderPricing::shown($t,$s,(new \DateTimeImmutable)->setTimestamp($now),$renewals)); } } catch (\Throwable) {} }
                     if($t->price_mode==='complimentary'){$price=ComplimentaryAccounts::LABEL;}
                     // The renewal invoice the page shows, in the same words; with none, the saved calendar's next one.
                     if ($invoice=$state->invoice()) {

@@ -24,6 +24,19 @@ final class HolderPricing implements NativeRepriceGuard
         throw new \DomainException(OfferUpgrade::MESSAGE);
     }
 
+    /** The renewal price the domain pages show, tax included: the holder quote that Renew now and the next renewal invoice
+     * use, not the price saved when the domain was last billed. That saved price is the fallback when no quote can be read. */
+    public static function shown(Domain $domain, Service $service, \DateTimeImmutable $now, array &$memo = []): string
+    {
+        if ($domain->price_mode === 'standard' && $service->currency_code === 'USD' && ($user = $service->user) !== null) {
+            try {
+                $key = $domain->server_id.'|'.$domain->account_fingerprint.'|'.$domain->tld.'|'.$user->id;
+                return $memo[$key] ??= NativeDomainGuard::gross(app(self::class)->renewal($domain, 'USD', $now)->retail, HoldingNativeLocks::tax($user));
+            } catch (\Throwable) { /* Show the saved price instead. */ }
+        }
+        return RetailLine::decimal($service->price);
+    }
+
     /** Compatibility contract delegates to the sole locked native save authority. */
     public function assertSave(Service $service, Domain $domain, \DateTimeImmutable $now): void
     {

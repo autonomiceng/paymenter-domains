@@ -51,11 +51,16 @@ final class HoldingNativeLocks
         $markers = $product->settings()->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         $upgrades = DB::table('product_upgrades')->where('product_id', $product->id)->orWhere('upgrade_id', $product->id)->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         $links = DB::table('config_option_products')->where('product_id', $product->id)->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
-        // Native Settings::tax selection, using current locked rows rather than a cached read view.
+        $tax = self::tax($user, $advisory);
+        return compact('user', 'staff', 'credit', 'invoices', 'items', 'transactions', 'orders', 'services', 'products', 'plans', 'service', 'product', 'plan', 'cancel', 'configs', 'properties', 'markers', 'upgrades', 'links', 'tax', 'opIds', 'relatedProperties');
+    }
+
+    /** Native Settings::tax selection, using current locked rows rather than a cached read view. */
+    public static function tax(\App\Models\User $user, bool $advisory = true): TaxRate|int
+    {
         $country = $user->properties->where('key', 'country')->value('value');
         if ($country) { $country = array_search($country, config('app.countries')) ?: $country; }
-        $tax = TaxRate::whereIn('country', [$country, 'all'])->orderByRaw('country = ? desc', [$country])->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->first() ?? 0;
-        return compact('user', 'staff', 'credit', 'invoices', 'items', 'transactions', 'orders', 'services', 'products', 'plans', 'service', 'product', 'plan', 'cancel', 'configs', 'properties', 'markers', 'upgrades', 'links', 'tax', 'opIds', 'relatedProperties');
+        return TaxRate::whereIn('country', [$country, 'all'])->orderByRaw('country = ? desc', [$country])->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->first() ?? 0;
     }
 
     /** Shared current-read prefix for mixed invoices. Never acquire an order after a service. */

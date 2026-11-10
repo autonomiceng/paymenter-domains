@@ -31,7 +31,7 @@ final class Evaluator
         }
         return new Decision($offer->feed->tld(), $query->action, $query->term, $retail !== null, $retail, $offer->revision,
             $context === Context::Staff ? $reason : ($retail === null ? 'unavailable' : null), $warning,
-            $scope && $context === Context::Staff ? $cost?->total : null);
+            $scope && $context === Context::Staff && $cost !== null ? Retail::cost($cost, $offer->costs) : null);
     }
 
     /** Staff or seller decisions only. Missing, stale or unready data is never "off sale". */
@@ -92,7 +92,7 @@ final class Evaluator
             if (!$cost->fresh($now)) { return 'stale_price'; }
             $retail = $offer->retail[$key] ?? null;
             if ($retail === null || PricingRule::units($retail, 2) < 1) { return 'unpublished_price'; }
-            if ($action !== 'renew' && $key === $action.':'.$term && PricingRule::units($retail, 2) * 100 < PricingRule::units($cost->total)) { return 'below_cost'; }
+            if ($action !== 'renew' && $key === $action.':'.$term && !PricingRule::covers($retail, Retail::cost($cost, $offer->costs))) { return 'below_cost'; }
         }
         if ($intent->maxAnnualCost !== null) {
             foreach ($offer->costs as $cost) {

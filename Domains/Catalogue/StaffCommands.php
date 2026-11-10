@@ -18,8 +18,9 @@ final class StaffCommands
         private readonly \Closure $wake,private readonly ?\Closure $sync=null) {}
 
     /** Columns only background price and terms reads and publication write. A staff save never depends on them being
-     * unchanged since the page opened: each command still checks its offer revision under the writer locks. */
-    private const BACKGROUND=['catalogue_revision'=>true,'catalogue_published_revision'=>true,'catalogue_facts'=>true];
+     * unchanged since the page opened: each command still checks its offer revision under the writer locks. Publishing
+     * rewrites the kept renewal price, so a save made while the last one is still publishing is not someone else's change. */
+    private const BACKGROUND=['catalogue_revision'=>true,'catalogue_published_revision'=>true,'catalogue_facts'=>true,'catalogue_retained_annual_retail'=>true];
     /** Raw hash of what staff set: credentials, accounts, settings, TLD choices and the seller rows. Never decrypts credentials.
      * Saved costs, terms and publication are left out, so background reads can't make a save look like someone else's change. */
     public static function stamp(int $server,?int $tld=null): string

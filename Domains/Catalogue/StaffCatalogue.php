@@ -89,7 +89,7 @@ final class StaffCatalogue
         if($facts?->fresh($now)&&!in_array($term,$facts->terms[$action]??[],true)&&!$expiredRefusal($action.':'.$term)){return $step('off','Not offered by this registrar for this term.');}
         if($facts?->fresh($now)&&!in_array(1,$facts->terms['renew']??[],true)&&!$expiredRefusal('renew:1')){return $step('off','This registrar does not offer annual renewal for this TLD.');}
         if($reason==='unsupported_facts'){$human=$missing('Ask the registrar to confirm renewal and nameserver requirements for .'.$t->tld.'.',null);}
-        $costs=[];foreach($offers as $offer){if($c=$offer->observation()){$costs[$c->key()]=$c;}}
+        $costs=self::costs($offers);
         foreach(Retail::terms($action,$term) as [$needed,$years]){
             $key=$needed.':'.$years;
             $cost=$offers[$key]??null;$observation=$cost?->observation();
@@ -137,17 +137,23 @@ final class StaffCatalogue
             ?'Allow '.($action==='register'?'registrations':'transfers').' in More → Change registrar on .'.$t->tld.'.'
             :'Choose the registrar in More on .'.$t->tld.'.';
     }
+    /** Each offer's saved cost, keyed by action and term. */
+    private static function costs(array $offers): array
+    {
+        $costs=[];foreach($offers as $offer){if($c=$offer->observation()){$costs[$c->key()]=$c;}}
+        return $costs;
+    }
     /** Form preview uses the same Staff evidence, never legacy wholesale or acceptance. */
     public function preview(Tld $t,array $rule): array
     {
-        $out=[];$offers=$this->snapshots(collect([$t]))[$t->id]['offers'];$costs=[];
-        foreach($offers as $offer){if($cost=$offer->observation()){$costs[$cost->key()]=$cost;}}
+        $out=[];$offers=$this->snapshots(collect([$t]))[$t->id]['offers'];$costs=self::costs($offers);
         foreach($offers as $offer){$d=$offer->decision;$cost=$offer->observation();if($cost===null){continue;}
             $new=Retail::quote($cost,$rule,$costs);
             // Publication preserves contractual annual renewal retail without a fresh positive quote.
             if($d->action==='renew'&&$d->term===1&&($new===null||PricingRule::units($new,2)<1||!$cost->fresh($this->clock->now()))){$new=OfferState::money($t->catalogue_retained_annual_retail,2);}
-            $under=$new!==null&&$cost->total!==null&&!PricingRule::covers($new,$cost->total);
-            $out[]=['action'=>$d->action,'term'=>$d->term,'cost'=>$cost->total,'current'=>$offer->staffRetail(),'new'=>$new,'synced'=>$cost->fresh($this->clock->now()),
+            $total=Retail::cost($cost,$costs);
+            $under=$new!==null&&$total!==null&&!PricingRule::covers($new,$total);
+            $out[]=['action'=>$d->action,'term'=>$d->term,'cost'=>$total,'current'=>$offer->staffRetail(),'new'=>$new,'synced'=>$cost->fresh($this->clock->now()),
                 'hold'=>$d->action==='renew'?null:($under?'below_cost':$d->reason),'alert'=>$d->action==='renew'&&$under?'below_cost':null];
         }
         return $out;
@@ -293,6 +299,7 @@ final class StaffCatalogue
             if(!$invalidRule&&$badDefaults){$invalidRule=true;$ruleKind='account_defaults';}
             $all=$unreadable?[]:($offers[$t->server_id.':'.$t->tld]??[]);$prices=[];
             if($holderRenewal!==null&&!isset($all['renew:1'])){$prices[]=['action'=>'renew','term'=>1,'retail'=>TldFacts::money($holderRenewal),'flags'=>[],'synced'=>false,'observed'=>null,...($grants->costs?['cost'=>null]:[])];}
+            $costs=self::costs($all);
             foreach($all as $offer){$decision=$offer->decision;$cost=$offer->observation();$flags=[];
                 if($decision->reason!==null){$flags[]=$decision->reason;}
                 if($cost!==null&&!$cost->enabled){$flags[]='not_offered';}
@@ -303,7 +310,7 @@ final class StaffCatalogue
                 if($decision->action==='renew'&&$decision->term===1&&$holderRenewal!==null){$retail=$holderRenewal;}
                 $prices[]=['action'=>$decision->action,'term'=>$decision->term,'retail'=>$retail===null?null:TldFacts::money($retail),
                     'flags'=>$flags,'synced'=>$cost!==null,'observed'=>$cost?->observedAt,
-                    ...($grants->costs?['cost'=>$cost?->total===null?null:TldFacts::money($cost->total,4)]:[])];
+                    ...($grants->costs?['cost'=>$cost?->total===null?null:TldFacts::money(Retail::cost($cost,$costs),4)]:[])];
             }
             $register=collect($all)->first(fn($o)=>$o->decision->action==='register'&&$o->decision->available);
             $transfer=$all['transfer:1']??null;$chosen=$register??($transfer?->decision->available?$transfer:null);
@@ -438,9 +445,10 @@ final class StaffCatalogue
                 $rule=Pricing::rule($t,$default,$fee);
                 $row=[...$identity,'prices'=>[],
                     'formula'=>'Price = '.PricingRule::describe($rule).($rule['mode']==='fixed'?', times years.':', per year, times years.'),'fee'=>$fee,'fee_in_price'=>$rule['mode']==='markup_fee_percent'];$below=$loss=false;
+                $costs=self::costs($s['offers']);
                 foreach(PriceList::ACTIONS as $action=>$unused){$offer=$s['offers'][$action.':'.$years]??null;$price=$offer?->staffRetail();
                     // A TLD with no offers to read, such as under bad account defaults, still shows its saved costs and losses. Sales stay closed.
-                    $cost=$s['offers']!==[]||$action!=='register'&&$years!==1?$offer?->observation()?->total
+                    $cost=$s['offers']!==[]||$action!=='register'&&$years!==1?(($observed=$offer?->observation())===null?null:Retail::cost($observed,$costs))
                         :(($bound??=self::boundCosts($chunk,$years))[(int)$t->id][$action.':'.$years]??null);
                     if($action==='renew'&&$years===1){$price=OfferState::money($t->catalogue_retained_annual_retail,2);}
                     $profit=$price!==null&&$cost!==null?CardFee::profit($price,$cost,$fee):null;$under=$price!==null&&$cost!==null&&!PricingRule::covers($price,$cost);$loses=$profit!==null&&str_starts_with($profit,'-');$below|=$under;$loss|=$loses;
