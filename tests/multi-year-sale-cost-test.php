@@ -37,4 +37,12 @@ same([true, '51.3500'], [$d->available, $d->staffCost], 'Staff cost for five yea
 $bracket = new FeedObserved($binding, 'net', [$cost('register', 1, '8.9800'), $cost('renew', 1, '8.9800'), $cost('register', 2, '32.0000', CostUnit::Annual)]);
 same('64.0000', Retail::cost($bracket->costs['register:2'], $bracket->costs), 'A higher registrar quote stays the cost');
 same('8.9500', Retail::cost($cost('renew', 1, '8.9500')), 'One-year and renewal costs are unchanged');
+$quoted=$feed()->costs['register:2'];
+foreach(['register:1','renew:1'] as $key){
+    $inputs=$feed()->costs;unset($inputs[$key]);
+    same('17.9000',Retail::cost($quoted,$inputs),'Missing '.$key.' keeps the raw term total');
+    $inputs=$feed()->costs;$annual=$inputs[$key];
+    $inputs[$key]=new Cost($annual->action,1,false,null,CostUnit::TermTotal,'synthetic_feed',$seen,$until);
+    same('17.9000',Retail::cost($quoted,$inputs),'Disabled '.$key.' keeps the raw term total');
+}
 echo "multi-year sale cost: ok\n";
