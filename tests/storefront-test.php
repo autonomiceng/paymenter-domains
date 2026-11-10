@@ -114,7 +114,10 @@ foreach (['enom', 'namesilo', 'fingerprint', 'wholesale', 'server_id', 'account-
 }
 foreach ([[true, true, 'premium'], [null, true, 'error'], [false, null, 'error'], [false, false, 'taken']] as [$premium, $available, $state]) {
     $reads->premium = $premium; $reads->available = $available;
-    same($state, $check('example.com')->getData(true)['status'], 'Premium/unavailable/unknown retained');
+    $data = $check('example.com')->getData(true);
+    same($state, $data['status'], 'Premium/unavailable/unknown retained');
+    // An answer that left out a flag is incomplete, not missing.
+    if ($state === 'error') { expect(str_contains(html_entity_decode($data['html'], ENT_QUOTES), 'The registrar’s answer for this name was incomplete. Retry in a minute.'), 'Incomplete answer words'); }
 }
 $reads->premium = false; $reads->available = true;
 foreach (['xn--example.com', 'éxample.com', str_repeat('a', 64).'.com', 'sub.example.com', '<script>.com', ['com']] as $invalid) {
