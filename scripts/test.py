@@ -25,6 +25,10 @@ ROOT = Path(__file__).resolve().parents[1]
 SUPERVISOR = Path(__file__).with_name('process_supervisor.py')
 CATEGORIES = ['lint', 'provider', 'contracts', 'native', 'ui', 'runner', 'package', 'mariadb']
 ORDER = ['lint', 'provider', 'contracts', 'runner', 'package', 'ui', 'native', 'mariadb']
+# Suites that run in the pristine native fixture, so they need PAYMENTER_TEST_APP.
+FIXTURE_SUITES = {'native', 'ui'}
+# The ui suite drives an existing Playwright and Chromium, which the clean environment would hide.
+BROWSER_ENV = ['NODE_PATH', 'CHROME_BIN', 'PLAYWRIGHT_BROWSERS_PATH']
 # Tests named for a category must be listed there, so they never fall back to native.
 NAMED = [('mariadb', 'tests/test_*_mariadb.py'), ('runner', 'tests/test_runner*.py'), ('package', 'tests/test_package*.py')]
 WORKER_MEMORY_MIB = 1024
@@ -372,7 +376,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         attempted[index] = (kind, argv, started)
         slow = Path(argv[-1]).name.startswith('test_installed_') or Path(argv[-1]).name in SLOW_NATIVE
         timeout = (3000 if kind == 'mariadb' else 300 if kind == 'native' and slow
-                   else 120 if kind == 'native' else 60)
+                   else 120 if kind == 'native' else 180 if kind == 'ui' else 60)
         syntax_lint = kind == 'lint' and len(argv) == 3 and argv[1] == '-l'
         rss_path = None if syntax_lint else output/f'{index:03d}.rss.txt'
         interrupted = None
@@ -451,8 +455,8 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                     while pending or (index < len(commands) and not stopped.is_set()):
                         while available and index < len(commands):
                             kind, argv = commands[index]
-                            exclusive = kind != 'lint' and Path(argv[-1]).name.startswith('test_installed_')
-                            # Installed fixtures need the whole pool, including integrity checks.
+                            exclusive = kind == 'ui' or (kind != 'lint' and Path(argv[-1]).name.startswith('test_installed_'))
+                            # Installed fixtures and the browser check need the whole pool, including integrity checks.
                             if exclusive_running or (exclusive and pending):
                                 break
                             with scheduling:
@@ -613,7 +617,7 @@ def positive_integer(value):
 
 
 def default_suites():
-    return [s for s in CATEGORIES if s != 'mariadb' and (s != 'native' or os.environ.get('PAYMENTER_TEST_APP'))]
+    return [s for s in CATEGORIES if s != 'mariadb' and (s not in FIXTURE_SUITES or os.environ.get('PAYMENTER_TEST_APP'))]
 
 
 def lint_files(base=None):
@@ -679,25 +683,28 @@ def main():
                 print('Not implemented: '+name, flush=True)
         dependency = None
         php_files = lint_files(args.lint_base) if 'lint' in selected else []
-        if 'native' in selected:
+        needs_fixture = bool(FIXTURE_SUITES.intersection(selected))
+        if needs_fixture:
             source = os.environ.get('PAYMENTER_TEST_APP')
             if not source:
-                raise ValueError('Native suite requires PAYMENTER_TEST_APP.')
+                raise ValueError('Native and UI suites require PAYMENTER_TEST_APP.')
             fixture = output/'paymenter'
             with timing("native_fixture", timings):
-                # Focused serial native-only selections share the verified vendor tree instead of
+                # Focused serial native or ui selections share the verified vendor tree instead of
                 # copying 27,000 files. Full runs, parallel workers and mixed selections keep a copy.
-                shared = args.jobs == 1 and bool(requested) and requested <= set(suites['native'])
+                shared = args.jobs == 1 and bool(requested) and requested <= set(suites['native']) | set(suites['ui'])
                 snapshot = native.prepare(source, fixture, share_vendor=shared)
             dependency = (source, snapshot)
         binary = extension = None
         if selected != ['mariadb']:
             with timing('php_runtime', timings):
-                runtime, binary, extension = prepare(native='native' in selected)
+                runtime, binary, extension = prepare(native=needs_fixture)
         env = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8',
                'PHPRC': '', 'PHP_INI_SCAN_DIR': '', 'TMPDIR': str(output), 'PYTHONDONTWRITEBYTECODE': '1'}
         if 'DOMAINS_UPGRADE_FROM' in os.environ:
             env['DOMAINS_UPGRADE_FROM'] = os.environ['DOMAINS_UPGRADE_FROM']
+        if 'ui' in selected:
+            env.update({name: os.environ[name] for name in BROWSER_ENV if name in os.environ})
         if binary:
             env.update(PAYMENTER_TEST_PHP=str(binary), PAYMENTER_TEST_CURL_EXTENSION=str(extension))
         if 'mariadb' in selected:
@@ -718,8 +725,8 @@ def main():
         if not commands:
             raise ValueError('No runnable suites selected.')
         commands = order_commands(commands, previous)
-        if args.memory_mib < 2048 and any(Path(argv[-1]).name.startswith('test_installed_') for kind, argv in commands if kind != 'lint'):
-            raise ValueError('Installed-package checks require a memory budget of at least 2048 MiB.')
+        if args.memory_mib < 2048 and any(kind == 'ui' or Path(argv[-1]).name.startswith('test_installed_') for kind, argv in commands if kind != 'lint'):
+            raise ValueError('Installed-package and UI checks require a memory budget of at least 2048 MiB.')
         jobs = 1 if 'mariadb' in selected else bounded_jobs(args.jobs, args.memory_mib, explicit=jobs_explicit)
         worker_check = None
         if jobs > 1:

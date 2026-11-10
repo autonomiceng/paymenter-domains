@@ -52,7 +52,10 @@
     "tests/renewal-ready-copy-test.php",
     "tests/test_gitleaks_policy.py"
   ],
-  "ui": [],
+  "ui": [
+    "tests/test_rendered_layout.py",
+    "tests/test_rendered_managed_dns.py"
+  ],
   "runner": [
     "tests/runner-test.php",
     "tests/fixture-policy-test.php",

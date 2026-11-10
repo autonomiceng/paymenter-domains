@@ -32,19 +32,24 @@ The browser blocks network/application scripts and measures both text axes: Tran
 wrapped height/padding, and the real Renewal card's Pay invoice link on one line at default size in both modes at 320/360/768/1280px.
 It compares Register/Transfer/Retry geometry with prior inline-flex/normal-wrap/1.25rem rules. Output artifacts and `button-layout-receipt.json` include failures; this minimal shell proves neither installed-theme nor browser-zoom acceptance.
 
-## Explicit offline name and heading check
+## Rendered layout check (UI suite)
 
-Same setup as above. Render the staff monitoring list and the client domain page, then measure them in Chromium:
-
-```sh
-R14_RENDER_DIR="$NAME_RENDER_DIR" suite-slot --quick python3 scripts/render-reminders.py "$NAME_RENDER_DIR" tests/test_installed_demo_c_state_watch-test.php tests/domain-page-render.php
-suite-slot --quick node scripts/check-name-and-heading.cjs "$NAME_RENDER_DIR"
-```
-
-A long name in the staff list's real name and person text items must be a block box, stay on one line inside its
-24rem or 11rem column, and end in a painted "...". The client domain heading must keep its clamp(1.125rem, 5vw, 1.5rem)
-size and 18 by 20px status mark at 320/390/768/1280px in both modes. Scripts are off, so the check shows Filament's
-main area that a script would fade in. It is not a screenshot beside the approved mock.
+`scripts/test.py --suite ui` renders staff pages with real Blade and measures them in Chromium with
+`scripts/check-name-and-heading.cjs`: `tests/test_rendered_layout.py` (Domains and monitoring lists, client domain page)
+and `tests/test_rendered_managed_dns.py` (DNS monitoring setup list). Default runs with `PAYMENTER_TEST_APP` include it.
+It needs `NODE_PATH` (Playwright) and `CHROME_BIN`, which the runner passes to this suite only; it runs alone (2048 MiB).
+At 1440, 900 and 390px, with the staff sheet after the theme and before it, each long name, customer and Note is one
+line cut with a painted "...": a name exactly 326px, a customer 120px, a Note the rest of the row and at least 160px
+(the approved table, padding included). Domains list cells are no wider than their items, the table fits its card at
+1440px, and the page never scrolls sideways. Each item and its tooltip keep the full text. Only the staff reveal script
+runs: keyboard focus on a row link, or on a cut text in a row that opens nothing (the only texts with their own tab stop,
+kept while cut, also after a late font load), shows the full text in a fixed overlay inside the viewport (at 320 by 225
+and 640 by 450px, a 254 character address fits or scrolls by wheel, arrows and Page keys), and no cell or row moves. The
+client domain heading keeps clamp(1.125rem, 5vw, 1.5rem) and an 18 by 20px status mark at 320/390/768/1280px in both
+modes. For a host skin, set
+`DOMAINS_PANEL_SETUP` to a PHP file that is given `$panel`, configures it and returns its built theme; render with
+`R14_RENDER_DIR=OUT scripts/render-reminders.py OUT` and both tests' render files, then run the check on `OUT`. Its
+receipt lists the Domain, Customer and Note column widths.
 
 Run `python3 scripts/bootstrap.py --download` once, then `scripts/test.py` fully offline.
 PHP **8.4.27** (Debian `8.4.27-1~deb13u1`, Linux x86_64) is pinned by archive SHA-256;
@@ -66,7 +71,7 @@ Listed paths must exist and appear once. Files named `test_*_mariadb.py`, `test_
 `test_package*.py` must be listed in that category; `*-test.cjs` files are refused until a
 JavaScript runner exists. Lint covers every runtime/test PHP file.
 Unknown, missing or explicitly unimplemented suites fail. Default runs execute all implemented
-categories, omitting native without a dependency. Empty categories are unimplemented; no UI suite exists.
+categories, omitting native and UI without a dependency. Empty categories are unimplemented.
 `--suite` selects categories and receipts disclose omissions. Synthetic tests do not prove provider acceptance.
 Native `test_client_scripts.py` needs Node.js on PATH, renders the shared client script and every
 including view with real Blade, then checks each inline script with `node --check`.

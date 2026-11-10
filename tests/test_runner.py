@@ -393,6 +393,7 @@ class RunnerTests(unittest.TestCase):
             with mock.patch.dict(os.environ, {'PAYMENTER_TEST_APP': source}):
                 self.assertNotIn('mariadb', runner.default_suites())
                 self.assertEqual('native' in runner.default_suites(), bool(source))
+                self.assertEqual('ui' in runner.default_suites(), bool(source))
         self.assertIn('mariadb', runner.CATEGORIES)
 
     def test_failure_timeout_or_source_mutation_saves_output_and_stops(self):
@@ -533,8 +534,44 @@ class RunnerTests(unittest.TestCase):
                 runner.manifest()
 
     def test_explicit_unimplemented_suite_is_not_green(self):
-        with mock.patch.object(runner.sys, 'argv', ['test.py', '--suite', 'ui']), contextlib.redirect_stderr(io.StringIO()), self.assertRaises(ValueError):
+        suites = {**runner.manifest(), 'ui': []}
+        with mock.patch.object(runner, 'manifest', return_value=suites), \
+             mock.patch.object(runner.sys, 'argv', ['test.py', '--suite', 'ui']), contextlib.redirect_stderr(io.StringIO()), \
+             self.assertRaisesRegex(ValueError, 'Suite not implemented: ui'):
             runner.main()
+
+    def test_ui_suite_runs_in_the_native_fixture_with_the_browser_environment(self):
+        browser = {'NODE_PATH': '/installed/node_modules', 'CHROME_BIN': '/installed/chrome', 'PLAYWRIGHT_BROWSERS_PATH': '/installed/browsers'}
+        with tempfile.TemporaryDirectory() as temp, \
+             mock.patch.dict(os.environ, {'PAYMENTER_TEST_APP': 'pristine', 'UNRELATED_SETTING': 'hidden', **browser}), \
+             mock.patch.object(runner.tempfile, 'mkdtemp', return_value=temp), \
+             mock.patch.object(runner.sys, 'argv', ['test.py', '--jobs', '1', '--only', 'tests/test_rendered_layout.py']), \
+             mock.patch.object(runner.native, 'prepare', return_value={'source': 'digest'}) as native_prepare, \
+             mock.patch.object(runner, 'prepare', return_value=(Path(temp)/'runtime', Path(temp)/'runtime/php', Path(temp)/'runtime/curl.so')) as php_prepare, \
+             mock.patch.object(runner, 'run', return_value=0) as run, contextlib.redirect_stdout(io.StringIO()):
+            (Path(temp)/'runtime').mkdir()
+            self.assertEqual(runner.main(), 0)
+            self.assertEqual([(kind, argv[-1]) for kind, argv in run.call_args.args[0]], [('ui', 'tests/test_rendered_layout.py')])
+            php_prepare.assert_called_once_with(native=True)
+            self.assertTrue(native_prepare.call_args.kwargs['share_vendor'])
+            env = run.call_args.args[1]
+            self.assertEqual(env['PAYMENTER_TEST_FIXTURE'], str(Path(temp)/'paymenter'))
+            self.assertEqual({name: env.get(name) for name in browser}, browser)
+            self.assertNotIn('UNRELATED_SETTING', env)
+        for source, arguments, message in [('', [], 'PAYMENTER_TEST_APP'), ('pristine', ['--memory-mib', '1024'], 'memory budget')]:
+            with self.subTest(source=source), tempfile.TemporaryDirectory() as temp, \
+                 mock.patch.dict(os.environ, {'PAYMENTER_TEST_APP': source}), \
+                 mock.patch.object(runner.tempfile, 'mkdtemp', return_value=temp), \
+                 mock.patch.object(runner.sys, 'argv', ['test.py', '--suite', 'ui', *arguments]), \
+                 mock.patch.object(runner.native, 'prepare', return_value={'source': 'digest'}), \
+                 mock.patch.object(runner, 'prepare', return_value=(Path(temp)/'runtime', Path(temp)/'runtime/php', Path(temp)/'runtime/curl.so')), \
+                 mock.patch.object(runner, 'run', return_value=0) as run, \
+                 contextlib.redirect_stderr(io.StringIO()), self.assertRaisesRegex(ValueError, message):
+                (Path(temp)/'runtime').mkdir()
+                try:
+                    runner.main()
+                finally:
+                    run.assert_not_called()
 
     def test_manifest_failure_has_setup_receipt(self):
         with tempfile.TemporaryDirectory() as temp:
