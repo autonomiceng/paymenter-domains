@@ -75,7 +75,7 @@ final class OperationQueries
         }
         return $accounts;
     }
-    private static function accountKey(mixed $server, mixed $registrar, mixed $fingerprint): string
+    public static function accountKey(mixed $server, mixed $registrar, mixed $fingerprint): string
     { return (int)$server."\0".$registrar."\0".$fingerprint; }
     private static function whereOrdersOff(Builder $q, ?array $accounts): Builder
     {

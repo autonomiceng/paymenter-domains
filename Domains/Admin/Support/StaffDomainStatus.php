@@ -35,14 +35,14 @@ final class StaffDomainStatus
      * @param array{key:string,label:string,tone:string,reason:?string} $shared
      * @param list<array{code:string,request:?int}> $alerts
      * @return array{key:string,label:string,tone:string,reason:?string,step:?string,request:?int,act:bool,alert:?string} $request is set when the step names one, $act when staff have a job here, $alert when the step is that open alert */
-    public static function for(array $shared, string $state, Domain $d, ?Operation $op, array $alerts, ?Operation $renewal=null, ?Operation $waiting=null, bool $ordersOff=false, ?array $accounts=null): array
+    public static function for(array $shared, string $state, Domain $d, ?Operation $op, array $alerts, ?Operation $renewal=null, ?Operation $waiting=null, bool $ordersOff=false, ?array $accounts=null, ?array $release=null): array
     {
-        [$step, $specific, $request] = self::resolve($state, $d, $op, $accounts);
+        [$step, $specific, $request] = self::resolve($state, $d, $op, $accounts, $release);
         $act = $step !== null && !in_array($step, self::WAITING, true);
         $named = null;
         if (!$specific) {
             if ($alerts) { $top = self::topAlert($alerts); [$step, $request] = self::alert($top, $d); $act = true; $named = $top['code']; }
-            elseif ($renewal && in_array($state, ['active', 'renewal_off_expiring'], true)) { [$step, $request, $act] = self::renewal($renewal, $accounts); }
+            elseif ($renewal && in_array($state, ['active', 'renewal_off_expiring'], true)) { [$step, $request, $act] = self::renewal($renewal, $accounts, $release); }
         }
         // A held or unconfirmed transfer, and a state this version doesn't know, only say a request is in the way.
         // Staff read the customer's head word, then that request in their step. Amber only when staff must act.
@@ -69,15 +69,15 @@ final class StaffDomainStatus
     private static function forStaff(array $shared): array
     { return in_array($shared['reason'], self::CUSTOMER_ONLY, true) ? [...$shared, 'reason' => null] : $shared; }
     /** @return array{0:?string,1:bool,2:?int} step, whether the step is already specific, and the request it names */
-    private static function resolve(string $state, Domain $d, ?Operation $op, ?array $accounts): array
+    private static function resolve(string $state, Domain $d, ?Operation $op, ?array $accounts, ?array $release=null): array
     {
         if ($state === 'adoption_pending') { return ['Check open invoices.', true, null]; }
         if ($op && in_array($d->status, self::ACQUIRING, true)) {
-            try { $ready=RequestFacts::readyMessage($op,$accounts); } catch (\Throwable) { return [DomainFacts::UNREADABLE.self::check($op->id),true,$op->id]; }
+            try { $ready=RequestFacts::readyMessage($op,$accounts,$release); } catch (\Throwable) { return [DomainFacts::UNREADABLE.self::check($op->id),true,$op->id]; }
             if ($ready!==null) {
                 return [$ready.self::ordersOrCheck($op,$ready,$accounts),true,$op->id];
             }
-            if (in_array($op->state, ['held', 'uncertain'], true)) { return [self::stopped($op,$accounts), true, $op->id]; }
+            if (in_array($op->state, ['held', 'uncertain'], true)) { return [self::stopped($op,$accounts,$release), true, $op->id]; }
             if ($state === 'awaiting_payment') { return [self::UNPAID, false, null]; }
             if ($state === 'awaiting_code') { return [self::NO_CODE, false, null]; }
             if ($state === 'setup_required') { return [self::NO_SETUP, false, null]; }
@@ -109,18 +109,18 @@ final class StaffDomainStatus
         return [str_contains($step, ' Check the request.') ? str_replace(' Check the request.', $open, $step) : $step.$open, $alert['request']];
     }
     /** @return array{0:string,1:?int,2:bool} step, the request it names, and whether staff have a job here */
-    private static function renewal(Operation $op, ?array $accounts): array
+    private static function renewal(Operation $op, ?array $accounts, ?array $release=null): array
     {
         return match (true) {
-            in_array($op->state, ['held', 'uncertain'], true) => [self::stopped($op, $accounts), $op->id, true],
+            in_array($op->state, ['held', 'uncertain'], true) => [self::stopped($op, $accounts, $release), $op->id, true],
             $op->state === 'awaiting_payment' => [Labels::requestStatus($op)['reason'], null, false],
-            $op->state === 'queued' && ($ready = RequestFacts::readyMessage($op, $accounts)) !== null => [$ready.self::ordersOrCheck($op, $ready, $accounts), $op->id, true],
+            $op->state === 'queued' && ($ready = RequestFacts::readyMessage($op, $accounts, $release)) !== null => [$ready.self::ordersOrCheck($op, $ready, $accounts), $op->id, true],
             default => [self::RENEWING, null, false],
         };
     }
-    private static function stopped(Operation $op, ?array $accounts=null): string
+    private static function stopped(Operation $op, ?array $accounts=null, ?array $release=null): string
     {
-        $cause = RequestFacts::reason($op, accounts: $accounts);
+        $cause = RequestFacts::reason($op, accounts: $accounts, release: $release);
         // A cost approval already names its one step, the Approve registrar cost button on the domain page.
         if ($cause !== null && str_starts_with($cause, 'Needs approval:') && \Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::need($op) !== null) { return $cause; }
         return self::sentence($cause ?? ($op->state === 'held' ? 'Not sent' : RequestStatus::UNCONFIRMED)).self::check($op->id);
