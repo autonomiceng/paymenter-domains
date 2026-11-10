@@ -53,8 +53,14 @@ class RegistrarSetup extends Page implements HasTable
                 if(!$resource::canCreate()){throw new \Illuminate\Auth\Access\AuthorizationException;}
                 $name=trim((string)$data['name']);
                 $server=Server::create(['name'=>$name,'extension'=>'Domains','type'=>'server','enabled'=>true]);
-                \App\Helpers\ExtensionHelper::call($server,'enabled',[$server],mayFail:true);
-                \Filament\Notifications\Notification::make()->success()->title('Registrar account added')->body('Use Connect account to finish.')->send();
+                try{
+                    \App\Helpers\ExtensionHelper::call($server,'enabled',[$server]);
+                    \Filament\Notifications\Notification::make()->success()->title('Registrar account added')->body('Use Connect account to finish.')->send();
+                }catch(\Throwable $e){
+                    report($e);
+                    \Filament\Notifications\Notification::make()->warning()->title('Registrar account added; setup failed')
+                        ->body('The account was saved. Ask your site admin to finish Domains setup, then use Connect account.')->send();
+                }
                 $this->redirect(RegistrarAccount::getUrl(['account'=>$server->id]));
             })];
     }
