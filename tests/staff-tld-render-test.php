@@ -14,8 +14,8 @@ $out=renderOutput($argv[1]??null);
 $f=commerceFixture();extract($f);tldPanel();pinStaffClock($now);$t=$tlds[0];
 $permissions=[Staff::VIEW,Staff::COSTS,Staff::POLICY];foreach(array_keys(Review::ACTIONS) as $key){$permissions[]=Review::permission($key);}
 $u=staffUser($permissions);Auth::setUser($u);$writer=new StaffSettingsWrites($native,$sellers,$bindings);app()->instance(StaffSettingsWrites::class,$writer);
-// Saving the default publishes .com, which follows it; the fixed $1 prices are below cost.
-same(['published'=>2,'failed'=>[],'skipped'=>[]],$writer->run(pricingReview($u->id),pricingForm(['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed_register'=>'1','fixed_renew'=>'1','fixed_transfer'=>'1']),$now),'Default publishes');
+// Existing fixed defaults still publish and render; the saved $1 prices are below cost.
+same(['published'=>2,'failed'=>[]],saveDefaultRule(['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed'=>array_fill_keys(['register','renew','transfer'],'1.00')],static fn($ending)=>activeFixtureRepublish($prices,$ending)),'Saved fixed default publishes');
 \Paymenter\Extensions\Servers\Domains\Models\Domain::create(['server_id'=>$t->server_id,'registrar_key'=>$t->registrar_key,'account_fingerprint'=>$t->account_fingerprint,
     'user_id'=>900,'service_id'=>900,'domain'=>'holder-placeholder.com','sld'=>'holder-placeholder','tld'=>'com','status'=>'active']);
 $panel=Filament::getCurrentPanel();$css=file_get_contents($fixture.'/vendor/filament/filament/dist/theme.css');

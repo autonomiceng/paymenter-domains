@@ -16,7 +16,7 @@ foreach([$binding,$second] as $b){
     }
 }
 $result=$save('41.00');same([],$result['failed'],'Global pricing honors the saved 72-hour policy');
-same('$41.00',$storefront->offer('com','register',1)['price'],'Fresh-under-policy costs publish into native offers');
+same('$47.00',$storefront->offer('com','register',1)['price'],'Fresh-under-policy costs publish into native offers');
 foreach([$binding,$second] as $b){App\Models\Server::findOrFail($b->serverId)->settings()->where('key',\Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness::KEY)->update(['value'=>'24']);}
 $result=$save('42.00');expect(count($result['failed'])>=2,'Shorter account policy rejects the same old observations');
 $nativeSuccessful=true;

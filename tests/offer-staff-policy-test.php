@@ -45,7 +45,7 @@ $writes->run($review('tld_settings',$id),$restore,$now);
 $nativeIds=Product::orderBy('id')->pluck('id')->all();$calls=$reads->calls;
 $before=count(Review::historyRows(Server::find($binding->serverId)));
 $global=new Review($actor->id,Review::ALL_ACCOUNTS,null,'default_pricing',Review::ticket($actor->id,Review::ALL_ACCOUNTS,null,'default_pricing',StaffCommands::stamp(Review::ALL_ACCOUNTS)),'Synthetic global review');
-$writes->run($global,['mode'=>'fixed','fixed_register'=>'20.00','fixed_renew'=>'21.00','fixed_transfer'=>'22.00','fee_percent'=>'3.00','fee_fixed'=>'0.30'],$now);
+$writes->run($global,['mode'=>'markup_amount','markup'=>'14.00','round_up'=>'none','fee_percent'=>'3.00','fee_fixed'=>'0.30'],$now);
 same(['completed','publication_completed'],array_column(array_values(array_filter(Review::historyRows(Server::find($binding->serverId)),static fn($r)=>$r['action']===Review::ACTIONS['default_pricing'])),'phase'),'Global save and publication outcome use main audit phases');same(0,$wake,'Global pricing publishes directly without scheduling account defaults');
 same('$20.00',$storefront->offer('com','register',1)['price'],'Global form delegates to the converted Writer');
 same($nativeIds,Product::orderBy('id')->pluck('id')->all(),'Repeated native publication preserves product identities');same($calls,$reads->calls,'Global save never resolves provider');

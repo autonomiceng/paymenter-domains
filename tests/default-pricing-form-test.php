@@ -27,6 +27,14 @@ $item('Item 6, no single own price for every TLD',function()use($dialog,$saved):
     $dialog(['mode'=>'fixed','fixed_register'=>'9.99','fixed_renew'=>'9.99','fixed_transfer'=>'9.99'])->assertHasActionErrors(['mode']);
     same(['markup_percent','20.00'],[(new PricingRules)->defaultRule()['mode'],$saved()],'A refused own price saves nothing');
 });
+$item('Direct fixed default refused',function()use($writer,$u,$now):void{
+    $before=\Illuminate\Support\Facades\DB::table('settings')->orderBy('id')->get()->toJson();
+    try{
+        $writer->run(pricingReview($u->id),pricingForm(['mode'=>'fixed','fixed_register'=>'19.99','fixed_renew'=>'20.99','fixed_transfer'=>'21.99'],['percent'=>'4','fixed'=>'0.50']),$now);
+        throw new RuntimeException('Direct fixed default was saved');
+    }catch(InvalidArgumentException $e){same('Set an own price on each TLD instead.', $e->getMessage(),'Writer refuses a fixed default');}
+    same($before,\Illuminate\Support\Facades\DB::table('settings')->orderBy('id')->get()->toJson(),'Refused rule and fee leave settings unchanged');
+});
 $item('Item 7, margin checks',function()use($dialog,$saved,$writer,$u,$now):void{
     foreach(['-5'=>'Enter 0 or more.','-0'=>'Enter 0 or more.',' 20'=>'Enter a number.','abc'=>'Enter a number.','1000'=>'Enter 500 or less.','8.125'=>'Use at most two decimal places.'] as $margin=>$message){
         $dialog(['mode'=>'markup_percent','markup'=>(string)$margin,'round_up'=>'none'])->assertHasActionErrors(['markup'=>$message]);
