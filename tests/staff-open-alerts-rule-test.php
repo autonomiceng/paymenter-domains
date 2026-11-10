@@ -53,5 +53,11 @@ $op=$unreleased->operations()->sole();
 DB::table('domains_operations')->where('id',$op->id)->update(['funding'=>'unreadable funding']);
 $ended=clone $unreleased;$ended->status='cancelled';
 same(false,ObligationAlerts::outdated((object)['code'=>'operation_review'],$op->fresh(),collect(),$ended),'Unreadable funding preserves the alert without breaking the page');
+// An unreadable encrypted policy cannot prove a release, so the released request's alert shows again in the shared read.
+$releasedOp=$released->operations()->sole();
+same(false,ObligationAlerts::open([$released->id])->where('operation_id',$releasedOp->id)->exists(),'A readable release keeps the alert out of the shared read');
+DB::table('domains_operations')->where('id',$releasedOp->id)->update(['policy'=>'unreadable policy']);
+same(true,ObligationAlerts::open([$released->id])->where('operation_id',$releasedOp->id)->exists(),'Unreadable policy keeps the alert in the shared read');
+same(false,ObligationAlerts::outdated((object)['code'=>'operation_review'],$releasedOp->fresh(),collect(),$released),'Unreadable policy keeps the alert on the detail page');
 Carbon::setTestNow();
 $nativeSuccessful=true; echo "Open alerts agree across navigation, filter and detail.\n";
