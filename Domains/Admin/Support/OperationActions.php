@@ -54,7 +54,7 @@ final class OperationActions
                 try { $actor=Auth::user(); if(!$actor instanceof \App\Models\User){throw new \DomainException('Staff required.');}
                     $reason=in_array($name,self::REASON,true)?trim((string)($data['reason']??'')):$label;
                     app(StaffOperations::class)->run($actor,(int)$op->domain_id,(int)$op->id,$name,(string)($data['review_key']??$ticket()),$reason);
-                    $check=$name==='recheck'&&in_array($op->action,['register','transfer','renew'],true)?\Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::for($op->fresh()):null;
+                    $check=$name!=='recheck'?null:(in_array($op->action,['register','transfer','renew'],true)?\Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::for($op->fresh()):ManagementCheck::words($op->fresh()));
                     $notification=Notification::make();
                     $check&&$check['title']!=='Registrar checked'?$notification->warning():$notification->success();
                     $notification->title($check['title']??($contactRecovery?'Contact details updated':($complimentaryClosure?'Order closed':self::DONE[$name])))

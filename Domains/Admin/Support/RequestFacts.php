@@ -320,7 +320,7 @@ final class RequestFacts
         }
         if (isset($facts['outcome'])) {
             $recover=HistoryRecovery::offered($op);$tooOld=HistoryRecovery::tooOld($op);
-            $step=RegistrarCheck::step($op);
+            $step=RegistrarCheck::step($op)??(($check=ManagementCheck::words($op))?['title'=>$check['title'].'. '.$check['at'],'body'=>$check['detail']]:null);
             // History already says the result is unconfirmed, so then the notice leads with what to do. The answer step already says to ask Enom.
             $said=$op->started_at&&StaffReviewHistory::sendEvent($op)===RequestStatus::UNCONFIRMED;
             // Ask Enom comes after the first read, so a pending check doesn't say it yet.
