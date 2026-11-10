@@ -268,7 +268,14 @@ final readonly class OwnedDomains
         if ($management && $forms) {
             $all=array_merge(...array_values(array_map(fn($section)=>array_keys($section['actions']),$management)));
             try { $allowed=Runtime::management($d,$this->engine)?->available($d->service->user,$d,$this->ports->forDomain($d),$all,$refused)??[]; } catch (\Throwable) { $allowed=[]; }
-            foreach ($management as $key=>&$section) { $section['actions']=array_intersect_key($section['actions'],array_flip($allowed)); if (!$section['actions'] && !isset($progressBySetting[ManagementProgress::setting($key)])) { unset($management[$key]); } } unset($section);
+            // While one change runs the registrar takes no other, so the other rows keep their values and say when they open.
+            $busy=array_key_first(array_filter($progressBySetting,fn($row)=>$row['pending']));
+            $busyLabel=$busy===null?null:mb_strtolower(collect($management)->first(fn($section,$key)=>ManagementProgress::setting($key)===$busy)['label']??str_replace('_',' ',$busy));
+            foreach ($management as $key=>&$section) {
+                $section['actions']=array_intersect_key($section['actions'],array_flip($allowed));
+                if ($section['actions'] || isset($progressBySetting[ManagementProgress::setting($key)])) { continue; }
+                if ($busyLabel!==null) { $section['waiting']='Opens when the '.$busyLabel.' change finishes.'; } else { unset($management[$key]); }
+            } unset($section);
             $unavailable=!array_filter($management,fn($section)=>$section['actions']) && !array_filter($progressBySetting,fn($row)=>$row['pending']);
         }
         if ($forms && $caps && $d->registrar_key==='namesilo' && $d->status==='active' && !isset($management['dns']) && $caps->get('dns')->support!==Support::Supported) {

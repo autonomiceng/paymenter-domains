@@ -170,5 +170,6 @@
 @endif
 @if ($cap==='ds' && ($section['off']??false))<span class="domains-row__v">@if ($section['records'] ?? [])<span class="domains-sub">Observed DS records</span>@foreach ($section['records'] as $ds)<span class="domains-sub domains-mono">Key tag {{ $ds['key_tag'] }}, algorithm {{ $ds['algorithm'] }}, digest type {{ $ds['digest_type'] }}: {{ $ds['digest'] }}</span>@endforeach @endif</span>@endif
 @if ($cap==='dns' && !($section['family_only']??false) && isset($section['inventory']))<span class="domains-row__v domains-row__full">@include('domains::partials.dns-inventory')</span>@endif
+@if ($section['waiting'] ?? null)<span class="domains-row__v domains-row__full domains-sub" role="status" data-management-waiting="{{ $cap }}">{{ $section['waiting'] }}</span>@endif
 </li>
 @endforeach
