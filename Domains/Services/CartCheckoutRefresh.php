@@ -283,7 +283,26 @@ final class CartCheckoutRefresh
             CartNotice::set($component, 'We could not get your price', 'Try again shortly.', 'We could not get your price. Try again shortly.', 'error');
             return;
         }
-        $component->notify('We could not check this domain. Edit or remove it from your cart, then try checkout again.', 'error');
+        // The cart's own notice, so the reason stays above the lines; Checkout runs this check again before any payment.
+        $names = self::domainNames();
+        CartNotice::set($component, self::UNCHECKED_TITLE, self::unchecked($names), self::unchecked($names), 'error', $names);
+    }
+
+    public const UNCHECKED_TITLE = 'We couldn’t confirm your domain';
+    /** Why checkout waits and what the customer can do, naming each domain line. */
+    public static function unchecked(array $names): string
+    {
+        $last = array_pop($names);
+        $list = $last === null ? 'your domain' : ($names === [] ? $last : implode(', ', $names).' and '.$last);
+        return 'We couldn’t confirm the price and term for '.$list.' with the registrar, so checkout is paused. Try again in a few minutes, or remove '
+            .($names === [] ? 'it' : 'them').' from your cart.';
+    }
+
+    /** @return list<string> */
+    private static function domainNames(): array
+    {
+        try { return NativeCart::items()->map(static fn ($item) => $item->checkout_config['domain'] ?? null)->filter(static fn ($name) => is_string($name) && $name !== '')->unique()->values()->all(); }
+        catch (\Throwable) { return []; }
     }
 
 }
