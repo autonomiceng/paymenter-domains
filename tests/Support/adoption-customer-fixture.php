@@ -66,9 +66,14 @@ foreach (['2027-10-12'=>'2027-10-13','2027-10-13'=>null,'2027-10-14'=>null] as $
  $projectionHtml=view('domains::show',['domain'=>$projected])->render();
  if($due===null){same('review',$projected->renewalInvoice['state'],'Cutoff requires support review');expect(!str_contains($projectionHtml,'An invoice will be issued'),'Cutoff never promises unissuable debt');}
 }
+// The list reads the clock the site binds, as production does. Both pages must agree with billing near midnight on either side of UTC.
+app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
 foreach (['2027-10-13T00:30:00+05:30'=>null,'2027-10-12T23:30:00-07:00'=>'2027-10-13'] as $local=>$due) {
  $clock->time=new DateTimeImmutable($local);$projected=$owners->present($d->fresh(),false);
  same($due,$projected->plannedRenewalDue,'Presentation uses actual billing clock date '.$local);
+ $listed=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($owner,'managed',$d->id,$clock->now()->getTimestamp());
+ same([$due===null,$due],[($projected->renewalInvoice['state']??null)==='review',$projected->plannedRenewalDue],'Detail reads the billing clock date '.$local);
+ same([$due===null,$due],[$listed->renewalInvoiceReview,$listed->renewalDueAt],'Domains list agrees with the domain page at '.$local);
 }
 }
 $clock->time=new DateTimeImmutable('2027-09-25T00:00:00Z');

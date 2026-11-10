@@ -70,7 +70,8 @@ final class DomainSummaries
         $work=['watch'=>DB::table('domains_watch_work')->whereIn('watch_id',$wids)->get()->groupBy('watch_id')->all(),
             'managed'=>DB::table(ManagedPublicWorkSchema::TABLE)->whereIn('domain_id',$dids)->whereNull('retired_at')->whereExists(fn($q)=>$q->selectRaw('1')->from('domains_domains as d')->whereColumn('d.id','domain_id')->whereColumn('d.authority_generation','generation'))->get()->groupBy('domain_id')->all()];
         // Status, order and renewal: the same projection the domain page reads, loaded once for the batch.
-        $inputs=DomainStateInputs::load($c->domains,$c->services);$at=new \DateTimeImmutable('@'.$now);
+        // Billing issues renewals on the clock's own date, so the projection and the billing dates below use the clock's time zone, as the domain page does.
+        $inputs=DomainStateInputs::load($c->domains,$c->services);$at=(new \DateTimeImmutable('@'.$now))->setTimezone(app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimezone());$billingDay=$at->format('Y-m-d');
         $testServers=Account::whereIn('server_id',array_map(fn($d)=>$d->server_id,$c->domains))->where('environment','test')->pluck('server_id')->all();
         $dnsChoices=collect();
         Operation::select('domains_operations.*')->join('domains_domains as d','d.id','=','domains_operations.domain_id')
@@ -151,10 +152,10 @@ final class DomainSummaries
                         $invoicePaid=$issued==='paid' && !$invoiceMissing;
                         $goes=$invoicePaid?($invoice['goes']??null):null;
                     } elseif ($expiry && !$off) { $projected=true;
-                        if ($state->calendar) { $due=$state->calendar['due'];$issue=$state->calendar['issue'];$invoiceMissing=$issue<gmdate('Y-m-d',$now); } }
+                        if ($state->calendar) { $due=$state->calendar['due'];$issue=$state->calendar['issue'];$invoiceMissing=$issue<$billingDay; } }
                     $order=$state->order;$managedStatus=$state->status;
                     $url=route('domains.domains.show',$id);
-                    if ($due && $due<=gmdate('Y-m-d',$now)) { $due=null; }
+                    if ($due && $due<=$billingDay) { $due=null; }
                     // The renewal invoice is due before expiry; once expiry has passed the list shows Expired instead. The detail page still says it was never issued.
                     $invoiceOverdue=$invoiceMissing;
                     if (!$expiry || $expiry<=gmdate('Y-m-d',$now)) { $invoiceMissing=false; }
