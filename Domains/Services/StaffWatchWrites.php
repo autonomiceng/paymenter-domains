@@ -92,13 +92,20 @@ final class StaffWatchWrites
 
         });
     }
-    /** Templates are told apart by name in every list and choice, so two may not share one (ignoring case and spaces). */
+    /** Templates are told apart by name in every list and choice, so two may not share one that looks the same: ignoring
+     * case, spaces, invisible format characters (zero-width space, soft hyphen) and compatibility forms (fullwidth letters). */
     public static function requireUniqueName(string $name,?int $except=null): void
     {
-        $key=mb_strtolower(trim(preg_replace('/\s+/u',' ',$name)??$name));
+        $key=self::nameKey($name);
         foreach(WatchProfile::when($except,fn($q)=>$q->whereKeyNot($except))->pluck('name') as $other){
-            if(mb_strtolower(trim(preg_replace('/\s+/u',' ',(string)$other)??(string)$other))===$key){throw new \DomainException('A DNS template named "'.trim($name).'" already exists. Choose another name.');}
+            if(self::nameKey((string)$other)===$key){throw new \DomainException('A DNS template named "'.trim($name).'" already exists. Choose another name.');}
         }
+    }
+    private static function nameKey(string $name): string
+    {
+        $folded=class_exists(\Normalizer::class)?(\Normalizer::normalize($name,\Normalizer::FORM_KC)?:$name):$name;
+        $visible=preg_replace('/\p{Cf}+/u','',$folded)??$folded;
+        return mb_strtolower(trim(preg_replace('/\s+/u',' ',$visible)??$visible));
     }
     private static function lines(mixed $value): array
     { if(!is_string($value) || strlen($value)>8192){throw new \DomainException('Enter one DNS target per line.');}return array_values(array_filter(array_map('trim',preg_split('/\R/',$value)))); }

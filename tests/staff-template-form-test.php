@@ -24,6 +24,10 @@ $page->setActionData(['name'=>' synthetic  DEFAULTS ','nameservers'=>"ns1.new.te
 same('A DNS template named "synthetic  DEFAULTS" already exists. Choose another name.',$page->errors()->first('mountedActions.0.data.name'),'The duplicate name is refused under Name');
 same($count,WatchProfile::count(),'A duplicate name saves nothing');
 $refused=false;try{Writes::requireUniqueName('Synthetic defaults');}catch(DomainException){$refused=true;}expect($refused,'The save refuses a duplicate name too');
+// Names that only look different are the same name: a zero-width space, a soft hyphen or fullwidth letters.
+foreach(["Synthetic\u{200B} defaults","Synthetic defaults\u{200B}","Synthe\u{00AD}tic defaults","Ｓｙｎｔｈｅｔｉｃ　ｄｅｆａｕｌｔｓ"] as $lookalike){
+    $refused=false;try{Writes::requireUniqueName($lookalike);}catch(DomainException){$refused=true;}expect($refused,'A look-alike name is refused: '.json_encode($lookalike));
+}
 Writes::requireUniqueName('Synthetic defaults',(int)$profile->id);
 expect(true,'A template keeps its own name on edit');
 $nativeSuccessful=true;echo "Staff template form passed\n";
