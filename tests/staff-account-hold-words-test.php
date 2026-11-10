@@ -33,5 +33,19 @@ $note=$list->getTable()->getColumn('note')->record($server);
 expect(str_contains((string)$note->getState(),'Check 2 requests. No registrar result yet.'),'The list Note names the held account step: '.$note->getState());
 expect(!str_contains((string)$note->getState(),'WHOIS privacy'),'The list Note never names WHOIS privacy');
 same('warn',$note->getExtraAttributes()['data-beco-tone']??null,'The held Note is amber');
+// One request reads the full hold snapshot once, including empty account results.
+$attributes=request()->attributes;
+$attributes->remove('domains.paid_uncertainty.holds');
+DB::flushQueryLog();DB::enableQueryLog();
+$step=PaidUncertainty::accountStep((int)$heldOp->server_id);
+$reads=count(DB::getQueryLog());
+same($step,PaidUncertainty::accountStep((int)$heldOp->server_id),'Sibling rows reuse the same hold step');
+same(null,PaidUncertainty::accountStep(999999),'An account outside the holds stays clear');
+same($reads,count(DB::getQueryLog()),'Additional registrar rows do not repeat hold queries');
+DB::disableQueryLog();
+// A fresh request must see an updated result rather than an earlier snapshot.
+$attributes->remove('domains.paid_uncertainty.holds');
+DB::table('domains_operations')->whereIn('id',[$heldOp->id,$longOp->id])->update(['state'=>'succeeded']);
+same(null,PaidUncertainty::accountStep((int)$heldOp->server_id),'The next request sees settled holds');
 echo "Account hold words passed.\n";
 $nativeSuccessful=true;

@@ -52,9 +52,16 @@ final class PaidUncertainty
     /** The Registrars list Note for a held account: the same step as its banner, so the list never shows the account as clear. */
     public static function accountStep(int $server): ?string
     {
-        return ($h=self::holds($server)[0]??null)?$h['label'].(PrivacyVisibility::SHOWN?'. Paid WHOIS privacy orders wait.':'. No registrar result yet.'):null;
+        Staff::requireView();
+        $attributes=request()->attributes;$key='domains.paid_uncertainty.holds';
+        if(!$attributes->has($key)){$attributes->set($key,self::holds(null));}
+        $holds=$attributes->get($key);
+        $h=collect($holds)->firstWhere('server_id',$server);
+        // A server beyond the bounded snapshot still gets its own checked result.
+        if($h===null&&count($holds)===100){$h=self::holds($server)[0]??null;}
+        return $h?$h['label'].(PrivacyVisibility::SHOWN?'. Paid WHOIS privacy orders wait.':'. No registrar result yet.'):null;
     }
-    /** @return list<array{label:string,url:?string,until:string,name:string,count:int}> */
+    /** @return list<array{server_id:int,label:string,url:?string,until:string,name:string,count:int}> */
     private static function holds(?int $server): array
     {
         Staff::requireView();
@@ -74,7 +81,7 @@ final class PaidUncertainty
             [$label,$url,$until]=$count===1
                 ? ['Check request #'.$first,DomainFacts::requestUrl(['request'=>$first]),'it is checked']
                 : ['Check '.$count.' requests',RegistrarFacts::requestsUrl((int)$id,['under_review']),'they are checked'];
-            $out[]=['label'=>$label,'url'=>$url,'until'=>$until,'name'=>(string)($names->get($id) ?: 'this registrar account'),'count'=>$count];
+            $out[]=['server_id'=>(int)$id,'label'=>$label,'url'=>$url,'until'=>$until,'name'=>(string)($names->get($id) ?: 'this registrar account'),'count'=>$count];
         }
         return $out;
     }
