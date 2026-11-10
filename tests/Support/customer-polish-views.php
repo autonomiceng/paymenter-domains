@@ -88,7 +88,7 @@ use Paymenter\Extensions\Servers\Domains\Services\DomainSummaryStrings;
     same([], array_intersect($pills($dom), $evidence), 'No registration, DNS, renewal or check pills on the list');
     $related = array_map(fn ($i) => $dom->query('//tbody/tr['.$i.']')->item(0), range(count($summaries) + 1, count($summaries) + count($watches)));
     same([[], [], ['Active']], array_map(fn ($node) => $pills($dom, $node), $related), 'Hosting rows: no pill without current registry facts; managed row shows Active');
-    same(['At your registrar', 'At your registrar', 'Off'], array_map(fn ($node) => trim($dom->query('td[@data-label="Renewal invoices"]', $node)->item(0)->textContent), $related), 'Hosting rows renew at their registrar; a registered row keeps its own renewal');
+    same(['', '', 'Off'], array_map(fn ($node) => trim($dom->query('td[@data-label="Renewal invoices"]', $node)->item(0)->textContent), $related), 'Hosting rows have no renewal invoices; a registered row keeps its own renewal');
     $detail = view('domains::partials.summary', ['summary' => $summaries[2]])->render();
     foreach (['domain.registration.unknown', 'domain.dns.unknown', 'domain.points.unknown', 'watch.not_checked'] as $key) { expect(!str_contains($detail, '>'.$strings[$key].'<'), 'Detail shows no chip that only says something is unknown: '.$key); }
     $nameservers = static fn (DOMXPath $dom) => preg_replace('/\s+/', ' ', trim($dom->query('//div[@class="domains-fact"][dt="Nameservers"]/dd')->item(0)?->textContent ?? ''));

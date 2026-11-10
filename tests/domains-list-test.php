@@ -66,13 +66,13 @@ $rows=[
     'real.example'=>[$dto('real.example','managed',['expiry'=>'2027-03-01','daysLeft'=>129,'renewalPrice'=>'$14.99','statusState'=>'active']),'Mar 1, 2027','On $14.99/yr',null],
     'demo-held.example'=>[$dto('demo-held.example','managed',['demo'=>true,'expiryWaits'=>'transfer','renewalPrice'=>'$15.99','statusState'=>'held','statusReason'=>'Transfer on hold']),'Missing Fills in by itself when the transfer finishes','On $15.99/yr','Demo'],
     'test-expiring.example'=>[$dto('test-expiring.example','managed',['testEnvironment'=>true,'expiry'=>'2026-11-02','daysLeft'=>1,'renewalInvoiceMissing'=>true,'statusState'=>'active']),'Nov 2, 2026 In 1 day','On Next invoice: Missing Not issued yet Contact support','Test'],
-    'watch-expired.example'=>[$dto('watch-expired.example','watch',['demo'=>true,'expiry'=>'2026-10-21','daysLeft'=>-2,'relatedServices'=>[...$hosting,['id'=>3,'label'=>'Shop hosting','url'=>'/services/3'],['id'=>4,'label'=>'Blog hosting','url'=>'/services/4']],'relatedOverflow'=>1,'statusState'=>'watch.expired','statusReason'=>'Renew at your registrar']),'Oct 21, 2026','At your registrar','Demo'],
-    'watch-unknown.example'=>[$dto('watch-unknown.example','watch',['relatedServices'=>array_slice($hosting,0,1)]),'Missing Check at your registrar','At your registrar',null],
+    'watch-expired.example'=>[$dto('watch-expired.example','watch',['demo'=>true,'expiry'=>'2026-10-21','daysLeft'=>-2,'relatedServices'=>[...$hosting,['id'=>3,'label'=>'Shop hosting','url'=>'/services/3'],['id'=>4,'label'=>'Blog hosting','url'=>'/services/4']],'relatedOverflow'=>1,'statusState'=>'watch.expired','statusReason'=>'Renew at your registrar']),'Oct 21, 2026','','Demo'],
+    'watch-unknown.example'=>[$dto('watch-unknown.example','watch',['relatedServices'=>array_slice($hosting,0,1)]),'Missing Check at your registrar','',null],
     'renewal-review.example'=>[$dto('renewal-review.example','managed',['expiry'=>'2029-11-05','daysLeft'=>1095,'renewalPrice'=>'$10.99','statusState'=>'active','renewalInvoiceReview'=>true]),'Nov 5, 2029','On Next invoice: Under review',null],
 ];
 $page=new LengthAwarePaginator(array_column($rows,0),count($rows),25);
 $html=view('domains::index',['domains'=>$page,'filterCounts'=>[''=>count($rows),'active'=>2,'under_review'=>1,'expired'=>1]])->render(); $dom=storefrontDom($html);
-same(['Domain','Status','Expires','Renewal'],array_map($norm,iterator_to_array($dom->query('//thead/tr/th'))),'Four columns, no Actions column');
+same(['Domain','Status','Expires','Renewal invoices'],array_map($norm,iterator_to_array($dom->query('//thead/tr/th'))),'Four columns, no Actions column');
 same(0,$dom->query('//*[contains(@class,"domains-lede")]')->length,'No lede: the All tab shows the count');
 same(0,$dom->query('//form[contains(@class,"domains-filter")]//button')->length,'No Apply button: search runs on Enter');
 same(['none','ascending'],array_map(fn($th)=>$th->value,iterator_to_array($dom->query('//thead/tr/th/@aria-sort'))),'Soonest expiry first is not the name order, and the head says so') ;

@@ -52,10 +52,10 @@ final class DomainListRow
         $soon = $days !== null && $days > 0 && $days <= 30;
         return ['missing' => false, 'tone' => $days !== null && $days <= 0 ? 'bad' : ($soon ? 'warn' : null), 'note' => $soon ? 'In '.$days.($days === 1 ? ' day' : ' days') : null];
     }
-    /** "At your registrar", or Auto-renew on/off with the price, the cancel date or a missing next invoice. */
+    /** Empty for a domain renewed at its own registrar (we send no invoices), or Auto-renew on/off with the price, the cancel date or a missing next invoice. */
     public static function renewal(DomainSummary $s): array
     {
-        if ($s->kind === 'watch') { return ['value' => 'At your registrar', 'note' => null, 'invoiceMissing' => false, 'invoiceCause' => null, 'invoiceFix' => null]; }
+        if ($s->kind === 'watch') { return ['value' => '', 'note' => null, 'invoiceMissing' => false, 'invoiceCause' => null, 'invoiceFix' => null]; }
         if ($s->expiry===null && (in_array($s->statusState,['registration_rejected','transfer_rejected','cancelled'],true)||in_array($s->order['state']??null,['failed','cancelled'],true))) { return ['value'=>'','note'=>null,'invoiceMissing'=>false,'invoiceCause'=>null,'invoiceFix'=>null]; }
         if ($s->renewalOffShown() && !$s->renewalInvoicePaid && !$s->renewalInvoiceReview && !$s->renewalInvoiceCancelled && !$s->renewalClosed) {
             return ['value' => 'Off', 'note' => $s->expiry ? 'Cancels '.CarbonImmutable::parse(substr($s->expiry, 0, 10), 'UTC')->format('M j, Y') : null, 'invoiceMissing' => false, 'invoiceCause' => null, 'invoiceFix' => null];
