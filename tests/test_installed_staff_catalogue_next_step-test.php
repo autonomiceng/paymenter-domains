@@ -248,7 +248,9 @@ case 'registrar terms':
     $next='Ask the registrar to confirm terms for .com.';break;
 case 'registrar requirements':
     $facts=OfferState::decode($original['catalogue_facts']);$facts['requiresNameservers']=true;DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>OfferState::json($facts)]);
-    $next='This registrar needs nameservers at registration for .com. Use Change registrar to sell it through another account.';break;
+    // Change registrar is on the TLD page, so the step links there.
+    $next='This registrar needs nameservers at registration for .com. Use Change registrar to sell it through another account.';$open='tld';
+    $url=\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource::getUrl('view',['record'=>$t->id]);break;
 case 'price choice':
     DB::table('domains_prices')->where('server_id',$binding->serverId)->where('tld','com')->where('action','register')->update(['retail'=>'0.00']);
     $next='Set a positive registration price in Edit prices on .com.';$open='tld';
