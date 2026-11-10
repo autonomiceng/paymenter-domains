@@ -6,8 +6,9 @@ use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 
 use App\Models\Server;
 use Illuminate\Support\Collection;
+use Illuminate\Support\HtmlString;
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,StaffGrants,TldFacts};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{Sheet,Staff,StaffGrants,TldFacts};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\RequestOrigin;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,OfferRow,Tld};
@@ -48,14 +49,17 @@ final class StaffCatalogue
         if($facts===null){try{$facts=OfferState::facts($t->catalogue_facts);}catch(\Throwable){$facts=null;}}
         return 'This registrar '.Writer::unsupportedCause($facts,(string)$t->registrar_key,(string)$t->tld).' for .'.$t->tld.'. '.(TldFacts::canChangeSeller()?TldFacts::SELL_ELSEWHERE:TldFacts::ASK_SELLER);
     }
+    /** When the queued read runs, in the viewer's time zone like the other staff times. */
+    private static function nextCheck(int $at): HtmlString
+    { return new HtmlString(Sheet::moment($at,'Next check')->toHtml().'.'); }
     private function nextStep(Tld $t,array $offers,string $action,int $term,array &$once): array
     {
         $offer=$offers[$action.':'.$term]??null;$reason=$offer?->decision->reason;$now=$this->clock->now();
         $names=['register'=>'registration','renew'=>'renewal','transfer'=>'transfer'];
-        $step=static fn(string $state,string $next,?string $open=null)=>compact('state','next','open');
+        $step=static fn(string $state,string|HtmlString $next,?string $open=null)=>compact('state','next','open');
         $missing=static fn(string $next,?string $open='tld')=>$step('missing',$next,$open);
         $waiting=static fn(array $s)=>!empty($s['local_failure'])?$missing('Check the registrar account and read prices again.','account'):
-            $step('checking',isset($s['due_at'])&&$s['due_at']>=$now->getTimestamp()&&empty($s['remaining'])?'Next check '.gmdate('M j, Y, g:i A',$s['due_at']).' UTC.':'Queued for the next background run.');
+            $step('checking',isset($s['due_at'])&&$s['due_at']>=$now->getTimestamp()&&empty($s['remaining'])?self::nextCheck((int)$s['due_at']):'Queued for the next background run.');
         if(!$offers){return $missing('Check saved settings on .'.$t->tld.'.');}
         if($reason==='account_unavailable'){return $missing('Check account setup on Registrar account.','account');}
         try{$rule=self::ruleOnce($t,$once);}catch(\DomainException|\InvalidArgumentException){return $missing('Fix the pricing rule in Edit prices on .'.$t->tld.'.');}
