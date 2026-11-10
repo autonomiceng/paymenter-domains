@@ -204,7 +204,7 @@ All rows: **I/B**, common envelope/code table. Ack mutations require later readb
 
 DNS add/update say `rrdistance` is MX-only (default 10), leaving SRV **priority** mapping unclear;
 weight/port/target are documented. TTL default is 7207; send an explicit validated TTL. Preserve
-TXT bytes and verify readback. Registered nameservers are IPv4 only (provider-confirmed);
+TXT bytes up to 2048 with no C0 or DEL byte (the adapter refuses them) and verify readback. Registered nameservers are IPv4 only (provider-confirmed);
 IPv6 glue is refused. SRV editing remains gated on its priority mapping.
 
 ## NameSilo contact readback acceptance
