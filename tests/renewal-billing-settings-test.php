@@ -78,9 +78,12 @@ same([$saved,$history],[$rows(),count(Review::historyRows($server->fresh()))],'R
 foreach([[365,364],[2,1]] as [$issue,$due]){$writer->run($review(),[...$valid,'issue_days'=>$issue,'due_days'=>$due]);same(['issue'=>$issue,'due'=>$due],BillingCalendar::timing($server->settings()->get()),'Calendar edge '.$issue.'/'.$due.' saves');}
 $saved=$rows();$history=count(Review::historyRows($server->fresh()));
 
-// Native refusal toast for a bound violation; stale page refuses after another change.
-Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id])->mountAction($name)->setActionData(['issue_days'=>'7','due_days'=>'7','reason'=>'Refuse an equal issue and due day'])
-    ->callMountedAction()->assertHasNoActionErrors()->assertNotified(Notification::make()->danger()->title("Couldn't save")->body('Issue days must be more than due days. Issue days can be at most 365 and due days at least 1. Nothing was saved.'));
+// Invalid timing stays in the dialog with a field error; stale pages refuse after another change.
+$invalid=Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id])->mountAction($name)->setActionData(['issue_days'=>'7','due_days'=>'7','reason'=>'Refuse an equal issue and due day'])
+    ->callMountedAction()->assertHasActionErrors(['issue_days'])->assertActionMounted($name);
+same('Must be more than the due days (7).',$invalid->errors()->first('mountedActions.0.data.issue_days'),'Equal issue and due days have a precise field error');
+same(['7','7','Refuse an equal issue and due day'],[(string)$invalid->get('mountedActions.0.data.issue_days'),(string)$invalid->get('mountedActions.0.data.due_days'),$invalid->get('mountedActions.0.data.reason')],'Invalid timing preserves the submitted values');
+same([$saved,$history],[$rows(),count(Review::historyRows($server->fresh()))],'Invalid timing writes nothing');
 $stale=Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id])->mountAction($name);$writer->run($review(),[...$valid,'manual'=>false,'issue_days'=>2,'due_days'=>1]);$saved=$rows();$history=count(Review::historyRows($server->fresh()));
 $stale->setActionData([...$valid,'issue_days'=>'40','reason'=>'Stale page must refuse'])->callMountedAction()->assertNotified(Notification::make()->danger()->title("Couldn't save")->body('Someone else changed this. Nothing was saved. Try again.'));
 same([$saved,$history],[$rows(),count(Review::historyRows($server->fresh()))],'Refused native submissions write nothing');
