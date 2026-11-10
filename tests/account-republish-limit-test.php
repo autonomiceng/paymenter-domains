@@ -42,6 +42,22 @@ same(null,SettingsActions::republished(['failed'=>[],'pending'=>false,'left'=>0]
 // Within the limit it is published at once.
 same(['failed'=>[],'left'=>0],$commands->republishSold($binding->serverId),'Within the limit the TLD is published at once');
 same($before,$price(),'.com is back on sale');
+// One failed publication names its TLD and does not stop a healthy sibling.
+$sibling=$com->fresh()->replicate();$sibling->tld='net';$sibling->catalogue_revision++;$sibling->save();
+foreach(Paymenter\Extensions\Servers\Domains\Models\Price::where('server_id',$binding->serverId)->where('tld','com')->get() as $price){$copy=$price->replicate();$copy->tld='net';$copy->save();}
+$policy=Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->sole()->replicate();$policy->tld='net';
+Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::withPolicyWrite(static fn()=>$policy->save());
+DB::table('domains_tlds')->where('id',$com->id)->increment('catalogue_revision');
+$attempted=[];
+$failing=new StaffCommands(new Writer(new Projection($native),$clock,static function($command)use(&$attempted):void{
+    $attempted[]=$command->tld();if($command->tld()==='com'){throw new DomainException('Synthetic publication refusal');}
+},static fn()=>true),$bindings,static fn()=>null);
+same(['failed'=>['com'],'left'=>0],$failing->republishSold($binding->serverId),'A failure is recorded without abandoning siblings');
+same(['com','net'],$attempted,'The sibling is published after the first TLD fails');
+$published=Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($sibling->fresh()->catalogue_published_revision);
+same($sibling->fresh()->catalogue_revision,$published['offer'],'The healthy sibling publication is current');
+same('Prices for .com are not published, so it is not for sale. Open Edit prices on the TLD and save.',SettingsActions::republished(['failed'=>['com'],'pending'=>false,'left'=>0]),'The failure names the TLD and repair');
+same('Prices are not published yet, so TLDs are not for sale until the next background run. Open Edit prices on a TLD and save to publish it now.',SettingsActions::republished(['failed'=>[],'pending'=>true]),'Pending publication explains the wait and immediate repair');
 // A saved setting without the installed catalogue must say publication is still pending.
 $unavailable=new class($native,$sellers,$bindings) extends StaffSettingsWrites {protected function catalogue():?StaffCommands{return null;}};
 $result=$unavailable->run($review('price_freshness'),['hours'=>72],$now);
