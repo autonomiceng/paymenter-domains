@@ -211,7 +211,7 @@ same(0,$dom->query('//a[.="Renew now"]')->length,'No Renew now while an invoice 
 // After a failed charge (Auto Pay or a card), the row says it failed and what to do, not only that the invoice is ready.
 $d=$domain(['renewalDue'=>'2027-02-01','renewNow'=>['invoice'=>'/invoices/9','declined'=>true]]);
 same('Due Feb 1, 2027 The last payment failed. Pay the invoice with another card. Pay invoice',$card(storefrontDom($render($d,$summary($d))),'Next invoice'),'A failed charge says so with its next step');
-same('Paid Updates when the renewal completes',$card(storefrontDom($render($domain(['renewNow'=>['status'=>'paid']]))),'Next invoice').' '.preg_replace('/^.*2027 /','',$card(storefrontDom($render($domain(['renewNow'=>['status'=>'paid']]))),'Expires')),'Paid invoice');
+same('Paid Current date. The new one shows once the renewal completes.',$card(storefrontDom($render($domain(['renewNow'=>['status'=>'paid']]))),'Next invoice').' '.preg_replace('/^.*2027 /','',$card(storefrontDom($render($domain(['renewNow'=>['status'=>'paid']]))),'Expires')),'Paid invoice');
 same('Missing Contact support Invoice cancelled',$card(storefrontDom($render($d=$domain(['renewNow'=>['status'=>'cancelled']]),$summary($d))),'Next invoice'),'Cancelled invoice');
 $dom=storefrontDom($render($d=$domain(['renewal'=>'Off','renewNow'=>['status'=>'review']]),$summary($d)));
 same('Under review Renewal being checked. No action needed.',$card($dom,'Next invoice'),'Invoice under review shows even with auto-renew off');

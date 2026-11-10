@@ -108,7 +108,7 @@ final class DomainPage
         }
         $days = $d->daysLeft ?? $s?->daysLeft ?? (int) CarbonImmutable::now('UTC')->startOfDay()->diffInDays(CarbonImmutable::parse($d->expiry, 'UTC'), false);
         $note = match (true) {
-            ($d->renewNow['status'] ?? $d->renewalInvoice['state'] ?? null) === 'paid' => 'Updates when the renewal completes',
+            ($d->renewNow['status'] ?? $d->renewalInvoice['state'] ?? null) === 'paid' => self::EXPIRY_PENDING,
             $d->renewalOff !== null => 'Cancels '.self::date($d->expiry),
             $days > 0 && $days <= 30 => 'In '.$days.($days === 1 ? ' day' : ' days'),
             default => null,
@@ -117,6 +117,8 @@ final class DomainPage
     }
     /** The renewal invoice's state in words, the same on the domain page and the Domains list (DomainStates::cycle). */
     /** The open renewal invoice's last charge failed, whether Auto Pay or a card made it. */
+    /** Beside the current expiry while a paid renewal is under way, so it never reads as the new date. */
+    public const EXPIRY_PENDING = 'Current date. The new one shows once the renewal completes.';
     public const DECLINED = 'The last payment failed. Pay the invoice with another card.';
     public const INVOICE = ['paid' => 'Paid', 'review' => 'Under review', 'cancelled' => 'Invoice cancelled', 'closed' => 'Renewal did not finish'];
     /** What happens to the money once the registrar rejected the order, by OwnedDomain::$refundTo. */

@@ -38,7 +38,7 @@
 </dl>
 @include('domains::partials.owner-auto-renew')
 @if ($renewable)
-@php $breakdown=static fn($line)=>isset($line['first_year'],$line['renewal'])?'$'.$line['first_year'].' for the first year'.($line['years']>1?' + $'.$line['renewal'].($line['years']===2?' for the next year.':' / year for the next '.($line['years']-1).' years.') : '.'):''; @endphp
+@php $breakdown=static fn($line)=>isset($line['first_year'],$line['renewal'])?'$'.$line['first_year'].' for the first added year'.($line['years']>1?' + $'.$line['renewal'].($line['years']===2?' for the next year.':' / year for the next '.($line['years']-1).' years.') : '.'):''; @endphp
 <dialog id="edit-renew" class="domains-confirm domains-edit domains-dialog-sheet" aria-labelledby="edit-renew-title" @if ($renewOpen) open @endif>
 <h3 id="edit-renew-title" class="domains-h3">Renew {{ $domain->name }}</h3>
 <form method="POST" action="{{ $domain->renewNow['url'] }}" class="domains-owner-form" data-renewal-form>
