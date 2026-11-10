@@ -78,9 +78,12 @@ jobs:
     env:
       PAYMENTER_TEST_APP: ${{ github.workspace }}/../paymenter-1.5.9
     steps:
+      # Upgrade tests package earlier revisions with git archive; older file contents download on demand.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
+          filter: blob:none
       - id: pin
         name: Read the pinned Paymenter release
         run: |
