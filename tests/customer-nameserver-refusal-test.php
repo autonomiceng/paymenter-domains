@@ -17,7 +17,7 @@ foreach ([true,false] as $forms) {
     if ($forms) {
         // The row names what the registrar refused, in red, with a support link.
         $row=$dto->management['nameservers']['progress'];
-        same('Not changed: the registrar refused ns1.example.net, ns2.example.net. Check that each one is a working nameserver, then try again.',$row['text'],'Settings name the refused nameservers and the next step');
+        same('Not changed: the registrar did not take the change to ns1.example.net, ns2.example.net. Check that each one is a working nameserver, then try again.',$row['text'],'Settings name the refused change and the next step');
         same(['bad',true],[$row['tone']??null,$row['support']??null],'The refused row is red and offers support');
     }
 }

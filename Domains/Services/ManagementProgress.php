@@ -154,7 +154,9 @@ final class ManagementProgress
     {
         $servers=$op->policy['management']['input']['nameservers']??null;
         $list=is_array($servers)?implode(', ',array_filter($servers,'is_string')):'';
-        return 'Not changed: the registrar refused '.($list!==''?$list:'these nameservers').'. Check that each one is a working nameserver, then try again.';
+        // The registrar refuses the change as a whole, so the words never say each server was refused.
+        return $list!==''?'Not changed: the registrar did not take the change to '.$list.'. Check that each one is a working nameserver, then try again.'
+            :'Not changed: the registrar did not take this change. Check that each nameserver is working, then try again.';
     }
     private static function readSince(Operation $op, Domain $d): bool
     {
