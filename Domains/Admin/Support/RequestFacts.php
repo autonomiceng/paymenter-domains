@@ -430,7 +430,10 @@ final class RequestFacts
         if ($sends!==null) { return ['Send to Enom now?','Release and send',"Sends the {$sends} to Enom within a few minutes. This can't be taken back."]; }
         $registrar=PaidUncertainty::registrar($op);
         $kind=$account&&in_array($op->action,['register','transfer','renew'],true)?self::queueWords($op,$account):'request';
-        if ($contactRecovery) { return ['Use updated account details?','Use updated account details',"Copies the customer's current account details into this request and releases the hold. The {$kind} then goes to {$registrar}."]; }
+        // Contact recovery queues a registration, but a transfer stays held for its own release review (ContactRecovery).
+        if ($contactRecovery) { return ['Use updated account details?','Use updated account details',$op->action==='transfer'
+            ?"Copies the customer's current account details into this request. The transfer stays on hold for a separate release review. If the auth code deadline has passed, it cannot be released."
+            :"Copies the customer's current account details into this request and releases the hold. The {$kind} then goes to {$registrar}."]; }
         if ($account&&ComplimentaryCosts::awaitingApproval($op)) { return ['Release hold?','Release hold','Retries the price check. The '.$kind.' holds again while the registrar cost is above the usual.']; }
         // A paid order held at its contact step goes as the customer's order; say what the registrar charges.
         $cost=$op->safe_code===\Paymenter\Extensions\Servers\Domains\Services\ContactProfileHold::CODE&&is_numeric($op->cost['estimated']??null)
