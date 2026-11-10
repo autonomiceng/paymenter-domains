@@ -43,7 +43,8 @@ line cut with a painted "...": a name exactly 326px, a customer 120px, a Note th
 (the approved table, padding included). Domains list cells are no wider than their items, the table fits its card at
 1440px, and the page never scrolls sideways. Each item and its tooltip keep the full text. Only the staff reveal script
 runs: keyboard focus on a row link, or on a cut text in a row that opens nothing (the only texts with their own tab stop,
-kept while cut), shows the full text in a fixed overlay, and no cell or row moves. The client domain heading keeps
+kept while cut, also after a late font load), shows the full text in a fixed overlay inside the viewport (also at
+320 by 225px), and no cell or row moves. The client domain heading keeps
 clamp(1.125rem, 5vw, 1.5rem) and an 18 by 20px status mark at 320/390/768/1280px in both modes. For a host skin, set
 `DOMAINS_PANEL_SETUP` to a PHP file that is given `$panel`, configures it and returns its built theme; render with
 `R14_RENDER_DIR=OUT scripts/render-reminders.py OUT` and both tests' render files, then run the check on `OUT`. Its

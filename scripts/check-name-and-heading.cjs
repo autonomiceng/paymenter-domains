@@ -19,6 +19,10 @@ const ORDERS = ['staff sheet after theme', 'staff sheet before theme'];
 const words = text => text.replace(/\s+/g, ' ').trim();
 const sentences = text => words(text).split(/(?<=\.)\s+/).sort();
 const SCOPES = ['lists', 'managed'];
+// A late font load (managed scope): a pinned font from the Paymenter fixture's vendor tree, read from disk, no network.
+const FONT = 'vendor/dompdf/dompdf/lib/fonts/DejaVuSans.ttf';
+// The longest valid address: a 64-character local part and labels of 63, 63, 56 and 4 characters (254 in all).
+const LONGEST = `${'l'.repeat(64)}@${'a'.repeat(63)}.${'b'.repeat(63)}.${'c'.repeat(56)}.test`;
 // Two frames: the reveal script's queued scan and its resize observer have run.
 const frames = () => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)));
 
@@ -51,7 +55,7 @@ async function main() {
             .replace(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi, (tag, attributes, body) =>
                 /\bdata-domains-reveal\b/.test(attributes) ? `<script nonce="domains-reveal"${attributes}>${body}</script>` : '');
         html = html.replace(/<head\b[^>]*>/i, head => head + '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; ' +
-            'style-src \'unsafe-inline\'; script-src \'nonce-domains-reveal\'">');
+            'style-src \'unsafe-inline\'; font-src data:; script-src \'nonce-domains-reveal\'">');
         // Filament fades its main area in with a script; without its scripts it stays transparent.
         html = html.replace('</body>', '<style>.fi-main-ctn{opacity:1!important}</style></body>');
         await page.setContent(html, { waitUntil: 'domcontentloaded' });
@@ -210,6 +214,77 @@ async function main() {
         }
     }
 
+    // A font that finishes loading later widens a fitting text without changing its box or the DOM: the text, now cut,
+    // takes its tab stop. The late face shares the bytes of the base face and is three times as wide (size-adjust).
+    async function lateFont(name, item, font) {
+        const got = await item.evaluate(async (item, font) => {
+            const settle = () => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)));
+            const walker = document.createTreeWalker(item, NodeFilter.SHOW_TEXT);
+            let node;
+            while ((node = walker.nextNode()) && !node.textContent.trim());
+            const long = node.textContent, source = `url(data:font/ttf;base64,${font})`;
+            const state = () => [item.getAttribute('tabindex'), item.scrollWidth > item.clientWidth, item.getBoundingClientRect().width];
+            const base = new FontFace('DomainsCheckBase', source);
+            document.fonts.add(base);
+            await base.load();
+            // The late family is not in the font set yet, so the text renders in the base face.
+            item.style.width = `${item.getBoundingClientRect().width}px`;
+            item.style.fontFamily = 'DomainsCheckLate, DomainsCheckBase';
+            node.textContent = 'a@b.test';
+            await settle();
+            const before = state();
+            const late = new FontFace('DomainsCheckLate', source, { sizeAdjust: '300%' });
+            document.fonts.add(late);
+            await late.load();
+            await settle();
+            const after = state();
+            document.fonts.delete(late);
+            document.fonts.delete(base);
+            item.style.width = item.style.fontFamily = '';
+            node.textContent = long;
+            await settle();
+            return { before, after, restored: item.getAttribute('tabindex') };
+        }, font);
+        check(got.before[0] === null && !got.before[1], `${name}: before the late font, the fitting text has no tab stop (${JSON.stringify(got.before)})`);
+        check(got.after[2] === got.before[2], `${name}: the late font leaves the box as it is (${got.before[2]}px, ${got.after[2]}px)`);
+        check(got.after[1] && got.after[0] === '0', `${name}: cut by a font that loads later, the text takes a tab stop (tabindex, cut: ${JSON.stringify(got.after.slice(0, 2))})`);
+        check(got.restored === '0', `${name}: the long text keeps its tab stop afterwards`);
+    }
+
+    // A short screen (320 by 225 CSS px, 400% zoom of 1280 by 900): the longest address, focused near the top, has no room
+    // below or above. Its overlay stays inside the viewport and shows all of it.
+    async function shortScreen(name, item) {
+        await page.setViewportSize({ width: 320, height: 225 });
+        const got = await item.evaluate(async (item, longest) => {
+            const settle = () => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)));
+            const walker = document.createTreeWalker(item, NodeFilter.SHOW_TEXT);
+            let node;
+            while ((node = walker.nextNode()) && !node.textContent.trim());
+            node.textContent = longest;
+            // Room to scroll the text to 60px from the top.
+            document.body.style.paddingBottom = '1000px';
+            await settle();
+            scrollBy(0, item.getBoundingClientRect().top - 60);
+            await settle();
+            const anchor = item.getBoundingClientRect();
+            item.focus({ preventScroll: true, focusVisible: true });
+            await settle();
+            const overlay = [...document.querySelectorAll('.domains-reveal')].find(node => !node.hidden && node.getClientRects().length);
+            const box = overlay?.getBoundingClientRect();
+            const result = { anchor: [anchor.top, anchor.bottom], view: [innerWidth, innerHeight], focused: document.activeElement === item,
+                overlay: overlay ? { text: overlay.textContent, box: [box.left, box.top, box.right, box.bottom],
+                    all: overlay.scrollHeight <= overlay.clientHeight && overlay.scrollWidth <= overlay.clientWidth } : null };
+            item.blur();
+            return result;
+        }, LONGEST);
+        check(got.focused && got.overlay !== null, `${name}: on a short screen, focus shows the overlay`);
+        if (!got.overlay) return;
+        const [left, top, right, bottom] = got.overlay.box, [width, height] = got.view;
+        check(left >= 0 && top >= 0 && right <= width && bottom <= height,
+            `${name}: on a short screen, the overlay stays inside the viewport (${got.overlay.box.map(Math.round)} in ${width} by ${height}, text at ${got.anchor.map(Math.round)})`);
+        check(got.overlay.all && words(got.overlay.text) === LONGEST, `${name}: on a short screen, the overlay shows the whole address`);
+    }
+
     try {
         for (const order of ORDERS) for (const width of [1440, 900, 390]) {
             if (scopes.includes('lists')) await lists(order, width);
@@ -275,6 +350,12 @@ async function main() {
         if (await customers.count() !== 1) return;
         await measure(`${where}, ${PERSON[0]}`, customers, PERSON[1], width, { full: account });
         await cutStops(`${where}, ${PERSON[0]}`, customers);
+        if (width === 1440) {
+            // Once per stylesheet order: a late font load, and a short screen (after the Tab presses below).
+            const root = [process.env.PAYMENTER_TEST_FIXTURE, process.env.PAYMENTER_TEST_APP].find(dir => dir && fs.existsSync(path.join(dir, FONT)));
+            check(root !== undefined, `${where}: the late font check needs ${FONT} under PAYMENTER_TEST_FIXTURE or PAYMENTER_TEST_APP`);
+            if (root) await lateFont(`${where}, ${PERSON[0]}`, customers, fs.readFileSync(path.join(root, FONT)).toString('base64'));
+        }
         // Real Tab presses from the page start reach the cut text, and its overlay shows.
         await page.evaluate(() => document.activeElement?.blur());
         let reached = false;
@@ -285,6 +366,7 @@ async function main() {
         check(reached, `${where}, ${PERSON[0]}: Tab presses from the page start reach the cut text`);
         if (reached) check(await page.locator('.domains-reveal:not([hidden])').count() === 1, `${where}, ${PERSON[0]}: Tab focus shows the overlay`);
         await page.evaluate(() => document.activeElement?.blur());
+        if (width === 1440) await shortScreen(`${where}, ${PERSON[0]}`, customers);
     }
 
     async function headings() {

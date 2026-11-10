@@ -1,4 +1,4 @@
-{{-- MIT, Copyright (c) 2026 Autonomic Engineering. Staff one-line texts (OneLine) that the browser cuts: in a row that opens nothing, a cut text takes a tab stop, kept right as text and widths change; keyboard focus on a cut text, or on the row link around it, shows the whole text in an overlay that leaves the table as it is. --}}
+{{-- MIT, Copyright (c) 2026 Autonomic Engineering. Staff one-line texts (OneLine) that the browser cuts: in a row that opens nothing, a cut text takes a tab stop, kept right as text, widths and fonts change; keyboard focus on a cut text, or on the row link around it, shows the whole text in an overlay that leaves the table as it is. --}}
 <script data-domains-reveal data-navigate-once>
 (() => {
     if (window.domainsReveal) return;
@@ -24,13 +24,17 @@
         if (anchor && !anchor.isConnected) hide();
     }
     const queue = () => { if (!queued) { queued = true; requestAnimationFrame(scan); } };
-    // Fixed to the viewport, so no table, row or scroll container changes size. Below the text, or above it near the bottom.
+    // Fixed to the viewport, so no table, row or scroll container changes size. Below the text, or above it; when neither
+    // side has room (a short screen), over the text. Never past the viewport: staff-styles caps its height, and it scrolls.
     function place() {
         if (!anchor) return;
+        // Measured at the origin: a fixed box shrinks to the room right of its last left, which would wrap it taller.
+        overlay.style.left = overlay.style.top = '0px';
         const box = anchor.getBoundingClientRect(), edge = 8, gap = 4, height = overlay.offsetHeight;
         overlay.style.left = `${Math.max(edge, Math.min(box.left, innerWidth - overlay.offsetWidth - edge))}px`;
         const below = box.bottom + gap, above = box.top - gap - height;
-        overlay.style.top = `${below + height <= innerHeight - edge || above < edge ? below : above}px`;
+        const top = below + height <= innerHeight - edge ? below : above >= edge ? above : innerHeight - edge - height;
+        overlay.style.top = `${Math.max(edge, top)}px`;
     }
     function show(items) {
         if (!overlay?.isConnected) {
@@ -59,7 +63,9 @@
     addEventListener('resize', place);
     new MutationObserver(records => { if (records.some(record => !overlay?.contains(record.target))) queue(); })
         .observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+    // A font that finishes loading changes text widths without changing a box or the DOM: measure again.
     document.fonts?.ready.then(queue);
+    document.fonts?.addEventListener('loadingdone', queue);
     queue();
 })();
 </script>
