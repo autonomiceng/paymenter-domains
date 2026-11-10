@@ -366,9 +366,17 @@ class ViewDomain extends ViewRecord
     private static function complimentaryTerms(Domain $d): array
     {
         if(!Staff::can('admin.domains.manage')||!Staff::can('admin.domains.fund')||!Staff::can(Staff::COSTS)||$d->status!=='active'||$d->service?->status!=='active'){return [];}
+        if(self::renewalUnsettled($d)){return [];}
         try{if(\Paymenter\Extensions\Servers\Domains\Services\RenewalStop::stopped(\Paymenter\Extensions\Servers\Domains\Services\RenewalStop::read($d))||($d->renewal_policy['automatic_spend_paused']??false)){return [];}
             return array_filter(app(\Paymenter\Extensions\Servers\Domains\Services\RenewalCycles::class)->complimentaryOptions((int)$d->id,Auth::user())['terms'],fn($t)=>$t['cost']!==null);
         }catch(\Throwable){return [];}
+    }
+    /** A renewal of this domain is open or unconfirmed, or one already renewed the current expiry: a free one now could renew it twice at our cost. */
+    public static function renewalUnsettled(Domain $d): bool
+    {
+        $expiry=$d->provider_expires_at?->format('Y-m-d');
+        return $d->operations()->where('action','renew')->get(['id','state','base_expires_at'])->contains(fn($op)=>!in_array($op->state,\Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus::FINISHED,true)
+            ||($op->state==='succeeded'&&$expiry!==null&&$op->base_expires_at?->format('Y-m-d')===$expiry));
     }
     private static function complimentaryRenewal(Domain $d): Action
     {
