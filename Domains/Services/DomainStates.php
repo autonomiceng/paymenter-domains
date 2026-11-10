@@ -74,7 +74,7 @@ final class DomainStates
         }
         $current = match (self::issuedState($cycle, $invoice, $d, $l)) {
             // A failed charge (Auto Pay or a card) leaves the invoice open: the page says so instead of only "Invoice ready".
-            'pending' => ['invoice' => route('invoices.show', $invoice), ...(self::declined($cycle, $invoice) ? ['declined' => true] : [])],
+            'pending' => ['invoice' => route('invoices.show', $invoice), ...(self::declined($cycle, $invoice, $in) ? ['declined' => true] : [])],
             'paid' => ['status' => 'paid', ...self::goes($cycle)],
             'closed' => ['status' => 'closed'],
             'cancelled' => ['status' => 'cancelled'],
@@ -82,10 +82,10 @@ final class DomainStates
         return ['current' => $current, 'due' => $due, 'early' => isset($current['invoice']) && RenewalCycles::early($cycle, $now) !== null];
     }
     /** Auto Pay was declined for this renewal, or the open invoice's latest payment attempt failed. */
-    private static function declined(Operation $cycle, \App\Models\Invoice $invoice): bool
+    private static function declined(Operation $cycle, \App\Models\Invoice $invoice, DomainStateInputs $in): bool
     {
         if ((($cycle->funding ?? [])['auto_pay_result']['status'] ?? null) === 'declined') { return true; }
-        $status = \App\Models\InvoiceTransaction::where('invoice_id', $invoice->id)->latest('id')->value('status');
+        $status = $in->latestTransactionStatus($invoice);
         return ($status instanceof \BackedEnum ? $status->value : $status) === 'failed';
     }
     /** A checked renewal invoice as the owner reads it: pending (pay it), paid, closed, cancelled, or review while we check it.
