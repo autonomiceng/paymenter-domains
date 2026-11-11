@@ -24,6 +24,9 @@ function watch(page) {
 }
 
 async function state(page, label) {
+  // Release prior navigation heaps before retaining the next small DOM receipt.
+  const session = await page.context().newCDPSession(page);
+  try { await session.send('HeapProfiler.collectGarbage'); } finally { await session.detach(); }
   const row = await page.evaluate(() => {
     const visible = (el) => !!el && el.offsetParent !== null;
     const root = [...document.querySelectorAll('[wire\\:id]')].find((el) => (el.getAttribute('wire:name') ?? '').includes('ViewOperation'));
