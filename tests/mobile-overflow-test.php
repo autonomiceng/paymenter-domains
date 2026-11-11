@@ -22,7 +22,7 @@ $summary = new DomainSummary($name, null, 'watch', 'domain.registration.external
 $domain = new OwnedDomain($name, 'Active', 'ok', '2027-01-15', 'On', '$14.00',
     ['show'=>'/domains/1', 'setupSave'=>'/domains/1/setup', 'codeSave'=>'/domains/1/code'], [],
     ['required'=>false, 'contacts'=>false, 'nameservers'=>true, 'privacy'=>false, 'defaults'=>false, 'maxNameservers'=>12],
-    ['open'=>true, 'received'=>false, 'phase'=>'editing', 'deadline'=>null, 'unchecked'=>false], [], false);
+    ['open'=>true, 'received'=>false, 'paid'=>false, 'phase'=>'editing', 'deadline'=>null, 'unchecked'=>false], [], false);
 $search = storefrontData();
 $search['results'][0] = [...$search['results'][0], 'domain'=>$name, 'sld'=>$label, 'tld'=>'com'];
 $transfer = ['id'=>1, 'name'=>$name, 'revision'=>'1', 'canCheck'=>true, 'state'=>'eligible',
