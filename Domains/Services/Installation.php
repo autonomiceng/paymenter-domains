@@ -82,7 +82,9 @@ final class Installation
             $closureRecorded=in_array(ClosureCursorSchema::MIGRATION,$ran,true);
             if(Schema::hasTable(ClosureCursorSchema::TABLE)&&Schema::hasColumn(ClosureCursorSchema::TABLE,ClosureCursorSchema::COLUMN)&&!$closureRecorded){throw new \DomainException('Retained complimentary closure cursor has no installation record.');}
             if($closureRecorded){ClosureCursorSchema::verify();}
-            if(in_array(BusinessSettingsSchema::MIGRATION,$ran,true)){BusinessSettingsSchema::verify();}
+            $businessRecorded=in_array(BusinessSettingsSchema::MIGRATION,$ran,true);
+            if(Schema::hasTable(BusinessSettingsSchema::TABLE)&&!$businessRecorded){throw new \DomainException('Retained global domain choices have no installation record.');}
+            if($businessRecorded){BusinessSettingsSchema::verify();}
             $watchZoneRecorded=in_array(WatchAuditTimeSchema::MIGRATION,$ran,true);
             if(Schema::hasColumn('domains_watch_audit','time_zone')&&!$watchZoneRecorded){throw new \DomainException('Retained watch audit time zones have no installation record.');}
             if($watchZoneRecorded){WatchAuditTimeSchema::verify();}

@@ -37,6 +37,8 @@ final class BusinessSettingsSchema
                 if($rows->contains(fn($r)=>$shape($r)!==$chosen)){
                     foreach($rows->slice(1) as $other){
                         $source=['id'=>(int)$other->id,'updated_at'=>$other->updated_at,...$shape($other)];
+                        $label=match($key){PricingRules::KEY=>'Default pricing',CardFee::KEY=>'Card fee',SiteDnsDefault::KEY=>'Site DNS template'};
+                        $reason=$label.': kept '.self::describe($key,$chosen).'; replaced '.self::describe($key,$source).'. Keep the most recently updated global setting';
                         // Large or heavily escaped values fit as ordered byte fragments in the existing audit store.
                         $parts=[$source];
                         if(strlen(json_encode($source,JSON_THROW_ON_ERROR))>24000){
@@ -45,8 +47,8 @@ final class BusinessSettingsSchema
                         }
                         foreach($parts as $part){
                             $entry=['key'=>'business-settings-import:'.$key.':'.$other->id.':'.($part['part']??0),
-                                'actor_id'=>0,'at'=>gmdate(DATE_ATOM),'action'=>'Import global domain settings',
-                                'reason'=>'Keep the most recently updated global setting','phase'=>'completed','input'=>['setting'=>$key],
+                                'actor_id'=>null,'at'=>gmdate(DATE_ATOM),'action'=>'Import global domain settings',
+                                'reason'=>$reason,'phase'=>'completed','input'=>['setting'=>$key],
                                 'before'=>['discarded'=>[$part]],'after'=>['selected'=>['id'=>(int)$rows[0]->id,'updated_at'=>$rows[0]->updated_at]]];
                             AuditArchives::append(0,'staff_settings',json_encode([$entry],JSON_THROW_ON_ERROR));
                         }
@@ -57,6 +59,19 @@ final class BusinessSettingsSchema
             DB::table('settings')->whereNull('settingable_type')->whereNull('settingable_id')->whereIn('key',array_keys(BusinessSetting::COLUMNS))->delete();
         });
         self::verify();
+    }
+    /** Keep staff summaries small; full source bytes remain in the encrypted evidence. */
+    private static function describe(string $key,array $source): string
+    {
+        if($source['encrypted']){return 'an encrypted value';}
+        $raw=(string)$source['value'];if(strlen($raw)>1024){return 'a large saved value';}
+        $value=$source['type']==='array'?json_decode($raw,true):$raw;
+        try{
+            if($key===CardFee::KEY&&is_array($value)){return CardFee::describe($value);}
+            if($key===PricingRules::KEY&&is_array($value)){return PricingRule::describe($value);}
+        }catch(\InvalidArgumentException){} // Invalid legacy choices still import without choosing a replacement.
+        if($key===SiteDnsDefault::KEY&&is_string($value)){return 'DNS template #'.$value;}
+        return 'saved value '.$raw;
     }
     public static function verify(): void
     {
