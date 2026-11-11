@@ -20,11 +20,9 @@ $watch=false;$writes=[];
 // What you sell has always given each accepted TLD a sell row on opening; nothing else may be written.
 DB::listen(static function($query)use(&$watch,&$writes):void{if($watch&&!preg_match('/^\s*(select|pragma)\b|^insert or ignore into "domains_sell_rows"/i',$query->sql)){$writes[]=$query->sql;}});
 $setting=static function(string $key,mixed $value,bool $encrypted):void{
-    $row=App\Models\Setting::updateOrCreate(['key'=>$key,'settingable_type'=>null,'settingable_id'=>null],['type'=>'array','encrypted'=>false,'value'=>$value]);
-    // Bypass the model's saving encryption: these bytes must remain invalid ciphertext on disk.
-    if($encrypted){DB::table('settings')->where('id',$row->id)->update(['encrypted'=>true,'value'=>'synthetic-invalid-ciphertext']);}
+    fixtureBusinessChoice($key,$encrypted?'synthetic-invalid-ciphertext':$value,'array',$encrypted);
 };
-$rawSettings=static fn():string=>DB::table('settings')->orderBy('id')->get()->toJson();
+$rawSettings=static fn():string=>DB::table('domains_business_settings')->orderBy('id')->get()->toJson();
 $csvRows=static fn(string $csv):array=>array_map(static fn($line)=>str_getcsv($line,',','"',''),preg_split('/\r?\n/',trim($csv)));
 // The page adds missing sales rows on its first read. After that, reads write nothing.
 Livewire::actingAs($u)->test(WhatYouSell::class)->set('account',WhatYouSell::ALL);
@@ -45,10 +43,10 @@ foreach($cases as $case){
     [$key,$value,$cause,$ids,$reason]=$case;$encrypted=$case[6]??false;
     $setting($key,$value,$encrypted);$settingsBefore=$rawSettings();$watch=true;
     if($encrypted){
-        $raw=DB::table('settings')->whereNull('settingable_type')->where('key',$key)->sole();
+        $raw=(object)fixtureBusinessRaw($key);
         same(1,(int)$raw->encrypted,'Corruption fixture is really encrypted on disk');
         same('synthetic-invalid-ciphertext',$raw->value,'Invalid ciphertext bypasses the model encryption setter');
-        same(null,App\Models\Setting::whereNull('settingable_type')->where('key',$key)->sole()->value,'Real native retrieval cannot decrypt the persisted bytes');
+        same(null,\Paymenter\Extensions\Servers\Domains\Services\BusinessSetting::row($key)->value,'Owned retrieval cannot decrypt the persisted bytes');
     }
     $matrix=$service->read();
     same($ids,array_column($matrix['skipped'],'id'),'Every affected TLD is identified: '.$cause);
@@ -91,7 +89,7 @@ foreach($cases as $case){
     if($cause==='default_rule'){$default->assertSee('Prices left out for 3 TLDs')->assertSee("They are not shown on this page. Default pricing can't be read.");}
     same($settingsBefore,$rawSettings(),'Service, page and CSV preserve raw settings bytes, including corrupt ciphertext');
     same($before,DB::table('domains_prices')->orderBy('id')->get()->toJson(),'Each corrupt case preserves saved prices and revisions');
-    $watch=false;App\Models\Setting::whereNull('settingable_type')->where('key',$key)->delete();if($key===PricingRules::KEY){saveDefaultRule(PricingRule::DEFAULT);}
+    $watch=false;fixtureClearBusinessChoice($key);if($key===PricingRules::KEY){saveDefaultRule(PricingRule::DEFAULT);}
 }
 // Bad custom pricing names its own TLD editor, rather than the account default editor.
 $intent=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($custom->fresh()->catalogue_intent);$intent['pricing_rule']['mode']='unknown';$custom->update(['catalogue_intent'=>\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::json($intent),'pricing_mode'=>'unknown']);$watch=true;
@@ -122,7 +120,7 @@ same([],$writes,'Service, page and export change no saved data');
 same($before,DB::table('domains_prices')->orderBy('id')->get()->toJson(),'All saved prices and revision identities remain unchanged');
 same(0,$reads->calls,'No provider calls');
 // Many TLDs with their own unreadable pricing: For sale on, the warning names ten with a way to each and counts the rest.
-App\Models\Setting::whereNull('settingable_type')->where('key',CardFee::KEY)->delete();
+fixtureClearBusinessChoice(CardFee::KEY);
 for($i=0;$i<14;$i++){$copy=$t->fresh()->replicate();$copy->tld='broken'.chr(97+$i);$copy->catalogue_intent='{"sell":';$copy->save();}
 $many=Livewire::actingAs($u)->test(WhatYouSell::class,['account'=>WhatYouSell::ALL])->assertSuccessful()->assertSee('Prices left out for 15 TLDs')->assertSee('and 5 more');
 $dom=new DOMDocument;@$dom->loadHTML($many->html());$xpath=new DOMXPath($dom);

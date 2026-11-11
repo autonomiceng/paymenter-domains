@@ -8,9 +8,8 @@ use Paymenter\Extensions\Servers\Domains\Services\PricingRules;
 $unreadablePricingCase='fixed';require __DIR__.'/Support/default-pricing-unreadable.php';
 $nativeSuccessful=false;
 // A native dialog is required to prove field defaults and required validation protect saved pricing.
-$setting=App\Models\Setting::where('key',PricingRules::KEY)->firstOrFail();
-$setting->update(['value'=>['mode'=>'markup_percent','markup'=>'invalid','round_up'=>'none']]);
-$beforeRule=$setting->fresh()->getRawOriginal();
+fixtureBusinessChoice(PricingRules::KEY,['mode'=>'markup_percent','markup'=>'invalid','round_up'=>'none']);
+$beforeRule=fixtureBusinessRaw(PricingRules::KEY);
 $beforePrices=Price::orderBy('id')->get()->map(fn($price)=>$price->getRawOriginal())->all();
 $page=Livewire::actingAs($staff)->withQueryParams(['account'=>WhatYouSell::ALL])->test(WhatYouSell::class)
     ->mountAction('default_pricing')->assertActionMounted('default_pricing');
@@ -19,7 +18,7 @@ foreach(['mode','markup','round_up','fixed_register','fixed_renew','fixed_transf
     same(null,$data[$field]??null,'Unreadable saved pricing leaves '.$field.' for staff to enter');
 }
 $page->setActionData(['reason'=>'Repair unreadable shared pricing'])->callMountedAction()->assertHasActionErrors(['mode'=>'required']);
-same($beforeRule,$setting->fresh()->getRawOriginal(),'Submitting without a replacement preserves the saved rule');
+same($beforeRule,fixtureBusinessRaw(PricingRules::KEY),'Submitting without a replacement preserves the saved rule');
 same($beforePrices,Price::orderBy('id')->get()->map(fn($price)=>$price->getRawOriginal())->all(),'Submitting without a replacement preserves all prices');
 $page->setActionData(['mode'=>'markup_amount','markup'=>'4.00','round_up'=>'none'])->callMountedAction()->assertHasNoActionErrors()->assertNotified('Saved');
 same('4.00',(new PricingRules)->defaultRule()['markup'],'An explicit valid replacement repairs shared pricing');

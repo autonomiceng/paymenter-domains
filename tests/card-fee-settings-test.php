@@ -72,28 +72,28 @@ same(['published'=>1,'failed'=>['Synthetic #'.$t->server_id=>['.com']],'skipped'
 same(['percent'=>'22.00','fixed'=>'2.00'],CardFee::read(),'Fee still commits when publication cost is missing');same($before,$rows(),'Failed publication retains every old revision');
 $renewal->update(['catalogue_observation'=>$cost,'revision'=>$renewal->revision+1]);
 // Register a real postcommit race on the matching fee save, after the completed audit and before fanout.
-$server=App\Models\Server::findOrFail($t->server_id);$default=App\Models\Setting::whereNull('settingable_type')->where('key','domains_pricing_default_rule')->sole()->value;
+$server=App\Models\Server::findOrFail($t->server_id);$default=\Paymenter\Extensions\Servers\Domains\Services\BusinessSetting::row('domains_pricing_default_rule')->value;
 $pending=true;$raced=false;
-App\Models\Setting::saved(static function($setting)use($server,&$pending,&$raced):void{
-    if(!$pending||$setting->key!==CardFee::KEY||($setting->fresh()->value['percent']??null)!=='12.00'){return;}
+\Paymenter\Extensions\Servers\Domains\Models\BusinessSettings::saved(static function($setting)use($server,&$pending,&$raced):void{
+    if(!$pending||(\Paymenter\Extensions\Servers\Domains\Services\BusinessSetting::row(CardFee::KEY)->value['percent']??null)!=='12.00'){return;}
     $pending=false;
     DB::afterCommit(static function()use($server,&$raced):void{
         same(0,DB::transactionLevel(),'Fault occurs after fee transaction commits');
         $history=Review::historyRows($server);$audit=end($history);
         same(['percent'=>'12.00','fixed'=>'1.00'],$audit['after']['card_fee'],'Completed audit precedes the injected fault');
-        App\Models\Setting::whereNull('settingable_type')->where('key','domains_pricing_default_rule')->firstOrFail()->update(['type'=>'string','value'=>'unreadable']);$raced=true;
+        fixtureBusinessChoice('domains_pricing_default_rule','unreadable','string');$raced=true;
     });
 });
 same(['published'=>0,'failed'=>['Synthetic #'.$tlds[0]->server_id=>['.com'],'Synthetic #'.$tlds[1]->server_id=>['.com']],'skipped'=>[]],$writer->run(pricingReview($u->id),$fee('12','1'),$now),'Postcommit unreadable default becomes a named publication failure');
 expect($raced&&!$pending,'Genuine one-shot postcommit fault exercised');
 same(['percent'=>'12.00','fixed'=>'1.00'],CardFee::read(),'Committed fee survives postcommit default failure');same($ordinaryBefore,$ownRows(),'Postcommit fallback still excludes ordinary own rules');
-App\Models\Setting::whereNull('settingable_type')->where('key','domains_pricing_default_rule')->firstOrFail()->update(['type'=>'array','value'=>$default]);
+fixtureBusinessChoice('domains_pricing_default_rule',$default);
 // An unreadable saved fee can be repaired through the full native form, including fee-mode rules.
 pinStaffClock($now);app()->instance(StaffSettingsWrites::class,$writer);
 $own->update(['pricing_mode'=>'markup_fee_percent','markup'=>'100',
     'catalogue_intent'=>OfferState::json([...OfferState::decode($own->catalogue_intent),'pricing_rule'=>PricingRule::validate([...PricingRule::DEFAULT,'mode'=>'markup_fee_percent','markup'=>'100','card_fee'=>CardFee::NONE])])]);
-$setting=App\Models\Setting::whereNull('settingable_type')->where('key',CardFee::KEY)->sole();$setting->update(['type'=>'string','value'=>'unreadable']);
-$brokenFee=$setting->fresh()->getRawOriginal();$before=$rows();$historyBefore=Review::historyRows($server);$keysBefore=DB::table(Review::KEYS)->count();
+fixtureBusinessChoice(CardFee::KEY,'unreadable','string');
+$brokenFee=fixtureBusinessRaw(CardFee::KEY);$before=$rows();$historyBefore=Review::historyRows($server);$keysBefore=DB::table(Review::KEYS)->count();
 $display=new \Paymenter\Extensions\Servers\Domains\Services\StorefrontCatalogueCache(app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class));
 $display->remember(static fn()=>['retained display']);
 $mountFee=static fn()=>Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful()->mountAction('default_pricing')->assertActionMounted('default_pricing');
@@ -102,12 +102,12 @@ same([null,null],[$defaults['fee_percent'],$defaults['fee_fixed']],'An unreadabl
 // The default's 5% markup can cover 60%; the own rule's 100% markup cannot.
 $page->setActionData(['fee_percent'=>'60','fee_fixed'=>'0','reason'=>'Refuse impossible own fee-mode rule'])->callMountedAction()->assertHasNoActionErrors()
     ->assertNotified(\Filament\Notifications\Notification::make()->danger()->title("Couldn't save")->body('No price can cover the card fee with this markup. Lower the markup or the card fee. Nothing was changed.'));
-same($brokenFee,$setting->fresh()->getRawOriginal(),'Impossible own rule rolls back the new fee');
+same($brokenFee,fixtureBusinessRaw(CardFee::KEY),'Impossible own rule rolls back the new fee');
 same($historyBefore,Review::historyRows($server),'Impossible fee adds no audit');same($keysBefore,DB::table(Review::KEYS)->count(),'Impossible fee rolls back the review key');
 same($before,$rows(),'Impossible fee leaves published revisions alone');same(['retained display'],$display->cachedRows(),'Rolled-back fee does not invalidate the display cache');
 try{$writer->run(pricingReview($u->id),[...$feeRule,'fee_percent'=>'99','fee_fixed'=>'0'],$now);expect(false,'Impossible default escaped');}
 catch(InvalidArgumentException $e){same('This percentage cannot cover the card fee. Lower the markup or card fee.',$e->getMessage(),'Impossible default rule refused');}
-same($brokenFee,$setting->fresh()->getRawOriginal(),'Impossible default rolls back the repair');
+same($brokenFee,fixtureBusinessRaw(CardFee::KEY),'Impossible default rolls back the repair');
 same($historyBefore,Review::historyRows($server),'Impossible default adds no audit');same(['retained display'],$display->cachedRows(),'Impossible default rolls back cache invalidation');
 $page=$mountFee();
 $page->setActionData(['fee_percent'=>'3.1','fee_fixed'=>'0.4','reason'=>'Repair unreadable card fee estimate'])->callMountedAction()->assertHasNoActionErrors()
@@ -126,6 +126,6 @@ $writer->run(pricingReview($u->id),pricingForm($large,['percent'=>'1','fixed'=>'
 $page=$mountFee();$defaults=$page->get('mountedActions.0.data');same($held,$form($defaults),'Dialog opens on the saved rule');same('1.00',$defaults['fee_percent'],'Dialog opens on the saved fee');
 $page->setActionData(['fee_percent'=>'1.10','reason'=>'Adjust the card fee estimate'])->callMountedAction()->assertHasNoActionErrors();
 same($held,$form((new PricingRules)->defaultRule()),'A fee-only edit keeps the rule');same('1.10',CardFee::read()['percent'],'A fee-only edit saves the fee');
-$setting->fresh()->update(['type'=>'string','value'=>'unreadable']);
+fixtureBusinessChoice(CardFee::KEY,'unreadable','string');
 same($held,$form($mountFee()->get('mountedActions.0.data')),'An unreadable fee keeps mode, markup and rounding');
 echo "Card fee, audit, mode changes and permissions passed.\n";$nativeSuccessful=true;

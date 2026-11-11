@@ -5,8 +5,8 @@ $siteServers=['ns1.staff.example.org','ns2.staff.example.org'];
 $profile=Illuminate\Support\Facades\DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Models\WatchProfile::create([
     'name'=>'Saved staff DNS','nameservers'=>$siteServers,'website_endpoints'=>[],'email_endpoints'=>[],
     'enabled'=>true,'edited_by'=>$staff->id,'reason'=>'Synthetic site default']));
-App\Models\Setting::whereNull('settingable_type')->whereNull('settingable_id')->where('key',\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::KEY)->delete();
-App\Models\Setting::create(['key'=>\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::KEY,'type'=>'string','encrypted'=>false,'value'=>(string)$profile->id]);
+fixtureClearBusinessChoice(\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::KEY);
+fixtureBusinessChoice(\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::KEY,(string)$profile->id,'string');
 $nsAction=\Filament\Actions\Testing\TestAction::make('edit_nameservers')->schemaComponent('fact_'.md5('Nameservers'),'infolist');
 $nsModal=\Livewire\Livewire::actingAs($staff)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$d->id])->mountAction($nsAction);
 $nsRegistrar=$d->registrar_key==='enom'?'Enom':'NameSilo';

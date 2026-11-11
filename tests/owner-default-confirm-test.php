@@ -9,7 +9,7 @@ require __DIR__.'/Support/owner-default-confirm.php';
 $freshFill();
 // An unexpected database failure is not an unconfigured default and must not disable custom editing.
 $failDefault=true;DB::connection()->beforeExecuting(static function($sql,$bindings)use(&$failDefault):void{
- if($failDefault&&str_starts_with(strtolower($sql),'select')&&in_array(SiteDnsDefault::KEY,$bindings,true)){throw new RuntimeException('Synthetic private lookup diagnostic');}
+ if($failDefault&&str_starts_with(strtolower($sql),'select')&&str_contains($sql,'domains_business_settings')){throw new RuntimeException('Synthetic private lookup diagnostic');}
 });
 $dto=$owners->present($d->fresh());$section=$dto->management['nameservers'];
 expect(($section['defaultError']??null)!==null,'Unexpected default lookup has distinct safe presentation');

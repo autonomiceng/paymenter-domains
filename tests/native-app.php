@@ -2,6 +2,7 @@
 // Adapted from Enom tests/enom-native-app.php; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require_once __DIR__.'/bootstrap.php';
+require_once __DIR__.'/Support/business-choices.php';
 // Laravel may render an uncaught exception with status zero; require explicit suite completion.
 $nativeSuccessful = false;
 register_shutdown_function(static function () use (&$nativeSuccessful): void { if (!$nativeSuccessful) { exit(1); } });

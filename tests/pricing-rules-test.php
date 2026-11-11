@@ -24,7 +24,7 @@ same('2.00', $rules->rule($override)['markup'], 'Per-TLD override unaffected');
 DB::beginTransaction();
 try {
     $server = Server::findOrFail(1);
-    App\Models\Setting::whereNull('settingable_type')->where('key','domains_pricing_default_rule')->update(['value' => json_encode(['mode' => 'markup_fee_percent', 'markup' => '30', 'round_up' => 'none'])]);
+    fixtureBusinessChoice('domains_pricing_default_rule',['mode'=>'markup_fee_percent','markup'=>'30','round_up'=>'none']);
     $custom = $override->fresh(); $custom->pricing_mode = 'markup_fee_percent';
     $default = Tld::where('server_id', 1)->where('tld', 'com')->firstOrFail();
     $snapshot = ['percent' => '7.00', 'fixed' => '0.70'];

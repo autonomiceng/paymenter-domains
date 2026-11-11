@@ -113,8 +113,7 @@ $work->accountTurn($binding->serverId);
 same('ready',$work->status($binding,'com')['state'],'A later successful turn restores the offer');
 
 // A broken shared default is an account-wide failure, even beside an unreadable override.
-$shared=\Paymenter\Extensions\Servers\Domains\Services\BusinessSetting::row(\Paymenter\Extensions\Servers\Domains\Services\PricingRules::KEY);
-$shared->value=['mode'=>'invalid'];$shared->save();
+fixtureBusinessChoice(\Paymenter\Extensions\Servers\Domains\Services\PricingRules::KEY,['mode'=>'invalid']);
 DB::table('domains_tlds')->where('id',$com->id)->increment('catalogue_revision');
 $stopped=false;
 try{$work->accountTurn($binding->serverId);}catch(InvalidArgumentException){$stopped=true;}

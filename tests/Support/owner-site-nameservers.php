@@ -9,8 +9,7 @@ $siteServers=['ns1.site.example.org','ns2.site.example.org'];
 config(['domains.site_dns_default.nameservers'=>['ns1.deploy.example.net','ns2.deploy.example.net']]);
 $siteProfile=DB::transaction(fn()=>WatchProfile::create(['name'=>'Saved site DNS','nameservers'=>$siteServers,'website_endpoints'=>[],
     'email_endpoints'=>[],'enabled'=>true,'edited_by'=>$user->id,'reason'=>'Synthetic saved site default']));
-$siteSetting=Setting::whereNull('settingable_type')->whereNull('settingable_id')->where('key',SiteDnsDefault::KEY);
-$siteSetting->delete();Setting::create(['key'=>SiteDnsDefault::KEY,'type'=>'string','encrypted'=>false,'value'=>(string)$siteProfile->id]);
+fixtureBusinessChoice(SiteDnsDefault::KEY,(string)$siteProfile->id,'string');
 $nsSection=$owners->present($d->fresh())->management['nameservers'];
 same($siteServers,$nsSection['defaultServers'],'Existing-domain management uses the saved site default for either registrar');
 same(true,$nsSection['defaults'],'Either registrar offers a usable site default');
@@ -50,8 +49,8 @@ $nsSave($siteServers);
 $manualServers=['ns1.custom.example.net','ns2.custom.example.net'];$nsSave($manualServers,['use_default'=>'1']);
 // Missing or disabled saved defaults cannot fall back to deployment or registrar DNS.
 foreach(['missing','disabled','invalid'] as $unavailable){
-    if($unavailable==='missing'){$siteSetting->delete();}
-    else{Setting::updateOrCreate(['key'=>SiteDnsDefault::KEY,'settingable_type'=>null,'settingable_id'=>null],['type'=>'string','encrypted'=>false,'value'=>(string)$siteProfile->id]);
+    if($unavailable==='missing'){fixtureClearBusinessChoice(SiteDnsDefault::KEY);}
+    else{fixtureBusinessChoice(SiteDnsDefault::KEY,(string)$siteProfile->id,'string');
         $siteProfile->enabled=$unavailable!=='disabled';$siteProfile->nameservers=$unavailable==='invalid'?['only.example.org']:$siteServers;$siteProfile->saveQuietly();}
     $section=$owners->present($d->fresh())->management['nameservers'];same([],$section['defaultServers'],'Unusable default exposes no substitute: '.$unavailable);
     same(false,$section['defaults'],'Unusable default offers no fill action: '.$unavailable);
@@ -71,5 +70,5 @@ same($free?$thirteen:[],$section['defaultServers'],'A 13-host saved default foll
 same($free?null:'The site default nameservers can’t be used with Enom. Enter your own nameservers, or contact support.',$section['defaultError'],'Only Enom refuses the 13-host saved default');
 expect(isset($section['actions']['nameservers']),'Custom nameserver editing stays available with a 13-host saved default');
 $siteProfile->enabled=true;$siteProfile->nameservers=$siteServers;$siteProfile->saveQuietly();
-Setting::updateOrCreate(['key'=>SiteDnsDefault::KEY,'settingable_type'=>null,'settingable_id'=>null],['type'=>'string','encrypted'=>false,'value'=>(string)$siteProfile->id]);
+fixtureBusinessChoice(SiteDnsDefault::KEY,(string)$siteProfile->id,'string');
 $session->forget(['errors','_old_input','domains_failed_form']);

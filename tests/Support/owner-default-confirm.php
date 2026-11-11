@@ -11,7 +11,7 @@ $d->update(['observation'=>[...($d->observation??[]),'records'=>['identity'=>\Pa
     'at'=>$readAt,'last_complete_at'=>$readAt,'sequence'=>0,'families'=>[]]]]);
 storefrontViews();
 $profile=DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Models\WatchProfile::create(['name'=>'Current default','enabled'=>true,'nameservers'=>['ns3.example.net','ns4.example.net'],'website_endpoints'=>[],'email_endpoints'=>[],'edited_by'=>$user->id,'reason'=>'Synthetic DNS default']));
-\App\Models\Setting::updateOrCreate(['key'=>SiteDnsDefault::KEY,'settingable_type'=>null,'settingable_id'=>null],['value'=>(string)$profile->id,'type'=>'string','encrypted'=>false]);
+fixtureBusinessChoice(SiteDnsDefault::KEY,(string)$profile->id,'string');
 $controller=new OwnerActionController($owners,new OwnerSetup($clock,$ports),new TransferInputs($clock,app(Refunds::class)),$management,$ports);
 $session=app('session')->driver();app('request')->setLaravelSession($session);
 $post=static function(array $data)use($d,$user,$session){

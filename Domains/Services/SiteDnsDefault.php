@@ -63,9 +63,9 @@ final class SiteDnsDefault
     {
         $changed=Cache::lock('domains-site-dns-default',30)->block(5,static function():bool {
             return DB::transaction(static function():bool {
-                BusinessSetting::singleton(true);
                 Setting::where('settingable_type',(new \App\Models\Server)->getMorphClass())->where('key','domains_new_domain_dns_template')
                     ->whereIn('settingable_id',\App\Models\Server::where('extension','Domains')->select('id'))->delete();
+                BusinessSetting::singleton(true);
                 if(self::rows(true)->isNotEmpty()){return false;} // Deployment changes never move a saved choice.
                 $names=config('domains.site_dns_default.nameservers');
                 if(!is_array($names) || !$names){return false;}
