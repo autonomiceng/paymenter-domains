@@ -65,7 +65,8 @@ final class OperationActions
                     $code=OperationFailure::code($error);
                     Log::warning('Domains staff operation refused.',['reason'=>$code,'action'=>$name,'operation_id'=>(int)$op->id]);
                     $why=OperationFailure::known($error)?->message() ?? 'Reload the page and try again. Ref '.$code.'.';
-                    $cancelled=$name==='refund'?self::refundPending($op->fresh(),$code):null;
+                    $cancelled=null;
+                    try{$cancelled=$name==='refund'?self::refundPending($op->fresh(),$code):null;}catch(\Throwable){}
                     ($cancelled??Notification::make()->danger()->title(self::FAILED)->body($why))->send();}
             });
         }
