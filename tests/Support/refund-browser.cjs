@@ -74,8 +74,8 @@ async function confirm(page) {
 (async () => {
   // Limit renderer overhead for these local fixture pages.
   const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN || undefined,
-    args: ['--single-process', '--no-zygote', '--disable-gpu', '--disable-software-rasterizer'] });
-  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, colorScheme: 'dark' });
+    args: ['--single-process', '--no-zygote', '--disable-gpu', '--disable-software-rasterizer', '--js-flags=--max-old-space-size=32 --optimize-for-size'] });
+  const context = await browser.newContext({ viewport: { width: 1024, height: 768 }, colorScheme: 'dark' });
   await context.route((url) => !url.href.startsWith(base), (route) => route.abort());
   try {
     const first = await context.newPage();
