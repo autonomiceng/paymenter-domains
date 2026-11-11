@@ -471,6 +471,7 @@
 .domains .domains-dialog-sheet { padding:0; border-radius:.375rem; }
 .domains .domains-dialog-sheet > h3 { padding:1rem 1.25rem; border-bottom:1px solid var(--e-line); }
 .domains .domains-dialog-sheet .domains-card>div { padding:.75rem 1.25rem; }
+.domains .domains-dialog-sheet form > .domains-hint { margin:.75rem 0 0; padding:0 1.25rem; }
 .domains .domains-dialog-sheet .domains-buttons { padding:1rem 1.25rem; border-top:1px solid var(--e-line); }
 @media (prefers-reduced-motion: no-preference) { .domains .domains-confirm:modal { animation: domains-confirm-in .15s ease-out; } }
 @keyframes domains-confirm-in { from { opacity: 0; transform: translateY(.5rem); } }

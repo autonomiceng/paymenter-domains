@@ -54,7 +54,7 @@ final class OperationActions
                 try { $actor=Auth::user(); if(!$actor instanceof \App\Models\User){throw new \DomainException('Staff required.');}
                     $reason=in_array($name,self::REASON,true)?trim((string)($data['reason']??'')):$label;
                     app(StaffOperations::class)->run($actor,(int)$op->domain_id,(int)$op->id,$name,(string)($data['review_key']??$ticket()),$reason);
-                    $check=$name==='recheck'&&in_array($op->action,['register','transfer','renew'],true)?\Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::for($op->fresh()):null;
+                    $check=$name!=='recheck'?null:(in_array($op->action,['register','transfer','renew'],true)?\Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::for($op->fresh()):ManagementCheck::words($op->fresh()));
                     $notification=Notification::make();
                     $check&&$check['title']!=='Registrar checked'?$notification->warning():$notification->success();
                     $notification->title($check['title']??($contactRecovery?'Contact details updated':($complimentaryClosure?'Order closed':self::DONE[$name])))
@@ -65,7 +65,8 @@ final class OperationActions
                     $code=OperationFailure::code($error);
                     Log::warning('Domains staff operation refused.',['reason'=>$code,'action'=>$name,'operation_id'=>(int)$op->id]);
                     $why=OperationFailure::known($error)?->message() ?? 'Reload the page and try again. Ref '.$code.'.';
-                    $cancelled=$name==='refund'?self::refundPending($op->fresh(),$code):null;
+                    $cancelled=null;
+                    try{$cancelled=$name==='refund'?self::refundPending($op->fresh(),$code):null;}catch(\Throwable){}
                     ($cancelled??Notification::make()->danger()->title(self::FAILED)->body($why))->send();}
             });
         }

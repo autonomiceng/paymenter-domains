@@ -8,8 +8,8 @@ $line=commerceAdd($cart,$storefront->offer('com','register',1)['product'],'risen
 Illuminate\Support\Once::flush();app('request')->cookies->set('cart',$cart->ulid);
 // The registrar check is not confirmed on this load; checkout runs it again before payment.
 $admission=new class($native,$sellers,$eligibility,$clock) extends CartAdmission {
-    public bool $display=false;
-    public function refresh():void {if($this->display){throw new App\Exceptions\DisplayException('Synthetic checkout refusal');}throw new EligibilityUnconfirmed(null);}
+    public bool $display=false; public bool $succeed=false; public ?Throwable $failure=null;
+    public function refresh():void {if($this->succeed){return;}if($this->failure){throw $this->failure;}if($this->display){throw new App\Exceptions\DisplayException('Synthetic checkout refusal');}throw new EligibilityUnconfirmed(null);}
 };
 CartCheckoutRefresh::boot($admission);
 $listeners=(new ReflectionProperty(Livewire\EventBus::class,'listeners'))->getValue(app(Livewire\EventBus::class));
@@ -41,4 +41,31 @@ $mount($component);
 same(['Synthetic checkout refusal'],$messages($component),'A displayed exception is the sole notice after a price change');
 same(null,CartNotice::get($component),'A displayed exception adds no price-change notice');
 same($amount,number_format((float)$component->total->total,2,'.',''),'A displayed exception still refreshes the total');
+
+// Unrelated hydration retains a failed check separately from a pending price review.
+$admission->display=false;
+session()->forget('domains.cart_shown.'.$cart->ulid);
+$mount($component=new App\Livewire\Cart);
+$failure=CartNotice::get($component);
+same(CartCheckoutRefresh::UNCHECKED_TITLE,$failure['title'],'Failure fixture reaches the failed-check notice');
+CartNotice::set($component,'Your cart changed','Review the total, then check out again.','Review the total.','warning',[],[$line->id=>'1.00']);
+$dehydrate=end($listeners['dehydrate']);$hydrate=end($listeners['hydrate']);$call=end($listeners['call']);
+$context=new class {public array $memo=[];public function addMemo($key,$value):void{$this->memo[$key]=$value;}};
+$dehydrate($component,$context);
+$hydrate($restored=new App\Livewire\Cart,$context->memo);
+same($failure['title'],CartNotice::get($restored)['title'],'An unrelated update keeps the failed-check notice');
+same([$line->id=>'1.00'],CartNotice::get($restored)['was'],'The failed check keeps pending price acceptance amounts');
+$admission->succeed=true;$mount($restored);
+same('Your cart changed',CartNotice::get($restored)['title'],'A successful recheck clears the failure but retains price review');
+$admission->succeed=false;$mount($restored);
+$call($restored,'updateQuantity',[$line->id,1],null,static function():void{});
+same(null,CartNotice::get($restored),'A relevant edit clears the failed check and prior review');
+foreach ([new Paymenter\Extensions\Servers\Domains\Services\CheckoutRefreshTimeout,new Paymenter\Extensions\Servers\Domains\Services\ReadDeferred] as $error) {
+    session()->forget('domains.cart_shown.'.$cart->ulid);$admission->failure=$error;$mount($restored=new App\Livewire\Cart);
+    $notice=CartNotice::get($restored);
+    same(['risen-price-placeholder.com'],$notice['names'],'A deferred check names the domain');
+    expect(str_contains($notice['text'],'Try again shortly.')&&str_contains($notice['text'],'remove it from your cart'),'A deferred check explains retry and removal');
+}
+$admission->failure=null;
+
 $nativeSuccessful=true;echo "Cart price rise with a failed check passed.\n";

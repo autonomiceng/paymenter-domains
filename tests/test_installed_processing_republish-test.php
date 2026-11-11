@@ -59,7 +59,8 @@ try {
 $cartIds = static fn () => $cart->items()->pluck('id')->map(static fn ($id) => (int) $id)->all();
 same([(int) $line->id], $cartIds(), 'Paused add creates no cart line');
 commerceCheckout($user, $cart)->assertDispatched('notify', static fn ($event, $params) =>
-    $params[0]['message'] === Paymenter\Extensions\Servers\Domains\Services\CartCheckoutRefresh::unchecked(['resumed-placeholder.com']));
+    $params[0]['message'] === Paymenter\Extensions\Servers\Domains\Services\CartCheckoutRefresh::unchecked(['resumed-placeholder.com'], false));
+expect(!str_contains(Paymenter\Extensions\Servers\Domains\Services\CartCheckoutRefresh::unchecked(['resumed-placeholder.com'], false), 'with the registrar'),'Paused guidance does not blame a registrar read');
 same($counts, [Order::count(), Invoice::count(), Operation::count()], 'Paused checkout creates no order, invoice or operation');
 same([(int) $line->id], $cartIds(), 'Paused checkout preserves the existing cart line');
 same($readsBefore, $reads->calls, 'Paused cart admission never resolves a provider');

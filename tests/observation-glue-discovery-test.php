@@ -10,12 +10,12 @@ use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{Glue as NameSiloGl
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,ObservationProjection,ObservationRecords,ObservationSchema,ObservationWork,OwnerRecords,ReadDeferred};
 // Empty TEST list captured on 2026-11-10; only the request IP is replaced with a documentation address.
 $emptyGlueReply='{"request":{"operation":"listRegisteredNameServers","ip":"192.0.2.10"},"reply":{"code":300,"detail":"success"}}';
-$glueReply=$emptyGlueReply;$glueCalls=[];
+$glueReply=$emptyGlueReply;$glueCalls=[];$glueError=null;
 $glueBinding=new AccountBinding('namesilo',1,Environment::Test,'synthetic-account');
-$glueWire=static function($origin,$command,$parameters,$timeout)use(&$glueReply,&$glueCalls):string {
+$glueWire=static function($origin,$command,$parameters,$timeout)use(&$glueReply,&$glueCalls,&$glueError):string {
  same('https://ote.namesilo.com/apibatch',$origin,'Glue observation stays on the TEST background route');
  expect($timeout>0&&$timeout<=25000,'Glue observation wire has a bounded deadline');$glueCalls[]=$command;
- if($command==='listRegisteredNameServers'){same(['domain'=>'example.com'],$parameters,'Glue read names the bound domain');return $glueReply;}
+ if($command==='listRegisteredNameServers'){if($glueError){throw $glueError;}same(['domain'=>'example.com'],$parameters,'Glue read names the bound domain');return $glueReply;}
  $reply=['code'=>300,'detail'=>'synthetic']+match($command){
   'getDomainInfo'=>['created'=>'2020-01-01','expires'=>'2028-01-01','status'=>'Active','locked'=>'Yes','private'=>'No','auto_renew'=>'No',
    'nameservers'=>[['nameserver'=>'ns1.dnsowl.com'],['nameserver'=>'ns2.dnsowl.com']],
@@ -53,6 +53,19 @@ foreach([
  same('complete',$failedGlue['settings']['contacts']['state'],'A failed glue read does not block independent contacts');
  same(['getDomainInfo','listRegisteredNameServers','contactList'],$glueCalls,'Contact read follows a failed glue read without writes');
 }
+// A deferred wire read propagates without consuming capacity on independent contacts.
+$glueError=new ReadDeferred('Synthetic glue admission delay');$glueCalls=[];$deferred=null;
+try{$glueReader->discover($glueRequest,$glueContext(),$knownGlue);}catch(ReadDeferred $e){$deferred=$e;}
+same($glueError,$deferred,'Glue wire deferral propagates unchanged');
+same(['getDomainInfo','listRegisteredNameServers'],$glueCalls,'Deferred glue does not read contacts');
+// An ordinary wire failure retains known glue and still completes the independent contact read.
+$glueError=new RuntimeException('Synthetic glue wire failure');$glueCalls=[];
+$wireFailure=$glueReader->discover($glueRequest,$glueContext(),$knownGlue);
+same(['state'=>'partial','records'=>$knownGlue],$wireFailure['glue'],'Wire failure preserves known glue');
+same('glue',$wireFailure['failed_family'],'Wire failure identifies glue');
+same('complete',$wireFailure['settings']['contacts']['state'],'Wire failure leaves contacts complete');
+same(['getDomainInfo','listRegisteredNameServers','contactList'],$glueCalls,'Ordinary glue failure permits the contact read');
+$glueError=null;
 $glueReply='{"request":{"operation":"listRegisteredNameServers"},"reply":{"code":300,"detail":"success","hosts":[{"host":"ns2","ip":"8.8.4.4"}]}}';
 $nextGlue=$glueReader->discover($glueRequest,$glueContext(),$knownGlue);
 same(['state'=>'complete','records'=>['ns2.example.com'=>'8.8.4.4']],$nextGlue['glue'],'A later successful list replaces old glue after a failed read');

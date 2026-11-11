@@ -102,5 +102,28 @@ $staff->role->update(['permissions'=>$all]);$run($returning->fresh(),'credit',$k
 commerceReject(fn()=>$run($returning->fresh(),'credit',$key));
 same(1,MoneyReceiptGateway::$sends,'Reviewed recovery does not reserve a second return');
 same(2,count($returning->fresh()->policy['staff_actions']),'Refund and authorized poll each retain one audit entry');
+// Secondary refund feedback reads must not replace the original safe failure notification with an exception.
+$feedback=$held('staff-refund-feedback-placeholder.com');
+$storedFunding=$feedback->getRawOriginal('funding');$primaryFailures=0;$secondaryReads=0;$readFailure=false;
+DB::connection()->beforeExecuting(static function($query)use(&$readFailure,&$secondaryReads):void {
+    if($readFailure&&str_contains($query,'from "domains_operations"')){++$secondaryReads;throw new RuntimeException('Synthetic secondary read failure');}
+});
+foreach(['read','decrypt'] as $failure){
+    $actions=Paymenter\Extensions\Servers\Domains\Admin\Support\OperationActions::make($feedback,'synthetic-feedback-stamp');
+    $refundAction=collect($actions)->first(fn($action)=>$action->getName()==='refund');
+    expect($refundAction!==null,'The refund callback is present');
+    app()->bind(StaffOperations::class,static function()use($failure,&$primaryFailures,&$readFailure,$feedback):never {
+        ++$primaryFailures;
+        if($failure==='read'){$readFailure=true;}else{DB::table('domains_operations')->where('id',$feedback->id)->update(['state'=>'rejected','funding'=>'broken ciphertext']);}
+        throw new RuntimeException('Synthetic primary refund failure');
+    });
+    session()->forget('filament.notifications');
+    try{($refundAction->getActionFunction())(['review_key'=>'synthetic-feedback-key','reason'=>'Review failed refund feedback']);}
+    finally{$readFailure=false;app()->instance(StaffOperations::class,$service);}
+    Notification::assertNotified(Notification::make()->danger()->title(Paymenter\Extensions\Servers\Domains\Admin\Support\OperationActions::FAILED)->body('Reload the page and try again. Ref producer_failed.'));
+    DB::table('domains_operations')->where('id',$feedback->id)->update(['state'=>'held','funding'=>$storedFunding]);
+}
+same(2,$primaryFailures,'Both controls reach the original failure handler');
+same(1,$secondaryReads,'The read control reaches the secondary request lookup');
 echo "Native financial review and refusal boundaries passed.\n";
 $nativeSuccessful=true;

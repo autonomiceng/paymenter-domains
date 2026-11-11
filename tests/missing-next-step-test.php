@@ -27,6 +27,23 @@ foreach(['resources/views/index.blade.php','Presentation/DomainListRow.php','Pre
     same(false,str_contains((string)file_get_contents($root.'/'.$file),'Not yet'),$file.' has no customer-only word');
 }
 
+// Waiting for a transfer code is actionable; its future registrar expiry is a normal waiting fact.
+$order=['state'=>'paid','kind'=>'transfer','next'=>'awaiting_code'];
+$waiting=$summary('managed',['order'=>$order,'statusState'=>'awaiting_code','expiryWaits'=>'transfer']);
+$expiry=DomainListRow::expires($waiting);
+same(Missing::fills('when the transfer finishes'),$expiry['cause'],'Waiting-code expiry says when the registrar date will fill in');
+$list=storefrontDom((string)Missing::html($expiry['cause'],$expiry['fix']));
+same(1,$list->query('//span[contains(@class,"domains-missing--calm")]')->length,'List expiry stays muted before code entry');
+same(0,$list->query('//svg')->length,'List expiry has no danger mark before code entry');
+$pending=new OwnedDomain('waiting.example','Action required','warn',null,'',null,['show'=>'/domains/1','code'=>'/domains/1/code'],[],
+    ['contacts'=>false,'required'=>false],['open'=>true,'received'=>false],[],false,statusReason:'Auth code needed',order:$order);
+$renewal=storefrontDom(view('domains::partials.owner-renew',['domain'=>$pending,'summary'=>$waiting,'support'=>'/tickets/create'])->render());
+same(1,$renewal->query('//div[dt="Expires"]/dd//span[contains(@class,"domains-missing--calm")]')->length,'Domain page expiry stays muted before code entry');
+same(0,$renewal->query('//div[dt="Expires"]/dd//svg')->length,'Domain page expiry has no danger mark before code entry');
+$notice=DomainPage::notice($pending,'/tickets/create',$waiting);
+same(['warn','Enter the auth code from your current registrar.',['label'=>'Enter auth code','url'=>'/domains/1/code']],
+    [$notice['tone'],$notice['text'],$notice['action']],'The code action stays conspicuous above the calm expiry');
+
 // Red with the hexagon when the reader must act. Muted, with no icon, when it fills in by itself or needs nothing.
 foreach(['Fills in by itself within a day','No time recorded. No action needed.'] as $calm){
     same(['gray',null,true],[Missing::color($calm),Missing::icon($calm),Missing::needsNothing($calm)],$calm);

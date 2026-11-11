@@ -56,6 +56,7 @@ class Operation extends Model
         static::updating(static fn (self $operation) => \Paymenter\Extensions\Servers\Domains\Services\ManagementEvidence::guard($operation));
         static::updating(static fn (self $operation) => \Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::noteReturn($operation));
         static::updated(static fn (self $operation) => \Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::settle($operation));
+        static::updated(static fn (self $operation) => \Paymenter\Extensions\Servers\Domains\Services\RequestAlerts::changed($operation));
         static::updating(static function (self $operation): void {
             $before = $operation->getOriginal('policy') ?? []; $after = $operation->policy ?? [];
             if (array_key_exists('contact_disposition', $before)

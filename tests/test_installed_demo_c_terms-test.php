@@ -133,12 +133,12 @@ $unavailable=new ReflectionMethod(Paymenter\Extensions\Servers\Domains\Services\
 $unavailable->invoke(null,$cart,new Paymenter\Extensions\Servers\Domains\Services\CheckoutRefreshTimeout);
 $notice=Paymenter\Extensions\Servers\Domains\Services\CartNotice::get($cart);
 same('We could not get your price',$notice['title'],'Quote notice title matches the mock');
-same('Try again shortly.',$notice['text'],'Unreadable quote uses the short retry state');
+same('We could not get the price for staff-term-price-placeholder.com. Try again shortly. You can also remove it from your cart.',$notice['text'],'Unreadable quote names the domain, retry and removal');
 expect(!str_contains($notice['text'],'internal'),'Quote failure does not expose internal detail');
 $generic=new App\Livewire\Cart;
 $unavailable->invoke(null,$generic,new RuntimeException('synthetic unexpected checkout error'));
 $genericNotice=Paymenter\Extensions\Servers\Domains\Services\CartNotice::get($generic);
-same([Paymenter\Extensions\Servers\Domains\Services\CartCheckoutRefresh::UNCHECKED_TITLE,'We couldn’t confirm the price and term for staff-term-price-placeholder.com with the registrar, so checkout is paused. Try again in a few minutes, or remove it from your cart.',['staff-term-price-placeholder.com']],
+same([Paymenter\Extensions\Servers\Domains\Services\CartCheckoutRefresh::UNCHECKED_TITLE,'Ordering is temporarily unavailable for staff-term-price-placeholder.com, so checkout is paused. Try again in a few minutes, or remove it from your cart.',['staff-term-price-placeholder.com']],
     [$genericNotice['title']??null,$genericNotice['text']??null,$genericNotice['names']??null],'Unexpected checkout failure says why checkout waits, not the quote retry');
 expect($r10Failures===[],implode('; ',$r10Failures));
 $nativeSuccessful=true;echo "Demo C NS17 forms passed.\n";

@@ -166,7 +166,7 @@ final class Labels
             'management_unconfirmed'=>RequestStatus::UNCONFIRMED,'management_provider_refused'=>\Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus::REFUSED.' The customer can try again.',
             'management_deferred'=>null,'readback_confirmed'=>null,
             'auth_email_accepted'=>'Auth code email sent','actual_charge_changed'=>'Registrar charged a different amount',
-            'contact_profile_proof_required'=>"Not sent: couldn't create the order's contact at NameSilo. The customer's details passed our checks.",'write_disabled'=>self::FEATURE_OFF,
+            'contact_profile_proof_required'=>"Not sent: couldn't confirm the order's contact at NameSilo. The customer's details passed our checks.",'write_disabled'=>self::FEATURE_OFF,
             'enom_test_transfer_call_cap'=>'Not sent: stopped by our test send check','enom_test_call_cap'=>'Not sent: stopped by our test send check','enom_test_management_call_cap'=>'Not sent: stopped by our test send check','enom_test_renewal_call_cap'=>'Not sent: stopped by our test send check',
             'enom_test_reconciliation_call_cap'=>RequestStatus::UNCONFIRMED,'enom_test_transfer_reconciliation_call_cap'=>RequestStatus::UNCONFIRMED,
             'enom_test_reconciliation_send_guard'=>'Status check paused: Enom sends are off',

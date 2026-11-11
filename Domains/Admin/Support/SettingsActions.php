@@ -247,7 +247,7 @@ final class SettingsActions
             $label=$setup?fn()=>self::setupLabel($name,$registrar()!==null):Review::ACTIONS[$name];
             $out[]=Action::make($id.($setup&&$server!==Review::ALL_ACCOUNTS?'_'.$server:''))->label($label)->color(fn()=>$name==='processing'&&$processing()?'danger':'gray')->modalWidth('lg')
                 ->visible(fn()=>!($setup&&$blocked())&&(!in_array($name,Review::PUBLISHES,true)||self::canSee(Review::permission('publish')))&&self::canSee(Staff::POLICY)&&(collect(Review::rights($name))->every(fn($right)=>self::canSee($right))||($name==='override'&&self::canSee(Review::permission('remove_override'))))&&self::featureVisible($server,$name))
-                ->requiresConfirmation(!$switch||$popup)->modalHidden($switch&&!$popup)->modalHeading($setup?fn()=>$popup?$turn().' '.self::POPUPS[$id].'?':self::setupHeading($name,$registrar()!==null):$label)
+                ->requiresConfirmation(!$switch||$popup)->modalIcon($name==='probe'?self::READ_ICON:null)->modalIconColor($name==='probe'?'gray':null)->modalHidden($switch&&!$popup)->modalHeading($setup?fn()=>$popup?$turn().' '.self::POPUPS[$id].'?':self::setupHeading($name,$registrar()!==null):$label)
                 ->modalDescription($popup?fn()=>self::switchWarning($id,$server):($switch?null:($name==='probe'?fn()=>self::description($name).($registrar()==='namesilo'?' '.self::details($name):''):($name==='configure'?fn(Action $action)=>($action->getRawData()['registrar']??null)==='namesilo'?'Checks the key with one balance read, then saves it. Orders stay paused. This does not confirm who owns the account.':self::description($name):($name==='seller'&&$tld!==null?fn()=>self::sellerDescription((int)$tld):self::description($name))))))
                 ->modalSubmitActionLabel($setup?fn()=>$popup?$turn():self::submitLabel($name,$registrar()!==null):($name==='override'?'Save and publish':'Confirm'))->schema($switch?[]:$fields)
                 ->action(function(#[\SensitiveParameter] array $data,$livewire)use($id,$name,$server,$tld,$setup,$stamp,$switch){
@@ -257,8 +257,7 @@ final class SettingsActions
                         $default=$name==='override'&&($data['pricing']??null)==='default';
                         $r=new Review((int)Auth::id(),$server,$tld,$default?'remove_override':$name,(string)($data[$default?'default_key':'review_key']??''),trim((string)($data['reason']??'')));
                         $summary=app(StaffSettingsWrites::class)->run($r,$data);$account=Account::where('server_id',$server)->first();
-                        Notification::make()->status(($summary['audit_failed']??false)||($summary['failed']??[])!==[]||($summary['pending']??false)?'warning':'success')->title(match(true){($summary['audit_failed']??false)=>"Saved, but the result wasn't recorded",$name==='processing'=>$account->processing_enabled?'Orders resumed':'Orders paused',$name==='probe'=>'Balance updated',
-                                $name==='enroll_sandbox'=>'Account connected',$name==='override'=>'Prices published',$setup=>'Saved',default=>'Change recorded'})
+                        Notification::make()->status(($summary['audit_failed']??false)||($summary['failed']??[])!==[]||($summary['pending']??false)?'warning':'success')->title(self::savedTitle($name,$summary,$account,$setup))
                             ->body($name==='processing'?self::republished($summary):($name==='probe'?null:($name==='default_pricing'?self::published($summary):($name==='enroll_sandbox'?'NameSilo accepted the key. Orders are paused and no TLDs are chosen yet.':null))))->send();
                         if($name==='processing'){$livewire->redirect(\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$server]));}
                     }catch(\Throwable $error){
@@ -272,6 +271,14 @@ final class SettingsActions
         }
         return $out;
     }
+    /** The toast title after a save. A Default pricing save that left some TLDs unpublished says so, beside its warning colour. */
+    public static function savedTitle(string $name,?array $summary,?Account $account,bool $setup): string
+    {
+        return match(true){($summary['audit_failed']??false)=>"Saved, but the result wasn't recorded",$name==='processing'=>$account?->processing_enabled?'Orders resumed':'Orders paused',$name==='probe'=>'Balance updated',
+            $name==='enroll_sandbox'=>'Account connected',$name==='override'=>'Prices published',$name==='default_pricing'&&($summary['failed']??[])!==[]=>'Saved. Some prices not published',$setup=>'Saved',default=>'Change recorded'};
+    }
+    /** A read that changes nothing gets a plain icon, not the warning triangle kept for changes that spend money or stop sales. */
+    private const READ_ICON='heroicon-o-signal';
     /** Sync prices for every accepted TLD of one account, from the TLD list header: one short question, no typed TLD and
      * no reason. The audit records who synced, when and which TLDs. */
     /** The Sync prices question: what it reads, and its share of our own daily call cap. */

@@ -77,7 +77,10 @@ final class ManagementProgress
         $pending=self::pending($op,$d);$slow=$pending && $since->getTimestamp()<=now()->getTimestamp()-120;
         $sent=($op->attempt['seal']??null)==='sealed';
         $refused=!$pending && $op->action==='nameservers' && $op->safe_code==='management_provider_refused';
+        // A read can't confirm an email the registrar's send reply never confirmed, so the customer gets a step, not a wait.
+        $unconfirmedEmail=$op->action==='auth_code_email'&&$pending&&$sent&&$op->state==='uncertain'&&($op->attempt['management_ack']['email_accepted']??null)!==true;
         $text=match(true){
+            $slow&&$unconfirmedEmail=>"We couldn't confirm the registrar sent the auth code email to the ".OwnedDomains::authCodeRecipient($d).". If it hasn't arrived, contact support.",
             $slow=>"This is taking longer than usual. We'll keep trying.",
             $pending && $sent=>'Sent. Checking the result…',
             $pending && $op->action==='lock'=>($op->policy['management']['input']['locked']??false)?'Turning on…':'Turning off…',
@@ -97,7 +100,7 @@ final class ManagementProgress
         // What staff read in place of $text, which speaks to the customer.
         $outcome=$pending||$replaced||$op->state==='succeeded'?null:ManagementEvidence::outcome($op)??RequestStatus::UNCONFIRMED;
         $row=['id'=>(int)$op->id,'pending'=>$pending,'slow'=>$slow,'text'=>$text,'settled'=>$settled,'outcome'=>$outcome,'replaced'=>$replaced,
-            ...($refused?['tone'=>'bad','support'=>true]:[])];
+            ...($refused?['tone'=>'bad','support'=>true]:[]),...($slow&&$unconfirmedEmail?['tone'=>'warning']:[])];
         return $row;
     }
 

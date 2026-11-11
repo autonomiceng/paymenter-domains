@@ -142,13 +142,17 @@ $grant->run('management',47,function()use($grant,$exchange,$origin):void {
 });
 same(3,$GLOBALS['wire']['sends'],'Registration, transfer and free management each send exactly once');
 // A failed purchase send keeps only its fixed failure kind, so staff can see the HTTP status without the body or URL.
-resetWire(['status'=>500]);
+resetWire(['status'=>500,'chunks'=>['SENSITIVE_PURCHASE_RESPONSE_BODY_51']]);
 $grant->run('registration',51,function()use($grant,$exchange,$origin):void {
     $mapping=Api\PurchaseMapping::register('example.com',1,false,'123',['ns1.example.net','ns2.example.net']);
     $grant->reserve($mapping->command,$mapping->parameters(),new Money('1.00','USD'));
     $failure=null;try{$exchange($origin,$mapping->command,$mapping->parameters(),20000);}catch(\Paymenter\Extensions\Servers\Domains\Data\SendFailure $error){$failure=$error;}
     same(['category'=>'http 500','timeout_ms'=>20000],$failure?->facts(),'Purchase HTTP error keeps only its status for staff');
     same('Registrar exchange failed.',$failure->getMessage(),'Failure names no single registrar');same(null,$failure->getPrevious(),'No raw cause');expect(!str_contains($failure->getMessage().$failure->getTraceAsString(),'placeholder-api-key'),'Failure redacts credentials');
+    foreach([$failure->facts(),$failure->getMessage(),(string)$failure,$failure->getTrace()] as $exposed){
+        $text=is_string($exposed)?$exposed:json_encode($exposed,JSON_THROW_ON_ERROR);
+        expect(!str_contains($text,'SENSITIVE_PURCHASE_RESPONSE_BODY_51'),'Purchase failure never exposes response bytes in facts, message or traces');
+    }
     same(1,$GLOBALS['wire']['sends'],'Failed purchase is sent once');expect(!$grant->unconsumed(51),'Failed purchase consumes its grant');
 });
 // A purchase that fails in cURL keeps its kind; a transfer keeps its HTTP status too.

@@ -163,20 +163,22 @@ final class AccountChecklist
     private static function tlds(Account $a,?object $binding,?\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue $offers=null): array
     {
         try {
-            $offers??=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed();$endings=[];$defaults=0;
+            $offers??=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed();$endings=[];$chosen=[];$defaults=0;
             if($offers){
                 \Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$binding->serverId)->where('account_fingerprint',$binding->fingerprint)
-                    ->where('catalogue_converted',true)->orderBy('id')->chunkById(100,function($rows)use($offers,&$endings,&$defaults):void {
+                    ->where('catalogue_converted',true)->orderBy('id')->chunkById(100,function($rows)use($offers,&$endings,&$chosen,&$defaults):void {
                         $page=$offers->page($rows);
-                        foreach($rows as $t){$sales=$page[$t->id]['acquisition'];if($sales['register']||$sales['transfer']){$endings[]=$t->tld;if(!$page[$t->id]['own']){$defaults++;}}}
+                        foreach($rows as $t){$sales=$page[$t->id]['acquisition'];if($page[$t->id]['selected']){$chosen[]=$t->tld;}if($sales['register']||$sales['transfer']){$endings[]=$t->tld;if(!$page[$t->id]['own']){$defaults++;}}}
                     });
             }
-        } catch (\Throwable) { $endings=[];$defaults=0; }
-        sort($endings);
+        } catch (\Throwable) { $endings=[];$chosen=[];$defaults=0; }
+        sort($endings);sort($chosen);
         try { $url=WhatYouSell::getUrl(['account'=>$a->server_id]); } catch (\Throwable) { $url=null; }
-        $count=count($endings);
-        return [...self::row('What you sell',$endings?self::sample($endings):null,null,$endings?$count.' '.($count===1?'TLD':'TLDs').' for sale':'Choose the TLDs you sell.',null,'The TLDs customers can buy from this account.'),
-            'using_default'=>$defaults,'buttons'=>[Action::make('what_you_sell_'.$a->server_id)->label($endings?'Change':'Choose what you sell')->link()->size('sm')->url($url)->visible($url!==null)]];
+        // Orders off pauses sales but keeps the saved choices, so the row shows them as paused, not missing.
+        $paused=!$endings&&$chosen&&!$a->processing_enabled;$shown=$paused?$chosen:$endings;$count=count($shown);
+        $cause=match(true){$paused=>$count.' '.($count===1?'TLD is':'TLDs are').' chosen. Sales are paused while Orders is off.',(bool)$endings=>$count.' '.($count===1?'TLD':'TLDs').' for sale',default=>'Choose the TLDs you sell.'};
+        return [...self::row('What you sell',$shown?self::sample($shown):null,null,$cause,null,'The TLDs customers can buy from this account.'),
+            'using_default'=>$defaults,'buttons'=>[Action::make('what_you_sell_'.$a->server_id)->label($shown?'Change':'Choose what you sell')->link()->size('sm')->url($url)->visible($url!==null)]];
     }
     /** Use the installed catalogue's pricing reader and its TLD override decisions. */
     private static function pricing(Account $a,?\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue $offers,int $defaults): array

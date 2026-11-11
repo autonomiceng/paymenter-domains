@@ -51,6 +51,17 @@ $saved=(clone $reminder)->sole();$audit=decrypt($saved->audit);$audit[0]['at']='
 $reminder->update(['audit'=>encrypt([$audit[0]])]);
 $history=TldFacts::accountHistory($server);
 $selected=array_values(array_filter($history,fn($r)=>str_starts_with($r['change'],'Synthetic ')||str_starts_with($r['change'],'Reminder emails')));
+// Invalid individual entries do not hide readable reminder or settings history.
+$malformed=[false,['reason'=>'Missing time'],['at'=>'not-a-time','reason'=>'Invalid time']];
+$invalidDays=['at'=>'2026-11-10T06:20:00Z','before'=>['enabled'=>false],'after'=>['enabled'=>false,'before_days'=>'invalid JSON','after_days'=>'[366]'],'reason'=>'Retained invalid days'];
+$mixed=encrypt([$audit[0],...$malformed,$invalidDays]);$reminder->update(['audit'=>$mixed]);
+$mixedHistory=TldFacts::accountHistory($server);
+expect(is_array($mixedHistory),'A readable mixed audit keeps account history readable');
+$reminderRows=array_values(array_filter($mixedHistory,fn($r)=>str_starts_with($r['change'],'Reminder ')));
+same(['Reminder schedule changed','Reminder emails turned off'],array_column($reminderRows,'change'),'Only readable reminder entries survive');
+same('Days before expiry: none; days after: none. Retained invalid days',$reminderRows[0]['reason'],'Malformed stored days use the existing none fallback');
+expect(in_array('Synthetic newest',array_column($mixedHistory,'change'),true),'Settings history survives malformed reminder entries');
+same($mixed,(clone $reminder)->value('audit'),'Reading mixed entries preserves the saved audit');
 // Existing unreadable reminder history is not an empty history, and reading never repairs it.
 $panel=\Filament\Facades\Filament::getCurrentPanel();
 Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(fn()=>\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarHistory::registerRoutes($panel));

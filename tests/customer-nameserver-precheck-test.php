@@ -4,10 +4,13 @@ declare(strict_types=1);
 // The nameserver editor checks a list the server would refuse before the warning, and the warning takes the editor's place.
 require __DIR__.'/Support/management.php';
 use Paymenter\Extensions\Servers\Domains\Services\{OwnerFormValidation,OwnerNameservers};
-[$d,$driver]=$holding(placeholderComFixtureName('customer-precheck-placeholder.com'));
+[$d,$driver]=$holding(placeholderComFixtureName('customer-precheck-placeholder.com'),Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence::observed(['ns1.example.com','ns2.example.com'],'enom_getdns',$clock->now()));
 require __DIR__.'/Support/owner-pages.php';
 $section=$owners->present($d->fresh(),true)->management['nameservers']; $max=$section['max'];
 same([true,$d->registrar_key==='namesilo'],[is_int($max)&&$max>=12,$section['letterEnding']??null],'The editor knows the server limit and ending rule');
+$request=Illuminate\Http\Request::create('/domains/'.$d->id);$request->setUserResolver(fn()=>$user);$request->setLaravelSession(app('request')->session());
+$html=view('domains::show',['domain'=>$owners->present($d->fresh(),true),'keys'=>array_fill_keys(['setup','recovery','code','renew','auto-renew',...Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerActionController::ACTIONS],str_repeat('a',64))])->render();
+same((string)$max,storefrontDom($html)->query('//form[@data-nameservers-max]')->item(0)?->getAttribute('data-nameservers-max'),'The rendered editor carries the actual maximum');
 $blade=file_get_contents(dirname(__DIR__).'/Domains/resources/views/partials/owner-management.blade.php');
 expect(str_contains($blade,'data-confirm data-nameservers-max="{{ $section[\'max\'] }}"'),'The nameserver editor form carries the limit for the browser check');
 // Every refusal the browser can give uses the server's words.

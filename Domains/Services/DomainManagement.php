@@ -35,7 +35,11 @@ final class DomainManagement
             return (function()use($actor,$seed,$driver,$actions,&$refused):array {
                 $l=HoldingLocks::take($seed,(int)$actor->id,true);
                 if($this->testManagement&&!EnomTestManagement::accepted(AccountBindings::binding($l['account']))){$refused=self::SWITCH_OFF;return [];}
-                if(($blocked=$this->unresolved($l))!==null){$refused=(int)$blocked->id;return [];}
+                if(($blocked=$this->unresolved($l))!==null){
+                    $refused=(int)$blocked->id;
+                    $actions=array_values(array_filter($actions,fn($action)=>$this->unresolved($l,action:$action)===null));
+                    if(!$actions){return [];}
+                }
                 return array_values(array_filter($actions,function($action)use($l,$actor,$driver,&$refused):bool {
                     if ($action==='auth_code_email'&&$this->emailCooling($l)) { return false; }
                     try { $this->authority($l,(int)$actor->id,$action,$driver,advisory:true); }
@@ -412,12 +416,19 @@ final class DomainManagement
     }
     private function peers(array $l, ?int $except = null, ?string $correction = null, ?string $action = null): void
     { if ($this->unresolved($l, $except, $correction, $action) !== null) { throw new \DomainException('Prior operation unresolved.'); } }
+    /** Changes an unconfirmed auth code email can't affect: the email goes to the registrant, and these leave the registrant,
+     * the transfer lock and the code alone. Contacts, the lock, privacy and another email still wait for it. */
+    private const BESIDE_EMAIL=['nameservers','dns','srv','ds_add','ds_delete','glue_add','glue_update','glue_delete'];
+    /** A sent auth code email whose acceptance is unknown. It is never resent or marked sent; it only stops holding unrelated changes. */
+    private static function unconfirmedEmail(Operation $op): bool
+    { return $op->action==='auth_code_email'&&$op->state==='uncertain'&&($op->attempt['seal']??null)==='sealed'; }
     private function unresolved(array $l, ?int $except = null, ?string $correction = null, ?string $action = null): ?Operation
     {
         $b = AccountBindings::binding($l['account']);
         foreach ($l['operations'] as $op) {
             if ($correction !== null && $op->operation_key === $correction && ManagementCorrections::pending($l, $action ?? '', $correction)) { continue; }
             if($op->id!==$except&&$op->action==='renew'&&in_array($op->state,['awaiting_payment','queued','held'],true)&&($op->attempt??[])===[]){continue;}
+            if(in_array($action,self::BESIDE_EMAIL,true)&&self::unconfirmedEmail($op)){continue;}
             if ($op->id !== $except && !ManagementEvidence::resolved($op, $l['domain']) && !RenewalAuthority::resolved($op, $l['domain'], $b)) { return $op; }
         }
         return null;

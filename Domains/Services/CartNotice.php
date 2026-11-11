@@ -16,18 +16,28 @@ final class CartNotice
      *  @param array<int, string> $was amount the line showed before the change, by cart item id */
     public static function set(object $component, string $title, string $text, string $toast, string $type, array $names = [], array $was = []): void
     {
-        \Livewire\store($component)->set('domains.cart_notice', compact('title', 'text', 'toast', 'type', 'names', 'was'));
+        \Livewire\store($component)->set($type === 'error' ? 'domains.check_notice' : 'domains.cart_notice', compact('title', 'text', 'toast', 'type', 'names', 'was'));
     }
 
     public static function restore(object $component, ?array $notice): void
-    { if ($notice !== null) { \Livewire\store($component)->set('domains.cart_notice', $notice); } }
+    { if ($notice !== null) { \Livewire\store($component)->set(($notice['type'] ?? null) === 'error' ? 'domains.check_notice' : 'domains.cart_notice', $notice); } }
 
     public static function clear(object $component): void
-    { \Livewire\store($component)->set('domains.cart_notice', null); }
+    { \Livewire\store($component)->set('domains.cart_notice', null); self::clearCheck($component); }
+
+    public static function clearCheck(object $component): void
+    { \Livewire\store($component)->set('domains.check_notice', null); }
+
+    public static function review(object $component): ?array
+    { return \Livewire\store($component)->get('domains.cart_notice'); }
 
     /** @return array{title: string, text: string, toast: string, type: string, names: list<string>, was: array<int, string>}|null */
     public static function get(?object $component): ?array
     {
-        return $component ? \Livewire\store($component)->get('domains.cart_notice') : null;
+        if (!$component) { return null; }
+        $review = self::review($component);
+        $check = \Livewire\store($component)->get('domains.check_notice');
+        // A failed check takes the notice while the price review keeps its old line amounts.
+        return $check ? [...$check, 'was' => $review['was'] ?? []] : $review;
     }
 }

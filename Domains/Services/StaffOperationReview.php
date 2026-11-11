@@ -105,7 +105,9 @@ final class StaffOperationReview
         $history[]=['key'=>$t['key'],'action'=>$this->action,'phase'=>$phase,'actor_id'=>$this->actorId,'actor_name'=>$actor?(trim($actor->first_name.' '.$actor->last_name)?:'Staff #'.$actor->id):null,'reason'=>$this->reason,
             'at'=>$this->clock->now()->format(DATE_ATOM),'operation_key'=>$op->operation_key,'generation'=>$op->authority_generation,
             'before'=>$this->before,'after'=>self::state($op,$d),
-            ...($this->action==='recheck'&&$phase==='read_finished'&&in_array($op->action,['register','transfer','renew'],true)?['check'=>$op->policy['status_check']??['outcome'=>'unavailable']]:[]),...($failure?['safe_code'=>OperationFailure::code($failure)]:[])];
+            ...($this->action==='recheck'&&$phase==='read_finished'&&in_array($op->action,['register','transfer','renew'],true)?['check'=>$op->policy['status_check']??['outcome'=>'unavailable']]:[]),
+            // A change's check keeps its result, so History says what the registrar showed.
+            ...($this->action==='recheck'&&$phase==='read_finished'&&isset($op->policy['management'])?['management_check'=>['outcome'=>match($op->state){'succeeded'=>'confirmed','rejected'=>'failed',default=>'unconfirmed'}]]:[]),...($failure?['safe_code'=>OperationFailure::code($failure)]:[])];
         $op->update(['policy'=>[...($op->policy??[]),'staff_actions'=>$history]]);
     }
     public function local(\Closure $write): mixed

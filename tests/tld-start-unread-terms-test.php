@@ -50,6 +50,10 @@ same('Use Change registrar to sell it through another account.',TldFacts::fixTex
 same(TldFacts::ASK_SELLER,TldFacts::fixText(TldFacts::salesState($t->fresh())['reason'],false),'Staff who cannot change the registrar are told who can');
 $change=collect($page->instance()->getCachedHeaderActions())->first(fn($a)=>$a instanceof \Filament\Actions\Action&&$a->getName()==='seller');
 same(['Change registrar','primary'],[$change?->getLabel(),$change?->getColor()],'Change registrar is the one action for a requirement this registrar fails');
+// Change registrar names that requirement on this account's choice, and a refused save says it instead of asking for a retry.
+$needs='This registrar needs nameservers at registration for .com. Choose another registrar.';
+same(['reason'=>$needs,'disabled'=>true],array_intersect_key(Paymenter\Extensions\Servers\Domains\Admin\Support\TldRegistrar::choices($t->id)[$t->server_id],['reason'=>1,'disabled'=>1]),'The registrar choice names the requirement and is not offered');
+same($needs.' Nothing was saved.',Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions::refusal(new DomainException('Explicit verified widening required.'),'seller',['seller'=>$t->server_id],$t->server_id,$t->id),'The refused registrar change names the requirement');
 // Stopped by staff with the same terms: Start selling can't lift the block, and the words drop "Set to sell".
 $ports->apply(Edit::override($binding,'com',new Intent(sell:true,stops:['register','transfer'])),$offer('register')->revision);
 $page=Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->assertActionHidden('start_selling')->assertActionHidden('stop_selling');

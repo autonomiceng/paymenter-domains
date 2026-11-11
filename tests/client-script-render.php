@@ -39,13 +39,20 @@ foreach (['dns'=>[
     $recordManagement[$cap]=['label'=>strtoupper($cap).' records','records'=>$records,'digest'=>str_repeat('b',64),
         'recordCheckHeld'=>false,'actions'=>[$cap=>'/domains/1/manage/'.$cap],...($cap==='dns'?['ttls'=>[300,3600]]:[])];
 }
+$recordManagement['nameservers']=['label'=>'Nameservers','max'=>12,'letterEnding'=>false,'current'=>['ns1.example.com','ns2.example.com'],
+    'registrar'=>'Enom','url'=>'/domains/1/manage/nameservers','actions'=>['nameservers'=>'/domains/1/manage/nameservers']];
 $pendingDomain=new OwnedDomain(...[...get_object_vars($domain),'management'=>['lock'=>['label'=>'Transfer lock','progress'=>['id'=>42,'pending'=>true,'slow'=>false,'text'=>'Turning off…']]]]);
 writeRenderArtifact($out.'/show-management-pending.html',view('domains::show',['domain'=>$pendingDomain,'keys'=>[]])->render());
 $orderDomain=new OwnedDomain(...[...get_object_vars($domain),'status'=>'Pending registration']);
 writeRenderArtifact($out.'/show-order-pending.html',view('domains::show',['domain'=>$orderDomain,'keys'=>[]])->render());
 $recordDomain=new OwnedDomain(...[...get_object_vars($domain),'management'=>$recordManagement]);
 writeRenderArtifact($out.'/show-records.html',view('domains::show',['domain'=>$recordDomain,
-    'keys'=>['dns'=>str_repeat('a',64),'srv'=>str_repeat('b',64)]])->render());
+    'keys'=>['dns'=>str_repeat('a',64),'srv'=>str_repeat('b',64),'nameservers'=>str_repeat('c',64)]])->render());
+$ns=storefrontDom(view('domains::show',['domain'=>$recordDomain,'keys'=>['dns'=>str_repeat('a',64),'srv'=>str_repeat('b',64),'nameservers'=>str_repeat('c',64)]])->render());
+$form=$ns->query('//form[@data-nameservers-max]')->item(0);$field=$ns->query('//textarea[@name="nameservers"]')->item(0);
+expect($form!==null&&$field!==null,'The client fixture has the real nameserver editor');
+writeRenderArtifact($out.'/nameserver-form.json',json_encode(['max'=>$form->getAttribute('data-nameservers-max'),
+    'letterEnding'=>$form->getAttribute('data-nameservers-letter-ending'),'id'=>$field->getAttribute('id')],JSON_THROW_ON_ERROR));
 foreach ($cases as $view => $data) {
     writeRenderArtifact($out.'/'.$view.'.html', view('domains::'.$view, $data)->render());
 }

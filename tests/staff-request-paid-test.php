@@ -12,12 +12,14 @@ DB::table('domains_operations')->where('id',$op->id)->update(['state'=>'awaiting
 DB::table('invoices')->where('id',$op->invoice_id)->update(['status'=>'pending']);
 $unpaid=RequestFacts::status($op->fresh());
 same(['Awaiting payment','Customer has not paid the invoice. Not sent yet.'],[$unpaid['label'],$unpaid['reason']],'An unpaid request waits on the customer');
+same('Not paid',RequestFacts::for($op->fresh())['invoice_state']??null,'The invoice row says an open invoice is not paid');
 DB::table('invoices')->where('id',$op->invoice_id)->update(['status'=>'paid']);
 $account=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->sole();
 DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>true]);
 $paid=RequestFacts::status($op->fresh());
 same(['In progress','Paid. It goes to the registrar automatically. Nothing to do yet.'],[$paid['label'],$paid['reason']],'A paid request not yet picked up reads paid');
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertSee('Paid. It goes to the registrar automatically.')->assertDontSee('Customer has not paid the invoice');
+same('Paid',RequestFacts::for($op->fresh())['invoice_state']??null,'The invoice row says the invoice is paid');
 // The request list's Note reads what its Status column does: paid, never that the customer has not paid.
 $note=static function()use($staff,$op):?string{\Illuminate\Support\Facades\Auth::setUser($staff);
     return Livewire::actingAs($staff)->test(ListOperations::class)->instance()->getTable()->getColumn('note')->record($op->fresh())->getState();};
@@ -42,6 +44,11 @@ same('Paid. Not sent. Orders are off for this account.',RequestFacts::status($op
 // List projections use one prefetched invoice batch for both status and reason.
 $page=Livewire::actingAs($staff)->test(ListOperations::class)->instance();
 $records=$page->getTableRecords();
+$listed=$records->firstWhere('id',$op->id);
+expect($listed!==null,'The measured list contains the expected paid request');
+expect($listed->relationLoaded('invoice'),'The expected request preloads its invoice');
+same((int)$op->invoice_id,(int)$listed->invoice?->id,'The preloaded relation is the expected invoice');
+same('paid',$listed->invoice->status,'The measured request has a paid invoice');
 $off=Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::ordersOffAccounts();
 DB::flushQueryLog();DB::enableQueryLog();
 foreach($records as $record){RequestFacts::status($record,accounts:$off);RequestFacts::reason($record,accounts:$off);}

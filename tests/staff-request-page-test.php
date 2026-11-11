@@ -44,7 +44,7 @@ same(['Auto Pay: charged','Auto Pay skipped: no saved payment method','Auto Pay:
 same(['recheck'=>'Check status','resume_reads'=>'Check status','resume_observation'=>'Resume sync','hold'=>'Put on hold','release'=>'Release hold',
     'disposition'=>'Close request','approve_charge'=>'Approve captured charge','refund'=>'Cancel and refund','credit'=>'Retry refund','replacement'=>'Reissue renewal invoice'],StaffOperationReview::ACTIONS,'Action names');
 
-// List: Request, Domain, Type, Status, Note, Created, Registrar account; Status, Type and Registrar account filters. One-line rows.
+// List: Request, Status, Domain, Type, Note, Created, Registrar account; Status, Type and Registrar account filters. One-line rows.
 DB::table('domains_operations')->where('id',$heldOp->id)->update(['created_at'=>'2026-10-20 15:05:00']);
 $list=Livewire::actingAs($viewer)->test(ListOperations::class)->assertSuccessful()
     ->assertSee('Request #'.$heldOp->id)->assertSeeHtml('2026-10-20T15:05:00+00:00')->assertSee('Synthetic registrar')
@@ -53,6 +53,7 @@ $list=Livewire::actingAs($viewer)->test(ListOperations::class)->assertSuccessful
 same(['Registrar requests','List'],array_values($list->instance()->getBreadcrumbs()),'List breadcrumb in sentence case, like the title');
 // Registrar account starts under Columns so the defaults fit inside the card at 1440px.
 staffTableStandard($list,'Search domain',['domain.domain','state','note']);staffRowsStandard($list,['server_id']);
+same(['id','state','domain.domain','action'],array_slice(array_keys($list->instance()->getTable()->getColumns()),0,4),'Status sits beside the request number, so a phone shows it without scrolling');
 $filter=static function(string $name,array $value){$p=Livewire::actingAs(Auth::user())->test(ListOperations::class)->filterTable($name,$value);
     return $p->set('tableDeferredFilters',$p->get('tableFilters'))->call('applyTableFilters');};
 $filter('status',['under_review'])->assertCanSeeTableRecords([$heldOp,$longOp])->assertCanNotSeeTableRecords([$doneOp]);

@@ -15,6 +15,11 @@ same($why.' The first year is $12.00; each renewal is $14.00 a year.', $row ? $t
 // The same prices say nothing more.
 $data['results'][0]['terms'][1] = '$14.00';
 same(0, storefrontDom(view('domains::search', $data)->render())->query('//*[@data-first-year-note]')->length, 'Equal prices need no note');
+foreach (['missing first year','unknown renewal'] as $case) {
+    $missing=storefrontData();
+    if($case==='missing first year'){unset($missing['results'][0]['terms'][1]);}else{$missing['results'][0]['renew']=null;}
+    same(0,storefrontDom(view('domains::search',$missing)->render())->query('//*[@data-first-year-note]')->length,'No note when '.$case);
+}
 // Price list: one sentence under the table.
 $rows = storefrontData()['endings'];
 $list = $text(view('domains::pricing', ['rows' => $rows, 'guest' => true, 'testEnvironment' => false])->render());
