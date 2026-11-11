@@ -70,13 +70,13 @@ $originalTld=DB::table('domains_tlds')->where('server_id',$d->server_id)->where(
 foreach(['net','org'] as $i=>$ending){
     $clone('domains_tlds',(int)$originalTld->id,['tld'=>$ending,'catalogue_retained_annual_retail'=>'18.00']);
     foreach(DB::table('domains_prices')->where('server_id',$d->server_id)->where('tld','com')->get() as $price){$clone('domains_prices',(int)$price->id,['tld'=>$ending]);}
-    DB::table('domains_domains')->where('sld','rows'.$i.'-placeholder')->update(['tld'=>$ending,'domain'=>'rows'.$i.'-placeholder.'.$ending,'reservation_name'=>'rows'.$i.'-placeholder.'.$ending]);
+    DB::table('domains_domains')->where('sld','rows'.$i.'-placeholder')->update(['tld'=>$ending,'sld'=>'example','domain'=>'example.'.$ending,'reservation_name'=>'example.'.$ending]);
 }
 DB::flushQueryLog();DB::enableQueryLog();
 $summaries=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->listed($user,$clock->now()->getTimestamp());
 $taxReads=array_filter(DB::getQueryLog(),static fn($q)=>str_contains($q['query'],'from "tax_rates"'));DB::disableQueryLog();DB::flushQueryLog();
 foreach(['net','org'] as $i=>$ending){
-    $id=DB::table('domains_domains')->where('sld','rows'.$i.'-placeholder')->value('id');
+    $id=DB::table('domains_domains')->where('domain','example.'.$ending)->value('id');
     same('$18.00',$summaries['managed:'.$id]->renewalPrice,'A successful quote is shown for distinct ending '.$ending);
 }
 same(1,count($taxReads),'A summary batch selects tax once per user across distinct TLD quotes');
@@ -93,7 +93,7 @@ same(1,$taxAttempts,'Several distinct TLD quotes share one failed tax attempt');
 $taxFailure=false;
 $recoveredTax=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->listed($user,$clock->now()->getTimestamp());
 foreach(['net','org'] as $i=>$ending){
-    $id=DB::table('domains_domains')->where('sld','rows'.$i.'-placeholder')->value('id');
+    $id=DB::table('domains_domains')->where('domain','example.'.$ending)->value('id');
     same('$18.00',$recoveredTax['managed:'.$id]->renewalPrice,'A new batch recovers after failed tax selection');
 }
 // Cancelled unpaid orders check their payments in the page's one batch, never once per row. A processing payment still needs review.
