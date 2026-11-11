@@ -36,5 +36,13 @@ recorded or unrecorded counter storage. Existing minute leases and non-catalogue
 
 Reservation is not a dispatch grant, credential check, funding proof or provider
 price cap. The caller must keep its one-send and UTC-day guard at the physical
-boundary. NameSilo policy, admitted transport and actual-charge reconciliation are
-separate work; this seam alone enables no NameSilo Live requests.
+boundary. `NameSiloLiveReservationPolicy` checks the current local binding, enabled
+server, matching HTTPS site, USD and balance funding. Admitted transport and
+actual-charge reconciliation remain separate responsibilities; reservation alone
+grants no NameSilo Live send authority.
+
+`live-reservation-lineage-test.php` rotates Enom and NameSilo credentials through
+the binding service, then reconstructs the ledger and checks the remaining call
+and spend allowance. It also replaces the same key after exhaustion. These
+synthetic checks establish local continuity, not provider acceptance or concurrent
+MariaDB behavior.
