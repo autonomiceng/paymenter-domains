@@ -42,9 +42,7 @@ async function state(page, label) {
       text: (document.querySelector('.fi-page') ?? document.body).innerText.replace(/\s+/g, ' ').trim().slice(0, 3000),
     };
   });
-  const shot = path.join(out, `${String(receipt.steps.length + 1).padStart(2, '0')}-${label}.png`);
-  await page.screenshot({ path: shot });
-  receipt.steps.push({ label, ...row, shot });
+  receipt.steps.push({ label, ...row });
   return row;
 }
 
@@ -74,7 +72,7 @@ async function confirm(page) {
 (async () => {
   // Limit renderer overhead for these local fixture pages.
   const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN || undefined,
-    args: ['--disable-gpu', '--disable-software-rasterizer', '--js-flags=--max-old-space-size=32 --optimize-for-size'] });
+    args: ['--single-process', '--no-zygote', '--disable-gpu', '--disable-software-rasterizer', '--js-flags=--max-old-space-size=32 --optimize-for-size'] });
   const context = await browser.newContext({ viewport: { width: 1024, height: 768 }, colorScheme: 'dark' });
   await context.route((url) => !url.href.startsWith(base), (route) => route.abort());
   try {
