@@ -44,6 +44,11 @@ same('Paid. Not sent. Orders are off for this account.',RequestFacts::status($op
 // List projections use one prefetched invoice batch for both status and reason.
 $page=Livewire::actingAs($staff)->test(ListOperations::class)->instance();
 $records=$page->getTableRecords();
+$listed=$records->firstWhere('id',$op->id);
+expect($listed!==null,'The measured list contains the expected paid request');
+expect($listed->relationLoaded('invoice'),'The expected request preloads its invoice');
+same((int)$op->invoice_id,(int)$listed->invoice?->id,'The preloaded relation is the expected invoice');
+same('paid',$listed->invoice->status,'The measured request has a paid invoice');
 $off=Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::ordersOffAccounts();
 DB::flushQueryLog();DB::enableQueryLog();
 foreach($records as $record){RequestFacts::status($record,accounts:$off);RequestFacts::reason($record,accounts:$off);}
