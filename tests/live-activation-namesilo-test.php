@@ -79,7 +79,8 @@ foreach([null,'invalid revision'] as $invalid){
     try{$engine->receiptFor($binding);throw new LogicException('Invalid runtime revision must refuse a receipt');}
     catch(DomainException $e){same($runtimeProblem,$e->getMessage(),'Readiness and receipt use the same runtime revision problem');}
 }
-same([[$runtimeProblem],[$runtimeProblem]],$runtimeProblems,'Missing and malformed runtime revisions appear in readiness');
+$runtimeMissing='Site setup Missing. Ask your site admin to install the registrar runtime.';
+same([[$runtimeProblem,$runtimeMissing],[$runtimeProblem,$runtimeMissing]],$runtimeProblems,'Missing and malformed revisions also close the installed runtime');
 config(['domains.namesilo_live.runtime_revision'=>'OFFLINE-v1']);
 same($readyProblems,$readiness(),'Restoring a valid runtime revision restores readiness');
 $saveReceipt=static function()use($engine,$binding,$server):void {
@@ -128,9 +129,9 @@ app('router')->getRoutes()->refreshNameLookups();
 $action=Filament\Actions\Testing\TestAction::make('activate_live')->schemaComponent('account_'.$server->id.'.live_sales','content');
 $page=Livewire\Livewire::actingAs($full)->test($pages[0],['account'=>$server->id])->mountAction($action)->assertActionMounted($action);
 $page->callMountedAction()->assertNotified('Could not activate');
-expect(!$a->fresh()->processing_enabled,'Missing installed runtime and prices keep Live spending closed');
+expect(!$a->fresh()->processing_enabled,'Missing prices keep Live spending closed');
 // Native installed routing is required: a unit reader cannot exercise CallerRouting's setup gates.
-// OFFLINE price/fact rows model setup only; no Live runtime, activation or provider send is installed.
+// OFFLINE price/fact rows model setup only; no activation or provider send is performed.
 Paymenter\Extensions\Servers\Domains\Services\Runtime::register();
 same('active',UpgradeGate::routeState()['state'],'Real fresh installation has already activated current catalogue');
 $server->settings()->where('key',LiveActivation::KEY)->delete();
