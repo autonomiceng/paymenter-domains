@@ -50,7 +50,10 @@ $conn = DB::connection(); $grammar = $conn->getQueryGrammar();
 $strict = new class($conn) extends \Illuminate\Database\Query\Grammars\SQLiteGrammar {
     public array $locks = [];
     protected function compileLock(\Illuminate\Database\Query\Builder $query, $value)
-    { $this->locks[] = $query->from; return ''; }
+    {
+        $keys=array_column(array_filter($query->wheres??[],static fn($where)=>($where['column']??null)==='key'),'value');
+        $this->locks[] = [$query->from,$keys]; return '';
+    }
 };
 $checkRevisions = static function () use ($local, $localBinding, $revision): void {
     same($revision, $local->holdingCredentialRevision($localBinding), 'Holding checks retain the local credential revision');
@@ -68,7 +71,11 @@ try {
     ] as $name=>$check){
         $strict->locks=[];
         DB::transaction($check);
-        expect(in_array('settings',$strict->locks,true),$name.' independently locks settings');
+        $settings=array_values(array_filter($strict->locks,static fn($lock)=>$lock[0]==='settings'));
+        $counts=array_count_values(array_merge(...array_column($settings,1)));ksort($counts);
+        $expected=['domains_credentials'=>1,'domains_verified_credentials'=>1,LocalAccountEnrollment::KEY=>$name==='readiness'?1:2];ksort($expected);
+        same($expected,$counts,$name.' locks every credential setting with the required enrollment reread');
+        same(array_sum($expected),count($settings),$name.' has no broad or unaccounted settings locks');
     }
 } finally { $conn->setQueryGrammar($grammar); }
 same($before, count($wire->calls), 'Credential checks never contact the registrar');
