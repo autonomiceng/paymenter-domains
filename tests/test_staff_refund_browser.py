@@ -111,6 +111,7 @@ def main():
             db.execute("CREATE TRIGGER refund_browser_credit_fail BEFORE UPDATE ON credits WHEN OLD.amount > 0 "
                        "BEGIN SELECT RAISE(ABORT, 'synthetic credit failure'); END")
         release_fixture_cache(app)
+        release_fixture_cache((app/'vendor').resolve(strict=True))
         steps, saved = browse(app, root, facts)
         operation = saved['operations']
 
