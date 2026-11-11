@@ -33,7 +33,8 @@ foreach (['ordinary.com', 'example.com', 'two.labels-placeholder.com', 'not-plac
 function fixtureHostnameLiterals(string $source): array
 {
     $names = []; $include = false;
-    $identifiers = ['admin.domains.manage', 'admin.invoices.update', '_old_input.transfer_code', 'domains.domains.'];
+    $identifiers = ['admin.domains.manage', 'admin.invoices.update', '_old_input.transfer_code',
+        'domains.domains.', 'domains.domains.show'];
     foreach (token_get_all($source) as $token) {
         if (is_string($token)) { if ($token === ';') { $include = false; } continue; }
         if (in_array($token[0], [T_REQUIRE, T_REQUIRE_ONCE, T_INCLUDE, T_INCLUDE_ONCE], true)) { $include = true; }
@@ -71,7 +72,7 @@ $probe = <<<'SOURCE'
 <?php
 require __DIR__.'/Support/fixture.php';
 $permissions = ['admin.domains.manage', 'admin.invoices.update'];
-$session = '_old_input.transfer_code'; $route = 'domains.domains.';
+$session = '_old_input.transfer_code'; $routes = ['domains.domains.', 'domains.domains.show'];
 $names = ['unreserved.io', 'https://nested.unreserved.dev/path', 'staff@mail.unreserved.cloud',
     'fixture.test', 'fixture.example', 'fixture.invalid', 'ns_1.example.net', 'example.com.evil.io'];
 SOURCE;
@@ -87,7 +88,8 @@ foreach (['fixture.test', 'fixture.example', 'fixture.invalid', 'ns_1.example.ne
 }
 foreach (['unreserved.io', 'nested.unreserved.dev', 'mail.unreserved.cloud', 'example.com.evil.io',
     'fixture.test.evil.io', 'notexample.com', 'two.labels-placeholder.com', 'unreserved.manage',
-    'child.data.iana.org', 'dns6.name-services.com', 'reseller.enom.com.evil.test.io'] as $name) {
+    'child.data.iana.org', 'dns6.name-services.com', 'reseller.enom.com.evil.test.io',
+    'domains.domains.show.evil.io'] as $name) {
     same([$name], fixtureHostnameLiterals("<?php \$name = '".$name."';"), 'Refused hostname reaches the scanner');
     expect(!fixtureHostnameAllowed($name), 'Nonreserved hostname is refused without partial-match exceptions: '.$name);
 }
