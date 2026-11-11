@@ -34,8 +34,9 @@ final class OperationActions
             if(in_array($name,[...self::REASON,'disposition'],true)){
                 $action->requiresConfirmation()->modalHeading($name==='disposition'?$label:$label.'?')->modalSubmitActionLabel($label)->modalWidth('lg')
                     ->modalDescription($complimentaryClosure?'Closes this complimentary order and its service. Nothing is charged or credited.':($name==='refund'?self::refundWords($op):self::description($name)));
-                // A destructive confirm is red wherever the action is shown, including as a notice button.
-                if($name==='refund'){$action->modalSubmitAction(fn(Action $submit)=>$submit->color('danger'));}
+                // A destructive confirm is red wherever the action is shown, including as a notice button. Filament passes the
+                // confirm button only as $action; any other name gets this action itself, whose button reopens the dialog.
+                if($name==='refund'){$action->modalSubmitAction(fn(Action $action)=>$action->color('danger'));}
             }
             $account=$name==='release'&&!$contactRecovery&&$op->state==='held'?RequestFacts::account($op)['account']:null;
             // A held complimentary cost comes back on release, so release sends nothing until the cost is approved.
@@ -60,14 +61,15 @@ final class OperationActions
                     $notification->title($check['title']??($contactRecovery?'Contact details updated':($complimentaryClosure?'Order closed':self::DONE[$name])))
                         ->body($check['body']??($name==='resume_reads'?'The system will check again on its next turn.':($name==='recheck'?'Open this request for its current result and next step.':($sends===null?null:"The {$sends} goes to Enom within a few minutes."))))->send();
                 }catch(StaffReviewRefused $error){
-                    ($error->getMessage()===StaffOperationReview::CHANGED?self::stale($name,$op->fresh()):Notification::make()->danger()->title(self::FAILED)->body($error->getMessage()))->send();
+                    ($error->getMessage()===StaffOperationReview::CHANGED?self::stale($name,$op->fresh()):Notification::make()->danger()->persistent()->title(self::FAILED)->body($error->getMessage()))->send();
                 }catch(\Throwable $error){
                     $code=OperationFailure::code($error);
                     Log::warning('Domains staff operation refused.',['reason'=>$code,'action'=>$name,'operation_id'=>(int)$op->id]);
                     $why=OperationFailure::known($error)?->message() ?? 'Reload the page and try again. Ref '.$code.'.';
                     $cancelled=null;
                     try{$cancelled=$name==='refund'?self::refundPending($op->fresh(),$code):null;}catch(\Throwable){}
-                    ($cancelled??Notification::make()->danger()->title(self::FAILED)->body($why))->send();}
+                    // A failure stays on screen until staff close it.
+                    ($cancelled??Notification::make()->danger()->title(self::FAILED)->body($why))->persistent()->send();}
             });
         }
         return $out;

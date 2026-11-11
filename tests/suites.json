@@ -54,7 +54,8 @@
   ],
   "ui": [
     "tests/test_rendered_layout.py",
-    "tests/test_rendered_managed_dns.py"
+    "tests/test_rendered_managed_dns.py",
+    "tests/test_staff_refund_browser.py"
   ],
   "runner": [
     "tests/runner-test.php",

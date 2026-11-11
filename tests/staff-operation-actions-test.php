@@ -25,6 +25,10 @@ commerceReject(fn()=>$run($op,'refund')); $staff->role->update(['permissions'=>$
 // Native modal reason validation on a money action, then allowed release, audit, immutable attempt and single-use key.
 $page->mountAction('refund')->setActionData(['reason'=>'no'])->callMountedAction()->assertHasActionErrors(['reason'=>'min']);
 $page->unmountAction()->mountAction('refund')->setActionData(['reason'=>"Review\nwith newline"])->callMountedAction()->assertHasActionErrors(['reason'=>'regex']);
+// The dialog's confirm button submits the typed reason; the refund action itself as that button only reopens the dialog.
+$submit=$page->unmountAction()->mountAction('refund')->instance()->getMountedAction()->getModalSubmitAction();
+same(['submit','danger'],[$submit?->getName(),$submit?->getColor()],'Cancel and refund confirms with a red submit button');
+$page->unmountAction();
 $key=$ticket($op,'release'); $before=$op->attempt; $run($op,'release',$key);
 same('queued',$op->fresh()->state,'Unattempted hold queues through explicit writer'); same($before,$op->fresh()->attempt,'No attempt reset');
 $audit=$op->fresh()->policy['staff_actions'][0]; same($staff->id,$audit['actor_id'],'Current staff audited');
@@ -50,7 +54,7 @@ same(null,$op->domain->fresh()->reservation_name,'Proven unsent registration rel
 // A failed native credit keeps the audited rejection; the separately permitted UI retry succeeds once.
 $retry=$held('staff-credit-retry-placeholder.com'); $before=$credit();
 DB::unprepared("CREATE TRIGGER staff_credit_fail BEFORE UPDATE ON credits BEGIN SELECT RAISE(ABORT, 'synthetic failure'); END");
-$retryPage=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$retry->id])->assertActionVisible('refund')->callAction('refund',['reason'=>'Customer cancelled unsent order'])->assertHasNoActionErrors()->assertNotified(Notification::make()->warning()->title('Cancelled, refund not finished')->body("The order and its service are cancelled. The refund hasn't gone through (ref database_failure). Use Retry refund. It reuses this refund, so the customer is never refunded twice."))
+$retryPage=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$retry->id])->assertActionVisible('refund')->callAction('refund',['reason'=>'Customer cancelled unsent order'])->assertHasNoActionErrors()->assertNotified(Notification::make()->warning()->persistent()->title('Cancelled, refund not finished')->body("The order and its service are cancelled. The refund hasn't gone through (ref database_failure). Use Retry refund. It reuses this refund, so the customer is never refunded twice."))
     ->assertSee('Cancelled')->assertSee('No credit added')->assertDontSee('Cancelled, credit added')->assertDontSee('On hold')->assertDontSee($holdText)
     ->assertActionHidden('refund')->assertActionHidden('release')->assertActionVisible('credit');
 same(App\Models\Service::STATUS_CANCELLED,App\Models\Service::findOrFail($retry->service_id)->status,'The service is cancelled before the credit');
@@ -74,6 +78,11 @@ echo "Native disposition passed.\n";
 $stale=$held('staff-stale-placeholder.com');$open=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$stale->id]);$key=$ticket($stale,'release');
 $stale->update(['safe_code'=>'funding']);$open->call('mountAction','release')->assertNotified(Notification::make()->warning()->title('This request changed')->body('Nothing new was done. This page is now up to date.'));
 $open->assertSee('Not sent: low registrar balance')->assertDontSee($holdText);
+// A dialog left open while another tab refunds answers its confirm the same way and refunds nothing more.
+$twice=$held('staff-stale-confirm-placeholder.com');$dialog=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$twice->id])->mountAction('refund');
+$run($twice,'refund');$before=$credit();
+$dialog->callMountedAction()->assertNotified(Notification::make()->warning()->title('This request changed')->body('Nothing new was done. This page is now up to date.'));
+same([[],'rejected',$before],[$dialog->get('mountedActions'),$twice->fresh()->state,$credit()],'An old dialog closes without a second refund');
 commerceReject(fn()=>$run($stale,'release',$key));
 $foreign=$held('staff-foreign-placeholder.com');$key=$ticket($stale->fresh(),'refund');
 commerceReject(fn()=>$service->run($staff,$foreign->domain_id,$foreign->id,'refund',$key,'Cross domain review refused'));
@@ -120,7 +129,7 @@ foreach(['read','decrypt'] as $failure){
     session()->forget('filament.notifications');
     try{($refundAction->getActionFunction())(['review_key'=>'synthetic-feedback-key','reason'=>'Review failed refund feedback']);}
     finally{$readFailure=false;app()->instance(StaffOperations::class,$service);}
-    Notification::assertNotified(Notification::make()->danger()->title(Paymenter\Extensions\Servers\Domains\Admin\Support\OperationActions::FAILED)->body('Reload the page and try again. Ref producer_failed.'));
+    Notification::assertNotified(Notification::make()->danger()->persistent()->title(Paymenter\Extensions\Servers\Domains\Admin\Support\OperationActions::FAILED)->body('Reload the page and try again. Ref producer_failed.'));
     DB::table('domains_operations')->where('id',$feedback->id)->update(['state'=>'held','funding'=>$storedFunding]);
 }
 same(2,$primaryFailures,'Both controls reach the original failure handler');

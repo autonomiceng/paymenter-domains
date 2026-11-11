@@ -143,7 +143,7 @@ echo "Cancel and refund cancels first, then refunds once.\n";
 $op=$heldOrder('held-contact-refund-fails-placeholder.com');$viaGateway($op,'');$sends=MoneyReceiptGateway::$sends;
 $page=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertActionVisible('refund')->assertActionVisible('release');
 $page->callAction('refund',['reason'=>'Customer asked for a refund'])->assertHasNoActionErrors()
-    ->assertNotified(Notification::make()->warning()->title('Cancelled, refund not finished')
+    ->assertNotified(Notification::make()->warning()->persistent()->title('Cancelled, refund not finished')
         ->body("The order and its service are cancelled. The refund hasn't gone through (ref guard_refused). Use Retry refund. It reuses this refund, so the customer is never refunded twice."));
 same(['rejected','refund_approved'],[$op->fresh()->state,$op->fresh()->safe_code],'The cancel is kept');
 same(App\Models\Service::STATUS_CANCELLED,$serviceStatus($op),'The service stays cancelled when the refund fails');

@@ -47,13 +47,24 @@ class ViewOperation extends ViewRecord
     /** A hidden action unmounts in silence, so an old click is answered here, before Filament drops it. */
     public function mountAction(string $name, array $arguments=[], array $context=[]): mixed
     {
-        if (isset(StaffOperationReview::ACTIONS[$name])) {
-            $op=$this->getRecord()->refresh();
-            if (!hash_equals($this->reviewStamp,StaffOperationReview::stamp($op,$op->domain))||!OperationActions::relevant($name,$op)) {
-                OperationActions::stale($name,$op)->send(); $this->reloadRequest(); return null;
-            }
-        }
+        if ($this->changed($name)) { OperationActions::stale($name,$this->getRecord())->send(); $this->reloadRequest(); return null; }
         return parent::mountAction($name,$arguments,$context);
+    }
+    /** A dialog opened before the change would do nothing on confirm, so its confirm closes it with the same answer. */
+    public function callMountedAction(array $arguments=[]): mixed
+    {
+        $name=$this->mountedActions[0]['name']??null;
+        if (is_string($name)&&$this->changed($name)) {
+            while ($this->mountedActions!==[]) { $this->unmountAction(false); }
+            OperationActions::stale($name,$this->getRecord())->send(); $this->reloadRequest(); return null;
+        }
+        return parent::callMountedAction($arguments);
+    }
+    private function changed(string $name): bool
+    {
+        if (!isset(StaffOperationReview::ACTIONS[$name])) { return false; }
+        $op=$this->getRecord()->refresh();
+        return !hash_equals($this->reviewStamp,StaffOperationReview::stamp($op,$op->domain))||!OperationActions::relevant($name,$op);
     }
     protected function afterActionCalled(Action $action): void
     {

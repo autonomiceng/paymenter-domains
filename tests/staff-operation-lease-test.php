@@ -59,7 +59,7 @@ $action=collect(OperationActions::make($op,StaffOperationReview::stamp($op,$op->
 \Illuminate\Support\Facades\Auth::setUser($staff);
 $refused(fn()=>$run($op->fresh(),'recheck'));
 ($action->getActionFunction())(['review_key'=>$oldKey,'reason'=>'Review current worker']);
-Notification::assertNotified(Notification::make()->danger()->title("Couldn't update request")->body($message));
+Notification::assertNotified(Notification::make()->danger()->persistent()->title("Couldn't update request")->body($message));
 // Every action is hidden during a live lease, including financial actions and observation resume.
 foreach(array_keys(StaffOperationReview::ACTIONS) as $action){same(false,OperationActions::relevant($action,$op->fresh()),'Live lease hides '.$action);}
 // Equal-to-now and absent leases have the same expired semantics as OperationClaims.
