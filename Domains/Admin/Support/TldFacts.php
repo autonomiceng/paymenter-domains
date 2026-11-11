@@ -69,9 +69,9 @@ final class TldFacts
     /** "1 year", "3 years" or "1 to 3 years". */
     public static function terms(Tld $t): string
     {
-        $catalogue=self::catalogue();$t=(clone $t)->forceFill(['min_years'=>$catalogue->setting($t,'min_years'),'max_years'=>$catalogue->setting($t,'max_years')]);
+        $catalogue=self::catalogue();$min=$catalogue->setting($t,'min_years');$max=$catalogue->setting($t,'max_years');
         $years=static fn(int $n):string=>$n.' '.($n===1?'year':'years');
-        return $t->min_years===$t->max_years?$years((int)$t->min_years):$t->min_years.' to '.$years((int)$t->max_years);
+        return $min===$max?$years((int)$min):$min.' to '.$years((int)$max);
     }
     /** Saved account refresh, shared by list cells and dialogs. The retry note is left out where a Sync prices button sits beside it. */
     public static function refreshText(array $status,bool $retry=true): string

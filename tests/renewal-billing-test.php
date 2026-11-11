@@ -33,7 +33,7 @@ $setting('domains_billing_enabled', false); $setting('domains_manual_renewals_en
 commerceReject(fn () => $billing->invoice($d->id, commerceUser()));
 // Seller and sales flags do not change holder retail; emergency spending pauses block new debt.
 activeFixtureSeller($sellers,'com',(int)\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->value('revision'), $tlds[1]->server_id, true, true, $clock->now());
-$tlds[0]->update(['enabled' => false, 'register_enabled' => false, 'renew_enabled' => false]);
+$tlds[0]->update(tldColumns(['enabled' => false, 'register_enabled' => false, 'renew_enabled' => false],$tlds[0]));
 $bindings->setProcessing($server->id, false);
 $clock->instant = new DateTimeImmutable('2027-09-26T12:00:00Z');
 commerceReject(fn () => $billing->invoice($d->id, $user, 1));

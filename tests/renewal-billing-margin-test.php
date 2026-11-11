@@ -15,7 +15,7 @@ $holderBinding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::b
 $renewQuery=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($holderBinding,['com'],'renew');
 // A separate real completed domain exercises scheduled issue and bill+alert below wholesale.
 $bindings->setProcessing($server->id, true, syntheticActivation());
-$tld->update(['enabled' => true, 'register_enabled' => true, 'renew_enabled' => true]); activeFixtureRepublish($prices,$tld); activeFixtureRepublish($native,$tld->id, $now);
+$tld->update(tldColumns(['enabled' => true, 'register_enabled' => true, 'renew_enabled' => true],$tld)); activeFixtureRepublish($prices,$tld); activeFixtureRepublish($native,$tld->id, $now);
 activeFixtureSeller($sellers,'com',(int)\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->value('revision'), $server->id, true, true, $now);
 Carbon\Carbon::setTestNow(); Carbon\CarbonImmutable::setTestNow();
 [$next] = $prepare(placeholderComFixtureName('billing-below-placeholder.com')); same('succeeded', $reconcile->run($next->id)->state, 'Second real anchor completed');

@@ -10,9 +10,9 @@ use Paymenter\Extensions\Servers\Domains\Services\{FoundationSchema, PricingRule
 // Default-rule writes require an active catalogue generation, even in this arithmetic fixture.
 (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
 $a = fixtureAccount(1, 'enom', 'account-a'); $b = fixtureAccount(2, 'namesilo', 'account-b');
-foreach (['com', 'net', 'org'] as $ending) { Tld::create([...$a, 'tld' => $ending]); }
-$override = Tld::create([...$a, 'tld' => 'io', 'use_default_rule' => false, 'pricing_mode' => 'markup_amount', 'markup' => '2.00']);
-$other = Tld::create([...$b, 'tld' => 'com']);
+foreach (['com', 'net', 'org'] as $ending) { Tld::create(tldColumns([...$a, 'tld' => $ending])); }
+$override = Tld::create(tldColumns([...$a, 'tld' => 'io', 'use_default_rule' => false, 'pricing_mode' => 'markup_amount', 'markup' => '2.00']));
+$other = Tld::create(tldColumns([...$b, 'tld' => 'com']));
 $override->refresh(); $other->refresh();
 $rules = new PricingRules;
 same('30.00', $rules->rule($other)['markup'], 'Account starts with standard default');

@@ -120,7 +120,7 @@ $reject(static fn () => Operation::create(array_replace($op->getAttributes(), ['
 DB::table('domains_domains')->where('id', $domain->id)->update(['authority_generation' => 0]); // retained/corrupt fixture
 $reject(static fn () => Operation::create(array_replace($op->getAttributes(), ['id' => 2, 'operation_key' => 'invalid:zero', 'authority_generation' => 0])));
 DB::table('domains_domains')->where('id', $domain->id)->update(['authority_generation' => 1]);
-$reject(static fn () => Tld::create(['tld' => 'com', 'server_id' => 1, 'registrar_key' => 'namesilo', 'account_fingerprint' => $b->fingerprint]));
+$reject(static fn () => Tld::create(tldColumns(['tld' => 'com', 'server_id' => 1, 'registrar_key' => 'namesilo', 'account_fingerprint' => $b->fingerprint])));
 DB::table((new Server)->getTable())->where('id', 1)->update(['extension' => 'Other']); // Deliberate retained corruption bypasses model identity guards.
 $reject(static fn () => $bindings->reader(1));
 DB::table((new Server)->getTable())->where('id', 1)->update(['extension' => 'Domains']);

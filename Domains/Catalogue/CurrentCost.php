@@ -9,6 +9,7 @@ final class CurrentCost
     public static function read(object $p): ?Cost
     {
         if($p->cost_enabled===null){return null;}
+        if(!in_array($p->cost_enabled,[true,false,0,1,'0','1'],true)||!$p->observed_at||!$p->fresh_until){throw new \DomainException('Invalid current cost.');}
         $amount=$p->wholesale===null?null:OfferState::money($p->wholesale,4);
         if($p->wholesale!==null&&$amount===null){throw new \DomainException('Invalid current cost.');}
         return new Cost($p->action,(int)$p->term,(bool)$p->cost_enabled,$amount,CostUnit::from($p->cost_source_unit),$p->source,
