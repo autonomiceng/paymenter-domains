@@ -208,7 +208,7 @@ final readonly class RenewalCycles
                     ...($term !== null ? ['term_rule' => $term] : [])]]]);
         });
     }
-    /** Staff complimentary form: the owner's renewal years, each with its new expiry and the exact registrar cost Beco covers. */
+    /** Staff complimentary form: the owner's renewal years, each with its new expiry and the exact registrar cost we cover. */
     public function complimentaryOptions(int $domainId, User $actor): array
     {
         $seed = Domain::findOrFail($domainId);

@@ -67,12 +67,12 @@ expect(str_contains($waiting['class'],'domains-warn'),'Requests that wait on sta
 // Ticking only On hold on the list shows only the held order, not every other request.
 same(1,$listed(RegistrarFacts::requestsUrl($server,['on_hold']),ListOperations::class),'On hold alone lists only held requests');
 
-// Due in 30 days: a renewal that waits on Beco's price read is told plainly, never amber and never a Sync prices job.
+// Due in 30 days: a renewal that waits on our price read is told plainly, never amber and never a Sync prices job.
 $unpriced=['unreadable'=>0,'without_cost'=>1,'unpriced'=>1];
 $gap=RegistrarFacts::dueGap($account,$unpriced);
 expect($gap!==null&&!$gap['act']&&str_starts_with($gap['text'],'1 renewal not priced yet. Fills in by itself after the '),'An unpriced renewal waits on the price read: '.json_encode($gap));
 $line=(string)RegistrarFacts::dueLine($gap);
-expect(!str_contains($line,'domains-warn')&&!str_contains($line,'Sync prices'),'Waiting on Beco is not amber: '.$line);
+expect(!str_contains($line,'domains-warn')&&!str_contains($line,'Sync prices'),'Waiting on our price read is not amber: '.$line);
 $undated=RegistrarFacts::dueGap($account,['unreadable'=>0,'without_cost'=>2,'unpriced'=>1]);
 expect(str_contains($undated['text'],'1 renewal with no known date')&&str_contains($undated['text'],'1 renewal not priced yet.'),
     'Mixed gaps explain both the undated and unpriced renewals');
@@ -81,9 +81,9 @@ expect(str_contains($mixedNote['text'],'1 renewal not priced yet.'),'The Registr
 expect($undated['act']&&str_contains((string)RegistrarFacts::dueLine($undated),'domains-warn'),'A renewal with no known date needs staff, so it is amber');
 // The Registrars list Note says the same words and is not amber for it.
 $note=(new ReflectionMethod(RegistrarSetup::class,'note'))->invoke(null,null,['value'=>'USD 9.00','low'=>false,'cause'=>null,...$unpriced],$account);
-expect(!$note['act']&&str_contains((string)$note['text'],'not priced yet')&&!str_contains((string)$note['text'],'Sync prices'),'The Note waits on Beco too: '.json_encode($note));
+expect(!$note['act']&&str_contains((string)$note['text'],'not priced yet')&&!str_contains((string)$note['text'],'Sync prices'),'The Note waits on our price read too: '.json_encode($note));
 
-// A failed price read that Beco retries by itself (registrar timeout) stays grey and shows the retry time;
+// A failed price read that we retry automatically (registrar timeout) stays grey and shows the retry time;
 // only a cause staff must fix is amber, with its step.
 $retryAt=now()->getTimestamp()+600;
 $failRead=static function(string $code)use($server,$account,$retryAt):void {
@@ -95,15 +95,15 @@ $failRead('read_deadline');
 $progress=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed()?->progress($server)??[];
 same(['retrying','read_deadline',$retryAt],[$progress['state']??null,$progress['failure']??null,$progress['due_at']??null],'The fixture read is retrying a timeout');
 $retry=RegistrarFacts::dueGap($account,$unpriced);
-same(["1 renewal not priced yet. The price read failed: Registrar didn't answer in time. Fills in by itself after Beco retries the read",false,$retryAt],
-    [$retry['text']??null,$retry['act']??null,$retry['at']??null],'A timeout Beco retries is not a staff job and shows the retry time');
+same(["1 renewal not priced yet. The price read failed: Registrar didn't answer in time. Fills in by itself after we retry the read",false,$retryAt],
+    [$retry['text']??null,$retry['act']??null,$retry['at']??null],'A timeout we retry is not a staff job and shows the retry time');
 $retryLine=(string)RegistrarFacts::dueLine($retry);
 expect(!str_contains($retryLine,'domains-warn')&&!str_contains($retryLine,'Fix that'),'A retried read is not amber: '.$retryLine);
 $note=(new ReflectionMethod(RegistrarSetup::class,'note'))->invoke(null,null,['value'=>'USD 9.00','low'=>false,'cause'=>null,...$unpriced],$account);
 expect(!$note['act'],'The Note does not make a retried read a job: '.json_encode($note));
 $failRead('configuration_unverified');
 $fix=RegistrarFacts::dueGap($account,$unpriced);
-same(["1 renewal not priced yet. The price read failed: Couldn't verify the registrar account settings. Use More, then Edit API credentials. Beco then fills the cost on the next read.",true],
+same(["1 renewal not priced yet. The price read failed: Couldn't verify the registrar account settings. Use More, then Edit API credentials. We then fill the cost on the next read.",true],
     [$fix['text']??null,$fix['act']??null],'A cause staff must fix is amber with its step');
 expect(str_contains((string)RegistrarFacts::dueLine($fix),'domains-warn'),'A staff-fix read failure is amber');
 same([],array_diff(array_keys(\Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::SYNC_STEPS),array_keys(\Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::CAUSES)),'Every staff step names a known cause');

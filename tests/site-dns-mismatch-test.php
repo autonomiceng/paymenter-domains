@@ -7,7 +7,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{SiteDnsDefault,DomainSummarie
 use Paymenter\Extensions\Servers\Domains\Presentation\{WatchPage,StatusPill};
 use Paymenter\Extensions\Servers\Domains\Models\WatchNotice;
 // The native owner/source, stamped observations, planner, DTO and Blade renderers must agree on the same history.
-config(['domains.site_dns_default.nameservers'=>['ns1.beco.test','ns2.beco.test'],'settings.company_name'=>'Beco']);
+config(['domains.site_dns_default.nameservers'=>['ns1.example.test','ns2.example.test'],'settings.company_name'=>'Example Hosting']);
 $f=noticeFixture();extract($f);require dirname(__DIR__).'/Domains/routes/owned.php';app('router')->getRoutes()->refreshNameLookups();
 DB::table('domains_watch_names')->where('id',$id)->update(['ns_profile_id'=>null,'expected_dns'=>null,'profile_revision'=>0]);
 $dns->enroll($id,$uid,$now);noticeRegistry($f,$now,100);$reader=new DomainSummaries();
@@ -21,8 +21,8 @@ $check=static function(int $at,bool $matched)use($planner,$id,$uid,$owner,$reade
     }
     $notice=WatchPage::notice($s,[$data+['kind'=>'ns_changed']],['ns_changed']);$history=WatchPage::history([$data+['kind'=>'ns_changed']]);
     $copy=$notice['text'].' '.$history[0]['label'].' '.view('domains::partials.summary',['summary'=>$s])->render().' '.(StatusPill::summary($s)['label']??'').' '.$app['title'].' '.$app['body'].' '.$mail['mail']->envelope()->subject.' '.$mail['mail']->render().' '.view('domains::mail-text',$mail['mail']->content()->with)->render();
-    if($matched){expect(str_contains($notice['text'],'stopped using Beco nameservers')&&str_contains($app['body'],'no longer uses Beco nameservers')&&str_contains($app['title'],'Nameservers changed'),'Earlier match permits change wording in portal and notices');}
-    else{expect(str_contains($notice['text'],'does not use Beco nameservers')&&str_contains($app['body'],'does not use Beco nameservers'),'Never-matched portal and opt-in notice explain current mismatch');
+    if($matched){expect(str_contains($notice['text'],'stopped using Example Hosting nameservers')&&str_contains($app['body'],'no longer uses Example Hosting nameservers')&&str_contains($app['title'],'Nameservers changed'),'Earlier match permits change wording in portal and notices');}
+    else{expect(str_contains($notice['text'],'does not use Example Hosting nameservers')&&str_contains($app['body'],'does not use Example Hosting nameservers'),'Never-matched portal and opt-in notice explain current mismatch');
         foreach(['stopped using','no longer uses','Nameservers changed','Change them back']as$claim){expect(!str_contains($copy,$claim),'No unproved change claim: '.$claim);}}
 };
 noticeDns($f,$now);noticeDns($f,$now+900);$check($now+902,false);
@@ -40,8 +40,8 @@ $old='As of {{ $date }}, {{ $domain }} @if($previously_matched)no longer uses @e
 $template->update(['subject'=>'Custom watch subject','in_app_body'=>$old,'body'=>str_replace($definitions['in_app_body'],$old,$definitions['body'])]);
 WatchNoticeTemplates::ensure();$template->refresh();same('Custom watch subject',$template->subject,'Spacing upgrade preserves staff subject customizations');
 foreach([false=>'does not use',true=>'no longer uses']as$matched=>$phrase){
-    $data=['date'=>'Jan 1, 2030','domain'=>'example.com','nameservers'=>'Beco nameservers','domain_url'=>'https://example.com/domains','previously_matched'=>(bool)$matched];
-    $expected='As of Jan 1, 2030, example.com '.$phrase.' Beco nameservers. If you didn’t expect this, contact support.';
+    $data=['date'=>'Jan 1, 2030','domain'=>'example.com','nameservers'=>'Example Hosting nameservers','domain_url'=>'https://example.com/domains','previously_matched'=>(bool)$matched];
+    $expected='As of Jan 1, 2030, example.com '.$phrase.' Example Hosting nameservers. If you didn’t expect this, contact support.';
     same($expected,\Illuminate\Support\Facades\Blade::render($template->in_app_body,$data),'Stored default in-app wording upgrades with exact spacing');
     expect(str_contains(\Illuminate\Support\Facades\Blade::render($template->body,$data),$expected),'Stored default mail wording upgrades with exact spacing');
 }

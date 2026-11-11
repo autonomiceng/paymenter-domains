@@ -34,7 +34,7 @@ StaffInvoiceReversalGateway::$observations['pi_staff_invoice']=[['kind'=>'disput
 same(['words'=>'$10.99 lost to a dispute.','act'=>true],RequestFacts::for($op->fresh())['payment_reversed']??null,'The request states the lost dispute and its amount');
 $html=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertSee('$10.99 lost to a dispute.')->html();
 $at=strpos($html,'$10.99 lost to a dispute.');$before=substr($html,max(0,$at-3000),3000);
-preg_match_all('/data-beco-tone="([a-z]+)"/',$before,$tones);
+preg_match_all('/data-domains-tone="([a-z]+)"/',$before,$tones);
 same('warn',end($tones[1])?:null,'The lost dispute reads amber');
 // Every recognised refund and dispute state has its words, and only disputes, failures and flagged rows ask staff to act.
 $row=static fn(array $over)=>[['kind'=>'refund','id'=>'re_staff','status'=>'refunded','needs_review'=>false,

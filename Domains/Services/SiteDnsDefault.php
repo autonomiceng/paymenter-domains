@@ -75,7 +75,7 @@ final class SiteDnsDefault
                 try{$routing=new RoutingProfile($names,[],[]);}catch(\InvalidArgumentException|\TypeError){return false;}
                 try{self::validateRegistrars($routing->nameservers);}catch(\DomainException){return false;}
                 // System installation has no staff actor. Quiet maintenance preserves normal staff validation.
-                $p=new WatchProfile(['name'=>'Beco DNS','nameservers'=>$routing->nameservers,'website_endpoints'=>[],
+                $p=new WatchProfile(['name'=>'Site DNS','nameservers'=>$routing->nameservers,'website_endpoints'=>[],
                     'email_endpoints'=>[],'enabled'=>true,'edited_by'=>0,'reason'=>'Deployment DNS default']);
                 $p->saveQuietly();
                 self::write($p);

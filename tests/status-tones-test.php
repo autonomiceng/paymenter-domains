@@ -26,4 +26,4 @@ foreach (['registration_held','registration_unconfirmed'] as $state) {
     same('pending_registration',DomainStatus::key($state),'A stopped registration stays in the Pending registration filter, the word its rows show');
 }
 same(['success'=>'ok','gray'=>'off','info'=>'prog','warning'=>'warn','danger'=>'err'],StatusMark::TONES,'One mapping from status colours to staff marks');
-same(['data-beco-tone'=>null,'data-beco-record'=>'domain-1'],StatusMark::attributes('pink','domain-1'),'An unknown colour gets no mark, so it keeps stock styling');
+same(['data-domains-tone'=>null,'data-domains-record'=>'domain-1'],StatusMark::attributes('pink','domain-1'),'An unknown colour gets no mark, so it keeps stock styling');

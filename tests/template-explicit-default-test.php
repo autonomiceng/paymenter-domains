@@ -8,7 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{WatchName,WatchProfile};
 use Paymenter\Extensions\Servers\Domains\Services\{SiteDnsDefault,WatchDnsChecks,WatchWork,WatchDiscoveryWork};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeDnsReader;
 // Native after-commit hooks and the durable enrollment cursor determine whether a real read can start.
-config(['domains.site_dns_default.nameservers'=>['ns1.beco.test','ns2.beco.test']]);extract(dnsFixture());
+config(['domains.site_dns_default.nameservers'=>['ns1.example.test','ns2.example.test']]);extract(dnsFixture());
 $now=1800000000;$reader=new FakeDnsReader();$checks=new WatchDnsChecks(true);
 DB::table('domains_watch_names')->where('id',$watch->id)->update(['ns_profile_id'=>null,'profile_revision'=>0,'expected_dns'=>null]);
 $work=new WatchWork($reader,new WatchDiscoveryWork(static fn()=>0),true,fn()=>$now);app()->instance(WatchWork::class,$work);

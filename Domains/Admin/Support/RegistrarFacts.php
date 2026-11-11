@@ -134,7 +134,7 @@ final class RegistrarFacts
             :self::readGap($n($b['unpriced']),$read,app(Clock::class)->now()->getTimestamp(),$b['unobserved']??[]);
         return $gap===null?$priced:[...$gap,'text'=>$gap['text'].' '.$priced['text']];
     }
-    /** Unpriced renewals by the price read's state. Beco retries a failed read by itself (OfferWork backoff), so only a
+    /** Unpriced renewals by the price read's state. We retry a failed read automatically (OfferWork backoff), so only a
      * cause staff must fix (TldFacts::SYNC_STEPS) is amber, with its step. @return array{text:string,act:bool,at:?int} */
     public static function readGap(string $count,array $read,int $now,array $unobserved=[]): array
     {
@@ -142,9 +142,9 @@ final class RegistrarFacts
         if (!empty($read['failure'])) {
             $cause=strtok(TldFacts::syncCause($read['failure']),'.');
             if (($step=TldFacts::syncStep($read['failure']))!==null) {
-                return ['text'=>$count.' not priced yet. The price read failed: '.$cause.'. '.$step.' Beco then fills the cost on the next read.','act'=>true,'at'=>null];
+                return ['text'=>$count.' not priced yet. The price read failed: '.$cause.'. '.$step.' We then fill the cost on the next read.','act'=>true,'at'=>null];
             }
-            return ['text'=>$count.' not priced yet. The price read failed: '.$cause.'. '.\Paymenter\Extensions\Servers\Domains\Presentation\Missing::fills('after Beco retries the read'),
+            return ['text'=>$count.' not priced yet. The price read failed: '.$cause.'. '.\Paymenter\Extensions\Servers\Domains\Presentation\Missing::fills('after we retry the read'),
                 'act'=>false,'at'=>($read['state']??null)==='retrying'?$at:null];
         }
         if($unobserved&&($read['succeeded_at']??0)>$now-86400&&empty($read['remaining'])){

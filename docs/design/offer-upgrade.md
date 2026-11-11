@@ -104,7 +104,7 @@ and a bounded local wake happen after commit. There is still one minute consumer
 
 1. Record the exact deployed code/schema and recovery procedure. Enter maintenance for staff writes,
    public checkout/payment callbacks and financial jobs as well as catalogue jobs; otherwise the
-   retained/native comparison cannot be stable. Stop `beco-demo-prices.timer`, the Domains scheduler,
+   retained/native comparison cannot be stable. Stop the price-update timer, the Domains scheduler,
    queue workers and manual Sync/import entry points. Record which services were running for restart.
    Let in-flight work finish; inspect both queue claim columns, observation-work claims and read-budget
    leases. A timeout does not prove that a process stopped. Do not clear claims or seed/reset tables.
