@@ -19,9 +19,14 @@ foreach(['',str_repeat('x',513),"bad\nvalue",[1],"bad\x7fvalue"] as $invalid){co
 foreach([[$other,'POST',false],[$user,'GET',false],[$user,'POST',true]] as [$actor,$method,$query]){
     commerceReject(fn()=>$inputs->submitCode($post($actor,'synthetic',$method,$query),$op->id));
 }
+\Paymenter\Extensions\Servers\Domains\Services\RuntimeSchema::install();
+DB::table('domains_runtime_operations')->updateOrInsert(['operation_id'=>$op->id],['due_at'=>$now->getTimestamp()+900]);
 $code='  Synthetic:Case-Sensitive  ';
 same(null,$inputs->submitCode($post($user,$code),$op->id),'No code/model response');
 same($code,$op->fresh()->payload['epp'],'Exact bytes preserved');
+same('queued',$op->fresh()->state,'Saved paid code no longer asks staff for the code');
+same(null,$op->fresh()->safe_code,'Saved paid code clears its missing-code reason');
+same(0,(int)DB::table('domains_runtime_operations')->where('operation_id',$op->id)->value('due_at'),'New code clears the missing-code scan backoff');
 $raw=DB::table('domains_operations')->where('id',$op->id)->first();
 expect(!str_contains($raw->payload,$code) && !str_contains(json_encode($op->fresh()),$code),'Encrypted and hidden');
 expect(!DB::table('properties')->where('value',$code)->exists(),'No native property code');
