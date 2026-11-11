@@ -439,7 +439,7 @@ final class RequestFacts
             :"Copies the customer's current account details into this request and releases the hold. The {$kind} then goes to {$registrar}."]; }
         if ($account&&ComplimentaryCosts::awaitingApproval($op)) { return ['Release hold?','Release hold','Retries the price check. The '.$kind.' holds again while the registrar cost is above the usual.']; }
         // A paid order held at its contact step goes as the customer's order; say what the registrar charges.
-        $cost=$op->safe_code===\Paymenter\Extensions\Servers\Domains\Services\ContactProfileHold::CODE&&is_numeric($op->cost['estimated']??null)
+        $cost=$op->safe_code===\Paymenter\Extensions\Servers\Domains\Services\ContactProfileHold::CODE&&StaffGrants::current()->costs&&is_numeric($op->cost['estimated']??null)
             ?' '.$registrar.' charges about '.($op->cost['currency']??'USD').' '.number_format((float)$op->cost['estimated'],2,'.','').' from the registrar balance.':'';
         if ($account?->processing_enabled) { return ['Send to '.$registrar.' now?','Release and send',"Queues the {$kind} to send to {$registrar}, usually within a few minutes.{$cost} Once sent, it can't be taken back."]; }
         return ['Release hold?','Release hold','The '.$kind.' waits in the queue and goes to '.$registrar.' once Orders is on for this registrar account.'];

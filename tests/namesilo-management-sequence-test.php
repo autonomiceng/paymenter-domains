@@ -199,6 +199,10 @@ $controller=new OwnerActionController($owners,new OwnerSetup($clock,$ports),new 
 $controller->manage($post($changed,$opened),$d->id,'contacts');
 $op=$d->operations()->where('action','contacts')->sole();
 same('queued',$op->state,'One save queues the contact change');same([],$ms->calls,'The POST performs no registrar calls');
+$queuedCount=$d->operations()->count();$queuedPayload=$op->payload;$queuedPolicy=$op->policy;
+$response=$controller->manage($post([...$changed,'city'=>'Stale City'],$opened),$d->id,'contacts');
+same([$queuedCount,'queued',$queuedPayload,$queuedPolicy],[$d->operations()->count(),$op->fresh()->state,$op->fresh()->payload,$op->fresh()->policy],'A second tab cannot retire or replace the first queued contact intent');
+same(\Paymenter\Extensions\Servers\Domains\Services\OwnerFormStale::MESSAGE,$session->get('errors')?->first('owner_action'),'A queued newer save uses the existing stale notice');
 $management->run($op->id,$driver);Cache::flush();same('succeeded',$management->run($op->id,$driver)->state,'Queued creation and association finish without another owner action');
 // A second tab opened before that save still holds the old details. Its save is refused and keeps the newer ones.
 $staleOps=$d->operations()->where('action','contacts')->count();
@@ -210,4 +214,30 @@ $controller->manage($post($changed,null),$d->id,'contacts');
 same($staleOps,$d->operations()->where('action','contacts')->count(),'A form without the opened details queues nothing');
 same($dto->management['contacts']['digest'],$opened,'The contacts form carries the saved details it opened on');
 same(['contacts'],array_keys($owners->present($d->fresh())->management['contacts']['actions']),'Completed editor still offers the ordinary save');
+// A save arriving after the controller check is compared again under the domain lock.
+foreach (['queued','completed'] as $race) {
+    [$raceDomain,$raceDriver,$raceOriginal]=$holding('form-race-'.$race);
+    $first=null;$before=null;$entered=false;
+    $firstInput=['role'=>'all','contact'=>[...$raceOriginal->payload['contacts']['registrant'],'first_name'=>'First']];
+    if ($race==='completed') {$first=$management->request($user,$raceDomain->id,'contacts',$firstInput,hash('sha256','first-'.$race),$raceDriver);}
+    $raceDigest=OwnedDomains::contactsFormDigest($raceDomain);
+    $racePorts=new OwnerPorts(function($b)use(&$first,&$before,&$entered,$race,$raceDomain,$raceDriver,$firstInput,$management,$user):Management {
+        if (!$entered) {
+            $entered=true;
+            $first??=$management->request($user,$raceDomain->id,'contacts',$firstInput,hash('sha256','first-'.$race),$raceDriver);
+            if ($race==='completed') { $management->run($first->id,$raceDriver);Cache::flush();$management->run($first->id,$raceDriver); }
+            $before=[$raceDomain->operations()->count(),$first->fresh()->state,$first->fresh()->payload,$first->fresh()->policy];
+        }
+        return $raceDriver;
+    });
+    $raceOwners=new OwnedDomains($clock,$racePorts,$management);
+    $raceController=new OwnerActionController($raceOwners,new OwnerSetup($clock,$racePorts),new TransferInputs($clock,new Refunds($clock)),$management,$racePorts);
+    $r=Request::create('/domains/'.$raceDomain->id.'/manage/contacts','POST',['role'=>'all','contact'=>[...$raceOriginal->payload['contacts']['registrant'],'city'=>'Stale City'],'opened_contacts_digest'=>$raceDigest]);
+    $r->setUserResolver(fn()=>$user);$r->setLaravelSession($session);$r->request->set('_request_key',FormKeys::issue($r,'owner:'.$raceDomain->id.':contacts'));
+    $response=$raceController->manage($r,$raceDomain->id,'contacts');
+    expect($first!==null,'The concurrent save runs after initial form validation');
+    same($race==='queued'?'queued':'succeeded',$first->fresh()->state,'The first save reaches the intended race state');
+    same($before,[$raceDomain->operations()->count(),$first->fresh()->state,$first->fresh()->payload,$first->fresh()->policy],'The locked comparison preserves the '.$race.' first save');
+    same([302,\Paymenter\Extensions\Servers\Domains\Services\OwnerFormStale::MESSAGE],[$response->getStatusCode(),$session->get('errors')?->first('owner_action')],'The locked comparison uses the stale notice for '.$race);
+}
 $nativeSuccessful=true;echo "NameSilo management normalization and automatic contact sequence passed.\n";
