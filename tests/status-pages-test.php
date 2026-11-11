@@ -6,7 +6,7 @@ require_once __DIR__.'/Support/reserved-fixtures.php';
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\{Crypt, DB};
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController;
-use Paymenter\Extensions\Servers\Domains\Services\{AdoptionSchema, HistoryLinkSchema, NativePresenter};
+use Paymenter\Extensions\Servers\Domains\Services\{AdoptionSchema, HistoryLinkSchema, NativePresenter, OwnerSetup};
 
 $op=$newTransfer(placeholderComFixtureName('status-pages-placeholder.com'),0,false,false); $d=$op->domain; storefrontViews();
 AdoptionSchema::install(); HistoryLinkSchema::install();
@@ -79,11 +79,13 @@ config(['settings.tickets_disabled'=>false]);
 // Saving a paid transfer code updates every customer status before a worker picks up the request.
 foreach ([0,1] as $registrar) {
     $saved=$newTransfer(placeholderComFixtureName('saved-status-'.$registrar.'-placeholder.com'),$registrar,true,false);
+    // Complete setup so the missing code is the only remaining customer step.
+    (new OwnerSetup($clock,$ports))->save($user,$saved->domain_id,['nameservers'=>$registrar?['ns1.provider.example','ns2.provider.example']:[],'privacy'=>false]);
     same('awaiting_code',$saved->state,'Paid transfer starts waiting for the code');
     same('Auth code needed',$owners->present($saved->domain->fresh())->statusReason,'Missing code still asks for action');
     $post=Request::create('/domains/'.$saved->domain_id.'/code','POST',['transfer_code'=>'SyntheticSavedCode']);$post->setUserResolver(fn()=>$user);
     $inputs->submitCode($post,$saved->id);
-    same('awaiting_code',$saved->fresh()->state,'Saving the code does not wait for a request-state update');
+    same(['queued',null],[$saved->fresh()->state,$saved->fresh()->safe_code],'Saving a paid code queues the request and clears its missing-code reason');
     $dto=$owners->present($saved->domain->fresh());
     same(['paid',null,true],[$dto->order['state'],$dto->order['next'],$dto->transfer['received']],'Saved code leaves no customer step');
     same(['Pending transfer',null],[$dto->status,$dto->statusReason],'Saved code immediately clears the stale code request');

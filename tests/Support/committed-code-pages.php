@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\{Auth,DB};
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
-use Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController;
+use Paymenter\Extensions\Servers\Domains\Http\Controllers\{OwnedDomainController,OwnerActionController};
 use Paymenter\Extensions\Servers\Domains\Services\{ContactRecovery,HolderPricing,NativePresenter};
 // The parent fixture's code POST service, native session and both-holder checkout are used unchanged.
 $assertSessionCodeAbsent=static function(array $values,string $code):void {
@@ -66,6 +66,7 @@ foreach([0,1]as$i){
     $r=$req($committed->domain,'code',['transfer_code'=>$sentinel]);
     $result=$action->code($r,$committed->domain_id);
     expect($result->getStatusCode()===302&&DB::transactionLevel()===0,'Real owner POST commits outside a test rollback');
+    same([route('domains.domains.show',$committed->domain_id),OwnerActionController::CODE_SAVED_STARTED],[$result->getTargetUrl(),$session->get('domains_status')],'Committed paid code opens the domain page with confirmation');
     expect(($committed->fresh()->payload['epp']??null)===$sentinel,'Committed secret fixture exists');
     expect(!$r->request->has('transfer_code'),'Secret scrubbed from committed request');
     $assertSessionCodeAbsent($session->all(),$sentinel);
@@ -73,9 +74,12 @@ foreach([0,1]as$i){
     ContactRecovery::hold($committed->id);$heldCalls=count($state->calls);
     same('held',$committed->fresh()->state,'Paid transfer retains its contact hold');
     foreach(['show','setup','code']as$page){
+        // Match native session saves: the redirect confirmation lasts for the first GET only.
+        $session->ageFlashData();
         storefrontViews();app('view')->getFinder()->flush();
         $r=Request::create('/domains/'.$committed->domain_id,'GET');$r->setUserResolver(fn()=>$user);$r->setLaravelSession($session);
         $view=$controller->$page($r,$committed->domain_id);$html=$view->render();$dto=$view->getData()['domain'];
+        same($page==='show'?1:0,substr_count($html,OwnerActionController::CODE_SAVED_STARTED),'Only the redirected domain page shows the save confirmation');
         expect(!str_contains($html,$sentinel),'Committed code absent from real owner markup');
         if($page!=='code'){expect($dto->setup['contacts']&&str_contains($html,$page==='show'?'Finish setup to start registration.':'Save details and continue'),'Customer render includes the committed contact hold');}
         $dom=storefrontDom($html);
