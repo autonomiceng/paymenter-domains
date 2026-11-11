@@ -79,6 +79,10 @@ $cases['order: unpaid invoice']=[$invoiced($row('registration_pending','register
 $cases['order: paid invoice of another customer']=[$invoiced($row('registration_pending','register','awaiting_payment'),'paid',999),'awaiting_payment','Awaiting payment',$unpaid];
 $cases['order: paid, nothing left for the customer']=[$invoiced($row('registration_pending','register','awaiting_payment'),'paid'),'pending_registration','Pending registration','Registration in progress. Nothing to do yet.'];
 $cases['order: paid, auth code missing']=[$invoiced($row('transfer_pending','transfer','awaiting_payment'),'paid'),'action_required','Action required','Auth code needed. Customer has not added the auth code. Not sent yet.'];
+// Saving the code completes the customer's part before the worker changes awaiting_code.
+$codeSaved=$invoiced($row('transfer_pending','transfer','awaiting_code'),'paid');
+$codeSaved->latestAcquisition->forceFill(['payload'=>['epp'=>'synthetic-transfer-code']])->saveQuietly();
+$cases['order: paid, code saved before pickup']=[$codeSaved->fresh(),'pending_transfer','Pending transfer','Transfer in progress. Nothing to do yet.'];
 $d=$invoiced($row('registration_pending','register','awaiting_payment'),'paid');
 DB::table('domains_domains')->where('id',$d->id)->update(['registrar_key'=>'namesilo']); DB::table('domains_operations')->where('domain_id',$d->id)->update(['registrar_key'=>'namesilo']);
 // No NameSilo account here, so the list note leads with that, as the domain's head does.
@@ -164,6 +168,11 @@ same([],$heads,'Customers and staff read one head word for every status');
 same('warning',DomainFacts::status($cases['held transfer'][0]->fresh())['tone'],'A held transfer is a staff job, so staff read it in amber');
 // The amber note is for staff jobs only.
 same([true,false],array_map(fn(string $name)=>DomainFacts::status($cases[$name][0]->fresh())['act'],['walk: paid registration held for staff (1)','unpaid invoice']),'A staff job gets the mark, waiting on the customer does not');
+same(false,DomainFacts::status($codeSaved->fresh())['act'],'A paid transfer with its code saved needs no staff action');
+Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$codeSaved->id])->assertSee('Transfer in progress. Nothing to do yet.')->assertDontSee('Request status unclear.');
+Account::where('server_id',$seed->server_id)->update(['processing_enabled'=>false]);
+same([true,'Not sent. Orders are off for this account. Turn them on in Registrars.'],[DomainFacts::status($codeSaved->fresh())['act'],DomainFacts::status($codeSaved->fresh())['step']],'A code saved before pickup still respects Orders off');
+Account::where('server_id',$seed->server_id)->update(['processing_enabled'=>true]);
 same(false,isset(DomainFacts::for($cases['past expiry'][0]->fresh())['Next invoice']),'An expired domain has no next invoice to chase');
 // A paid renewal stays unsent while Orders are off, so staff must read that, not Nothing to do yet.
 $d=$row('active',null,null,null,730); $paid=Invoice::withoutEvents(fn()=>Invoice::create(['user_id'=>$d->user_id,'currency_code'=>'USD','status'=>'paid','due_at'=>now()]));

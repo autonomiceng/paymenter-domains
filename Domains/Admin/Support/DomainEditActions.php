@@ -132,7 +132,7 @@ final class DomainEditActions
                     if (!ManagementForms::accepted($actor,$d,$name,$key)) {
                         if (array_diff_assoc($bound,$data)) { throw new \DomainException('Current records required.'); }
                         $p=$input($data);
-                        app(ManagementForms::class)->submit($actor,$d->fresh(),$name,[...$p,'confirmed'=>'1'],$key);
+                        app(ManagementForms::class)->submit($actor,$d->fresh(),$name,[...$p,'confirmed'=>'1'],$key,contactsDigest:$name==='contacts'?$data['opened_contacts_digest']:null);
                     }
                     Notification::make()->success()->title(ManagementForms::REQUESTED)->send();
                 } catch (\Throwable $error) {
