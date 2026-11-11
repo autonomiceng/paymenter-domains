@@ -143,7 +143,7 @@ final class WatchActions
         // A short form: one note says one value per line, and the record groups are headed, not boxed.
         // Each box checks its lines in the dialog and names the bad one, so a mistake keeps the dialog and what was typed.
         $lines=fn(string $name,string $label,array $value,?\Illuminate\Contracts\Validation\ValidationRule $rule=null)=>Textarea::make($name)->label($label)->default(implode("\n",$value))->maxLength(8192)->rows(2)->rule($rule??FieldRules::hostname());
-        $fields=[TextInput::make('name')->label('Name')->default($row?->name)->required()->maxLength(128)->rule(FieldRules::check(fn($name)=>Writes::requireUniqueName((string)$name,$row?->id))),$lines('nameservers','Nameservers',$row?->nameservers??[])];
+        $fields=[TextInput::make('name')->label('Name')->default($row?->name)->required()->maxLength(128)->rule(FieldRules::check(fn($name)=>Writes::requireUniqueName((string)$name,$row?->id))),$lines('nameservers','Nameservers',$row?->nameservers??[],FieldRules::hostname(13))->required()];
         foreach(['website_endpoints'=>'Website','email_endpoints'=>'Email'] as $key=>$label){$value=$row?->$key??[];
             $fields[]=Fieldset::make($label.' records')->contained(false)->columns(1)->schema([$lines($key,'Hostnames',$value['exact']??[]),$lines($key.'_suffix','Hostname suffixes',$value['suffix']??[]),$lines($key.'_ips','IP addresses',$value['ips']??[],FieldRules::ip())]);}
         $note=($row?'Future checks use these records. Monitoring stays on if this template is on. ':'').self::ONE_PER_LINE;

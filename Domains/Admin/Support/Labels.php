@@ -19,7 +19,8 @@ final class Labels
                 'service_inactive'=>'service not active', 'renewal_off'=>'auto-renew off', 'owner_auto_renew_off'=>'auto-renew off', 'authority_changed'=>'account changed',
                 'invoice_settled'=>'already paid', 'no_agreement'=>'no saved payment method', 'foreign_agreement'=>'payment method belongs to another customer',
                 'gateway_missing'=>'gateway missing', 'gateway_disabled'=>'gateway off', 'agreement_changed'=>'payment method changed'][$evidence['reason'] ?? ''] ?? null) ? ': '.$skip : ''),
-            default => 'Auto Pay: result missing',
+            // Auto Pay never retries an unknown charge, so staff check the gateway before any other payment.
+            default => 'Auto Pay: result missing. Check your payment gateway for this charge before taking payment again.',
         };
     }
     /** Saved request status and cause. RequestFacts::reason adds what is true now. $ordersOff: Orders are off for this request's account. */
@@ -179,7 +180,7 @@ final class Labels
             'registrar_balance_insufficient'=>'Not sent: registrar balance is too low. Add funds.','registry_details_unsupported'=>'Not sent: registry needs extra details',
             'renewal_funding_or_authority'=>'Not sent: renewal settings changed. Check the domain.','renewal_cost_overrun'=>'Not sent: cost above limit',
             'target_changed'=>'Not sent: domain status changed','term'=>'Not sent: term not supported','balance'=>'Not sent: low registrar balance',
-            'cancelled'=>'Cancelled','acquisition_cancelled_unpaid'=>'Order cancelled: not paid','registration_adopted'=>'Imported',
+            'cancelled'=>'Cancelled','acquisition_cancelled_unpaid'=>'Order cancelled: not paid','registration_adopted'=>'Imported','imported_renewal_unproven'=>\Paymenter\Extensions\Servers\Domains\Services\AdoptionRenewalEligibility::STAFF,
             'registration_managed'=>null,'ready'=>null,
             'expiry_unknown'=>'Expiry missing at the registry','no_coverage'=>'No public registry for this TLD',
             'not_registered'=>'No registry record found','deadline'=>'Public check timed out',

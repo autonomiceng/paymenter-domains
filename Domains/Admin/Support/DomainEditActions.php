@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\{Auth,Log};
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\DnsForm;
-use Paymenter\Extensions\Servers\Domains\Services\{ContactValidation,DomainManagement,ManagementForms,OwnedDomains,OwnerFormValidation,ManagementProgress};
+use Paymenter\Extensions\Servers\Domains\Services\{ContactDetails,ContactValidation,DomainManagement,ManagementForms,OwnedDomains,OwnerFormValidation,ManagementProgress};
 /** Staff edits on the domain page: the owner's form path and every check it runs, credited to the staff member. */
 final class DomainEditActions
 {
@@ -98,8 +98,15 @@ final class DomainEditActions
         return [self::edit($d,'contacts','Edit','Edit contacts',[...$form,Hidden::make('opened_contacts_digest')],
             fn(array $data)=>['role'=>'all','contact'=>array_map(fn($value)=>(string)($value??''),array_intersect_key($data,$m['limits']))],
             'We use these details for every contact on this domain. '.ManagementForms::CONTACTS_RISK,
-            array_intersect_key($m['saved'],$m['limits']),'Save',
+            self::contactFill($m['saved'],$m['limits']),'Save',
             bound:['opened_contacts_digest'=>$m['digest']])];
+    }
+    /** The saved details, with the phone as people write it, as on the customer form. Saving it stores the same value. */
+    private static function contactFill(array $saved, array $limits): array
+    {
+        $fill=array_intersect_key($saved,$limits);
+        if (is_string($fill['phone']??null)) { $fill['phone']=ContactDetails::readablePhone($fill['phone'],is_string($saved['country']??null)?$saved['country']:''); }
+        return $fill;
     }
     private static function records(Domain $d, string $kind, string $label, array $m): Action
     {

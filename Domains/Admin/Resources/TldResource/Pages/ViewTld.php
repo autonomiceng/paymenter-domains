@@ -211,7 +211,7 @@ class ViewTld extends ViewRecord
     {
         if($this->accountRead){return $this->accountName;}
         $t=$this->getRecord();$this->accountRead=true;
-        $shared=\Paymenter\Extensions\Servers\Domains\Models\Tld::where('tld',$t->tld)->where('server_id','!=',$t->server_id)->exists();
+        $shared=TldFacts::bound(\Paymenter\Extensions\Servers\Domains\Models\Tld::query())->where('tld',$t->tld)->where('server_id','!=',$t->server_id)->exists();
         return $this->accountName=$shared?((string)(\App\Models\Server::whereKey($t->server_id)->value('name')?:'') ?: null):null;
     }
     public function getSubheading(): string|Htmlable|null

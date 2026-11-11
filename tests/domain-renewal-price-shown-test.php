@@ -16,4 +16,21 @@ expect($renewNow!=='$10.99','Fixture: the current renewal price differs from the
 same($renewNow,$owners->present($d->fresh())->renewalPrice,'The domain page shows the Renew now price');
 same($renewNow,(new DomainSummaries)->one($user,'managed',(int)$d->id,$clock->now()->getTimestamp())->renewalPrice,'The domain summary shows the Renew now price');
 same($renewNow,(new DomainSummaries)->listed($user,$clock->now()->getTimestamp())['managed:'.$d->id]->renewalPrice,'The Domains list shows the Renew now price');
+$holder=app(\Paymenter\Extensions\Servers\Domains\Services\HolderPricing::class);
+app()->bind(\Paymenter\Extensions\Servers\Domains\Services\HolderPricing::class,static fn()=>throw new DomainException('Synthetic missing quote'));
+try{
+    same('$10.99',$owners->present($d->fresh())->renewalPrice,'Missing page quote keeps the saved price');
+    same('$10.99',(new DomainSummaries)->one($user,'managed',(int)$d->id,$clock->now()->getTimestamp())->renewalPrice,'Missing summary quote keeps the saved price');
+}finally{app()->instance(\Paymenter\Extensions\Servers\Domains\Services\HolderPricing::class,$holder);}
+foreach(['custom','complimentary'] as $mode){
+    DB::table('domains_domains')->where('id',$d->id)->update(['price_mode'=>$mode]);
+    $expected=$mode==='complimentary'?\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryAccounts::LABEL:'$10.99';
+    same($expected,$owners->present($d->fresh())->renewalPrice,$mode.' page contract');
+    same($expected,(new DomainSummaries)->one($user,'managed',(int)$d->id,$clock->now()->getTimestamp())->renewalPrice,$mode.' summary contract');
+}
+DB::table('domains_domains')->where('id',$d->id)->update(['price_mode'=>'standard']);
+App\Models\Currency::create(['code'=>'EUR','name'=>'Euro','prefix'=>'€','suffix'=>'','format'=>'1,234.56']);
+DB::table('services')->where('id',$d->service_id)->update(['currency_code'=>'EUR']);
+same(null,$owners->present($d->fresh())->renewalPrice,'Non-USD page omits the renewal display');
+same(null,(new DomainSummaries)->one($user,'managed',(int)$d->id,$clock->now()->getTimestamp())->renewalPrice,'Non-USD summary omits the renewal display');
 $nativeSuccessful=true;echo "Shown renewal price passed.\n";

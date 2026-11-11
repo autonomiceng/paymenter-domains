@@ -22,7 +22,7 @@ $post=static function($op,array $contact,bool $save=false)use($user,$session):Re
     $r->request->set('_request_key',FormKeys::issue($r,'owner:'.$op->domain_id.':recovery'));return $r;
 };
 foreach([false,true]as$save){
-    $user->properties()->where('key','phone')->update(['value'=>'']);
+    $user->properties()->where('key','phone')->update(['value'=>'+1.2065550100']);
     $name=placeholderComFixtureName('inline-contact-'.(int)$save.'-placeholder.com');
     $cart=commerceCart($user);commerceAdd($cart,$native->product($tlds[0],'register'),$name);
     app('request')->cookies->set('cart',$cart->ulid);Illuminate\Support\Once::flush();
@@ -31,6 +31,13 @@ foreach([false,true]as$save){
     same('1 Synthetic Street',$fields->query('//input[@name="contact[address1]"]')->item(0)->getAttribute('value'),'Checkout contact prefills from account');
     same(1,$fields->query('//form[@id="domains-checkout-contact"]')->length,'Shared contact form compiles on native checkout');
     same(0,$fields->query('//input[@name="save_account"][@checked]')->length,'Account saving defaults off');
+    same('+1 206-555-0100',$fields->query('//input[@name="contact[phone]"]')->item(0)->getAttribute('value'),'Checkout shows the saved phone readable');
+    $model=$fields->query('//form[@id="domains-checkout-contact"]')->item(0)->getAttribute('x-data');
+    expect(str_contains($model,'+1 206-555-0100')&&!str_contains($model,'+1.2065550100'),'The checkout form model starts from the readable phone');
+    $readable=ContactDetails::collect($user)['registrant'];$readable['phone']='+1 206-555-0100';
+    same(['+1.2065550100','2065550100'],[ContactDetails::validate('enom',\Paymenter\Extensions\Servers\Domains\Services\OrderContact::roles($readable))['registrant']['phone'],ContactDetails::validate('namesilo',\Paymenter\Extensions\Servers\Domains\Services\OrderContact::roles($readable))['registrant']['phone']],'The readable phone saves as the registry form');
+    same(['+1 206-555-0100','+44 2071234567','2065550100'],[ContactDetails::readablePhone('2065550100','US'),ContactDetails::readablePhone('+44.2071234567','GB'),ContactDetails::readablePhone('2065550100','GB')],'NameSilo US numbers and other countries read with their country code');
+    $user->properties()->where('key','phone')->update(['value'=>'']);
     commerceLegacyCheckout($user,$cart);
     $op=Domain::where('domain',$name)->sole()->operations()->sole();
     App\Helpers\ExtensionHelper::addPayment($op->invoice_id,null,$op->amount);ContactRecovery::hold($op->id);

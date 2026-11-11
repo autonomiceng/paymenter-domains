@@ -98,5 +98,11 @@ foreach([$owner,null] as $actor){
     expect($refused,'Imported renewal cannot create manual or scheduled debt');
 }
 same(['eligible'=>false,'reason'=>'imported_renewal_unproven'],$review->details['renewal_eligibility']??null,'Ready import does not promise a renewal');
+// Past the invoice date no renewal invoice appears, by design: the staff alert says why with the import words, not "Renewal invoice missing".
+$alerts=[];$locks=DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($d->fresh()));
+same(null,\Paymenter\Extensions\Servers\Domains\Services\RenewalReminders::plan($locks,(object)['before_days'=>'[30]','after_days'=>'[1]'],$clock->now(),$alerts,$bindings),'No reminder for a renewal we do not bill');
+$codes=DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->pluck('code')->all();
+same([true,false],[in_array('imported_renewal_unproven',$codes,true),in_array('missing_obligation',$codes,true)],'Unproven import alert replaces the missing invoice alert: '.implode(',',$codes));
+same(\Paymenter\Extensions\Servers\Domains\Services\AdoptionRenewalEligibility::STAFF,\Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::LABELS['imported_renewal_unproven'],'The alert uses the import label staff see on the review');
 same($before,scenarioMoney(),'Ineligible renewals create no debt');same($ops,Operation::count(),'No renewal obligations');same(1,$GLOBALS['importCalls'],'Billing eligibility needs no provider request');
 $nativeSuccessful=true;echo "Admitted NameSilo import previews/commits locally, retains evidence and refuses unproven renewal billing.\n";

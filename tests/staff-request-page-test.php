@@ -39,7 +39,7 @@ same(['Put on hold by staff','Not sent: Orders off for this account','Not sent: 
 same('Not sent: stopped by our test send check',Labels::reason('enom_test_call_cap'),'Enom test limit is one short line');
 same(null,Labels::reason('refreshed'),'Internal codes have no reason line');
 same(['Transfer lock','Auth code email','DNS records','Other'],[Labels::action('lock'),Labels::action('auth_code_email'),Labels::action('dns'),Labels::action('future')],'Type names');
-same(['Auto Pay: charged','Auto Pay skipped: no saved payment method','Auto Pay: result missing'],
+same(['Auto Pay: charged','Auto Pay skipped: no saved payment method','Auto Pay: result missing. Check your payment gateway for this charge before taking payment again.'],
     [Labels::autoPay(['status'=>'charged']),Labels::autoPay(['status'=>'skipped','reason'=>'no_agreement']),Labels::autoPay(null)],'Auto Pay lines');
 same(['recheck'=>'Check status','resume_reads'=>'Check status','resume_observation'=>'Resume sync','hold'=>'Put on hold','release'=>'Release hold',
     'disposition'=>'Close request','approve_charge'=>'Approve captured charge','refund'=>'Cancel and refund','credit'=>'Retry refund','replacement'=>'Reissue renewal invoice'],StaffOperationReview::ACTIONS,'Action names');

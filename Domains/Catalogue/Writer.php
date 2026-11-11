@@ -79,6 +79,8 @@ final class Writer implements Catalogue
     public function defaultPricing(StaffSettingsReview $review, array $rule, array $fee): array
     {
         if(DB::transactionLevel()!==0||$review->action!=='default_pricing'||$review->serverId!==StaffSettingsReview::ALL_ACCOUNTS||$review->tldId!==null){throw new \DomainException('Business-wide pricing review required.');}
+        $rule=PricingRule::validate($rule);
+        if($rule['mode']==='fixed'){throw new \InvalidArgumentException('Set an own price on each TLD instead.');}
         $targets=DB::transaction(function()use($review,$rule,$fee):array {
             $review->lockActor();$review->lockAccounts();
             if($this->current){($this->current)();}else{UpgradeGate::active(UpgradeGate::generation());}

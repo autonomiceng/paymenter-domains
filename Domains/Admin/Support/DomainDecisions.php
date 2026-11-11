@@ -59,6 +59,7 @@ final class DomainDecisions
         'reminder_failed'=>['Renewal','warning'],
         'missing_obligation'=>['Next invoice','danger'],
         'missing_execution'=>['Next invoice','danger'],
+        'imported_renewal_unproven'=>['Renewal','danger'],
     ];
     private const OWNER_OFF='Turned off by customer';
     public const NO_ACCOUNT='Registrar account not found. Check Registrars.';

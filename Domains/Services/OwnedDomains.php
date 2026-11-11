@@ -248,7 +248,7 @@ final readonly class OwnedDomains
                     $management['nameservers']['registrar']=ManagementNameservers::registrar($d);
                     // Only a confirmed readback supplies current nameservers; otherwise the form starts empty.
                     $management['nameservers']['current']=self::storedNameservers($d); }
-                if (isset($management['contacts'])) { $management['contacts']+=self::contactForm($d,$contacts)+['digest'=>hash('sha256',json_encode($contacts,JSON_THROW_ON_ERROR))]; }
+                if (isset($management['contacts'])) { $management['contacts']+=self::contactForm($d,$contacts)+['digest'=>self::contactsDigest($contacts)]; }
                 if (isset($management['auth_code_email'])) { $management['auth_code_email']['recipient']=self::authCodeRecipient($d); $management['auth_code_email']['sender']=self::authCodeSender($d); }
                 if ($from=self::transferOutFrom($op,$this->clock->now())) { foreach (['lock','auth_code_email'] as $k) { if (isset($management[$k])) { $management[$k]['transferFrom']=$from; } } }
                 // Lock and privacy as last read from the registrar (a confirmed change first, then the sync); null until read.
@@ -350,6 +350,9 @@ final readonly class OwnedDomains
         }
         return array_filter($saved, 'is_array');
     }
+    /** The saved details a contacts form opened on. The customer and staff editors refuse a save when it no longer matches. */
+    public static function contactsDigest(array $contacts): string
+    { return hash('sha256', json_encode($contacts, JSON_THROW_ON_ERROR)); }
     /** The editor: one form for the whole domain, prefilled from the owner, the role every registrar reads back. */
     private static function contactForm(Domain $d, array $saved): array
     {

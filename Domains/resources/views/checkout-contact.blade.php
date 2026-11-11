@@ -1,6 +1,8 @@
 @php
     $tlds = app(\Paymenter\Extensions\Servers\Domains\Services\CartAdmission::class)->contactTlds();
     $values = auth()->check() ? \Paymenter\Extensions\Servers\Domains\Services\ContactDetails::collect(auth()->user())['registrant'] : [];
+    // The form model starts from these values, so the phone shows as people write it here too.
+    if (isset($values['phone'])) { $values['phone'] = \Paymenter\Extensions\Servers\Domains\Services\ContactDetails::readablePhone($values['phone'], $values['country'] ?? ''); }
     $stateRequired = collect($tlds)->contains('registrar_key', 'namesilo');
     $limits = \Paymenter\Extensions\Servers\Domains\Services\ContactDetails::limits($stateRequired ? 'namesilo' : 'enom');
 @endphp

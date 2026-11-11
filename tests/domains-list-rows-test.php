@@ -41,10 +41,16 @@ foreach ($cases as $case=>[$status,$action,$state,$code]) {
 // The list query count does not grow with rows on the page, whatever state the extra rows are in.
 DB::table('domains_domains')->where('id',$d->id)->update(['status'=>'active','provider_expires_at'=>now()->addDays(200)->format('Y-m-d 00:00:00')]);
 DB::table('domains_operations')->where('id',$op->id)->update(['action'=>'transfer','state'=>'succeeded','safe_code'=>null]);
+DB::table('services')->where('id',$d->service_id)->update(['price'=>'41.23']);
 [$list,$before]=$render();same(1,$list->query('//tbody/tr')->length,'One row');
+$normalPrice=Paymenter\Extensions\Servers\Domains\Services\Storefront::money(HolderPricing::shown($d->fresh(),$d->service->fresh(),$clock->now()));
+expect($normalPrice!=='$41.23','Fixture: successful current renewal quote differs from saved price');
+expect(str_contains($norm($list->query('//tbody/tr')->item(0)),$normalPrice.'/yr'),'The normal row displays its current quote');
+[$missing]=$withoutQuote();
+expect(str_contains($norm($missing->query('//tbody/tr')->item(0)),'$41.23/yr'),'That same row falls back to its saved price');
 [, $fallbackBefore]=$withoutQuote();
 $clone=function(string $table,int $id,array $changes):int{$row=(array)DB::table($table)->where('id',$id)->first();unset($row['id']);return (int)DB::table($table)->insertGetId([...$row,...$changes]);};
-$savedPrices=[$d->domain=>'$'.number_format((float)$d->service->price,2,'.','')];
+$savedPrices=[$d->domain=>'$41.23'];
 for ($i=0;$i<8;$i++) {
     $name=placeholderComFixtureName('rows'.$i.'-placeholder.com');$service=$clone('services',(int)$d->service_id,['price'=>20+$i]);$savedPrices[$name]='$'.number_format(20+$i,2,'.','');
     [$status,$action,$state,$code]=[['active','transfer','succeeded',null],...array_values($cases)][$i%7];
@@ -59,6 +65,21 @@ same($before,$after,'No queries per additional row');
 same($fallbackBefore,$fallbackAfter,'No queries per additional row when the renewal quote is missing');
 same(9,$fallback->query('//tbody/tr')->length,'Nine rows without a renewal quote');
 foreach($fallback->query('//tbody/tr') as $row){$name=$norm($fallback->query('td[1]/a',$row)->item(0));same(true,str_contains($norm($row),$savedPrices[$name].'/yr'),'Missing quote keeps the saved price for '.$name);}
+// Distinct endings still share this user's advisory tax selection within the summary batch.
+$originalTld=DB::table('domains_tlds')->where('server_id',$d->server_id)->where('tld','com')->first();
+foreach(['net','org'] as $i=>$ending){
+    $clone('domains_tlds',(int)$originalTld->id,['tld'=>$ending,'catalogue_retained_annual_retail'=>'18.00']);
+    foreach(DB::table('domains_prices')->where('server_id',$d->server_id)->where('tld','com')->get() as $price){$clone('domains_prices',(int)$price->id,['tld'=>$ending]);}
+    DB::table('domains_domains')->where('sld','rows'.$i.'-placeholder')->update(['tld'=>$ending,'domain'=>'rows'.$i.'-placeholder.'.$ending,'reservation_name'=>'rows'.$i.'-placeholder.'.$ending]);
+}
+DB::flushQueryLog();DB::enableQueryLog();
+$summaries=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->listed($user,$clock->now()->getTimestamp());
+$taxReads=array_filter(DB::getQueryLog(),static fn($q)=>str_contains($q['query'],'from "tax_rates"'));DB::disableQueryLog();DB::flushQueryLog();
+foreach(['net','org'] as $i=>$ending){
+    $id=DB::table('domains_domains')->where('sld','rows'.$i.'-placeholder')->value('id');
+    same('$18.00',$summaries['managed:'.$id]->renewalPrice,'A successful quote is shown for distinct ending '.$ending);
+}
+same(1,count($taxReads),'A summary batch selects tax once per user across distinct TLD quotes');
 // Cancelled unpaid orders check their payments in the page's one batch, never once per row. A processing payment still needs review.
 $cancelledOrder=function(int $i)use($clone,$d,$op,$user):int{
     $name=placeholderComFixtureName('cancelled-order'.$i.'-placeholder.com');$service=$clone('services',(int)$d->service_id,[]);

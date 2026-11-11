@@ -61,8 +61,15 @@ $conn->setQueryGrammar($strict);
 try {
     $checkRevisions();
     same([], $strict->locks, 'Read-only credential checks never attempt a row lock');
-    DB::transaction($checkRevisions);
-    expect(in_array('settings', $strict->locks, true), 'Transactional credential checks retain settings row locks');
+    foreach([
+        'holding'=>static fn()=>same($revision,$local->holdingCredentialRevision($localBinding),'Holding revision under locks'),
+        'offer'=>static fn()=>same($revision,$local->offerCredentialRevision($localBinding),'Offer revision under locks'),
+        'readiness'=>static fn()=>$local->requireOfferReadiness($localBinding,Server::findOrFail(10),Account::where('server_id',10)->sole()),
+    ] as $name=>$check){
+        $strict->locks=[];
+        DB::transaction($check);
+        expect(in_array('settings',$strict->locks,true),$name.' independently locks settings');
+    }
 } finally { $conn->setQueryGrammar($grammar); }
 same($before, count($wire->calls), 'Credential checks never contact the registrar');
 foreach (Server::findOrFail(10)->settings()->get() as $setting) {

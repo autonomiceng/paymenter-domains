@@ -17,10 +17,10 @@ $before=$broken->fresh()->getRawOriginal();$failures=[];
 $commands=new StaffCommands(new Writer(new Projection($native),$clock,static fn()=>null,static fn()=>true),$bindings,static fn()=>null);
 $review=static fn()=>new Review($actor->id,Review::ALL_ACCOUNTS,null,'default_pricing',Review::ticket($actor->id,Review::ALL_ACCOUNTS,null,'default_pricing',StaffCommands::stamp(Review::ALL_ACCOUNTS)), 'Change the default while retaining unreadable own pricing');
 try{
-    $result=$commands->run($review(),['mode'=>'fixed','fixed_register'=>'20.00','fixed_renew'=>'20.00','fixed_transfer'=>'20.00','fee_percent'=>'2.9','fee_fixed'=>'0.3']);
+    $result=$commands->run($review(),['mode'=>'markup_amount','markup'=>'20.00','round_up'=>'none','fee_percent'=>'2.9','fee_fixed'=>'0.3']);
     same([],$result['failed'],'Unreadable own rule does not prevent healthy converted publication');
-    same('20.00',(new PricingRules)->defaultRule()['fixed']['register'],'Converted global default saves');
-    same('$20.00',$storefront->offer('com','register',1)['price'],'Healthy converted follower publishes');
+    same('20.00',(new PricingRules)->defaultRule()['markup'],'Converted global default saves');
+    same('$26.00',$storefront->offer('com','register',1)['price'],'Healthy converted follower publishes');
 }catch(InvalidArgumentException $error){$failures[]='Converted global save: '.$error->getMessage();}
 try{
     $matrix=$source->matrix(collect([$tlds[0]->fresh(),$broken->fresh()]),1);
@@ -38,21 +38,21 @@ $saved=$tlds[0]->fresh()->replicate();$own=[...PricingRule::DEFAULT,'mode'=>'mar
 $savedIntent=[...OfferState::decode($saved->catalogue_intent),'pricing_rule'=>$own];
 $saved->fill(['tld'=>'savedfee','catalogue_intent'=>OfferState::json($savedIntent),'use_default_rule'=>false])->save();
 $stamp=StaffCommands::stamp(Review::ALL_ACCOUNTS);$refused=false;
-try{$commands->run($review(),['mode'=>'fixed','fixed_register'=>'30.00','fixed_renew'=>'30.00','fixed_transfer'=>'30.00','fee_percent'=>'50.00','fee_fixed'=>'0.30']);}
+try{$commands->run($review(),['mode'=>'markup_amount','markup'=>'30.00','round_up'=>'none','fee_percent'=>'50.00','fee_fixed'=>'0.30']);}
 catch(InvalidArgumentException $error){same('This percentage cannot cover the card fee. Lower the markup or card fee.',$error->getMessage(),'Readable saved rule rejects the conflicting fee');$refused=true;}
 expect($refused,'Readable saved fee rule must reject an incompatible new fee');
 same($stamp,StaffCommands::stamp(Review::ALL_ACCOUNTS),'Conflicting fee rolls back shared settings, TLDs and audit');
-same('$20.00',$storefront->offer('com','register',1)['price'],'Rejected fee leaves healthy publication unchanged');
+same('$26.00',$storefront->offer('com','register',1)['price'],'Rejected fee leaves healthy publication unchanged');
 echo "Readable saved fee rule rejects the conflicting new fee without changing shared state.\n";
 // Saved intent bypasses the legacy reader: invalid own content must still be isolated.
 $savedIntent['pricing_rule']['markup']='invalid';$saved->fill(['catalogue_intent'=>OfferState::json($savedIntent)])->save();
 $savedBefore=$saved->fresh()->getRawOriginal();
-try{$result=$commands->run($review(),['mode'=>'fixed','fixed_register'=>'25.00','fixed_renew'=>'25.00','fixed_transfer'=>'25.00','fee_percent'=>'3.00','fee_fixed'=>'0.40']);}
+try{$result=$commands->run($review(),['mode'=>'markup_amount','markup'=>'25.00','round_up'=>'none','fee_percent'=>'3.00','fee_fixed'=>'0.40']);}
 catch(InvalidArgumentException $error){throw new RuntimeException('Malformed saved fee rule must not reject the shared default save: '.$error->getMessage(),0,$error);}
 same([],$result['failed'],'Malformed saved fee rule is skipped rather than published');
-same('25.00',(new PricingRules)->defaultRule()['fixed']['register'],'Malformed saved fee rule does not roll back shared pricing');
+same('25.00',(new PricingRules)->defaultRule()['markup'],'Malformed saved fee rule does not roll back shared pricing');
 same(['percent'=>'3.00','fixed'=>'0.40'],CardFee::read(),'Malformed saved fee rule does not roll back the shared fee');
-same('$25.00',$storefront->offer('com','register',1)['price'],'Healthy follower publishes despite malformed saved fee rule');
+same('$31.00',$storefront->offer('com','register',1)['price'],'Healthy follower publishes despite malformed saved fee rule');
 same($savedBefore,$saved->fresh()->getRawOriginal(),'Malformed saved fee rule retains its intent and publication evidence');
 $matrix=$source->matrix(collect([$tlds[0]->fresh(),$saved->fresh()]),1);
 same([$saved->id],array_column($matrix['skipped'],'id'),'Malformed saved fee rule retains its TLD warning');

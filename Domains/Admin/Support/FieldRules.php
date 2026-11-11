@@ -23,18 +23,22 @@ final class FieldRules
         });
     }
     /** One value per line: names the first line $valid refuses. */
-    public static function lines(\Closure $valid,string $what): ValidationRule
+    public static function lines(\Closure $valid,string $what,int $max=100,bool $unique=false): ValidationRule
     {
-        return self::rule(static function(mixed $value,\Closure $fail)use($valid,$what):void {
+        return self::rule(static function(mixed $value,\Closure $fail)use($valid,$what,$max,$unique):void {
+            $values=[];
             foreach(preg_split('/\R/',(string)$value)?:[] as $i=>$line){
                 $line=trim($line);if($line===''){continue;}
                 try{$ok=$valid($line);}catch(\InvalidArgumentException|\TypeError){$ok=false;}
                 if(!$ok){$fail('Line '.($i+1).': "'.mb_strimwidth($line,0,60,'...').'" is not '.$what.'.');return;}
+                $values[]=$unique?$ok:$line;
             }
+            if(count($values)>100){$fail('Enter at most 100 values.');return;}
+            if(count($unique?array_unique($values):$values)>$max){$fail('Enter at most '.$max.' values.');}
         });
     }
-    public static function hostname(): ValidationRule
-    { return self::lines(static fn(string $line)=>is_string(\Paymenter\Extensions\Servers\Domains\Dns\DnsQuery::hostname($line)),'a hostname'); }
+    public static function hostname(int $max=100): ValidationRule
+    { return self::lines(static fn(string $line)=>\Paymenter\Extensions\Servers\Domains\Dns\DnsQuery::hostname($line),'a hostname',$max,true); }
     public static function ip(): ValidationRule
     { return self::lines(static fn(string $line)=>filter_var($line,FILTER_VALIDATE_IP)!==false,'an IP address'); }
 }

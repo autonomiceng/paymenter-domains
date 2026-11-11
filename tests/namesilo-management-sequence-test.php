@@ -186,15 +186,28 @@ $get=Request::create('/domains/'.$d->id);$get->setUserResolver(fn()=>$user);$get
 $html=(new OwnedDomainController($owners))->show($get,$d->id)->render();
 expect(!str_contains($html,'Send for approval')&&!str_contains($html,'Use the approved details')&&!str_contains($html,'Step 1 of 2'),'The editor has no manual profile stage');
 same(1,storefrontDom($html)->query('//form[contains(@action,"/manage/contacts")]')->length,'One ordinary contacts form');
-$input=['role'=>'all','contact'=>$original->payload['contacts']['registrant']];
+// The form carries the saved details it opened on, as the staff editor does.
+$opened=storefrontDom($html)->query('//form[contains(@action,"/manage/contacts")]//input[@name="opened_contacts_digest"]')->item(0)?->getAttribute('value');
 $session=app('request')->session();$session->put('_token','synthetic-csrf');
-$r=Request::create('/domains/'.$d->id.'/manage/contacts','POST',$input);
-$r->setUserResolver(fn()=>$user);$r->setLaravelSession($session);
-$r->request->set('_request_key',FormKeys::issue($r,'owner:'.$d->id.':contacts'));
+$post=static function(array $contact,?string $digest)use($d,$user,$session):Request {
+    $r=Request::create('/domains/'.$d->id.'/manage/contacts','POST',['role'=>'all','contact'=>$contact]+($digest===null?[]:['opened_contacts_digest'=>$digest]));
+    $r->setUserResolver(fn()=>$user);$r->setLaravelSession($session);
+    $r->request->set('_request_key',FormKeys::issue($r,'owner:'.$d->id.':contacts'));return $r;
+};
+$changed=[...$original->payload['contacts']['registrant'],'first_name'=>'Changed'];
 $controller=new OwnerActionController($owners,new OwnerSetup($clock,$ports),new TransferInputs($clock,new Refunds($clock)),$management,$ports);
-$controller->manage($r,$d->id,'contacts');
+$controller->manage($post($changed,$opened),$d->id,'contacts');
 $op=$d->operations()->where('action','contacts')->sole();
 same('queued',$op->state,'One save queues the contact change');same([],$ms->calls,'The POST performs no registrar calls');
 $management->run($op->id,$driver);Cache::flush();same('succeeded',$management->run($op->id,$driver)->state,'Queued creation and association finish without another owner action');
+// A second tab opened before that save still holds the old details. Its save is refused and keeps the newer ones.
+$staleOps=$d->operations()->where('action','contacts')->count();
+$response=$controller->manage($post([...$original->payload['contacts']['registrant'],'city'=>'Stale City'],$opened),$d->id,'contacts');
+same($staleOps,$d->operations()->where('action','contacts')->count(),'A form opened before a newer save queues nothing');
+same('Changed',OwnedDomains::contacts($d->fresh())['registrant']['first_name'],'The newer saved details stay');
+same([302,\Paymenter\Extensions\Servers\Domains\Services\OwnerFormStale::MESSAGE,null],[$response->getStatusCode(),$session->get('errors')?->first('owner_action'),$session->get('_old_input.contact')],'The owner is told why, and nothing typed is kept');
+$controller->manage($post($changed,null),$d->id,'contacts');
+same($staleOps,$d->operations()->where('action','contacts')->count(),'A form without the opened details queues nothing');
+same($dto->management['contacts']['digest'],$opened,'The contacts form carries the saved details it opened on');
 same(['contacts'],array_keys($owners->present($d->fresh())->management['contacts']['actions']),'Completed editor still offers the ordinary save');
 $nativeSuccessful=true;echo "NameSilo management normalization and automatic contact sequence passed.\n";

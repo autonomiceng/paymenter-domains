@@ -232,4 +232,15 @@ $viewer=staffUser([Staff::VIEW]);Auth::setUser($viewer);
 $list=Livewire::actingAs($viewer)->test(ListTlds::class)->assertSuccessful()->assertDontSee('USD 8.00');
 same('TLDs from What you sell. Open one for its prices.',$list->instance()->getSubheading(),'Staff without costs get the same head line.');
 $page=Livewire::actingAs($viewer)->test(ViewTld::class,['record'=>$silo->id])->assertSuccessful()->assertDontSee('USD 8.00')->assertDontSee('Restore fee');
+// A retained sibling from an old registrar or account is not a current shared ending.
+foreach(['registrar_key'=>'retired','account_fingerprint'=>'retired-account'] as $field=>$stale){
+    DB::table('domains_tlds')->where('id',$silo->id)->update([$field=>$stale]);
+    $current=Livewire::actingAs($viewer)->test(ViewTld::class,['record'=>$enom->id])->assertSuccessful();
+    same('.com',$current->instance()->getTitle(),'Stale '.$field.' does not make the title shared');
+    $accounts=TldFacts::accountsTable($enom,Staff::requireView())->toHtml();
+    expect(!str_contains($accounts,'OFFLINE DEMO NameSilo'),'Stale sibling is also absent from account rows');
+    DB::table('domains_tlds')->where('id',$silo->id)->update([$field=>$silo->{$field}]);
+}
+$current=Livewire::actingAs($viewer)->test(ViewTld::class,['record'=>$enom->id])->assertSuccessful();
+same('.com on Enom TEST identity check',$current->instance()->getTitle(),'A current sibling still makes the title shared');
 echo "Native TLDs & pricing list and TLD page passed.\n";$nativeSuccessful=true;

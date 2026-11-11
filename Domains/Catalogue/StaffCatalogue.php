@@ -361,7 +361,7 @@ final class StaffCatalogue
             if($queue&&$queue->account_fingerprint!==$t->account_fingerprint){$queue=null;}
             $work=$queue?OfferState::decode($queue->offer_work):[];
             // A terms read that failed says so, instead of checking with no end. The next try is in the row's refresh.
-            if(!$unreadable&&in_array($reason,['unknown_facts','stale_facts'],true)&&isset($work['facts'][$t->tld]['failed_at'])
+            if(!$unreadable&&in_array($reason,['unknown_facts','stale_facts'],true)&&!empty($work['facts'][$t->tld]['failure'])
                 &&str_ends_with($label,'checking registrar terms')){$label=TldFacts::TERMS_FAILED;}
             // Only seller-policy writes establish selection time; pricing revisions do not.
             $selectedAt=$policy?->updated_at;
@@ -431,12 +431,16 @@ final class StaffCatalogue
             $a=Account::where('server_id',$id)->sole();
             $bound=$rows->filter(fn($t)=>$t->catalogue_converted&&$t->account_fingerprint===$a->account_fingerprint&&$t->registrar_key===$a->registrar_key)->keyBy('tld');
             if($bound->isEmpty()){continue;}
-            foreach(DB::table('domains_prices')->where('server_id',$id)->whereIn('tld',$bound->keys()->all())->where('term',$years)->where('currency','USD')
+            $saved=[];
+            foreach(DB::table('domains_prices')->where('server_id',$id)->whereIn('tld',$bound->keys()->all())->whereIn('term',array_unique([1,$years]))->where('currency','USD')
                 ->where('account_fingerprint',$a->account_fingerprint)->where('registrar_key',$a->registrar_key)->orderBy('id')->get() as $p){
                 $cost=OfferState::savedCost($p->catalogue_observation);
                 if($cost===null||$cost->action!==$p->action||$cost->term!==(int)$p->term){continue;}
-                $out[(int)$bound[$p->tld]->id][$cost->key()]=$cost->total;
+                $saved[(int)$bound[$p->tld]->id][$cost->key()]=$cost;
             }
+            foreach($saved as $tld=>$costs){foreach($costs as $key=>$cost){
+                if($cost->term===$years){$out[$tld][$key]=Retail::cost($cost,$costs);}
+            }}
         }
         return $out;
     }
