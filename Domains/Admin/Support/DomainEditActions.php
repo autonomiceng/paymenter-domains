@@ -23,6 +23,7 @@ final class DomainEditActions
         'Management lifecycle held.'=>'This domain or its service is not active, or orders are paused. Fix that, then try again.',
         'Management permission required.'=>"You don't have permission to change domains.",
         'Current records required.'=>'This changed after you opened it. Reload the page and try again.',
+        'Opened details changed.'=>'This changed after you opened it. Reload the page and try again.',
         'DNS records changed.'=>'The records changed at the registrar, so nothing was sent. Reload the page and try again.',
         'DNS tools disabled.'=>'DNS tools are off for this registrar account. Turn them on in Registrars, then try again.',
         'Management capability unsupported.'=>"This registrar doesn't support this change.",
