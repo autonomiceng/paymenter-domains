@@ -44,6 +44,20 @@ def started(server, timeout):
         raise AssertionError('The fixture server did not start: ' + ''.join(lines))
 
 
+def release_fixture_cache(app):
+    """Do not retain copied fixture assets in file cache alongside Chromium."""
+    if not hasattr(os, 'posix_fadvise'):
+        return
+    for directory, _, files in os.walk(app, followlinks=False):
+        for name in files:
+            path = Path(directory) / name
+            if path.is_symlink():
+                continue
+            with path.open('rb') as handle:
+                os.fsync(handle.fileno())
+                os.posix_fadvise(handle.fileno(), 0, 0, os.POSIX_FADV_DONTNEED)
+
+
 def browse(app, root, facts):
     node = shutil.which('node')
     assert node, 'Node.js is required for the browser check'
@@ -96,6 +110,7 @@ def main():
             # The first refund creates the customer's credit; changing that balance later fails, as a database fault would.
             db.execute("CREATE TRIGGER refund_browser_credit_fail BEFORE UPDATE ON credits WHEN OLD.amount > 0 "
                        "BEGIN SELECT RAISE(ABORT, 'synthetic credit failure'); END")
+        release_fixture_cache(app)
         steps, saved = browse(app, root, facts)
         operation = saved['operations']
 
