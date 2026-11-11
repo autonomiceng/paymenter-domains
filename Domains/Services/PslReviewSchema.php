@@ -19,6 +19,7 @@ final class PslReviewSchema
         $t->string('event', 64); $t->text('reason')->nullable();
         $t->string('before_revision', 64)->nullable(); $t->string('after_revision', 64);
         $t->longText('data'); ($legacyDates ? $t->timestamp('created_at') : $t->dateTime('created_at'));
+        HistoryAccountIndex::define($t,'domains_watch_audit');
     }
     public static function install(): void
     {

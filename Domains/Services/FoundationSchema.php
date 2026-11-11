@@ -22,6 +22,7 @@ final class FoundationSchema
             $table->unsignedBigInteger('service_id')->unique();
             $table->unsignedBigInteger('user_id')->index();
             self::binding($table);
+            HistoryAccountIndex::define($table,'domains_domains');
             $table->string('domain', 253)->index();
             $table->string('reservation_name', 253)->nullable()->unique();
             $table->string('sld', 63);
@@ -52,6 +53,7 @@ final class FoundationSchema
         self::table('domains_operations', function (Blueprint $table) use ($legacyServiceIndex,$progressLast) {
             $table->id();
             self::binding($table, true);
+            HistoryAccountIndex::define($table,'domains_operations');
             $table->unsignedBigInteger('authority_generation')->nullable();
             $table->unsignedBigInteger('domain_id')->index();
             $service = $table->unsignedBigInteger('service_id');
