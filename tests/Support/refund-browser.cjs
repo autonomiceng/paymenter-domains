@@ -72,7 +72,9 @@ async function confirm(page) {
 }
 
 (async () => {
-  const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN || undefined });
+  // These local fixture pages share one Chromium process to stay within the test memory budget.
+  const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN || undefined,
+    args: ['--single-process', '--no-zygote', '--disable-gpu'] });
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, colorScheme: 'dark' });
   await context.route((url) => !url.href.startsWith(base), (route) => route.abort());
   try {
@@ -94,6 +96,7 @@ async function confirm(page) {
     await state(first, 'reloaded');
     await confirm(second);
     await state(second, 'duplicate');
+    await second.close();
     // A paid renewal whose registrar reply is unknown is never offered or accepted for a refund.
     await open(first, seed.unknown.id);
     if (await first.locator('button:has-text("More")').count()) await first.click('button:has-text("More")');
@@ -105,8 +108,7 @@ async function confirm(page) {
     await first.waitForLoadState('networkidle');
     await state(first, 'unknown-forced');
     // Check the rendered auto-close setting and visibility after a short interval.
-    const third = await context.newPage();
-    watch(third);
+    const third = first;
     await open(third, seed.failing.id);
     await openRefund(third);
     await confirm(third);
@@ -119,6 +121,7 @@ async function confirm(page) {
   } catch (error) {
     receipt.errors.push(String((error && error.stack) || error));
   }
+  await context.close();
   await browser.close();
   fs.writeFileSync(path.join(out, 'receipt.json'), JSON.stringify(receipt, null, 1));
   console.log(JSON.stringify({ steps: receipt.steps.map(({ shot, text, ...s }) => ({ ...s, text })), errors: receipt.errors, requests: receipt.requests, facts: receipt.facts ?? null }));
