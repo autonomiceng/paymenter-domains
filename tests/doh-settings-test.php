@@ -2,6 +2,9 @@
 // Native encrypted settings and stock Filament, fake HTTPS only. MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/native-app.php'; require __DIR__.'/Support/staff-panel.php';
+// Monitoring settings also present the extension-owned site DNS default.
+\Paymenter\Extensions\Servers\Domains\Services\FoundationSchema::install();
+\Paymenter\Extensions\Servers\Domains\Services\BusinessSettingsSchema::install();
 use App\Models\Setting;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\Psr7\Response;

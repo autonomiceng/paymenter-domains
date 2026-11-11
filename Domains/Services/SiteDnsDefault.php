@@ -17,11 +17,8 @@ final class SiteDnsDefault
     /** Settings writes refuse duplicates, so only someone with database access can remove the extra row. */
     public const DUPLICATE='The default nameservers are saved more than once. Ask your site admin to remove the extra setting.';
     public const ASK='Ask staff who can change the default nameservers.';
-    private static function query(): \Illuminate\Database\Eloquent\Builder
-    { return Setting::whereNull('settingable_type')->whereNull('settingable_id')->where('key',self::KEY); }
-    /** A locking read sees rows committed after an older read view opened. */
     private static function rows(bool $lock=false): \Illuminate\Support\Collection
-    { return self::query()->when($lock,fn($q)=>$q->lockForUpdate())->get(); }
+    { $row=BusinessSetting::row(self::KEY,$lock);return collect($row?[$row]:[]); }
     private static function usable(\Illuminate\Support\Collection $rows,bool $lock=false): ?WatchProfile
     {
         if($rows->count()!==1 || $rows[0]->type!=='string' || $rows[0]->encrypted){return null;}
@@ -66,10 +63,10 @@ final class SiteDnsDefault
     {
         $changed=Cache::lock('domains-site-dns-default',30)->block(5,static function():bool {
             return DB::transaction(static function():bool {
-                Setting::orderBy('id')->select('id')->lockForUpdate()->get();
+                BusinessSetting::singleton(true);
                 Setting::where('settingable_type',(new \App\Models\Server)->getMorphClass())->where('key','domains_new_domain_dns_template')
                     ->whereIn('settingable_id',\App\Models\Server::where('extension','Domains')->select('id'))->delete();
-                if(self::query()->exists()){return false;} // Deployment changes never move a saved choice.
+                if(self::rows(true)->isNotEmpty()){return false;} // Deployment changes never move a saved choice.
                 $names=config('domains.site_dns_default.nameservers');
                 if(!is_array($names) || !$names){return false;}
                 try{$routing=new RoutingProfile($names,[],[]);}catch(\InvalidArgumentException|\TypeError){return false;}
@@ -96,7 +93,7 @@ final class SiteDnsDefault
         self::authorize($actor);
         Cache::lock('domains-site-dns-default',30)->block(5,static function()use($actor,$id):void {
             DB::transaction(static function()use($actor,$id):void {
-                self::authorize($actor);Setting::orderBy('id')->select('id')->lockForUpdate()->get();
+                self::authorize($actor);BusinessSetting::singleton(true);
                 $p=WatchProfile::whereKey($id)->lockForUpdate()->first();
                 if(!ManagedDnsSetup::usable($p)){throw new \DomainException('Choose an enabled DNS template.');}
                 self::validateRegistrars($p->nameservers);
@@ -154,10 +151,7 @@ final class SiteDnsDefault
     }
     private static function write(WatchProfile $p): void
     {
-        $rows=self::query()->lockForUpdate()->get();
-        if($rows->count()>1){throw new \DomainException(self::DUPLICATE);}
-        $s=$rows->first()??new Setting(['key'=>self::KEY,'settingable_type'=>null,'settingable_id'=>null]);
-        $s->fill(['type'=>'string','encrypted'=>false,'value'=>(string)$p->id])->save();
+        BusinessSetting::saveLocked(self::KEY,(string)$p->id);
     }
     /** Restart durable bounded cursors, then process one local page through the admitted workers. No DNS I/O. */
     public static function reconcile(?int $profileId=null,bool $inherited=false): void

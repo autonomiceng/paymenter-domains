@@ -1,0 +1,42 @@
+<?php
+// MIT, Copyright (c) 2026 Autonomic Engineering.
+declare(strict_types=1);
+// Installed native tables reproduce NULL global identities and exercise the real encrypted staff history.
+require __DIR__.'/native-app.php';
+use App\Models\{Server,Setting};
+use Illuminate\Support\Facades\{DB,Schema};
+use Paymenter\Extensions\Servers\Domains\Services\{Installation,BusinessSetting,CardFee,PricingRules,SiteDnsDefault,StaffSettingsReview};
+$install=new Installation;$install->install();
+$table='domains_business_settings';$migration='2026_11_11_000061_create_business_settings';
+expect(Schema::hasTable($table),'Extension owns singleton business choices');
+$server=Server::create(['name'=>'Synthetic registrar','extension'=>'Domains','type'=>'server','enabled'=>true]);
+Schema::drop($table);DB::table('migrations')->where('migration',$migration)->delete();
+$rule=['mode'=>'markup_percent','markup'=>'12.00','round_up'=>'none'];
+$put=static fn($key,$value,$at)=>DB::table('settings')->insertGetId(['key'=>$key,'value'=>is_array($value)?json_encode($value):$value,'type'=>is_array($value)?'array':'string','encrypted'=>false,'settingable_type'=>null,'settingable_id'=>null,'created_at'=>$at,'updated_at'=>$at]);
+$put(PricingRules::KEY,$rule,'2026-11-01 01:00:00');$put(PricingRules::KEY,$rule,'2026-11-02 01:00:00');
+$old=$put(CardFee::KEY,['percent'=>'2.90','fixed'=>'0.30'],'2026-11-01 01:00:00');
+$new=$put(CardFee::KEY,['percent'=>'3.00','fixed'=>'0.40'],'2026-11-02 01:00:00');
+$put(SiteDnsDefault::KEY,'17','2026-11-02 01:00:00');
+$native=$put('company_name','Example Hosting','2026-11-01 01:00:00');
+$install->install();
+same(1,DB::table($table)->count(),'One row is the shared mutex');same(1,(int)DB::table($table)->sole()->id,'Singleton identity is 1');
+same('12.00',(new PricingRules)->defaultRule()['markup'],'Equal pricing duplicates collapse');
+same(['percent'=>'3.00','fixed'=>'0.40'],CardFee::read(),'Latest updated conflicting value wins');
+same('17',BusinessSetting::row(SiteDnsDefault::KEY)->value,'DNS reference copies without guessing a replacement');
+same(0,Setting::whereIn('key',[PricingRules::KEY,CardFee::KEY,SiteDnsDefault::KEY])->count(),'Only imported global keys retire');
+same('Example Hosting',Setting::findOrFail($native)->value,'Ordinary native settings remain intact');
+$history=StaffSettingsReview::historyRows($server);$conflicts=array_values(array_filter($history,fn($r)=>($r['action']??null)==='Import global domain settings'));
+same(1,count($conflicts),'Conflicts appear in staff history');
+same($new,$conflicts[0]['after']['selected']['id'],'Staff history names the selected source');
+same($old,$conflicts[0]['before']['discarded'][0]['id'],'Staff history retains the other source');
+expect(str_contains(json_encode($conflicts[0]),'2.90'),'Staff history retains the other value');
+$stamp=BusinessSetting::stamp();$path=dirname(__DIR__).'/Domains/database/migrations/'.$migration.'.php';
+(require $path)->up();$install->install();same($stamp,BusinessSetting::stamp(),'Migration and installation rerun without resetting choices');
+same(count($history),count(StaffSettingsReview::historyRows($server)),'Reruns do not duplicate staff history');
+DB::transaction(fn()=>BusinessSetting::saveLocked(CardFee::KEY,['percent'=>'4.00','fixed'=>'0.50']));
+expect($stamp!==BusinessSetting::stamp(),'Staff review stamps notice an owned choice change');
+$put(CardFee::KEY,['percent'=>'99.00','fixed'=>'99.00'],'2026-11-03 01:00:00');
+same('4.00',CardFee::read()['percent'],'Retired native globals never regain authority');
+$error=null;try{BusinessSetting::saveLocked(CardFee::KEY,[]);}catch(LogicException $e){$error=$e->getMessage();}expect($error!==null,'Writes require the outer transaction');
+$failed=false;try{DB::table($table)->insert((array)DB::table($table)->sole());}catch(Illuminate\Database\QueryException){$failed=true;}expect($failed,'Database primary key rejects a second singleton');
+$nativeSuccessful=true;echo "Business choices import, duplicate policy, staff history, retirement and reruns.\n";

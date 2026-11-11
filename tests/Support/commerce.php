@@ -72,8 +72,7 @@ function commerceFixture(bool $eligible = false, ?Closure $activation = null, En
         }
         $binding = $bindings->configure($server->id, $key, $environment, ['token' => $identities[$key]??'account-'.$key],$review);
         // This shared fixture keeps its explicit historical arithmetic; new-account defaults have an upgrade regression.
-        App\Models\Setting::updateOrCreate(['key'=>'domains_pricing_default_rule','settingable_type'=>null,'settingable_id'=>null],
-            ['type' => 'array', 'encrypted' => false, 'value' => \Paymenter\Extensions\Servers\Domains\Services\PricingRule::DEFAULT]);
+        \Illuminate\Support\Facades\DB::transaction(static fn()=>\Paymenter\Extensions\Servers\Domains\Services\BusinessSetting::saveLocked(PricingRules::KEY,\Paymenter\Extensions\Servers\Domains\Services\PricingRule::DEFAULT));
         if ($environment === Environment::Live) { $bindings->confirmLiveSite($server->id, rtrim(config('app.url'), '/')); }
         $bindings->setProcessing($server->id, true, $activation ?? syntheticActivation());
         $tld = Tld::create(['server_id' => $server->id, 'registrar_key' => $key, 'account_fingerprint' => $binding->fingerprint,
