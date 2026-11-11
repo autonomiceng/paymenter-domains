@@ -85,11 +85,14 @@ final class RequestFacts
             $closed=in_array($op->state,['rejected','disposed'],true); $neverPaid=self::neverPaid($op);
             if ($neverPaid) { /* No money moved, so no refund row. */ }
             elseif ($returned=\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::summary($op)) {
-                $out['refund']=$returned[0];
+                // A return to the card is a refund, not credit, so the row is named for what happened.
+                $out['refund']=$returned[0]; $out['refund_label']=$returned[0]==='Credit added'?'Credit':'Refund';
                 $out['refund_sub']=match($returned[0]) {
                     'Refund needs a check'=>'Check the refund alert and gateway outcome. Do not return it again.',
                     'Refund processing'=>'Gateway return in progress. Automatic checks continue.',
-                    default=>'Check the invoice payment return.',
+                    'Refunded'=>'Returned to the original payment method. The refund shows on the invoice.',
+                    'Money returned'=>'Part returned to the original payment method, the rest added as account credit.',
+                    default=>'The original payment could not be refunded, so it went to account credit.',
                 };
             }
             elseif (array_key_exists('refund',$f)||array_key_exists('late_credits',$f)) { [$out['refund'],$out['refund_sub']]=self::creditWords($f); }
