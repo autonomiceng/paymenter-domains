@@ -380,13 +380,16 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         syntax_lint = kind == 'lint' and len(argv) == 3 and argv[1] == '-l'
         rss_path = None if syntax_lint else output/f'{index:03d}.rss.txt'
         interrupted = None
+        stdout, stderr = b'', b''
         try:
-            stdout, stderr, code, timed_out = execute(argv, cwd=ROOT, env=workers[worker] if workers else env,
-                                                    timeout=timeout, graceful=60 if kind == 'mariadb' else 0,
-                                                    processes=processes, index=index, rss_path=rss_path)
+            with test_workers.command_environment(workers[worker] if workers else env,
+                                                  fixture_snapshot=dependency[1] if dependency else None) as child:
+                stdout, stderr, code, timed_out = execute(argv, cwd=ROOT, env=child,
+                                                        timeout=timeout, graceful=60 if kind == 'mariadb' else 0,
+                                                        processes=processes, index=index, rss_path=rss_path)
         except BaseException as error:
             interrupted = error
-            stdout, stderr = getattr(error, 'captured_output', (b'', b''))
+            stdout, stderr = getattr(error, 'captured_output', (stdout, stderr))
             code, timed_out = 130 if isinstance(error, KeyboardInterrupt) else None, False
         seconds = time.monotonic() - started
         cancelled = interrupted is not None or index in processes.cancelled

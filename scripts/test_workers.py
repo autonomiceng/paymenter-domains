@@ -1,12 +1,14 @@
 """Private, reusable worker environments for the offline runner."""
 # MIT, Copyright (c) 2026 Autonomic Engineering.
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from functools import partial
 import hashlib
 import os
 from pathlib import Path
 import shutil
 import native
+import installed_fixture
 
 
 def runtime_hashes(root):
@@ -66,3 +68,32 @@ def verify(workers, fixture_snapshot, runtime_snapshot):
     check = partial(verify_worker, fixture_snapshot=fixture_snapshot, runtime_snapshot=runtime_snapshot)
     with ThreadPoolExecutor(max_workers=max(1, len(workers))) as pool:
         list(pool.map(check, workers))
+
+
+@contextmanager
+def command_environment(env, *, fixture_snapshot=None):
+    """Keep generated app files private to a case; reuse only verified vendor files."""
+    if not env or not env.get('PAYMENTER_TEST_FIXTURE'):
+        yield env
+        return
+    fixture = Path(env['PAYMENTER_TEST_FIXTURE'])
+    vendor = (fixture/'vendor').resolve(strict=True)
+    if fixture_snapshot is not None:
+        # Use the prepared app, which omits upstream cache placeholders.
+        fixture_snapshot = {name: digest for name, digest in fixture_snapshot.items() if name.startswith('vendor/')}
+        for entry in fixture.iterdir():
+            if entry.name == 'vendor':
+                continue
+            if entry.is_dir():
+                fixture_snapshot.update({entry.name+'/'+name: digest for name, digest in native.hashes(entry).items()})
+            elif entry.is_file():
+                fixture_snapshot[entry.name] = hashlib.sha256(entry.read_bytes()).hexdigest()
+    with installed_fixture.application(fixture, 'case') as (root, app):
+        temporary = root/'tmp'; temporary.mkdir()
+        child = dict(env, PAYMENTER_TEST_FIXTURE=str(app), TMPDIR=str(temporary),
+                     TMP=str(temporary), TEMP=str(temporary))
+        try:
+            yield child
+        finally:
+            if fixture_snapshot is not None:
+                native.verify(app, fixture_snapshot=fixture_snapshot, shared_vendor=vendor)
