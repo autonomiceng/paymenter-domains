@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Data\Action;
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\{BalanceSchema,EnomLiveActivation,EnomTestRenewal,EnomTestManagement,EnomTestTransfer,HistoryAcceptances,RenewalBillingSettings,StaffSettingsReview as Review};
+use Paymenter\Extensions\Servers\Domains\Services\{AuditArchives,BalanceSchema,EnomLiveActivation,EnomTestRenewal,EnomTestManagement,EnomTestTransfer,HistoryAcceptances,RenewalBillingSettings,StaffSettingsReview as Review};
 $activation=['registration'=>true,'renewal'=>true,'management'=>true,'transfer'=>false,'confirmed'=>true];
 $beforeWire=count($GLOBALS['enomWire']['forms']);
 // Staff saves are independent of automatic catalogue publication.
@@ -36,12 +36,17 @@ config(['domains.enom_live.management'=>false]);$deny(fn()=>$write('activate',$a
 $server->settings()->updateOrCreate(['key'=>RenewalBillingSettings::DUE],['value'=>'21','type'=>'integer']);
 $badBefore=$unchanged();$deny(fn()=>$write('activate',$activation));same($badBefore,$unchanged(),'Bad invoice days leave sending, both billing flags and audit unchanged');
 $server->settings()->where('key',RenewalBillingSettings::DUE)->delete();
-// Force failure after the existing feature writers run: audit corruption must undo every local write.
-$audit=$server->settings()->where('key',Review::KEY)->sole();$audit->encrypted=false;$audit->save();
-$deny(fn()=>$write('activate',$activation));
+// Force failure after the existing feature writers run: a refused audit insert must undo every local write.
+$failAudit=true;$auditAttempted=false;
+DB::connection()->beforeExecuting(static function(string $sql)use(&$failAudit,&$auditAttempted):void {
+    if($failAudit&&str_starts_with($sql,'insert into "'.AuditArchives::TABLE.'"')){
+        $auditAttempted=true;throw new DomainException('Synthetic audit append refusal');
+    }
+});
+try{$deny(fn()=>$write('activate',$activation));}finally{$failAudit=false;}
+expect($auditAttempted,'Activation reaches the current audit insert before rollback');
 expect(!EnomTestRenewal::accepted($binding)&&!RenewalBillingSettings::anyOn($server->id),'Audit refusal rolls back renewal send and both billing flags');
 expect(!$server->settings()->where('key',EnomLiveActivation::KEY)->exists(),'Audit refusal rolls back activation receipt');
-$audit->encrypted=true;$audit->save();
 $historyBefore=$staffHistoryCount();
 // Exercise the actual one-click + confirm native staff action, not an acceptance-row seed.
 $activateAction=Filament\Actions\Testing\TestAction::make('activate_live')->schemaComponent('account_'.$server->id.'.live_sales','content');
