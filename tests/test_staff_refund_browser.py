@@ -44,7 +44,7 @@ def started(server, timeout):
         raise AssertionError('The fixture server did not start: ' + ''.join(lines))
 
 
-def release_fixture_cache(app):
+def release_fixture_cache(app, *, copied=True):
     """Do not retain copied fixture assets in file cache alongside Chromium."""
     if not hasattr(os, 'posix_fadvise'):
         return
@@ -54,7 +54,8 @@ def release_fixture_cache(app):
             if path.is_symlink():
                 continue
             with path.open('rb') as handle:
-                os.fsync(handle.fileno())
+                if copied:
+                    os.fsync(handle.fileno())
                 os.posix_fadvise(handle.fileno(), 0, 0, os.POSIX_FADV_DONTNEED)
 
 
@@ -111,7 +112,7 @@ def main():
             db.execute("CREATE TRIGGER refund_browser_credit_fail BEFORE UPDATE ON credits WHEN OLD.amount > 0 "
                        "BEGIN SELECT RAISE(ABORT, 'synthetic credit failure'); END")
         release_fixture_cache(app)
-        release_fixture_cache((app/'vendor').resolve(strict=True))
+        release_fixture_cache((app/'vendor').resolve(strict=True), copied=False)
         steps, saved = browse(app, root, facts)
         operation = saved['operations']
 
