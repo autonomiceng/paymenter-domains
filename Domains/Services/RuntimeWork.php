@@ -118,6 +118,7 @@ final readonly class RuntimeWork
         },(int)$id);}}
         foreach(ObservationCandidates::next('timeout') as $ids){foreach($ids as $id){$this->attempt('timeout',fn()=>app(TransferInputs::class)->expireMissingCode((int)$id),(int)$id);}}
         $this->attempt('reminders',fn()=>app(Reminders::class)->sweep());
+        $this->attempt('history_retention',fn()=>HistoryRetention::tick($this->clock->now()->getTimestamp()));
         $this->attempt('watch_public_checks',fn()=>app(WatchWork::class)->tick());
         // Dispatch every selected account and independent producer before optional registrar I/O.
         foreach($balanceAccounts as $a){

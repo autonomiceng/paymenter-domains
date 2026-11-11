@@ -15,7 +15,7 @@ final class ReminderDelivery
     {
         $data+=['renews_automatically'=>false,'currency'=>'USD','can_turn_on'=>false];if(($data['invoice']??null)===false){$data['invoice']=null;} // Retained templates must never promise automatic renewal.
         $digest=hash('sha256',$domainId.':'.$identity);
-        if(DB::table('domains_reminder_deliveries')->where('delivery_key',$digest)->exists()){return null;}
+        if(HistoryRetention::replayed('reminder',$digest)||DB::table('domains_reminder_deliveries')->where('delivery_key',$digest)->exists()){return null;}
         $template=NotificationTemplate::where('key',$key)->lockForUpdate()->first();
         if(!$template){throw new \DomainException('Notification template missing.');}
         $pref=$template?$user->notificationsPreferences()->where('notification_template_id',$template->id)->first():null;

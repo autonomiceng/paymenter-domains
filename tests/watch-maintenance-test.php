@@ -54,7 +54,7 @@ $m->tick($at+2*86400);$alert=App\Models\Notification::where('title','Domain moni
 same(strstr($n['text'],' Ask your site admin',true),$alert->body,'Alert keeps the fact; the next step stays on the linked page');$oldAlert=(int)DB::table('domains_watch_schedule')->where('scope','dispatch')->value('alert_at');
 DB::table('domains_watch_work')->insert(['watch_id'=>$watch->id,'kind'=>'points','watch_revision'=>1,'due_at'=>$at]);DB::table('domains_watch_schedule')->insert(['scope'=>'health_watch_dns','cursor'=>$at]);$m->tick($at+2*86400+1);expect((int)DB::table('domains_watch_schedule')->where('scope','dispatch')->value('alert_at')>$oldAlert,'Additional failed family is not suppressed');
 DB::transaction(fn()=>$m->retain('registry',$first));$m->tick($now+91*86400);expect(WatchRegistryObservation::whereKey($first)->exists(),'Notice reference survives retention');expect(WatchRegistryObservation::whereKey($last)->exists(),'Last good survives beyond ninety days');
-DB::table('domains_public_evidence_refs')->delete();$m->tick($now+91*86400);expect(!WatchRegistryObservation::whereKey($first)->exists(),'Unreferenced superseded evidence pruned');expect(WatchRegistryObservation::whereKey($last)->exists(),'Last successful fact retained');same(0,DB::table('domains_operations')->count(),'Maintenance never writes financial operations');
+DB::table('domains_public_evidence_refs')->delete();$m->tick($now+91*86400);expect(WatchRegistryObservation::whereKey($first)->exists(),'Unreferenced evidence remains active for thirteen months');expect(WatchRegistryObservation::whereKey($last)->exists(),'Last successful fact retained');same(0,DB::table('domains_operations')->count(),'Maintenance never writes financial operations');
 // A failed native recipient must not prevent delivery to later eligible staff.
 $failure='throw';$levels=[];$markers=[];
 App\Models\Notification::creating(static function($n)use(&$failure,&$levels,&$markers,$staff){
@@ -85,7 +85,7 @@ $old['result']='unknown';$old['reason']='endpoint_failed';$old['completed_at']=$
 $oldId=DB::table('domains_watch_registry')->insertGetId($old);
 $m->tick($retryAt);
 expect($commitObservations!==[]&&!in_array(false,$commitObservations,true),'Every observed recipient delivery follows episode commit');
-same([$retryAt,true],[(int)DB::table('domains_watch_schedule')->where('scope','dispatch')->value('alert_at'),!DB::table('domains_watch_registry')->where('id',$oldId)->exists()],'Failure retains episode and still sweeps old observations');
+same([$retryAt,true],[(int)DB::table('domains_watch_schedule')->where('scope','dispatch')->value('alert_at'),DB::table('domains_watch_registry')->where('id',$oldId)->exists()],'Failure retains episode and observations within thirteen months');
 expect($levels!==[]&&array_unique($levels)===[1],'Native inbox writes use a separate receipt transaction after episode locks');
 expect(!in_array(false,$markers,true),'Episode committed before any native inbox write');
 $outage=fn()=>json_decode(DB::table('domains_watch_schedule')->where('scope','outage')->value('data'),true);

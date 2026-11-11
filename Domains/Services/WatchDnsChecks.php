@@ -119,6 +119,7 @@ final class WatchDnsChecks
         if ($candidate === null || $candidate->state !== 'active' || WatchManagedTarget::exists($userId,$candidate->canonical_name)) { return null; }
         [$sources, $overflow] = $this->sources($watchId, $sourceCursor, false);
         if ($sources->isEmpty() || !User::whereKey($userId)->when($lock, fn($q) => $q->lockForUpdate())->exists()) { return null; }
+        if(DB::table(UserDeletionSchema::TABLE)->where('user_id',$userId)->exists()){return null;}
         $orderIds = Service::whereIn('id', $sources->pluck('service_id'))->pluck('order_id');
         $orders = Order::whereIn('id', $orderIds)->orderBy('id')->when($lock, fn($q) => $q->lockForUpdate())->get()->keyBy('id');
         $services = Service::whereIn('id', $sources->pluck('service_id'))->orderBy('id')->when($lock, fn($q) => $q->lockForUpdate())->get()->keyBy('id');

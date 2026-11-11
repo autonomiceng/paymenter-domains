@@ -15,6 +15,7 @@ final class WatchScheduleSchema
         $t->unsignedBigInteger('source_cursor')->default(0); $t->string('bootstrap_revision',64);
         $t->unsignedBigInteger('started_at'); $t->unsignedBigInteger('completed_at'); $t->unsignedBigInteger('valid_until')->nullable();
         $t->string('result',16); $t->string('reason',32); $t->string('safe_code',64)->nullable(); $t->longText('facts');
+        RetentionOwnerIndex::define($t,'domains_watch_registry');
         $t->index(['watch_id','completed_at']);
     }
     private static function quota(Blueprint $t): void

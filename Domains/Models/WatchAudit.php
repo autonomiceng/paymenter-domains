@@ -26,6 +26,9 @@ final class WatchAudit extends Model
             if(!isset($row->attributes['created_at'])){$row->created_at=now();}
             $row->attributes['time_zone']='UTC';
         });
+        static::created(static function (self $row): void {
+            \Paymenter\Extensions\Servers\Domains\Services\HistoryRetention::recorded('watch_audit',(int)$row->id,time());
+        });
         static::updating(static function (): never { throw new \DomainException('Watch audit is append-only.'); });
         static::deleting(static function (): never { throw new \DomainException('Watch audit is retained.'); });
     }

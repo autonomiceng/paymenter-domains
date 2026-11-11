@@ -72,9 +72,15 @@ same($hostingBefore+1,Service::where('user_id',$failed->id)->count(),'Deletion i
 $reject(fn()=>DB::transaction(fn()=>HoldingIdentityLock::lockForAdoption(987654,987654)), 'Missing owner.');
 $existing=$makeService($failed,$failed,false);
 $reject(fn()=>DB::transaction(fn()=>HoldingIdentityLock::lockForAdoption($existing->order_id,$existing->id)),NativeUserDeletion::PENDING);
-$failure=false;$failed->fresh()->delete();
-expect(!User::whereKey($failed->id)->exists(),'Retry completes deletion');
-same((array)$intent,(array)DB::table(UserDeletionSchema::TABLE)->where('user_id',$failed->id)->sole(),'Completed deletion retains intent without restamping');
+$failure=false;$reject(fn()=>$failed->fresh()->delete(),NativeUserDeletion::RETAINED);
+expect(User::whereKey($failed->id)->exists(),'Hosting checkout invoice retains its owner');
+same((array)$intent,(array)DB::table(UserDeletionSchema::TABLE)->where('user_id',$failed->id)->sole(),'Financial refusal retains the original deletion intent');
+$retry=commerceUser();$retryFailure=true;
+User::deleting(static function(User $u)use($retry,&$retryFailure):void {if($u->id===$retry->id&&$retryFailure){throw new RuntimeException('Synthetic retry failure');}});
+try{$retry->fresh()->delete();expect(false,'Retry listener must fail');}catch(RuntimeException){}
+$retryIntent=(array)DB::table(UserDeletionSchema::TABLE)->where('user_id',$retry->id)->sole();
+$retryFailure=false;$retry->fresh()->delete();expect(!User::whereKey($retry->id)->exists(),'Retry without financial records completes deletion');
+same($retryIntent,(array)DB::table(UserDeletionSchema::TABLE)->where('user_id',$retry->id)->sole(),'Completed deletion retains intent without restamping');
 // A second paused deletion can still delete a manually reused ID after the first completes.
 $twice=commerceUser();$attrs=$twice->getAttributes();
 User::deleting(static function(User $u)use($twice):void {if($u->id===$twice->id){Fiber::suspend('delete-ready');}});

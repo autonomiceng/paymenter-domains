@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Models\{Server,Setting};
-use Illuminate\Support\Facades\{Crypt,DB};
+use Illuminate\Support\Facades\{Crypt,DB,Schema};
 /** Encrypted events, with legacy batch identities retained until checked retirement. */
 final class AuditEvents
 {
@@ -16,6 +16,10 @@ final class AuditEvents
         $json=json_encode($entry,JSON_THROW_ON_ERROR);$payload=Crypt::encryptString($json);
         if(strlen($payload)>64000){throw new \DomainException('Audit entry too large. Changes held.');}
         $key??=bin2hex(random_bytes(32));
+        if(Schema::hasTable(RetentionSchema::KEYS)&&HistoryRetention::replayed('audit_event',$key)){
+            if(!HistoryRetention::replayed('audit_event_data',self::retentionDigest($key,$server,$family,$entry))){throw new \DomainException('Audit event identity changed.');}
+            return;
+        }
         $old=DB::table(AuditArchives::TABLE)->where('event_key',$key)->first();
         if($old){
             if((int)$old->server_id!==$server||$old->family!==$family||self::decode($old->payload)!==$entry){throw new \DomainException('Audit event identity changed.');}
@@ -23,6 +27,8 @@ final class AuditEvents
         }
         DB::table(AuditArchives::TABLE)->insert(['server_id'=>$server,'family'=>$family,'event_key'=>$key,'payload'=>$payload]);
     }
+    public static function retentionDigest(string $key,int $server,string $family,array $entry): string
+    {return hash('sha256',json_encode([$key,$server,$family,$entry],JSON_THROW_ON_ERROR));}
     private static function decode(string $payload): array
     {
         try{$row=json_decode(Crypt::decryptString($payload),true,32,JSON_THROW_ON_ERROR);
