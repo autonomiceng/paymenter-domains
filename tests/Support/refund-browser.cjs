@@ -34,7 +34,10 @@ async function state(page, label) {
       modalOpen: !!modal,
       reason: modal?.querySelector('textarea')?.value ?? null,
       mounted: mounted?.map((a) => ({ name: a.name, reason: a.data?.reason ?? null })) ?? null,
-      menu: [...document.querySelectorAll('.fi-dropdown-list-item')].map((n) => n.innerText.trim()),
+      menu: [...document.querySelectorAll('.fi-dropdown-list-item')].filter(visible).map((n) => n.innerText.trim()),
+      notificationTitles: [...document.querySelectorAll('.fi-no-notification-title')].filter(visible).map((el) => el.innerText.trim()),
+      notificationDurations: [...document.querySelectorAll('.fi-no-notification')].filter(visible).map((el) =>
+        window.Alpine.evaluate(el, el.getAttribute('x-data').replace(/^notificationComponent/, '')).notification.duration),
       notifications: [...document.querySelectorAll('.fi-no-notification')].filter(visible).map((n) => n.innerText.replace(/\s+/g, ' ').trim()),
       text: (document.querySelector('.fi-page') ?? document.body).innerText.replace(/\s+/g, ' ').trim().slice(0, 3000),
     };
@@ -53,7 +56,6 @@ async function open(page, id) {
 async function openRefund(page) {
   await page.click('button:has-text("More")');
   await page.click('.fi-dropdown-list-item:has-text("Cancel and refund")');
-  await page.waitForLoadState('networkidle');
   await page.waitForSelector('.fi-modal-window textarea', { state: 'visible' });
   await page.locator('.fi-modal-window textarea').click();
   await page.keyboard.type(REASON);
@@ -88,6 +90,7 @@ async function confirm(page) {
     await confirm(first);
     await state(first, 'confirmed');
     await open(first, seed.refund.id);
+    await first.click('button:has-text("More")');
     await state(first, 'reloaded');
     await confirm(second);
     await state(second, 'duplicate');
@@ -101,15 +104,16 @@ async function confirm(page) {
     });
     await first.waitForLoadState('networkidle');
     await state(first, 'unknown-forced');
-    // A refund that cannot finish keeps its warning on screen after ordinary notices close.
+    // Check the rendered auto-close setting and visibility after a short interval.
     const third = await context.newPage();
     watch(third);
-    await third.clock.install();
     await open(third, seed.failing.id);
     await openRefund(third);
     await confirm(third);
     await state(third, 'failed');
-    await third.clock.fastForward(60000);
+    await third.evaluate(() => { window.refundNoticeCheckStarted = performance.now(); });
+    await third.waitForFunction(() => performance.now() >= window.refundNoticeCheckStarted + 250,
+      null, { polling: 'raf', timeout: 2000 });
     await state(third, 'failed-later');
     receipt.facts = await (await context.request.get(`${base}/refund-browser-facts`)).json();
   } catch (error) {

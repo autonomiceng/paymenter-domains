@@ -115,7 +115,7 @@ def main():
         assert 'Cancelled' in reloaded and 'Credit added' in reloaded, 'The request page shows the cancelled request and its credit'
         assert 'Cancel and refund' not in steps['reloaded']['menu'], 'A closed request offers no second refund'
         duplicate = steps['duplicate']
-        assert not duplicate['modalOpen'] and duplicate['notifications'], f'A second click from an old dialog is answered: {duplicate}'
+        assert not duplicate['modalOpen'] and duplicate['mounted'] == [] and duplicate['notificationTitles'] == ['This request changed'], f'A second click from an old dialog is answered: {duplicate}'
 
         unknown = steps['unknown-offered']
         assert 'Cancel and refund' not in unknown['menu'], 'An unknown registrar reply is not offered a refund'
@@ -126,6 +126,7 @@ def main():
 
         warning = 'Cancelled, refund not finished'
         assert any(n.startswith(warning) for n in steps['failed']['notifications']), f'A failed refund says so: {steps["failed"]["notifications"]}'
+        assert steps['failed']['notificationDurations'] == ['persistent'], 'The failure notice has no auto-close duration'
         assert any(n.startswith(warning) for n in steps['failed-later']['notifications']), 'The failure stays on screen'
         failing = operation['failing']
         assert failing['state'] == 'rejected' and 'refund_authorization' in failing['funding_keys'] and 'refund' not in failing['funding_keys'], \
