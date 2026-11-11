@@ -5,7 +5,7 @@
     $all = request()->query('history') === 'all';
 @endphp
 <section class="domains-panel" id="history" aria-labelledby="heading-history"><div class="domains-panel__h"><h2 id="heading-history" class="domains-h2">History</h2>@if (count($steps) > 5 && !$all)<a class="domains-a" href="{{ $domain->actions['show'] }}?history=all#history">View all {{ count($steps) }}</a>@endif</div>
-@if (!$steps)<div class="domains-panel__b"><p class="domains-muted">{{ ($domain->order['kind'] ?? null) === 'registration' && ($domain->order['state'] ?? null) === 'paid' ? 'Registration is in progress.' : 'No changes yet.' }}</p></div>@else
+@if (!$steps)<div class="domains-panel__b"><p class="domains-muted">{{ in_array($domain->order['kind'] ?? null, ['registration', 'transfer'], true) && ($domain->order['state'] ?? null) === 'paid' ? ucfirst($domain->order['kind']).' is in progress.' : 'No changes yet.' }}</p></div>@else
 <ol class="domains-trace">@foreach ($all ? $steps : array_slice($steps, 0, 5) as $step)
 @php($word = $step['state'] ?? $step['status'])
 <li><span class="domains-status domains-tone-{{ $tone($word) }}" aria-hidden="true"></span><div>@if ($step['url'] ?? null)<a class="domains-a" href="{{ $step['url'] }}">Invoice #{{ $step['number'] }}</a>@else<b>{{ $step['label'] === 'WHOIS privacy' && !\Paymenter\Extensions\Servers\Domains\Presentation\PrivacyVisibility::SHOWN ? 'Domain change' : $step['label'] }}</b>@endif

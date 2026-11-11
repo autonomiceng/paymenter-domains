@@ -9,8 +9,10 @@ use Paymenter\Extensions\Servers\Domains\Services\{ContactRecovery, DomainManage
 /** Dormant owner POST boundary. Never calls a driver write. Contact correction wakes only the existing paid registration. */
 final readonly class OwnerActionController
 {
-    // Shown on the auth code page once a code is saved, so the redirect carries no flash.
+    // Shown on the auth code page while the code can still be changed.
     public const CODE_SAVED='Auth code saved.';
+    /** After a save on a paid transfer the domain page says it started; its notice says how long transfers take. */
+    public const CODE_SAVED_STARTED='Auth code saved. The transfer has started.';
     public const ACTIONS=['nameservers','contacts','contact_profile','lock','privacy_enable','privacy_disable','privacy_purchase','privacy_renew','auto_renew_off','auth_code_email','dns','srv','ds_add','ds_delete','glue_add','glue_update','glue_delete'];
     public function __construct(private OwnedDomains $owners, private OwnerSetup $setup, private TransferInputs $inputs,
         private DomainManagement $management, private OwnerPorts $ports) {}
@@ -31,7 +33,10 @@ final readonly class OwnerActionController
         try {
             $body=Request::create('/','POST',['transfer_code'=>$code]); $body->setUserResolver(fn()=>$request->user());
             $this->inputs->submitCode($body,$op?->id??0);
-            return redirect()->route('domains.domains.code',$domain);
+            $op=$op?->fresh();
+            // Unpaid or held, the domain page notice already names the next step, so the message only confirms the save.
+            $started=$op!==null&&$op->state!=='held'&&\App\Models\Invoice::whereKey($op->invoice_id)->where('user_id',$d->user_id)->value('status')==='paid';
+            return redirect()->route('domains.domains.show',$domain)->with('domains_status',$started?self::CODE_SAVED_STARTED:self::CODE_SAVED);
         } catch (\Throwable) { return redirect()->route('domains.domains.code',$domain)->withErrors(['transfer_code'=>'We couldn’t save the auth code. Try again.']); }
     }
     public function setup(Request $request,int $domain)

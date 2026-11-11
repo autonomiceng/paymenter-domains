@@ -8,6 +8,11 @@ use Paymenter\Extensions\Servers\Domains\Services\{ComplimentaryAccounts, Renewa
 final class DomainListRow
 {
     private const WAITS = ['import' => 'when the import is confirmed', 'registration' => 'when the registration finishes', 'transfer' => 'when the transfer finishes'];
+    /** A transfer brings its expiry date with it, so nothing is missing while it runs: the row says when the date shows. */
+    public const AFTER_TRANSFER = 'Shows when the transfer finishes';
+    /** Expires while a transfer runs. support false: there is nothing to ask us about. */
+    public static function afterTransfer(): array
+    { return ['missing' => false, 'tone' => null, 'value' => self::AFTER_TRANSFER, 'note' => null, 'support' => false]; }
     /** "Hosting: {first}" or "Hosting: {first} and {n} more". */
     public static function hosting(DomainSummary $s): ?string
     {
@@ -27,12 +32,12 @@ final class DomainListRow
         $basis = ($order['complimentary'] ?? false) ? ($funding ? 'Complimentary. ' : '') : 'Paid. ';
         return match ($order['state'] ?? null) {
             'unpaid' => ['missing' => true, 'cause' => ucfirst($word).' starts after you pay', 'fix' => ['label' => 'Pay invoice', 'url' => $order['invoice'], 'button' => true]],
-            'paid' => ['missing' => true, ...match ($order['next'] ?? null) {
+            'paid' => $word === 'transfer' && (($order['next'] ?? null) === 'awaiting_code' || !isset($order['next']) && !$complimentary) ? self::afterTransfer() : ['missing' => true, ...match ($order['next'] ?? null) {
                 'awaiting_code' => ['cause' => Missing::fills(self::WAITS[$word]), 'fix' => null],
                 'setup_required' => ['cause' => $basis.'Finish setup to start the '.$word.'.', 'fix' => null],
                 'setup_optional' => ['cause' => $basis.'We’re starting the '.$word.'. You can choose nameservers before it’s sent.', 'fix' => null],
                 // With no notice above it, a complimentary row says what the page notice says.
-                default => ['cause' => $complimentary ? $basis.'We’re finishing the '.$word.'. There’s nothing you need to do.' : Missing::fills(self::WAITS[$word]), 'fix' => null],
+                default => ['cause' => $complimentary ? $basis.DomainPage::finishing($word).' '.DomainPage::NOTHING_TO_DO : Missing::fills(self::WAITS[$word]), 'fix' => null],
             }],
             'cancelled' => isset($order['credit']) || ($order['unpaid'] ?? false) ? ['missing' => false, 'tone' => null, 'note' => null] : ['missing' => true, 'cause' => 'Order cancelled', 'fix' => Missing::support($support)],
             'failed' => ['missing' => true, 'cause' => ucfirst($word).' did not finish', 'fix' => Missing::support($support)],
@@ -45,6 +50,7 @@ final class DomainListRow
         if ($s->expiry === null) {
             if ($s->statusState === 'cancelled') { return ['missing' => false, 'tone' => null, 'note' => null]; } // Nothing left to fill in.
             if ($order = self::orderExpires($s->order, $s->urls['support'] ?? null)) { return $order; }
+            if ($s->kind !== 'watch' && $s->expiryWaits === 'transfer') { return self::afterTransfer(); }
             $wait = self::WAITS[$s->expiryWaits ?? ''] ?? null;
             $cause = $s->kind === 'watch' ? 'Check at your registrar' : ($wait ? Missing::fills($wait) : null);
             return ['missing' => true, 'cause' => $cause, 'fix' => $cause === null ? Missing::support($s->urls['support'] ?? null) : null];

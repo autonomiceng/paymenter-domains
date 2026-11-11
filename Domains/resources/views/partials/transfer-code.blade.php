@@ -20,7 +20,7 @@
 @elseif ($domain->transfer['phase'] === 'payment')<p>We couldn’t confirm the payment date for this transfer. @include('domains::partials.contact-support', ['after' => ' and we’ll sort it out.'])</p>
 @else<p>Your transfer is on hold. @include('domains::partials.contact-support', ['after' => ' and we’ll sort it out.'])</p>@endif
 @endif
-@if ($domain->transfer['unchecked'])<dl class="domains-facts"><div><dt>Expires</dt><dd>@include('domains::partials.missing', ['cause' => \Paymenter\Extensions\Servers\Domains\Presentation\Missing::fills('when the transfer finishes')])</dd></div></dl>@endif
+@if ($domain->transfer['unchecked'])<dl class="domains-facts"><div><dt>Expires</dt><dd>{{ \Paymenter\Extensions\Servers\Domains\Presentation\DomainListRow::AFTER_TRANSFER }}</dd></div></dl>@endif
 
 @if ($domain->setup['contacts'])
 <section class="domains-section">@include('domains::partials.registration-setup')</section>

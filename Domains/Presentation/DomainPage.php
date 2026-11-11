@@ -17,6 +17,11 @@ final class DomainPage
     /** The cause on each value while reads are stopped. The page notice carries the one fix, so the rows stay calm. */
     public const TEAM_CHECK = 'Our team needs to check this domain. '.Missing::NO_ACTION;
     public const NOTHING_TO_DO = 'There’s nothing you need to do.';
+    /** How long a transfer takes, said wherever the customer waits for one. */
+    public const TRANSFER_TIME = 'Most transfers finish within 5 to 7 days.';
+    /** The work under way on a paid order, with the time frame for a transfer. */
+    public static function finishing(string $word): string
+    { return 'We’re finishing the '.$word.'.'.($word === 'transfer' ? ' '.self::TRANSFER_TIME : ''); }
     /** The page notice while reads are stopped. When it shows, the rows need not repeat it. */
     public const READ_HELD = 'We can’t read this domain’s details right now. '.DomainStatus::ON_IT.'.';
     public static function readHeldSaid(?array $notice): bool
@@ -59,7 +64,7 @@ final class DomainPage
             ($d->transfer['notice']['tone'] ?? null) === 'warning' => ['tone' => 'warn', 'text' => $d->transfer['notice']['title'].' '.$d->transfer['notice']['body'], 'action' => $contact],
             $order === 'paid' && isset($d->order['check']) => ['tone' => $d->order['check']['tone'] ?? 'warn', 'text' => $d->order['check']['title'].'. '.$d->order['check']['body'], 'action' => $contact],
             // A complimentary order has nothing paid, so it says what it is, as its receipt does.
-            $order === 'paid' && in_array($d->order['next'] ?? null, [null, 'setup_optional'], true) => self::ours((($d->order['complimentary'] ?? false) ? 'Complimentary. ' : 'Paid. ').'We’re finishing the '.$word.'. '.self::NOTHING_TO_DO, $contact),
+            $order === 'paid' && in_array($d->order['next'] ?? null, [null, 'setup_optional'], true) => self::ours((($d->order['complimentary'] ?? false) ? 'Complimentary. ' : 'Paid. ').self::finishing($word).' '.self::NOTHING_TO_DO, $contact),
             // An Off switch is why changes stop, so its own notice below wins over a stopped read, which the rows already say.
             self::checkHeld($d) && !($d->changesUnavailable && $d->changesRefused === DomainManagement::SWITCH_OFF) => self::ours(self::READ_HELD, $contact),
             $d->statusReason === DomainStatus::LATE => ['tone' => 'bad', 'text' => 'This domain has expired. '.DomainStatus::LATE.'.', 'action' => $contact],
@@ -108,6 +113,7 @@ final class DomainPage
             if ($order = DomainListRow::orderExpires($d->order, $support, funding: !$said)) { return $order; }
             if (self::checkHeld($d)) { return ['missing' => true, 'cause' => self::TEAM_CHECK, 'fix' => null]; }
             $list = $s ? DomainListRow::expires($s) : null;
+            if (isset($list['value'])) { return $list; }
             return ['missing' => true, 'cause' => $list['cause'] ?? Missing::fills('after the next sync'), 'fix' => isset($list['cause']) ? $list['fix'] : null];
         }
         $days = $d->daysLeft ?? $s?->daysLeft ?? (int) CarbonImmutable::now('UTC')->startOfDay()->diffInDays(CarbonImmutable::parse($d->expiry, 'UTC'), false);

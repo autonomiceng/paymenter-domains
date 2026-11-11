@@ -83,9 +83,9 @@ $notice=DomainPage::notice($owned($pay),'/tickets/create');
 same('This order isn’t paid yet. Pay the invoice to start the registration.',$notice['text'],'Unpaid notice');
 same(['label'=>'Pay invoice','url'=>'/invoices/11','button'=>true],$notice['action'],'Unpaid notice carries the Pay button');
 same(['Paid. Finish setup to start the registration.',null],[($e=DomainListRow::orderExpires(['state'=>'paid','kind'=>'registration','next'=>'setup_required'],'/tickets/create'))['cause'],$e['fix']],'Expires names the owner\'s step');
-same(Missing::fills('when the transfer finishes'),DomainListRow::orderExpires(['state'=>'paid','kind'=>'transfer','next'=>'awaiting_code'],'/tickets/create')['cause'],'Expires stays calm while the notice asks for the code');
+same(DomainListRow::afterTransfer(),DomainListRow::orderExpires(['state'=>'paid','kind'=>'transfer','next'=>'awaiting_code'],'/tickets/create'),'Expires stays calm while the notice asks for the code');
 // slop-sweep: a complimentary order says so, as its page notice does.
-same(['Complimentary. Finish setup to start the registration.',Missing::fills('when the transfer finishes')],[DomainListRow::orderExpires(['state'=>'paid','kind'=>'registration','next'=>'setup_required','complimentary'=>true],null)['cause'],DomainListRow::orderExpires(['state'=>'paid','kind'=>'transfer','next'=>'awaiting_code','complimentary'=>true],null)['cause']],'Complimentary Expires names no payment');
+same(['Complimentary. Finish setup to start the registration.',DomainListRow::AFTER_TRANSFER],[DomainListRow::orderExpires(['state'=>'paid','kind'=>'registration','next'=>'setup_required','complimentary'=>true],null)['cause'],DomainListRow::orderExpires(['state'=>'paid','kind'=>'transfer','next'=>'awaiting_code','complimentary'=>true],null)['value']],'Complimentary Expires names no payment');
 same(null,DomainPage::notice($owned(['state'=>'paid','kind'=>'registration','next'=>'setup_required']),'/tickets/create'),'Never says nothing to do while a step is left');
 // A paid NameSilo registration with default nameservers goes ahead by itself: choosing nameservers is optional, never Action required.
 $optional=OwnedDomains::order($d(['registrar_key'=>'namesilo']),$op(['registrar_key'=>'namesilo','state'=>'queued','payload'=>['nameservers'=>['ns1.provider.example','ns2.provider.example']]]),$invoice('paid'));
@@ -122,7 +122,7 @@ foreach(['register'=>'registration','transfer'=>'transfer'] as $action=>$kind){
             $notice=DomainPage::notice($owned($order),'/tickets/create');
             if($retry!==null){
                 expect(!isset($order['check']),'Scheduled retry keeps check details out of the customer order');
-                same(['info','Paid. We’re finishing the '.$kind.'. There’s nothing you need to do.'],[$notice['tone'],$notice['text']],'Automatic retry needs no customer action');
+                same(['info','Paid. We’re finishing the '.$kind.'.'.($kind==='transfer'?' Most transfers finish within 5 to 7 days.':'').' There’s nothing you need to do.'],[$notice['tone'],$notice['text']],'Automatic retry needs no customer action; a transfer says how long it takes');
             }else{
                 same(Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::for($pending),$order['check'],'Stopped customer check uses the same words as staff');
                 same('warn',$notice['tone'],'Stopped check points the customer to support');

@@ -256,7 +256,7 @@ $pending=$domain(['status'=>'Pending transfer','tone'=>'info','renewal'=>'','exp
     'transfer'=>['open'=>true,'received'=>false,'phase'=>'editing']]);
 $dom=storefrontDom($render($pending,$summary($pending,['expiryWaits'=>'transfer'])));
 same('Enter the auth code from your current registrar. Enter auth code',$norm($dom->query('//div[contains(@class,"domains-notice")]')->item(0)),'Pending transfer notice');
-same('Missing Fills in by itself when the transfer finishes',$card($dom,'Expires'),'Pending expiry waits');
+same('Shows when the transfer finishes',$card($dom,'Expires'),'Pending transfer expiry says when it shows, not Missing');
 same([null,null],[$card($dom,'Renewal invoices'),$card($dom,'Next invoice')],'No renewal timing for an inactive domain');
 $saved=new OwnedDomain(...[...get_object_vars($pending),'transfer'=>['open'=>true,'received'=>true,'phase'=>'editing']]);
 $dom=storefrontDom($render($saved));same('Saved Change auth code',$card($dom,'Auth code'),'Saved auth code');same(['Saved',['Change auth code']],$split($dom,'Auth code'),'Change auth code sits on its own line');same(0,$dom->query('//div[contains(@class,"domains-notice")]')->length,'No notice once saved');

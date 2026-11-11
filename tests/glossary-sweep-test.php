@@ -152,7 +152,7 @@ same(['Auth code'],array_map(fn($n)=>$n->textContent,iterator_to_array($dom->que
 same(['Auth code'],array_map(fn($n)=>$n->textContent,iterator_to_array($dom->query('//label[@for="transfer-code-input"]'))),'Code field label');
 same(['Save'],array_map(fn($n)=>trim($n->textContent),iterator_to_array($dom->query('//form//button[@type="submit"]'))),'Code button');
 same(1,substr_count($codeText,OwnerActionController::CODE_SAVED),'Saved line said once');
-expect(str_contains($codeText,'Expires Missing Fills in by itself when the transfer finishes'),'Unchecked registry record: Expires Missing with its cause');
+expect(str_contains($codeText,'Expires Shows when the transfer finishes')&&!str_contains($codeText,'Missing'),'Unchecked registry record: Expires says when it shows, not Missing');
 $none($codeText,['transfer code','Transfer code','public registration record','Code saved','auth code or EPP'],'Auth code page');
 $cutoff=$plain(view('domains::code',['domain'=>$owned(['required'=>false],[...$transferDto,'open'=>false,'phase'=>'cutoff','unchecked'=>false])])->render());
 expect(str_contains($cutoff,'The time to enter or change this auth code has passed.'),'Cutoff names the auth code');
