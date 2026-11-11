@@ -30,6 +30,11 @@ def application(fixture, scenario):
                 "vendor", "*.sqlite", "domains-editor-routes.php"
             ),
         )
+        # Native panel tests can leave the worker linked to the current source.
+        # An installed lifecycle receives only the ZIP it installs in this app.
+        extension = app / "extensions/Servers/Domains"
+        if extension.is_symlink():
+            extension.unlink()
         (app / "vendor").symlink_to(vendor, target_is_directory=True)
         try:
             yield root, app

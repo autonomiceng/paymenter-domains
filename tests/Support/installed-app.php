@@ -19,7 +19,8 @@ foreach(['APP_ENV'=>'testing','APP_KEY'=>'base64:'.base64_encode(str_repeat('t',
 }
 $loader=require $fixture.'/vendor/autoload.php';
 $loader->addPsr4('App\\',$fixture.'/app/',true);
-$loader->addPsr4('Paymenter\\Extensions\\',$fixture.'/extensions/',true);
+// Replace Composer's worker path: a missing installed class must stay missing.
+$loader->setPsr4('Paymenter\\Extensions\\',$fixture.'/extensions/');
 $app=require $fixture.'/bootstrap/app.php';
 // Retained fixture databases keep real cross-process commits. WAL avoids rewriting the
 // rollback journal for every migration while FULL synchronization preserves durability.
