@@ -19,7 +19,7 @@ final readonly class ManagementForms
     /** Whether this exact form save is already a request. */
     public static function accepted(User $actor, Domain $d, string $action, string $nonce): bool
     { return $d->operations()->where('operation_key','manage:'.$d->id.':'.$nonce)->where('action',$action)->where('authorized_by',$actor->id)->exists(); }
-    public function submit(User $actor, Domain $d, string $action, #[\SensitiveParameter] array $p, string $nonce): void
+    public function submit(User $actor, Domain $d, string $action, #[\SensitiveParameter] array $p, string $nonce, ?string $contactsDigest = null): void
     {
         // Paid-service toggles and renewals require an existing subscription at the driver; new offerings stay closed.
         if (!PrivacyVisibility::SHOWN && ($action==='privacy_purchase' || $action==='privacy_enable' && $this->ports->forDomain($d)->capabilities()->privacy!==PrivacyMode::Paid)) {
@@ -52,7 +52,7 @@ final readonly class ManagementForms
             $payload=DnsForm::payload(OwnerRecords::nameSilo($d)??throw new \DomainException('Current records required.'),$payload['records'],$payload['record_sources'],$payload['preimage_digest']);
         }
         $engine=Runtime::management($d,$this->management); $driver=$this->ports->forDomain($d);
-        $op=$engine->request($actor,(int)$d->id,$action,$payload,$nonce,$driver,recordIdentity:$records?ObservationRecords::identity($d):null);
+        $op=$engine->request($actor,(int)$d->id,$action,$payload,$nonce,$driver,recordIdentity:$records?ObservationRecords::identity($d):null,contactsDigest:$contactsDigest);
         if (in_array($action,['lock','nameservers','contacts','contact_profile','dns','srv','auth_code_email'],true)) { ManagementStart::afterResponse($op,$engine,$driver); }
     }
 }

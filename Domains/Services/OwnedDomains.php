@@ -230,7 +230,7 @@ final readonly class OwnedDomains
             if ($label) { $progress[]=['label'=>$label,'state'=>'Under review','date'=>$entries->firstWhere('operation_key',$row['operation_key']??null)?->updated_at?->toIso8601String()]; }
         }
         if ($caps) { $setup['maxNameservers']=$d->registrar_key==='enom'?12:13; }
-        try { $contacts=$forms?self::contacts($d):[]; } catch (\Throwable) { $contacts=null; }
+        try { $contactOperations=$forms?self::contactOperations($d):collect(); $contacts=self::contacts($d,$contactOperations); } catch (\Throwable) { $contacts=null; }
         if ($forms) {
             $labels=['glue'=>'Glue records','nameservers'=>'Nameservers','contacts'=>'Contacts','lock'=>'Transfer lock','privacy'=>'WHOIS privacy','auto_renew_off'=>'Renewal settings','auth_code_email'=>'Auth code'];
             if ($d->registrar_key==='enom') { $labels+=['dns'=>'DNS records','srv'=>'SRV records','ds'=>'DNSSEC','glue'=>'Glue records']; }
@@ -248,7 +248,7 @@ final readonly class OwnedDomains
                     $management['nameservers']['registrar']=ManagementNameservers::registrar($d);
                     // Only a confirmed readback supplies current nameservers; otherwise the form starts empty.
                     $management['nameservers']['current']=self::storedNameservers($d); }
-                if (isset($management['contacts'])) { $management['contacts']+=self::contactForm($d,$contacts)+['digest'=>self::contactsDigest($contacts)]; }
+                if (isset($management['contacts'])) { $management['contacts']+=self::contactForm($d,$contacts)+['digest'=>self::contactsFormDigest($d,$contactOperations)]; }
                 if (isset($management['auth_code_email'])) { $management['auth_code_email']['recipient']=self::authCodeRecipient($d); $management['auth_code_email']['sender']=self::authCodeSender($d); }
                 if ($from=self::transferOutFrom($op,$this->clock->now())) { foreach (['lock','auth_code_email'] as $k) { if (isset($management[$k])) { $management[$k]['transferFrom']=$from; } } }
                 // Lock and privacy as last read from the registrar (a confirmed change first, then the sync); null until read.
@@ -339,10 +339,13 @@ final readonly class OwnedDomains
             daysLeft:$d->provider_expires_at?(int)\Carbon\CarbonImmutable::parse($this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d'),'UTC')->diffInDays(\Carbon\CarbonImmutable::parse($d->provider_expires_at->format('Y-m-d'),'UTC'),false):null);
         return \Paymenter\Extensions\Servers\Domains\Presentation\DsState::owner($page,$d,$forms&&$caps!==null);
     }
+    private static function contactOperations(Domain $d): \Illuminate\Support\Collection
+    { return $d->operations()->whereIn('action', ['register', 'transfer', 'contacts'])->where('authority_generation', $d->authority_generation)->where('account_fingerprint', $d->account_fingerprint)->orderByDesc('id')->limit(100)->get(); }
     /** Details by role as last stored: the registration request, then confirmed contact changes in order. Throws on unreadable data. Shared by the customer and staff domain pages. */
-    public static function contacts(Domain $d): array
+    public static function contacts(Domain $d, ?\Illuminate\Support\Collection $operations = null): array
     {
-        $ops = $d->operations()->whereIn('action', ['register', 'transfer', 'contacts'])->where('authority_generation', $d->authority_generation)->where('account_fingerprint', $d->account_fingerprint)->orderByDesc('id')->limit(100)->get();
+        $ops = $operations ?? self::contactOperations($d);
+        $ops = $ops->filter(fn($op) => in_array($op->action, ['register', 'transfer', 'contacts'], true) && $op->authority_generation === $d->authority_generation && $op->account_fingerprint === $d->account_fingerprint)->sortByDesc('id')->take(100);
         $saved = array_intersect_key(self::acquisition($ops, $d)?->payload['contacts'] ?? [], array_flip(ContactDetails::ROLES));
         foreach ($ops->where('action', 'contacts')->where('state', 'succeeded')->sortBy('id') as $change) {
             $role = $change->payload['role'] ?? null;
@@ -353,6 +356,14 @@ final readonly class OwnedDomains
     /** The saved details a contacts form opened on. The customer and staff editors refuse a save when it no longer matches. */
     public static function contactsDigest(array $contacts): string
     { return hash('sha256', json_encode($contacts, JSON_THROW_ON_ERROR)); }
+    /** Includes the latest intent so another tab cannot replace a save that has not reached the registrar yet. */
+    public static function contactsFormDigest(Domain $d, ?\Illuminate\Support\Collection $operations = null): string
+    {
+        $operations ??= self::contactOperations($d);
+        $latest = $operations->filter(fn($op) => $op->action === 'contacts' && isset($op->policy['management'])
+            && $op->authority_generation === $d->authority_generation && $op->account_fingerprint === $d->account_fingerprint)->sortByDesc('id')->first();
+        return hash('sha256', json_encode([self::contactsDigest(self::contacts($d, $operations)), $latest?->id], JSON_THROW_ON_ERROR));
+    }
     /** The editor: one form for the whole domain, prefilled from the owner, the role every registrar reads back. */
     private static function contactForm(Domain $d, array $saved): array
     {

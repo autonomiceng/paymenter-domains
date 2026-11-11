@@ -67,7 +67,7 @@ final readonly class OwnerActionController
         return $this->submit($request,$domain,$action,function($nonce)use($request,$domain,$action):void {
             $d=$this->owners->owned($request->user(),$domain); $p=$request->request->all();
             // Like the staff editor, the form carries the saved details it opened on, so a newer save is never overwritten.
-            if ($action==='contacts' && !hash_equals(OwnedDomains::contactsDigest(OwnedDomains::contacts($d)),is_string($p['opened_contacts_digest']??null)?$p['opened_contacts_digest']:'')) {
+            if ($action==='contacts' && !hash_equals(OwnedDomains::contactsFormDigest($d),is_string($p['opened_contacts_digest']??null)?$p['opened_contacts_digest']:'')) {
                 throw new \Paymenter\Extensions\Servers\Domains\Services\OwnerFormStale;
             }
             if (in_array($action,['dns','srv'],true)) {
@@ -82,7 +82,7 @@ final readonly class OwnerActionController
                 $p['nameservers']=implode("\n",$servers);
                 $request->request->set('nameservers',$p['nameservers']);
             }
-            (new \Paymenter\Extensions\Servers\Domains\Services\ManagementForms($this->management,$this->ports))->submit($request->user(),$d,$action,$p,$nonce);
+            (new \Paymenter\Extensions\Servers\Domains\Services\ManagementForms($this->management,$this->ports))->submit($request->user(),$d,$action,$p,$nonce,contactsDigest:$action==='contacts'?$p['opened_contacts_digest']:null);
         },\Paymenter\Extensions\Servers\Domains\Services\ManagementForms::REQUESTED);
     }
     private function submit(Request $request,int $domain,string $action,\Closure $work,string $message)
