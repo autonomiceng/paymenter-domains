@@ -46,7 +46,7 @@ foreach ([30 => true, 31 => false] as $id => $upgradeFirst) {
     $op = Operation::create(['domain_id' => $domain->id, 'service_id' => $id, 'authority_generation' => 1,
         'server_id' => $id, 'registrar_key' => 'namesilo', 'account_fingerprint' => $binding->fingerprint,
         'operation_key' => 'ote:rotation:'.$id, 'action' => 'register', 'state' => 'held', 'currency' => 'USD']);
-    $holding = $domain->getRawOriginal(); $operation = $op->getRawOriginal();
+    $holding = $domain->fresh()->getRawOriginal(); $operation = $op->fresh()->getRawOriginal();
     $usage->reserve($binding, new Money('1.25', 'USD'));
     $counters = $usage->usage($binding);
     same(['used' => 1, 'spend_micros' => 1250000], $counters, 'Retained OTE usage is nonempty before rotation');
