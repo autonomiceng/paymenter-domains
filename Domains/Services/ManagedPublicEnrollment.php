@@ -19,6 +19,7 @@ final class ManagedPublicEnrollment
             catch (HoldingNativeMarkersUnavailable $e) { if ($transferOnly) { return null; } throw $e; }
             catch (\DomainException) { return null; }
             if (!ManagedPublicTarget::valid($l,$now)) { return null; }$d=$l['domain'];
+            BusinessSetting::singleton(true);
             $maps=WatchProductMap::whereKey($peek->pluck('map_id'))->orderBy('id')->lockForUpdate()->get()->keyBy('id');
             $candidate=WatchName::where('user_id',$owner)->where('canonical_name',$d->domain)->first();
             $config=ManagedPublicConfig::whereKey($id)->lockForUpdate()->first();

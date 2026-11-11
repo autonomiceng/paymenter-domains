@@ -13,7 +13,7 @@ final class BusinessSettingsSchema
     public const MIGRATION='2026_11_11_000061_create_business_settings';
     private static function definition(Blueprint $t): void
     {
-        $t->unsignedTinyInteger('id')->primary();$t->boolean('imported')->default(false);
+        $t->enum('id',['1'])->primary();$t->boolean('imported')->default(false);
         $t->longText('pricing_rule')->nullable();$t->longText('card_fee')->nullable();$t->longText('dns_template')->nullable();
     }
     public static function install(): void

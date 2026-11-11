@@ -39,4 +39,5 @@ $put(CardFee::KEY,['percent'=>'99.00','fixed'=>'99.00'],'2026-11-03 01:00:00');
 same('4.00',CardFee::read()['percent'],'Retired native globals never regain authority');
 $error=null;try{BusinessSetting::saveLocked(CardFee::KEY,[]);}catch(LogicException $e){$error=$e->getMessage();}expect($error!==null,'Writes require the outer transaction');
 $failed=false;try{DB::table($table)->insert((array)DB::table($table)->sole());}catch(Illuminate\Database\QueryException){$failed=true;}expect($failed,'Database primary key rejects a second singleton');
+$failed=false;try{DB::table($table)->insert(['id'=>2]);}catch(Illuminate\Database\QueryException){$failed=true;}expect($failed,'Database restricts the singleton identity to 1');
 $nativeSuccessful=true;echo "Business choices import, duplicate policy, staff history, retirement and reruns.\n";

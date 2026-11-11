@@ -25,6 +25,7 @@ final class StaffManagedDnsSetup
             StaffWatchWrites::authorize($actor);
             if(!ManagedPublicTarget::valid($l,time()) || (int)$d->user_id!==$t['owner'] || (int)$d->authority_generation!==$t['generation']
                 || $d->account_fingerprint!==$t['account']){throw new \DomainException('This domain changed. Reload and try again.');}
+            BusinessSetting::singleton(true);
             $config=ManagedPublicConfig::whereKey($id)->lockForUpdate()->first();
             if((int)($config?->revision??0)!==$t['revision'] || ($config && (int)$config->user_id!==(int)$d->user_id)){throw new \DomainException('This domain changed. Reload and try again.');}
             $profile=WatchProfile::whereKey($profileId)->lockForUpdate()->first();

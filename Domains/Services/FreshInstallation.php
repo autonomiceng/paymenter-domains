@@ -121,6 +121,10 @@ final class FreshInstallation
                         throw new \DomainException('Domains initialization has retained suffix activity.');
                     }
                 }
+            } elseif ($table === BusinessSettingsSchema::TABLE) {
+                foreach($query->get() as $row){
+                    if((int)$row->id!==1||!$row->imported||$row->pricing_rule!==null||$row->card_fee!==null||$row->dns_template!==null){throw new \DomainException('Domains initialization has retained global choices.');}
+                }
             } elseif ($query->exists()) { throw new \DomainException('Domains initialization is no longer empty. Keep it paused and investigate.'); }
         }
     }

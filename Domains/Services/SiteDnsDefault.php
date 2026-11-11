@@ -167,6 +167,7 @@ final class SiteDnsDefault
         if($watch){
             // Settings, then templates, as the default save locks them.
             WatchDnsRefresh::request(static function()use($profileId,$inherited):array {
+                BusinessSetting::singleton(true);
                 $keys=[];$d=$inherited?self::profile(true):null;
                 if($inherited){$keys[WatchDnsRefresh::DEFAULT]=$d?$d->id.':'.$d->revision:'none';}
                 if($profileId!==null){$p=WatchProfile::whereKey($profileId)->lockForUpdate()->first();$keys[WatchDnsRefresh::scope($profileId)]=$p?$p->id.':'.$p->revision:'missing';}

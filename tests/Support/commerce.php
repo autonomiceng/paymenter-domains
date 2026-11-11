@@ -29,6 +29,7 @@ function commerceFixture(bool $eligible = false, ?Closure $activation = null, En
         if (class_exists(\Paymenter\Extensions\Servers\Domains\Services\UserDeletionSchema::class)) { \Paymenter\Extensions\Servers\Domains\Services\UserDeletionSchema::install(); }
         // Historical installed ZIPs predate this schema; current partial fixtures need it explicitly.
         if (class_exists(StaffAuditSchema::class)) { StaffAuditSchema::install(); }
+        \Paymenter\Extensions\Servers\Domains\Services\BusinessSettingsSchema::install();
     }
     Currency::firstOrCreate(['code' => 'USD'], ['name' => 'US Dollar', 'format' => '1,000.00', 'prefix' => '$', 'suffix' => '']);
     Category::create(['name' => 'Domains', 'slug' => 'domains', 'description' => 'Domains']);

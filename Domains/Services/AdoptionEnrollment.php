@@ -22,6 +22,7 @@ final readonly class AdoptionEnrollment
             HoldingAnchor::resolve($l);
             $prior = $d->observation['adoption_enrollment'] ?? [];
             if (($prior['adoption_id'] ?? null) === $d->adoption_id && ($prior['generation'] ?? null) === $d->authority_generation) { return; }
+            BusinessSetting::singleton(true);
             $maps = WatchProductMap::whereKey($discovery->pluck('map_id'))->orderBy('id')->lockForUpdate()->get()->keyBy('id');
             $candidate = WatchName::where('user_id', $d->user_id)->where('canonical_name', $d->domain)->first();
             $profile = $candidate?->ns_profile_id ? WatchProfile::whereKey($candidate->ns_profile_id)->lockForUpdate()->first() : null;

@@ -20,6 +20,7 @@ final class ManagedPublicTarget
         try { $l=HoldingLocks::take($seed,advisory:!$lock,additionalServices:$peek->pluck('service_id')->all()); HoldingAnchor::resolve($l); }
         catch (\LogicException|\RuntimeException) { return null; }
         if (!self::valid($l,$now)) { return null; } $d=$l['domain'];
+        if($lock){BusinessSetting::singleton(true);}
         $maps=WatchProductMap::whereKey($peek->pluck('map_id'))->orderBy('id')->when($lock,fn($q)=>$q->lockForUpdate())->get()->keyBy('id');
         $config=ManagedPublicConfig::whereKey($id)->when($lock,fn($q)=>$q->lockForUpdate())->first();
         if (!$config || (int)$config->user_id!==$owner) { return null; }
