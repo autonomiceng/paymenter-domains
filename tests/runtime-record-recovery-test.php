@@ -14,7 +14,6 @@ $p=$d->fresh()->observation;unset($p['records']);$d->fresh()->update(['observati
 $neutral=storefrontDom($html);
 $registrarLines=$neutral->query('//dialog[@id="edit-nameservers"]/form/p[normalize-space()="Registrar: Enom."]|//dialog[@id="confirm-nameservers"]/p[normalize-space()="Registrar: Enom."]');
 same(0,$registrarLines->length,'While the first read is pending the nameserver editor is closed, so nothing names the registrar');
-foreach(iterator_to_array($registrarLines) as $line){$line->parentNode->removeChild($line);}
 $visible=strip_tags(preg_replace('~<(style|script)\b[^>]*>.*?</\1>~si','',$neutral->document->saveHTML()));
 // The auth code row and its confirm name who sends the code, because no mail from us follows.
 same(2,substr_count($visible,'Enom emails it to the registrant email'),'The auth code row and confirm name the sender');$visible=str_replace('Enom emails it to the registrant email','',$visible);

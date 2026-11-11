@@ -34,12 +34,22 @@ final readonly class Refunds
             // Retain the decision if credit fails; retryPending independently rechecks funding and negative proof.
             ContactRecovery::financialDisposition($op, ['state' => 'rejected', 'safe_code' => 'refund_approved',
                 'funding' => [...($op->funding ?? []), 'refund_authorization' => $audit]]);
+            // The customer pending-refund step belongs only to this paid held-order cancellation, never a zero receipt or registrar refusal.
+            if(in_array($op->action,['register','transfer'],true)&&$op->funding_basis==='paid_invoice'){
+                $op->update(['policy'=>[...($op->policy??[]),'held_order_refund'=>true]]);
+            }
             if (in_array($op->action,['register','transfer'],true)&&(($op->attempt??[])===[]||($op->action==='transfer'&&($testUnsent||$claimedUnsent)))) {
                 $op->update(['attempt'=>OperationTerminalProof::rejectedAttempt($op,$l['domain'])]);
                 if($claimedUnsent&&!OperationTerminalProof::safe($op,$l['domain'])){throw new \DomainException('Terminal identity mismatch.');}
             }
             AcquisitionRetirement::retainClosure($op,$l['transactions']->where('invoice_id',$op->invoice_id),
                 $l['invoices']->firstWhere('id',$op->invoice_id)?->status,$this->clock->now());
+            // The order and its service end in this commit, before any money moves: a refund that fails later leaves
+            // a cancelled service and a retryable refund, never a refund for a live service.
+            if (in_array($op->action, ['register', 'transfer'], true)) {
+                $l['domain']->update(['status' => $op->action === 'transfer' ? 'transfer_rejected' : 'registration_rejected']);
+                NativeDomainGuard::terminal($l, $op);
+            }
             $review?->record($l);
         });
         return $this->creditRejected($id);

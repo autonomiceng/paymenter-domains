@@ -30,7 +30,7 @@ class OperationResource extends Resource
     public static function canDeleteAny(): bool { return false; }
     public static function canGloballySearch(): bool { return false; }
     public static function getEloquentQuery(): Builder
-    { Staff::requireView(); return OperationQueries::bound(parent::getEloquentQuery()); }
+    { Staff::requireView(); return OperationQueries::bound(parent::getEloquentQuery())->with('invoice:id,status'); }
     /** Statuses that wait on staff. Awaiting payment waits on the customer, and In progress on the registrar. */
     public const NEEDS_STAFF=['on_hold','under_review'];
     /** Menu count: requests On hold or Under review, the list's Status filter for those two. Null at zero, so the menu shows nothing. */

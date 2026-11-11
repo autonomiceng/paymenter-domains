@@ -30,9 +30,13 @@ $expiry=function(int $wid,int $days)use($registry,$uid,$at):void{DB::table('doma
     expect($registry->finish($t,['result'=>'facts','reason'=>'facts','safe_code'=>null,'expiry'=>gmdate('Y-m-d',$at+$days*86400),'precision'=>'date','source'=>null,'status'=>[]],str_repeat('c',64),$at+1),'Synthetic registry facts');};
 $checked=function(int $wid,string $ns,int $days)use($read,$expiry):void{$read($wid,'delegation',new DnsReading('delegation',$ns));$read($wid,'points',new DnsReading('points',website:true,email:true));$expiry($wid,$days);};
 DB::table('domains_watch_names')->where('id',$id)->update(['canonical_name'=>'healthy.example']);DB::table('domains_watch_sources')->where('id',$sourceId)->update(['registrable_name'=>'healthy.example','hostname'=>'www.healthy.example']);$property->update(['value'=>'www.healthy.example']);
-$w=['healthy'=>$id];foreach(['ns-changed','ns-pending','expired','expiring','stale','not-checked','paused'] as $name){$w[$name]=$add($name.'.example');}
+$w=['healthy'=>$id];foreach(['ns-changed','ns-pending','expired','expiring','stale','not-checked','paused','registry-failed','partly-checked'] as $name){$w[$name]=$add($name.'.example');}
 $checked($w['healthy'],'platform',200);$checked($w['ns-changed'],'external',200);$checked($w['ns-pending'],'external',200);$checked($w['expired'],'platform',-2);$checked($w['expiring'],'platform',10);$checked($w['stale'],'platform',200);$checked($w['paused'],'platform',200);
 DB::table('domains_watch_registry')->where('watch_id',$w['stale'])->update(['valid_until'=>$at+5]);DB::table('domains_watch_names')->where('id',$w['paused'])->update(['state'=>'paused']);
+// A saved failed registry lookup and a saved partly failed fresh check, read back from the database.
+$checked($w['registry-failed'],'platform',200);$checked($w['partly-checked'],'platform',200);
+DB::table('domains_watch_work')->where('watch_id',$w['registry-failed'])->where('kind','expiry')->update(['safe_code'=>'read_unavailable']);
+DB::table('domains_watch_observations')->where('watch_id',$w['partly-checked'])->where('check_kind','points')->update(['partial'=>true]);
 // The portal's confirmed nameserver episode, as written by the notice planner.
 DB::table('domains_watch_notice_state')->insert(['scope'=>WatchNoticePreferences::scope($uid,'ns-changed.example'),'user_id'=>$uid,'data'=>Crypt::encryptString(json_encode(['target'=>['watch',$w['ns-changed']],'portal'=>['dns'=>['ns_changed']],'dns'=>['episode'=>$at]])),'updated_at'=>$at]);
 // A first current mismatch is already visible; only notification delivery waits for confirmation.
@@ -71,6 +75,11 @@ same(['label'=>'Check failed','tone'=>'warning'],$failedStatus(new \Paymenter\Ex
 $problem=array_map(fn($n)=>WatchName::find($w[$n]),['ns-changed','ns-pending','expired','expiring']);$monitoring=array_map(fn($n)=>WatchName::find($w[$n]),['healthy','stale','not-checked']);
 Livewire::actingAs($viewer)->test(ListWatches::class)->filterTable('status','problem')->assertCanSeeTableRecords($problem)->assertCanNotSeeTableRecords([...$monitoring,WatchName::find($w['paused'])])->assertCountTableRecords(count($problem));
 Livewire::actingAs($viewer)->test(ListWatches::class)->filterTable('status','monitoring')->assertCanSeeTableRecords($monitoring)->assertCanNotSeeTableRecords([...$problem,WatchName::find($w['paused'])])->assertCountTableRecords(count($monitoring));
+$failed=array_map(fn($n)=>WatchName::find($w[$n]),['registry-failed','partly-checked']);
+foreach($failed as $row){same('Check failed',$column->record($records[$row->id])->getState(),'Saved failed check reads Check failed for '.$row->canonical_name);}
+Livewire::actingAs($viewer)->test(ListWatches::class)->filterTable('status','failed')->assertCanSeeTableRecords($failed)->assertCanNotSeeTableRecords([...$problem,...$monitoring,WatchName::find($w['paused'])])->assertCountTableRecords(count($failed));
+Livewire::actingAs($viewer)->test(ListWatches::class)->filterTable('status','monitoring')->assertCanNotSeeTableRecords($failed);
+Livewire::actingAs($viewer)->test(ViewWatch::class,['record'=>$w['registry-failed']])->assertSeeInOrder(['Check failed','Domain','Latest checks']);
 Livewire::actingAs($viewer)->test(ListWatches::class)->filterTable('status','paused')->assertCanSeeTableRecords([WatchName::find($w['paused'])])->assertCountTableRecords(1);
 // Customer identity needs the native user permissions, checked fresh on every request.
 $customer=fn($user)=>Livewire::actingAs($user)->test(ListWatches::class)->instance()->watchRow(WatchName::find($w['healthy']))['customer'];
@@ -95,7 +104,7 @@ $batch=$count(fn()=>$reader->batch($owner,[],[$id]));$page25=$count(fn()=>Livewi
 foreach(WatchName::where('canonical_name','like','bulk%')->orderBy('id')->get()->values() as $i=>$bulk){DB::table('domains_watch_names')->where('id',$bulk->id)->update(['user_id'=>$others[$i%4]]);}
 // One mounted render each: four more customers add no per-owner queries.
 $spread=$count(fn()=>Livewire::actingAs($editor)->test(ListWatches::class)->assertCountTableRecords(25));
-$filtered=$count(fn()=>Livewire::actingAs($editor)->test(ListWatches::class)->filterTable('status','monitoring')->assertCountTableRecords(20));expect($filtered<=2*$spread+$batch+10,'Filtering is one more render plus one multi-owner batch, evaluated once per request ('.$filtered.' <= 2 x '.$spread.' + '.$batch.' + 10)');
+$filtered=$count(fn()=>Livewire::actingAs($editor)->test(ListWatches::class)->filterTable('status','monitoring')->assertCountTableRecords(18));expect($filtered<=2*$spread+$batch+10,'Filtering is one more render plus one multi-owner batch, evaluated once per request ('.$filtered.' <= 2 x '.$spread.' + '.$batch.' + 10)');
 same($page25,$spread,'Five customers cost the same as one customer');
 // Filament stacks the header as a column below 40rem; flex-basis there becomes height and pushes findings off the first screen.
 $header=file_get_contents(dirname(__DIR__).'/Domains/resources/views/partials/staff-styles.blade.php');[$narrow,$wide]=explode('@media (min-width:40rem){',$header,2)+[1=>''];

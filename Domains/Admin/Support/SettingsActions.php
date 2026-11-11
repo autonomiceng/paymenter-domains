@@ -50,15 +50,17 @@ final class SettingsActions
         return $current!==null&&$current->hasPermission(Staff::VIEW)&&$current->hasPermission($permission);
     }
     /** Why a margin can't be used, or null when it can. Matches the field's own rules so the preview never shows a price for it.
-     * The limit applies to a new margin only: a larger saved one, which the server takes, stays usable for other edits. */
-    private static function margin(mixed $value, mixed $saved = null): ?string
+     * The server takes the exact text, so a sign or spaces around the number are refused here too. The limit applies to a new
+     * margin only: a larger saved one, which the server takes, stays usable for other edits in its own mode (800% is not $800). */
+    private static function margin(mixed $value, mixed $saved = null, ?string $mode = null, ?string $savedMode = null): ?string
     {
         if($value===null||is_string($value)&&trim($value)===''){return 'Enter a margin.';}
-        if(!is_scalar($value)||!preg_match('/^-?[0-9]+(\.[0-9]+)?$/D',trim((string)$value))){return 'Enter a number.';}
-        $value=trim((string)$value);
-        if($value[0]==='-'&&preg_match('/[1-9]/',$value)){return 'Enter 0 or more.';}
-        $kept=is_string($saved)&&is_numeric($saved)&&bccomp($value,$saved,2)===0;
-        if(!$kept&&bccomp(ltrim($value,'-'),(string)self::MARGIN_MAX,2)>0){return 'Enter '.self::MARGIN_MAX.' or less.';}
+        if(!is_scalar($value)){return 'Enter a number.';}
+        $value=(string)$value;
+        if(str_starts_with(trim($value),'-')){return 'Enter 0 or more.';}
+        if(!preg_match('/^[0-9]+(\.[0-9]+)?$/D',$value)){return 'Enter a number.';}
+        $kept=is_string($saved)&&is_numeric($saved)&&$mode===$savedMode&&bccomp($value,$saved,2)===0;
+        if(!$kept&&bccomp($value,(string)self::MARGIN_MAX,2)>0){return 'Enter '.self::MARGIN_MAX.' or less.';}
         return preg_match('/\.[0-9]{3,}$/',$value)?'Use at most two decimal places.':null;
     }
     /** The one plain sentence a settings dialog opens with. Detail lives in details(). */
@@ -68,7 +70,7 @@ final class SettingsActions
             'renewal_billing'=>'Set when renewal invoices go out.',
             'unpaid_hold'=>'Set how long an unpaid new domain order keeps its name.',
             'default_pricing'=>'Sets the pricing every TLD uses unless it has its own, and the estimated card fee. Saving publishes new prices at once. Issued invoices keep their prices.',
-            'override'=>'Saving publishes these prices at once. Registrations and transfers below cost are not sold, and the TLD shows why. Renewals below cost are still billed, and each one adds an alert to its domain. Issued invoices keep their prices.',
+            'override'=>'Saving publishes these prices at once. Registrations and transfers below cost are not sold, and Edit prices and the price list show why for each term. Renewals below cost are still billed, and each one adds an alert to its domain. Issued invoices keep their prices.',
             'remove_override'=>'Uses Default pricing. Saving publishes the new prices at once. Issued invoices keep their prices.',
             'publish'=>'Publishes prices from saved costs and the current pricing. It does not refresh costs or change issued invoices.',
             'tld_settings'=>'Choose the years customers can buy and what is for sale.',
@@ -143,7 +145,7 @@ final class SettingsActions
                     // One own price for every TLD ignores each TLD's cost, so own prices are set per TLD only.
                     ...($name==='default_pricing'?[]:['fixed'=>'Set my own price'])])->required()->live()->default(fn()=>$rule()['mode']??null)->visible($own);
                 $fields[]=TextInput::make('markup')->label(fn($get)=>$get('mode')==='markup_amount'?'Amount to add (USD)':'Percentage to add')->default(fn()=>$rule()['markup']??null)->required()->maxLength(12)->live(debounce:500)
-                    ->rule(static fn():\Closure=>static function(string $attribute,mixed $value,\Closure $fail)use($rule):void{if(($error=self::margin($value,$rule()['markup']??null))!==null){$fail($error);}})
+                    ->rule(static fn($get):\Closure=>static function(string $attribute,mixed $value,\Closure $fail)use($rule,$get):void{if(($error=self::margin($value,$rule()['markup']??null,$get('mode'),$rule()['mode']??null))!==null){$fail($error);}})
                     ->visible(fn($get)=>$own($get)&&$get('mode')!=='fixed');
                 $fields[]=Select::make('round_up')->label('Round up')->options(PricingRule::ROUNDING_LABELS)->default(fn()=>$rule()['round_up']??null)->required()->live()
                     ->visible(fn($get)=>$own($get)&&$get('mode')!=='fixed');
@@ -158,14 +160,14 @@ final class SettingsActions
                 $newFee=static fn($get)=>CardFee::validate(['percent'=>$get('fee_percent'),'fixed'=>$get('fee_fixed')]);
                 $entered=static function($get)use($name,$default,$saved,$newFee,$rule):?array{
                     if($name==='override'&&$get('pricing')==='default'){return $default();}
-                    if($get('mode')!=='fixed'&&self::margin($get('markup'),$rule()['markup']??null)!==null){return null;}
+                    if($get('mode')!=='fixed'&&self::margin($get('markup'),$rule()['markup']??null,$get('mode'),$rule()['mode']??null)!==null){return null;}
                     try{return PricingRule::validate(['mode'=>$get('mode'),'markup'=>$get('markup')??'0','round_up'=>$get('round_up')??'none',
                         'fixed'=>['register'=>$get('fixed_register'),'renew'=>$get('fixed_renew'),'transfer'=>$get('fixed_transfer')],
                         ...($get('mode')==='markup_fee_percent'?['card_fee'=>$name==='override'?$saved():$newFee($get)]:[])]);}
                     catch(\Throwable){return null;}
                 };
                 $fields[]=\Filament\Schemas\Components\Text::make(fn($get)=>($r=$entered($get))!==null?'Customer pays: '.PricingRule::describe($r)
-                    :($get('mode')!=='fixed'&&($bad=self::margin($get('markup'),$rule()['markup']??null))!==null?$bad:'Enter prices to see what customers pay.'))->key('formula');
+                    :($get('mode')!=='fixed'&&($bad=self::margin($get('markup'),$rule()['markup']??null,$get('mode'),$rule()['mode']??null))!==null?$bad:'Enter prices to see what customers pay.'))->key('formula');
                 if($name==='override'){$fields[]=\Filament\Schemas\Components\Html::make(fn($get)=>self::preview($tld,$entered($get)))->key('preview');}
                 else{
                     $reach=self::cached(static fn()=>self::reach());
@@ -377,7 +379,7 @@ final class SettingsActions
     public static function republished(?array $summary): ?string
     {
         $failed=$summary['failed']??[];$left=(int)($summary['left']??0);
-        $later=$left>0?$left.' more '.($left===1?'TLD goes':'TLDs go').' back on sale in the background, about '.\Paymenter\Extensions\Servers\Domains\Catalogue\OfferWork::BATCH.' a minute.':null;
+        $later=$left>0?$left.' more '.($left===1?'TLD goes':'TLDs go').' back on sale in the background, up to '.\Paymenter\Extensions\Servers\Domains\Catalogue\OfferWork::BATCH.' a minute.':null;
         if($failed!==[]){return implode(' ',array_filter(['Prices for '.\Paymenter\Extensions\Servers\Domains\Presentation\TldNames::summary($failed).' are not published, so '.(count($failed)===1?'it is':'they are').' not for sale. Open Edit prices on the TLD and save.',$later]));}
         return ($summary['pending']??false)?'Prices are not published yet, so TLDs are not for sale until the next background run. Open Edit prices on a TLD and save to publish it now.':$later;
     }

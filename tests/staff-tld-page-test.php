@@ -52,6 +52,12 @@ same(1,$buttons->length,'The TLD page shows one Edit prices button');
 $button=$buttons->item(0);
 if(!$button instanceof DOMElement||!$button->ownerDocument instanceof DOMDocument){throw new RuntimeException('Edit prices is not an element');}
 same(0,$query($button->ownerDocument,'//section//button[normalize-space(.)="Edit prices"]')->length,'The prices section has no Edit prices copy');
+// The one button is on the page itself, never inside hidden or menu content.
+for($node=$button;$node instanceof DOMElement;$node=$node->parentNode){
+    expect(!$node->hasAttribute('hidden')&&!$node->hasAttribute('x-cloak')&&!$node->hasAttribute('x-show')
+        &&$node->getAttribute('aria-hidden')!=='true'&&!str_contains($node->getAttribute('class'),'fi-dropdown-panel')
+        &&!preg_match('/display\s*:\s*none/i',$node->getAttribute('style')),'Edit prices is outside hidden menu content');
+}
 $click=$button->getAttribute('wire:click');
 // Click the rendered button: send exactly the call its wire:click makes.
 expect((bool)preg_match("/^mountAction\\('([A-Za-z_]+)', (\\{.*?\\}), JSON\\.parse\\('(.*)'\\)\\)$/s",$click,$call),'Edit prices click is a plain mountAction call');

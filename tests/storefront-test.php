@@ -72,6 +72,11 @@ same(['com'], array_column($store->endings(), 'tld'), 'Only selected seller endi
     $linked = $transfer->show($req(['name' => 'example', 'tld' => 'unsold'], 'GET'))->getData();
     same(['We don’t offer transfers for .unsold domains. Contact support for help transferring this domain.', []], [$linked['error'], $linked['results']], 'A transfer link with an unsupported ending says so instead of checking .com');
     expect(str_contains((string) $forged['notice'], '.unsold isn’t available here.'), 'Register says a linked unsold ending is not offered');
+    // A link with only an unsold ending keeps the notice, but there is no name to show with each ending.
+    $plain = static fn ($response): string => trim(preg_replace('/\s+/', ' ', html_entity_decode(strip_tags($response->render()), ENT_QUOTES)));
+    $bare = $plain($controller->search($req(['tld' => 'unsold'], 'GET')));
+    expect(str_contains($bare, '.unsold isn’t available here.') && !str_contains($bare, 'with each of them'), 'An unsold ending without a name has no name sentence');
+    expect(str_contains($plain($controller->search($req(['name' => 'example', 'tld' => 'unsold'], 'GET'))), 'Here’s example with each of them.'), 'An unsold ending with a name shows that name with each ending');
     same('We don’t offer transfers for this ending. Contact support for help transferring this domain.', $transfer->show($req(['name' => 'example', 'tld' => '<b>'], 'GET'))->getData()['error'], 'A malformed ending is not echoed');
     $policies::where('tld', 'com')->update(['register_enabled' => false]);
     Illuminate\Support\Facades\Cache::flush();
@@ -109,7 +114,10 @@ foreach (['enom', 'namesilo', 'fingerprint', 'wholesale', 'server_id', 'account-
 }
 foreach ([[true, true, 'premium'], [null, true, 'error'], [false, null, 'error'], [false, false, 'taken']] as [$premium, $available, $state]) {
     $reads->premium = $premium; $reads->available = $available;
-    same($state, $check('example.com')->getData(true)['status'], 'Premium/unavailable/unknown retained');
+    $data = $check('example.com')->getData(true);
+    same($state, $data['status'], 'Premium/unavailable/unknown retained');
+    // An answer that left out a flag is incomplete, not missing.
+    if ($state === 'error') { expect(str_contains(html_entity_decode($data['html'], ENT_QUOTES), 'The registrar’s answer for this name was incomplete. Retry in a minute.'), 'Incomplete answer words'); }
 }
 $reads->premium = false; $reads->available = true;
 foreach (['xn--example.com', 'éxample.com', str_repeat('a', 64).'.com', 'sub.example.com', '<script>.com', ['com']] as $invalid) {

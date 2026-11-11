@@ -217,7 +217,12 @@ $query=OperationClaims::query($failed,$failed->domain);$funds='100.00';$availabl
 $result=$lowEngine->execute($failed->id);$claim=$result->attempt['claim_key'];$paid=$result->funding['claim'];
 same(['held','registrar_read_failed','absent'],[$result->state,$result->safe_code,$result->attempt['seal']],'A failed read is proven unsent');
 $open($result)->assertSee("Not sent: couldn't read from the registrar. It will retry automatically.")->assertActionHidden('release');
-Illuminate\Support\Facades\Auth::setUser($staff);same('Next try '.gmdate('M j, Y H:i',(int)DB::table('domains_runtime_operations')->where('operation_id',$result->id)->value('due_at')).' UTC.',RequestFacts::notice($result)['body'],'A timed retry shows when it runs');
+Illuminate\Support\Facades\Auth::setUser($staff);$nextTry=(int)DB::table('domains_runtime_operations')->where('operation_id',$result->id)->value('due_at');
+// The page shows every time in the viewer's time zone, so the retry time uses the same moment as the rest.
+same(Paymenter\Extensions\Servers\Domains\Admin\Support\Sheet::moment($nextTry,'Next try')->toHtml().'.',(string)RequestFacts::notice($result)['body'],'A timed retry shows when it runs');
+// The browser shows that moment in the viewer's zone, so the page must carry the retry's own instant and its UTC time.
+$body=(string)RequestFacts::notice($result)['body'];
+expect(str_starts_with($body,'Next try <span title="'.gmdate('M j, Y, g:i A',$nextTry).' UTC">')&&str_contains($body,'datetime="'.gmdate('Y-m-d\TH:i:s',$nextTry).'+00:00"'),'The retry time is the queued retry instant');
 commerceReject(fn()=>$run($result,'release'));
 foreach(range(2,BalanceRetries::READ_LIMIT) as $i){$step();$result=$lowEngine->execute($failed->id);}
 same(['held','registrar_read_failed',BalanceRetries::READ_LIMIT],[$result->state,$result->safe_code,$result->policy['read_retries']],'Retries stop at the limit');

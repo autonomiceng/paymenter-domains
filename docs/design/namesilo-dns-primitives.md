@@ -15,7 +15,8 @@ facts silently. Only complete inventory can be a sequence preimage.
 
 Rows use shared `name`, `type`, `address`, `mx_pref`, plus `record_id` and `ttl`.
 Owners are relative (`@` for apex); CNAME/MX targets have a root dot. TXT bytes and
-CAA wire text are retained. CAA requires a flag/tag/value triplet, with an unsigned
+CAA wire text are retained up to 2048 bytes without control bytes: a value with a C0
+byte (tab, newline) or DEL is refused, so its row prevents completeness. CAA requires a flag/tag/value triplet, with an unsigned
 8-bit flag, alphanumeric tag and nonempty value (which can contain colons); malformed
 CAA prevents completeness while valid siblings survive. SRV retains its wire value and distance, with parsed
 weight/port/target and `priority_proven: false`; distance is never mapped to

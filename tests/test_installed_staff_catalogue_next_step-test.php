@@ -8,7 +8,7 @@ require __DIR__.'/Support/native-commerce.php';
 require __DIR__.'/Support/staff-tlds.php';
 require __DIR__.'/Support/offer-commerce.php';
 use Illuminate\Support\Facades\{Auth,DB};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{SellTable,Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{SellTable,Sheet,Staff};
 use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferState,OfferWork,StaffCatalogue};
 use Paymenter\Extensions\Servers\Domains\Models\Tld;
 use Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget;
@@ -50,13 +50,16 @@ class NextStepStaffPage extends \Paymenter\Extensions\Servers\Domains\Admin\Page
 \Livewire\Livewire::component('next-step-staff-page',NextStepStaffPage::class);
 $failures=[];
 $retry=$now->getTimestamp()+120;
+// A queued check shows its time in the viewer's time zone like the other staff times, with UTC only on hover.
+$nextCheck=static fn(int $at):string=>Sheet::moment($at,'Next check')->toHtml().'.';
+$html=static fn(mixed $next):mixed=>$next instanceof \Illuminate\Contracts\Support\Htmlable?$next->toHtml():$next;
 try {
 DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>null]);
 DB::table('domains_prices')->where('server_id',$binding->serverId)->where('tld','com')->where('action','register')->update(['retail'=>null]);
 [$table,$row]=nextTable();$cell=$table->cell($row,'register','price');
 same('Checking',$cell['text'],'Missing facts queue their own read rather than asking staff to sync');
 same('gray',$cell['tone'],'Automatic work is a waiting state');
-same('Next check '.gmdate('M j, Y, g:i A',$now->getTimestamp()).' UTC.',$cell['next'],'Waiting shows when the queued check is due');
+same($nextCheck($now->getTimestamp()),$html($cell['next']),'Waiting shows when the queued check is due');
 same('queued',$work->status($binding,'com')['state'],'The existing lazy-facts queue receives the hint');
 $queued=DB::table('domains_observation_queues')->where('server_id',$binding->serverId)->value('offer_work');
 [$again,$row]=nextTable();$again->cell($row,'register','cost');$again->cell($row,'register','price');$again->status($row);
@@ -65,7 +68,7 @@ same(0,$calls,'Staff rendering never resolves a provider or sends a request');
 // Existing retry dates survive repeated hints, so staff do not bypass the read budget/backoff.
 $retry=$now->getTimestamp()+120;
 $queue->update(['offer_work'=>OfferState::json(['facts'=>['com'=>['authority'=>$factAuthority,'due_at'=>$retry,'tries'=>2,'failure'=>'read_failed']]])]);
-[$table,$row]=nextTable();same('Next check '.gmdate('M j, Y, g:i A',$retry).' UTC.',$table->cell($row,'register','price')['next'],'Fact retry uses its existing due time');
+[$table,$row]=nextTable();same($nextCheck($retry),$html($table->cell($row,'register','price')['next']),'Fact retry uses its existing due time');
 
 } catch (Throwable $error) {$failures[]='Case 1: '.$error->getMessage();}
 try {
@@ -75,7 +78,7 @@ same($now->getTimestamp(),$work->status($binding)['due_at'],'A missing price que
 same('background',OfferState::decode($queue->value('offer_work'))['origin'],'Automatic price hints use the background allowance');
 $queued=$queue->value('offer_work');[$table,$row]=nextTable();$table->cell($row,'register','price');same($queued,$queue->value('offer_work'),'Price hints queue only once');
 $queue->update(['offer_work'=>OfferState::json(['feed_due'=>$retry,'tries'=>2])]);
-[$table,$row]=nextTable();same('Next check '.gmdate('M j, Y, g:i A',$retry).' UTC.',$table->cell($row,'register','price')['next'],'Price hints preserve failure backoff');
+[$table,$row]=nextTable();same($nextCheck($retry),$html($table->cell($row,'register','price')['next']),'Price hints preserve failure backoff');
 
 } catch (Throwable $error) {$failures[]='Case 2: '.$error->getMessage();}
 try {

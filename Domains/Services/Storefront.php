@@ -173,7 +173,7 @@ class Storefront
             return $transferOnly?$this->transferRefusal($base):$this->unchecked($base);
         }
         if ($r->evidence()->premium === true) { return $transferOnly ? $this->transferRefusal($base, 'premium') : [...$base, 'status' => 'premium']; }
-        if ($r->evidence()->premium !== false || $r->evidence()->available === null) { return $transferOnly?$this->transferRefusal($base):$this->unchecked($base); }
+        if ($r->evidence()->premium !== false || $r->evidence()->available === null) { return $transferOnly?$this->transferRefusal($base):$this->unchecked($base,answered:true); }
         if ($r->evidence()->available) {
             if ($transferOnly) { return $this->transferRefusal($base, 'transfer_not_registered'); }
             if (!$offers) { return [...$base, 'status' => 'held']; }
@@ -234,10 +234,12 @@ class Storefront
     }
 
     /** A failed registrar check always says why and what to do next. */
-    private function unchecked(array $base): array
+    /** $answered: the registrar replied in time but left out whether the name is premium or free. */
+    private function unchecked(array $base, bool $answered = false): array
     {
         return [...$base, 'status' => 'error', 'support' => true,
-            'message' => 'We couldn’t get an answer from the registrar for this name. Retry in a minute.'];
+            'message' => $answered ? 'The registrar’s answer for this name was incomplete. Retry in a minute.'
+                : 'We couldn’t get an answer from the registrar for this name. Retry in a minute.'];
     }
 
     /** One search may take this long in all. Enom TEST sometimes needs more than 10 seconds to answer a Check. */

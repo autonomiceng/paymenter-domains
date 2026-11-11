@@ -41,8 +41,12 @@ final class ObservationReader extends Management
                 if ($out['ds']['state']!=='complete') { throw new \DomainException('DS incomplete.'); }
             }
             $family='glue';
-            $reply=$this->reply(Glue::preserveAddresses($this->read($r,$c,'listRegisteredNameServers',['domain'=>$r->name])),'listRegisteredNameServers');
-            $out['glue']=['state'=>'complete','records'=>Glue::records($reply,$r->name)];
+            try {
+                $reply=$this->reply(Glue::preserveAddresses($this->read($r,$c,'listRegisteredNameServers',['domain'=>$r->name])),'listRegisteredNameServers');
+                // NameSilo omits hosts on a successful empty list. Management reads still require an explicit list.
+                $out['glue']=['state'=>'complete','records'=>array_key_exists('hosts',$reply)?Glue::records($reply,$r->name):[]];
+            } catch (ReadDeferred|EnomTestCallLimit $e) { throw $e; }
+            catch (\Throwable $e) { $out['failure_code']=ReadFailure::code($e);$out['failed_family']=$family; }
             $family='contacts';$roles=['registrant'=>'registrant','admin'=>'administrative','tech'=>'technical','auxbilling'=>'billing'];
             $contacts=[];$cache=[];
             foreach ($roles as $role=>$wire) {
@@ -64,7 +68,7 @@ final class ObservationReader extends Management
             }
             $out['settings']['contacts']['state']='complete';
         } catch (ReadDeferred|EnomTestCallLimit $e) { throw $e; }
-        catch (\Throwable $e) { $out['failure_code']=ReadFailure::code($e);$out['failed_family']=$family; }
+        catch (\Throwable $e) { $out['failure_code']??=ReadFailure::code($e);$out['failed_family']??=$family; }
         return $out;
     }
     private function reply(string $body,string $command): array

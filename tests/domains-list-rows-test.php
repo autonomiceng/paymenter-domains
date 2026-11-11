@@ -59,4 +59,20 @@ same($before,$after,'No queries per additional row');
 same($fallbackBefore,$fallbackAfter,'No queries per additional row when the renewal quote is missing');
 same(9,$fallback->query('//tbody/tr')->length,'Nine rows without a renewal quote');
 foreach($fallback->query('//tbody/tr') as $row){$name=$norm($fallback->query('td[1]/a',$row)->item(0));same(true,str_contains($norm($row),$savedPrices[$name].'/yr'),'Missing quote keeps the saved price for '.$name);}
+// Cancelled unpaid orders check their payments in the page's one batch, never once per row. A processing payment still needs review.
+$cancelledOrder=function(int $i)use($clone,$d,$op,$user):int{
+    $name=placeholderComFixtureName('cancelled-order'.$i.'-placeholder.com');$service=$clone('services',(int)$d->service_id,[]);
+    $invoice=App\Models\Invoice::withoutEvents(fn()=>App\Models\Invoice::create(['user_id'=>$user->id,'currency_code'=>'USD','status'=>'cancelled','due_at'=>now()]));
+    $id=$clone('domains_domains',$d->id,['domain'=>$name,'reservation_name'=>$name,'sld'=>'cancelled-order'.$i.'-placeholder','service_id'=>$service,'status'=>'registration_pending','provider_expires_at'=>null]);
+    $clone('domains_operations',$op->id,['domain_id'=>$id,'service_id'=>$service,'operation_key'=>'cancelled-order-'.$i,'invoice_id'=>$invoice->id,'invoice_item_id'=>null,'action'=>'register','state'=>'awaiting_payment','safe_code'=>null]);
+    return (int)$invoice->id;
+};
+$cancelledOrder(0);[, $oneCancelled]=$render();
+$processing=$cancelledOrder(1);$cancelledOrder(2);
+App\Models\InvoiceTransaction::withoutEvents(fn()=>App\Models\InvoiceTransaction::create(['invoice_id'=>$processing,'amount'=>'1.00','fee'=>'0.00','status'=>'processing']));
+[$orders,$threeCancelled]=$render();
+same($oneCancelled,$threeCancelled,'No queries per additional cancelled unpaid order');
+$statusOf=static function(string $name)use($orders,$norm):?string{foreach($orders->query('//tbody/tr') as $row){if($norm($orders->query('td[1]/a',$row)->item(0))===$name){return $norm($orders->query('td[@data-label="Status"]',$row)->item(0));}}return null;};
+same([true,null],[str_contains((string)$statusOf(placeholderComFixtureName('cancelled-order1-placeholder.com')),'Under review'),$statusOf(placeholderComFixtureName('cancelled-order2-placeholder.com'))],
+    'From the batch, a processing payment needs review and a never-paid cancelled order is left off the list');
 echo "Client Domains list: Renewal on every state and a fixed query count passed.\n";$nativeSuccessful=true;

@@ -37,19 +37,22 @@ final readonly class OwnedDomains
     { return $operations->filter(fn($op)=>in_array($op->action,['register','transfer'],true)&&$op->authority_generation===$d->authority_generation&&$op->account_fingerprint===$d->account_fingerprint)->sortByDesc('id')->first(); }
     /** Where a pending order stands for its owner: unpaid with the invoice link, paid, cancelled ('credit' once the money is credited), or failed. Empty otherwise. Paid says what's still the owner's in next: setup_required, awaiting_code, or null for nothing.
      * $closed: the service is cancelled, so payment can no longer start an order that hasn't been sent (InvoiceFunding::requireInitialFacts). */
-    public static function order(Domain $d, ?Operation $op, ?Invoice $invoice, bool $closed=false): array
+    public static function order(Domain $d, ?Operation $op, ?Invoice $invoice, bool $closed=false, ?array $paying=null): array
     {
         if (!$op) { return []; }
         $kind=$op->action==='transfer'?'transfer':'registration';
         if($op->state==='rejected'&&($return=ReceiptReturns::summary($op))){return ['state'=>'cancelled','kind'=>$kind,'return'=>$return[1],'returned'=>!ReceiptReturns::malformed($op)&&ReceiptReturns::outstanding($op)===0];}
         // Applying the credit closes the domain row too. The order still reads Cancelled, as its request does. Approval alone adds no money: the credit can fail and retry.
-        if ($op->state==='rejected'&&($op->safe_code==='refund_approved'||isset($op->funding['refund'])&&in_array($op->safe_code,[...WriteHeld::FINAL_REFUSALS,TransferRejections::CODE],true))&&in_array($d->status,['registration_pending','transfer_pending',$kind.'_rejected'],true)) { return ['state'=>'cancelled','kind'=>$kind,...(isset($op->funding['refund'])?['credit'=>true]:[])]; }
+        if ($op->state==='rejected'&&($op->safe_code==='refund_approved'||isset($op->funding['refund'])&&in_array($op->safe_code,[...WriteHeld::FINAL_REFUSALS,TransferRejections::CODE],true))&&in_array($d->status,['registration_pending','transfer_pending',$kind.'_rejected'],true)) {
+            $pending=($op->policy['held_order_refund']??false)===true&&$op->funding_basis==='paid_invoice'&&!isset($op->funding['refund']);
+            return ['state'=>'cancelled','kind'=>$kind,...(isset($op->funding['refund'])?['credit'=>true]:[]),...($pending?['refund_pending'=>true]:[])];
+        }
         if ($op->safe_code===UnpaidAcquisitionProof::CODE&&isset($op->funding['late_credits'])) { return ['state'=>'cancelled','kind'=>$kind,'credit'=>true]; }
         if (!in_array($d->status,['registration_pending','transfer_pending'],true)) { return []; }
         if ($op->state==='rejected') { return RequestStatus::closed($op->state,$op->safe_code)?[]:['state'=>'failed','kind'=>$kind]; }
-        if ($closed && in_array($op->state,['awaiting_payment','awaiting_code','queued'],true)) { return ['state'=>'cancelled','kind'=>$kind,...self::unpaidCancel($op,$invoice)]; }
+        if ($closed && in_array($op->state,['awaiting_payment','awaiting_code','queued'],true)) { return ['state'=>'cancelled','kind'=>$kind,...self::unpaidCancel($op,$invoice,$paying)]; }
         if ($op->state==='awaiting_payment' && $invoice?->status==='pending') { return ['state'=>'unpaid','kind'=>$kind,'invoice'=>route('invoices.show',$invoice)]; }
-        if ($op->state==='awaiting_payment' && $invoice?->status==='cancelled') { return ['state'=>'cancelled','kind'=>$kind,...self::unpaidCancel($op,$invoice)]; }
+        if ($op->state==='awaiting_payment' && $invoice?->status==='cancelled') { return ['state'=>'cancelled','kind'=>$kind,...self::unpaidCancel($op,$invoice,$paying)]; }
         $next=match (true) {
             $op->state==='held'&&in_array($op->safe_code,self::OWNER_HOLDS,true) => 'setup_required',
             $op->action==='transfer'&&!TransferInputs::validCode($op->payload['epp']??null) => 'awaiting_code',
@@ -61,13 +64,26 @@ final readonly class OwnedDomains
     }
     private static function defaultNameservers(Operation $op): bool
     { try { return NewDomainDns::forOperation($op) !== []; } catch (\Throwable) { return false; } }
-    /** A cancelled order nobody paid or is paying: a normal cancel with nothing to review. */
-    private static function unpaidCancel(Operation $op, ?Invoice $invoice): array
+    /** A cancelled order nobody paid or is paying: a normal cancel with nothing to review.
+     * $paying: invoice ids with a payment that succeeded or is processing, from the caller's batch (DomainStateInputs::paying). Null reads this invoice. */
+    private static function unpaidCancel(Operation $op, ?Invoice $invoice, ?array $paying): array
     {
         if ($op->state!=='awaiting_payment' || $invoice?->status==='paid') { return []; }
-        $paying=$op->invoice_id!==null&&\App\Models\InvoiceTransaction::where('invoice_id',$op->invoice_id)
-            ->whereIn('status',[\App\Enums\InvoiceTransactionStatus::Succeeded,\App\Enums\InvoiceTransactionStatus::Processing])->exists();
+        $id=$op->invoice_id===null?null:(int)$op->invoice_id;
+        $paying=$id!==null&&in_array($id,$paying??self::paying(\App\Models\InvoiceTransaction::where('invoice_id',$id)
+            ->whereIn('status',[\App\Enums\InvoiceTransactionStatus::Succeeded,\App\Enums\InvoiceTransactionStatus::Processing])->get()),true);
         return $paying ? [] : ['unpaid'=>true];
+    }
+    /** Invoice ids with a payment that succeeded or is still processing: money that came in or is on its way.
+     * @param iterable<\App\Models\InvoiceTransaction> $transactions
+     * @return list<int> */
+    public static function paying(iterable $transactions): array
+    {
+        $ids=[];
+        foreach ($transactions as $t) {
+            if (in_array($t->status,[\App\Enums\InvoiceTransactionStatus::Succeeded,\App\Enums\InvoiceTransactionStatus::Processing],true)) { $ids[(int)$t->invoice_id]=true; }
+        }
+        return array_keys($ids);
     }
     /** Where a rejected registration or transfer's money goes, for the customer page: see OwnedDomain::$refundTo. */
     public static function refundTo(Domain $d, ?Operation $op, array $order): ?string

@@ -62,7 +62,7 @@ class WatchResource extends WatchReadResource
             self::fact(TextColumn::make('expiry')->label('Expires')->visibleFrom('lg'),fn($record,$livewire)=>[...self::expires($record,$livewire),'sub'=>null]),
         ],['registration','delegation.dns'])->filters([
             SelectFilter::make('status')->label('Status')->options(WatchFindings::STATUSES)->query(fn(Builder $query,array $data,$livewire)=>WatchFindings::filter($query,$data['value']??null,$livewire))
-                ->indicateUsing(fn(array $data)=>isset(WatchFindings::STATUSES[$data['value']??''])?(in_array($data['value'],['monitoring','problem'],true)?self::capped('Status: '.WatchFindings::STATUSES[$data['value']]):'Status: '.WatchFindings::STATUSES[$data['value']]):null),
+                ->indicateUsing(fn(array $data)=>isset(WatchFindings::STATUSES[$data['value']??''])?(in_array($data['value'],WatchFindings::READ_STATUSES,true)?self::capped('Status: '.WatchFindings::STATUSES[$data['value']]):'Status: '.WatchFindings::STATUSES[$data['value']]):null),
             Filter::make('customer')->label('Customer')->schema([TextInput::make('customer')->label('Customer')])->query(fn(Builder $query,array $data)=>WatchFindings::customer($query,$data['customer']??null))
                 ->indicateUsing(fn(array $data)=>trim((string)($data['customer']??''))!==''?'Customer: '.trim((string)$data['customer']):null),
             SelectFilter::make('expiry')->label('Expires within')->options(['7'=>'7 days','30'=>'30 days','90'=>'90 days'])->query(fn(Builder $query,array $data,$livewire)=>$livewire->expiryQuery($query,(int)($data['value']??0)))

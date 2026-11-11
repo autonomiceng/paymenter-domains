@@ -73,17 +73,25 @@ final class DomainSummaries
         // Billing issues renewals on the clock's own date, so the projection and the billing dates below use the clock's time zone, as the domain page does.
         $inputs=DomainStateInputs::load($c->domains,$c->services);$at=(new \DateTimeImmutable('@'.$now))->setTimezone(app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimezone());$billingDay=$at->format('Y-m-d');
         $testServers=Account::whereIn('server_id',array_map(fn($d)=>$d->server_id,$c->domains))->where('environment','test')->pluck('server_id')->all();
-        $dnsChoices=collect();
-        Operation::select('domains_operations.*')->join('domains_domains as d','d.id','=','domains_operations.domain_id')
-            ->whereIn('d.id',$dids)->whereColumn('d.authority_generation','domains_operations.authority_generation')->whereColumn('d.account_fingerprint','domains_operations.account_fingerprint')
+        // Each domain keeps its newest acquisition and its newest confirmed nameserver change. History is read newest first and stops
+        // once every domain has its confirmed change; acquisitions older than that page are read only for the domains still missing one.
+        $succeeded=fn(array $ids,array $actions)=>Operation::select('domains_operations.*')->join('domains_domains as d','d.id','=','domains_operations.domain_id')
+            ->whereIn('d.id',$ids)->whereColumn('d.authority_generation','domains_operations.authority_generation')->whereColumn('d.account_fingerprint','domains_operations.account_fingerprint')
             ->whereColumn('d.service_id','domains_operations.service_id')->whereColumn('d.server_id','domains_operations.server_id')->whereColumn('d.registrar_key','domains_operations.registrar_key')
-            ->where('domains_operations.state','succeeded')->whereIn('domains_operations.action',['register','transfer','nameservers'])
-            ->chunkByIdDesc(100,function($ops)use($c,$dnsChoices):void{
-                foreach($ops->groupBy('domain_id') as $id=>$batch){
-                    $choices=ManagedDnsSetup::choices($c->domains[$id],$dnsChoices->get($id,collect())->concat($batch));
-                    $dnsChoices->put($id,collect(array_filter($choices)));
-                }
-            },'domains_operations.id','id');
+            ->where('domains_operations.state','succeeded')->whereIn('domains_operations.action',$actions);
+        $dnsChoices=collect();$stopped=false;
+        $keep=function($ops)use($c,$dnsChoices):void{
+            foreach($ops->groupBy('domain_id') as $id=>$batch){
+                $choices=ManagedDnsSetup::choices($c->domains[$id],$dnsChoices->get($id,collect())->concat($batch));
+                $dnsChoices->put($id,collect(array_filter($choices)));
+            }
+        };
+        $succeeded($dids,['register','transfer','nameservers'])->chunkByIdDesc(100,function($ops)use($keep,$dnsChoices,$dids,&$stopped):bool{
+            $keep($ops);
+            return !($stopped=$dnsChoices->filter(fn($kept)=>$kept->contains('action','nameservers'))->count()===count($dids));
+        },'domains_operations.id','id');
+        $unacquired=array_values(array_filter($dids,fn($id)=>!$dnsChoices->get($id,collect())->contains(fn($op)=>$op->action!=='nameservers')));
+        if($stopped&&$unacquired){$keep($succeeded($unacquired,['register','transfer'])->get());}
         $targets=[...$c->domains,...$c->watches];
         $scopes=array_map(fn($t)=>WatchNoticePreferences::scope((int)$t->user_id,$t instanceof WatchName?$t->canonical_name:$t->domain),$targets);
         $noticeStates=DB::table('domains_watch_notice_state')->whereIn('user_id',$c->staff?array_map(fn($w)=>$w->user_id,$c->watches):[$uid])->whereIn('scope',$scopes)->get()->keyBy('scope');

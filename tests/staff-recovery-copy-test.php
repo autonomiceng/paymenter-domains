@@ -10,6 +10,10 @@ app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clo
 EnomTestSendLimitSchema::install();config(['domains.enom_test_sends_per_day'=>10,'domains.enom_test_sends_per_minute'=>100000]);
 $problems=[];
 same('Catalogue upgrade needed: install the Domains bridge and run the catalogue conversion.',Labels::reason('catalogue_upgrade_required'),'Catalogue upgrade cause has staff words');
+// A paid order is cancelled and refunded; a complimentary one has nothing to refund.
+foreach(['name_unavailable'=>'Not sent: name not available.','premium_name'=>'Not sent: premium names not supported.','order_not_supported'=>'Not sent: registrar does not support this order.'] as $code=>$cause){
+    same([$cause.' Cancel and refund.',$cause.' Cancel.'],[Labels::reason($code),Labels::reason($code,true)],'Refund words follow the funding: '.$code);
+}
 Paymenter\Extensions\Servers\Domains\Services\FoundationSchema::install();
 same('We stopped this before it reached Enom. Earlier reads may have been sent. Check API calls on the account page.',SettingsActions::refusal(new EnomTestCallLimit,'configure',['environment'=>'live']),'First Live configure refusal uses the submitted environment before an account row exists');
 foreach([new DomainException('Catalogue import unavailable.'),...array_map(fn($code)=>new CatalogueImportFailure($code),ReadFailure::CODES)] as $failure){

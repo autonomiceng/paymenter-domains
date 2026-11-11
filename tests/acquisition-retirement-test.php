@@ -109,12 +109,16 @@ $note=Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::notice($calm
 DB::table('services')->where('id',$open->service_id)->update(['status'=>'pending']);DB::table('domains_native_intents')->insert(['service_id'=>$open->service_id,'kind'=>'cancellation','created_at'=>now()]);
 same(['cancelled','Cancelled','Order cancelled'],$orderWords(),'A retained cancellation intent counts as cancelled');
 // A successful or in-flight payment prevents the unpaid-cancel message even before invoice status catches up.
+// Each status runs alone, so either one on its own keeps the review.
 foreach(['processing','succeeded'] as $status){
-    App\Models\InvoiceTransaction::withoutEvents(fn()=>App\Models\InvoiceTransaction::create(['invoice_id'=>$open->invoice_id,'amount'=>'1.00','fee'=>'0.00','status'=>$status]));
+    $payment=App\Models\InvoiceTransaction::withoutEvents(fn()=>App\Models\InvoiceTransaction::create(['invoice_id'=>$open->invoice_id,'amount'=>'1.00','fee'=>'0.00','status'=>$status]));
+    same([1,$status],[App\Models\InvoiceTransaction::where('invoice_id',$open->invoice_id)->count(),$payment->fresh()->status->value],'Fixture: only the '.$status.' payment is on the invoice');
     same(['cancelled','Under review','Order cancelled'],$orderWords(),'A '.$status.' payment on a cancelled service needs review');
     $paidCancel=$owned->present($open->domain->fresh());
     same(false,$paidCancel->order['unpaid']??false,'Payment evidence never says nothing was charged');
+    App\Models\InvoiceTransaction::withoutEvents(fn()=>$payment->delete());
 }
+same(['cancelled','Cancelled','Order cancelled'],$orderWords(),'Without the payments the cancelled order reads as a plain cancel again');
 // Native gateway reversals are expected closure activity, not new late money or a second Domains return.
 require __DIR__.'/Support/money-receipt.php';MoneyReceiptGateway::$lost=false;
 $gateway=App\Models\Gateway::create(['extension'=>'MoneyReceipt','name'=>'Money receipt fixture','type'=>'gateway','enabled'=>true]);

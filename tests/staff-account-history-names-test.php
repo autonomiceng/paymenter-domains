@@ -20,10 +20,19 @@ ReminderSchedules::save($u,$server,(int)$row->revision,false,'1,7,30,60','3','Tu
 $first=array_values(array_filter(TldFacts::accountHistory($server),fn(array $r)=>str_starts_with($r['change'],'Reminder emails')))[0]??['change'=>null,'by'=>null];
 same('Reminder emails turned off',$first['change'],'A Reminder emails change is in account history');
 same(trim($u->first_name.' '.$u->last_name)?:$u->email,$first['by'],'It names who changed it');
+// A days-only change keeps the switch and lists the new days.
+Carbon\Carbon::setTestNow($now->modify('+2 minutes'));$row=Illuminate\Support\Facades\DB::table('domains_reminder_schedules')->where('server_id',$server)->sole();
+ReminderSchedules::save($u,$server,(int)$row->revision,false,'1,7,30','3,10','Shorter schedule');
+$schedule=array_values(array_filter(TldFacts::accountHistory($server),fn(array $r)=>$r['change']==='Reminder schedule changed'))[0]??['reason'=>null];
+same('Days before expiry: 1, 7, 30; days after: 3, 10. Shorter schedule',$schedule['reason'],'A schedule change lists the saved days and the reason');
 // Back-to-back system runs read as one row.
 $rows=[['time'=>'2026-11-10T04:10:03+00:00','change'=>'Prices published','reason'=>'.org: Prices recalculated using the current pricing and sales settings.','by'=>'System','tld'=>'org'],
     ['time'=>'2026-11-10T04:10:02+00:00','change'=>'Prices published','reason'=>'.net: Prices recalculated using the current pricing and sales settings.','by'=>'System','tld'=>'net'],
     ['time'=>'2026-11-10T04:10:01+00:00','change'=>'Prices published','reason'=>'.com: Prices recalculated using the current pricing and sales settings.','by'=>'System','tld'=>'com'],
     ['time'=>'2026-11-10T04:09:00+00:00','change'=>'Price freshness changed','reason'=>'Staff change','by'=>'Staff #1']];
 same([['time'=>'2026-11-10T04:10:03+00:00','change'=>'Prices published for 3 TLDs','reason'=>'.com, .net, .org: Prices recalculated using the current pricing and sales settings.','by'=>'System'],$rows[3]],TldFacts::group($rows),'Three system rows fold into one with a count, and the staff row stays near the top');
+// Runs a day apart stay separate rows, even with no other row between them.
+$daily=[['time'=>'2026-11-10T04:10:00+00:00','change'=>'Prices published','reason'=>'.com: Prices recalculated using the current pricing and sales settings.','by'=>'System','tld'=>'com'],
+    ['time'=>'2026-11-09T04:10:00+00:00','change'=>'Prices published','reason'=>'.com: Prices recalculated using the current pricing and sales settings.','by'=>'System','tld'=>'com']];
+same([[...array_diff_key($daily[0],['tld'=>1])],[...array_diff_key($daily[1],['tld'=>1])]],TldFacts::group($daily),'Daily system runs stay separate rows');
 $nativeSuccessful=true;echo "Staff account history names passed\n";

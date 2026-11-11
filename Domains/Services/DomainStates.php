@@ -42,7 +42,7 @@ final class DomainStates
         $today = $now->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d'); $stops = $in->stops($d);
         if ($d->adoptionPending()) { return new DomainState(['adoption_pending', null], [], null, $stops, '', true); }
         $op = $in->acquisition($d); $policy = $stops['policy']; $off = RenewalStop::stopped($stops);
-        $order = $op ? OwnedDomains::order($d, $op, $in->invoice($op->invoice_id, $d), OwnedDomains::closed($in->service($d)?->status, $in->stopped($d))) : [];
+        $order = $op ? OwnedDomains::order($d, $op, $in->invoice($op->invoice_id, $d), OwnedDomains::closed($in->service($d)?->status, $in->stopped($d)), $in->paying()) : [];
         $status = $policy === null ? ['needs_review', null] : OwnedDomains::orderStatus(self::managed($d, $op, $today, $off), $d, $order);
         $renewal = $policy !== null && $d->status === 'active' ? ($off ? 'Off' : 'On') : '';
         // Unreadable renewal settings show no renewal invoice: the status already says we are checking the domain.

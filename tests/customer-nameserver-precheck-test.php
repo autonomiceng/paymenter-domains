@@ -24,4 +24,6 @@ expect(str_contains($script,'const problem = nameserverProblem();')&&strpos($scr
 $styles=file_get_contents(dirname(__DIR__).'/Domains/resources/views/partials/styles.blade.php');
 expect(str_contains($script,"editor?.classList.add('domains-edit--behind')")&&str_contains($styles,'.domains .domains-edit--behind { visibility: hidden; }')
     &&str_contains($styles,'.domains .domains-edit--behind [data-confirm-dialog] { visibility: visible; }'),'Only the warning shows while it is open');
+// Reopening an open warning closes it first; that close event arrives after it is open again and must not show the editor.
+expect(str_contains($script,"dialog.addEventListener('close', () => { if (!dialog.open) editor?.classList.remove('domains-edit--behind'); });"),'The editor shows again only once the warning is closed');
 $nativeSuccessful=true; echo "Customer nameserver precheck passed.\n";

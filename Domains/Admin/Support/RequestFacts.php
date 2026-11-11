@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus;
-use Paymenter\Extensions\Servers\Domains\Services\{BalanceRetries, ComplimentaryCosts, EnomTestManagement, EnomTestRegistration, ManagementEvidence, ManagementProgress, OperationClaims, RegistrarCheck, RegistrationDns, RenewalCycles, RenewalReplacements, StaffOperationWrites, UnpaidAcquisitionProof, WriteHeld};
+use Paymenter\Extensions\Servers\Domains\Services\{BalanceRetries, ComplimentaryCosts, ContactProfileHold, EnomTestManagement, EnomTestRegistration, ManagementEvidence, ManagementProgress, OperationClaims, RegistrarCheck, RegistrationDns, RenewalCycles, RenewalReplacements, StaffOperationWrites, UnpaidAcquisitionProof, WriteHeld};
 /** Request page facts and its one notice. A null fact value is Missing and its "_sub" key names the cause. */
 final class RequestFacts
 {
@@ -53,6 +53,10 @@ final class RequestFacts
                 }
             }
             $p=$op->policy??[]; $a=$op->attempt??[]; $f=$op->funding??[];
+            if($op->state==='held'&&$op->safe_code===ContactProfileHold::CODE
+                &&($blocked=ContactProfileHold::releaseBlocked($op))!==null){
+                $out['contact_recovery']=$blocked;
+            }
             if ($grants->metadata && ($failure=\Paymenter\Extensions\Servers\Domains\Data\SendFailure::words($a['send_failure']??null))) { $out['send_failure']=$failure; }
             if ($grants->metadata && ($reply=\Paymenter\Extensions\Servers\Domains\Data\RegistrarReply::fromArray($a['evidence']['registrarReply']??null))) { $out['registrar_reply']=$reply->words(); }
             $paid=$op->invoice_id||in_array($op->action,self::PAID_ACTIONS,true);
@@ -157,7 +161,10 @@ final class RequestFacts
      * Lists call this per row, so they pass $ordersOff: a queued row is only stopped while Orders are off, and held rows are rare. */
     public static function reason(Operation $op, bool $ordersOff=true, ?StaffGrants $grants=null, ?array $accounts=null, ?array $release=null): ?string
     {
-        try { return ($op->state==='held'||$op->state==='queued'&&$ordersOff?self::readyMessage($op,$accounts,$release):null)??Labels::requestStatus($op,grants:$grants)['reason']; }
+        try {
+            return ($op->state==='held'||$op->state==='queued'&&$ordersOff?self::readyMessage($op,$accounts,$release):null)
+                ??self::paidWaiting($op,$accounts)??Labels::requestStatus($op,grants:$grants)['reason']??self::paidMoving($op);
+        }
         catch (\Throwable) { return Labels::requestStatus($op,grants:$grants)['reason']; }
     }
     /** A request's status, in the customer's words. Orders off stop all queued work, so a queued request whose account has them off is held
@@ -188,8 +195,22 @@ final class RequestFacts
     public static function paidWaiting(Operation $op, ?array $accounts=null): ?string
     {
         if ($op->state!=='awaiting_payment' || !$op->invoice_id) { return null; }
-        if (\App\Models\Invoice::whereKey($op->invoice_id)->value('status')!=='paid') { return null; }
-        return OperationQueries::ordersOff($op,$accounts)?'Paid. Not sent. '.self::ORDERS_OFF:'Paid. It goes to the registrar automatically. Nothing to do yet.';
+        if (self::invoiceStatus($op)!=='paid') { return null; }
+        return OperationQueries::ordersOff($op,$accounts)?'Paid. Not sent. '.self::ORDERS_OFF:self::PAID_GOES;
+    }
+    /** Lists and history preload invoices once; detail callers may read their single invoice directly. */
+    private static function invoiceStatus(Operation $op): ?string
+    { return $op->relationLoaded('invoice')?$op->invoice?->status:\App\Models\Invoice::whereKey($op->invoice_id)->value('status'); }
+    public const PAID_GOES='Paid. It goes to the registrar automatically. Nothing to do yet.';
+    /** A paid request on its way, for the moments its saved state has no words: picked up, then sent, until the registrar answers. */
+    private const PAID_MOVING=['queued'=>self::PAID_GOES,'running'=>'Paid. Sending to the registrar now. Nothing to do yet.',
+        'pending'=>'Paid. Sent to the registrar. Waiting for it to confirm. Nothing to do yet.'];
+    private static function paidMoving(Operation $op): ?string
+    {
+        if (!isset(self::PAID_MOVING[$op->state]) || $op->funding_basis!=='paid_invoice' || !$op->invoice_id) { return null; }
+        // A queued transfer without a valid auth code waits on the customer (OperationActions::customerOwes), so it is not on its way.
+        if ($op->state==='queued' && $op->action==='transfer' && !\Paymenter\Extensions\Servers\Domains\Services\TransferInputs::validCode($op->payload['epp']??null)) { return null; }
+        return self::invoiceStatus($op)==='paid'?self::PAID_MOVING[$op->state]:null;
     }
     /** Local readiness shared by request pages and domain lists. It never releases a hold.
      * $accounts: a list's OperationQueries::ordersOffAccounts() snapshot, read for the Orders switch instead of the account now.
@@ -235,12 +256,12 @@ final class RequestFacts
         if (!$on) { return 'Ready to send. '.self::ORDERS_OFF; }
         return $op->state==='held' ? 'Ready to send. Release the hold.' : null;
     }
-    /** When a timed retry runs next. Nothing once it is due: the next tick takes it. */
-    private static function nextTry(Operation $op): ?string
+    /** When a timed retry runs next, in the viewer's time zone like every other time here. Nothing once it is due: the next tick takes it. */
+    private static function nextTry(Operation $op): ?\Illuminate\Support\HtmlString
     {
         if (!BalanceRetries::pending($op)) { return null; }
         $due=(int)\Illuminate\Support\Facades\DB::table('domains_runtime_operations')->where('operation_id',$op->id)->value('due_at');
-        return $due>app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp()?'Next try '.gmdate('M j, Y H:i',$due).' UTC.':null;
+        return $due>app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp()?new \Illuminate\Support\HtmlString(Sheet::moment($due,'Next try')->toHtml().'.'):null;
     }
     /** Only a financially confirmed, nameserver-only registration fallback needs no staff task. */
     public static function quietRegistrationDns(Operation $op): bool
@@ -351,7 +372,7 @@ final class RequestFacts
             $approval=$open&&ComplimentaryCosts::awaitingApproval($op);
             if ($approval) { $next=(OperationActions::relevant('release',$op)?'Release hold only retries the price check. ':'').'The '.($account?self::queueWords($op,$account):'request').' holds again while the registrar cost is above the usual. It goes ahead at this cost once the registrar cost is approved on the domain page.'; }
             if ($next!==null) { $body=$body===null?$next:$next.' '.$body; }
-            if (($try=self::nextTry($op))!==null) { $body=$body===null?$try:$body.' '.$try; }
+            if (($try=self::nextTry($op))!==null) { $body=new \Illuminate\Support\HtmlString(($body===null?'':e($body).' ').$try->toHtml()); }
             return ['title'=>rtrim($reason??Labels::reason(null),'.').'.','body'=>$body,'tone'=>'warning','action'=>in_array($op->safe_code,WriteHeld::FINAL_REFUSALS,true)&&OperationActions::relevant('refund',$op)?'refund':(OperationActions::relevant('release',$op)?'release':null),
                 'link'=>$approval?'domain':match($op->safe_code){'renewal_invoice_unpaid'=>'invoice','renewal_funding_or_authority','automatic_spend_paused','renewal_spend_paused'=>'domain',default=>$fix?'registrars':null},'link_label'=>$fix];
         }
@@ -378,7 +399,9 @@ final class RequestFacts
         catch (\Throwable) { return ['words'=>null,'act'=>true]; }
         $lines=[];$act=false;
         foreach ($rows as $r) {
-            $amount=\Paymenter\Extensions\Servers\Domains\Services\Storefront::money(\Paymenter\Extensions\Servers\Domains\Services\PricingRule::decimal((int)$r['amount_minor']));
+            // Missing or invalid money is a payment read problem: never show it as zero.
+            if (!is_int($r['amount_minor']??null) || $r['amount_minor']<0) { return ['words'=>null,'act'=>true]; }
+            $amount=\Paymenter\Extensions\Servers\Domains\Services\Storefront::money(\Paymenter\Extensions\Servers\Domains\Services\PricingRule::decimal($r['amount_minor']));
             $line=match ([$r['kind']??null,$r['status']??null]) {
                 ['dispute','lost']=>$amount.' lost to a dispute',
                 ['dispute','open'],['dispute','inquiry']=>$amount.' under dispute. Submit evidence in Stripe before the deadline',
@@ -407,9 +430,15 @@ final class RequestFacts
         if ($sends!==null) { return ['Send to Enom now?','Release and send',"Sends the {$sends} to Enom within a few minutes. This can't be taken back."]; }
         $registrar=PaidUncertainty::registrar($op);
         $kind=$account&&in_array($op->action,['register','transfer','renew'],true)?self::queueWords($op,$account):'request';
-        if ($contactRecovery) { return ['Use updated account details?','Use updated account details',"Copies the customer's current account details into this request and releases the hold. The {$kind} then goes to {$registrar}."]; }
+        // Contact recovery queues a registration, but a transfer stays held for its own release review (ContactRecovery).
+        if ($contactRecovery) { return ['Use updated account details?','Use updated account details',$op->action==='transfer'
+            ?"Copies the customer's current account details into this request. The transfer stays on hold for a separate release review. If the auth code deadline has passed, it cannot be released."
+            :"Copies the customer's current account details into this request and releases the hold. The {$kind} then goes to {$registrar}."]; }
         if ($account&&ComplimentaryCosts::awaitingApproval($op)) { return ['Release hold?','Release hold','Retries the price check. The '.$kind.' holds again while the registrar cost is above the usual.']; }
-        if ($account?->processing_enabled) { return ['Send to '.$registrar.' now?','Release and send',"Queues the {$kind} to send to {$registrar}, usually within a few minutes. Once sent, it can't be taken back."]; }
+        // A paid order held at its contact step goes as the customer's order; say what the registrar charges.
+        $cost=$op->safe_code===\Paymenter\Extensions\Servers\Domains\Services\ContactProfileHold::CODE&&is_numeric($op->cost['estimated']??null)
+            ?' '.$registrar.' charges about '.($op->cost['currency']??'USD').' '.number_format((float)$op->cost['estimated'],2,'.','').' from the registrar balance.':'';
+        if ($account?->processing_enabled) { return ['Send to '.$registrar.' now?','Release and send',"Queues the {$kind} to send to {$registrar}, usually within a few minutes.{$cost} Once sent, it can't be taken back."]; }
         return ['Release hold?','Release hold','The '.$kind.' waits in the queue and goes to '.$registrar.' once Orders is on for this registrar account.'];
     }
     /** What release queues: the request type, marked test on a test account. */

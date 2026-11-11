@@ -28,7 +28,7 @@ $item('Item 6, no single own price for every TLD',function()use($dialog,$saved):
     same(['markup_percent','20.00'],[(new PricingRules)->defaultRule()['mode'],$saved()],'A refused own price saves nothing');
 });
 $item('Item 7, margin checks',function()use($dialog,$saved,$writer,$u,$now):void{
-    foreach(['-5'=>'Enter 0 or more.','abc'=>'Enter a number.','1000'=>'Enter 500 or less.','8.125'=>'Use at most two decimal places.'] as $margin=>$message){
+    foreach(['-5'=>'Enter 0 or more.','-0'=>'Enter 0 or more.',' 20'=>'Enter a number.','abc'=>'Enter a number.','1000'=>'Enter 500 or less.','8.125'=>'Use at most two decimal places.'] as $margin=>$message){
         $dialog(['mode'=>'markup_percent','markup'=>(string)$margin,'round_up'=>'none'])->assertHasActionErrors(['markup'=>$message]);
     }
     same('20.00',$saved(),'Refused margins save nothing');
@@ -37,6 +37,9 @@ $item('Item 7, margin checks',function()use($dialog,$saved,$writer,$u,$now):void
     $dialog(['round_up'=>'whole'])->assertHasNoActionErrors();
     same(['800.00','whole'],[$saved(),(new PricingRules)->defaultRule()['round_up']],'A saved larger margin keeps working');
     $dialog(['markup'=>'801'])->assertHasActionErrors(['markup'=>'Enter 500 or less.']);
+    // The saved 800 is a percentage; as an amount to add it is a new margin over the limit.
+    $dialog(['mode'=>'markup_amount'])->assertHasActionErrors(['markup'=>'Enter 500 or less.']);
+    same(['markup_percent','800.00'],[(new PricingRules)->defaultRule()['mode'],$saved()],'A saved percentage is not kept as an amount');
     $dialog(['mode'=>'markup_amount','markup'=>'500','round_up'=>'none'])->assertHasNoActionErrors();
     same(['markup_amount','500.00'],[(new PricingRules)->defaultRule()['mode'],$saved()],'The largest margin saves');
 });
@@ -45,6 +48,8 @@ $item('Item 2, below-cost words',function():void{
     $words=SettingsActions::description('override');
     expect(!str_contains($words,'alert staff'),'No claim that saving alerts staff');
     expect(str_contains($words,'Registrations and transfers below cost are not sold')&&str_contains($words,'each one adds an alert to its domain'),'Below-cost words say what happens');
+    // The TLD's status reads the one-year registration only, so the words name where each term's reason shows.
+    expect(str_contains($words,'Edit prices and the price list show why for each term')&&!str_contains($words,'the TLD shows why'),'Below-cost words name where the reason shows');
 });
 if($failed){throw new RuntimeException(implode("\n",$failed));}
 $nativeSuccessful=true;echo "Default pricing dialog passed.\n";

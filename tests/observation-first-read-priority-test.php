@@ -51,4 +51,13 @@ same($routine[0],(int)($claim()->id??0),'A first read beyond the 25-row window d
 $reads=array_filter(DB::getQueryLog(),fn($q)=>str_contains($q['query'],'from "domains_domains"'));
 DB::disableQueryLog();
 same(1,count($reads),'The claim batch-loads its bounded domain window once');
+// Saved history that fails validation, here a completed read stamped after now, is not a first read and does not
+// take the place of a domain that has never been read.
+DB::table('domains_observation_work')->delete();
+$future=$domain('future-read-placeholder',40,false);
+Domain::withoutEvents(static fn()=>$future->update(['observation'=>['records'=>['identity'=>ObservationRecords::identity($future),
+    'at'=>'2026-11-11T06:00:00+00:00','last_complete_at'=>'2026-11-11T06:00:00+00:00','sequence'=>0,'families'=>[]]]]));
+expect(ObservationRecords::current($future->fresh())===null,'Fixture: the future stamped read fails validation');
+$work(Domain::find(1),'2026-11-10T05:30:00+00:00');$work($future->fresh(),'2026-11-10T05:40:00+00:00');$genuine=$work($new,'2026-11-10T06:00:00+00:00');
+same($genuine,(int)($claim()->id??0),'A genuine first read goes ahead of saved history that fails validation');
 $nativeSuccessful=true;echo "First record read priority passed.\n";

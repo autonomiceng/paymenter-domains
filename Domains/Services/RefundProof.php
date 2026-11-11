@@ -68,9 +68,11 @@ final class RefundProof
             throw new \DomainException('Unsealed financial seal or unknown claim prevents refund.');
         }
         if (!$sealed && array_key_exists('claim_key', $a) && (!is_string($a['claim_key']) || !preg_match('/^[a-f0-9]{32}$/D', $a['claim_key'])
-            || !in_array($op->safe_code, [...BalanceRetries::REVIEW_CODES,'namesilo_account_guard', 'pre_send_interrupted', 'seal_authority_invalid', 'nameservers_required', 'write_acceptance_required', 'write_rate_limited', 'refund_approved', 'usd_balance_required', 'enom_test_setup_required', ...WriteHeld::UNSENT_REFUSALS], true))) {
+            || !in_array($op->safe_code, [...BalanceRetries::REVIEW_CODES,'namesilo_account_guard', 'pre_send_interrupted', 'seal_authority_invalid', 'nameservers_required', 'write_acceptance_required', 'write_rate_limited', 'refund_approved', 'usd_balance_required', 'enom_test_setup_required', ContactProfileHold::CODE, ...WriteHeld::UNSENT_REFUSALS], true))) {
             throw new \DomainException('Unresolved local claim.');
         }
+        // A contact step hold is unsent only while the order's own contact row shows nothing went to NameSilo.
+        if (!$sealed && $op->safe_code === ContactProfileHold::CODE && !ContactProfileHold::unsent($op)) { throw new OperationRefused(OperationFailure::ProviderEvidence); }
         if (array_key_exists('terminal', $a) && (($a['terminal']['operation_key'] ?? null) !== $op->operation_key
             || ($a['terminal']['generation'] ?? null) !== $op->authority_generation)) { throw new \DomainException('Foreign terminal proof.'); }
     }

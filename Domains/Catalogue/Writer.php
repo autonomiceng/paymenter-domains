@@ -297,8 +297,9 @@ final class Writer implements Catalogue
         return match (true) {
             $facts === null => \Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::UNSUPPORTED[4],
             !\Paymenter\Extensions\Servers\Domains\Services\RegistryInputs::supported($registrarKey, $tld, $facts->registryFields) => \Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::UNSUPPORTED[0],
-            $facts->requiresNameservers !== false => \Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::UNSUPPORTED[1],
-            $facts->autoRenewOnly !== false => \Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::UNSUPPORTED[2],
+            // Name a requirement only when the registrar stated it; an unknown flag falls to the unconfirmed or general words.
+            $facts->requiresNameservers === true => \Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::UNSUPPORTED[1],
+            $facts->autoRenewOnly === true => \Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::UNSUPPORTED[2],
             $facts->renewalSafe !== true => \Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::UNSUPPORTED[3],
             default => \Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::UNSUPPORTED[4],
         };

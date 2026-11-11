@@ -35,6 +35,8 @@ expect(!str_contains($facts['Expires']['sub']??'','Next automatic retry:'),'Miss
 same([null,null],[$facts['Nameservers']['value'],$facts['Nameservers']['sub']],'Unread nameservers stay Missing; Last sync names the automatic retry once');
 expect($errors===[],implode('; ',$errors));
 expect(str_contains($top,'The registrar read failed.')&&str_contains($top,'Next automatic retry:'),'Native top rows render the actual failed read and due time');
+// The retry time reads in the viewer's time zone like the rest of the page, with UTC only on hover.
+expect(preg_match('~Next automatic retry: <span title="[^"]+ UTC"><time datetime="[^"]+" data-domains-time=~',$top)===1&&!str_contains($top,' UTC.'),'The automatic retry time is a viewer-time moment');
 // ui-r15 R4: a registrar read can return contacts while the domain has none saved here (an import). The moved Contacts row
 // shows the read state above its own red Missing, as it did before it moved onto the family row.
 $known=['state'=>'complete','records'=>[]];

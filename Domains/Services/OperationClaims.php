@@ -107,9 +107,10 @@ final class OperationClaims
             if(FundsWaits::elapsed($op,$this->clock->now())){return null;}
             $capacityRetry=self::capacityRetry($op);$priceRetry=(self::testCallRetry($op)&&ExecutionWindow::priceReleased($op))||ComplimentaryCosts::readmitted($op);
             $testCallRetry=self::testCallRetry($op)&&!$priceRetry&&!BalanceRetry::from($op)?->window;$balanceRetry=self::balanceRefusalRetryable($op);
-            // A cap refusal starts fresh authority; validated balance and price retries retain the original unsent claim.
-            $claimRetry=($capacityRetry||$balanceRetry||$priceRetry)&&!$testCallRetry&&isset($op->attempt['claim_key']);
-            if (!self::virgin($op)&&!$capacityRetry&&!$testCallRetry&&!$balanceRetry&&!$priceRetry) {
+            $contactRetry=self::contactRetry($op);
+            // A cap refusal starts fresh authority; validated balance, price and contact step retries retain the original unsent claim.
+            $claimRetry=($capacityRetry||$balanceRetry||$priceRetry||$contactRetry)&&!$testCallRetry&&isset($op->attempt['claim_key']);
+            if (!self::virgin($op)&&!$capacityRetry&&!$testCallRetry&&!$balanceRetry&&!$priceRetry&&!$contactRetry) {
                 $op->update(['state' => 'uncertain', 'safe_code' => 'prior_attempt', 'lease_expires_at' => null]); return null;
             }
             try { [$binding, $paid] = $this->validate($op, $domain, $all, $funding, $server, $account); }
@@ -198,6 +199,10 @@ final class OperationClaims
             }
             if ($ready->query->action === Action::Transfer) { $attempt['transfer_admission'] = $ready->transfer; }
             $op->update(['attempt' => $attempt, 'funding' => [...$op->funding, 'seal' => $paid]]);
+            // A retry's backoff paces only this send. Once it may be sent, status checks keep their own schedule.
+            if (array_key_exists('balance_retry', $op->policy ?? [])) {
+                DB::table('domains_runtime_operations')->where('operation_id', $op->id)->where('due_at', '>', $now->getTimestamp())->update(['due_at' => $now->getTimestamp()]);
+            }
             return $op;
         });
     }
@@ -312,6 +317,14 @@ final class OperationClaims
         $proof=clone $op;$proof->state='held';$proof->safe_code='registrar_balance_insufficient';
         try { RefundProof::requireUnsent($proof,$op->domain); return true; }
         catch (\Throwable) { return false; }
+    }
+    /** A staff release of an unsent contact step hold: the audited release is the latest window and the order's own
+     * contact row still waits, so the same claim runs the contact step and the purchase once. */
+    private static function contactRetry(Operation $op): bool
+    {
+        if($op->state!=='queued'||$op->safe_code!==null||!self::unsealed($op)){return false;}
+        try{ExecutionWindow::start($op,$reason);}catch(\Throwable){return false;}
+        return $reason===ContactProfileHold::CODE&&ContactProfileHold::unsent($op,retry:true);
     }
     public static function accountGuardRetryable(Operation $op): bool
     {
