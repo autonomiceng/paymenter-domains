@@ -20,6 +20,7 @@ final class PslReviewSchema
         $t->string('before_revision', 64)->nullable(); $t->string('after_revision', 64);
         $t->longText('data'); ($legacyDates ? $t->timestamp('created_at') : $t->dateTime('created_at'));
         HistoryAccountIndex::define($t,'domains_watch_audit');
+        if(!Schema::hasTable('domains_watch_audit') || Schema::hasColumn('domains_watch_audit','time_zone')){$t->string('time_zone',64)->nullable();}
     }
     public static function install(): void
     {

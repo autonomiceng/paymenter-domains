@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\{Cache,DB,Schema};
 /** No destructive rollback or automatic adoption of retained history. */
 final class Installation
 {
-    public const SCHEMAS=[FoundationSchema::class,SalesPolicySchema::class,ContactProfileSchema::class,ObservationSchema::class,ReminderSchema::class,RuntimeSchema::class,HoldingProvenanceSchema::class,PslSchema::class,PslReviewSchema::class,WatchSchema::class,AdoptionSchema::class,HistoryLinkSchema::class,WatchDnsSchema::class,NativeIntentSchema::class,HoldingAdoptionSchema::class,BalanceSchema::class,ManagedPublicWorkSchema::class,ManagedPublicSchema::class,WatchScheduleSchema::class,WatchNoticeSchema::class,StaffWatchSchema::class,StaffAuditSchema::class,EnomTestSendLimitSchema::class,UserDeletionSchema::class,EnomLiveCallSchema::class,StaffAlertSchema::class,BalanceAlertSchema::class,OfferRetirement::class,RenewalRetrySchema::class,ManagementProgressIndex::class,ProfileContactSchema::class,OfferSchema::class,OfferWorkSchema::class,LiveCatalogueSchema::class,ComplimentaryAccountSchema::class,TemplateAssignmentIndex::class,ComplimentaryTimeSchema::class,HistoryAccountIndex::class];
+    public const SCHEMAS=[FoundationSchema::class,SalesPolicySchema::class,ContactProfileSchema::class,ObservationSchema::class,ReminderSchema::class,RuntimeSchema::class,HoldingProvenanceSchema::class,PslSchema::class,PslReviewSchema::class,WatchSchema::class,AdoptionSchema::class,HistoryLinkSchema::class,WatchDnsSchema::class,NativeIntentSchema::class,HoldingAdoptionSchema::class,BalanceSchema::class,ManagedPublicWorkSchema::class,ManagedPublicSchema::class,WatchScheduleSchema::class,WatchNoticeSchema::class,StaffWatchSchema::class,StaffAuditSchema::class,EnomTestSendLimitSchema::class,UserDeletionSchema::class,EnomLiveCallSchema::class,StaffAlertSchema::class,BalanceAlertSchema::class,OfferRetirement::class,RenewalRetrySchema::class,ManagementProgressIndex::class,ProfileContactSchema::class,OfferSchema::class,OfferWorkSchema::class,LiveCatalogueSchema::class,ComplimentaryAccountSchema::class,TemplateAssignmentIndex::class,ComplimentaryTimeSchema::class,HistoryAccountIndex::class,WatchAuditTimeSchema::class];
     public static function legacy(): void
     {
         foreach(Server::where('extension','Enom')->get() as $server){
@@ -82,6 +82,9 @@ final class Installation
             $closureRecorded=in_array(ClosureCursorSchema::MIGRATION,$ran,true);
             if(Schema::hasTable(ClosureCursorSchema::TABLE)&&Schema::hasColumn(ClosureCursorSchema::TABLE,ClosureCursorSchema::COLUMN)&&!$closureRecorded){throw new \DomainException('Retained complimentary closure cursor has no installation record.');}
             if($closureRecorded){ClosureCursorSchema::verify();}
+            $watchZoneRecorded=in_array(WatchAuditTimeSchema::MIGRATION,$ran,true);
+            if(Schema::hasColumn('domains_watch_audit','time_zone')&&!$watchZoneRecorded){throw new \DomainException('Retained watch audit time zones have no installation record.');}
+            if($watchZoneRecorded){WatchAuditTimeSchema::verify();}
             $zoneRecorded=in_array(ComplimentaryTimeSchema::MIGRATION,$ran,true);
             if(ComplimentaryTimeSchema::present()&&!$zoneRecorded){throw new \DomainException('Retained complimentary time zones have no installation record.');}
             if($zoneRecorded){ComplimentaryTimeSchema::verify();}
