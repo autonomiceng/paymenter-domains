@@ -20,7 +20,7 @@ foreach([[$other,'POST',false],[$user,'GET',false],[$user,'POST',true]] as [$act
     commerceReject(fn()=>$inputs->submitCode($post($actor,'synthetic',$method,$query),$op->id));
 }
 \Paymenter\Extensions\Servers\Domains\Services\RuntimeSchema::install();
-DB::table('domains_runtime_operations')->insert(['operation_id'=>$op->id,'due_at'=>$now->getTimestamp()+900]);
+DB::table('domains_runtime_operations')->updateOrInsert(['operation_id'=>$op->id],['due_at'=>$now->getTimestamp()+900]);
 $code='  Synthetic:Case-Sensitive  ';
 same(null,$inputs->submitCode($post($user,$code),$op->id),'No code/model response');
 same($code,$op->fresh()->payload['epp'],'Exact bytes preserved');
