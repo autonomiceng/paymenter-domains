@@ -33,14 +33,14 @@ catch(DomainException $e){same('Enter a one-line reason between 5 and 500 charac
 \Illuminate\Support\Facades\Auth::setUser($staff);
 $action=collect(OperationActions::make($op->fresh(),StaffOperationReview::stamp($op->fresh(),$op->domain->fresh())))->first(fn($a)=>$a->getName()==='refund');
 ($action->getActionFunction())(['review_key'=>$ticket($op,'refund'),'reason'=>'éééé']);
-Notification::assertNotified(Notification::make()->danger()->title("Couldn't update request")->body('Enter a one-line reason between 5 and 500 characters.'));
+Notification::assertNotified(Notification::make()->danger()->persistent()->title("Couldn't update request")->body('Enter a one-line reason between 5 and 500 characters.'));
 same([],$logs,'Expected staff validation remains quiet');
 // Exercise the actual source guards through the staff action, without provider traffic.
 $refuse=static function($op,string $name,string $code,string $message)use(&$logs,$ticket,$staff):string{
     \Illuminate\Support\Facades\Auth::setUser($staff);$logs=[];
     $action=collect(OperationActions::make($op,StaffOperationReview::stamp($op,$op->domain->fresh())))->first(fn($a)=>$a->getName()===$name);
     $key=$ticket($op,$name);($action->getActionFunction())(['review_key'=>$key,'reason'=>'Reviewed original evidence']);
-    Notification::assertNotified(Notification::make()->danger()->title("Couldn't update request")->body($message));
+    Notification::assertNotified(Notification::make()->danger()->persistent()->title("Couldn't update request")->body($message));
     same([['level'=>'warning','message'=>'Domains staff operation refused.','context'=>['reason'=>$code,'action'=>$name,'operation_id'=>(int)$op->id]]],$logs,'Exactly one warning with only safe diagnostic fields');
     return $key;
 };

@@ -9,6 +9,10 @@ use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
 use Paymenter\Extensions\Servers\Domains\Services\{OwnedDomains,OwnerPorts,OwnerSetup,TransferInputs,Refunds,DomainManagement};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 $free=isset($ms);[$d,$driver]=$holding($free?'owner-management':'owner-management-placeholder.com');
+// These input checks use an existing domain whose first registrar read has finished.
+$readAt=$clock->now()->format(DATE_ATOM);
+$d->update(['observation'=>[...($d->observation??[]),'records'=>['identity'=>\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::identity($d),
+    'at'=>$readAt,'last_complete_at'=>$readAt,'sequence'=>0,'families'=>[]]]]);
 storefrontViews();
 $ports=new OwnerPorts(fn($b)=>$driver);$owners=new OwnedDomains($clock,$ports,$management);
 // Future-only stops preserve settings management and accurately show renewal Off.
@@ -19,6 +23,8 @@ $controller=new OwnerActionController($owners,new OwnerSetup($clock,$ports),new 
 $session=app('request')->session();$session->put('_token','owner-csrf');
 $post=static function(string $action,array $data=[])use($d,$user,$session):Request {
     $data=['confirmed'=>'1',...$data];
+    // Contact submissions carry the saved-details digest from the editor they opened.
+    if($action==='contacts'){$data=['opened_contacts_digest'=>OwnedDomains::contactsFormDigest($d->fresh()),...$data];}
     $r=Request::create('/domains/'.$d->id.'/manage/'.$action,'POST',$data,[],[],['CONTENT_TYPE'=>'application/x-www-form-urlencoded'],http_build_query($data));
     nativeNormalizeInput($r);$r->setUserResolver(fn()=>$user);$r->setLaravelSession($session);
     $r->request->set('_request_key',FormKeys::issue($r,'owner:'.$d->id.':'.$action));return $r;

@@ -14,7 +14,7 @@ final readonly class OwnedTransferController
         $endings=array_values(array_filter($this->storefront->endings(),fn($row)=>$row['transfer']!==null));
         $names=array_column($endings,'tld'); $raw=$request->query('name');
         $raw=is_string($raw)?substr($raw,0,300):''; $parsed=$raw===''?['sld'=>null,'ending'=>null,'error'=>null]:StorefrontController::parseName($raw);
-        $chosen=$request->query('tld'); $preferred=in_array($chosen,$names,true)?$chosen:StorefrontController::defaultEnding($names);
+        $chosen=$request->query('tld'); $chosen=is_string($chosen)?strtolower(trim($chosen)):$chosen; $preferred=in_array($chosen,$names,true)?$chosen:StorefrontController::defaultEnding($names);
         $error=$request->query->has('name') && trim($raw)==='' ? 'Enter a domain name.' : $parsed['error'];
         if ($parsed['ending']!==null) {
             if (in_array($parsed['ending'],$names,true)) { $preferred=$parsed['ending']; }
