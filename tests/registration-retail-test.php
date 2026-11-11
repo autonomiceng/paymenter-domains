@@ -61,7 +61,7 @@ foreach (['markup_percent', 'fixed'] as $mode) {
         $published = OfferState::decode($tlds[0]->fresh()->catalogue_published_revision);
         unset($published['retailRule']); // Legacy publications have only offer/defaults/selection.
         DB::table('domains_tlds')->where('id', $tlds[0]->id)->update(['catalogue_published_revision' => OfferState::json($published)]);
-        $evidence = DB::table('domains_prices')->orderBy('id')->pluck('catalogue_observation', 'id')->all();
+        $evidence = DB::table('domains_prices')->orderBy('id')->get()->mapWithKeys(fn($p)=>[$p->id=>costEvidence($p)])->all();
         $readsBefore = $reads->calls;
         // Installation may run while deployment sends are off. Publishing retail must still project
         // retained plans; sale admission remains independently closed until acceptance returns.
@@ -81,7 +81,7 @@ foreach (['markup_percent', 'fixed'] as $mode) {
         }
         same($nativeIds, $product->plans()->orderBy('id')->pluck('id')->all(), 'Upgrade preserves native plan identities');
         same($priceIds, DB::table('prices')->whereIn('plan_id', $nativeIds)->orderBy('id')->pluck('id')->all(), 'Upgrade preserves native price identities');
-        same($evidence, DB::table('domains_prices')->orderBy('id')->pluck('catalogue_observation', 'id')->all(), 'Upgrade preserves saved cost evidence and its age');
+        same($evidence, DB::table('domains_prices')->orderBy('id')->get()->mapWithKeys(fn($p)=>[$p->id=>costEvidence($p)])->all(), 'Upgrade preserves saved cost evidence and its age');
         same($readsBefore, $reads->calls, 'Upgrade republication never resolves a provider');
         $priceRows = DB::table('domains_prices')->orderBy('id')->get()->map(fn ($row) => (array) $row)->all();
         $nativeRows = DB::table('prices')->orderBy('id')->get()->toJson();
@@ -204,8 +204,8 @@ $admission->fixtureOffers = $eligibility->fixtureOffers = $quoted;
 $expire = static function (array $keys) use ($clock, $binding): void {
     foreach (DB::table('domains_prices')->where('server_id', $binding->serverId)->where('tld', 'example.net')->get() as $row) {
         if (!in_array($row->action.':'.$row->term, $keys, true)) { continue; }
-        $raw = OfferState::decode($row->catalogue_observation); $raw['fresh_until'] = $clock->now()->format(DATE_ATOM);
-        DB::table('domains_prices')->where('id', $row->id)->update(['catalogue_observation' => OfferState::json($raw)]);
+        $raw = OfferState::decode(costEvidence($row)); $raw['fresh_until'] = $clock->now()->format(DATE_ATOM);
+        DB::table('domains_prices')->where('id', $row->id)->update([...costColumns(OfferState::json($raw))]);
     }
 };
 $clock->instant = $clock->now()->modify('+1 second');
@@ -232,10 +232,10 @@ same([2, '32.98', '18.0000', '32.98', '32.98'], [(int) $refreshed->term, $refres
 // Dependency observation drift must invalidate the saved longer-term quote.
 $selection = new \Paymenter\Extensions\Servers\Domains\Data\SaleSelection(...$refreshed->policy['checkout']['catalogue']);
 $annual = DB::table('domains_prices')->where('server_id', $binding->serverId)->where('tld', 'example.net')->where('action', 'register')->where('term', 1)->sole();
-$changed = OfferState::decode($annual->catalogue_observation); $changed['total'] = '25.9900';
-DB::table('domains_prices')->where('id', $annual->id)->update(['catalogue_observation' => OfferState::json($changed)]);
+$changed = OfferState::decode(costEvidence($annual)); $changed['total'] = '25.9900';
+DB::table('domains_prices')->where('id', $annual->id)->update([...costColumns(OfferState::json($changed))]);
 commerceReject(fn () => $quoted->validate($selection));
-DB::table('domains_prices')->where('id', $annual->id)->update(['catalogue_observation' => $annual->catalogue_observation]);
+DB::table('domains_prices')->where('id', $annual->id)->update([...costColumns(costEvidence($annual))]);
 // The mixed retail must still cover the independently quoted selected term's wholesale cost.
 $clock->instant = $clock->now()->modify('+1 minute');
 $ports->apply(new FeedObserved($binding, 'example.net', [new Cost('register', 10, true, '200.0000', CostUnit::TermTotal,

@@ -33,7 +33,7 @@ foreach (['enom', 'namesilo'] as $registrar) {
         'catalogue_intent' => OfferState::json(['sell' => false]), 'catalogue_facts' => OfferState::encodeFacts($facts), 'created_at' => $now, 'updated_at' => $now]);
     foreach ([['renew', 1, '14.0000'], ['renew', 2, '24.0000'], ['register', 2, '21.0000']] as [$action, $term, $total]) {
         DB::table('domains_prices')->insert($row + ['tld' => 'com', 'action' => $action, 'term' => $term, 'currency' => 'USD', 'unit' => 'term_total',
-            'source' => 'synthetic_quote', 'observed_at' => '2026-11-06 11:00:00', 'catalogue_observation' => $observe($action, $term, $total), 'created_at' => $now, 'updated_at' => $now]);
+            'source' => 'synthetic_quote', 'observed_at' => '2026-11-06 11:00:00', ...costColumns($observe($action, $term, $total)), 'created_at' => $now, 'updated_at' => $now]);
     }
     $tld = Tld::where('server_id', $server->id)->where('tld', 'com')->sole();
     $prices = Price::where(['server_id' => $server->id, 'tld' => 'com', 'action' => 'renew'])->orderBy('id')->get();
@@ -59,10 +59,10 @@ foreach (['enom', 'namesilo'] as $registrar) {
     catch (DomainException) {}
     // Account policy can shorten the age of an already stored bulk observation. Native settings/rows
     // are required to exercise the same owner-cap and staff readers used after a settings edit.
-    $annualPrice = $prices->firstWhere('term', 1); $original = $annualPrice->catalogue_observation;
+    $annualPrice = $prices->firstWhere('term', 1); $original = costEvidence($annualPrice);
     $bulk = new Cost('renew', 1, true, '14.0000', CostUnit::TermTotal,
         $registrar === 'enom' ? 'enom_bulk_bucket_1' : 'namesilo_account_annual', $now->modify('-25 hours'), $now->modify('+23 hours'));
-    DB::table('domains_prices')->where('id', $annualPrice->id)->update(['catalogue_observation' => OfferState::json(OfferState::encodeCost($bulk))]);
+    DB::table('domains_prices')->where('id', $annualPrice->id)->update([...costColumns(OfferState::json(OfferState::encodeCost($bulk)))]);
     $server->settings()->updateOrCreate(['key' => 'domains_price_freshness_hours'], ['value' => 24, 'type' => 'integer']);
     $policyPrices = Price::where(['server_id' => $server->id, 'tld' => 'com', 'action' => 'renew'])->get();
     $policyTerms = $caps->renewalTerms($binding, $tld, $policyPrices, new DateTimeImmutable('2027-11-20T00:00:00+00:00'));
@@ -70,20 +70,20 @@ foreach (['enom', 'namesilo'] as $registrar) {
     same([null, null], [$policyTerms[1]['cost'], $policyReady['renew'][1]['cost']], $registrar.': shortened account age removes stale annual caps and readiness costs');
     // A derived two-year total shares its annual source's account age policy after a settings change.
     if ($registrar === 'enom' && $environment === Environment::Test) {
-        $twoYear = $prices->firstWhere('term', 2); $savedTwoYear = $twoYear->catalogue_observation;
+        $twoYear = $prices->firstWhere('term', 2); $savedTwoYear = costEvidence($twoYear);
         $derived = new Cost('renew', 2, true, '24.0000', CostUnit::TermTotal,
             'enom_renew_annual_total', $now->modify('-25 hours'), $now->modify('+23 hours'));
-        DB::table('domains_prices')->where('id', $twoYear->id)->update(['catalogue_observation' => OfferState::json(OfferState::encodeCost($derived))]);
+        DB::table('domains_prices')->where('id', $twoYear->id)->update([...costColumns(OfferState::json(OfferState::encodeCost($derived)))]);
         $checkDerived = static fn () => $caps->renewalTerms($binding, $tld, Price::where(['server_id' => $server->id, 'tld' => 'com', 'action' => 'renew'])->get(), new DateTimeImmutable('2027-11-20T00:00:00+00:00'));
         same('stale_price', $checkDerived()[2]['reason'], 'Shortened account age removes a derived two-year quote');
         $server->settings()->updateOrCreate(['key' => 'domains_price_freshness_hours'], ['value' => 48, 'type' => 'integer']);
         same('24.0000', $checkDerived()[2]['cost'], 'Current account age restores the same derived observation without redating it');
-        DB::table('domains_prices')->where('id', $twoYear->id)->update(['catalogue_observation' => $savedTwoYear]);
+        DB::table('domains_prices')->where('id', $twoYear->id)->update([...costColumns($savedTwoYear)]);
     }
     $server->settings()->updateOrCreate(['key' => 'domains_price_freshness_hours'], ['value' => 48, 'type' => 'integer']);
     $policyTerms = $caps->renewalTerms($binding, $tld, $policyPrices, new DateTimeImmutable('2027-11-20T00:00:00+00:00'));
     same('14.0000', $policyTerms[1]['cost'], $registrar.': current account age restores the same observation without redating it');
-    DB::table('domains_prices')->where('id', $annualPrice->id)->update(['catalogue_observation' => $original]);
+    DB::table('domains_prices')->where('id', $annualPrice->id)->update([...costColumns($original)]);
     // Empty inventory: no stored prices leaves only the annual path, with no known cost.
     $empty = $caps->renewalTerms($binding, $tld, [], new DateTimeImmutable('2027-11-20T00:00:00+00:00'));
     same([true, null, $available ? 'unknown_price' : $held], [$empty[1]['available'], $empty[1]['cost'], $empty[2]['reason']], $registrar.': empty inventory');

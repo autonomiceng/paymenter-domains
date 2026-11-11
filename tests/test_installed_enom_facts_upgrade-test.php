@@ -36,7 +36,7 @@ $queue=DB::table('domains_observation_queues')->where('server_id',$server->id);
 $work=OfferState::decode((clone $queue)->value('offer_work'));
 $work['facts']['com']=['sold_only'=>true,'due_at'=>$old->freshUntil->getTimestamp(),'succeeded_at'=>$old->observedAt->getTimestamp(),'tries'=>0];
 $queue->update(['offer_work'=>OfferState::json($work)]);
-same('17.9000',OfferState::cost(OfferState::decode(DB::table('domains_prices')->where('server_id',$server->id)->where('action','renew')->where('term',2)->value('catalogue_observation')))->total,'Fresh reviewed two-year cost already exists');
+same('17.9000',OfferState::cost(OfferState::decode(costEvidence(OfferState::query('domains_prices')->where('server_id',$server->id)->where('action','renew')->where('term',2)->first())))->total,'Fresh reviewed two-year cost already exists');
 // Completion of retained provider work is independent of upgraded term authority.
 $before=count($GLOBALS['catalogueCalls']);
 same(true,$worker->settled($b,$clock->now()->modify('-1 second'),['com']),'Completed old facts settle without current expansion');
@@ -53,7 +53,7 @@ $facts=OfferState::facts(Tld::where('server_id',$server->id)->where('tld','com')
 same(2,count($GLOBALS['catalogueCalls'])-$before,'Normal refresh rereads real independent facts once');
 same($clock->now()->format(DATE_ATOM),$facts->observedAt->format(DATE_ATOM),'Provider refresh replaces the pre-upgrade observation');
 same(TermSupport::REVIEWED_EVIDENCE['enom']['com'],$facts->expansion,'Stored facts carry current reviewed evidence');
-$costs=[];foreach(DB::table('domains_prices')->where('server_id',$server->id)->get() as $p){$c=OfferState::cost(OfferState::decode($p->catalogue_observation));$costs[$c->key()]=$c;}
+$costs=[];foreach(OfferState::query('domains_prices')->where('server_id',$server->id)->get() as $p){$c=OfferState::cost(OfferState::decode(costEvidence($p)));$costs[$c->key()]=$c;}
 same(true,TermSupport::renewal('enom','com',$facts,$costs,$clock->now()->modify('+1 year'),$clock->now(),environment:Environment::Test)[2]['available'],'Owner evaluator offers two years from refreshed facts');
 same(false,TermSupport::renewal('enom','com',$facts,$costs,$clock->now()->modify('+1 year'),$clock->now(),environment:Environment::Live)[2]['available'],'Live longer terms remain held');
 $before=count($GLOBALS['catalogueCalls']);$scheduler->requestFacts($b,'com');$worker->accountTurn($server->id);
@@ -63,7 +63,7 @@ $caps = new \Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities($ports,
 $t = Tld::where('server_id', $server->id)->where('tld', 'com')->sole();
 $original = $t->catalogue_facts; $intent = $t->catalogue_intent;
 DB::table('domains_tlds')->where('id', $t->id)->update(['catalogue_intent' => OfferState::json(['sell' => false])]);
-$prices = DB::table('domains_prices')->where('server_id', $server->id)->get();
+$prices = OfferState::query('domains_prices')->where('server_id', $server->id)->get();
 $before = count($GLOBALS['catalogueCalls']);
 foreach (['term_evidence', 'renewal_families','term_rule','family_rule'] as $key) {
     $changed = OfferState::decode($original);

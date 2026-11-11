@@ -105,7 +105,7 @@ $q = new Query($b, ['org'], 'register');
 $ports->apply(Edit::seller($b, 'org', ['register']), $ports->readOffers($q, Context::Staff)[0]->revision);
 $orgPrice = $native->product($org, 'register')->plans()->where('billing_period', 3)->sole()->prices()->where('currency_code', 'USD')->sole();
 DB::table('prices')->where('id', $orgPrice->id)->update(['price' => '0.01']);
-$costs = DB::table('domains_prices')->where('server_id', $b->serverId)->where('tld', 'net')->pluck('catalogue_observation')->map(OfferState::decode(...))->all();
+$costs = DB::table('domains_prices')->where('server_id', $b->serverId)->where('tld', 'net')->get()->map(fn($p)=>OfferState::decode(costEvidence($p)))->all();
 DB::table('domains_observation_queues')->updateOrInsert(['server_id' => $b->serverId],
     ['account_fingerprint' => $b->fingerprint, 'offer_work' => OfferState::json(['feed_due' => $now->getTimestamp() + 86400,
         'pending' => [['tld' => 'net', 'costs' => $costs]]])]);

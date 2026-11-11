@@ -126,10 +126,10 @@ final class Writer implements Catalogue
             try{foreach($targets[$a->server_id]??[] as $target){
                 $id=$target['id'];$t=Tld::findOrFail($id);$pricingChanged=false;
                 try{
-                    $rows=DB::table('domains_prices')->where('server_id',$a->server_id)->where('tld',$t->tld)->where('account_fingerprint',$a->account_fingerprint)->where('currency','USD')->get();
+                    $rows=OfferState::query('domains_prices')->where('server_id',$a->server_id)->where('tld',$t->tld)->where('account_fingerprint',$a->account_fingerprint)->where('currency','USD')->get();
                     if($rows->isEmpty()){throw new \DomainException('Current costs required.');}
                     $freshness=\Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness::forAccount((int)$a->server_id);
-                    foreach($rows as $p){if($p->catalogue_observation===null||!$freshness->cost(OfferState::cost(OfferState::decode($p->catalogue_observation)))->fresh($this->clock->now())){throw new \DomainException('Current costs required.');}}
+                    foreach($rows as $p){if($p->cost_enabled===null||!$freshness->cost(CurrentCost::read($p))->fresh($this->clock->now())){throw new \DomainException('Current costs required.');}}
                     $b=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a);
                     // Target discovery precedes this turn. Recheck after acquiring its writer mutexes.
                     $this->withGuard(static function()use($id,$target,&$pricingChanged):void {
@@ -415,7 +415,7 @@ final class Writer implements Catalogue
                 if ($preserveRetained) { $offer->catalogue_retained_annual_retail = $annual; }
                 // A damaged saved cost stays out of the snapshot, so only its own offer stays closed.
                 $prices = OfferState::query('domains_prices')->where('server_id', $id)->where('tld', $name)->get()
-                    ->filter(static fn ($p) => OfferState::savedCost($p->catalogue_observation) !== null);
+                    ->filter(static fn ($p) => OfferState::savedCost($p) !== null);
                 $snapshot = OfferState::snapshot($b, $offer, $d, $policy, $prices, $servers[$id]->enabled && ($this->ready)($b, $servers[$id], $account), $published);
                 $this->projection->write($offer, $snapshot, $now, $native, $published && $retailUpgrade);
                 $offer->catalogue_published_revision = $published ? OfferState::json($snapshot->revision) : null;
@@ -452,7 +452,7 @@ final class Writer implements Catalogue
         if ($command instanceof FactsObserved) {
             $old = OfferState::facts($target->catalogue_facts); $new = $command->facts;
             $costs = [];
-            foreach ($prices as $p) { if (($cost = OfferState::savedCost($p->catalogue_observation)) !== null) { $costs[] = $cost; } }
+            foreach ($prices as $p) { if (($cost = OfferState::savedCost($p)) !== null) { $costs[] = $cost; } }
             $new = (new FeedObserved($command->binding(), $command->tld(), $costs))->facts($new);
             if ($new->observedAt > $now) { throw new \DomainException('Future facts observation.'); }
             if ($old && $old->observedAt > $new->observedAt) { return false; }
@@ -476,7 +476,7 @@ final class Writer implements Catalogue
             if ($cost->observedAt > $now) { throw new \DomainException('Future cost observation.'); }
             $p = $prices->first(static fn ($p) => $p->action === $cost->action && (int) $p->term === $cost->term && $p->currency === 'USD');
             // A saved cost that can't be read has no time or value to compare, so this observation replaces it.
-            try { $old = $p?->catalogue_observation === null ? null : OfferState::cost(OfferState::decode($p->catalogue_observation)); }
+            try { $old = $p?->cost_enabled === null ? null : CurrentCost::read($p); }
             catch (\Throwable) { $old = null; }
             if ($old && $old->observedAt > $cost->observedAt) { continue; }
             if ($old && $old->observedAt == $cost->observedAt) {
@@ -486,13 +486,12 @@ final class Writer implements Catalogue
                 }
                 continue;
             }
-            $values = ['catalogue_observation' => OfferState::json(OfferState::encodeCost($cost))];
+            $values = CurrentCost::values($cost);
             if ($p) { DB::table('domains_prices')->where('id', $p->id)->update($values); }
             else {
                 DB::table('domains_prices')->insert([...$values, 'server_id' => $target->server_id, 'registrar_key' => $target->registrar_key,
                     'account_fingerprint' => $target->account_fingerprint, 'tld' => $target->tld, 'action' => $cost->action,
-                    'term' => $cost->term, 'currency' => 'USD', 'unit' => 'term_total', 'source' => $cost->source,
-                    'observed_at' => $cost->observedAt->format('Y-m-d H:i:s'), 'catalogue_created' => true]);
+                    'term' => $cost->term, 'currency' => 'USD', 'catalogue_created' => true]);
             }
             $changed = true;
         }
@@ -500,7 +499,7 @@ final class Writer implements Catalogue
             $costs = [];
             // A damaged cost the feed left out stays damaged; it can't undo the costs the feed replaced.
             foreach (OfferState::query('domains_prices')->where('server_id', $target->server_id)->where('tld', $target->tld)->where('currency', 'USD')->get() as $p) {
-                if (($cost = OfferState::savedCost($p->catalogue_observation)) !== null) { $costs[] = $cost; }
+                if (($cost = OfferState::savedCost($p)) !== null) { $costs[] = $cost; }
             }
             $target->catalogue_facts = OfferState::encodeFacts((new FeedObserved($command->binding(), $command->tld(), $costs))->facts(OfferState::facts($target->catalogue_facts)));
         }
@@ -528,7 +527,7 @@ final class Writer implements Catalogue
         $prices = OfferState::query('domains_prices')->where('server_id', $tld->server_id)->where('tld', $tld->tld)->where('currency', 'USD')->orderBy('id')->get();
         $costs = $readable = [];
         foreach ($prices as $p) {
-            if (($cost = OfferState::savedCost($p->catalogue_observation)) !== null) {
+            if (($cost = OfferState::savedCost($p)) !== null) {
                 $cost = $freshness->cost($cost); $costs[$cost->key()] = $cost; $readable[$p->id] = true;
             }
         }
@@ -543,9 +542,7 @@ final class Writer implements Catalogue
                 if ($retail !== null && PricingRule::units($retail, 2) > 0 && $cost->fresh($now)) { $tld->catalogue_retained_annual_retail = $retail; }
                 else { $retail = OfferState::money($tld->catalogue_retained_annual_retail, 2); }
             }
-            $values = ['wholesale' => $cost->total, 'retail' => $retail, 'unit' => 'term_total', 'source' => $cost->source,
-                'observed_at' => $cost->observedAt->format('Y-m-d H:i:s'), 'fresh_until' => $cost->freshUntil->format('Y-m-d H:i:s'),
-                'revision' => (int) $p->revision + 1];
+            $values = ['retail' => $retail, 'revision' => (int) $p->revision + 1];
             DB::table('domains_prices')->where('id', $p->id)->update($values);
         }
         return true;

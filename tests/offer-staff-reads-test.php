@@ -24,9 +24,9 @@ $commands->run($r,['mode'=>'fixed','fixed_register'=>'12.00','fixed_renew'=>'14.
 $matrix=$list->read();same('12.00',$matrix['rows'][0]['prices']['register']['price'],'CSV matrix reads the reviewed Staff snapshot');
 expect(str_contains($list->csv(),'12.00'),'CSV exports reviewed price');
 $facts=$source->page(collect([$t->fresh()]));same('For sale',$facts[$t->id]['sales']['label'],'TLD label uses shared evaluator');
-// The old cost and acceptance columns cannot change the new Staff projection.
-DB::table('domains_prices')->where('server_id',$binding->serverId)->update(['wholesale'=>'999.0000']);
-same('6.0000',$source->matrix(collect([$t->fresh()]),1)['rows'][0]['prices']['register']['cost'],'Normalized observation supplies cost, not obsolete columns');
+// Published retail does not replace the independent observed wholesale cost.
+DB::table('domains_prices')->where('server_id',$binding->serverId)->update(['retail'=>'999.00']);
+same('6.0000',$source->matrix(collect([$t->fresh()]),1)['rows'][0]['prices']['register']['cost'],'Normalized wholesale supplies cost independently of retail');
 $key=Review::ticket($actor->id,$binding->serverId,$t->id,'override',StaffCommands::stamp($binding->serverId,$t->id));
 $commands->run(new Review($actor->id,$binding->serverId,$t->id,'override',$key,'Synthetic below cost'),['mode'=>'fixed','fixed_register'=>'2.00','fixed_renew'=>'14.00','fixed_transfer'=>'13.00']);
 $below=$source->matrix(collect([$t->fresh()]),1,'below_cost');same('2.00',$below['rows'][0]['prices']['register']['price'],'Below-cost filter keeps the exact saved staff retail');commerceReject(fn()=>$storefront->offer('com','register',1));

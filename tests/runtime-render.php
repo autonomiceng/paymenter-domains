@@ -30,7 +30,7 @@ session()->forget(['filament.notifications','filament.claimed_notifications']);
 $d=\Paymenter\Extensions\Servers\Domains\Models\Domain::firstOrFail();$op=$d->operations()->sole();$t=$tlds[1];foreach($tlds as $holding){app(\Paymenter\Extensions\Servers\Domains\Services\NativeServerGuard::class)->pause($holding->server_id);}
 // Quarantine uses retained unknown costs, never a synthetic zero price.
 foreach(\Paymenter\Extensions\Servers\Domains\Models\Price::where('server_id',$t->server_id)->whereIn('action',['register','transfer'])->get() as $price){
-    Illuminate\Support\Facades\DB::table('domains_prices')->where('id',$price->id)->update(['catalogue_observation'=>null,'wholesale'=>null,'revision'=>$price->revision+1]);
+    Illuminate\Support\Facades\DB::table('domains_prices')->where('id',$price->id)->update([...costColumns(null),'wholesale'=>null,'revision'=>$price->revision+1]);
 }
 foreach(['staff-domains'=>[ListDomains::class,[]],'staff-domain'=>[ViewDomain::class,['record'=>$d->id]],'staff-queue'=>[ListOperations::class,[]],
     'staff-request'=>[ViewOperation::class,['record'=>$op->id]],'staff-tlds'=>[ListTlds::class,[]],'staff-tld'=>[ViewTld::class,['record'=>$t->id]],'staff-setup'=>[RegistrarSetup::class,[]],'staff-account'=>[RegistrarAccount::class,['account'=>$t->server_id]]] as $name=>[$class,$params]){

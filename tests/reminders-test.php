@@ -65,7 +65,7 @@ foreach(['expiry','cost','price','held','missing'] as $case){
     if($case==='expiry'){$x->update(['provider_expires_at'=>null]);}
     if($case==='held'){$renew->update(['state'=>'held']);}
     $rate=Price::where('server_id',$x->server_id)->where('action','renew')->sole();$original=$rate->getAttributes();$tld=\Paymenter\Extensions\Servers\Domains\Models\Tld::where(['server_id'=>$x->server_id,'tld'=>$x->tld])->sole();$retained=$tld->getRawOriginal('catalogue_retained_annual_retail');
-    if($case==='cost'){$rate->update(['revision'=>$rate->revision+1,'catalogue_observation'=>null]);}if($case==='price'){$tld->update(['catalogue_retained_annual_retail'=>null]);}
+    if($case==='cost'){$rate->update(['revision'=>$rate->revision+1,...costColumns(null)]);}if($case==='price'){$tld->update(['catalogue_retained_annual_retail'=>null]);}
     $before=Mail::queued(DomainNotice::class)->count();same(in_array($case,['cost','price'],true),$reminders->remind((int)$x->id),'Known issued invoice is independent of current quote/cost: '.$case);
     same($before+(in_array($case,['cost','price'],true)?1:0),Mail::queued(DomainNotice::class)->count(),'No customer guess for '.$case);
     $code=['expiry'=>'unknown_expiry','cost'=>'unknown_cost','price'=>'unknown_price','held'=>'held_obligation','missing'=>'missing_obligation'][$case];

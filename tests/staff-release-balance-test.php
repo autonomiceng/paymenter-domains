@@ -22,7 +22,7 @@ $ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FactsObserved(
     $fixtureFacts->terms,[] ,true,false,false,'synthetic',$clock->now(),$clock->now()->modify('+30 days'))),$fixtureRevision());
 $fixtureCosts=[];
 foreach(\Paymenter\Extensions\Servers\Domains\Models\Price::where('server_id',$fixtureBinding->serverId)->get() as $rate){
-    $c=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::cost(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($rate->catalogue_observation));
+    $c=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::cost(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode(costEvidence($rate)));
     $fixtureCosts[]=new \Paymenter\Extensions\Servers\Domains\Catalogue\Cost($c->action,$c->term,$c->enabled,$c->total,$c->sourceUnit,$c->source,$clock->now(),$clock->now()->modify('+30 days'),normalized:true);
 }
 $ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($fixtureBinding,'com',$fixtureCosts),$fixtureRevision());

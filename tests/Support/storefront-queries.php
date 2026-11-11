@@ -65,17 +65,17 @@ function storefrontQueryChecks(array $fixture, Storefront $store): void
     expect($tenQueries <= $singleQueries + 120, 'Incremental ending reads stay bounded');
     // Retained native prices must not substitute for missing, future or unsupported current term evidence.
     $termPrice = \Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::query('domains_prices')->where('server_id', $server->id)->where('tld', 'qnet')->where('action', 'register')->where('term', 1)->sole();
-    $cost=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($termPrice->catalogue_observation);
+    $cost=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode(costEvidence($termPrice));
     $tldFacts=$catalogueTlds['qnet']->fresh()->catalogue_facts;
     $facts=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($tldFacts);$facts['terms']['register']=range(2,10);
     foreach (['unknown_cost'=>['enabled'=>false,'total'=>null],'unknown_retail'=>null,'held'=>['total'=>'999.0000'],
         'unit'=>['source_unit'=>'unsupported'],'future'=>['observed_at'=>activeFixtureClock($bindings)->now()->modify('+1 second')->format(DATE_ATOM)],
         'unsynced'=>null,'term_proof'=>null] as $reason=>$change) {
         $change=match($reason){
-            'unknown_retail'=>['retail'=>null], 'unsynced'=>['catalogue_observation'=>null],
-            'term_proof'=>[],default=>['catalogue_observation'=>json_encode(array_replace($cost,$change))],
+            'unknown_retail'=>['retail'=>null], 'unsynced'=>[...costColumns(null)],
+            'term_proof'=>[],default=>[...costColumns(json_encode(array_replace($cost,$change)))],
         };
-        DB::table('domains_prices')->where('id',$termPrice->id)->update($change?:['catalogue_observation'=>$termPrice->catalogue_observation]);
+        DB::table('domains_prices')->where('id',$termPrice->id)->update($change?:[...costColumns(costEvidence($termPrice))]);
         if($reason==='term_proof'){DB::table('domains_tlds')->where('id',$catalogueTlds['qnet']->id)->update(['catalogue_facts'=>json_encode($facts)]);}
         $before=$reads->calls;$rows=array_column(storefrontFreshEndings($store),null,'tld');
         if($reason==='unit'){

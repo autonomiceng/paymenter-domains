@@ -17,10 +17,10 @@ final class SellerAvailability
     {
         if(!$t||!$t->catalogue_converted||$t->account_fingerprint!==$account->account_fingerprint||$t->registrar_key!==$account->registrar_key){return self::MISSING;}
         $costs=[];$unreadable=false;
-        foreach(DB::table('domains_prices')->where('server_id',$account->server_id)->where('tld',$t->tld)
-            ->where('registrar_key',$account->registrar_key)->where('account_fingerprint',$account->account_fingerprint)->where('term',1)->get() as $price){
-            if($price->catalogue_observation===null){continue;}
-            try{$cost=OfferState::cost(OfferState::decode($price->catalogue_observation));}
+        foreach(OfferState::query('domains_prices')->where('server_id',$account->server_id)->where('tld',$t->tld)
+            ->where('registrar_key',$account->registrar_key)->where('account_fingerprint',$account->account_fingerprint)->where('term',1)->where('currency','USD')->get() as $price){
+            if($price->cost_enabled===null){continue;}
+            try{$cost=CurrentCost::read($price);}
             catch(\Throwable){$unreadable=true;continue;}
             if($cost->enabled){$costs[$cost->action]=true;}
         }

@@ -17,7 +17,7 @@ $policy=\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld',$t
 $actor=staffUser([...array_keys(Staff::permissions()),...array_map(Review::permission(...),array_keys(Review::ACTIONS))]);Auth::setUser($actor);
 $own=PricingRule::validate(['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed'=>['register'=>'20.00','renew'=>'21.00','transfer'=>'22.00']]);
 $rawPrices=static fn()=>DB::table('domains_prices')->where('server_id',$target->server_id)->where('tld',$target->tld)->orderBy('id')->get()->toJson();
-DB::table('domains_prices')->where('server_id',$target->server_id)->where('tld',$target->tld)->update(['catalogue_observation'=>null]);
+DB::table('domains_prices')->where('server_id',$target->server_id)->where('tld',$target->tld)->update([...costColumns(null)]);
 $before=$rawPrices();$armed=true;
 Tld::retrieved(static function(Tld $t)use(&$armed,$target,$own):void {
     if(!$armed||$t->id!==$target->id||DB::transactionLevel()!==0||(new PricingRules)->defaultRule()['markup']!=='40.00'){return;}

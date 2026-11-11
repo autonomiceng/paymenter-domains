@@ -60,7 +60,7 @@ DB::transaction(function () use ($caps,$d,$clock,$prices): void {
     commerceReject(fn()=>$caps->requireRenewal(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($l['account']),'com',$l['tld']));
 });
 DB::table('domains_tlds')->where('server_id',$binding->serverId)->update(['catalogue_facts'=>null,'catalogue_intent'=>OfferState::json(['sell'=>false]),'catalogue_published_revision'=>null]);
-DB::table('domains_prices')->where('server_id',$binding->serverId)->update(['catalogue_observation'=>null,'wholesale'=>'999.0000']);
+DB::table('domains_prices')->where('server_id',$binding->serverId)->update([...costColumns(null),'wholesale'=>'999.0000']);
 DB::transaction(function () use ($caps,$d,$clock,$prices): void {
     $l=HoldingLocks::take($d,catalogue:$caps); $guard=new NativeDomainGuard(new HolderPricing($prices,$caps),$clock);
     same('10.40',$guard->quote($l)['annual_net'],'Unsold, unknown-cost holder keeps annual retail');

@@ -160,10 +160,10 @@ foreach(['budget','cap','throw','malformed','success'] as $mode){
 BalanceReads::record($binding,null,$clock->now(),'preflight','read_failed');
 BalanceReads::record($binding,new Money('8.00','USD'),$clock->now()->modify('-1 second'),'manual');
 same('read_failed',$row($a)->last_error_code,'Old completion cannot replace newer failure');
-$rate=Price::where('server_id',$a->server_id)->where('action','renew')->sole();$saved=$rate->getRawOriginal('catalogue_observation');
+$rate=Price::where('server_id',$a->server_id)->where('action','renew')->sole();$saved=costEvidence($rate);
 // Missing current annual evidence, rather than the retired publication columns, drives the forecast.
-DB::table('domains_prices')->where('id',$rate->id)->update(['catalogue_observation'=>null]);same(1,$forecast()['unknown'],'Unknown cost is counted');
-same(1,RegistrarBalances::facts($a,$clock->now())['unknown'],'Facts count renewals without a cost');same(1,$forecast()['unpriced'],'A dated renewal without a cost waits on the price read');DB::table('domains_prices')->where('id',$rate->id)->update(['catalogue_observation'=>$saved]);
+DB::table('domains_prices')->where('id',$rate->id)->update([...costColumns(null)]);same(1,$forecast()['unknown'],'Unknown cost is counted');
+same(1,RegistrarBalances::facts($a,$clock->now())['unknown'],'Facts count renewals without a cost');same(1,$forecast()['unpriced'],'A dated renewal without a cost waits on the price read');DB::table('domains_prices')->where('id',$rate->id)->update([...costColumns($saved)]);
 $refreshForecastCost=static function()use($ports,$binding,$clock):void {
     $q=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,['com'],'renew');
     $cost=new \Paymenter\Extensions\Servers\Domains\Catalogue\Cost('renew',1,true,'8.0000',\Paymenter\Extensions\Servers\Domains\Data\CostUnit::TermTotal,'synthetic',$clock->now(),$clock->now()->modify('+3 days'));

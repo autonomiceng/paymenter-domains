@@ -12,10 +12,10 @@ $new = static function (string $name, bool $paid = true, bool $setup = true, str
 $siteTimezone = date_default_timezone_get(); $ordinaryInstant = $clock->instant;
 // Each independent fall-back case carries current synthetic facts/costs, not October's expired feed.
 $clockTlds = Illuminate\Support\Facades\DB::table('domains_tlds')->get(['id','catalogue_facts']);
-$clockPrices = Illuminate\Support\Facades\DB::table('domains_prices')->get(['id','catalogue_observation']);
+$clockPrices = Illuminate\Support\Facades\DB::table('domains_prices')->get();
 $restoreClockEvidence = static function () use ($clockTlds, $clockPrices): void {
     foreach ($clockTlds as $row) { Illuminate\Support\Facades\DB::table('domains_tlds')->where('id',$row->id)->update(['catalogue_facts'=>$row->catalogue_facts]); }
-    foreach ($clockPrices as $row) { Illuminate\Support\Facades\DB::table('domains_prices')->where('id',$row->id)->update(['catalogue_observation'=>$row->catalogue_observation]); }
+    foreach ($clockPrices as $row) { Illuminate\Support\Facades\DB::table('domains_prices')->where('id',$row->id)->update([...costColumns(costEvidence($row))]); }
 };
 try {
     foreach ([245, 246, 275] as $elapsed) {
@@ -26,10 +26,10 @@ try {
         $clock->instant = $entry->setTimezone(new DateTimeZone('America/Los_Angeles'));
         activeCommerceFacts($entry,$entry->modify('+1 day'));
         foreach ($clockPrices as $row) {
-            if ($row->catalogue_observation === null) { continue; }
-            $cost = Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::cost(Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($row->catalogue_observation));
+            if (costEvidence($row) === null) { continue; }
+            $cost = Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::cost(Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode(costEvidence($row)));
             $fresh = new Paymenter\Extensions\Servers\Domains\Catalogue\Cost($cost->action,$cost->term,$cost->enabled,$cost->total,$cost->sourceUnit,$cost->source,$entry,$entry->modify('+1 day'),normalized:true);
-            Illuminate\Support\Facades\DB::table('domains_prices')->where('id',$row->id)->update(['catalogue_observation'=>Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::json(Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::encodeCost($fresh))]);
+            Illuminate\Support\Facades\DB::table('domains_prices')->where('id',$row->id)->update([...costColumns(Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::json(Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::encodeCost($fresh)))]);
         }
         $preflight->during = static fn () => $clock->instant = $entry->setTimezone(new DateTimeZone('UTC'))
             ->modify('+'.$elapsed.' seconds')->setTimezone(new DateTimeZone('America/Los_Angeles'));

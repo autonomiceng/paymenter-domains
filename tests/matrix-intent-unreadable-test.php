@@ -38,8 +38,8 @@ $retained=$renewal($source->page(collect([$healthy]))[$healthy->id]);expect($ret
 $savedDefaults=OfferState::decode(DB::table('domains_accounts')->where('server_id',$binding->serverId)->value('catalogue_defaults'));
 $reason=TldFacts::ruleProblem(['invalid_rule_kind'=>'account_defaults']);
 // A known renewal cost above the saved holder price stays an exact loss, though bad defaults leave no offers to read it from.
-$renewRow=static fn()=>DB::table('domains_prices')->where('server_id',$healthy->server_id)->where('action','renew')->where('term',1);$renewSaved=$renewRow()->value('catalogue_observation');
-$renewRow()->update(['catalogue_observation'=>OfferState::json([...OfferState::decode($renewSaved),'total'=>'50.0000'])]);
+$renewRow=static fn()=>DB::table('domains_prices')->where('server_id',$healthy->server_id)->where('action','renew')->where('term',1);$renewSaved=costEvidence($renewRow()->first());
+$renewRow()->update([...costColumns(OfferState::json([...OfferState::decode($renewSaved),'total'=>'50.0000']))]);
 foreach([['defaultLongest'=>11],['maxAnnualCost'=>'not money'],['defaultTransfers'=>'yes']] as $bad){
     DB::table('domains_accounts')->where('server_id',$binding->serverId)->update(['catalogue_defaults'=>OfferState::json([...$savedDefaults,...$bad])]);
     $fact=$source->page(collect([$healthy->fresh()]))[$healthy->id];
@@ -56,7 +56,7 @@ foreach([['defaultLongest'=>11],['maxAnnualCost'=>'not money'],['defaultTransfer
     same([$healthy->id],array_column($list->read(1,'below_cost')['rows'],'id'),'Below cost keeps the TLD that loses money on renewals');
     same([],$source->omissions(collect([$healthy->fresh()])),'Off-page warnings do not call bad account defaults a pricing error');
 }
-$renewRow()->update(['catalogue_observation'=>$renewSaved]);
+$renewRow()->update([...costColumns($renewSaved)]);
 // Saving Default for new TLDs replaces the bad defaults whole, so the named repair works.
 $review=new Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview($actor->id,$binding->serverId,null,'acceptance',Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::ticket($actor->id,$binding->serverId,null,'acceptance',StaffCommands::stamp($binding->serverId)),'');
 $commands->run($review,['sell'=>['rule'=>['mode'=>'except','max_cost'=>null,'years'=>3,'transfers'=>true]]]);

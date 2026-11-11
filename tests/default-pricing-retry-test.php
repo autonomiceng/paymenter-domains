@@ -20,11 +20,11 @@ $save=static fn()=>$writer->defaultPricing(pricingReview($actor->id),$rule,CardF
 $priceRows=static fn(Tld $t)=>DB::table('domains_prices')->where('server_id',$t->server_id)->where('tld',$t->tld)->orderBy('id')->get()->toJson();
 $state=static fn(Tld $t)=>[$priceRows($t),$t->fresh()->catalogue_revision,$t->fresh()->catalogue_published_revision];
 $missing=Price::where('server_id',$target->server_id)->where('tld',$target->tld)->where('action','renew')->sole();
-$cost=$missing->getRawOriginal('catalogue_observation');DB::table('domains_prices')->where('id',$missing->id)->update(['catalogue_observation'=>null]);
+$cost=costEvidence($missing);DB::table('domains_prices')->where('id',$missing->id)->update([...costColumns(null)]);
 $before=$priceRows($target);
 same(['published'=>1,'failed'=>['Synthetic #'.$target->server_id=>['.com']],'skipped'=>[]],$save(),'A missing observation names the failed target while its sibling publishes');
 same($before,$priceRows($target),'A refused target retains every price byte and revision');
-DB::table('domains_prices')->where('id',$missing->id)->update(['catalogue_observation'=>$cost]);$siblingBefore=$state($sibling);
+DB::table('domains_prices')->where('id',$missing->id)->update([...costColumns($cost)]);$siblingBefore=$state($sibling);
 same(['published'=>1,'failed'=>[],'skipped'=>[]],$retry=$save(),'Saving the same default retries only its failed publication: '.json_encode($retry));
 same($siblingBefore,$state($sibling),'The sibling already on the default retains exact prices and publication revisions');
 same('8.40',$prices->current($target->server_id,$target->account_fingerprint,'com','register',1,'USD',$now)->retail,'The repaired target uses the saved default');

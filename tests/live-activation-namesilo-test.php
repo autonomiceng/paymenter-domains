@@ -160,7 +160,7 @@ foreach(['register','renew','transfer'] as $action){
         'offline_synthetic_setup',$now,$now->modify('+1 day'));
     DB::table('domains_prices')->insert([...$key,'action'=>$action,'term'=>1,'currency'=>'USD','retail'=>'13.00',
         'unit'=>'term_total','source'=>$cost->source,'observed_at'=>$now->format('Y-m-d H:i:s'),
-        'catalogue_observation'=>OfferState::json(OfferState::encodeCost($cost))]);
+        ...costColumns(OfferState::json(OfferState::encodeCost($cost)))]);
 }
 // Isolate feature readiness from the separately tested Orders precondition; always restore Orders Off.
 DB::table('domains_accounts')->where('id',$a->id)->update(['processing_enabled'=>true]);

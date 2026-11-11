@@ -48,9 +48,9 @@ foreach(\Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$t->
     $prototype=Price::where('server_id',$t->server_id)->where('tld',$ending->tld)->where('action','register')->firstOrFail();
     foreach([2,4,5,6,7,8,9,10] as $term){
         $row=$prototype->replicate();$row->term=$term;
-        $source=Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::cost(Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($prototype->catalogue_observation));
+        $source=Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::cost(Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode(costEvidence($prototype)));
         $cost=new Paymenter\Extensions\Servers\Domains\Catalogue\Cost('register',$term,true,bcmul('6.0000',(string)$term,4),$source->sourceUnit,$source->source,$source->observedAt,$source->freshUntil,normalized:true);
-        $row->catalogue_observation=Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::json(Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::encodeCost($cost));$row->save();
+        $row->forceFill(costColumns(Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::json(Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::encodeCost($cost))));$row->save();
     }
 }
 same($twentyFive,tldListCost($page,25),'Four versus twelve price rows have identical 25-row query cost');

@@ -18,7 +18,7 @@ final class BalanceForecast
         // Current costs omit stale/disabled observations. Preserve their existence separately from a missing read.
         $observed=$catalogue&&$binding?Price::where('server_id',$account->server_id)->where('registrar_key',$account->registrar_key)
             ->where('account_fingerprint',$account->account_fingerprint)->where('action','renew')->where('term',1)->where('currency','USD')
-            ->whereNotNull('catalogue_observation')->pluck('tld')->flip()->all():[];
+            ->whereNotNull('cost_enabled')->pluck('tld')->flip()->all():[];
         Domain::where('server_id',$account->server_id)->where('account_fingerprint',$account->account_fingerprint)
             ->whereIn('status',['active','expired','grace'])->with(['service','operations'])->chunkById(100,function($domains)use($rates,$now,$timing,$catalogue,$observed,&$total,&$unknown,&$count,&$unreadable,&$unpriced,&$unobserved):void {
             $serviceIds=$domains->pluck('service_id')->all();

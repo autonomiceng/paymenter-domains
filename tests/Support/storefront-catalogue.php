@@ -26,8 +26,8 @@ function storefrontFixtureRule(string $register,string $renew,string $transfer):
 function storefrontCorruptCost(int $server,string $ending,array $actions,array $changes): void
 {
     foreach(Price::where('server_id',$server)->where('tld',$ending)->whereIn('action',$actions)->get() as $price){
-        $cost=OfferState::decode($price->catalogue_observation);
-        DB::table('domains_prices')->where('id',$price->id)->update(['catalogue_observation'=>OfferState::json(array_replace($cost,$changes))]);
+        $cost=OfferState::decode(costEvidence($price));
+        DB::table('domains_prices')->where('id',$price->id)->update([...costColumns(OfferState::json(array_replace($cost,$changes)))]);
     }
 }
 

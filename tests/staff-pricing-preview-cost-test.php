@@ -20,7 +20,7 @@ $rule=Paymenter\Extensions\Servers\Domains\Services\PricingRule::validate(['mode
 $p=Price::where('server_id',$binding->serverId)->where('tld','com')->where('action','register')->where('term',3)->sole();
 // Encode through the real Cost type rather than relying on persistence field names.
 $cost=new Paymenter\Extensions\Servers\Domains\Catalogue\Cost('register',3,true,'18.0000',Paymenter\Extensions\Servers\Domains\Data\CostUnit::TermTotal,'synthetic',$now->modify('-2 days'),$now->modify('-1 minute'));
-DB::table('domains_prices')->where('id',$p->id)->update(['catalogue_observation'=>OfferState::json(OfferState::encodeCost($cost))]);
+DB::table('domains_prices')->where('id',$p->id)->update([...costColumns(OfferState::json(OfferState::encodeCost($cost)))]);
 // Route the existing preview renderer to this same real snapshot fixture.
 $probe=new ReflectionProperty(Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::class,'probe');$probe->setValue(null,[StaffCatalogue::class=>$source]);
 try{$html=(new ReflectionMethod(Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions::class,'preview'))->invoke(null,$t->id,$rule)->toHtml();}finally{$probe->setValue(null,null);}

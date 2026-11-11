@@ -84,11 +84,11 @@ foreach (($quoteAction === 'register' ? ['fresh', 'renew_only', 'same', 'changed
         // Only daily prices age; independent registry facts remain current.
         foreach ($original as $row) {
             if ($case === 'fresh' || ($case === 'renew_only' && $row['action'] !== 'renew')) { continue; }
-            $cost = json_decode($row['catalogue_observation'], true);
+            $cost = json_decode(costEvidence((object)$row), true);
             $cost['source'] = 'enom_bulk_bucket_'.($row['term'] === 3 ? 2 : 1);
             $cost['observed_at'] = $now->modify('-49 hours')->format(DATE_ATOM);
             $cost['fresh_until'] = $now->modify('-1 hour')->format(DATE_ATOM);
-            DB::table('domains_prices')->where('id', $row['id'])->update(['catalogue_observation' => json_encode($cost)]);
+            DB::table('domains_prices')->where('id', $row['id'])->update([...costColumns(json_encode($cost))]);
         }
         $tldRow = (array)DB::table('domains_tlds')->where('id', $tlds[0]->id)->sole();
         $accountRow = (array)DB::table('domains_accounts')->where('server_id', $binding->serverId)->sole();

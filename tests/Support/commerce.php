@@ -120,11 +120,11 @@ function activeCommerceFacts(DateTimeImmutable $now,DateTimeImmutable $until,?\P
         if($ports!==null){
             // Independent scenarios rewind this synthetic clock; discard only observations from its future.
             foreach(\Paymenter\Extensions\Servers\Domains\Models\Price::where('server_id',$t->server_id)->where('tld',$t->tld)->get() as $p){
-                if($p->catalogue_observation===null){continue;}
-                $cost=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::cost(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($p->catalogue_observation));
+                if(costEvidence($p)===null){continue;}
+                $cost=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::cost(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode(costEvidence($p)));
                 if($cost->observedAt<=$now){continue;}
                 $reset=new \Paymenter\Extensions\Servers\Domains\Catalogue\Cost($cost->action,$cost->term,$cost->enabled,$cost->total,$cost->sourceUnit,$cost->source,$now,$until,normalized:true);
-                Illuminate\Support\Facades\DB::table('domains_prices')->where('id',$p->id)->update(['catalogue_observation'=>\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::json(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::encodeCost($reset))]);
+                Illuminate\Support\Facades\DB::table('domains_prices')->where('id',$p->id)->update([...costColumns(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::json(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::encodeCost($reset)))]);
             }
             $b=AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$t->server_id)->sole());
             $q=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($b,[$t->tld],'register');
@@ -140,8 +140,8 @@ function activeCommerceCostObservations(DateTimeImmutable $now,DateTimeImmutable
         $binding=AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$t->server_id)->sole());
         $costs=[];
         foreach(\Paymenter\Extensions\Servers\Domains\Models\Price::where('server_id',$t->server_id)->where('tld',$t->tld)->get() as $row){
-            if($row->catalogue_observation===null){continue;}
-            $cost=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::cost(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($row->catalogue_observation));
+            if(costEvidence($row)===null){continue;}
+            $cost=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::cost(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode(costEvidence($row)));
             $costs[]=new \Paymenter\Extensions\Servers\Domains\Catalogue\Cost($cost->action,$cost->term,$cost->enabled,$cost->total,$cost->sourceUnit,$cost->source,$now,$until,normalized:true);
         }
         $query=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,[$t->tld],'register');
