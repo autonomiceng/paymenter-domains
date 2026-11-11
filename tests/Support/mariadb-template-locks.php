@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\{Artisan,DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{WatchAudit,WatchName,WatchProfile};
-use Paymenter\Extensions\Servers\Domains\Services\{Installation,SiteDnsDefault,StaffWatchWrites as Writes};
+use Paymenter\Extensions\Servers\Domains\Services\{BusinessSetting,Installation,SiteDnsDefault,StaffWatchWrites as Writes};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 $root=(string)getenv('TPL_BARRIERS');expect(is_dir($root),'Private barriers required');
 $phase=getenv('TPL_PHASE');$case=(string)getenv('TPL_CASE');$action=(string)getenv('TPL_ACTION');$prefix=(string)getenv('SCHEMA_PREFIX');
@@ -27,8 +27,7 @@ config(['database.connections.mysql.prefix'=>$prefix]);DB::purge('mysql');Schema
 app()->instance(Clock::class,new FakeClock(new DateTimeImmutable('2026-11-09T12:00:00Z')));
 if($phase==='seed'){
     (new Installation)->install();
-    // The site default setting row exists, so the write's settings lock holds a real row.
-    App\Models\Setting::updateOrCreate(['key'=>SiteDnsDefault::KEY,'settingable_type'=>null,'settingable_id'=>null],['type'=>'string','encrypted'=>false,'value'=>'']);
+    DB::transaction(static fn()=>BusinessSetting::saveLocked(SiteDnsDefault::KEY,''));
     $role=Role::create(['name'=>'Synthetic template staff','permissions'=>[Staff::VIEW,Writes::VIEW,Writes::MANAGE]]);
     $manager=User::create(['first_name'=>'Synthetic','last_name'=>'Staff','email'=>'template-staff@example.test','password'=>'synthetic-password','role_id'=>$role->id]);
     $customer=User::create(['first_name'=>'Synthetic','last_name'=>'Customer','email'=>'template-customer@example.test','password'=>'synthetic-password']);
@@ -51,7 +50,7 @@ $id=$ids[$name];$watch=$ids['watch-'.$name];$manager=User::findOrFail($ids['mana
 $writes=new Writes;
 if($phase==='hold'){
     // Only the waiting staff write blocked on this connection's template row lock counts.
-    $profiles='`'.DB::getDatabaseName().'`.`'.DB::getTablePrefix().'domains_watch_profiles`';
+    $profiles='`'.DB::getDatabaseName().'`.`'.DB::getTablePrefix().($case==='late'?'domains_business_settings':'domains_watch_profiles').'`';
     $observe=static function()use($root,$name,$profiles,$wait):void {
         $wait('started');$writer=(int)file_get_contents($root.'/'.$name.'-connection');
         $waits=static fn():int=>(int)DB::selectOne('SELECT COUNT(*) AS n FROM information_schema.INNODB_LOCK_WAITS w'
@@ -80,8 +79,8 @@ if($phase==='hold'){
         DB::table('domains_watch_names')->where('id',$watch)->update(['ns_profile_id'=>$id]);
         $signal('locked');$observe();
         if($case==='deadlock'){
-            // Close the cycle: the staff write holds the settings rows and waits on this template row.
-            try{App\Models\Setting::orderBy('id')->select('id')->lockForUpdate()->get();}
+            // Deliberately reverse the supported order to prove rollback on an external deadlock.
+            try{BusinessSetting::singleton(true);}
             catch(QueryException $e){throw new RuntimeException('The assignment holder was chosen as the deadlock victim: '.($e->errorInfo[1]??'unknown'));}
         }
         $wait('done');DB::rollBack();

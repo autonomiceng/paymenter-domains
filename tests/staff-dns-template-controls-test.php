@@ -222,7 +222,7 @@ $check('Unusable defaults stay protected and retired native rows cannot replace 
         $duplicate=DB::table('settings')->insertGetId(['key'=>SiteDnsDefault::KEY,'value'=>'opaque','type'=>'string','encrypted'=>true,'settingable_type'=>null,'settingable_id'=>null,'created_at'=>now(),'updated_at'=>now()]);
         foreach(['disable','delete']as$action){
             $error=null;try{$write($row->fresh(),$action);}catch(DomainException $e){$error=$e->getMessage();}
-            expect($error!==null && $error!==SiteDnsDefault::DUPLICATE,'The owned default still refuses '.$action.' without a duplicate refusal');
+            expect($error!==null && $error!==SiteDnsDefault::RETAINED,'The owned usable default still refuses '.$action);
             expect(WatchProfile::find($row->id)?->enabled===true,'The duplicate reference keeps the template after '.$action);
         }
         same(null,SiteDnsDefault::refusal(),'A retired native row has no settings authority');

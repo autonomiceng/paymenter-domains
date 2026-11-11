@@ -18,8 +18,9 @@ final class BusinessSetting
     /** Preserve unreadable or encrypted legacy choices as invalid, rather than selecting a new default. */
     public static function row(string $key,bool $lock=false): ?object
     {
-        $saved=self::singleton($lock)->{self::column($key)};
-        if($saved===null){return null;}
+        $s=self::singleton($lock);$column=self::column($key);$saved=$s->$column;
+        if($s->getRawOriginal($column)===null){return null;}
+        if(!is_array($saved)||!is_string($saved['type']??null)||!is_bool($saved['encrypted']??null)||!array_key_exists('value',$saved)){throw new \DomainException('Saved global domain choice cannot be read.');}
         $value=$saved['value'];
         if($saved['encrypted']){$value=null;}
         elseif($saved['type']==='array'){$value=json_decode((string)$value,true);}

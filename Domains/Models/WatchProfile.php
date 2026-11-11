@@ -35,7 +35,7 @@ final class WatchProfile extends WatchRecord
     protected static function booted(): void
     {
         static::deleting(static function(self $row):void {
-            // A duplicate or unusable saved reference names its own recovery.
+            // An unusable saved reference names its own recovery.
             if($saved=\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::usesRefusal((int)$row->id)){
                 throw new \DomainException($saved===\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::REPLACE?'Choose another template for the default nameservers before deleting this one.':$saved);
             }
