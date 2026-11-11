@@ -85,7 +85,7 @@ final class Labels
             if($guarded){return self::reason('enom_test_reconciliation_send_guard');}
         }
         if (($held=self::staffHold($op))!==null) { return $held; }
-        $reason=self::reason($op->safe_code,$op->funding_basis==='complimentary');
+        $reason=$op->safe_code==='refund_approved'?self::refundApproved($op):self::reason($op->safe_code,$op->funding_basis==='complimentary');
         if ($reason===self::FEATURE_OFF) {
             return 'Not sent: '.(['renew'=>'Renewals','transfer'=>'Transfers','register'=>'Registrations'][$op->action]??'Changes').' off for this account';
         }
@@ -95,6 +95,15 @@ final class Labels
             if($cache->get($key)==='live'){return 'Not sent: our daily call cap reached';}
         }
         return $reason===RequestStatus::UNCONFIRMED?(ManagementEvidence::outcome($op)??$reason):$reason;
+    }
+    /** An approved refund is named for where the money went: account credit reads Credit approved, a card return Refund approved. */
+    private static function refundApproved(\Paymenter\Extensions\Servers\Domains\Models\Operation $op): string
+    {
+        try { $returned=\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::summary($op); $to=$op->funding['refund']['to']??null; }
+        catch (\Illuminate\Contracts\Encryption\DecryptException) { return DomainFacts::UNREADABLE; }
+        // A card return still processing or under review stays a refund; only a return that ended as credit reads as credit.
+        $credit=$returned!==null?$returned[0]==='Credit added':$to==='account_credit';
+        return $credit?'Credit approved':self::reason('refund_approved');
     }
     /** "Put on hold by <name>" for a staff hold whose history saved a name; null otherwise. The request reason and the domain header both read it. */
     public static function staffHold(\Paymenter\Extensions\Servers\Domains\Models\Operation $op): ?string
@@ -139,7 +148,7 @@ final class Labels
             'acquisition_definitely_unsent'=>RequestStatus::UNSENT,'management_definitely_unsent'=>RequestStatus::UNSENT,
             'renewal_definitely_unsent'=>'Renewal not sent','renewal_confirmation_required'=>RequestStatus::UNCONFIRMED,
             'captured_charge_approved'=>'Captured registrar charge approved by staff',
-            'awaiting_unique_charge'=>'Registrar has not confirmed the charge','refund_approved'=>'Credit approved',
+            'awaiting_unique_charge'=>'Registrar has not confirmed the charge','refund_approved'=>'Refund approved',
             'authority'=>'Not sent: registrar account changed',
             'reads'=>'Status check failed','cost'=>'Not sent: cost missing','funding'=>'Not sent: low registrar balance','renewal_invoice_unpaid'=>'Not sent: renewal invoice not paid. Check the invoice.','renewal_spend_paused'=>'Not sent: orders paused for this domain',
             'processing'=>'Not sent: Orders off for this account','state'=>'Not sent: domain status changed','owner'=>'Not sent: domain not in registrar account',

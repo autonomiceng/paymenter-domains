@@ -165,7 +165,18 @@ foreach(['review'=>'Refund needs a check','pending'=>'Refund processing','refund
         'receipt_return_results'=>['staff-return'=>['state'=>$result]]]])->saveQuietly();
     $facts=RequestFacts::for($row);same($title,$facts['refund'],'Staff keeps the gateway return title');
     expect(!str_contains($facts['refund_sub'],'Contact support')&&!str_contains($facts['refund_sub'],'We are returning'),'Staff guidance does not address the customer');
+    same('Refund',$facts['refund_label'],'A gateway return is named Refund, not Credit');
 }
+// rw-J9-1: a card refund is a refund, and its row says where the money went.
+same(['Refund approved','Returned to the original payment method. The refund shows on the invoice.'],[Labels::reason('refund_approved'),$facts['refund_sub']],'A card refund reads as a refund, not Credit approved');
+// Review: the header names the destination. Credit returns read Credit approved; only a card refund reads Refund approved.
+DB::table('domains_operations')->where('id',$longOp->id)->update(['safe_code'=>'refund_approved']);
+$approved=static function(array $funding)use($longOp):string{$row=Operation::find($longOp->id);$row->forceFill(['funding'=>$funding])->saveQuietly();return Labels::requestStatus(Operation::find($longOp->id))['reason'];};
+$cardReturn=static fn(string $state)=>['refund'=>['amount'=>'1.00','to'=>'original_payment','bridge_minor'=>0,'payments'=>[['id'=>1,'amount_minor'=>100]],'allocations'=>[['key'=>'staff-return','amount_minor'=>100]]],
+    'receipt_return_results'=>['staff-return'=>['state'=>$state]]];
+same(['Credit approved','Credit approved','Refund approved','Refund approved'],
+    [$approved(['refund'=>['to'=>'account_credit']]),$approved($cardReturn('credited')),$approved($cardReturn('refunded')),$approved($cardReturn('pending'))],
+    'Credit returns read Credit approved; card refunds, done or processing, read Refund approved');
 
 // A change that never reached the registrar says what happens next, since its page has no button.
 $claim=['seal'=>'absent','send_state'=>'definitely_unsent','management_claim'=>str_repeat('a',32)];

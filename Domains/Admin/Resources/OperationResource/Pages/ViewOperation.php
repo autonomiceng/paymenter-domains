@@ -128,7 +128,7 @@ class ViewOperation extends ViewRecord
             }
             if ($grants->costs && array_key_exists('refund',$facts)) {
                 $fix=isset($facts['refund_fix'])?$this->getAction($facts['refund_fix'],false):null;
-                $rows[]=self::entry('Credit',$facts['refund'],sub:$facts['refund_sub']??null,side:$fix?->isVisible()?Html::make(Sheet::buttons([$fix->size('sm')->toHtml()])):[]);
+                $rows[]=self::entry($facts['refund_label']??'Credit',$facts['refund'],sub:$facts['refund_sub']??null,side:$fix?->isVisible()?Html::make(Sheet::buttons([$fix->size('sm')->toHtml()])):[]);
             }
         }
         $components[]=Sheet::section('Details',$rows);
