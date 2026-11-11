@@ -51,8 +51,7 @@ $strict = new class($conn) extends \Illuminate\Database\Query\Grammars\SQLiteGra
     public array $locks = [];
     protected function compileLock(\Illuminate\Database\Query\Builder $query, $value)
     {
-        $keys=array_column(array_filter($query->wheres??[],static fn($where)=>($where['column']??null)==='key'),'value');
-        $this->locks[] = [$query->from,$keys]; return '';
+        $this->locks[] = [$query->from,$query->wheres??[]]; return '';
     }
 };
 $checkRevisions = static function () use ($local, $localBinding, $revision): void {
@@ -60,6 +59,33 @@ $checkRevisions = static function () use ($local, $localBinding, $revision): voi
     same($revision, $local->offerCredentialRevision($localBinding), 'Offer checks retain the local credential revision');
     $local->requireOfferReadiness($localBinding, Server::findOrFail(10), Account::where('server_id', 10)->sole());
 };
+// Each settings lock must name exactly one key with a conjunctive equality predicate.
+$exactKeys=static function(array $locks):array {
+    $keys=[];
+    foreach($locks as [$table,$wheres]){
+        if($table!=='settings'){continue;}
+        $predicates=array_values(array_filter($wheres,static fn($where)=>($where['column']??null)==='key'));
+        if(count($predicates)!==1){throw new LogicException('One settings key required.');}
+        $where=$predicates[0];
+        if(($where['type']??null)!=='Basic'||($where['operator']??null)!=='='||($where['boolean']??null)!=='and'||!is_string($where['value']??null)){
+            throw new LogicException('Exact settings key required.');
+        }
+        $keys[]=$where['value'];
+    }
+    return $keys;
+};
+$predicate=static fn(string $key)=>['type'=>'Basic','column'=>'key','operator'=>'=','boolean'=>'and','value'=>$key];
+$badLocks=[
+    [['settings',[]],['settings',[$predicate('domains_credentials'),$predicate('domains_verified_credentials')]],['settings',[$predicate(LocalAccountEnrollment::KEY)]]],
+    [['settings',[[...$predicate('domains_credentials'),'operator'=>'>=']]]],
+    [['settings',[[...$predicate('domains_credentials'),'boolean'=>'or']]]],
+    [['settings',[[...$predicate('domains_credentials'),'type'=>'In']]]],
+];
+foreach($badLocks as $locks){
+    $refused=false;try{$exactKeys($locks);}catch(LogicException){$refused=true;}
+    expect($refused,'Broad or non-equality settings predicates cannot satisfy the lock assertion');
+}
+same(['domains_credentials'],$exactKeys([['settings',[$predicate('domains_credentials')]]]),'A single exact key passes the assertion');
 $conn->setQueryGrammar($strict);
 try {
     $checkRevisions();
@@ -72,7 +98,7 @@ try {
         $strict->locks=[];
         DB::transaction($check);
         $settings=array_values(array_filter($strict->locks,static fn($lock)=>$lock[0]==='settings'));
-        $counts=array_count_values(array_merge(...array_column($settings,1)));ksort($counts);
+        $counts=array_count_values($exactKeys($settings));ksort($counts);
         $expected=['domains_credentials'=>1,'domains_verified_credentials'=>1,LocalAccountEnrollment::KEY=>$name==='readiness'?1:2];ksort($expected);
         same($expected,$counts,$name.' locks every credential setting with the required enrollment reread');
         same(array_sum($expected),count($settings),$name.' has no broad or unaccounted settings locks');

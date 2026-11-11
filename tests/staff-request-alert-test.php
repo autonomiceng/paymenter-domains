@@ -14,6 +14,28 @@ staffPanel();staffAlertFixture();
 $viewer=staffUser([Staff::VIEW]);$blind=staffUser(['admin.domains.watch.view']);
 $notices=static fn($user,string $title)=>NativeNotification::where('user_id',$user->id)->where('title',$title)->get()->map(static fn($row)=>[$row->body,$row->url])->all();
 $link=static fn($op)=>route('filament.admin.resources.registrar-requests.view',['record'=>$op->id]);
+$noRequestNotice=static function($op,string $case)use($viewer,$link):void {
+    same([],NativeNotification::where('user_id',$viewer->id)->where('url',$link($op))
+        ->whereIn('title',['Registrar request needs a check','Registrar request failed'])->pluck('title')->all(),$case.' sends no request-specific staff notice');
+};
+// A lost write response before any completed registrar read still has automatic checks ahead.
+[$d,$driver]=$holding(placeholderComFixtureName('request-alert-before-read-placeholder.com'));
+$state->afterWrite=static fn()=>throw new RuntimeException('Synthetic lost write response');
+$op=$submit($d,$driver,'lock',['locked'=>false]);
+same('uncertain',$management->run($op->id,$driver)->state,'The lost response leaves the send uncertain');
+same([],\Paymenter\Extensions\Servers\Domains\Services\ManagementReadRecovery::latest($op->fresh()),'No completed registrar read exists yet');
+$noRequestNotice($op,'Uncertain send before a registrar read');
+// A failed preparation is held without sending and retries by itself.
+[$d,$driver]=$holding(placeholderComFixtureName('request-alert-retry-placeholder.com'));
+$state->fault='GetDomainInfo';$op=$submit($d,$driver,'lock',['locked'=>false]);
+same('held',$management->run($op->id,$driver)->state,'Failed preparation holds the management request');
+expect(\Paymenter\Extensions\Servers\Domains\Services\ManagementEvidence::recoverable($op->fresh()),'The held preparation remains automatically recoverable');
+$noRequestNotice($op,'Recoverable held request');
+// Acquisition state changes have their own alerts and no management policy.
+[$d,$driver,$plain]=$holding(placeholderComFixtureName('request-alert-acquisition-placeholder.com'));
+expect(!isset($plain->policy['management']),'The acquisition control has no management policy');
+$plain->update(['state'=>'uncertain']);expect($plain->wasChanged('state'),'The control actually changes state');
+$noRequestNotice($plain,'Changed acquisition without management policy');
 // An unconfirmed write after its read: Under review.
 [$d,$driver]=$holding(placeholderComFixtureName('request-alert-unknown-placeholder.com'));
 $state->fault='SetRegLock';$op=$submit($d,$driver,'lock',['locked'=>false]);

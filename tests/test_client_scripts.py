@@ -140,6 +140,7 @@ def main():
         checked = subprocess.run([node, str(ROOT/'tests/Support/search-summary.js')],
                                  input=json.dumps({'script': scripts.scripts[0]}), capture_output=True, text=True, timeout=10)
         assert checked.returncode == 0, checked.stdout + checked.stderr
+        assert 'Search summary, failed fetches and alternative-name bodies: 12 cases passed.' in checked.stdout
         print(checked.stdout.strip())
         # Dispatch term changes through the actual rendered registration handler.
         checked = subprocess.run([node, '-e', r'''
