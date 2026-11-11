@@ -3,6 +3,7 @@
 declare(strict_types=1);
 // Deliberately no tests/bootstrap.php: its source-tree autoloader would mask missing ZIP files.
 require_once __DIR__.'/default-rule.php';
+require_once __DIR__.'/catalogue-columns.php';
 function expect(bool $ok,string $message): void {if(!$ok){throw new RuntimeException($message);}}
 function same(mixed $expected,mixed $actual,string $message): void {expect($expected===$actual,$message);}
 $nativeSuccessful=false;
