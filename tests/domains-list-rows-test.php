@@ -80,6 +80,22 @@ foreach(['net','org'] as $i=>$ending){
     same('$18.00',$summaries['managed:'.$id]->renewalPrice,'A successful quote is shown for distinct ending '.$ending);
 }
 same(1,count($taxReads),'A summary batch selects tax once per user across distinct TLD quotes');
+// A failed tax selection is shared too, while every service keeps its own saved price.
+$taxFailure=true;$taxAttempts=0;
+DB::connection()->beforeExecuting(static function($query)use(&$taxFailure,&$taxAttempts):void {
+    if($taxFailure&&str_contains($query,'from "tax_rates"')){++$taxAttempts;throw new RuntimeException('Synthetic advisory tax failure');}
+});
+$failedTax=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->listed($user,$clock->now()->getTimestamp());
+foreach(Paymenter\Extensions\Servers\Domains\Models\Domain::where('user_id',$user->id)->with('service')->get() as $domain){
+    same('$'.number_format((float)$domain->service->price,2,'.',''),$failedTax['managed:'.$domain->id]->renewalPrice,'Failed tax keeps the saved price for '.$domain->tld);
+}
+same(1,$taxAttempts,'Several distinct TLD quotes share one failed tax attempt');
+$taxFailure=false;
+$recoveredTax=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->listed($user,$clock->now()->getTimestamp());
+foreach(['net','org'] as $i=>$ending){
+    $id=DB::table('domains_domains')->where('sld','rows'.$i.'-placeholder')->value('id');
+    same('$18.00',$recoveredTax['managed:'.$id]->renewalPrice,'A new batch recovers after failed tax selection');
+}
 // Cancelled unpaid orders check their payments in the page's one batch, never once per row. A processing payment still needs review.
 $cancelledOrder=function(int $i)use($clone,$d,$op,$user):int{
     $name=placeholderComFixtureName('cancelled-order'.$i.'-placeholder.com');$service=$clone('services',(int)$d->service_id,[]);

@@ -34,7 +34,14 @@ final class HolderPricing implements NativeRepriceGuard
                 $memo[$key] = null;
                 try {
                     if (($user = $service->user) !== null) {
-                        $memo[$key] = NativeDomainGuard::gross(app(self::class)->renewal($domain, 'USD', $now)->retail, $memo['tax'][$service->user_id] ??= HoldingNativeLocks::tax($user));
+                        $retail = app(self::class)->renewal($domain, 'USD', $now)->retail;
+                        if (!array_key_exists($service->user_id, $memo['tax'] ?? [])) {
+                            $memo['tax'][$service->user_id] = null;
+                            $memo['tax'][$service->user_id] = HoldingNativeLocks::tax($user);
+                        }
+                        if ($memo['tax'][$service->user_id] !== null) {
+                            $memo[$key] = NativeDomainGuard::gross($retail, $memo['tax'][$service->user_id]);
+                        }
                     }
                 } catch (\Throwable) { /* Show each service's saved price instead. */ }
             }
