@@ -118,8 +118,8 @@ final class StaffSettingsReview
     /** Independent recent windows: bulk syncs cannot evict staff saves. Never replay authority. */
     public static function historyRows(Server $s,bool $lock=false): array
     {
-        $global=AuditArchives::latest(0,'staff_settings',$lock);
-        $rows=[...($global!==null?self::decode($global):[]),...self::historyWindow($s,self::KEY,'staff_settings',$lock),...self::historyWindow($s,self::SYNC_KEY,'catalogue_sync',$lock)];
+        $global=[];foreach(array_reverse(AuditArchives::recent(0,'staff_settings',self::HISTORY_LIMIT,$lock)) as $batch){array_push($global,...self::decode($batch));}
+        $rows=[...$global,...self::historyWindow($s,self::KEY,'staff_settings',$lock),...self::historyWindow($s,self::SYNC_KEY,'catalogue_sync',$lock)];
         usort($rows,static fn(array $a,array $b)=>strtotime($a['at'])<=>strtotime($b['at']));
         return $rows;
     }

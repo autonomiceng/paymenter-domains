@@ -6,7 +6,7 @@ require __DIR__.'/Support/watch-dns.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\WatchProfile;
 use Paymenter\Extensions\Servers\Domains\Services\{SiteDnsDefault,WatchDnsChecks,StaffWatchWrites as Writes};
-extract(dnsFixture());$manager=staffUser(['admin.domains.manage-policy',SiteDnsDefault::MANAGE,Writes::VIEW,Writes::MANAGE]);
+extract(dnsFixture());$manager=staffUser(['admin.domains.view','admin.domains.manage-policy',SiteDnsDefault::MANAGE,Writes::VIEW,Writes::MANAGE]);
 $profile->enabled=true;$profile->saveQuietly();
 $queries=[];$record=false;DB::listen(static function($q)use(&$queries,&$record):void{if($record){$queries[]=$q->sql;}});
 $position=static function(string $table)use(&$queries):int {

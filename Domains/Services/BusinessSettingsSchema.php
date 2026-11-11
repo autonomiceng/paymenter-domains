@@ -28,7 +28,6 @@ final class BusinessSettingsSchema
             $globals=DB::table('settings')->orderBy('id')->lockForUpdate()->get();
             DB::table(self::TABLE)->insertOrIgnore(['id'=>1]);
             $s=BusinessSetting::singleton(true);if($s->imported){return;}
-            $history=[];
             foreach(BusinessSetting::COLUMNS as $key=>$column){
                 $rows=$globals->filter(fn($r)=>$r->key===$key&&$r->settingable_type===null&&$r->settingable_id===null)
                     ->sort(static fn($a,$b)=>strcmp((string)$b->updated_at,(string)$a->updated_at)?:($b->id<=>$a->id))->values();
@@ -36,15 +35,24 @@ final class BusinessSettingsSchema
                 $shape=static fn($r)=>['type'=>$r->type,'encrypted'=>(bool)$r->encrypted,'value'=>$r->value];
                 $chosen=$shape($rows[0]);$s->$column=$chosen;
                 if($rows->contains(fn($r)=>$shape($r)!==$chosen)){
-                    $source=static fn($r)=>['id'=>(int)$r->id,'updated_at'=>$r->updated_at,...$shape($r)];
-                    $history[]=['key'=>'business-settings-import:'.$key,'actor_id'=>0,'at'=>gmdate(DATE_ATOM),
-                        'action'=>'Import global domain settings','reason'=>'Keep the most recently updated global setting','phase'=>'completed',
-                        'input'=>['setting'=>$key],'before'=>['discarded'=>$rows->slice(1)->map($source)->values()->all()],
-                        'after'=>['selected'=>$source($rows[0])]];
+                    foreach($rows->slice(1) as $other){
+                        $source=['id'=>(int)$other->id,'updated_at'=>$other->updated_at,...$shape($other)];
+                        // Large or heavily escaped values fit as ordered byte fragments in the existing audit store.
+                        $parts=[$source];
+                        if(strlen(json_encode($source,JSON_THROW_ON_ERROR))>24000){
+                            $bytes=str_split((string)$source['value'],16000);unset($source['value']);$parts=[];
+                            foreach($bytes as $i=>$bytesPart){$parts[]=[...$source,'part'=>$i,'parts'=>count($bytes),'value_base64'=>base64_encode($bytesPart)];}
+                        }
+                        foreach($parts as $part){
+                            $entry=['key'=>'business-settings-import:'.$key.':'.$other->id.':'.($part['part']??0),
+                                'actor_id'=>0,'at'=>gmdate(DATE_ATOM),'action'=>'Import global domain settings',
+                                'reason'=>'Keep the most recently updated global setting','phase'=>'completed','input'=>['setting'=>$key],
+                                'before'=>['discarded'=>[$part]],'after'=>['selected'=>['id'=>(int)$rows[0]->id,'updated_at'=>$rows[0]->updated_at]]];
+                            AuditArchives::append(0,'staff_settings',json_encode([$entry],JSON_THROW_ON_ERROR));
+                        }
+                    }
                 }
             }
-            // Server 0 is the global staff history, also included in each account's history reader.
-            if($history){AuditArchives::append(0,'staff_settings',json_encode($history,JSON_THROW_ON_ERROR));}
             $s->imported=true;$s->save();
             DB::table('settings')->whereNull('settingable_type')->whereNull('settingable_id')->whereIn('key',array_keys(BusinessSetting::COLUMNS))->delete();
         });
