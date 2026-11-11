@@ -19,15 +19,17 @@ final class LocalAccountEnrollment
         if (NameSiloSandbox::enabled()) { throw new \DomainException('Choose one NameSilo enrollment composition.'); }
         $registry->register('namesilo', ['api_key'], new NameSilo\AccountVerifier,
             static function(AccountBinding $binding) use ($environment): NameSilo\Driver {
-                if($environment!==Environment::Test){throw new \DomainException('Domain reads require separate deployment composition.');}
-                return (NameSilo\TestRuntime::reader($binding,app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)))($binding);
+                if($binding->environment!==$environment){throw new \DomainException('Credential environment changed.');}
+                $clock=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class);
+                return ($environment===Environment::Test?NameSilo\TestRuntime::reader($binding,$clock):NameSilo\LiveRuntime::reader($binding,$clock))($binding);
             },
             static function (AccountBinding $binding, #[\SensitiveParameter] array $credentials) use ($environment): NameSilo\Driver {
                 if ($binding->environment !== $environment) { throw new \DomainException('Credential environment changed.'); }
+                if($environment===Environment::Live){
+                    return (NameSilo\LiveRuntime::reader($binding,app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)))($binding);
+                }
                 return new NameSilo\Driver(new NameSilo\Client($binding, $credentials['api_key']), []);
-            // Local TEST enrollment already installs the admitted holding reader above.
-            // Live remains account-only until its separate account-bound composition is installed.
-            }, $environment !== Environment::Test,
+            }, false,
             authenticator: new NameSilo\CredentialAuthenticator($environment, $transport));
         return true;
     }

@@ -18,13 +18,14 @@ final class RuntimePorts
     public function registered(Account $account): bool
     {
         if(isset($this->factories[$account->account_fingerprint])){return true;}
-        try{return \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\TestRuntime::enabled(AccountBindings::binding($account))||($account->registrar_key==='enom'&&(EnomTestRegistration::enabled(AccountBindings::binding($account))||(EnomTestRenewal::enabled(AccountBindings::binding($account))||EnomTestManagement::enabled(AccountBindings::binding($account))||EnomTestTransfer::enabled(AccountBindings::binding($account)))||EnomTestRegistration::recoveryEnabled(AccountBindings::binding($account))));}catch(\Throwable){return false;}
+        try{return \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\LiveRuntime::enabled(AccountBindings::binding($account))||\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\TestRuntime::enabled(AccountBindings::binding($account))||($account->registrar_key==='enom'&&(EnomTestRegistration::enabled(AccountBindings::binding($account))||(EnomTestRenewal::enabled(AccountBindings::binding($account))||EnomTestManagement::enabled(AccountBindings::binding($account))||EnomTestTransfer::enabled(AccountBindings::binding($account)))||EnomTestRegistration::recoveryEnabled(AccountBindings::binding($account))));}catch(\Throwable){return false;}
     }
     private function composition(Account $account): array
     {
         $binding=AccountBindings::binding($account);
         $factory=$this->factories[$account->account_fingerprint]??(($binding->registrarKey==='enom')&&(EnomTestRegistration::enabled($binding)||(EnomTestRenewal::enabled($binding)||EnomTestManagement::enabled($binding)||EnomTestTransfer::enabled($binding))||EnomTestRegistration::recoveryEnabled($binding))?EnomTestRegistration::factory($binding):null)
             ??(\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\TestRuntime::enabled($binding)?\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\TestRuntime::factory($binding):null)
+            ??(\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\LiveRuntime::enabled($binding)?\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\LiveRuntime::factory($binding):null)
             ??throw new \DomainException('Runtime provider acceptance is required.');
         $ports=$factory(AccountBindings::binding($account));
         foreach(self::TYPES as $key=>$type){if(!($ports[$key]??null) instanceof $type){throw new \DomainException('Incomplete runtime composition.');}}
