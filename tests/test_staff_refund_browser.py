@@ -71,7 +71,7 @@ def browse(app, root, facts):
                               cwd=app, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
     try:
         started(server, 30)
-        result = subprocess.run([node, '--max-old-space-size=96', str(ROOT/'tests/Support/refund-browser.cjs'), base, str(root/'seed.json'), str(out)],
+        result = subprocess.run([node, '--max-old-space-size=64', str(ROOT/'tests/Support/refund-browser.cjs'), base, str(root/'seed.json'), str(out)],
                                 cwd=ROOT, env=env, capture_output=True, text=True, timeout=240)
     finally:
         server.terminate()
