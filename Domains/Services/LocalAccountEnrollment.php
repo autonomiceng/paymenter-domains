@@ -45,7 +45,7 @@ final class LocalAccountEnrollment
     }
     public static function validate(Account $account, #[\SensitiveParameter] array $facts, #[\SensitiveParameter] array $credentials): void
     {
-        // An authenticated same-key TEST upgrade retains its original OTE identity and all ledger bindings.
+        // An authenticated TEST upgrade or rotation retains its original OTE identity and all ledger bindings.
         $retainedTest = $account->registrar_key === 'namesilo' && $account->environment === Environment::Test->value && NameSiloSandbox::enrolled($account);
         if ((!self::enrolled($account) && !$retainedTest) || ($facts['contract'] ?? null) !== 'local_account_enrollment_v1'
             || ($facts['provider_confirmed_account'] ?? null) !== false || ($facts['identity'] ?? null) !== $account->stable_identity

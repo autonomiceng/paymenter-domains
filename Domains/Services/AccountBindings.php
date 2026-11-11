@@ -134,7 +134,8 @@ final class AccountBindings
             if ($sandbox) {
                 // Retained OTE facts still reserve their key when the old deployment opt-in is off.
                 $retained = json_decode($this->secret((int) $account->server_id, NameSiloSandbox::KEY, $server), true, 8, JSON_THROW_ON_ERROR);
-                NameSiloSandbox::validateLineage($account, $retained);
+                try { NameSiloSandbox::validateLineage($account, $retained); }
+                catch (\Throwable) { throw new \DomainException('Existing sandbox enrollment unavailable.'); }
                 $duplicate = hash_equals($retained['key_fingerprint'], hash('sha256', $credentials['api_key']));
                 if ($marked) {
                     $existing = $this->configuration($account, false, $server);

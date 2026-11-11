@@ -50,7 +50,7 @@ foreach ([30 => true, 31 => false] as $id => $upgradeFirst) {
     $usage->reserve($binding, new Money('1.25', 'USD'));
     $counters = $usage->usage($binding);
     same(['used' => 1, 'spend_micros' => 1250000], $counters, 'Retained OTE usage is nonempty before rotation');
-    $ledger = DB::table('domains_enom_live_calls')->orderBy('account')->get()->all();
+    $ledger = DB::table('domains_enom_live_calls')->orderBy('account')->get()->map(static fn ($row) => (array) $row)->all();
     $revision = null;
     if ($upgradeFirst) {
         $local->configure($id, 'namesilo', Environment::Test, $credentials, $review($id));
@@ -72,7 +72,7 @@ foreach ([30 => true, 31 => false] as $id => $upgradeFirst) {
     if ($revision !== null) { $refuse(fn () => $local->requireCredentialRevision($binding, $revision)); }
     $local->requireCredentialRevision($binding, $currentRevision);
     same($counters, $usage->usage($binding), 'Rotation preserves call and spend usage');
-    same($ledger, DB::table('domains_enom_live_calls')->orderBy('account')->get()->all(), 'Rotation never rewrites or duplicates usage rows');
+    same($ledger, DB::table('domains_enom_live_calls')->orderBy('account')->get()->map(static fn ($row) => (array) $row)->all(), 'Rotation never rewrites or duplicates usage rows');
     same($holding, $domain->fresh()->getRawOriginal(), 'Rotation preserves the holding');
     same($operation, $op->fresh()->getRawOriginal(), 'Rotation preserves the held operation');
     same($retained, Server::findOrFail($id)->settings()->where('key', NameSiloSandbox::KEY)->sole()->getRawOriginal(), 'Original OTE facts remain byte-for-byte retained');
