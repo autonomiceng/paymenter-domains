@@ -19,14 +19,14 @@ final class AuditArchives
     /** Bounded recent batches, newest first. Global imports can span several retained batches. */
     public static function recent(int $server,string $family,int $limit,bool $lock=false): array
     {
-        $q=DB::table(self::TABLE)->where('server_id',$server)->where('family',$family)->orderByDesc('id')->limit($limit);
+        $q=DB::table(self::TABLE)->where('server_id',$server)->where('family',$family)->when(\Illuminate\Support\Facades\Schema::hasColumn(self::TABLE,'event_key'),fn($q)=>$q->whereNull('event_key'))->orderByDesc('id')->limit($limit);
         if($lock){$q->lockForUpdate();}
         try{return $q->get(['payload'])->map(static fn($r)=>Crypt::decryptString($r->payload))->all();}
         catch(\Illuminate\Contracts\Encryption\DecryptException){throw new \DomainException('Audit unavailable. Changes held.');}
     }
     public static function latest(int $server,string $family,bool $lock=false): ?string
     {
-        $q=DB::table(self::TABLE)->where('server_id',$server)->where('family',$family)->orderByDesc('id')->limit(1);
+        $q=DB::table(self::TABLE)->where('server_id',$server)->where('family',$family)->when(\Illuminate\Support\Facades\Schema::hasColumn(self::TABLE,'event_key'),fn($q)=>$q->whereNull('event_key'))->orderByDesc('id')->limit(1);
         if($lock){$q->lockForUpdate();}$row=$q->first();
         if(!$row){return null;}
         try{return Crypt::decryptString($row->payload);}catch(\Throwable){throw new \DomainException('Audit unavailable. Changes held.');}

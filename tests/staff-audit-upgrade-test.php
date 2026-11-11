@@ -12,11 +12,11 @@ $tables=['domains_staff_review_keys','domains_audit_archives'];
 // All other installed schema/history stays authentic; no bridge receipt is manufactured.
 (new Installation)->install();
 foreach($tables as $table){Schema::drop($table);}
-DB::table('migrations')->where('migration',$newMigration)->delete();
+DB::table('migrations')->whereIn('migration',[$newMigration,'2026_11_11_000062_add_audit_events'])->delete();
 // Replay the installed migration inventory without review storage. The additive
 // upgrade must preserve its existing foundation/history and refuse every partial audit state.
 $paths=array_values(array_filter(glob(dirname(__DIR__).'/Domains/database/migrations/*.php'),
-    static fn($path)=>basename($path,'.php')!==$newMigration));
+    static fn($path)=>!in_array(basename($path,'.php'),[$newMigration,'2026_11_11_000062_add_audit_events'],true)));
 app(Migrator::class)->run($paths,['force'=>true]);
 foreach($tables as $table){Schema::dropIfExists($table);}
 foreach(['domains_domains','domains_operations','domains_tlds','domains_accounts','domains_prices'] as $table){
