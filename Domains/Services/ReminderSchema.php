@@ -13,7 +13,8 @@ final class ReminderSchema
             'domains_reminder_schedules'=>static function(Blueprint $t):void {
                 $t->id();$t->unsignedBigInteger('server_id')->unique();$t->string('account_fingerprint',64);
                 $t->boolean('enabled')->default(false);$t->text('before_days');$t->text('after_days');
-                $t->unsignedBigInteger('revision')->default(1);$t->text('audit');
+                $t->unsignedBigInteger('revision')->default(1);
+                if(!Schema::hasTable('domains_reminder_schedules')||Schema::hasColumn('domains_reminder_schedules','audit')){$t->text('audit');}
                 $t->unsignedBigInteger('cursor')->default(0);$t->unsignedBigInteger('turn')->default(0);
                 $t->unsignedBigInteger('due_at')->default(0);
             },

@@ -46,37 +46,33 @@ $account=App\Models\Server::findOrFail($server);
 foreach(['2026-11-10 01:30:00-05:00'=>'Synthetic newest','2026-11-10T06:00:00Z'=>'Synthetic oldest','zz-invalid-time'=>'Synthetic invalid'] as $at=>$action){
     Illuminate\Support\Facades\DB::transaction(fn()=>Review::append($account,['key'=>'synthetic-'.$action,'at'=>$at,'action'=>$action,'phase'=>'completed','actor_id'=>$u->id,'reason'=>'Readable retained detail','input'=>[],'before'=>[],'after'=>[]]));
 }
-$reminder=Illuminate\Support\Facades\DB::table('domains_reminder_schedules')->where('server_id',$server);
-$saved=(clone $reminder)->sole();$audit=decrypt($saved->audit);$audit[0]['at']='2026-11-10 06:15:00 UTC';
-$reminder->update(['audit'=>encrypt([$audit[0]])]);
+$reminder=Illuminate\Support\Facades\DB::table('domains_audit_archives')->where('server_id',$server)->where('family','reminders');
+$saved=(clone $reminder)->orderBy('id')->first();$audit=json_decode(Illuminate\Support\Facades\Crypt::decryptString($saved->payload),true);$audit['at']='2026-11-10 06:15:00 UTC';
+$reminder->delete();
+$append=static fn(array $entry)=>Illuminate\Support\Facades\DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Services\AuditEvents::append($server,'reminders',$entry));
+$append($audit);
 $history=TldFacts::accountHistory($server);
 $selected=array_values(array_filter($history,fn($r)=>str_starts_with($r['change'],'Synthetic ')||str_starts_with($r['change'],'Reminder emails')));
-// Invalid individual entries do not hide readable reminder or settings history.
-$malformed=[false,['reason'=>'Missing time'],['at'=>'not-a-time','reason'=>'Invalid time']];
-$invalidDays=['at'=>'2026-11-10T06:20:00Z','before'=>['enabled'=>false],'after'=>['enabled'=>false,'before_days'=>'invalid JSON','after_days'=>'[366]'],'reason'=>'Retained invalid days'];
-$mixed=encrypt([$audit[0],...$malformed,$invalidDays]);$reminder->update(['audit'=>$mixed]);
-$mixedHistory=TldFacts::accountHistory($server);
-expect(is_array($mixedHistory),'A readable mixed audit keeps account history readable');
+foreach([['reason'=>'Missing time'],['at'=>'not-a-time','reason'=>'Invalid time'],['at'=>'2026-11-10T06:20:00Z','before'=>['enabled'=>false],'after'=>['enabled'=>false,'before_days'=>'invalid JSON','after_days'=>'[366]'],'reason'=>'Retained invalid days']] as $entry){$append($entry);}
+$before=(clone $reminder)->orderBy('id')->get()->toJson();$mixedHistory=TldFacts::accountHistory($server);
+expect(is_array($mixedHistory),'Readable mixed events keep account history readable');
 $reminderRows=array_values(array_filter($mixedHistory,fn($r)=>str_starts_with($r['change'],'Reminder ')));
 same(['Reminder schedule changed','Reminder emails turned off'],array_column($reminderRows,'change'),'Only readable reminder entries survive');
-same('Days before expiry: none; days after: none. Retained invalid days',$reminderRows[0]['reason'],'Malformed stored days use the existing none fallback');
-expect(in_array('Synthetic newest',array_column($mixedHistory,'change'),true),'Settings history survives malformed reminder entries');
-same($mixed,(clone $reminder)->value('audit'),'Reading mixed entries preserves the saved audit');
-// Existing unreadable reminder history is not an empty history, and reading never repairs it.
+same('Days before expiry: none; days after: none. Retained invalid days',$reminderRows[0]['reason'],'Malformed days use the existing none fallback');
+same($before,(clone $reminder)->orderBy('id')->get()->toJson(),'History reads preserve event bytes');
 $panel=\Filament\Facades\Filament::getCurrentPanel();
 Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(fn()=>\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarHistory::registerRoutes($panel));
 app('router')->getRoutes()->refreshNameLookups();
-foreach(['broken ciphertext',encrypt('not an array'),encrypt(null)] as $unreadable){
-    $reminder->update(['audit'=>$unreadable]);
-    same(null,TldFacts::accountHistory($server),'Unreadable reminder history makes the combined history unreadable');
+$last=(clone $reminder)->orderByDesc('id')->first();
+foreach(['broken ciphertext',Illuminate\Support\Facades\Crypt::encryptString('null')] as $unreadable){
+    (clone $reminder)->where('id',$last->id)->update(['payload'=>$unreadable]);
+    same(null,TldFacts::accountHistory($server),'Unreadable reminder event makes combined history unreadable');
     \Livewire\Livewire::actingAs($u)->test(\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarHistory::class,['account'=>$server])
         ->assertSee(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::UNREADABLE)->assertDontSee('No changes yet');
-    same($unreadable,(clone $reminder)->value('audit'),'Reading preserves the saved unreadable audit');
 }
-$reminder->update(['audit'=>encrypt([])]);
-expect(is_array(TldFacts::accountHistory($server)),'An empty readable reminder audit keeps settings history');
-$reminder->delete();expect(is_array(TldFacts::accountHistory($server)),'A missing reminder row keeps settings history');
-Illuminate\Support\Facades\Schema::drop('domains_reminder_schedules');expect(is_array(TldFacts::accountHistory($server)),'A missing reminder table keeps settings history');
-same(['Synthetic newest','Reminder emails turned off','Synthetic oldest','Synthetic invalid'],array_column($selected,'change'),'Parsed audit times sort newest first with invalid times last');
-same(['zz-invalid-time','Readable retained detail'],[$selected[3]['time'],$selected[3]['reason']],'An invalid audit time retains its details');
+(clone $reminder)->where('id',$last->id)->update(['payload'=>$last->payload]);
+Illuminate\Support\Facades\DB::table('domains_reminder_schedules')->where('server_id',$server)->delete();
+expect(is_array(TldFacts::accountHistory($server)),'Reminder events survive schedule removal');
+same(['Synthetic newest','Reminder emails turned off','Synthetic oldest','Synthetic invalid'],array_column($selected,'change'),'Parsed event times sort newest first with invalid times last');
+same(['zz-invalid-time','Readable retained detail'],[$selected[3]['time'],$selected[3]['reason']],'Invalid audit time retains its details');
 $nativeSuccessful=true;echo "Staff account history names passed\n";

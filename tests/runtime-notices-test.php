@@ -21,9 +21,8 @@ foreach($tlds as $i=>$t){
 // Rotation retains every prior audit row and permits the101st edit.
 $clock->instant=$now;$t=$tlds[0];$q=DB::table('domains_reminder_schedules')->where('server_id',$t->server_id);$audit=[];
 for($i=1;$i<=100;$i++){$audit[]=['revision'=>$i,'actor_id'=>$staff->id,'reason'=>'prior_review'];}
-$q->update(['revision'=>101,'audit'=>encrypt($audit)]);ReminderSchedules::save($staff,$t->server_id,101,false,'1,7','3','review_rotation');
-same(1,count(decrypt($q->sole()->audit)),'Active audit starts next retained segment');
-$archive=DB::table(AuditArchives::TABLE)->where('server_id',$t->server_id)->where('family','reminders')->sole();expect(!str_contains($archive->payload,'prior_review'),'Schedule history encrypted');same(100,count(json_decode(AuditArchives::latest($t->server_id,'reminders'),true)['rows']),'All100 prior rows retained');
+DB::transaction(fn()=>AuditArchives::append($t->server_id,'reminders',json_encode(['rows'=>$audit])));$q->update(['revision'=>101]);ReminderSchedules::save($staff,$t->server_id,101,false,'1,7','3','review_rotation');
+same(101,DB::table(AuditArchives::TABLE)->where('server_id',$t->server_id)->where('family','reminders')->whereNotNull('event_key')->count(),'All prior rows plus the new change retained separately');
 expect(!App\Models\Server::find($t->server_id)->settings()->where('key','like','domains_reminder_audit.%')->exists(),'Archives stay outside native settings loads');
 // A manual disposition records staff review without any resend or release of the claim.
 $op=$newTransfer(placeholderComFixtureName('manual-outcome-placeholder.com'),0,true,false);$id=DB::table('domains_reminder_deliveries')->insertGetId(['domain_id'=>$op->domain_id,'delivery_key'=>hash('sha256','manual-review'),'template'=>'domains_transfer_code_paid','state'=>'uncertain','created_at'=>$now->getTimestamp()]);

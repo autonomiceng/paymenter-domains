@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\{Cache,DB,Schema};
 /** No destructive rollback or automatic adoption of retained history. */
 final class Installation
 {
-    public const SCHEMAS=[FoundationSchema::class,SalesPolicySchema::class,ContactProfileSchema::class,ObservationSchema::class,ReminderSchema::class,RuntimeSchema::class,HoldingProvenanceSchema::class,PslSchema::class,PslReviewSchema::class,WatchSchema::class,AdoptionSchema::class,HistoryLinkSchema::class,WatchDnsSchema::class,NativeIntentSchema::class,HoldingAdoptionSchema::class,BalanceSchema::class,ManagedPublicWorkSchema::class,ManagedPublicSchema::class,WatchScheduleSchema::class,WatchNoticeSchema::class,StaffWatchSchema::class,StaffAuditSchema::class,EnomTestSendLimitSchema::class,UserDeletionSchema::class,EnomLiveCallSchema::class,StaffAlertSchema::class,BalanceAlertSchema::class,OfferRetirement::class,RenewalRetrySchema::class,ManagementProgressIndex::class,ProfileContactSchema::class,OfferSchema::class,OfferWorkSchema::class,LiveCatalogueSchema::class,ComplimentaryAccountSchema::class,TemplateAssignmentIndex::class,ComplimentaryTimeSchema::class,HistoryAccountIndex::class,WatchAuditTimeSchema::class,BusinessSettingsSchema::class,AuditEventSchema::class];
+    public const SCHEMAS=[FoundationSchema::class,SalesPolicySchema::class,ContactProfileSchema::class,ObservationSchema::class,ReminderSchema::class,RuntimeSchema::class,HoldingProvenanceSchema::class,PslSchema::class,PslReviewSchema::class,WatchSchema::class,AdoptionSchema::class,HistoryLinkSchema::class,WatchDnsSchema::class,NativeIntentSchema::class,HoldingAdoptionSchema::class,BalanceSchema::class,ManagedPublicWorkSchema::class,ManagedPublicSchema::class,WatchScheduleSchema::class,WatchNoticeSchema::class,StaffWatchSchema::class,StaffAuditSchema::class,EnomTestSendLimitSchema::class,UserDeletionSchema::class,EnomLiveCallSchema::class,StaffAlertSchema::class,BalanceAlertSchema::class,OfferRetirement::class,RenewalRetrySchema::class,ManagementProgressIndex::class,ProfileContactSchema::class,OfferSchema::class,OfferWorkSchema::class,LiveCatalogueSchema::class,ComplimentaryAccountSchema::class,TemplateAssignmentIndex::class,ComplimentaryTimeSchema::class,HistoryAccountIndex::class,WatchAuditTimeSchema::class,BusinessSettingsSchema::class,AuditEventSchema::class,AuditBatchRetirement::class];
     public static function legacy(): void
     {
         foreach(Server::where('extension','Enom')->get() as $server){
@@ -103,6 +103,7 @@ final class Installation
             $sellPresent=array_filter(array_map(Schema::hasTable(...),OfferRetirement::TABLES));
             if($sellPresent&&!$sellRecorded){throw new \DomainException('Retained sell table has no installation record.');}
             if($sellRecorded && !OfferRetirement::finished()){OfferRetirement::verifyLegacyStores();}
+            if(in_array(AuditBatchRetirement::MIGRATION,$ran,true)){AuditBatchRetirement::verify();}
             if(in_array(AuditEventSchema::MIGRATION,$ran,true)){AuditEventSchema::verify();}
             $auditRecorded=in_array(StaffAuditSchema::MIGRATION,$ran,true);
             $auditPresent=array_filter(array_map(Schema::hasTable(...),StaffAuditSchema::tables()));

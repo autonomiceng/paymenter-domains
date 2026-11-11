@@ -12,11 +12,11 @@ $tables=['domains_staff_review_keys','domains_audit_archives'];
 // All other installed schema/history stays authentic; no bridge receipt is manufactured.
 (new Installation)->install();
 foreach($tables as $table){Schema::drop($table);}
-DB::table('migrations')->whereIn('migration',[$newMigration,'2026_11_11_000062_add_audit_events'])->delete();
+DB::table('migrations')->whereIn('migration',[$newMigration,'2026_11_11_000062_add_audit_events','2026_11_11_000063_retire_audit_batches'])->delete();
 // Replay the installed migration inventory without review storage. The additive
 // upgrade must preserve its existing foundation/history and refuse every partial audit state.
 $paths=array_values(array_filter(glob(dirname(__DIR__).'/Domains/database/migrations/*.php'),
-    static fn($path)=>!in_array(basename($path,'.php'),[$newMigration,'2026_11_11_000062_add_audit_events'],true)));
+    static fn($path)=>!in_array(basename($path,'.php'),[$newMigration,'2026_11_11_000062_add_audit_events','2026_11_11_000063_retire_audit_batches'],true)));
 app(Migrator::class)->run($paths,['force'=>true]);
 foreach($tables as $table){Schema::dropIfExists($table);}
 foreach(['domains_domains','domains_operations','domains_tlds','domains_accounts','domains_prices'] as $table){
@@ -31,7 +31,7 @@ foreach($tables as $table){expect(Schema::hasTable($table),'Upgrade creates '.$t
 expect(DB::table('migrations')->where('migration',$newMigration)->exists(),'Upgrade records additive migration');
 foreach($history as $row){same((array)$row,(array)DB::table('migrations')->where('id',$row->id)->sole(),'Prior history preserved');}
 DB::table($tables[0])->insert(['server_id'=>7,'review_key'=>str_repeat('a',32),'expires_at'=>1800000000]);
-DB::table($tables[1])->insert(['server_id'=>7,'family'=>'staff_settings','payload'=>'synthetic retained ciphertext']);
+DB::table($tables[1])->insert(['server_id'=>7,'family'=>'staff_settings','event_key'=>str_repeat('e',64),'payload'=>'synthetic retained ciphertext']);
 $snapshot=static fn()=>array_map(static fn($table)=>DB::table($table)->get()->toJson(),$tables);
 $rows=$snapshot();$migration=DB::table('migrations')->where('migration',$newMigration)->sole();
 $installation->install();$installation->verify();

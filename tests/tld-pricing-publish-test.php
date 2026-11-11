@@ -154,8 +154,8 @@ same(['published'=>0,'failed'=>[],'skipped'=>[]],$empty,'No followers changes on
 $history=Review::historyRows(App\Models\Server::findOrFail($t->server_id));same($empty,end($history)['outcome'],'Empty publication outcome is retained');
 // Losing the final audit cannot undo the already committed default and follower publication.
 $setFixtureRule($t->fresh(),null);$auditWrites=0;$failAudit=true;
-App\Models\Setting::saving(static function($setting)use(&$auditWrites,&$failAudit):void{
-    if($failAudit&&$setting->key===Review::KEY&&++$auditWrites===3){throw new RuntimeException('Synthetic outcome audit failure');}
+Illuminate\Support\Facades\DB::listen(static function($query)use(&$auditWrites,&$failAudit):void{
+    if($failAudit&&str_starts_with($query->sql,'insert into')&&str_contains($query->sql,'domains_audit_archives')&&in_array('staff_settings',$query->bindings,true)&&++$auditWrites===3){throw new RuntimeException('Synthetic outcome audit failure');}
 });
 $before=array_map(fn(Price $p)=>$p->revision,$rows($t->fresh()));
 $failedAudit=$writer->run(pricingReview($u->id),pricingForm(['mode'=>'markup_percent','markup'=>'30','round_up'=>'none']),$now);$failAudit=false;

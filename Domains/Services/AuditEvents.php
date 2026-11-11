@@ -51,15 +51,15 @@ final class AuditEvents
                 foreach($settings as $setting){
                     if(!$setting->encrypted){throw new \DomainException('Audit unavailable. Changes held.');}
                     $rows=self::batch($setting->value,$family);
-                    if($rows){AuditArchives::append((int)$server,$family,json_encode($rows,JSON_THROW_ON_ERROR));}
+                    if($rows){AuditArchives::retainBatch((int)$server,$family,json_encode($rows,JSON_THROW_ON_ERROR));}
                     $setting->value='[]';$setting->save();
                 }
             }
             $q=DB::table('domains_reminder_schedules')->where('server_id',$server);$schedule=(clone $q)->lockForUpdate()->first();
-            if($schedule){
+            if($schedule&&\Illuminate\Support\Facades\Schema::hasColumn('domains_reminder_schedules','audit')){
                 try{$rows=decrypt($schedule->audit);}catch(\Throwable){throw new \DomainException('Reminder audit unavailable.');}
                 if(!is_array($rows)||!array_is_list($rows)){throw new \DomainException('Reminder audit unavailable.');}
-                if($rows){AuditArchives::append((int)$server,'reminders',json_encode(['rows'=>$rows,'through_revision'=>(int)$schedule->revision],JSON_THROW_ON_ERROR));}
+                if($rows){AuditArchives::retainBatch((int)$server,'reminders',json_encode(['rows'=>$rows,'through_revision'=>(int)$schedule->revision],JSON_THROW_ON_ERROR));}
                 $q->update(['audit'=>encrypt([])]);
             }
             DB::table(AuditArchives::TABLE)->where('server_id',$server)->whereNull('event_key')->orderBy('id')->chunkById(25,static function($batches)use($server):void {

@@ -337,8 +337,7 @@ final class TldFacts
     private static function reminderHistory(int $serverId): ?array
     {
         try{
-            $row=\Illuminate\Support\Facades\Schema::hasTable('domains_reminder_schedules')?\Illuminate\Support\Facades\DB::table('domains_reminder_schedules')->where('server_id',$serverId)->first():null;
-            $audit=$row?decrypt($row->audit):[];if(!is_array($audit)){return null;}
+            $audit=\Paymenter\Extensions\Servers\Domains\Services\AuditEvents::recent($serverId,'reminders',100);
         }catch(\Throwable){return null;}
         $names=Staff::can('admin.users.view')?\App\Models\User::whereIn('id',array_column($audit,'actor_id'))->get(['id','first_name','last_name','email'])->mapWithKeys(fn($u)=>[$u->id=>trim($u->first_name.' '.$u->last_name)?:$u->email])->all():[];
         $days=static fn($json)=>implode(', ',(array)(\Paymenter\Extensions\Servers\Domains\Services\ReminderSchedules::storedDays($json)??[]))?:'none';
