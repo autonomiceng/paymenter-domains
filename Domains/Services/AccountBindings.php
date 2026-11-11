@@ -83,10 +83,9 @@ final class AccountBindings
                 if ((!LocalAccountEnrollment::enrolled($account) && !$sandbox) || $account->registrar_key !== $registrar || $account->environment !== $environment->value) {
                     throw new \DomainException('Local account binding is immutable.');
                 }
-                $retained = $this->configuration($account, true, sandboxUpgrade: $sandbox);
-                // The old facts seal this exact key to this TEST lineage. Upgrade the connection,
-                // not its identity: all holdings, held operations and budgets keep their binding.
-                if ($sandbox && $credentials !== $retained) { throw new \DomainException('Sandbox enrollment is immutable.'); }
+                $this->configuration($account, true, sandboxUpgrade: $sandbox);
+                // Validate the saved key before authenticating its replacement. Retained OTE
+                // facts keep the original lineage; current local facts seal the rotated key.
                 $identity = $account->stable_identity;
             } else {
                 $this->freshEnrollment($serverId);
@@ -135,13 +134,12 @@ final class AccountBindings
             if ($sandbox) {
                 // Retained OTE facts still reserve their key when the old deployment opt-in is off.
                 $retained = json_decode($this->secret((int) $account->server_id, NameSiloSandbox::KEY, $server), true, 8, JSON_THROW_ON_ERROR);
-                if (!NameSiloSandbox::enrolled($account) || $account->environment !== Environment::Test->value
-                    || ($retained['contract'] ?? null) !== 'namesilo_ote_enrollment_v1'
-                    || !hash_equals($account->stable_identity, NameSiloSandbox::identity($retained))
-                    || !is_string($retained['key_fingerprint'] ?? null)) {
-                    throw new \DomainException('Existing sandbox enrollment unavailable.');
-                }
+                NameSiloSandbox::validateLineage($account, $retained);
                 $duplicate = hash_equals($retained['key_fingerprint'], hash('sha256', $credentials['api_key']));
+                if ($marked) {
+                    $existing = $this->configuration($account, false, $server);
+                    $duplicate = $duplicate || LocalAccountEnrollment::keyFingerprint($credentials) === LocalAccountEnrollment::keyFingerprint($existing);
+                }
             } else {
                 if (!LocalAccountEnrollment::enrolled($account) && !$marked) { continue; }
                 $existing = $this->configuration($account, false, $server);
@@ -500,7 +498,8 @@ final class AccountBindings
             }
             if(NameSiloSandbox::enrolled($account)){
                 $facts=json_decode($this->secret((int)$account->server_id,NameSiloSandbox::KEY,$lockedServer,$advisory),true,8,JSON_THROW_ON_ERROR);
-                if ($localMarker || $sandboxUpgrade) { NameSiloSandbox::validateRetained($account,$facts,$credentials); }
+                if ($localMarker) { NameSiloSandbox::validateLineage($account,$facts); }
+                elseif ($sandboxUpgrade) { NameSiloSandbox::validateRetained($account,$facts,$credentials); }
                 else { NameSiloSandbox::validate($account,$facts,$credentials); }
             }elseif($account->registrar_key==='namesilo'&&($lockedServer??$this->server((int)$account->server_id))->settings()->where('key',NameSiloSandbox::KEY)->exists()){
                 throw new \DomainException('Sandbox enrollment cannot be rebound.');

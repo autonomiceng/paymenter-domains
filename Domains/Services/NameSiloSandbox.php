@@ -70,10 +70,18 @@ final class NameSiloSandbox
     /** Retained continuity is independent of the retired balance-only deployment opt-in. */
     public static function validateRetained(Account $a,#[\SensitiveParameter] array $facts,#[\SensitiveParameter] array $credentials): void
     {
+        self::validateLineage($a,$facts);
+        if(!hash_equals($facts['key_fingerprint'],hash('sha256',$credentials['api_key']))){
+            throw new \DomainException('Sandbox enrollment changed.');
+        }
+    }
+    /** Original enrollment stays immutable after current local facts take over credential continuity. */
+    public static function validateLineage(Account $a,#[\SensitiveParameter] array $facts): void
+    {
         if($a->registrar_key!=='namesilo'||$a->environment!==Environment::Test->value||($facts['contract']??null)!=='namesilo_ote_enrollment_v1'
             ||($facts['server_id']??null)!==(int)$a->server_id||($facts['provider_confirmed_account']??null)!==false
             ||($facts['authenticated_ote_key']??null)!==true||!hash_equals($a->stable_identity,self::identity($facts))
-            ||!hash_equals($facts['key_fingerprint']??'',hash('sha256',$credentials['api_key']))){
+            ||!is_string($facts['key_fingerprint']??null)||!preg_match('/^[a-f0-9]{64}$/D',$facts['key_fingerprint'])){
             throw new \DomainException('Sandbox enrollment changed.');
         }
     }
