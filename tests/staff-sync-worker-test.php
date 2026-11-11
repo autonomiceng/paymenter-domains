@@ -11,6 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,HoldingObservationWork,ObservationRecords,ObservationSchema};
 ObservationSchema::install();[$d,$driver]=$holding(placeholderComFixtureName('staff-sync-placeholder.com'));
 staffPanel();$actor=staffUser([Staff::VIEW,'admin.domains.manage']);Auth::setUser($actor);
+$actor->update(['first_name'=>'Alex','last_name'=>'Admin']);
 App\Models\Server::findOrFail($d->server_id)->settings()->updateOrCreate(['key'=>'domains_dns_tools'],['value'=>'1']);
 $observer=new DomainObservation($readBindings,$clock,new AccountReadBudget($clock),$ports);
 app()->instance(DomainObservation::class,$observer);
@@ -54,6 +55,27 @@ expect(str_contains($queuedHtml,'wire:poll.2s.keep-alive="pollManagement"'),'An 
 expect(!str_contains($page->html(),'wire:poll.'),'Completed sync stops polling');
 $syncEvents=array_values(array_filter(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::entries($d->fresh()),fn($entry)=>is_array($entry)&&in_array($entry['event']??null,['Sync requested','Domain synced'],true)));
 same('Domain synced',$syncEvents[0]['event']??null,'Same-second completion is newer than its request in Activity');
+// The real queued sync retains its staff identity for both history surfaces, even after a name change.
+$saved=$d->fresh()->observation;
+same([[$actor->id,'Alex Admin'],[$actor->id,'Alex Admin']],array_map(fn(array $entry)=>[$entry['actor_id'],$entry['actor_name']??null],$saved['sync_history']),'Sync request and completion retain the acting staff member');
+$actor->update(['first_name'=>'Updated','last_name'=>'Operator']);
+$rail=$page->call('pollManagement')->html();
+$history=Livewire\Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager::class,
+    ['ownerRecord'=>$d->fresh(),'pageClass'=>ViewDomain::class])->assertSuccessful()->html();
+foreach ([$rail,$history] as $i=>$html) {
+    $dom=new DOMDocument;@$dom->loadHTML($html);$xpath=new DOMXPath($dom);
+    foreach (['Sync requested','Domain synced'] as $event) {
+        $selector=$i===0?'//*[contains(concat(" ",normalize-space(@class)," ")," domains-trace-item ")]':'//tbody/tr';
+        $rows=$xpath->query($selector.'[contains(.,"'.$event.'")]');
+        same(1,$rows->length,'Each history surface shows the sync event once');
+        expect(str_contains($rows->item(0)->textContent,'Alex Admin'),'The sync history row keeps the recorded staff name');
+    }
+}
+// Existing saved syncs have only an ID, so they resolve the staff name without rewriting history.
+foreach ($saved['sync_history'] as &$entry) { unset($entry['actor_name']); } unset($entry);
+$d->update(['observation'=>$saved]);
+$legacy=array_values(array_filter(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::entries($d->fresh()),fn($entry)=>is_array($entry)&&in_array($entry['event']??null,['Sync requested','Domain synced'],true)));
+same(['Updated Operator','Updated Operator'],array_column($legacy,'by'),'Existing sync history identifies staff from its saved ID');
 // A pre-read failure used to disappear into the notification inbox, leaving old facts with no page explanation.
 $last=$d->fresh()->last_synced_at->format(DATE_ATOM);
 DB::table('extensions')->where('id',$d->server_id)->update(['enabled'=>false]);

@@ -30,7 +30,9 @@ final class DomainHistory
         $holdings=is_array($holdings)&&array_is_list($holdings)?array_filter($holdings,'is_array'):[];
         try { $audits=WatchAudit::query()->where('subject_type','domain')->where('subject_id',$domain->id)->where('event','owner_auto_renew')->orderByDesc('id')->limit(100)->get(); }
         catch (\Throwable) { $audits=collect(); }
-        $ids=array_unique(array_filter([...array_map(fn(array $h)=>is_int($h['actor_id']??null)?$h['actor_id']:null,$holdings),...$audits->pluck('actor_id')->all()]));
+        try { $sync=$domain->observation['sync_history']??[]; } catch (\Throwable) { $sync=[]; }
+        $sync=is_array($sync)?array_filter(array_slice($sync,-20),'is_array'):[];
+        $ids=array_unique(array_filter([...array_map(fn(array $h)=>is_int($h['actor_id']??null)?$h['actor_id']:null,[...$holdings,...$sync]),...$audits->pluck('actor_id')->all()]));
         $names=$ids?User::query()->whereIn('id',$ids)->get(['id','first_name','last_name'])->mapWithKeys(fn(User $u)=>[$u->id=>trim($u->first_name.' '.$u->last_name)])->all():[];
         foreach (array_values($holdings) as $i=>$h) {
             $rows[]=['__key'=>'holding-'.$i,'time'=>self::at($h['at']??null),'event'=>self::HOLDINGS[$h['action']??'']??'Renewal changed',
@@ -41,11 +43,11 @@ final class DomainHistory
             $rows[]=['__key'=>'audit-'.$a->id,'time'=>$a->created_at,'event'=>$enabled===null?'Auto-renew changed':'Auto-renew turned '.($enabled?'on':'off'),
                 'sub'=>null,'status'=>null,'by'=>$names[$a->actor_id]??'Customer'];
         }
-        try { $sync=$domain->observation['sync_history']??[]; } catch (\Throwable) { $sync=[]; }
         $events=['Sync requested','Domain synced',"Couldn't read all records",'Records not read',"Couldn't sync domain",'Sync stopped','Sync needs a check'];
-        foreach (is_array($sync)?array_reverse(array_slice($sync,-20),true):[] as $i=>$entry) {
-            if (!is_array($entry)||!in_array($entry['event']??null,$events,true)) { continue; }
-            $rows[]=['__key'=>'sync-'.$i,'__order'=>$i+1,'time'=>self::at($entry['at']??null),'event'=>$entry['event'],'sub'=>null,'status'=>null,'by'=>'Staff'];
+        foreach (array_reverse($sync,true) as $i=>$entry) {
+            if (!in_array($entry['event']??null,$events,true)) { continue; }
+            $rows[]=['__key'=>'sync-'.$i,'__order'=>$i+1,'time'=>self::at($entry['at']??null),'event'=>$entry['event'],'sub'=>null,'status'=>null,
+                'by'=>is_string($entry['actor_name']??null)&&$entry['actor_name']!==''?$entry['actor_name']:($names[$entry['actor_id']??0]??'Staff')];
         }
         $at=fn(Operation|array $r)=>($r instanceof Operation?self::when($r):$r['time'])?->getTimestamp()??PHP_INT_MIN;
         $order=static fn(Operation|array $r)=>$r instanceof Operation?[$r->id,0]:[$r['__request']??0,$r['__order']??0];
