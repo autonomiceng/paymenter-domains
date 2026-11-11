@@ -72,9 +72,9 @@ async function confirm(page) {
 }
 
 (async () => {
-  // These local fixture pages share one Chromium process to stay within the test memory budget.
+  // Limit renderer overhead for these local fixture pages.
   const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN || undefined,
-    args: ['--single-process', '--no-zygote', '--disable-gpu'] });
+    args: ['--renderer-process-limit=1', '--disable-gpu', '--disable-software-rasterizer'] });
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, colorScheme: 'dark' });
   await context.route((url) => !url.href.startsWith(base), (route) => route.abort());
   try {
