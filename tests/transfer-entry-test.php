@@ -36,4 +36,25 @@ foreach([[],[['transfer'=>null]], [['transfer'=>null],['transfer'=>'$0.00']]] as
     $empty=storefrontDom(view('domains::index',['domains'=>new \Illuminate\Pagination\LengthAwarePaginator([],0,25),'transfersOffered'=>$expected===1])->render());
     same($expected,$empty->query('//a[@href="'.route('domains.domains.transfer').'"]')->length,'Empty list has only its offered transfer entry');
 }
+// A TLD in a transfer link matches regardless of case; unsold and non-string endings stay refused.
+$ports=activeFixturePorts($native);$query=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,['com'],'register');
+$ports->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::override($binding,'com',new \Paymenter\Extensions\Servers\Domains\Catalogue\Intent(sell:true,longest:3,transfers:true)),
+    $ports->readOffers($query,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
+$transfer=function(array $query)use($store){$r=Request::create('/domains/transfer','GET',$query);$r->setLaravelSession(app('request')->session());
+    return (new \Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedTransferController($store))->show($r)->getData();};
+$lower=$transfer(['name'=>'example','tld'=>'com']);
+same(null,$lower['error'],'Lowercase TLD link reaches a transfer check');
+same('example.com',$lower['results'][0]['domain']??null,'Lowercase TLD link checks the named domain');
+foreach(['COM','Com',' com '] as $tld){
+    $data=$transfer(['name'=>'example','tld'=>$tld]);
+    same([$lower['error'],$lower['preferred'],$lower['results']],[$data['error'],$data['preferred'],$data['results']],'TLD link takes the lowercase path: '.$tld);
+}
+same('idle',$lower['results'][0]['status'],'The entry page itself sends no registrar check');
+foreach(['NET'=>'We don’t offer transfers for .net domains.','net'=>'We don’t offer transfers for .net domains.','C*M'=>'We don’t offer transfers for this ending.'] as $tld=>$message){
+    $data=$transfer(['name'=>'example','tld'=>$tld]);
+    expect(str_starts_with((string)$data['error'],$message),'Unsold TLD link is refused: '.$tld);
+    same([],$data['results'],'Unsold TLD link checks no other name: '.$tld);
+}
+$data=$transfer(['name'=>'example','tld'=>['COM']]);
+same(['com',null],[$data['preferred'],$data['error']],'Non-string TLD input is ignored, not read as an ending');
 $nativeSuccessful=true;echo "Transfer entry links follow the public offer.\n";
