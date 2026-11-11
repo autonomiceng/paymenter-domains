@@ -113,6 +113,7 @@ def main():
                        "BEGIN SELECT RAISE(ABORT, 'synthetic credit failure'); END")
         release_fixture_cache(app)
         release_fixture_cache((app/'vendor').resolve(strict=True), copied=False)
+        release_fixture_cache(ROOT/'.cache/php-runtime', copied=False)
         steps, saved = browse(app, root, facts)
         operation = saved['operations']
 
