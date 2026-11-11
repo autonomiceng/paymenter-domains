@@ -24,16 +24,18 @@ final class LiveRuntime
         if(!self::enabled($binding)){throw new \DomainException('Live NameSilo runtime unavailable.');}
         $bindings=app(AccountBindings::class);$clock=app(Clock::class);
         $revision=$bindings->credentialRevision($binding);$deployment=self::deployment($binding);$settings=NameSiloFeatureSettings::stamp($binding);
-        return static function(AccountBinding $requested)use($binding,$bindings,$clock,$revision,$deployment,$settings):array {
+        $registrationAccepted=(new LiveActivation(new ActivationEvidence))->registrationAccepted($binding);
+        return static function(AccountBinding $requested)use($binding,$bindings,$clock,$revision,$deployment,$settings,$registrationAccepted):array {
             $binding->requireMatch($requested);$bindings->requireCredentialRevision($binding,$revision);
             if(!self::enabled($binding)||$deployment!==self::deployment($binding)||$settings!==NameSiloFeatureSettings::stamp($binding)){
                 throw new \DomainException('Live NameSilo runtime changed.');
             }
-            $current=static function(AccountBinding $b)use($binding,$bindings,$revision,$deployment,$settings):bool {
+            $current=static function(AccountBinding $b)use($binding,$bindings,$revision,$deployment,$settings,$registrationAccepted):bool {
                 try {
                     $binding->requireMatch($b);$bindings->requireCredentialRevision($binding,$revision);
                     return self::enabled($b)&&$deployment===self::deployment($b)&&$settings===NameSiloFeatureSettings::stamp($b)
-                        &&(new LiveActivation(new ActivationEvidence))->current($b);
+                        &&(new LiveActivation(new ActivationEvidence))->current($b)
+                        &&(new LiveActivation(new ActivationEvidence))->registrationAccepted($b)===$registrationAccepted;
                 }catch(\Throwable){return false;}
             };
             $credentials=static function(bool $write)use($binding,$bindings,$revision,$deployment,$current):array {
@@ -62,7 +64,8 @@ final class LiveRuntime
             $management=new DsManagement($binding,$exchange,DsRegistryPolicy::DEPLOYMENT_FACTS,$clock);$management->useReservation($transport->reservation);
             $ports=RuntimeComposition::make($binding,$bindings,$clock,$features,$accepted,$renewal,app(TransferPrecheck::class),
                 $registration,$transfer,$exchange,$management,$features->management,$profiles,
-                observationReader:new ObservationReader($binding,$exchange));
+                observationReader:new ObservationReader($binding,$exchange),
+                managementAcceptanceCheck:static fn($b)=>$current($b)&&NameSiloFeatureSettings::accepted($b,'management'));
             $ports['renewal_writer']->useReservation($transport->reservation);
             return $ports;
         };

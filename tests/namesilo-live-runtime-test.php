@@ -106,7 +106,32 @@ $accepted->requireCurrent($binding);
 $save('domains_namesilo_renewal',['fingerprint'=>$binding->fingerprint,'enabled'=>false]);
 $deny(fn()=>$accepted->requireCurrent($binding));
 $save('domains_namesilo_renewal',['fingerprint'=>$binding->fingerprint,'enabled'=>true]);
+$cached=$composition();
+$accepted=(new \ReflectionProperty($cached['renewal'],'accepted'))->getValue($cached['renewal']);$accepted->requireCurrent($binding);
+$exchange=(new \ReflectionProperty(\Paymenter\Extensions\Servers\Domains\Contracts\ManagementProtocol::class,'exchange'))->getValue($cached['management_protocol'])->getValue();
+$transport=(new \ReflectionFunction($exchange))->getClosureThis();
+$credentialCheck=(new \ReflectionProperty(AdmittedTransport::class,'credentials'))->getValue($transport)->getValue();
+DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>true]);
+expect(is_array($credentialCheck(true)),'Current receipt and Orders On pass the final local credential guard');
 $receipt(false);same(['register'=>false,'transfer'=>true],$ports->acquisitionGates($account),'Registration receipt Off leaves independently reviewed transfer intact');
+$deny(fn()=>$credentialCheck(true));
+// Use the engine's real request authority with a synthetic holding snapshot. No provider or queue is involved.
+$receipt();$guarded=$composition();
+$owner=77;$domain=new \Paymenter\Extensions\Servers\Domains\Models\Domain(['user_id'=>$owner,'status'=>'active']);
+$holding=['domain'=>$domain,'account'=>$account->fresh(),'server'=>$server,'staff'=>null,'service'=>new \App\Models\Service(['status'=>'active']),'cancel'=>collect()];
+$authority=new \ReflectionMethod($guarded['management'],'authority');
+foreach(['lock','privacy_enable','glue_add'] as $action){
+    $authority->invoke($guarded['management'],$holding,$owner,$action,$guarded['management_protocol'],true,null,true);
+}
+$save('domains_namesilo_management',['fingerprint'=>$binding->fingerprint,'enabled'=>false]);
+foreach(['lock','privacy_enable','glue_add'] as $action){
+    $deny(fn()=>$authority->invoke($guarded['management'],$holding,$owner,$action,$guarded['management_protocol'],true,null,true));
+}
+$save('domains_namesilo_management',['fingerprint'=>$binding->fingerprint,'enabled'=>true]);
+$server->settings()->where('key',LiveActivation::KEY)->delete();
+$deny(fn()=>$authority->invoke($guarded['management'],$holding,$owner,'lock',$guarded['management_protocol'],true,null,true));
+$receipt();DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>false]);
+$cached=$composition();$accepted=(new \ReflectionProperty($cached['renewal'],'accepted'))->getValue($cached['renewal']);$accepted->requireCurrent($binding);
 $server->settings()->where('key',LiveActivation::KEY)->delete();
 $deny(fn()=>$accepted->requireCurrent($binding));same(['register'=>false,'transfer'=>false],$ports->acquisitionGates($account),'Receipt withdrawal closes writes but preserves recovery composition');
 same('123.45',$reader->balance($context())->evidence()->balance?->amount,'Receipt withdrawal retains admitted read-only recovery');

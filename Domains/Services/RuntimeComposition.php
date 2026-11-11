@@ -11,7 +11,7 @@ final class RuntimeComposition
         WriteAcceptance $accepted, RenewalAcceptance $renewalAccepted, TransferPrecheck $precheck,
         RegistrationProtocol $registration, TransferProtocol $transfer, #[\SensitiveParameter] \Closure $renewalExchange,
         ManagementProtocol $management, bool $managementAccepted=false, ?RegistrationProfiles $profiles=null, bool $testManagement=false,
-        ?\Paymenter\Extensions\Servers\Domains\Contracts\ObservationReader $observationReader=null): array
+        ?\Paymenter\Extensions\Servers\Domains\Contracts\ObservationReader $observationReader=null, ?\Closure $managementAcceptanceCheck=null): array
     {
         if (!$management->bindsTo($binding)) { throw new \DomainException('Runtime management binding changed.'); }
         if ($observationReader !== null && !$observationReader->bindsTo($binding)) { throw new \DomainException('Runtime observation binding changed.'); }
@@ -23,7 +23,7 @@ final class RuntimeComposition
         return ['acquisition'=>$acquisition,'reconciliation'=>new OperationReconciliation(new OperationClaims($bindings,$clock),$bindings,$clock),
             'renewal'=>$renewal,'renewal_writer'=>new RenewalWriter($binding,$features,$renewalAccepted,static fn()=>$renewal,$renewalExchange),
             'renewal_completion'=>new RenewalCompletion($bindings,$clock),
-            'management'=>new DomainManagement($bindings,$clock,$features,$managementAccepted,testManagement:$testManagement),'management_protocol'=>$management,
+            'management'=>new DomainManagement($bindings,$clock,$features,$managementAccepted,testManagement:$testManagement,localCheck:$managementAcceptanceCheck),'management_protocol'=>$management,
             ...($observationReader === null ? [] : ['observation_reader'=>$observationReader])];
     }
 }

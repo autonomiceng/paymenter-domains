@@ -16,7 +16,7 @@ final class DomainManagement
     private ?array $receiptGrant = null;
     public function __construct(private readonly AccountBindings $bindings, private readonly Clock $clock,
         private readonly WriteFeatures $features = new WriteFeatures, private readonly bool $accepted = false,
-        private readonly int $intervalSeconds = 25, private readonly bool $testManagement = false) {}
+        private readonly int $intervalSeconds = 25, private readonly bool $testManagement = false, private readonly ?\Closure $localCheck = null) {}
     public static function capability(string $action): string
     {
         return match ($action) {
@@ -34,7 +34,8 @@ final class DomainManagement
         try {
             return (function()use($actor,$seed,$driver,$actions,&$refused):array {
                 $l=HoldingLocks::take($seed,(int)$actor->id,true);
-                if($this->testManagement&&!EnomTestManagement::accepted(AccountBindings::binding($l['account']))){$refused=self::SWITCH_OFF;return [];}
+                if($this->localCheck&&($this->localCheck)(AccountBindings::binding($l['account']))!==true
+                    ||$this->testManagement&&!EnomTestManagement::accepted(AccountBindings::binding($l['account']))){$refused=self::SWITCH_OFF;return [];}
                 if(($blocked=$this->unresolved($l))!==null){
                     $refused=(int)$blocked->id;
                     $actions=array_values(array_filter($actions,fn($action)=>$this->unresolved($l,action:$action)===null));
@@ -397,6 +398,7 @@ final class DomainManagement
     private function authority(array $l, int $actor, string $action, ManagementProtocol $driver, bool $processing = true, ?string $correction = null, bool $advisory = false): void
     {
         $d = $l['domain']; $b = AccountBindings::binding($l['account']);
+        if($processing&&$this->localCheck&&($this->localCheck)($b)!==true){throw new \DomainException('Management acceptance required.');}
         if($this->testManagement){EnomTestManagement::requireAction($b,$action);}
         if(in_array($action,['privacy_purchase','privacy_renew'],true)){
             if($actor!==(int)$d->user_id){throw new \DomainException('Privacy billing is owner-only.');}
