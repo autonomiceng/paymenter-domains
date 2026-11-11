@@ -149,6 +149,13 @@ $wrong=new AccountBinding('namesilo',$binding->serverId+1,Environment::Live,Loca
 $factory=LiveRuntime::factory($binding);$deny(fn()=>$factory($wrong));
 // A cached writer cannot bypass processing Off, even when every feature and receipt is current.
 // Call the final credential guard directly so the reservation policy cannot mask this refusal.
+$cached=$composition();
+$exchange=(new \ReflectionProperty(\Paymenter\Extensions\Servers\Domains\Contracts\ManagementProtocol::class,'exchange'))->getValue($cached['management_protocol'])->getValue();
+$transport=(new \ReflectionFunction($exchange))->getClosureThis();
+$credentialCheck=(new \ReflectionProperty(AdmittedTransport::class,'credentials'))->getValue($transport)->getValue();
+DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>true]);
+expect(is_array($credentialCheck(true)),'Current cached credentials allow writes with Orders On');
+DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>false]);
 expect(is_array($credentialCheck(false)),'Orders Off retains current read credentials');
 $processingRefused=false;
 try{$credentialCheck(true);}catch(\Paymenter\Extensions\Servers\Domains\Services\RuntimeIneligible $e){
