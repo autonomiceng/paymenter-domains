@@ -20,7 +20,7 @@ config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enab
 expect(!Policy::accepted($binding),'Management acceptance defaults closed');
 try{$write('test_management',['accept'=>true]);throw new LogicException('Independent review required');}catch(DomainException){}
 $managementAction=setupAction('test_management',$server->id);
-Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$server->id])->mountAction($managementAction)->setActionData(['accept'=>true,'verified'=>true,'reason'=>'Independent synthetic TEST management review'])->callMountedAction()->assertHasNoActionErrors();expect(Policy::accepted($binding),'Audited visible TEST management action saves acceptance');
+Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$server->id])->mountAction($managementAction)->callMountedAction()->assertHasNoActionErrors();expect(Policy::accepted($binding),'Audited visible TEST management action saves acceptance');
 $saved=$server->settings()->where('key',Policy::KEY)->sole();expect($saved->encrypted,'Acceptance encrypted');
 $value=$saved->value;$saved->value=str_replace($binding->fingerprint,str_repeat('0',64),$value);$saved->save();expect(!Policy::accepted($binding),'Exact fingerprint bound');$saved->value=$value;$saved->save();
 $saved->encrypted=false;$saved->value=$value;$saved->save();expect(!Policy::accepted($binding),'Plain acceptance refused');$saved->encrypted=true;$saved->value=$value;$saved->save();

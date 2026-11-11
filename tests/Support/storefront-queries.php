@@ -81,7 +81,7 @@ function storefrontQueryChecks(array $fixture, Storefront $store): void
         if($reason==='unit'){
             expect(!isset($rows['qnet']),'Malformed normalized unit closes the ending instead of interpreting retained costs');
             same('held',$store->check('example.qnet')['status'],'Check rejects malformed normalized unit');
-        }elseif(in_array($reason,['unknown_cost','unknown_retail','future','unsynced'],true)){
+        }elseif(in_array($reason,['unknown_cost','unknown_retail','held','future','unsynced'],true)){
             // Longer registrations are priced from the first registration year, so losing its evidence closes every registration term.
             same([],$rows['qnet']['terms'],'Current '.$reason.' closes every registration term priced from the first year');
             same(null,$rows['qnet']['register'],'Current '.$reason.' never leaks retained native annual price');
