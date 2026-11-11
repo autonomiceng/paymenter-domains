@@ -148,6 +148,14 @@ $server->update(['enabled'=>false]);expect(!$ports->accepted($account),'Disabled
 $wrong=new AccountBinding('namesilo',$binding->serverId+1,Environment::Live,LocalAccountEnrollment::PREFIX.'other');
 $factory=LiveRuntime::factory($binding);$deny(fn()=>$factory($wrong));
 // A cached writer cannot bypass processing Off, even when every feature and receipt is current.
+// Call the final credential guard directly so the reservation policy cannot mask this refusal.
+expect(is_array($credentialCheck(false)),'Orders Off retains current read credentials');
+$processingRefused=false;
+try{$credentialCheck(true);}catch(\Paymenter\Extensions\Servers\Domains\Services\RuntimeIneligible $e){
+    same(\Paymenter\Extensions\Servers\Domains\Services\RuntimeReason::ProcessingOff,$e->reason,'Final credential guard refuses Orders Off');
+    $processingRefused=true;
+}
+expect($processingRefused,'Final credential guard requires processing independently of reservation policy');
 $exchange=(new \ReflectionProperty(\Paymenter\Extensions\Servers\Domains\Contracts\ManagementProtocol::class,'exchange'))->getValue($cached['management_protocol'])->getValue();
 $deny(fn()=>$exchange('https://www.namesilo.com/apibatch','domainLock',['domain'=>'example.com'],1000));
 $before=$usage();$store(['api_key'=>'placeholder-rotated-key']);
