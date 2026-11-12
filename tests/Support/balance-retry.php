@@ -203,6 +203,8 @@ same($clock->now()->getTimestamp()+1800,$due($op),'Stored shortfall schedules th
 }catch(Throwable $e){$failures[]='stored shortfall: '.$e->getMessage();}
 }
 if($balanceRetryCase==='reads'){
+activeCommerceFacts($clock->now(),$clock->now()->modify('+30 days'),$offerPorts);
+activeCommerceCostObservations($clock->now(),$clock->now()->modify('+30 days'),$offerPorts);
 // A failed read or missing price retries the same way, with no click and no send, then runs the full fresh preflight.
 $retried=static fn($op)=>$op->fresh()->policy['read_retries']??0;
 foreach(['read'=>['available',null,true,'registrar_read_failed'],'price'=>['priced',false,true,'registrar_price_missing'],'balance_read'=>['funds',null,'100.00','registrar_read_failed']] as $case=>[$edge,$broken,$healthy,$code]){
