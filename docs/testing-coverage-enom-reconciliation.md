@@ -48,8 +48,9 @@ still needed before changing that contract. Expiry parsing is unchanged.
 ## Lost renewal replies and paged history
 
 `renewal-enom-history-contract-test.php` starts with a funded, sealed renewal whose
-reply was lost. Four list pages plus one matching detail settle it in nine reads
-including holding checks. Missing orders, missing pages and ambiguous or duplicate
+reply was lost. Four list pages plus three details settle it in eleven reads
+including holding checks: a recent registration, an older renewal and the unique
+matching renewal are all validated. Missing orders, missing pages and ambiguous or duplicate
 charges retain uncertainty, without another renewal send or native money changes.
 `reconciliation-enom-history-test.php` also covers full-term and timestamp guards.
 
@@ -59,3 +60,10 @@ before details. Every remaining row requires a detail; over 20 details or insuff
 remaining page/detail capacity keeps history incomplete. The request range spans
 the same conservative whole days, rather than adding a day on both sides of an
 assumed provider clock. No read-budget, send-limit or acceptance default changes.
+
+A validated same-domain order with another action/term or a bill time outside the
+sealed window is a known non-match, preserving complete history. The paid-renewal
+regression includes a recent registration and an older renewal alongside the unique
+matching renewal. Unknown dates, invalid charges, unsupported shapes and competing
+renewals remain held. List rows must also say Order complete and processed before
+a detail can supply a candidate; cancelled or failed list rows cannot settle it.

@@ -21,10 +21,11 @@ $wire = new class implements Transport {
         if ($command === ReadCommand::Orders) {
             $rows = [];
             for ($i = 0; $i < 81; $i++) {
-                $matching = $i === 0 || ($i === 1 && in_array($this->fault, ['undated', 'date', 'duplicate', 'foreign', 'case'], true))
+                $matching = $i === 0 || ($i === 1 && in_array($this->fault, ['undated', 'date', 'duplicate', 'foreign', 'case', 'known_renew', 'old_register', 'unknown_renew_date', 'invalid_renew_charge'], true))
                     || ($i < 21 && $this->fault === 'dense');
                 $rows[] = ['id'=>(string)(901 + $i), 'date'=>$matching ? '10/18/2026 6:00:00 AM' : '10/16/2026 6:00:00 AM'];
             }
+            if ($this->fault === 'old_register') { $rows[1]['date'] = '10/18/2026 5:00:00 AM'; }
             if ($this->fault === 'none') { $rows = []; }
             $start = $p['Start'];
             $body = enomHistoryPage(array_slice($rows, $start - 1, 25), $start, count($rows));
@@ -35,6 +36,8 @@ $wire = new class implements Transport {
             if ($this->fault === 'changed_count' && $start === 26) { $body = str_replace('<RecordCount>81', '<RecordCount>82', $body); }
             if ($this->fault === 'repeated_id' && $start === 26) { $body = str_replace('<OrderID>926', '<OrderID>901', $body); }
             if ($this->fault === 'truncated') { $body = preg_replace('~<OrderDetail>.*?</OrderDetail>~s', '', $body, 1); }
+            if ($this->fault === 'list_cancelled') { $body = str_replace('<StatusDesc>Order complete', '<StatusDesc>Order canceled', $body); }
+            if ($this->fault === 'list_failed') { $body = str_replace('<StatusDesc>Order complete', '<StatusDesc>Authorization Failed', $body); }
             $body = enomHistoryEnvelope($body);
             if ($this->fault === 'unknown') { $body = str_replace('</interface-response>', '<UnknownCompleteness>1</UnknownCompleteness></interface-response>', $body); }
             if ($this->fault === 'nested_metadata') { $body = preg_replace('~<Server\s*/>~', '<Server><NextPage>2</NextPage></Server>', $body); }
@@ -51,6 +54,12 @@ $wire = new class implements Transport {
         if ($this->fault === 'nested_result') { $body = str_replace('<Result>True</Result>', '<Result><Value>True</Value></Result>', $body); }
         if ($this->fault === 'nested_product') { $body = str_replace('<ProductType>Register</ProductType>', '<ProductType><Value>Register</Value></ProductType>', $body); }
         if ($this->fault === 'changed_order_date') { $body = str_replace('<OrderDate>10/18/2026', '<OrderDate>10/17/2026', $body); }
+        if ($p['OrderID'] === '902') {
+            if (in_array($this->fault, ['known_renew', 'unknown_renew_date', 'invalid_renew_charge'], true)) { $body = str_replace('<ProductType>Register', '<ProductType>Renew', $body); }
+            if ($this->fault === 'old_register') { $body = str_replace(['<OrderDate>10/18/2026 6:00:00', '<BillDate>10/18/2026 6:00:01'], ['<OrderDate>10/18/2026 5:00:00', '<BillDate>10/18/2026 5:00:01'], $body); }
+            if ($this->fault === 'unknown_renew_date') { $body = preg_replace('~<BillDate>.*?</BillDate>~', '<BillDate/>', $body); }
+            if ($this->fault === 'invalid_renew_charge') { $body = str_replace('<AmountPaid>8.95</AmountPaid>', '<AmountPaid>invalid</AmountPaid>', $body); }
+        }
         return $body;
     }
 };
@@ -79,10 +88,15 @@ same('2026-10-18T12:00:01+00:00', $facts->candidates[0]->processedAt->value, 'En
 $complete = fn ($d, $f) => ReconciliationEvidence::completion($attempt, new Evidence(domain: $d, candidates: $f->candidates, historyComplete: $f->historyComplete), $clock->now());
 same('8.95', $complete($domain('2029-10-18'), $facts)['charge']['amount'], 'Provider-only recovery of full three-year original attempt');
 same(null, $complete($domain('2027-10-18'), $facts), 'Short provider expiry cannot complete purchased three-year term');
-foreach (['undated', 'date', 'duplicate', 'pagination', 'unknown', 'case', 'row_pagination', 'detail_root_pagination', 'header_pagination', 'item_metadata', 'missing_page', 'loop', 'changed_count', 'repeated_id', 'truncated', 'nested_metadata', 'adjustment', 'nested_result', 'nested_product', 'changed_order_date', 'dense', 'none'] as $fault) {
+foreach (['undated', 'date', 'duplicate', 'pagination', 'unknown', 'case', 'row_pagination', 'detail_root_pagination', 'header_pagination', 'item_metadata', 'missing_page', 'loop', 'changed_count', 'repeated_id', 'truncated', 'nested_metadata', 'adjustment', 'nested_result', 'nested_product', 'changed_order_date', 'dense', 'none', 'list_cancelled', 'list_failed', 'unknown_renew_date', 'invalid_renew_charge'] as $fault) {
     $wire->fault = $fault; $facts = $read();
     same(null, $complete($domain('2029-10-18'), $facts), 'Undated/date-only/multiple competing matching orders cannot establish uniqueness');
     if (!in_array($fault, ['duplicate', 'case', 'none'], true)) { same(false, $facts->historyComplete, 'Unknown competing timestamp poisons completeness'); }
+}
+foreach (['known_renew', 'old_register'] as $fault) {
+    $wire->fault = $fault; $facts = $read();
+    same(true, $facts->historyComplete, 'A fully validated different action or older bill time is a known non-match');
+    same('8.95', $complete($domain('2029-10-18'), $facts)['charge']['amount'], 'A known same-domain non-match leaves a unique original charge');
 }
 $wire->fault = 'foreign'; $facts = $read(); same(true, $facts->historyComplete, 'Parsed unrelated account order preserves complete history');
 same('8.95', $complete($domain('2029-10-18'), $facts)['charge']['amount'], 'Mixed-domain account still proves unique original charge');

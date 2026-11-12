@@ -40,15 +40,17 @@ final class History
         if (count($ids) !== $total) { return new Evidence; }
         $candidates = []; $complete = true;
         foreach ($details as $row) {
+            if ($row['statusdesc'] !== 'Order complete' || $row['orderprocessflag'] !== 'True') { $complete = false; continue; }
             $id = $row['orderid'];
             $order = $this->client->read(ReadCommand::Order, ['OrderID'=>$id], $context);
             if (!self::supported($order) || $order->value('order.orderid') !== $id) { $complete = false; continue; }
             if ($order->value('order.orderdate') !== null && self::localClock($order->value('order.orderdate')) != self::localClock($row['orderdate'])) { $complete = false; continue; }
             if (OrderCharge::unrelated($attempt, $order)) { continue; }
-            $candidate = OrderCharge::candidate($attempt, $order);
+            $candidate = OrderCharge::fromHistory($attempt->binding, $order);
             if (!$candidate || $candidate->processedAt?->precision !== ExpiryPrecision::Instant) { $complete = false; continue; }
             $processed = new \DateTimeImmutable($candidate->processedAt->value);
-            if ($processed < $attempt->windowStart || $processed > $attempt->windowEnd) { $complete = false; continue; }
+            // A validated different action/term or bill time cannot be this original send.
+            if (!$candidate->query->matches($attempt->query) || $processed < $attempt->windowStart || $processed > $attempt->windowEnd) { continue; }
             $candidates[] = $candidate;
         }
         return new Evidence(candidates:$candidates, historyComplete:$complete);
