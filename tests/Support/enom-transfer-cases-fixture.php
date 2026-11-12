@@ -29,8 +29,9 @@ $write('publish',[],$tld->id);$transferProduct=app(\Paymenter\Extensions\Servers
 $transferState=(object)['name'=>'','bill'=>'','pending'=>true,'charge'=>true];require __DIR__.'/enom-transfer-wire.php';
 $reset=static function()use($server,$transferReply):void{Cache::flush();DB::table('domains_read_budgets')->where('server_id',$server->id)->delete();resetWire(['reply'=>$transferReply]);};$reset();
 $run=static fn($op)=>(new RuntimeWork($clock,new RuntimePorts))->operation($op->id);
-$newTransfer=static function(string $name,bool $paid=true)use($user,$transferProduct,$clock):Operation {
-    Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());$cart=commerceCart($user);commerceAdd($cart,$transferProduct,$name);commerceCheckout($user,$cart)->assertHasNoErrors();
+$newTransfer=static function(string $name,bool $paid=true)use($user,$transferProduct,$clock,$binding):Operation {
+    Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());try{$cart=commerceCart($user);commerceAdd($cart,$transferProduct,$name);commerceCheckout($user,$cart)->assertHasNoErrors();}
+    catch(DomainException $error){installedOfferFailure($binding,$clock,['transfer','renew']);throw $error;}
     $op=Domain::where('domain',$name)->sole()->operations()->sole();if($paid){App\Helpers\ExtensionHelper::addPayment($op->invoice_id,null,$op->amount);}return $op->fresh();
 };
 $code=static function(Operation $op,string $secret)use($user,$session):void{

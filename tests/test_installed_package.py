@@ -247,8 +247,10 @@ def main(scenario):
             phase(name)
         if scenario == 'held':
             phase('held')
+            with sqlite3.connect(database) as source, sqlite3.connect(root/'installed-seed.sqlite') as target:
+                source.backup(target)
             for group in ('balance', 'rotation', 'runtime'):
-                phase('identity-group-'+group)
+                isolated_phase('identity-group-'+group)
             phase('catalogue')
             phase('upload', 'current')
             phase('catalogue-retained')

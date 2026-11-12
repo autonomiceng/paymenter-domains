@@ -34,9 +34,10 @@ foreach(['address'=>'1 Synthetic Street','city'=>'Seattle','state'=>'WA','zip'=>
 if(isset($resumeEnomFixture)){$tld=Tld::findOrFail($resumeEnomFixture['tld']);}
 else{$write('processing',['enabled'=>true,'confirmed'=>true]);$write('publish',[],$tld->id);}
 $product=app(NativeCatalogue::class)->product($tld,'register');$worker=app(RuntimeWork::class);
-$new=static function(string $name)use($user,$product,$clock):Operation {
+$new=static function(string $name)use($user,$product,$clock,$binding):Operation {
     Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
-    $cart=commerceCart($user);commerceAdd($cart,$product,$name);commerceCheckout($user,$cart)->assertHasNoErrors();
+    try{$cart=commerceCart($user);commerceAdd($cart,$product,$name);commerceCheckout($user,$cart)->assertHasNoErrors();}
+    catch(DomainException $error){installedOfferFailure($binding,$clock,['register','renew']);throw $error;}
     $op=Domain::where('domain',$name)->sole()->operations()->sole();
     App\Helpers\ExtensionHelper::addPayment($op->invoice_id,null,$op->amount);
     same('paid',App\Models\Invoice::findOrFail($op->invoice_id)->status,'Native payment marks the invoice paid');
