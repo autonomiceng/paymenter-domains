@@ -17,6 +17,8 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain, Price};
 use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission, CheckoutEligibility, Rdap, Storefront, TransferPrecheck};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 
+same('-$10.99',Storefront::money('-10.99'),'Negative money formats the refund sign before the currency');
+same('-$1,234.56',Storefront::money('-1234.56'),'Negative money retains grouping and exact cents');
 expect(!Route::has('domains.domains.search'), 'Storefront remains dormant before explicit test registration');
 require dirname(__DIR__).'/Domains/routes/web.php';
 extract(commerceFixture(true)); $clock ??= new FakeClock($now);

@@ -122,6 +122,9 @@ foreach(['register'=>'registration','transfer'=>'transfer'] as $action=>$kind){
             $notice=DomainPage::notice($owned($order),'/tickets/create');
             if($retry!==null){
                 expect(!isset($order['check']),'Scheduled retry keeps check details out of the customer order');
+                $cell=DomainListRow::orderExpires([...$order,'complimentary'=>true],null);
+                expect(str_contains($cell['cause']??'',DomainPage::NOTHING_TO_DO),'Scheduled complimentary acquisition check leaves no customer action in the list');
+                if($kind==='transfer'){expect(str_contains($cell['cause']??'',DomainPage::TRANSFER_TIME),'Scheduled complimentary transfer check keeps its completion estimate');}
                 same(['info','Paid. We’re finishing the '.$kind.'.'.($kind==='transfer'?' Most transfers finish within 5 to 7 days.':'').' There’s nothing you need to do.'],[$notice['tone'],$notice['text']],'Automatic retry needs no customer action; a transfer says how long it takes');
             }else{
                 same(Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::for($pending),$order['check'],'Stopped customer check uses the same words as staff');

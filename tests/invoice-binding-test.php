@@ -88,12 +88,27 @@ $cart = commerceCart($user); commerceAdd($cart, $nsProduct, placeholderComFixtur
 $fail = true; commerceCheckout($user, $cart); $fail = false;
 same($counts, [Order::count(), Invoice::count(), Service::count(), Domain::count(), Operation::count()], 'Late binding exception rolls back entire multi-line checkout');
 expect(!Domain::where('domain', 'rolled-first-placeholder.com')->exists(), 'First reservation rolls back with second failure');
+App\Models\Setting::updateOrCreate(['key'=>'tax_enabled','settingable_type'=>null,'settingable_id'=>null],['type'=>'boolean','value'=>true]);
+App\Models\Setting::updateOrCreate(['key'=>'tax_type','settingable_type'=>null,'settingable_id'=>null],['type'=>'string','value'=>'inclusive']);
+config(['settings'=>collect(config('settings'))->merge(['tax_enabled'=>true,'tax_type'=>'inclusive'])->all()]);
+App\Models\TaxRate::create(['name'=>'Synthetic tax','country'=>'all','rate'=>10]);
+Illuminate\Support\Once::flush();
 // Discounted acquisition freezes its positive net; holder renewal remains independently priced.
 $cart = commerceCart($user); commerceAdd($cart, $nsProduct, placeholderComFixtureName('coupon-binding-placeholder.com'));
 $coupon = Coupon::create(['code' => 'BINDHALF', 'type' => 'percentage', 'value' => 50, 'applies_to' => 'price', 'recurring' => 0, 'max_uses_per_user' => 1, 'max_uses' => 2]);
 $cart->update(['coupon_id' => $coupon->id]); commerceCheckout($user, $cart);
 $discounted = Domain::where('domain', 'coupon-binding-placeholder.com')->sole();
 same('3.90', $discounted->operations()->sole()->amount, 'Positive below-cost coupon amount frozen once');
+$discountedOp=$discounted->operations()->sole();
+$discountedItem=InvoiceItem::findOrFail($discountedOp->invoice_item_id);
+$finalPrice=new App\Classes\Price(['price'=>$discountedItem->price,'currency'=>$discountedItem->invoice->currency,'tax'=>$discountedItem->invoice->tax]);
+same('0.35', $finalPrice->total_tax, 'Native invoice tax reflects the coupon-adjusted gross');
+same($finalPrice->total_tax,$discountedOp->policy['checkout']['tax'],'Frozen checkout tax matches finalized native invoice line');
+same('3.55',$discountedOp->policy['checkout']['net'],'Frozen net excludes only finalized line tax');
+same($discountedOp->policy['checkout'],$discounted->snapshot['checkout'],'Holding and request retain the same finalized amounts');
+App\Models\Setting::whereNull('settingable_type')->where('key','tax_enabled')->firstOrFail()->update(['value'=>false]);
+config(['settings'=>collect(config('settings'))->merge(['tax_enabled'=>false])->all()]);
+Illuminate\Support\Once::flush();
 same('10.40', number_format((float) $discounted->service->price, 2, '.', ''), 'Lifetime acquisition coupon never changes annual holder retail');
 same($coupon->id, $discounted->service->coupon_id, 'Coupon association retained for native usage accounting');
 same(1, $coupon->services()->count(), 'Domain acquisition consumes a native coupon use');

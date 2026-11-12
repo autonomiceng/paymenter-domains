@@ -364,7 +364,7 @@ foreach(['history_limit'=>'Missing: saved record history needs a fresh read. Use
 }
 $p=$active->fresh()->observation;unset($p['record_hold']);$active->fresh()->update(['observation'=>$p]);
 DB::table('domains_domains')->where('id',$active->id)->update(['last_synced_at'=>'2026-10-20 15:05:00']);
-same('Oct 20, 2026 15:05 UTC',$value($active,'Last sync'),'Last sync time');
+same('Oct 20, 2026, 3:05 PM UTC',$value($active,'Last sync'),'Last sync time');
 require_once __DIR__.'/Support/accounts.php';
 $demo=Domain::create([...fixtureAccount((int)App\Models\Server::max('id')+1,'enom','demo-enom'),'domain'=>'demo-held.test','sld'=>'demo-held','tld'=>'test','user_id'=>$customer->id,'service_id'=>499,
     'status'=>'active','provider_expires_at'=>today()->addDays(200)->format('Y-m-d'),'snapshot'=>['offline_demo'=>true],'observation'=>['facts'=>[]],'renewal_policy'=>[]]);
@@ -468,7 +468,7 @@ same([today()->addDays(120-21)->format('M j, Y'),'Renewal invoice missing. Check
 ObligationAlerts::record($active->fresh(),'renewal_unpaid',time());
 same(['On','Unpaid renewal invoice cancelled. Talk to the customer about renewal.','warning'],[$value($active,'Renewal'),$sub($active,'Renewal'),DomainFacts::for($active->fresh())['Renewal']['tone']],'Review alerts keep the value and add the cause');
 ObligationAlerts::record($active->fresh(),'observation_review',time());
-same(['Oct 20, 2026 15:05 UTC',null],[$value($active,'Last sync'),$sub($active,'Last sync')],'A sync that is not stopped has nothing to resume');
+same(['Oct 20, 2026, 3:05 PM UTC',null],[$value($active,'Last sync'),$sub($active,'Last sync')],'A sync that is not stopped has nothing to resume');
 $work=DB::table('domains_observation_work')->insertGetId(['server_id'=>$active->server_id,'account_fingerprint'=>$active->account_fingerprint,
     'domain_id'=>$active->id,'generation'=>$active->authority_generation,'due_at'=>0,'safe_code'=>'read_unavailable','tries'=>1]);
 same(null,$sub($active,'Last sync'),'The stopped row leaves the cause to the page notice');

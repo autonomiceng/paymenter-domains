@@ -42,6 +42,22 @@ $card=static fn(DOMXPath $dom,string $label)=>$norm($dom->query('//section[@id="
 $split=static fn(DOMXPath $dom,string $label)=>[$norm($dom->query('//section[@id="renewal"]//dt[normalize-space(text())="'.$label.'"]/following-sibling::dd[1]/span[contains(@class,"domains-card__v")]')->item(0)),
     array_map($norm,iterator_to_array($dom->query('//section[@id="renewal"]//dt[normalize-space(text())="'.$label.'"]/following-sibling::dd[1]/span[contains(@class,"domains-card__a")]//*[self::a or self::button][contains(@class,"domains-a")]')))];
 
+// Held and unresolved paid transfers retain their progress through the real order projection.
+foreach (['held','uncertain'] as $state) {
+    $record=new \Paymenter\Extensions\Servers\Domains\Models\Domain(['status'=>'transfer_pending','registrar_key'=>'enom']);
+    $op=new \Paymenter\Extensions\Servers\Domains\Models\Operation(['action'=>'transfer','state'=>$state,'payload'=>['epp'=>'SyntheticOnly'],'policy'=>[]]);
+    $invoice=new \App\Models\Invoice(['status'=>'paid']);
+    $order=\Paymenter\Extensions\Servers\Domains\Services\OwnedDomains::order($record,$op,$invoice);
+    same($state,$order['progress']??null,'Paid order retains held or unresolved transfer progress');
+    $notice=DomainPage::notice($domain(['order'=>$order,'status'=>'Under review','management'=>[]]),'/support');
+    same('info',$notice['tone']??null,'Transfer check belongs to staff');
+    same('/support',$notice['action']['url']??null,'Held transfer keeps a support route');
+    expect(!str_contains($notice['text']??'',DomainPage::TRANSFER_TIME),'Stopped or unresolved transfer has no completion estimate');
+    $cell=\Paymenter\Extensions\Servers\Domains\Presentation\DomainListRow::orderExpires([...$order,'complimentary'=>true],'/support');
+    same([true,null],[$cell['missing'],$cell['fix']],'Held complimentary transfer waits for its expiry without asking the customer to act');
+    expect(!str_contains($cell['cause']??'',DomainPage::TRANSFER_TIME),'Held or unresolved complimentary transfer has no completion estimate in the list');
+}
+
 // Header: breadcrumb, mono name with tags, pill. No Expires meta, Domain help link, tabs or Overview.
 $d=$domain();$html=$render($d,$summary($d,['daysLeft'=>129]));$dom=storefrontDom($html);
 same('Domains '.$name,$norm($dom->query('//nav[contains(@class,"domains-crumb")]')->item(0)),'Breadcrumb names the domain');

@@ -24,6 +24,14 @@ final class HoldingObservationWork
     public static function nextRead(Domain $d): ?array
     {
         if (!Schema::hasTable('domains_observation_work')) { return null; }
+        $account=Account::where('server_id',$d->server_id)->first();
+        if(!$account||!$account->processing_enabled||$account->account_fingerprint!==$d->account_fingerprint
+            ||!\App\Models\Server::whereKey($d->server_id)->where('enabled',true)->where('extension','Domains')->exists()){return null;}
+        try {
+            $binding=AccountBindings::binding($account);
+            if((TestCatalogue::testDeployment($binding)||EnomLive::deployment($binding))
+                &&!EnomTestManagement::accepted($binding)){return null;}
+        } catch (\Throwable) { return null; }
         $job=self::current($d,true)->orderByDesc('id')->first();
         if ($job===null||$job->safe_code==='records_disabled') { return null; }
         $first=$job->safe_code===null&&(int)$job->resumes===0

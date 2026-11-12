@@ -12,16 +12,17 @@ use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Action,AttemptEvid
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,AccountReadBudget,Installation,LiveActivation,LiveReservations,LocalAccountEnrollment,NameSiloFeatureSettings,RegistrarBalances,RegistrarFactories,RegistrarRegistry,RuntimePorts};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
-function curl_init(): object {return new \stdClass;}
-function curl_setopt_array($h,array $options): bool {$GLOBALS['liveOptions']=array_replace($GLOBALS['liveOptions']??[],$options);return true;}
+function curl_init(): object {return (object)['options'=>[]];}
+function curl_setopt_array($h,array $options): bool {$h->options=array_replace($h->options,$options);return true;}
 function curl_getinfo($h,int $option): int {return 200;}
 function curl_close($h): void {}
 function curl_exec($h): bool {
     same(0,DB::transactionLevel(),'Installed Live wire stays outside database locks');
-    $o=$GLOBALS['liveOptions'];$url=parse_url($o[CURLOPT_URL]);parse_str($url['query'],$p);
+    $o=$h->options;$url=parse_url($o[CURLOPT_URL]);parse_str($url['query'],$p);
+    $command=basename($url['path']);$GLOBALS['liveCalls'][]=$command;
+    same($GLOBALS['liveExpectedKey'],$p['key']??null,'Each physical request uses the current synthetic credential');
     same('www.namesilo.com',$url['host'],'Live composition uses the fixed Live origin');
     same('/apibatch/',substr($url['path'],0,10),'Daily reads declare background routing');
-    $command=basename($url['path']);$GLOBALS['liveCalls'][]=$command;
     expect(in_array($command,['getAccountBalance','getDomainInfo','checkTransferStatus'],true),'This read fixture must never mutate');
     if($GLOBALS['liveFail']??false){throw new \RuntimeException('Synthetic lost reply');}
     $reply=match($command){
@@ -44,6 +45,7 @@ $identity=LocalAccountEnrollment::PREFIX.'live-runtime';
 $account=Account::withVerifiedBindingWrite(fn()=>Account::create(['server_id'=>$server->id,'registrar_key'=>'namesilo','environment'=>'live','stable_identity'=>$identity]));
 Account::withVerifiedBindingWrite(fn()=>$account->update(['live_site'=>'https://billing.example.com']));
 $binding=AccountBindings::binding($account);$credentials=['api_key'=>'placeholder-live-key'];
+$GLOBALS['liveExpectedKey']=$credentials['api_key'];
 $save=static function(string $key,array|string $value)use($server):void {
     $server->settings()->updateOrCreate(['key'=>$key],['encrypted'=>true,'type'=>'string','value'=>is_array($value)?json_encode($value,JSON_THROW_ON_ERROR):$value]);
 };
@@ -170,7 +172,7 @@ try{$credentialCheck(true);}catch(\Paymenter\Extensions\Servers\Domains\Services
 expect($processingRefused,'Final credential guard requires processing independently of reservation policy');
 $exchange=(new \ReflectionProperty(\Paymenter\Extensions\Servers\Domains\Contracts\ManagementProtocol::class,'exchange'))->getValue($cached['management_protocol'])->getValue();
 $deny(fn()=>$exchange('https://www.namesilo.com/apibatch','domainLock',['domain'=>'example.com'],1000));
-$before=$usage();$store(['api_key'=>'placeholder-rotated-key']);
+$before=$usage();$GLOBALS['liveExpectedKey']='placeholder-rotated-key';$store(['api_key'=>'placeholder-rotated-key']);
 $deny(fn()=>$reader->balance($context()));$deny(fn()=>$accepted->requireCurrent($binding));$deny(fn()=>$factory($binding));
 expect($ports->accepted($account),'Newly authenticated revision can compose read-only recovery');
 same(['register'=>false,'transfer'=>false],$ports->acquisitionGates($account),'Rotation cannot reuse prior write receipt');

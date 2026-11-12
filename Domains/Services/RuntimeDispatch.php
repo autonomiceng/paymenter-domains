@@ -29,6 +29,9 @@ final readonly class RuntimeDispatch
         $due=DB::transaction(function()use($id,$op,$now,$force,$balance):bool {
             DB::table('domains_runtime_operations')->insertOrIgnore(['operation_id'=>$id,...($balance?['due_at'=>$now+900]:[])]);
             $q=DB::table('domains_runtime_operations')->where('operation_id',$id);$row=(clone $q)->lockForUpdate()->first();
+            // Input may have committed while dispatch waited for the runtime row. Read without taking another lock.
+            $op=$op->fresh();$balance=BalanceRetries::pending($op);
+            if(!TransferPolling::due($op,$now)){return false;}
             // TransferPolling owns transfer pacing; balance readmission retains its own due entry.
             if(($balance||!$force&&!TransferPolling::applies($op))&&(int)$row->due_at>$now){return false;}
             if($balance){return true;} // The locked readmission consumes due_at, never a queued notification.

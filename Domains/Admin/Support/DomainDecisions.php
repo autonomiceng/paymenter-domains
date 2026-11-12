@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Illuminate\Support\Facades\{DB, Schema};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Presentation\{DomainStatus, Missing, RequestStatus};
+use Paymenter\Extensions\Servers\Domains\Presentation\{DomainStatus, Missing, RequestStatus, StaffTime};
 use Paymenter\Extensions\Servers\Domains\Services\{BillingCalendar, DomainStates, HoldingObservationWork, ObligationAlerts, ObservationProjection, ObservationRecords, ObservationWork, OwnedDomains, OwnerRecords, RenewalCycles, RenewalStop, StaffHoldingReview, StaffOperationReview};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 /** Staff domain page rows and the status, sync and alert decisions behind them. Request-local allowlisted projection. Never cache across actors, call providers or serialize models.
@@ -140,7 +140,7 @@ final class DomainDecisions
         if (!self::unconfirmedRegistration($d)&&($registered||$job||$d->last_synced_at)&&(!self::ended($d)||$d->last_synced_at)) { $f['Last sync']=match(true) {
             $paused=>Facts::row('Paused',sub:'Demo registrar is off while Enom Test mode is on',tone:'warning'),
             $sync==='failed'=>Facts::row('Read stopped',tone:'danger'),
-            default=>['at'=>$d->last_synced_at?->getTimestamp(),...Facts::row($d->last_synced_at?->utc()->format('M j, Y H:i').($d->last_synced_at?' UTC':''),
+            default=>['at'=>$d->last_synced_at?->getTimestamp(),...Facts::row($d->last_synced_at ? StaffTime::at($d->last_synced_at->getTimestamp()) : null,
                 sub:$job&&$job->claim!==null&&$job->lease_until>time()?($d->last_synced_at?'Syncing now':Missing::fills('when this sync finishes')):($d->last_synced_at?null:Missing::fills('within a day')))],
         }; }
         $user=$d->user;
@@ -335,11 +335,11 @@ final class DomainDecisions
                 default=>'Sync stopped: DNS record check failed.' },'stopped'=>true];
         } catch (\Throwable) { return ['text'=>self::UNREADABLE,'stopped'=>true]; }
     }
-    /** When a held family is read again, in the site clock. A due time that has passed means the read runs as soon as the worker gets to it. */
+    /** When a held family is read again, in the staff time zone. A due time that has passed means the read runs as soon as the worker gets to it. */
     private static function untilRead(array $next): string
     {
         $now=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now();
-        $at=$next['due']>$now->getTimestamp()?(new \DateTimeImmutable('@'.$next['due']))->setTimezone($now->getTimezone())->format('M j, Y, g:i A T'):null;
+        $at=$next['due']>$now->getTimestamp()?StaffTime::at($next['due']):null;
         return match($next['wait']) { 'first'=>'while the first registrar check runs',
             'retry'=>'until the registrar check retries'.($at===null?'':' at '.$at),
             default=>'until the next registrar check'.($at===null?' runs':' at '.$at) };

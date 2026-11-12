@@ -20,8 +20,12 @@ foreach([0,1]as$i){
     }
     $r=$req($d,'code',['transfer_code'=>$exact]);$stale=clone $r;
     $saved=$action->code($r,$d->id);same($exact,$op->fresh()->payload['epp'],'Controller preserves exact encrypted bytes');
-    // rw-J3-1: a save leaves the empty form for the domain page and says the paid transfer started.
-    same([route('domains.domains.show',$d->id),OwnerActionController::CODE_SAVED_STARTED],[$saved->getTargetUrl(),$session->get('domains_status')],'Saved code opens the domain page with what happens next');
+    // A paid transfer with incomplete setup only saves the code; no registrar work has started.
+    same([route('domains.domains.show',$d->id),OwnerActionController::CODE_SAVED],[$saved->getTargetUrl(),$session->get('domains_status')],'Saved code opens the domain page with what happens next');
+    \Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->update(['processing_enabled'=>false]);
+    $action->code($req($d,'code',['transfer_code'=>$exact]),$d->id);
+    same(OwnerActionController::CODE_SAVED,$session->get('domains_status'),'Orders off confirms the save without claiming transfer progress');
+    \Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->update(['processing_enabled'=>true]);
     expect(!str_contains(DB::table('domains_operations')->find($op->id)->payload,$exact),'No plaintext at rest');
     expect(!str_contains(json_encode($session->all()),$exact),'No code in session');$replay(fn()=>$action->code($stale,$d->id));
     $r=$req($d,'code',['transfer_code'=>'private-query']);$r->query->set('transfer_code','private-query');$action->code($r,$d->id);

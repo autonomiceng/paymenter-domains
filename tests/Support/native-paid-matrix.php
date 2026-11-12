@@ -44,14 +44,15 @@ $manual($wakeFailure);$paid($wakeFailure);
 same('active',$host->fresh()->status,'Hosting continues when domain wake fails');same('5.00',number_format((float)$user->credits()->sole()->amount,2,'.',''),'Credit continues when domain wake fails');
 same('awaiting_payment',$wakeFailure->fresh()->state,'Failed wake remains recoverable');
 app()->instance(Paymenter\Extensions\Servers\Domains\Services\RuntimeDispatch::class,$dispatch);
-// Missing contacts can arrive after payment; native callbacks never readmit a hold.
+// Missing account contacts keep native callbacks from automatically readmitting the hold.
+$phone=$user->properties()->where('key','phone')->sole();$savedPhone=$phone->value;$phone->update(['value'=>'']);
 $late=$new(placeholderComFixtureName('paid-late-contact-placeholder.com'),paid:false,setup:false);$before=$writer->calls;$paid($late);
 same($before,$writer->calls,'Incomplete contacts never send');same('held',$late->fresh()->state,'Contact setup holds');
 $nativeBeforeReplay=nativeFinancialSnapshot($late);$heldBeforeReplay=$late->fresh()->getRawOriginal();
 $manual($late);event(new App\Events\Invoice\Paid(Invoice::find($late->invoice_id)));same('held',$late->fresh()->state,'Native wake never readmits contact hold');
 same($heldBeforeReplay,$late->fresh()->getRawOriginal(),'Native contact-hold replay preserves operation bytes');
 same($nativeBeforeReplay,nativeFinancialSnapshot($late),'Native contact-hold replay preserves native/financial state (reminder alerts and deliveries excluded)');
-ContactRecovery::replace($user,$late->id,'Owner supplied late contacts');$manual($late);same($before+1,$writer->calls,'Audited contact recovery permits one send');
+$phone->update(['value'=>$savedPhone]);ContactRecovery::replace($user,$late->id,'Owner supplied late contacts');$manual($late);same($before+1,$writer->calls,'Audited contact recovery permits one send');
 // Explicit failure before send can be credited once; original payment history is quiet.
 $failed=$new(placeholderComFixtureName('paid-failed-placeholder.com'),paid:false);$preflight->supported=false;$paid($failed);$preflight->supported=true;
 same('held',$failed->fresh()->state,'Unsupported registration remains held');$staff=staffUser(['admin.domains.view','admin.domains.manage','admin.invoices.update','admin.invoices.view']);
@@ -99,7 +100,9 @@ expect(isset($gap->fresh()->policy['native_acquisition_closure']),'Timeout snaps
 same('rejected',$gap->fresh()->state,'Timeout closure committed before credit');same(null,$gap->fresh()->funding['refund']??null,'Credit not yet issued');same(0,$alerts($gap)->count(),'Original payment in credit gap stays quiet without any inspection');
 InvoiceTransaction::create(['invoice_id'=>$gap->invoice_id,'amount'=>'1.00','fee'=>'0.00','status'=>'processing']);$retirement->inspect($gap->domain_id);$retirement->inspect($gap->domain_id);expect($alerts($gap)->count()>0,'Credit failure and lost wake cannot hide late payment');$clock->instant=$now;
 // Staff refund authorization is durable before credit, even if Service is not yet Cancelled.
+$phone->update(['value'=>'']);
 $staffGap=$new(placeholderComFixtureName('paid-staff-refund-gap-placeholder.com'),paid:false,setup:false);$paid($staffGap);$failCredit=true;
+$phone->update(['value'=>$savedPhone]);
 try{$refunds->refundHeld($staff,$staffGap->id,'customer_cancelled');expect(false,'Staff credit failure expected');}catch(RuntimeException $e){same('Synthetic credit interruption',$e->getMessage(),'Staff credit interrupted after authorization');}
 same('rejected',$staffGap->fresh()->state,'Staff closure survives credit interruption');same(null,$staffGap->fresh()->funding['refund']??null,'Staff credit still pending');
 $retirement->inspect($staffGap->domain_id);same(0,$alerts($staffGap)->count(),'Original authorized payment stays quiet');

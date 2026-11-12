@@ -12,6 +12,18 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,ObservationSchema,ObservationWork,Refunds,RenewalReplacements,StaffOperationReview,StaffOperations};
 $all[]=Staff::COSTS;$staff->role->update(['permissions'=>$all]);
+\Paymenter\Extensions\Servers\Domains\Services\StaffAlertSchema::install();
+$alertFailure=$held('staff-alert-failure-placeholder.com');$creditBefore=$credit();$recipientFailed=false;
+DB::listen(static function($query)use(&$recipientFailed):void {
+    if(!$recipientFailed&&str_contains($query->sql,'from "users"')&&str_contains($query->sql,'limit 100')){
+        $recipientFailed=true;throw new RuntimeException('Synthetic recipient query failure');
+    }
+});
+$run($alertFailure,'refund');
+expect($recipientFailed,'Recipient query failure occurs after the durable action');
+same('rejected',$alertFailure->fresh()->state,'Notification failure preserves cancellation');
+expect($credit()>$creditBefore,'Notification failure cannot prevent immediate account credit');
+same('account_credit',$alertFailure->fresh()->funding['refund']['to']??null,'Immediate credit retains its once-only receipt');
 $op=$held('staff-actions-placeholder.com'); $page=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertSuccessful();
 // Every action has an independent default-deny permission; a general manager has none of them.
 foreach(array_keys(StaffOperationReview::ACTIONS) as $action){

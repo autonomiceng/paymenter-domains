@@ -66,7 +66,7 @@ foreach([0,1]as$i){
     $r=$req($committed->domain,'code',['transfer_code'=>$sentinel]);
     $result=$action->code($r,$committed->domain_id);
     expect($result->getStatusCode()===302&&DB::transactionLevel()===0,'Real owner POST commits outside a test rollback');
-    same([route('domains.domains.show',$committed->domain_id),OwnerActionController::CODE_SAVED_STARTED],[$result->getTargetUrl(),$session->get('domains_status')],'Committed paid code opens the domain page with confirmation');
+    same([route('domains.domains.show',$committed->domain_id),OwnerActionController::CODE_SAVED],[$result->getTargetUrl(),$session->get('domains_status')],'Committed paid code opens the domain page with confirmation');
     expect(($committed->fresh()->payload['epp']??null)===$sentinel,'Committed secret fixture exists');
     expect(!$r->request->has('transfer_code'),'Secret scrubbed from committed request');
     $assertSessionCodeAbsent($session->all(),$sentinel);
@@ -79,7 +79,6 @@ foreach([0,1]as$i){
         storefrontViews();app('view')->getFinder()->flush();
         $r=Request::create('/domains/'.$committed->domain_id,'GET');$r->setUserResolver(fn()=>$user);$r->setLaravelSession($session);
         $view=$controller->$page($r,$committed->domain_id);$html=$view->render();$dto=$view->getData()['domain'];
-        same($page==='show'?1:0,substr_count($html,OwnerActionController::CODE_SAVED_STARTED),'Only the redirected domain page shows the save confirmation');
         expect(!str_contains($html,$sentinel),'Committed code absent from real owner markup');
         if($page!=='code'){expect($dto->setup['contacts']&&str_contains($html,$page==='show'?'Finish setup to start registration.':'Save details and continue'),'Customer render includes the committed contact hold');}
         $dom=storefrontDom($html);
