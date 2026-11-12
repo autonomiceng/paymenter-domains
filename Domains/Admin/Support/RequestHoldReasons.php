@@ -24,7 +24,8 @@ final class RequestHoldReasons
         'limit'=>['write_rate_limited','renewal_rate_limited','enom_test_call_cap','enom_test_transfer_call_cap','enom_test_management_call_cap','enom_test_renewal_call_cap'],
         'membership'=>['owner','provider_membership_unconfirmed','domain_not_in_account'],
         'renewal'=>['provider_auto_renew_unconfirmed','renewal_state_unconfirmed','state','target_changed'],
-        'unsupported'=>['name_unavailable','premium_name','order_not_supported','registry_details_unsupported','renewal_term_refused','term','renewal_restore_refused'],
+        'availability'=>['name_unavailable','premium_name'],
+        'unsupported'=>['order_not_supported','registry_details_unsupported','renewal_term_refused','term','renewal_restore_refused'],
         'outcome'=>['prior_attempt','reconciliation_required','renewal_prior_outcome_unresolved','pre_send_interrupted','management_unconfirmed','renewal_confirmation_required','acquisition_definitely_unsent','renewal_definitely_unsent','management_definitely_unsent'],
     ];
     // Owner, next step, destination, link label. Causes remain the closed vocabulary in Labels::reason.
@@ -44,6 +45,7 @@ final class RequestHoldReasons
         'limit'=>['The site administrator','check the request limit for this registrar account before retrying','registrars','Open account'],
         'membership'=>['Staff','confirm the domain is in the assigned registrar account','registrars','Open account'],
         'renewal'=>['Staff','check the domain at the registrar before retrying','domain',null],
+        'availability'=>['Staff','release the hold to check the name and its price again',null,null],
         'unsupported'=>['Staff','cancel this unsupported order on the domain page','domain',null],
         'outcome'=>['Staff','check the original registrar result before retrying','domain',null],
         'unknown'=>['Staff','review the request history on the domain page before retrying','domain',null],
