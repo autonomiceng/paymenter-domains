@@ -246,6 +246,6 @@ final class Labels
     {
         if (!is_string($value) || !preg_match('/^\d{1,18}(?:\.\d{1,8})?$/D', $value)) { return 'Unknown'; }
         [$whole,$fraction] = array_pad(explode('.', $value, 2), 2, '');
-        return 'USD '.$whole.'.'.str_pad(rtrim($fraction, '0'), 2, '0');
+        return '$'.$whole.'.'.str_pad(rtrim($fraction, '0'), 2, '0');
     }
 }

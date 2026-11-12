@@ -74,7 +74,7 @@ final class DomainListRow
         $price = !$s->renewalInvoiceMissing && $s->renewalPrice && !($complimentary && str_starts_with(self::expires($s)['cause'] ?? '', 'Complimentary. '))
             ? $s->renewalPrice.($complimentary ? '' : '/yr') : null;
         // Under review is blue, as on the domain page: the check is ours.
-        return ['value' => $s->renewalOffShown()?'Off':'On', 'note' => $s->renewalInvoiceCancelled?DomainPage::INVOICE['cancelled']:($s->renewalInvoicePaid ? 'Next invoice: '.DomainPage::INVOICE['paid'].($s->renewalGoesAt ? '. '.RenewalRepeatWait::NOTHING.' '.RenewalRepeatWait::GOES : '') : ($s->renewalInvoiceReview ? 'Next invoice: '.DomainPage::INVOICE['review'] : $price)),
+        return ['value' => $s->renewalOffShown()?'Off':'On', 'note' => $s->renewalInvoiceCancelled?DomainPage::INVOICE['cancelled']:($s->renewalInvoicePaid ? DomainPage::PAID_LABEL.' '.strtolower(DomainPage::INVOICE['paid']).($s->renewalGoesAt ? '. '.RenewalRepeatWait::NOTHING.' '.RenewalRepeatWait::GOES : '') : ($s->renewalInvoiceReview ? 'Next invoice: '.DomainPage::INVOICE['review'] : $price)),
             'noteState' => $s->renewalInvoiceReview ? ['label' => DomainPage::INVOICE['review'], 'tone' => 'info'] : null,
             'at' => $s->renewalInvoicePaid ? $s->renewalGoesAt : null, 'invoiceMissing' => $s->renewalInvoiceMissing,
             'invoiceCause' => $s->renewalInvoiceMissing ? 'Not issued yet' : null, 'invoiceFix' => $s->renewalInvoiceMissing ? Missing::support($s->urls['support'] ?? null) : null];

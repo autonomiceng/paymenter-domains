@@ -134,6 +134,11 @@ final class DomainPage
     /** Beside the current expiry while a paid renewal is under way, so it never reads as the new date. */
     public const EXPIRY_PENDING = 'Current date. The new one shows once the renewal completes.';
     public const DECLINED = 'The last payment failed. Pay the invoice with another card.';
+    /** An unread registrar record on the customer page: a calm word per row, and one note above the rows. */
+    public const NOT_READ = 'Not read yet';
+    public const NOT_READ_NOTE = 'We have not read these records from the registrar yet. They show here after the next read.';
+    /** A paid cycle has no next invoice yet, so its row names the invoice it shows. */
+    public const PAID_LABEL = 'Renewal invoice';
     public const INVOICE = ['paid' => 'Paid', 'review' => 'Under review', 'cancelled' => 'Invoice cancelled', 'closed' => 'Renewal did not finish'];
     /** What happens to the money once the registrar rejected the order, by OwnedDomain::$refundTo. */
     public const REFUND = ['original' => 'Any refund goes back to your original payment method.', 'credit' => 'Any refund goes to your account credit.',
@@ -152,7 +157,7 @@ final class DomainPage
         return match (true) {
             $state === 'pending' => ['value' => $due ? ($d->earlyRenewal ? RequestStatus::earlyRenewal($due) : 'Due '.self::date($due)) : 'Due',
                 ...(($d->renewNow['declined'] ?? false) ? ['note' => self::DECLINED] : []), 'action' => isset($d->renewNow['invoice']) ? ['label' => 'Pay invoice', 'url' => $d->renewNow['invoice']] : null],
-            $state === 'paid' => ['value' => self::INVOICE['paid'], ...(($goes = $d->renewNow['goes'] ?? $d->renewalInvoice['goes'] ?? null) ? ['note' => RenewalRepeatWait::NOTHING.' '.RenewalRepeatWait::GOES, 'at' => $goes] : [])],
+            $state === 'paid' => ['label' => self::PAID_LABEL, 'value' => self::INVOICE['paid'], ...(($goes = $d->renewNow['goes'] ?? $d->renewalInvoice['goes'] ?? null) ? ['note' => RenewalRepeatWait::NOTHING.' '.RenewalRepeatWait::GOES, 'at' => $goes] : [])],
             $state === 'closed' => ['value' => self::INVOICE['closed'], 'action' => $contact],
             $state === 'cancelled' => ['missing' => true, 'cause' => self::INVOICE['cancelled'], 'fix' => $contact],
             // The row says there is nothing to do unless the page notice already says so,

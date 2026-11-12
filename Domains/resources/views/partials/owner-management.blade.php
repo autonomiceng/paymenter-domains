@@ -36,7 +36,7 @@
 @if (($section['progress'] ?? null) && !$section['progress']['pending'])<span @class(['domains-sub', 'domains-tone-text-bad' => ($section['progress']['tone'] ?? null) === 'bad']) role="status">{{ $section['progress']['text'] }}@if ($section['progress']['support'] ?? false)@include('domains::partials.contact-support', ['before' => ' '])@endif</span>@endif</span>
 @if (($section['family_only'] ?? false) && !($section['off'] ?? false) && !($section['progress']['pending'] ?? false))
 <span class="domains-row__v">@if ($cap === 'glue')@if ($section['family']['hosts'] ?? [])@include('domains::partials.nameserver-list', ['servers' => $section['family']['hosts']])@elseif (($section['family']['state'] ?? null) === 'partial')<span class="domains-muted">No glue records known here</span>@endif @endif @include('domains::partials.record-family-status',['family'=>$section['family'],'support'=>'Need a change?','asValue'=>true])</span>
-@if ($cap==='dns')<span class="domains-row__v domains-row__full">@include('domains::partials.dns-inventory')</span>@endif
+@if ($cap==='dns' && (($section['inventory'] ?? []) || ($section['caa'] ?? [])))<span class="domains-row__v domains-row__full">@include('domains::partials.dns-inventory')</span>@endif
 @elseif ($section['progress']['pending'] ?? false)
 <span class="domains-row__v">
 @if ($cap==='ds' && isset($section['progress']['state']))<strong data-ds-state>{{ $section['progress']['state'] }}</strong>@endif

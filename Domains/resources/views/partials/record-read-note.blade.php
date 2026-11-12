@@ -11,7 +11,9 @@
 @unless ($staff)<p class="domains-hint">Registrar read queued for @include('domains::partials.moment', ['at' => gmdate(DATE_ATOM, (int) $recordFamilies['next_read'])]).</p>@endunless
 @elseif ($recordFamilies['records_paused'] ?? false)
 <p class="domains-hint">Record checks are paused or not set up for this registrar account.@if ($staff) Check Processing and record-read setup.@endif</p>
-@elseif (!$staff || (($recordFamilies['read_cause'] ?? null) && !($recordFamilies['read_code'] ?? null)))
-<p class="domains-hint">{{ $recordFamilies['read_cause'] ?? 'No registrar read is queued.' }} Missing records will appear after a successful registrar read.</p>
+@elseif (!$staff)
+<p class="domains-hint">{{ \Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::NOT_READ_NOTE }}</p>
+@elseif (($recordFamilies['read_cause'] ?? null) && !($recordFamilies['read_code'] ?? null))
+<p class="domains-hint">{{ $recordFamilies['read_cause'] }} Missing records will appear after a successful registrar read.</p>
 @endif
 @endif

@@ -171,7 +171,7 @@ class ViewDomain extends ViewRecord
     private function cacheHoldingActions(): void
     {
         if (isset($this->cachedActions['stop'])) { return; }
-        foreach (HoldingActions::make($this->getRecord()) as $action) { $this->cacheAction(Sheet::button($action,$action->getName()==='stop'?'danger':'gray')); }
+        foreach (HoldingActions::make($this->getRecord()) as $action) { $this->cacheAction(Sheet::button($action)); /* Quiet, like every row button; red only in its confirm. */ }
     }
     private function syncNow(): Action
     {

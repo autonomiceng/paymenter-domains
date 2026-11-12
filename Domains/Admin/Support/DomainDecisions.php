@@ -418,7 +418,7 @@ final class DomainDecisions
         $company=\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company();
         $value=null;
         if ($d->price_mode==='complimentary') {
-            $value='Standard renewal price '.$service->currency_code.' '.number_format((float)$service->price,2).' / year, complimentary';
+            $value='Standard renewal price '.($service->currency_code==='USD'?'$':$service->currency_code.' ').number_format((float)$service->price,2).' / year, complimentary';
         } elseif ($service->currency_code==='USD') {
             try {
                 $value=\Paymenter\Extensions\Servers\Domains\Services\Storefront::money(\Paymenter\Extensions\Servers\Domains\Services\HolderPricing::shown($d,$service,app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now())).' / year';

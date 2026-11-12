@@ -35,7 +35,7 @@ final class HoldingActions
         $out=[];
         foreach(StaffHoldingReview::ACTIONS as$name=>$unused){
             $label=self::LABELS[$name];
-            $out[]=Action::make($name)->label($label)->color($name==='stop'?'danger':'gray')
+            $out[]=Action::make($name)->label($label)->color('gray')->modalSubmitAction(fn(Action $action)=>$name==='stop'?$action->color('danger'):$action)
                 ->visible(fn()=>Staff::can(StaffHoldingReview::permission($name))&&($name==='stop'?!$stopped&&DomainFacts::registered($d):$stopped))
                 ->requiresConfirmation()->modalHeading($name==='stop'?'Turn off renewal invoices?':'Turn on renewal invoices?')->modalDescription(self::description($name))->modalSubmitActionLabel($label.' renewal invoices')->modalWidth('lg')
                 ->schema([Hidden::make('review_key')->default(fn()=>StaffHoldingReview::ticket((int)Auth::id(),(int)$d->id,$name,$stamp,app(Clock::class))),

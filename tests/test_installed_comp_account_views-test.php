@@ -52,7 +52,7 @@ same($before,$report->chart()['datasets'],'Complimentary positive and negative l
 $editor=Livewire::actingAs($staff)->test(App\Admin\Resources\UserResource\Pages\EditUser::class,['record'=>$user->id]);$editor->assertSee('Complimentary domains')->assertSee('. Reason: Gift account')->assertSee('Turn off');
 $staffHtml=$editor->html();
 $plain=staffUser(['admin.users.viewAny','admin.users.view','admin.users.update']);Livewire::actingAs($plain)->test(App\Admin\Resources\UserResource\Pages\EditUser::class,['record'=>$user->id])->assertDontSee('Complimentary domains')->assertDontSee('Reason: Gift account');
-Auth::login($staff);$domainPage=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$d->id]);$domainPage->assertSee(ComplimentaryAccounts::LABEL)->assertSee('Standard renewal price USD 10.40 / year, complimentary')->assertSee('Example Hosting covers registrar costs.');$domainHtml=$domainPage->html();
+Auth::login($staff);$domainPage=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$d->id]);$domainPage->assertSee(ComplimentaryAccounts::LABEL)->assertSee('Standard renewal price $10.40 / year, complimentary')->assertSee('Example Hosting covers registrar costs.');$domainHtml=$domainPage->html();
 $domainPage->assertActionVisible('complimentary_renewal')->mountAction('complimentary_renewal')->call('$refresh');
 expect(str_contains($domainPage->effects['partials']['action-modals.0']??'','Example Hosting covers the $8.00 registrar renewal cost.'),'Renewal dialog names the configured company');$domainPage->unmountAction();
 $list=Livewire::actingAs($staff)->test(ListDomains::class)->filterTable('price_mode','complimentary');$list->assertCanSeeTableRecords([$d]);

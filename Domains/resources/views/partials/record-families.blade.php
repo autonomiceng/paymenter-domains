@@ -6,7 +6,8 @@
 {{-- Staff: nothing is at the registrar yet, so one line replaces the read times and a Missing per family. The page head says why the order has not finished. --}}
 <p class="domains-hint">No registrar records yet. They are read once the {{ $notYet === 'transfer' ? 'transfer finishes' : 'registration is confirmed' }}.</p>
 @elseif ($part !== 'tail')
-@if ($recordFamilies['stale'] && ($readScheduling ?? true))<p class="domains-hint">Registrar records are waiting for an update.@if ($recordFamilies['retained']) Last confirmed data is retained.@endif</p>@endif
+{{-- Staff read the queue state on the Next registrar read line, so the waiting line is for customers. --}}
+@if ($recordFamilies['stale'] && ($readScheduling ?? true) && !$staff)<p class="domains-hint">Registrar records are waiting for an update.@if ($recordFamilies['retained']) Last confirmed data is retained.@endif</p>@endif
 @if ($recordFamilies['at'])<p class="domains-hint">Last registrar read: @include('domains::partials.moment', ['at'=>$recordFamilies['at']])</p>@endif
 {{-- What to do next is on the Next registrar read line below. When the read stopped, the page notice names Resume sync, so this line keeps only the count, the cause in words and the time. --}}
 @if ($staff && $recordFamilies['failed_family'])<p class="domains-hint">Last read failed for {{ collect($recordFamilies['rows'])->firstWhere('kind', $recordFamilies['failed_family'])['label'] ?? $recordFamilies['failed_family'] }}. {{ $recordFamilies['staff_hold'] }}</p>@endif
@@ -18,7 +19,8 @@
 @if ($readScheduling ?? true)
 @include('domains::partials.record-read-note', ['recordFamilies' => $recordFamilies, 'staff' => $staff])
 @endif
-@if ($staff && !($recordFamilies['cancelled_without_records'] ?? false))<p class="domains-hint">Last complete read: @if ($recordFamilies['last_complete_at'])@include('domains::partials.moment',['at'=>$recordFamilies['last_complete_at']])@else Unknown @endif</p>@endif
+{{-- No complete read yet: the Missing rows already say so. --}}
+@if ($staff && !($recordFamilies['cancelled_without_records'] ?? false) && $recordFamilies['last_complete_at'])<p class="domains-hint">Last complete read: @include('domains::partials.moment',['at'=>$recordFamilies['last_complete_at']])</p>@endif
 @if ($recordFamilies['cancelled_without_records'] ?? false)
 <p class="domains-hint">{{ ($recordFamilies['cancelled_without_records'] ?? null) === 'transfer' ? 'Transfer' : 'Registration' }} cancelled; no registrar records to check</p>
 @elseif ($part === null)
