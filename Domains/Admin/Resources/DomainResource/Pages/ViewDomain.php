@@ -80,7 +80,7 @@ class ViewDomain extends ViewRecord
     public function getHeading(): HtmlString
     {
         $d=$this->getRecord(); $test=DomainFacts::test($d);
-        return new HtmlString('<span class="font-mono domains-mono">'.DomainName::html($this->getTitle())->toHtml().'</span>'.($test||DemoData::is($d)?DemoData::tag(inline:true,test:$test)->toHtml():''));
+        return new HtmlString('<span class="domains-wrap">'.DomainName::html($this->getTitle())->toHtml().'</span>'.($test||DemoData::is($d)?DemoData::tag(inline:true,test:$test)->toHtml():''));
     }
     public function getSubheading(): string|Htmlable|null
     {
@@ -205,6 +205,9 @@ class ViewDomain extends ViewRecord
         $late=$this->recordsLate($d);
         // The summary above the sheet says once why values are missing, so rows drop the repeated cause.
         if ($late) { foreach ($facts as $label=>$fact) { if (is_string($fact['sub']??null)&&str_contains($fact['sub'],\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainDecisions::NOT_RETURNED)) { $facts[$label]['sub']=trim(str_replace(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainDecisions::NOT_RETURNED,'',$fact['sub']))?:null; } } }
+        // Values the registrar read fills in show Not read, in a neutral tone, until a read fails; Missing (red) is kept for that.
+        if ($this->unread($d)) { foreach (self::READ_FACTS as $label) { if (isset($facts[$label])&&$facts[$label]['value']===null) { $facts[$label]=[...$facts[$label],'value'=>\Paymenter\Extensions\Servers\Domains\Presentation\Missing::NOT_READ,'tone'=>'gray','alert'=>false,
+            'sub'=>is_string($facts[$label]['sub']??null)?(trim(str_replace(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainDecisions::NOT_RETURNED,'',$facts[$label]['sub']))?:null):($facts[$label]['sub']??null)]; } } }
         // WHOIS privacy stays stored and read, but the page does not show it (PrivacyVisibility).
         if (!\Paymenter\Extensions\Servers\Domains\Presentation\PrivacyVisibility::SHOWN) { unset($facts['WHOIS privacy']); }
         // Reminder issues sit on Renewal, then on Open alerts, which they open when neither row exists.
@@ -263,6 +266,14 @@ class ViewDomain extends ViewRecord
         return [Callout::make('Set the default nameservers in Domains > DNS templates to start DNS monitoring.')->status('info')->columnSpanFull()
             ->footer(Staff::can(\Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites::VIEW) && Staff::canEditDefaultDns()?new HtmlString('<a class="fi-link domains-link" href="'.e(\Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource::getUrl()).'">'.\Paymenter\Extensions\Servers\Domains\Admin\Support\DefaultNameservers::TITLE.'</a>'):null)];
     }
+    /** Facts that come from the registrar read. */
+    private const READ_FACTS=['Contacts','Nameservers','Glue records','DNS records','In registrar account','Transfer lock','WHOIS privacy','Email auth code','Registrar auto-renew'];
+    /** No complete registrar read yet and no failed one: values are not read, not missing. */
+    private function unread(Domain $d): bool
+    {
+        $s=$this->familyState();
+        return !DomainFacts::ended($d)&&($s['last_complete_at']??null)===null&&!($s['read_failed']??false)&&!($s['cancelled_without_records']??false);
+    }
     /** The registrar read is overdue or failing on a domain that has records to read. */
     private function recordsLate(Domain $d): bool
     {
@@ -275,10 +286,18 @@ class ViewDomain extends ViewRecord
     {
         $s=$this->familyState();
         $last=$s['last_complete_at']??null;
-        $text=($last?'Last complete read: '.trim(view('domains::partials.moment',['at'=>$last])->render()).'.':'No complete registrar read yet.')
-            .' Missing values fill in after the next successful read.';
+        $at=static fn($when)=>trim(view('domains::partials.moment',['at'=>is_int($when)?gmdate(DATE_ATOM,$when):$when])->render());
+        $failed=(bool)($s['read_failed']??false);
+        // One notice: what is late, when the next read is, and what to do. The records section below keeps only its rows.
+        $text=match(true){
+            $failed=>e(trim((string)($s['read_cause']??'The registrar read failed.'))).' '.($last?'Last complete read: '.$at($last).'.':'No complete read yet.').' Missing values fill in after the next successful read.',
+            $last!==null=>'Last complete read: '.$at($last).'.',
+            default=>'Values show after the first complete read.',
+        };
+        if (!$failed&&($s['next_read']??null)!==null) { $text.=' Next read: '.(($s['read_queued']??false)?'waiting in the account’s read queue since '.$at((int)$s['next_read']):$at((int)$s['next_read'])).'. Use Sync now to read it sooner.'; }
         if ($note!==null) { $text.=' '.e(trim(html_entity_decode(strip_tags((string)($note instanceof Htmlable?$note->toHtml():$note)),ENT_QUOTES|ENT_HTML5))); }
-        return Callout::make('Registrar records are out of date')->description(new HtmlString($text))->status('warning')->columnSpanFull();
+        $title=$failed?'Registrar read failed':($last===null?'Not read from the registrar yet':'Registrar records are out of date');
+        return Callout::make($title)->description(new HtmlString($text))->status($failed?'warning':'info')->columnSpanFull();
     }
     /** A domain monitoring can't compare says so on its DNS row, beside the way to fix it. */
     private static function withDnsSetup(Domain $d, array $facts): array
@@ -294,7 +313,7 @@ class ViewDomain extends ViewRecord
     {
         $state=$this->familyState();
         $resume=$this->getAction('resume_observation',false);
-        $view=fn(string $part)=>Html::make(view('domains::partials.record-families',['recordFamilies'=>$state,'staff'=>true,'part'=>$part,'readScheduling'=>!DomainFacts::ended($d)]));
+        $view=fn(string $part)=>Html::make(view('domains::partials.record-families',['recordFamilies'=>$state,'staff'=>true,'part'=>$part,'readScheduling'=>!DomainFacts::ended($d),'summarised'=>$this->recordsLate($d)]));
         $own=array_intersect_key($facts,array_flip(DomainFacts::SECTIONS[self::HELD_SECTION]));$own['DS records']=\Paymenter\Extensions\Servers\Domains\Presentation\DsState::staff($d);
         $rows=[$view('head')];$shown=[];
         // SRV has no row of its own in the facts, so its change line comes straight from the stored progress.
@@ -324,7 +343,7 @@ class ViewDomain extends ViewRecord
         }
         $entry=$this->entry($family['label'],$fact);
         if ($family['label']==='DS records'&&$fact['value']!==null) { $entry->prefix('DNSSEC: '); }
-        if (!($family['state']==='unknown'&&$fact['value']===null)) { $entry->aboveContent($status); }
+        if (!($family['state']==='unknown'&&in_array($fact['value'],[null,\Paymenter\Extensions\Servers\Domains\Presentation\Missing::NOT_READ],true))) { $entry->aboveContent($status); }
         return Sheet::row($entry,$side,pending:$fact['progress']['waiting']??false,key:'fact_'.md5($family['label']));
     }
     /** The rail: the newest history, with the tab holding the rest. */
@@ -387,8 +406,8 @@ class ViewDomain extends ViewRecord
     {
         return Sheet::row($this->entry($label,$fact),$side,pending:$fact['progress']['waiting']??false,key:'fact_'.md5($label));
     }
-    /** Row keys whose words differ on the page: renewal reads as the customer's Renewal invoices. */
-    private const SHOWN=['Renewal'=>'Renewal invoices'];
+    /** Row keys whose words differ on the page: renewal reads as the customer's Auto-renew. */
+    private const SHOWN=['Renewal'=>'Auto-renew'];
     /** A fact's value with its words, tone, red Missing and demo tag. */
     private function entry(string $label, array $fact): TextEntry
     {
@@ -397,7 +416,7 @@ class ViewDomain extends ViewRecord
         $entry=TextEntry::make('value_'.md5($label))->label(self::SHOWN[$label]??$label)->state($fact['value'])
             ->belowContent(self::below($fact));
         if (is_array($fact['value'])) { $entry->listWithLineBreaks(); }
-        if ($label==='Nameservers'&&$fact['value']!==null) { $entry->fontFamily(FontFamily::Mono); }
+        if ($label==='Nameservers'&&!in_array($fact['value'],[null,\Paymenter\Extensions\Servers\Domains\Presentation\Missing::NOT_READ],true)) { $entry->fontFamily(FontFamily::Mono); }
         if ($label==='Service'&&$fact['value']!==null) { $entry->formatStateUsing(fn()=>new HtmlString('<span class="font-mono domains-mono">'.DomainName::html($this->getTitle())->toHtml().'</span> registration')); }
         if (isset($fact['at'])) { $entry->formatStateUsing(fn()=>Sheet::moment($fact['at'])); }
         if ($fact['help']) { $entry->hintAction(HelpHint::make($fact['help'])); }

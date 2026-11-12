@@ -202,7 +202,7 @@ class ViewTld extends ViewRecord
     public function getHeading(): HtmlString
     {
         $a=$this->account();
-        return new HtmlString('<span class="font-mono domains-mono">.'.e($this->getRecord()->tld).'</span>'.($a!==null?' <span class="domains-tld-account">on '.e($a).'</span>':''));
+        return new HtmlString('<span class="domains-wrap">.'.e($this->getRecord()->tld).'</span>'.($a!==null?' <span class="domains-tld-account">on '.e($a).'</span>':''));
     }
     private ?string $accountName=null;private bool $accountRead=false;
     /** A TLD has a page on each registrar account that offers it. Then the page names its account, so two pages never

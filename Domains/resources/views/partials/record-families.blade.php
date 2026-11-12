@@ -1,6 +1,6 @@
 {{-- Registrar evidence, independent of public DNS and of DS mutation eligibility. --}}
 {{-- part: head (notes above the rows) or tail (CAA and evidence). The staff page draws the rows itself, with their edit buttons. --}}
-@php $staff ??= false; $part ??= null; $notYet = $staff ? ($recordFamilies['not_at_registrar'] ?? null) : null; @endphp
+@php $staff ??= false; $part ??= null; $summarised ??= false; $notYet = $staff ? ($recordFamilies['not_at_registrar'] ?? null) : null; @endphp
 <div class="domains">
 @if ($part !== 'tail' && $notYet)
 {{-- Staff: nothing is at the registrar yet, so one line replaces the read times and a Missing per family. The page head says why the order has not finished. --}}
@@ -10,13 +10,14 @@
 @if ($recordFamilies['stale'] && ($readScheduling ?? true) && !$staff)<p class="domains-hint">Registrar records are waiting for an update.@if ($recordFamilies['retained']) Last confirmed data is retained.@endif</p>@endif
 @if ($recordFamilies['at'])<p class="domains-hint">Last registrar read: @include('domains::partials.moment', ['at'=>$recordFamilies['at']])</p>@endif
 {{-- What to do next is on the Next registrar read line below. When the read stopped, the page notice names Resume sync, so this line keeps only the count, the cause in words and the time. --}}
-@if ($staff && $recordFamilies['failed_family'])<p class="domains-hint">Last read failed for {{ collect($recordFamilies['rows'])->firstWhere('kind', $recordFamilies['failed_family'])['label'] ?? $recordFamilies['failed_family'] }}. {{ $recordFamilies['staff_hold'] }}</p>@endif
+@if ($staff && !$summarised && $recordFamilies['failed_family'])<p class="domains-hint">Last read failed for {{ collect($recordFamilies['rows'])->firstWhere('kind', $recordFamilies['failed_family'])['label'] ?? $recordFamilies['failed_family'] }}. {{ $recordFamilies['staff_hold'] }}</p>@endif
 {{-- A cancelled registration with no records won't be read again, so it has no next read. --}}
-@if ($staff && ($readScheduling ?? true) && !($recordFamilies['cancelled_without_records'] ?? false))
+{{-- When the page notice above already gives the late read and its next step ($summarised), the rows follow it with no repeat. --}}
+@if ($staff && !$summarised && ($readScheduling ?? true) && !($recordFamilies['cancelled_without_records'] ?? false))
 <p class="domains-hint">Next registrar read: @if ($recordFamilies['next_read'] !== null && ($recordFamilies['read_queued'] ?? false))Waiting its turn in the account’s read queue, due since @include('domains::partials.moment', ['at'=>gmdate(DATE_ATOM, $recordFamilies['next_read'])]).@elseif ($recordFamilies['next_read'] !== null)@include('domains::partials.moment', ['at'=>gmdate(DATE_ATOM, $recordFamilies['next_read'])])@elseif ($recordFamilies['read_stopped'] && $recordFamilies['read_code'] === 'domain_not_in_account')None until the domain is in this account. @if ($recordFamilies['read_failed_at'])Last failure: @include('domains::partials.moment', ['at'=>$recordFamilies['read_failed_at']])@endif @elseif ($recordFamilies['read_stopped'])Stopped{{ $recordFamilies['read_attempts'] >= 1 ? ' after '.$recordFamilies['read_attempts'].' '.($recordFamilies['read_attempts'] === 1 ? 'attempt' : 'attempts') : '' }}.@if ($recordFamilies['read_code'] && $recordFamilies['read_cause'] !== \Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::STOPPED_CAUSE) {{ $recordFamilies['read_cause'] }}@endif @if ($recordFamilies['read_failed_at'])Last failure: @include('domains::partials.moment', ['at'=>$recordFamilies['read_failed_at']])@endif @else No read queued. The domain must be active and its registrar read setup enabled.@endif</p>
 @if ($recordFamilies['read_code'] && !$recordFamilies['read_stopped'])<p class="domains-hint">{{ $recordFamilies['read_cause'] === \Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::STOPPED_CAUSE ? 'The registrar read failed.' : $recordFamilies['read_cause'] }} {{ $recordFamilies['read_attempts'] }} {{ $recordFamilies['read_attempts'] === 1 ? 'attempt' : 'attempts' }}.@if ($recordFamilies['read_failed_at']) Last failure: @include('domains::partials.moment', ['at'=>$recordFamilies['read_failed_at']])@endif</p>@endif
 @endif
-@if ($readScheduling ?? true)
+@if (($readScheduling ?? true) && !$summarised)
 @include('domains::partials.record-read-note', ['recordFamilies' => $recordFamilies, 'staff' => $staff])
 @endif
 {{-- No complete read yet: the Missing rows already say so. --}}

@@ -63,7 +63,7 @@ class ViewWatch extends ViewRecord
     }
     public function getTitle(): string{return $this->getRecord()->canonical_name;}
     public function getHeading(): HtmlString
-    {return new HtmlString('<span class="font-mono domains-mono">'.DomainName::html($this->getTitle())->toHtml().'</span>'.(DemoData::is($this->getRecord())?DemoData::tag(inline:true)->toHtml():''));}
+    {return new HtmlString('<span class="domains-wrap">'.DomainName::html($this->getTitle())->toHtml().'</span>'.(DemoData::is($this->getRecord())?DemoData::tag(inline:true)->toHtml():''));}
     public function getSubheading(): string|Htmlable|null
     {$status=$this->facts()['status'];$ended=match($this->getRecord()->state){'retired'=>WatchFindings::stoppedReason($this->getRecord()),'paused'=>WatchFindings::pausedReason($this->getRecord()),default=>null};
         return StatusMark::line($status['tone'],$status['label'],'watch-'.$this->getRecord()->id,$status['reason']??$ended);}

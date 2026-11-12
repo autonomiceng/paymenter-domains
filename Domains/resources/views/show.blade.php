@@ -12,7 +12,7 @@
         && !($cap === 'flags' && ($domain->management['flags']['family']['state'] ?? null) === 'complete' && ($domain->management['flags']['family_only'] ?? false))));
 @endphp
 <nav class="domains-crumb" aria-label="Breadcrumb"><a href="{{ route('domains.domains.index') }}">Domains</a> <svg class="domains-crumb__sep" viewBox="0 0 16 16" aria-hidden="true"><path d="m6 4 4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg> {{ $domain->name }}</nav>
-<div class="domains-ph"><h1 class="domains-mono">{{ $domain->name }}{{ \Paymenter\Extensions\Servers\Domains\Support\DemoData::label($domain->demo, $domain->testEnvironment) }}</h1>@if ($pill)<span class="domains-pill">@include('domains::partials.status-pill', ['pill' => $pill])</span>@endif</div>
+<div class="domains-ph"><h1 class="domains-title">{{ $domain->name }}{{ \Paymenter\Extensions\Servers\Domains\Support\DemoData::label($domain->demo, $domain->testEnvironment) }}</h1>@if ($pill)<span class="domains-pill">@include('domains::partials.status-pill', ['pill' => $pill])</span>@endif</div>
 @include('domains::partials.notices', ['fieldKeys'=>['nameservers','contact','dns','srv','ds','glue']])
 @if ($notice)
 <div class="domains-notice domains-notice--{{ $notice['tone'] }}" role="status"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v4M12 16h.01"/><circle cx="12" cy="12" r="10"/></svg><span class="domains-notice__tx">{{ $notice['text'] }}</span>@if ($notice['action']) <a class="{{ ($notice['action']['button'] ?? false) ? 'domains-btn domains-btn--primary domains-btn--sm' : 'domains-a' }}" href="{{ $notice['action']['url'] }}">{{ $notice['action']['label'] }}</a>@endif</div>
@@ -33,7 +33,9 @@
 @php $readAt = isset($recordFamilies) ? ($recordFamilies['at'] ?? null) : null; @endphp
 @if ($readAt)<p class="domains-hint">Checked @include('domains::partials.moment', ['at' => $readAt]).</p>@endif
 </div>
-<ul class="domains-rows">@include('domains::partials.owner-management', ['caps' => $settings])</ul></section>
+{{-- Nothing read yet and nothing to change: the note above says it once, instead of a Not read line per record. --}}
+@php $allUnread = ($recordFamilies ?? null) && collect($settings)->every(fn ($cap) => ($domain->management[$cap]['family']['state'] ?? null) === 'unknown' && empty($domain->management[$cap]['actions'] ?? []) && !($domain->management[$cap]['progress'] ?? null) && !($domain->management[$cap]['off'] ?? false)); @endphp
+@unless ($allUnread)<ul class="domains-rows">@include('domains::partials.owner-management', ['caps' => $settings])</ul>@endunless</section>
 @endif
 </div>
 @unless ($domain->setupPending)

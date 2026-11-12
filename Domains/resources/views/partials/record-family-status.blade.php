@@ -15,8 +15,8 @@
 @elseif ($family['state'] === 'unknown')
     @if (($family['read_checking'] ?? false) || (!$staff && ($family['initial_read_pending'] ?? false)))
         @include('domains::partials.status-pill', ['pill'=>['label'=>'Checking','tone'=>'info']])
-    @elseif (!$staff)
-        {{-- Customers can't fix an unread record: a calm word, and the note above the rows says why once. --}}
+    @elseif (!$staff || !($family['read_failed'] ?? false))
+        {{-- Nobody needs to fix a record that has not been read yet: a calm word, and the note above the rows says why once. Staff see Missing only once a read failed. --}}
         <span class="domains-muted">{{ \Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::NOT_READ }}</span>
     @else
         @include('domains::partials.missing', ['cause'=>null])
@@ -25,7 +25,7 @@
     @include('domains::partials.status-pill', ['pill'=>['label'=>$family['value'],'tone'=>match($family['state']){'complete'=>'ok','partial'=>$staff?'warn':'info',default=>'muted'}]])
 @endif
 </span>
-{{-- An unread family shows only Missing or Checking. Why is the same for every family, so record-read-note says it once above the rows. --}}
+{{-- An unread family shows only Not read, Missing or Checking. Why is the same for every family, so record-read-note says it once above the rows. --}}
 @if ($family['state'] !== 'unknown' && ((!$quiet && $family[$staff ? 'staff' : 'customer'] !== '') || $ownTime))
 <span class="domains-sub">{{ $quiet ? '' : $family[$staff ? 'staff' : 'customer'] }} @if (!$staff && ($support ?? null) && ($family['support'] ?? false))@include('domains::partials.contact-support', ['before' => $support.' ', 'after' => '. '])@endif @if ($ownTime)Checked @include('domains::partials.moment',['at'=>$family['at']]).@endif</span>
 @endif

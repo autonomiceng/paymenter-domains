@@ -4,6 +4,8 @@
 .domains-dialog .fi-modal-footer:is(.fi-align-end,.fi-align-right) .fi-modal-footer-actions{flex-direction:row;justify-content:flex-end}
 .domains-mono,.domains-wrap,.domains-row .fi-in-entry-content-col{overflow-wrap:anywhere}
 .domains-title{display:inline-flex;flex-wrap:wrap;align-items:center;gap:.5rem;min-width:0}
+/* Not read and other calm words: the panel's muted gray, the same tone as a gray fact value. */
+.domains .domains-muted{color:var(--e-muted,var(--gray-400))}
 /* Domain price line under the customer title: the state and its button, then the last change on its own row.
    The last change wraps to at most 2 lines and ends in "..."; the audit log has all of it. */
 .domains-comp{display:grid;gap:.25rem;margin-top:.375rem;min-width:0;font-size:.875rem;line-height:1.25rem}
