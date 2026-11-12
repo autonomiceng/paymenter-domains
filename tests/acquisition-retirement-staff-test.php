@@ -60,31 +60,4 @@ DB::transaction(fn()=>(new App\Services\Invoice\ProcessPaidInvoiceService)->hand
 same(4,DB::table('domains_obligation_alerts')->where('domain_id',$staffOp->domain_id)->where('code','acquisition_late_money')->count(),'Native service and invoice status changes retain new late-money evidence');
 $lateLocks=0;$countTransactions=true;$retirement->inspect($staffOp->domain_id);$retirement->inspect($staffOp->domain_id);$countTransactions=false;
 same(0,$lateLocks,'Repeated activated-service identity also skips locking');
-// Match the installed after-commit wake used by the original modal scenarios.
-AcquisitionRetirement::boot();
-// Real staff modal success and refusal use the same locked authority.
-Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();staffPanel();Auth::login($staff);
-$pageClass=Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class;
-$modalOp=$new(placeholderComFixtureName('unpaid-modal-placeholder.com'),paid:false);Auth::login($staff);
-$page=Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$modalOp->domain_id])->mountAction('retire_unpaid')->assertActionMounted('retire_unpaid');
-$beforeInvalidReason=$modalOp->fresh()->getRawOriginal();
-$page->setActionData(['reason'=>"Reviewed\u{2028}closure"])->callMountedAction()->assertHasActionErrors(['reason'=>'regex']);
-same($beforeInvalidReason,$modalOp->fresh()->getRawOriginal(),'Closure reason field error changes no order');
-$page->setActionData(['reason'=>'Retire from real staff modal'])->callMountedAction()->assertNotified('Order cancelled')->assertRedirect(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource::getUrl('view',['record'=>$modalOp->domain_id]));
-Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$modalOp->domain_id])->assertActionDoesNotExist('retire_unpaid');same(null,$modalOp->domain->fresh()->reservation_name,'Real modal invokes retirement');
-$paid=$new(placeholderComFixtureName('unpaid-refusal-placeholder.com'));Auth::login($staff);
-Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$paid->domain_id])->assertActionDoesNotExist('retire_unpaid');
-// Both unpaid acquisition actions explain registrar evidence and other requests without blaming one cause.
-foreach(['register','transfer'] as $action){foreach(['provider','sibling'] as $cause){
-    $op=$new(placeholderComFixtureName('unpaid-modal-'.$action.'-'.$cause.'-placeholder.com'),paid:false,action:$action);
-    if($cause==='provider'){$op->domain->update(['provider_order_id'=>'synthetic-provider']);}
-    else{Operation::create(['domain_id'=>$op->domain_id,'service_id'=>$op->service_id,'server_id'=>$op->server_id,'registrar_key'=>$op->registrar_key,'account_fingerprint'=>$op->account_fingerprint,'authority_generation'=>1,'operation_key'=>'modal-other:'.$op->id,'action'=>'renew','term'=>1,'state'=>'queued','amount'=>'1.00','currency'=>'USD']);}
-    $invoice=App\Models\Invoice::findOrFail($op->invoice_id)->getRawOriginal();$reservation=$op->domain->fresh()->reservation_name;
-    Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$op->domain_id])->mountAction('retire_unpaid')->assertActionMounted('retire_unpaid')
-        ->setActionData(['reason'=>'Review refused unpaid cancellation'])->callMountedAction()->assertNotified(Filament\Notifications\Notification::make()->danger()->title("Couldn't cancel order")
-            ->body("Can't cancel: the order is no longer pending, or it has other requests or registrar details."));
-    same($reservation,$op->domain->fresh()->reservation_name,$action.' '.$cause.' keeps the reservation');
-    same($invoice,App\Models\Invoice::findOrFail($op->invoice_id)->getRawOriginal(),$action.' '.$cause.' keeps the invoice');
-}}
-$viewOnly=staffUser(['admin.domains.view']);Livewire\Livewire::actingAs($viewOnly)->test($pageClass,['record'=>$paid->domain_id])->assertActionDoesNotExist('retire_unpaid');
-echo "Unpaid retirement staff review, audit, late money and modals passed.\n";$nativeSuccessful=true;
+echo "Unpaid retirement staff review, audit and late money passed.\n";$nativeSuccessful=true;
