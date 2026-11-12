@@ -335,11 +335,11 @@ final class DomainDecisions
                 default=>'Sync stopped: DNS record check failed.' },'stopped'=>true];
         } catch (\Throwable) { return ['text'=>self::UNREADABLE,'stopped'=>true]; }
     }
-    /** When a held family is read again, in the site clock. A due time that has passed means the read runs as soon as the worker gets to it. */
+    /** When a held family is read again, in the staff time zone. A due time that has passed means the read runs as soon as the worker gets to it. */
     private static function untilRead(array $next): string
     {
         $now=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now();
-        $at=$next['due']>$now->getTimestamp()?(new \DateTimeImmutable('@'.$next['due']))->setTimezone($now->getTimezone())->format('M j, Y, g:i A T'):null;
+        $at=$next['due']>$now->getTimestamp()?StaffTime::at($next['due']):null;
         return match($next['wait']) { 'first'=>'while the first registrar check runs',
             'retry'=>'until the registrar check retries'.($at===null?'':' at '.$at),
             default=>'until the next registrar check'.($at===null?' runs':' at '.$at) };
