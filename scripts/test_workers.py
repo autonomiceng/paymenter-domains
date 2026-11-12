@@ -27,8 +27,11 @@ def environment(index, *, env, output, runtime, fixture, fixture_snapshot, runti
                  PYTHONDONTWRITEBYTECODE='1')
     if fixture:
         copy = directory/'paymenter'
-        shutil.copytree(fixture, copy)
-        native.verify(copy, fixture_snapshot=fixture_snapshot)
+        vendor = (fixture/'vendor').resolve(strict=True)
+        shutil.copytree(fixture, copy, ignore=lambda directory, names: {'vendor'} if Path(directory) == fixture else set())
+        (copy/'vendor').symlink_to(vendor, target_is_directory=True)
+        native.verify(copy, fixture_snapshot=fixture_snapshot, shared_vendor=vendor)
+        child['PAYMENTER_TEST_SHARED_VENDOR'] = str(vendor)
         child['PAYMENTER_TEST_FIXTURE'] = str(copy)
     if runtime:
         copy = directory/'runtime'
@@ -57,7 +60,8 @@ def environments(env, output, jobs, runtime=None):
 
 def verify_worker(env, *, fixture_snapshot, runtime_snapshot):
     if fixture_snapshot is not None:
-        native.verify(env['PAYMENTER_TEST_FIXTURE'], fixture_snapshot=fixture_snapshot)
+        native.verify(env['PAYMENTER_TEST_FIXTURE'], fixture_snapshot=fixture_snapshot,
+                      shared_vendor=env.get('PAYMENTER_TEST_SHARED_VENDOR'))
     if runtime_snapshot is not None:
         runtime = Path(env['PAYMENTER_TEST_PHP']).parents[2]
         if runtime_hashes(runtime) != runtime_snapshot:
@@ -88,7 +92,7 @@ def command_environment(env, *, fixture_snapshot=None):
                 fixture_snapshot.update({entry.name+'/'+name: digest for name, digest in native.hashes(entry).items()})
             elif entry.is_file():
                 fixture_snapshot[entry.name] = hashlib.sha256(entry.read_bytes()).hexdigest()
-    with installed_fixture.application(fixture, 'case') as (root, app):
+    with installed_fixture.application(fixture, 'case', verify_vendor=fixture_snapshot is None) as (root, app):
         temporary = root/'tmp'; temporary.mkdir()
         child = dict(env, PAYMENTER_TEST_FIXTURE=str(app), TMPDIR=str(temporary),
                      TMP=str(temporary), TEMP=str(temporary))

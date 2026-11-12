@@ -14,9 +14,9 @@ import native
 
 
 @contextmanager
-def application(fixture, scenario):
+def application(fixture, scenario, *, verify_vendor=True):
     vendor = (fixture / "vendor").resolve(strict=True)
-    before = native.admitted_vendor_hashes(vendor)
+    before = native.admitted_vendor_hashes(vendor) if verify_vendor else None
     with tempfile.TemporaryDirectory(
         prefix=f"domains-installed-{scenario}-", dir=fixture.parent
     ) as temporary:
@@ -36,7 +36,7 @@ def application(fixture, scenario):
         try:
             yield root, app
         finally:
-            if native.admitted_vendor_hashes(vendor) != before:
+            if verify_vendor and native.admitted_vendor_hashes(vendor) != before:
                 raise RuntimeError(
                     "Installed scenario changed shared vendor dependencies."
                 )

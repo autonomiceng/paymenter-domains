@@ -2,7 +2,7 @@
 """Run registered offline suites with pinned PHP and optional pristine native fixture."""
 # Adapted from Paymenter Enom scripts/test.py; MIT, Copyright (c) 2026 Autonomic Engineering.
 import argparse
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 import fnmatch
 import json
@@ -186,6 +186,12 @@ def available_memory_mib(meminfo=Path('/proc/meminfo'), cgroup=Path('/sys/fs/cgr
 
 
 def bounded_jobs(requested, memory_mib, *, explicit=False):
+    if os.environ.get('DOMAINS_TEST_CGROUP'):
+        # Each command owns a hard 256 MiB child; the controller has 512 MiB.
+        fitting = min(6, memory_mib // 256)
+        if requested > fitting:
+            raise ValueError('Requested workers exceed the per-test memory reservation.')
+        return requested
     if memory_mib < WORKER_MEMORY_MIB:
         raise ValueError('Memory budget must reserve at least 1024 MiB per worker.')
     # Serial runs cannot reduce concurrency further; preserve small-host support.
@@ -377,15 +383,22 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         slow = Path(argv[-1]).name.startswith('test_installed_') or Path(argv[-1]).name in SLOW_NATIVE
         timeout = (3000 if kind == 'mariadb' else 300 if kind == 'native' and slow
                    else 120 if kind == 'native' else 180 if kind == 'ui' else 60)
+        bounded = bool(env.get('DOMAINS_TEST_CGROUP'))
+        resource_receipt = output / f'{index:04d}.resources.json'
         syntax_lint = kind == 'lint' and len(argv) == 3 and argv[1] == '-l'
         rss_path = None if syntax_lint else output/f'{index:03d}.rss.txt'
         interrupted = None
         stdout, stderr = b'', b''
         try:
-            with test_workers.command_environment(workers[worker] if workers else env,
-                                                  fixture_snapshot=dependency[1] if dependency else None) as child:
-                stdout, stderr, code, timed_out = execute(argv, cwd=ROOT, env=child,
-                                                        timeout=timeout, graceful=60 if kind == 'mariadb' else 0,
+            source_env = workers[worker] if workers else env
+            # Syntax parsing never boots or modifies an application fixture.
+            context = (nullcontext(source_env) if syntax_lint else
+                       test_workers.command_environment(source_env, fixture_snapshot=dependency[1] if dependency else None))
+            with context as child:
+                launched = ([sys.executable, env['DOMAINS_TEST_BUDGET'], '--name', argv[-1],
+                             '--test-scope', '--receipt', str(resource_receipt), '--', *argv] if bounded else argv)
+                stdout, stderr, code, timed_out = execute(launched, cwd=ROOT, env=child,
+                                                        timeout=12 if bounded else timeout, graceful=60 if kind == 'mariadb' else 0,
                                                         processes=processes, index=index, rss_path=rss_path)
         except BaseException as error:
             interrupted = error
@@ -399,6 +412,13 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                   'guard_complete': False, 'skipped': kind == 'mariadb' and code == 77,
                   'seconds': seconds, 'guard_seconds': 0, 'started_seconds': started-started_run,
                   'finished_seconds': time.monotonic()-started_run}
+        if bounded:
+            result['limits'] = dict(wall_seconds=10, memory_bytes=256*1024**2)
+            if resource_receipt.is_file():
+                result['resources'] = json.loads(resource_receipt.read_text())
+            else:
+                result['exit'] = code = code or 1
+                result['resource_error'] = 'Missing per-test resource receipt'
         value = stdout, stderr, result
         # Execution evidence must survive interruption in the integrity guard,
         # RSS read or failure handling, before the main thread can record it.
@@ -704,6 +724,7 @@ def main():
                 runtime, binary, extension = prepare(native=needs_fixture)
         env = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8',
                'PHPRC': '', 'PHP_INI_SCAN_DIR': '', 'TMPDIR': str(output), 'PYTHONDONTWRITEBYTECODE': '1'}
+        env.update({key: value for key, value in os.environ.items() if key.startswith('DOMAINS_TEST_')})
         if 'DOMAINS_UPGRADE_FROM' in os.environ:
             env['DOMAINS_UPGRADE_FROM'] = os.environ['DOMAINS_UPGRADE_FROM']
         if 'ui' in selected:
@@ -728,7 +749,7 @@ def main():
         if not commands:
             raise ValueError('No runnable suites selected.')
         commands = order_commands(commands, previous)
-        if args.memory_mib < 2048 and any(kind == 'ui' or Path(argv[-1]).name.startswith('test_installed_') for kind, argv in commands if kind != 'lint'):
+        if not env.get('DOMAINS_TEST_CGROUP') and args.memory_mib < 2048 and any(kind == 'ui' or Path(argv[-1]).name.startswith('test_installed_') for kind, argv in commands if kind != 'lint'):
             raise ValueError('Installed-package and UI checks require a memory budget of at least 2048 MiB.')
         jobs = 1 if 'mariadb' in selected else bounded_jobs(args.jobs, args.memory_mib, explicit=jobs_explicit)
         worker_check = None
