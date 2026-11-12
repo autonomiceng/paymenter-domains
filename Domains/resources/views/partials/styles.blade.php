@@ -25,10 +25,11 @@
     --e-bad: color-mix(in srgb, hsl(var(--color-error)) 82%, white);
 }
 /* Text on filled buttons. A theme's own --on-primary or --on-danger wins (the Beco theme sets --on-primary).
-   Otherwise the text is black or white, whichever contrasts more with the fill: relative luminance 0.1791 is
-   where both give the same ratio, so the pick is always at least 4.58:1. A theme's inverted text colour is
+   Otherwise the text is black or white, whichever contrasts more with the fill. Both give the same ratio at
+   relative luminance sqrt(.0525) - .05 = .1791287848; round(up) turns the distance from it into exactly 0 or 1,
+   never a grey in between, so the pick is always at least 4.58:1. A theme's inverted text colour is
    not used: stock Paymenter dark sets it to grey. Hover moves the fill away from the text, never toward it.
-   Without relative colours the text is black (AA on stock Paymenter fills) and hover keeps the fill. */
+   Without relative colours or round() the text is black (AA on stock Paymenter fills) and hover keeps the fill. */
 .domains, .domains-dialog {
     --e-danger: hsl(var(--color-error));
     --e-on-accent: var(--on-primary, #000);
@@ -37,24 +38,24 @@
     --e-danger-hover: var(--e-danger);
 }
 .domains-dialog { --e-accent: hsl(var(--color-primary)); }
-@supports (color: color(from red srgb-linear r g b)) {
+@supports (color: color(from red srgb-linear round(up, r, 1) g b)) {
     .domains, .domains-dialog {
         --e-on-accent: var(--on-primary, color(from var(--e-accent) srgb-linear
-            clamp(0, (.1791 - (.2126 * r + .7152 * g + .0722 * b)) * 1e5, 1)
-            clamp(0, (.1791 - (.2126 * r + .7152 * g + .0722 * b)) * 1e5, 1)
-            clamp(0, (.1791 - (.2126 * r + .7152 * g + .0722 * b)) * 1e5, 1) / 1));
+            round(up, .1791287848 - (.2126 * r + .7152 * g + .0722 * b), 1)
+            round(up, .1791287848 - (.2126 * r + .7152 * g + .0722 * b), 1)
+            round(up, .1791287848 - (.2126 * r + .7152 * g + .0722 * b), 1) / 1));
         --e-on-danger: var(--on-danger, color(from var(--e-danger) srgb-linear
-            clamp(0, (.1791 - (.2126 * r + .7152 * g + .0722 * b)) * 1e5, 1)
-            clamp(0, (.1791 - (.2126 * r + .7152 * g + .0722 * b)) * 1e5, 1)
-            clamp(0, (.1791 - (.2126 * r + .7152 * g + .0722 * b)) * 1e5, 1) / 1));
+            round(up, .1791287848 - (.2126 * r + .7152 * g + .0722 * b), 1)
+            round(up, .1791287848 - (.2126 * r + .7152 * g + .0722 * b), 1)
+            round(up, .1791287848 - (.2126 * r + .7152 * g + .0722 * b), 1) / 1));
         --e-accent-hover: color-mix(in srgb, var(--e-accent) 85%, color(from var(--e-on-accent) srgb-linear
-            clamp(0, (.1791 - (.2126 * r + .7152 * g + .0722 * b)) * 1e5, 1)
-            clamp(0, (.1791 - (.2126 * r + .7152 * g + .0722 * b)) * 1e5, 1)
-            clamp(0, (.1791 - (.2126 * r + .7152 * g + .0722 * b)) * 1e5, 1) / 1));
+            round(up, .1791287848 - (.2126 * r + .7152 * g + .0722 * b), 1)
+            round(up, .1791287848 - (.2126 * r + .7152 * g + .0722 * b), 1)
+            round(up, .1791287848 - (.2126 * r + .7152 * g + .0722 * b), 1) / 1));
         --e-danger-hover: color-mix(in srgb, var(--e-danger) 85%, color(from var(--e-on-danger) srgb-linear
-            clamp(0, (.1791 - (.2126 * r + .7152 * g + .0722 * b)) * 1e5, 1)
-            clamp(0, (.1791 - (.2126 * r + .7152 * g + .0722 * b)) * 1e5, 1)
-            clamp(0, (.1791 - (.2126 * r + .7152 * g + .0722 * b)) * 1e5, 1) / 1));
+            round(up, .1791287848 - (.2126 * r + .7152 * g + .0722 * b), 1)
+            round(up, .1791287848 - (.2126 * r + .7152 * g + .0722 * b), 1)
+            round(up, .1791287848 - (.2126 * r + .7152 * g + .0722 * b), 1) / 1));
     }
 }
 .domains [hidden] { display: none !important; }
