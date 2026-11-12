@@ -119,6 +119,11 @@ def prepare_database(env, output, root):
                    env=dict(env, PAYMENTER_TEST_DATABASE_EXPORT=str(snapshot)), check=True, timeout=10)
     env.update(PAYMENTER_TEST_DATABASE=str(snapshot),
                PAYMENTER_TEST_DATABASE_SHA256=hashlib.sha256(snapshot.read_bytes()).hexdigest())
+    installed = output/'commerce-database.sql'
+    subprocess.run([str(root/'scripts/php-test'), 'tests/commerce-database.php'], cwd=root,
+                   env=dict(env, PAYMENTER_TEST_COMMERCE_EXPORT=str(installed)), check=True, timeout=10)
+    env.update(PAYMENTER_TEST_COMMERCE_DATABASE=str(installed),
+               PAYMENTER_TEST_COMMERCE_SHA256=hashlib.sha256(installed.read_bytes()).hexdigest())
 
 
 def installed_phases(path):
