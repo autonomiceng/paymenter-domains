@@ -754,6 +754,7 @@ def main():
         if not commands:
             raise ValueError('No runnable suites selected.')
         commands = order_commands(commands, previous)
+        (output/'plan.json').write_text(json.dumps([{'index': i, 'kind': kind, 'argv': argv} for i, (kind, argv) in enumerate(commands)]))
         if not env.get('BECO_TEST_CGROUP') and args.memory_mib < 2048 and any(kind == 'ui' or Path(argv[-1]).name.startswith('test_installed_') for kind, argv in commands if kind != 'lint'):
             raise ValueError('Installed-package and UI checks require a memory budget of at least 2048 MiB.')
         jobs = 1 if 'mariadb' in selected else bounded_jobs(args.jobs, args.memory_mib, explicit=jobs_explicit)
