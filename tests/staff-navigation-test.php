@@ -66,7 +66,7 @@ $form=Livewire::actingAs($manager)->test(MonitoringSettings::class)->mountAction
 foreach(['Edit resolver','Resolver URL (DNS over HTTPS)','Default: '.DohEndpoint::URL,'Checked domain names are sent to this resolver.','Resolver IP address','Default: '.DohEndpoint::IP.". The resolver's public IP."] as $text){expect(str_contains($modal($form),$text),'Form copy: '.$text);}
 $form->setActionData(['url'=>DohEndpoint::URL,'ip'=>DohEndpoint::IP])->callMountedAction()->assertHasNoActionErrors()->assertNotified('Resolver saved');
 // Saved: the header holds Edit and Test; no Missing.
-$saved=Livewire::actingAs($manager)->test(MonitoringSettings::class)->assertSee('cloudflare-dns.com')->assertSee('Resolver IP address')->assertSee(DohEndpoint::IP)->assertDontSee('Server default')->assertSee('Site DNS default')
+$saved=Livewire::actingAs($manager)->test(MonitoringSettings::class)->assertSee('cloudflare-dns.com')->assertSee('Resolver IP address')->assertSee(DohEndpoint::IP)->assertDontSee('Server default')->assertSee('Default nameservers')
     ->assertActionVisible('configure')->assertActionVisible('check');
 $once($saved,'Edit resolver');
 expect(!str_contains(resolverSectionText($saved->html()),'Missing'),'Saved resolver has no missing state in its section');
@@ -74,7 +74,7 @@ expect(!str_contains(resolverSectionText($saved->html()),'Missing'),'Saved resol
 \App\Models\Setting::where('key',DnsResolverSettings::KEY)->update(['value'=>'{']);
 Livewire::actingAs($manager)->test(MonitoringSettings::class)->assertSee('Missing')->assertSee("Saved settings can't be read.")->assertDontSee('Server default')->assertActionHidden('configure')->assertActionHidden('check')->assertSee('Edit resolver');
 // The server cannot use a custom resolver: the error notice and the server default, not Missing.
-putenv('SSLKEYLOGFILE=/synthetic-disabled');$forced=Livewire::actingAs($manager)->test(MonitoringSettings::class)->assertSee('Turn off SSLKEYLOGFILE on the server to use a custom resolver.')->assertSee('Server default')->assertSee('Site DNS default')->assertActionHidden('configure')->assertActionHidden('check')->assertDontSee('Edit resolver');expect(!str_contains(resolverSectionText($forced->html()),'Missing'),'Forced server resolver has no missing state in its section');putenv('SSLKEYLOGFILE');
+putenv('SSLKEYLOGFILE=/synthetic-disabled');$forced=Livewire::actingAs($manager)->test(MonitoringSettings::class)->assertSee('Turn off SSLKEYLOGFILE on the server to use a custom resolver.')->assertSee('Server default')->assertSee('Default nameservers')->assertActionHidden('configure')->assertActionHidden('check')->assertDontSee('Edit resolver');expect(!str_contains(resolverSectionText($forced->html()),'Missing'),'Forced server resolver has no missing state in its section');putenv('SSLKEYLOGFILE');
 $GLOBALS['domainsTestCurlMissing']=true;
 same([null,'Install the PHP cURL extension to use a custom resolver.',true],$settings->configuration(),'Missing PHP cURL forces the server resolver');
 Livewire::actingAs($manager)->test(MonitoringSettings::class)->assertSee('Install the PHP cURL extension to use a custom resolver.')->assertSee('Server default')->assertActionHidden('configure')->assertActionHidden('check')->assertDontSee('Edit resolver');

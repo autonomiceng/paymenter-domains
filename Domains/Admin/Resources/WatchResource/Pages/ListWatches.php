@@ -39,9 +39,9 @@ class ListWatches extends ListRecords
         $count=ManagedDnsSetup::affected(time())->count();
         $canAssign=Staff::can(StaffWatchWrites::MANAGE) && Staff::canEditDefaultDns();
         $setupText='DNS monitoring is not set up for '.$count.' '.($count===1?'domain.':'domains.');
-        if($canAssign){$setupText.=' Set the site DNS default in monitoring settings.';}
+        if($canAssign){$setupText.=' Set the default nameservers in Domains > DNS templates.';}
         $setup=$count?Callout::make($setupText)->status('info')
-            ->footer($canAssign?new HtmlString(view('filament::components.button.index',['tag'=>'a','href'=>WatchResource::getUrl('settings'),'color'=>'gray','size'=>'sm','slot'=>'Site DNS settings'])->render()):null)->columnSpanFull():null;
+            ->footer($canAssign?new HtmlString(view('filament::components.button.index',['tag'=>'a','href'=>\Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource::getUrl(),'color'=>'gray','size'=>'sm','slot'=>\Paymenter\Extensions\Servers\Domains\Admin\Support\DefaultNameservers::TITLE])->render()):null)->columnSpanFull():null;
         $button=$url?view('filament::components.button.index',['tag'=>'a','href'=>$url,'color'=>'gray','size'=>'sm','slot'=>'Resolver settings'])->render():null;
         if($dnsFailure && in_array('managed_dns',$this->failedFamilies,true)){$button.=view('filament::components.button.index',['tag'=>'a','href'=>WatchResource::getUrl('dns-failures'),'color'=>'gray','size'=>'sm','slot'=>'Affected checks'])->render();}
         return $schema->components([...($setup?[$setup]:[]),...($notice?[Callout::make($notice['text'])->status($notice['tone'])->footer($button?new HtmlString($button):null)->columnSpanFull()]:[]),

@@ -20,10 +20,10 @@ class ListManagedDns extends ListRecords
     // These are managed domains, so the external-watch resource's columns and filters do not apply.
     protected function makeTable(): Table{return $this->makeBaseTable();}
     public function getTitle(): string{return 'DNS monitoring setup';}
-    public function getSubheading(): ?string{return 'Set the site DNS default in monitoring settings. These domains inherit it automatically. Their expiry monitoring continues.';}
+    public function getSubheading(): ?string{return 'Set the default nameservers in Domains > DNS templates. These domains inherit them automatically. Their expiry monitoring continues.';}
     public function getSubNavigation(): array{return StaffTabs::monitoring('DNS monitoring setup');}
     protected function getHeaderActions(): array
-    {return [Action::make('templates')->label('DNS templates')->url(RoutingProfileResource::getUrl())];}
+    {return [Action::make('templates')->label('Default nameservers')->url(RoutingProfileResource::getUrl())];}
     protected function domains(): \Illuminate\Database\Eloquent\Builder{return ManagedDnsSetup::affected(time());}
     public function table(Table $table): Table
     {

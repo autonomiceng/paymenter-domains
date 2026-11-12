@@ -90,7 +90,7 @@ $check('Dependencies refuse turn off and delete with a reason',function()use($pr
 });
 $check('One New domains use choice is shown',function()use($profile,$make,$manager):void{
     $other=$make('Other enabled template');siteDnsFixture($profile->id);
-    $list=Livewire::actingAs($manager)->test(ListConfiguration::class)->assertSee('New domains use')->assertSee($profile->name);
+    $list=Livewire::actingAs($manager)->test(ListConfiguration::class)->assertSee('Default nameservers')->assertSee($profile->name);
     $column=$list->instance()->getTable()->getColumn('name');
     same('Used for new domains',$column->record($profile)->getDescriptionBelow(),'Chosen template marked');
     same(null,$column->record($other)->getDescriptionBelow(),'Other On template is not marked');
@@ -187,9 +187,9 @@ $check('Unusable and duplicate saved defaults keep their template and name the r
         same('Saved for new domains but cannot be used',$marker(),'The list marks the unusable saved default it protects');
         DB::table('domains_watch_profiles')->where('id',$row->id)->update(['nameservers'=>$stored]);
         same('Used for new domains',$marker(),'A healthy default keeps its marker');
-        // Settings writes refuse a duplicate, so Change site DNS default cannot be the recovery.
+        // Settings writes refuse a duplicate, so changing the default nameservers cannot be the recovery.
         $duplicate=DB::table('settings')->insertGetId(['key'=>SiteDnsDefault::KEY,'value'=>'opaque','type'=>'string','encrypted'=>true,'settingable_type'=>null,'settingable_id'=>null,'created_at'=>now(),'updated_at'=>now()]);
-        $admin='The site DNS default is saved more than once. Ask your site admin to remove the extra setting.';
+        $admin='The default nameservers are saved more than once. Ask your site admin to remove the extra setting.';
         foreach(['disable','delete']as$action){
             $error=null;try{$write($row->fresh(),$action);}catch(DomainException $e){$error=$e->getMessage();}
             same($admin,$error,'A duplicate saved default refuses '.$action.' with administrator recovery');

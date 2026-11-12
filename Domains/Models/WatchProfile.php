@@ -21,7 +21,7 @@ final class WatchProfile extends WatchRecord
         if($this->exists && $this->isDirty('enabled') && !$this->enabled
             && ($refusal=\Paymenter\Extensions\Servers\Domains\Services\DnsTemplateUsage::refusal((int)$this->id,true))){throw new \DomainException($refusal);}
         if($saved=\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::usesRefusal((int)$this->id)){
-            if(!$this->enabled){throw new \DomainException($saved===\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::REPLACE?'Choose another site DNS default before turning this template off.':$saved);}
+            if(!$this->enabled){throw new \DomainException($saved===\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::REPLACE?'Choose another template for the default nameservers before turning this one off.':$saved);}
             \Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::validateRegistrars($profile->nameservers);
         }
         $this->nameservers = $profile->nameservers; $this->website_endpoints = $profile->website; $this->email_endpoints = $profile->email;
@@ -37,7 +37,7 @@ final class WatchProfile extends WatchRecord
         static::deleting(static function(self $row):void {
             // A duplicate or unusable saved reference names its own recovery.
             if($saved=\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::usesRefusal((int)$row->id)){
-                throw new \DomainException($saved===\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::REPLACE?'Choose another site DNS default before deleting this template.':$saved);
+                throw new \DomainException($saved===\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::REPLACE?'Choose another template for the default nameservers before deleting this one.':$saved);
             }
         });
         parent::booted();

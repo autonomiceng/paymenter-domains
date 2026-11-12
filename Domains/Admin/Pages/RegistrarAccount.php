@@ -16,7 +16,7 @@ use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\HtmlString;
 use Livewire\Attributes\Locked;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\MonitoringSettings;
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{CatalogueSalesNotice,AccountChecklist,BalanceCheck,HelpHint,LiveActivationAction,MissingEntry,OnOffSwitch,PaidUncertainty,PslActions,RegistrarFacts,RequestFacts,SettingsActions,Sheet,Staff,TldFacts,StatusMark};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Tld};
 use Paymenter\Extensions\Servers\Domains\Presentation\{AccountStatus,Missing};
@@ -133,16 +133,16 @@ class RegistrarAccount extends Page
         }
         return $system;
     }
-    /** The site DNS default as it applies here: its name, its nameservers and Change, which opens Domain monitoring settings where it is chosen.
+    /** The default nameservers as they apply here: the template name, its nameservers and Change, which opens Domains > DNS templates where they are set.
      * Change and the fix text need both that page and the right to change the default; other staff are told who can. */
     private static function newDomainsUse(Account $a): array
     {
-        $canEdit=Staff::canEditDefaultDns()&&MonitoringSettings::canAccess();$default=SiteDnsDefault::profile();$refusal=SiteDnsDefault::refusal($canEdit);
+        $canEdit=Staff::canEditDefaultDns()&&RoutingProfileResource::canViewAny();$default=SiteDnsDefault::profile();$refusal=SiteDnsDefault::refusal($canEdit);
         $names=$default&&!$refusal?'<span class="domains-mono">'.e(implode(', ',array_map('strval',(array)$default->nameservers))).'</span><br>':'';
         $row=self::fact('New domains use',$refusal?null:$default?->name,$refusal??($default
             ?new HtmlString($names.'New registrations use these nameservers unless the customer chooses others. Transfers keep the nameservers they already have.')
-            :'New registrations have no site-default nameservers. '.($a->registrar_key==='namesilo'?'NameSilo needs explicit nameservers before an order can be sent. ':'').($canEdit?'Choose one in Domain monitoring settings.':SiteDnsDefault::ASK)));
-        try { $url=$canEdit?MonitoringSettings::getUrl():null; } catch (\Throwable) { $url=null; }
+            :'New registrations have no site-default nameservers. '.($a->registrar_key==='namesilo'?'NameSilo needs explicit nameservers before an order can be sent. ':'').($canEdit?'Choose one in Domains > DNS templates.':SiteDnsDefault::ASK)));
+        try { $url=$canEdit?RoutingProfileResource::getUrl():null; } catch (\Throwable) { $url=null; }
         return [...$row,'buttons'=>$url?[Action::make('new_domains_use')->label('Change')->link()->size('sm')->url($url)]:[]];
     }
     /** A value with no fix of its own. */

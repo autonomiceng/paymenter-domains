@@ -57,7 +57,7 @@ $setRights = function ($permissions) use ($staff) { $staff->role()->first()->upd
 $setRights([]); Livewire::actingAs($staff)->test(Page::class)->assertForbidden();
 $setRights([Staff::VIEW, PublicSuffixList::MANAGE]); same(false, Page::canAccess(), 'Manage alone cannot view');
 $setRights([Staff::VIEW, PublicSuffixList::VIEW]);
-$configured=Livewire::actingAs($staff)->test(Page::class)->assertSee('cloudflare-dns.com')->assertSee(DohEndpoint::IP)->assertSee('Site DNS default')->assertActionHidden('configure')->assertActionHidden('check');
+$configured=Livewire::actingAs($staff)->test(Page::class)->assertSee('cloudflare-dns.com')->assertSee(DohEndpoint::IP)->assertSee('Default nameservers')->assertActionHidden('configure')->assertActionHidden('check');
 expect(!str_contains(resolverSectionText($configured->html()),'Missing'),'Saved resolver has no missing state in its section');
 same(0, $calls, 'Rendering no query'); $setRights($rights);
 // The ? text must match FallbackDnsReader: a failed resolver query retries once with the server's resolver.

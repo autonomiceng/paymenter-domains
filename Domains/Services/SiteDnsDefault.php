@@ -11,12 +11,12 @@ final class SiteDnsDefault
 {
     public const KEY='domains_site_dns_template';
     public const MANAGE='admin.domains.settings.new_domain_dns';
-    public const MISSING='Site DNS default is Missing. New domains have no nameservers to use. Choose a set with Change site DNS default.';
+    public const MISSING='Default nameservers are Missing. New domains have no nameservers to use. Choose a template in Domains > DNS templates.';
     public const REPLACE='Choose another template for new domains first.';
     public const RETAINED='This template is saved for new domains but cannot be used. Choose another template for new domains first.';
     /** Settings writes refuse duplicates, so only someone with database access can remove the extra row. */
-    public const DUPLICATE='The site DNS default is saved more than once. Ask your site admin to remove the extra setting.';
-    public const ASK='Ask staff who can change the site DNS default.';
+    public const DUPLICATE='The default nameservers are saved more than once. Ask your site admin to remove the extra setting.';
+    public const ASK='Ask staff who can change the default nameservers.';
     private static function query(): \Illuminate\Database\Eloquent\Builder
     { return Setting::whereNull('settingable_type')->whereNull('settingable_id')->where('key',self::KEY); }
     /** A locking read sees rows committed after an older read view opened. */
@@ -113,6 +113,8 @@ final class SiteDnsDefault
     {
         if($rule=self::rule($nameservers)){throw new \DomainException($rule.' Update this DNS template or choose another one.');}
     }
+    /** Whether every connected registrar accepts these nameservers, so a save would not refuse them. */
+    public static function fits(array $nameservers): bool{return self::rule($nameservers)===null;}
     private static function rule(array $nameservers): ?string
     {
         foreach(Account::orderBy('registrar_key')->distinct()->pluck('registrar_key') as $registrar){
@@ -145,7 +147,7 @@ final class SiteDnsDefault
             $names=config('domains.site_dns_default.nameservers');
             if(!is_array($names) || !$names){return null;}
             $names=self::deployment($names);
-            $cause=is_string($names)?$names:self::rule($names);$fix='Create and turn on a compatible DNS template, then choose it as the site DNS default.';
+            $cause=is_string($names)?$names:self::rule($names);$fix='Create and turn on a compatible DNS template, then choose it for the default nameservers.';
         }
         // Staff without the settings permission keep the cause and are sent to someone who can fix it.
         return $cause===null?null:$cause.' '.($canEdit?$fix:self::ASK);
