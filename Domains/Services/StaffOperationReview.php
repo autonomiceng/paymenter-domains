@@ -109,6 +109,7 @@ final class StaffOperationReview
             // A change's check keeps its result, so History says what the registrar showed.
             ...($this->action==='recheck'&&$phase==='read_finished'&&isset($op->policy['management'])?['management_check'=>['outcome'=>match($op->state){'succeeded'=>'confirmed','rejected'=>'failed',default=>'unconfirmed'}]]:[]),...($failure?['safe_code'=>OperationFailure::code($failure)]:[])];
         $op->update(['policy'=>[...($op->policy??[]),'staff_actions'=>$history]]);
+        if($phase==='completed'){StaffOperationNotices::completed($op,$d,end($history));}
     }
     public function local(\Closure $write): mixed
     {
