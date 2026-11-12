@@ -212,8 +212,8 @@ final class HoldingObservationWork
                 ->where(function($q){$q->whereNull('safe_code')->orWhereNotIn('safe_code',HoldingReadRetry::STOPPED)
                     ->orWhere(fn($q)=>$q->whereIn('safe_code',HoldingReadRetry::TRANSIENT)->where('tries','<',HoldingReadRetry::LIMIT));});
             // Acquisition completion marks its initial read before discovery. Select those jobs before the bounded
-            // window so an older routine backlog cannot hide them. Unmarked legacy work keeps its local priority.
-            $due=$q->orderByRaw("CASE WHEN safe_code = ? THEN 0 ELSE 1 END",[self::INITIAL_READ])->orderBy('due_at')->orderBy('id')->limit(self::FIRST_READ_WINDOW)->lockForUpdate()->get(); if ($due->isEmpty()) { return null; }
+            // window so an older backlog cannot hide them. Due transient retries follow, before routine refreshes.
+            $due=$q->orderByRaw("CASE WHEN safe_code = ? THEN 0 WHEN safe_code IN (?, ?) THEN 1 ELSE 2 END",[self::INITIAL_READ,...HoldingReadRetry::TRANSIENT])->orderBy('due_at')->orderBy('id')->limit(self::FIRST_READ_WINDOW)->lockForUpdate()->get(); if ($due->isEmpty()) { return null; }
             $domains=Domain::whereIn('id',$due->pluck('domain_id'))->get()->keyBy('id');
             $job=$due->first(fn($row)=>self::firstRecordRead($domains->get($row->domain_id))) ?? $due->first();
             $d=$domains->get($job->domain_id);

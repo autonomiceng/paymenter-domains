@@ -62,6 +62,20 @@ same(0,(int)HoldingObservationWork::current($new)->value('tries'),'Local account
 same($routine[0],(int)($claim()->id??0),'A deferred first read respects its retry due time');
 $clock->at=$now->modify('+60 seconds');
 same($first,(int)($claim()->id??0),'The first read keeps priority when its local deferral ends');
+// A large retry backlog must not hide a newly active first attempt either.
+DB::table('domains_observation_work')->whereIn('id',$routine)->update(['safe_code'=>'read_failed','tries'=>1,'claim'=>null,'lease_until'=>0]);
+HoldingObservationWork::current($new)->update(['claim'=>null,'lease_until'=>0]);
+same($first,(int)($claim()->id??0),'Initial reads precede even more than 25 older transient retries');
+// Failed first reads still recover ahead of routine refreshes, once their backoff ends.
+DB::table('domains_observation_work')->whereIn('id',$routine)->update(['safe_code'=>'refreshed','tries'=>0]);
+foreach (['read_failed','read_deadline'] as $code) {
+    HoldingObservationWork::current($new)->update(['safe_code'=>$code,'tries'=>1,'claim'=>null,'lease_until'=>0,'due_at'=>$clock->now()->getTimestamp()+60]);
+    same($routine[0],(int)($claim()->id??0),'A transient first-read failure respects backoff: '.$code);
+    // Return that routine job to the backlog for the next selection.
+    DB::table('domains_observation_work')->where('id',$routine[0])->update(['claim'=>null,'lease_until'=>0]);
+    $clock->at=$clock->at->modify('+60 seconds');
+    same($first,(int)($claim()->id??0),'A due first-read retry precedes routine work: '.$code);
+}
 $clock->at=$now;
 // Saved history that fails validation, here a completed read stamped after now, is not a first read and does not
 // take the place of a domain that has never been read.
