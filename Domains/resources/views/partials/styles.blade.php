@@ -24,7 +24,7 @@
     --e-warn: color-mix(in srgb, hsl(var(--color-warning)) 85%, white);
     --e-bad: color-mix(in srgb, hsl(var(--color-error)) 82%, white);
 }
-/* Text on filled buttons. A theme's own --on-primary or --on-danger wins (the Beco theme sets --on-primary).
+/* Text on filled buttons. A theme's own --on-primary or --on-danger wins (for example, a host theme that sets --on-primary).
    Otherwise the text is black or white, whichever contrasts more with the fill. Both give the same ratio at
    relative luminance sqrt(.0525) - .05 = .1791287848; round(up) turns the distance from it into exactly 0 or 1,
    never a grey in between, so the pick is always at least 4.58:1. A theme's inverted text colour is
