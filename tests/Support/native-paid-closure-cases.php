@@ -12,7 +12,7 @@ $cart=commerceCart($user);commerceAdd($cart,$native->product($tlds[0],'transfer'
 $gap=Domain::where('domain','paid-refund-gap-placeholder.com')->sole()->operations()->sole();$paid($gap);$clock->instant=$now->modify('+31 days');
 $failCredit=true;Credit::saving(static function()use(&$failCredit):void {if($failCredit){$failCredit=false;throw new RuntimeException('Synthetic credit interruption');}});
 app()->bind(AcquisitionRetirement::class,static fn()=>throw new RuntimeException('Synthetic lost timeout wake'));
-try{$transfers->expireMissingCode($gap->id);expect(false,'Credit failure expected');}catch(RuntimeException $e){same('Synthetic credit interruption',$e->getMessage(),'Credit interruption is after closure');}
+try{$transfers->expireMissingCode($gap->id);expect(false,'Credit failure expected');}catch(RuntimeException $e){same('Synthetic credit interruption',$e->getMessage(),'Credit interruption is after closure: '.$e->getMessage());}
 app()->instance(AcquisitionRetirement::class,$retirement);
 expect(isset($gap->fresh()->policy['native_acquisition_closure']),'Timeout snapshot survives both lost wake and credit failure');
 same('rejected',$gap->fresh()->state,'Timeout closure committed before credit');same(null,$gap->fresh()->funding['refund']??null,'Credit not yet issued');same(0,$alerts($gap)->count(),'Original payment in credit gap stays quiet without any inspection');
