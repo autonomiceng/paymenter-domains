@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import subprocess
 import tempfile
 
 import build
@@ -22,11 +23,16 @@ def application(fixture, scenario, *, verify_vendor=True):
     ) as temporary:
         root = Path(temporary)
         app = root / "paymenter"
-        def generated(directory, names):
-            ignored = shutil.ignore_patterns("*.sqlite", "domains-editor-routes.php")(directory, names)
-            return ignored | ({"vendor"} if Path(directory) == fixture else set())
-
-        shutil.copytree(fixture, app, symlinks=True, ignore=generated)
+        app.mkdir()
+        # GNU cp keeps independent mutable files and avoids thousands of Python
+        # filesystem operations contending between the scheduler's worker threads.
+        entries = [str(path) for path in fixture.iterdir() if path.name != 'vendor']
+        if entries:
+            subprocess.run(['cp', '-a', '--reflink=auto', '--', *entries, str(app)], check=True)
+        for directory, _, names in os.walk(app, followlinks=False):
+            for name in names:
+                if name.endswith('.sqlite') or name == 'domains-editor-routes.php':
+                    (Path(directory)/name).unlink()
         # Native panel tests can leave the worker linked to the current source.
         # An installed lifecycle receives only the ZIP it installs in this app.
         extension = app / "extensions/Servers/Domains"
