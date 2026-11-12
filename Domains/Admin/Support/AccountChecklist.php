@@ -33,7 +33,7 @@ final class AccountChecklist
     private const MANAGEMENT='Sends changes to DNS records, nameservers and contact details to the registrar. Off: those changes are not sent.';
     private static function row(string $label,?string $value,?string $tone=null,string|Htmlable|null $cause=null,?string $action=null,?string $help=null): array
     { return compact('label','value','tone','cause','action','help'); }
-    private static function date(int $at): string { return gmdate('M j, Y H:i \U\T\C',$at); }
+    private static function date(int $at): string { return \Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at($at); }
     private static function unavailable(string $label,string $why): array { return self::row($label,self::NOT_YET,null,null,null,$why); }
     /** Staff can't change the site config, so a row says who can. release-runbook.md lists what the site admin sets. */
     private static function siteOff(Account $a): string
@@ -205,7 +205,7 @@ final class AccountChecklist
         if($binding===null){return [...self::row('TLD prices',null,null,'Restore the API connection first.',null,self::PRICES),'buttons'=>[]];}
         if ($offers=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed()) {
             $status=$offers->progress((int)$a->server_id);
-            if(!empty($status['failure'])){return [...self::row('TLD prices','Sync failed','danger',TldFacts::syncCause($status['failure']).(isset($status['failed_at'])?', '.gmdate('M j, Y H:i',(int)$status['failed_at']).' UTC':'').'. Fix this cause first. Sync prices is an optional retry.',null,self::PRICES),'buttons'=>self::priceButtons($a)];}
+            if(!empty($status['failure'])){return [...self::row('TLD prices','Sync failed','danger',TldFacts::syncCause($status['failure']).(isset($status['failed_at'])?', '.self::date((int)$status['failed_at']):'').'. Fix this cause first. Sync prices is an optional retry.',null,self::PRICES),'buttons'=>self::priceButtons($a)];}
             return [...self::row('TLD prices',ucfirst($status['state']),null,isset($status['succeeded_at'])?Sheet::moment((int)$status['succeeded_at'],'Updated'):'Not updated yet.',null,self::PRICES),'buttons'=>self::priceButtons($a)];
         }
         $failure=TldFacts::syncFailure((int)$a->server_id);

@@ -18,7 +18,7 @@ final class ManagementReadRecovery
     {
         $last=self::last($op->attempt);$next=$last?->modify($reviewed?'+15 minutes':'+6 hours');
         if($next&&$now<$next){
-            if($reviewed){throw new StaffReviewRefused('A status check was requested recently. Try again at '.$next->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i').' UTC. Automatic checks continue.');}
+            if($reviewed){throw new StaffReviewRefused('A status check was requested recently. Try again at '.\Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at($next->getTimestamp()).'. Automatic checks continue.');}
             return false;
         }
         $at=$now->setTimezone(new \DateTimeZone('UTC'))->format(DATE_ATOM);

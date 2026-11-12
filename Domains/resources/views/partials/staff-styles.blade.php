@@ -93,6 +93,26 @@
 .domains-disclosure{cursor:pointer}
 .domains-total{display:block;font-size:1.5rem;font-weight:600;line-height:1.25;font-variant-numeric:tabular-nums}
 
+/* Panel pieces (Value, Row, SettingsRow, Trace) without a skin: stacked lines on phones, the sheet's label, value and
+   action columns from 40rem. Zero specificity, so a skin's rules win whatever order the sheets load in. */
+:where(.domains-panel-val){display:grid;gap:2px;min-width:0}
+:where(.domains-panel-sub){font-size:.75rem;line-height:1.125rem;color:var(--panel-fg-2,inherit)}
+:where(.domains-panel-fact[data-domains-fact=host],.domains-panel-fact[data-domains-fact=code]){font-family:var(--panel-font-mono,ui-monospace,monospace)}
+:where(.domains-panel-fact[data-domains-fact=money],.domains-panel-fact[data-domains-fact=count]){font-variant-numeric:tabular-nums}
+:where(.domains-panel-st){font-weight:500}
+:where(.domains-panel-row){display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 16px;align-items:center;min-height:44px;padding:8px 0;border-top:1px solid var(--panel-line-soft,color-mix(in srgb,currentColor 20%,transparent))}
+:where(.domains-panel-row-k){grid-column:1/-1;min-width:0;color:var(--panel-fg-2,inherit)}
+:where(.domains-panel-row-v){min-width:0;overflow-wrap:anywhere}
+:where(.domains-panel-row-a,.domains-panel-row-a .fi-ac){display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:12px}
+:where(.domains-panel-row-a:empty){display:none}
+:where(.domains-panel-nw){white-space:nowrap}:where(.domains-panel-nw .domains-help){display:inline-flex;vertical-align:middle}
+:where(.domains-panel-blocked){cursor:not-allowed}
+@media(min-width:40rem){:where(.domains-panel-row){grid-template-columns:156px minmax(0,1fr) auto}:where(.domains-panel-row-k){grid-column:auto}}
+:where(.domains-panel-row[data-domains-row=notice]){grid-template-columns:minmax(0,1fr) auto}
+:where(.domains-panel-trace){display:grid;gap:12px;margin:0;padding:0;list-style:none}
+:where(.domains-panel-step){display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px}
+:where(.domains-panel-step-d){font-size:.75rem;line-height:1.125rem;color:var(--panel-fg-2,inherit)}
+:where(.domains-panel-step-w){font-weight:500;white-space:nowrap}
 .domains-phone-note { display:none; }
 @media(max-width:639px) {
  .domains-phone-note { display:block; max-width:calc(100vw - 110px); white-space:normal; overflow-wrap:anywhere; line-height:1.5; }

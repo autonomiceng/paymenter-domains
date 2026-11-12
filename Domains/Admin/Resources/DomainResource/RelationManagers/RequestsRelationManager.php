@@ -37,10 +37,8 @@ class RequestsRelationManager extends RelationManager
             $sub=$row['sub']?StaffDomainStatus::sentence($row['sub']):null;
             if (DomainHistory::repeatsHead($entry,$sub,$request,$said)) { $sub=null; }
             $detail=array_filter([$row['status']['label']??null,$sub]);
-            return ['time'=>self::utc($row['time']),'change'=>$row['event'],'reason'=>$detail===[]?null:implode(' ',array_map(StaffDomainStatus::sentence(...),$detail)),
+            return ['time'=>$row['time']?gmdate(DATE_ATOM,$row['time']->getTimestamp()):null,'change'=>$row['event'],'reason'=>$detail===[]?null:implode(' ',array_map(StaffDomainStatus::sentence(...),$detail)),
                 'by'=>$row['by'],'url'=>$entry instanceof Operation?OperationResource::getUrl('view',['record'=>$entry]):null];
         },DomainHistory::entries($domain));
     }
-    private static function utc(?\DateTimeInterface $time): ?string
-    { return $time?\DateTimeImmutable::createFromInterface($time)->setTimezone(new \DateTimeZone('UTC'))->format('M j, Y H:i').' UTC':null; }
 }

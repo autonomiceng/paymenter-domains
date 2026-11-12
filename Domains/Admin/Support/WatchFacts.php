@@ -182,5 +182,5 @@ final class WatchFacts
         return null;
     }
     /** For plain text. The watch page shows the same instants in the viewer's zone through each fact's 'at'. */
-    public static function date(?int $at): string{return $at?gmdate('M j, Y, g:i A',$at).' UTC':Missing::LABEL;}
+    public static function date(?int $at): string{return $at?\Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at($at):Missing::LABEL;}
 }

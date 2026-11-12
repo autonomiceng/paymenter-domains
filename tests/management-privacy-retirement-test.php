@@ -92,7 +92,7 @@ foreach(['privacy_purchase','privacy_renew'] as $action){
         same('Cancelled by customer',\Paymenter\Extensions\Servers\Domains\Admin\Support\Labels::requestStatus($op)['reason'],'Retired privacy names the customer who cancelled it');
         same('cancelled',Invoice::findOrFail($op->invoice_id)->status,'Retirement cancels untouched native invoice');
         $visible($op,$d);
-        if($mode==='staff'){Auth::setUser($staff);same([['time'=>'Oct 18, 2026 12:00 UTC','event'=>'Put on hold','sub'=>'[redacted]','by'=>'Staff']],StaffReviewHistory::rows($op),'Privacy-charge retirement preserves an already-redacted reason without actor lookup');}
+        if($mode==='staff'){Auth::setUser($staff);same([['time'=>'2026-10-18T12:00:00+00:00','event'=>'Put on hold','sub'=>'[redacted]','by'=>'Staff']],StaffReviewHistory::rows($op),'Privacy-charge retirement preserves an already-redacted reason without actor lookup');}
         $tx=$payment($op);
         same('paid',Invoice::findOrFail($op->invoice_id)->status,'Real late succeeded native transaction pays previously cancelled invoice');
         if($mode==='cancelled'){DB::table('invoices')->where('id',$op->invoice_id)->update(['status'=>'cancelled']);}
