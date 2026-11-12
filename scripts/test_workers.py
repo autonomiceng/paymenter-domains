@@ -7,6 +7,7 @@ import hashlib
 import os
 from pathlib import Path
 import shutil
+import subprocess
 import native
 import installed_fixture
 
@@ -109,3 +110,11 @@ def command_environment(env, *, fixture_snapshot=None):
         finally:
             if fixture_snapshot is not None:
                 native.verify(app, fixture_snapshot=fixture_snapshot, shared_vendor=vendor)
+
+
+def prepare_database(env, output, root):
+    snapshot = output/'core-database.sql'
+    subprocess.run([str(root/'scripts/php-test'), 'tests/native-database.php'], cwd=root,
+                   env=dict(env, PAYMENTER_TEST_DATABASE_EXPORT=str(snapshot)), check=True, timeout=10)
+    env.update(PAYMENTER_TEST_DATABASE=str(snapshot),
+               PAYMENTER_TEST_DATABASE_SHA256=hashlib.sha256(snapshot.read_bytes()).hexdigest())

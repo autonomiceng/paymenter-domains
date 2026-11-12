@@ -50,7 +50,14 @@ config(['hashing.bcrypt.rounds' => 4, 'audit.enabled' => false, 'settings.mail_d
 same('sqlite', config('database.default'), 'Native database isolation');
 same(':memory:', config('database.connections.sqlite.database'), 'Native database is memory only');
 Illuminate\Support\Facades\Http::preventStrayRequests();
-Illuminate\Support\Facades\Artisan::call('migrate', ['--force' => true]);
+$snapshot = (string)getenv('PAYMENTER_TEST_DATABASE');
+if ($snapshot !== '') {
+    $sql = file_get_contents($snapshot);
+    same((string)getenv('PAYMENTER_TEST_DATABASE_SHA256'), hash('sha256', $sql), 'Migrated fixture snapshot retains admitted bytes');
+    Illuminate\Support\Facades\DB::connection()->getPdo()->exec($sql);
+} else {
+    Illuminate\Support\Facades\Artisan::call('migrate', ['--force' => true]);
+}
 
 // Public-data updater also uses an explicit fake: native runtime tests must never resolve DNS.
 $app->instance(\Paymenter\Extensions\Servers\Domains\Services\PslTransport::class,

@@ -741,6 +741,9 @@ def main():
         if fixture:
             env.update(PAYMENTER_TEST_FIXTURE=str(fixture), PAYMENTER_TEST_NATIVE_EXTENSIONS=str(extension.parent),
                        LD_LIBRARY_PATH=str(runtime/'usr/lib/x86_64-linux-gnu'))
+        if fixture and not args.only:
+            with timing('core_database', timings):
+                test_workers.prepare_database(env, output, ROOT)
         php = str(ROOT/'scripts/php-test')
         batch = 32 if env.get('DOMAINS_TEST_CGROUP') else 1
         commands = [('lint', [php, '-l', *php_files[index:index+batch]])
