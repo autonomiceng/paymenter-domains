@@ -21,6 +21,16 @@ $loader=require $fixture.'/vendor/autoload.php';
 $loader->addPsr4('App\\',$fixture.'/app/',true);
 // Replace Composer's worker path: a missing installed class must stay missing.
 $loader->setPsr4('Paymenter\\Extensions\\',$fixture.'/extensions/');
+// Schema checks need table names, not a scan of every SQLite page for table sizes.
+Illuminate\Database\Connection::resolverFor('sqlite', static fn ($pdo, $database, $prefix, $config) =>
+    new class($pdo, $database, $prefix, $config) extends Illuminate\Database\SQLiteConnection {
+        protected function getDefaultSchemaGrammar()
+        {
+            return new class($this) extends Illuminate\Database\Schema\Grammars\SQLiteGrammar {
+                public function compileDbstatExists() { return 'select 0 as enabled'; }
+            };
+        }
+    });
 $app=require $fixture.'/bootstrap/app.php';
 // Retained fixture databases keep real cross-process commits. WAL avoids rewriting the
 // rollback journal for every migration while FULL synchronization preserves durability.
