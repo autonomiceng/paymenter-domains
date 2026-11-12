@@ -44,7 +44,7 @@ final class DomainListRow
             default => null,
         };
     }
-    /** A date with its tone (bad once passed, warn within 30 days) and "In N days", or a pending registration, or Missing with its cause or fix. */
+    /** A date with its tone (bad once passed, warn on the expiry day and within 30 days) and "In N days", or a pending registration, or Missing with its cause or fix. */
     public static function expires(DomainSummary $s): array
     {
         if ($s->expiry === null) {
@@ -57,7 +57,7 @@ final class DomainListRow
         }
         $days = $s->daysLeft;
         $soon = $days !== null && $days > 0 && $days <= 30;
-        return ['missing' => false, 'tone' => $days !== null && $days <= 0 ? 'bad' : ($soon ? 'warn' : null), 'note' => $soon ? 'In '.$days.($days === 1 ? ' day' : ' days') : null];
+        return ['missing' => false, 'tone' => $days !== null && $days < 0 ? 'bad' : ($soon || $days === 0 ? 'warn' : null), 'note' => $soon ? 'In '.$days.($days === 1 ? ' day' : ' days') : null];
     }
     /** Empty for a domain renewed at its own registrar (we send no invoices), or Auto-renew on/off with the price, the cancel date or a missing next invoice. */
     public static function renewal(DomainSummary $s): array

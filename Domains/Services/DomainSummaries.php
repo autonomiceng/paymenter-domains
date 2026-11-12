@@ -8,7 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts;
 use Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence;
 use Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,WatchName,WatchDnsObservation,ManagedPublicObservation,WatchRegistryObservation,Operation,Account};
-use Paymenter\Extensions\Servers\Domains\Presentation\{DomainSummary,Missing};
+use Paymenter\Extensions\Servers\Domains\Presentation\{DomainStatus,DomainSummary,Missing};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 /** Batched local projection. No transport, writes, locks, lazy model relations or actor cache. */
 final class DomainSummaries
@@ -142,7 +142,7 @@ final class DomainSummaries
                     $url=route('domains.checks.show',['kind'=>'watch','id'=>$id]);$t->setRelation('registry',$r);
                 } else {
                     $pending=$t->adoptionPending();$registration='domain.registration.'.($pending?'unknown':(in_array($t->status,['active','expired','grace','redemption'],true)?'platform':'unknown'));
-                    $states[]=$pending?'adopt.pending':match($t->status){'active'=>$t->provider_expires_at===null?'domain.review':($t->provider_expires_at->format('Y-m-d')<=gmdate('Y-m-d',$now)?'watch.expired':'domain.active'),'expired','grace'=>'domain.expired','redemption'=>'domain.redemption','registration_pending'=>'domain.pending','transfer_pending'=>'domain.transfer','cancelled'=>'domain.cancelled',default=>'domain.review'};
+                    $states[]=$pending?'adopt.pending':match($t->status){'active'=>$t->provider_expires_at===null?'domain.review':(DomainStatus::expiry($t->provider_expires_at->format('Y-m-d'),gmdate('Y-m-d',$now))==='expired'?'watch.expired':'domain.active'),'expired','grace'=>'domain.expired','redemption'=>'domain.redemption','registration_pending'=>'domain.pending','transfer_pending'=>'domain.transfer','cancelled'=>'domain.cancelled',default=>'domain.review'};
                     if (!$pending) { $expiry=$t->provider_expires_at?->format('Y-m-d');$precision=$expiry?'date':null;$source=$expiry?'Confirmed registration':null; }
                     $state=DomainStates::project($t,$inputs,$at);$op=$state->acquisition;
                     if(!$pending && $op && (int)$op->service_id===(int)$t->service_id && (int)$op->server_id===(int)$t->server_id && $op->registrar_key===$t->registrar_key){if($op->state==='awaiting_payment'){$states=['domain.awaiting_payment'];}elseif(in_array($op->state,['held','uncertain'],true)){$states=[$op->action==='register' && !in_array($op->safe_code,['contact_details_required','transfer_setup_review_required','nameservers_required'],true)?'domain.processing':'domain.review'];}}

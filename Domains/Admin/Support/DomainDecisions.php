@@ -252,12 +252,13 @@ final class DomainDecisions
     public static function status(Domain $d, ?array $inputs=null): array
     {
         $inputs??=StaffDomainInputs::for([$d])[$d->id]; $op=$d->latestAcquisition;
+        // Staff read the same clock as the customer pages, so both agree on the expiry day.
         // Saved request data that can't be read must not break the list.
         // The customer reads an unpaid cancel as plain Cancelled. Staff still check the closed order until it is retired,
         // so staff drop the unpaid mark and skip its payment read.
         try { $order=OwnedDomains::order($d,$op,$inputs['invoice'],$inputs['closed'],[]); } catch (\Throwable) { $order=[]; }
         unset($order['unpaid']);
-        [$state,$reason]=OwnedDomains::orderStatus(DomainStates::managed($d,$op,gmdate('Y-m-d'),(bool)$inputs['off']),$d,$order);
+        [$state,$reason]=OwnedDomains::orderStatus(DomainStates::managed($d,$op,app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d'),(bool)$inputs['off']),$d,$order);
         $shared=['key'=>DomainStatus::key($state),...DomainStatus::for($state,$reason)];
         if ($inputs['late']) { return StaffDomainStatus::late($shared); }
         return StaffDomainStatus::for($shared,$state,$d,$op,$inputs['alerts'],$inputs['renewal'],$inputs['waiting'],$inputs['orders_off']??false,$inputs['accounts']??null,$inputs['release']??null);

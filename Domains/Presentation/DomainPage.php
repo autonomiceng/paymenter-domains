@@ -127,7 +127,7 @@ final class DomainPage
             $days > 0 && $days <= 30 => 'In '.$days.($days === 1 ? ' day' : ' days'),
             default => null,
         };
-        return ['missing' => false, 'tone' => $days <= 0 ? 'bad' : ($days <= 30 ? 'warn' : null), 'note' => $note];
+        return ['missing' => false, 'tone' => $days < 0 ? 'bad' : ($days <= 30 ? 'warn' : null), 'note' => $note];
     }
     /** The renewal invoice's state in words, the same on the domain page and the Domains list (DomainStates::cycle). */
     /** The open renewal invoice's last charge failed, whether Auto Pay or a card made it. */
