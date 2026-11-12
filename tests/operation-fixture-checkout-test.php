@@ -5,7 +5,12 @@ require __DIR__.'/Support/operation-fixture.php';
 use App\Models\Invoice;
 use Livewire\Livewire;
 
+$renders=0;
+$stop=Livewire::listen('render',static function($component)use(&$renders):void {
+    if($component::class===App\Livewire\Cart::class){$renders++;}
+});
 $quiet=$new('fixture-quiet-placeholder.com',paid:false);
+expect($renders>0,'Fixture checkout still invokes native cart render hooks');$stop();
 putenv('PAYMENTER_TEST_RENDER_FIXTURE_CART=1');
 try { $rendered=$new('fixture-rendered-placeholder.com',paid:false); }
 finally { putenv('PAYMENTER_TEST_RENDER_FIXTURE_CART'); }
