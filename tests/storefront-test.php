@@ -261,5 +261,7 @@ same(0, $dom->query('//li[@data-domains-result]//*[@role="status"]')->length, 'N
 $data['endings'] = []; $data['results'] = [];
 expect(str_contains(view('domains::search', $data)->render(), 'Domain registration isn’t available right now. Please check back later.'), 'Closed storefront view');
 same('$9,999,999,999.99', Storefront::money('9999999999.99'), 'Exact large-money display');
+// FU-D-money-negative: a refund or credit is negative. The sign goes in front of the dollar sign and never reaches the price rules.
+same(['-$10.99', '-$1,234.50', '-$0.07', '$0.00'], [Storefront::money('-10.99'), Storefront::money('-1234.5'), Storefront::money('-0.07'), Storefront::money('-0.00')], 'Refund amounts read -$10.99');
 require __DIR__.'/Support/customer-polish-views.php';
 $nativeSuccessful = true; echo "Dormant storefront native controller, DOM states, privacy and budget checks passed.\n";

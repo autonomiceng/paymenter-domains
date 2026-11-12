@@ -259,9 +259,11 @@ class Storefront
     /** Exact two-decimal display; no float conversion even at the integer boundary. */
     public static function money(string $amount): string
     {
+        // A refund reads -$10.99, not $-10.99. The price rules take unsigned amounts, so the sign comes off before and
+        // goes back on after; a zero keeps no sign.
         $sign = str_starts_with($amount, '-') ? '-' : '';
-        $value = PriceCatalogue::retail($sign === '-' ? substr($amount, 1) : $amount); [$whole, $fraction] = explode('.', $value);
-        // A refund reads -$10.99, not $-10.99.
+        [$whole, $fraction] = explode('.', PriceCatalogue::retail(substr($amount, strlen($sign))));
+        if (ltrim($whole.$fraction, '0') === '') { $sign = ''; }
         return $sign.'$'.preg_replace('/\B(?=(\d{3})+(?!\d))/', ',', $whole).'.'.$fraction;
     }
 }
