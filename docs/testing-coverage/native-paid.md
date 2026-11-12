@@ -17,4 +17,4 @@ each file owns its mutations and real committed native payment processing.
 
 Staff surface setup retains the real domain/hosting/Credit basket alongside closed states, using native checkout, payment,
 refund and retirement. Their full lifecycle assertions live in baseline, refunds and retirement.
-The baseline starts without Credit so its native Credit sibling still proves row creation.
+Refund and closure fixtures seed an empty native Credit row, as the original mixed checkout did before these scenarios, so injected save failures occur at the credit update after closure. The baseline starts without Credit so its native Credit sibling still proves row creation.
