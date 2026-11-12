@@ -397,4 +397,10 @@ expect(!$status['act']&&!str_contains((string)$status['step'],'Check request'), 
 same('In progress',RequestFacts::status($op->fresh())['label'],'Pending transfer request is in progress');
 expect(!Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::status(Operation::whereKey($op->id),['under_review'])->exists(),'Pending transfer is excluded from staff review filters');
 expect(Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::status(Operation::whereKey($op->id),['in_progress'])->exists(),'Pending transfer is included in its displayed status filter');
+
+$d=$row('registration_pending','register','held','staff_review_required');
+expect(DomainQueries::alerting(Domain::whereKey($d->id))->exists(),'A visible staff task counts even before a saved alert is written');
+$domainColumn=Livewire::actingAs($viewer)->test(ListDomains::class)->instance()->getTable()->getColumn('domain')->record($d);
+$phone=(string)$domainColumn->getDescriptionBelow();
+expect(str_contains($phone,'domains-phone-note')&&str_contains($phone,'On hold')&&str_contains($phone,'Check request'),'Phone summary keeps both Status and Note under the domain');
 $nativeSuccessful=true; echo "Staff domain status: customer words and one next step per row.\n";

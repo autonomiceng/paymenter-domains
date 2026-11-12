@@ -300,4 +300,11 @@ same([false,$writes],[RegistrarAnswers::ready($lostRenew->fresh(),$clock->now())
 DB::table('domains_operations')->where('id',$lostRenew->id)->update(['attempt'=>$storedAttempt]);
 echo "Native staff actions: permissions, confirmations, reasons, audit, stale/replay/binding, read-only reconciliation, credit and cycle replacement passed.\n";
 }catch(Throwable $error){throw new RuntimeException($error->getMessage().' at '.implode(' > ',array_map(static fn($frame)=>($frame['file']??'').':'.($frame['line']??0),$error->getTrace())),0,$error);}
+
+$entry=['action'=>'recheck','phase'=>'read_finished','at'=>$clock->now()->format(DATE_ATOM),'actor_name'=>'Synthetic staff','check'=>['outcome'=>'awaiting_answer','registrar'=>'Enom','answer_after'=>0,'facts'=>['owned'=>false]]];
+$repeat=[...$entry,'at'=>$clock->now()->modify('+1 minute')->format(DATE_ATOM)];
+$changed=[...$repeat,'check'=>[...$repeat['check'],'facts'=>['owned'=>true]]];
+$history=new Paymenter\Extensions\Servers\Domains\Models\Operation(['policy'=>['staff_actions'=>[$entry,$repeat,$changed]]]);
+same(2,count(Paymenter\Extensions\Servers\Domains\Admin\Support\StaffReviewHistory::rows($history)),'History shows an unchanged answer once, but keeps a changed ownership answer');
+same(3,count($history->policy['staff_actions']),'The complete status-check audit remains retained');
 $nativeSuccessful=true;

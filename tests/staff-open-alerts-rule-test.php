@@ -14,6 +14,8 @@ use Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts;
 
 Carbon::setTestNow('2026-11-02 18:00:00');
 staffPanel(); [$released, , $unreleased]=staffData();
+// Isolate saved review alerts from the independent Orders-off staff task.
+Paymenter\Extensions\Servers\Domains\Models\Account::query()->update(['processing_enabled'=>true]);
 $viewer=staffUser([Staff::VIEW]); Auth::setUser($viewer);
 foreach ([$released, $unreleased] as $d) {
     $op=$d->operations()->sole();
@@ -31,7 +33,7 @@ parse_str(parse_url($link,PHP_URL_QUERY),$parameters);
 same(['alerts'=>['isActive'=>'1']],$parameters['filters']??null,'The badge link selects exactly the alert filter');
 $page=Livewire::withQueryParams($parameters)->actingAs($viewer)->test(ListDomains::class);
 same('Needs attention',$page->instance()->getTable()->getFilter('alerts')->getLabel(),'Staff can select the same Needs attention filter themselves');
-expect(str_contains(DomainResource::getNavigationBadgeTooltip(),'open alerts'),'Badge title explains the count');
+expect(str_contains(DomainResource::getNavigationBadgeTooltip(),'staff action'),'Badge title explains the count');
 $page->set('tableDeferredFilters',$page->get('tableFilters'))->call('applyTableFilters')->assertSuccessful();
 $filtered=$page->instance()->getTableRecords()->pluck('id')->sort()->values()->all();
 $cause=DomainFacts::alertCause('operation_review');
