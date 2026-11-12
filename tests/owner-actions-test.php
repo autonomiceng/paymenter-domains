@@ -23,7 +23,10 @@ foreach([0,1]as$i){
     // A paid transfer with incomplete setup only saves the code; no registrar work has started.
     same([route('domains.domains.show',$d->id),OwnerActionController::CODE_SAVED],[$saved->getTargetUrl(),$session->get('domains_status')],'Saved code opens the domain page with what happens next');
     \Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->update(['processing_enabled'=>false]);
-    $action->code($req($d,'code',['transfer_code'=>$exact]),$d->id);
+    $session->forget(['domains_status','errors']);
+    $saved=$action->code($req($d,'code',['transfer_code'=>$exact]),$d->id);
+    same(route('domains.domains.show',$d->id),$saved->getTargetUrl(),'Orders off returns to the domain page after saving');
+    expect(!$session->has('errors'),'Orders off saves without errors');
     same(OwnerActionController::CODE_SAVED,$session->get('domains_status'),'Orders off confirms the save without claiming transfer progress');
     \Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->update(['processing_enabled'=>true]);
     expect(!str_contains(DB::table('domains_operations')->find($op->id)->payload,$exact),'No plaintext at rest');
