@@ -18,7 +18,9 @@ final readonly class RuntimeDispatch
     }
     public function enqueue(int $id,bool $force=false): void
     {
-        $op=Operation::findOrFail($id);$balance=BalanceRetries::pending($op);
+        $op=Operation::findOrFail($id);
+        ContactRecovery::retryAccount($id,$this->clock);$op=$op->fresh();
+        $balance=BalanceRetries::pending($op);
         if(!$this->current($op)){if($balance){app(OperationClaims::class)->readmitBalance($id);}return;}
         if(OperationClaims::ordersOffHold($op)){app(OperationClaims::class)->readmitOrdersOff($id);$op=$op->fresh();}
         if($op->state==='held'&&!ManagementEvidence::recoverable($op)&&!RenewalRetries::candidate($op)&&!TransferPolling::applies($op)&&(!$balance||!Account::where('server_id',$op->server_id)->value('processing_enabled'))){return;}

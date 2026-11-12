@@ -138,6 +138,9 @@ final class RequestFacts
                 if ($paid||isset($c['actual'])) {
                     $out['cost']=$actual??($unknown&&$quote!==null?'Not confirmed':null);
                     $out['cost_sub']=$out['registrar_refund'] ?? $quote ?? ($actual===null ? 'No cost recorded. Check at the registrar.' : null);
+                    if(\Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::open()->where('domain_id',$op->domain_id)->where('code','below_cost')->exists()){
+                        $out['cost_sub']=trim(($out['cost_sub']??'').' '.\Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::LABELS['below_cost']);
+                    }
                     if(\Paymenter\Extensions\Servers\Domains\Services\TransferRejections::proved($op,$op->domain)){
                         $answer=$p['enom_answer'];$out['cost_sub']='Registrar charge '.Labels::money($answer['charge']).'; registrar refund '.Labels::money($answer['registrar_refund']).'. We cover the failed fee.';
                     }
@@ -167,6 +170,7 @@ final class RequestFacts
     public static function reason(Operation $op, bool $ordersOff=true, ?StaffGrants $grants=null, ?array $accounts=null, ?array $release=null): ?string
     {
         try {
+            if(self::automaticTransfer($op)){return self::AUTO_TRANSFER;}
             return ($op->state==='held'||$op->state==='queued'&&$ordersOff?self::readyMessage($op,$accounts,$release):null)
                 ??self::paidWaiting($op,$accounts)??Labels::requestStatus($op,grants:$grants)['reason']??self::paidMoving($op);
         }
@@ -185,8 +189,18 @@ final class RequestFacts
         return RequestStatus::readsAs($op->state,$op->safe_code,$ordersOff)==='held'
             && ($op->action==='register' || ($op->action==='transfer' && $op->state==='held' && $op->safe_code===self::HELD_TRANSFER_CODE));
     }
+    public const AUTO_TRANSFER='Transfer pending. We keep checking. There is nothing you need to do.';
+    public static function automaticTransfer(Operation $op): bool
+    {
+        $now=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp();
+        try{return \Paymenter\Extensions\Servers\Domains\Services\TransferPolling::expected($op)
+            &&($op->policy['reconciliation']['staff_alert']??true)===false
+            &&!\Paymenter\Extensions\Servers\Domains\Services\TransferPolling::expired($op,$now);
+        }catch(\Throwable){return false;}
+    }
     public static function status(Operation $op, bool $ordersOff=true, ?Domain $d=null, ?StaffGrants $grants=null, ?array $accounts=null): array
     {
+        if(self::automaticTransfer($op)){return ['label'=>'In progress','tone'=>'info','reason'=>self::AUTO_TRANSFER];}
         $d??=$op->relationLoaded('domain')?$op->domain:null;
         $off=$ordersOff&&$op->state==='queued'&&OperationQueries::ordersOff($op,$accounts);
         $status=[...Labels::requestStatus($op,$off,$grants),'reason'=>self::reason($op,$ordersOff,$grants,$accounts)];

@@ -48,6 +48,14 @@ class WatchResource extends WatchReadResource
     }
     /** Status reads at most CAP active names; the indicator says so only when more exist. */
     private static function capped(string $label): string{return WatchName::where('state','active')->count()>WatchFindings::CAP?$label.' (first 1,000 active domains)':$label;}
+    public static function getNavigationBadge(): ?string
+    {
+        if(!static::canViewAny()){return null;}
+        return \Paymenter\Extensions\Servers\Domains\Admin\Support\NavigationCount::read('monitoring',fn()=>count(WatchFindings::statusIds('attention')));
+    }
+    public static function getNavigationBadgeUrl(): string {return static::getUrl('index',['filters'=>['status'=>['value'=>'attention']]]);}
+    public static function getNavigationBadgeTooltip(): ?string {return 'Monitored domains needing attention, first 1,000 active domains';}
+    public static function getNavigationBadgeColor(): string {return 'warning';}
     public static function table(Table $table): Table
     {
         return TableColumns::choose(EmptyTable::apply($table,'No monitored domains','Turn on monitoring on a hosting product.','No monitored domains match'),[

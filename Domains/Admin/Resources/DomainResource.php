@@ -57,7 +57,8 @@ class DomainResource extends Resource
         $orders=OperationQueries::ordersOffAccounts(); self::$orders??=new \WeakMap(); self::$orders[$table->getLivewire()]=$orders;
         return TableColumns::choose($table->modifyQueryUsing(fn (Builder $query) => $query
             ->with(['user:id,first_name,last_name,email', 'server:id,name', 'latestAcquisition'])),[
-            DemoTag::apply(OneLine::apply(TextColumn::make('domain')->label('Domain')->searchable()->sortable()->fontFamily(FontFamily::Mono),OneLine::NAME)),
+            DemoTag::apply(OneLine::apply(TextColumn::make('domain')->label('Domain')->searchable()->sortable()->fontFamily(FontFamily::Mono)
+                ->description(fn(Domain $record,$livewire)=>new \Illuminate\Support\HtmlString('<span class="domains-phone-note">'.e(self::status($record,$livewire)['label']).'<br>'.e(self::note($record,$livewire)['text']).'</span>')),OneLine::NAME)),
             OneLine::apply(TextColumn::make('customer')->label('Customer')->state(fn(Domain $record)=>$record->user?(trim($record->user->first_name.' '.$record->user->last_name)?:$record->user->email):null)
                 ->searchable(query:fn(Builder $query,string $search)=>self::customerSearch($query,$search)),OneLine::SHORT),
             TextColumn::make('status')->label('Status')->badge()->state(fn(Domain $record,$livewire)=>self::status($record,$livewire)['label'])

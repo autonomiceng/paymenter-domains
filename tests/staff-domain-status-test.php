@@ -388,4 +388,13 @@ $perRow=array_filter(array_column($switches,'query'),static fn(string $sql)=>!st
 expect($switches!==[],'The list reads the Orders switches');
 same([],array_values($perRow),'Three queued registrations read the Orders switches from the list snapshot, never per row');
 $accounts->update(['processing_enabled'=>true]);
+
+// A registrar-confirmed pending transfer has a scheduled read, not a staff task.
+$d=$row('transfer_pending','transfer','uncertain','reconciliation_required');$op=$d->latestAcquisition;
+$op->update(['started_at'=>now(),'attempt'=>['seal'=>'sealed'],'policy'=>['reconciliation'=>['transfer_status'=>'pending','reason'=>'transfer_pending','staff_alert'=>false]]]);
+$d=$d->fresh();$status=DomainFacts::status($d);
+expect(!$status['act']&&!str_contains((string)$status['step'],'Check request'), 'Pending transfer never asks staff to check what the worker is watching');
+same('In progress',RequestFacts::status($op->fresh())['label'],'Pending transfer request is in progress');
+expect(!Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::status(Operation::whereKey($op->id),['under_review'])->exists(),'Pending transfer is excluded from staff review filters');
+expect(Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::status(Operation::whereKey($op->id),['in_progress'])->exists(),'Pending transfer is included in its displayed status filter');
 $nativeSuccessful=true; echo "Staff domain status: customer words and one next step per row.\n";

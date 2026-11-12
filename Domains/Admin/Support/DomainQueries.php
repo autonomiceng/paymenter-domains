@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Illuminate\Database\Eloquent\Builder;
-use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts;
 /** Exact holding binding, independent of today's seller. No financial interpretation of state labels. */
 final class DomainQueries
@@ -27,7 +27,7 @@ final class DomainQueries
      * It asks only whether staff must act, so it reads a fixed number of queries per 200 rows (StaffDomainInputs $release). */
     public static function alerting(Builder $q): Builder
     {
-        return self::rows(self::openAlerts($q),fn(array $status,array $inputs)=>$inputs['alerts']!==[]&&$status['act'],release:true);
+        return self::rows($q,fn(array $status,array $inputs)=>DomainFacts::note($status,$inputs['sync'],$inputs['no_account'])['act'],release:true);
     }
     /** Rows whose staff status (DomainFacts::status) and its inputs pass $keep. */
     private static function rows(Builder $q, \Closure $keep, ?array $ordersOff=null, bool $release=false): Builder
@@ -35,7 +35,13 @@ final class DomainQueries
         $ids=[];
         (clone $q)->reorder()->with('latestAcquisition')->chunkById(200,function ($page) use (&$ids,$keep,$ordersOff,$release): void {
             $inputs=StaffDomainInputs::for($page,$ordersOff,$release);
+            $accounts=$release?Account::whereIn('server_id',$page->pluck('server_id')->unique()->all())->get():collect();
+            $stopped=$release?\Paymenter\Extensions\Servers\Domains\Services\ObservationWork::stoppedIds($page):[];
             foreach ($page as $d) {
+                if($release){
+                    $account=$accounts->first(fn($a)=>$a->server_id===$d->server_id&&$a->registrar_key===$d->registrar_key&&$a->account_fingerprint===$d->account_fingerprint);
+                    $inputs[$d->id]+=['sync'=>DomainFacts::sync($d,$account,isset($stopped[$d->id]),accountLoaded:true),'no_account'=>$account===null];
+                }
                 if ($keep(DomainFacts::status($d,$inputs[$d->id]),$inputs[$d->id])) { $ids[]=$d->id; }
             }
         },'domains_domains.id','id');
