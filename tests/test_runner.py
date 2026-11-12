@@ -20,7 +20,6 @@ sys.path.insert(0, str(ROOT/'scripts'))
 spec = importlib.util.spec_from_file_location('domains_runner', ROOT/'scripts/test.py')
 runner = importlib.util.module_from_spec(spec); spec.loader.exec_module(runner)
 
-
 @contextlib.contextmanager
 def timeout_after_ready(root, expirations=1):
     ready = root/'timeout-ready'
@@ -37,7 +36,6 @@ def timeout_after_ready(root, expirations=1):
         return communicate(process, *args, **kwargs)
     with mock.patch.object(runner.subprocess.Popen, 'communicate', expired):
         yield f"from pathlib import Path; Path({str(ready)!r}).write_text('ready'); "
-
 
 class RunnerTests(unittest.TestCase):
     def setUp(self):
