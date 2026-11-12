@@ -80,7 +80,7 @@ app('view')->share('keys', array_fill_keys(['setup', 'recovery', 'code', 'renew'
 app('view')->share('errors', new Illuminate\Support\ViewErrorBag);
 $showHtml = view('domains::show', ['domain' => $present, 'summary' => $summary])->render(); $showText = $text($showHtml);
 $dom = new DOMDocument; @$dom->loadHTML($showHtml);
-$card = (new DOMXPath($dom))->query('//section[@id="renewal"]//dt[normalize-space(text())="Next invoice"]/following-sibling::dd[1]')->item(0);
+$card = (new DOMXPath($dom))->query('//section[@id="renewal"]//dt[normalize-space(text())="Renewal invoice"]/following-sibling::dd[1]')->item(0);
 $check($card !== null && str_starts_with(trim(preg_replace('/\s+/', ' ', $card->textContent)), 'Paid '.$customer), 'customer page: Paid, nothing to do, goes automatically');
 $check($at($showHtml), 'customer page: the fixed time in the viewer\'s zone');
 $check(substr_count($showText, $customer) === 1, 'customer page: said once');
