@@ -42,6 +42,8 @@ class RunnerTests(unittest.TestCase):
     def setUp(self):
         memory = mock.patch.object(runner, 'available_memory_mib', return_value=8192)
         memory.start(); self.addCleanup(memory.stop)
+        database = mock.patch.object(runner.test_workers, 'prepare_database')
+        database.start(); self.addCleanup(database.stop)
 
     def test_ote_output_resolves_symlinked_tmpdir(self):
         spec = importlib.util.spec_from_file_location('ote_contract', ROOT/'scripts/ote-contract.py')
