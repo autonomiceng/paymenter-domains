@@ -329,7 +329,7 @@ final class DomainDecisions
             }
             return ['text'=>ObservationRecords::limitNotice($d)??match($d->observation['record_hold']['reason']??null) {
                 'ownership_drift'=>'Sync stopped: domain is not in the registrar account.',
-                'glue_unavailable'=>"Couldn't read glue records. Other domain facts were saved. Use Sync now to try again.",
+                'glue_unavailable'=>"Couldn't read glue records. Other domain facts were saved.",
                 'records_unavailable'=>self::unreadFamily($d->observation['record_hold']['family']??null),
                 'caa_unsupported'=>"Sync stopped: this domain has CAA records, which can't be read from Enom here. Other domain facts were saved. Manage this domain's DNS at Enom.",
                 default=>'Sync stopped: DNS record check failed.' },'stopped'=>true];

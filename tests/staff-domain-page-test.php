@@ -356,7 +356,7 @@ foreach(['cancelled','registration_rejected','transfer_rejected'] as $endedStatu
     expect(!str_contains((string)$ds['sub'],'Sync this domain.'),'An ended domain without queued reads has no DS sync instruction: '.$endedStatus);
 }
 foreach(['history_limit'=>'Missing: saved record history needs a fresh read. Use Sync now to refresh DNS records.','ownership_drift'=>'Sync stopped: domain is not in the registrar account.',
-    'glue_unavailable'=>"Couldn't read glue records. Other domain facts were saved. Use Sync now to try again.",
+    'glue_unavailable'=>"Couldn't read glue records. Other domain facts were saved.",
     'records_unavailable'=>"Sync stopped: couldn't read DNS records.",'unmapped_reason_code'=>'Sync stopped: DNS record check failed.'] as $reason=>$title){
     ObservationRecords::hold($active->fresh(),$reason,new DateTimeImmutable('2026-10-18T12:00:00Z'));
     same($title,DomainFacts::notice($active->fresh())['title'],'Record hold notice '.$reason);
