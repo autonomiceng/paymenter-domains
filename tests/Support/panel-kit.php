@@ -22,3 +22,26 @@ function panelKitFixture(): int
     app('router')->getRoutes()->refreshNameLookups();app('router')->getRoutes()->refreshActionLookups();
     return $account['server_id'];
 }
+/** Reminder days a reader sees, by direction: each number belongs to the before or after word that follows it, so a
+ * swapped side fails while wording and punctuation never matter. Numbers with no direction land in none.
+ * @return array{before: list<int>, after: list<int>, none: list<int>} */
+function panelKitShownDays(string $text): array
+{
+    $days=['before'=>[],'after'=>[],'none'=>[]];$pending=[];
+    preg_match_all('/\d+|\b(?:before|after)\b/i',$text,$tokens);
+    foreach($tokens[0] as $token){
+        if(ctype_digit($token)){$pending[]=(int)$token;continue;}
+        $days[strtolower($token)]=[...$days[strtolower($token)],...$pending];$pending=[];
+    }
+    $days['none']=$pending;
+    foreach($days as &$side){sort($side);}unset($side);
+    return $days;
+}
+/** The reminder days saved for a server, by direction, in the same shape. @return array{before: list<int>, after: list<int>, none: list<int>} */
+function panelKitSavedDays(int $server): array
+{
+    $saved=\Illuminate\Support\Facades\DB::table('domains_reminder_schedules')->where('server_id',$server)->sole();
+    $days=['before'=>json_decode($saved->before_days,true),'after'=>json_decode($saved->after_days,true),'none'=>[]];
+    foreach($days as &$side){$side=array_map('intval',$side);sort($side);}unset($side);
+    return $days;
+}

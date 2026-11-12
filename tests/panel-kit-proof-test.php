@@ -15,12 +15,9 @@ $server = panelKitFixture();
 $setup = (string) getenv('DOMAINS_PANEL_SETUP');
 if ($setup !== '') { (static fn (string $file, $panel): mixed => require $file)($setup, Filament::getPanel('admin')); }
 $schedule = static fn (): object => DB::table('domains_reminder_schedules')->where('server_id', $server)->sole();
-// The days a reader sees on the Reminder schedule row, and the days saved, both sorted, so wording never matters.
-$days = static function (string $html): array {
-    preg_match_all('/\d+/', storefrontDom($html)->evaluate('string(//div[@data-domains-row][normalize-space(div[@class="domains-panel-row-k"])="Reminder schedule"]//*[@data-domains-fact])'), $m);
-    $shown = array_map('intval', $m[0]); sort($shown); return $shown;
-};
-$stored = static function () use ($schedule): array { $s = $schedule(); $all = [...json_decode($s->before_days, true), ...json_decode($s->after_days, true)]; sort($all); return $all; };
+// The days a reader sees on the Reminder schedule row and the days saved, each side of the expiry on its own.
+$days = static fn (string $html): array => panelKitShownDays(storefrontDom($html)->evaluate('string(//div[@data-domains-row][normalize-space(div[@class="domains-panel-row-k"])="Reminder schedule"]//*[@data-domains-fact])'));
+$stored = static fn (): array => panelKitSavedDays($server);
 // The row places the page's own action: its click mounts reminders_<server> from the row's actions.
 $writer = staffUser([Staff::VIEW, Staff::POLICY]);
 $page = Livewire::actingAs($writer)->test(PanelKit::class)->assertSuccessful();
