@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<interface-response>
+  <Order>
+    <OrderID>901</OrderID>
+    <Result>True</Result>
+    <BillDate>11/6/2026 11:55:00 PM</BillDate>
+    <CCRefNum />
+    <OrderBillAmount>$17.90</OrderBillAmount>
+    <AdjustToAccount />
+    <Certs>False</Certs>
+    <OrderStatus>6</OrderStatus>
+    <TaxAmount>$0.00</TaxAmount>
+    <StatusDesc>Successful</StatusDesc>
+    <OrderDate>11/6/2026 11:52:28 PM</OrderDate>
+    <OrderDetail>
+      <ProductType>Renew</ProductType>
+      <Description>example.com</Description>
+      <Status>Successful</Status>
+      <Quantity>2</Quantity>
+      <DetailStatusID>9</DetailStatusID>
+      <AmountPaid>17.90</AmountPaid>
+      <DomainPassword />
+      <OrderStatus>Closed</OrderStatus>
+      <BundleID />
+      <BundleInstanceID />
+      <Discount />
+      <BundleDescription />
+      <BundleName />
+      <ExpiryDatetime>11/2/2029 4:35:00 AM</ExpiryDatetime>
+    </OrderDetail>
+  </Order>
+  <Command>GETORDERDETAIL</Command>
+  <APIType>API.NET</APIType>
+  <Language>eng</Language>
+  <ErrCount>0</ErrCount>
+  <ResponseCount>0</ResponseCount>
+  <MinPeriod>1</MinPeriod>
+  <MaxPeriod>10</MaxPeriod>
+  <Server />
+  <Site>eNom</Site>
+  <IsLockable />
+  <IsRealTimeTLD />
+  <TimeDifference>+0.00</TimeDifference>
+  <ExecTime>0.01</ExecTime>
+  <Done>true</Done>
+  <TrackingKey>fixture-tracking</TrackingKey>
+  <RequestDateTime>11/10/2026 4:26:56 AM</RequestDateTime>
+  <debug />
+</interface-response>
