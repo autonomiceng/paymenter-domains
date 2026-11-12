@@ -85,7 +85,7 @@ foreach(['processing','auto_pay_uncertain','pending','uncertain','retireable','c
     foreach([1,2] as $pass){
         $label=$case.':'.$pass;$html=$page($d);
         $expiryExpected[$label]=[['status'=>$expected],$expected==='cancelled'?1:0,$expected==='review'?1:0];
-        $expiryResults[$label]=[$bounded(fn()=>$owners->present($d->fresh())->renewNow),substr_count($html,'>Invoice cancelled<'),substr_count($html,'>Renewal being checked.<')];
+        $expiryResults[$label]=[$bounded(fn()=>$owners->present($d->fresh())->renewNow),substr_count($html,'>Invoice cancelled<'),substr_count($html,'>Renewal being checked.')];
         expect(!str_contains($html,'Pay invoice')&&!str_contains($html,'Create invoice'),'Expired '.$label.' offers no billing action');
         same($unchanged,$ledger(),'Repeated expired '.$label.' presentation preserves all evidence');
     }
