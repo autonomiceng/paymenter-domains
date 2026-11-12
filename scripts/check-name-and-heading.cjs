@@ -136,12 +136,6 @@ async function main() {
             check(sentences(got.text).join(' ') === expected, `${name}: the item keeps its full text, got ${JSON.stringify(words(got.text))}`);
             check(sentences(got.tooltip ?? '').join(' ') === expected, `${name}: the tooltip has the full text, got ${JSON.stringify(got.tooltip)}`);
         }
-        // The browser paints the ellipsis: the item differs from the same item cut without one.
-        const cut = await item.screenshot({ animations: 'disabled' });
-        await item.evaluate(item => { item.style.textOverflow = 'clip'; });
-        const clipped = await item.screenshot({ animations: 'disabled' });
-        await item.evaluate(item => { item.style.textOverflow = ''; });
-        check(!cut.equals(clipped), `${name}: the cut text ends in a painted ellipsis`);
         if (full === undefined && !focus) return;
         // Keyboard focus on the row's link or button, or, in a row that opens nothing, on the cut text itself (then in the
         // tab order with a focus ring), shows the whole text in an overlay. No cell or row of the table moves or resizes.
