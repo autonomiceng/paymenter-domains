@@ -76,7 +76,7 @@ $compose = static function ($binding, bool $enabled = true, bool $grace = true) 
         same('https://resellertest.enom.com/interface.asp', $origin, 'Fixed test origin');
         same('no', $params['UseCreditCard'], 'Account balance only'); $state->writes++; $state->lastWrite = [$command,$params];
         if ($state->afterWrite) { ($state->afterWrite)(); }
-        if ($state->lost) { throw new RuntimeException('Synthetic lost response'); }
+        if ($state->lost) { throw $state->lost instanceof Throwable ? $state->lost : new RuntimeException('Synthetic lost response'); }
         if ($command === 'UpdateExpiredDomains') { return '<interface-response><Command>'.$command.'</Command><ErrCount>0</ErrCount><Done>true</Done><ReactivateDomainName><Status>true</Status><OrderID>'.$state->order.'</OrderID></ReactivateDomainName></interface-response>'; }
         return '<interface-response><Command>'.$command.'</Command><ErrCount>0</ErrCount><Done>true</Done><RRPCode>200</RRPCode><OrderID>'.$state->order.'</OrderID></interface-response>';
     });

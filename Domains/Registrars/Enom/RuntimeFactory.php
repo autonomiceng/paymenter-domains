@@ -75,7 +75,7 @@ final class RuntimeFactory
                     CURLOPT_VERBOSE=>false,CURLOPT_HEADER=>false,CURLOPT_SSL_VERIFYPEER=>true,CURLOPT_SSL_VERIFYHOST=>2,
                     CURLOPT_PROTOCOLS=>CURLPROTO_HTTPS,CURLOPT_REDIR_PROTOCOLS=>CURLPROTO_HTTPS,
                     CURLOPT_CONNECTTIMEOUT_MS=>min(8000,$timeoutMs),CURLOPT_TIMEOUT_MS=>$timeoutMs,
-                    CURLOPT_LOW_SPEED_LIMIT=>32,CURLOPT_LOW_SPEED_TIME=>$named===RegistrationCommand::Purchase?25:10,CURLOPT_FRESH_CONNECT=>true,CURLOPT_FORBID_REUSE=>true,
+                    CURLOPT_LOW_SPEED_LIMIT=>32,CURLOPT_LOW_SPEED_TIME=>in_array($named,[RegistrationCommand::Purchase,RegistrationCommand::Renew,RegistrationCommand::GraceRenew],true)?25:10,CURLOPT_FRESH_CONNECT=>true,CURLOPT_FORBID_REUSE=>true,
                     CURLOPT_WRITEFUNCTION=>static function($handle,string $chunk)use(&$body,$named):int {
                         if (strlen($chunk)>$named->bodyLimit()-strlen($body)) { return 0; }
                         $body.=$chunk;return strlen($chunk);
