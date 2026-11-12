@@ -236,6 +236,14 @@ class SchedulingTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'only 2 worker'):
                 runner.bounded_jobs(4, 2048, explicit=True)
 
+    def test_admitted_workers_fit_measured_headroom_and_refuse_an_extra_worker(self):
+        with mock.patch.dict(os.environ, {'DOMAINS_TEST_CGROUP': '/owned'}):
+            self.assertEqual(runner.bounded_jobs(10, 2048), 10)
+            with self.assertRaisesRegex(ValueError, 'memory reservation'):
+                runner.bounded_jobs(11, 2048)
+            with self.assertRaisesRegex(ValueError, 'memory reservation'):
+                runner.bounded_jobs(1, 128)
+
     def test_available_memory_uses_cgroup_headroom_when_lower(self):
         mib = 1024*1024
         def capped(limit, used, prefix=''):
