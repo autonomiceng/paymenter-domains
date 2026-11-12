@@ -40,7 +40,7 @@ $norm=static fn(?DOMNode $n)=>$n?trim(preg_replace('/\s+/',' ',$n->textContent))
 $card=static fn(DOMXPath $dom,string $label)=>$norm($dom->query('//section[@id="renewal"]//dt[normalize-space(text())="'.$label.'"]/following-sibling::dd[1]')->item(0));
 // A Renewal card value and its actions: the value stays on one line, the actions sit on their own line below it.
 $split=static fn(DOMXPath $dom,string $label)=>[$norm($dom->query('//section[@id="renewal"]//dt[normalize-space(text())="'.$label.'"]/following-sibling::dd[1]/span[contains(@class,"domains-card__v")]')->item(0)),
-    array_map($norm,iterator_to_array($dom->query('//section[@id="renewal"]//dt[normalize-space(text())="'.$label.'"]/following-sibling::dd[1]/span[contains(@class,"domains-card__a")]//*[self::a or self::button][contains(@class,"domains-a")]')))];
+    array_map($norm,iterator_to_array($dom->query('//section[@id="renewal"]//dt[normalize-space(text())="'.$label.'"]/following-sibling::dd[1]/span[contains(@class,"domains-card__a")]//*[self::a or self::button][contains(@class,"domains-a") or contains(@class,"domains-btn")]')))];
 
 // Held and unresolved paid transfers retain their progress through the real order projection.
 foreach (['held','uncertain'] as $state) {

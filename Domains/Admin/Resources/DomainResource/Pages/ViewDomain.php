@@ -294,6 +294,9 @@ class ViewDomain extends ViewRecord
             $last!==null=>'Last complete read: '.$at($last).'.',
             default=>'Values show after the first complete read.',
         };
+        // A failed read keeps its attempt count and last failure, which the rows below no longer repeat.
+        $attempts=(int)($s['read_attempts']??0);
+        if ($failed&&$attempts>=1) { $text.=' '.(($s['read_stopped']??false)?'Stopped after ':'').$attempts.' '.($attempts===1?'attempt':'attempts').'.'.(($s['read_failed_at']??null)?' Last failure: '.$at($s['read_failed_at']).'.':''); }
         if (!$failed&&($s['next_read']??null)!==null) { $text.=' Next read: '.(($s['read_queued']??false)?'waiting in the account’s read queue since '.$at((int)$s['next_read']):$at((int)$s['next_read'])).'. Use Sync now to read it sooner.'; }
         if ($note!==null) { $text.=' '.e(trim(html_entity_decode(strip_tags((string)($note instanceof Htmlable?$note->toHtml():$note)),ENT_QUOTES|ENT_HTML5))); }
         $title=$failed?'Registrar read failed':($last===null?'Not read from the registrar yet':'Registrar records are out of date');
