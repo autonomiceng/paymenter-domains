@@ -129,7 +129,12 @@ final class InvoiceBinding
             || $service->properties()->where('key', 'domain')->sole()->value !== $line['name']) {
             throw new \DomainException('Native domain invoice changed after admission.');
         }
-        $checkout = [...$line['retail'], 'name' => $line['name'], 'user_id' => (int) $service->user_id, 'order_id' => (int) $service->order_id,
+        // Retain the finalized native line tax after coupons, using the invoice's own tax basis.
+        $retail=$line['retail'];
+        $finalPrice=new \App\Classes\Price(['price'=>$item->price,'currency'=>$invoice->currency,'tax'=>$invoice->tax]);
+        $retail['tax']=RetailLine::decimal($finalPrice->total_tax);
+        $retail['net']=PricingRule::decimal(PricingRule::units($retail['total'],2)-PricingRule::units($retail['tax'],2));
+        $checkout = [...$retail, 'name' => $line['name'], 'user_id' => (int) $service->user_id, 'order_id' => (int) $service->order_id,
             'service_id' => (int) $service->id, 'product_id' => (int) $line['product_id'], 'plan_id' => (int) $line['plan_id'],
             'annual_plan_id' => (int) $line['annual_plan_id'], 'annual_price' => $line['annual_price'],
             'invoice_id' => (int) $invoice->id, 'invoice_item_id' => (int) $item->id, 'term' => $s->term, 'action' => $s->action, 'currency' => 'USD',
