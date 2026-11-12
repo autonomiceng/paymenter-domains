@@ -67,9 +67,23 @@ $notice = $dom->query('//div[@data-domains-row="notice"][contains(@id,"orders-pa
 expect($notice !== null, 'The section notice is on the page');
 foreach ([['row-blocked-ns', 'Edit Nameservers'], ['row-blocked-lock', 'Turn off Transfer lock']] as [$key, $name]) {
     $button = $dom->query('//div[@data-domains-row][contains(@id,"'.$key.'")]//button')->item(0);
-    same(['true', $notice->getAttribute('id'), $name, false], [$button?->getAttribute('aria-disabled'), $button?->getAttribute('aria-describedby'), $button?->getAttribute('aria-label'), $button?->hasAttribute('wire:click')], 'A row blocked by the notice: '.$name);
+    same(['true', $notice->getAttribute('id'), $name, false, false], [$button?->getAttribute('aria-disabled'), $button?->getAttribute('aria-describedby'), $button?->getAttribute('aria-label'), $button?->hasAttribute('wire:click'), $button?->hasAttribute('disabled')], 'A row blocked by the notice: '.$name);
 }
 expect($q($row('kit-blocked-registrar', 'Last sync'), './/button[@*[name()="wire:click"]]')->length === 1, 'The notice blocks only the rows that say so');
+// A request that names a blocked action runs nothing, while an open action in the same section still runs.
+$calls = [];
+Illuminate\Support\Facades\Event::listen(Filament\Actions\Events\ActionCalling::class, static function (Action $action) use (&$calls): void { $calls[] = $action->getName(); });
+$page = Livewire::actingAs($writer)->test(PanelKit::class);
+foreach ([['kit_blocked_ns', 'kit-blocked.kit-blocked-registrar.row-blocked-ns'], ['kit_blocked_lock', 'kit-blocked.kit-blocked-registrar.row-blocked-lock'],
+    ['kit_records', 'kit-blocked.kit-blocked-dns.row-host-records'], ['kit_transfers', 'kit-toggle.kit-toggle-orders.row-transfers'], ['kit_sync', 'kit-blocked.kit-blocked-registrar.row-last-sync']] as [$name, $at]) {
+    $context = ['schemaComponent' => 'content.'.$at.'.'.substr($at, strrpos($at, '.') + 1).'-actions'];
+    $runs = $name === 'kit_sync' ? [$name] : [];
+    $calls = [];$page->call('mountAction', $name, [], $context)->set('mountedActions', []);
+    same($runs, $calls, 'Clicked by name, only the open action runs: '.$name);
+    // A client can also put the action in mountedActions and call it directly.
+    $calls = [];$page->set('mountedActions', [['name' => $name, 'arguments' => [], 'context' => $context]])->call('callMountedAction')->set('mountedActions', []);
+    same($runs, $calls, 'Called directly, only the open action runs: '.$name);
+}
 // Every staff instant on the kit converts in the browser; the done row keeps its confirmation time as a moment.
 same(0.0, $dom->evaluate('count(//*[@data-domains-fact="date"][contains(@title," UTC")][not(.//time[@data-domains-time])])'), 'No staff instant on the kit is static text');
 same(1.0, $dom->evaluate('count(.//*[@class="domains-panel-sub"]//time[@data-domains-time])', $row('kit-live-done', 'Transfer lock')), 'The confirmation sentence ends with a time that converts');
