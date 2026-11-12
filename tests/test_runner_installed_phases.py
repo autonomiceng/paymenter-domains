@@ -23,6 +23,7 @@ class InstalledPhaseTests(unittest.TestCase):
         spec = importlib.util.spec_from_file_location('installed_phase_limits', ROOT/'tests/test_installed_package.py')
         installed = importlib.util.module_from_spec(spec); spec.loader.exec_module(installed)
         clock, calls, errors = [1000.0], [], []
+        real_run = subprocess.run
         def advance(seconds):
             clock[0] += seconds
         with tempfile.TemporaryDirectory() as temp:
@@ -37,6 +38,8 @@ class InstalledPhaseTests(unittest.TestCase):
                 nonlocal verify
                 advance(verify); verify = 0
             def child(argv, **options):
+                if argv[0] == 'cp':
+                    return real_run(argv, **options)
                 name = options['env']['PACKAGE_PHASE']
                 self.assertEqual(argv[-1], str(ROOT/'tests/package-lifecycle.php'))
                 calls.append((name, options['timeout']))
