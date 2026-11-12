@@ -74,7 +74,7 @@ final class RequestFacts
                 } catch (\DomainException) { /* Sent or unknown outcomes keep the unconfirmed notice. */ }
             }
             $admissionHold=$op->state==='held'&&RenewalCycles::registrarVirgin($op)&&StaffOperationWrites::renewalAdmissionHold($op);
-            if ($admissionHold) { $out['admission']='Fix the cause, then release the hold.'; }
+            if ($admissionHold&&OperationActions::relevant('release',$op)) { $out['admission']='Fix the cause, then release the hold.'; }
             if ($op->registrar_key==='namesilo' && $op->action==='renew' && ($admissionHold || $a!==[])
                 && (($p['renewal_execution']['reason']??null)==='provider_auto_renew_unconfirmed'
                     || $op->safe_code==='provider_auto_renew_unconfirmed')) {
