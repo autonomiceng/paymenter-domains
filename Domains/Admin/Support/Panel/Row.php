@@ -82,8 +82,8 @@ class Row extends Component implements HasEmbeddedView
         $why = $this->blocked !== null ? $this->anchor().'-why' : $this->blockedBy?->anchor();
         if ($why !== null) {
             foreach ($shown as $action) {
-                // Visible, focusable and named, but it runs nothing until the cause is cleared.
-                $action->livewireClickHandlerEnabled(false)->extraAttributes(['aria-disabled' => 'true', 'aria-describedby' => $why, 'class' => 'beco-blocked'], merge: true);
+                // Visible, focusable and named, but it runs nothing until the cause is cleared: no link, Alpine or Livewire handler.
+                $action->url(null)->alpineClickHandler('$event.preventDefault()')->livewireClickHandlerEnabled(false)->extraAttributes(['aria-disabled' => 'true', 'aria-describedby' => $why, 'class' => 'beco-blocked'], merge: true);
             }
         }
         $tip = $this->tip();

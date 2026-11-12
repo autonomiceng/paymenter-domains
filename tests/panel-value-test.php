@@ -26,7 +26,7 @@ foreach ([[Reader::Staff, 'warn'], [Reader::Customer, 'prog']] as [$reader, $ton
 $failed = static fn (Reader $r): Value => Value::state(State::CouldntRead, $r, 'We couldn\'t reach the registrar.')->when($at)->detail(Fact::code('2400'));
 $staff = $read($failed(Reader::Staff));
 same(['err', 'Nov 12, 2026, 9:12 AM PST, 2400'], [$text($staff, '//*[@class="beco-st"]/@data-beco-tone'), $text($staff, '//*[contains(@class,"beco-extra")]')], 'Staff see when and the code');
-same(['2026-11-12T17:12:00Z', 'Nov 12, 2026, 5:12 PM UTC'], [$text($staff, '//time/@datetime'), $text($staff, '//time/@title')], 'Staff time carries UTC on hover');
+same(['2026-11-12T17:12:00+00:00', 'Nov 12, 2026, 5:12 PM UTC', 1.0], [$text($staff, '//time/@datetime'), $text($staff, '//*[@data-beco-fact="date"]/@title'), $staff->evaluate('count(//time[@data-domains-time])')], 'A staff instant converts to the viewer\'s zone, with UTC on hover');
 // A page moment: the browser shows the viewer's zone; without script it reads in the site's staff zone, named, never bare UTC.
 $moment = $read(\Paymenter\Extensions\Servers\Domains\Admin\Support\Sheet::moment($at, 'Checked')->toHtml());
 same(['2026-11-12T17:12:00+00:00', 'Nov 12, 2026, 9:12 AM PST', 'Nov 12, 2026, 5:12 PM UTC'], [$text($moment, '//time/@datetime'), $text($moment, '//time'), $text($moment, '//span/@title')], 'A moment falls back to the named staff zone');
@@ -48,6 +48,7 @@ same(['$12.3456', '-$5.50', null], [Fact::money('12.3456')?->text, Fact::money('
 // Late evening in the site's zone is already the next day in UTC: the customer's text and machine date name one day.
 $late = Fact::date(new DateTimeImmutable('2026-11-12T01:00:00Z'), Reader::Customer);
 same(['Nov 11, 2026', '2026-11-11'], [$late->text, $late->datetime], 'A customer date reads and encodes the same calendar day');
+same(0.0, $read(Value::fact(Fact::date($at, Reader::Customer)))->evaluate('count(//time[@data-domains-time])') + $read(Value::fact(Fact::day('2027-03-04')))->evaluate('count(//time[@data-domains-time])'), 'Calendar dates stay as written, never converted');
 same([['Nov 12, 2026', '2026-11-12', null], ['Mar 4, 2027', '2027-03-04']], [[Fact::date($at, Reader::Customer)->text, Fact::date($at, Reader::Customer)->datetime, Fact::date($at, Reader::Customer)->title], [Fact::day('2027-03-04 00:00:00')?->text, Fact::day('2027-03-04')?->datetime]], 'Customers read dates only; calendar days stay as stored');
 same([null, '.com, .net, .org and 2 more', 'Enom TEST, NameSilo', 'ns1.beco.dev', null, null], [Fact::day('2027-02-30'), Fact::tlds(['io', 'org', 'dev', 'com', 'net'])?->text, Fact::names(['Enom TEST', ' NameSilo '])?->text, Fact::host('NS1.Beco.dev.')?->text, Fact::host('not a host'), Fact::names([])], 'Facts from typed data, null when there is nothing to show');
 

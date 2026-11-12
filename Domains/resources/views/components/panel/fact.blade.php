@@ -1,3 +1,4 @@
-{{-- MIT, Copyright (c) 2026 Autonomic Engineering. One Fact. A skin sets host and code in mono and numbers in tabular figures from data-beco-fact. --}}
+{{-- MIT, Copyright (c) 2026 Autonomic Engineering. One Fact. A skin sets host and code in mono and numbers in tabular figures from data-beco-fact.
+     An instant goes through the moment partial, so the browser shows the viewer's zone; a calendar date stays as written. --}}
 @props(['fact'])
-@if ($fact->kind === 'date')<time class="beco-fact" data-beco-fact="date" datetime="{{ $fact->datetime }}" @if ($fact->title !== null) title="{{ $fact->title }}" @endif>{{ $fact->text }}</time>@else<span class="beco-fact" data-beco-fact="{{ $fact->kind }}">{{ $fact->text }}</span>@endif
+@if ($fact->instant)<span class="beco-fact" data-beco-fact="date" title="{{ $fact->title }}">@include('domains::partials.moment', ['at' => $fact->datetime])</span>@elseif ($fact->kind === 'date')<time class="beco-fact" data-beco-fact="date" datetime="{{ $fact->datetime }}" @if ($fact->title !== null) title="{{ $fact->title }}" @endif>{{ $fact->text }}</time>@else<span class="beco-fact" data-beco-fact="{{ $fact->kind }}">{{ $fact->text }}</span>@endif

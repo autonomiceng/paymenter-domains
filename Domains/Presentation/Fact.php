@@ -10,7 +10,7 @@ final class Fact
 {
     /** How the value reads: text, code and host are names (host and code in mono), money and count are numbers. */
     public const KINDS = ['text', 'code', 'host', 'money', 'count', 'date'];
-    private function __construct(public readonly string $kind, public readonly string $text, public readonly ?string $datetime = null, public readonly ?string $title = null)
+    private function __construct(public readonly string $kind, public readonly string $text, public readonly ?string $datetime = null, public readonly ?string $title = null, public readonly bool $instant = false)
     { assert($kind === 'code' || !self::isWord($text), 'A fact never reads as a state or plain word: '.$text); }
 
     /** A model attribute. Status and state columns are refused: their word comes from State. */
@@ -52,13 +52,14 @@ final class Fact
      * A code is opaque, so it may be spelled like one of our words ("failed"); it shows as the code under Not recognized, never as the word. */
     public static function code(?string $code): ?self
     { return $code !== null && preg_match('/^[A-Za-z0-9][A-Za-z0-9_.:\/-]{0,63}$/D', $code) === 1 ? new self('code', $code) : null; }
-    /** A moment. Staff read date and time in the site's zone with UTC on hover; customers read the date only. */
+    /** A moment. Staff read date and time in their browser's zone (the moment partial), with UTC on hover and the site's
+     * staff zone, named, as the text without script. Customers read the date only, a calendar day. */
     public static function date(int|\DateTimeInterface $at, Reader $reader): self
     {
         $at = $at instanceof \DateTimeInterface ? $at->getTimestamp() : $at;
         if ($reader === Reader::Customer) { $day = StaffTime::local($at); return new self('date', $day->format('M j, Y'), $day->format('Y-m-d')); }
         $utc = new \DateTimeImmutable('@'.$at);
-        return new self('date', StaffTime::at($at), $utc->format('Y-m-d\TH:i:s\Z'), $utc->format('M j, Y, g:i A').' UTC');
+        return new self('date', StaffTime::at($at), $utc->format('Y-m-d\TH:i:s\Z'), $utc->format('M j, Y, g:i A').' UTC', true);
     }
     /** A calendar date such as an expiry, the same for every reader, with no zone change. Null when it isn't a date. */
     public static function day(string|\DateTimeInterface|null $date): ?self

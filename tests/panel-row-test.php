@@ -4,6 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/Support/panel-kit.php';
 require __DIR__.'/Support/storefront.php';
 use Filament\Actions\Action;
+use Filament\Schemas\Schema;
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\PanelKit;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Row, SettingsRow, Trace, Value};
@@ -33,11 +34,11 @@ same([true, false, true], [Row::make('A', Value::state(State::Checking, Reader::
 
 // A trace: tones by reader, staff read the time and customers the date.
 $trace = static fn (Reader $reader): DOMXPath => storefrontDom(Trace::make($reader)->step('Transfer request', State::UnderReview, $at, 'the customer')->step('Invoice #100', State::Unpaid, $at - 60)->toEmbeddedHtml());
-foreach ([[Reader::Staff, ['warn', 'off'], '2026-11-12T17:12:00Z'], [Reader::Customer, ['prog', 'warn'], '2026-11-12']] as [$reader, $tones, $datetime]) {
+foreach ([[Reader::Staff, ['warn', 'off'], '2026-11-12T17:12:00+00:00', 2.0], [Reader::Customer, ['prog', 'warn'], '2026-11-12', 0.0]] as [$reader, $tones, $datetime, $converted]) {
     $dom = $trace($reader);
     same($tones, array_map(static fn (DOMNode $n): string => $n->nodeValue, iterator_to_array($dom->query('//li[@class="beco-step"]/@data-beco-tone'))), 'Step tones for '.$reader->name);
     same(['Under review', 'Unpaid'], array_map(static fn (DOMNode $n): string => trim($n->nodeValue), iterator_to_array($dom->query('//*[@class="beco-step-w"]'))), 'Step words are the same for both readers');
-    same($datetime, $dom->evaluate('string((//time)[1]/@datetime)'), 'Step time for '.$reader->name);
+    same([$datetime, $converted], [$dom->evaluate('string((//time)[1]/@datetime)'), $dom->evaluate('count(//time[@data-domains-time])')], 'Step time for '.$reader->name.'; staff times convert in the browser');
     expect(str_contains($dom->evaluate('string((//*[@class="beco-step-d"])[1])'), ', by the customer'), 'A step says who');
 }
 
@@ -69,6 +70,18 @@ foreach ([['row-blocked-ns', 'Edit Nameservers'], ['row-blocked-lock', 'Turn off
     same(['true', $notice->getAttribute('id'), $name, false], [$button?->getAttribute('aria-disabled'), $button?->getAttribute('aria-describedby'), $button?->getAttribute('aria-label'), $button?->hasAttribute('wire:click')], 'A row blocked by the notice: '.$name);
 }
 expect($q($row('kit-blocked-registrar', 'Last sync'), './/button[@*[name()="wire:click"]]')->length === 1, 'The notice blocks only the rows that say so');
+// Every staff instant on the kit converts in the browser; the done row keeps its confirmation time as a moment.
+same(0.0, $dom->evaluate('count(//*[@data-beco-fact="date"][contains(@title," UTC")][not(.//time[@data-domains-time])])'), 'No staff instant on the kit is static text');
+same(1.0, $dom->evaluate('count(.//time[@data-domains-time])', $row('kit-live-done', 'Transfer lock')), 'The confirmation time converts');
+// A blocked link or Alpine action runs nothing either: no href and no handler but the one that cancels the click.
+$go = Action::make('go')->url('https://registrar.example/domain/7');
+$alpine = Action::make('copy')->alpineClickHandler('navigator.clipboard.writeText(\'x\')');
+$blockedRow = Row::make('Registrar', $on)->actions($go, $alpine)->blocked('The registrar page opens once the domain is active.');
+Schema::make(Livewire::actingAs($writer)->test(PanelKit::class)->instance())->components([$blockedRow])->getComponents(); // Places the row on a page, as a render does.
+$blockedDom = storefrontDom($blockedRow->toEmbeddedHtml());
+$controls = iterator_to_array($blockedDom->query('//*[@aria-disabled="true"]'));
+$attrs = implode(' ', array_map(static fn (DOMElement $c): string => implode(' ', array_map(static fn (DOMAttr $a): string => $a->name.'='.$a->value, iterator_to_array($c->attributes))), $controls));
+same([2, 0.0, false, false], [count($controls), $blockedDom->evaluate('count(//*[@href] | //*[@*[name()="wire:click"]])'), str_contains($attrs, 'registrar.example'), str_contains($attrs, 'clipboard')], 'A blocked URL or Alpine action keeps its button but has no link or handler');
 // Blocked on its own: the reason is under the value and the control points to it.
 foreach ([['kit-blocked-dns', 'Host records', 'Records can\'t be edited while DNS hosting is off.'], ['kit-toggle-orders', 'Transfers', 'Transfers can\'t be turned on without a Live registrar account.']] as [$section, $label, $why]) {
     $control = $q($row($section, $label), './/*[@class="beco-row-a"]//button')->item(0);
