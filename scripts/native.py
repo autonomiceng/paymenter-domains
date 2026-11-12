@@ -9,6 +9,8 @@ from pathlib import Path
 import shutil
 import subprocess
 import tarfile
+import threading
+from fixture_watch import UnchangedTree
 
 COMMIT = 'ee729f7d99ac18942625b79f3f93d8d8b21255e8'
 LOCK_SHA256 = 'fd6bdeb5557b3af0976d5688d92081abc6f7c3235806a6c4b77f4b8bca9186be'
@@ -38,9 +40,23 @@ def hashes(root):
 # Full inventory walks still reject links/additions/removals. Linux ctime changes on
 # writes even when a test restores mtime; inode/device also detect replacement.
 _VENDOR_ADMISSIONS = {}
+_VENDOR_WATCHES = {}
+_VENDOR_LOCK = threading.RLock()
 
 
 def admitted_vendor_hashes(root):
+    with _VENDOR_LOCK:
+        key = str(root)
+        record = _VENDOR_WATCHES.get(key)
+        if record is not None and record[0].unchanged():
+            return dict(record[1])
+        watch = UnchangedTree(root) if record is None else record[0]
+        result = _vendor_inventory(root)
+        _VENDOR_WATCHES[key] = watch, result
+        return result
+
+
+def _vendor_inventory(root):
     root = Path(root)
     if root.is_symlink():
         raise ValueError('Dependency symlinks are not accepted.')
