@@ -8,6 +8,7 @@ longest-suffix refusal and exact tuple mappings. Zero SQL migrations or old-row 
 `DsRegistryPolicy::DEPLOYMENT_FACTS` is **[]**. No real suffix qualifies from saved evidence; .com/.net/.org
 remain Off. API examples, IANA numbers and registry signing keys do not establish child-DS acceptance.
 Only deployment review may change this constant; there is no customer/staff allowlist setting.
+The [2026-11-11 source review](namesilo-ds-evidence.md) records the remaining provider and registry gaps.
 
 Facts use C0's envelope `['format'=>1,'entries'=>[suffix=>fact]]`. Each complete fact includes matching `suffix`,
 `input=ds|key`, integer algorithm/digest sets, explicit `combinations` of algorithm/digest_type pairs,

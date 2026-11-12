@@ -48,6 +48,8 @@ final class ActivationEvidence implements LiveActivationEvidence
     {
         if(!in_array($feature,['catalogue','registration','transfer','renewal','management'],true)
             ||config('domains.namesilo_live.catalogue')!==true||config('domains.namesilo_live.'.$feature)!==true){return false;}
+        // Fresh acquisitions create an isolated contact through the management reservation.
+        if(in_array($feature,['registration','transfer'],true)&&config('domains.namesilo_live.management')!==true){return false;}
         try{$this->account($binding);return true;}catch(\Throwable){return false;}
     }
     public function label(): string {return 'NameSilo';}

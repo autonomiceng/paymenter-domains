@@ -79,9 +79,20 @@ foreach([null,'invalid revision'] as $invalid){
     try{$engine->receiptFor($binding);throw new LogicException('Invalid runtime revision must refuse a receipt');}
     catch(DomainException $e){same($runtimeProblem,$e->getMessage(),'Readiness and receipt use the same runtime revision problem');}
 }
-same([[$runtimeProblem],[$runtimeProblem]],$runtimeProblems,'Missing and malformed runtime revisions appear in readiness');
+$runtimeMissing='Site setup Missing. Ask your site admin to install the registrar runtime.';
+same([[$runtimeProblem,$runtimeMissing],[$runtimeProblem,$runtimeMissing]],$runtimeProblems,'Missing and malformed revisions also close the installed runtime');
 config(['domains.namesilo_live.runtime_revision'=>'OFFLINE-v1']);
 same($readyProblems,$readiness(),'Restoring a valid runtime revision restores readiness');
+// Registration and transfer each need contact creation even with the staff management choice Off.
+$contactProblem='Contact profiles Missing. Ask your site admin to enable NameSilo management in the deployment; registration and transfer need it to create contacts.';
+foreach(['registration','transfer'] as $feature){
+    $choices=['registration'=>false,'transfer'=>false,'renewal'=>false,'management'=>false,$feature=>true];
+    $before=$engine->problems($a,$choices,static function():void {});
+    config(['domains.namesilo_live.management'=>false]);
+    $after=$engine->problems($a,$choices,static function():void {});
+    expect(in_array($contactProblem,$after,true)&&!in_array($contactProblem,$before,true),'Activation refuses '.$feature.' when its deployment contact capability is Off');
+    config(['domains.namesilo_live.management'=>true]);
+}
 $saveReceipt=static function()use($engine,$binding,$server):void {
     $server->settings()->updateOrCreate(['key'=>LiveActivation::KEY],['encrypted'=>true,'type'=>'string',
         'value'=>json_encode([...$engine->receiptFor($binding),'registration'=>true],JSON_THROW_ON_ERROR)]);
@@ -128,9 +139,9 @@ app('router')->getRoutes()->refreshNameLookups();
 $action=Filament\Actions\Testing\TestAction::make('activate_live')->schemaComponent('account_'.$server->id.'.live_sales','content');
 $page=Livewire\Livewire::actingAs($full)->test($pages[0],['account'=>$server->id])->mountAction($action)->assertActionMounted($action);
 $page->callMountedAction()->assertNotified('Could not activate');
-expect(!$a->fresh()->processing_enabled,'Missing installed runtime and prices keep Live spending closed');
+expect(!$a->fresh()->processing_enabled,'Missing prices keep Live spending closed');
 // Native installed routing is required: a unit reader cannot exercise CallerRouting's setup gates.
-// OFFLINE price/fact rows model setup only; no Live runtime, activation or provider send is installed.
+// OFFLINE price/fact rows model setup only; no activation or provider send is performed.
 Paymenter\Extensions\Servers\Domains\Services\Runtime::register();
 same('active',UpgradeGate::routeState()['state'],'Real fresh installation has already activated current catalogue');
 $server->settings()->where('key',LiveActivation::KEY)->delete();

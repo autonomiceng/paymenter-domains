@@ -4,8 +4,16 @@ const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const {readFileSync} = require('node:fs');
 const {script} = JSON.parse(readFileSync(0, 'utf8'));
-const element = tag => ({tag, textContent: '', innerHTML: '', children: [], dataset: {},
-    replaceChildren(...children) { this.children = children; }, append(...children) { this.children.push(...children); }});
+const element = tag => ({tag, children: [], dataset: {},
+    get textContent() { return this.children.map(child => typeof child === 'string' ? child : child.textContent).join(''); },
+    set textContent(text) { this.replaceChildren(String(text)); },
+    replaceChildren(...children) { this.children = children; },
+    append(...children) { this.children.push(...children); }});
+// Text assignment removes old nodes; replacement and appended strings contribute to the same text.
+const probe = element('p'); const anchor = element('a'); anchor.textContent = 'link';
+probe.textContent = 'Start'; probe.append(' ', anchor); assert.equal(probe.textContent, 'Start link');
+probe.replaceChildren(anchor, '!'); assert.equal(probe.textContent, 'link!');
+probe.textContent = 'Reset'; assert.deepEqual(probe.children, ['Reset']);
 const makeRow = state => {
     const parts = new Map();
     return {
@@ -67,8 +75,8 @@ async function announce(states) { return (await run(states)).text; }
         const expected = failure === 429 ? 'Too many searches. Wait a minute, then retry.'
             : failure === 419 ? 'This page expired. Reload to try again.'
             : 'We couldn’t check this name right now. Retry in a minute.';
-        assert.equal(note.textContent, expected);
-        const support = note.children.filter(child => child.tag === 'a');
+        assert.equal(note.textContent, expected + ([429, 419].includes(failure) ? '' : ' Contact support'));
+        const support = note.children.filter(child => typeof child !== 'string' && child.tag === 'a');
         assert.equal(support.length, [429, 419].includes(failure) ? 0 : 1, 'Support is suppressed only for pacing and expired sessions');
         if (support.length) assert.equal(support[0].href, 'https://support.example.test/help');
         const retry = row.querySelector('.domains-result__action').children[0];

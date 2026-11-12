@@ -15,6 +15,7 @@ final class HistoryLinkSchema
         $t->unsignedBigInteger('invoice_item_id')->nullable(); $t->string('source', 32);
         $t->unsignedBigInteger('linked_by'); $t->text('reason'); ($legacyDates ? $t->timestamp('linked_at') : $t->dateTime('linked_at'));
         $t->longText('evidence'); $t->string('link_key', 64)->unique();
+        HistoryAccountIndex::define($t,'domains_history_links');
     }
     public static function install(): void
     {

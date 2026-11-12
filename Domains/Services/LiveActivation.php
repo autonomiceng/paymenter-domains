@@ -108,6 +108,9 @@ final class LiveActivation
         if(!app(AccountBindings::class)->configurationAvailable((int)$a->server_id)){$missing[]='API connection Missing. Use Connect account to verify the saved credentials and site.';}
         $check(function()use($a,$b,$features):void {
             if(!$this->provider->enabled($b,'catalogue')){throw new \DomainException('Live setup Missing. Ask your site admin to enable Live catalogue reads for this account.');}
+            if($b->registrarKey==='namesilo'&&(($features['registration']??false)||($features['transfer']??false))&&!$this->provider->enabled($b,'management')){
+                throw new \DomainException('Contact profiles Missing. Ask your site admin to enable NameSilo management in the deployment; registration and transfer need it to create contacts.');
+            }
             foreach(self::FEATURES as $feature){if(($features[$feature]??false)&&!$this->provider->enabled($b,$feature)){throw new \DomainException(ucfirst($feature).' setup Missing. Ask your site admin to enable it for this account.');}}
             if(!app(RuntimePorts::class)->accepted($a)){throw new \DomainException('Site setup Missing. Ask your site admin to install the registrar runtime.');}
             Installation::legacy();

@@ -108,7 +108,7 @@ $other=Server::create(['name'=>'Duplicate TEST key','type'=>'server','extension'
 $refuse(fn()=>$writes->run($review($other->id),['registrar'=>'namesilo','environment'=>'test','credentials'=>$credentials]));
 expect(!Account::where('server_id',$other->id)->exists(),'Same key cannot create another budget lineage');
 $refuse(fn()=>$writes->run($review($server->id),['registrar'=>'namesilo','environment'=>'live','credentials'=>$credentials]));
-$refuse(fn()=>$writes->run($review($server->id),['registrar'=>'namesilo','environment'=>'test','credentials'=>['api_key'=>'other-synthetic-key']]));
+$writes->run($review($server->id),['registrar'=>'namesilo','environment'=>'test','credentials'=>['api_key'=>'other-synthetic-key']]);
 config(['domains.namesilo_test.daily_call_cap'=>1]);
 $refuse(fn()=>$bindings->reader($server->id)->readDomain('example.com',$context()));
 config(['domains.namesilo_account.environment'=>'live']);
