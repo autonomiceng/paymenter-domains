@@ -20,6 +20,7 @@ import time
 from bootstrap import prepare
 import native
 import test_workers
+import test_scheduling
 
 ROOT = Path(__file__).resolve().parents[1]
 SUPERVISOR = Path(__file__).with_name('process_supervisor.py')
@@ -215,7 +216,7 @@ def order_commands(commands, previous=None):
     def priority(item):
         index, (kind, argv) = item
         failed, seconds = previous.get((kind, argv[-1]), (False, math.inf))
-        return ORDER.index(kind), not failed, seconds, index
+        return ORDER.index(kind), not failed, not test_scheduling.installed(kind, argv), seconds, index
     return [command for _, command in sorted(enumerate(commands), key=priority)]
 
 def git_tree():
@@ -470,35 +471,8 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                         break
             else:
                 with ThreadPoolExecutor(max_workers=jobs) as pool, cancel_on_error(processes):
-                    pending, index, available = {}, 0, list(range(jobs))
-                    exclusive_running = False
-                    while pending or (index < len(commands) and not stopped.is_set()):
-                        while available and index < len(commands):
-                            kind, argv = commands[index]
-                            exclusive = kind == 'ui' or (not (env or {}).get('DOMAINS_TEST_CGROUP') and kind != 'lint' and argv[-1].endswith('.py') and Path(argv[-1]).name.startswith('test_installed_'))
-                            # Python package lifecycles and browser checks still drain the pool; native PHP owns private state.
-                            if exclusive_running or (exclusive and pending):
-                                break
-                            with scheduling:
-                                if stopped.is_set():
-                                    break
-                                worker = available.pop()
-                                future = pool.submit(command, index, worker)
-                                pending[future] = (index, worker)
-                                submitted[future] = index
-                                exclusive_running = exclusive
-                                index += 1
-                        if not pending:
-                            break
-                        done, _ = wait(pending, timeout=.1, return_when=FIRST_COMPLETED)
-                        # Drain every completed result before assigning another command.
-                        for future in done:
-                            position, worker = pending.pop(future)
-                            record(position, future.result())
-                            submitted.pop(future, None)
-                            available.append(worker)
-                        if not pending:
-                            exclusive_running = False
+                    test_scheduling.parallel(pool, commands, env or {}, jobs, stopped, scheduling,
+                                             command, record, submitted, wait_for=wait)
     except BaseException as error:
         runner_error = type(error).__name__
         runner_error_detail = str(error)
