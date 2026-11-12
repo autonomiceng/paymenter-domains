@@ -20,14 +20,26 @@ function commerceAdd(Cart $cart, Product $product, string $name, int $term = 1):
     return $cart->items()->create(['product_id' => $product->id, 'plan_id' => $product->plans()->where('billing_period', $term)->sole()->id,
         'quantity' => 1, 'config_options' => [], 'checkout_config' => ['domain' => $name, 'epp' => 'discard-me', 'authority' => 'forged']]);
 }
-function commerceCheckout(User $user, Cart $cart)
+function commerceCheckout(User $user, Cart $cart, bool $render = true)
 {
+    // Operation fixtures need native checkout writes and hooks, but never inspect cart HTML.
+    // Keep the real component and snapshots; explicit page tests retain ordinary rendering.
+    $remove=[];
+    if (!$render) {
+        foreach (['mount','hydrate'] as $event) {
+            $remove[]=Livewire\Livewire::listen($event,static function($component):void {
+                if ($component::class===App\Livewire\Cart::class) { $component->skipRender(); }
+            });
+        }
+    }
+    try {
     Illuminate\Support\Once::flush();
     $page=Livewire\Livewire::actingAs($user)->withCookies(['cart' => $cart->ulid])->test(App\Livewire\Cart::class)->set('use_credits', false);
     // Ordinary commerce cases supply the contact form; account-specific cases define their own properties.
     $required=['address','city','zip','country','phone'];
     return $user->properties()->whereIn('key',$required)->distinct()->count('key')===count($required) ? $page->call('checkout')
         : $page->call('checkout',['contact'=>commerceOrderContact($user),'save_account'=>false]);
+    } finally { foreach ($remove as $stop) { $stop(); } }
 }
 
 function commerceOrderContact(User $user): array
