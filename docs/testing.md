@@ -776,7 +776,7 @@ Every command, including lint, prints a JSON timing row with command index, exec
 and final guards; `run` includes execution/guards but excludes setup, receipt writing and cleanup. Parallel
 command/guard totals sum worker time, not elapsed wall time; measure full wall time around the runner separately.
 
-`native-paid-baseline-test.php` is the single entrypoint for the shared paid-processing matrix.
+The [native paid](testing-coverage/native-paid.md) and [staff release](testing-coverage/release-parity.md) guard maps describe the focused tests.
 
 `provider-send-guard-test.php` checks all three physical registrar senders with synthetic cURL,
 all named command routes, UTC metadata, default-null sends and closed failure paths.

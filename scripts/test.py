@@ -650,7 +650,7 @@ def main():
     output = Path(tempfile.mkdtemp(prefix='domains-tests-'))
     selected = args.suite or []
     runtime = fixture = None
-    vendor_sealed = False
+    vendor_sealed = runtime_sealed = False
     workers = None
     timings = {}
     try:
@@ -690,6 +690,8 @@ def main():
         if selected != ['mariadb']:
             with timing('php_runtime', timings):
                 runtime, binary, extension = prepare(native=needs_fixture)
+            test_workers.seal_path(runtime)
+            runtime_sealed = os.environ.get('DOMAINS_TEST_OVERLAY') == '1'
         env = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8',
                'PHPRC': '', 'PHP_INI_SCAN_DIR': '', 'TMPDIR': str(output), 'PYTHONDONTWRITEBYTECODE': '1'}
         env.update({key: value for key, value in os.environ.items() if key.startswith('DOMAINS_TEST_')})
@@ -748,6 +750,8 @@ def main():
         if vendor_sealed:
             test_workers.seal_vendor(fixture, release=True)
         if runtime:
+            if runtime_sealed:
+                test_workers.seal_path(runtime, release=True)
             shutil.rmtree(runtime)
         if fixture:
             shutil.rmtree(fixture, ignore_errors=True)
