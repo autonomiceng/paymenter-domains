@@ -130,7 +130,7 @@ class RegistrarSetup extends Page implements HasTable
             $b['value']===null?$b['cause']:null,
             $b['value']!==null&&$b['low']?'Low balance. Add funds.':null,
         ]);
-        // A renewal waiting on Beco's price read is told, not a job: it fills in by itself.
+        // A renewal waiting on our price read is told, not a job: it fills in by itself.
         $gap=$b===null?null:RegistrarFacts::dueGap($account,$b);
         if ($gap!==null&&$gap['act']) { $jobs[]=$gap['text']; }
         $parts=array_map(StaffDomainStatus::sentence(...),array_filter([$reason,...$jobs,$gap!==null&&!$gap['act']?$gap['text']:null]));

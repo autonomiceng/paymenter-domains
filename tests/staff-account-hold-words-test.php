@@ -32,7 +32,7 @@ $note=$list->getTable()->getColumn('note')->record($server);
 // This fixture account has no loadable settings, so the Note also says that; the held step must be there in its own words.
 expect(str_contains((string)$note->getState(),'Check 2 requests. No registrar result yet.'),'The list Note names the held account step: '.$note->getState());
 expect(!str_contains((string)$note->getState(),'WHOIS privacy'),'The list Note never names WHOIS privacy');
-same('warn',$note->getExtraAttributes()['data-beco-tone']??null,'The held Note is amber');
+same('warn',$note->getExtraAttributes()['data-domains-tone']??null,'The held Note is amber');
 // One request reads the full hold snapshot once, including empty account results.
 $attributes=request()->attributes;
 $attributes->remove('domains.paid_uncertainty.holds');

@@ -16,25 +16,27 @@ import native
 @contextmanager
 def application(fixture, scenario):
     vendor = (fixture / "vendor").resolve(strict=True)
-    before = native.hashes(vendor, release_cache=True)
+    before = native.admitted_vendor_hashes(vendor)
     with tempfile.TemporaryDirectory(
         prefix=f"domains-installed-{scenario}-", dir=fixture.parent
     ) as temporary:
         root = Path(temporary)
         app = root / "paymenter"
-        shutil.copytree(
-            fixture,
-            app,
-            symlinks=True,
-            ignore=shutil.ignore_patterns(
-                "vendor", "*.sqlite", "domains-editor-routes.php"
-            ),
-        )
+        def generated(directory, names):
+            ignored = shutil.ignore_patterns("*.sqlite", "domains-editor-routes.php")(directory, names)
+            return ignored | ({"vendor"} if Path(directory) == fixture else set())
+
+        shutil.copytree(fixture, app, symlinks=True, ignore=generated)
+        # Native panel tests can leave the worker linked to the current source.
+        # An installed lifecycle receives only the ZIP it installs in this app.
+        extension = app / "extensions/Servers/Domains"
+        if extension.is_symlink():
+            extension.unlink()
         (app / "vendor").symlink_to(vendor, target_is_directory=True)
         try:
             yield root, app
         finally:
-            if native.hashes(vendor, release_cache=True) != before:
+            if native.admitted_vendor_hashes(vendor) != before:
                 raise RuntimeError(
                     "Installed scenario changed shared vendor dependencies."
                 )

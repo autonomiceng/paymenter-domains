@@ -23,6 +23,7 @@ final class DomainEditActions
         'Management lifecycle held.'=>'This domain or its service is not active, or orders are paused. Fix that, then try again.',
         'Management permission required.'=>"You don't have permission to change domains.",
         'Current records required.'=>'This changed after you opened it. Reload the page and try again.',
+        'Opened details changed.'=>'This changed after you opened it. Reload the page and try again.',
         'DNS records changed.'=>'The records changed at the registrar, so nothing was sent. Reload the page and try again.',
         'DNS tools disabled.'=>'DNS tools are off for this registrar account. Turn them on in Registrars, then try again.',
         'Management capability unsupported.'=>"This registrar doesn't support this change.",
@@ -132,7 +133,7 @@ final class DomainEditActions
                     if (!ManagementForms::accepted($actor,$d,$name,$key)) {
                         if (array_diff_assoc($bound,$data)) { throw new \DomainException('Current records required.'); }
                         $p=$input($data);
-                        app(ManagementForms::class)->submit($actor,$d->fresh(),$name,[...$p,'confirmed'=>'1'],$key);
+                        app(ManagementForms::class)->submit($actor,$d->fresh(),$name,[...$p,'confirmed'=>'1'],$key,contactsDigest:$name==='contacts'?$data['opened_contacts_digest']:null);
                     }
                     Notification::make()->success()->title(ManagementForms::REQUESTED)->send();
                 } catch (\Throwable $error) {

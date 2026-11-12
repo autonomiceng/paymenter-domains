@@ -2,9 +2,9 @@
     <style>
         .domains-sell{display:grid;gap:1.5rem}
         .domains-sell-add{display:flex;gap:.75rem;align-items:center;max-width:24rem}.domains-sell-add .fi-input-wrp{flex:1}
-        .domains-sell-table{--domains-sell-edge:20px;--domains-sell-rule:var(--beco-line-soft,var(--gray-200))}.dark .domains-sell-table{--domains-sell-rule:var(--beco-line-soft,#ffffff14)}
+        .domains-sell-table{--domains-sell-edge:20px;--domains-sell-rule:var(--panel-line-soft,var(--gray-200))}.dark .domains-sell-table{--domains-sell-rule:var(--panel-line-soft,#ffffff14)}
         /* What the skin's table head says for a plain cell, for the Register, Renew and Transfer cells above it. */
-        .domains-sell-table .fi-ta-header-group-cell{padding:8px 20px;border-width:0 0 1px 1px;border-style:solid;border-color:var(--domains-sell-rule);color:var(--beco-fg-2,var(--gray-400));font-size:13px;font-weight:400;line-height:20px}.domains-sell-table .fi-ta-header-cell{border:0}.domains-sell-table thead .fi-ta-selection-cell{padding-block:8px;text-align:start}
+        .domains-sell-table .fi-ta-header-group-cell{padding:8px 20px;border-width:0 0 1px 1px;border-style:solid;border-color:var(--domains-sell-rule);color:var(--panel-fg-2,var(--gray-400));font-size:13px;font-weight:400;line-height:20px}.domains-sell-table .fi-ta-header-cell{border:0}.domains-sell-table thead .fi-ta-selection-cell{padding-block:8px;text-align:start}
         .domains-sell-choices{display:flex;flex-wrap:wrap;gap:.5rem}
         .domains-price-help{display:grid;gap:1rem;font-size:.875rem}
         .domains-price-help h3{font-weight:600}
@@ -32,16 +32,16 @@
         .domains-sell-table .fi-ta-table:has(.fi-ta-header-group-cell ~ .fi-ta-header-group-cell) :is(:not(.domains-sell-register)+.domains-sell-register,:not(.domains-sell-renew)+.domains-sell-renew,:not(.domains-sell-transfer)+.domains-sell-transfer,.domains-sell-status){border-inline-start:1px solid var(--domains-sell-rule)}
         /* Staff rows are one line at 44px. */
         .domains-sell-table .fi-ta-table td .fi-ta-text{padding-block:10px}.domains-sell-table .fi-ta-table td.fi-ta-selection-cell,.domains-sell-table .fi-ta-table td:last-child{padding-block:0}
-        .domains-sell-table .fi-ta-selection-cell,.domains-sell-table .domains-sell-pin{position:sticky;left:0;z-index:1;background:var(--beco-card,Canvas)}
-        .dark .domains-sell-table .fi-ta-selection-cell,.dark .domains-sell-table .domains-sell-pin{background:var(--beco-card,var(--gray-900))}
+        .domains-sell-table .fi-ta-selection-cell,.domains-sell-table .domains-sell-pin{position:sticky;left:0;z-index:1;background:var(--panel-card,Canvas)}
+        .dark .domains-sell-table .fi-ta-selection-cell,.dark .domains-sell-table .domains-sell-pin{background:var(--panel-card,var(--gray-900))}
         /* Pinned cells are solid so rows slide under them, so a ticked row's tint is repeated here. Filament's first-cell rule must not unpin them. */
         .domains-sell-table .fi-ta-row.fi-selected>:first-child{position:sticky}
         .domains-sell-table .fi-ta-row.fi-selected>.fi-ta-selection-cell,.domains-sell-table .fi-ta-row.fi-selected>.domains-sell-pin{background:var(--gray-50)}
-        .dark .domains-sell-table .fi-ta-row.fi-selected>.fi-ta-selection-cell,.dark .domains-sell-table .fi-ta-row.fi-selected>.domains-sell-pin{background:linear-gradient(#ffffff0d,#ffffff0d),var(--beco-card,var(--gray-900))}
+        .dark .domains-sell-table .fi-ta-row.fi-selected>.fi-ta-selection-cell,.dark .domains-sell-table .fi-ta-row.fi-selected>.domains-sell-pin{background:linear-gradient(#ffffff0d,#ffffff0d),var(--panel-card,var(--gray-900))}
         .domains-sell-table .fi-ta-selection-cell{width:3rem;min-width:3rem}.domains-sell-table .fi-ta-selection-cell + .domains-sell-pin{left:3rem}
         /* Ticked rows: the pinned cells paint their tint short of their own row line, and Chrome lays the price cells' tint under the line or not by sub-pixel position, so lines stepped. Every cell draws the line solid: the line over the tint between two ticked rows, the plain row line where a ticked run starts or ends. */
-        .dark .domains-sell-table .fi-ta-row.fi-selected:has(+.fi-ta-row.fi-selected)>td{border-bottom:1px solid color-mix(in srgb,white 5%,color-mix(in srgb,white 5%,var(--beco-card,var(--gray-900))))}
-        .dark .domains-sell-table .fi-ta-row:is(.fi-selected:has(+.fi-ta-row:not(.fi-selected)),:not(.fi-selected):has(+.fi-ta-row.fi-selected))>td{border-bottom:1px solid color-mix(in srgb,white 5%,var(--beco-card,var(--gray-900)))}
+        .dark .domains-sell-table .fi-ta-row.fi-selected:has(+.fi-ta-row.fi-selected)>td{border-bottom:1px solid color-mix(in srgb,white 5%,color-mix(in srgb,white 5%,var(--panel-card,var(--gray-900))))}
+        .dark .domains-sell-table .fi-ta-row:is(.fi-selected:has(+.fi-ta-row:not(.fi-selected)),:not(.fi-selected):has(+.fi-ta-row.fi-selected))>td{border-bottom:1px solid color-mix(in srgb,white 5%,var(--panel-card,var(--gray-900)))}
         @media(max-width:40rem){
             .domains-price-help dl{grid-template-columns:minmax(0,1fr)}
             /* The account and year choices share a row, and search and the buttons wrap below, so nothing is cut. */

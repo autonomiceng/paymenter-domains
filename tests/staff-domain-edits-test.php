@@ -69,4 +69,30 @@ same($before,Operation::count(),'A finished contact save stays idempotent after 
 $staleContacts->callMountedAction();same($before,Operation::count(),'An old contact modal cannot queue the former owner email');
 $staleContacts->assertNotified(Filament\Notifications\Notification::make()->danger()->title("Couldn't save this change")->body('This changed after you opened it. Reload the page and try again.'));
 
+// A competing save after the modal's first check is compared again under the domain lock.
+foreach (['queued','completed'] as $race) {
+    $modal=$open('Contacts','contacts');
+    $current=$owners->present($d->fresh())->management['contacts']['saved'];
+    $first=null;$before=null;$armed=true;
+    $firstInput=['role'=>'all','contact'=>[...$current,'first_name'=>'Concurrent '.$race]];
+    $racePorts=new OwnerPorts(function($binding)use(&$armed,&$first,&$before,$firstInput,$race,$management,$actor,$d,$driver,$finish){
+        if($armed){
+            $armed=false;
+            $first=$management->request($actor,$d->id,'contacts',$firstInput,hash('sha256','staff-first-'.$race),$driver);
+            if($race==='completed'){$finish($first);}
+            $first=$first->fresh();$before=[$d->operations()->count(),$first->state,$first->payload,$first->policy];
+        }
+        return $driver;
+    });
+    app()->instance(ManagementForms::class,new ManagementForms($management,$racePorts));
+    try {
+        $modal->setActionData([...$current,'city'=>'Stale City'])->callMountedAction();
+        expect($first!==null,'The concurrent staff save runs after the modal check');
+        same($race==='queued'?'queued':'succeeded',$first->fresh()->state,'The first staff save reaches '.$race);
+        same($before,[$d->operations()->count(),$first->fresh()->state,$first->fresh()->payload,$first->fresh()->policy],'The locked staff comparison preserves the '.$race.' first save');
+        $modal->assertNotified(Filament\Notifications\Notification::make()->danger()->title("Couldn't save this change")->body('This changed after you opened it. Reload the page and try again.'));
+    } finally {app()->forgetInstance(ManagementForms::class);}
+    if($race==='queued'){$finish($first);}
+}
+
 echo "Staff nameserver, lock and contact edits passed.\n";$nativeSuccessful=true;

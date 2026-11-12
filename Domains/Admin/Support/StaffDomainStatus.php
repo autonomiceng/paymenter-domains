@@ -73,16 +73,20 @@ final class StaffDomainStatus
     {
         if ($state === 'adoption_pending') { return ['Check open invoices.', true, null]; }
         if ($op && in_array($d->status, self::ACQUIRING, true)) {
-            try { $ready=RequestFacts::readyMessage($op,$accounts,$release); } catch (\Throwable) { return [DomainFacts::UNREADABLE.self::check($op->id),true,$op->id]; }
+            // The paid order projection already confirms the saved code; only worker pickup is left.
+            $pickup=$state==='transfer_pending'&&$op->state==='awaiting_code';
+            $readyOp=$pickup?clone $op:$op;
+            if($pickup){$readyOp->state='queued';}
+            try { $ready=RequestFacts::readyMessage($readyOp,$accounts,$release); } catch (\Throwable) { return [DomainFacts::UNREADABLE.self::check($op->id),true,$op->id]; }
             if ($ready!==null) {
-                return [$ready.self::ordersOrCheck($op,$ready,$accounts),true,$op->id];
+                return [$ready.self::ordersOrCheck($readyOp,$ready,$accounts),true,$op->id];
             }
             if (in_array($op->state, ['held', 'uncertain'], true)) { return [self::stopped($op,$accounts,$release), true, $op->id]; }
             if ($state === 'awaiting_payment') { return [self::UNPAID, false, null]; }
             if ($state === 'awaiting_code') { return [self::NO_CODE, false, null]; }
             if ($state === 'setup_required') { return [self::NO_SETUP, false, null]; }
-            // Paid and still marked awaiting_payment: the sweep picks it up on its own.
-            if ($state !== 'needs_review' && !in_array($op->state, [...self::MOVING, 'awaiting_payment'], true)) {
+            // Paid and still awaiting payment or a saved code: the sweep picks it up on its own.
+            if ($state !== 'needs_review' && !$pickup && !in_array($op->state, [...self::MOVING, 'awaiting_payment'], true)) {
                 return [match ($op->state) {
                     'cancelled' => 'Request cancelled, order still open. Cancel the order to release the name.', 'disposed' => 'Request cancelled.', 'rejected' => RequestStatus::closed($op->state, $op->safe_code) ? 'Request cancelled.' : 'Request failed.',
                     'succeeded' => 'Request done, but the domain is still pending.', default => 'Request status unclear.',

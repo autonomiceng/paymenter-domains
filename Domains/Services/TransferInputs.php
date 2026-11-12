@@ -125,7 +125,13 @@ final class TransferInputs
                 self::open($op, $l); $this->payment($op, $l); self::requireEditable($op, $this->clock->now());
                 if ($op->state === 'held' && !self::holdTakesCode($op)) { throw new \DomainException; }
                 self::write(fn () => $op->update(['payload' => [...($op->payload ?? []), 'epp' => $code],
-                    'policy' => [...($op->policy ?? []), 'code_saved_at' => $this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format(DATE_ATOM)]]));
+                    'policy' => [...($op->policy ?? []), 'code_saved_at' => $this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format(DATE_ATOM)],
+                    // Saving input does not send a transfer or release a staff hold. Paid work waits for its worker.
+                    ...($op->state === 'awaiting_code' ? ['state' => 'queued', 'safe_code' => null] : [])]));
+                // Missing-code scans back off for fifteen minutes. New paid input is ready for the next turn.
+                if ($op->state === 'queued' && isset($op->policy['paid_at']) && \Illuminate\Support\Facades\Schema::hasTable('domains_runtime_operations')) {
+                    DB::table('domains_runtime_operations')->where('operation_id', $id)->update(['due_at' => 0]);
+                }
             });
         } catch (\Throwable) { throw new \DomainException('Transfer code could not be saved.'); }
     }

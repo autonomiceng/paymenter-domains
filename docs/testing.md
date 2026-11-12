@@ -683,7 +683,7 @@ Coverage details are in the [testing coverage index](testing-coverage.md), with 
 `--jobs` or `DOMAINS_TEST_JOBS` count that exceeds the memory budget or available host
 memory fails at setup. CPU-based defaults shrink to fit. `--jobs 1` keeps serial execution.
 `DOMAINS_TEST_JOBS` sets the default; otherwise it is half the CPU count, between one and four.
-Each worker owns its fixture, PHP runtime and temporary paths. Source and copied dependencies are checked before commands start and after the run.
+Each command starts with a fresh mutable app and temporary directory, sharing only verified vendor files. Each worker owns its PHP runtime. Source and copied dependencies are checked before commands start and after the run; each app copy is checked before disposal.
 Console output prints each command's block as it completes; receipts keep scheduled
 plan order and indexed output files.
 Receipts add `jobs` and command `seconds` for concurrency and timing.

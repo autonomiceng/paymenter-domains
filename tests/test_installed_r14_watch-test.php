@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\Vie
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,WatchFacts};
 use Paymenter\Extensions\Servers\Domains\Presentation\WatchPage;
 use Paymenter\Extensions\Servers\Domains\Dns\{DnsAnswer,DnsQuery};
-config(['domains.site_dns_default.nameservers'=>['ns1.beco.test','ns2.beco.test'],'settings.company_name'=>'Beco']);
+config(['domains.site_dns_default.nameservers'=>['ns1.example.test','ns2.example.test'],'settings.company_name'=>'Example Hosting']);
 extract(dnsFixture());
 DB::table('domains_watch_names')->where('id',$watch->id)->update(['ns_profile_id'=>null,'profile_revision'=>0,'expected_dns'=>null]);
 $now=time()-1200;
@@ -34,10 +34,10 @@ $initial=WatchDnsObservation::where('watch_id',$watch->id)->where('check_kind','
 expect($initial!==null&&!$initial->facts['ns_confirmed'],'Initial real DNS read has not passed notification confirmation');
 $initialSummary=(new DomainSummaries())->one($owner,'watch',$watch->id,$now);
 $initialStaff=WatchFacts::for($watch->fresh(),['keys'=>[],'summary'=>$initialSummary]);
-expect(str_contains(json_encode($initialStaff),'does not use Beco nameservers'),'Staff explains the initial observed mismatch');
+expect(str_contains(json_encode($initialStaff),'does not use Example Hosting nameservers'),'Staff explains the initial observed mismatch');
 $initialCustomer=view('domains::partials.summary',['summary'=>$initialSummary])->render();
-expect(str_contains($initialCustomer,'does not use Beco nameservers'),'Customer explains the same initial observed mismatch');
-expect(str_contains(WatchPage::notice($initialSummary,[],[])['text']??'','does not use Beco nameservers'),'Customer watch page uses the existing mismatch notice immediately');
+expect(str_contains($initialCustomer,'does not use Example Hosting nameservers'),'Customer explains the same initial observed mismatch');
+expect(str_contains(WatchPage::notice($initialSummary,[],[])['text']??'','does not use Example Hosting nameservers'),'Customer watch page uses the existing mismatch notice immediately');
 expect(WatchPage::nameservers($initialSummary)['sub']!=='Checking again','Initial observed mismatch no longer masquerades as pending');
 same(0,DB::table('domains_watch_notices')->count(),'Displaying an observed mismatch does not bypass notification confirmation');
 foreach([300,600,900,1200]as$offset){$now=$start+$offset;$work->tick();}
@@ -50,9 +50,9 @@ $staff=WatchFacts::for($watch->fresh(),['keys'=>[],'summary'=>$summary]);
 $customer=view('domains::partials.summary',['summary'=>$summary])->render();
 writeRenderArtifact((getenv('R14_RENDER_DIR')?:sys_get_temp_dir()).'/r14-watch-customer.html',$customer);
 $errors=[];
-if(!str_contains(json_encode($staff),'does not use Beco nameservers')){$errors[]='Staff does not explain inherited mismatch';}
+if(!str_contains(json_encode($staff),'does not use Example Hosting nameservers')){$errors[]='Staff does not explain inherited mismatch';}
 if(str_contains(json_encode($staff),'Choose a DNS template to compare nameservers')){$errors[]='Staff asks for a template already inherited';}
-if(!str_contains($customer,'does not use Beco nameservers')){$errors[]='Customer still waits on the notice planner';}
+if(!str_contains($customer,'does not use Example Hosting nameservers')){$errors[]='Customer still waits on the notice planner';}
 // Keep native page HTML even on red for the screenshot comparison.
 \Carbon\CarbonImmutable::setTestNow(\Carbon\CarbonImmutable::createFromTimestampUTC($now));
 $page=\Livewire\Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$watch->id]);

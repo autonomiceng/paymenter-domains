@@ -19,7 +19,9 @@ foreach([0,1]as$i){
         expect(!isset($op->fresh()->payload['epp']),'Invalid code not stored');
     }
     $r=$req($d,'code',['transfer_code'=>$exact]);$stale=clone $r;
-    $action->code($r,$d->id);same($exact,$op->fresh()->payload['epp'],'Controller preserves exact encrypted bytes');
+    $saved=$action->code($r,$d->id);same($exact,$op->fresh()->payload['epp'],'Controller preserves exact encrypted bytes');
+    // rw-J3-1: a save leaves the empty form for the domain page and says the paid transfer started.
+    same([route('domains.domains.show',$d->id),OwnerActionController::CODE_SAVED_STARTED],[$saved->getTargetUrl(),$session->get('domains_status')],'Saved code opens the domain page with what happens next');
     expect(!str_contains(DB::table('domains_operations')->find($op->id)->payload,$exact),'No plaintext at rest');
     expect(!str_contains(json_encode($session->all()),$exact),'No code in session');$replay(fn()=>$action->code($stale,$d->id));
     $r=$req($d,'code',['transfer_code'=>'private-query']);$r->query->set('transfer_code','private-query');$action->code($r,$d->id);

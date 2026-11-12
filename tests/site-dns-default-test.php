@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{SiteDnsDefault,NewDomainDns,W
 // Installation has no staff actor yet. Deployment supplies literal public names, never registrar credentials.
 config(['domains.site_dns_default.nameservers'=>['ns1.deployment.test','ns2.deployment.test']]);
 extract(dnsFixture());
-same(1,WatchProfile::where('name','Beco DNS')->where('enabled',true)->count(),'Installation seeds one enabled deployment DNS template');
+same(1,WatchProfile::where('name','Site DNS')->where('enabled',true)->count(),'Installation seeds one enabled deployment DNS template');
 $default=SiteDnsDefault::profile();
 same(['ns1.deployment.test','ns2.deployment.test'],$default->nameservers,'Deployment owns the nameservers');
 same($default->id,NewDomainDns::profile($server->id)->id,'Site default works independently of registrar account');
@@ -23,7 +23,7 @@ $reading=true;foreach($legacyServers as$accountServer){same($default->id,NewDoma
 expect(!$legacyRead,'Registration never reads the retired account setting');
 $entry->upgraded();same($default->id,SiteDnsDefault::profile()->id,'Upgrade keeps one stable default reference');
 same(0,\App\Models\Setting::where('key',$legacy)->count(),'Site-default upgrade deletes retired account DNS settings');
-same(1,WatchProfile::where('name','Beco DNS')->count(),'Upgrade does not duplicate the deployment template');
+same(1,WatchProfile::where('name','Site DNS')->count(),'Upgrade does not duplicate the deployment template');
 // Null watch choices inherit the site reference without storing a per-watch assignment.
 DB::table('domains_watch_names')->where('id',$watch->id)->update(['ns_profile_id'=>null,'profile_revision'=>0,'expected_dns'=>null]);
 $checks=new WatchDnsChecks(true);$at=1800000000;

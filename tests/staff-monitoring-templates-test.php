@@ -19,16 +19,16 @@ same('DNS templates',$templates->instance()->getTitle(),'Templates title');expec
 foreach(['name'=>'Template','nameservers'=>'Nameservers','enabled'=>'Status'] as $name=>$label){same($label,$column($templates,$name)->getLabel(),'Template column '.$name);}
 same(null,$column($templates,'revision'),'No revision column');same('On',$column($templates,'enabled')->record($profile)->getState(),'Status On');same(null,$column($templates,'used_by'),'No Used by column');
 // The list retains status marks; the detail page has a reversible monitoring switch.
-expect(!str_contains($templates->html(),'role="switch"'),'Template list shows no switch');expect(preg_match('~data-beco-tone="ok"[^>]*data-beco-record="template-'.$profile->id.'"~',$templates->html())===1,'Template list marks On');
+expect(!str_contains($templates->html(),'role="switch"'),'Template list shows no switch');expect(preg_match('~data-domains-tone="ok"[^>]*data-domains-record="template-'.$profile->id.'"~',$templates->html())===1,'Template list marks On');
 $template=Livewire::actingAs($manager)->test(ViewTemplate::class,['record'=>$profile->id])->assertSeeInOrder(['On','Records','Nameservers','Website records','Email records','Used by','Monitored domains'])->assertActionHidden('enable');$clean($template->html(),'DNS template');
 expect(str_contains($template->html(),'role="switch"'),'Template page has a monitoring switch');
 // Nothing goes beside the sheet, so it is one column with no empty rail.
-expect(str_contains($template->html(),'domains-split-single') && !str_contains($template->html(),'domains-rail'),'Template page is a single-column sheet');expect(str_contains((string)$template->instance()->getSubheading()?->toHtml(),'data-beco-tone="ok"'),'Template page head marks On');
+expect(str_contains($template->html(),'domains-split-single') && !str_contains($template->html(),'domains-rail'),'Template page is a single-column sheet');expect(str_contains((string)$template->instance()->getSubheading()?->toHtml(),'data-domains-tone="ok"'),'Template page head marks On');
 same('Synthetic defaults',$template->instance()->getTitle(),'Template title');same('Edit',$template->instance()->getAction('save')->getLabel(),'Edit template');
 same([RoutingProfileResource::getUrl()=>'DNS templates','Synthetic defaults'],$template->instance()->getBreadcrumbs(),'Template breadcrumb');
 $off=DB::transaction(fn()=>WatchProfile::create(['name'=>'Spare template','nameservers'=>['ns1.spare.test'],'website_endpoints'=>[],'email_endpoints'=>[],'edited_by'=>$manager->id,'reason'=>'Synthetic spare']));
 $spare=Livewire::actingAs($manager)->test(ViewTemplate::class,['record'=>$off->id]);same('Turn on',$spare->instance()->getAction('enable')->getLabel(),'Turn on template');
-expect(str_contains((string)$spare->instance()->getSubheading()?->toHtml(),'data-beco-tone="off"'),'Off template head marks Off');
+expect(str_contains((string)$spare->instance()->getSubheading()?->toHtml(),'data-domains-tone="off"'),'Off template head marks Off');
 same('Future checks use these records. Monitoring stays on if this template is on. Enter one value per line.',$spare->instance()->getAction('save')->getModalDescription(),'Edit body');
 // The form is short: one note for every box, record groups headed and not boxed.
 $add=$templates->instance()->getAction('save');same(['Add DNS template','Enter one value per line.',\Filament\Support\Enums\Width::Medium],[$add->getModalHeading(),$add->getModalDescription(),$add->getModalWidth()],'Add form head and width');

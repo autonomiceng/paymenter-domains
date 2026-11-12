@@ -269,6 +269,33 @@ class RunnerTests(unittest.TestCase):
             Path(workers[1]['PAYMENTER_TEST_FIXTURE'], 'vendor/autoload.php').write_text('changed')
             with self.assertRaises(ValueError): runner.test_workers.verify(workers, fixture_snapshot, runtime_snapshot)
 
+    def test_native_cases_reset_routes_databases_and_extensions_with_shared_vendor(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); (root/'Domains').mkdir(); output = root/'output'; output.mkdir()
+            fixture = root/'fixture'; (fixture/'vendor').mkdir(parents=True)
+            (fixture/'vendor/autoload.php').write_text('<?php')
+            (fixture/'bootstrap/cache').mkdir(parents=True); (fixture/'database').mkdir()
+            (fixture/'pristine').write_text('source')
+            env = dict(os.environ, PAYMENTER_TEST_FIXTURE=str(fixture), TMPDIR=str(output))
+            contaminate = ("from pathlib import Path; import os; "
+                           "app=Path(os.environ['PAYMENTER_TEST_FIXTURE']); "
+                           "(app/'bootstrap/cache/routes-v7.php').write_text('cached storefront'); "
+                           "(app/'database/runtime.sqlite').touch(); "
+                           "(app/'extensions').mkdir(); (app/'extensions/Domains').symlink_to(app/'pristine'); "
+                           "print((app/'vendor').resolve())")
+            probe = ("from pathlib import Path; import os; "
+                     "app=Path(os.environ['PAYMENTER_TEST_FIXTURE']); "
+                     "assert not (app/'bootstrap/cache/routes-v7.php').exists(); "
+                     "assert not (app/'database/runtime.sqlite').exists(); "
+                     "assert not (app/'extensions').exists(); "
+                     "assert (app/'pristine').read_text()=='source'; "
+                     "print((app/'vendor').resolve())")
+            commands = [('native', [sys.executable, '-c', script]) for script in [contaminate, probe]]
+            with mock.patch.object(runner, 'ROOT', root), contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(runner.run(commands, env, output, ['native'], {}), 0)
+            self.assertEqual((output/'000.stdout.txt').read_text().strip(), str(fixture/'vendor'))
+            self.assertEqual((output/'001.stdout.txt').read_text().strip(), str(fixture/'vendor'))
+
     def test_worker_copies_use_canonical_paths_under_a_linked_output_parent(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp).resolve()

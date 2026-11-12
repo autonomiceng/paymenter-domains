@@ -47,7 +47,7 @@ foreach(['paused'=>'Paused','retired'=>'Stopped']as$state=>$expected){
  $record=$w->fresh();
  same($expected,$list->instance()->getTable()->getColumn('status')->record($record)->getState(),'The row names its monitoring state');
  $rowDom=storefrontDom($list->html());$nativeRow=$rowDom->query('//*[@*[name()="wire:key" and contains(.,".table.records.'.$id.'")]]')->item(0);
- $badges=$nativeRow===null?[]:array_map(fn($n)=>trim($n->textContent),iterator_to_array($rowDom->query('.//td[contains(concat(" ",normalize-space(@class)," ")," fi-ta-cell-status ")]//*[@data-beco-record="watch-'.$id.'"]/span[contains(concat(" ",normalize-space(@class)," ")," fi-badge ")]',$nativeRow)));
+ $badges=$nativeRow===null?[]:array_map(fn($n)=>trim($n->textContent),iterator_to_array($rowDom->query('.//td[contains(concat(" ",normalize-space(@class)," ")," fi-ta-cell-status ")]//*[@data-domains-record="watch-'.$id.'"]/span[contains(concat(" ",normalize-space(@class)," ")," fi-badge ")]',$nativeRow)));
  same([$expected],$badges,'The row status badge itself names its state, independent of the filter options');
  foreach(['registration','delegation.dns','last_check']as$name){$column=$list->instance()->getTable()->getColumn($name)->record($record);
   // Status says Paused or Stopped once per row (ui-r15); the fact cells stay empty instead of repeating it.

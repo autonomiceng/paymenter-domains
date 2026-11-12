@@ -95,7 +95,7 @@ def git(source, *args):
     return subprocess.check_output(['git', '-C', str(source), *args], stderr=subprocess.PIPE)
 
 
-def verify(source, *, fixture_snapshot=None):
+def verify(source, *, fixture_snapshot=None, shared_vendor=None):
     source = Path(source)
     if not source.is_absolute() or source.is_symlink() or source.resolve() != source or str(source).startswith('/var/www/'):
         raise ValueError('Use a canonical pristine development dependency.')
@@ -107,7 +107,14 @@ def verify(source, *, fixture_snapshot=None):
         # pristine file and the complete vendor tree must retain their original bytes.
         files = {name: digest for name, digest in fixture_snapshot.items() if not name.startswith('vendor/')}
         ancestors = {parent for name in files for parent in (source/name).parents if parent.is_relative_to(source)}
-        if (source/'vendor').is_symlink() or any(parent.is_symlink() for parent in ancestors):
+        vendor_root = source/'vendor'
+        if shared_vendor is not None:
+            if not vendor_root.is_symlink() or vendor_root.resolve(strict=True) != Path(shared_vendor):
+                raise ValueError('Fixture vendor link changed.')
+            vendor_root = Path(shared_vendor)
+        elif vendor_root.is_symlink():
+            raise ValueError('Fixture dependency path is linked.')
+        if any(parent.is_symlink() for parent in ancestors):
             raise ValueError('Fixture dependency path is linked.')
         for name, digest in files.items():
             path = source/name
@@ -115,7 +122,7 @@ def verify(source, *, fixture_snapshot=None):
                 raise ValueError('Fixture dependency path is linked.')
             if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
                 raise ValueError('Fixture dependency changed: '+name)
-        vendor = {'vendor/'+name: digest for name, digest in admitted_vendor_hashes(source/'vendor').items()}
+        vendor = {'vendor/'+name: digest for name, digest in admitted_vendor_hashes(vendor_root).items()}
         if vendor != {name: digest for name, digest in fixture_snapshot.items() if name.startswith('vendor/')}:
             raise ValueError('Fixture vendor inventory changed.')
         return {}, fixture_snapshot

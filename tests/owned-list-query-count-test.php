@@ -63,7 +63,8 @@ foreach (['managed','watch','mixed','renewing'] as $kind) {
         same($i,$result['total'],'Every owned '.$kind.' row is resolved at '.$i);
         same(25,$result['visible'],'Only the requested page is rendered at '.$i);
         same(['managed'=>(int)ceil($counts['managed']/250),'watch'=>(int)ceil($counts['watch']/250)],$result['batches'],'Both summary loops keep 250-row batches at '.$kind.' '.$i);
-        expect($result['queries']<=10+70*array_sum($result['batches']),'Query count stays bounded per batch at '.$kind.' '.$i);
+        // The rendered page also checks whether transfers are offered, independent of list size.
+        expect($result['queries']<=32+70*array_sum($result['batches']),'Query count stays bounded per batch at '.$kind.' '.$i);
     }
     same($results[$kind][25],$results[$kind][250],'No per-row queries within a full '.$kind.' batch');
     if ($kind==='mixed') { same($results[$kind][250],$results[$kind][251],'Mixed list stays within its two existing batches'); }

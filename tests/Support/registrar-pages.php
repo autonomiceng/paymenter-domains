@@ -113,10 +113,10 @@ staffRowsStandard($list,['checked','domains'],['balance','due']);
 // Neither fixture account sells a TLD under the installed rules, so each leads with Nothing for sale and its fix.
 $rows=$list->instance()->getTableRecords()->keyBy('id');$cell=fn(string $column,int $id)=>$list->instance()->getTable()->getColumn($column)->record($rows[$id]);
 same('No TLDs are for sale. Check registrar account for .com. Open the TLD to see what it needs. Low balance. Add funds.',$cell('note',$enom->server_id)->getState(),'Low balance says to add funds');
-same('warn',$cell('note',$enom->server_id)->getExtraAttributes()['data-beco-tone']??null,'Low balance is a job');
+same('warn',$cell('note',$enom->server_id)->getExtraAttributes()['data-domains-tone']??null,'Low balance is a job');
 same('No TLDs are for sale. Choose what you sell, or turn Orders off. Not checked yet. Use Check balance.',$cell('note',$silo->server_id)->getState(),'A Missing balance has its step in Note');
 same('Off in Paymenter.',$cell('note',$off->id)->getState(),'The status reason is in Note');
-same([null,null],[$cell('note',$empty->id)->getState(),$cell('note',$empty->id)->getExtraAttributes()['data-beco-tone']??null],'Nothing to say, no Note');
+same([null,null],[$cell('note',$empty->id)->getState(),$cell('note',$empty->id)->getExtraAttributes()['data-domains-tone']??null],'Nothing to say, no Note');
 same(['Enom','1','NameSilo','0'],[$cell('registrar',$enom->server_id)->getState(),(string)$cell('domains',$enom->server_id)->getState(),$cell('registrar',$silo->server_id)->getState(),(string)$cell('domains',$silo->server_id)->getState()],'Registrar and domain count have columns');
 expect(str_contains((string)$cell('checked',$enom->server_id)->formatState($cell('checked',$enom->server_id)->getState()),'data-domains-time'),'Balance checked shows in the viewer time');
 // Each read-only filter case hydrates its own copy of the same initial native page.

@@ -18,13 +18,13 @@ foreach(['domains_complimentary_approvals','domains_complimentary_accounts']as$t
 }
 DB::table('migrations')->whereIn('migration',[ComplimentaryAccountSchema::MIGRATION,ComplimentaryTimeSchema::MIGRATION])->delete();
 
-config(['domains.site_dns_default.nameservers'=>['ns1.beco.test','ns2.beco.test']]);
+config(['domains.site_dns_default.nameservers'=>['ns1.example.test','ns2.example.test']]);
 app(Installation::class)->install();
 ComplimentaryTimeSchema::verify();
 same(true,DB::table('migrations')->where('migration',ComplimentaryAccountSchema::MIGRATION)->exists(),'Normal pre-F71 upgrade records the new migration');
 $seeded=SiteDnsDefault::profile();
 expect($seeded!==null,'Normal same-version installation seeds the DNS default');
-same(['ns1.beco.test','ns2.beco.test'],$seeded->nameservers,'Seed uses configured nameservers');
+same(['ns1.example.test','ns2.example.test'],$seeded->nameservers,'Seed uses configured nameservers');
 $count=WatchProfile::count();$audit=WatchAudit::count();
 app(Installation::class)->install();
 same($seeded->id,SiteDnsDefault::profile()->id,'Repeated upgrade keeps the same reference');

@@ -12,9 +12,9 @@
 .domains-comp-last{max-width:72ch;margin:0;opacity:.75;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden}
 @media (max-width:39.99rem){.domains-comp-last{min-height:2.5rem}}
 .domains-missing-mark{display:inline-block;width:14px;height:16px;flex:none;vertical-align:middle;color:inherit}
-.domains-missing{display:inline-flex;align-items:center;gap:.375rem;color:var(--beco-err,var(--danger-600));font-weight:600}
-.domains-missing--calm{color:var(--beco-fg-3,var(--gray-500));font-weight:500}
-.domains-missing__cause{margin-inline-start:.5rem;color:var(--beco-fg-2,var(--gray-500))}
+.domains-missing{display:inline-flex;align-items:center;gap:.375rem;color:var(--panel-err,var(--danger-600));font-weight:600}
+.domains-missing--calm{color:var(--panel-fg-3,var(--gray-500));font-weight:500}
+.domains-missing__cause{margin-inline-start:.5rem;color:var(--panel-fg-2,var(--gray-500))}
 .domains-note{min-width:14rem;max-width:24rem;overflow-wrap:anywhere}
 .domains-narrow{max-width:12rem}
 /* Staff rows are one line: long text ends in "..." and its tooltip has all of it. Keyboard focus shows it in an overlay. */
@@ -27,8 +27,8 @@
 /* The approved staff table's columns, padding included: a domain name 326px and a customer 120px (above). A list Note takes the rest of the row, and 160px when the table scrolls inside its card. Notes lead with their step; the tooltip has the rest. */
 .domains-name-cell{max-width:326px}.domains-line.domains-list-note{max-width:none;width:160px;min-width:100%}.domains-note-cell{width:100%}
 /* Keyboard focus on a cut text, or on the row link around it, shows the whole text over the page (staff-reveal), so no cell or row changes size. */
-.domains-reveal{position:fixed;z-index:60;max-width:min(24rem,calc(100vw - 16px));max-height:calc(100vh - 16px);max-height:calc(100dvh - 16px);overflow-y:auto;overscroll-behavior:contain;padding:6px 10px;border:1px solid var(--beco-line,color-mix(in srgb,currentColor 20%,transparent));border-radius:6px;background:var(--beco-card-2,#fff);color:var(--beco-fg,#111827);box-shadow:0 4px 12px rgb(0 0 0/.2);font-size:.875rem;line-height:1.25rem;white-space:pre-line;overflow-wrap:anywhere;pointer-events:none}
-.dark .domains-reveal{background:var(--beco-card-2,#18181b);color:var(--beco-fg,#fff)}
+.domains-reveal{position:fixed;z-index:60;max-width:min(24rem,calc(100vw - 16px));max-height:calc(100vh - 16px);max-height:calc(100dvh - 16px);overflow-y:auto;overscroll-behavior:contain;padding:6px 10px;border:1px solid var(--panel-line,color-mix(in srgb,currentColor 20%,transparent));border-radius:6px;background:var(--panel-card-2,#fff);color:var(--panel-fg,#111827);box-shadow:0 4px 12px rgb(0 0 0/.2);font-size:.875rem;line-height:1.25rem;white-space:pre-line;overflow-wrap:anywhere;pointer-events:none}
+.dark .domains-reveal{background:var(--panel-card-2,#18181b);color:var(--panel-fg,#fff)}
 .domains-reveal[hidden]{display:none}
 .domains-reveal[data-domains-scroll]{pointer-events:auto}
 .domains-line.fi-ta-text-has-descriptions{display:flex;align-items:baseline;gap:.375rem}.domains-line.fi-ta-text-has-descriptions>.fi-ta-text-item{flex:none}.domains-line.fi-ta-text-has-descriptions>.fi-ta-text-description{min-width:0}
@@ -42,7 +42,7 @@
 .domains-blocked{opacity:.6;cursor:not-allowed}
 .domains-row-target{scroll-margin-top:5rem;box-shadow:inset 2px 0 var(--primary-500);background:color-mix(in srgb,var(--primary-500) 10%,transparent)}
 /* Shared customer mark shapes, resolved through native panel and optional skin tokens. */
-.domains-status { display:inline-flex;align-items:center;--domains-fg:var(--beco-fg,inherit);--domains-quiet:var(--beco-fg-3,var(--gray-400));--domains-ok:var(--success-500);--domains-info:var(--beco-cyan,var(--info-500));--domains-warn:var(--beco-warn,var(--warning-500));--domains-bad:var(--beco-err,var(--danger-500));color:var(--domains-fg) }
+.domains-status { display:inline-flex;align-items:center;--domains-fg:var(--panel-fg,inherit);--domains-quiet:var(--panel-fg-3,var(--gray-400));--domains-ok:var(--success-500);--domains-info:var(--panel-cyan,var(--info-500));--domains-warn:var(--panel-warn,var(--warning-500));--domains-bad:var(--panel-err,var(--danger-500));color:var(--domains-fg) }
 .domains-status { gap: .4375rem; padding: 0; border-radius: 0; font-size: inherit; font-weight: 500; line-height: inherit; background: none; --domains-mark: var(--domains-quiet); }
 .domains-status::before { width: 14px; height: 16px; flex: none; border-radius: 0; background: var(--domains-mark);
     mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 18'%3E%3Cpath d='M8 1 15 5v8l-7 4-7-4V5z' fill='none' stroke='black' stroke-width='1.4' stroke-linejoin='round'/%3E%3Cpath d='M5.6 9h4.8' stroke='black' stroke-width='1.7' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat; }
@@ -62,18 +62,18 @@
    These neutral fallbacks also work without a panel skin. */
 .domains-sec .domains{min-width:0}
 .domains-sec .domains-card{margin:0}
-.domains-sec .domains-card>div{display:grid;grid-template-columns:156px minmax(0,1fr);gap:16px;align-items:start;min-height:44px;padding:8px 24px;border-top:1px solid var(--beco-line-soft,color-mix(in srgb,currentColor 20%,transparent))}
-.domains-sec .domains-card dt{font-weight:400;color:var(--beco-fg-2,inherit)}
-.domains-sec .domains-card dd{color:var(--beco-fg,inherit);margin:0;min-width:0;overflow-wrap:anywhere}
-.domains-sec .domains-card .domains-mono{font-family:var(--beco-font-mono,ui-monospace,monospace);font-weight:600}
-.domains-sub{display:block;margin-top:3px;font-size:.75rem;line-height:1.125rem;color:var(--beco-fg-2,inherit)}
-.domains-hint{margin:6px 24px;font-size:.75rem;line-height:1.125rem;color:var(--beco-fg-2,inherit)}
+.domains-sec .domains-card>div{display:grid;grid-template-columns:156px minmax(0,1fr);gap:16px;align-items:start;min-height:44px;padding:8px 24px;border-top:1px solid var(--panel-line-soft,color-mix(in srgb,currentColor 20%,transparent))}
+.domains-sec .domains-card dt{font-weight:400;color:var(--panel-fg-2,inherit)}
+.domains-sec .domains-card dd{color:var(--panel-fg,inherit);margin:0;min-width:0;overflow-wrap:anywhere}
+.domains-sec .domains-card .domains-mono{font-family:var(--panel-font-mono,ui-monospace,monospace);font-weight:600}
+.domains-sub{display:block;margin-top:3px;font-size:.75rem;line-height:1.125rem;color:var(--panel-fg-2,inherit)}
+.domains-hint{margin:6px 24px;font-size:.75rem;line-height:1.125rem;color:var(--panel-fg-2,inherit)}
 .domains-h3{margin:12px 24px 8px;font-size:.875rem;font-weight:600}
 .domains-tablewrap{max-width:100%;overflow-x:auto}
 .domains-tbl{width:100%;border-collapse:collapse;font-size:.875rem}
-.domains-tbl th{padding:8px 12px;text-align:start;font-weight:500;color:var(--beco-fg-2,inherit)}
+.domains-tbl th{padding:8px 12px;text-align:start;font-weight:500;color:var(--panel-fg-2,inherit)}
 .domains-tbl td{padding:8px 12px;vertical-align:top;overflow-wrap:anywhere}
-.domains-tbl tbody tr{border-top:1px solid var(--beco-line-soft,color-mix(in srgb,currentColor 20%,transparent))}
+.domains-tbl tbody tr{border-top:1px solid var(--panel-line-soft,color-mix(in srgb,currentColor 20%,transparent))}
 .domains-tbl .domains-money{text-align:end}
 @media(max-width:40rem){.domains-sec .domains-card>div{grid-template-columns:minmax(0,1fr);gap:4px;padding:8px 16px}}
 .domains-table-wrap{max-width:100%;overflow-x:auto}

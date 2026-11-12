@@ -39,7 +39,7 @@ $head=static function(string $html)use($request):array{
     $dom=new DOMDocument;@$dom->loadHTML('<?xml encoding="utf-8" ?>'.$html);$x=new DOMXPath($dom);
     $line=$x->query('//*[contains(concat(" ",normalize-space(@class)," ")," domains-head-line ")]');same(1,$line->length,'One head line');
     $links=$x->query('.//*[contains(concat(" ",normalize-space(@class)," ")," domains-head-step ")]//a[normalize-space(.)="Check request #'.$request->id.'"]/@href',$line->item(0));
-    return [$x->query('.//*[contains(concat(" ",normalize-space(@class)," ")," domains-head-state ")]/@data-beco-tone',$line->item(0))->item(0)?->value,$links->length===1?$links->item(0)->value:null];
+    return [$x->query('.//*[contains(concat(" ",normalize-space(@class)," ")," domains-head-state ")]/@data-domains-tone',$line->item(0))->item(0)?->value,$links->length===1?$links->item(0)->value:null];
 };
 same(['warn',\Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource::getUrl('view',['record'=>$request->id])],$head($pendingPage->html()),'A readable unconfirmed registration keeps the amber head and its request link');
 $pendingPage->assertSee('Registration not confirmed by the registrar.')->assertSee('Check request #'.$request->id)

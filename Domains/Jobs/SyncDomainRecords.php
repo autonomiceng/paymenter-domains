@@ -96,7 +96,9 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
             $d=Domain::whereKey($this->domain)->lockForUpdate()->first();
             if (!$d||$d->authority_generation!==$this->generation||$d->account_fingerprint!==$this->fingerprint) { return; }
             $p=$d->observation??[];$history=$p['sync_history']??[];
+            $actor=User::find($this->actor);
             $p['sync_history']=array_slice([...$history,['event'=>$event,'actor_id'=>$this->actor,
+                'actor_name'=>$actor?(trim($actor->first_name.' '.$actor->last_name)?:'Staff #'.$actor->id):null,
                 'at'=>app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->format(DATE_ATOM)]],-20);
             $d->update(['observation'=>$p]);
         });

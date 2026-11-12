@@ -365,7 +365,7 @@ final class TldFacts
         'catalogue_evidence_invalid'=>'Registrar returned prices for terms this account does not support',
         'catalogue_call_capacity'=>"Our call limit cannot cover the price sync",
         'catalogue_import_failed'=>"Couldn't save the new prices",'catalogue_interrupted'=>'Sync stopped before it finished'];
-    /** Price-read failures staff must fix, each with its next step. Beco retries every other failure by itself. */
+    /** Price-read failures staff must fix, each with its next step. We retry every other failure automatically. */
     public const SYNC_STEPS=['account_unavailable'=>'Check this registrar account on Registrars.',
         'binding_mismatch'=>'Use More, then Edit API credentials.','configuration_unverified'=>'Use More, then Edit API credentials.',
         'catalogue_reader_unavailable'=>'Use More, then Edit API credentials.',

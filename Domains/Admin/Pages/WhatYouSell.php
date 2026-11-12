@@ -358,7 +358,7 @@ class WhatYouSell extends Page implements HasTable
             ->description(fn(OfferRow $record)=>$cell($record,$field)['next']??null)
             ->url(fn(OfferRow $record)=>match($cell($record,$field)['open']??null){'tld'=>TldResource::getUrl('view',['record'=>$this->reads()->tldId($record)]),'account'=>RegistrarAccount::getUrl(['account'=>$record->server_id]),default=>null})
             ->state(fn(OfferRow $record)=>$cell($record,$field)['text'])->color(fn(OfferRow $record)=>$cell($record,$field)['tone'])->tooltip(fn(OfferRow $record)=>$cell($record,$field)['hint'])
-            ->badge(fn(OfferRow $record)=>$cell($record,$field)['mark'])->extraAttributes(fn(OfferRow $record)=>$cell($record,$field)['mark']?['data-beco-tone'=>'err']:[]);
+            ->badge(fn(OfferRow $record)=>$cell($record,$field)['mark'])->extraAttributes(fn(OfferRow $record)=>$cell($record,$field)['mark']?['data-domains-tone'=>'err']:[]);
         return ColumnGroup::make(PriceList::ACTIONS[$action],[
             $column('cost',$action==='register'?fn()=>$this->years().'-year cost':'Cost')->sortable(fn()=>$action==='register'&&$this->years()===1),
             $column('price','Price'),

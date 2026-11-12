@@ -30,6 +30,9 @@ class InstalledFixtureTests(unittest.TestCase):
         (fixture / "vendor/autoload.php").write_text("<?php // synthetic dependency")
         (fixture / "app").mkdir()
         (fixture / "app/state").write_text("pristine")
+        views = fixture / "themes/default/views/vendor"
+        views.mkdir(parents=True)
+        (views / "component.blade.php").write_text("native view")
         return fixture
 
     def test_scenarios_share_vendor_but_never_mutable_app_or_database(self):
@@ -44,6 +47,7 @@ class InstalledFixtureTests(unittest.TestCase):
                         )
                     )
                     self.assertEqual((app / "app/state").read_text(), "pristine")
+                    self.assertEqual((app / "themes/default/views/vendor/component.blade.php").read_text(), "native view")
                     self.assertFalse((root / "scenario.sqlite").exists())
                     (app / "app/state").write_text("changed")
                     (root / "scenario.sqlite").touch()

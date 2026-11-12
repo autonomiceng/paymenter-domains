@@ -44,6 +44,21 @@ def started(server, timeout):
         raise AssertionError('The fixture server did not start: ' + ''.join(lines))
 
 
+def release_fixture_cache(app, *, copied=True):
+    """Do not retain copied fixture assets in file cache alongside Chromium."""
+    if not hasattr(os, 'posix_fadvise'):
+        return
+    for directory, _, files in os.walk(app, followlinks=False):
+        for name in files:
+            path = Path(directory) / name
+            if path.is_symlink():
+                continue
+            with path.open('rb') as handle:
+                if copied:
+                    os.fsync(handle.fileno())
+                os.posix_fadvise(handle.fileno(), 0, 0, os.POSIX_FADV_DONTNEED)
+
+
 def browse(app, root, facts):
     node = shutil.which('node')
     assert node, 'Node.js is required for the browser check'
@@ -57,7 +72,7 @@ def browse(app, root, facts):
                               cwd=app, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
     try:
         started(server, 30)
-        result = subprocess.run([node, str(ROOT/'tests/Support/refund-browser.cjs'), base, str(root/'seed.json'), str(out)],
+        result = subprocess.run([node, '--max-old-space-size=64', str(ROOT/'tests/Support/refund-browser.cjs'), base, str(root/'seed.json'), str(out)],
                                 cwd=ROOT, env=env, capture_output=True, text=True, timeout=240)
     finally:
         server.terminate()
@@ -96,6 +111,9 @@ def main():
             # The first refund creates the customer's credit; changing that balance later fails, as a database fault would.
             db.execute("CREATE TRIGGER refund_browser_credit_fail BEFORE UPDATE ON credits WHEN OLD.amount > 0 "
                        "BEGIN SELECT RAISE(ABORT, 'synthetic credit failure'); END")
+        release_fixture_cache(app)
+        release_fixture_cache((app/'vendor').resolve(strict=True), copied=False)
+        release_fixture_cache(ROOT/'.cache/php-runtime', copied=False)
         steps, saved = browse(app, root, facts)
         operation = saved['operations']
 
@@ -115,7 +133,7 @@ def main():
         assert 'Cancelled' in reloaded and 'Credit added' in reloaded, 'The request page shows the cancelled request and its credit'
         assert 'Cancel and refund' not in steps['reloaded']['menu'], 'A closed request offers no second refund'
         duplicate = steps['duplicate']
-        assert not duplicate['modalOpen'] and duplicate['notifications'], f'A second click from an old dialog is answered: {duplicate}'
+        assert not duplicate['modalOpen'] and duplicate['mounted'] == [] and duplicate['notificationTitles'] == ['This request changed'], f'A second click from an old dialog is answered: {duplicate}'
 
         unknown = steps['unknown-offered']
         assert 'Cancel and refund' not in unknown['menu'], 'An unknown registrar reply is not offered a refund'
@@ -126,6 +144,7 @@ def main():
 
         warning = 'Cancelled, refund not finished'
         assert any(n.startswith(warning) for n in steps['failed']['notifications']), f'A failed refund says so: {steps["failed"]["notifications"]}'
+        assert steps['failed']['notificationDurations'] == ['persistent'], 'The failure notice has no auto-close duration'
         assert any(n.startswith(warning) for n in steps['failed-later']['notifications']), 'The failure stays on screen'
         failing = operation['failing']
         assert failing['state'] == 'rejected' and 'refund_authorization' in failing['funding_keys'] and 'refund' not in failing['funding_keys'], \

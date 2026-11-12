@@ -124,8 +124,8 @@ is still logged on every due retry.
 ## Site DNS default
 
 Deployment supplies `domains.site_dns_default.nameservers`. Native install/upgrade seeds one enabled
-`Beco DNS` template and saves its ID in the global native setting `domains_site_dns_template`.
-No Beco hosts live in the generic extension. Missing or invalid deployment names remain Missing.
+`Site DNS` template and saves its ID in the global native setting `domains_site_dns_template`.
+No deployment hosts live in the generic extension. Missing or invalid deployment names remain Missing.
 System seeding uses actor 0 on the template and a system audit with no staff actor; later edits use
 normal staff attribution. There is no schema migration. The same install/upgrade transaction deletes the retired
 `domains_new_domain_dns_template` values on Domains registrar accounts, including saved None choices.

@@ -91,7 +91,7 @@ final class Sheet
         return Group::make(array_map(static function(array $step): Group {
             $body=[Html::make(new HtmlString(view('domains::admin.trace-step',$step)->render()))];
             if(!empty($step['buttons'])){$body[]=Actions::make($step['buttons']);}
-            return Group::make($body)->extraAttributes(['class'=>'domains-trace-item','role'=>'listitem','data-beco-tone'=>StatusMark::tone($step['tone'])??'ok','data-beco-record'=>'trace-'.md5($step['label'])]);
+            return Group::make($body)->extraAttributes(['class'=>'domains-trace-item','role'=>'listitem','data-domains-tone'=>StatusMark::tone($step['tone'])??'ok','data-domains-record'=>'trace-'.md5($step['label'])]);
         },$steps))->extraAttributes(['class'=>'domains-trace','role'=>'list']);
     }
 }

@@ -180,7 +180,7 @@ $storeNs($active,['ns1.example.net','ns2.example.net','ns3.example.net']);
 same(['ns1.example.net','ns2.example.net','ns3.example.net'],$value($active,'Nameservers'),'Stored nameservers in order');
 same(false,DomainFacts::for($active->fresh())['Nameservers']['demo'],'Ordinary nameservers have no Demo tag');
 same($before,$queries($active->fresh()),'Nameservers add no queries');
-Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSeeInOrder(['Nameservers','ns1.example.net','ns2.example.net','ns3.example.net','Transfer lock'])->assertSeeHtml('data-beco-tone="ok" data-beco-record="lock-'.$active->id.'"');
+Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSeeInOrder(['Nameservers','ns1.example.net','ns2.example.net','ns3.example.net','Transfer lock'])->assertSeeHtml('data-domains-tone="ok" data-domains-record="lock-'.$active->id.'"');
 foreach([[],['ns1.example.net',7],['a'=>'ns1.example.net'],'ns1.example.net'] as $bad){$storeNs($active,$bad);same(null,$value($active,'Nameservers'),'Unusable stored nameservers are Missing');}
 $storeNs($active,['ns1.example.net','ns2.example.net']);
 // Every Missing carries its cause.
@@ -257,10 +257,10 @@ DB::table('domains_operations')->where('id',$heldOperation->id)->update(['action
 
 $heldPage=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->assertSee('Transfer not sent: old registrar needs approval.')->assertSee('Check request #')->assertDontSeeHtml('fi-callout');
 same(1,substr_count(html_entity_decode(strip_tags($heldPage->html()),ENT_QUOTES),'Transfer not sent: old registrar needs approval.'),'The reason is said once on the page');
-same(1,substr_count((string)$heldPage->instance()->getSubheading(),'data-beco-tone="warn"'),'One amber mark in the head of a held domain');
+same(1,substr_count((string)$heldPage->instance()->getSubheading(),'data-domains-tone="warn"'),'One amber mark in the head of a held domain');
 // The request page head sweeps like the domain head, so it needs the same mark. A Note's step looks like the link its cell is.
 $heldRequest=$held->operations()->sole()->id;
-Livewire::actingAs($viewer)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation::class,['record'=>$heldRequest])->assertSeeHtml('data-beco-record="request-'.$heldRequest.'"');
+Livewire::actingAs($viewer)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation::class,['record'=>$heldRequest])->assertSeeHtml('data-domains-record="request-'.$heldRequest.'"');
 $note=DomainFacts::note(DomainFacts::status($held),null)['text'];
 same('<span class="domains-link">Check request #'.$heldRequest.'</span>. '.e(rtrim(substr($note,0,-strlen('Check request #'.$heldRequest.'.')))),(string)DomainFacts::noteStep($note,DomainFacts::status($held)),'A Note leads with its step, which looks like a link');
 same('Sync failed. Use Resume sync on the domain.',DomainFacts::noteStep('Sync failed. Use Resume sync on the domain.',DomainFacts::status($held)),'A Note with no request step stays plain');
@@ -288,12 +288,12 @@ same('The registrar read stopped.',DomainFacts::notice($active->fresh())['title'
 DB::table('domains_domains')->where('id',$active->id)->update(['provider_expires_at'=>null]);
 same(null,$sub($active,'Expires'),'Missing expiry leaves stopped-read recovery to the page notice');
 DB::table('domains_domains')->where('id',$active->id)->update(['provider_expires_at'=>today()->addDays(120)->format('Y-m-d')]);
-Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($active->domain)->assertSee('Active')->assertSee('Sync stopped')->assertSeeHtml('data-beco-tone="warn" data-beco-record="domain-'.$active->id.'"');
+Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($active->domain)->assertSee('Active')->assertSee('Sync stopped')->assertSeeHtml('data-domains-tone="warn" data-domains-record="domain-'.$active->id.'"');
 same('success',DomainFacts::listTone(['tone'=>'success'],null),'A healthy row stays green in the list');same('danger',DomainFacts::listTone(['tone'=>'danger'],'failed'),'A stopped sync never softens a worse status');
 Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$active->id])->assertSee('The registrar read stopped.')->assertSee('Resume sync')->assertSee('Read stopped')->assertSee('Stopped after 5 attempts.')->assertDontSee('Cause: read_unavailable.');
 Auth::setUser($staff);$stoppedHead=DomainFacts::head($active->fresh(),DomainFacts::status($active->fresh()),DomainFacts::for($active->fresh()));
 same('warning',$stoppedHead['tone'],'Active over a stopped sync turns amber');
-expect(str_contains((string)$stoppedHead['step'],'The registrar read stopped. Use Resume sync below.')&&!str_contains((string)$stoppedHead['step'],'data-beco-tone'),'The state is the one mark');
+expect(str_contains((string)$stoppedHead['step'],'The registrar read stopped. Use Resume sync below.')&&!str_contains((string)$stoppedHead['step'],'data-domains-tone'),'The state is the one mark');
 Auth::setUser($viewer);expect(str_contains((string)DomainFacts::head($active->fresh(),DomainFacts::status($active->fresh()),DomainFacts::for($active->fresh()))['step'],'Ask staff who can resume sync.'),'Without the right the step names who can');
 // One rule for the request a page names: the one that needs staff, in the head and on the rows alike, and none when nothing does.
 Auth::setUser($staff);

@@ -9,7 +9,9 @@ use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Services\{BalanceSchema,EnomLiveActivation,EnomTestRenewal,EnomTestManagement,EnomTestTransfer,HistoryAcceptances,RenewalBillingSettings,StaffSettingsReview as Review};
 $activation=['registration'=>true,'renewal'=>true,'management'=>true,'transfer'=>false,'confirmed'=>true];
 $beforeWire=count($GLOBALS['enomWire']['forms']);
-$unchanged=static fn()=>[Account::where('server_id',$server->id)->sole()->processing_enabled,EnomTestRenewal::accepted($binding),EnomTestManagement::accepted($binding),RenewalBillingSettings::read($server->id),count(Review::historyRows($server->fresh()))];
+// Staff saves are independent of automatic catalogue publication.
+$staffHistoryCount=static fn()=>count(array_filter(Review::historyRows($server->fresh()),static fn(array $entry):bool=>!str_starts_with($entry['action'],'catalogue_')));
+$unchanged=static fn()=>[Account::where('server_id',$server->id)->sole()->processing_enabled,EnomTestRenewal::accepted($binding),EnomTestManagement::accepted($binding),RenewalBillingSettings::read($server->id),$staffHistoryCount()];
 $beforeActivation=$unchanged();
 try{$write('activate',$activation);throw new LogicException('Missing Live evidence must refuse');}catch(DomainException $e){expect(str_contains($e->getMessage(),'Live evidence Missing'),'P35 refusal names the missing provider answer');}
 same($beforeActivation,$unchanged(),'Missing evidence grants no authority or billing');
@@ -40,7 +42,7 @@ $deny(fn()=>$write('activate',$activation));
 expect(!EnomTestRenewal::accepted($binding)&&!RenewalBillingSettings::anyOn($server->id),'Audit refusal rolls back renewal send and both billing flags');
 expect(!$server->settings()->where('key',EnomLiveActivation::KEY)->exists(),'Audit refusal rolls back activation receipt');
 $audit->encrypted=true;$audit->save();
-$historyBefore=count(Review::historyRows($server->fresh()));
+$historyBefore=$staffHistoryCount();
 // Exercise the actual one-click + confirm native staff action, not an acceptance-row seed.
 $activateAction=Filament\Actions\Testing\TestAction::make('activate_live')->schemaComponent('account_'.$server->id.'.live_sales','content');
 $problems=EnomLiveActivation::problems($a->fresh(),$activation);same([],$problems,'Synthetic activation prerequisites: '.json_encode($problems));
@@ -49,11 +51,11 @@ $page->callMountedAction()->assertHasNoActionErrors()->assertNotified('Live feat
 expect(EnomLiveActivation::current($binding)&&Account::where('server_id',$server->id)->sole()->processing_enabled,'Supported staff action enables processing');
 same([true,true,true],[EnomTestRenewal::accepted($binding),RenewalBillingSettings::read($server->id)['scheduled'],RenewalBillingSettings::read($server->id)['manual']],'One save enables renewal send and both billing flags');
 expect(EnomTestManagement::accepted($binding)&&!EnomTestTransfer::accepted($binding),'Management independent; unproved transfers stay Off');
-same($historyBefore+1,count(Review::historyRows($server->fresh())),'Activate records one audited transaction');
+same($historyBefore+1,$staffHistoryCount(),'Activate records one audited transaction');
 $late=Paymenter\Extensions\Servers\Domains\Services\EnomLateRenewal::class;
 expect(!$late::available($binding),'Normal Live activation cannot replace late-renewal evidence');
-$lateBefore=count(Review::historyRows($server->fresh()));$deny(fn()=>$write('late_renewal',['accept'=>true]));
-same($lateBefore,count(Review::historyRows($server->fresh())),'Missing late evidence grants no switch or audit success');
+$lateBefore=$staffHistoryCount();$deny(fn()=>$write('late_renewal',['accept'=>true]));
+same($lateBefore,$staffHistoryCount(),'Missing late evidence grants no switch or audit success');
 $syntheticLate=['contract'=>$late::CONTRACT,'reference'=>'OFFLINE synthetic late answer','sha256'=>hash('sha256','OFFLINE synthetic late answer'),
     'verified_at'=>'2026-10-20T12:00:00+00:00','expiry_timezone'=>'America/Los_Angeles','deadline'=>'expiry_plus_delete_day','price'=>'getextendinfo_check_renewal'];
 config(['domains.enom_live.accounts.live-uid.late_renewal_evidence'=>$syntheticLate]);
@@ -63,7 +65,7 @@ config(['domains.enom_live.accounts.live-uid.late_renewal_evidence.reference'=>'
 config(['domains.enom_live.accounts.live-uid.late_renewal_evidence'=>null]);expect(!$late::available($binding),'Removed evidence refuses Live late renewal');
 $write('late_renewal',['accept'=>false]);
 
-same($historyBefore+3,count(Review::historyRows($server->fresh())),'Activate and two late switch changes each record one audited transaction');
+same($historyBefore+3,$staffHistoryCount(),'Activate and two late switch changes each record one audited transaction');
 // Enabling Orders invalidates the previous publication; arrange current offers before the independent pause/resume review.
 $write('publish',[],$tld->id);
 // A worker stopping after the page opened must not stale an emergency Orders pause.
@@ -117,11 +119,11 @@ $activationReceipt=json_decode($server->settings()->where('key',EnomLiveActivati
 $activationBalance=DB::table(BalanceSchema::TABLE)->where('server_id',$server->id)->sole();
 DB::table(BalanceSchema::TABLE)->where('server_id',$server->id)->update(['read_at'=>$clock->now()->getTimestamp()-86401]);
 config(['domains.support_url'=>null,'domains.enom_live.accounts.live-uid.evidence'=>null]);$withdraw=$review();
-DB::table('domains_runtime_turns')->update(['finished_at'=>$clock->now()->getTimestamp()-901]);$historyBefore=count(Review::historyRows($server->fresh()));
+DB::table('domains_runtime_turns')->update(['finished_at'=>$clock->now()->getTimestamp()-901]);$historyBefore=$staffHistoryCount();
 $settings->run($withdraw,[...$activation,'registration'=>false]);
 $withdrawn=json_decode($server->settings()->where('key',EnomLiveActivation::KEY)->sole()->value,true,8,JSON_THROW_ON_ERROR);
 same([false,$activationReceipt['evidence'],false,true,true],[$withdrawn['registration'],$withdrawn['evidence'],Account::where('server_id',$server->id)->sole()->processing_enabled,EnomTestRenewal::stored($binding),EnomTestManagement::stored($binding)],'Withdrawal needs no readiness and leaves Orders and other features alone');
-same($historyBefore+1,count(Review::historyRows($server->fresh())),'Withdrawal records one audit entry');
+same($historyBefore+1,$staffHistoryCount(),'Withdrawal records one audit entry');
 $deny(fn()=>$write('activate',[...$activation,'confirmed'=>false]));
 $write('activate',['registration'=>false,'renewal'=>false,'management'=>false,'transfer'=>false,'confirmed'=>true]);
 expect(!EnomTestRenewal::on($binding)&&!EnomTestManagement::stored($binding)&&!Account::where('server_id',$server->id)->sole()->processing_enabled,'All Off clears retained permissions and billing without resuming Orders');

@@ -5,6 +5,10 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Services\{SiteDnsDefault,OwnerSetup,TransferInputs,Refunds};
 use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerActionController;
+// This confirmation flow starts after the holding's first registrar read.
+$readAt=$clock->now()->format(DATE_ATOM);
+$d->update(['observation'=>[...($d->observation??[]),'records'=>['identity'=>\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::identity($d),
+    'at'=>$readAt,'last_complete_at'=>$readAt,'sequence'=>0,'families'=>[]]]]);
 storefrontViews();
 $profile=DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Models\WatchProfile::create(['name'=>'Current default','enabled'=>true,'nameservers'=>['ns3.example.net','ns4.example.net'],'website_endpoints'=>[],'email_endpoints'=>[],'edited_by'=>$user->id,'reason'=>'Synthetic DNS default']));
 \App\Models\Setting::updateOrCreate(['key'=>SiteDnsDefault::KEY,'settingable_type'=>null,'settingable_id'=>null],['value'=>(string)$profile->id,'type'=>'string','encrypted'=>false]);
