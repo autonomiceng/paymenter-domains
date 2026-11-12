@@ -83,7 +83,8 @@ $color=static function(string $css,string $inlineStyle,array $ancestors,array $c
 };
 $clientCss=view('domains::partials.styles')->render();
 expect(str_contains($clientCss,'domains-demo-tag'),'Client stylesheet renders once for the colour checks');
-$want=['Demo'=>['light'=>'#c2410c','dark'=>'#fdba74'],'Test'=>['light'=>'#475569','dark'=>'#cbd5e1']];
+// Both variants are one neutral tag (panel rules: the tag is a label, not an alert).
+$want=['Demo'=>['light'=>'#475569','dark'=>'#aebbd0'],'Test'=>['light'=>'#475569','dark'=>'#aebbd0']];
 $expected=[];$actual=[];
 foreach ([false,true] as $test) {
     $variant=$test?'Test':'Demo';

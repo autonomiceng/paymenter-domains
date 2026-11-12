@@ -9,7 +9,7 @@
         // Domain settings only says the settings were read. Once the read is full, the rows below show each one.
         && !($cap === 'flags' && ($domain->management['flags']['family']['state'] ?? null) === 'complete' && ($domain->management['flags']['family_only'] ?? false))));
 @endphp
-<nav class="domains-crumb" aria-label="Breadcrumb"><a href="{{ route('domains.domains.index') }}">Domains</a> / {{ $domain->name }}</nav>
+<nav class="domains-crumb" aria-label="Breadcrumb"><a href="{{ route('domains.domains.index') }}">Domains</a> <svg class="domains-crumb__sep" viewBox="0 0 16 16" aria-hidden="true"><path d="m6 4 4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg> {{ $domain->name }}</nav>
 <div class="domains-ph"><h1 class="domains-mono">{{ $domain->name }}{{ \Paymenter\Extensions\Servers\Domains\Support\DemoData::label($domain->demo, $domain->testEnvironment) }}</h1>@if ($pill)<span class="domains-pill">@include('domains::partials.status-pill', ['pill' => $pill])</span>@endif</div>
 @include('domains::partials.notices', ['fieldKeys'=>['nameservers','contact','dns','srv','ds','glue']])
 @if ($notice)

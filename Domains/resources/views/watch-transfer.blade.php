@@ -2,7 +2,7 @@
 @component('layouts.app', ['title' => str_replace(':domain', $name, $strings['watch.transfer_title']), 'sidebar' => true, 'spa' => false])
 <div class="container mt-14 mb-10"><div class="domains">
 @include('domains::partials.styles')
-<nav class="domains-crumb" aria-label="Breadcrumb"><a href="{{ route('domains.domains.index') }}">Domains</a> / <a href="{{ route('domains.checks.show', ['kind' => 'watch', 'id' => $id]) }}">{{ $name }}</a></nav>
+<nav class="domains-crumb" aria-label="Breadcrumb"><a href="{{ route('domains.domains.index') }}">Domains</a> <svg class="domains-crumb__sep" viewBox="0 0 16 16" aria-hidden="true"><path d="m6 4 4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg> <a href="{{ route('domains.checks.show', ['kind' => 'watch', 'id' => $id]) }}">{{ $name }}</a></nav>
 <div class="domains-ph"><h1>{{ str_replace(':domain', $name, $strings['watch.transfer_title']) }}</h1></div>
 @if ($state === 'in_cart')
 <div class="domains-notice" role="status"><span class="domains-notice__tx">{{ $strings['watch.transfer_in_cart'] }}</span></div>

@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview;
 /** One domain's history: registrar requests, staff holds, releases and renewal changes, and customer auto-renew changes, newest first. Read by the History tab and the Activity rail. */
 final class DomainHistory
 {
-    private const HOLDINGS = ['stop' => 'Renewal stopped', 'resume' => 'Renewal resumed', 'reprice' => 'Renewal price updated', 'resume_observation' => 'Sync resumed'];
+    private const HOLDINGS = ['stop' => 'Renewal invoices turned off', 'resume' => 'Renewal invoices turned on', 'reprice' => 'Renewal price updated', 'resume_observation' => 'Sync resumed'];
     /** @return list<Operation|array> */
     public static function entries(Domain $domain): array
     {

@@ -53,7 +53,7 @@ foreach (['status'=>['status'=>'adoption_pending'],'provenance'=>['provenance'=>
     [$columns,$records]=$list();$cell=$columns['auto_renew']->record($records[$held->id]);$page=DomainFacts::for($held->fresh())['Renewal'];
     same(['Off','Until import'],[$page['value'],$page['sub']],'Domain page says Off until import: pending '.$case);
     // Customers and staff see one name for the setting.
-    same('Renewal',$columns['auto_renew']->getLabel(),'List column says Renewal, as the domain page row');
+    same('Renewal invoices',$columns['auto_renew']->getLabel(),'List column says Renewal invoices, as the domain page row');
     same([$page['value'],$page['sub']],[$cell->getState(),$cell->getDescriptionBelow()],'List matches the domain page: pending '.$case);
     DB::table('domains_domains')->where('id',$held->id)->update($saved);
 }

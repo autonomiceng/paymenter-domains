@@ -229,12 +229,12 @@ $page=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id
 $page->assertDontSee('WHOIS privacy')->assertSee('Renewal')->assertSee('Registration')->assertSee('Billing')->assertSee('Ada Lovelace')->assertSee('Missing')->assertSee('Needs the linked service. Check the Services page.')->assertSeeHtml('domains-sheet');
 // The Renewal row holds its own value, not just Renewal text somewhere on the page. Stop and Resume in it: staff-holding-test.
 $renewalRow=static function(string $html):array{$doc=new DOMDocument();@$doc->loadHTML('<?xml encoding="UTF-8">'.$html);$x=new DOMXPath($doc);$t=static fn(DOMNode $n)=>trim(preg_replace('/\s+/',' ',$n->textContent));
-    $rows=$x->query('//div[contains(concat(" ",normalize-space(@class)," ")," domains-row ")][.//*[@role="term"][normalize-space(.)="Renewal"]]');
+    $rows=$x->query('//div[contains(concat(" ",normalize-space(@class)," ")," domains-row ")][.//*[@role="term"][normalize-space(.)="Renewal invoices"]]');
     if($rows->length!==1){return [$rows->length,'',[]];}
     return [1,$t($rows->item(0)),array_values(array_filter(array_map($t,iterator_to_array($x->query('.//button',$rows->item(0)))),fn(string $b)=>in_array($b,HoldingActions::LABELS,true)))];};
-same([1,'Renewal On',[]],$renewalRow(Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSuccessful()->html()),'One Renewal row says On, with no Stop or Resume for a viewer');
+same([1,'Renewal invoices On',[]],$renewalRow(Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSuccessful()->html()),'One Renewal row says On, with no Stop or Resume for a viewer');
 DB::table('domains_domains')->where('id',$active->id)->update(['renewal_policy'=>encrypt(json_encode([...$policy,'renewals_stopped'=>true]),false)]);
-same([1,'Renewal Off Stopped by staff',[]],$renewalRow(Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSuccessful()->html()),'The Renewal row says Off, Stopped by staff');
+same([1,'Renewal invoices Off Stopped by staff',[]],$renewalRow(Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSuccessful()->html()),'The Renewal row says Off, Stopped by staff');
 DB::table('domains_domains')->where('id',$active->id)->update(['renewal_policy'=>encrypt(json_encode($policy),false)]);
 foreach(['Saved facts','Assignment generation','Observation drift','Follow-up','Data retention','Server #','Domain #','Account spending holds','Preview adoption','Scheduled reads'] as $old){$page->assertDontSee($old);}
 same([DomainResource::getUrl('index')=>'Domains','active.example.com'],$page->instance()->getBreadcrumbs(),'Breadcrumb names the domain');
@@ -392,7 +392,7 @@ DB::table('domains_domains')->where('id',$active->id)->update(['renewal_policy'=
 WatchAudit::create(['subject_type'=>'domain','subject_id'=>$active->id,'user_id'=>$customer->id,'actor_id'=>$customer->id,'event'=>'owner_auto_renew',
     'before_revision'=>'on','after_revision'=>'off','data'=>['enabled'=>false],'created_at'=>new DateTimeImmutable('2026-10-22T08:00:00Z')]);
 $history=Livewire::actingAs($viewer)->test(RequestsRelationManager::class,['ownerRecord'=>$active->fresh(),'pageClass'=>ViewDomain::class]);
-$history->assertSeeInOrder(['Oct 22, 2026, 8:00 AM UTC','Auto-renew turned off','Ada Lovelace','Oct 21, 2026, 9:30 AM UTC','Renewal stopped','Customer asked by phone','Synthetic Staff']);
+$history->assertSeeInOrder(['Oct 22, 2026, 8:00 AM UTC','Auto-renew turned off','Ada Lovelace','Oct 21, 2026, 9:30 AM UTC','Renewal invoices turned off','Customer asked by phone','Synthetic Staff']);
 DB::table('domains_operations')->where('domain_id',$demo->id)->delete();
 Livewire::actingAs($viewer)->test(RequestsRelationManager::class,['ownerRecord'=>$demo,'pageClass'=>ViewDomain::class])->assertSee('No history yet');
 
@@ -400,7 +400,7 @@ Livewire::actingAs($viewer)->test(RequestsRelationManager::class,['ownerRecord'=
 same('Closes the unpaid order and releases the domain name.',AcquisitionActions::DESCRIPTION,'Cancel order description');
 same("Stops new renewal invoices. Invoices already sent stay payable, and renewal requests already created may still run.",HoldingActions::description('stop'),'Stop renewal description');
 same('Restarts renewal invoices and removes any pending service cancellation.',HoldingActions::description('resume'),'Resume renewal description');
-same(['stop'=>'Stop renewal','resume'=>'Resume renewal'],HoldingActions::LABELS,'Renewal action labels');
+same(['stop'=>'Turn off','resume'=>'Turn on'],HoldingActions::LABELS,'Renewal action labels match the customer row');
 
 // List: Status, Expires, Auto-renew and Registrar columns; Status filter uses the staff statuses.
 $list=Livewire::actingAs($viewer)->test(ListDomains::class)->assertCanSeeTableRecords([$held,$active,$long]);

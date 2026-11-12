@@ -260,6 +260,8 @@ class Storefront
     public static function money(string $amount): string
     {
         $value = PriceCatalogue::retail($amount); [$whole, $fraction] = explode('.', $value);
-        return '$'.preg_replace('/\B(?=(\d{3})+(?!\d))/', ',', $whole).'.'.$fraction;
+        // A refund reads -$10.99, not $-10.99.
+        $sign = str_starts_with($whole, '-') ? '-' : ''; $whole = ltrim($whole, '-');
+        return $sign.'$'.preg_replace('/\B(?=(\d{3})+(?!\d))/', ',', $whole).'.'.$fraction;
     }
 }

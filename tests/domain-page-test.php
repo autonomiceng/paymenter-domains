@@ -44,7 +44,7 @@ $split=static fn(DOMXPath $dom,string $label)=>[$norm($dom->query('//section[@id
 
 // Header: breadcrumb, mono name with tags, pill. No Expires meta, Domain help link, tabs or Overview.
 $d=$domain();$html=$render($d,$summary($d,['daysLeft'=>129]));$dom=storefrontDom($html);
-same('Domains / '.$name,$norm($dom->query('//nav[contains(@class,"domains-crumb")]')->item(0)),'Breadcrumb names the domain');
+same('Domains '.$name,$norm($dom->query('//nav[contains(@class,"domains-crumb")]')->item(0)),'Breadcrumb names the domain');
 same(1,$dom->query('//nav[contains(@class,"domains-crumb")]/a[@href="'.route('domains.domains.index').'"][.="Domains"]')->length,'Breadcrumb links to the list');
 same(1,$dom->query('//h1[contains(@class,"domains-mono")][starts-with(normalize-space(.),"'.$name.'")]')->length,'Name is the mono h1');
 same(1,$dom->query('//div[contains(@class,"domains-ph")]//span[contains(@class,"domains-pill")]')->length,'One pill in the header');
@@ -84,11 +84,38 @@ same('Contacts',$norm($dom->query('//li[@id="contacts"]/span[contains(@class,"do
 same('Contacts',$norm($dom->query('//dialog[@id="edit-contacts"]//h3')->item(0)),'Contacts dialog title');
 same(0,$dom->query('//*[contains(@class,"domains-row__a")]//*[self::a or self::button][not(contains(@class,"domains-a"))]')->length,'Every row action uses the one link style');
 expect(str_contains($html,'.domains .domains-a { color: var(--e-accent); font-weight: 600; text-decoration: underline;'),'Inline links are underlined');
-expect(str_contains($html,'.domains .domains-row__a .domains-a, .domains .domains-card dd > .domains-a, .domains .domains-linkbtn { text-decoration: none; }'),'Standalone row actions keep their link style');
-expect(str_contains($html,'.domains .domains-row__a .domains-a:hover, .domains .domains-card dd > .domains-a:hover, .domains .domains-linkbtn:hover { text-decoration: none; }'),'Standalone actions have explicit no-underline hover exceptions');
+expect(str_contains($html,'.domains .domains-row__a .domains-a, .domains .domains-card dd > .domains-a, .domains .domains-card__a .domains-a, .domains .domains-linkbtn { text-decoration: none; }'),'Standalone row actions keep their link style');
+expect(str_contains($html,'.domains .domains-row__a .domains-a:hover, .domains .domains-card dd > .domains-a:hover, .domains .domains-card__a .domains-a:hover, .domains .domains-linkbtn:hover { text-decoration: none; }'),'Standalone actions have explicit no-underline hover exceptions');
 $inlineHover=strpos($html,'.domains .domains-a:hover { text-decoration: underline; }');
-$actionHover=strpos($html,'.domains .domains-row__a .domains-a:hover, .domains .domains-card dd > .domains-a:hover, .domains .domains-linkbtn:hover { text-decoration: none; }');
+$actionHover=strpos($html,'.domains .domains-row__a .domains-a:hover, .domains .domains-card dd > .domains-a:hover, .domains .domains-card__a .domains-a:hover, .domains .domains-linkbtn:hover { text-decoration: none; }');
 expect($inlineHover!==false&&$actionHover!==false&&$actionHover>$inlineHover,'Action hover exceptions follow the inline rule so equal-specificity link buttons keep no underline');
+// Filled button text: stock Paymenter dark sets the inverted text colour to grey (1.46:1 on primary), so buttons use their own tokens.
+expect(!str_contains($html,'var(--color-inverted'),'Button text never uses the theme inverted text colour');
+foreach(['.domains .domains-btn--primary { background: var(--e-accent); color: var(--e-on-accent);','.domains .domains-btn--danger { background: var(--e-danger); color: var(--e-on-danger); }',
+    '.domains-dialog .domains-btn--primary { background: var(--e-accent); color: var(--e-on-accent); }','.domains-dialog .domains-btn--danger { background: var(--e-danger); color: var(--e-on-danger); }']as$rule){
+    expect(str_contains($html,$rule),'Filled button uses its text token: '.$rule);
+}
+expect(str_contains($html,'--e-on-accent: var(--on-primary, #000);')&&str_contains($html,'--e-on-danger: var(--on-danger, #000);'),'A theme on-colour wins; black is the fallback that passes AA on stock fills');
+// The fallback text is exactly black or white for any fill, including configured fills near the crossover where a ramp gave grey.
+$srgb=function(float $h,float $s,float $l):array{$s/=100;$l/=100;$k=fn($n)=>fmod($n+$h/30,12);$a=$s*min($l,1-$l);
+    return array_map(fn($n)=>$l-$a*max(-1,min($k($n)-3,9-$k($n),1)),[0,8,4]);};
+$lin=fn(float $c):float=>$c<=.04045?$c/12.92:(($c+.055)/1.055)**2.4;
+$ratio=function(array $x,array $y)use($lin):float{$L=fn($c)=>.2126*$lin($c[0])+.7152*$lin($c[1])+.0722*$lin($c[2]);[$p,$q]=[max($L($x),$L($y)),min($L($x),$L($y))];return ($p+.05)/($q+.05);};
+$fills=['stock primary hsl(229 100% 64%)'=>['e-on-accent',[229,100,64]],'stock error hsl(0 75% 60%)'=>['e-on-danger',[0,75,60]],
+    'configured primary hsl(212 82% 48%)'=>['e-on-accent',[212,82,48]],'configured primary #1a6cfb'=>['e-on-accent',[218.1333,96.5665,54.3137]],
+    'configured error hsl(353 70% 53%)'=>['e-on-danger',[353,70,53]]];
+foreach($fills as$label=>[$token,$hslFill]){
+    expect(preg_match('/--'.$token.': var\(--on-\w+, color\(from var\(--e-\w+\) srgb-linear\n(.+?) \/ 1\)\);/s',$html,$m)===1,'Fallback formula found: '.$token);
+    $bg=$srgb(...$hslFill);[$r,$g,$b]=array_map($lin,$bg);
+    $fg=array_map(function(string $e)use($r,$g,$b){
+        $e=preg_replace(['/^round\(up, (.+), 1\)$/','/^clamp\(0, (.+), 1\)$/'],['ceil($1)','max(0,min($1,1))'],trim($e));
+        $e=str_replace(['r','g','b'],[sprintf('%.17F',$r),sprintf('%.17F',$g),sprintf('%.17F',$b)],$e);
+        expect(preg_match('/^(?:[0-9.e+\-*\/(), ]|ceil|max|min)+$/',$e)===1,'Fallback channel is plain arithmetic');
+        return abs((float)eval('return '.$e.';'));
+    },explode("\n",$m[1]));
+    expect(count($fg)===3&&$fg[0]===$fg[1]&&$fg[1]===$fg[2]&&in_array($fg[0],[0.0,1.0],true),'Fallback text is pure black or white on '.$label.': '.json_encode($fg));
+    expect($ratio($fg,$bg)>=4.5,'Fallback text reaches AA on '.$label.': '.round($ratio($fg,$bg),2));
+}
 same(['We email it to the owner',['Email code']],[$text('auth_code_email'),$action('auth_code_email')],'Auth code row');
 same(0,$dom->query('//li[@id="auto_renew_off"]')->length,'Registrar auto-renew row is staff only');
 foreach(['nameservers'=>'nameservers','dns'=>'dns-records','glue'=>'glue-records','ds'=>'dnssec','lock'=>'transfer-lock','auth_code_email'=>'transfer-code']as$id=>$anchor){

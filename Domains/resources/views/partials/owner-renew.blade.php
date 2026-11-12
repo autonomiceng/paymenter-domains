@@ -38,7 +38,7 @@
 </dl>
 @include('domains::partials.owner-auto-renew')
 @if ($renewable)
-@php $breakdown=static fn($line)=>isset($line['first_year'],$line['renewal'])?'$'.$line['first_year'].' for the first added year'.($line['years']>1?' + $'.$line['renewal'].($line['years']===2?' for the next year.':' / year for the next '.($line['years']-1).' years.') : '.'):''; @endphp
+@php $breakdown=static fn($line)=>isset($line['first_year'],$line['renewal'])?'$'.$line['first_year'].' for the first added year'.($line['years']>1?' + $'.$line['renewal'].($line['years']===2?' for the next year.':'/yr for the next '.($line['years']-1).' years.') : '.'):''; @endphp
 <dialog id="edit-renew" class="domains-confirm domains-edit domains-dialog-sheet" aria-labelledby="edit-renew-title" @if ($renewOpen) open @endif>
 <h3 id="edit-renew-title" class="domains-h3">Renew {{ $domain->name }}</h3>
 <form method="POST" action="{{ $domain->renewNow['url'] }}" class="domains-owner-form" data-renewal-form>
@@ -50,7 +50,7 @@
 <div data-renewal-summary hidden><dt>New expiry</dt><dd data-renewal-expiry>{{ !empty($renewalChoices['lines']) ? \Carbon\CarbonImmutable::parse(reset($renewalChoices['lines'])['expiry'])->format('M j, Y') : 'Confirmed at payment' }}</dd></div>
 <div data-renewal-summary hidden><dt>Total</dt><dd><strong class="domains-total" data-renewal-total>{{ !empty($renewalChoices['lines']) ? '$'.reset($renewalChoices['lines'])['total'] : 'Confirmed at payment' }}</strong><span class="domains-sub" data-renewal-breakdown>{{ $breakdown(!empty($renewalChoices['lines']) ? reset($renewalChoices['lines']) : null) }}</span></dd></div>
 <noscript><div><dt>Term totals</dt><dd>@forelse ($renewalChoices['lines'] ?? [] as $line)<p>{{ $line['years'] }} {{ $line['years'] === 1 ? 'year' : 'years' }}: ${{ $line['total'] }}; new expiry {{ \Carbon\CarbonImmutable::parse($line['expiry'])->format('M j, Y') }}<span class="domains-sub">{{ $breakdown($line) }}</span></p>@empty<p>Total and new expiry confirmed at payment.</p>@endforelse</dd></div></noscript>
-@if (isset($renewalChoices['next_annual']))<div><dt>Next annual renewal</dt><dd>${{ $renewalChoices['next_annual'] }} / year<span class="domains-sub">Renewal invoices stay annual. Renewal prices may change.</span></dd></div>@endif
+@if (isset($renewalChoices['next_annual']))<div><dt>Next annual renewal</dt><dd>${{ $renewalChoices['next_annual'] }}/yr<span class="domains-sub">Renewal invoices stay annual. Renewal prices may change.</span></dd></div>@endif
 </dl>
 @if ($domain->renewNow['repeat_at'] ?? null)<p class="domains-hint" role="note" data-renewal-repeat>{{ \Paymenter\Extensions\Servers\Domains\Services\RenewalRepeatWait::NEXT }} @include('domains::partials.moment', ['at' => $domain->renewNow['repeat_at']]). The invoice is due now.</p>@endif
 @if ($domain->renewNow['late'] ?? false)<p class="domains-hint">Late renewal @include('domains::partials.help', ['id' => 'late-renewal', 'label' => 'Late renewal', 'helpText' => \Paymenter\Extensions\Servers\Domains\Services\EnomLateRenewal::HELP])</p>@endif

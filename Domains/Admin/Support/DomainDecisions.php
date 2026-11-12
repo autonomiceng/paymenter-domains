@@ -387,10 +387,10 @@ final class DomainDecisions
         return Staff::can('admin.domains.manage')&&$d->status==='active'?'Use Sync now.':'Ask staff who can sync this domain.';
     }
     private static function canResume(): bool { return Staff::can(StaffOperationReview::permission('resume_observation')); }
-    /** The customer's own Off still lets them renew by hand or turn it back on. A staff stop blocks both, so its red button says what is left to stop. */
+    /** The customer's own Off still lets them renew by hand or turn it back on. Staff Turn off blocks both, so the row says what is left to stop. */
     private static function ownerOff(): string
     {
-        return self::OWNER_OFF.(Staff::can('admin.domains.manage')&&Staff::can(StaffHoldingReview::permission('stop'))?'. They can still renew by hand or turn it back on. Stop renewal blocks both.':'');
+        return self::OWNER_OFF.(Staff::can('admin.domains.manage')&&Staff::can(StaffHoldingReview::permission('stop'))?'. They can still renew by hand or turn it back on. Turning it off here blocks both.':'');
     }
     /** The domain sits on a registrar's test account. */
     public static function test(Domain $d): bool { return self::account($d)?->environment==='test'; }
