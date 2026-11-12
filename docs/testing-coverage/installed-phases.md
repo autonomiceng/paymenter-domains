@@ -6,7 +6,7 @@ private persistent SQLite database. Admitted ordinary phases keep the 30-second 
 
 | Scenario | Focused phases and retained guards |
 | --- | --- |
-| held | held: default catalogue/checkout/queued writer gates, display isolation, native authority, diagnostics, discovery and permissions in the original shared process; identity balance/rotation/runtime groups use the existing native group selector; catalogue and reinstall guards unchanged |
+| held | held: default catalogue/checkout/queued writer gates, display isolation, native authority, diagnostics, discovery and permissions in the original shared process; identity balance/rotation/runtime groups each fork the same post-held SQLite seed and use the existing native group selector; catalogue and reinstall guards unchanged |
 | acquisition | guards: seven-role composition, exact policy/profile identity, action gates and corrupted binding; dispatch: alternating real paid register/transfer, duplicates, premium preflight refusal. Both fork the same native-installed SQLite seed |
 | enom-exchange | dispatch: authenticated monetary routing, reentrant worker/physical slot, timeout, held management/renewal; authority: pre-entry capacity, pause, post-seal drift and lazy credentials; reconciliation: closed/accepted history, bounded polling, audited resume, unique charge and expiry. Each forks the same native-installed seed; wire-contract phase unchanged |
 | namesilo-enrollment | Native editor, enrollment action, single physical OTE check, encrypted identity/settings, processing/write gates, balance/probe/scheduler and no inherited facts. Duplicate recovery/invalid-input/reply/tampering/rotation/race matrices remain in namesilo-enrollment-test.php through the same helper |
@@ -15,9 +15,12 @@ private persistent SQLite database. Admitted ordinary phases keep the 30-second 
 | enom-test-transfer | arrival: strict gates, guest cart/login/EPP auth, exact encrypted code, native payment, two preflights/one transfer, scheduled charge/expiry proof; capacity: held code-after-payment, release/read-slot retry, stale balance and sealed deadline; preflight: RDAP faults/unknown, current policy revocation and lost reply; contacts: timely/late correction, timeout, terminal refund proof/forgeries, redaction and process restart |
 | enom-test-renewal | policy: strict environment/account acceptance and billing calendar; confirmation: future stop, off/missing acceptance, reentrant Extend, incomplete/final charge/expiry, capped proof/no replay; cap: pre-write refusal, deployment-aware release and restart; refusals: partial cap, anchor drift, cost pause, auto-renew and grace; history: lost reply, permission/window gates and zero/ambiguous/unique history; replacement: exact refund/one replacement/old evidence; race: native paid seed, overlapping issue/admit workers and staff page silence |
 
-Registration, transfer and renewal groups retain one seeded account between PHP processes;
-they reconstruct closures from the fixture and load existing IDs and clocks instead of re-running a
-full scenario. Renewal no longer executes the entire registration suite as setup: every
-registration assertion remains in the focused registration scenario above. Each holder
-still originates in real native checkout, payment and captured charge/expiry proof.
-All original renewal and registration assertions are retained in the mapped files.
+Registration and transfer retain one seeded account between PHP processes. They
+reconstruct closures and load existing IDs and clocks. Transfer's offline clock and
+RDAP reader are bound before native extension boot in resumed processes.
+Renewal seeds twelve holders once through real native checkout, payment and captured
+charge/expiry proof, plus a real pending sealed registration for recovery routing.
+Independent groups fork that committed seed; cap and race keep their shared state so
+restart and overlapping issue/admit workers still exercise the original operation.
+Renewal no longer executes registration's full assertion matrix as setup: those guards
+remain in the registration scenario above. All original behavior assertions remain.

@@ -12,6 +12,7 @@ import time
 import zipfile
 import stat
 import sqlite3
+from contextlib import closing
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -239,15 +240,15 @@ def main(scenario):
         phase('install', first)
         if scenario in ('acquisition', 'enom-exchange'):
             # Seed once through the real ZIP uploader, then fork committed SQLite bytes.
-            with sqlite3.connect(database) as source, sqlite3.connect(root/'installed-seed.sqlite') as target:
+            with closing(sqlite3.connect(database)) as source, closing(sqlite3.connect(root/'installed-seed.sqlite')) as target:
                 source.backup(target)
         def isolated_phase(name):
-            with sqlite3.connect(root/'installed-seed.sqlite') as source, sqlite3.connect(database) as target:
+            with closing(sqlite3.connect(root/'installed-seed.sqlite')) as source, closing(sqlite3.connect(database)) as target:
                 source.backup(target)
             phase(name)
         if scenario == 'held':
             phase('held')
-            with sqlite3.connect(database) as source, sqlite3.connect(root/'installed-seed.sqlite') as target:
+            with closing(sqlite3.connect(database)) as source, closing(sqlite3.connect(root/'installed-seed.sqlite')) as target:
                 source.backup(target)
             for group in ('balance', 'rotation', 'runtime'):
                 isolated_phase('identity-group-'+group)
@@ -270,7 +271,7 @@ def main(scenario):
             evidence['test_management_readback_and_restart'] = True
         elif scenario == 'enom-test-renewal':
             phase('enom-test-renewal-group-seed')
-            with sqlite3.connect(database) as source, sqlite3.connect(root/'installed-seed.sqlite') as target:
+            with closing(sqlite3.connect(database)) as source, closing(sqlite3.connect(root/'installed-seed.sqlite')) as target:
                 source.backup(target)
             for group in ('policy', 'confirmation', 'refusals', 'history', 'replacement', 'cap'):
                 isolated_phase('enom-test-renewal-group-'+group)

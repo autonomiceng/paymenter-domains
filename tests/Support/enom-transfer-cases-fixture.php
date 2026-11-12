@@ -29,10 +29,9 @@ $write('publish',[],$tld->id);$transferProduct=app(\Paymenter\Extensions\Servers
 $transferState=(object)['name'=>'','bill'=>'','pending'=>true,'charge'=>true];require __DIR__.'/enom-transfer-wire.php';
 $reset=static function()use($server,$transferReply):void{Cache::flush();DB::table('domains_read_budgets')->where('server_id',$server->id)->delete();resetWire(['reply'=>$transferReply]);};$reset();
 $run=static fn($op)=>(new RuntimeWork($clock,new RuntimePorts))->operation($op->id);
-$newTransfer=static function(string $name,bool $paid=true)use($user,$transferProduct,$clock,$binding):Operation {
-    Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());try{$cart=commerceCart($user);commerceAdd($cart,$transferProduct,$name);$checkout=commerceCheckout($user,$cart);$checkout->assertHasNoErrors();
-        if(!Domain::where('domain',$name)->exists()){fwrite(STDERR,json_encode(['fixture_checkout_failure'=>$checkout->effects['dispatches']??[]],JSON_THROW_ON_ERROR)."\n");}}
-    catch(DomainException $error){installedOfferFailure($binding,$clock,['transfer','renew']);throw $error;}
+$newTransfer=static function(string $name,bool $paid=true)use($user,$transferProduct,$clock):Operation {
+    Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
+    $cart=commerceCart($user);commerceAdd($cart,$transferProduct,$name);commerceCheckout($user,$cart)->assertHasNoErrors();
     $op=Domain::where('domain',$name)->sole()->operations()->sole();if($paid){App\Helpers\ExtensionHelper::addPayment($op->invoice_id,null,$op->amount);}return $op->fresh();
 };
 $code=static function(Operation $op,string $secret)use($user,$session):void{
@@ -40,12 +39,4 @@ $code=static function(Operation $op,string $secret)use($user,$session):void{
     $r->setUserResolver(fn()=>$user);$r->setLaravelSession($session);$r->request->set('_request_key',FormKeys::issue($r,'owner:'.$op->domain_id.':code'));app(OwnerActionController::class)->code($r,$op->domain_id);
     same($secret,$op->fresh()->payload['epp'],'Owner code exact bytes');expect(!$r->request->has('transfer_code'),'Owner code scrubbed');expect(!str_contains(json_encode($r->session()->all()),$secret),'Code absent from session');expect(!str_contains(DB::table('domains_operations')->find($op->id)->payload,$secret),'Code encrypted at rest');
 };
-app(Illuminate\Contracts\Debug\ExceptionHandler::class)->stopIgnoring([Illuminate\Validation\ValidationException::class,Illuminate\Database\Eloquent\ModelNotFoundException::class,Illuminate\Database\MultipleRecordsFoundException::class,Illuminate\Database\RecordNotFoundException::class,Illuminate\Database\RecordsNotFoundException::class]);
-app(Illuminate\Contracts\Debug\ExceptionHandler::class)->reportable(static function(Throwable $error):void {
-    fwrite(STDERR,json_encode(['fixture_reported_error'=>get_class($error),'file'=>basename($error->getFile()),'line'=>$error->getLine(),'trace'=>array_map(static fn($frame)=>[basename($frame['file']??''),$frame['line']??0,$frame['function']??''],array_slice($error->getTrace(),0,12))],JSON_THROW_ON_ERROR)."\n");
-});
-$fixtureHandler=app(Illuminate\Contracts\Debug\ExceptionHandler::class);
-Livewire\Livewire::listen('call',static function($component,$method)use($fixtureHandler):void {
-    if($component instanceof App\Livewire\Cart&&$method==='checkout'){app()->instance(Illuminate\Contracts\Debug\ExceptionHandler::class,$fixtureHandler);}
-});
 $secret='  Synthetic:Case-Sensitive + % é雪  ';

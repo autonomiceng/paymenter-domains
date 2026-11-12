@@ -15,7 +15,7 @@ app()->instance(\Paymenter\Extensions\Servers\Domains\Services\TransferPrecheck:
 $session=app('session')->driver();$session->start();app('request')->setLaravelSession($session);app('view')->share('errors',new Illuminate\Support\ViewErrorBag);
 $hot=storage_path('framework/domains-assets-hot');file_put_contents($hot,'http://assets.example.test');app(Illuminate\Foundation\Vite::class)->useHotFile($hot);require_once app_path('Classes/helpers.php');tldPanel();
 // Fresh install's contract inspected these adapters before this fixture supplied its offline RDAP.
-foreach(['CheckoutEligibility','CartAdmission','InvoiceBinding','Storefront'] as $adapter){app()->forgetInstance('Paymenter\\Extensions\\Servers\\Domains\\Services\\'.$adapter);}
+if(!isset($resumeTransfer)){foreach(['CheckoutEligibility','CartAdmission','InvoiceBinding','Storefront'] as $adapter){app()->forgetInstance('Paymenter\\Extensions\\Servers\\Domains\\Services\\'.$adapter);}}
 $staff=isset($resumeTransfer)?App\Models\User::findOrFail($resumeTransfer['staff']):staffUser([...array_keys(Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::permissions()),'admin.invoices.update']);Auth::setUser($staff);
 Currency::firstOrCreate(['code'=>'USD'],['name'=>'US Dollar','format'=>'1,000.00','prefix'=>'$','suffix'=>'']);
 $server=isset($resumeTransfer)?Server::findOrFail($resumeTransfer['server']):Server::create(['name'=>'Synthetic TEST transfer','type'=>'server','extension'=>'Domains','enabled'=>true]);(new Paymenter\Extensions\Servers\Domains\Domains)->boot();

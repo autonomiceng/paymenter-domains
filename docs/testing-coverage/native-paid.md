@@ -5,6 +5,10 @@ Every entrypoint uses the same installed runtime composition and native payment 
 matrix. The runner's verified core/commerce database snapshots remain shared inputs;
 each file owns its mutations and real committed native payment processing.
 
+Baseline retains native install and installed-runtime lifecycle calls. The other six
+files reuse the runner's verified installed-commerce snapshot before mutations;
+`test_installed_package_fresh.py` retains archive upload, install and reinstall guards.
+
 | Test | Original guards retained |
 | --- | --- |
 | native-paid-baseline | Activation mail/default/custom/blank/null text; real mixed domain/hosting/Credit checkout; unpaid early jobs; native synchronous activation timing; managed expiry; duplicate Paid/manual/worker no resend, duplicate operation, credit or financial mutation; queue failure preserves siblings |
