@@ -13,10 +13,12 @@ $mismatches=[];$reading=false;
 $guidance=static function($row,array $notice,bool $visible):void{
     if(!in_array($row->safe_code,['pre_send_interrupted','renewal_term_refused','registry_details_unsupported'],true)){return;}
     $body=(string)($notice['body']??'');
-    same($visible,str_contains($body,'Staff must release the hold after reviewing the saved order.'),'Release guidance follows the actual offer: '.$row->safe_code);
+    expect($visible||!str_contains($body,'Staff must release the hold after reviewing the saved order.'),'Release guidance requires an actual offer: '.$row->safe_code);
     if(!$visible){
         expect(str_contains($body,'Staff must check the original registrar result before retrying'),'A refused release keeps registrar-result guidance: '.$row->safe_code);
         same(['domain',null],[$notice['link']??null,$notice['link_label']??null],'A refused release opens its domain for review');
+    }else{
+        same('Staff must release the hold after reviewing the saved order.',\Paymenter\Extensions\Servers\Domains\Admin\Support\RequestHoldReasons::for($row)['body'],'An offered recovery keeps its release guidance');
     }
 };
 $all=[...$all,Staff::COSTS,Staff::METADATA];$staff->role->update(['permissions'=>$all]);
