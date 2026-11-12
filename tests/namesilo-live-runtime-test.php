@@ -93,6 +93,11 @@ $receipt();
 foreach(['renewal','transfer','management'] as $feature){$save('domains_namesilo_'.$feature,['fingerprint'=>$binding->fingerprint,'enabled'=>true]);}
 expect($engine->current($binding),'Synthetic receipt models local activation only');
 same(['register'=>true,'transfer'=>true],$ports->acquisitionGates($account),'Current receipt and feature choices enable the installed acquisition gates');
+// Even a receipt for this deployment cannot supply its missing contact-creation capability.
+config(['domains.namesilo_live.management'=>false]);$receipt();
+expect($engine->current($binding),'Contact prerequisite test uses a current receipt, not a stale deployment');
+same(['register'=>false,'transfer'=>false],$ports->acquisitionGates($account),'Acquisitions close before checkout when deployment contact creation is Off');
+config(['domains.namesilo_live.management'=>true]);$receipt();
 $cached=$composition();$features=(new \ReflectionProperty($cached['renewal'],'features'))->getValue($cached['renewal']);
 expect($features->renewal&&$features->management,'Current reviewed renewal and management choices reach the shared engines');
 $deny=static function(callable $work):void {

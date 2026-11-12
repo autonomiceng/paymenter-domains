@@ -83,6 +83,16 @@ $runtimeMissing='Site setup Missing. Ask your site admin to install the registra
 same([[$runtimeProblem,$runtimeMissing],[$runtimeProblem,$runtimeMissing]],$runtimeProblems,'Missing and malformed revisions also close the installed runtime');
 config(['domains.namesilo_live.runtime_revision'=>'OFFLINE-v1']);
 same($readyProblems,$readiness(),'Restoring a valid runtime revision restores readiness');
+// Registration and transfer each need contact creation even with the staff management choice Off.
+$contactProblem='Contact profiles Missing. Ask your site admin to enable NameSilo management in the deployment; registration and transfer need it to create contacts.';
+foreach(['registration','transfer'] as $feature){
+    $choices=['registration'=>false,'transfer'=>false,'renewal'=>false,'management'=>false,$feature=>true];
+    $before=$engine->problems($a,$choices,static function():void {});
+    config(['domains.namesilo_live.management'=>false]);
+    $after=$engine->problems($a,$choices,static function():void {});
+    expect(in_array($contactProblem,$after,true)&&!in_array($contactProblem,$before,true),'Activation refuses '.$feature.' when its deployment contact capability is Off');
+    config(['domains.namesilo_live.management'=>true]);
+}
 $saveReceipt=static function()use($engine,$binding,$server):void {
     $server->settings()->updateOrCreate(['key'=>LiveActivation::KEY],['encrypted'=>true,'type'=>'string',
         'value'=>json_encode([...$engine->receiptFor($binding),'registration'=>true],JSON_THROW_ON_ERROR)]);
