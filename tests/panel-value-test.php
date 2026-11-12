@@ -71,9 +71,9 @@ same([0.0, '<b>x</b> broke.'], [$escaped->evaluate('count(//b)'), $text($escaped
 same($failed(Reader::Staff)->toHtml(), Blade::render('<x-domains::panel.value :value="$value" />', ['value' => $failed(Reader::Staff)]), 'The component tag and the PHP piece agree');
 
 // Head: title with its tag, then the record's own state, facts and one link.
-$head = Head::make('fieldnote.dev', Reader::Staff)->domain()->tag(demo: false, test: true)->state(State::Active, 'domain-8')->fact('Expires', Fact::day('2027-03-04'))->link('Enom TEST', '/admin/registrar-account/3');
+$head = Head::make('fieldnote.example', Reader::Staff)->domain()->tag(demo: false, test: true)->state(State::Active, 'domain-8')->fact('Expires', Fact::day('2027-03-04'))->link('Enom TEST', '/admin/registrar-account/3');
 $title = $read($head->heading()->toHtml());
-same('fieldnote.dev', $text($title, '//*[@class="domains-panel-head-title"]'), 'The title is the record name');
+same('fieldnote.example', $text($title, '//*[@class="domains-panel-head-title"]'), 'The title is the record name');
 expect(str_contains($head->heading()->toHtml(), '<wbr>') && str_contains($title->document->textContent, 'Test'), 'A domain title wraps after dots and carries its Test tag');
 $line = $read($head->line()->toHtml());
 same(['Active', 'ok', 'domain-8', 'Expires Mar 4, 2027', '/admin/registrar-account/3'], [$text($line, '//*[@class="domains-panel-st"]'), $text($line, '//*[@class="domains-panel-st"]/@data-domains-tone'), $text($line, '//*[@class="domains-panel-st"]/@data-domains-record'), $text($line, '//*[@class="domains-panel-head-fact"]'), $text($line, '//a/@href')], 'The head line');

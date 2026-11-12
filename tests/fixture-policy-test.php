@@ -115,6 +115,10 @@ foreach (['invoice-binding-test.php', 'management-privacy-test.php', 'owner-acti
         expect(fixtureHostnameAllowed($name, $fixture), $fixture.' uses a reserved or explicit placeholder name: '.$name);
     }
 }
+// The staff panel kit is a shipped demo page, so the names it shows are reserved too.
+foreach (fixtureHostnameLiterals(file_get_contents(dirname(__DIR__).'/Domains/Admin/Pages/PanelKit.php')) as $name) {
+    expect(fixtureHostnameAllowed($name), 'The panel kit shows a reserved name: '.$name);
+}
 
 /** Known IP fixture strings have no escapes; PHP tokens make quote spelling irrelevant. */
 function fixtureIpLiterals(string $source): array

@@ -39,7 +39,7 @@ class PanelKit extends Page
     public function getTitle(): string { return 'Panel kit'; }
     private function head(): Head
     {
-        return Head::make('fieldnote.dev', Reader::Staff)->domain()->tag(true, false)->state(State::Active, 'kit-domain')
+        return Head::make('fieldnote.example', Reader::Staff)->domain()->tag(true, false)->state(State::Active, 'kit-domain')
             ->fact('Expires', Fact::day('2027-03-04'))->link('Enom TEST', '#kit-rows');
     }
     public function getHeading(): Htmlable { return $this->head()->heading(); }
@@ -160,7 +160,7 @@ class PanelKit extends Page
                         ->blocked('Records can\'t be edited while DNS hosting is off. Turn on DNS hosting to edit them.'),
                 ], null, 'kit-blocked-dns'),
                 Sheet::section('Domain', [
-                    Row::make('Domain', Value::fact(Fact::host('fieldnote.dev')))->actions(self::kit('delete', 'Delete', 'fieldnote.dev')->color('danger'))
+                    Row::make('Domain', Value::fact(Fact::host('fieldnote.example')))->actions(self::kit('delete', 'Delete', 'fieldnote.example')->color('danger'))
                         ->blocked('This domain can\'t be deleted while the renewal is running. Delete works again when the renewal finishes.'),
                 ], null, 'kit-blocked-domain'),
             ], 'kit-blocked'),

@@ -23,6 +23,7 @@ class Row extends Component implements HasEmbeddedView
     protected ?Row $blockedBy = null;
     /** @var list<Action> */
     protected array $controls = [];
+    private bool $painting = false;
 
     final public function __construct(protected string $rowLabel, protected Value $rowValue) {}
     public static function make(string $label, Value $value): static
@@ -51,6 +52,7 @@ class Row extends Component implements HasEmbeddedView
         if (count($actions) > self::MAX_ACTIONS) { throw new \InvalidArgumentException('A row has at most '.self::MAX_ACTIONS.' actions.'); }
         if ($this->kind === 'notice' && count($actions) > 1) { throw new \InvalidArgumentException('A notice has at most one action.'); }
         $this->controls = array_values($actions);
+        $this->holdBlocked();
         return $this->schema($actions === [] ? [] : [Actions::make($this->controls)->key($this->getKey(false).'-actions')]);
     }
     /** A change running in place: its state takes the action's place until it finishes, and nothing else moves. */
@@ -58,12 +60,13 @@ class Row extends Component implements HasEmbeddedView
     /** What the last change did, under the value, such as Failed with what failed. The value itself stays true. */
     public function result(Value $state): static { $this->result = self::needsState($state); return $this; }
     /** Only this row's actions are blocked: $reason says so and how to clear it, under the value, with $fix as its link. */
-    public function blocked(string $reason, ?Action $fix = null): static { $this->blocked = $reason; $this->fix = $fix; return $this; }
+    public function blocked(string $reason, ?Action $fix = null): static { $this->blocked = $reason; $this->fix = $fix; $this->holdBlocked(); return $this; }
     /** Every change in the section is blocked, and the section's notice says why. */
     public function blockedBy(Row $notice): static
     {
         if ($notice->kind !== 'notice') { throw new \InvalidArgumentException('A row is blocked by a notice.'); }
         $this->blockedBy = $notice;
+        $this->holdBlocked();
         return $this;
     }
     public function waits(): bool { return $this->rowValue->waits() || $this->live?->waits() === true; }
@@ -76,7 +79,21 @@ class Row extends Component implements HasEmbeddedView
     /** The "?" text. A setting row adds who sets it when this reader has no control. */
     protected function tip(): ?string { return $this->help; }
 
+    /** A blocked action runs nothing even when a request names it, since Filament won't mount or call a disabled action.
+     * It reads as enabled only while this row paints it, so its button stays focusable. This replaces any disabled
+     * condition the page set on that action. */
+    private function holdBlocked(): void
+    {
+        if ($this->blocked === null && $this->blockedBy === null) { return; }
+        foreach ($this->controls as $action) { $action->disabled(fn (): bool => !$this->painting); }
+    }
+
     public function toEmbeddedHtml(): string
+    {
+        $this->painting = true;
+        try { return $this->paint(); } finally { $this->painting = false; }
+    }
+    private function paint(): string
     {
         $shown = $this->shownControls();
         $why = $this->blocked !== null ? $this->anchor().'-why' : $this->blockedBy?->anchor();
