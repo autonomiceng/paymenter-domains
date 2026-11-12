@@ -44,14 +44,14 @@ foreach ([$released, $unreleased] as $d) {
     $details[]=str_contains(html_entity_decode(strip_tags($html),ENT_QUOTES),str_replace('Check the request','Check request #'.$d->operations()->sole()->id,$cause));
 }
 $actual=[$badge,$filtered,$details];
-same(['1',[$unreleased->id],[false,true]],$actual,
-    'A released queued review counts nowhere; an unreleased review appears in the badge, filter and detail: '.json_encode($actual));
+same(['2',[$released->id,$unreleased->id],[false,true]],$actual,
+    'A released review hides its old alert; the fixture with no native service still needs a domain check, and the unreleased alert stays visible: '.json_encode($actual));
 // The read rule preserves the alert history, and the existing minute cache still avoids repeated count queries.
 same(2,DB::table('domains_obligation_alerts')->whereNull('resolved_at')->count(),'Read paths retain both alert rows');
 // Opening the list drops the cached count so the badge matches it (journeys-r2 item 2); the next menu read fills it again.
-same('1',DomainResource::getNavigationBadge(),'The badge refills with the list count');
+same('2',DomainResource::getNavigationBadge(),'The badge refills with the list count');
 DB::connection()->flushQueryLog(); DB::connection()->enableQueryLog();
-same('1',DomainResource::getNavigationBadge(),'Warm badge retains the visible count');
+same('2',DomainResource::getNavigationBadge(),'Warm badge retains the visible count');
 $domainReads=array_filter(DB::connection()->getQueryLog(),fn(array $q)=>str_contains($q['query'],'domains_'));
 same([],$domainReads,'Warm badge performs no domain-data reads');
 DB::connection()->disableQueryLog();
