@@ -4,8 +4,8 @@
 declare(strict_types=1);
 // This registry exercises only Enom retries; keep unrelated registrar facts out of its refreshes.
 $fixtureRegistrars=['enom'];
-require __DIR.'/operation-fixture.php';
-require __DIR.'/staff-panel.php';staffPanel();
+require __DIR__.'/operation-fixture.php';
+require __DIR__.'/staff-panel.php';staffPanel();
 use Illuminate\Support\Facades\{Cache,DB,Queue};
 use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Capabilities, CostUnit, Disposition, DriverResult, Environment, Evidence, Money, QuoteEvidence, ResultReason, SendState};
