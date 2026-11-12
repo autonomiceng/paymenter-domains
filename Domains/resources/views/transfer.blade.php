@@ -1,5 +1,5 @@
 {{-- Enom 444f31c transfer view; MIT, Copyright (c) 2026 Autonomic Engineering. --}}
-@component('layouts.app', ['title' => 'Transfer a domain', 'sidebar' => true, 'spa' => false])
+@component('layouts.app', ['title' => 'Transfer a domain', 'sidebar' => auth()->check(), 'spa' => false])
 <div class="container mt-14 mb-10"><div class="domains">
 @include('domains::partials.styles')
 @include('domains::partials.test-banner', ['test' => $testEnvironment])
