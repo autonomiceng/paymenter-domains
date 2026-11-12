@@ -90,7 +90,7 @@ same($counts, [Order::count(), Invoice::count(), Service::count(), Domain::count
 expect(!Domain::where('domain', 'rolled-first-placeholder.com')->exists(), 'First reservation rolls back with second failure');
 App\Models\Setting::updateOrCreate(['key'=>'tax_enabled','settingable_type'=>null,'settingable_id'=>null],['type'=>'boolean','value'=>true]);
 App\Models\Setting::updateOrCreate(['key'=>'tax_type','settingable_type'=>null,'settingable_id'=>null],['type'=>'string','value'=>'inclusive']);
-config(['settings.tax_enabled'=>true,'settings.tax_type'=>'inclusive']);
+config(['settings'=>collect(config('settings'))->merge(['tax_enabled'=>true,'tax_type'=>'inclusive'])->all()]);
 App\Models\TaxRate::create(['name'=>'Synthetic tax','country'=>'all','rate'=>10]);
 Illuminate\Support\Once::flush();
 // Discounted acquisition freezes its positive net; holder renewal remains independently priced.
@@ -107,7 +107,7 @@ same($finalPrice->total_tax,$discountedOp->policy['checkout']['tax'],'Frozen che
 same('3.55',$discountedOp->policy['checkout']['net'],'Frozen net excludes only finalized line tax');
 same($discountedOp->policy['checkout'],$discounted->snapshot['checkout'],'Holding and request retain the same finalized amounts');
 App\Models\Setting::whereNull('settingable_type')->where('key','tax_enabled')->firstOrFail()->update(['value'=>false]);
-config(['settings.tax_enabled'=>false]);
+config(['settings'=>collect(config('settings'))->merge(['tax_enabled'=>false])->all()]);
 Illuminate\Support\Once::flush();
 same('10.40', number_format((float) $discounted->service->price, 2, '.', ''), 'Lifetime acquisition coupon never changes annual holder retail');
 same($coupon->id, $discounted->service->coupon_id, 'Coupon association retained for native usage accounting');

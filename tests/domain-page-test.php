@@ -53,6 +53,9 @@ foreach (['held','uncertain'] as $state) {
     same('info',$notice['tone']??null,'Transfer check belongs to staff');
     same('/support',$notice['action']['url']??null,'Held transfer keeps a support route');
     expect(!str_contains($notice['text']??'',DomainPage::TRANSFER_TIME),'Stopped or unresolved transfer has no completion estimate');
+    $cell=\Paymenter\Extensions\Servers\Domains\Presentation\DomainListRow::orderExpires([...$order,'complimentary'=>true],'/support');
+    same([true,null],[$cell['missing'],$cell['fix']],'Held complimentary transfer waits for its expiry without asking the customer to act');
+    expect(!str_contains($cell['cause']??'',DomainPage::TRANSFER_TIME),'Held or unresolved complimentary transfer has no completion estimate in the list');
 }
 
 // Header: breadcrumb, mono name with tags, pill. No Expires meta, Domain help link, tabs or Overview.
