@@ -11,6 +11,7 @@ import tarfile
 import time
 import zipfile
 import stat
+import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'scripts'))
@@ -194,7 +195,19 @@ def main(scenario):
                     if remaining <= 0:
                         raise TimeoutError(f'Installed package {scenario} phase {name} exhausted the {scenario_timeout}-second scenario deadline')
                     timeout = min(phase_limit, remaining)
-                subprocess.run([str(ROOT/'scripts/php-test'), str(ROOT/'tests/package-lifecycle.php')], cwd=ROOT, env=run_env, check=True, timeout=timeout)
+                argv = [str(ROOT/'scripts/php-test'), str(ROOT/'tests/package-lifecycle.php')]
+                if os.environ.get('BECO_TEST_CGROUP'):
+                    resource = Path(os.environ['BECO_TEST_RECEIPTS'])/('installed-'+uuid.uuid4().hex+'.json')
+                    status = subprocess.run([sys.executable, os.environ['BECO_TEST_BUDGET'], '--name', scenario+'/'+name,
+                                             '--test-scope', '--receipt', str(resource), '--', *argv], cwd=ROOT, env=run_env, timeout=12).returncode
+                    measured = json.loads(resource.read_text()) if resource.exists() else None
+                    print(json.dumps(dict(timing='installed_case', label=scenario+'/'+name,
+                                          argv=[*argv, scenario, name, str(worker)], exit=status,
+                                          seconds=time.monotonic()-phase_started, resources=measured)), flush=True)
+                    if status or measured is None:
+                        raise subprocess.CalledProcessError(status or 1, argv)
+                else:
+                    subprocess.run(argv, cwd=ROOT, env=run_env, check=True, timeout=timeout)
             except subprocess.TimeoutExpired as error:
                 if scenario_deadline is not None and time.monotonic() >= scenario_deadline:
                     raise TimeoutError(f'Installed package {scenario} phase {name} exhausted the {scenario_timeout}-second scenario deadline') from error
