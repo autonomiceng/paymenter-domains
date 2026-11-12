@@ -16,7 +16,7 @@ $clock=new class implements Clock {
     public function __construct(){$this->at=new DateTimeImmutable('2026-10-21T12:00:00Z');}
     public function now():DateTimeImmutable{return $this->at;}
 };
-app()->instance(Clock::class,$clock);config(['domains.enom_test_sends_per_minute'=>100000]);Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
+app()->instance(Clock::class,$clock);\Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::reset();config(['domains.enom_test_sends_per_minute'=>100000]);Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
 $session=app('session')->driver();$session->start();app('request')->setLaravelSession($session);app('view')->share('errors',new Illuminate\Support\ViewErrorBag);
 $hot=storage_path('framework/domains-assets-hot');file_put_contents($hot,'http://assets.example.test');app(Illuminate\Foundation\Vite::class)->useHotFile($hot);
 require_once app_path('Classes/helpers.php');tldPanel();
