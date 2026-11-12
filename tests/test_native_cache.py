@@ -27,6 +27,36 @@ class NativeCacheTests(unittest.TestCase):
                                     'Restoring mtime cannot hide a same-size edit')
                 self.assertEqual(digest.call_count, 2)
 
+    def test_unchanged_tree_avoids_walk_but_nested_mutation_invalidates_it(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root/'nested').mkdir()
+            (root/'nested/file').write_bytes(b'original')
+            expected = native.admitted_vendor_hashes(root)
+            with mock.patch.object(native, '_vendor_inventory', wraps=native._vendor_inventory) as walk:
+                self.assertEqual(expected, native.admitted_vendor_hashes(root))
+                self.assertEqual(0, walk.call_count)
+                (root/'nested/file').write_bytes(b'changed')
+                self.assertNotEqual(expected, native.admitted_vendor_hashes(root))
+                self.assertEqual(1, walk.call_count)
+
+    def test_watch_failure_and_overflow_never_reuse_the_inventory(self):
+        from fixture_watch import UnchangedTree
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root/'file').write_bytes(b'original')
+            native.admitted_vendor_hashes(root)
+            watch = native._VENDOR_WATCHES[str(root)][0]
+            with mock.patch('fixture_watch.os.read', return_value=b'overflow'), \
+                 mock.patch.object(native, '_vendor_inventory', wraps=native._vendor_inventory) as walk:
+                native.admitted_vendor_hashes(root)
+                self.assertEqual(1, walk.call_count)
+            self.assertFalse(watch.clean)
+            with mock.patch.object(UnchangedTree, 'unchanged', return_value=False), \
+                 mock.patch.object(native, '_vendor_inventory', wraps=native._vendor_inventory) as walk:
+                native.admitted_vendor_hashes(root)
+                self.assertEqual(1, walk.call_count)
+
     def test_process_admission_retains_exact_inventory_and_symlink_refusals(self):
         for change in ['add', 'remove', 'replace', 'link']:
             with self.subTest(change=change), tempfile.TemporaryDirectory() as temp:
