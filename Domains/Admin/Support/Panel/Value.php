@@ -8,7 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Presentation\Codes\Coded;
 /** One value on a panel: a State with its mark, a Plain word, or a Fact, then an optional sentence under it. Nothing
  * else: no bare text, colour, icon or class. A State's tone comes from its reader; staff may get one more line with
  * times and codes, which customers never see. Renders the domains::components.panel.value Blade component, which
- * emits neutral beco-* classes and data-beco-tone, and reads as stacked text in plain Filament. */
+ * emits neutral domains-panel-* classes and data-domains-tone, and reads as stacked text in plain Filament. */
 final class Value implements Htmlable
 {
     /** @param list<Fact> $extra Staff only. */

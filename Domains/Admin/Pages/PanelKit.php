@@ -88,10 +88,10 @@ class PanelKit extends Page
                     Row::make('Invoice status', Value::coded(InvoiceStatus::state('STATUS_77', null, '2026-11-12'), $staff)),
                 ], null, 'kit-value-state'),
                 Sheet::section('A plain word', [
-                    SettingsRow::setting('Registrar auto-renew', Value::plain(Plain::Off), 'Set by Beco and kept off.')->help('Beco renews the domain after the invoice is paid, so the customer is never charged twice.'),
-                    SettingsRow::setting('Price sync', Value::plain(Plain::Daily), 'Set by Beco.')->help('Prices sync from the registrar once a day.'),
+                    SettingsRow::setting('Registrar auto-renew', Value::plain(Plain::Off), 'Set by the host and kept off.')->help('The domain renews after the invoice is paid, so the customer is never charged twice.'),
+                    SettingsRow::setting('Price sync', Value::plain(Plain::Daily), 'Set by the host.')->help('Prices sync from the registrar once a day.'),
                     SettingsRow::setting('Registry lock', Value::plain(Plain::NotApplicable), 'Set by the registry.')->help('The .dev registry has no registry lock.'),
-                    SettingsRow::setting('New domains use', Value::plain(Plain::Default, 'ns1.beco.dev and ns2.beco.dev. Used by 597 TLDs.'), 'Set by staff in domain settings.')->actions(Sheet::link('kit_ns', 'Change', '#kit-value')),
+                    SettingsRow::setting('New domains use', Value::plain(Plain::Default, 'ns1.example.net and ns2.example.net. Used by 597 TLDs.'), 'Set by staff in domain settings.')->actions(Sheet::link('kit_ns', 'Change', '#kit-value')),
                 ], null, 'kit-value-plain'),
                 Sheet::section('A fact', [
                     Row::make('Balance', Value::fact(Fact::money('1240.00'))),
@@ -118,12 +118,12 @@ class PanelKit extends Page
                 Sheet::section('Domain', [
                     Row::make('Renewal', Value::state(State::Checking, $staff, 'Renewing for 1 year at Enom TEST.')),
                     Row::make('Transfer', Value::state(State::UnderReview, $staff, 'This paid change waits for staff review.'))->actions(Sheet::link('kit_transfer', 'Check request #84', '#kit-rows')),
-                    Row::make('Nameservers', Value::fact(Fact::names(['ns1.beco.dev', 'ns2.beco.dev'])))->actions(self::kit('ns_edit', 'Edit', 'Nameservers')),
+                    Row::make('Nameservers', Value::fact(Fact::names(['ns1.example.net', 'ns2.example.net'])))->actions(self::kit('ns_edit', 'Edit', 'Nameservers')),
                     Row::make('Transfer lock', Value::plain(Plain::On, 'Turning off at the registrar. The button comes back when this finishes.'))->running(Value::state(State::Checking, $staff)),
                 ], null, 'kit-rows-domain'),
                 Sheet::section('Registrar account', [
                     Row::make('Balance', Value::fact(Fact::money('1240.00')))->actions(self::kit('balance', 'Check balance'), Sheet::link('kit_funds', 'Add funds', '#kit-rows')),
-                    SettingsRow::toggle('Renewal invoices', true, self::kit('invoices', 'Renewal invoices'), 'Set by staff on the registrar account.', 'Beco sends a renewal invoice 30 days before a domain expires.'),
+                    SettingsRow::toggle('Renewal invoices', true, self::kit('invoices', 'Renewal invoices'), 'Set by staff on the registrar account.', 'A renewal invoice is sent 30 days before a domain expires.'),
                     SettingsRow::setting('Mode', Value::plain(Plain::Test), 'Set by staff when the account is connected.')->help('Test and Live are separate registrar accounts, each with its own login, domains and money.'),
                     SettingsRow::setting('Reminder schedule', $this->reminderDays(), 'Set by staff who can change domain policy.')->actions(Sheet::edit(ReminderAction::make($this->server), 'Reminder schedule')),
                 ], 'All amounts in USD.', 'kit-rows-account'),
@@ -151,7 +151,7 @@ class PanelKit extends Page
                 Sheet::section('Registrar', [
                     $paused = Row::notice('orders-paused', Value::state(State::OrdersPaused, $staff, 'Changes can\'t be sent to Enom TEST while orders are paused.'), Sheet::link('kit_orders', 'Open order settings', '#kit-toggle')),
                     Row::make('Last sync', Value::fact(Fact::date(self::AT, $staff)))->actions(self::kit('sync', 'Sync now')),
-                    Row::make('Nameservers', Value::fact(Fact::names(['ns1.beco.dev', 'ns2.beco.dev'])))->key('row-blocked-ns')->actions(self::kit('blocked_ns', 'Edit', 'Nameservers'))->blockedBy($paused),
+                    Row::make('Nameservers', Value::fact(Fact::names(['ns1.example.net', 'ns2.example.net'])))->key('row-blocked-ns')->actions(self::kit('blocked_ns', 'Edit', 'Nameservers'))->blockedBy($paused),
                     Row::make('Transfer lock', Value::plain(Plain::On))->key('row-blocked-lock')->actions(self::kit('blocked_lock', 'Turn off', 'Transfer lock'))->blockedBy($paused),
                 ], null, 'kit-blocked-registrar'),
                 Sheet::section('DNS', [
@@ -197,7 +197,7 @@ class PanelKit extends Page
     ];
     /** Every word of one tone, as staff read it. @param list<State> $states */
     private static function words(array $states): Component
-    { return Html::make(new HtmlString('<div class="beco-kit-words">'.implode('', array_map(static fn (State $s): string => Value::state($s, Reader::Staff)->toHtml(), $states)).'</div>')); }
+    { return Html::make(new HtmlString('<div class="domains-panel-kit-words">'.implode('', array_map(static fn (State $s): string => Value::state($s, Reader::Staff)->toHtml(), $states)).'</div>')); }
     /** The demo account's saved reminder days, read the way the account page reads them. */
     private function reminderDays(): Value
     {

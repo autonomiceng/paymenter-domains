@@ -17,7 +17,7 @@ if ($setup !== '') { (static fn (string $file, $panel): mixed => require $file)(
 $schedule = static fn (): object => DB::table('domains_reminder_schedules')->where('server_id', $server)->sole();
 $days = static function (string $html): string {
     $dom = storefrontDom($html);
-    return trim($dom->evaluate('string(//div[@data-beco-row][normalize-space(div[@class="beco-row-k"])="Reminder schedule"]//*[@class="beco-fact"])'));
+    return trim($dom->evaluate('string(//div[@data-domains-row][normalize-space(div[@class="domains-panel-row-k"])="Reminder schedule"]//*[@class="domains-panel-fact"])'));
 };
 // The row places the page's own action: its click mounts reminders_<server> from the row's actions.
 $writer = staffUser([Staff::VIEW, Staff::POLICY]);

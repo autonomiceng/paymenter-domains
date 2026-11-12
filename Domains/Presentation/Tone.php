@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Presentation;
 /** The five status tones. A page never picks one: a State gives it for its reader, and the mark comes from the tone
- * (a skin draws it from data-beco-tone). Adding a tone or mark needs Ilya. */
+ * (a skin draws it from data-domains-tone). Adding a tone or mark needs Ilya. */
 enum Tone: string
 {
     /** Solid green, check: done or healthy. */

@@ -29,7 +29,7 @@ same(['Unpaid' => [Tone::Off, Tone::Attention], 'AwaitingPayment' => [Tone::Prog
 foreach (Tone::cases() as $tone) {
     expect(array_filter(State::cases(), static fn (State $s): bool => $s->tone(Reader::Staff) === $tone || $s->tone(Reader::Customer) === $tone) !== [], 'Every tone is used: '.$tone->name);
 }
-same(['ok', 'off', 'prog', 'warn', 'err'], array_map(static fn (Tone $t): string => $t->value, Tone::cases()), 'The five tones a skin draws from data-beco-tone');
+same(['ok', 'off', 'prog', 'warn', 'err'], array_map(static fn (Tone $t): string => $t->value, Tone::cases()), 'The five tones a skin draws from data-domains-tone');
 // The shared block (results and the six availability states) is part of this enum.
 foreach (['ok', 'failed', 'not_read_yet', 'checking', 'couldnt_read', 'not_set', 'not_for_sale', 'not_supported', 'not_recognized'] as $key) {
     expect(in_array(State::from($key), State::SHARED, true), 'Shared state: '.$key);

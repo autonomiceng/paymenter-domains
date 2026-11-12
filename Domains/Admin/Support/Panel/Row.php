@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\HelpHint;
 /** One sheet row: a label with an optional "?", one Value, and at most two native actions in the action column.
  * The page registers its actions as it always has (keys, modals, authorisation and refresh hooks are its own); the
  * row only places them. A row whose value or live state is Checking gets the waiting edge, so a page can't paint one.
- * Emits neutral beco-row markup with plain Filament actions, so it reads as a stacked line without a skin.
+ * Emits neutral domains-panel-row markup with plain Filament actions, so it reads as a stacked line without a skin.
  * Row::notice() is the page notice: the same row shape with a state and sentence instead of a label. */
 class Row extends Component implements HasEmbeddedView
 {
@@ -68,7 +68,7 @@ class Row extends Component implements HasEmbeddedView
     }
     public function waits(): bool { return $this->rowValue->waits() || $this->live?->waits() === true; }
     /** The row's id on the page, from its full key, so rows with the same label in other sections stay apart. */
-    public function anchor(): string { return 'beco-'.trim((string) preg_replace('/[^A-Za-z0-9_-]+/', '-', $this->getKey() ?? (string) $this->getKey(false)), '-'); }
+    public function anchor(): string { return 'domains-panel-'.trim((string) preg_replace('/[^A-Za-z0-9_-]+/', '-', $this->getKey() ?? (string) $this->getKey(false)), '-'); }
 
     /** The actions this reader can use now. */
     protected function shownControls(): array
@@ -83,7 +83,7 @@ class Row extends Component implements HasEmbeddedView
         if ($why !== null) {
             foreach ($shown as $action) {
                 // Visible, focusable and named, but it runs nothing until the cause is cleared: no link, Alpine or Livewire handler.
-                $action->url(null)->alpineClickHandler('$event.preventDefault()')->livewireClickHandlerEnabled(false)->extraAttributes(['aria-disabled' => 'true', 'aria-describedby' => $why, 'class' => 'beco-blocked'], merge: true);
+                $action->url(null)->alpineClickHandler('$event.preventDefault()')->livewireClickHandlerEnabled(false)->extraAttributes(['aria-disabled' => 'true', 'aria-describedby' => $why, 'class' => 'domains-panel-blocked'], merge: true);
             }
         }
         $tip = $this->tip();

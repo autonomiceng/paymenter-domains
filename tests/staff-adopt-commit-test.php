@@ -108,7 +108,9 @@ foreach ([new RuntimeException('private-sink-detail'), new DomainException('priv
 }
 $when = new ReflectionMethod(AdoptDomain::class, 'when');
 // Plain text names the staff zone; on the page an instant is a moment the browser shows in the viewer's zone.
-foreach (['2027-10-20' => 'Oct 20, 2027', '2027-10-20T08:14:00+02:00' => 'Oct 20, 2027, 6:14 AM UTC', '2027-10-20T06:14:00Z' => 'Oct 20, 2027, 6:14 AM UTC', '' => 'Unconfirmed', 'not-a-date' => 'Unconfirmed'] as $raw => $shown) { same($shown, $when->invoke(null, $raw, true), 'Staff date '.$raw); }
+$expiry = \Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at((new DateTimeImmutable('2027-10-20T06:14:00Z'))->getTimestamp()); // One instant, whatever offset it was stored with.
+// A calendar date stays the stored day in any zone, so its text is behaviour.
+foreach (['2027-10-20' => 'Oct 20, 2027', '2027-10-20T08:14:00+02:00' => $expiry, '2027-10-20T06:14:00Z' => $expiry, '' => 'Unconfirmed', 'not-a-date' => 'Unconfirmed'] as $raw => $shown) { same($shown, $when->invoke(null, $raw, true), 'Staff date '.$raw); }
 expect(str_contains((string) $when->invoke(null, '2027-10-20T08:14:00+02:00'), 'datetime="2027-10-20T06:14:00+00:00"'), 'A page instant carries its moment');
 same('Unconfirmed', $when->invoke(null, null), 'Missing staff date');
 $page->callAction('readback', data: ['reason' => 'Rechecked after stale evidence', 'do_not_renew' => true])->assertHasNoActionErrors()->assertSee('Checks passed');
@@ -136,7 +138,7 @@ app()->instance(AdoptionReader::class, $reader);
 $page->callAction('readback', data: ['reason' => 'Rechecked after diagnostic failures', 'do_not_renew' => true])->assertSee('Checks passed');
 
 $calls = count($wire->calls); $money = scenarioMoney();
-$page->mountAction('confirm'); expect(str_contains((string) $page->instance()->getMountedAction()->getModalDescription(), 'Expiry: Oct 20, 2027, 6:14 AM UTC'), 'Confirm modal names the staff zone');
+$page->mountAction('confirm'); expect(str_contains((string) $page->instance()->getMountedAction()->getModalDescription(), $expiry), 'Confirm modal reads the expiry instant in the named staff zone');
 // The own-class container seam injects a postcommit enrollment failure without changing native services.
 $enrollment = new class {
     public array $ids = [];
