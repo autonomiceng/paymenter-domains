@@ -9,7 +9,7 @@ use Filament\Schemas\Components\{Actions,Component,Flex,Group,Html,Section};
 use Filament\Support\Enums\Width;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\HtmlString;
-use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
+use Paymenter\Extensions\Servers\Domains\Presentation\{Missing, StaffTime};
 /** The one detail page layout: a sheet of sections with a rail beside it. A row is a label, a value and an action column.
  * It emits plain Filament plus domains-* class names. A skin draws the sheet from those; without one it stays stacked Filament sections. */
 final class Sheet
@@ -69,10 +69,10 @@ final class Sheet
         $link=Action::make($name)->label($label)->link()->size('sm')->url($url)->visible($url!==null);
         return $external?$link->openUrlInNewTab()->icon('heroicon-m-arrow-top-right-on-square')->iconPosition('after'):$link;
     }
-    /** "Synced Nov 1, 2026, 2:13 AM PST": the viewer's time zone, with UTC as the fallback and on hover. */
+    /** "Synced Nov 1, 2026, 2:13 AM PST": the viewer's time zone, UTC on hover. Without script it reads in the site's staff zone, named. */
     public static function moment(int|string $at,string $before=''): HtmlString
     {
-        $iso=is_int($at)?gmdate('c',$at):$at;$fallback=is_int($at)?gmdate('M j, Y H:i \\U\\T\\C',$at):$at;
+        $iso=is_int($at)?gmdate('c',$at):$at;$fallback=is_int($at)?StaffTime::at($at):$at;
         try { $utc=CarbonImmutable::parse($iso)->utc()->format('M j, Y, g:i A').' UTC'; } catch (\Throwable) { $utc=null; }
         $time=view('domains::partials.moment',['at'=>$iso,'fallback'=>$fallback])->render();
         return new HtmlString(($before===''?'':e($before).' ').($utc===null?$time:'<span title="'.e($utc).'">'.$time.'</span>'));

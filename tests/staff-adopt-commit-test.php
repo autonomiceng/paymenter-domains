@@ -48,7 +48,7 @@ same('Import example.com for Customer #'.$owner->id,$page->instance()->confirmAc
 same(0, count($wire->calls), 'Choosing mapping performs no wire');
 $page->callAction('readback', data: ['reason' => 'Verified native dedicated service for original customer', 'do_not_renew' => true])->assertHasNoActionErrors()
     ->assertSee('Checks passed')->assertSee('No renewal')->assertActionDisabled('confirm')
-    ->assertSee('Oct 20, 2027 06:14 UTC')->assertSee('Valid until')->assertDontSee('Expiry (UTC)')->assertDontSee('2027-10-20T06:14')
+    ->assertSeeHtml('datetime="2027-10-20T06:14:00+00:00"')->assertSee('Valid until')->assertDontSee('Expiry (UTC)')->assertDontSeeText('2027-10-20T06:14')
     ->assertSee('import is off on this site');
 // Invalid reasons stay in the form and preserve the previous successful preview.
 $previewResolutions = 0;
@@ -66,7 +66,7 @@ foreach (["Verified\u{2028}customer", "Verified\u{2029}customer", "Verified\tcus
     same($previousEvidence, [Adoption::count(), count($wire->calls)], 'Invalid reason reads no registrar and creates no preview');
     $page->unmountAction();
 }
-$html = $page->html(); $a = Adoption::sole(); $page->assertSee($a->valid_until->setTimezone(new DateTimeZone('UTC'))->format('M j, Y H:i:s').' UTC');
+$html = $page->html(); $a = Adoption::sole(); $page->assertSeeHtml('datetime="'.gmdate('c', $a->valid_until->getTimestamp()).'"');
 foreach ([$a->request_key, $a->request_digest, 'synthetic-secret', 'account-enom', 'provider_domain_id', 'account_fingerprint'] as $secret) { expect(!str_contains($html, $secret), 'Browser excludes private authority '.$secret); }
 $page->callAction('confirm', data: ['verified' => true]); same(0, Domain::count(), 'Default off UI cannot confirm');
 config(['domains.adoption.enabled' => true]);
@@ -107,7 +107,9 @@ foreach ([new RuntimeException('private-sink-detail'), new DomainException('priv
     $text = $refused->invoke(null, $unknown); expect(str_contains($text, "can't tell if the import finished") && !str_contains($text, 'private-sink-detail') && !str_contains($text, 'Nothing was changed'), 'Unmapped refusal is uncertain and hides exception text');
 }
 $when = new ReflectionMethod(AdoptDomain::class, 'when');
-foreach (['2027-10-20' => 'Oct 20, 2027', '2027-10-20T08:14:00+02:00' => 'Oct 20, 2027 06:14 UTC', '2027-10-20T06:14:00Z' => 'Oct 20, 2027 06:14 UTC', '' => 'Unconfirmed', 'not-a-date' => 'Unconfirmed'] as $raw => $shown) { same($shown, $when->invoke(null, $raw), 'Staff date '.$raw); }
+// Plain text names the staff zone; on the page an instant is a moment the browser shows in the viewer's zone.
+foreach (['2027-10-20' => 'Oct 20, 2027', '2027-10-20T08:14:00+02:00' => 'Oct 20, 2027, 6:14 AM UTC', '2027-10-20T06:14:00Z' => 'Oct 20, 2027, 6:14 AM UTC', '' => 'Unconfirmed', 'not-a-date' => 'Unconfirmed'] as $raw => $shown) { same($shown, $when->invoke(null, $raw, true), 'Staff date '.$raw); }
+expect(str_contains((string) $when->invoke(null, '2027-10-20T08:14:00+02:00'), 'datetime="2027-10-20T06:14:00+00:00"'), 'A page instant carries its moment');
 same('Unconfirmed', $when->invoke(null, null), 'Missing staff date');
 $page->callAction('readback', data: ['reason' => 'Rechecked after stale evidence', 'do_not_renew' => true])->assertHasNoActionErrors()->assertSee('Checks passed');
 
@@ -134,7 +136,7 @@ app()->instance(AdoptionReader::class, $reader);
 $page->callAction('readback', data: ['reason' => 'Rechecked after diagnostic failures', 'do_not_renew' => true])->assertSee('Checks passed');
 
 $calls = count($wire->calls); $money = scenarioMoney();
-$page->mountAction('confirm'); expect(str_contains((string) $page->instance()->getMountedAction()->getModalDescription(), 'Expiry: Oct 20, 2027 06:14 UTC'), 'Confirm modal shows UTC expiry');
+$page->mountAction('confirm'); expect(str_contains((string) $page->instance()->getMountedAction()->getModalDescription(), 'Expiry: Oct 20, 2027, 6:14 AM UTC'), 'Confirm modal names the staff zone');
 // The own-class container seam injects a postcommit enrollment failure without changing native services.
 $enrollment = new class {
     public array $ids = [];

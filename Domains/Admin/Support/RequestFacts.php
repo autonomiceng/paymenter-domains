@@ -412,7 +412,7 @@ final class RequestFacts
         $wait=\Paymenter\Extensions\Servers\Domains\Services\RenewalRepeatWait::class;
         $paid=$op->funding_basis==='paid_invoice'?'Paid. ':'';
         return ['title'=>$wait::STAFF.'.','tone'=>'info','body'=>new \Illuminate\Support\HtmlString(e($paid.$wait::NOTHING.' '.$wait::GOES).' '
-            .Sheet::moment($until->setTimezone(new \DateTimeZone('UTC'))->format(DATE_ATOM))->toHtml().e(', after fresh checks.'))];
+            .Sheet::moment($until->getTimestamp())->toHtml().e(', after fresh checks.'))];
     }
     /** What release sends, in the words staff see. */
     public static function sendWords(Operation $op, Account $account): string

@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview;
 final class StaffReviewHistory
 {
     public const SENT = 'Sent to registrar';
-    /** History rows in recorded order: time ("M j, Y H:i UTC" or null for Missing), event, reason sub-line and who.
+    /** History rows in recorded order: time (an ISO 8601 instant the page shows in the viewer's zone, or null for Missing), event, reason sub-line and who.
      * Null when the saved history can't be read. A check's request and result phases show as one row. */
     public static function rows(Operation $op, ?StaffGrants $grants = null): ?array
     {
@@ -77,5 +77,5 @@ final class StaffReviewHistory
         return $send==='sent'||in_array($op->state,['pending','succeeded'],true)?self::SENT:RequestStatus::STATES['uncertain'][1];
     }
     public static function time(?\DateTimeInterface $at): ?string
-    { return $at?\DateTimeImmutable::createFromInterface($at)->setTimezone(new \DateTimeZone('UTC'))->format('M j, Y H:i').' UTC':null; }
+    { return $at?gmdate(DATE_ATOM,$at->getTimestamp()):null; }
 }

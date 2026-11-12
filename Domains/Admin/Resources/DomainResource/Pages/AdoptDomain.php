@@ -9,12 +9,14 @@ use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Pages\Page;
 use Filament\Schemas\{Schema, Components\Section, Components\Actions};
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{Sheet, Staff};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{CanonicalName, Environment};
 use Paymenter\Extensions\Servers\Domains\Data\Adoption\{RefusalCode, Review, StaffContext, Target};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Adoption, Domain};
+use Paymenter\Extensions\Servers\Domains\Presentation\StaffTime;
 use Paymenter\Extensions\Servers\Domains\Services\{AdoptionCommit, AdoptionReader, AdoptionRefused, StaffReason};
 /** Native staff wizard. Request keys, digests and private evidence never leave the server. */
 class AdoptDomain extends Page
@@ -106,7 +108,7 @@ class AdoptDomain extends Page
             ->modalDescription(function (): string {
                 $facts = $this->review['details'] ?? [];
                 return 'Customer #'.$this->target['customer'].', Service #'.$this->target['service'].', Account #'.$this->target['account']
-                    .'. Expiry: '.self::when($facts['expiry'] ?? null).'. Annual charge: '.($facts['annual_charge'] ?? 'Unconfirmed').' USD including tax. '
+                    .'. Expiry: '.self::when($facts['expiry'] ?? null, text: true).'. Annual charge: '.($facts['annual_charge'] ?? 'Unconfirmed').' USD including tax. '
                     .Review::renewalNotice($facts).' '
                     .'Nothing is charged now. Reason: '.$this->reason;
             })
@@ -149,8 +151,9 @@ class AdoptDomain extends Page
             default => "We can't tell if the import finished. See if this name now shows as imported before you check it again.",
         };
     }
-    /** Registrar expiry and calendar dates for staff: date-only stays a date, instants show in UTC. */
-    public static function when(?string $value): string
+    /** Registrar expiry and calendar dates for staff: date-only stays a date. An instant shows on the page in the viewer's
+     * zone, or with $text in the site's staff zone, named. */
+    public static function when(?string $value, bool $text = false): string|HtmlString
     {
         if ($value === null || $value === '') { return 'Unconfirmed'; }
         try {
@@ -159,7 +162,8 @@ class AdoptDomain extends Page
                 $date = \DateTimeImmutable::createFromFormat('!Y-m-d', $value, $utc);
                 return $date && $date->format('Y-m-d') === $value ? $date->format('M j, Y') : 'Unconfirmed';
             }
-            return (new \DateTimeImmutable($value))->setTimezone($utc)->format('M j, Y H:i').' UTC';
+            $at = (new \DateTimeImmutable($value))->getTimestamp();
+            return $text ? StaffTime::at($at) : Sheet::moment($at);
         } catch (\Throwable) { return 'Unconfirmed'; }
     }
     private function customerLabel(): string
@@ -186,7 +190,7 @@ class AdoptDomain extends Page
                 'Price review' => Review::priceNotice($details['price_notice'] ?? null),
                 'Past invoices' => array_map(fn ($i) => 'Invoice #'.$i['invoice_id'].' ('.ucfirst($i['status']).')', $details['history'] ?? []) ?: ['No verified past invoices.'],
                 'Renewal' => Review::renewalNotice($details),
-                'Reason' => $this->reason, 'Valid until' => $a?->valid_until ? $a->valid_until->setTimezone(new \DateTimeZone('UTC'))->format('M j, Y H:i:s').' UTC' : 'Expired. Check again.'];
+                'Reason' => $this->reason, 'Valid until' => $a?->valid_until ? Sheet::moment($a->valid_until->getTimestamp()) : 'Expired. Check again.'];
             $entries = []; foreach ($facts as $label => $value) { $entries[] = TextEntry::make('review_'.count($entries))->label($label)->state($value)->listWithLineBreaks(); }
             if ($why = $this->unavailable()) { $entries[] = TextEntry::make('unavailable')->label("Why you can't confirm")->hiddenLabel()->state($why)->columnSpanFull(); }
             $sections[] = Section::make('3. Review the details')->columns(2)->schema([...$entries, Actions::make([$this->confirmAction()])->columnSpanFull()]);

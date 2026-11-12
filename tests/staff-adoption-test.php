@@ -38,7 +38,7 @@ same([], $view->get('review'), 'Invalid reason leaves pending adoption preview u
 same(0, count($wire->calls), 'Invalid pending adoption reason reads nothing');
 $view->unmountAction();
 $view->callAction('preview', data: ['reason' => 'Reviewed synthetic service mapping', 'do_not_renew' => true])->assertHasNoActionErrors()
-    ->assertSee('Test only. No real domain is imported.')->assertSee('None. Do not renew was requested.')->assertDontSee('renewal off')->assertSee('Expiry on file')->assertSee('Oct 20, 2027')->assertSee($owner->name)->assertSee('Oct 20, 2027 06:14 UTC')->assertSee('Preview import')->assertSee('USD')->assertSee('Requested for review. No cancellation was created.')->assertActionDisabled('confirm')->assertDontSee('(UTC date)');
+    ->assertSee('Test only. No real domain is imported.')->assertSee('None. Do not renew was requested.')->assertDontSee('renewal off')->assertSee('Expiry on file')->assertSee('Oct 20, 2027')->assertSee($owner->name)->assertSeeHtml('datetime="2027-10-20T06:14:00+00:00"')->assertSee('Preview import')->assertSee('USD')->assertSee('Requested for review. No cancellation was created.')->assertActionDisabled('confirm')->assertDontSee('(UTC date)');
 same(4, count($wire->calls), 'Only explicit action makes bounded named readback'); same(1, Adoption::count(), 'Preview retains evidence');
 $view->callAction('confirm'); same('adoption_pending', Domain::findOrFail($id)->status, 'Disabled confirm cannot promote a holding');
 same($before, [$service->fresh()->getAttributes(), Domain::findOrFail($id)->getRawOriginal(), App\Models\Invoice::count()], 'Staff preview changes no native/holding/invoice state');
@@ -121,7 +121,7 @@ foreach(['2026-02-30','2026-13-01','2026-00-10','2026-01-00','2025-02-29']as$bad
     same('Unconfirmed',\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\AdoptDomain::when($bad),'Impossible expiry stays unconfirmed');
 }
 same('Feb 29, 2028',\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\AdoptDomain::when('2028-02-29'),'Valid leap date retained');
-same('Oct 20, 2027 06:14 UTC',\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\AdoptDomain::when('2027-10-19T23:14:00-07:00'),'Instant display retains UTC conversion');
+same('Oct 20, 2027, 6:14 AM UTC',\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\AdoptDomain::when('2027-10-19T23:14:00-07:00',true),'Instant text converts to the named staff zone');
 foreach([str_repeat('é',501),"line\nbreak","line\u{2028}break","line\u{2029}break",'   ',"valid\xff"]as$bad){
     $refused=false;try{new \Paymenter\Extensions\Servers\Domains\Data\Adoption\StaffContext($staff->id,$bad);}catch(InvalidArgumentException){$refused=true;}
     expect($refused,'StaffContext refuses overlimit, control, blank and malformed reasons');

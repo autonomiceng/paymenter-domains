@@ -80,7 +80,7 @@ same(['Request created','Put on hold'],array_column(StaffReviewHistory::timeline
 expect(!isset($first->fresh()->policy['staff_actions']),'A system hold stays out of the capped staff history');
 // Redacted/missing fields are never recovered by joining the retained actor ID or other evidence.
 $redacted=clone $op;$redacted->policy=['staff_actions'=>[['action'=>'hold','phase'=>'completed','actor_id'=>$staff->id,'reason'=>'[redacted]','at'=>'2026-10-18T12:00:00+00:00']]];
-same([['time'=>'Oct 18, 2026 12:00 UTC','event'=>'Put on hold','sub'=>'[redacted]','by'=>'Staff']],StaffReviewHistory::rows($redacted),'Redacted reason stays redacted; absent name stays absent');
+same([['time'=>'2026-10-18T12:00:00+00:00','event'=>'Put on hold','sub'=>'[redacted]','by'=>'Staff']],StaffReviewHistory::rows($redacted),'Redacted reason stays redacted; absent name stays absent');
 $redacted->policy=['staff_actions'=>[['action'=>'release','actor_id'=>$staff->id,'at'=>'invalid']]];
 same([['time'=>null,'event'=>'Hold released','sub'=>null,'by'=>'Staff']],StaffReviewHistory::rows($redacted),'Missing private fields stay absent');
 $redacted->policy=['staff_actions'=>[['action'=>'hold','reason'=>'[redacted]','at'=>"2026-10-18T12:00:00+00:00\0"]]];

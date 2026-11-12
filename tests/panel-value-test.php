@@ -27,6 +27,9 @@ $failed = static fn (Reader $r): Value => Value::state(State::CouldntRead, $r, '
 $staff = $read($failed(Reader::Staff));
 same(['err', 'Nov 12, 2026, 9:12 AM PST, 2400'], [$text($staff, '//*[@class="beco-st"]/@data-beco-tone'), $text($staff, '//*[contains(@class,"beco-extra")]')], 'Staff see when and the code');
 same(['2026-11-12T17:12:00Z', 'Nov 12, 2026, 5:12 PM UTC'], [$text($staff, '//time/@datetime'), $text($staff, '//time/@title')], 'Staff time carries UTC on hover');
+// A page moment: the browser shows the viewer's zone; without script it reads in the site's staff zone, named, never bare UTC.
+$moment = $read(\Paymenter\Extensions\Servers\Domains\Admin\Support\Sheet::moment($at, 'Checked')->toHtml());
+same(['2026-11-12T17:12:00+00:00', 'Nov 12, 2026, 9:12 AM PST', 'Nov 12, 2026, 5:12 PM UTC'], [$text($moment, '//time/@datetime'), $text($moment, '//time'), $text($moment, '//span/@title')], 'A moment falls back to the named staff zone');
 $customer = $read($failed(Reader::Customer));
 same([0.0, 'We couldn\'t reach the registrar.'], [$customer->evaluate('count(//*[contains(@class,"beco-extra")])'), $text($customer, '//*[@class="beco-sub"]')], 'Customers read the reason with no time or code');
 // A provider code we don't know reads Not recognized; the code is a staff detail.
