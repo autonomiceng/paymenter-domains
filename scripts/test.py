@@ -369,7 +369,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         phased = bounded and test_workers.installed_phases(argv[-1])
         resource_receipt = output / f'{index:04d}.resources.json'
         # Browser cases run alone and include Chromium, Node and the PHP server.
-        test_limits = dict(wall_seconds=60 if Path(argv[-1]).name in {'native-paid-baseline-test.php', 'renewal-safety-test.php'} else 30 if kind in ('ui', 'native') else 10,
+        test_limits = dict(wall_seconds=60 if Path(argv[-1]).name in {'native-paid-baseline-test.php', 'renewal-safety-test.php', 'staff-release-parity-test.php', 'staff-transfer-release-parity-test.php'} else 30 if kind in ('ui', 'native') else 10,
                            memory_bytes=(768 if kind == 'ui' else 256)*1024**2)
         syntax_lint = kind == 'lint' and len(argv) >= 3 and argv[1] == '-l'
         rss_path = None if syntax_lint else output/f'{index:03d}.rss.txt'
