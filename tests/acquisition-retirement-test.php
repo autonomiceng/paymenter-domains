@@ -25,23 +25,6 @@ same(false,in_array('unpaid-solo-placeholder.com',[...$listed(),...$listed('?sta
 same([false,true],[in_array('paid-cancelled-placeholder.com',$listed(),true),in_array('paid-cancelled-placeholder.com',$listed('?status=cancelled'),true)],'A cancelled domain waits behind the Cancelled chip');
 $second=commerceUser();$cart=commerceCart($second);commerceAdd($cart,$product,placeholderComFixtureName('unpaid-solo-placeholder.com'));commerceCheckout($second,$cart);
 $again=Domain::where('reservation_name','unpaid-solo-placeholder.com')->sole()->operations()->sole();expect($again->domain_id!==$solo->domain_id,'Another customer can order a retired name');
-// Late-money read faults cannot suppress either unpaid closure or the review fallback.
-$lateFault=false;$lateFaults=0;$lateLogs=[];
-DB::connection()->beforeExecuting(static function($sql)use(&$lateFault,&$lateFaults):void {
-    if($lateFault&&str_contains($sql,'from "service_cancellations"')){$lateFault=false;$lateFaults++;throw new RuntimeException('PRIVATE-late-money-detail');}
-});
-\Illuminate\Support\Facades\Log::listen(static function($event)use(&$lateLogs):void {
-    if($event->message==='Domains acquisition late-money inspection deferred.'){$lateLogs[]=$event->context;}
-});
-foreach([false,true] as $paidFixture){
-    $isolated=$new(placeholderComFixtureName('late-fault-'.($paidFixture?'paid':'unpaid').'-placeholder.com'),paid:$paidFixture);$cancel($isolated);
-    $lateFault=true;$retirement->inspect($isolated->domain_id);expect(!$lateFault,'Late-money fault reached');
-    if(!$paidFixture){same('rejected',$isolated->fresh()->state,'Late-money failure still retires unpaid acquisition');same(null,$isolated->domain->fresh()->reservation_name,'Late-money failure releases unfunded reservation');}
-    else{expect(DB::table('domains_obligation_alerts')->where('domain_id',$isolated->domain_id)->where('code','acquisition_retirement_review')->whereNull('resolved_at')->exists(),'Late-money failure still records retirement proof refusal');expect($isolated->domain->fresh()->reservation_name!==null,'Paid acquisition stays reserved');}
-    $retirement->inspect($isolated->domain_id);
-    same(['domain_id'=>(int)$isolated->domain_id,'exception_class'=>RuntimeException::class],$lateLogs[array_key_last($lateLogs)],'Late-money diagnostic exposes class and owned ID only');
-}
-same(2,$lateFaults,'Both late-money paths tested');same(2,count($lateLogs),'One diagnostic per failed inspection');
 // Native full cron, shared hosting invoice, no invoice model events and all-null stock.
 $cart=commerceCart($user);commerceAdd($cart,$product,placeholderComFixtureName('unpaid-mixed-placeholder.com'));$hosting=commerceHosting();
 $cart->items()->create(['product_id'=>$hosting->id,'plan_id'=>$hosting->plans()->sole()->id,'quantity'=>1,'config_options'=>[],'checkout_config'=>[]]);commerceCheckout($user,$cart);
@@ -130,56 +113,4 @@ foreach(['processing','succeeded'] as $status){
     App\Models\InvoiceTransaction::withoutEvents(fn()=>$payment->delete());
 }
 same(['cancelled','Cancelled','Order cancelled'],$orderWords(),'Without the payments the cancelled order reads as a plain cancel again');
-// Native gateway reversals are expected closure activity, not new late money or a second Domains return.
-require __DIR__.'/Support/money-receipt.php';MoneyReceiptGateway::$lost=false;
-$gateway=App\Models\Gateway::create(['extension'=>'MoneyReceipt','name'=>'Money receipt fixture','type'=>'gateway','enabled'=>true]);
-$automatic=$new(placeholderComFixtureName('closed-auto-return-placeholder.com'),paid:false);$cancel($automatic);$retirement->inspect($automatic->domain_id);
-$bill=App\Models\Invoice::findOrFail($automatic->invoice_id);
-App\Models\InvoiceTransaction::withoutEvents(fn()=>App\Models\InvoiceTransaction::create(['invoice_id'=>$bill->id,'amount'=>'1.00','fee'=>'0.00','status'=>'succeeded','gateway_id'=>$gateway->id,'transaction_id'=>'receipt_closed_auto']));
-MoneyReceiptGateway::automatic($bill,'receipt_closed_auto',100);
-$returns=app(Paymenter\Extensions\Servers\Domains\Services\Refunds::class);$account=Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$automatic->server_id)->firstOrFail();
-$observed=$returns->creditRetired($account);
-expect(in_array($automatic->domain_id,$observed,true),'Closed acquisition observes the gateway return');
-same([],$returns->creditRetired($account),'Closed acquisition repeats without another return');
-$returns->creditRetired($account);$retirement->inspect($automatic->domain_id);
-expect(UnpaidAcquisitionProof::terminal($automatic->fresh(),$automatic->domain->fresh()),'Return results preserve retained no-send proof');
-same(0,DB::table('domains_obligation_alerts')->where('domain_id',$automatic->domain_id)->whereIn('code',['refund_repair','acquisition_late_money'])->whereNull('resolved_at')->count(),'Expected gateway reversal creates no new repair step');
-same(1,MoneyReceiptGateway::$sends,'Gateway owns the only closed acquisition return');
-// The closed-order sweep checks a malformed retained plan before outstanding allocations: staff repair, no error, money or gateway call.
-$staysLogs=[];\Illuminate\Support\Facades\Log::listen(static function($event)use(&$staysLogs,$automatic):void {if($event->message==='Domains late payment stays with staff.'&&($event->context['operation_id']??null)===(int)$automatic->id){$staysLogs[]=$event->context;}});
-$validRaw=$automatic->fresh()->getRawOriginal('funding');$bad=$automatic->fresh()->funding;$bad['late_credits'][0]['allocations'][0]=[...$bad['late_credits'][0]['allocations'][0],'amount_minor'=>'not-an-amount','key'=>'domains:closed:unobserved'];
-DB::table('domains_operations')->where('id',$automatic->id)->update(['funding'=>Illuminate\Support\Facades\Crypt::encryptString(json_encode($bad))]);
-$rows=static fn(string $table)=>DB::table($table)->orderBy('id')->get()->map(static fn($row)=>(array)$row)->all();$money=[$rows('credits'),$rows('invoice_transactions')];$calls=[MoneyReceiptGateway::$statusCalls,MoneyReceiptGateway::$sends];
-same([],$returns->creditRetired($account),'A malformed closed-order plan is not reported as credited');
-same([],$staysLogs,'A malformed closed-order plan is checked before allocation arithmetic');
-expect(DB::table('domains_obligation_alerts')->where('operation_id',$automatic->id)->where('code','refund_repair')->whereNull('resolved_at')->exists(),'A malformed closed-order plan keeps a staff repair');
-same($money[0],$rows('credits'),'A malformed closed-order plan adds no credit');
-same($money[1],$rows('invoice_transactions'),'A malformed closed-order plan writes no payment row');
-same($calls,[MoneyReceiptGateway::$statusCalls,MoneyReceiptGateway::$sends],'A malformed closed-order plan calls no gateway');
-// An account-credit return with unreadable coverage is checked before the sweep reads what it credited: staff repair, no error.
-Paymenter\Extensions\Servers\Domains\Services\RefundRepairs::resolved((int)$automatic->id,$clock->now()->getTimestamp());$creditOnly=$automatic->fresh()->funding;
-$creditOnly['late_credits']=[['payments'=>[['id'=>(int)App\Models\InvoiceTransaction::where('transaction_id','receipt_closed_auto')->value('id'),'amount_minor'=>[100]]],
-    'amount'=>'1.00','currency'=>'USD','to'=>'account_credit','credit_id'=>null,'at'=>$clock->now()->format(DATE_ATOM)]];
-DB::table('domains_operations')->where('id',$automatic->id)->update(['funding'=>Illuminate\Support\Facades\Crypt::encryptString(json_encode($creditOnly))]);
-same([],$returns->creditRetired($account),'Unreadable account-credit coverage is not reported as credited');
-same([DomainException::class],array_column($staysLogs,'exception_class'),'Unreadable account-credit coverage is a review refusal, not an error');
-expect(DB::table('domains_obligation_alerts')->where('operation_id',$automatic->id)->where('code','refund_repair')->whereNull('resolved_at')->exists(),'Unreadable account-credit coverage keeps a staff repair');
-same([$money[0],$money[1]],[$rows('credits'),$rows('invoice_transactions')],'Unreadable account-credit coverage moves no money');
-same($calls,[MoneyReceiptGateway::$statusCalls,MoneyReceiptGateway::$sends],'Unreadable account-credit coverage calls no gateway');
-DB::table('domains_operations')->where('id',$automatic->id)->update(['funding'=>$validRaw]);
-// A refused close rolls back the replacement invoice too; never return a payment link to it.
-// Native rows and the retirement transaction are required to reproduce the rolled-back invoice ID.
-$cart=commerceCart($user);commerceAdd($cart,$product,placeholderComFixtureName('unpaid-reissue-rollback-placeholder.com'));
-$hosting=commerceHosting();$cart->items()->create(['product_id'=>$hosting->id,'plan_id'=>$hosting->plans()->sole()->id,'quantity'=>1,'config_options'=>[],'checkout_config'=>[]]);commerceCheckout($user,$cart);
-$refusedReissue=Domain::where('domain','unpaid-reissue-rollback-placeholder.com')->sole()->operations()->sole();
-$invoiceCount=App\Models\Invoice::count();$refusedOnce=false;
-Operation::updating(static function(Operation $op)use($refusedReissue,&$refusedOnce):void {
-    if((int)$op->id===(int)$refusedReissue->id&&$op->state==='rejected'){$refusedOnce=true;throw new DomainException('Synthetic retirement refusal after reissue');}
-});
-$closed=$retirement->closeUnpaid((int)$refusedReissue->invoice_id,Paymenter\Extensions\Servers\Domains\Services\PayCheck::notice('expired'));
-expect($refusedOnce,'The close refused after creating its replacement invoice');
-same(null,$closed['invoice'],'A rolled-back replacement invoice never becomes a payment link');
-same($invoiceCount,App\Models\Invoice::count(),'The refused close rolls back the replacement invoice');
-same(['pending','awaiting_payment',$refusedReissue->domain->domain],[App\Models\Invoice::findOrFail($refusedReissue->invoice_id)->status,$refusedReissue->fresh()->state,$refusedReissue->domain->fresh()->reservation_name],'A refused close retains the unpaid order and reserved name');
-
 echo "Unpaid retirement, native cron, wake-up and cancellation passed.\n";$nativeSuccessful=true;

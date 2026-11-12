@@ -5,6 +5,7 @@ import io
 import json
 import os
 from pathlib import Path
+import select
 import signal
 import subprocess
 import sys
@@ -19,11 +20,29 @@ sys.path.insert(0, str(ROOT/'scripts'))
 spec = importlib.util.spec_from_file_location('domains_runner', ROOT/'scripts/test.py')
 runner = importlib.util.module_from_spec(spec); spec.loader.exec_module(runner)
 
+@contextlib.contextmanager
+def timeout_after_ready(root, expirations=1):
+    ready = root/'timeout-ready'
+    os.mkfifo(ready)
+    communicate = runner.subprocess.Popen.communicate
+    remaining = expirations
+    def expired(process, *args, **kwargs):
+        nonlocal remaining
+        if remaining:
+            if remaining == expirations:
+                assert ready.read_text() == 'ready'
+            remaining -= 1
+            raise subprocess.TimeoutExpired(process.args, kwargs.get('timeout', 60))
+        return communicate(process, *args, **kwargs)
+    with mock.patch.object(runner.subprocess.Popen, 'communicate', expired):
+        yield f"from pathlib import Path; Path({str(ready)!r}).write_text('ready'); "
 
 class RunnerTests(unittest.TestCase):
     def setUp(self):
         memory = mock.patch.object(runner, 'available_memory_mib', return_value=8192)
         memory.start(); self.addCleanup(memory.stop)
+        database = mock.patch.object(runner.test_workers, 'prepare_database')
+        database.start(); self.addCleanup(database.stop)
 
     def test_ote_output_resolves_symlinked_tmpdir(self):
         spec = importlib.util.spec_from_file_location('ote_contract', ROOT/'scripts/ote-contract.py')
@@ -354,19 +373,19 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(error.exception.code, 2)
 
     def test_graceful_timeout_allows_resource_cleanup(self):
-        code = "import signal,time; signal.signal(signal.SIGTERM,lambda *args:(print('cleaned',flush=True),exit(0))); time.sleep(30)"
-        stdout, stderr, status, timed_out = runner.execute([sys.executable, '-c', code], cwd=ROOT, env=os.environ, timeout=2, graceful=3)
+        with tempfile.TemporaryDirectory() as temporary, timeout_after_ready(Path(temporary)) as ready:
+            code = "import signal; signal.signal(signal.SIGTERM,lambda *args:(print('cleaned',flush=True),exit(0))); " + ready + "signal.pause()"
+            stdout, stderr, status, timed_out = runner.execute([sys.executable, '-c', code], cwd=ROOT, env=os.environ, graceful=3)
         self.assertEqual((status, timed_out, stdout, stderr), (124, True, b'cleaned\n', b''))
 
     def test_graceful_timeout_escalates_when_sigterm_is_ignored(self):
-        code = "import os,signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); print(os.getpid(),flush=True); time.sleep(30)"
-        started = time.monotonic()
-        stdout, stderr, status, timed_out = runner.execute([sys.executable, '-c', code], cwd=ROOT,
-                                                         env=os.environ, timeout=2, graceful=1)
-        elapsed = time.monotonic() - started
+        with tempfile.TemporaryDirectory() as temporary, timeout_after_ready(Path(temporary), expirations=2) as ready:
+            code = "import os,signal; signal.signal(signal.SIGTERM,signal.SIG_IGN); print(os.getpid(),flush=True); " + ready + "signal.pause()"
+            with mock.patch.object(runner.os, 'killpg', wraps=os.killpg) as signals:
+                stdout, stderr, status, timed_out = runner.execute([sys.executable, '-c', code], cwd=ROOT,
+                                                                 env=os.environ, graceful=1)
         self.assertEqual((status, timed_out, stderr), (124, True, b''))
-        self.assertGreaterEqual(elapsed, 3)
-        self.assertLess(elapsed, 8)
+        self.assertEqual([call.args[1] for call in signals.call_args_list], [signal.SIGTERM, signal.SIGKILL])
         pid = int(stdout.strip())
         with self.assertRaises(ProcessLookupError):
             os.kill(pid, 0)
@@ -507,40 +526,37 @@ class RunnerTests(unittest.TestCase):
                 self.assertEqual(receipt['dependency_error'], error_type.__name__)
 
     def test_timeout_kills_nested_process_group(self):
-        child_script = 'import os,time; print(os.getpid(),flush=True); time.sleep(15)'
-        command = [sys.executable, '-c', f"import subprocess,sys,time; subprocess.Popen([sys.executable,'-c',{child_script!r}]); time.sleep(15)"]
-        stdout, _, code, timed_out = runner.execute(command, cwd=ROOT, env=None, timeout=3)
+        with tempfile.TemporaryDirectory() as temporary, timeout_after_ready(Path(temporary)) as ready:
+            child_script = "import os,signal; print(os.getpid(),flush=True); " + ready + "signal.pause()"
+            command = [sys.executable, '-c', f"import subprocess,sys,signal; subprocess.Popen([sys.executable,'-c',{child_script!r}]); signal.pause()"]
+            stdout, _, code, timed_out = runner.execute(command, cwd=ROOT, env=None)
         self.assertTrue(timed_out); self.assertEqual(code, 124)
         pid = stdout.decode().strip()
-        self.assertTrue(pid.isdigit(), 'Nested child PID was not captured before timeout')
-        child = Path('/proc')/pid/'stat'
-        deadline = time.monotonic() + 3
-        while True:
-            if Path('/proc/self/stat').exists():
-                try: state = child.read_text().split()[2]
-                except (FileNotFoundError, ProcessLookupError): state = None
-            else:
-                try: os.kill(int(pid), 0); state = 'R'
-                except ProcessLookupError: state = None
-            if state in [None, 'Z', 'X'] or time.monotonic() >= deadline: break
-            time.sleep(0.05)
-        self.assertIn(state, [None, 'Z', 'X'], 'Nested child is still running')
+        self.assertTrue(pid.isdigit(), 'Nested child PID was captured before timeout')
+        try:
+            descriptor = os.pidfd_open(int(pid))
+        except ProcessLookupError:
+            return
+        try:
+            # SIGKILL can close stdout before the kernel publishes the exit state.
+            # The process descriptor signals that transition without a scheduling window.
+            self.assertEqual(select.select([descriptor], [], [])[0], [descriptor])
+        finally:
+            os.close(descriptor)
 
     def test_escaped_session_pipe_drain_is_bounded_and_receipted(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp); (root/'Domains').mkdir(); (root/'output').mkdir()
             pid_file = root/'escaped.pid'
-            child_script = (f"import os,sys,time; from pathlib import Path; Path({str(pid_file)!r}).write_text(str(os.getpid())); "
-                            "print('escaped-stdout',flush=True); print('escaped-stderr',file=sys.stderr,flush=True); time.sleep(15)")
-            command = [sys.executable, '-c', f"import subprocess,sys,time; subprocess.Popen([sys.executable,'-c',{child_script!r}],start_new_session=True); time.sleep(15)"]
-            execute = runner.execute
-            started = time.monotonic()
+            child_script = (f"import os,sys,signal; from pathlib import Path; Path({str(pid_file)!r}).write_text(str(os.getpid())); "
+                            "print('escaped-stdout',flush=True); print('escaped-stderr',file=sys.stderr,flush=True); "
+                            f"Path({str(root/'timeout-ready')!r}).write_text('ready'); signal.pause()")
+            command = [sys.executable, '-c', f"import subprocess,sys,signal; subprocess.Popen([sys.executable,'-c',{child_script!r}],start_new_session=True); signal.pause()"]
             try:
                 with mock.patch.object(runner, 'ROOT', root), \
-                     mock.patch.object(runner, 'execute', side_effect=lambda argv, **kw: execute(argv, **dict(kw, timeout=3))), \
+                     timeout_after_ready(root), \
                      contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
                     self.assertEqual(runner.run([('runner', command)], None, root/'output', ['runner'], {}), 1)
-                self.assertLess(time.monotonic() - started, 8, 'Escaped pipe owner blocked timeout cleanup')
                 receipt = json.loads((root/'output/receipt.json').read_text())
                 self.assertFalse(receipt['complete'])
                 self.assertEqual(receipt['results'][0]['exit'], 124)

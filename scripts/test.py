@@ -2,7 +2,7 @@
 """Run registered offline suites with pinned PHP and optional pristine native fixture."""
 # Adapted from Paymenter Enom scripts/test.py; MIT, Copyright (c) 2026 Autonomic Engineering.
 import argparse
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 import fnmatch
 import json
@@ -34,7 +34,6 @@ NAMED = [('mariadb', 'tests/test_*_mariadb.py'), ('runner', 'tests/test_runner*.
 WORKER_MEMORY_MIB = 1024
 # About 85 s alone; parallel load pushed it past the 120 s native limit.
 SLOW_NATIVE = {'management-privacy-retirement-test.php', 'native-paid-baseline-test.php', 'transfer-completion-test.php'}
-
 
 def kill_tree(pid):
     """Freeze parents before discovering children, including detached sessions."""
@@ -71,7 +70,6 @@ def kill_tree(pid):
         except ProcessLookupError:
             pass
     return stopped or bool(owned)
-
 
 class Processes:
     """Cancel registered trees, including children racing with cancellation."""
@@ -119,7 +117,6 @@ class Processes:
             for index, process in self.running.items():
                 self.kill(index, process)
 
-
 def cgroup_headroom_mib(group):
     """Return a cgroup v2 group's memory headroom, or None if unlimited or unreadable."""
     try:
@@ -137,16 +134,13 @@ def cgroup_headroom_mib(group):
     except (OSError, ValueError, IndexError):
         return None
 
-
 def cgroup_parts(path):
     parts = [part for part in path.split('/') if part]
     return None if '..' in parts else parts
 
-
 def mountinfo_path(field):
     # mountinfo escapes space, tab, newline and backslash as three octal digits.
     return re.sub(r'\\([0-7]{3})', lambda escape: chr(int(escape.group(1), 8)), field)
-
 
 def cgroup_ancestry(cgroup, membership, mountinfo):
     """Return the process's cgroup v2 directory and its ancestors, leaf first.
@@ -173,7 +167,6 @@ def cgroup_ancestry(cgroup, membership, mountinfo):
         parts = parts[len(root):]
     return [cgroup.joinpath(*parts[:depth]) for depth in range(len(parts), -1, -1)]
 
-
 def available_memory_mib(meminfo=Path('/proc/meminfo'), cgroup=Path('/sys/fs/cgroup'),
                          membership=Path('/proc/self/cgroup'), mountinfo=Path('/proc/self/mountinfo')):
     available = next(int(line.split()[1])//1024 for line in meminfo.read_text().splitlines()
@@ -184,8 +177,13 @@ def available_memory_mib(meminfo=Path('/proc/meminfo'), cgroup=Path('/sys/fs/cgr
               if headroom is not None]
     return min([available, *limits])
 
-
 def bounded_jobs(requested, memory_mib, *, explicit=False):
+    if os.environ.get('DOMAINS_TEST_CGROUP'):
+        # Each command owns a hard 256 MiB child; the controller has 512 MiB.
+        fitting = min(8, memory_mib // 256)
+        if requested > fitting:
+            raise ValueError('Requested workers exceed the per-test memory reservation.')
+        return requested
     if memory_mib < WORKER_MEMORY_MIB:
         raise ValueError('Memory budget must reserve at least 1024 MiB per worker.')
     # Serial runs cannot reduce concurrency further; preserve small-host support.
@@ -199,7 +197,6 @@ def bounded_jobs(requested, memory_mib, *, explicit=False):
         raise ValueError(f'Requested {requested} workers, but only {fitting} worker(s) fit the memory budget and host reserve.')
     return min(requested, fitting)
 
-
 def history(path):
     result = {}
     if path:
@@ -212,7 +209,6 @@ def history(path):
             result[(row['kind'], row['argv'][-1])] = (row['exit'] != 0 or not row['runtime_unchanged'], seconds)
     return result
 
-
 def order_commands(commands, previous=None):
     previous = previous or {}
     def priority(item):
@@ -220,7 +216,6 @@ def order_commands(commands, previous=None):
         failed, seconds = previous.get((kind, argv[-1]), (False, math.inf))
         return ORDER.index(kind), not failed, seconds, index
     return [command for _, command in sorted(enumerate(commands), key=priority)]
-
 
 def git_tree():
     """Return (tree, reason): the HEAD tree only for a clean checkout rooted here."""
@@ -236,7 +231,6 @@ def git_tree():
     except (OSError, subprocess.SubprocessError):
         return None, 'not a Git checkout'
 
-
 def unchanged_tree(checkout):
     """The tree is evidence only when the same clean checkout held before and after."""
     tree, tree_error = checkout
@@ -245,10 +239,8 @@ def unchanged_tree(checkout):
     after, after_error = git_tree()
     return (tree, None) if after == tree else (None, after_error or 'checkout changed during the run')
 
-
 def hashes():
     return native.hashes(ROOT/'Domains')
-
 
 def manifest():
     """Return every category's tests; a discovered test not listed in suites.json is native."""
@@ -270,7 +262,6 @@ def manifest():
     if not any(suites.values()):
         raise ValueError('No registered suite.')
     return suites
-
 
 def shutdown(process, graceful, *, supervised):
     graceful = max(graceful, 1) if supervised else graceful
@@ -305,7 +296,6 @@ def shutdown(process, graceful, *, supervised):
     except subprocess.TimeoutExpired as drain:
         return drain.output or b'', drain.stderr or b''
 
-
 def execute(argv, *, cwd, env, timeout=60, graceful=0, processes=None, index=None, rss_path=None):
     if rss_path is not None:
         argv = [sys.executable, str(SUPERVISOR), '--grace-seconds', str(max(graceful, 1)), '--',
@@ -327,7 +317,6 @@ def execute(argv, *, cwd, env, timeout=60, graceful=0, processes=None, index=Non
             if processes is not None:
                 processes.unregister(index)
 
-
 @contextmanager
 def timing(name, timings):
     started = time.monotonic()
@@ -337,7 +326,6 @@ def timing(name, timings):
         timings[name] = time.monotonic() - started
         print(json.dumps({'timing': 'stage', 'stage': name, 'seconds': timings[name]}), flush=True)
 
-
 @contextmanager
 def cancel_on_error(processes):
     try:
@@ -345,7 +333,6 @@ def cancel_on_error(processes):
     except BaseException:
         processes.cancel()
         raise
-
 
 def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, workers=None, worker_check=None, timings=None, only=None,
         fail_fast=False, requested_jobs=None, memory_mib=None, jobs_explicit=False, lint_base=None, checkout=None):
@@ -377,15 +364,26 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         slow = Path(argv[-1]).name.startswith('test_installed_') or Path(argv[-1]).name in SLOW_NATIVE
         timeout = (3000 if kind == 'mariadb' else 300 if kind == 'native' and slow
                    else 120 if kind == 'native' else 180 if kind == 'ui' else 60)
-        syntax_lint = kind == 'lint' and len(argv) == 3 and argv[1] == '-l'
+        bounded = bool((env or {}).get('DOMAINS_TEST_CGROUP'))
+        phased = bounded and test_workers.installed_phases(argv[-1])
+        resource_receipt = output / f'{index:04d}.resources.json'
+        syntax_lint = kind == 'lint' and len(argv) >= 3 and argv[1] == '-l'
         rss_path = None if syntax_lint else output/f'{index:03d}.rss.txt'
         interrupted = None
         stdout, stderr = b'', b''
         try:
-            with test_workers.command_environment(workers[worker] if workers else env,
-                                                  fixture_snapshot=dependency[1] if dependency else None) as child:
-                stdout, stderr, code, timed_out = execute(argv, cwd=ROOT, env=child,
-                                                        timeout=timeout, graceful=60 if kind == 'mariadb' else 0,
+            source_env = workers[worker] if workers else env
+            # Syntax parsing never boots or modifies an application fixture.
+            pure = kind in ('lint', 'provider', 'contracts', 'package')
+            if pure and source_env:
+                source_env = {key: value for key, value in source_env.items() if key != 'PAYMENTER_TEST_FIXTURE'}
+            context = (nullcontext(source_env) if pure else
+                       test_workers.command_environment(source_env, fixture_snapshot=dependency[1] if dependency else None))
+            with context as child:
+                launched = ([sys.executable, env['DOMAINS_TEST_BUDGET'], '--name', argv[-1],
+                             '--test-scope', '--receipt', str(resource_receipt), '--', *argv] if bounded and not phased else argv)
+                stdout, stderr, code, timed_out = execute(launched, cwd=ROOT, env=child,
+                                                        timeout=12 if bounded and not phased else timeout, graceful=60 if kind == 'mariadb' else 0,
                                                         processes=processes, index=index, rss_path=rss_path)
         except BaseException as error:
             interrupted = error
@@ -394,11 +392,23 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         seconds = time.monotonic() - started
         cancelled = interrupted is not None or index in processes.cancelled
         result = {'kind': kind, 'argv': argv, 'exit': code, 'timed_out': timed_out,
-                  'cancelled': cancelled, 'peak_rss_kib': None,
+                  'cancelled': cancelled, 'peak_rss_kib': None, 'command_error': str(interrupted) if interrupted else None,
                   'runtime_unchanged': False, 'runtime_error': 'Integrity verification did not finish.',
+                  'dependency_changes': getattr(interrupted, 'changed_paths', []),
                   'guard_complete': False, 'skipped': kind == 'mariadb' and code == 77,
                   'seconds': seconds, 'guard_seconds': 0, 'started_seconds': started-started_run,
                   'finished_seconds': time.monotonic()-started_run}
+        if phased:
+            result['cases'] = test_workers.phase_results(stdout)
+            if not result['cases'] or any(row.get('exit') != 0 or not row.get('resources') for row in result['cases']):
+                result['exit'] = code = code or 1
+        if bounded and not phased:
+            result['limits'] = dict(wall_seconds=10, memory_bytes=256*1024**2)
+            if resource_receipt.is_file():
+                result['resources'] = json.loads(resource_receipt.read_text())
+            else:
+                result['exit'] = code = code or 1
+                result['resource_error'] = 'Missing per-test resource receipt'
         value = stdout, stderr, result
         # Execution evidence must survive interruption in the integrity guard,
         # RSS read or failure handling, before the main thread can record it.
@@ -458,8 +468,8 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                     while pending or (index < len(commands) and not stopped.is_set()):
                         while available and index < len(commands):
                             kind, argv = commands[index]
-                            exclusive = kind == 'ui' or (kind != 'lint' and Path(argv[-1]).name.startswith('test_installed_'))
-                            # Installed fixtures and the browser check need the whole pool, including integrity checks.
+                            exclusive = kind == 'ui' or (not (env or {}).get('DOMAINS_TEST_CGROUP') and kind != 'lint' and argv[-1].endswith('.py') and Path(argv[-1]).name.startswith('test_installed_'))
+                            # Python package lifecycles and browser checks still drain the pool; native PHP owns private state.
                             if exclusive_running or (exclusive and pending):
                                 break
                             with scheduling:
@@ -508,7 +518,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                                     'finished_seconds': time.monotonic()-started_run}
     results = [completed[index] for index in sorted(completed)]
     final_guard_complete, final_guard_error = False, None
-    dependency_unchanged, dependency_error = False, None
+    dependency_unchanged, dependency_error, dependency_detail = False, None, None
     try:
         with timing('final_guards', timings):
             # A final guard catches changes after the last per-command check.
@@ -521,7 +531,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                     worker_check()
             except (ValueError, RuntimeError, OSError, KeyError, TypeError, subprocess.CalledProcessError) as error:
                 dependency_unchanged = False
-                dependency_error = type(error).__name__
+                dependency_error, dependency_detail = type(error).__name__, str(error)
             final_guard_complete = True
     except BaseException as error:
         final_guard_error = type(error).__name__
@@ -565,7 +575,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                    'selected_suites': selected, 'omitted_suites': [s for s in CATEGORIES if s not in selected],
                    'unimplemented_suites': [s for s, paths in suites.items() if not paths],
                    'dependency': {'commit': native.COMMIT, 'lock_sha256': native.LOCK_SHA256, 'source_sha256': dependency[1]} if dependency else None,
-                   'skipped_suites': [r['kind'] for r in results if r['skipped']], 'dependency_unchanged': dependency_unchanged, 'dependency_error': dependency_error, 'real_provider_calls': 0,
+                   'skipped_suites': [r['kind'] for r in results if r['skipped']], 'dependency_unchanged': dependency_unchanged, 'dependency_error': dependency_error, 'dependency_detail': dependency_detail, 'real_provider_calls': 0,
                    'scope': 'Synthetic offline tests and native ZIP install/retention; no live provider, delivered mail, shared-database or production acceptance.'}
         (output/'receipt.json').write_text(json.dumps(receipt, indent=2)+'\n')
         print(json.dumps({'complete': complete, 'commands_run': len(results), 'commands_planned': len(commands),
@@ -577,7 +587,6 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
             return 77
         return 130 if runner_error == 'KeyboardInterrupt' else 0 if complete else 1
 
-
     try:
         return finish()
     except KeyboardInterrupt:
@@ -586,7 +595,6 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         # persistence or console summary, without rerunning any command.
         runner_error = 'KeyboardInterrupt'
         return finish()
-
 
 def runtime_fingerprint():
     root = ROOT/'Domains'
@@ -604,13 +612,11 @@ def runtime_fingerprint():
                     pending.append((entry.path, name+'/'))
     return result
 
-
 def runtime_matches(before, fingerprint=None):
     try:
         return hashes() == before and (fingerprint is None or runtime_fingerprint() == fingerprint), None
     except (ValueError, OSError) as error:
         return False, type(error).__name__
-
 
 def positive_integer(value):
     number = int(value)
@@ -618,10 +624,8 @@ def positive_integer(value):
         raise argparse.ArgumentTypeError('Must be positive.')
     return number
 
-
 def default_suites():
     return [s for s in CATEGORIES if s != 'mariadb' and (s not in FIXTURE_SUITES or os.environ.get('PAYMENTER_TEST_APP'))]
-
 
 def lint_files(base=None):
     if base is None:
@@ -636,7 +640,6 @@ def lint_files(base=None):
                                         '--', 'Domains', 'tests'], cwd=ROOT)
     return sorted({os.fsdecode(p) for p in (changed+untracked).split(b'\0') if p
                    and os.fsdecode(p).endswith('.php') and (ROOT/os.fsdecode(p)).is_file()})
-
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -665,6 +668,7 @@ def main():
     output = Path(tempfile.mkdtemp(prefix='domains-tests-'))
     selected = args.suite or []
     runtime = fixture = None
+    vendor_sealed = False
     workers = None
     timings = {}
     try:
@@ -697,6 +701,8 @@ def main():
                 # copying 27,000 files. Full runs, parallel workers and mixed selections keep a copy.
                 shared = args.jobs == 1 and bool(requested) and requested <= set(suites['native']) | set(suites['ui'])
                 snapshot = native.prepare(source, fixture, share_vendor=shared)
+            test_workers.seal_vendor(fixture)
+            vendor_sealed = os.environ.get('DOMAINS_TEST_OVERLAY') == '1'
             dependency = (source, snapshot)
         binary = extension = None
         if selected != ['mariadb']:
@@ -704,6 +710,7 @@ def main():
                 runtime, binary, extension = prepare(native=needs_fixture)
         env = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8',
                'PHPRC': '', 'PHP_INI_SCAN_DIR': '', 'TMPDIR': str(output), 'PYTHONDONTWRITEBYTECODE': '1'}
+        env.update({key: value for key, value in os.environ.items() if key.startswith('DOMAINS_TEST_')})
         if 'DOMAINS_UPGRADE_FROM' in os.environ:
             env['DOMAINS_UPGRADE_FROM'] = os.environ['DOMAINS_UPGRADE_FROM']
         if 'ui' in selected:
@@ -717,8 +724,13 @@ def main():
         if fixture:
             env.update(PAYMENTER_TEST_FIXTURE=str(fixture), PAYMENTER_TEST_NATIVE_EXTENSIONS=str(extension.parent),
                        LD_LIBRARY_PATH=str(runtime/'usr/lib/x86_64-linux-gnu'))
+        if fixture and not args.only:
+            with timing('core_database', timings):
+                test_workers.prepare_database(env, output, ROOT)
         php = str(ROOT/'scripts/php-test')
-        commands = [('lint', [php, '-l', path]) for path in php_files]
+        batch = 32 if env.get('DOMAINS_TEST_CGROUP') else 1
+        commands = [('lint', [php, '-l', *php_files[index:index+batch]])
+                    for index in range(0, len(php_files), batch)]
         if 'lint' in selected:
             commands.append(('lint', [php, 'tests/php83-compatibility-test.php']))
         for kind, paths in suites.items():
@@ -728,7 +740,8 @@ def main():
         if not commands:
             raise ValueError('No runnable suites selected.')
         commands = order_commands(commands, previous)
-        if args.memory_mib < 2048 and any(kind == 'ui' or Path(argv[-1]).name.startswith('test_installed_') for kind, argv in commands if kind != 'lint'):
+        (output/'plan.json').write_text(json.dumps([{'index': i, 'kind': kind, 'argv': argv} for i, (kind, argv) in enumerate(commands)]))
+        if not env.get('DOMAINS_TEST_CGROUP') and args.memory_mib < 2048 and any(kind == 'ui' or Path(argv[-1]).name.startswith('test_installed_') for kind, argv in commands if kind != 'lint'):
             raise ValueError('Installed-package and UI checks require a memory budget of at least 2048 MiB.')
         jobs = 1 if 'mariadb' in selected else bounded_jobs(args.jobs, args.memory_mib, explicit=jobs_explicit)
         worker_check = None
@@ -750,11 +763,12 @@ def main():
         raise
     finally:
         shutil.rmtree(output/'workers', ignore_errors=True)
+        if vendor_sealed:
+            test_workers.seal_vendor(fixture, release=True)
         if runtime:
             shutil.rmtree(runtime)
         if fixture:
             shutil.rmtree(fixture, ignore_errors=True)
-
 
 def interrupted(signum, frame):
     # Once shutdown begins, another signal must not interrupt tree draining or
@@ -762,7 +776,6 @@ def interrupted(signum, frame):
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
     signal.signal(signal.SIGINT, signal.SIG_IGN)
     raise KeyboardInterrupt
-
 
 if __name__ == '__main__':
     signal.signal(signal.SIGTERM, interrupted)

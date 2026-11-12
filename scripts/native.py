@@ -9,12 +9,14 @@ from pathlib import Path
 import shutil
 import subprocess
 import tarfile
+import threading
+from fixture_watch import UnchangedTree
 
 COMMIT = 'ee729f7d99ac18942625b79f3f93d8d8b21255e8'
 LOCK_SHA256 = 'fd6bdeb5557b3af0976d5688d92081abc6f7c3235806a6c4b77f4b8bca9186be'
 
 
-def hashes(root, *, release_cache=False):
+def hashes(root):
     result = {}
 
     pending = [(root, '')] if root.is_dir() else []
@@ -30,24 +32,31 @@ def hashes(root, *, release_cache=False):
                 elif entry.is_file(follow_symlinks=False):
                     with open(entry.path, "rb") as handle:
                         result[name] = hashlib.file_digest(handle, "sha256").hexdigest()
-                        if release_cache:
-                            # Verification streams the entire read-only vendor tree. Do not keep its
-                            # hundreds of MiB of file cache charged alongside the PHP fixture.
-                            try:
-                                os.posix_fadvise(handle.fileno(), 0, 0, os.POSIX_FADV_DONTNEED)
-                            except OSError:
-                                pass  # Optional filesystem hint; every byte was still verified.
-    # Preserve relative Path component ordering without allocating Path objects.
-    return dict(sorted(result.items(), key=lambda item: item[0].split('/')))
+
+    return {name: result[name] for name in sorted(result, key=Path)}
 
 
 # Admission lives only in this runner process, never in a caller-supplied disk cache.
 # Full inventory walks still reject links/additions/removals. Linux ctime changes on
 # writes even when a test restores mtime; inode/device also detect replacement.
 _VENDOR_ADMISSIONS = {}
+_VENDOR_WATCHES = {}
+_VENDOR_LOCK = threading.RLock()
 
 
-def admitted_vendor_hashes(root):
+def admitted_vendor_hashes(root, *, force=False):
+    with _VENDOR_LOCK:
+        key = str(root)
+        record = _VENDOR_WATCHES.get(key)
+        if not force and record is not None and record[0].unchanged():
+            return dict(record[1])
+        watch = UnchangedTree(root) if record is None else record[0]
+        result = _vendor_inventory(root)
+        _VENDOR_WATCHES[key] = watch, result
+        return result
+
+
+def _vendor_inventory(root):
     root = Path(root)
     if root.is_symlink():
         raise ValueError('Dependency symlinks are not accepted.')
@@ -80,22 +89,33 @@ def admitted_vendor_hashes(root):
                             digest = hashlib.file_digest(handle, 'sha256').hexdigest()
                             if identity(os.fstat(handle.fileno())) != stamp:
                                 raise ValueError('Dependency changed during admission.')
-                            try:
-                                os.posix_fadvise(handle.fileno(), 0, 0, os.POSIX_FADV_DONTNEED)
-                            except OSError:
-                                pass
-                    admitted[name] = (stamp, digest)
+                    admitted[name] = cached if cached is not None and cached[0] == stamp else (stamp, digest)
                     result[name] = digest
     # Publish only after a complete successful inventory; no partial admission is trusted.
     _VENDOR_ADMISSIONS[str(root)] = admitted
-    return dict(sorted(result.items(), key=lambda item: item[0].split('/')))
+    return result
 
 
 def git(source, *args):
     return subprocess.check_output(['git', '-C', str(source), *args], stderr=subprocess.PIPE)
 
 
-def verify(source, *, fixture_snapshot=None, shared_vendor=None):
+_FIXTURE_INDEXES = {}
+
+
+def fixture_indexes(snapshot):
+    # Admission snapshots are immutable for the run. Retain their identity with the indexes.
+    cached = _FIXTURE_INDEXES.get(id(snapshot))
+    if cached is None:
+        files = {name: digest for name, digest in snapshot.items() if not name.startswith('vendor/')}
+        vendor = {name[7:]: digest for name, digest in snapshot.items() if name.startswith('vendor/')}
+        parents = {str(Path(name).parent) for name in files}
+        ancestors = {str(parent) for name in parents for parent in (Path(name), *Path(name).parents)}
+        cached = _FIXTURE_INDEXES[id(snapshot)] = (snapshot, files, vendor, ancestors)
+    return cached[1:]
+
+
+def verify(source, *, fixture_snapshot=None, shared_vendor=None, force_vendor=False):
     source = Path(source)
     if not source.is_absolute() or source.is_symlink() or source.resolve() != source or str(source).startswith('/var/www/'):
         raise ValueError('Use a canonical pristine development dependency.')
@@ -105,8 +125,8 @@ def verify(source, *, fixture_snapshot=None, shared_vendor=None):
     if fixture_snapshot is not None:
         # Generated views, caches and installed extensions are fixture-local. Every
         # pristine file and the complete vendor tree must retain their original bytes.
-        files = {name: digest for name, digest in fixture_snapshot.items() if not name.startswith('vendor/')}
-        ancestors = {parent for name in files for parent in (source/name).parents if parent.is_relative_to(source)}
+        files, expected_vendor, relative_parents = fixture_indexes(fixture_snapshot)
+        ancestors = (source/parent for parent in relative_parents)
         vendor_root = source/'vendor'
         if shared_vendor is not None:
             if not vendor_root.is_symlink() or vendor_root.resolve(strict=True) != Path(shared_vendor):
@@ -122,9 +142,12 @@ def verify(source, *, fixture_snapshot=None, shared_vendor=None):
                 raise ValueError('Fixture dependency path is linked.')
             if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
                 raise ValueError('Fixture dependency changed: '+name)
-        vendor = {'vendor/'+name: digest for name, digest in admitted_vendor_hashes(vendor_root).items()}
-        if vendor != {name: digest for name, digest in fixture_snapshot.items() if name.startswith('vendor/')}:
-            raise ValueError('Fixture vendor inventory changed.')
+        actual_vendor = admitted_vendor_hashes(vendor_root, force=force_vendor)
+        if actual_vendor != expected_vendor:
+            error = ValueError('Fixture vendor inventory changed.')
+            error.changed_paths = sorted(name for name in actual_vendor.keys() | expected_vendor.keys()
+                                         if actual_vendor.get(name) != expected_vendor.get(name))
+            raise error
         return {}, fixture_snapshot
     if git(source, 'rev-parse', '--show-toplevel').decode().strip() != str(source):
         raise ValueError('Dependency must be its own checkout.')
@@ -167,7 +190,7 @@ def verify(source, *, fixture_snapshot=None, shared_vendor=None):
     ):
         raise ValueError('Installed dependencies do not match the pinned lock.')
     snapshot = {name: hashlib.sha256((source/name).read_bytes()).hexdigest() for name in members}
-    snapshot.update({'vendor/'+name: digest for name, digest in admitted_vendor_hashes(source/'vendor').items()})
+    snapshot.update({'vendor/'+name: digest for name, digest in admitted_vendor_hashes(source/'vendor', force=True).items()})
     return members, snapshot
 
 

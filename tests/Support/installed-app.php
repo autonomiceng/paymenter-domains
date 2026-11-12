@@ -21,11 +21,21 @@ $loader=require $fixture.'/vendor/autoload.php';
 $loader->addPsr4('App\\',$fixture.'/app/',true);
 // Replace Composer's worker path: a missing installed class must stay missing.
 $loader->setPsr4('Paymenter\\Extensions\\',$fixture.'/extensions/');
+// Schema checks need table names, not a scan of every SQLite page for table sizes.
+Illuminate\Database\Connection::resolverFor('sqlite', static fn ($pdo, $database, $prefix, $config) =>
+    new class($pdo, $database, $prefix, $config) extends Illuminate\Database\SQLiteConnection {
+        protected function getDefaultSchemaGrammar()
+        {
+            return new class($this) extends Illuminate\Database\Schema\Grammars\SQLiteGrammar {
+                public function compileDbstatExists() { return 'select 0 as enabled'; }
+            };
+        }
+    });
 $app=require $fixture.'/bootstrap/app.php';
 // Retained fixture databases keep real cross-process commits. WAL avoids rewriting the
-// rollback journal for every migration while FULL synchronization preserves durability.
+// rollback journal for every migration. These process-restart tests do not simulate power loss.
 $app->afterBootstrapping(Illuminate\Foundation\Bootstrap\LoadConfiguration::class,
-    static fn()=>config(['database.connections.sqlite.journal_mode'=>'WAL','database.connections.sqlite.synchronous'=>'FULL']));
+    static fn()=>config(['database.connections.sqlite.journal_mode'=>'WAL','database.connections.sqlite.synchronous'=>'NORMAL']));
 if(in_array(getenv('PACKAGE_PHASE'),['enom-test-transfer','enom-test-transfer-restart','enom-test-management','install-enom-test-management','enom-test-management-restart','enom-test-registration','enom-test-renewal','enom-test-renewal-restart','enom-test-renewal-race-issue','enom-test-renewal-race-admit','enom-test-renewal-race-verify'],true)){
     $app->afterBootstrapping(Illuminate\Foundation\Bootstrap\LoadConfiguration::class,
         static fn()=>config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,'domains.enom_writes.registration'=>in_array(getenv('PACKAGE_PHASE'),['enom-test-transfer','enom-test-management','install-enom-test-management','enom-test-registration','enom-test-renewal'],true),'domains.enom_writes.transfer'=>in_array(getenv('PACKAGE_PHASE'),['enom-test-transfer','enom-test-transfer-restart'],true),'domains.enom_writes.management'=>getenv('PACKAGE_PHASE')==='enom-test-management-restart','domains.enom_writes.renewal'=>str_starts_with((string)getenv('PACKAGE_PHASE'),'enom-test-renewal-')]));
@@ -43,6 +53,6 @@ config(['hashing.bcrypt.rounds'=>4,'audit.enabled'=>false,'settings.mail_disable
 same('sqlite',config('database.default'),'No database sockets');
 same(getenv('PACKAGE_DATABASE'),config('database.connections.sqlite.database'),'Scratch database only');
 same('wal',Illuminate\Support\Facades\DB::scalar('PRAGMA journal_mode'),'Retained fixture uses a real WAL database');
-same(2,(int)Illuminate\Support\Facades\DB::scalar('PRAGMA synchronous'),'Retained fixture keeps FULL synchronization');
+same(1,(int)Illuminate\Support\Facades\DB::scalar('PRAGMA synchronous'),'Retained fixture synchronizes checkpoints');
 Illuminate\Support\Facades\Http::preventStrayRequests();
 Illuminate\Support\Facades\Artisan::call('migrate',['--force'=>true]);

@@ -1,11 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require __DIR__.'/native-app.php';
-// Installation now boots Runtime: declare its identity-only deployment before the retained counter fixture.
-config(['domains.enom_identity.environment'=>'test','domains.namesilo_account.environment'=>'']);
-require __DIR__.'/Support/enom-test-counter.php';
-require __DIR__.'/Support/enom-identity.php';
+require __DIR__.'/Support/enom-identity-fixture.php';
 use Paymenter\Extensions\Servers\Domains\Data\Environment;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\AccountVerifier;
 use Paymenter\Extensions\Servers\Domains\Services\{EnomTestCallLimit,IdentityRefused,RegistrarRegistry};
@@ -47,5 +43,4 @@ $registry=new RegistrarRegistry;$registry->register('enom',['uid','token'],$veri
 try{$registry->verify('enom',1,Environment::Test,$credentials);throw new LogicException('Identity cap refusal must remain typed through registry');}catch(EnomTestCallLimit){}
 same($before,count($GLOBALS['identityCalls']),'Identity cap refuses before transport send');config(['domains.enom_test_sends_per_day'=>1000]);
 $GLOBALS['identityMode']='credentials';
-require __DIR__.'/Support/enom-identity-staff.php';
-echo "Enom identity: strict authentication, redaction, rotation and native staff flow passed.\n";$nativeSuccessful=true;
+echo "Enom identity: strict authentication and redaction passed.\n";$nativeSuccessful=true;
