@@ -392,7 +392,10 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         try:
             source_env = workers[worker] if workers else env
             # Syntax parsing never boots or modifies an application fixture.
-            context = (nullcontext(source_env) if syntax_lint else
+            pure = kind in ('lint', 'provider', 'contracts', 'package')
+            if pure and source_env:
+                source_env = {key: value for key, value in source_env.items() if key != 'PAYMENTER_TEST_FIXTURE'}
+            context = (nullcontext(source_env) if pure else
                        test_workers.command_environment(source_env, fixture_snapshot=dependency[1] if dependency else None))
             with context as child:
                 launched = ([sys.executable, env['DOMAINS_TEST_BUDGET'], '--name', argv[-1],
