@@ -10,6 +10,15 @@ use Paymenter\Extensions\Servers\Domains\Data\RenewalCode;
 
 // Genuine current states exercise writer prerequisites independently of reason substitution.
 $mismatches=[];$reading=false;
+$guidance=static function($row,array $notice,bool $visible):void{
+    if(!in_array($row->safe_code,['pre_send_interrupted','renewal_term_refused','registry_details_unsupported'],true)){return;}
+    $body=(string)($notice['body']??'');
+    same($visible,str_contains($body,'Staff must release the hold after reviewing the saved order.'),'Release guidance follows the actual offer: '.$row->safe_code);
+    if(!$visible){
+        expect(str_contains($body,'Staff must check the original registrar result before retrying'),'A refused release keeps registrar-result guidance: '.$row->safe_code);
+        same(['domain',null],[$notice['link']??null,$notice['link_label']??null],'A refused release opens its domain for review');
+    }
+};
 $all=[...$all,Staff::COSTS,Staff::METADATA];$staff->role->update(['permissions'=>$all]);
 $deployment=[];foreach(['domains.enom_identity.environment','domains.enom_catalogue.enabled','domains.enom_writes.registration','domains.enom_writes.transfer'] as $key){$deployment[$key]=config($key);}
 DB::listen(static function($query)use(&$reading):void{
@@ -66,6 +75,7 @@ foreach([defined('STAFF_RELEASE_KIND')?STAFF_RELEASE_KIND:'register'] as $kind){
         if(in_array($fault,['permission','complimentary-permission'],true)){$staff->role->update(['permissions'=>array_values(array_diff($all,[$fault==='permission'?'admin.domains.manage':'admin.domains.fund']))]);}
         $row=$row->fresh();$before=$row->getRawOriginal();$reading=true;
         $visible=OperationActions::relevant('release',$row);$notice=RequestFacts::notice($row);$reading=false;
+        $guidance($row,$notice,$visible);
         $facts=RequestFacts::for($row);expect(!($facts['unreadable']??false),'Held request remains readable: '.$kind.':'.$fault);
         same($financialFacts,array_intersect_key($facts,$financialKeys),'Held request preserves financial facts: '.$kind.':'.$fault);
         same(Labels::requestStatus($row)['reason'],$facts['reason'],'Hold keeps its saved reason');
@@ -109,6 +119,7 @@ foreach([defined('STAFF_RELEASE_KIND')?STAFF_RELEASE_KIND:'register'] as $kind){
         foreach(array_unique([...$codes,...array_map(fn($c)=>$c->value,RenewalCode::cases())],SORT_REGULAR) as $code){
             $restore();$row=$op->fresh();$row->update(['safe_code'=>$code]);$row=$row->fresh();
             $notice=RequestFacts::notice($row);$visible=OperationActions::relevant('release',$row);
+            $guidance($row,$notice,$visible);
             if(!$enabled&&in_array($code,$testOnly,true)){expect(!$visible,'Deployment-off hold has no release: '.$kind.':'.$code);}
             if(in_array($code,['usd_balance_required','enom_test_transfer_usd_balance_required'],true)){expect(!$visible,'Stored balance checks use automatic recovery: '.$kind.':'.$code);}
             if($code==='enom_test_renewal_call_cap'){same($kind==='renew'&&$enabled,$visible,'Renewal cap recovery requires its own deployment: '.$kind);}

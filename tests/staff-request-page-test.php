@@ -85,9 +85,10 @@ foreach(['configuration_unavailable','processing','balance','usd_balance_require
     DB::table('domains_operations')->where('id',$heldOp->id)->update(['safe_code'=>$code]);
     $n=RequestFacts::notice($heldOp->fresh()); $links[$code]=[$n['link']??null,$n['link_label']??null,$n['action']??null];
 }
+// domains-fixes-r2-fix-r1 restores queue-only release while Orders is off; staff holds no longer direct release to the Orders switch.
 same(['configuration_unavailable'=>['registrars','Open account',null],'processing'=>['registrars','Go to Orders switch',null],
     'balance'=>['registrars','Go to balance',null],'usd_balance_required'=>[null,null,null],
-    'write_disabled'=>['registrars','Go to System checks',null],'staff_review_required'=>['registrars','Go to Orders switch',null]],$links,'Notice link per cause');
+    'write_disabled'=>['registrars','Go to System checks',null],'staff_review_required'=>[null,null,null]],$links,'Notice link per cause');
 // Repair links depend on retained safe codes even if display copy changes.
 $accountCodes=[
     'authority'=>'Open account','renewal_authority_invalid'=>'Open account','renewal_binding_changed'=>'Open account',
@@ -97,13 +98,22 @@ $accountCodes=[
     'registrar_balance_insufficient_or_unknown'=>'Go to balance','registrar_balance_insufficient'=>'Go to balance',
     'usd_balance_required'=>null,'enom_test_transfer_usd_balance_required'=>null,
     'awaiting_acceptance'=>'Go to System checks','write_disabled'=>'Go to System checks','write_acceptance_required'=>'Go to System checks','renewal_acceptance_required'=>'Go to System checks','grace_capability_unaccepted'=>'Go to System checks'];
-foreach([...$accountCodes,'staff_review_required'=>'Go to Orders switch','enom_test_call_cap'=>'Open account','nameservers_required'=>null,
+foreach([...$accountCodes,'staff_review_required'=>null,'enom_test_call_cap'=>'Open account','nameservers_required'=>null,
     'name_unavailable'=>null,'premium_name'=>null,'order_not_supported'=>null,'registrar_price_missing'=>'Sync prices','registrar_read_failed'=>null] as $code=>$label){
     DB::table('domains_operations')->where('id',$heldOp->id)->update(['safe_code'=>$code]);
     $copy=RequestFacts::for($heldOp->fresh());$copy['reason']='Reviewed cause with different wording';
     $notice=RequestFacts::notice($heldOp->fresh(),$copy);
     $destination=in_array($code,['nameservers_required','name_unavailable','premium_name','order_not_supported'],true)?'domain':($label?'registrars':null);
     same([$destination,$label],[$notice['link']??null,$notice['link_label']??null],'Repair link uses safe code '.$code);
+}
+// This NameSilo display fixture retains registrar evidence, so these recovery codes cannot offer Release.
+foreach(['pre_send_interrupted','renewal_term_refused','registry_details_unsupported'] as $code){
+    DB::table('domains_operations')->where('id',$heldOp->id)->update(['safe_code'=>$code]);
+    $notice=RequestFacts::notice($heldOp->fresh());
+    same(['domain',null],[$notice['link']??null,$notice['action']??null],'A refused recovery opens the domain instead of offering release: '.$code);
+    Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$heldOp->id])->assertActionHidden('release')
+        ->assertDontSee('Staff must release the hold after reviewing the saved order.')
+        ->assertSee('Staff must check the original registrar result before retrying');
 }
 // Customer payment and renewal settings are not registrar balance problems, so they open their own record.
 foreach(['renewal_invoice_unpaid'=>'invoice','renewal_funding_or_authority'=>'domain','automatic_spend_paused'=>'domain','renewal_spend_paused'=>'domain'] as $code=>$link){

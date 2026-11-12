@@ -8,7 +8,8 @@ use Paymenter\Extensions\Servers\Domains\Services\{ComplimentaryCosts,ContactPro
 final class RequestHoldReasons
 {
     private const REASONS=[
-        'staff'=>['staff_review_required','pre_send_interrupted','renewal_term_refused','registry_details_unsupported'],
+        'staff'=>['staff_review_required'],
+        'retry'=>['pre_send_interrupted','renewal_term_refused','registry_details_unsupported'],
         'orders'=>['processing','processing_off'],
         'balance'=>['funding','balance','registrar_balance_insufficient_or_unknown','registrar_balance_insufficient'],
         'feature'=>['awaiting_acceptance','write_disabled','write_acceptance_required','renewal_acceptance_required','late_renewal_paused','grace_capability_unaccepted'],
@@ -53,6 +54,7 @@ final class RequestHoldReasons
     public static function for(Operation $op): array
     {
         $kind='unknown';foreach(self::REASONS as $group=>$codes){if(in_array($op->safe_code,$codes,true)){$kind=$group;break;}}
+        if($kind==='retry'){$kind=OperationActions::relevant('release',$op)?'staff':'outcome';}
         [$owner,$step,$link,$label]=self::FIXES[$kind];$blocked=null;
         $account=RequestFacts::account($op)['account'];
         if(in_array($kind,['unsupported','outcome','unknown'],true)){$blocked=$owner.' must '.$step.'; releasing this hold cannot resolve its cause.';}
