@@ -33,7 +33,7 @@ def hashes(root):
                     with open(entry.path, "rb") as handle:
                         result[name] = hashlib.file_digest(handle, "sha256").hexdigest()
 
-    return result
+    return dict(sorted(result.items()))
 
 
 # Admission lives only in this runner process, never in a caller-supplied disk cache.
@@ -109,7 +109,9 @@ def fixture_indexes(snapshot):
     if cached is None:
         files = {name: digest for name, digest in snapshot.items() if not name.startswith('vendor/')}
         vendor = {name[7:]: digest for name, digest in snapshot.items() if name.startswith('vendor/')}
-        cached = _FIXTURE_INDEXES[id(snapshot)] = (snapshot, files, vendor)
+        parents = {str(Path(name).parent) for name in files}
+        ancestors = {str(parent) for name in parents for parent in (Path(name), *Path(name).parents)}
+        cached = _FIXTURE_INDEXES[id(snapshot)] = (snapshot, files, vendor, ancestors)
     return cached[1:]
 
 
@@ -123,8 +125,8 @@ def verify(source, *, fixture_snapshot=None, shared_vendor=None, force_vendor=Fa
     if fixture_snapshot is not None:
         # Generated views, caches and installed extensions are fixture-local. Every
         # pristine file and the complete vendor tree must retain their original bytes.
-        files, expected_vendor = fixture_indexes(fixture_snapshot)
-        ancestors = {parent for name in files for parent in (source/name).parents if parent.is_relative_to(source)}
+        files, expected_vendor, relative_parents = fixture_indexes(fixture_snapshot)
+        ancestors = (source/parent for parent in relative_parents)
         vendor_root = source/'vendor'
         if shared_vendor is not None:
             if not vendor_root.is_symlink() or vendor_root.resolve(strict=True) != Path(shared_vendor):
