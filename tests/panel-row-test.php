@@ -99,7 +99,11 @@ foreach ([['Registrations', 'true', 'On', true], ['Renewals', 'false', 'Off', tr
 $tip = static fn (DOMElement $r): string => html_entity_decode((string) $q($r, './/*[contains(@class,"domains-help")]/@x-tooltip')->item(0)?->nodeValue, ENT_QUOTES);
 expect(str_contains($tip($row('kit-rows-account', 'Mode')), 'Set by staff when the account is connected.') && str_contains($tip($row('kit-rows-account', 'Mode')), 'Test and Live are separate'), 'A read-only setting says who sets it, then what it means');
 same(['', 1], [$tip($row('kit-rows-account', 'Reminder schedule')), $q($row('kit-rows-account', 'Reminder schedule'), './/button[@aria-label="Edit Reminder schedule"]')->length], 'Staff who set reminders get the control, not who sets it');
-same('60, 30, 7 and 1 days before, 3 days after', trim($q($row('kit-rows-account', 'Reminder schedule'), './/*[@class="domains-panel-fact"]')->item(0)?->nodeValue ?? ''), 'The saved reminder days');
+$savedDays = (array) \Illuminate\Support\Facades\DB::table('domains_reminder_schedules')->where('server_id', $server)->sole(['before_days', 'after_days']);
+$savedDays = [...json_decode($savedDays['before_days'], true), ...json_decode($savedDays['after_days'], true)]; sort($savedDays);
+preg_match_all('/\d+/', (string) $q($row('kit-rows-account', 'Reminder schedule'), './/*[@data-domains-fact]')->item(0)?->nodeValue, $shownDays); $shownDays = array_map('intval', $shownDays[0]); sort($shownDays);
+expect($savedDays !== [], 'The kit has saved reminder days');
+same($savedDays, $shownDays, 'Staff see every saved reminder day');
 
 // Staff without policy permission read the same row with no control.
 $reader = staffUser([Staff::VIEW]);

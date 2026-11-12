@@ -109,8 +109,14 @@ foreach ([new RuntimeException('private-sink-detail'), new DomainException('priv
 $when = new ReflectionMethod(AdoptDomain::class, 'when');
 // Plain text names the staff zone; on the page an instant is a moment the browser shows in the viewer's zone.
 $expiry = \Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at((new DateTimeImmutable('2027-10-20T06:14:00Z'))->getTimestamp()); // One instant, whatever offset it was stored with.
-// A calendar date stays the stored day in any zone, so its text is behaviour.
-foreach (['2027-10-20' => 'Oct 20, 2027', '2027-10-20T08:14:00+02:00' => $expiry, '2027-10-20T06:14:00Z' => $expiry, '' => 'Unconfirmed', 'not-a-date' => 'Unconfirmed'] as $raw => $shown) { same($shown, $when->invoke(null, $raw, true), 'Staff date '.$raw); }
+// A calendar date reads as its stored day whatever the viewer's zone: the shown text parses back to 2027-10-20.
+$zoneBefore = config('domains.time_zone');
+foreach (['Pacific/Kiritimati', 'Pacific/Pago_Pago', 'UTC'] as $zone) {
+    config(['domains.time_zone' => $zone]); $shownDay = date_parse((string) $when->invoke(null, '2027-10-20', true));
+    same([2027, 10, 20], [$shownDay['year'], $shownDay['month'], $shownDay['day']], 'A calendar date keeps its day for a viewer in '.$zone);
+}
+config(['domains.time_zone' => $zoneBefore]);
+foreach (['2027-10-20T08:14:00+02:00' => $expiry, '2027-10-20T06:14:00Z' => $expiry, '' => 'Unconfirmed', 'not-a-date' => 'Unconfirmed'] as $raw => $shown) { same($shown, $when->invoke(null, $raw, true), 'Staff date '.$raw); }
 expect(str_contains((string) $when->invoke(null, '2027-10-20T08:14:00+02:00'), 'datetime="2027-10-20T06:14:00+00:00"'), 'A page instant carries its moment');
 same('Unconfirmed', $when->invoke(null, null), 'Missing staff date');
 $page->callAction('readback', data: ['reason' => 'Rechecked after stale evidence', 'do_not_renew' => true])->assertHasNoActionErrors()->assertSee('Checks passed');
