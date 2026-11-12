@@ -68,6 +68,13 @@ foreach ($cases as $case=>[$domain,$acquisition,$label,$reason]) {
     same(0,$controller->index($request(['status'=>$label==='Active'?'expired':'active']))->getData()['domains']->total(),'Other tabs drop the row: '.$case);
 }
 same(count($keys),count(array_unique($keys)),'Each tab has its own filter key');
+// One expiry-day rule for customers and staff: before the date Active, on it Expires today, after it Expired.
+foreach ([1=>'active',0=>'expires_today',-1=>'expired'] as $offset=>$want) {
+    DB::table('domains_domains')->where('id',$d->id)->update([...$base,'status'=>'active','provider_expires_at'=>$day($offset)]);
+    DB::table('domains_operations')->where('id',$op->id)->update(['action'=>'transfer','safe_code'=>null,'state'=>'succeeded']);
+    same(1,$controller->index($request(['status'=>$want]))->getData()['domains']->total(),'Customer list files the domain under '.$want.' at '.$offset.' days');
+    same($want,Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::status($d->fresh())['key'],'Staff read '.$want.' at '.$offset.' days');
+}
 // A real expired domain gets its next step, and never a link to the ticket page that answers 404 when tickets are off.
 DB::table('domains_domains')->where('id',$d->id)->update([...$base,'status'=>'expired','provider_expires_at'=>$day(-5)]);
 DB::table('domains_operations')->where('id',$op->id)->update(['action'=>'transfer','safe_code'=>null,'state'=>'succeeded']);
