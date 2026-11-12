@@ -4,7 +4,7 @@
 declare(strict_types=1);
 // The included native actions collect completed trees explicitly; avoid scanning live forms on each request.
 $automaticWordingGc=gc_enabled();gc_disable();
-require __DIR__.'/namesilo-settings-test.php';$nativeSuccessful=false;
+require __DIR__.'/Support/namesilo-settings-fixture.php';
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{SettingsActions,AccountChecklist};
@@ -24,8 +24,8 @@ $page->unmountAction();gc_collect_cycles();gc_mem_caches();
 $rows=array_column(AccountChecklist::setup($account->fresh(),['label'=>'Active','reason'=>null]),null,'label');
 same(['Not supported',null],[$rows['Late renewal']['value'],$rows['Late renewal']['action']],'Unsupported late renewal has no switch');
 $page->assertSee('Free when supported by the TLD.')->assertSee('DNS records and DNSSEC are not offered for NameSilo.');
-// The included fixture authenticates the initial key and both credential rotations.
-same(3,$GLOBALS['enrollmentCalls'],'Viewing and local settings never probe the provider');
+// Credential rotation is covered by namesilo-settings-test.php; viewing does not probe again.
+same(1,$GLOBALS['enrollmentCalls'],'Viewing and local settings never probe the provider');
 // Edit API credentials: a refused key, an unclear reply and no reply each keep their own words, and nothing is saved.
 $revision=app(Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class)->credentialRevision(Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account->fresh()));
 foreach([
