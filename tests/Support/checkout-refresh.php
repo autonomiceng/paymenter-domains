@@ -15,8 +15,8 @@ extract(commerceFixture(true,registrars:['namesilo'])); ObservationSchema::insta
 $clock = new class($now) implements Clock {
     public int $offset = 0;
     private int $started;
-    public function __construct(private DateTimeImmutable $base) { $this->started = hrtime(true); }
-    public function now(): DateTimeImmutable { return $this->base->modify('+'.($this->offset + intdiv(hrtime(true) - $this->started, 1000)).' microseconds'); }
+    public function __construct(private DateTimeImmutable $base) { $this->started = $GLOBALS['checkout_fake_tick'] ?? hrtime(true); }
+    public function now(): DateTimeImmutable { return $this->base->modify('+'.($this->offset + intdiv(($GLOBALS['checkout_fake_tick'] ?? hrtime(true)) - $this->started, 1000)).' microseconds'); }
     public function advance(int $seconds): void { $this->offset += $seconds * 1000000; }
 };
 $wire = new class($clock) implements DeadlineTransport {
@@ -33,7 +33,9 @@ $wire = new class($clock) implements DeadlineTransport {
         $this->calls[] = (int)DB::table('domains_read_budgets')->value('next_api_at');
         $this->timeouts[] = $timeoutMs;
         if ($this->delayMs > 0) {
-            usleep(min($this->delayMs, $timeoutMs) * 1000);
+            $delay = min($this->delayMs, $timeoutMs) * 1000;
+            if (isset($GLOBALS['checkout_fake_tick'])) { $GLOBALS['checkout_fake_tick'] += $delay * 1000; }
+            else { usleep($delay); }
             if ($timeoutMs < $this->delayMs) { return new TransportResponse(200, '{}'); }
         }
         if ($name === $this->slowName) { $this->clock->advance(2); }
