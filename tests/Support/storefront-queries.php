@@ -87,6 +87,7 @@ function storefrontQueryChecks(array $fixture, Storefront $store): void
             same(null,$rows['qnet']['register'],'Current '.$reason.' never leaks retained native annual price');
             same($before,$reads->calls,'Invalid-term catalogue is local only');
             $result=$store->check('example.qnet');expect(($result['terms']??[])===[]&&!isset($result['term']),'Check offers no registration term without first-year evidence');
+            commerceReject(static fn()=>$store->offer('qnet','register',2));
         }else{
             same(range(2,10),$rows['qnet']['terms'],'Current '.$reason.' rejects only the invalid term');
             same(null,$rows['qnet']['register'],'Current '.$reason.' never leaks retained native annual price');
