@@ -9,6 +9,9 @@ final class StaffTime
 {
     public static function at(int $at): string
     { return (new \DateTimeImmutable('@'.$at))->setTimezone(new \DateTimeZone(self::zone()))->format('M j, Y, g:i A T'); }
+    /** The calendar day of $at in the same zone, for readers who see dates only: Nov 4, 2026. */
+    public static function day(int $at): string
+    { return (new \DateTimeImmutable('@'.$at))->setTimezone(new \DateTimeZone(self::zone()))->format('M j, Y'); }
     private static function zone(): string
     {
         $zone=config('domains.time_zone')?:config('app.timezone');

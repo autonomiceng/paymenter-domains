@@ -1,0 +1,72 @@
+<?php
+// MIT, Copyright (c) 2026 Autonomic Engineering. Panel values and heads show only states, plain words and facts; tones follow the reader and staff detail stays with staff.
+declare(strict_types=1);
+require __DIR__.'/native-app.php';
+require __DIR__.'/Support/storefront.php';
+storefrontViews();
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Blade;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Head, Value};
+use Paymenter\Extensions\Servers\Domains\Presentation\{Fact, Plain, Reader, State};
+use Paymenter\Extensions\Servers\Domains\Presentation\Codes\InvoiceStatus;
+
+config(['domains.time_zone' => 'America/Los_Angeles']);
+$at = 1794503520; // Nov 12, 2026, 17:12 UTC
+$read = static function (Value|string $html): DOMXPath { return storefrontDom($html instanceof Value ? $html->toHtml() : $html); };
+$text = static fn (DOMXPath $dom, string $path): string => $dom->evaluate('normalize-space('.$path.')');
+$fails = static function (Closure $make, string $class): bool { try { $make(); } catch (Throwable $e) { return $e instanceof $class; } return false; };
+
+// A state: one word for both readers, the tone by reader, and the reason for both.
+foreach ([[Reader::Staff, 'warn'], [Reader::Customer, 'prog']] as [$reader, $tone]) {
+    $dom = $read(Value::state(State::UnderReview, $reader, 'This paid change waits for staff review.', 'domain-7'));
+    same(['Under review', $tone, 'domain-7'], [$text($dom, '//*[@class="beco-st"]'), $text($dom, '//*[@class="beco-st"]/@data-beco-tone'), $text($dom, '//*[@class="beco-st"]/@data-beco-record')], 'Under review by reader: '.$reader->name);
+    same('This paid change waits for staff review.', $text($dom, '//*[@class="beco-sub"]'), 'The reason reads the same for both');
+}
+// Staff get times and codes on one more line; customers never see it.
+$failed = static fn (Reader $r): Value => Value::state(State::CouldntRead, $r, 'We couldn\'t reach the registrar.')->when($at)->detail(Fact::code('2400'));
+$staff = $read($failed(Reader::Staff));
+same(['err', 'Nov 12, 2026, 9:12 AM PST, 2400'], [$text($staff, '//*[@class="beco-st"]/@data-beco-tone'), $text($staff, '//*[contains(@class,"beco-extra")]')], 'Staff see when and the code');
+same(['2026-11-12T17:12:00Z', 'Nov 12, 2026, 5:12 PM UTC'], [$text($staff, '//time/@datetime'), $text($staff, '//time/@title')], 'Staff time carries UTC on hover');
+$customer = $read($failed(Reader::Customer));
+same([0.0, 'We couldn\'t reach the registrar.'], [$customer->evaluate('count(//*[contains(@class,"beco-extra")])'), $text($customer, '//*[@class="beco-sub"]')], 'Customers read the reason with no time or code');
+// A provider code we don't know reads Not recognized; the code is a staff detail.
+$coded = InvoiceStatus::state('refunded', null, '2026-11-12');
+same(['Not recognized', 'off', 'refunded'], [$text($read(Value::coded($coded, Reader::Staff)), '//*[@class="beco-st"]'), $text($read(Value::coded($coded, Reader::Staff)), '//*[@class="beco-st"]/@data-beco-tone'), $text($read(Value::coded($coded, Reader::Staff)), '//*[@data-beco-fact="code"]')], 'Unmapped code for staff');
+same(0.0, $read(Value::coded($coded, Reader::Customer))->evaluate('count(//*[@data-beco-fact])'), 'Customers don\'t see provider codes');
+same('Awaiting payment', $text($read(Value::coded(InvoiceStatus::state('pending', '2026-11-19', '2026-11-12'), Reader::Customer)), '//*[@class="beco-st"]'), 'A mapped code shows its state');
+same('warn', $text($read(Value::coded(InvoiceStatus::state('pending', '2026-11-19', '2026-11-12'), Reader::Customer)), '//*[@class="beco-st"]/@data-beco-tone'), 'Customers must pay, so amber');
+
+// Plain words and facts have no mark.
+$plain = $read(Value::plain(Plain::Off));
+same(['Off', 0.0], [$text($plain, '//*[@class="beco-plain"]'), $plain->evaluate('count(//*[@data-beco-tone])')], 'Off is plain text with no tone');
+$money = $read(Value::fact(Fact::money('1240'), '3 renew in November.'));
+same(['$1,240.00', 'money', '3 renew in November.', 0.0], [$text($money, '//*[@class="beco-fact"]'), $text($money, '//*[@class="beco-fact"]/@data-beco-fact'), $text($money, '//*[@class="beco-sub"]'), $money->evaluate('count(//*[@data-beco-tone])')], 'Money fact with a line under it');
+same(['$12.3456', '-$5.50', null], [Fact::money('12.3456')?->text, Fact::money('-5.5')?->text, Fact::money('12,00')], 'Money never rounds and refuses non-decimals');
+same([['Nov 12, 2026', '2026-11-12', null], ['Mar 4, 2027', '2027-03-04']], [[Fact::date($at, Reader::Customer)->text, Fact::date($at, Reader::Customer)->datetime, Fact::date($at, Reader::Customer)->title], [Fact::day('2027-03-04 00:00:00')?->text, Fact::day('2027-03-04')?->datetime]], 'Customers read dates only; calendar days stay as stored');
+same([null, '.com, .net, .org and 2 more', 'Enom TEST, NameSilo', 'ns1.beco.dev', null, null], [Fact::day('2027-02-30'), Fact::tlds(['io', 'org', 'dev', 'com', 'net'])?->text, Fact::names(['Enom TEST', ' NameSilo '])?->text, Fact::host('NS1.Beco.dev.')?->text, Fact::host('not a host'), Fact::names([])], 'Facts from typed data, null when there is nothing to show');
+
+// The boundary: no free text, no status column, no state word passed off as data or as a reason.
+$model = (new class extends Model {})->forceFill(['name' => 'Enom TEST', 'status' => 'active', 'note' => null, 'enabled' => true]);
+same(['Enom TEST', null], [Fact::attr($model, 'name')?->text, Fact::attr($model, 'note')], 'A model attribute, null when empty');
+expect($fails(static fn () => Fact::attr($model, 'status'), InvalidArgumentException::class), 'A status column takes a State');
+expect($fails(static fn () => Fact::attr($model, 'enabled'), InvalidArgumentException::class), 'A yes or no takes Plain');
+expect($fails(static fn () => Fact::names(['Active']), AssertionError::class), 'Computed text that equals a state word fails');
+expect($fails(static fn () => Value::state(State::Failed, Reader::Staff, 'Not set'), AssertionError::class), 'A reason that equals a state word fails');
+expect($fails(static fn () => Value::plain(Plain::On)->when(1), LogicException::class), 'Only a state has a staff line');
+foreach ([Value::class, Fact::class] as $class) { expect(!(new ReflectionClass($class))->getConstructor()->isPublic(), 'No public constructor takes free text: '.$class); }
+$escaped = $read(Value::state(State::Failed, Reader::Staff, '<b>x</b> broke.'));
+same([0.0, '<b>x</b> broke.'], [$escaped->evaluate('count(//b)'), $text($escaped, '//*[@class="beco-sub"]')], 'A reason is text, never markup');
+// The Blade component renders the same value.
+same($failed(Reader::Staff)->toHtml(), Blade::render('<x-domains::panel.value :value="$value" />', ['value' => $failed(Reader::Staff)]), 'The component tag and the PHP piece agree');
+
+// Head: title with its tag, then the record's own state, facts and one link.
+$head = Head::make('fieldnote.dev', Reader::Staff)->domain()->tag(demo: false, test: true)->state(State::Active, 'domain-8')->fact('Expires', Fact::day('2027-03-04'))->link('Enom TEST', '/admin/registrar-account/3');
+$title = $read($head->heading()->toHtml());
+same('fieldnote.dev', $text($title, '//*[@class="beco-head-title"]'), 'The title is the record name');
+expect(str_contains($head->heading()->toHtml(), '<wbr>') && str_contains($title->document->textContent, 'Test'), 'A domain title wraps after dots and carries its Test tag');
+$line = $read($head->line()->toHtml());
+same(['Active', 'ok', 'domain-8', 'Expires Mar 4, 2027', '/admin/registrar-account/3'], [$text($line, '//*[@class="beco-st"]'), $text($line, '//*[@class="beco-st"]/@data-beco-tone'), $text($line, '//*[@class="beco-st"]/@data-beco-record'), $text($line, '//*[@class="beco-head-fact"]'), $text($line, '//a/@href')], 'The head line');
+same(0.0, $line->evaluate('count(//div|//p)'), 'The head line is inline, so it fits inside Filament\'s subheading');
+same('prog', $text($read(Head::make('Invoice #100', Reader::Staff)->state(State::AwaitingPayment, 'invoice-100')->line()->toHtml()), '//*[@class="beco-st"]/@data-beco-tone'), 'Head tone follows its reader');
+same(null, Head::make('Settings', Reader::Staff)->line(), 'No line when there is nothing to say');
+$nativeSuccessful = true; echo "Panel value passed.\n";
