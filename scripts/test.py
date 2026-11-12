@@ -394,6 +394,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         result = {'kind': kind, 'argv': argv, 'exit': code, 'timed_out': timed_out,
                   'cancelled': cancelled, 'peak_rss_kib': None, 'command_error': str(interrupted) if interrupted else None,
                   'runtime_unchanged': False, 'runtime_error': 'Integrity verification did not finish.',
+                  'dependency_changes': getattr(interrupted, 'changed_paths', []),
                   'guard_complete': False, 'skipped': kind == 'mariadb' and code == 77,
                   'seconds': seconds, 'guard_seconds': 0, 'started_seconds': started-started_run,
                   'finished_seconds': time.monotonic()-started_run}
