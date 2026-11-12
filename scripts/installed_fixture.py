@@ -58,7 +58,10 @@ def application(fixture, scenario, *, verify_vendor=True):
                     )
         finally:
             if overlay:
-                subprocess.run(['umount', str(app)], check=True, timeout=5)
+                # Other worker forks can briefly retain a mount reference. Detach
+                # our private mount before deleting its upper layer; command
+                # descendants have already been drained by the supervisor.
+                subprocess.run(['umount', '--lazy', str(app)], check=True, timeout=5)
 
 
 
