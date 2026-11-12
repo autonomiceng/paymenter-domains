@@ -13,7 +13,8 @@ final class HoldingObservationWork
     {
         if ($d->status!=='active'||!Schema::hasTable('domains_observation_work')) { return; }
         DB::table('domains_observation_work')->insertOrIgnore(['server_id'=>$d->server_id,'account_fingerprint'=>$d->account_fingerprint,
-            'domain_id'=>$d->id,'generation'=>$d->authority_generation,'phase'=>self::phase($d),'due_at'=>$now->getTimestamp()]);
+            'domain_id'=>$d->id,'generation'=>$d->authority_generation,'phase'=>self::phase($d),'due_at'=>$now->getTimestamp(),
+            'safe_code'=>self::firstRecordRead($d)?self::INITIAL_READ:null]);
     }
     /**
      * What the current read waits for, and when it is due. 'first': the first scheduled read has not finished (never tried, resumed
@@ -34,9 +35,9 @@ final class HoldingObservationWork
         } catch (\Throwable) { return null; }
         $job=self::current($d,true)->orderByDesc('id')->first();
         if ($job===null||$job->safe_code==='records_disabled') { return null; }
-        $first=$job->safe_code===null&&(int)$job->resumes===0
+        $first=in_array($job->safe_code,[null,self::INITIAL_READ],true)&&(int)$job->resumes===0
             &&((int)$job->tries===0||((int)$job->tries===1&&(int)$job->lease_until>app(Clock::class)->now()->getTimestamp()));
-        $retry=$job->safe_code===null||in_array($job->safe_code,HoldingReadRetry::TRANSIENT,true);
+        $retry=in_array($job->safe_code,[null,self::INITIAL_READ],true)||in_array($job->safe_code,HoldingReadRetry::TRANSIENT,true);
         return ['wait'=>$first?'first':($retry?'retry':'next'),'due'=>(int)$job->due_at];
     }
     /** Only the current binding, generation and follow-up phase can stop this holding. */
@@ -210,9 +211,9 @@ final class HoldingObservationWork
                 ->where('account_fingerprint',$queue->account_fingerprint)->where('due_at','<=',$now)->where('tries','<',28)->where('lease_until','<=',$now)
                 ->where(function($q){$q->whereNull('safe_code')->orWhereNotIn('safe_code',HoldingReadRetry::STOPPED)
                     ->orWhere(fn($q)=>$q->whereIn('safe_code',HoldingReadRetry::TRANSIENT)->where('tries','<',HoldingReadRetry::LIMIT));});
-            // Oldest due first, except that a new domain's first record read goes ahead of routine reads: its page says
-            // "Checking" until that read finishes, while routine reads only refresh what the page already shows.
-            $due=$q->orderBy('due_at')->orderBy('id')->limit(self::FIRST_READ_WINDOW)->lockForUpdate()->get(); if ($due->isEmpty()) { return null; }
+            // Acquisition completion marks its initial read before discovery. Select those jobs before the bounded
+            // window so an older routine backlog cannot hide them. Unmarked legacy work keeps its local priority.
+            $due=$q->orderByRaw("CASE WHEN safe_code = ? THEN 0 ELSE 1 END",[self::INITIAL_READ])->orderBy('due_at')->orderBy('id')->limit(self::FIRST_READ_WINDOW)->lockForUpdate()->get(); if ($due->isEmpty()) { return null; }
             $domains=Domain::whereIn('id',$due->pluck('domain_id'))->get()->keyBy('id');
             $job=$due->first(fn($row)=>self::firstRecordRead($domains->get($row->domain_id))) ?? $due->first();
             $d=$domains->get($job->domain_id);
@@ -226,6 +227,8 @@ final class HoldingObservationWork
             return $job;
         });
     }
+    /** Pending initial read, preserved on local deferral until the registrar returns a result. */
+    private const INITIAL_READ='initial_read';
     /** Due rows the scheduler looks through for a first record read. */
     private const FIRST_READ_WINDOW=25;
     /**
