@@ -76,7 +76,7 @@ final class DefaultNameservers
             ->url($default?RoutingProfileResource::getUrl('view',['record'=>$default]):null);
         return Sheet::single([
             ...($problem?[Callout::make($problem)->status('danger')->columnSpanFull()]:[]),
-            Sheet::section(self::TITLE,[Sheet::row(MissingEntry::apply($names),$edit&&$default?[$edit]:[]),Sheet::row(MissingEntry::apply($template),[$choose])]),
+            Sheet::section(self::TITLE,[Sheet::row(MissingEntry::apply($names,cause:$problem,causeShown:true),$edit&&$default?[$edit]:[]),Sheet::row(MissingEntry::apply($template,cause:$problem,causeShown:true),[$choose])]),
         ],'default-nameservers');
     }
 }

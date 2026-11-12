@@ -9,7 +9,7 @@ require __DIR__.'/Support/offer-commerce.php';
 require __DIR__.'/Support/storefront.php';
 use Illuminate\Support\Facades\{Auth,DB};
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell;
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource,WatchResource};
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource,RoutingProfileResource,WatchResource};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DialogFooter,Staff};
 use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting,StaffCatalogue,Capabilities};
@@ -35,8 +35,9 @@ $d->update(['status'=>'active','billing_managed'=>true,'authority_generation'=>1
 app()->instance(RenewalCycles::class,new RenewalCycles($bindings,$clock));
 $options=app(RenewalCycles::class)->complimentaryOptions($d->id,$actor);
 same([1],array_keys($options['terms']),'Complimentary retains one evidenced year');
-$panel=Filament\Facades\Filament::getCurrentPanel();$panel->resources([DomainResource::class,WatchResource::class]);
-Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($panel){DomainResource::registerRoutes($panel);WatchResource::registerRoutes($panel);});
+$panel=Filament\Facades\Filament::getCurrentPanel();// The default DNS change moved the default DNS destination to DNS templates.
+$panel->resources([DomainResource::class,RoutingProfileResource::class,WatchResource::class]);
+Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($panel){DomainResource::registerRoutes($panel);RoutingProfileResource::registerRoutes($panel);WatchResource::registerRoutes($panel);});
 app('router')->getRoutes()->refreshNameLookups();
 $gift=Livewire\Livewire::actingAs($actor)->test(ViewDomain::class,['record'=>$d->id])->mountAction('complimentary_renewal')->call('$refresh');
 $giftAction=$gift->instance()->getMountedAction();

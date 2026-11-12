@@ -22,7 +22,8 @@ DB::enableQueryLog();DB::flushQueryLog();
 $page=Livewire::actingAs($viewer)->test(ListDomains::class)->assertSuccessful();
 $queries=DB::getQueryLog();DB::disableQueryLog();
 $opQueries=array_filter($queries,fn($q)=>str_contains($q['query'],'from "domains_operations"'));
-same(5,count($opQueries),'Three domain-page batch queries and two queries for the account hold notice');
+// each notice status filter also reads encrypted automatic-transfer evidence.
+same(7,count($opQueries),'Three domain-page batch queries and four queries for the account hold notice');
 $userReads=array_filter($queries,fn($q)=>str_contains($q['query'],'from "users"')&&str_contains($q['query'],'"email"'));
 same(1,count($userReads),'Customer descriptions use one eager query');
 $customer=trim($viewer->first_name.' '.$viewer->last_name)?:$viewer->email;
@@ -42,7 +43,8 @@ foreach([[$held,'Under review','Old registrar needs approval. Check request #'.$
     same(null,$column->getTooltip(),'No tooltip: the reason is visible');
     same(OwnedDomains::acquisition($record->operations,$record)?->id,$record->latestAcquisition?->id,'Batch matches customer acquisition lookup');
     same($customer,$columns['customer']->record($record)->getState(),'Customer name has its own column');
-    same(null,$columns['domain']->record($record)->getDescriptionBelow(),'Domain name has no duplicate customer description');
+    $phone=$columns['domain']->record($record)->getDescriptionBelow();
+    same('<span class="domains-phone-note">'.e($label).'<br>'.e($reason).'</span>',$phone?->toHtml(),'Phone summary keeps the status and next step from the row');
     same(null,$columns['domain']->getTooltip(),'No customer ID tooltip');
     same(null,$columns['provider_expires_at']->record($record)->getState(),'Expiry of a domain under review is blank, not Missing');
 }

@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Illuminate\Database\Eloquent\Builder;
-use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts;
 /** Exact holding binding, independent of today's seller. No financial interpretation of state labels. */
 final class DomainQueries
@@ -35,12 +35,13 @@ final class DomainQueries
         $ids=[];
         (clone $q)->reorder()->with('latestAcquisition')->chunkById(200,function ($page) use (&$ids,$keep,$ordersOff,$release): void {
             $inputs=StaffDomainInputs::for($page,$ordersOff,$release);
-            $accounts=$release?Account::whereIn('server_id',$page->pluck('server_id')->unique()->all())->get():collect();
             $stopped=$release?\Paymenter\Extensions\Servers\Domains\Services\ObservationWork::stoppedIds($page):[];
             foreach ($page as $d) {
                 if($release){
-                    $account=$accounts->first(fn($a)=>$a->server_id===$d->server_id&&$a->registrar_key===$d->registrar_key&&$a->account_fingerprint===$d->account_fingerprint);
-                    $inputs[$d->id]+=['sync'=>DomainFacts::sync($d,$account,isset($stopped[$d->id]),accountLoaded:true),'no_account'=>$account===null];
+                    $account=$inputs[$d->id]['release']['accounts'][OperationQueries::accountKey($d->server_id,$d->registrar_key,$d->account_fingerprint)]??null;
+                    try{$sync=DomainFacts::sync($d,$account,isset($stopped[$d->id]),accountLoaded:true);}
+                    catch(\Illuminate\Contracts\Encryption\DecryptException){$sync='failed';}
+                    $inputs[$d->id]+=['sync'=>$sync,'no_account'=>$account===null];
                 }
                 if ($keep(DomainFacts::status($d,$inputs[$d->id]),$inputs[$d->id])) { $ids[]=$d->id; }
             }

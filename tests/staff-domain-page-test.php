@@ -475,7 +475,8 @@ same(null,$sub($active,'Last sync'),'The stopped row leaves the cause to the pag
 Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSee('The registrar read stopped.')->assertSee('Ask staff who can resume sync.')->assertSee('Read stopped');
 DB::table('domains_observation_work')->where('id',$work)->delete();
 Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSeeInOrder(['Service','Missing','Customer, order or service missing'])->assertSee('Unpaid renewal invoice cancelled');
-$filter(Livewire::actingAs($viewer)->test(ListDomains::class),'alerts',true)->assertCanSeeTableRecords([$active])->assertCanNotSeeTableRecords([$held,$long]);
+// held requests and unreadable data need staff even without saved alert rows.
+$filter(Livewire::actingAs($viewer)->test(ListDomains::class),'alerts',true)->assertCanSeeTableRecords([$active,$held,$long])->assertCanNotSeeTableRecords([$demo]);
 DB::table('domains_obligation_alerts')->update(['resolved_at'=>time()]);
 same(['Service #'.$active->service_id.' not found. Check the Services page.','On'],[$sub($active,'Service'),$sub($active,'Renewal')??$value($active,'Renewal')],'Resolved alerts leave the rows');
 

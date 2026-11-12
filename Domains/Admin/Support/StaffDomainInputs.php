@@ -30,7 +30,10 @@ final class StaffDomainInputs
             ->orderBy('id')->get(['domain_id','code','operation_id','last_seen'])->groupBy('domain_id') : collect();
         // Every renewal, because only the newest one counts. All requests of a domain with a linked alert, to check its fixes.
         $linked=$open->flatten(1)->whereNotNull('operation_id')->pluck('domain_id')->unique()->values()->all();
-        $operations=Operation::query()->whereIn('domain_id',$ids)->where(fn($q)=>$q->where('action','renew')->orWhereIn('domain_id',$linked))
+        $operations=Operation::query()->whereIn('domain_id',$ids)->where(function($q)use($linked,$release):void{
+                $q->where('action','renew')->orWhereIn('domain_id',$linked);
+                if($release){$q->orWhereIn('state',[...StaffDomainStatus::MOVING,'held','uncertain']);}
+            })
             ->orderBy('id')->get()->groupBy('domain_id');
         $services=$domains->pluck('service_id')->filter()->unique()->values()->all();
         $statuses=Service::whereIn('id',$services)->pluck('status','id');
@@ -38,7 +41,8 @@ final class StaffDomainInputs
         $adoptionIds=$domains->pluck('adoption_id')->filter()->unique()->values()->all();
         $adoptions=$adoptionIds?Adoption::whereIn('id',$adoptionIds)->get()->keyBy('id'):collect();
         $invoices=Invoice::whereIn('id',$domains->map(fn(Domain $d)=>$d->latestAcquisition?->invoice_id)->filter()->unique()->all())->get(['id','user_id','status'])->keyBy('id');
-        $waiting=Operation::query()->whereIn('domain_id',$ids)->whereIn('state',[...StaffDomainStatus::MOVING,'held','uncertain'])->orderBy('id')->get()->keyBy('domain_id');
+        $waiting=($release?$operations->flatten(1)->filter(fn(Operation $op)=>in_array($op->state,[...StaffDomainStatus::MOVING,'held','uncertain'],true))
+            :Operation::query()->whereIn('domain_id',$ids)->whereIn('state',[...StaffDomainStatus::MOVING,'held','uncertain'])->orderBy('id')->get())->keyBy('domain_id');
         $requests=[...$domains->pluck('latestAcquisition')->filter()->all(),...$operations->flatten(1)->all(),...$waiting->all()];
         $accounts=$release?['accounts'=>self::accounts([...$domains->all(),...$requests]),'invoices'=>self::invoiceStatuses($requests)]:null;
         $inputs=[];

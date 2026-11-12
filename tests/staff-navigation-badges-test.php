@@ -15,8 +15,8 @@ $advance=fn()=>Carbon::setTestNow(now()->addSeconds(61));
 $badges=fn()=>[DomainResource::getNavigationBadge(), OperationResource::getNavigationBadge()];
 $op=fn($domain)=>Operation::where('domain_id',$domain->id);
 
-// Registrar requests: On hold and Under review wait on staff. The fixture has two held requests and no alerts.
-same([null,'2'],$badges(),'Two requests on hold, no domain alerts');
+// the two held transfers need staff without saved alert rows.
+same(['2','2'],$badges(),'Two held transfers count as requests and domains needing attention');
 same(['warning','warning'],[DomainResource::getNavigationBadgeColor(),OperationResource::getNavigationBadgeColor()],'Both counts ask a person to act');
 $op($long)->update(['state'=>'uncertain']);$advance();
 same('2',OperationResource::getNavigationBadge(),'Under review counts too');
