@@ -124,11 +124,12 @@ final class RequestFacts
                 // Credit needs proof the request was never sent, so neither has a cost to miss.
                 if ($actual===null&&$op->state==='rejected'&&(array_key_exists('refund',$f)||array_key_exists('late_credits',$f))) { [$actual,$quote]=['Not charged',null]; }
                 // A request never sent has no cost to miss. A renewal's saved cap is a spending limit, not a cost.
-                $unsent=$actual===null&&$a===[]&&$op->started_at===null&&$op->provider_order_id===null&&!array_key_exists('dispatch_attempted_at',$p)
+                $unsent=$actual===null&&($a===[]||$op->safe_code===ContactProfileHold::CODE&&ContactProfileHold::unsent($op))&&$op->started_at===null&&$op->provider_order_id===null&&!array_key_exists('dispatch_attempted_at',$p)
                     &&in_array($op->state,['awaiting_payment','awaiting_code','queued','held'],true);
                 if ($unsent) {
                     $actual='Not charged yet';
                     if ($op->action==='renew'&&($m=$usd($p['renewal']['cost_cap']['amount']??null,$p['renewal']['cost_cap']['currency']??null))) { $quote='Spending limit '.$m; }
+                    elseif($quote!==null){$quote.='; the registrar price is checked again before sending and cannot exceed this estimate.';}
                 }
                 // An unpaid request closed with its unsent proof never cost anything.
                 $closedUnsent=$op->state==='rejected'&&in_array($op->safe_code,['renewal_cancelled_unpaid',UnpaidAcquisitionProof::CODE],true)&&($a['send_state']??null)==='definitely_unsent'&&!array_key_exists('dispatch_attempted_at',$p);
@@ -352,13 +353,7 @@ final class RequestFacts
         }
         if ($op->state==='held') {
             $reason=$facts['reason']??null;
-            $fix=match($op->safe_code){
-                'processing'=>self::ORDERS_SWITCH,
-                'funding','balance','registrar_balance_insufficient_or_unknown','registrar_balance_insufficient'=>'Go to balance',
-                'awaiting_acceptance','write_disabled','write_acceptance_required','renewal_acceptance_required'=>'Go to System checks',
-                'authority','renewal_authority_invalid','renewal_binding_changed','claim_authority_invalid','seal_authority_invalid','registration_authority_changed',
-                'configuration_unavailable','transfer_setup_review_required','enom_test_transfer_setup_required','enom_test_setup_required'=>'Open account',
-                default=>null};
+            $recovery=RequestHoldReasons::for($op);$fix=$recovery['link_label'];
             $body=$facts['contact_missing']??$facts['contact_recovery']??$facts['contact_ready']??$facts['auto_renew']??$facts['admission']??null;
             $owes=OperationActions::customerOwes($op); $account=self::account($op)['account'];
             // A contact hold has its own recovery, and only the customer can clear what they owe.
@@ -374,10 +369,12 @@ final class RequestFacts
             // Release does not approve a higher complimentary cost, so it is only a retry and approval is the way forward.
             $approval=$open&&ComplimentaryCosts::awaitingApproval($op);
             if ($approval) { $next=(OperationActions::relevant('release',$op)?'Release hold only retries the price check. ':'').'The '.($account?self::queueWords($op,$account):'request').' holds again while the registrar cost is above the usual. It goes ahead at this cost once the registrar cost is approved on the domain page.'; }
-            if ($next!==null) { $body=$body===null?$next:$next.' '.$body; }
+            if($recovery['blocked']!==null){$body=$recovery['blocked'];}
+            elseif ($next!==null) { $body=$body===null?$next.' '.$recovery['body']:$next.' '.$body; }
+            else{$body??=$recovery['body'];}
             if (($try=self::nextTry($op))!==null) { $body=new \Illuminate\Support\HtmlString(($body===null?'':e($body).' ').$try->toHtml()); }
             return ['title'=>rtrim($reason??Labels::reason(null),'.').'.','body'=>$body,'tone'=>'warning','action'=>in_array($op->safe_code,WriteHeld::FINAL_REFUSALS,true)&&OperationActions::relevant('refund',$op)?'refund':(OperationActions::relevant('release',$op)?'release':null),
-                'link'=>$approval?'domain':match($op->safe_code){'renewal_invoice_unpaid'=>'invoice','renewal_funding_or_authority','automatic_spend_paused','renewal_spend_paused'=>'domain',default=>$fix?'registrars':null},'link_label'=>$fix];
+                'link'=>$approval?'domain':$recovery['link'],'link_label'=>$fix];
         }
         return null;
     }

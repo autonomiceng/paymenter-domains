@@ -85,6 +85,40 @@ expect(StaffOperationWrites::canRelease($op,$clock->now()),'Release is offered f
 expect(OperationActions::relevant('refund',$op),'Cancel and refund is offered for an unsent contact step hold');
 $account=Account::where('server_id',$op->server_id)->sole();
 $costStaff=staffUser([...$all,Staff::COSTS]);Auth::login($costStaff);
+$costFacts=RequestFacts::for($op);
+same('Not charged yet',$costFacts['cost'],'A proved unsent contact hold has no missing registrar charge');
+expect(str_contains($costFacts['cost_sub'],'cannot exceed this estimate'),'The estimate is a spending limit, not an assumed charge');
+
+// A release cannot enable the contact-creation deployment capability; both page and locked writer must refuse it.
+$managementConfig=config('domains.namesilo_test.management');config(['domains.namesilo_test.management'=>false]);
+$blocked='Contact creation is off on this site; the site administrator must enable NameSilo contact creation before this order can retry.';
+$before=[$nativeMoney(),$op->fresh()->getRawOriginal(),$sent->contactAdd,$sent->registerDomain];
+expect(!StaffOperationWrites::canRelease($op,$clock->now()),'Contact creation off prevents offering a repeat hold');
+Livewire::actingAs($costStaff)->test(ViewOperation::class,['record'=>$op->id])->assertActionHidden('release')->assertSee($blocked);
+Auth::login($staff);$refused(fn()=>$run($op,'release'),'The writer refuses disabled contact creation',$blocked);
+same($before,[$nativeMoney(),$op->fresh()->getRawOriginal(),$sent->contactAdd,$sent->registerDomain],'Blocked contact retry changes no money or sends');
+config(['domains.namesilo_test.management'=>$managementConfig]);
+
+// Every reason uses one recovery mapping, including a safe instruction for an unknown old reason.
+$mapping=new ReflectionClass(\Paymenter\Extensions\Servers\Domains\Admin\Support\RequestHoldReasons::class);
+$codes=[];
+foreach($mapping->getConstant('REASONS') as $group=>$reasons){foreach($reasons as $code){
+    expect(!isset($codes[$code]),'Each hold reason has exactly one recovery');$codes[$code]=true;
+    $row=clone $op;$row->safe_code=$code;
+    $guidance=\Paymenter\Extensions\Servers\Domains\Admin\Support\RequestHoldReasons::for($row);
+    same($group,$guidance['kind'],'Reason resolves its shared recovery category');
+    expect($guidance['owner']!==''&&$guidance['step']!==''&&$guidance['body']!=='','Every reason names who fixes it and the next action');
+}}
+$row=clone $op;$row->safe_code='future_hold';
+expect(\Paymenter\Extensions\Servers\Domains\Admin\Support\RequestHoldReasons::releaseBlocked($row)!==null,'Unknown holds do not invite a blind retry');
+
+// A paused account offers its Orders setting and explains the disabled release beside it.
+DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>false]);
+$page=Livewire::actingAs($costStaff)->test(ViewOperation::class,['record'=>$op->id]);
+$page->assertActionDisabled('release')->assertSee('Orders are off for this account; staff must turn Orders on before this request can send.');
+$page->callAction('release')->assertHasNoActionErrors();same('held',$op->fresh()->state,'A disabled release leaves the request held');
+DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>true]);
+Auth::login($costStaff);
 [$heading,$submit,$words]=RequestFacts::releaseConfirmation($op,$account,null,false);
 same(['Send to NameSilo now?','Release and send'],[$heading,$submit],'Release asks before it sends');
 expect(str_contains($words,'NameSilo charges about USD '.number_format((float)$op->cost['estimated'],2,'.','').' from the registrar balance.'),'Release says what NameSilo charges');

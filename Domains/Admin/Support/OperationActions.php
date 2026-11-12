@@ -43,6 +43,7 @@ final class OperationActions
             $sends=EnomTestRegistration::releaseSends($op,$account)&&!\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::awaitingApproval($op)?RequestFacts::sendWords($op,$account):null;
             // Every release starts paid work again, so each one asks first and says what it starts.
             if($name==='release'){
+                $action->disabled(fn()=>RequestHoldReasons::releaseBlocked($op)!==null)->tooltip(fn()=>RequestHoldReasons::releaseBlocked($op));
                 [$heading,$submit,$description]=RequestFacts::releaseConfirmation($op,$account,$sends,$contactRecovery);
                 $action->requiresConfirmation()->modalHeading($heading)->modalSubmitActionLabel($submit)->modalWidth('lg')->modalDescription($description);
             }
