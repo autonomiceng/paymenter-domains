@@ -25,7 +25,7 @@ $families=static function(array $facts,string $case,bool $checking):void {
     foreach($facts['rows'] as $family){
         $html=view('domains::partials.record-family-status',compact('family'))->render();
         same($checking,str_contains($html,'Checking'),$case.': '.$family['kind'].' Checking');
-        same(!$checking,str_contains($html,'domains-missing'),$case.': '.$family['kind'].' Missing');
+        same(!$checking,str_contains($html,DomainPage::NOT_READ),$case.': '.$family['kind'].' Not read yet');
     }
 };
 $work([]);

@@ -76,7 +76,7 @@ $r=$d->fresh()->observation['records'];same('complete',$r['families']['dns']['st
 same('unknown',$r['families']['srv']['state'],'Failed family unknown');same('unknown',$r['families']['ds']['state'],'Unattempted family unknown');
 expect(!in_array('GetDnsSec',array_column($state->calls,0),true),'No further wire after failure');
 $html=$page();$srvDom=storefrontDom($html);
-same('Missing',trim($srvDom->query('//li[@id="srv"]//*[@data-record-family="srv"]')->item(0)?->textContent??''),'Unknown stopped SRV shows Missing');
+same(\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::NOT_READ,trim($srvDom->query('//li[@id="srv"]//*[@data-record-family="srv"]')->item(0)?->textContent??''),'Unknown stopped SRV says Not read yet');
 same(1,substr_count(html_entity_decode($html,ENT_QUOTES,'UTF-8'),\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::READ_HELD),'The customer reads the stopped-read notice once above the rows');
 same(0,$srvDom->query('//li[@id="srv"]/span[@class="domains-row__v"]/span[@class="domains-sub"][contains(.,"complete supported record family")]')->length,'Unknown SRV does not duplicate the staff read cause');
 same(0,storefrontDom($html)->query('//form[contains(@action,"/manage/srv")]')->length,'Failed refresh cannot retain old edit form');

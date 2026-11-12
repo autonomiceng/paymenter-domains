@@ -39,7 +39,7 @@ foreach(['held','stopped']as$readState){
  $heldHtml=$page();same($readState==='stopped'?1:0,substr_count($heldHtml,e(\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::READ_HELD)),'Exactly one recovery notice only for stopped reads');same($readState==='stopped',str_contains($heldHtml,e(\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::READ_HELD)),'Only a stopped read needs the staff-recovery page notice');
  foreach(['dns'=>'srv','srv'=>'dns']as$kind=>$other){
   $alone=$familyPage($kind);$dom=storefrontDom($alone);same(0,$dom->query('//li[@id="'.$other.'"]')->length,$readState.' '.$kind.' page renders that family alone');
-  $row=$dom->query('//li[@id="'.$kind.'"]')->item(0);expect($row!==null&&str_contains($row->textContent,'Missing'),$readState.' '.$kind.' row stays visible with its calm missing value');
+  $row=$dom->query('//li[@id="'.$kind.'"]')->item(0);expect($row!==null&&str_contains($row->textContent,\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::NOT_READ),$readState.' '.$kind.' row stays visible with its calm Not read yet');
   expect(!str_contains($row->textContent,\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::TEAM_CHECK),$readState.' '.$kind.' row does not repeat the page recovery');
   same($readState==='stopped'?1:0,substr_count($alone,e(\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::READ_HELD)),$readState.' '.$kind.' page says the recovery notice only for a stopped read');
  }
