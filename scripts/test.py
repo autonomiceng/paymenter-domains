@@ -383,7 +383,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         slow = Path(argv[-1]).name.startswith('test_installed_') or Path(argv[-1]).name in SLOW_NATIVE
         timeout = (3000 if kind == 'mariadb' else 300 if kind == 'native' and slow
                    else 120 if kind == 'native' else 180 if kind == 'ui' else 60)
-        bounded = bool(env.get('BECO_TEST_CGROUP'))
+        bounded = bool((env or {}).get('BECO_TEST_CGROUP'))
         resource_receipt = output / f'{index:04d}.resources.json'
         syntax_lint = kind == 'lint' and len(argv) == 3 and argv[1] == '-l'
         rss_path = None if syntax_lint else output/f'{index:03d}.rss.txt'
