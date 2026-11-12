@@ -99,18 +99,24 @@ Auth::login($staff);$refused(fn()=>$run($op,'release'),'The writer refuses disab
 same($before,[$nativeMoney(),$op->fresh()->getRawOriginal(),$sent->contactAdd,$sent->registerDomain],'Blocked contact retry changes no money or sends');
 config(['domains.namesilo_test.management'=>$managementConfig]);
 
-// Every reason uses one recovery mapping, including a safe instruction for an unknown old reason.
-$mapping=new ReflectionClass(\Paymenter\Extensions\Servers\Domains\Admin\Support\RequestHoldReasons::class);
-$codes=[];
-foreach($mapping->getConstant('REASONS') as $group=>$reasons){foreach($reasons as $code){
-    expect(!isset($codes[$code]),'Each hold reason has exactly one recovery');$codes[$code]=true;
+// Distinct hold causes must lead to a useful repair, with no blind retry for permanent or unknown failures.
+foreach([
+    'configuration_unavailable'=>['Staff','registrars'],
+    'registrar_price_missing'=>['Staff','registrars'],
+    'provider_membership_unconfirmed'=>['Staff','registrars'],
+    'renewal_invoice_unpaid'=>['Staff','invoice'],
+    'automatic_spend_paused'=>['Staff','domain'],
+    'registry_details_unsupported'=>['Staff','domain'],
+    'future_hold'=>['Staff','domain'],
+] as $code=>[$owner,$destination]){
     $row=clone $op;$row->safe_code=$code;
-    $guidance=\Paymenter\Extensions\Servers\Domains\Admin\Support\RequestHoldReasons::for($row);
-    same($group,$guidance['kind'],'Reason resolves its shared recovery category');
-    expect($guidance['owner']!==''&&$guidance['step']!==''&&$guidance['body']!=='','Every reason names who fixes it and the next action');
-}}
-$row=clone $op;$row->safe_code='future_hold';
-expect(\Paymenter\Extensions\Servers\Domains\Admin\Support\RequestHoldReasons::releaseBlocked($row)!==null,'Unknown holds do not invite a blind retry');
+    $notice=RequestFacts::notice($row);
+    expect(str_contains((string)$notice['body'],$owner),'The page names who fixes '.$code);
+    same($destination,$notice['link'],'The page leads to the repair for '.$code);
+    if(in_array($code,['registry_details_unsupported','future_hold'],true)){
+        expect(str_contains((string)$notice['body'],'releasing this hold cannot resolve its cause'),'Permanent and unknown holds explain why release cannot help');
+    }
+}
 
 // A paused account offers its Orders setting and explains the disabled release beside it.
 DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>false]);

@@ -391,7 +391,7 @@ foreach(['awaiting_payment','held'] as $state){
         'policy'=>['renewal'=>['cost_cap'=>['amount'=>'8.9500','currency'=>'USD']]]]);
     same(['Not charged yet','Spending limit USD 8.95'],$cost($unsent),'Unsent renewal shows its spending limit: '.$state);
     $unsent->action='register'; $unsent->cost=['estimated'=>'8.95','currency'=>'USD'];
-    same(['Not charged yet','Estimated USD 8.95'],$cost($unsent),'Unsent registration keeps its estimate: '.$state);
+    same(['Not charged yet','Estimated USD 8.95; the registrar price is checked again before sending and cannot exceed this estimate.'],$cost($unsent),'Unsent registration keeps its estimate: '.$state);
 }
 // An unpaid request that closed before sending never cost anything, so its Cost row is not Missing.
 foreach(['renewal_cancelled_unpaid'=>'renew','acquisition_cancelled_unpaid'=>'register'] as $code=>$action){

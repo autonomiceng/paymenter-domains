@@ -68,7 +68,7 @@ final class RequestHoldReasons
             }
         }
         // Turning Orders on is a separate deliberate staff choice; releasing a hold cannot change that setting.
-        if($blocked===null&&!in_array($kind,['invoice','contact'],true)&&$account&&!$account->processing_enabled){
+        if($blocked===null&&in_array($kind,['staff','profile','orders'],true)&&$account&&!$account->processing_enabled){
             [$owner,$step,$link,$label]=self::FIXES['orders'];
             $blocked='Orders are off for this account; staff must turn Orders on before this request can send.';
         }

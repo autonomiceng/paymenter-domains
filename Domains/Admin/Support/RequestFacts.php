@@ -124,8 +124,9 @@ final class RequestFacts
                 // Credit needs proof the request was never sent, so neither has a cost to miss.
                 if ($actual===null&&$op->state==='rejected'&&(array_key_exists('refund',$f)||array_key_exists('late_credits',$f))) { [$actual,$quote]=['Not charged',null]; }
                 // A request never sent has no cost to miss. A renewal's saved cap is a spending limit, not a cost.
-                $unsent=$actual===null&&($a===[]||$op->safe_code===ContactProfileHold::CODE&&ContactProfileHold::unsent($op))&&$op->started_at===null&&$op->provider_order_id===null&&!array_key_exists('dispatch_attempted_at',$p)
-                    &&in_array($op->state,['awaiting_payment','awaiting_code','queued','held'],true);
+                $unsent=$actual===null&&($a===[]&&$op->started_at===null&&$op->provider_order_id===null&&!array_key_exists('dispatch_attempted_at',$p)
+                    &&in_array($op->state,['awaiting_payment','awaiting_code','queued','held'],true)
+                    ||$op->state==='held'&&$op->safe_code===ContactProfileHold::CODE&&ContactProfileHold::unsent($op));
                 if ($unsent) {
                     $actual='Not charged yet';
                     if ($op->action==='renew'&&($m=$usd($p['renewal']['cost_cap']['amount']??null,$p['renewal']['cost_cap']['currency']??null))) { $quote='Spending limit '.$m; }
