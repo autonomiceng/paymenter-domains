@@ -399,7 +399,7 @@ final class DomainManagement
     {
         $d = $l['domain']; $b = AccountBindings::binding($l['account']);
         if($processing&&$this->localCheck&&($this->localCheck)($b)!==true){throw new \DomainException('Management acceptance required.');}
-        if($this->testManagement){EnomTestManagement::requireAction($b,$action);}
+        if($this->testManagement){EnomTestManagement::requireAction($b,$action,$correction!==null);}
         if(in_array($action,['privacy_purchase','privacy_renew'],true)){
             if($actor!==(int)$d->user_id){throw new \DomainException('Privacy billing is owner-only.');}
             $this->features->requireManagement(); if(!$this->accepted||$this->intervalSeconds<25||$this->intervalSeconds>86400){throw new \DomainException('Management acceptance required.');}

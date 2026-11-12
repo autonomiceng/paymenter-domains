@@ -14,6 +14,32 @@ foreach([false,'true',1,null] as $off){config(['domains.enom_writes.management'=
 $stored=$setting->fresh()->value;
 foreach([['encrypted'=>false,'value'=>$stored],['encrypted'=>true,'value'=>str_replace($b->fingerprint,str_repeat('0',64),$stored)],['encrypted'=>true,'value'=>str_replace('25','26',$stored)],['encrypted'=>true,'value'=>'null']] as $bad){$setting->fill($bad)->save();expect(!Policy::accepted($b),'Only exact encrypted fingerprint and protocol acceptance');}$setting->fill(['encrypted'=>true,'value'=>$stored])->save();
 expect(Policy::accepted($b),'Exact encrypted protocol acceptance');Policy::requireAction($b,'lock');Policy::requireAction($b,'contacts');Policy::requireAction($b,'auth_code_email');commerceReject(fn()=>Policy::requireAction($b,'auto_renew_off'));
+// Consent is independent of release command details, but remains encrypted and account-bound.
+$consent=['fingerprint'=>$b->fingerprint,'feature'=>'management','version'=>1];
+$setting->value=json_encode($consent);$setting->save();expect(Policy::accepted($b),'Account-level management consent accepted');
+Policy::requireAction($b,'auto_renew_off',true);commerceReject(fn()=>Policy::requireAction($b,'auto_renew_off'));
+foreach([['encrypted'=>false,'value'=>json_encode($consent)],
+    ['encrypted'=>true,'value'=>json_encode([...$consent,'version'=>2])],
+    ['encrypted'=>true,'value'=>json_encode([...$consent,'feature'=>'registration'])],
+    ['encrypted'=>true,'value'=>json_encode([...$consent,'fingerprint'=>str_repeat('0',64)])],
+    ['encrypted'=>true,'value'=>'null']] as $bad){
+    $setting->fill($bad)->save();expect(!Policy::accepted($b),'Malformed, foreign, unencrypted or revoked consent grants nothing');
+}
+$setting->fill(['encrypted'=>true,'value'=>json_encode($consent)])->save();
+$otherServer=new AccountBinding('enom',$b->serverId+1,Environment::Test,'account-enom');
+expect(!Policy::stored($otherServer),'Consent cannot move to another server');
+$live=new AccountBinding('enom',$b->serverId,Environment::Live,'account-enom');
+expect(!Policy::stored($live),'TEST consent cannot enable Live management');
+$liveSetting=$product->server->settings()->firstOrNew(['key'=>\Paymenter\Extensions\Servers\Domains\Services\EnomLive::key($live,Policy::KEY)]);
+$liveSetting->encrypted=true;$liveSetting->type='string';
+$legacyLive=['fingerprint'=>$live->fingerprint,'route'=>'https://reseller.enom.com/interface.asp',
+    'commands'=>['ModifyNS','SetRegLock','Contacts','SynchAuthInfo','SetHosts','SetDomainSRVHosts','AddDnsSec','DeleteDnsSec'],'interval'=>25];
+$liveSetting->value=json_encode($legacyLive);$liveSetting->save();expect(Policy::stored($live),'Existing Live consent survives command additions');
+expect(!Policy::accepted($live),'Stored Live consent cannot bypass deployment and activation');
+$liveSetting->value=json_encode([...$legacyLive,'route'=>'https://resellertest.enom.com/interface.asp']);$liveSetting->save();
+expect(!Policy::stored($live),'Wrong-environment legacy route refused');
+$liveSetting->value=json_encode(['fingerprint'=>$live->fingerprint,'feature'=>'management','version'=>1]);$liveSetting->save();
+expect(Policy::stored($live)&&!Policy::accepted($live),'New Live consent still requires activation');
 $engine=new DomainManagement($bindings,$clock,new WriteFeatures(management:true),true,testManagement:true);
 foreach(['domains.enom_writes.management'=>false,'domains.enom_catalogue.enabled'=>false,'domains.enom_identity.environment'=>'live'] as $key=>$value){$old=config($key);config([$key=>$value]);commerceReject(fn()=>$engine->request($user,$d->id,'lock',['locked'=>false],hash('sha256',$key),$driver));config([$key=>$old]);}
 $op=$engine->request($user,$d->id,'lock',['locked'=>false],hash('sha256','proof'),$driver);$valid=['seal'=>'sealed','send_state'=>'definitely_unsent','management_claim'=>str_repeat('a',32),'management_test_unsent'=>true];
