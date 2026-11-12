@@ -57,6 +57,13 @@ if ($snapshot !== '') {
     Illuminate\Support\Facades\DB::connection()->getPdo()->exec($sql);
     // Migration boot normally initializes the grammar before tests build schema inspectors.
     Illuminate\Support\Facades\DB::connection()->useDefaultSchemaGrammar();
+    // foreignIdFor() boots models during migration, while fixture auditing is disabled.
+    // Restore that same observer setup before a case changes its audit configuration.
+    expect(preg_match('/^-- booted-models: (.+)$/m', $sql, $models) === 1, 'Snapshot records migration model boot order');
+    foreach (json_decode($models[1], true, 512, JSON_THROW_ON_ERROR) as $model) {
+        expect(is_subclass_of($model, Illuminate\Database\Eloquent\Model::class), 'Snapshot model is an Eloquent model');
+        new $model;
+    }
 } else {
     Illuminate\Support\Facades\Artisan::call('migrate', ['--force' => true]);
 }
