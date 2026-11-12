@@ -44,11 +44,11 @@ _VENDOR_WATCHES = {}
 _VENDOR_LOCK = threading.RLock()
 
 
-def admitted_vendor_hashes(root):
+def admitted_vendor_hashes(root, *, force=False):
     with _VENDOR_LOCK:
         key = str(root)
         record = _VENDOR_WATCHES.get(key)
-        if record is not None and record[0].unchanged():
+        if not force and record is not None and record[0].unchanged():
             return dict(record[1])
         watch = UnchangedTree(root) if record is None else record[0]
         result = _vendor_inventory(root)
@@ -113,7 +113,7 @@ def fixture_indexes(snapshot):
     return cached[1:]
 
 
-def verify(source, *, fixture_snapshot=None, shared_vendor=None):
+def verify(source, *, fixture_snapshot=None, shared_vendor=None, force_vendor=False):
     source = Path(source)
     if not source.is_absolute() or source.is_symlink() or source.resolve() != source or str(source).startswith('/var/www/'):
         raise ValueError('Use a canonical pristine development dependency.')
@@ -140,7 +140,7 @@ def verify(source, *, fixture_snapshot=None, shared_vendor=None):
                 raise ValueError('Fixture dependency path is linked.')
             if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
                 raise ValueError('Fixture dependency changed: '+name)
-        if admitted_vendor_hashes(vendor_root) != expected_vendor:
+        if admitted_vendor_hashes(vendor_root, force=force_vendor) != expected_vendor:
             raise ValueError('Fixture vendor inventory changed.')
         return {}, fixture_snapshot
     if git(source, 'rev-parse', '--show-toplevel').decode().strip() != str(source):
@@ -184,7 +184,7 @@ def verify(source, *, fixture_snapshot=None, shared_vendor=None):
     ):
         raise ValueError('Installed dependencies do not match the pinned lock.')
     snapshot = {name: hashlib.sha256((source/name).read_bytes()).hexdigest() for name in members}
-    snapshot.update({'vendor/'+name: digest for name, digest in admitted_vendor_hashes(source/'vendor').items()})
+    snapshot.update({'vendor/'+name: digest for name, digest in admitted_vendor_hashes(source/'vendor', force=True).items()})
     return members, snapshot
 
 

@@ -61,7 +61,7 @@ def environments(env, output, jobs, runtime=None):
 def verify_worker(env, *, fixture_snapshot, runtime_snapshot):
     if fixture_snapshot is not None:
         native.verify(env['PAYMENTER_TEST_FIXTURE'], fixture_snapshot=fixture_snapshot,
-                      shared_vendor=env.get('PAYMENTER_TEST_SHARED_VENDOR'))
+                      shared_vendor=env.get('PAYMENTER_TEST_SHARED_VENDOR'), force_vendor=True)
     if runtime_snapshot is not None:
         runtime = Path(env['PAYMENTER_TEST_PHP']).parents[2]
         if runtime_hashes(runtime) != runtime_snapshot:

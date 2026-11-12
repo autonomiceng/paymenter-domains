@@ -40,6 +40,17 @@ class NativeCacheTests(unittest.TestCase):
                 self.assertNotEqual(expected, native.admitted_vendor_hashes(root))
                 self.assertEqual(1, walk.call_count)
 
+    def test_final_inventory_checks_memory_mapped_writes_without_notifications(self):
+        import mmap
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root/'file').write_bytes(b'original')
+            expected = native.admitted_vendor_hashes(root)
+            with (root/'file').open('r+b') as stream, mmap.mmap(stream.fileno(), 0) as mapped:
+                mapped[:] = b'modified'
+                mapped.flush()
+            self.assertNotEqual(expected, native.admitted_vendor_hashes(root, force=True))
+
     def test_watch_failure_and_overflow_never_reuse_the_inventory(self):
         from fixture_watch import UnchangedTree
         with tempfile.TemporaryDirectory() as temp:
