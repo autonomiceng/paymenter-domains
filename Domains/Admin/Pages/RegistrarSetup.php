@@ -20,7 +20,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\{CatalogueSalesNotice,Emp
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain};
 use Paymenter\Extensions\Servers\Domains\Presentation\AccountStatus;
 use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
-use Paymenter\Extensions\Servers\Domains\Services\ContactDetails;
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,ContactDetails};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 /** Registrars: every registrar account (Domains server) with its status and balance. The slug keeps the old address. */
 class RegistrarSetup extends Page implements HasTable
@@ -126,9 +126,10 @@ class RegistrarSetup extends Page implements HasTable
     /** The account's Note: why it is in this state, then any job on its money, each with its step. @return array{text:?string,act:bool} */
     private static function note(?string $reason,?array $b,?Account $account,?string $held=null,bool $act=false): array
     {
-        // Settings that can't be loaded are also why the balance is Missing, and its cause says so with the step, so the reason
-        // is not said twice.
-        if ($reason===AccountStatus::STATES['configuration_unavailable'][1]&&$b!==null&&$b['value']===null&&$b['cause']!==null) { $reason=null; }
+        // Suppress the repeated reason only when the saved settings cannot load. A stale worker turn can cause the same
+        // status while the balance is missing for a separate reason, so staff still need both causes then.
+        if ($reason===AccountStatus::STATES['configuration_unavailable'][1]&&$b!==null&&$b['value']===null&&$b['cause']!==null
+            &&$account!==null&&!app(AccountBindings::class)->configurationAvailable((int)$account->server_id)) { $reason=null; }
         // Requests under review hold the account, so the row says so first, in amber, as its banner does.
         $jobs=$b===null?($held?[$held]:[]):array_filter([$held,
             $b['value']===null?$b['cause']:null,
