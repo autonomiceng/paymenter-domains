@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/binding-local.php';
+require_once __DIR__.'/Support/reserved-fixtures.php';
 use App\Models\Server;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\LiveReservationPolicy;
@@ -41,7 +42,7 @@ foreach ([30 => true, 31 => false] as $id => $upgradeFirst) {
         $setting->encrypted = true; $setting->type = 'string'; $setting->value = $value; $setting->save();
     }
     $retained = Server::findOrFail($id)->settings()->where('key', NameSiloSandbox::KEY)->sole()->getRawOriginal();
-    $domain = DomainReservations::reserve(['domain' => 'rotation-'.$id.'.com', 'service_id' => $id, 'user_id' => $id,
+    $domain = DomainReservations::reserve(['domain' => placeholderComFixtureName('rotation-'.$id.'-placeholder.com'), 'service_id' => $id, 'user_id' => $id,
         'status' => 'pending', 'server_id' => $id, 'registrar_key' => 'namesilo', 'account_fingerprint' => $binding->fingerprint], ['com']);
     $op = Operation::create(['domain_id' => $domain->id, 'service_id' => $id, 'authority_generation' => 1,
         'server_id' => $id, 'registrar_key' => 'namesilo', 'account_fingerprint' => $binding->fingerprint,
