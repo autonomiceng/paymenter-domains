@@ -131,7 +131,7 @@ class InstalledPhaseTests(unittest.TestCase):
 
     def test_no_deadline_keeps_ordinary_limits_for_every_focused_renewal_group(self):
         groups = [('enom-test-renewal-group-'+group, 45) for group in
-                  ('policy', 'confirmation', 'cap', 'refusals', 'history', 'replacement', 'race')]
+                  ('seed', 'policy', 'confirmation', 'refusals', 'history', 'replacement', 'cap', 'race')]
         for scenario, target, expected in [
             ('fresh', 'install', [('install', 45)]),
             ('enom-live', 'enom-live', [('install', 45), ('enom-live', 120)]),

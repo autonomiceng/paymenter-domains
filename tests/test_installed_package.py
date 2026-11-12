@@ -269,8 +269,12 @@ def main(scenario):
             phase('enom-test-management-restart')
             evidence['test_management_readback_and_restart'] = True
         elif scenario == 'enom-test-renewal':
-            for group in ('policy', 'confirmation', 'cap', 'refusals', 'history', 'replacement', 'race'):
-                phase('enom-test-renewal-group-'+group)
+            phase('enom-test-renewal-group-seed')
+            with sqlite3.connect(database) as source, sqlite3.connect(root/'installed-seed.sqlite') as target:
+                source.backup(target)
+            for group in ('policy', 'confirmation', 'refusals', 'history', 'replacement', 'cap'):
+                isolated_phase('enom-test-renewal-group-'+group)
+            phase('enom-test-renewal-group-race')
             phase('enom-test-renewal-restart')
             from concurrent.futures import ThreadPoolExecutor
             for race in ('issue', 'admit'):

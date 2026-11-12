@@ -30,7 +30,8 @@ $transferState=(object)['name'=>'','bill'=>'','pending'=>true,'charge'=>true];re
 $reset=static function()use($server,$transferReply):void{Cache::flush();DB::table('domains_read_budgets')->where('server_id',$server->id)->delete();resetWire(['reply'=>$transferReply]);};$reset();
 $run=static fn($op)=>(new RuntimeWork($clock,new RuntimePorts))->operation($op->id);
 $newTransfer=static function(string $name,bool $paid=true)use($user,$transferProduct,$clock,$binding):Operation {
-    Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());try{$cart=commerceCart($user);commerceAdd($cart,$transferProduct,$name);commerceCheckout($user,$cart)->assertHasNoErrors();}
+    Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());try{$cart=commerceCart($user);commerceAdd($cart,$transferProduct,$name);$checkout=commerceCheckout($user,$cart);$checkout->assertHasNoErrors();
+        if(!Domain::where('domain',$name)->exists()){fwrite(STDERR,json_encode(['fixture_checkout_failure'=>$checkout->effects['dispatches']??[]],JSON_THROW_ON_ERROR)."\n");}}
     catch(DomainException $error){installedOfferFailure($binding,$clock,['transfer','renew']);throw $error;}
     $op=Domain::where('domain',$name)->sole()->operations()->sole();if($paid){App\Helpers\ExtensionHelper::addPayment($op->invoice_id,null,$op->amount);}return $op->fresh();
 };

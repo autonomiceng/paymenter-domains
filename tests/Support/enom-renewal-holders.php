@@ -13,6 +13,11 @@ $nativeSuccessful=false;config(['domains.enom_test_sends_per_day'=>1000,'domains
 // The limit counts this login's sends in the rolling 24 hours before the scenario clock.
 $recentSends=static fn():int=>EnomTestSendLimit::usage('test-uid')['day'];
 $clock->at=new DateTimeImmutable('2026-10-22T00:10:00Z');Cache::flush();DB::table('domains_read_budgets')->where('server_id',$server->id)->delete();resetWire(['reply'=>$reply]);
+if(is_file($receipt.'.renewal-holders')){
+    $seed=json_decode(file_get_contents($receipt.'.renewal-holders'),true,512,JSON_THROW_ON_ERROR);
+    $clock->at=new DateTimeImmutable($seed['at']);$holders=[];
+    foreach($renewalCases as $case){$holders[$case]=Domain::findOrFail($seed['holders'][$case]);}
+}else{
 // Independent current annual evidence replaces the preceding transfer fixture's support.
 Auth::setUser($staff);config(['domains.enom_writes.renewal'=>true]);
 $write('test_renewal',['accept'=>true,'verified'=>true]);$write('test_transfer',['accept'=>false]);
@@ -27,11 +32,12 @@ foreach($renewalCases as $case){
 }
 // The original registration setup left sealed pending work, keeping read-only
 // recovery composed when the confirmation case disables every write permission.
-if($renewalGroup==='confirmation'){
+if($renewalGroup==='seed'){
     $clock->at=$clock->at->modify('+61 seconds');Cache::flush();
     $recoverySeed=$new(placeholderComFixtureName('renewal-recovery-route-placeholder.com'));
     $worker->operation($recoverySeed->id);
     same('pending',$recoverySeed->fresh()->state,'Real sealed work retains the read-only recovery route');
+}
 }
 $money=static fn()=>array_map(static fn($table)=>DB::table($table)->orderBy('id')->get()->map(static fn($row)=>(array)$row)->all(),['invoices','invoice_items','invoice_transactions','credits']);
 $make=static function($domain)use($clock,$bindings,$user,$server,$staff,$binding):Operation {

@@ -172,6 +172,8 @@ if($phase==='bridge-seed'){
     $traceTiming('management_assertions',$managementStarted);
 }elseif($phase==='enom-test-management-restart'){
     require __DIR__.'/Support/enom-management-restart.php';
+}elseif($phase==='enom-test-renewal-group-seed'){
+    require __DIR__.'/Support/enom-renewal-seed.php';
 }elseif(str_starts_with($phase,'enom-test-renewal-group-')){
     $group=substr($phase,strlen('enom-test-renewal-group-'));
     expect(in_array($group,['policy','confirmation','cap','refusals','history','replacement','race'],true),'Known renewal guard group');
