@@ -30,4 +30,11 @@ same([],$state->calls,'Deferral makes no provider read or write');
 commerceReject(fn()=>$management->request($user,$d->id,'nameservers',['nameservers'=>$original->payload['nameservers']],
     hash('sha256','direct-correction-blocked'),$driver,correction:$original->operation_key));
 same('uncertain',$peer->fresh()->state,'Direct requests also preserve the unresolved renewal');
+// A refused local acceptance check also defers the scheduled correction instead of failing its job.
+DB::table('domains_operations')->where('id',$peer->id)->delete();
+$count=DB::table('domains_operations')->where('domain_id',$d->id)->count();
+$refusing=new Paymenter\Extensions\Servers\Domains\Services\DomainManagement($bindings,$clock,new Paymenter\Extensions\Servers\Domains\Services\WriteFeatures(management:true),true,25,false,static fn()=>false);
+for($round=0;$round<2;$round++){Cache::flush();same(null,CorrectionWork::produce($d,$refusing,$driver),'A correction waits while local management acceptance is refused');}
+same($count,DB::table('domains_operations')->where('domain_id',$d->id)->count(),'Refused acceptance creates no correction request');
+same([],$state->calls,'Refused acceptance makes no provider read or write');
 $nativeSuccessful=true;echo "Registration correction defers behind uncertain renewal without replay.\n";
