@@ -28,6 +28,7 @@ same(null,DomainFacts::notice($d->fresh()),'Automatic retry needs no staff warni
 expect(!HoldingObservationWork::stopped($d->fresh()),'Retryable settings do not stop the job');
 $page=Livewire\Livewire::actingAs($actor)->test(ViewDomain::class,['record'=>$d->id]);
 $page->assertSee('Sync will retry automatically')->assertActionEnabled('sync_now');
+expect(str_contains($page->instance()->getSubheading()->toHtml(),'Sync will retry automatically'),'Retry progress sits with the status and Sync now button');
 $page->assertDontSee('Sync stopped')->assertDontSee('Use Sync now');
 expect(str_contains($page->html(),'wire:poll.2s.keep-alive="pollManagement"'),'The page follows the automatic retry');
 $state->calls=[];same('idle',$worker->turn($queue,$guard),'The backoff prevents immediate repeat reads');same([],$state->calls,'No reads before due');
@@ -42,8 +43,16 @@ $manual=new SyncDomainRecords((int)$actor->id,(int)$d->id,$d->authority_generati
 $manual->handle($wired);
 same([1,60],[(int)$work()->tries,$work()->due_at-$clock->now()->getTimestamp()],'Manual partial read schedules automatic recovery');
 same('Sync retry scheduled',SyncDomainRecords::result($d->fresh())['title'],'Manual partial read reports automatic recovery');
+expect(in_array('Sync retry scheduled',array_column(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::entries($d->fresh()),'event'),true),'History records that manual sync scheduled automatic recovery');
 $state->fault='';$due();same('refreshed',$worker->turn($queue,$guard),'Scheduled worker heals manual partial read');
 same(null,SyncDomainRecords::result($d->fresh()),'Automatic success clears the cached partial result');
+
+// A partial job saved by the previous policy resumes without staff resetting its budget.
+$state->fault='GetRegLock';$tick();$wired->run($d->id,readRecords:true);
+HoldingObservationWork::current($d)->update(['safe_code'=>'read_exception','tries'=>1,'due_at'=>$clock->now()->getTimestamp()]);
+same('read_failed',$worker->turn($queue,$guard),'An old partial stop resumes through the existing worker');
+same(2,(int)$work()->tries,'Resuming old partial work preserves its attempts');
+$state->fault='';$due();$worker->turn($queue,$guard);
 
 // Unknown flag values are partial without a transport exception, and need the same bounded retries.
 $unknownFlags=static function(...$args)use($exchange):string{

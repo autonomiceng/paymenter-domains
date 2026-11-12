@@ -54,7 +54,8 @@ class ViewDomain extends ViewRecord
         $now=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp();
         $this->followStarted=$pending?($this->followStarted??$now):null;
         $following=$pending&&$now<$this->followStarted+self::FOLLOW_SECONDS;
-        $every=$following||$this->syncPending()||($this->syncRetryAt()!==null&&$now<$this->syncRetryAt()+self::FOLLOW_SECONDS)?(array_filter($pending,fn(array $row)=>$row['slow'])?'10s':'2s'):null;
+        $retry=$this->syncRetryAt();
+        $every=$following||$this->syncPending()||($retry!==null&&$now<$retry+self::FOLLOW_SECONDS)?(array_filter($pending,fn(array $row)=>$row['slow'])?'10s':'2s'):null;
         return ['every'=>$every,'stopped'=>$pending&&!$following];
     }
 
@@ -237,7 +238,8 @@ class ViewDomain extends ViewRecord
             catch(\Throwable){$out[]=Callout::make('Registrar cost details are unavailable.')->status('warning')->columnSpanFull();}
         }}
         $sync=\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::result($d);
-        if($sync!==null&&!in_array($sync['title'],['Domain synced','Sync retry scheduled'],true)){
+        if($sync!==null&&!in_array($sync['title'],['Domain synced','Sync retry scheduled'],true)
+            &&!($sync['title']==="Couldn't read all records"&&\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::held($d))){
             $out[]=Callout::make($sync['title'])->description($sync['body'])->status('warning')->columnSpanFull();
         }
         if(\Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::affected(time())->whereKey($d->id)->exists()){
