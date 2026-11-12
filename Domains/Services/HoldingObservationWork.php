@@ -213,9 +213,13 @@ final class HoldingObservationWork
                     ->orWhere(fn($q)=>$q->whereIn('safe_code',HoldingReadRetry::TRANSIENT)->where('tries','<',HoldingReadRetry::LIMIT));});
             // Acquisition completion marks its initial read before discovery. Select those jobs before the bounded
             // window so an older backlog cannot hide them. Due transient retries follow, before routine refreshes.
-            $due=$q->orderByRaw("CASE WHEN safe_code = ? THEN 0 WHEN safe_code IN (?, ?) THEN 1 ELSE 2 END",[self::INITIAL_READ,...HoldingReadRetry::TRANSIENT])->orderBy('due_at')->orderBy('id')->limit(self::FIRST_READ_WINDOW)->lockForUpdate()->get(); if ($due->isEmpty()) { return null; }
+            // Work overdue by more than ROUTINE_WAIT ranks with initial reads by due time, so a steady stream of new
+            // domains or retries can't starve a routine refresh.
+            $starved=$now-self::ROUTINE_WAIT;
+            $due=$q->orderByRaw("CASE WHEN safe_code = ? OR due_at < ? THEN 0 WHEN safe_code IN (?, ?) THEN 1 ELSE 2 END",[self::INITIAL_READ,$starved,...HoldingReadRetry::TRANSIENT])->orderBy('due_at')->orderBy('id')->limit(self::FIRST_READ_WINDOW)->lockForUpdate()->get(); if ($due->isEmpty()) { return null; }
             $domains=Domain::whereIn('id',$due->pluck('domain_id'))->get()->keyBy('id');
-            $job=$due->first(fn($row)=>self::firstRecordRead($domains->get($row->domain_id))) ?? $due->first();
+            $oldest=$due->first();
+            $job=(int)$oldest->due_at<$starved?$oldest:($due->first(fn($row)=>self::firstRecordRead($domains->get($row->domain_id))) ?? $oldest);
             $d=$domains->get($job->domain_id);
             if($d&&TransferPolling::ownsObservation($d)){DB::table('domains_observation_work')->where('id',$job->id)->delete();return null;}
             if ($d && (!in_array($d->status,['active','registration_pending','transfer_pending'],true)||!ObservationEligibility::allows($d)||$d->account_fingerprint!==$job->account_fingerprint||$d->adoptionPending() || (int)$job->generation!==$d->authority_generation || $job->phase!==self::phase($d))) {
@@ -231,6 +235,8 @@ final class HoldingObservationWork
     private const INITIAL_READ='initial_read';
     /** Due rows the scheduler looks through for a first record read. */
     private const FIRST_READ_WINDOW=25;
+    /** Seconds a due read may wait behind initial reads and retries before it takes its turn by due time. */
+    private const ROUTINE_WAIT=3600;
     /**
      * An active domain with no completed record read yet. Saved history that fails validation (unreadable, a time
      * after now, a sequence ahead of management) is not a first read: it waits its turn like a routine read.

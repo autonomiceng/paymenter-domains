@@ -84,6 +84,13 @@ $future=$domain('future-read-placeholder',40,false);
 Domain::withoutEvents(static fn()=>$future->update(['observation'=>['records'=>['identity'=>ObservationRecords::identity($future),
     'at'=>'2026-11-11T06:00:00+00:00','last_complete_at'=>'2026-11-11T06:00:00+00:00','sequence'=>0,'families'=>[]]]]));
 expect(ObservationRecords::current($future->fresh())===null,'Fixture: the future stamped read fails validation');
-$work(Domain::find(1),'2026-11-10T05:30:00+00:00');$work($future->fresh(),'2026-11-10T05:40:00+00:00');$genuine=$work($new,'2026-11-10T06:00:00+00:00');
+$overdue=$work(Domain::find(1),'2026-11-10T05:30:00+00:00');$work($future->fresh(),'2026-11-10T05:40:00+00:00');$genuine=$work($new,'2026-11-10T06:00:00+00:00');
 same($genuine,(int)($claim()->id??0),'A genuine first read goes ahead of saved history that fails validation');
+// Priority is bounded: a routine read overdue by more than an hour takes its turn by due time, so a steady stream
+// of newly active domains or retries cannot starve it.
+DB::table('domains_observation_work')->update(['claim'=>null,'lease_until'=>0,'tries'=>0]);
+$clock->at=$now->modify('+2 hours');
+DB::table('domains_observation_work')->where('id',$genuine)->update(['due_at'=>$clock->at->getTimestamp()-60]);
+same($overdue,(int)($claim()->id??0),'A routine read overdue by more than an hour goes ahead of a new first read');
+$clock->at=$now;
 $nativeSuccessful=true;echo "First record read priority passed.\n";
