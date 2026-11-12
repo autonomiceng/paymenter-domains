@@ -90,7 +90,7 @@ same('Not charged yet',$costFacts['cost'],'A proved unsent contact hold has no m
 expect(str_contains($costFacts['cost_sub'],'cannot exceed this estimate'),'The estimate is a spending limit, not an assumed charge');
 
 // A release cannot enable the contact-creation deployment capability; both page and locked writer must refuse it.
-$managementConfig=config('domains.namesilo_test.management');config(['domains.namesilo_test.management'=>false]);
+$managementConfig=config('domains.namesilo_test.management',true);config(['domains.namesilo_test.management'=>false]);
 $blocked='Contact creation is off on this site; the site administrator must enable NameSilo contact creation before this order can retry.';
 $before=[$nativeMoney(),$op->fresh()->getRawOriginal(),$sent->contactAdd,$sent->registerDomain];
 expect(!StaffOperationWrites::canRelease($op,$clock->now()),'Contact creation off prevents offering a repeat hold');

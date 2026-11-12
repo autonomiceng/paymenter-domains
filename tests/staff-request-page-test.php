@@ -87,7 +87,7 @@ foreach(['configuration_unavailable','processing','balance','usd_balance_require
 }
 same(['configuration_unavailable'=>['registrars','Open account',null],'processing'=>['registrars','Go to Orders switch',null],
     'balance'=>['registrars','Go to balance',null],'usd_balance_required'=>[null,null,null],
-    'write_disabled'=>['registrars','Go to System checks',null],'staff_review_required'=>[null,null,null]],$links,'Notice link per cause');
+    'write_disabled'=>['registrars','Go to System checks',null],'staff_review_required'=>['registrars','Go to Orders switch',null]],$links,'Notice link per cause');
 // Repair links depend on retained safe codes even if display copy changes.
 $accountCodes=[
     'authority'=>'Open account','renewal_authority_invalid'=>'Open account','renewal_binding_changed'=>'Open account',
@@ -96,13 +96,14 @@ $accountCodes=[
     'processing'=>'Go to Orders switch','balance'=>'Go to balance','funding'=>'Go to balance',
     'registrar_balance_insufficient_or_unknown'=>'Go to balance','registrar_balance_insufficient'=>'Go to balance',
     'usd_balance_required'=>null,'enom_test_transfer_usd_balance_required'=>null,
-    'awaiting_acceptance'=>'Go to System checks','write_disabled'=>'Go to System checks','write_acceptance_required'=>'Go to System checks','renewal_acceptance_required'=>'Go to System checks','grace_capability_unaccepted'=>null];
-foreach([...$accountCodes,'staff_review_required'=>null,'enom_test_call_cap'=>null,'nameservers_required'=>null,
-    'name_unavailable'=>null,'premium_name'=>null,'order_not_supported'=>null,'registrar_price_missing'=>null,'registrar_read_failed'=>null] as $code=>$label){
+    'awaiting_acceptance'=>'Go to System checks','write_disabled'=>'Go to System checks','write_acceptance_required'=>'Go to System checks','renewal_acceptance_required'=>'Go to System checks','grace_capability_unaccepted'=>'Go to System checks'];
+foreach([...$accountCodes,'staff_review_required'=>'Go to Orders switch','enom_test_call_cap'=>'Open account','nameservers_required'=>null,
+    'name_unavailable'=>null,'premium_name'=>null,'order_not_supported'=>null,'registrar_price_missing'=>'Sync prices','registrar_read_failed'=>null] as $code=>$label){
     DB::table('domains_operations')->where('id',$heldOp->id)->update(['safe_code'=>$code]);
     $copy=RequestFacts::for($heldOp->fresh());$copy['reason']='Reviewed cause with different wording';
     $notice=RequestFacts::notice($heldOp->fresh(),$copy);
-    same([$label?'registrars':null,$label],[$notice['link']??null,$notice['link_label']??null],'Account link uses safe code '.$code);
+    $destination=in_array($code,['nameservers_required','name_unavailable','premium_name','order_not_supported'],true)?'domain':($label?'registrars':null);
+    same([$destination,$label],[$notice['link']??null,$notice['link_label']??null],'Repair link uses safe code '.$code);
 }
 // Customer payment and renewal settings are not registrar balance problems, so they open their own record.
 foreach(['renewal_invoice_unpaid'=>'invoice','renewal_funding_or_authority'=>'domain','automatic_spend_paused'=>'domain','renewal_spend_paused'=>'domain'] as $code=>$link){
