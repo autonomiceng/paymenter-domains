@@ -297,7 +297,7 @@ class ViewDomain extends ViewRecord
     {
         if ($label==='Renewal') {
             // On a row that says Off, Stop shows only when the row says what it still stops.
-            $buttons=array_filter(['stop','resume'],fn(string $name)=>(($this->cachedActions[$name]??null)?->isVisible()??false)&&($name!=='stop'||$fact['value']!=='Off'||str_contains((string)$fact['sub'],'Stop renewal')));
+            $buttons=array_filter(['stop','resume'],fn(string $name)=>(($this->cachedActions[$name]??null)?->isVisible()??false)&&($name!=='stop'||$fact['value']!=='Off'||str_contains((string)$fact['sub'],'blocks both')));
             $html=[...array_map(fn(string $name)=>$this->cachedActions[$name]->toHtml(),$buttons),...($review?[$review]:[])];
             return $html?Html::make(Sheet::buttons($html)):[];
         }
@@ -344,12 +344,14 @@ class ViewDomain extends ViewRecord
     {
         return Sheet::row($this->entry($label,$fact),$side,pending:$fact['progress']['waiting']??false,key:'fact_'.md5($label));
     }
+    /** Row keys whose words differ on the page: renewal reads as the customer's Renewal invoices. */
+    private const SHOWN=['Renewal'=>'Renewal invoices'];
     /** A fact's value with its words, tone, red Missing and demo tag. */
     private function entry(string $label, array $fact): TextEntry
     {
         $waiting=$fact['progress']['waiting']??false;
         if ($label==='Transfer lock'&&in_array($fact['value'],['On','Off'],true)) { $fact=self::lockMark($fact,$waiting); }
-        $entry=TextEntry::make('value_'.md5($label))->label($label)->state($fact['value'])
+        $entry=TextEntry::make('value_'.md5($label))->label(self::SHOWN[$label]??$label)->state($fact['value'])
             ->belowContent(self::below($fact));
         if (is_array($fact['value'])) { $entry->listWithLineBreaks(); }
         if ($label==='Nameservers'&&$fact['value']!==null) { $entry->fontFamily(FontFamily::Mono); }
@@ -402,7 +404,7 @@ class ViewDomain extends ViewRecord
                     \Filament\Schemas\Components\Html::make(fn(\Filament\Schemas\Components\Utilities\Get $get)=>view('domains::admin.renewal-facts',['facts'=>[
                         'New expiry'=>['value'=>isset($term($get)['expiry'])?\Carbon\CarbonImmutable::parse($term($get)['expiry'])->format('M j, Y'):'Missing','sub'=>'Up to '.($options['max_years']??0).(($options['max_years']??0)===1?' added year fits before ':' added years fit before ').(isset($options['horizon'])?\Carbon\CarbonImmutable::parse($options['horizon'])->format('M j, Y'):'the registration horizon').'.'],
                         'Total'=>['value'=>'$0.00','sub'=>isset($term($get)['cost'])?($company!==''?$company.' covers':'We cover').' the $'.number_format((float)$term($get)['cost'],2,'.','').' registrar renewal cost.':'Missing. Sync prices before renewing.'],
-                        'Next annual renewal'=>['value'=>$annual===null?'Missing':('$'.$annual.' / year'),'sub'=>'Renewal invoices stay annual. Renewal prices may change.'],
+                        'Next annual renewal'=>['value'=>$annual===null?'Missing':('$'.$annual.'/yr'),'sub'=>'Renewal invoices stay annual. Renewal prices may change.'],
                     ]]))];
             })->action(function(array $data)use($d):void {
                 try {

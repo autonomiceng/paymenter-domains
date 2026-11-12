@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Domain;
 /** Review a single holding. No catalogue publication or issued-debt mutation. */
 final class StaffHoldingReview
 {
-    public const ACTIONS=['stop'=>'Stop renewal','resume'=>'Resume renewal'];
+    public const ACTIONS=['stop'=>'Turn off renewal invoices','resume'=>'Turn on renewal invoices'];
     public function __construct(private readonly Clock $clock){}
     public static function permission(string $action): string
     {if(!isset(self::ACTIONS[$action])){throw new \DomainException('Unknown holding action.');}return 'admin.domains.holdings.'.$action;}

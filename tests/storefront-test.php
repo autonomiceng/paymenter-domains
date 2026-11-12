@@ -139,7 +139,7 @@ $transferController = new StorefrontController(activeFixtureStorefront($sellers,
 App\Models\Server::findOrFail($tlds[0]->server_id)->settings()->create(['key' => 'domains_transfer_endings', 'value' => 'com']);
 $transfer = $transferController->check($req(['domain' => 'transfer-placeholder.com', '_request_key' => $key]))->getData(true);
 same('transferable', $transfer['status'], 'Controller requires independent ordinary transfer proof');
-expect(str_contains($transfer['html'],'$10.40 / year'),'Transfer result renders the admitted annual renewal price');
+expect(str_contains($transfer['html'],'$10.40/yr'),'Transfer result renders the admitted annual renewal price');
 same(2, $transferState->calls, 'One register plus one transfer synthetic read');
 expect(str_contains($transfer['html'], 'value="transfer"'), 'Verified transfer action offered');
 $transferState->fail = true;

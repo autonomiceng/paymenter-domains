@@ -58,8 +58,8 @@ class DomainResource extends Resource
             ->with(['user:id,first_name,last_name,email', 'server:id,name', 'latestAcquisition'])),[
             DemoTag::apply(OneLine::apply(TextColumn::make('domain')->label('Domain')->searchable()->sortable()->fontFamily(FontFamily::Mono),OneLine::NAME)),
             OneLine::apply(TextColumn::make('customer')->label('Customer')->state(fn(Domain $record)=>$record->user?(trim($record->user->first_name.' '.$record->user->last_name)?:$record->user->email):null)
-                ->searchable(query:fn(Builder $query,string $search)=>self::customerSearch($query,$search)),OneLine::SHORT),
-            TextColumn::make('status')->label('Status')->badge()->state(fn(Domain $record,$livewire)=>self::status($record,$livewire)['label'])
+                ->searchable(query:fn(Builder $query,string $search)=>self::customerSearch($query,$search)),[...OneLine::SHORT,'domains-customer-cell']),
+            TextColumn::make('status')->label('Status')->badge()->state(fn(Domain $record,$livewire)=>self::label($record,$livewire))
                 ->extraAttributes(fn(Domain $record,$livewire)=>StatusMark::attributes(self::tone($record,$livewire),'domain-'.$record->id))
                 ->color(fn(Domain $record,$livewire)=>self::tone($record,$livewire)),
             // The step comes first, so a cut note still shows it. Every open alert is listed on the domain page. A step that names a request opens it.
@@ -73,10 +73,10 @@ class DomainResource extends Resource
                 ->description(fn(Domain $record,$state,$livewire)=>$state===Missing::LABEL?DomainFacts::unread($record,self::row($record,$livewire)['sync']):null)
                 ->sortable(query: fn(Builder $query,string $direction)=>$query->orderBy('provider_expires_at',$direction))),
             // Renewal applies until the domain has ended, so pending and under-review rows show it too. A pending import bills nothing until import, as on the domain page.
-            OneLine::apply(TextColumn::make('auto_renew')->label('Renewal')->state(fn(Domain $record,$livewire)=>DomainFacts::ended($record)?null:match(true) {
+            OneLine::apply(TextColumn::make('auto_renew')->label('Renewal invoices')->state(fn(Domain $record,$livewire)=>DomainFacts::ended($record)?null:match(true) {
                 self::row($record,$livewire)['off']===null=>Missing::LABEL,$record->adoptionPending()||self::row($record,$livewire)['off']||self::row($record,$livewire)['accountOff']=>'Off',default=>'On'})
                 ->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::icon():null)
-                ->description(fn($state,Domain $record,$livewire)=>$state===Missing::LABEL?DomainFacts::UNREADABLE_RENEWAL:($state==='Off'&&$record->adoptionPending()?'Until import':($state==='Off'&&!self::row($record,$livewire)['off']&&self::row($record,$livewire)['accountOff']?'Account Renewals off':null)))),
+                ->description(fn($state,Domain $record,$livewire)=>$state===Missing::LABEL?DomainFacts::UNREADABLE_RENEWAL:($state==='Off'&&$record->adoptionPending()?'Until import':($state==='Off'&&!self::row($record,$livewire)['off']&&self::row($record,$livewire)['accountOff']?'Account renewals off':null)))),
             OneLine::apply(TextColumn::make('server_id')->label('Registrar')->state(fn(Domain $record)=>$record->server?$record->server->name.' #'.$record->server_id:Missing::LABEL)
                 ->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::icon():null)
                 ->description(fn(Domain $record,$state)=>$state===Missing::LABEL?DomainFacts::NO_ACCOUNT:(self::REGISTRARS[$record->registrar_key]??null))),
@@ -122,6 +122,13 @@ class DomainResource extends Resource
     }
     private static function tone(Domain $record, mixed $livewire): string
     { return DomainFacts::listTone(self::status($record,$livewire),self::row($record,$livewire)['sync'],self::row($record,$livewire)['noAccount']); }
+    /** The status word follows the list tone: an amber row that would read Active says what staff must fix. */
+    private static function label(Domain $record, mixed $livewire): string
+    {
+        $status=self::status($record,$livewire);
+        if (self::tone($record,$livewire)===$status['tone']) { return $status['label']; }
+        return self::row($record,$livewire)['noAccount']?'No account':'Sync stopped';
+    }
     private static function note(Domain $record, mixed $livewire): array
     { return DomainFacts::note(self::status($record,$livewire),self::row($record,$livewire)['sync'],self::row($record,$livewire)['noAccount'],$record); }
     private static function registered(Domain $record): bool

@@ -44,7 +44,7 @@ $split=static fn(DOMXPath $dom,string $label)=>[$norm($dom->query('//section[@id
 
 // Header: breadcrumb, mono name with tags, pill. No Expires meta, Domain help link, tabs or Overview.
 $d=$domain();$html=$render($d,$summary($d,['daysLeft'=>129]));$dom=storefrontDom($html);
-same('Domains / '.$name,$norm($dom->query('//nav[contains(@class,"domains-crumb")]')->item(0)),'Breadcrumb names the domain');
+same('Domains '.$name,$norm($dom->query('//nav[contains(@class,"domains-crumb")]')->item(0)),'Breadcrumb names the domain');
 same(1,$dom->query('//nav[contains(@class,"domains-crumb")]/a[@href="'.route('domains.domains.index').'"][.="Domains"]')->length,'Breadcrumb links to the list');
 same(1,$dom->query('//h1[contains(@class,"domains-mono")][starts-with(normalize-space(.),"'.$name.'")]')->length,'Name is the mono h1');
 same(1,$dom->query('//div[contains(@class,"domains-ph")]//span[contains(@class,"domains-pill")]')->length,'One pill in the header');
@@ -84,10 +84,10 @@ same('Contacts',$norm($dom->query('//li[@id="contacts"]/span[contains(@class,"do
 same('Contacts',$norm($dom->query('//dialog[@id="edit-contacts"]//h3')->item(0)),'Contacts dialog title');
 same(0,$dom->query('//*[contains(@class,"domains-row__a")]//*[self::a or self::button][not(contains(@class,"domains-a"))]')->length,'Every row action uses the one link style');
 expect(str_contains($html,'.domains .domains-a { color: var(--e-accent); font-weight: 600; text-decoration: underline;'),'Inline links are underlined');
-expect(str_contains($html,'.domains .domains-row__a .domains-a, .domains .domains-card dd > .domains-a, .domains .domains-linkbtn { text-decoration: none; }'),'Standalone row actions keep their link style');
-expect(str_contains($html,'.domains .domains-row__a .domains-a:hover, .domains .domains-card dd > .domains-a:hover, .domains .domains-linkbtn:hover { text-decoration: none; }'),'Standalone actions have explicit no-underline hover exceptions');
+expect(str_contains($html,'.domains .domains-row__a .domains-a, .domains .domains-card dd > .domains-a, .domains .domains-card__a .domains-a, .domains .domains-linkbtn { text-decoration: none; }'),'Standalone row actions keep their link style');
+expect(str_contains($html,'.domains .domains-row__a .domains-a:hover, .domains .domains-card dd > .domains-a:hover, .domains .domains-card__a .domains-a:hover, .domains .domains-linkbtn:hover { text-decoration: none; }'),'Standalone actions have explicit no-underline hover exceptions');
 $inlineHover=strpos($html,'.domains .domains-a:hover { text-decoration: underline; }');
-$actionHover=strpos($html,'.domains .domains-row__a .domains-a:hover, .domains .domains-card dd > .domains-a:hover, .domains .domains-linkbtn:hover { text-decoration: none; }');
+$actionHover=strpos($html,'.domains .domains-row__a .domains-a:hover, .domains .domains-card dd > .domains-a:hover, .domains .domains-card__a .domains-a:hover, .domains .domains-linkbtn:hover { text-decoration: none; }');
 expect($inlineHover!==false&&$actionHover!==false&&$actionHover>$inlineHover,'Action hover exceptions follow the inline rule so equal-specificity link buttons keep no underline');
 same(['We email it to the owner',['Email code']],[$text('auth_code_email'),$action('auth_code_email')],'Auth code row');
 same(0,$dom->query('//li[@id="auto_renew_off"]')->length,'Registrar auto-renew row is staff only');

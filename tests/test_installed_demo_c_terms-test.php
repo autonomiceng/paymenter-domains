@@ -86,7 +86,7 @@ DB::table('services')->where('id',$service->id)->update(['price'=>'10.99']);$ser
 $holding=new Paymenter\Extensions\Servers\Domains\Models\Domain(['status'=>'closed','domain'=>'example.com','service_id'=>$service->id]);
 $gift=(new ReflectionMethod(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,'complimentaryRenewal'))->invoke(null,$holding);
 $schema=$gift->getSchema(\Filament\Schemas\Schema::make($page)->statePath('data'))->getComponents(withHidden:true);$text=(string)$schema[array_key_last($schema)]->getContent();
-$r10Check(str_contains(storefrontDom($text)->query('//div[dt="Next annual renewal"]/dd')->item(0)?->textContent??'','$10.99 / year'),'Complimentary dialog retains the domain annual price when customer-request eligibility is closed');
+$r10Check(str_contains(storefrontDom($text)->query('//div[dt="Next annual renewal"]/dd')->item(0)?->textContent??'','$10.99/yr'),'Complimentary dialog retains the domain annual price when customer-request eligibility is closed');
 // A short preview must not evaluate every explicitly unsold catalogue entry.
 $priceQueries=0;DB::listen(static function($query)use(&$priceQueries):void{$priceQueries++;});
 Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::renewals($binding->serverId);$smallQueries=$priceQueries;

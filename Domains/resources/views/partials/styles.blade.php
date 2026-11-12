@@ -15,6 +15,8 @@
     --e-warn: color-mix(in srgb, hsl(var(--color-warning)) 78%, black);
     --e-bad: color-mix(in srgb, hsl(var(--color-error)) 80%, black);
     --e-quiet: hsl(var(--color-muted));
+    --e-mono: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+    --e-on-accent: hsl(var(--color-inverted, 0 0% 100%));
     max-width: 72rem; margin-inline: auto; color: var(--e-fg); overflow-wrap: anywhere;
 }
 .dark .domains {
@@ -32,9 +34,10 @@
 .domains .domains-num { font-variant-numeric: tabular-nums; }
 .domains .domains-nowrap { white-space: nowrap; }
 .domains .domains-a { color: var(--e-accent); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
-.domains .domains-row__a .domains-a, .domains .domains-card dd > .domains-a, .domains .domains-linkbtn { text-decoration: none; }
+/* Standalone action links stay plain; links inside a sentence are underlined. */
+.domains .domains-row__a .domains-a, .domains .domains-card dd > .domains-a, .domains .domains-card__a .domains-a, .domains .domains-linkbtn { text-decoration: none; }
 .domains .domains-a:hover { text-decoration: underline; }
-.domains .domains-row__a .domains-a:hover, .domains .domains-card dd > .domains-a:hover, .domains .domains-linkbtn:hover { text-decoration: none; }
+.domains .domains-row__a .domains-a:hover, .domains .domains-card dd > .domains-a:hover, .domains .domains-card__a .domains-a:hover, .domains .domains-linkbtn:hover { text-decoration: none; }
 .domains .domains-back { display: inline-flex; align-items: center; gap: .25rem; font-size: .875rem; color: var(--e-muted); min-height: 2rem; }
 .domains .domains-back:hover { color: var(--e-fg); }
 .domains .domains-stack > * + * { margin-top: 1rem; }
@@ -44,10 +47,10 @@
 
 /* Page header */
 .domains .domains-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 1rem; }
-.domains .domains-title { font-size: 1.625rem; line-height: 2.125rem; font-weight: 700; letter-spacing: -.015em; }
+.domains .domains-title { font-family: var(--font-display, inherit); font-size: 1.75rem; line-height: 2.25rem; font-weight: 600; letter-spacing: -.015em; }
 .domains .domains-lede { margin-top: .25rem; color: var(--e-muted); font-size: .9375rem; max-width: 60ch; }
-.domains h2.domains-h2 { font-size: 1.0625rem; font-weight: 700; line-height: 1.5rem; }
-.domains h3.domains-h3 { font-size: .9375rem; font-weight: 700; }
+.domains h2.domains-h2 { font-size: .9375rem; font-weight: 600; line-height: 1.5rem; }
+.domains h3.domains-h3 { font-size: .9375rem; font-weight: 600; }
 
 @media (max-width: 639px) { .domains .domains-head > .domains-btn--ghost { margin-left: -.5rem; } }
 
@@ -56,21 +59,21 @@
 .domains .domains-btn { display: inline-flex; align-items: center; justify-content: center; gap: .5rem; box-sizing: border-box; min-height: 2.5rem; max-width: 100%; padding: .375rem 1rem;
     border-radius: .375rem; border: 1px solid transparent; font-size: .875rem; font-weight: 600; line-height: max(1.25rem, 1.4em); text-align: center; overflow-wrap: break-word;
     cursor: pointer; transition: background-color .15s, border-color .15s, color .15s; text-decoration: none; }
-.domains .domains-btn--primary { background: var(--e-accent); color: #fff; }
-.domains .domains-btn--primary:hover { background: hsl(var(--color-primary) / .85); }
+.domains .domains-btn--primary { background: var(--e-accent); color: var(--e-on-accent); transition: background-color .15s, box-shadow .15s; }
+.domains .domains-btn--primary:is(:hover, :focus-visible) { background: hsl(var(--color-primary) / .85); box-shadow: 0 0 14px hsl(var(--color-primary) / .35); }
 .domains .domains-btn--secondary { background: var(--e-panel); border-color: var(--e-line); color: var(--e-fg); }
 .domains .domains-panel .domains-btn--secondary { background: var(--e-bg); }
 .domains .domains-btn--secondary:hover { border-color: color-mix(in srgb, var(--e-fg) 30%, var(--e-line)); }
 .domains .domains-btn--ghost { background: transparent; color: var(--e-accent); padding-inline: .5rem; }
 .domains .domains-btn--ghost:hover { background: hsl(var(--color-primary) / .08); }
-.domains .domains-btn--danger { background: hsl(var(--color-error)); color: #fff; }
+.domains .domains-btn--danger { background: hsl(var(--color-error)); color: var(--e-on-accent); }
 .domains .domains-btn--danger:hover { background: hsl(var(--color-error) / .85); }
 .domains .domains-btn--sm { min-height: 2rem; padding: 0 .75rem; font-size: .8125rem; }
 .domains .domains-btn:disabled, .domains .domains-btn[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
 @media (pointer: coarse) { .domains .domains-btn { min-height: 2.75rem; } .domains .domains-btn--sm { min-height: 2.5rem; } }
 
 /* Panels and sections */
-.domains .domains-panel { --e-field: var(--e-bg); background: var(--e-panel); border: 1px solid var(--e-line); border-radius: .75rem; }
+.domains .domains-panel { --e-field: var(--e-bg); background: var(--e-panel); border: 1px solid var(--e-line); border-radius: .5rem; }
 .domains .domains-section { padding: 1.25rem 1.5rem; }
 .domains .domains-section + .domains-section { border-top: 1px solid var(--e-line); }
 .domains .domains-section__head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .5rem 1rem; margin-bottom: 1rem; }
@@ -218,9 +221,8 @@
 .domains .domains-searchbar > input::placeholder { color: var(--e-muted); font-weight: 400; }
 .domains .domains-searchbar > :is(input, select):is(:focus, :focus-visible) { outline: none; box-shadow: none; }
 .domains .domains-searchbar > select { flex: none; field-sizing: content; border: 0; border-left: 1px solid var(--e-line); border-radius: 0; background-color: transparent; color: var(--e-fg);
-    font-family: var(--font-mono, ui-monospace, monospace); font-size: .9375rem; font-weight: 500; padding: 0 2.25rem 0 .75rem; min-height: 2.5rem; width: auto; }
+    font-family: var(--e-mono); font-size: .9375rem; font-weight: 500; padding: 0 2.25rem 0 .75rem; min-height: 2.5rem; width: auto; }
 .domains .domains-searchbar .domains-btn { min-height: 2.5rem; padding: 0 1rem; border-radius: .375rem; font-size: .875rem; }
-.domains .domains-searchbar .domains-btn--primary { color: hsl(var(--color-inverted, 0 0% 100%)); }
 @media (max-width: 639px) {
     .domains .domains-searchbar { flex-wrap: wrap; }
     .domains .domains-searchbar > input { flex-basis: 100%; }
@@ -349,8 +351,9 @@
 .domains-dialog .domains-dialog__actions { display: flex; flex-wrap: wrap-reverse; justify-content: flex-end; gap: .5rem; margin-top: 1.5rem; }
 .domains-dialog .domains-btn { display: inline-flex; align-items: center; justify-content: center; min-height: 2.5rem; padding: 0 1rem; border-radius: .375rem; font-size: .875rem; font-weight: 600; cursor: pointer; border: 1px solid transparent; }
 .domains-dialog .domains-btn--secondary { background: transparent; border-color: hsl(var(--color-neutral)); color: hsl(var(--color-base)); }
-.domains-dialog .domains-btn--primary { background: hsl(var(--color-primary)); color: #fff; }
-.domains-dialog .domains-btn--danger { background: hsl(var(--color-error)); color: #fff; }
+.domains-dialog .domains-btn--primary { background: hsl(var(--color-primary)); color: hsl(var(--color-inverted, 0 0% 100%)); }
+.domains-dialog .domains-btn--primary:is(:hover, :focus-visible) { box-shadow: 0 0 14px hsl(var(--color-primary) / .35); }
+.domains-dialog .domains-btn--danger { background: hsl(var(--color-error)); color: hsl(var(--color-inverted, 0 0% 100%)); }
 .domains-dialog :focus-visible { outline: 2px solid hsl(var(--color-primary)); outline-offset: 2px; }
 
 /* Help */
@@ -431,7 +434,7 @@
 .domains .domains-linkrow:is(:hover, :focus-within) td { background: color-mix(in srgb, var(--e-accent) 10%, transparent); }
 .domains .domains-linkrow .domains-missing__fix, .domains .domains-linkrow .domains-missing__pay { position:relative; z-index:1; }
 .domains .domains-list .domains-missing__pay { display:flex; width:fit-content; margin-top:.375rem; }
-.domains .domains-list .domains-domain { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-weight:500; text-decoration:none; }
+.domains .domains-list .domains-domain { font-family: var(--e-mono); font-weight:500; text-decoration:none; }
 .domains .domains-list .domains-domain:hover { text-decoration:underline; }
 .domains .domains-list td { vertical-align:top; }
 .domains .domains-cell-main { display:block; }
@@ -447,9 +450,9 @@
 .domains .domains-missing--calm { color:var(--e-muted); font-weight:500; }
 .domains .domains-missing__cause { margin-inline-start:.5rem; color:var(--e-muted); }
 .domains .domains-missing__fix { margin-inline-start:.5rem; white-space:nowrap; }
-/* Demo tag: the only orange on the page. Wraps as one unit after the name. The Test variant has the same shape. */
+/* Demo tag: a neutral tag. Wraps as one unit after the name. The Test variant has the same shape. */
 .domains .domains-demo-tag { display: inline-flex; align-items:center; height:18px; padding:0 6px; margin-inline-start:8px; border-radius:4px;
-    font-size:11px; font-weight:600; line-height:1; letter-spacing:.03em; white-space: nowrap; vertical-align:2px; cursor:help; }
+    font-size:11px; font-weight:500; line-height:1; white-space: nowrap; vertical-align:2px; cursor:help; }
 @include('domains::partials.demo-tag-colors')
 .domains a:focus-visible,.domains summary:focus-visible { outline:2px solid var(--e-accent);outline-offset:3px; }
 @media(max-width:639px) { .domains .domains-summary .domains-facts { grid-template-columns:1fr; } .domains .domains-summary .domains-fact { min-width:0; } }
@@ -480,6 +483,7 @@
 .domains .domains-help-btn { display: inline-grid; place-items: center; inline-size: 1.5rem; block-size: 1.5rem; flex: none; border: 1px solid var(--e-line); border-radius: 999px; background: transparent; color: var(--e-muted); font-size: .8125rem; font-weight: 700; line-height: 1; cursor: help; }
 .domains .domains-help-btn:hover, .domains .domains-help-btn[aria-expanded="true"] { color: var(--e-fg); border-color: var(--e-accent); }
 .domains .domains-help-btn:focus-visible { outline: 2px solid var(--e-accent); outline-offset: 2px; }
+@media (pointer: coarse) { .domains .domains-help-btn { position: relative; } .domains .domains-help-btn::after { content: ""; position: absolute; inset: -10px; } }
 .domains .domains-help-pop { white-space: normal; display: none; box-sizing: border-box; position: absolute; z-index: 20; top: 100%; left: 0; margin-top: .375rem; inline-size: max-content; max-inline-size: min(22rem, 100%); padding: .625rem .75rem; border: 1px solid var(--e-line); border-radius: .5rem; background: var(--e-panel); color: var(--e-fg); box-shadow: 0 .5rem 1.5rem rgb(0 0 0 / .25); font-size: .875rem; font-weight: 400; line-height: 1.375rem; }
 .domains .domains-help[data-open] .domains-help-pop, .domains .domains-help:not([data-ready]):is(:hover, :focus-within) .domains-help-pop { display: block; }
 @media (prefers-reduced-motion: no-preference) { .domains .domains-help[data-open] .domains-help-pop { animation: domains-confirm-in .12s ease-out; } }
@@ -492,9 +496,10 @@
 /* ---------- Domain page ---------- */
 .domains .domains-crumb { font-size: .8125rem; color: var(--e-muted); margin-bottom: .5rem; }
 .domains .domains-crumb a { color: var(--e-muted); text-decoration: none; }
+.domains .domains-crumb__sep { display: inline-block; width: .875rem; height: .875rem; margin: 0 .125rem; vertical-align: -2px; }
 .domains .domains-transfer { max-width: 36rem; }
 .domains .domains-crumb a:hover { color: var(--e-fg); }
-.domains .domains-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.domains .domains-mono { font-family: var(--e-mono); }
 .domains .domains-ph { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: .375rem .75rem; margin-bottom: 1.25rem; }
 .domains .domains-ph > h1 { flex-basis: 100%; }
 /* The head status uses the head-size mark. */

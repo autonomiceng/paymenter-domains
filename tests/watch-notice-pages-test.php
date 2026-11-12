@@ -51,7 +51,7 @@ $card=static fn(string $html,string $term)=>array_map($norm,iterator_to_array(st
 $notice=static fn(string $html)=>array_map($norm,iterator_to_array(storefrontDom($html)->query('//div[contains(@class,"domains-notice")]')));
 $row=static fn(string $kind,string $date='January 15, 2027')=>[['kind'=>$kind,'company'=>'Example Hosting','date'=>$date,'previously_matched'=>true]];
 $plain=$page([],[],[],['nameservers'=>['nameservers'=>['ns1.example.net','ns2.example.net'],'at'=>'2027-01-10T08:00:00Z'],'expiry'=>'2027-06-01','daysLeft'=>200,'relatedServices'=>[['label'=>'Web A','url'=>'/services/1'],['label'=>'Web B','url'=>'/services/2']],'urls'=>['compareTransfer'=>'/domains/checks/watch/1/transfer','support'=>'/tickets/create']]);$dom=storefrontDom($plain);
-same('Domains / example.com',$norm($dom->query('//nav[contains(@class,"domains-crumb")]')->item(0)),'Breadcrumb names the domain');
+same('Domains example.com',$norm($dom->query('//nav[contains(@class,"domains-crumb")]')->item(0)),'Breadcrumb names the domain');
 same('Hosting: Web A and 1 more',$norm($dom->query('//*[contains(@class,"domains-ph__sub")]')->item(0)),'Header names its hosting service');same('/services/1',$dom->query('//*[contains(@class,"domains-ph__sub")]/a/@href')->item(0)?->value,'Hosting service is a link');
 same(1,substr_count($text($plain),'We check the public registry and nameservers daily.'),'Status help says how often we check');
 // The summary lists every usable link; its overflow counts those past the first three, so it never adds to the count.
