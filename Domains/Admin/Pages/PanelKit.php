@@ -168,7 +168,7 @@ class PanelKit extends Page
                 Sheet::section('Before', [Row::make('Transfer lock', Value::plain(Plain::On))->key('row-live-before')->actions(self::kit('live_before', 'Turn off', 'Transfer lock'))], null, 'kit-live-before'),
                 Sheet::section('Sent', [Row::make('Transfer lock', Value::plain(Plain::On, 'Turning off at the registrar. The button comes back when this finishes.'))->key('row-live-sent')->running(Value::state(State::Checking, $staff))], null, 'kit-live-sent'),
                 Sheet::section('After 30 seconds', [Row::make('Transfer lock', Value::plain(Plain::On, 'This is taking longer than usual. We\'ll keep trying.'))->key('row-live-slow')->running(Value::state(State::Checking, $staff))], null, 'kit-live-slow'),
-                Sheet::section('Done', [Row::make('Transfer lock', Value::plain(Plain::Off))->key('row-live-done')->result(Value::state(State::Completed, $staff, 'Turned off and confirmed at the registrar.')->when(self::AT + 120))->actions(self::kit('live_done', 'Turn on', 'Transfer lock'))], null, 'kit-live-done'),
+                Sheet::section('Done', [Row::make('Transfer lock', Value::plain(Plain::Off, 'Turned off. Confirmed at the registrar', Fact::date(self::AT + 120, $staff)))->key('row-live-done')->actions(self::kit('live_done', 'Turn on', 'Transfer lock'))], null, 'kit-live-done'),
                 Sheet::section('Failed', [Row::make('Transfer lock', Value::plain(Plain::On))->key('row-live-failed')->result(Value::state(State::Failed, $staff, 'The registrar didn\'t answer. Nothing changed.'))->actions(self::kit('live_retry', 'Try again', 'Transfer lock'))], null, 'kit-live-failed'),
             ], 'kit-live'),
             Sheet::single([

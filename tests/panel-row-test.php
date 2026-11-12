@@ -72,7 +72,7 @@ foreach ([['row-blocked-ns', 'Edit Nameservers'], ['row-blocked-lock', 'Turn off
 expect($q($row('kit-blocked-registrar', 'Last sync'), './/button[@*[name()="wire:click"]]')->length === 1, 'The notice blocks only the rows that say so');
 // Every staff instant on the kit converts in the browser; the done row keeps its confirmation time as a moment.
 same(0.0, $dom->evaluate('count(//*[@data-beco-fact="date"][contains(@title," UTC")][not(.//time[@data-domains-time])])'), 'No staff instant on the kit is static text');
-same(1.0, $dom->evaluate('count(.//time[@data-domains-time])', $row('kit-live-done', 'Transfer lock')), 'The confirmation time converts');
+same(1.0, $dom->evaluate('count(.//*[@class="beco-sub"]//time[@data-domains-time])', $row('kit-live-done', 'Transfer lock')), 'The confirmation sentence ends with a time that converts');
 // A blocked link or Alpine action runs nothing either: no href and no handler but the one that cancels the click.
 $go = Action::make('go')->url('https://registrar.example/domain/7');
 $alpine = Action::make('copy')->alpineClickHandler('navigator.clipboard.writeText(\'x\')');

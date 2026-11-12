@@ -13,7 +13,7 @@ final class Value implements Htmlable
 {
     /** @param list<Fact> $extra Staff only. */
     private function __construct(public readonly string $kind, public readonly string $word, public readonly ?Tone $tone, public readonly ?Fact $fact,
-        public readonly ?string $sub, public readonly ?Reader $reader, public readonly ?string $record, public readonly array $extra = [], public readonly ?State $state = null)
+        public readonly ?string $sub, public readonly ?Reader $reader, public readonly ?string $record, public readonly array $extra = [], public readonly ?State $state = null, public readonly ?Fact $subAt = null)
     { assert($sub === null || trim($sub) !== '' && !Fact::isWord($sub), 'A line under a value is a sentence, never a state or plain word: '.$sub); }
 
     /** $record names the record the state belongs to, so a skin sweeps the mark only on a real change. */
@@ -22,7 +22,12 @@ final class Value implements Htmlable
     /** A provider code's state. An unmapped code keeps the code on the staff line. */
     public static function coded(Coded $coded, Reader $reader, ?string $reason = null, ?string $record = null): self
     { $value = self::state($coded->state, $reader, $reason, $record); return $coded->code === null ? $value : $value->detail($coded->code); }
-    public static function plain(Plain $plain, ?string $sub = null): self { return new self('plain', $plain->label(), null, null, $sub, null, null); }
+    /** $at ends the sentence with its time, as a finished change reads: "Turned off. Confirmed at the registrar, <time>." */
+    public static function plain(Plain $plain, ?string $sub = null, ?Fact $at = null): self
+    {
+        if ($at !== null && $sub === null) { throw new \InvalidArgumentException('A time ends a sentence.'); }
+        return new self('plain', $plain->label(), null, null, $sub, null, null, [], null, $at);
+    }
     public static function fact(Fact $fact, ?string $sub = null): self { return new self('fact', $fact->text, null, $fact, $sub, null, null); }
     /** A state's time, such as when a change was sent or a read last failed. Staff only, since a reason carries no time. */
     public function when(int|\DateTimeInterface $at): self { return $this->detail(Fact::date($at, Reader::Staff)); }
