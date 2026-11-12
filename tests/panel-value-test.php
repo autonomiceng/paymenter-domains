@@ -54,6 +54,10 @@ same(['Enom TEST', null], [Fact::attr($model, 'name')?->text, Fact::attr($model,
 expect($fails(static fn () => Fact::attr($model, 'status'), InvalidArgumentException::class), 'A status column takes a State');
 expect($fails(static fn () => Fact::attr($model, 'enabled'), InvalidArgumentException::class), 'A yes or no takes Plain');
 expect($fails(static fn () => Fact::names(['Active']), AssertionError::class), 'Computed text that equals a state word fails');
+// An unmapped provider code spelled like a word renders for both readers; only staff see the code.
+$wordCode = InvoiceStatus::state('unpaid', null, '2026-11-12');
+same(['Not recognized', 'unpaid'], [$text($read(Value::coded($wordCode, Reader::Staff)), '//*[@class="beco-st"]'), $text($read(Value::coded($wordCode, Reader::Staff)), '//*[@data-beco-fact="code"]')], 'Staff see the code under Not recognized');
+same(['Not recognized', 0.0], [$text($read(Value::coded($wordCode, Reader::Customer)), '//*[@class="beco-st"]'), $read(Value::coded($wordCode, Reader::Customer))->evaluate('count(//*[@data-beco-fact])')], 'Customers read Not recognized with no code');
 expect($fails(static fn () => Value::state(State::Failed, Reader::Staff, 'Not set'), AssertionError::class), 'A reason that equals a state word fails');
 expect($fails(static fn () => Value::plain(Plain::On)->when(1), LogicException::class), 'Only a state has a staff line');
 foreach ([Value::class, Fact::class] as $class) { expect(!(new ReflectionClass($class))->getConstructor()->isPublic(), 'No public constructor takes free text: '.$class); }

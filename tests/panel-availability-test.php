@@ -33,6 +33,12 @@ $odd = RecordRead::state('future_code', $good);
 same([State::NotRecognized, 'code', 'future_code'], [$odd->state, $odd->code?->kind, $odd->code?->text], 'An unmapped code reads Not recognized and keeps the code');
 same([State::NotRecognized, null], [RecordRead::state('<b>Some text</b>', $good)->state, RecordRead::state('<b>Some text</b>', $good)->code], 'Provider text that isn\'t a code never echoes');
 
+// A provider code spelled like one of our words is still only a code: Not recognized, with the code for staff.
+foreach ([RecordRead::state('failed', new Read(null, 200)), RecordRead::state('Active', $good), InvoiceStatus::state('unpaid', null, '2026-11-12')] as $coded) {
+    same([State::NotRecognized, 'code'], [$coded->state, $coded->code?->kind], 'A code that matches a word falls back: '.$coded->code?->text);
+}
+same(['failed', 'Active', 'unpaid'], [RecordRead::state('failed', new Read(null, 200))->code?->text, RecordRead::state('Active', $good)->code?->text, InvoiceStatus::state('unpaid', null, '2026-11-12')->code?->text], 'The code keeps its own spelling');
+
 // Paymenter invoices.
 same(State::Paid, InvoiceStatus::state('paid', '2026-11-01', '2026-11-12')->state, 'Paid');
 same(State::Cancelled, InvoiceStatus::state('cancelled', null, '2026-11-12')->state, 'Cancelled');
