@@ -3,8 +3,8 @@
 declare(strict_types=1);
 // Real Livewire snapshots and native invoice writes are needed to prove price acceptance and rollback.
 require dirname(__DIR__).'/native-app.php';
-require __DIR.'/commerce.php';
-require __DIR.'/native-commerce.php';
+require __DIR__.'/commerce.php';
+require __DIR__.'/native-commerce.php';
 use App\Models\{CartItem, Coupon, Invoice, Order, Service};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission, CheckoutEligibility, Rdap, RetailLine, TransferPrecheck};
