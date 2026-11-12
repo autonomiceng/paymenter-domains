@@ -130,7 +130,12 @@ final class RequestFacts
                 if ($unsent) {
                     $actual='Not charged yet';
                     if ($op->action==='renew'&&($m=$usd($p['renewal']['cost_cap']['amount']??null,$p['renewal']['cost_cap']['currency']??null))) { $quote='Spending limit '.$m; }
-                    elseif($quote!==null){$quote.='; the registrar price is checked again before sending and cannot exceed this estimate.';}
+                    elseif($quote!==null){
+                        $cap=isset($p['account_complimentary'])&&isset($c['estimated'])?ComplimentaryCosts::cap($op,(string)$c['estimated']):null;
+                        $quote.=$cap!==null&&\Paymenter\Extensions\Servers\Domains\Services\WriteMoney::compare($cap,(string)$c['estimated'])>0
+                            ?'; the registrar price is checked again before sending and cannot exceed the approved limit of '.$usd($cap,'USD').'.'
+                            :'; the registrar price is checked again before sending and cannot exceed this estimate.';
+                    }
                 }
                 // An unpaid request closed with its unsent proof never cost anything.
                 $closedUnsent=$op->state==='rejected'&&in_array($op->safe_code,['renewal_cancelled_unpaid',UnpaidAcquisitionProof::CODE],true)&&($a['send_state']??null)==='definitely_unsent'&&!array_key_exists('dispatch_attempted_at',$p);
