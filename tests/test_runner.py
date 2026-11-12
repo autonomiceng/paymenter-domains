@@ -710,7 +710,7 @@ class RunnerTests(unittest.TestCase):
                 (Path(temp)/'runtime').mkdir()
                 self.assertEqual(runner.main(), 0)
                 expected = [(kind, path) for kind, paths in suites.items() for path in paths if path in requested]
-                expected.sort(key=lambda item: runner.ORDER.index(item[0]))
+                expected.sort(key=lambda item: (runner.ORDER.index(item[0]), not (item[0]=='native' and Path(item[1]).name.startswith(('test_installed_package','test_installed_namesilo_enrollment')))))
                 self.assertEqual([(kind, argv[-1]) for kind, argv in run.call_args.args[0]], expected)
                 self.assertEqual(run.call_args.args[3], selected)
                 if selected == ['mariadb']:
@@ -770,7 +770,7 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(runner.main(), 0)
         commands = run.call_args.args[0]
         expected = [(kind, path) for kind, paths in suites.items() if kind != 'mariadb' for path in paths]
-        expected.sort(key=lambda item: runner.ORDER.index(item[0]))
+        expected.sort(key=lambda item: (runner.ORDER.index(item[0]), not (item[0]=='native' and Path(item[1]).name.startswith(('test_installed_package','test_installed_namesilo_enrollment')))))
         self.assertEqual([(kind, argv[-1]) for kind, argv in commands if kind != 'lint'], expected)
         lint = [[str(ROOT/'scripts/php-test'), '-l', str(path.relative_to(ROOT))]
                 for area in ['Domains', 'tests'] for path in sorted((ROOT/area).rglob('*.php'))]
