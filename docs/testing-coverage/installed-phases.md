@@ -24,3 +24,8 @@ Independent groups fork that committed seed; cap and race keep their shared stat
 restart and overlapping issue/admit workers still exercise the original operation.
 Renewal no longer executes registration's full assertion matrix as setup: those guards
 remain in the registration scenario above. All original behavior assertions remain.
+
+Main compatibility: the SetRenew consent and correction changes from `5d13261d`
+remain intact. The installed management scenario uses main's account-level consent
+assertion and unknown-version refusal. Its native guards retain legacy consent,
+server/environment isolation and the automatic SetRenew correction regression.
