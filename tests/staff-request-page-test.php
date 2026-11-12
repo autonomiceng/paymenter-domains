@@ -344,7 +344,7 @@ same(['Check 2 requests Paid orders on '.$name($heldOp->server_id).' have no reg
 same($oneAccount,$twoAccounts,'Held accounts are read together, not one by one');
 foreach ($saved as $row) { DB::table('domains_operations')->where('id',$row->id)->update(['state'=>$row->state,'safe_code'=>$row->safe_code]); }
 // A sealed transfer with stale reads returns to staff review before its seven-day deadline.
-$readNow=time();
+$readNow=time();$storedTransfer=array_intersect_key($longOp->fresh()->getRawOriginal(),array_flip(['state','safe_code','started_at','policy']));
 DB::table('domains_operations')->where('id',$longOp->id)->update(['state'=>'uncertain','safe_code'=>null,'started_at'=>gmdate('Y-m-d H:i:s',$readNow-2*86400)]);
 $transfer=$longOp->fresh();$policy=$transfer->policy;
 $policy['reconciliation']=['transfer_status'=>'pending','reason'=>'transfer_pending','staff_alert'=>false,'read_at'=>$readNow-25*3600];
@@ -359,6 +359,7 @@ unset($policy['reconciliation']['read_at']);$transfer->policy=$policy;
 same(false,RequestFacts::automaticTransfer($transfer),'Without a read the old transfer start is stale');
 $transfer->started_at=gmdate('Y-m-d H:i:s',$readNow-3600);
 same(true,RequestFacts::automaticTransfer($transfer),'A newly started transfer can await its first read');
+DB::table('domains_operations')->where('id',$longOp->id)->update($storedTransfer);
 // Unreadable saved data: one notice with its fix, never an "unavailable" value.
 DB::table('domains_operations')->where('id',$longOp->id)->update(['policy'=>'not-encrypted']);
 Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$longOp->id])->assertSee("Can't read saved data. Ask your site admin to check the encryption key.")->assertDontSee('unavailable');
