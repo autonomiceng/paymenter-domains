@@ -25,7 +25,9 @@ final class OwnerHelp
     public static function summary(string $anchor): string
     {
         $company=\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company();
-        return $company!==''?preg_replace('/^We send\b/',$company.' sends',self::SUMMARIES[$anchor]):self::SUMMARIES[$anchor];
+        $text=self::SUMMARIES[$anchor];
+        // Plain string work: a company name is text, never a pattern replacement.
+        return $company!==''&&str_starts_with($text,'We send ')?$company.' sends '.substr($text,8):$text;
     }
     public static function path(): string
     {

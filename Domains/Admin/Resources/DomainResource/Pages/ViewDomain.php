@@ -287,20 +287,15 @@ class ViewDomain extends ViewRecord
         $s=$this->familyState();
         $last=$s['last_complete_at']??null;
         $at=static fn($when)=>trim(view('domains::partials.moment',['at'=>is_int($when)?gmdate(DATE_ATOM,$when):$when])->render());
-        $failed=(bool)($s['read_failed']??false);
-        // One notice: what is late, when the next read is, and what to do. The records section below keeps only its rows.
-        $text=match(true){
-            $failed=>e(trim((string)($s['read_cause']??'The registrar read failed.'))).' '.($last?'Last complete read: '.$at($last).'.':'No complete read yet.').' Missing values fill in after the next successful read.',
-            $last!==null=>'Last complete read: '.$at($last).'.',
-            default=>'Values show after the first complete read.',
-        };
-        // A failed read keeps its attempt count and last failure, which the rows below no longer repeat.
+        // recordsLate() only lets a late or failing read through. One notice: what is wrong, the last complete read, and the
+        // attempts so far; the records section below keeps only its rows.
+        $text=e(trim((string)($s['read_cause']??'The registrar read failed.'))).' '.($last?'Last complete read: '.$at($last).'.':'No complete read yet.').' Missing values fill in after the next successful read.';
         $attempts=(int)($s['read_attempts']??0);
-        if ($failed&&$attempts>=1) { $text.=' '.(($s['read_stopped']??false)?'Stopped after ':'').$attempts.' '.($attempts===1?'attempt':'attempts').'.'.(($s['read_failed_at']??null)?' Last failure: '.$at($s['read_failed_at']).'.':''); }
-        if (!$failed&&($s['next_read']??null)!==null) { $text.=' Next read: '.(($s['read_queued']??false)?'waiting in the account’s read queue since '.$at((int)$s['next_read']):$at((int)$s['next_read'])).'. Use Sync now to read it sooner.'; }
+        if ($attempts>=1) { $text.=' '.(($s['read_stopped']??false)?'Stopped after ':'').$attempts.' '.($attempts===1?'attempt':'attempts').'.'.(($s['read_failed_at']??null)?' Last failure: '.$at($s['read_failed_at']).'.':''); }
         if ($note!==null) { $text.=' '.e(trim(html_entity_decode(strip_tags((string)($note instanceof Htmlable?$note->toHtml():$note)),ENT_QUOTES|ENT_HTML5))); }
-        $title=$failed?'Registrar read failed':($last===null?'Not read from the registrar yet':'Registrar records are out of date');
-        return Callout::make($title)->description(new HtmlString($text))->status($failed?'warning':'info')->columnSpanFull();
+        // A read that is only overdue has not failed: its records are out of date.
+        $failed=($s['read_code']??null)||($s['read_stopped']??false)||($s['failed_family']??null);
+        return Callout::make($failed?'Registrar read failed':'Registrar records are out of date')->description(new HtmlString($text))->status('warning')->columnSpanFull();
     }
     /** A domain monitoring can't compare says so on its DNS row, beside the way to fix it. */
     private static function withDnsSetup(Domain $d, array $facts): array
