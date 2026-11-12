@@ -7,6 +7,8 @@ use Illuminate\Support\Facades\{DB,Event,Queue};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement,ContactRecovery,ContactSetup,NativeActivationInformation,NativePaidHooks,Refunds,UnpaidAcquisitionProof};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\AcquisitionPaymentReview;
+// The original mixed checkout set native time before these closure cases.
+Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
 // A real transfer timeout commits closure before credit; failure must not hide later money.
 $cart=commerceCart($user);commerceAdd($cart,$native->product($tlds[0],'transfer'),'paid-refund-gap-placeholder.com');commerceCheckout($user,$cart)->assertHasNoErrors();
 $gap=Domain::where('domain','paid-refund-gap-placeholder.com')->sole()->operations()->sole();$paid($gap);$clock->instant=$now->modify('+31 days');
