@@ -12,9 +12,10 @@ use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 $controller=new OwnedDomainController($owners);$session=app('request')->session();
 $request=static function()use($user,$session){$r=Request::create('/domains','GET');$r->setUserResolver(fn()=>$user);$r->setLaravelSession($session);return $r;};
 // Each text node that is exactly the name must be followed by the expected tag, or by no tag for a real domain.
+// The breadcrumb's last step is the page's own name, and the heading right below it carries the tag, so it is skipped.
 $tags=static function(string $html,string $name):array{
     $x=storefrontDom($html);$found=[];
-    foreach($x->query('//body//text()[normalize-space()="'.$name.'"]') as $text){
+    foreach($x->query('//body//text()[normalize-space()="'.$name.'"][not(ancestor::nav[@aria-label="Breadcrumb"])]') as $text){
         $next=$x->query('following::*[1]',$text)->item(0);
         $found[]=$next instanceof DOMElement&&in_array('domains-demo-tag',explode(' ',$next->getAttribute('class')),true)?trim($x->query('text()',$next)->item(0)?->textContent??''):'none';
     }
