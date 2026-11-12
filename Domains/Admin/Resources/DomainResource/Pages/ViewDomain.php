@@ -206,7 +206,6 @@ class ViewDomain extends ViewRecord
         // The notice above the sheet gives the cause and the next step once, so the rows it explains stay calm.
         $this->calmMissing=$late;
         // The summary above the sheet says once why values are missing, so rows drop the repeated cause.
-        if ($late && is_string($facts['DS records']['sub']??null)) { $facts['DS records']['sub']=trim(preg_replace('/\s*Use Sync now to read them\.?/','',$facts['DS records']['sub']))?:null; }
         if ($late) { foreach ($facts as $label=>$fact) { if (is_string($fact['sub']??null)&&str_contains($fact['sub'],\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainDecisions::NOT_RETURNED)) { $facts[$label]['sub']=trim(str_replace(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainDecisions::NOT_RETURNED,'',$fact['sub']))?:null; } } }
         // Values the registrar read fills in show Not read, in a neutral tone, until a read fails; Missing (red) is kept for that.
         if ($this->unread($d)) { foreach (self::READ_FACTS as $label) { if (isset($facts[$label])&&$facts[$label]['value']===null) { $facts[$label]=[...$facts[$label],'value'=>\Paymenter\Extensions\Servers\Domains\Presentation\Missing::NOT_READ,'tone'=>'gray','alert'=>false,
@@ -327,6 +326,8 @@ class ViewDomain extends ViewRecord
         $resume=$this->getAction('resume_observation',false);
         $view=fn(string $part)=>Html::make(view('domains::partials.record-families',['recordFamilies'=>$state,'staff'=>true,'part'=>$part,'readScheduling'=>!DomainFacts::ended($d),'summarised'=>$this->recordsLate($d)]));
         $own=array_intersect_key($facts,array_flip(DomainFacts::SECTIONS[self::HELD_SECTION]));$own['DS records']=\Paymenter\Extensions\Servers\Domains\Presentation\DsState::staff($d);
+        // Under the late-read notice, Sync now is said once, there.
+        if ($this->calmMissing && is_string($own['DS records']['sub']??null)) { $own['DS records']['sub']=trim(str_replace('Use Sync now to read them.','',$own['DS records']['sub']))?:null; }
         $rows=[$view('head')];$shown=[];
         // SRV has no row of its own in the facts, so its change line comes straight from the stored progress.
         $srv=DomainFacts::progress($this->managementProgress(),'srv',DomainFacts::headRequest($d,$this->status(),$edits['request'],$this->notice()));
