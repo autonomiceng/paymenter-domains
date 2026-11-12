@@ -162,7 +162,8 @@ $ordersBefore=Order::count();
 // Independent transfer/age scenarios start with a known two-day synthetic observation window.
 // Expire the transfer receipt after its unlocked automatic refresh, at the native order boundary.
 // Locked admission must refuse and offer a working edit-or-remove path.
-$clock->instant = $now;activeCommerceFacts($now,$now->modify('+2 days'),$ports);
+$now=$now->modify('+1 second');$clock->instant = $now;activeCommerceFacts($now,$now->modify('+2 days'),$ports);
+activeCommerceCostObservations($now,$now->modify('+2 days'),$ports);
 App\Models\Server::find($tlds[0]->server_id)->settings()->create(['key' => 'domains_transfer_endings', 'value' => 'com']);
 $cart = commerceCart($user); $transfer = $native->product($tlds[0], 'transfer');
 $line = commerceAdd($cart, $transfer, placeholderComFixtureName('expired-transfer-placeholder.com'));
