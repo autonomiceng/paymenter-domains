@@ -21,7 +21,7 @@ Illuminate\Support\Facades\Schema::create('cache',function($t){$t->string('key')
 Illuminate\Support\Facades\Schema::create('cache_locks',function($t){$t->string('key')->primary();$t->string('owner');$t->integer('expiration');});
 Cache::flush();
 $page=Livewire\Livewire::actingAs($actor)->test(ViewDomain::class,['record'=>$d->id]);
-$page->assertSee('Not read yet');
+$page->assertSee('Not read');
 $clock->instant=$clock->now()->modify('+61 seconds');
 $page->callAction('sync_now')->assertNotified('Sync queued')->assertSee('Sync requested')->assertSee('Sync in progress')->assertActionDisabled('sync_now');
 same(1,DB::table('jobs')->count(),'One queued job');
@@ -49,7 +49,7 @@ same(0,DB::table('jobs')->count(),'Worker consumes the job');
 same(0,DB::table('failed_jobs')->count(),'No failed queue job');
 same(0,App\Models\Notification::where('user_id',$actor->id)->count(),'A first successful read only confirms records and stays out of the bell');
 same($clock->now()->format(DATE_ATOM),$d->fresh()->last_synced_at->format(DATE_ATOM),'Worker advances saved domain facts');
-$page->call('pollManagement')->assertSee('0 records')->assertDontSee('Not read yet')->assertSee('Domain synced');
+$page->call('pollManagement')->assertSee('0 records')->assertDontSee('Not read')->assertSee('Domain synced');
 expect(str_contains($queuedHtml,'wire:poll.2s.keep-alive="pollManagement"'),'An open staff page must poll while its sync is queued');
 expect(!str_contains($page->html(),'wire:poll.'),'Completed sync stops polling');
 $syncEvents=array_values(array_filter(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::entries($d->fresh()),fn($entry)=>is_array($entry)&&in_array($entry['event']??null,['Sync requested','Domain synced'],true)));

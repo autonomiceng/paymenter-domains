@@ -102,12 +102,12 @@ ObservationProjection::save($active->fresh(),new DomainSnapshot($binding,$active
     expiry:new DateEvidence($active->provider_expires_at->format('Y-m-d'),ExpiryPrecision::Date,'synthetic_read'),
     providerAutoRenew:false,privacy:false,locked:true,active:true),TransferStatus::Unknown,new DateTimeImmutable('2026-10-20T15:05:00+00:00'));
 $dnsMissing[]=[$value($active,'DNS records'),$sub($active,'DNS records')];
-same([['Not read yet',null],['Not read yet',null]],$dnsMissing,'Unread on-demand DNS is a plain state, not Missing');
+same([['Not read',null],['Not read',null]],$dnsMissing,'Unread on-demand DNS is a plain state, not Missing');
 $unread=DomainFacts::for($active->fresh())['DNS records'];same(null,$unread['tone'],'Unread DNS has no tone');
 same('success',DomainFacts::head($active->fresh(),DomainFacts::status($active->fresh()),['DNS records'=>$unread])['tone'],'A healthy domain stays green with its DNS unread');
-Auth::setUser(staffUser([Staff::VIEW,'admin.domains.manage']));same(['Not read yet','Use Sync now to read them.'],[$value($active,'DNS records'),$sub($active,'DNS records')],'Staff who can sync are told how');Auth::setUser($viewer);
+Auth::setUser(staffUser([Staff::VIEW,'admin.domains.manage']));same(['Not read','Use Sync now to read them.'],[$value($active,'DNS records'),$sub($active,'DNS records')],'Staff who can sync are told how');Auth::setUser($viewer);
 same([null,'Registrar did not return it. Check the domain at the registrar.'],[$value($active,'Nameservers'),$sub($active,'Nameservers')],'Unread core facts keep their own recovery guidance');
-Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSee('DNS records')->assertSee('Not read yet');
+Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSee('DNS records')->assertSee('Not read');
 // Persistent record limits name the condition and a next step that changes it.
 foreach ([
     'child_host_limit'=>"Missing: more than 50 child hosts to check. Ask your site admin to remove unused entries from this domain's saved discovery data, registrar nameservers and DNS templates so at most 50 child hosts remain, then use Sync now.",
@@ -229,12 +229,12 @@ $page=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id
 $page->assertDontSee('WHOIS privacy')->assertSee('Renewal')->assertSee('Registration')->assertSee('Billing')->assertSee('Ada Lovelace')->assertSee('Missing')->assertSee('Needs the linked service. Check the Services page.')->assertSeeHtml('domains-sheet');
 // The Renewal row holds its own value, not just Renewal text somewhere on the page. Stop and Resume in it: staff-holding-test.
 $renewalRow=static function(string $html):array{$doc=new DOMDocument();@$doc->loadHTML('<?xml encoding="UTF-8">'.$html);$x=new DOMXPath($doc);$t=static fn(DOMNode $n)=>trim(preg_replace('/\s+/',' ',$n->textContent));
-    $rows=$x->query('//div[contains(concat(" ",normalize-space(@class)," ")," domains-row ")][.//*[@role="term"][normalize-space(.)="Renewal invoices"]]');
+    $rows=$x->query('//div[contains(concat(" ",normalize-space(@class)," ")," domains-row ")][.//*[@role="term"][normalize-space(.)="Auto-renew"]]');
     if($rows->length!==1){return [$rows->length,'',[]];}
     return [1,$t($rows->item(0)),array_values(array_filter(array_map($t,iterator_to_array($x->query('.//button',$rows->item(0)))),fn(string $b)=>in_array($b,HoldingActions::LABELS,true)))];};
-same([1,'Renewal invoices On',[]],$renewalRow(Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSuccessful()->html()),'One Renewal row says On, with no Stop or Resume for a viewer');
+same([1,'Auto-renew On',[]],$renewalRow(Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSuccessful()->html()),'One Renewal row says On, with no Stop or Resume for a viewer');
 DB::table('domains_domains')->where('id',$active->id)->update(['renewal_policy'=>encrypt(json_encode([...$policy,'renewals_stopped'=>true]),false)]);
-same([1,'Renewal invoices Off Stopped by staff',[]],$renewalRow(Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSuccessful()->html()),'The Renewal row says Off, Stopped by staff');
+same([1,'Auto-renew Off Stopped by staff',[]],$renewalRow(Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSuccessful()->html()),'The Renewal row says Off, Stopped by staff');
 DB::table('domains_domains')->where('id',$active->id)->update(['renewal_policy'=>encrypt(json_encode($policy),false)]);
 foreach(['Saved facts','Assignment generation','Observation drift','Follow-up','Data retention','Server #','Domain #','Account spending holds','Preview adoption','Scheduled reads'] as $old){$page->assertDontSee($old);}
 same([DomainResource::getUrl('index')=>'Domains','active.example.com'],$page->instance()->getBreadcrumbs(),'Breadcrumb names the domain');
@@ -392,7 +392,7 @@ DB::table('domains_domains')->where('id',$active->id)->update(['renewal_policy'=
 WatchAudit::create(['subject_type'=>'domain','subject_id'=>$active->id,'user_id'=>$customer->id,'actor_id'=>$customer->id,'event'=>'owner_auto_renew',
     'before_revision'=>'on','after_revision'=>'off','data'=>['enabled'=>false],'created_at'=>new DateTimeImmutable('2026-10-22T08:00:00Z')]);
 $history=Livewire::actingAs($viewer)->test(RequestsRelationManager::class,['ownerRecord'=>$active->fresh(),'pageClass'=>ViewDomain::class]);
-$history->assertSeeInOrder(['Oct 22, 2026, 8:00 AM UTC','Auto-renew turned off','Ada Lovelace','Oct 21, 2026, 9:30 AM UTC','Renewal invoices turned off','Customer asked by phone','Synthetic Staff']);
+$history->assertSeeInOrder(['Oct 22, 2026, 8:00 AM UTC','Auto-renew turned off','Ada Lovelace','Oct 21, 2026, 9:30 AM UTC','Auto-renew turned off','Customer asked by phone','Synthetic Staff']);
 DB::table('domains_operations')->where('domain_id',$demo->id)->delete();
 Livewire::actingAs($viewer)->test(RequestsRelationManager::class,['ownerRecord'=>$demo,'pageClass'=>ViewDomain::class])->assertSee('No history yet');
 
@@ -482,4 +482,24 @@ same(['Service #'.$active->service_id.' not found. Check the Services page.','On
 
 same(false,PendingAdoptionResource::shouldRegisterNavigation(),'Adoption pending is not in navigation');
 same(DomainResource::getUrl('index',['filters'=>['status'=>['values'=>['under_review']]]]),PendingAdoptionResource::redirectUrl(),'Adoption pending opens the Under review filter');
+// Before any read, staff see a neutral Not read. A late read shows Missing that fills in by itself (gray) under "Registrar
+// records are out of date"; a failed read shows a calm Missing under "Registrar read failed". The notice gives the cause once.
+$unreadDomain=Domain::create(['server_id'=>$active->server_id,'registrar_key'=>$active->registrar_key,'account_fingerprint'=>$active->account_fingerprint,
+    'user_id'=>$customer->id,'service_id'=>99992,'domain'=>'unread-ui.example.com','sld'=>'unread-ui','tld'=>'example.com','status'=>'active']);
+$nameservers=static function()use($viewer,$unreadDomain):array{
+    $html=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$unreadDomain->id])->html();
+    $row=preg_match('/>\s*Nameservers\s*</',$html,$at,PREG_OFFSET_CAPTURE)?substr($html,$at[0][1],2500):'';
+    preg_match('/Not read|Missing/',$row,$m);
+    return [$m[0]??null,str_contains($row,'danger'),str_contains($html,'Registrar read failed'),str_contains($html,'Registrar records are out of date'),$row];
+};
+[$state,$red,$failedTitle,$lateTitle,$row]=$nameservers();
+expect([$state,$red,$failedTitle,$lateTitle]===['Not read',false,false,false],'Before any read, Nameservers is a neutral Not read with no read notice: '.json_encode([$state,$red,$failedTitle,$lateTitle]).' '.preg_replace('/\s+/',' ',$row));
+$unreadWork=DB::table('domains_observation_work')->insertGetId(['server_id'=>$unreadDomain->server_id,'account_fingerprint'=>$unreadDomain->account_fingerprint,
+    'domain_id'=>$unreadDomain->id,'generation'=>$unreadDomain->authority_generation,'due_at'=>time()-3600,'safe_code'=>null,'tries'=>0]);
+[$state,$red,$failedTitle,$lateTitle,$row]=$nameservers();
+expect([$state,$red,$failedTitle,$lateTitle]===['Missing',false,false,true],'A late read leaves Nameservers gray Missing under Registrar records are out of date: '.json_encode([$state,$red,$failedTitle,$lateTitle]).' '.preg_replace('/\s+/',' ',$row));
+DB::table('domains_observation_work')->where('id',$unreadWork)->update(['safe_code'=>'read_failed','tries'=>1,'due_at'=>time()+3600]);
+[$state,$red,$failedTitle,$lateTitle,$row]=$nameservers();
+expect([$state,$red,$failedTitle,$lateTitle]===['Missing',false,true,false],'A failed read leaves Nameservers a calm Missing under Registrar read failed, which gives the cause once: '.json_encode([$state,$red,$failedTitle,$lateTitle]).' '.preg_replace('/\s+/',' ',$row));
+
 echo "Staff domain page and list passed.\n";$nativeSuccessful=true;

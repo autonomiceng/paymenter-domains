@@ -70,6 +70,7 @@
 /* Standalone action links stay plain; links inside a sentence are underlined. */
 .domains .domains-row__a .domains-a, .domains .domains-card dd > .domains-a, .domains .domains-card__a .domains-a, .domains .domains-linkbtn { text-decoration: none; }
 .domains .domains-a:hover { text-decoration: underline; }
+@media (pointer: coarse), (max-width: 639px) { .domains .domains-row__a .domains-a, .domains .domains-card__a .domains-a, .domains .domains-linkbtn { display: inline-flex; align-items: center; min-height: 2.75rem; } }
 .domains .domains-row__a .domains-a:hover, .domains .domains-card dd > .domains-a:hover, .domains .domains-card__a .domains-a:hover, .domains .domains-linkbtn:hover { text-decoration: none; }
 .domains .domains-back { display: inline-flex; align-items: center; gap: .25rem; font-size: .875rem; color: var(--e-muted); min-height: 2rem; }
 .domains .domains-back:hover { color: var(--e-fg); }
@@ -86,6 +87,8 @@
 .domains h3.domains-h3 { font-size: .9375rem; font-weight: 600; }
 
 @media (max-width: 639px) { .domains .domains-head > .domains-btn--ghost { margin-left: -.5rem; } }
+/* Phones: a long domain name stays a two-line-at-most title above its controls, not an oversized heading. */
+@media (max-width: 639px) { .domains .domains-ph .domains-title { font-size: 1.375rem; line-height: 1.875rem; } }
 
 /* Buttons */
 /* Border-box, as the app's base styles already set: one-line buttons keep their min-height; the padding gives a label that must wrap room. */
@@ -103,7 +106,7 @@
 .domains .domains-btn--danger:hover { background: var(--e-danger-hover); }
 .domains .domains-btn--sm { min-height: 2rem; padding: 0 .75rem; font-size: .8125rem; }
 .domains .domains-btn:disabled, .domains .domains-btn[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
-@media (pointer: coarse) { .domains .domains-btn { min-height: 2.75rem; } .domains .domains-btn--sm { min-height: 2.5rem; } }
+@media (pointer: coarse), (max-width: 639px) { .domains .domains-btn, .domains .domains-btn--sm { min-height: 2.75rem; } }
 
 /* Panels and sections */
 .domains .domains-panel { --e-field: var(--e-bg); background: var(--e-panel); border: 1px solid var(--e-line); border-radius: .5rem; }
@@ -517,7 +520,9 @@
 .domains .domains-help-btn { display: inline-grid; place-items: center; inline-size: 1.5rem; block-size: 1.5rem; flex: none; border: 1px solid var(--e-line); border-radius: 999px; background: transparent; color: var(--e-muted); font-size: .8125rem; font-weight: 700; line-height: 1; cursor: help; }
 .domains .domains-help-btn:hover, .domains .domains-help-btn[aria-expanded="true"] { color: var(--e-fg); border-color: var(--e-accent); }
 .domains .domains-help-btn:focus-visible { outline: 2px solid var(--e-accent); outline-offset: 2px; }
-@media (pointer: coarse) { .domains .domains-help-btn { position: relative; } .domains .domains-help-btn::after { content: ""; position: absolute; inset: -10px; } }
+/* Phones: the help button is a full 44px box drawn as the same 24px ring; negative margins keep the row height. */
+@media (pointer: coarse), (max-width: 639px) { .domains .domains-help-btn { inline-size: 2.75rem; block-size: 2.75rem; margin: -10px -10px -10px -6px; border-color: transparent; background: radial-gradient(circle, transparent 11px, var(--e-line) 11px, var(--e-line) 12px, transparent 12.5px); }
+  .domains .domains-help-btn:hover, .domains .domains-help-btn[aria-expanded="true"] { border-color: transparent; background: radial-gradient(circle, transparent 11px, var(--e-accent) 11px, var(--e-accent) 12px, transparent 12.5px); } }
 .domains .domains-help-pop { white-space: normal; display: none; box-sizing: border-box; position: absolute; z-index: 20; top: 100%; left: 0; margin-top: .375rem; inline-size: max-content; max-inline-size: min(22rem, 100%); padding: .625rem .75rem; border: 1px solid var(--e-line); border-radius: .5rem; background: var(--e-panel); color: var(--e-fg); box-shadow: 0 .5rem 1.5rem rgb(0 0 0 / .25); font-size: .875rem; font-weight: 400; line-height: 1.375rem; }
 .domains .domains-help[data-open] .domains-help-pop, .domains .domains-help:not([data-ready]):is(:hover, :focus-within) .domains-help-pop { display: block; }
 @media (prefers-reduced-motion: no-preference) { .domains .domains-help[data-open] .domains-help-pop { animation: domains-confirm-in .12s ease-out; } }

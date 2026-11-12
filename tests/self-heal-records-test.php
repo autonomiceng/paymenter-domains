@@ -36,7 +36,8 @@ storefrontViews();
 $gatedFacts=\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::read($d->fresh(),$clock->now());
 foreach(['staff'=>view('domains::partials.record-families',['recordFamilies'=>$gatedFacts,'staff'=>true])->render(),'customer'=>$page()] as $surface=>$html){
  $dom=new DOMDocument;@$dom->loadHTML($html);$xp=new DOMXPath($dom);$nodes=$xp->query('//span[@data-record-family="dns"]');
- expect($nodes->length>0,$surface.' renders gated family');
+ // Customers with nothing read yet see one note on why, in place of a Not read line per record.
+ expect($nodes->length>0||$surface==='customer'&&str_contains($dom->textContent,'Record checks are paused'),$surface.' renders gated family');
  // Staff-only setup advice never reaches the customer page.
  if($surface==='customer'){$check(!str_contains($dom->textContent,'Processing'),'customer page shows no staff setup advice');}
 }

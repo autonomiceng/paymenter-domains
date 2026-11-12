@@ -228,7 +228,7 @@ $clock->instant=$clock->now()->modify('+1 minute');Carbon\Carbon::setTestNow($cl
 $dnsPage=Livewire\Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$dnsDomain->id]);
 $factRow=static fn($html,$label)=>storefrontDom($html)->query('//*[contains(concat(" ",normalize-space(@class)," ")," fi-in-entry ")][.//*[@role="term"][normalize-space(.)="'.$label.'"]]')->item(0);
 $missing=$factRow($dnsPage->html(),'DNS records');
-expect($missing&&str_contains($missing->textContent,'Not read yet')&&str_contains($missing->textContent,'Use Sync now to read them.'),'Unread DNS keeps the current recovery instruction after a saved change');
+expect($missing&&str_contains($missing->textContent,'Not read')&&str_contains($missing->textContent,'Use Sync now to read them.'),'Unread DNS keeps the current recovery instruction after a saved change');
 expect(str_contains($missing->textContent,'Saved.'),'The saved request remains a separate progress line under unread DNS');
 same('Saved.',ManagementProgress::for($dnsDomain->fresh())['dns']['text'],'Failed sync does not rewrite the completed request');
 $dnsPage->assertSee('DNS records')->assertSee('Saved.');

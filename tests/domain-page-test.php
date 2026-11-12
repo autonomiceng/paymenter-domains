@@ -40,7 +40,7 @@ $norm=static fn(?DOMNode $n)=>$n?trim(preg_replace('/\s+/',' ',$n->textContent))
 $card=static fn(DOMXPath $dom,string $label)=>$norm($dom->query('//section[@id="renewal"]//dt[normalize-space(text())="'.$label.'"]/following-sibling::dd[1]')->item(0));
 // A Renewal card value and its actions: the value stays on one line, the actions sit on their own line below it.
 $split=static fn(DOMXPath $dom,string $label)=>[$norm($dom->query('//section[@id="renewal"]//dt[normalize-space(text())="'.$label.'"]/following-sibling::dd[1]/span[contains(@class,"domains-card__v")]')->item(0)),
-    array_map($norm,iterator_to_array($dom->query('//section[@id="renewal"]//dt[normalize-space(text())="'.$label.'"]/following-sibling::dd[1]/span[contains(@class,"domains-card__a")]//*[self::a or self::button][contains(@class,"domains-a")]')))];
+    array_map($norm,iterator_to_array($dom->query('//section[@id="renewal"]//dt[normalize-space(text())="'.$label.'"]/following-sibling::dd[1]/span[contains(@class,"domains-card__a")]//*[self::a or self::button][contains(@class,"domains-a") or contains(@class,"domains-btn")]')))];
 
 // Held and unresolved paid transfers retain their progress through the real order projection.
 foreach (['held','uncertain'] as $state) {
@@ -62,7 +62,7 @@ foreach (['held','uncertain'] as $state) {
 $d=$domain();$html=$render($d,$summary($d,['daysLeft'=>129]));$dom=storefrontDom($html);
 same('Domains '.$name,$norm($dom->query('//nav[contains(@class,"domains-crumb")]')->item(0)),'Breadcrumb names the domain');
 same(1,$dom->query('//nav[contains(@class,"domains-crumb")]/a[@href="'.route('domains.domains.index').'"][.="Domains"]')->length,'Breadcrumb links to the list');
-same(1,$dom->query('//h1[contains(@class,"domains-mono")][starts-with(normalize-space(.),"'.$name.'")]')->length,'Name is the mono h1');
+same(1,$dom->query('//h1[starts-with(normalize-space(.),"'.$name.'")]')->length,'Name is the h1');
 same(1,$dom->query('//div[contains(@class,"domains-ph")]//span[contains(@class,"domains-pill")]')->length,'One pill in the header');
 foreach(['Domain help</a>','class="domains-tabs','>Overview<','Contact support to change','Historical invoices','Next renewal','Scroll sideways','Renewal settings','registrar auto-renew','Save nameservers','Use default nameservers','Transfer code','transfer code','Domain privacy','—']as$gone){expect(!str_contains($html,$gone),'Removed: '.$gone);}
 same(['Registrar: Enom.'],array_map($norm,iterator_to_array($dom->query('//dialog[@id="edit-nameservers"]/form/p[starts-with(normalize-space(.),"Registrar:")]'))),'The nameserver editor quietly names its saved registrar once');
@@ -98,7 +98,7 @@ expect(!str_contains(strip_tags($html),'WHOIS privacy')&&!str_contains($html,'/m
 same(['Jane Doe jane@example.com',['Edit']],[$text('contacts'),$action('contacts')],'Owner row: registrant name and email');
 same('Contacts',$norm($dom->query('//li[@id="contacts"]/span[contains(@class,"domains-row__l")]/text()')->item(0)),'Contacts row label');
 same('Contacts',$norm($dom->query('//dialog[@id="edit-contacts"]//h3')->item(0)),'Contacts dialog title');
-same(0,$dom->query('//*[contains(@class,"domains-row__a")]//*[self::a or self::button][not(contains(@class,"domains-a"))]')->length,'Every row action uses the one link style');
+same(0,$dom->query('//*[contains(@class,"domains-row__a")]//*[self::a or self::button][not(contains(@class,"domains-a")) and not(contains(@class,"domains-btn"))]')->length,'Every row action is a link or a button');
 expect(str_contains($html,'.domains .domains-a { color: var(--e-accent); font-weight: 600; text-decoration: underline;'),'Inline links are underlined');
 expect(str_contains($html,'.domains .domains-row__a .domains-a, .domains .domains-card dd > .domains-a, .domains .domains-card__a .domains-a, .domains .domains-linkbtn { text-decoration: none; }'),'Standalone row actions keep their link style');
 expect(str_contains($html,'.domains .domains-row__a .domains-a:hover, .domains .domains-card dd > .domains-a:hover, .domains .domains-card__a .domains-a:hover, .domains .domains-linkbtn:hover { text-decoration: none; }'),'Standalone actions have explicit no-underline hover exceptions');
@@ -218,15 +218,15 @@ foreach (['dns' => [
 // Renew now is the Expires row's action, at the end of the row as the mock places every row action, not loose under the card.
 same(['Mar 1, 2027',['Renew now']],$split($dom,'Expires'),'Expires date, with Renew now as its row action');
 same(0,$dom->query('//section[@id="renewal"]//div[contains(@class,"domains-panel__b")]/a[.="Renew now"]')->length,'Renew now is not loose under the card');
-expect(str_starts_with($card($dom,'Renewal invoices'),'On Turn off'),'Renewal on');
-same(['On',['Turn off']],$split($dom,'Renewal invoices'),'Renewal action sits on its own line');
+expect(str_starts_with($card($dom,'Auto-renew'),'On Turn off'),'Renewal on');
+same(['On',['Turn off']],$split($dom,'Auto-renew'),'Renewal action sits on its own line');
 same('$14.99/yr',$card($dom,'Renewal price'),'Renewal price');
 same(1,$dom->query('//section[@id="renewal"]//a[@data-dialog-open][.="Renew now"]')->length,'Renew now button');
-// Four months before expiry Renew now is a quiet link, not the page's main action.
-same('domains-a',$dom->query('//section[@id="renewal"]//a[@data-dialog-open][.="Renew now"]')->item(0)?->getAttribute('class'),'Renew now stays a quiet row link until renewal is near');
+// Four months before expiry Renew now is a secondary button, not the page's main action.
+same('domains-btn domains-btn--secondary domains-btn--sm',$dom->query('//section[@id="renewal"]//a[@data-dialog-open][.="Renew now"]')->item(0)?->getAttribute('class'),'Renew now stays secondary until renewal is near');
 // The last day to renew online is a fact about expiry, so it sits under the dialog's Expires date.
 same(['Renew online by Feb 28, 2027.'],array_map($norm,iterator_to_array($dom->query('//dialog[@id="edit-renew"]//dt[.="Expires"]/following-sibling::dd[1]/span[@class="domains-sub"][time[@datetime="2027-02-28"]]'))),'The renewal deadline sits under the dialog Expires date');
-foreach(['Renew '.$name,'>Years<','Create invoice','Turn off renewal invoices?','This stops scheduled renewal invoices. You can still use Renew now when your domain is eligible. An invoice already issued stays payable. Paying it can still renew '.$name.'.']as$t){expect(str_contains($html,$t),'Renewal card: '.$t);}
+foreach(['Renew '.$name,'>Years<','Create invoice','Turn off auto-renew?','We stop sending renewal invoices. An invoice already sent stays payable, and Renew now still works.']as$t){expect(str_contains($html,$t),'Renewal card: '.$t);}
 same(0,$dom->query('//div[contains(@class,"domains-notice")]')->length,'An active domain has no notice');
 same('No changes yet.',$norm($dom->query('//section[@id="history"]//p')->item(0)),'Empty history');
 
@@ -240,12 +240,12 @@ same('Missing Contact support Not issued yet. Expected Oct 3, 2026.',$card($dom,
 $d=$domain(['status'=>'Expired','tone'=>'bad','expiry'=>'2026-10-01']);$dom=storefrontDom($render($d,$summary($d,['daysLeft'=>-21,'renewalInvoiceOverdue'=>true,'renewalIssueAt'=>'2026-09-01'])));
 same('Missing Contact support Not issued yet. Expected Sep 1, 2026.',$card($dom,'Next invoice'),'An expired domain never says its invoice issues on a passed date');
 // Planned, due, paid and cancelled invoices.
-// Renewal On: Auto Pay has its own row and says what it does to the renewal invoice.
+// Renewal On: the Auto-renew row says how the renewal invoice is paid, with the Auto Pay link when it is off.
 $on=$domain(['renewal'=>'On','actions'=>['show'=>'/domains/1','autoPay'=>'/services/1#auto-pay']]);
-$autoPay=static fn(DOMXPath $dom)=>[...$split($dom,'Auto Pay'),$norm($dom->query('//section[@id="renewal"]//dt[normalize-space(text())="Auto Pay"]/following-sibling::dd[1]/span[contains(@class,"domains-sub")]')->item(0))];
-same(['Off',['Manage Auto Pay'],'We send you an invoice and you pay it to renew.'],$autoPay(storefrontDom($render($on,$summary($on)))),'Auto Pay off explains the invoice');
+$autoPay=static fn(DOMXPath $dom)=>[$norm($dom->query('//section[@id="renewal"]//dt[starts-with(normalize-space(.),"Auto-renew")]/following-sibling::dd[1]/span[contains(@class,"domains-sub")]')->item(0)),$dom->query('//section[@id="renewal"]//dt[starts-with(normalize-space(.),"Auto-renew")]/following-sibling::dd[1]//a[@href="/services/1#auto-pay"]')->length,$dom->query('//section[@id="renewal"]//dt[normalize-space(.)="Auto Pay"]')->length];
+same(['We send a renewal invoice. Pay it to renew. Set up Auto Pay',1,0],$autoPay(storefrontDom($render($on,$summary($on)))),'Auto Pay off explains the invoice and links to Auto Pay');
 $on=$domain(['renewal'=>'On','autoPay'=>true]);
-same(['On',[],'We charge your saved payment method for each renewal invoice.'],$autoPay(storefrontDom($render($on,$summary($on)))),'Auto Pay on says the card is charged');
+same(['Auto Pay charges your saved payment method for each renewal.',0,0],$autoPay(storefrontDom($render($on,$summary($on)))),'Auto Pay on says the card is charged');
 $d=$domain();same('Issues Feb 1, 2027. Due Feb 8, 2027.',$card(storefrontDom($render($d,$summary($d,['renewalDueAt'=>'2027-02-08','renewalIssueAt'=>'2027-02-01']))),'Next invoice'),'Planned invoice says when it is issued and when it is due');
 $d=$domain(['renewalDue'=>'2027-02-01','renewNow'=>['invoice'=>'/invoices/9']]);$dom=storefrontDom($render($d,$summary($d)));
 same('Due Feb 1, 2027 Pay invoice',$card($dom,'Next invoice'),'Due invoice');
@@ -254,7 +254,7 @@ same(0,$dom->query('//a[.="Renew now"]')->length,'No Renew now while an invoice 
 // After a failed charge (Auto Pay or a card), the row says it failed and what to do, not only that the invoice is ready.
 $d=$domain(['renewalDue'=>'2027-02-01','renewNow'=>['invoice'=>'/invoices/9','declined'=>true]]);
 same('Due Feb 1, 2027 The last payment failed. Pay the invoice with another card. Pay invoice',$card(storefrontDom($render($d,$summary($d))),'Next invoice'),'A failed charge says so with its next step');
-same('Paid Current date. The new one shows once the renewal completes.',$card(storefrontDom($render($domain(['renewNow'=>['status'=>'paid']]))),'Renewal invoice').' '.preg_replace('/^.*2027 /','',$card(storefrontDom($render($domain(['renewNow'=>['status'=>'paid']]))),'Expires')),'Paid invoice');
+same('Paid Current expiry date. It updates when the renewal completes.',$card(storefrontDom($render($domain(['renewNow'=>['status'=>'paid']]))),'Renewal invoice').' '.preg_replace('/^.*2027 /','',$card(storefrontDom($render($domain(['renewNow'=>['status'=>'paid']]))),'Expires')),'Paid invoice');
 same('Missing Contact support Invoice cancelled',$card(storefrontDom($render($d=$domain(['renewNow'=>['status'=>'cancelled']]),$summary($d))),'Next invoice'),'Cancelled invoice');
 $dom=storefrontDom($render($d=$domain(['renewal'=>'Off','renewNow'=>['status'=>'review']]),$summary($d)));
 same('Under review Renewal being checked. No action needed.',$card($dom,'Next invoice'),'Invoice under review shows even with auto-renew off');
@@ -267,13 +267,13 @@ same('Under review Renewal being checked.',$card(storefrontDom($render($d,$summa
 
 // Auto-renew off by the owner, and stopped by staff.
 $d=$domain(['renewal'=>'Off','renewalOff'=>'owner','autoRenew'=>['url'=>'/domains/1/auto-renew','enabled'=>false]]);$html=$render($d,$summary($d));$dom=storefrontDom($html);
-same(['Mar 1, 2027 Cancels Mar 1, 2027 Renew now','Off Turn on'],[$card($dom,'Expires'),$card($dom,'Renewal invoices')],'Owner off');
-same(['Off',['Turn on']],$split($dom,'Renewal invoices'),'Turn on sits on its own line');
+same(['Mar 1, 2027 Cancels Mar 1, 2027 Renew now','Off Turn on'],[$card($dom,'Expires'),$card($dom,'Auto-renew')],'Owner off');
+same(['Off',['Turn on']],$split($dom,'Auto-renew'),'Turn on sits on its own line');
 same(null,$card($dom,'Next invoice'),'No next invoice while off');
 expect(!str_contains($html,'Auto-renew is off.'),'No auto-renew notice');
 $d=$domain(['renewal'=>'Off','renewalOff'=>'staff','autoRenew'=>[],'renewNow'=>[]]);$dom=storefrontDom($render($d,$summary($d)));
-same('Off Contact support',$card($dom,'Renewal invoices'),'Staff stop');
-same(['Off',['Contact support']],$split($dom,'Renewal invoices'),'Contact support sits on its own line');
+same('Off Contact support',$card($dom,'Auto-renew'),'Staff stop');
+same(['Off',['Contact support']],$split($dom,'Auto-renew'),'Contact support sits on its own line');
 
 // Missing expiry; pending transfer; setup; cutoff; import; demo sync paused; test mode.
 // Renew now needs a registrar expiry, so a domain without one has no Renew now.
@@ -300,7 +300,7 @@ $pending=$domain(['status'=>'Pending transfer','tone'=>'info','renewal'=>'','exp
 $dom=storefrontDom($render($pending,$summary($pending,['expiryWaits'=>'transfer'])));
 same('Enter the auth code from your current registrar. Enter auth code',$norm($dom->query('//div[contains(@class,"domains-notice")]')->item(0)),'Pending transfer notice');
 same('Shows when the transfer finishes',$card($dom,'Expires'),'Pending transfer expiry says when it shows, not Missing');
-same([null,null],[$card($dom,'Renewal invoices'),$card($dom,'Next invoice')],'No renewal timing for an inactive domain');
+same([null,null],[$card($dom,'Auto-renew'),$card($dom,'Next invoice')],'No renewal timing for an inactive domain');
 $saved=new OwnedDomain(...[...get_object_vars($pending),'transfer'=>['open'=>true,'received'=>true,'phase'=>'editing']]);
 $dom=storefrontDom($render($saved));same('Saved Change auth code',$card($dom,'Auth code'),'Saved auth code');same(['Saved',['Change auth code']],$split($dom,'Auth code'),'Change auth code sits on its own line');same(0,$dom->query('//div[contains(@class,"domains-notice")]')->length,'No notice once saved');
 $setup=static fn(array $s,array $t=[])=>$domain(['status'=>'Action required','tone'=>'warn','renewal'=>'','management'=>[],'actions'=>['show'=>'/domains/1','setup'=>'/domains/1/setup'],'setup'=>$s,'transfer'=>$t]);
@@ -332,7 +332,7 @@ same('Changes are on hold until we finish checking an earlier request. There’s
 $dom=storefrontDom($render($d=$domain(['changesUnavailable'=>true,'changesRefused'=>7,'renewNow'=>['status'=>'review']]),$summary($d)));
 same('Under review Renewal being checked.',$card($dom,'Next invoice'),'Renewal under review leaves the no-action line to the notice');
 $text=$dom->document->textContent;same(1,substr_count($text,'nothing you need to do')+substr_count($text,'No action needed'),'No-action reassurance once per page');
-same('Changes to this domain are on hold right now. Try again later.',DomainPage::notice($domain(['changesUnavailable'=>true]),'/tickets/create')['text']??null,'No known cause stays general');
+same('Changes to this domain are paused while we check it with the registrar. There’s nothing you need to do.',DomainPage::notice($domain(['changesUnavailable'=>true]),'/tickets/create')['text']??null,'No known cause stays general');
 $expired=DomainPage::notice($domain(['statusReason'=>\Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus::LATE]),'/tickets/create');
 same(['This domain has expired. Contact support to check whether it can still be renewed.','Contact support','/tickets/create'],[$expired['text'],$expired['action']['label'],$expired['action']['url']],'An expired domain says what to do next, with the way to do it');
 

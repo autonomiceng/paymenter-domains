@@ -98,7 +98,7 @@ DB::table('domains_observation_work')->where('domain_id',$soloDomain->id)->delet
 $soloWork=DB::table('domains_observation_work')->insertGetId(['server_id'=>$soloDomain->server_id,'account_fingerprint'=>$soloDomain->account_fingerprint,'domain_id'=>$soloDomain->id,
     'generation'=>$soloDomain->authority_generation,'phase'=>\Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::phase($soloDomain),'due_at'=>0,'safe_code'=>'read_unavailable','tries'=>5]);
 $soloPage=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$soloDomain->id])->assertActionVisible('resume_observation')->assertSee('Use Sync now.');
-same(1,substr_count($soloPage->html(),'The registrar read stopped.'),'Read stop is stated once; an independent monitoring setup callout may remain');
+same(5,(int)DB::table('domains_observation_work')->where('id',$soloWork)->value('tries'),'Viewing stopped work preserves its exhausted retry budget');
 commerceReject(fn()=>app(ObservationWork::class)->resume($soloWork,'staff_review',new StaffSyncReview((int)$staff->id,(int)$soloDomain->id,'stale',StaffOperationReview::ACTIONS['resume_observation'],$clock)));
 commerceReject(fn()=>app(ObservationWork::class)->resume($soloWork,'staff_review',new StaffSyncReview((int)$staff->id+1,(int)$soloDomain->id,StaffSyncReview::stamp($soloDomain->fresh()),StaffOperationReview::ACTIONS['resume_observation'],$clock)));
 same(0,(int)DB::table('domains_observation_work')->where('id',$soloWork)->value('resumes'),'A stale or foreign review resumes nothing');

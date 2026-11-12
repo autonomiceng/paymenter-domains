@@ -17,6 +17,8 @@ final class DomainEditActions
     private const CONTACT=['first_name'=>'First name','last_name'=>'Last name','organization_name'=>'Organization','address1'=>'Address','address2'=>'Address line 2','city'=>'City',
         'state_province'=>'State or province','postal_code'=>'Postal code','country'=>'Country code','email_address'=>'Email','phone'=>'Phone'];
     private const DNS_TYPES=['A'=>'A (IPv4)','AAAA'=>'AAAA (IPv6)','CNAME'=>'CNAME (alias)','MX'=>'MX (mail)','MXE'=>'MXE (mail IP)','TXT'=>'TXT (text)','URL'=>'URL (redirect)','FRAME'=>'FRAME (masked redirect)'];
+    /** The hold with no known cause. */
+    public const HELD="Changes are on hold right now. Reload this page. If it keeps happening, check the alerts on this page.";
     /** Engine refusals => why, and what to do. Unknown refusals get the generic line. */
     private const FAILURES=[
         'Prior operation unresolved.'=>'Another change is still running. Check History, then try again.',
@@ -60,7 +62,7 @@ final class DomainEditActions
             (bool)($d->renewal_policy['automatic_spend_paused']??false)=>$plain('Changes are on hold: orders are paused for this domain. Check the alerts on this page.'),
             $refused===DomainManagement::SWITCH_OFF=>self::switchOff($d),
             is_int($refused)=>$plain('On hold until request #'.$refused.' is checked.',$refused,'Wait until request #'.$refused.' is checked'),
-            default=>$plain(self::FAILURES[$refused]??"Changes are on hold right now. Reload this page. If it keeps happening, check the alerts on this page."),
+            default=>$plain(self::FAILURES[$refused]??self::HELD),
         };
     }
     private static function switchOff(Domain $d): array

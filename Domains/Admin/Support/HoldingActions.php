@@ -13,9 +13,9 @@ use Paymenter\Extensions\Servers\Domains\Services\{HoldingLocks,RenewalStop,Staf
 /** Owned holding actions only; native service controls remain upstream. */
 final class HoldingActions
 {
-    /** The same words as the customer's Renewal invoices row. */
+    /** The same words as the customer's Auto-renew row. */
     public const LABELS=['stop'=>'Turn off','resume'=>'Turn on'];
-    private const DONE=['stop'=>'Renewal invoices turned off','resume'=>'Renewal invoices turned on'];
+    private const DONE=['stop'=>'Auto-renew turned off','resume'=>'Auto-renew turned on'];
     private const CHANGED='This domain changed. Reload the page and try again.';
     /** Service refusals => the dialog's failure line. Unknown refusals get the generic line. */
     private const FAILURES=[
@@ -37,7 +37,7 @@ final class HoldingActions
             $label=self::LABELS[$name];
             $out[]=Action::make($name)->label($label)->color('gray')->modalSubmitAction(fn(Action $action)=>$name==='stop'?$action->color('danger'):$action)
                 ->visible(fn()=>Staff::can(StaffHoldingReview::permission($name))&&($name==='stop'?!$stopped&&DomainFacts::registered($d):$stopped))
-                ->requiresConfirmation()->modalHeading($name==='stop'?'Turn off renewal invoices?':'Turn on renewal invoices?')->modalDescription(self::description($name))->modalSubmitActionLabel($label.' renewal invoices')->modalWidth('lg')
+                ->requiresConfirmation()->modalHeading($name==='stop'?'Turn off auto-renew?':'Turn on auto-renew?')->modalDescription(self::description($name))->modalSubmitActionLabel($label.' auto-renew')->modalWidth('lg')
                 ->schema([Hidden::make('review_key')->default(fn()=>StaffHoldingReview::ticket((int)Auth::id(),(int)$d->id,$name,$stamp,app(Clock::class))),
                     Textarea::make('reason')->label('Reason')->required()->minLength(5)->maxLength(500)->rows(3)
                         ->rules(['regex:'.StaffReason::SINGLE_LINE])->validationMessages(['regex'=>'Use one line.'])])

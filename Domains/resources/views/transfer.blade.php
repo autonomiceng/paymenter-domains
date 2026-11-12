@@ -1,10 +1,11 @@
 {{-- Enom 444f31c transfer view; MIT, Copyright (c) 2026 Autonomic Engineering. --}}
-@component('layouts.app', ['title' => 'Transfer a domain', 'sidebar' => true, 'spa' => false])
+@component('layouts.app', ['title' => 'Transfer a domain', 'sidebar' => auth()->check(), 'spa' => false])
 <div class="container mt-14 mb-10"><div class="domains">
 @include('domains::partials.styles')
 @include('domains::partials.test-banner', ['test' => $testEnvironment])
 @php($listed = \Paymenter\Extensions\Servers\Domains\Http\DomainList::reachable())
-<div><a class="domains-back" href="{{ route($listed ? 'domains.domains.index' : 'domains.domains.search') }}"><x-ri-arrow-left-s-line class="domains-i" aria-hidden="true" />{{ $listed ? 'Domains' : 'Register a domain' }}</a>
+{{-- Back only to a domain list the visitor can open, as on Register; the Register tab below is the way to registration. --}}
+<div>@if ($listed)<a class="domains-back" href="{{ route('domains.domains.index') }}"><x-ri-arrow-left-s-line class="domains-i" aria-hidden="true" />Domains</a>@endif
 <div class="domains-head domains-head--search"><div><h1 class="domains-title">Transfer a domain</h1><p class="domains-lede">Move a domain you own from another registrar. A transfer adds one year to its expiry date.</p></div></div></div>
 @include('domains::partials.acquire-tabs', ['current' => 'transfer'])
 @include('domains::partials.notices', ['fieldKeys' => ['domain'], 'summary' => false])

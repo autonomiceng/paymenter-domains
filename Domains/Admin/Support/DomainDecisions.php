@@ -111,7 +111,7 @@ final class DomainDecisions
             catch (\Illuminate\Contracts\Encryption\DecryptException) { $sections=$records=[]; }
             if ($d->registrar_key==='enom'&&filter_var($d->server?->settings()->where('key','domains_dns_tools')->value('value'),FILTER_VALIDATE_BOOLEAN)) {
                 $count=isset($records['dns'])?count($records['dns']):null;
-                $f['DNS records']=Facts::row($count===null?(ObservationRecords::limitNotice($d)===null?'Not read yet':null):$count.' '.($count===1?'record':'records'),sub:$count===null?(ObservationRecords::limitNotice($d)??(Staff::can('admin.domains.manage')?'Use Sync now to read them.':null)):(empty($records['srv'])?null:count($records['srv']).' SRV '.(count($records['srv'])===1?'record':'records').'.'));
+                $f['DNS records']=Facts::row($count===null?(ObservationRecords::limitNotice($d)===null?Missing::NOT_READ:null):$count.' '.($count===1?'record':'records'),sub:$count===null?(ObservationRecords::limitNotice($d)??(Staff::can('admin.domains.manage')?'Use Sync now to read them.':null)):(empty($records['srv'])?null:count($records['srv']).' SRV '.(count($records['srv'])===1?'record':'records').'.'));
                 if ($count!==null) { $f['DNS records']['asOf']=$sections['dns']['at']??null; }
             }
             if ($d->registrar_key==='namesilo') {
@@ -180,7 +180,7 @@ final class DomainDecisions
         // so their Missing keeps its own step.
         if($registered && ($problem=self::readProblem($d))!==null){
             foreach(['Expires','In registrar account','Nameservers','Transfer lock','WHOIS privacy','Registrar auto-renew','DNS records'] as $label){
-                if(isset($f[$label]) && ($f[$label]['value']===null || $f[$label]['value']==='Not read yet')){$f[$label]['value']=null;$f[$label]['sub']=null;}
+                if(isset($f[$label]) && ($f[$label]['value']===null || $f[$label]['value']===Missing::NOT_READ)){$f[$label]['value']=null;$f[$label]['sub']=null;}
             }
             if(isset($f['Last sync'])){
                 $stopped=!self::ended($d)&&(self::hold($d)['stopped']??false);

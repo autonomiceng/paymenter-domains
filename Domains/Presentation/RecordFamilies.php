@@ -7,7 +7,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{ObservationProjection,Observa
 /** No inferred completeness or edit grants. Last-good evidence remains historical after a failed read. */
 final class RecordFamilies
 {
-    /** What separate public and registrar checks mean for staff. The value beside it already says "Separate checks". */
+    /** What separate public and registrar checks mean for staff. */
     public const EVIDENCE='Public DNS can’t confirm a registrar change or renewal.';
     public static function owner(OwnedDomain $page,array $facts): OwnedDomain
     {
@@ -57,6 +57,8 @@ final class RecordFamilies
         // Only queued, on-time read work can promise the first read; without it each family is Missing.
         $initial=$readable&&!$cancelled&&$d->status==='active'&&$status['last_complete_at']===null&&!$hold&&!$status['read_code']&&!$status['read_stopped']&&!$status['records_paused']
             &&$status['next_read']!==null&&!$status['read_overdue'];
+        // A failed, stopped or overdue read is a problem staff fix (Missing, red). A read that has not happened yet is neutral (Not read).
+        $failed=(bool)(($status['read_code']??null)||($status['read_stopped']??false)||($status['read_overdue']??false)||($status['failed_family']??null));
         $rows=[];$caa=[];$caaAt=null;
         foreach(['settings'=>['nameservers'=>'Nameservers','contacts'=>'Contacts','flags'=>'Domain settings'],'families'=>['dns'=>'DNS records','srv'=>'SRV records','ds'=>'DS records','glue'=>'Glue records']] as $group=>$labels){
             foreach($labels as $kind=>$label){$f=$status[$group][$kind];$state=$f['expectation']==='unsupported'?'unsupported':$f['state'];
@@ -68,7 +70,7 @@ final class RecordFamilies
                 $checked=$count.' '.$unit.' checked.';
                 // A stopped read won't refresh anything; the page notice names Resume sync.
                 $next=($status['read_stopped']??false)?'':($kind==='contacts'?'Refresh contacts before editing.':($kind==='nameservers'?'Refresh nameservers before editing.':'Sync this domain before editing.'));
-                $rows[]=[...array_intersect_key($status,array_flip(['next_read','read_checking','read_cause','records_paused'])),'initial_read_pending'=>$initial,'count'=>$count,'kind'=>$kind,'label'=>$label,'state'=>$state,'value'=>ucfirst($state),'at'=>$f['at'],'last_good_at'=>$f['last_good_at'],
+                $rows[]=[...array_intersect_key($status,array_flip(['next_read','read_checking','read_cause','records_paused'])),'initial_read_pending'=>$initial,'read_failed'=>$failed,'count'=>$count,'kind'=>$kind,'label'=>$label,'state'=>$state,'value'=>ucfirst($state),'at'=>$f['at'],'last_good_at'=>$f['last_good_at'],
                     'customer'=>match($state){'complete'=>$checked,'partial'=>$count.' '.$unit.' read. We’re checking the rest. Editing will return when the check finishes.','unsupported'=>'These records cannot be read here.',default=>'We’re checking these records.'},
                     'staff'=>match($state){'complete'=>$checked,'partial'=>$returned.$next.' Valid siblings are retained; whole-list editing stays blocked.','unsupported'=>'No supported read contract. This is not an empty record list.',default=>'No current complete read. Sync this domain.'}];
                 $index=array_key_last($rows);
@@ -99,6 +101,6 @@ final class RecordFamilies
         // Only a family the registrar once confirmed has last confirmed data to keep.
         $status['retained']=collect($rows)->contains(fn($row)=>$row['last_good_at']!==null||in_array($row['state'],['complete','partial'],true));
         // A due read that has not started waits its turn in the account's read queue: staff read that, not a past time as the next read.
-        return [...$status,'read_queued'=>$status['next_read']!==null&&$status['next_read']<=$now->getTimestamp(),'initial_read_pending'=>$initial,'registrar_key'=>$d->registrar_key,'cancelled_without_records'=>$cancelled,'not_at_registrar'=>$notYet,'current_read'=>$currentRead,'rows'=>$rows,'caa'=>$caa,'caa_at'=>$caaAt,'staff_hold'=>match($hold){'budget_exhausted','call_cap'=>'Account call limit reached.','caa_unsupported'=>'CAA records cannot be read from Enom here. Manage DNS at Enom.',default=>null}];
+        return [...$status,'read_failed'=>$failed,'read_queued'=>$status['next_read']!==null&&$status['next_read']<=$now->getTimestamp(),'initial_read_pending'=>$initial,'registrar_key'=>$d->registrar_key,'cancelled_without_records'=>$cancelled,'not_at_registrar'=>$notYet,'current_read'=>$currentRead,'rows'=>$rows,'caa'=>$caa,'caa_at'=>$caaAt,'staff_hold'=>match($hold){'budget_exhausted','call_cap'=>'Account call limit reached.','caa_unsupported'=>'CAA records cannot be read from Enom here. Manage DNS at Enom.',default=>null}];
     }
 }

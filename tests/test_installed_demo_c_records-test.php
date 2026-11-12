@@ -100,8 +100,8 @@ $unknown=new Domain(['domain'=>'example.com','registrar_key'=>'enom','server_id'
 $unreadManagement=$existing;foreach(['dns','srv','ds'] as $key){$unreadManagement[$key]['records']=null;$unreadManagement[$key]['actions']=[];}
 $unread=RecordFamilies::owner(new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(...[...get_object_vars($owned),'management'=>$unreadManagement]),RecordFamilies::read($unknown,$now));
 $unreadHtml=view('domains::partials.owner-management',['domain'=>$unread,'caps'=>['dns','srv','ds'],'keys'=>array_fill_keys(['dns','srv','ds','ds_delete'],str_repeat('b',64))])->render();
-$check(!str_contains($unreadHtml,'Contact support to sync')&&str_contains($unreadHtml,\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::NOT_READ)&&!str_contains($unreadHtml,'domains-missing'),'Unqueued unknown registrar families say Not read yet, calm, without a support chore');
-// The rows say Not read yet; why is said once above them, in plain words.
+$check(!str_contains($unreadHtml,'Contact support to sync')&&str_contains($unreadHtml,\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::NOT_READ)&&!str_contains($unreadHtml,'domains-missing'),'Unqueued unknown registrar families say Not read, calm, without a support chore');
+// The rows say Not read; why is said once above them, in plain words.
 $unreadNote=view('domains::partials.record-read-note',['recordFamilies'=>RecordFamilies::read($unknown,$now)])->render();
 $check(str_contains($unreadNote,\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::NOT_READ_NOTE)&&!str_contains($unreadHtml,\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::NOT_READ_NOTE),'Unknown families explain the missing read once');
 // Partial glue discovery must keep a separately authorized per-host addition.

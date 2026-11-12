@@ -76,7 +76,7 @@ final class DomainPage
             self::initialRead($d) => ['tone'=>'info','text'=>self::INITIAL_READ,'action'=>null],
             $d->changesUnavailable && $d->changesRefused === DomainManagement::SWITCH_OFF => ['tone' => 'info', 'text' => 'Changes are on hold: DNS, nameservers and contacts are Off. Contact us to turn them on.', 'action' => $contact],
             $d->changesUnavailable && is_int($d->changesRefused) => ['tone' => 'info', 'text' => 'Changes are on hold until we finish checking an earlier request. '.self::NOTHING_TO_DO, 'action' => $contact],
-            $d->changesUnavailable => ['tone' => 'info', 'text' => 'Changes to this domain are on hold right now. Try again later.', 'action' => $contact],
+            $d->changesUnavailable => self::ours(self::HELD[$d->changesRefused] ?? 'Changes to this domain are paused while we check it with the registrar. '.self::NOTHING_TO_DO, $contact),
             default => null,
         };
         // Funding describes the issued order even when setup or a registrar check supplies its next step.
@@ -96,6 +96,12 @@ final class DomainPage
         if (!$d->dnsCorrection) { return null; }
         return ['tone'=>'info','text'=>'The registered nameservers do not match the registration settings. '.($change?'Set up DNS with your provider, then change nameservers.':($contact?'Set up DNS with your provider, then contact support to change nameservers.':'Set up DNS with your provider. Nameserver changes are currently unavailable.')),'action'=>$change ?? $contact,'asks'=>true];
     }
+    /** Why changes wait, in the customer's words, by the refusal reason DomainManagement gives. */
+    private const HELD = [
+        'Prior operation unresolved.' => 'Changes open once an earlier change finishes. '.self::NOTHING_TO_DO,
+        'Current records required.' => 'Changes open once we’ve read this domain’s records from the registrar. '.self::NOTHING_TO_DO,
+        'Management lifecycle held.' => 'Changes are on hold while this domain isn’t active.',
+    ];
     /** A notice for work that is ours: blue, with the way to reach us. */
     private static function ours(string $text, ?array $contact): array
     { return ['tone' => 'info', 'text' => $text, 'action' => $contact]; }
@@ -132,11 +138,11 @@ final class DomainPage
     /** The renewal invoice's state in words, the same on the domain page and the Domains list (DomainStates::cycle). */
     /** The open renewal invoice's last charge failed, whether Auto Pay or a card made it. */
     /** Beside the current expiry while a paid renewal is under way, so it never reads as the new date. */
-    public const EXPIRY_PENDING = 'Current date. The new one shows once the renewal completes.';
+    public const EXPIRY_PENDING = 'Current expiry date. It updates when the renewal completes.';
     public const DECLINED = 'The last payment failed. Pay the invoice with another card.';
     /** An unread registrar record on the customer page: a calm word per row, and one note above the rows. */
-    public const NOT_READ = 'Not read yet';
-    public const NOT_READ_NOTE = 'We have not read these records from the registrar yet. They show here after the next read.';
+    public const NOT_READ = Missing::NOT_READ;
+    public const NOT_READ_NOTE = 'Nameservers, contacts and DNS records show here once we’ve read them from the registrar.';
     /** A paid cycle has no next invoice yet, so its row names the invoice it shows. */
     public const PAID_LABEL = 'Renewal invoice';
     public const INVOICE = ['paid' => 'Paid', 'review' => 'Under review', 'cancelled' => 'Invoice cancelled', 'closed' => 'Renewal did not finish'];

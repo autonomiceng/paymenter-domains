@@ -14,6 +14,8 @@ final class Missing
     /** Cause for a price or offer a customer needs before buying. */
     public const ASK_FIRST = 'Contact support before you buy';
     public const LABEL = 'Missing';
+    /** A registrar value we have not read yet, and no read has failed: neutral, for customers and staff alike. Missing (red) is kept for a failed read. */
+    public const NOT_READ = 'Not read';
     /** The staff err mark in the row size, its cross cut out so it sits on any surface. */
     public const ICON = '<svg class="domains-missing-mark" width="14" height="16" viewBox="0 0 16 18" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M8 .3l7.7 4.3v8.8L8 17.7.3 13.4V4.6zM8 7.8l2.4-2.4 1.2 1.2L9.2 9l2.4 2.4-1.2 1.2L8 10.2l-2.4 2.4-1.2-1.2L6.8 9 4.4 6.6l1.2-1.2z"/></svg>';
     public const COLOR = 'danger';

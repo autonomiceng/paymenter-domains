@@ -6,7 +6,7 @@ use Illuminate\Support\Str;
 final class OwnerHelp
 {
     // Stable help page anchors and the ## heading each one belongs to.
-    public const ANCHORS=['nameservers'=>'Nameservers','glue-records'=>'Glue records','dns-records'=>'DNS records','dnssec'=>'DNSSEC','transfer-lock'=>'Transfer lock','transfer-code'=>'Auth code','privacy'=>'WHOIS privacy','contacts'=>'Contacts','auto-renew'=>'Renewal invoices'];
+    public const ANCHORS=['nameservers'=>'Nameservers','glue-records'=>'Glue records','dns-records'=>'DNS records','dnssec'=>'DNSSEC','transfer-lock'=>'Transfer lock','transfer-code'=>'Auth code','privacy'=>'WHOIS privacy','contacts'=>'Contacts','auto-renew'=>'Auto-renew'];
     // Owner management sections and the anchor that explains each one.
     public const SECTIONS=['nameservers'=>'nameservers','glue'=>'glue-records','dns'=>'dns-records','srv'=>'dns-records','ds'=>'dnssec','lock'=>'transfer-lock','auth_code_email'=>'transfer-code','privacy'=>'privacy','contacts'=>'contacts','auto_renew_off'=>'auto-renew','auto-renew'=>'auto-renew'];
     // One short line per popover. The help page has the full text.
@@ -19,13 +19,15 @@ final class OwnerHelp
         'transfer-code'=>'Also called an EPP code. Treat it like a password.',
         'privacy'=>'Some registries require the owner’s details to stay public.',
         'contacts'=>'The owner holds the domain. The other contacts handle admin, tech and billing.',
-        'auto-renew'=>'Sends a renewal invoice before this domain expires. Auto Pay is a separate setting.',
+        'auto-renew'=>'We send a renewal invoice before this domain expires. With Auto Pay on, we charge your saved payment method for it.',
     ];
     /** Shared staff/customer explanation; the extension uses the site's configured company name. */
     public static function summary(string $anchor): string
     {
         $company=\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company();
-        return $anchor==='auto-renew'?($company!==''?$company.' sends':'We send').substr(self::SUMMARIES[$anchor],5):self::SUMMARIES[$anchor];
+        $text=self::SUMMARIES[$anchor];
+        // Plain string work: a company name is text, never a pattern replacement.
+        return $company!==''&&str_starts_with($text,'We send ')?$company.' sends '.substr($text,8):$text;
     }
     public static function path(): string
     {

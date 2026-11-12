@@ -60,11 +60,12 @@ class DomainResource extends Resource
             DemoTag::apply(OneLine::apply(TextColumn::make('domain')->label('Domain')->searchable()->sortable()->fontFamily(FontFamily::Mono)
                 ->description(fn(Domain $record,$livewire)=>new \Illuminate\Support\HtmlString('<span class="domains-phone-note">'.e(self::status($record,$livewire)['label']).'<br>'.e(self::note($record,$livewire)['text']).'</span>')),OneLine::NAME)),
             // Status and its next step come right after the name, so a phone shows them without scrolling.
-            TextColumn::make('status')->label('Status')->badge()->state(fn(Domain $record,$livewire)=>self::label($record,$livewire))
+            // A phone reads status and note under the name, so these two columns start at the sm breakpoint and say each fact once.
+            TextColumn::make('status')->label('Status')->badge()->visibleFrom('sm')->state(fn(Domain $record,$livewire)=>self::label($record,$livewire))
                 ->extraAttributes(fn(Domain $record,$livewire)=>StatusMark::attributes(self::tone($record,$livewire),'domain-'.$record->id))
                 ->color(fn(Domain $record,$livewire)=>self::tone($record,$livewire)),
             // The step comes first, so a cut note still shows it. Every open alert is listed on the domain page. A step that names a request opens it.
-            OneLine::apply(TextColumn::make('note')->label('Note')->state(fn(Domain $record,$livewire)=>self::note($record,$livewire)['text'])->color('gray')
+            OneLine::apply(TextColumn::make('note')->label('Note')->visibleFrom('sm')->state(fn(Domain $record,$livewire)=>self::note($record,$livewire)['text'])->color('gray')
                 ->formatStateUsing(fn(string $state,Domain $record,$livewire)=>DomainFacts::noteStep($state,self::status($record,$livewire)))
                 ->url(fn(Domain $record,$livewire)=>DomainFacts::requestUrl(self::status($record,$livewire)))
                 ->extraAttributes(fn(Domain $record,$livewire)=>StatusMark::note(self::note($record,$livewire)['act'])),OneLine::NOTE),
@@ -76,7 +77,7 @@ class DomainResource extends Resource
                 ->description(fn(Domain $record,$state,$livewire)=>$state===Missing::LABEL?DomainFacts::unread($record,self::row($record,$livewire)['sync']):null)
                 ->sortable(query: fn(Builder $query,string $direction)=>$query->orderBy('provider_expires_at',$direction))),
             // Renewal applies until the domain has ended, so pending and under-review rows show it too. A pending import bills nothing until import, as on the domain page.
-            OneLine::apply(TextColumn::make('auto_renew')->label('Renewal invoices')->state(fn(Domain $record,$livewire)=>DomainFacts::ended($record)?null:match(true) {
+            OneLine::apply(TextColumn::make('auto_renew')->label('Auto-renew')->state(fn(Domain $record,$livewire)=>DomainFacts::ended($record)?null:match(true) {
                 self::row($record,$livewire)['off']===null=>Missing::LABEL,$record->adoptionPending()||self::row($record,$livewire)['off']||self::row($record,$livewire)['accountOff']=>'Off',default=>'On'})
                 ->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::icon():null)
                 ->description(fn($state,Domain $record,$livewire)=>$state===Missing::LABEL?DomainFacts::UNREADABLE_RENEWAL:($state==='Off'&&$record->adoptionPending()?'Until import':($state==='Off'&&!self::row($record,$livewire)['off']&&self::row($record,$livewire)['accountOff']?'Account renewals off':null)))),
