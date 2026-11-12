@@ -47,7 +47,8 @@ class DomainResource extends Resource
         if (!Staff::can()) { return null; }
         return NavigationCount::read('domains',fn()=>DomainQueries::openAlertCount(Domain::query()));
     }
-    public static function getNavigationBadgeTooltip(): ?string { return 'Domains with open alerts across all registrar accounts'; }
+    public static function getNavigationBadgeUrl(): string { return static::getUrl('index',['filters'=>['alerts'=>['isActive'=>true]]]); }
+    public static function getNavigationBadgeTooltip(): ?string { return 'Domains needing staff action across all registrar accounts'; }
     public static function getNavigationBadgeColor(): string { return 'warning'; }
     public static function table(Table $table): Table
     {
@@ -56,7 +57,8 @@ class DomainResource extends Resource
         $orders=OperationQueries::ordersOffAccounts(); self::$orders??=new \WeakMap(); self::$orders[$table->getLivewire()]=$orders;
         return TableColumns::choose($table->modifyQueryUsing(fn (Builder $query) => $query
             ->with(['user:id,first_name,last_name,email', 'server:id,name', 'latestAcquisition'])),[
-            DemoTag::apply(OneLine::apply(TextColumn::make('domain')->label('Domain')->searchable()->sortable()->fontFamily(FontFamily::Mono),OneLine::NAME)),
+            DemoTag::apply(OneLine::apply(TextColumn::make('domain')->label('Domain')->searchable()->sortable()->fontFamily(FontFamily::Mono)
+                ->description(fn(Domain $record,$livewire)=>new \Illuminate\Support\HtmlString('<span class="domains-phone-note">'.e(self::status($record,$livewire)['label']).'<br>'.e(self::note($record,$livewire)['text']).'</span>')),OneLine::NAME)),
             OneLine::apply(TextColumn::make('customer')->label('Customer')->state(fn(Domain $record)=>$record->user?(trim($record->user->first_name.' '.$record->user->last_name)?:$record->user->email):null)
                 ->searchable(query:fn(Builder $query,string $search)=>self::customerSearch($query,$search)),[...OneLine::SHORT,'domains-customer-cell']),
             TextColumn::make('status')->label('Status')->badge()->state(fn(Domain $record,$livewire)=>self::label($record,$livewire))
@@ -95,7 +97,7 @@ class DomainResource extends Resource
                         ->whereDate('provider_expires_at','<=',CarbonImmutable::today()->addDays($days)) : $query;
                 }),
             // The account page's Domain alerts row links here with this filter and the account.
-            Filter::make('alerts')->label('Open alerts')->toggle()
+            Filter::make('alerts')->label('Needs attention')->toggle()
                 ->query(fn(Builder $query)=>DomainQueries::alerting($query)),
         ])->recordUrl(fn(Domain $record)=>static::getUrl('view',['record'=>$record]))
             ->defaultSort('domain')->paginated([25,50,100])->defaultPaginationPageOption(25)->searchPlaceholder('Search domain or customer');

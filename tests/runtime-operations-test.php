@@ -52,4 +52,8 @@ $heldId=DB::table('domains_operations')->insertGetId([...$original,'invoice_item
 app(\Paymenter\Extensions\Servers\Domains\Services\RuntimeDispatch::class)->enqueue($heldId);
 same($clock->now()->getTimestamp()+900,(int)DB::table('domains_runtime_operations')->where('operation_id',$heldId)->value('due_at'),'Held recovery candidates use fifteen-minute dispatch backoff');
 echo "Bounded operations-only dispatch, durable backoff and producer isolation passed.\n";
+
+$correctionId=DB::table('domains_operations')->insertGetId([...$original,'invoice_item_id'=>null,'operation_key'=>'finished-correction-retry','state'=>'succeeded','safe_code'=>'registration_correction_required']);
+$clock->instant=$clock->now()->modify('+61 seconds');$runtime->tickOperations();
+expect(Queue::pushed(RunOperation::class)->contains(fn($job)=>$job->operationId===$correctionId),'Operations turn schedules the existing correction producer for a completed registration');
 $nativeSuccessful=true;

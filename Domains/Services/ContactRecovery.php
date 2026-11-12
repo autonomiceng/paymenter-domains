@@ -49,8 +49,18 @@ final class ContactRecovery
     public static function replaceDetails(User $actor, int $operationId, #[\SensitiveParameter] array $contact, bool $saveAccount = false): Operation
     { return self::replaceUsing($actor, $operationId, 'owner_corrected_order_details', null, null, $contact, $saveAccount); }
 
+    public static function retryAccount(int $operationId, Clock $clock): void
+    {
+        $op=Operation::findOrFail($operationId);
+        if($op->action!=='register'||$op->state!=='held'||$op->safe_code!=='contact_details_required'){return;}
+        $owner=User::find($op->domain?->user_id);
+        if(!$owner){return;}
+        try{self::replaceUsing($owner,$operationId,'Account details completed',clock:$clock,automatic:true);}
+        catch(\DomainException){ /* Invalid details or changed financial authority keep the original hold. */ }
+    }
+
     private static function replaceUsing(User $actor, int $operationId, string $reason, ?StaffOperationReview $review = null,
-        ?Clock $clock = null, #[\SensitiveParameter] ?array $contact = null, bool $saveAccount = false): Operation
+        ?Clock $clock = null, #[\SensitiveParameter] ?array $contact = null, bool $saveAccount = false, bool $automatic = false): Operation
     {
         self::reason($reason);
         if ($review && ($review->action !== 'release' || $review->operationId !== $operationId || $review->actorId !== (int) $actor->id)) {
@@ -58,7 +68,7 @@ final class ContactRecovery
         }
         $hint = Operation::findOrFail($operationId); $ownerId = Domain::findOrFail($hint->domain_id)->user_id;
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Contact recovery owns its transaction.'); }
-        return DB::transaction(static function () use ($actor, $hint, $ownerId, $reason, $review, $clock, $contact, $saveAccount): Operation {
+        return DB::transaction(static function () use ($actor, $hint, $ownerId, $reason, $review, $clock, $contact, $saveAccount, $automatic): Operation {
             $users = User::whereKey([$actor->id, $ownerId])->orderBy('id')->lockForUpdate()->get()->keyBy('id');
             $currentActor = $users->get($actor->id); $owner = $users->get($ownerId);
             if (!$currentActor || !$owner || ((int) $actor->id !== (int) $ownerId && !$currentActor->hasPermission('admin.domains.manage'))) {
@@ -74,7 +84,7 @@ final class ContactRecovery
             $contacts=self::requireReplacement($op,$facts,$contact===null?ContactDetails::collect($owner):OrderContact::roles($contact),$clock?->now()??now()->toDateTimeImmutable());
             $payload=$op->payload??[];$policy=$op->policy??[];$history=$policy['contact_readmissions']??[];
             $payload['contacts'] = $contacts; $payload['setup_required'] = false; $payload['setup_fields'] = []; $payload['registry_supported'] = true;
-            $history[] = ['actor_id' => (int) $actor->id, 'owner_id' => (int) $ownerId, 'reason' => $reason,
+            $history[] = ['actor_id' => $automatic ? null : (int) $actor->id, ...($automatic ? ['source'=>'account_automatic'] : []), 'owner_id' => (int) $ownerId, 'reason' => $reason,
                 'at' => now()->toIso8601String(), 'previous_code' => $op->safe_code,
                 ...($contact===null?[]:['source'=>'order_form','saved_account'=>$saveAccount])];
             $policy['contact_readmissions'] = $history;

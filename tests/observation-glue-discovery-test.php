@@ -97,7 +97,7 @@ foreach(['GetHosts','GetDomainInfo','CheckNSStatus']as$fault){
   same($clock->now()->format(DATE_ATOM),$d->fresh()->last_synced_at->format(DATE_ATOM),'Glue parser failure still saves fresh core facts');
   foreach(['dns','srv','ds'] as $kind) { same('complete',$d->fresh()->observation['records']['families'][$kind]['state'],'Glue parser failure preserves completed '.$kind); }
   \Illuminate\Support\Facades\Auth::login(staffUser([\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::VIEW]));
-  same('Glue records held while the first registrar check runs.',\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::recordHold($d->fresh()),'The pending first automatic read is not presented as a stopped sync');
+  same(null,\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::recordHold($d->fresh()),'The pending first automatic read is not presented as a stopped sync');
   expect(\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($d->fresh())['next_read']!==null,'The initial registrar read remains queued for an automatic retry');
   \Illuminate\Support\Facades\Auth::login($user);
  }

@@ -65,7 +65,7 @@ final class StaffOperationWrites
         // A paid NameSilo order held at its contact step, with nothing sent, goes back once as the same claim.
         $contactRetry=$op->safe_code===ContactProfileHold::CODE&&ContactProfileHold::unsent($op,retry:true);
         // The retained contact step cannot be reopened or send different details; cancellation still uses its unsent proof.
-        if($op->safe_code===ContactProfileHold::CODE&&!$contactRetry&&($blocked=ContactProfileHold::releaseBlocked($op))!==null){
+        if($op->safe_code===ContactProfileHold::CODE&&($blocked=ContactProfileHold::releaseBlocked($op))!==null){
             throw new \DomainException($blocked);
         }
         if(!$balanceRetry&&!$contactRetry&&!in_array($op->safe_code,$ordinary,true)&&!self::renewalAdmissionHold($op)){

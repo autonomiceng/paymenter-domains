@@ -117,10 +117,11 @@ $check('Quote changed after modal opens',static function()use($staff,$d,$changed
     same($before,DB::table('domains_complimentary_approvals')->count(),'An unseen replacement quote adds no approval audit');
 });
 [$retry,$d]=$hold('approval-release-retry-placeholder.com');
-$check('Release is a retry until the cost is approved',static function()use($staff,$retry,$d):void {
+$check('Release waits until the cost is approved',static function()use($staff,$retry,$d):void {
     $page=Livewire::actingAs($staff)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation::class,['record'=>$retry->id]);
     $text=preg_replace('/\s+/',' ',html_entity_decode(strip_tags($page->html()),ENT_QUOTES));
-    expect(str_contains($text,'holds again while the registrar cost is above the usual. It goes ahead at this cost once the registrar cost is approved on the domain page.'),'The request says release returns to hold without approval');
+    $page->assertActionDisabled('release');
+    expect(str_contains($text,'The registrar cost needs approval; Staff with domain cost and funding access must approve the registrar cost on the domain page.'),'The request directs staff to approve the cost before release');
     expect(!str_contains($text,'Release hold queues')&&!str_contains($text,'Release hold sends'),'The request never says release sends the held cost');
     expect(preg_match('~href="'.preg_quote(e(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource::getUrl('view',['record'=>$d->id])),'~').'"[^>]*>\s*Open domain\s*<~',$page->html())===1,'The notice opens the domain page with Approve registrar cost');
     same(['held','registrar_price_increased'],[$retry->fresh()->state,$retry->fresh()->safe_code],'Rendering the request changes nothing');

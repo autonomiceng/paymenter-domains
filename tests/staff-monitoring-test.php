@@ -24,7 +24,8 @@ same('Missing',$column($list,'registration')->record($watch)->getState(),'Regist
 same('Customer #'.$uid,$column($list,'customer')->record($watch)->getState(),'Customer has its own column');same(null,$column($list,'canonical_name')->record($watch)->getDescriptionBelow(),'The name is one line');
 foreach(['status'=>'Status','customer'=>'Customer','expiry'=>'Expires within'] as $name=>$label){same($label,$filter($list,$name)->getLabel(),'Filter '.$name);}
 same(null,$filter($list,'attention'),'Attention filter merged into Status');same(null,$filter($list,'drift'),'Drift filter merged into Status');same(null,$filter($list,'state'),'State filter merged into Status');
-same(['monitoring'=>'Monitoring','problem'=>'Problem found','failed'=>'Check failed','paused'=>'Paused','stopped'=>'Stopped'],$filter($list,'status')->getOptions(),'Status filter options');
+// operator-pass-review-R1 The status filter includes the shared Needs attention destination.
+same(['attention'=>'Needs attention','monitoring'=>'Monitoring','problem'=>'Problem found','failed'=>'Check failed','paused'=>'Paused','stopped'=>'Stopped'],$filter($list,'status')->getOptions(),'Status filter options');
 Livewire::actingAs($manager)->test(ListWatches::class)->filterTable('status','paused')->assertCountTableRecords(0)->assertSee('No monitored domains match')->assertSee('Clear the search or filters to see all rows.')->assertDontSee('Turn on monitoring on a hosting product.');
 Livewire::actingAs($manager)->test(ListWatches::class)->filterTable('customer',['customer'=>(string)$uid])->assertCanSeeTableRecords([$watch]);
 

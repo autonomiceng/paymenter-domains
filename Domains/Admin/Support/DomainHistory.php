@@ -43,7 +43,7 @@ final class DomainHistory
             $rows[]=['__key'=>'audit-'.$a->id,'time'=>$a->created_at,'event'=>$enabled===null?'Auto-renew changed':'Auto-renew turned '.($enabled?'on':'off'),
                 'sub'=>null,'status'=>null,'by'=>$names[$a->actor_id]??'Customer'];
         }
-        $events=['Sync requested','Domain synced',"Couldn't read all records",'Records not read',"Couldn't sync domain",'Sync stopped','Sync needs a check'];
+        $events=['Sync requested','Sync retry scheduled','Domain synced',"Couldn't read all records",'Records not read',"Couldn't sync domain",'Sync stopped','Sync needs a check'];
         foreach (array_reverse($sync,true) as $i=>$entry) {
             if (!in_array($entry['event']??null,$events,true)) { continue; }
             $rows[]=['__key'=>'sync-'.$i,'__order'=>$i+1,'time'=>self::at($entry['at']??null),'event'=>$entry['event'],'sub'=>null,'status'=>null,

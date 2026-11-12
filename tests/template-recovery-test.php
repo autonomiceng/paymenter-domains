@@ -23,8 +23,10 @@ $check('Unreadable saved site default cannot be deleted',function()use($make,$ma
  $page->callAction('delete')->assertNotNotified('DNS template deleted');expect(WatchProfile::find($row->id)!==null,'Unreadable saved default is retained');siteDnsFixture(null);
 });
 $check('New domains Missing has one sentence boundary',function()use($manager,$profile):void{
- siteDnsFixture(null);$page=Livewire::actingAs($manager)->test(ListConfiguration::class);expect(!str_contains($page->instance()->getSubheading(),'..'),'Missing default never doubles punctuation');
- siteDnsFixture($profile->id);$next=Livewire::actingAs($manager)->test(ListConfiguration::class);expect(str_contains($next->instance()->getSubheading(),$profile->name),'Named default survives rendering');
+ siteDnsFixture(null);$page=Livewire::actingAs($manager)->test(ListConfiguration::class);$page->assertSee('Default nameservers are Missing. New domains have no nameservers to use. '.SiteDnsDefault::ASK);expect(!str_contains(strip_tags($page->html()),'Missing..'),'Missing default never doubles punctuation');
+ siteDnsFixture($profile->id);$next=Livewire::actingAs($manager)->test(ListConfiguration::class);// the named default is in the card.
+ same((int)$profile->id,$next->instance()->defaultId,'The card holds the selected default');
+ $next->assertSee($profile->name)->assertSee('Default nameservers');
 });
 $check('Linked references have truthful retained-history guidance',function()use($manager,$make,$watch):void{
  $row=$make();DB::table('domains_watch_names')->where('id',$watch->id)->update(['ns_profile_id'=>$row->id,'state'=>'linked']);

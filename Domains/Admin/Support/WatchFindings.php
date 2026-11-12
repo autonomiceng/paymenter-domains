@@ -33,9 +33,9 @@ final class WatchFindings
         return WatchDiscovery::staffPaused($watch)?self::HOSTING_SUSPENDED_STAFF_PAUSED:self::HOSTING_SUSPENDED;
     }
     /** Status filter options; Monitoring, Problem found and Check failed read the first CAP active names. */
-    public const STATUSES=['monitoring'=>'Monitoring','problem'=>'Problem found','failed'=>'Check failed','paused'=>'Paused','stopped'=>'Stopped'];
+    public const STATUSES=['attention'=>'Needs attention','monitoring'=>'Monitoring','problem'=>'Problem found','failed'=>'Check failed','paused'=>'Paused','stopped'=>'Stopped'];
     /** The statuses read from summaries rather than saved state. */
-    public const READ_STATUSES=['monitoring','problem','failed'];
+    public const READ_STATUSES=['attention','monitoring','problem','failed'];
     public const CAP=1000;
     /** @return array<int,list<string>> keyed by watch id. */
     public static function batch(iterable $watches,?int $now=null): array{return array_map(fn($r)=>$r['keys'],self::summaries($watches,$now));}
@@ -77,7 +77,7 @@ final class WatchFindings
     public static function filter(Builder $query,?string $status,mixed $livewire=null): Builder
     {
         return match($status){'paused'=>$query->where('state','paused'),'stopped'=>$query->whereIn('state',['retired','linked']),
-            'monitoring','problem','failed'=>$query->whereIn('id',is_callable([$livewire,'statusIds'])?$livewire->statusIds($status):self::statusIds($status)),default=>$query};
+            'attention','monitoring','problem','failed'=>$query->whereIn('id',is_callable([$livewire,'statusIds'])?$livewire->statusIds($status):self::statusIds($status)),default=>$query};
     }
     /** @return list<int> Active names with this status among the first CAP; four bounded batches limit decryption and response work.
      * Each row's status comes from status(), so the filter and the Status column agree, Problem found before Check failed. */
@@ -86,7 +86,7 @@ final class WatchFindings
         abort_unless(Staff::can(Writes::VIEW),403);
         $label=self::STATUSES[$status]??null;if(!in_array($status,self::READ_STATUSES,true)){return [];}
         $rows=WatchName::where('state','active')->orderBy('id')->limit(self::CAP)->with('work')->get(['id','user_id','state'])->keyBy('id');
-        $ids=[];foreach(self::summaries($rows) as $id=>$r){if(self::status($rows[$id],$r['keys'],summary:$r['summary'])['label']===$label){$ids[]=$id;}}
+        $ids=[];foreach(self::summaries($rows) as $id=>$r){if(in_array(self::status($rows[$id],$r['keys'],summary:$r['summary'])['label'],$status==='attention'?['Problem found','Check failed']:[$label],true)){$ids[]=$id;}}
         return $ids;
     }
     /** Native user details only with the native permissions, checked fresh; otherwise the neutral identifier. */

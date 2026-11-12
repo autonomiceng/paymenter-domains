@@ -8,7 +8,8 @@ use Illuminate\Support\Facades\{DB,Route};
 use Livewire\Livewire;
 use Filament\Infolists\Components\TextEntry;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\{RegistrarSetup,RegistrarAccount,RegistrarHistory};
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource;
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\{RoutingProfileResource,WatchResource};
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource\Pages\ListConfiguration;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\MonitoringSettings;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,WatchName,WatchProfile};
@@ -20,10 +21,10 @@ $entry=new \Paymenter\Extensions\Servers\Domains\Domains([]);$entry->installed()
 $staff=staffUser(array_keys(Staff::permissions()));
 $watch=DB::transaction(fn()=>WatchName::create(['user_id'=>$staff->id,'canonical_name'=>'example.com','psl_revision'=>str_repeat('a',64),
     'state'=>'active','ns_profile_id'=>null,'profile_revision'=>0,'expected_dns'=>null,'notice_preferences'=>[]]));
-staffPanel();$panel=\Filament\Facades\Filament::getCurrentPanel();$panel->resources([WatchResource::class]);
+staffPanel();$panel=\Filament\Facades\Filament::getCurrentPanel();$panel->resources([WatchResource::class,RoutingProfileResource::class]);
 $pages=[RegistrarSetup::class,RegistrarAccount::class,RegistrarHistory::class];$panel->pages($pages);
 Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($panel,$pages):void {
-    WatchResource::registerRoutes($panel);foreach($pages as$page){$page::registerRoutes($panel);}
+    WatchResource::registerRoutes($panel);RoutingProfileResource::registerRoutes($panel);foreach($pages as$page){$page::registerRoutes($panel);}
 });app('router')->getRoutes()->refreshNameLookups();
 $names=static fn(int $n)=>array_map(fn($i)=>sprintf('ns%02d.connection.test',$i),range(1,$n));
 $make=static fn(int $n)=>DB::transaction(fn()=>WatchProfile::create(['name'=>'Connection template '.$n,'nameservers'=>$names($n),
@@ -39,7 +40,7 @@ $connect=static function(string $registrar)use($snapshot):Account {
     same($saved,Setting::where('key',SiteDnsDefault::KEY)->sole()->getRawOriginal(),'Connection preserves the exact saved default');
     return $account;
 };
-$row=static fn($page)=>$page->instance()->getSchema('content')->getComponent(fn($c)=>$c instanceof TextEntry&&in_array($c->getLabel(),['Site DNS default','New domains use'],true));
+$row=static fn($page)=>$page->instance()->getSchema('content')->getComponent(fn($c)=>$c instanceof TextEntry&&in_array($c->getLabel(),['Default nameservers','New domains use'],true));
 $assertMissing=static function(Account $account,string $rule)use($staff,$row):void {
     // Account first: it must show the problem immediately after connect, without revisiting settings or upgrading.
     foreach([[RegistrarAccount::class,['account'=>$account->server_id]],[MonitoringSettings::class,[]]]as[$class,$params]){
@@ -59,7 +60,7 @@ $dnsRow=static function(string $html):array {
 };
 $select=static function(WatchProfile $profile,array $accounts,string $oldRule)use($staff,$row,$dnsRow):void {
     $domains=Domain::orderBy('id')->get()->toJson();$watches=WatchName::orderBy('id')->get()->toJson();
-    Livewire::actingAs($staff)->test(MonitoringSettings::class)->callAction('siteDefault',['profile'=>$profile->id])->assertHasNoActionErrors();
+    Livewire::actingAs($staff)->test(ListConfiguration::class)->callAction('siteDefault',['profile'=>$profile->id])->assertHasNoActionErrors();
     same($profile->id,SiteDnsDefault::profile()?->id,'Staff selection is the only default change');
     same($domains,Domain::orderBy('id')->get()->toJson(),'Selecting a default never changes existing domain nameservers');
     same($watches,WatchName::orderBy('id')->get()->toJson(),'Selecting a default leaves watch assignments unchanged');
@@ -70,7 +71,7 @@ $select=static function(WatchProfile $profile,array $accounts,string $oldRule)us
         if($class===RegistrarAccount::class){same('New domains use',$entry->getLabel(),'Account row says what new domains use');
             $dns=$dnsRow($page->html());
             foreach([implode(', ',$profile->nameservers),'New registrations use these nameservers unless the customer chooses others. Transfers keep the nameservers they already have.'] as $text){expect(str_contains($dns['text'],$text),'The DNS row says: '.$text);}
-            same(['Change'=>MonitoringSettings::getUrl()],$dns['links'],'The DNS row links Change to Domain monitoring settings');}
+            same(['Change'=>RoutingProfileResource::getUrl()],$dns['links'],'The DNS row links Change to DNS templates');}
         expect($entry->getColor($entry->getState())!=='danger','Valid default is no longer red');
         unset($entry,$page);gc_collect_cycles();gc_mem_caches();
     }
@@ -86,14 +87,14 @@ $enom=$connect('enom');$enomRule='Enom takes 2 to 12 nameservers. Update this DN
 $assertMissing($enom,$enomRule);$assertMissing($silo,$enomRule);
 same($thirteen->id,SiteDnsDefault::profile()->id,'Later Enom connection never replaces NameSilo-compatible default');
 $twelve=$make(12);$select($twelve,[$silo,$enom],$enomRule);
-// Change needs both Domain monitoring settings and the right to change the default there; the writer still refuses the rest.
+// Change needs both DNS templates and the right to change the default there; the writer still refuses the rest.
 $all=array_keys(Staff::permissions());
 foreach(['view only'=>[Staff::VIEW],'no settings page'=>array_values(array_diff($all,[\Paymenter\Extensions\Servers\Domains\Admin\Pages\PublicSuffixList::VIEW])),
     'no domain policy'=>array_values(array_diff($all,[Staff::POLICY])),'no site DNS default'=>array_values(array_diff($all,[SiteDnsDefault::MANAGE])),'full'=>$all] as $case=>$grants){
     $user=staffUser($grants);$full=$case==='full';
     $dns=$dnsRow(Livewire::actingAs($user)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSuccessful()->html());
     expect(str_contains($dns['text'],$twelve->name),'Every staff member sees the default: '.$case);
-    same($full?['Change'=>MonitoringSettings::getUrl()]:[],$dns['links'],'The DNS row offers Change only with full rights: '.$case);
+    same($full?['Change'=>RoutingProfileResource::getUrl()]:[],$dns['links'],'The DNS row offers Change only with full rights: '.$case);
     if($full||$case==='no settings page'){continue;}
     try{SiteDnsDefault::save($user,$thirteen->id);expect(false,'The writer refuses without edit rights: '.$case);}
     catch(Symfony\Component\HttpKernel\Exception\HttpException $error){same(403,$error->getStatusCode(),'The writer refuses without edit rights: '.$case);}
@@ -104,14 +105,14 @@ foreach(['view only'=>[Staff::VIEW],'no settings page'=>array_values(array_diff(
 $viewer=staffUser(array_values(array_diff(array_keys(Staff::permissions()),[SiteDnsDefault::MANAGE])));
 $readOnly=static function(Account $account,string $detail,string $hidden)use($viewer,$row):void {
     $page=Livewire::actingAs($viewer)->test(RegistrarAccount::class,['account'=>$account->server_id])->assertSee($detail)->assertDontSee($hidden);
-    $entry=$row($page);same('Missing',$entry?->getState(),'A read-only Site DNS default row is Missing');
-    same('danger',$entry->getColor($entry->getState()),'A read-only Site DNS default row is red');
+    $entry=$row($page);same('Missing',$entry?->getState(),'A read-only Default nameservers row is Missing');
+    same('danger',$entry->getColor($entry->getState()),'A read-only Default nameservers row is red');
     unset($entry,$page);gc_collect_cycles();gc_mem_caches();
 };
 $saved=Setting::where('key',SiteDnsDefault::KEY)->whereNull('settingable_type')->whereNull('settingable_id');
 (clone $saved)->update(['value'=>(string)$thirteen->id]);
 $readOnly($enom,'Enom takes 2 to 12 nameservers. '.SiteDnsDefault::ASK,'Update this DNS template or choose another one.');
 config(['domains.site_dns_default.nameservers'=>[]]);(clone $saved)->update(['value'=>'']);
-$readOnly($silo,'New registrations have no site-default nameservers. NameSilo needs explicit nameservers before an order can be sent. '.SiteDnsDefault::ASK,'Choose one in Domain monitoring settings.');
+$readOnly($silo,'New registrations have no site-default nameservers. NameSilo needs explicit nameservers before an order can be sent. '.SiteDnsDefault::ASK,'Choose one in Domains > DNS templates.');
 $readOnly($enom,'New registrations have no site-default nameservers. '.SiteDnsDefault::ASK,'NameSilo needs explicit nameservers');
 $nativeSuccessful=true;echo "DNS default compatibility after registrar connection passed.\n";

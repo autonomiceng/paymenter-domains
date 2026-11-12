@@ -90,7 +90,7 @@ $check('Dependencies refuse turn off and delete with a reason',function()use($pr
 });
 $check('One New domains use choice is shown',function()use($profile,$make,$manager):void{
     $other=$make('Other enabled template');siteDnsFixture($profile->id);
-    $list=Livewire::actingAs($manager)->test(ListConfiguration::class)->assertSee('New domains use')->assertSee($profile->name);
+    $list=Livewire::actingAs($manager)->test(ListConfiguration::class)->assertSee('Default nameservers')->assertSee($profile->name);
     $column=$list->instance()->getTable()->getColumn('name');
     same('Used for new domains',$column->record($profile)->getDescriptionBelow(),'Chosen template marked');
     same(null,$column->record($other)->getDescriptionBelow(),'Other On template is not marked');
@@ -113,6 +113,37 @@ $check('Read-only staff cannot change templates',function()use($make):void{
     try{(new Writes())->run($viewer,'profile',(int)$row->id,'delete',Writes::ticket((int)$viewer->id,'profile',(int)$row->id,(int)$row->revision,'delete'),'Synthetic permission refusal');}
     catch(\Symfony\Component\HttpKernel\Exception\HttpException $e){$error=$e->getStatusCode();}
     same(403,$error,'Deletion requires manage permission');expect($row->fresh()!==null,'Refused deletion preserves the template');
+});
+$check('Default template saves require both default permissions',function()use($make):void{
+    $default=$make('Protected default');$ordinary=$make('Ordinary edit');siteDnsFixture($default->id);
+    $rights=['admin.domains.view',Writes::VIEW,Writes::MANAGE];
+    $full=staffUser([...$rights,'admin.domains.manage-policy',SiteDnsDefault::MANAGE]);
+    $input=fn(WatchProfile $row)=>['name'=>$row->name,'nameservers'=>"ns1.changed.test\nns2.changed.test"];
+    // Each default right is required independently, even with all template editing rights.
+    foreach([[],['admin.domains.manage-policy'],[SiteDnsDefault::MANAGE]]as$extra){
+        $editor=staffUser([...$rights,...$extra]);$before=[$default->fresh()->getRawOriginal(),WatchAudit::count(),DB::table('domains_watch_staff_claims')->count()];$status=null;
+        try{(new Writes())->run($editor,'profile',(int)$default->id,'save',Writes::ticket((int)$editor->id,'profile',(int)$default->id,(int)$default->revision,'save'),'DNS template saved',$input($default));}
+        catch(\Symfony\Component\HttpKernel\Exception\HttpException $e){$status=$e->getStatusCode();}
+        same(403,$status,'Default template save needs both default permissions');
+        same($before,[$default->fresh()->getRawOriginal(),WatchAudit::count(),DB::table('domains_watch_staff_claims')->count()],'Permission refusal preserves the template, audit and claim');
+        Livewire::actingAs($editor)->test(ViewConfiguration::class,['record'=>$default->id])->assertActionHidden('save');
+    }
+    $editor=staffUser($rights);
+    $page=Livewire::actingAs($editor)->test(ViewConfiguration::class,['record'=>$ordinary->id])->assertActionVisible('save');
+    $page->callAction('save',$input($ordinary))->assertNotified('DNS template saved');
+    same(['ns1.changed.test','ns2.changed.test'],$ordinary->fresh()->nameservers,'Template-only staff can edit an ordinary template');
+    $mounted=Livewire::actingAs($editor)->test(ViewConfiguration::class,['record'=>$ordinary->id])->mountAction('save')->setActionData($input($ordinary));
+    $ticket=Writes::ticket((int)$editor->id,'profile',(int)$ordinary->id,(int)$ordinary->fresh()->revision,'save');
+    SiteDnsDefault::save($full,$ordinary->id);$before=[$ordinary->fresh()->getRawOriginal(),WatchAudit::count(),DB::table('domains_watch_staff_claims')->count()];
+    $mounted->callMountedAction()->assertSuccessful()->assertNotNotified('DNS template saved');
+    $status=null;try{(new Writes())->run($editor,'profile',(int)$ordinary->id,'save',$ticket,'DNS template saved',$input($ordinary));}
+    catch(\Symfony\Component\HttpKernel\Exception\HttpException $e){$status=$e->getStatusCode();}
+    same(403,$status,'A ticket issued before the template became default is refused at the writer');
+    same($before,[$ordinary->fresh()->getRawOriginal(),WatchAudit::count(),DB::table('domains_watch_staff_claims')->count()],'A template selected after the editor opened cannot be saved by template-only staff');
+    Livewire::actingAs($full)->test(ViewConfiguration::class,['record'=>$ordinary->id])->assertActionVisible('save')
+        ->callAction('save',['name'=>$ordinary->name,'nameservers'=>"ns1.authorized.test\nns2.authorized.test"])->assertNotified('DNS template saved');
+    same(['ns1.authorized.test','ns2.authorized.test'],$ordinary->fresh()->nameservers,'Fully authorized staff can edit the default template');
+    siteDnsFixture(null);
 });
 $check('Default label lookup is constant per table render',function()use($profile,$make,$manager):void{
  $count=0;DB::listen(static function($q)use(&$count):void{if(str_contains($q->sql,'"settings"')&&in_array(SiteDnsDefault::KEY,$q->bindings,true)){$count++;}});
@@ -187,9 +218,9 @@ $check('Unusable and duplicate saved defaults keep their template and name the r
         same('Saved for new domains but cannot be used',$marker(),'The list marks the unusable saved default it protects');
         DB::table('domains_watch_profiles')->where('id',$row->id)->update(['nameservers'=>$stored]);
         same('Used for new domains',$marker(),'A healthy default keeps its marker');
-        // Settings writes refuse a duplicate, so Change site DNS default cannot be the recovery.
+        // Settings writes refuse a duplicate, so changing the default nameservers cannot be the recovery.
         $duplicate=DB::table('settings')->insertGetId(['key'=>SiteDnsDefault::KEY,'value'=>'opaque','type'=>'string','encrypted'=>true,'settingable_type'=>null,'settingable_id'=>null,'created_at'=>now(),'updated_at'=>now()]);
-        $admin='The site DNS default is saved more than once. Ask your site admin to remove the extra setting.';
+        $admin='The default nameservers are saved more than once. Ask your site admin to remove the extra setting.';
         foreach(['disable','delete']as$action){
             $error=null;try{$write($row->fresh(),$action);}catch(DomainException $e){$error=$e->getMessage();}
             same($admin,$error,'A duplicate saved default refuses '.$action.' with administrator recovery');

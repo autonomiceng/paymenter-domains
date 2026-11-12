@@ -37,9 +37,9 @@ $reject=static function(int $n,string $rule)use($names,$staff):void {
     unset($row,$page);gc_collect_cycles();gc_mem_caches();
 };
 $connect('namesilo');
-// This staff user cannot change the site DNS default, so the page keeps the cause and names who can fix it.
-$reject(1,'NameSilo takes 2 to 13 nameservers. Ask staff who can change the site DNS default.');
-$reject(14,'Deployment DNS default lists more than 13 nameservers. Ask staff who can change the site DNS default.');
+// This staff user cannot change the default nameservers, so the page keeps the cause and names who can fix it.
+$reject(1,'NameSilo takes 2 to 13 nameservers. Ask staff who can change the default nameservers.');
+$reject(14,'Deployment DNS default lists more than 13 nameservers. Ask staff who can change the default nameservers.');
 config(['domains.site_dns_default.nameservers'=>$names(13)]);app(Installation::class)->install();
 $seeded=SiteDnsDefault::profile();same($names(13),$seeded?->nameservers,'NameSilo accepts its upper limit at installation');
 $count=WatchProfile::count();$audit=WatchAudit::count();
@@ -47,7 +47,7 @@ config(['domains.site_dns_default.nameservers'=>$names(1)]);app(Installation::cl
 same($seeded->id,SiteDnsDefault::profile()?->id,'Configuration never replaces a saved choice');
 same([$count,$audit],[WatchProfile::count(),WatchAudit::count()],'Repeated installation remains idempotent');
 $unset();$connect('enom');
-foreach([1,13]as$n){$reject($n,'Enom takes 2 to 12 nameservers. Ask staff who can change the site DNS default.');}
+foreach([1,13]as$n){$reject($n,'Enom takes 2 to 12 nameservers. Ask staff who can change the default nameservers.');}
 foreach([2,12]as$n){
     config(['domains.site_dns_default.nameservers'=>$names($n)]);app(Installation::class)->install();
     same($names($n),SiteDnsDefault::profile()?->nameservers,'Both connected registrars accept installation boundary '.$n);

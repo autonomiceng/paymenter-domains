@@ -14,6 +14,13 @@ final class ContactProfileHold
     /** A saved step cannot be reopened or send different details. The offer and writer give the same cause. */
     public static function releaseBlocked(Operation $op): ?string
     {
+        if(self::unsent($op,retry:true)){
+            $environment=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->value('environment');
+            $test=$environment==='test';
+            if(config('domains.namesilo_'.($test?'test':'live').'.management',$test)!==true){
+                return 'Contact creation is off on this site; the site administrator must enable NameSilo contact creation before this order can retry.';
+            }
+        }
         if(!self::unsent($op)||self::unsent($op,retry:true)){return null;}
         $matches=ProfileContactOperation::where('operation_id',$op->id)->value('payload_digest')===OperationClaims::payloadDigest($op);
         return $matches?self::RETRY_ENDED:self::RETRY_BLOCKED;

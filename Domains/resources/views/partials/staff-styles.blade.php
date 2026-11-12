@@ -94,4 +94,10 @@
 .domains-scroll-short{max-height:8rem}
 .domains-disclosure{cursor:pointer}
 .domains-total{display:block;font-size:1.5rem;font-weight:600;line-height:1.25;font-variant-numeric:tabular-nums}
+
+.domains-phone-note { display:none; }
+@media(max-width:639px) {
+ .domains-phone-note { display:block; max-width:calc(100vw - 110px); white-space:normal; overflow-wrap:anywhere; line-height:1.5; }
+ .domains-name-cell:has(.domains-phone-note) .fi-ta-text-item { max-width:calc(100vw - 110px); }
+}
 </style>

@@ -107,7 +107,7 @@ final class DomainNotices
                     .(DomainDecisions::syncNow($d)?'Then use Sync now.':'Ask staff who can sync this domain.'),
                 'action'=>['label'=>'Open registrar account','url'=>Facts::url(fn()=>RegistrarFacts::accountUrl((int)$d->server_id))]]);
         }
-        if (!DomainDecisions::ended($d)&&$read['read_review']) {
+        if (!DomainDecisions::ended($d)&&$read['read_review']&&!\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::retryableHold($d)) {
             $name=trim((string)\App\Models\Server::whereKey($d->server_id)->value('name'));
             // A failed read is not ownership proof. Name the possible cause without stopping recovery.
             $account='The domain may not be in '.($name!==''?'the assigned account: '.$name.'.':'its assigned registrar account.').' Check the account.';
@@ -122,7 +122,10 @@ final class DomainNotices
         if ($d->adoptionPending()) {
             return ['title'=>'Imported without purchase records. Check open invoices.','tone'=>'warning'];
         }
-        if (!DomainDecisions::ended($d)&&($hold=DomainDecisions::hold($d))!==null) { return $withPayment(['title'=>$hold['text'],'body'=>$hold['stopped']?DomainDecisions::restart($d):null,'tone'=>'warning','resume'=>true]); }
+        if (!DomainDecisions::ended($d)&&($hold=DomainDecisions::hold($d))!==null) {
+            $hasAction=preg_match('/(?:use Sync now|use Resume sync|ask staff|Manage this domain)/i',$hold['text']);
+            return $withPayment(['title'=>$hold['text'],'body'=>$hold['stopped']&&!$hasAction?DomainDecisions::restart($d):null,'tone'=>'warning','resume'=>true]);
+        }
         if ($payment!==null) { return $payment; }
         if ($d->provenance==='adopted'&&($d->observation['adoption_review']['near_due']??false)===true&&!RenewalStop::stopped(RenewalStop::read($d))) {
             return ['title'=>'Imported after the invoice date. No renewal invoice was issued.','tone'=>'warning',

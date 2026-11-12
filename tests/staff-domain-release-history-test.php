@@ -25,9 +25,11 @@ foreach ($releaseOps as $request) {
 }
 $clock->instant=$clock->now()->modify('+5 minutes');
 DB::table('domains_accounts')->where('server_id',$releaseOps[0]->server_id)->update(['processing_enabled'=>false]);
-Livewire::actingAs($releaseStaff)->test(ViewOperation::class,['record'=>$releaseOps[0]->id])->assertActionVisible('release')
+$before=$nativeMoney();
+Livewire::actingAs($releaseStaff)->test(ViewOperation::class,['record'=>$releaseOps[0]->id])->assertActionEnabled('release')
     ->callAction('release')->assertHasNoActionErrors()->assertNotified('Hold released');
-same('queued',$releaseOps[0]->fresh()->state,'The real Release leaves the request queued with Orders off');
+same('queued',$releaseOps[0]->fresh()->state,'The real Release queues the request while Orders is off');
+same($before,$nativeMoney(),'Paused release preserves money');
 foreach ($releaseOps as $i=>$request) {
     $html=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$request->domain_id])->assertSuccessful()->html();
     $dom=new DOMDocument;@$dom->loadHTML($html);$xpath=new DOMXPath($dom);

@@ -35,6 +35,15 @@ class ViewDomain extends ViewRecord
     }
     public function managementProgress(): array
     { return \Paymenter\Extensions\Servers\Domains\Services\ManagementProgress::for($this->getRecord()); }
+    public function syncRetryAt(): ?int
+    {
+        try {
+            $d=$this->getRecord();
+            if(!\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::retryableHold($d)){return null;}
+            $read=\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($d);
+            return $read['read_stopped']?null:$read['next_read'];
+        } catch (\Throwable) { return null; }
+    }
     /** How long the page keeps following waiting changes in the background. Sync now keeps its own window (syncPending). */
     public const FOLLOW_SECONDS=900;
     #[\Livewire\Attributes\Locked]
@@ -47,7 +56,8 @@ class ViewDomain extends ViewRecord
         $now=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp();
         $this->followStarted=$pending?($this->followStarted??$now):null;
         $following=$pending&&$now<$this->followStarted+self::FOLLOW_SECONDS;
-        $every=$following||$this->syncPending()?(array_filter($pending,fn(array $row)=>$row['slow'])?'10s':'2s'):null;
+        $retry=$this->syncRetryAt();
+        $every=$following||$this->syncPending()||($retry!==null&&$now<$retry+self::FOLLOW_SECONDS)?(array_filter($pending,fn(array $row)=>$row['slow'])?'10s':'2s'):null;
         return ['every'=>$every,'stopped'=>$pending&&!$following];
     }
 
@@ -75,7 +85,9 @@ class ViewDomain extends ViewRecord
     public function getSubheading(): string|Htmlable|null
     {
         $d=$this->getRecord(); $head=$this->head();
-        return StatusMark::line($head['tone'],$this->status()['label'],'domain-'.$d->id,$head['step']);
+        $line=StatusMark::line($head['tone'],$this->status()['label'],'domain-'.$d->id,$head['step'])->toHtml();
+        $progress=$this->syncPending()?'Sync in progress; this page updates when the read finishes.':($this->syncRetryAt()!==null?'Sync will retry automatically.':null);
+        return new HtmlString($line.($progress===null?'':' <span role="status" class="domains-hint">'.e($progress).'</span>'));
     }
     private function head(): array { return $this->head??=DomainFacts::head($this->getRecord(),$this->status(),$this->facts(),$this->edits()['request'],$this->notice()); }
     /** The head's step as plain text, so rows and Activity can leave out what it already says. */
@@ -228,12 +240,17 @@ class ViewDomain extends ViewRecord
             catch(\Throwable){$out[]=Callout::make('Registrar cost details are unavailable.')->status('warning')->columnSpanFull();}
         }}
         $sync=\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::result($d);
-        if($sync!==null&&$sync['title']!=='Domain synced'){
+        $recordsHeld=false;
+        if(($sync['title']??null)==="Couldn't read all records"){
+            try{$recordsHeld=\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::held($d);}catch(\Throwable){}
+        }
+        if($sync!==null&&!in_array($sync['title'],['Domain synced','Sync retry scheduled'],true)
+            &&!$recordsHeld){
             $out[]=Callout::make($sync['title'])->description($sync['body'])->status('warning')->columnSpanFull();
         }
         if(\Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::affected(time())->whereKey($d->id)->exists()){
-            $out[]=Callout::make('Set the site DNS default in monitoring settings to start DNS monitoring.')->status('info')->columnSpanFull()
-                ->footer(Staff::can(\Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites::VIEW) && Staff::canEditDefaultDns()?new HtmlString('<a class="fi-link domains-link" href="'.e(\Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource::getUrl('settings')).'">Site DNS settings</a>'):null);
+            $out[]=Callout::make('Set the default nameservers in Domains > DNS templates to start DNS monitoring.')->status('info')->columnSpanFull()
+                ->footer(Staff::can(\Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites::VIEW) && Staff::canEditDefaultDns()?new HtmlString('<a class="fi-link domains-link" href="'.e(\Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource::getUrl()).'">'.\Paymenter\Extensions\Servers\Domains\Admin\Support\DefaultNameservers::TITLE.'</a>'):null);
         }
         return $out;
     }

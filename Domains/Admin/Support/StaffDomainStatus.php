@@ -23,7 +23,7 @@ final class StaffDomainStatus
     private const TRANSFERRING = 'Transfer in progress. Nothing to do yet.';
     private const RENEWING = 'Renewal in progress. Nothing to do yet.';
     /** Steps that wait on the customer or on work already running. Every other step is a job for staff. */
-    private const WAITING = [self::UNPAID, self::NO_CODE, self::NO_SETUP, self::REGISTERING, self::TRANSFERRING];
+    private const WAITING = [RequestFacts::AUTO_TRANSFER,self::UNPAID, self::NO_CODE, self::NO_SETUP, self::REGISTERING, self::TRANSFERRING];
     private const CHECK = 'Check the domain.';
     /** Customers read DomainStatus::LATE, which sends them to support. Staff are support, so they get this step instead. */
     private const LATE = 'Check renewal options and status at the registrar.';
@@ -73,6 +73,7 @@ final class StaffDomainStatus
     {
         if ($state === 'adoption_pending') { return ['Check open invoices.', true, null]; }
         if ($op && in_array($d->status, self::ACQUIRING, true)) {
+            if(RequestFacts::automaticTransfer($op)){return [RequestFacts::AUTO_TRANSFER,true,null];}
             // The paid order projection already confirms the saved code; only worker pickup is left.
             $pickup=$state==='transfer_pending'&&$op->state==='awaiting_code';
             $readyOp=$pickup?clone $op:$op;

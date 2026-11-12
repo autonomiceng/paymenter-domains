@@ -165,6 +165,11 @@ final class HoldingObservationWork
                 DB::table('domains_observation_work')->insertOrIgnore(['server_id'=>$d->server_id,'account_fingerprint'=>$d->account_fingerprint,
                     'domain_id'=>$d->id,'generation'=>$d->authority_generation,'phase'=>self::phase($d),'due_at'=>$this->clock->now()->getTimestamp()]);
                 $this->recover($d);
+                // Older partial-family jobs stopped at their first failure. Keep their attempts and resume the bounded policy.
+                if(HoldingReadRetry::retryableHold($d)){
+                    self::current($d)->whereIn('safe_code',['records_incomplete','read_exception','read_no_evidence'])->where('tries','<',HoldingReadRetry::LIMIT)
+                        ->where('lease_until','<=',$this->clock->now()->getTimestamp())->update(['safe_code'=>'read_failed']);
+                }
                 // Legacy healthy ownership-only jobs must not postpone a missing or stale family read.
                 if($this->observer->readsRecords()&&$d->status==='active'&&ObservationProjection::recordStatus($d,$this->clock->now())['stale']){
                     self::current($d)->where('safe_code','refreshed')->where('lease_until','<=',$this->clock->now()->getTimestamp())
@@ -250,10 +255,7 @@ final class HoldingObservationWork
                 'claim'=>null,'lease_until'=>0,'tries'=>$job->tries,'safe_code'=>$job->safe_code,'due_at'=>$now+60]); return;
         }
         $d=Domain::findOrFail($job->domain_id); $tries=$job->tries+1;
-        if($code==='refreshed'&&ObservationRecords::held($d)){
-            $held=$d->observation['record_hold'];
-            $code=in_array($held['code']??null,ReadFailure::CODES,true)?$held['code']:'records_incomplete';
-        }
+        $code=HoldingReadRetry::result($d,$code);
         $code=HoldingReadRetry::scheduled($d,$code,$tries);
         if(in_array($code,HoldingReadRetry::RECOVERABLE,true)){
             $p=$d->observation??[];$prior=$p['read_retry']??[];$verifiedCredential=null;

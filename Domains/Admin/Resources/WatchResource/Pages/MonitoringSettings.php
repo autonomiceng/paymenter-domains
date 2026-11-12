@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages;
 use Filament\Actions\Action;
-use Filament\Forms\Components\{TextInput,Select};
+use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\Page;
@@ -11,11 +11,12 @@ use Filament\Schemas\{Schema,Components\Callout};
 use Filament\Support\Enums\Width;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\PublicSuffixList;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{HelpHint,MissingEntry,Sheet,Staff,StaffTabs};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{DefaultNameservers,HelpHint,MissingEntry,Sheet,Staff,StaffTabs};
 use Paymenter\Extensions\Servers\Domains\Dns\DohEndpoint;
 use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
 use Paymenter\Extensions\Servers\Domains\Services\DnsResolverSettings;
-/** Domain monitoring > Settings: the DNS resolver monitoring checks use. Settings live in native encrypted settings. */
+/** Domain monitoring > Settings: the DNS resolver monitoring checks use. Settings live in native encrypted settings.
+ * The default nameservers are shown here and changed in Domains > DNS templates. */
 class MonitoringSettings extends Page
 {
     protected static string $resource=WatchResource::class;
@@ -45,23 +46,9 @@ class MonitoringSettings extends Page
     }
     /** Missing: no saved resolver although the server could use one. */
     private static function missing(): bool{[$endpoint,,$forced]=app(DnsResolverSettings::class)->configuration();return $endpoint===null&&!$forced;}
-    private function siteDefault(): Action
-    {
-        return Action::make('siteDefault')->label('Change site DNS default')->modalHeading('Site DNS default')
-            ->schema([Select::make('profile')->label('DNS template')->required()
-                ->default(fn()=>\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::profile()?->id)
-                ->helperText('Create a DNS template in Domains > DNS templates, turn it on, then choose it here.')
-                ->options(fn()=>\Paymenter\Extensions\Servers\Domains\Models\WatchProfile::where('enabled',true)->get()->filter(fn($p)=>\Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::usable($p))->pluck('name','id')->all())])
-            ->visible(fn()=>Staff::canEditDefaultDns())->action(function(array $data,Action $action):void {
-                abort_unless(Staff::canEditDefaultDns(),403);
-                try{\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::save(\Illuminate\Support\Facades\Auth::user(),(int)$data['profile']);}
-                catch(\DomainException $e){Notification::make()->warning()->title($e->getMessage())->send();$action->halt();return;}
-                unset($this->cachedSchemas['content']);Notification::make()->title('Site DNS default saved')->success()->send();
-            });
-    }
     protected function getHeaderActions(): array
     {
-        return [$this->siteDefault(),$this->edit('configure')->visible(fn()=>Staff::can(PublicSuffixList::MANAGE)&&app(DnsResolverSettings::class)->configuration()[0]!==null),
+        return [$this->edit('configure')->visible(fn()=>Staff::can(PublicSuffixList::MANAGE)&&app(DnsResolverSettings::class)->configuration()[0]!==null),
             Action::make('check')->label('Test resolver')->color('gray')->visible(fn()=>Staff::can(PublicSuffixList::MANAGE)&&app(DnsResolverSettings::class)->configuration()[0]!==null)
                 ->action(function(): void{
                     self::requireManage();$result=app(DnsResolverSettings::class)->check();
@@ -78,10 +65,11 @@ class MonitoringSettings extends Page
         $resolver=TextEntry::make('resolver')->label('Resolver')->state($endpoint?->host??($forced?'Server default':Missing::LABEL))
             ->hintAction(HelpHint::make("If the resolver fails, checks retry once with the server's resolver."));
         return $schema->components([
-            ...(!$default||$refusal?[Callout::make($refusal??($canEdit?\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::MISSING:'Site DNS default is Missing. New domains have no nameservers to use. '.\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::ASK))->status('danger')->columnSpanFull()]:[]),
+            ...(!$default||$refusal?[Callout::make($refusal??($canEdit?\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::MISSING:'Default nameservers are Missing. New domains have no nameservers to use. '.\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::ASK))->status('danger')->columnSpanFull()]:[]),
             ...($forced?[Callout::make($reason)->status('danger')->columnSpanFull()]:[]),
             Sheet::split([Sheet::section('Monitoring',[
-                Sheet::row(MissingEntry::apply(TextEntry::make('site_dns')->label('Site DNS default')->state($refusal?Missing::LABEL:($default?->name??Missing::LABEL)),cause:$refusal??null)->belowContent($default?implode(', ',$default->nameservers):null)),
+                Sheet::row(MissingEntry::apply(TextEntry::make('site_dns')->label(DefaultNameservers::TITLE)->state($refusal?Missing::LABEL:($default?->name??Missing::LABEL)),cause:$refusal??null)->belowContent($default?implode(', ',$default->nameservers):null),
+                    [Sheet::link('defaults',$canEdit?'Change':'View',DefaultNameservers::url())->extraAttributes(['aria-label'=>($canEdit?'Change':'View').' default nameservers in DNS templates'])]),
                 Sheet::row(TextEntry::make('registrar_refresh')->label('Registrar refresh')->state('Daily')->belowContent('Daily refresh reads domain facts. Use Sync now on a domain to read DNS, SRV, DS and glue records. Unsupported families remain unsupported.')),
                 Sheet::row(TextEntry::make('public_checks')->label('Public DNS checks')->state('Nameservers at least every 6 hours, records daily')->belowContent('Failed checks retry while monitoring and its background worker are on. Paused checks wait; resume monitoring first.')),
                 Sheet::row(TextEntry::make('read_failures')->label('Registrar read failures')->state('No separate alert switch')->belowContent('Shown on the domain page, beside Resume sync. There is no email alert for them.')),

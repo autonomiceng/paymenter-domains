@@ -59,20 +59,53 @@ DB::table('domains_watch_names')->where('id',$watch->id)->update(['state'=>'acti
 SiteDnsDefault::save($manager,$default->id);
 same($replacement->id,SiteDnsDefault::watchProfile($watch->fresh())->id,'Explicit watch template survives site changes');
 same([], $fake->calls,'Reconciliation performs no DNS or registrar I/O');
-// Mount the actual settings page to verify Missing and the one site-level writer with permission checks.
+// Mount the actual pages to verify Missing and the one site-level writer with permission checks. The default is set
+// on Domains > DNS templates; Domain monitoring > Settings shows it and links there.
 staffPanel();
-$panel=\Filament\Facades\Filament::getCurrentPanel();$panel->resources([\Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource::class]);
-\Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(fn()=>\Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource::registerRoutes($panel));
+$templates=\Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource::class;
+$panel=\Filament\Facades\Filament::getCurrentPanel();$panel->resources([\Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource::class,$templates]);
+\Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($panel,$templates){\Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource::registerRoutes($panel);$templates::registerRoutes($panel);});
 app('router')->getRoutes()->refreshNameLookups();
-$page=\Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\MonitoringSettings::class;
-\Livewire\Livewire::actingAs($viewer)->test($page)->assertActionHidden('siteDefault');
+$settingsPage=\Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\MonitoringSettings::class;
+$page=\Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource\Pages\ListConfiguration::class;
+\Livewire\Livewire::actingAs($viewer)->test($page)->assertActionHidden('siteDefault')->assertActionHidden('editDefault');
 \App\Models\Setting::where('key',SiteDnsDefault::KEY)->whereNull('settingable_type')->delete();
 config(['domains.site_dns_default.nameservers'=>null]);$entry->upgraded();
 $settings=\Livewire\Livewire::actingAs($manager)->test($page)->assertSee(SiteDnsDefault::MISSING);
-// ui-r15 R4: the step is said once, in the red callout; the Site DNS default row shows only Missing.
-same(1,substr_count($settings->html(),'Choose a set with Change site DNS default'),'Site DNS default step shows once');
-$settings->callAction('siteDefault',['profile'=>$default->id])->assertHasNoActionErrors();
+// ui-r15 R4: the step is said once, in the red callout; the Default nameservers row shows only Missing.
+same(1,substr_count($settings->html(),'Choose a template in Domains &gt; DNS templates'),'Default nameservers step shows once');
+// dns-defaults-ux-r1: monitoring settings no longer change the default; they show it and link to DNS templates.
+$monitoring=\Livewire\Livewire::actingAs($manager)->test($settingsPage)->assertActionDoesNotExist('siteDefault')->assertSee(SiteDnsDefault::MISSING);
+same(1,substr_count($monitoring->html(),'Choose a template in Domains &gt; DNS templates'),'Monitoring settings say the step once');
+expect(str_contains($monitoring->html(),'href="'.$templates::getUrl().'"'),'Monitoring settings link to DNS templates');
+$settings->callAction('siteDefault',['profile'=>$default->id])->assertHasNoActionErrors()->assertNotified('Default nameservers saved');
 same($default->id,SiteDnsDefault::profile()->id,'Site settings save a single global reference');
+$settings->assertSee('ns1.deployment.test')->assertDontSee(SiteDnsDefault::MISSING)->assertActionVisible('editDefault');
+// Edit changes the default template's nameservers in place, without leaving the page.
+$settings->callAction('editDefault',['name'=>$default->name,'nameservers'=>"ns1.edited.test\nns2.edited.test"])->assertNotified('DNS template saved')->assertNoRedirect();
+same(['ns1.edited.test','ns2.edited.test'],SiteDnsDefault::profile()->nameservers,'Edit in place changes the default nameservers');
+$settings->assertSee('ns1.edited.test');
+// Another tab changes the default after this page captured it. The card and Edit keep the same template.
+$stale=\Livewire\Livewire::actingAs($manager)->test($page);
+SiteDnsDefault::save($manager,$replacement->id);
+$stale->call('$refresh');
+$cardHtml=$stale->html();
+$before=[SiteDnsDefault::profile()->id,WatchProfile::orderBy('id')->get()->toJson(),\Paymenter\Extensions\Servers\Domains\Models\WatchAudit::count(),DB::table('domains_watch_staff_claims')->count()];
+$stale->callAction('editDefault',['name'=>$default->name,'nameservers'=>"ns1.stale.test\nns2.stale.test"])
+    ->assertNotified('The default nameservers changed. Reload the page and try again.')->assertNotNotified('DNS template saved')->assertActionMounted('editDefault');
+same($before,[SiteDnsDefault::profile()->id,WatchProfile::orderBy('id')->get()->toJson(),\Paymenter\Extensions\Servers\Domains\Models\WatchAudit::count(),DB::table('domains_watch_staff_claims')->count()],'Stale default edit preserves both templates, selection, audit and claim');
+$dom=new DOMDocument();@$dom->loadHTML($cardHtml);$xpath=new DOMXPath($dom);
+$card=$xpath->query('//*[contains(concat(" ",normalize-space(@class)," ")," domains-sheet ")]')->item(0);
+expect($card instanceof DOMElement,'The default card is rendered');
+expect(str_contains($card->textContent,'ns1.edited.test')&&!str_contains($card->textContent,'ns1.other.test'),'The card shows the template captured by Edit');
+// An edit dialog already open when another tab selects a different template is refused too.
+$mounted=\Livewire\Livewire::actingAs($manager)->test($page)->mountAction('editDefault')->setActionData(['name'=>$replacement->name,'nameservers'=>"ns1.stale.test\nns2.stale.test"]);
+SiteDnsDefault::save($manager,$default->id);
+$before=[WatchProfile::orderBy('id')->get()->toJson(),\Paymenter\Extensions\Servers\Domains\Models\WatchAudit::count()];
+$mounted->callMountedAction()->assertNotified('The default nameservers changed. Reload the page and try again.')->assertNotNotified('DNS template saved');
+same($before,[WatchProfile::orderBy('id')->get()->toJson(),\Paymenter\Extensions\Servers\Domains\Models\WatchAudit::count()],'Changing the default while Edit is open changes neither template');
+\Livewire\Livewire::actingAs($manager)->test($settingsPage)->assertSee('ns1.edited.test, ns2.edited.test');
+$default=$default->fresh();
 app(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class)->boot();
 DB::table('domains_watch_work')->where('watch_id',$watch->id)->delete();
 DB::transaction(fn()=>$source->fresh()->fill(['revision'=>$source->revision+1,'last_seen_at'=>$at+1])->save());
@@ -94,12 +127,15 @@ $refuse=static function(Closure $write,string $rule):void {
     same($before,[SiteDnsDefault::profile()->id,WatchProfile::orderBy('id')->get()->toJson(),\Paymenter\Extensions\Servers\Domains\Models\WatchAudit::count()],'Refused save preserves selection, templates and audit');
 };
 $connect('namesilo');$one=$make(1);$thirteen=$make(13);
-// The native page must present the local registrar refusal, rather than leaking an action exception.
+// The chooser offers only templates every connected registrar accepts, each with its nameservers; reserved test names are marked.
+$options=\Paymenter\Extensions\Servers\Domains\Admin\Support\DefaultNameservers::options();
+expect(!isset($options[$one->id]),'The chooser leaves out a template a connected registrar refuses');
+same('Count 13: '.implode(', ',$thirteen->fresh()->nameservers).' (test names, not for real domains)',$options[$thirteen->id]??null,'A choice shows its nameservers and marks reserved test names');
+expect(!\Paymenter\Extensions\Servers\Domains\Admin\Support\DefaultNameservers::testNames(['dns01.exampled.net','ns1.exampled.com']),'Real names are not marked');
+// A template left out of the list is refused in the dialog, before anything is saved.
 $pageBefore=[SiteDnsDefault::profile()->id,WatchProfile::orderBy('id')->get()->toJson(),\Paymenter\Extensions\Servers\Domains\Models\WatchAudit::count()];
 \Livewire\Livewire::actingAs($manager)->test($page)->callAction('siteDefault',['profile'=>$one->id])
-    ->assertSuccessful()->assertActionHalted('siteDefault')
-    ->assertNotified(\Filament\Notifications\Notification::make()->warning()->title('NameSilo takes 2 to 13 nameservers. Update this DNS template or choose another one.'))
-    ->assertNotNotified('Site DNS default saved');
+    ->assertSuccessful()->assertHasActionErrors(['profile'])->assertNotNotified('Default nameservers saved');
 same($pageBefore,[SiteDnsDefault::profile()->id,WatchProfile::orderBy('id')->get()->toJson(),\Paymenter\Extensions\Servers\Domains\Models\WatchAudit::count()],'Page refusal preserves selection, templates and audit');
 $refuse(fn()=>SiteDnsDefault::save($manager,$one->id),'NameSilo takes 2 to 13');
 SiteDnsDefault::save($manager,$thirteen->id);same(13,count(SiteDnsDefault::profile()->nameservers),'NameSilo accepts thirteen');
@@ -116,16 +152,16 @@ try{SiteDnsDefault::validateRegistrars(['invalid host','ns2.example.test']);expe
 catch(DomainException $e){expect(str_contains(strtolower($e->getMessage()),'hostname')&&!str_contains($e->getMessage(),'takes 2 to'),'Hostname refusal explains the relevant rule');}
 \App\Models\Setting::where('key',SiteDnsDefault::KEY)->delete();DB::table('domains_watch_profiles')->update(['enabled'=>false]);
 config(['domains.site_dns_default.nameservers'=>null]);
-\Livewire\Livewire::actingAs($viewer)->test($page)->assertSee('Ask staff who can change the site DNS default.')->assertDontSee('Choose a set with Change site DNS default');
+\Livewire\Livewire::actingAs($viewer)->test($page)->assertSee('Ask staff who can change the default nameservers.')->assertDontSee('Choose a template in Domains > DNS templates');
 $empty=\Livewire\Livewire::actingAs($manager)->test($page)->mountAction('siteDefault')->call('$refresh');
-expect(str_contains(html_entity_decode(implode('', $empty->effects['partials']??[]).$empty->html(),ENT_QUOTES),'Create a DNS template in Domains > DNS templates, turn it on, then choose it here.'),'Empty selector explains create, enable and select');
+expect(str_contains(html_entity_decode(implode('', $empty->effects['partials']??[]).$empty->html(),ENT_QUOTES),'Lists templates that are on and that every connected registrar accepts. To add one, use Add DNS template.'),'Empty selector explains which templates it lists and how to add one');
 config(['domains.site_dns_default.nameservers'=>['invalid host','ns2.example.test']]);
 expect(str_contains((string)SiteDnsDefault::refusal(),'Create and turn on a compatible DNS template'),'An unusable deployment seed does not tell staff to edit a nonexistent saved template');
 // Too many valid deployment hosts is a count problem, not a hostname problem; registrar limits still apply below it.
 $hosts=static fn(int $count)=>array_map(static fn($n)=>'ns'.$n.'.deployment.test',range(1,$count));
 config(['domains.site_dns_default.nameservers'=>$hosts(14)]);$limit=(string)SiteDnsDefault::refusal();
 expect(str_contains($limit,'more than 13 nameservers')&&!str_contains(strtolower($limit),'hostname'),'Fourteen valid deployment hosts report the 13-host limit: '.$limit);
-expect(str_contains($limit,'Create and turn on a compatible DNS template, then choose it as the site DNS default.'),'The limit keeps template-selection recovery');
+expect(str_contains($limit,'Create and turn on a compatible DNS template, then choose it for the default nameservers.'),'The limit keeps template-selection recovery');
 config(['domains.site_dns_default.nameservers'=>[...$hosts(13),'bad host']]);
 expect(str_contains((string)SiteDnsDefault::refusal(),'hostnames are invalid'),'A malformed host among many is still a hostname problem');
 config(['domains.site_dns_default.nameservers'=>$hosts(13)]);
@@ -133,10 +169,10 @@ expect(str_starts_with((string)SiteDnsDefault::refusal(),'Enom takes 2 to 12 nam
 config(['domains.site_dns_default.nameservers'=>$hosts(12)]);same(null,SiteDnsDefault::refusal(),'Twelve valid hosts suit both connected registrars');
 // Read-only staff keep the cause and are sent to staff who can change the default.
 config(['domains.site_dns_default.nameservers'=>$hosts(14)]);
-\Livewire\Livewire::actingAs($viewer)->test($page)->assertSee('Deployment DNS default lists more than 13 nameservers.')->assertSee('Ask staff who can change the site DNS default.')->assertDontSee('Create and turn on a compatible DNS template');
-\Livewire\Livewire::actingAs($manager)->test($page)->assertSee('Create and turn on a compatible DNS template')->assertDontSee('Ask staff who can change the site DNS default.');
+\Livewire\Livewire::actingAs($viewer)->test($page)->assertSee('Deployment DNS default lists more than 13 nameservers.')->assertSee('Ask staff who can change the default nameservers.')->assertDontSee('Create and turn on a compatible DNS template');
+\Livewire\Livewire::actingAs($manager)->test($page)->assertSee('Create and turn on a compatible DNS template')->assertDontSee('Ask staff who can change the default nameservers.');
 DB::table('domains_watch_profiles')->where('id',$thirteen->id)->update(['enabled'=>true]);
 \App\Models\Setting::updateOrCreate(['key'=>SiteDnsDefault::KEY,'settingable_type'=>null,'settingable_id'=>null],['type'=>'string','encrypted'=>false,'value'=>(string)$thirteen->id]);
 same('Enom takes 2 to 12 nameservers. Update this DNS template or choose another one.',SiteDnsDefault::refusal(),'Editors are told to update or replace a saved default');
-\Livewire\Livewire::actingAs($viewer)->test($page)->assertSee('Enom takes 2 to 12 nameservers. Ask staff who can change the site DNS default.')->assertDontSee('Update this DNS template or choose another one.');
+\Livewire\Livewire::actingAs($viewer)->test($page)->assertSee('Enom takes 2 to 12 nameservers. Ask staff who can change the default nameservers.')->assertDontSee('Update this DNS template or choose another one.');
 $nativeSuccessful=true;echo "Site DNS installation default passed.\n";

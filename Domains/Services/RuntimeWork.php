@@ -25,6 +25,9 @@ final readonly class RuntimeWork
         $op=Operation::findOrFail($id);try{$a=Account::where('server_id',$op->server_id)->first();$pausedTest=$a&&!$a->processing_enabled&&$op->action==='register'&&$op->state==='awaiting_payment'
             &&\App\Models\Invoice::whereKey($op->invoice_id)->value('status')==='paid'&&self::testRegistrationEnabled($a);
             if($pausedTest){if(app(RuntimeDispatch::class)->current($op)){app(OperationClaims::class)->holdUnclaimed((int)$op->id,'processing');}return;}
+            if($a&&$a->processing_enabled&&$op->state==='succeeded'&&$op->safe_code==='registration_correction_required'){
+                $this->ports->corrections($op->domain);return;
+            }
             if($a&&$a->processing_enabled&&BalanceRetries::pending($op)){app(OperationClaims::class)->readmitBalance($id);$op=$op->fresh();if($op->state==='held'){return;}}
             if($a&&$a->processing_enabled&&RenewalRetries::candidate($op)){$op=RenewalRetries::recover($id,$this->clock);}
             if($a&&($a->processing_enabled||in_array($op->state,['pending','uncertain','running'],true)||TransferPolling::applies($op))&&$this->ports->accepted($a)){if(app(RuntimeDispatch::class)->current($op)){$this->ports->operation($op);}}}finally{$this->notice((int)$op->domain_id);}
@@ -82,6 +85,8 @@ final readonly class RuntimeWork
             $ops=Operation::where('server_id',$a->server_id)->where('account_fingerprint',$a->account_fingerprint)->where('id','>',$row->operation_cursor)
                 ->where(fn($q)=>$q->whereIn('state',['awaiting_payment','awaiting_code','queued','pending','uncertain','running'])
                     ->orWhere(fn($held)=>$held->where('state','held')->whereIn('safe_code',[...BalanceRetries::CODES,BalanceRetries::LEGACY_CODE]))
+                    ->orWhere(fn($q)=>$q->where('action','register')->where('state','held')->where('safe_code','contact_details_required'))
+                    ->orWhere(fn($q)=>$q->where('state','succeeded')->where('safe_code','registration_correction_required'))
                     ->orWhere(fn($q)=>$q->where('state','held')->where('safe_code','management_unconfirmed'))
                     ->orWhere(fn($q)=>$q->where('action','renew')->where('state','held')->where('safe_code','renewal_definitely_unsent'))
                     ->orWhere(fn($q)=>$q->where('action','transfer')->where('state','held')->where('safe_code','transfer_needs_action')))->orderBy('id')->limit(25)->get();

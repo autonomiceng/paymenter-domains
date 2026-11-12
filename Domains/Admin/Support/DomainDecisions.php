@@ -313,11 +313,20 @@ final class DomainDecisions
     {
         Staff::requireView();
         try {
+            $retryable=\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::retryableHold($d);
+            if($retryable&&\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::pending($d)){return null;}
             if (!ObservationRecords::stopped($d)) {
+                if($retryable){return null;}
                 if (!ObservationRecords::held($d)||($next=HoldingObservationWork::nextRead($d))===null) { return null; }
                 return ['text'=>ucfirst(self::familyName($d->observation['record_hold']['family']??null)??'DNS records').' held '.self::untilRead($next).'.','stopped'=>false];
             }
             if (!ObservationRecords::held($d)) { return ['text'=>self::readCause($d),'stopped'=>true]; }
+            $read=\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($d);
+            if($retryable&&$read['read_attempts']>=\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::LIMIT){
+                $family=self::familyName($d->observation['record_hold']['family']??null)??'DNS records';
+                $action=self::syncNow($d)?'use Sync now to try again':'ask staff who can sync this domain';
+                return ['text'=>"Couldn't read ".$family.' after '.$read['read_attempts'].' attempts; '.$action.'.','stopped'=>true];
+            }
             return ['text'=>ObservationRecords::limitNotice($d)??match($d->observation['record_hold']['reason']??null) {
                 'ownership_drift'=>'Sync stopped: domain is not in the registrar account.',
                 'glue_unavailable'=>"Couldn't read glue records. Other domain facts were saved. Use Sync now to try again.",
@@ -407,16 +416,17 @@ final class DomainDecisions
         $code=$observation['adoption_review']['price']??null;
         if ($code==='retained_renewal') { $code=null; }
         $company=\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company();
-        return Facts::row(($d->price_mode==='complimentary'?'Standard renewal price ':'').$service->currency_code.' '.number_format((float)$service->price,2).' / year'.($d->price_mode==='complimentary'?', complimentary':''),
-            sub:match(true) {$code==='below_cost'=>'Below cost',$code!==null=>'Cost missing',$d->price_mode==='complimentary'=>\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryAccounts::LABEL.'. '.($company!==''?$company.' covers':'We cover').' registrar costs.',self::purchasePrice($d,$service)=>'Price kept from purchase until the next renewal invoice.',default=>'Standard pricing'},
+        $value=null;
+        if ($d->price_mode==='complimentary') {
+            $value='Standard renewal price '.$service->currency_code.' '.number_format((float)$service->price,2).' / year, complimentary';
+        } elseif ($service->currency_code==='USD') {
+            try {
+                $value=\Paymenter\Extensions\Servers\Domains\Services\Storefront::money(\Paymenter\Extensions\Servers\Domains\Services\HolderPricing::shown($d,$service,app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now())).' / year';
+            } catch (\Throwable) {}
+        }
+        return Facts::row($value,
+            sub:match(true) {$code==='below_cost'=>'Below cost',$code!==null=>'Cost missing',$d->price_mode==='complimentary'=>\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryAccounts::LABEL.'. '.($company!==''?$company.' covers':'We cover').' registrar costs.',$value===null=>'No renewal price set. Check the linked service.',default=>'Standard pricing'},
             tone:$code===null?null:'danger');
-    }
-    /** The native service keeps checkout's annual gross until a renewal invoice projects current pricing. */
-    private static function purchasePrice(Domain $d,\App\Models\Service $service): bool
-    {
-        $checkout=$d->snapshot['checkout']??[];
-        return isset($checkout['annual_price'])&&($checkout['currency']??null)===$service->currency_code
-            &&\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor($checkout['annual_price'])===\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)$service->price);
     }
     private static function nextInvoice(Domain $d): array
     {

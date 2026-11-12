@@ -54,7 +54,10 @@ function staffRowsStandard(mixed $page, array $hidden=[], array $money=[]): void
     foreach ($records as $record) {
         foreach ($columns as $key=>$column) {
             $column->record($record); $class=(string)($column->getExtraAttributes()['class']??'');
-            if ($column->getDescriptionBelow()!==null||$column->getDescriptionAbove()!==null) { expect(str_contains($class,'domains-line'),$name.': '.$key.' keeps its description on the same line'); }
+            // The domain's approved phone summary is separate from ordinary inline descriptions.
+            $description=$column->getDescriptionBelow();
+            $phone=$key==='domain'&&$description instanceof Illuminate\Support\HtmlString&&str_starts_with($description->toHtml(),'<span class="domains-phone-note">');
+            if ((!$phone&&$description!==null)||$column->getDescriptionAbove()!==null) { expect(str_contains($class,'domains-line'),$name.': '.$key.' keeps its description on the same line'); }
         }
     }
     foreach ($money as $key) {

@@ -23,7 +23,8 @@ $commands=new StaffCommands(new Writer(new Projection($native),$clock,static fn(
 $r=new Review($actor->id,$binding->serverId,$t->id,'override',Review::ticket($actor->id,$binding->serverId,$t->id,'override',StaffCommands::stamp($binding->serverId,$t->id)),'Change standard renewal price');
 $commands->run($r,['mode'=>'fixed','fixed_register'=>'12.00','fixed_renew'=>'14.00','fixed_transfer'=>'13.00']);
 $price=Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::for($d->fresh())['Renewal price'];
-same('Price kept from purchase until the next renewal invoice.',$price['sub'],'Staff see why the saved service price differs from current standard pricing');
+same('$14.00 / year',$price['value'],'Staff see the current renewal quote instead of the saved purchase price');
+same('Standard pricing',$price['sub'],'Current renewal pricing does not claim to be the purchase price');
 same($purchase,$service->fresh()->price,'The display does not reprice a purchase');
-Livewire\Livewire::actingAs($actor)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$d->id])->assertSee('Price kept from purchase until the next renewal invoice.');
-$nativeSuccessful=true;echo "Purchase price provenance is visible to staff.\n";
+Livewire\Livewire::actingAs($actor)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$d->id])->assertSee('$14.00 / year')->assertDontSee('Price kept from purchase until the next renewal invoice.');
+$nativeSuccessful=true;echo "Current renewal price is visible to staff.\n";

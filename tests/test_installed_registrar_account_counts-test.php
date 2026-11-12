@@ -24,12 +24,12 @@ $request=static function(string $name,string $action,string $state,array $extra=
     return Operation::create([...$bind,'domain_id'=>$d->id,'service_id'=>$d->service_id,'authority_generation'=>$d->authority_generation,
         'operation_key'=>'counts-'.$n,'action'=>$action,'currency'=>'USD','amount'=>'10.00','state'=>$state,'payload'=>[],'attempt'=>[],'policy'=>[],'cost'=>[],'funding'=>[],...$extra]);
 };
-$request('counts-paid-unconfirmed','register','uncertain',['funding_basis'=>'paid_invoice']);
+$unconfirmed=$request('counts-paid-unconfirmed','register','uncertain',['funding_basis'=>'paid_invoice']);
 $request('counts-held-renewal','renew','held',['safe_code'=>'renewal_definitely_unsent']);
 $request('counts-unconfirmed-change','update_nameservers','uncertain');
-$request('counts-held-order','register','held');
+$heldOrder=$request('counts-held-order','register','held');
 $request('counts-unpaid','renew','awaiting_payment');
-$request('counts-done','transfer','succeeded');
+$pendingDone=$request('counts-done','transfer','succeeded');
 // A request whose domain moved to another service is not listed, so it is not counted either.
 $moved=$request('counts-moved','renew','queued');Domain::whereKey($moved->domain_id)->update(['service_id'=>999]);
 
@@ -119,19 +119,21 @@ $alerted=static function(string $name,string $status,string $state,string $actio
     return $d;
 };
 $live=$alerted('alerts-live','active','queued');
-$alerted('alerts-done','active','succeeded');      // The request went through, so its review is outdated and the row is OK.
+$doneAlert=$alerted('alerts-done','active','succeeded');      // Its review is outdated, but its missing expiry still needs staff.
 $alerted('alerts-cancelled','cancelled','queued'); // The row reads Cancelled and shows no alert.
 $held=$alerted('alerts-held','registration_pending','held','register'); // The row's step is the hold; it still waits on staff.
 Cache::flush();
 // The account page's System checks row: its count and its View domains link.
 $alerts=Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::alerts($account);
-same('2',$alerts['value'],'The count is the alerting rows');
+// include visible staff tasks without a saved alert, including missing expiry.
+$expected=[$unconfirmed->domain_id,$heldOrder->domain_id,$pendingDone->domain_id,$live->id,$doneAlert->id,$held->id];
+same('6',$alerts['value'],'The count includes all six domains whose visible note needs staff');
 same('Domains on this registrar account with open alerts. The sidebar counts all registrar accounts.',$alerts['help'],'The account row says it counts this account only');
 parse_str((string)parse_url((string)$alerts['buttons'][0]->getUrl(),PHP_URL_QUERY),$query);
 $records=Livewire::actingAs($staff)->withQueryParams($query)->test(ListDomains::class)->assertSuccessful()->instance()->getTableRecords();
-same([$live->id,$held->id],collect($records->items())->pluck('id')->sort()->values()->all(),'View domains opens exactly the alerting rows');
+same($expected,collect($records->items())->pluck('id')->sort()->values()->all(),'View domains opens exactly the domains needing staff');
 expect(DomainFacts::status($live)['alert']!==null&&DomainFacts::status($held)['act'],'Each listed row asks staff to act');
-same('2',(string)DomainResource::getNavigationBadge(),'The menu badge counts the same rows');
+same('6',(string)DomainResource::getNavigationBadge(),'The menu badge counts the same rows');
 // Native encrypted casts must contain one unreadable request without breaking every candidate row.
 foreach(['queued','held'] as $state){
     $bad=$request('unreadable-'.$state.'-placeholder','transfer',$state,['safe_code'=>$state==='held'?'processing':null]);

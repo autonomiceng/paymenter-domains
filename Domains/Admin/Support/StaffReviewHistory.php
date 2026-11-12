@@ -17,7 +17,7 @@ final class StaffReviewHistory
         try { $history=$op->policy['staff_actions']??[]; } catch (\Throwable) { return null; }
         if (!is_array($history)||!array_is_list($history)||count($history)>100) { return null; }
         $done=array_flip(array_filter(array_map(fn($e)=>is_array($e)&&in_array($e['phase']??null,['read_finished','read_failed'],true)&&is_string($e['key']??null)?$e['key']:null,$history)));
-        $rows=[];
+        $rows=[];$lastCheck=null;
         foreach ($history as $entry) {
             if (!is_array($entry)) { $rows[]=['time'=>null,'event'=>'Staff action','sub'=>null,'by'=>'Staff']; continue; }
             $action=$entry['action']??null; $phase=$entry['phase']??null;
@@ -43,7 +43,13 @@ final class StaffReviewHistory
             // Actions without a reason field record their own name; that repeats the event, so it is not shown.
             $reason=$action==='engine_hold' ? Labels::reason($entry['reason']??null,$op->funding_basis==='complimentary') : ($entry['reason']??null);
             $sub=is_string($reason)&&$reason!==''&&$reason!==($contactUpdate?'Use updated account details':(StaffOperationReview::ACTIONS[$action]??null)) ? $reason : null;
-            $rows[]=['time'=>self::time($date?:null),'event'=>$event,'sub'=>$sub,'by'=>$by];
+            $row=['time'=>self::time($date?:null),'event'=>$event,'sub'=>$sub,'by'=>$by];
+            $sameCheck=$action==='recheck'&&$phase==='read_finished'&&isset($entry['check']);
+            $check=$sameCheck?array_diff_key($entry['check'],array_flip(['at','started','order','next_at'])):null;
+            $signature=$sameCheck?[$check,$row['event'],$row['sub'],$row['by']]:null;
+            if($sameCheck&&$signature===$lastCheck){continue;}
+            $lastCheck=$signature;
+            $rows[]=$row;
         }
         return $rows;
     }

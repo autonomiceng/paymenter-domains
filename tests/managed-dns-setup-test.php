@@ -66,8 +66,8 @@ app()->instance(WatchWork::class,new WatchWork($fake,new WatchDiscoveryWork(fn()
 $templateEditor=staffUser([Staff::VIEW,StaffWatchWrites::VIEW,StaffWatchWrites::MANAGE,Staff::POLICY,\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::MANAGE]);
 $page=Livewire::actingAs($manager)->test(ListManagedDns::class);
 expect($page->instance()->getTable()->getAction('accountTemplate')===null,'Account DNS control removed');
-Livewire::actingAs($templateEditor)->test(ListWatches::class)->assertSee('Site DNS settings');
-Livewire::actingAs($viewer)->test(ListWatches::class)->assertDontSee('Site DNS settings');
+Livewire::actingAs($templateEditor)->test(ListWatches::class)->assertSee('Default nameservers');
+Livewire::actingAs($viewer)->test(ListWatches::class)->assertDontSee('Default nameservers');
 
 DB::table('domains_watch_profiles')->where('id',$profile->id)->update(['enabled'=>true]);
 $setupPage=Livewire::actingAs($manager)->test(ListManagedDns::class);
@@ -99,7 +99,7 @@ DB::table('domains_watch_profiles')->where('id',$profile->id)->update(['nameserv
 expect($profile->fresh()->enabled && $profile->fresh()->readProfile()===null,'Retained enabled template is unreadable');
 same(1,ManagedDnsSetup::affected($now)->count(),'Unreadable template returns to setup count');
 Livewire::actingAs($viewer)->test(ListManagedDns::class)->assertCanSeeTableRecords([$d]);
-Livewire::actingAs($templateEditor)->test(ListWatches::class)->assertSee('DNS monitoring is not set up for 1 domain. Set the site DNS default in monitoring settings.');
+Livewire::actingAs($templateEditor)->test(ListWatches::class)->assertSee('DNS monitoring is not set up for 1 domain. Set the default nameservers in Domains > DNS templates.');
 $unreadableSummary=(new \Paymenter\Extensions\Servers\Domains\Services\DomainSummaries())->one($owner,'managed',$id,$now);
 expect(in_array('domain.dns.not_configured',$unreadableSummary->stateKeys,true),'Customer sees unreadable template as not configured');
 same([], (new ManagedPublicReconciliation($signals))->due($now),'Unreadable template has no configured runnable work');

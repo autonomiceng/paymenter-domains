@@ -13,7 +13,8 @@ $syncActor=staffUser([\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff:
 $syncJob=new \Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords($syncActor->id,$d->id,$d->authority_generation,$d->account_fingerprint);
 $clock->instant=$clock->now()->modify('+61 seconds');$syncJob->handle($observer);
 same($clock->now()->format(DATE_ATOM),$d->fresh()->observation['records']['at'],'Queued worker saves record inventory through the observer');
-same('Domain synced',App\Models\Notification::where('user_id',$syncActor->id)->latest('id')->value('title'),'Queued worker reports completion in the staff inbox');
+same('Domain synced',\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::result($d->fresh())['title'],'Queued worker reports completion on the domain page');
+same(0,App\Models\Notification::where('user_id',$syncActor->id)->count(),'Queued worker keeps unchanged records out of the staff inbox');
 // A closed record gate still refreshes core facts, but cannot promise fresh records.
 $syncInventory=$d->fresh()->observation['records'];$syncIo=[count($state->calls),count($observation->calls)];
 $clock->instant=$clock->now()->modify('+61 seconds');
@@ -64,7 +65,7 @@ require_once __DIR__.'/Support/staff-panel.php';
 // Completion queued this exact holding already; model its first automatic retry in place.
 $existing=\Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::current($d)->sole();
 DB::table('domains_observation_work')->where('id',$existing->id)->update(['due_at'=>$clock->now()->getTimestamp()+60,'safe_code'=>'read_failed','tries'=>1]);
-same('SRV records held until the registrar check retries at '.(new DateTimeImmutable('@'.($clock->now()->getTimestamp()+60)))->setTimezone($clock->now()->getTimezone())->format('M j, Y, g:i A T').'.',\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::recordHold($d->fresh()),'Scheduled recovery shows the hold until the retry, not a stopped read');
+same(null,\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::recordHold($d->fresh()),'Scheduled recovery needs no staff warning before retries finish');
 $partialJob=\Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::current($d)->sole();
 DB::table('domains_observation_work')->where('id',$partialJob->id)->update(['safe_code'=>'records_incomplete']);
 same("Sync stopped: couldn't read SRV records. Other domain facts were saved. Use Sync now to try again.",\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::recordHold($d->fresh()),'Staff record notice names the stopped read');

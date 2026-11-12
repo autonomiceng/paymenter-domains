@@ -11,7 +11,7 @@ use Filament\Support\Enums\Width;
 use Illuminate\Support\Facades\Auth;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\{RoutingProfileResource,WatchResource};
 use Paymenter\Extensions\Servers\Domains\Models\{WatchName,WatchProductMap,WatchProfile};
-use Paymenter\Extensions\Servers\Domains\Services\{StaffWatchWrites as Writes,WatchDiscovery,WatchProducts};
+use Paymenter\Extensions\Servers\Domains\Services\{SiteDnsDefault,StaffWatchWrites as Writes,WatchDiscovery,WatchProducts};
 /** Staff writes for monitored domains, DNS templates and hosting product lines. The ticket binds the revision the page loaded, so a stale page changes nothing. */
 final class WatchActions
 {
@@ -20,15 +20,15 @@ final class WatchActions
     private const DONE=['pause'=>'Monitoring paused','resume'=>'Monitoring resumed'];
     /** The DNS template form says this once, for every box. */
     public const ONE_PER_LINE='Enter one value per line.';
-    public static function action(string $kind,int $id,int $revision,string $action,string $label,array $fields=[]): Action
+    public static function action(string $kind,int $id,int $revision,string $action,string $label,array $fields=[],?int $defaultId=null): Action
     {
         $a=Action::make($action)->label($label)->visible(fn()=>Staff::can(Writes::VIEW)&&Staff::can(Writes::MANAGE));
         if($fields){$a->schema($fields);}
         if($action==='read'){$a->tooltip('Monitoring uses 0 registrar reads per domain per day.');}
-        return $a->action(function(array $data,array $arguments,$livewire)use($kind,$id,$revision,$action):void {
+        return $a->action(function(array $data,array $arguments,$livewire)use($kind,$id,$revision,$action,$defaultId):void {
                 $id=(int)($arguments['map']??$id);$revision=(int)($arguments['revision']??$revision);
                 $reason=match($action){'note'=>(string)($data['note']??''),'save'=>$kind==='mapping'?'Domain field chosen':'DNS template saved','enable'=>'DNS template turned on','disable'=>'DNS template turned off','delete'=>'DNS template deleted',default=>self::REASONS[$action]};
-                try{(new Writes())->run(Auth::user(),$kind,$id,$action,Writes::ticket((int)Auth::id(),$kind,$id,$revision,$action),$reason,$data+$arguments);}
+                try{(new Writes())->run(Auth::user(),$kind,$id,$action,Writes::ticket((int)Auth::id(),$kind,$id,$revision,$action,$defaultId),$reason,$data+$arguments);}
                 catch(\DomainException|\InvalidArgumentException|\Illuminate\Database\QueryException|\Illuminate\Database\Eloquent\ModelNotFoundException $e){
                     if($action==='read' && $e instanceof \DomainException && $e->getMessage()==='A check was recently requested. Try again later.'){$livewire->waitForCheck();}
                     Notification::make()->warning()->title(self::error($kind,$e))->send();
@@ -137,9 +137,10 @@ final class WatchActions
                     ->helperText($fields===[]?'No service on this product has a text field yet. If it has a domain, add a text option for it.':null)];});
     }
     /** Add (no row) or Edit a DNS template. Validated edits preserve whether monitoring is on. */
-    public static function configuration(?WatchProfile $row,int $revision=0): Action
+    public static function configuration(?WatchProfile $row,int $revision=0,?int $defaultId=null): Action
     {
-        if($row&&$row->readProfile()===null){return self::action('profile',(int)$row->id,$revision,'save','Edit')->color('gray')->disabled()->tooltip(WatchFacts::TEMPLATE_UNAVAILABLE);}
+        $canEdit=fn()=>Staff::can(Writes::VIEW)&&Staff::can(Writes::MANAGE)&&(!$row || !SiteDnsDefault::uses((int)$row->id) || Staff::canEditDefaultDns());
+        if($row&&$row->readProfile()===null){return self::action('profile',(int)$row->id,$revision,'save','Edit')->visible($canEdit)->color('gray')->disabled()->tooltip(WatchFacts::TEMPLATE_UNAVAILABLE);}
         // A short form: one note says one value per line, and the record groups are headed, not boxed.
         // Each box checks its lines in the dialog and names the bad one, so a mistake keeps the dialog and what was typed.
         $lines=fn(string $name,string $label,array $value,?\Illuminate\Contracts\Validation\ValidationRule $rule=null)=>Textarea::make($name)->label($label)->default(implode("\n",$value))->maxLength(8192)->rows(2)->rule($rule??FieldRules::hostname());
@@ -147,7 +148,7 @@ final class WatchActions
         foreach(['website_endpoints'=>'Website','email_endpoints'=>'Email'] as $key=>$label){$value=$row?->$key??[];
             $fields[]=Fieldset::make($label.' records')->contained(false)->columns(1)->schema([$lines($key,'Hostnames',$value['exact']??[]),$lines($key.'_suffix','Hostname suffixes',$value['suffix']??[]),$lines($key.'_ips','IP addresses',$value['ips']??[],FieldRules::ip())]);}
         $note=($row?'Future checks use these records. Monitoring stays on if this template is on. ':'').self::ONE_PER_LINE;
-        return self::action('profile',(int)($row?->id??0),$row?$revision:0,'save',$row?'Edit':'Add DNS template',$fields)->modalHeading($row?'Edit DNS template':'Add DNS template')
+        return self::action('profile',(int)($row?->id??0),$row?$revision:0,'save',$row?'Edit':'Add DNS template',$fields,$defaultId)->visible($canEdit)->modalHeading($row?'Edit DNS template':'Add DNS template')
             ->modalDescription($note)->modalWidth(Width::Medium)->modalSubmitActionLabel('Save')->color($row?'gray':'primary');
     }
 }

@@ -85,6 +85,55 @@ expect(StaffOperationWrites::canRelease($op,$clock->now()),'Release is offered f
 expect(OperationActions::relevant('refund',$op),'Cancel and refund is offered for an unsent contact step hold');
 $account=Account::where('server_id',$op->server_id)->sole();
 $costStaff=staffUser([...$all,Staff::COSTS]);Auth::login($costStaff);
+$costFacts=RequestFacts::for($op);
+same('Not charged yet',$costFacts['cost'],'A proved unsent contact hold has no missing registrar charge');
+expect(str_contains($costFacts['cost_sub'],'cannot exceed this estimate'),'The estimate is a spending limit, not an assumed charge');
+
+// A release cannot enable the contact-creation deployment capability; both page and locked writer must refuse it.
+$managementConfig=config('domains.namesilo_test.management',true);config(['domains.namesilo_test.management'=>false]);
+$blocked='Contact creation is off on this site; the site administrator must enable NameSilo contact creation before this order can retry.';
+$before=[$nativeMoney(),$op->fresh()->getRawOriginal(),$sent->contactAdd,$sent->registerDomain];
+expect(!StaffOperationWrites::canRelease($op,$clock->now()),'Contact creation off prevents offering a repeat hold');
+Livewire::actingAs($costStaff)->test(ViewOperation::class,['record'=>$op->id])->assertActionHidden('release')->assertSee($blocked);
+Auth::login($staff);$refused(fn()=>$run($op,'release'),'The writer refuses disabled contact creation',$blocked);
+same($before,[$nativeMoney(),$op->fresh()->getRawOriginal(),$sent->contactAdd,$sent->registerDomain],'Blocked contact retry changes no money or sends');
+config(['domains.namesilo_test.management'=>$managementConfig]);
+
+// Distinct hold causes must lead to a useful repair, with no blind retry for permanent or unknown failures.
+foreach([
+    'configuration_unavailable'=>['Staff','registrars'],
+    'registrar_price_missing'=>['Staff','registrars'],
+    'provider_membership_unconfirmed'=>['Staff','registrars'],
+    'renewal_invoice_unpaid'=>['Staff','invoice'],
+    'automatic_spend_paused'=>['Staff','domain'],
+    'registry_details_unsupported'=>['Staff',null],
+    'future_hold'=>['Staff','domain'],
+] as $code=>[$owner,$destination]){
+    $row=clone $op;$row->safe_code=$code;
+    $notice=RequestFacts::notice($row);
+    if($code==='registrar_price_missing'){
+        expect(str_contains($notice['title'],'It will retry automatically'),'A pending price check needs the system rather than a staff retry');
+    }else{expect(str_contains((string)$notice['body'],$owner),'The page names who fixes '.$code);}
+    same($destination,$notice['link'],'The page leads to the repair for '.$code);
+    if($code==='future_hold'){
+        expect(str_contains((string)$notice['body'],'releasing this hold cannot resolve its cause'),'Permanent and unknown holds explain why release cannot help');
+    }
+    if($code==='registry_details_unsupported'){
+        same(null,\Paymenter\Extensions\Servers\Domains\Admin\Support\RequestHoldReasons::releaseBlocked($row),'Safe registry holds defer to the writer no-send proof');
+    }
+}
+
+// A paused account accepts release into the queue while its purchase and contact step remain unsent.
+$paused=$heldOrder('held-contact-paused-release-placeholder.com');
+DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>false]);
+$before=[$nativeMoney(),$sent->contactAdd,$sent->registerDomain,$paused->attempt];
+$page=Livewire::actingAs($costStaff)->test(ViewOperation::class,['record'=>$paused->id]);
+$page->assertActionEnabled('release')->callAction('release')->assertHasNoActionErrors()->assertNotified('Hold released');
+same(['queued',null],[$paused->fresh()->state,$paused->fresh()->safe_code],'Orders off allows release into the queue');
+same($before,[$nativeMoney(),$sent->contactAdd,$sent->registerDomain,$paused->fresh()->attempt],'Orders off release sends nothing and preserves money and unsent proof');
+same(false,$account->fresh()->processing_enabled,'Release leaves Orders off');
+DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>true]);
+Auth::login($costStaff);
 [$heading,$submit,$words]=RequestFacts::releaseConfirmation($op,$account,null,false);
 same(['Send to NameSilo now?','Release and send'],[$heading,$submit],'Release asks before it sends');
 expect(str_contains($words,'NameSilo charges about USD '.number_format((float)$op->cost['estimated'],2,'.','').' from the registrar balance.'),'Release says what NameSilo charges');

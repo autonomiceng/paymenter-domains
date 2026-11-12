@@ -3,13 +3,14 @@
 declare(strict_types=1);
 require __DIR__.'/Support/staff-domain-edits.php';
 use Filament\Actions\Testing\TestAction;
-use Illuminate\Support\Facades\{Auth,DB};
+use Illuminate\Support\Facades\{Auth,Cache,DB};
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainEditActions,DomainFacts,Staff};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainManagement,DomainObservation,ManagementForms,ObservationSchema,OwnedDomains,OwnerPorts};
 use Paymenter\Extensions\Servers\Domains\Services\{StaffOperationReview,StaffOperations};
 // Corrupt encrypted storage must not take down staff pages or either customer projection.
@@ -29,7 +30,21 @@ $check('customer dashboard',function()use($presenter,$customer,$d):void{$dto=$pr
 $check('customer /domains',function()use($customer,$d):void{Auth::setUser($customer);config(['settings.default_currency'=>'USD']);$request=\Illuminate\Http\Request::create('/domains');$request->setUserResolver(fn()=>$customer);expect(str_contains(app(\Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController::class)->index($request)->render(),$d->domain),'Customer list retains unreadable domain');});
 DB::table('domains_domains')->where('id',$d->id)->update(['renewal_policy'=>$stored]);Auth::setUser($actor);
 $observation=$d->fresh()->getRawOriginal('observation');DB::table('domains_domains')->where('id',$d->id)->update(['observation'=>'batch6-explicit-unreadable-fixture']);
-$check('staff unreadable observation',fn()=>$view()->assertSuccessful()->assertSee(DomainFacts::UNREADABLE));DB::table('domains_domains')->where('id',$d->id)->update(['observation'=>$observation]);
+$check('staff unreadable observation',fn()=>$view()->assertSuccessful()->assertSee(DomainFacts::UNREADABLE));
+// A cached manual result outlives encrypted facts becoming unreadable. Both result paths must still render.
+$job=new SyncDomainRecords((int)$actor->id,(int)$d->id,$d->authority_generation,$d->account_fingerprint);
+$key=$job->uniqueId().':result';$before=$d->fresh()->getRawOriginal();
+foreach(['Sync retry scheduled',"Couldn't read all records"] as $title){
+    $result=['title'=>$title,'body'=>'Saved partial sync result.'];Cache::put($key,$result,SyncDomainRecords::UNIQUE_FOR);
+    $check('cached '.$title,function()use($view,$d,$key,$result,$before):void{
+        same($result,SyncDomainRecords::result($d->fresh()),'Unreadable observation cannot prove that a retry result was superseded');
+        $view()->assertSuccessful()->assertSee(DomainFacts::UNREADABLE);
+        same([],DomainEditActions::for($d->fresh())['rows'],'Unreadable observation grants no record edits');
+        same($result,Cache::get($key),'Rendering retains the cached result');
+        same($before,$d->fresh()->getRawOriginal(),'Rendering preserves unreadable domain storage');
+    });
+}
+Cache::forget($key);DB::table('domains_domains')->where('id',$d->id)->update(['observation'=>$observation]);
 $acquisition=$d->operations()->whereIn('action',['register','transfer'])->orderByDesc('id')->firstOrFail();$payload=$acquisition->getRawOriginal('payload');DB::table('domains_operations')->where('id',$acquisition->id)->update(['payload'=>'batch6-explicit-unreadable-fixture']);
 $check('staff unreadable contacts',function()use($view,$d):void{$view()->assertSuccessful()->assertSee(DomainFacts::UNREADABLE);expect(!isset(DomainEditActions::for($d->fresh())['rows']['Contacts']),'No contact edit without a current digest');});DB::table('domains_operations')->where('id',$acquisition->id)->update(['payload'=>$payload]);
 $attempt=$acquisition->fresh()->getRawOriginal('attempt');DB::table('domains_operations')->where('id',$acquisition->id)->update(['attempt'=>'d29-explicit-unreadable-fixture']);

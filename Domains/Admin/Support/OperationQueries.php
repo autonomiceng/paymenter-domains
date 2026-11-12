@@ -22,7 +22,14 @@ final class OperationQueries
     {
         if (!$keys) { return $q; }
         $in=fn(string $state)=>in_array(RequestStatus::key($state),$keys,true);
-        return $q->where(function($q) use ($in,$keys,$ordersOff) {
+        $automatic=[];
+        (clone $q)->reorder()->where('action','transfer')->whereIn('state',['pending','uncertain','running','held'])->chunkById(200,function($rows)use(&$automatic):void{
+            foreach($rows as $op){if(RequestFacts::automaticTransfer($op)){$automatic[]=(int)$op->id;}}
+        },'domains_operations.id','id');
+        return $q->where(function($query)use($automatic,$keys,$in,$ordersOff):void {
+        if(in_array('in_progress',$keys,true)){$query->orWhereIn('domains_operations.id',$automatic);}
+        $query->orWhere(function($q)use($automatic,$in,$keys,$ordersOff):void {
+        $q->whereNotIn('domains_operations.id',$automatic)->where(function($q) use ($in,$keys,$ordersOff) {
             if (in_array('on_hold',$keys,true)) { $q->orWhere(fn($held)=>self::heldAcquisition($held,$ordersOff)); }
             $q->orWhere(function($q) use ($in,$ordersOff) {
             $q->whereNot(fn($held)=>self::heldAcquisition($held,$ordersOff))->where(function($q) use ($in,$ordersOff) {
@@ -38,6 +45,8 @@ final class OperationQueries
             foreach (RequestStatus::READS_AS as $as=>$rule) { if ($in($as)) { $q->orWhere(fn($q)=>self::readsAs($q,$rule,$ordersOff)); } }
             });
             });
+        });
+        });
         });
     }
     /** SQL form of RequestFacts::heldAcquisition, including queued registrations stopped by Orders off and transfers staff held. */

@@ -29,9 +29,11 @@ $notice=App\Models\Notification::where('user_id',$limitActor->id)->latest('id')-
 same("Couldn't read all records",$notice->title,'Candidate limit never reports Domain synced');
 same($d->domain.": Missing: more than 50 child hosts to check. Ask your site admin to remove unused entries from this domain's saved discovery data, registrar nameservers and DNS templates so at most 50 child hosts remain, then use Sync now.",$notice->body,'Candidate-limit inbox gives the real limit and required source cleanup');
 DB::table('domains_watch_profiles')->where('id',array_pop($profiles))->delete();
+$notices=App\Models\Notification::where('user_id',$limitActor->id)->count();
 $clock->instant=$clock->now()->modify('+61 seconds');$limitJob->handle($observer);
 expect(!ObservationRecords::held($d->fresh()),'Reducing candidates to50 allows successful discovery ('.($d->fresh()->observation['record_hold']['reason']??'none').'/'.($d->fresh()->observation['record_hold']['code']??'none').')');
 same(50,count($d->fresh()->observation['records']['families']['glue']['candidates']),'Discovery retains every candidate at its limit');
-same('Domain synced',App\Models\Notification::where('user_id',$limitActor->id)->latest('id')->value('title'),'Retry after reducing sources honestly reports success');
+same('Domain synced',\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::result($d->fresh())['title'],'Retry after reducing sources reports page completion');
+same($notices,App\Models\Notification::where('user_id',$limitActor->id)->count(),'Successful discovery adds no inbox notice');
 
 $nativeSuccessful=true;echo "Combined candidate limit, exact staff inbox and recovery at50 passed.\n";

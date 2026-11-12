@@ -22,12 +22,12 @@ final class DomainQueries
         if (!$keys) { return $q; }
         return self::rows($q,fn(array $status)=>in_array($status['key'],$keys,true),$ordersOff);
     }
-    /** Alerting rows: an open alert that still applies, on a row that asks staff to act. OK, outdated and ended rows are not alerting.
+    /** Rows whose visible Note asks staff to act, including a stopped sync or a missing account without an alert row.
      * The account page's count, the Open alerts filter and the menu badge all use this one rule.
      * It asks only whether staff must act, so it reads a fixed number of queries per 200 rows (StaffDomainInputs $release). */
     public static function alerting(Builder $q): Builder
     {
-        return self::rows(self::openAlerts($q),fn(array $status,array $inputs)=>$inputs['alerts']!==[]&&$status['act'],release:true);
+        return self::rows($q,fn(array $status,array $inputs)=>DomainFacts::note($status,$inputs['sync'],$inputs['no_account'])['act'],release:true);
     }
     /** Rows whose staff status (DomainFacts::status) and its inputs pass $keep. */
     private static function rows(Builder $q, \Closure $keep, ?array $ordersOff=null, bool $release=false): Builder
@@ -35,7 +35,14 @@ final class DomainQueries
         $ids=[];
         (clone $q)->reorder()->with('latestAcquisition')->chunkById(200,function ($page) use (&$ids,$keep,$ordersOff,$release): void {
             $inputs=StaffDomainInputs::for($page,$ordersOff,$release);
+            $stopped=$release?\Paymenter\Extensions\Servers\Domains\Services\ObservationWork::stoppedIds($page):[];
             foreach ($page as $d) {
+                if($release){
+                    $account=$inputs[$d->id]['release']['accounts'][OperationQueries::accountKey($d->server_id,$d->registrar_key,$d->account_fingerprint)]??null;
+                    try{$sync=DomainFacts::sync($d,$account,isset($stopped[$d->id]),accountLoaded:true);}
+                    catch(\Illuminate\Contracts\Encryption\DecryptException){$sync='failed';}
+                    $inputs[$d->id]+=['sync'=>$sync,'no_account'=>$account===null];
+                }
                 if ($keep(DomainFacts::status($d,$inputs[$d->id]),$inputs[$d->id])) { $ids[]=$d->id; }
             }
         },'domains_domains.id','id');
