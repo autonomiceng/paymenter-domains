@@ -82,6 +82,7 @@ async function confirm(page) {
     const first = await context.newPage();
     watch(first);
     await first.goto(`${base}/refund-browser-login`);
+    if ((process.env.REFUND_BROWSER_CASE || 'refund') === 'refund') {
     // A second tab holds an open dialog for the same request: its later click is the duplicate.
     const second = await context.newPage();
     watch(second);
@@ -98,6 +99,7 @@ async function confirm(page) {
     await confirm(second);
     await state(second, 'duplicate');
     await second.close();
+    } else {
     // A paid renewal whose registrar reply is unknown is never offered or accepted for a refund.
     await open(first, seed.unknown.id);
     if (await first.locator('button:has-text("More")').count()) await first.click('button:has-text("More")');
@@ -116,6 +118,7 @@ async function confirm(page) {
     await state(third, 'failed');
     await third.clock.fastForward(60000);
     await state(third, 'failed-later');
+    }
     receipt.facts = await (await context.request.get(`${base}/refund-browser-facts`)).json();
   } catch (error) {
     receipt.errors.push(String((error && error.stack) || error));
