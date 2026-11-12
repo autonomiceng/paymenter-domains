@@ -106,17 +106,15 @@ async function confirm(page) {
       const root = [...document.querySelectorAll('[wire\\:id]')].find((el) => (el.getAttribute('wire:name') ?? '').includes('ViewOperation'));
       return window.Livewire.find(root.getAttribute('wire:id')).mountAction('refund');
     });
-    await first.waitForLoadState('networkidle');
     await state(first, 'unknown-forced');
-    // Check the rendered auto-close setting and visibility after a short interval.
+    // Check the rendered auto-close setting and persistence with a deterministic clock.
     const third = first;
+    await third.clock.install();
     await open(third, seed.failing.id);
     await openRefund(third);
     await confirm(third);
     await state(third, 'failed');
-    await third.evaluate(() => { window.refundNoticeCheckStarted = performance.now(); });
-    await third.waitForFunction(() => performance.now() >= window.refundNoticeCheckStarted + 250,
-      null, { polling: 'raf', timeout: 2000 });
+    await third.clock.fastForward(60000);
     await state(third, 'failed-later');
     receipt.facts = await (await context.request.get(`${base}/refund-browser-facts`)).json();
   } catch (error) {
