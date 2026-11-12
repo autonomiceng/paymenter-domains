@@ -17,6 +17,9 @@ SCOPES = {
     'lists': (['tests/test_installed_demo_c_state_watch-test.php', 'tests/domain-page-render.php', 'tests/staff-list-render.php'],
               ['staff-domains-list.html', 'r14-watchlist-paused.html', 'r14-watchlist-retired.html',
                'domain-page-invoice-due-dark.html', 'domain-page-invoice-due-light.html'], 56),
+    'staff': (['tests/staff-list-render.php'], ['staff-domains-list.html'], 24),
+    'watch': (['tests/test_installed_demo_c_state_watch-test.php'], ['r14-watchlist-paused.html', 'r14-watchlist-retired.html'], 24),
+    'heading': (['tests/domain-page-render.php'], ['domain-page-invoice-due-dark.html', 'domain-page-invoice-due-light.html'], 8),
     'managed': (['tests/managed-dns-render.php'], ['staff-managed-dns.html'], 6),
 }
 
@@ -51,4 +54,4 @@ def main(scope='lists'):
 
 
 if __name__ == '__main__':
-    main()
+    main('staff')

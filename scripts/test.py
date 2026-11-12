@@ -179,8 +179,9 @@ def available_memory_mib(meminfo=Path('/proc/meminfo'), cgroup=Path('/sys/fs/cgr
 
 def bounded_jobs(requested, memory_mib, *, explicit=False):
     if os.environ.get('DOMAINS_TEST_CGROUP'):
-        # Each command owns a hard 256 MiB child; the controller has 512 MiB.
-        fitting = min(8, memory_mib // 256)
+        # Native process trees measured below 192 MiB. The enclosing scope still caps
+        # all workers and the controller together; individual cases retain their own caps.
+        fitting = min(10, memory_mib // 192)
         if requested > fitting:
             raise ValueError('Requested workers exceed the per-test memory reservation.')
         return requested
@@ -367,6 +368,9 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         bounded = bool((env or {}).get('DOMAINS_TEST_CGROUP'))
         phased = bounded and test_workers.installed_phases(argv[-1])
         resource_receipt = output / f'{index:04d}.resources.json'
+        # Browser cases run alone and include Chromium, Node and the PHP server.
+        test_limits = dict(wall_seconds=60 if Path(argv[-1]).name in {'native-paid-baseline-test.php', 'renewal-safety-test.php', 'staff-release-parity-test.php', 'staff-transfer-release-parity-test.php'} else 30 if kind in ('ui', 'native') else 10,
+                           memory_bytes=(768 if kind == 'ui' else 256)*1024**2)
         syntax_lint = kind == 'lint' and len(argv) >= 3 and argv[1] == '-l'
         rss_path = None if syntax_lint else output/f'{index:03d}.rss.txt'
         interrupted = None
@@ -374,16 +378,18 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         try:
             source_env = workers[worker] if workers else env
             # Syntax parsing never boots or modifies an application fixture.
-            pure = kind in ('lint', 'provider', 'contracts', 'package')
+            pure = kind in ('lint', 'provider', 'contracts', 'package', 'runner')
             if pure and source_env:
                 source_env = {key: value for key, value in source_env.items() if key != 'PAYMENTER_TEST_FIXTURE'}
             context = (nullcontext(source_env) if pure else
                        test_workers.command_environment(source_env, fixture_snapshot=dependency[1] if dependency else None))
             with context as child:
                 launched = ([sys.executable, env['DOMAINS_TEST_BUDGET'], '--name', argv[-1],
-                             '--test-scope', '--receipt', str(resource_receipt), '--', *argv] if bounded and not phased else argv)
+                             '--test-scope', '--wall', str(test_limits['wall_seconds']),
+                             '--memory', str(test_limits['memory_bytes']),
+                             '--receipt', str(resource_receipt), '--', *argv] if bounded and not phased else argv)
                 stdout, stderr, code, timed_out = execute(launched, cwd=ROOT, env=child,
-                                                        timeout=12 if bounded and not phased else timeout, graceful=60 if kind == 'mariadb' else 0,
+                                                        timeout=test_limits['wall_seconds']+2 if bounded and not phased else timeout, graceful=60 if kind == 'mariadb' else 0,
                                                         processes=processes, index=index, rss_path=rss_path)
         except BaseException as error:
             interrupted = error
@@ -395,6 +401,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                   'cancelled': cancelled, 'peak_rss_kib': None, 'command_error': str(interrupted) if interrupted else None,
                   'runtime_unchanged': False, 'runtime_error': 'Integrity verification did not finish.',
                   'dependency_changes': getattr(interrupted, 'changed_paths', []),
+                  'dependency_inventory': getattr(interrupted, 'inventory_detail', None),
                   'guard_complete': False, 'skipped': kind == 'mariadb' and code == 77,
                   'seconds': seconds, 'guard_seconds': 0, 'started_seconds': started-started_run,
                   'finished_seconds': time.monotonic()-started_run}
@@ -403,12 +410,12 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
             if not result['cases'] or any(row.get('exit') != 0 or not row.get('resources') for row in result['cases']):
                 result['exit'] = code = code or 1
         if bounded and not phased:
-            result['limits'] = dict(wall_seconds=10, memory_bytes=256*1024**2)
-            if resource_receipt.is_file():
+            result['limits'] = test_limits
+            try:
                 result['resources'] = json.loads(resource_receipt.read_text())
-            else:
+            except (OSError, ValueError) as error:
                 result['exit'] = code = code or 1
-                result['resource_error'] = 'Missing per-test resource receipt'
+                result['resource_error'] = 'Invalid per-test resource receipt: '+type(error).__name__
         value = stdout, stderr, result
         # Execution evidence must survive interruption in the integrity guard,
         # RSS read or failure handling, before the main thread can record it.
@@ -453,7 +460,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         if stderr:
             print(stderr.decode(errors='replace').strip(), file=sys.stderr, flush=True)
 
-    runner_error = None
+    runner_error, runner_error_detail = None, None
     try:
         with timing('commands', timings):
             if jobs == 1:
@@ -494,6 +501,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                             exclusive_running = False
     except BaseException as error:
         runner_error = type(error).__name__
+        runner_error_detail = str(error)
         processes.cancel()
         # Finalize output and metadata together after the pool has drained.
         for future, index in submitted.items():
@@ -550,7 +558,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         first_failure = failures[0] if failures else next(iter(failed_indexes), None)
         timings['run'] = time.monotonic() - started_run
         planned = {argv[-1] for kind, argv in commands if kind != 'lint'}
-        receipt = {'runner_error': runner_error, 'final_guard_complete': final_guard_complete,
+        receipt = {'runner_error': runner_error, 'runner_error_detail': runner_error_detail, 'final_guard_complete': final_guard_complete,
                    'final_guard_error': final_guard_error, 'timings': timings, 'only_tests': sorted(set(only or [])),
                    'lint_base': lint_base,
                    'git_tree': tree, 'git_tree_error': tree_error,

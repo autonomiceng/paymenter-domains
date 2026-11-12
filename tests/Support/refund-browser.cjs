@@ -58,8 +58,7 @@ async function openRefund(page) {
   await page.click('button:has-text("More")');
   await page.click('.fi-dropdown-list-item:has-text("Cancel and refund")');
   await page.waitForSelector('.fi-modal-window textarea', { state: 'visible' });
-  await page.locator('.fi-modal-window textarea').click();
-  await page.keyboard.type(REASON);
+  await page.locator('.fi-modal-window textarea').fill(REASON);
 }
 
 async function confirm(page) {
@@ -82,6 +81,7 @@ async function confirm(page) {
     const first = await context.newPage();
     watch(first);
     await first.goto(`${base}/refund-browser-login`);
+    if ((process.env.REFUND_BROWSER_CASE || 'refund') === 'refund') {
     // A second tab holds an open dialog for the same request: its later click is the duplicate.
     const second = await context.newPage();
     watch(second);
@@ -98,6 +98,7 @@ async function confirm(page) {
     await confirm(second);
     await state(second, 'duplicate');
     await second.close();
+    } else {
     // A paid renewal whose registrar reply is unknown is never offered or accepted for a refund.
     await open(first, seed.unknown.id);
     if (await first.locator('button:has-text("More")').count()) await first.click('button:has-text("More")');
@@ -106,18 +107,17 @@ async function confirm(page) {
       const root = [...document.querySelectorAll('[wire\\:id]')].find((el) => (el.getAttribute('wire:name') ?? '').includes('ViewOperation'));
       return window.Livewire.find(root.getAttribute('wire:id')).mountAction('refund');
     });
-    await first.waitForLoadState('networkidle');
     await state(first, 'unknown-forced');
-    // Check the rendered auto-close setting and visibility after a short interval.
+    // Check the rendered auto-close setting and persistence with a deterministic clock.
     const third = first;
+    await third.clock.install();
     await open(third, seed.failing.id);
     await openRefund(third);
     await confirm(third);
     await state(third, 'failed');
-    await third.evaluate(() => { window.refundNoticeCheckStarted = performance.now(); });
-    await third.waitForFunction(() => performance.now() >= window.refundNoticeCheckStarted + 250,
-      null, { polling: 'raf', timeout: 2000 });
+    await third.clock.fastForward(60000);
     await state(third, 'failed-later');
+    }
     receipt.facts = await (await context.request.get(`${base}/refund-browser-facts`)).json();
   } catch (error) {
     receipt.errors.push(String((error && error.stack) || error));

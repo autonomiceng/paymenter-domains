@@ -55,9 +55,21 @@ if ($snapshot !== '') {
     $sql = file_get_contents($snapshot);
     same((string)getenv('PAYMENTER_TEST_DATABASE_SHA256'), hash('sha256', $sql), 'Migrated fixture snapshot retains admitted bytes');
     Illuminate\Support\Facades\DB::connection()->getPdo()->exec($sql);
+    // Migration boot normally initializes the grammar before tests build schema inspectors.
+    Illuminate\Support\Facades\DB::connection()->useDefaultSchemaGrammar();
+    // foreignIdFor() boots models during migration, while fixture auditing is disabled.
+    // Restore that same observer setup before a case changes its audit configuration.
+    expect(preg_match('/^-- booted-models: (.+)$/m', $sql, $models) === 1, 'Snapshot records migration model boot order');
+    foreach (json_decode($models[1], true, 512, JSON_THROW_ON_ERROR) as $model) {
+        expect(is_subclass_of($model, Illuminate\Database\Eloquent\Model::class), 'Snapshot model is an Eloquent model');
+        new $model;
+    }
 } else {
     Illuminate\Support\Facades\Artisan::call('migrate', ['--force' => true]);
 }
+$pdo=Illuminate\Support\Facades\DB::connection()->getPdo();
+$GLOBALS['nativeFixtureDatabase']=['pdo'=>$pdo,'changes'=>(int)$pdo->query('SELECT total_changes()')->fetchColumn(),
+    'schema'=>(int)$pdo->query('PRAGMA schema_version')->fetchColumn()];
 
 // Public-data updater also uses an explicit fake: native runtime tests must never resolve DNS.
 $app->instance(\Paymenter\Extensions\Servers\Domains\Services\PslTransport::class,

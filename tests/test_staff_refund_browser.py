@@ -59,14 +59,14 @@ def release_fixture_cache(app, *, copied=True):
                 os.posix_fadvise(handle.fileno(), 0, 0, os.POSIX_FADV_DONTNEED)
 
 
-def browse(app, root, facts):
+def browse(app, root, facts, scenario):
     node = shutil.which('node')
     assert node, 'Node.js is required for the browser check'
     php = str(ROOT/'scripts/php-test')
     port = free_port()
     base = f'http://127.0.0.1:{port}'
     env = dict(os.environ, PAYMENTER_TEST_FIXTURE=str(app), REFUND_BROWSER_URL=base, REFUND_BROWSER_DATABASE=str(root/'seed.sqlite'),
-               REFUND_BROWSER_CLOCK=facts['clock'], REFUND_BROWSER_EMAIL=facts['email'], REFUND_BROWSER_SEED=str(root/'seed.json'))
+               REFUND_BROWSER_CASE=scenario, REFUND_BROWSER_CLOCK=facts['clock'], REFUND_BROWSER_EMAIL=facts['email'], REFUND_BROWSER_SEED=str(root/'seed.json'))
     out = Path(tempfile.mkdtemp(prefix='refund-browser-', dir=root))
     server = subprocess.Popen([php, '-S', f'127.0.0.1:{port}', '-t', str(app/'public'), str(ROOT/'tests/Support/refund-browser-router.php')],
                               cwd=app, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
@@ -90,7 +90,7 @@ def browse(app, root, facts):
     return {step['label']: step for step in report['steps']}, report['facts']
 
 
-def main():
+def main(scenario='refund'):
     fixture = Path(os.environ['PAYMENTER_TEST_FIXTURE'])
     with installed_fixture.application(fixture, 'refund-browser') as (root, app):
         installed = app/'extensions/Servers/Domains'
@@ -103,7 +103,7 @@ def main():
         for path in (app/'bootstrap/cache').glob('*.php'):
             path.unlink()
         seed = subprocess.run([str(ROOT/'scripts/php-test'), 'tests/Support/refund-browser-seed.php'], cwd=ROOT,
-                              env=dict(os.environ, REFUND_BROWSER_ROOT=str(root)), capture_output=True, text=True, timeout=120)
+                              env=dict(os.environ, REFUND_BROWSER_ROOT=str(root), REFUND_BROWSER_CASE=scenario), capture_output=True, text=True, timeout=120)
         assert seed.returncode == 0, f'Seed failed:\n{seed.stdout}\n{seed.stderr}'
         facts = json.loads((root/'seed.json').read_text())
         database = root/'seed.sqlite'
@@ -111,44 +111,47 @@ def main():
             # The first refund creates the customer's credit; changing that balance later fails, as a database fault would.
             db.execute("CREATE TRIGGER refund_browser_credit_fail BEFORE UPDATE ON credits WHEN OLD.amount > 0 "
                        "BEGIN SELECT RAISE(ABORT, 'synthetic credit failure'); END")
+            if scenario == 'refusals':
+                db.execute("CREATE TRIGGER refund_browser_insert_fail BEFORE INSERT ON credits "
+                           "BEGIN SELECT RAISE(ABORT, 'synthetic credit failure'); END")
         release_fixture_cache(app)
-        release_fixture_cache((app/'vendor').resolve(strict=True), copied=False)
-        release_fixture_cache(ROOT/'.cache/php-runtime', copied=False)
-        steps, saved = browse(app, root, facts)
+        steps, saved = browse(app, root, facts, scenario)
         operation = saved['operations']
 
-        typed = steps['reason-typed']
-        assert typed['mounted'] == [{'name': 'refund', 'reason': REASON}], f'The typed reason reaches the dialog: {typed["mounted"]}'
-        done = steps['confirmed']
-        assert not done['modalOpen'] and done['mounted'] == [], f'Confirming closes the dialog: {done}'
-        assert any(n.startswith('Request cancelled') for n in done['notifications']), f'Confirming says the request is cancelled: {done["notifications"]}'
-        refunded = operation['refund']
-        amount = Decimal(facts['refund']['amount'])
-        assert refunded['state'] == 'rejected' and refunded['safe_code'] == 'refund_approved', f'The held renewal is closed: {refunded}'
-        assert [a for a in refunded['staff_actions'] if a[0] == 'refund'] == [['refund', 'completed', REASON]], \
-            f'History keeps one refund with the typed reason: {refunded["staff_actions"]}'
-        assert Decimal(refunded['refund']['amount']) == amount and refunded['refund']['to'] == 'account_credit', 'The paid amount is returned'
-        assert [(Decimal(a), c) for a, c in saved['credits']] == [(amount, 'USD')], f'The paid amount returns exactly once: {saved["credits"]}'
-        reloaded = steps['reloaded']['text']
-        assert 'Cancelled' in reloaded and 'Credit added' in reloaded, 'The request page shows the cancelled request and its credit'
-        assert 'Cancel and refund' not in steps['reloaded']['menu'], 'A closed request offers no second refund'
-        duplicate = steps['duplicate']
-        assert not duplicate['modalOpen'] and duplicate['mounted'] == [] and duplicate['notificationTitles'] == ['This request changed'], f'A second click from an old dialog is answered: {duplicate}'
+        if scenario == 'refund':
+            typed = steps['reason-typed']
+            assert typed['mounted'] == [{'name': 'refund', 'reason': REASON}], f'The typed reason reaches the dialog: {typed["mounted"]}'
+            done = steps['confirmed']
+            assert not done['modalOpen'] and done['mounted'] == [], f'Confirming closes the dialog: {done}'
+            assert any(n.startswith('Request cancelled') for n in done['notifications']), f'Confirming says the request is cancelled: {done["notifications"]}'
+            refunded = operation['refund']
+            amount = Decimal(facts['refund']['amount'])
+            assert refunded['state'] == 'rejected' and refunded['safe_code'] == 'refund_approved', f'The held renewal is closed: {refunded}'
+            assert [a for a in refunded['staff_actions'] if a[0] == 'refund'] == [['refund', 'completed', REASON]], \
+                f'History keeps one refund with the typed reason: {refunded["staff_actions"]}'
+            assert Decimal(refunded['refund']['amount']) == amount and refunded['refund']['to'] == 'account_credit', 'The paid amount is returned'
+            assert [(Decimal(a), c) for a, c in saved['credits']] == [(amount, 'USD')], f'The paid amount returns exactly once: {saved["credits"]}'
+            reloaded = steps['reloaded']['text']
+            assert 'Cancelled' in reloaded and 'Credit added' in reloaded, 'The request page shows the cancelled request and its credit'
+            assert 'Cancel and refund' not in steps['reloaded']['menu'], 'A closed request offers no second refund'
+            duplicate = steps['duplicate']
+            assert not duplicate['modalOpen'] and duplicate['mounted'] == [] and duplicate['notificationTitles'] == ['This request changed'], f'A second click from an old dialog is answered: {duplicate}'
 
-        unknown = steps['unknown-offered']
-        assert 'Cancel and refund' not in unknown['menu'], 'An unknown registrar reply is not offered a refund'
-        forced = steps['unknown-forced']
-        assert not forced['modalOpen'], 'An unknown registrar reply cannot open the refund dialog'
-        unsure = operation['unknown']
-        assert unsure['state'] == 'uncertain' and not {'refund_authorization', 'refund'} & set(unsure['funding_keys']), 'Nothing is refunded for an unknown reply'
+        else:
+            unknown = steps['unknown-offered']
+            assert 'Cancel and refund' not in unknown['menu'], 'An unknown registrar reply is not offered a refund'
+            forced = steps['unknown-forced']
+            assert not forced['modalOpen'], 'An unknown registrar reply cannot open the refund dialog'
+            unsure = operation['unknown']
+            assert unsure['state'] == 'uncertain' and not {'refund_authorization', 'refund'} & set(unsure['funding_keys']), 'Nothing is refunded for an unknown reply'
 
-        warning = 'Cancelled, refund not finished'
-        assert any(n.startswith(warning) for n in steps['failed']['notifications']), f'A failed refund says so: {steps["failed"]["notifications"]}'
-        assert steps['failed']['notificationDurations'] == ['persistent'], 'The failure notice has no auto-close duration'
-        assert any(n.startswith(warning) for n in steps['failed-later']['notifications']), 'The failure stays on screen'
-        failing = operation['failing']
-        assert failing['state'] == 'rejected' and 'refund_authorization' in failing['funding_keys'] and 'refund' not in failing['funding_keys'], \
-            f'A failed refund keeps the decision and stays retryable: {failing}'
+            warning = 'Cancelled, refund not finished'
+            assert any(n.startswith(warning) for n in steps['failed']['notifications']), f'A failed refund says so: {steps["failed"]["notifications"]}'
+            assert steps['failed']['notificationDurations'] == ['persistent'], 'The failure notice has no auto-close duration'
+            assert any(n.startswith(warning) for n in steps['failed-later']['notifications']), 'The failure stays on screen'
+            failing = operation['failing']
+            assert failing['state'] == 'rejected' and 'refund_authorization' in failing['funding_keys'] and 'refund' not in failing['funding_keys'], \
+                f'A failed refund keeps the decision and stays retryable: {failing}'
         print('Staff Cancel and refund closes a held paid renewal once, from the dialog button, in Chromium.')
 
 

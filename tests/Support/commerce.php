@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__.'/FakeRegistrar.php';
 require_once __DIR__.'/offer-generation.php';
 require_once __DIR__.'/offer-writers.php';
+require_once __DIR__.'/commerce-database.php';
 use App\Models\{Category, Currency, Server};
 use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Capabilities, CatalogueEntry, CatalogueRate, Disposition, DriverResult, Environment, Evidence, ResultReason, SendState};
@@ -16,7 +17,7 @@ function commerceFixture(bool $eligible = false, ?Closure $activation = null, En
     if(!app()->bound(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)){app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new \Paymenter\Extensions\Servers\Domains\Tests\FakeClock(new DateTimeImmutable('2026-10-18T12:00:00Z')));}
     // Installation republishes the retail rule through the runtime, so register it first as every production caller does.
     if ($active && !app()->bound(\Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class)) { \Paymenter\Extensions\Servers\Domains\Services\Runtime::register(); }
-    if ($active) { (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class);app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\RuntimePorts::class);
+    if ($active) { if(!restoreCommerceDatabase()){(new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();}app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class);app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\RuntimePorts::class);
         // Fresh empty ports keep the installed catalogue contract, without retaining provider factories.
         $runtimePorts=new \Paymenter\Extensions\Servers\Domains\Services\RuntimePorts;
         $runtimePorts->registerInitialManagedRecordObservations(\Paymenter\Extensions\Servers\Domains\Services\Runtime::initialManagedRecordObservations(...));

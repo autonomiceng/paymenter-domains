@@ -262,20 +262,20 @@ class RunnerTests(unittest.TestCase):
                    'PAYMENTER_TEST_PHP': str(runtime/'usr/bin/php8.4')}
             workers, fixture_snapshot, runtime_snapshot = runner.test_workers.environments(env, output, 2, runtime)
             self.assertTrue(all(worker['PYTHONDONTWRITEBYTECODE'] == '1' for worker in workers))
-            rendezvous = root/'ready'; rendezvous.mkdir()
-            script = ("import os,time; from pathlib import Path; "
+            rendezvous = root/'ready'; rendezvous.mkdir(); os.mkfifo(rendezvous/'one'); os.mkfifo(rendezvous/'two')
+            script = ("import os,sys; from pathlib import Path; "
                       "fixture=Path(os.environ['PAYMENTER_TEST_FIXTURE']); token=str(os.getpid()); "
                       "(fixture/'state').write_text(token); "
                       "Path(os.environ['TMPDIR'],'state').write_text(token); "
-                      f"ready=Path({str(rendezvous)!r}); (ready/token).touch(); deadline=time.monotonic()+5; "
-                      "\nwhile len(list(ready.iterdir()))<2 and time.monotonic()<deadline: time.sleep(.01)"
-                      "\nassert len(list(ready.iterdir()))==2"
+                      f"ready=Path({str(rendezvous)!r}); "
+                      "\nif sys.argv[1]=='0': (ready/'one').write_text('ready'); assert (ready/'two').read_text()=='ready'"
+                      "\nelse: assert (ready/'one').read_text()=='ready'; (ready/'two').write_text('ready')"
                       "\nassert (fixture/'state').read_text()==token"
                       "\nassert Path(os.environ['TMPDIR'],'state').read_text()==token"
                       "\nprint(fixture)")
             with mock.patch.object(runner, 'ROOT', root), contextlib.redirect_stdout(io.StringIO()):
-                self.assertEqual(runner.run([('runner', [sys.executable, '-c', script])]*2, env, output,
-                                            ['runner'], {}, jobs=2, workers=workers), 0)
+                self.assertEqual(runner.run([('native', [sys.executable, '-c', script, str(i)]) for i in range(2)], env, output,
+                                            ['native'], {}, jobs=2, workers=workers), 0)
             self.assertNotEqual((output/'000.stdout.txt').read_bytes(), (output/'001.stdout.txt').read_bytes())
             self.assertFalse((fixture/'state').exists())
             for key in ['PAYMENTER_TEST_FIXTURE', 'PAYMENTER_TEST_PHP', 'TMPDIR']:

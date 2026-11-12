@@ -3,11 +3,11 @@
 declare(strict_types=1);
 
 /** Serialize a freshly migrated, empty fixture for independent in-memory databases. */
-function exportCoreDatabase(PDO $pdo, string $path): void
+function exportCoreDatabase(PDO $pdo, string $path, array $bootedModels = []): void
 {
     $quote = static fn(string $name): string => '"'.str_replace('"', '""', $name).'"';
     $objects = $pdo->query("SELECT type,name,sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY type='table' DESC,name")->fetchAll(PDO::FETCH_ASSOC);
-    $sql = ['PRAGMA foreign_keys=OFF;', 'BEGIN;'];
+    $sql = ['-- booted-models: '.json_encode($bootedModels, JSON_THROW_ON_ERROR), 'PRAGMA foreign_keys=OFF;', 'BEGIN;'];
     foreach ($objects as $object) {
         if ($object['type'] === 'table' && !str_starts_with($object['name'], 'sqlite_')) { $sql[] = $object['sql'].';'; }
     }

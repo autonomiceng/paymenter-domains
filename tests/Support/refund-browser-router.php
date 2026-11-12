@@ -36,6 +36,7 @@ $app->booted(static function()use($app):void{
         $seed=json_decode((string)file_get_contents((string)getenv('REFUND_BROWSER_SEED')),true,flags:JSON_THROW_ON_ERROR);
         $ops=[];
         foreach(['refund','failing','unknown'] as $key){
+            if(!isset($seed[$key])){continue;}
             $op=Paymenter\Extensions\Servers\Domains\Models\Operation::findOrFail($seed[$key]['id']);$invoice=App\Models\Invoice::findOrFail($seed[$key]['invoice']);
             $ops[$key]=['state'=>$op->state,'safe_code'=>$op->safe_code,'funding_keys'=>array_keys($op->funding??[]),
                 'staff_actions'=>array_map(fn($a)=>[$a['action'],$a['phase'],$a['reason']],$op->policy['staff_actions']??[]),'refund'=>$op->funding['refund']??null,
