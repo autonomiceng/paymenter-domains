@@ -53,6 +53,15 @@ if($renewalGroup||$registrationGroup||$transferGroup||in_array($packagePhase,[
             'domains.enom_writes.management'=>$packagePhase==='enom-test-management-restart',
             'domains.enom_writes.renewal'=>str_starts_with($packagePhase,'enom-test-renewal-')]));
 }
+if($transferGroup){
+    $app->afterBootstrapping(Illuminate\Foundation\Bootstrap\LoadConfiguration::class,static function()use($app):void {
+        require_once __DIR__.'/enom-transfer-readers.php';
+        [$clock,,$rdap]=enomTransferReaders();
+        $app->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
+        $app->instance(Paymenter\Extensions\Servers\Domains\Services\Rdap::class,$rdap);
+        $app->instance(Paymenter\Extensions\Servers\Domains\Services\TransferPrecheck::class,new Paymenter\Extensions\Servers\Domains\Services\TransferPrecheck($rdap));
+    });
+}
 if(str_starts_with($packagePhase,'identity-group-')||in_array($packagePhase,['identity','catalogue','catalogue-retained'],true)){
     $app->afterBootstrapping(Illuminate\Foundation\Bootstrap\LoadConfiguration::class,
         static fn()=>config(['domains.enom_identity.environment'=>'test',

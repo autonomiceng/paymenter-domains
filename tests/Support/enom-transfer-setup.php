@@ -7,18 +7,13 @@ use Illuminate\Support\Facades\{Auth,DB,Queue};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Tld};
 use Paymenter\Extensions\Servers\Domains\Services\{NativeCatalogue, StaffSettingsReview as Review, StaffSettingsWrites};
-$clock=new class implements Clock {public DateTimeImmutable $at;public function __construct(){$this->at=new DateTimeImmutable('2026-10-22T00:10:00Z');}public function now():DateTimeImmutable{return $this->at;}};
+require_once __DIR__.'/enom-transfer-readers.php';
+[$clock,$rdapMode,$rdap]=enomTransferReaders();
 app()->instance(Clock::class,$clock);\Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::reset();Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
+app()->instance(\Paymenter\Extensions\Servers\Domains\Services\Rdap::class,$rdap);
+app()->instance(\Paymenter\Extensions\Servers\Domains\Services\TransferPrecheck::class,new \Paymenter\Extensions\Servers\Domains\Services\TransferPrecheck($rdap));
 $session=app('session')->driver();$session->start();app('request')->setLaravelSession($session);app('view')->share('errors',new Illuminate\Support\ViewErrorBag);
 $hot=storage_path('framework/domains-assets-hot');file_put_contents($hot,'http://assets.example.test');app(Illuminate\Foundation\Vite::class)->useHotFile($hot);require_once app_path('Classes/helpers.php');tldPanel();
-$rdapMode=(object)['mode'=>'ok','calls'=>0];$rdap=new \Paymenter\Extensions\Servers\Domains\Services\Rdap(static function(string $url,int $timeout)use($rdapMode):array {
-    same(0,DB::transactionLevel(),'Transfer RDAP outside locks');expect($timeout>0&&$timeout<=8000,'Bounded RDAP');$rdapMode->calls++;
-    if(str_ends_with(parse_url($url,PHP_URL_PATH),'dns.json')){return ['status'=>200,'body'=>json_encode(['services'=>[[['com'],['https://rdap.example.com/']]]])];}
-    if($rdapMode->mode==='unknown'){throw new RuntimeException('Synthetic unavailable registry lookup');}
-    if($rdapMode->mode==='404'){return ['status'=>404,'body'=>'{"errorCode":404}'];}
-    return ['status'=>200,'body'=>json_encode(['objectClassName'=>'domain','ldhName'=>basename(parse_url($url,PHP_URL_PATH)),'status'=>[$rdapMode->mode==='locked'?'client transfer prohibited':'active'],'events'=>[['eventAction'=>'registration','eventDate'=>$rdapMode->mode==='young'?'2026-10-21T00:00:00Z':'2020-01-01T00:00:00Z'],['eventAction'=>'transfer','eventDate'=>in_array($rdapMode->mode,['young','recent'],true)?'2026-10-21T00:00:00Z':'2020-01-01T00:00:00Z'],['eventAction'=>'expiration','eventDate'=>'2027-10-21T00:00:00Z']]])];
-});app()->instance(\Paymenter\Extensions\Servers\Domains\Services\Rdap::class,$rdap);
-app()->instance(\Paymenter\Extensions\Servers\Domains\Services\TransferPrecheck::class,new \Paymenter\Extensions\Servers\Domains\Services\TransferPrecheck($rdap));
 // Fresh install's contract inspected these adapters before this fixture supplied its offline RDAP.
 foreach(['CheckoutEligibility','CartAdmission','InvoiceBinding','Storefront'] as $adapter){app()->forgetInstance('Paymenter\\Extensions\\Servers\\Domains\\Services\\'.$adapter);}
 $staff=isset($resumeTransfer)?App\Models\User::findOrFail($resumeTransfer['staff']):staffUser([...array_keys(Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::permissions()),'admin.invoices.update']);Auth::setUser($staff);
