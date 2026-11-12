@@ -189,7 +189,7 @@ def main(scenario):
                 verifier.verify(upload, receipt)
                 run_env['PACKAGE_ZIP'] = str(upload)
                 package_seconds = time.monotonic() - package_started
-            phase_limit = 120 if name in ['enom-test-renewal', 'enom-live'] else 45
+            phase_limit = 120 if name == 'enom-live' else 45
             timeout = phase_limit
             try:
                 if scenario_deadline is not None:

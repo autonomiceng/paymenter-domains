@@ -41,11 +41,11 @@ $renewalGroup=str_starts_with($packagePhase,'enom-test-renewal-group-');
 $registrationGroup=str_starts_with($packagePhase,'enom-test-registration-group-');
 $transferGroup=str_starts_with($packagePhase,'enom-test-transfer-group-');
 if($renewalGroup||$registrationGroup||$transferGroup||in_array($packagePhase,[
-    'enom-test-transfer','enom-test-transfer-restart','enom-test-management','install-enom-test-management',
+    'enom-test-transfer','enom-test-transfer-restart','enom-test-management',
     'enom-test-management-restart','enom-test-registration','enom-test-renewal','enom-test-renewal-restart',
     'enom-test-renewal-race-issue','enom-test-renewal-race-admit','enom-test-renewal-race-verify'],true)){
     $registration=$renewalGroup||$registrationGroup||$transferGroup||in_array($packagePhase,[
-        'enom-test-transfer','enom-test-management','install-enom-test-management','enom-test-registration','enom-test-renewal'],true);
+        'enom-test-transfer','enom-test-management','enom-test-registration','enom-test-renewal'],true);
     $transfer=$transferGroup||in_array($packagePhase,['enom-test-transfer','enom-test-transfer-restart'],true);
     $app->afterBootstrapping(Illuminate\Foundation\Bootstrap\LoadConfiguration::class,
         static fn()=>config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,

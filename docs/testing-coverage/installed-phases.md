@@ -29,3 +29,7 @@ Main compatibility: the SetRenew consent and correction changes from `5d13261d`
 remain intact. The installed management scenario uses main's account-level consent
 assertion and unknown-version refusal. Its native guards retain legacy consent,
 server/environment isolation and the automatic SetRenew correction regression.
+
+Renewal compatibility: `a4b217b8` bill dates use `America/Denver` in the
+confirmation and lost-reply history phases. Native `renewal-send-failure-test.php`
+retains safe failure metadata, staff visibility and no-replay assertions from main.
