@@ -82,7 +82,7 @@ $other=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$silo->id])->asser
 same('.com on OFFLINE DEMO NameSilo (synthetic)',$other->instance()->getTitle(),'Two pages for one TLD never share a title');
 // Each price shows the cost for the same action, so a price never reads against another action's cost.
 expect(!str_contains($page->html(),'<th scope="col">Cost'),'No single Cost column beside three prices');
-expect(substr_count($text($page->html()),'Cost USD ')>=2,'Registration and renewal each show their own cost');
+expect(substr_count($text($page->html()),'Cost $')>=2,'Registration and renewal each show their own cost');
 // Change registrar says what it does to sales before it is saved.
 $dialog=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$enom->id])->mountAction('seller')->call('$refresh');
 expect(str_contains($text($dialog->effects['partials']['action-modals.0']??''),'new orders for .com stop until that account\'s terms and prices are checked, and open carts drop .com'),'Change registrar warns that sales stop and carts drop the TLD');
