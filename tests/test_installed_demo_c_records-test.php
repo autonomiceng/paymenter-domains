@@ -32,7 +32,7 @@ $check($state['stale'],'Older than one day is stale');
 $owned=new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(name:$d->domain,status:'Active',tone:'ok',expiry:'2027-11-20',renewal:'On',renewalPrice:'$14.00',actions:['show'=>'/domains/1'],progress:[],setup:[],transfer:[],management:[],testEnvironment:false);
 $page=RecordFamilies::owner($owned,$state);
 $html=view('domains::partials.owner-management',['domain'=>$page])->render();
-foreach(['Partial','Missing','Unsupported','CAA','3600','Read-only','Checked'] as $text){$check(str_contains($html,$text),'Customer sees '.$text);}
+foreach(['Partial',\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::NOT_READ,'Unsupported','CAA','3600','Read-only','Checked'] as $text){$check(str_contains($html,$text),'Customer sees '.$text);}
 $check(str_contains($html,'aria-label="DNS records"')&&str_contains($html,'TTL'),'CAA is in the DNS records table');
 $caaDom=storefrontDom($html);
 $same(1,$caaDom->query('//tr[td[normalize-space(.)="CAA"]]')->length,'The real DNS table contains the CAA row');
@@ -100,10 +100,10 @@ $unknown=new Domain(['domain'=>'example.com','registrar_key'=>'enom','server_id'
 $unreadManagement=$existing;foreach(['dns','srv','ds'] as $key){$unreadManagement[$key]['records']=null;$unreadManagement[$key]['actions']=[];}
 $unread=RecordFamilies::owner(new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(...[...get_object_vars($owned),'management'=>$unreadManagement]),RecordFamilies::read($unknown,$now));
 $unreadHtml=view('domains::partials.owner-management',['domain'=>$unread,'caps'=>['dns','srv','ds'],'keys'=>array_fill_keys(['dns','srv','ds','ds_delete'],str_repeat('b',64))])->render();
-$check(!str_contains($unreadHtml,'Contact support to sync')&&str_contains($unreadHtml,'domains-missing'),'Unqueued unknown registrar families show Missing without a support chore');
-// ui-r15 R3: the rows keep Missing; why is said once above them.
+$check(!str_contains($unreadHtml,'Contact support to sync')&&str_contains($unreadHtml,\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::NOT_READ)&&!str_contains($unreadHtml,'domains-missing'),'Unqueued unknown registrar families say Not read yet, calm, without a support chore');
+// The rows say Not read yet; why is said once above them, in plain words.
 $unreadNote=view('domains::partials.record-read-note',['recordFamilies'=>RecordFamilies::read($unknown,$now)])->render();
-$check(str_contains($unreadNote,'No registrar read is queued.')&&!str_contains($unreadHtml,'No registrar read is queued'),'Unknown families explain the absence of queued read work once');
+$check(str_contains($unreadNote,\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::NOT_READ_NOTE)&&!str_contains($unreadHtml,\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::NOT_READ_NOTE),'Unknown families explain the missing read once');
 // Partial glue discovery must keep a separately authorized per-host addition.
 $glueFacts=RecordFamilies::read($d,$now);
 $glueFacts['current_read']=true;
