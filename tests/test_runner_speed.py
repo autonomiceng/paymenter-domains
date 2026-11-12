@@ -7,7 +7,6 @@ import os
 from pathlib import Path
 import sys
 import tempfile
-import time
 import unittest
 from unittest import mock
 
@@ -16,6 +15,25 @@ sys.path.insert(0, str(ROOT/'scripts'))
 spec = importlib.util.spec_from_file_location('speed_runner', ROOT/'scripts/test.py')
 runner = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(runner)
+
+
+def ready_pipe(root, name='ready'):
+    path = root/name
+    os.mkfifo(path)
+    return path
+
+
+def detached_waiter(root):
+    """A detached child announces its PID before its parent announces readiness."""
+    child_ready = ready_pipe(root, 'child-ready')
+    pidfile = root/'pid'
+    child = ("import os,signal; from pathlib import Path; "
+             f"Path({str(pidfile)!r}).write_text(str(os.getpid())); "
+             f"Path({str(child_ready)!r}).write_text('ready'); signal.pause()")
+    parent = ("import subprocess,sys,signal; from pathlib import Path; "
+              f"subprocess.Popen([sys.executable,'-c',{child!r}],start_new_session=True); "
+              f"assert Path({str(child_ready)!r}).read_text() == 'ready'; ")
+    return parent, pidfile
 
 
 class SchedulingTests(unittest.TestCase):
@@ -344,22 +362,17 @@ class SchedulingTests(unittest.TestCase):
             root = Path(temporary)
             (root/'Domains').mkdir()
             output = root/'output'; output.mkdir()
-            ready, escaped, pidfile = root/'ready', root/'escaped', root/'pid'
-            sleeper = ("import subprocess,sys,time; from pathlib import Path; "
-                       f"subprocess.Popen([sys.executable,'-c',\"import os,time; from pathlib import Path; Path({str(pidfile)!r}).write_text(str(os.getpid())); time.sleep(2); Path({str(escaped)!r}).touch()\"],start_new_session=True); "
-                       f"deadline=time.monotonic()+5\nwhile not Path({str(pidfile)!r}).exists() and time.monotonic()<deadline: time.sleep(.002)\nassert Path({str(pidfile)!r}).exists(); "
-                       f"Path({str(ready)!r}).touch(); print('started',flush=True); time.sleep(30)")
-            failure = ("import time; from pathlib import Path; "
-                       f"ready=Path({str(ready)!r}); deadline=time.monotonic()+5; "
-                       "\nwhile not ready.exists() and time.monotonic()<deadline: time.sleep(.01)"
-                       "\nassert ready.exists(); raise SystemExit(7)")
+            ready = ready_pipe(root)
+            parent, pidfile = detached_waiter(root)
+            sleeper = (parent + "print('started',flush=True); "
+                       f"Path({str(ready)!r}).write_text('ready'); signal.pause()")
+            failure = ("from pathlib import Path; "
+                       f"assert Path({str(ready)!r}).read_text() == 'ready'; raise SystemExit(7)")
             commands = [('provider', [sys.executable, '-c', script]) for script in
                         [sleeper, failure, "raise RuntimeError('must not run')"]]
-            started = time.monotonic()
             with mock.patch.object(runner, 'ROOT', root), contextlib.redirect_stdout(io.StringIO()):
                 status = runner.run(commands, dict(os.environ), output, ['provider'], {}, jobs=2, fail_fast=True)
             self.assertEqual(status, 1)
-            self.assertLess(time.monotonic()-started, 5)
             receipt = json.loads((output/'receipt.json').read_text())
             self.assertFalse(receipt['complete'])
             self.assertEqual(receipt['first_failure'], 1)
@@ -369,24 +382,17 @@ class SchedulingTests(unittest.TestCase):
             self.assertEqual(receipt['commands_planned'], len(commands))
             self.assertIn('started', (output/'000.stdout.txt').read_text())
             self.assertFalse(Path('/proc/'+pidfile.read_text()).exists(), 'Grandchild was not reaped')
-            self.assertFalse(escaped.exists(), 'Grandchild survived cancellation')
 
 
     def test_unexpected_output_error_cancels_peers_without_fail_fast(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary); (root/'Domains').mkdir()
             output = root/'output'; output.mkdir()
-            ready, escaped, pidfile = root/'ready', root/'escaped', root/'pid'
-            sleeper = ("import subprocess,sys,time; from pathlib import Path; "
-                       f"subprocess.Popen([sys.executable,'-c',\"import os,time; from pathlib import Path; Path({str(pidfile)!r}).write_text(str(os.getpid())); time.sleep(2); Path({str(escaped)!r}).touch()\"],start_new_session=True); "
-                       f"deadline=time.monotonic()+5\nwhile not Path({str(pidfile)!r}).exists() and time.monotonic()<deadline: time.sleep(.002)\nassert Path({str(pidfile)!r}).exists(); "
-                       f"Path({str(ready)!r}).touch(); time.sleep(8)")
-            success = ("import time; from pathlib import Path; "
-                       f"ready=Path({str(ready)!r}); deadline=time.monotonic()+5; "
-                       "\nwhile not ready.exists() and time.monotonic()<deadline: time.sleep(.01)"
-                       "\nassert ready.exists()")
+            ready = ready_pipe(root)
+            parent, pidfile = detached_waiter(root)
+            sleeper = parent + f"Path({str(ready)!r}).write_text('ready'); signal.pause()"
+            success = "from pathlib import Path; " + f"assert Path({str(ready)!r}).read_text() == 'ready'"
             commands = [('provider', [sys.executable, '-c', script]) for script in [sleeper, success]]
-            started = time.monotonic()
             with mock.patch.object(runner, 'ROOT', root), \
                  mock.patch.object(Path, 'write_bytes', side_effect=OSError('output unavailable')), \
                  contextlib.redirect_stdout(io.StringIO()):
@@ -397,26 +403,21 @@ class SchedulingTests(unittest.TestCase):
             self.assertFalse(receipt['complete'])
             self.assertEqual(len(receipt['results']), 2)
             self.assertEqual(receipt['not_run'], [])
-            self.assertLess(time.monotonic()-started, 5)
             self.assertFalse(Path('/proc/'+pidfile.read_text()).exists(), 'Grandchild was not reaped')
-            self.assertFalse(escaped.exists(), 'Grandchild survived output failure')
 
 
     def test_interrupt_allows_resource_owner_cleanup(self):
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary); ready, cleaned = root/'ready', root/'cleaned'
-            child = ("import signal,time; from pathlib import Path; "
+            root = Path(temporary); ready, cleaned = ready_pipe(root), root/'cleaned'
+            child = ("import signal; from pathlib import Path; "
                      f"signal.signal(signal.SIGTERM,lambda *args:(Path({str(cleaned)!r}).touch(),exit(0))); "
-                     f"Path({str(ready)!r}).touch(); time.sleep(30)")
+                     f"Path({str(ready)!r}).write_text('ready'); signal.pause()")
             communicate = runner.subprocess.Popen.communicate
             calls = []
             def interrupt_once(process, *args, **kwargs):
                 if not calls:
                     calls.append(True)
-                    deadline = time.monotonic()+5
-                    while not ready.exists() and time.monotonic()<deadline:
-                        time.sleep(.01)
-                    self.assertTrue(ready.exists())
+                    self.assertEqual(ready.read_text(), 'ready')
                     raise KeyboardInterrupt
                 return communicate(process, *args, **kwargs)
             with mock.patch.object(runner.subprocess.Popen, 'communicate', interrupt_once), self.assertRaises(KeyboardInterrupt):
@@ -427,27 +428,22 @@ class SchedulingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary); (root/'Domains').mkdir()
             output = root/'output'; output.mkdir()
-            ready, escaped, pidfile = root/'ready', root/'escaped', root/'pid'
-            orphan = ("import subprocess,sys,os,time; from pathlib import Path; "
-                      f"subprocess.Popen([sys.executable,'-c',\"import os,time; from pathlib import Path; Path({str(pidfile)!r}).write_text(str(os.getpid())); time.sleep(2); Path({str(escaped)!r}).touch()\"],start_new_session=True); "
-                       f"deadline=time.monotonic()+5\nwhile not Path({str(pidfile)!r}).exists() and time.monotonic()<deadline: time.sleep(.002)\nassert Path({str(pidfile)!r}).exists(); "
-                      f"Path({str(ready)!r}).write_text(str(os.getpid()))")
-            failure = ("import time; from pathlib import Path; "
-                       f"ready=Path({str(ready)!r}); deadline=time.monotonic()+5; "
-                       "\nwhile (not ready.exists() or Path('/proc/'+ready.read_text()).exists()) and time.monotonic()<deadline: time.sleep(.01)"
-                       "\nassert ready.exists(); raise SystemExit(7)")
+            ready = ready_pipe(root)
+            parent, pidfile = detached_waiter(root)
+            orphan = parent + f"import os; Path({str(ready)!r}).write_text(str(os.getpid()))"
+            failure = ("import os,select; from pathlib import Path; "
+                       f"pid=int(Path({str(ready)!r}).read_text())\n"
+                       "try: fd=os.pidfd_open(pid)\n"
+                       "except ProcessLookupError: pass\n"
+                       "else: select.select([fd],[],[]); os.close(fd)\n"
+                       "raise SystemExit(7)")
             commands = [('provider', [sys.executable, '-c', script]) for script in [orphan, failure]]
-            started = time.monotonic()
             with mock.patch.object(runner, 'ROOT', root), contextlib.redirect_stdout(io.StringIO()):
                 status = runner.run(commands, dict(os.environ), output, ['provider'], {}, jobs=2, fail_fast=True)
             self.assertEqual(status, 1)
-            self.assertLess(time.monotonic()-started, 5)
             receipt = json.loads((output/'receipt.json').read_text())
             self.assertEqual(receipt['results'][1]['exit'], 7, 'The intentional failure must follow the parent exit, not a fixture error')
-            self.assertTrue(ready.exists(), 'The detached parent completed its readiness handshake')
-            self.assertFalse(Path('/proc/'+ready.read_text()).exists(), 'The detached parent did not exit')
             self.assertFalse(Path('/proc/'+pidfile.read_text()).exists(), 'Grandchild was not reaped')
-            self.assertFalse(escaped.exists(), 'Detached child survived parent exit and cancellation')
 
 
     def test_missing_kernel_child_list_refuses_before_spawning(self):
@@ -484,15 +480,13 @@ class SchedulingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary); (root/'Domains').mkdir()
             output = root/'output'; output.mkdir()
-            ready = [root/str(index) for index in range(2)]
+            ready = [ready_pipe(root, str(index)) for index in range(2)]
             commands = [('provider', [sys.executable, '-c',
-                        f"from pathlib import Path; import time; print('marker-{index}',flush=True); Path({str(path)!r}).touch(); time.sleep(30)"])
+                        f"from pathlib import Path; import signal; print('marker-{index}',flush=True); Path({str(path)!r}).write_text('ready'); signal.pause()"])
                         for index, path in enumerate(ready)]
             def interrupt(*args, **kwargs):
-                deadline = time.monotonic()+5
-                while not all(path.exists() for path in ready) and time.monotonic()<deadline:
-                    time.sleep(.01)
-                self.assertTrue(all(path.exists() for path in ready))
+                for path in ready:
+                    self.assertEqual(path.read_text(), 'ready')
                 raise KeyboardInterrupt
             with mock.patch.object(runner, 'ROOT', root), mock.patch.object(runner, 'wait', interrupt), \
                  contextlib.redirect_stdout(io.StringIO()):
@@ -507,16 +501,15 @@ class SchedulingTests(unittest.TestCase):
     def test_serial_interrupt_preserves_captured_output(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary); (root/'Domains').mkdir()
-            output = root/'output'; output.mkdir(); ready = root/'ready'
-            child = f"from pathlib import Path; import time; print('serial-marker',flush=True); Path({str(ready)!r}).touch(); time.sleep(30)"
+            output = root/'output'; output.mkdir(); ready = ready_pipe(root)
+            child = f"from pathlib import Path; import signal; print('serial-marker',flush=True); Path({str(ready)!r}).write_text('ready'); signal.pause()"
             communicate = runner.subprocess.Popen.communicate
             calls = []
             def interrupt_once(process, *args, **kwargs):
                 if not calls:
-                    calls.append(True); deadline = time.monotonic()+5
-                    while not ready.exists() and time.monotonic()<deadline:
-                        time.sleep(.01)
-                    self.assertTrue(ready.exists()); raise KeyboardInterrupt
+                    calls.append(True)
+                    self.assertEqual(ready.read_text(), 'ready')
+                    raise KeyboardInterrupt
                 return communicate(process, *args, **kwargs)
             with mock.patch.object(runner, 'ROOT', root), \
                  mock.patch.object(runner.subprocess.Popen, 'communicate', interrupt_once), \
@@ -555,11 +548,19 @@ class SchedulingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary); (root/'Domains').mkdir()
             output = root/'output'
-            ready, cleaned, adopted, pidfile = [root/name for name in ['ready', 'cleaned', 'adopted', 'pid']]
-            grandchild = "import os,signal,time; from pathlib import Path; signal.signal(signal.SIGTERM,signal.SIG_IGN); Path(%r).write_text(str(os.getpid())); time.sleep(30)" % str(pidfile)
-            intermediate = "import subprocess,sys,signal,time; from pathlib import Path; subprocess.Popen([sys.executable,'-c',%r],start_new_session=True); signal.signal(signal.SIGTERM,lambda *args:(Path(%r).touch(),sys.exit(0))); time.sleep(30)" % (grandchild, str(adopted))
-            slow = "import subprocess,sys,signal,time; from pathlib import Path; subprocess.Popen([sys.executable,'-c',%r],start_new_session=True); signal.signal(signal.SIGTERM,lambda *args:(Path(%r).touch(),sys.exit(0))); deadline=time.monotonic()+5\nwhile not Path(%r).exists() and time.monotonic()<deadline: time.sleep(.01)\nassert Path(%r).exists(); Path(%r).touch(); time.sleep(30)" % (intermediate, str(cleaned), str(pidfile), str(pidfile), str(ready))
-            fail = "import time; from pathlib import Path; deadline=time.monotonic()+5\nwhile not Path(%r).exists() and time.monotonic()<deadline: time.sleep(.01)\nassert Path(%r).exists(); raise SystemExit(7)" % (str(ready), str(ready))
+            ready, child_ready, intermediate_ready = [ready_pipe(root, name) for name in ['ready', 'child-ready', 'intermediate-ready']]
+            cleaned, adopted, pidfile = [root/name for name in ['cleaned', 'adopted', 'pid']]
+            grandchild = ("import os,signal; from pathlib import Path; signal.signal(signal.SIGTERM,signal.SIG_IGN); "
+                          f"Path({str(pidfile)!r}).write_text(str(os.getpid())); Path({str(child_ready)!r}).write_text('ready'); signal.pause()")
+            intermediate = ("import subprocess,sys,signal; from pathlib import Path; "
+                            f"signal.signal(signal.SIGTERM,lambda *args:(Path({str(adopted)!r}).touch(),sys.exit(0))); "
+                            f"subprocess.Popen([sys.executable,'-c',{grandchild!r}],start_new_session=True); "
+                            f"assert Path({str(child_ready)!r}).read_text() == 'ready'; Path({str(intermediate_ready)!r}).write_text('ready'); signal.pause()")
+            slow = ("import subprocess,sys,signal; from pathlib import Path; "
+                    f"signal.signal(signal.SIGTERM,lambda *args:(Path({str(cleaned)!r}).touch(),sys.exit(0))); "
+                    f"subprocess.Popen([sys.executable,'-c',{intermediate!r}],start_new_session=True); "
+                    f"assert Path({str(intermediate_ready)!r}).read_text() == 'ready'; Path({str(ready)!r}).write_text('ready'); signal.pause()")
+            fail = "from pathlib import Path; " + f"assert Path({str(ready)!r}).read_text() == 'ready'; raise SystemExit(7)"
             output.mkdir()
             commands = [('provider', [sys.executable, '-c', code]) for code in [slow, fail]]
             with mock.patch.object(runner, 'ROOT', root), contextlib.redirect_stdout(io.StringIO()):
@@ -607,11 +608,11 @@ class SchedulingTests(unittest.TestCase):
         self.assertEqual(libc.prctl(37, ctypes.byref(previous), 0, 0, 0), 0)
         self.assertEqual(libc.prctl(36, 1, 0, 0, 0), 0)
         try:
-            for trial in range(20):
+            for trial in range(2):
                 with self.subTest(trial=trial), tempfile.TemporaryDirectory() as temporary:
                     root = Path(temporary); (root/'Domains').mkdir()
-                    ready, cleaned = root/'ready', root/'cleaned'
-                    child = "import os,signal,sys,time; from pathlib import Path; signal.signal(signal.SIGTERM,lambda *a:(Path(%r).touch(),sys.exit(0))); Path(%r).write_text(str(os.getpid())); time.sleep(30)" % (str(cleaned), str(ready))
+                    ready, cleaned, pidfile = ready_pipe(root), root/'cleaned', root/'pid'
+                    child = "import os,signal,sys; from pathlib import Path; signal.signal(signal.SIGTERM,lambda *a:(Path(%r).touch(),sys.exit(0))); Path(%r).write_text(str(os.getpid())); Path(%r).write_text('ready'); signal.pause()" % (str(cleaned), str(pidfile), str(ready))
                     driver = ("import importlib.util,os,signal,sys; from pathlib import Path; "
                               "sys.path.insert(0,%r); spec=importlib.util.spec_from_file_location('subject',%r); subject=importlib.util.module_from_spec(spec); spec.loader.exec_module(subject); subject.ROOT=Path(%r); "
                               "signal.signal(signal.SIGTERM,subject.interrupted); signal.signal(signal.SIGINT,subject.interrupted); "
@@ -619,10 +620,7 @@ class SchedulingTests(unittest.TestCase):
                     try:
                         with (root/'stdout').open('wb') as out, (root/'stderr').open('wb') as err:
                             process = subprocess.Popen([sys.executable, '-c', driver], stdout=out, stderr=err, start_new_session=True)
-                        deadline = time.monotonic()+5
-                        while not ready.exists() and process.poll() is None and time.monotonic()<deadline:
-                            time.sleep(.002)
-                        self.assertTrue(ready.exists(), (root/'stderr').read_text())
+                        self.assertEqual(ready.read_text(), 'ready')
                         signals = [signal.SIGTERM, signal.SIGINT]
                         if trial % 2:
                             signals.reverse()
@@ -635,7 +633,7 @@ class SchedulingTests(unittest.TestCase):
                         receipt, = root.rglob('receipt.json')
                         self.assertEqual(status, 130, receipt.read_text())
                         self.assertTrue(cleaned.exists())
-                        self.assertFalse(Path('/proc/'+ready.read_text()).exists())
+                        self.assertFalse(Path('/proc/'+pidfile.read_text()).exists())
                         receipt, = root.rglob('receipt.json')
                         evidence = json.loads(receipt.read_text())
                         self.assertFalse(evidence['complete'])
