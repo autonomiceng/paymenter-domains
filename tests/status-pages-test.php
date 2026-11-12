@@ -55,7 +55,8 @@ foreach ($cases as $case=>[$domain,$acquisition,$label,$reason]) {
     $native=app()->make(NativePresenter::class,['owned'=>$owners])->service($user,(int)$d->service_id);
     $seen=['list'=>$text($list,'domains-status',$row),'detail'=>$text($show,'domains-status',$header),'service card'=>$text($card,'domains-status'),'services page'=>[$native?->status]];
     foreach ($seen as $page=>$labels) { same([$label],$labels,'One status label on the '.$page.': '.$case); }
-    $reasons=['list'=>$text($list,'domains-pill-reason',$row),'detail'=>$text($show,'domains-pill-reason',$header),'service card'=>$text($card,'domains-pill-reason')];
+    // The detail page says its reason in the notice instead, so only the list and the service card carry it in the pill.
+    $reasons=['list'=>$text($list,'domains-pill-reason',$row),'service card'=>$text($card,'domains-pill-reason')];
     foreach ($reasons as $page=>$lines) { same($reason===null?[]:[$reason],$lines,'Same reason line on the '.$page.': '.$case); }
     // Tabs name the statuses present; the tab for this status keeps the row, any other tab drops it.
     // A stopped registration reads Pending registration, the same word as the tab that holds it (approved mock).
