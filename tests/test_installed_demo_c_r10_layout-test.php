@@ -23,26 +23,22 @@ $tokens='';foreach(\Filament\Support\Facades\FilamentColor::getColors() as $name
 $staff='<style>:root{'.$tokens.'}</style>'.$staff;
 $dir=storage_path('framework/r10-layout');mkdir($dir,0700,true);
 foreach(compact('staff','customer') as $name=>$html){file_put_contents($dir.'/'.$name.'.html','<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{box-sizing:border-box}body{margin:0;padding:24px;font:14px/20px sans-serif;background:#0b1229;color:#dce5f3}table{border-collapse:collapse}th,td{padding:0}dl,dd{margin:0}:root{--gray-200:#ddd;--gray-700:#334155;--primary-500:#00c2ff}.domains-history-fixture{width:600px}.fi-ta-table{width:100%;table-layout:fixed}.fi-ta-cell{overflow:hidden}.fi-ta-text{padding:8px}</style>'.$html);}
-// The native render keeps labels for stacked DNS cells and does not attach the
-// staff single-line truncation class to History changes. Browser QA consumes these
-// same optional artifacts, outside the PHP fixture process.
+// Check record data and read states here. Optional artifacts keep the real markup
+// available for separate browser layout checks.
 $failures=[];
 $check=static function(bool $ok,string $message)use(&$failures):void{if(!$ok){$failures[]=$message;}};
 $dom=storefrontDom($customer);
-$check($dom->query('//table[contains(@class,"domains-stackable")]')->length===1,'DNS inventory uses the shared mobile card layout');
-$check($dom->query('//tbody/tr/td[@data-label="Value"]')->length===3,'Every DNS record value carries its mobile label');
-$dom=storefrontDom($history);
-$check($dom->query('//*[contains(@class,"domains-cut") and contains(.,"Request #")]')->length===0,'History Change is not assigned single-line truncation');
-$style=view('domains::partials.staff-styles')->render();
-$check(str_contains($style,'.domains-tbl td{')&&str_contains($style,'.domains-sec .domains-card>div{'),'Shared staff facts and tables have layout rules');
+$values=array_map(static fn($cell)=>trim($cell->textContent),iterator_to_array($dom->query('//tbody/tr/td[3]')));
+$check($values===['192.0.2.10','hosting.example.com','0 issue "ca.example"'],'DNS inventory retains ordinary and CAA values');
+$check($dom->query('//tbody/tr/td[5][normalize-space(.)="Read-only"]')->length===3,'Records without edit actions remain read-only');
 $dom=storefrontDom($staff);
-$check($dom->query('//*[@data-record-family="contacts"]/span[contains(@class,"domains-tone-warn")]')->length===1,'Staff Partial uses the attention mark');
-$check($dom->query('//*[@data-record-family="nameservers"]/span[contains(@class,"domains-tone-ok")]')->length===1,'Staff Complete uses the healthy mark');
-$check($dom->query('//*[@data-record-family="glue"]/span[contains(@class,"domains-tone-muted")]')->length===1,'Unsupported retains the quiet state');
-$check($dom->query('//*[@data-record-family="dns"]/*[contains(@class,"domains-missing")]')->length===1,'Unknown uses the current Missing value');
-// Browser QA checks the rendered pseudo-elements and resolved native/skin tokens.
-$check(str_contains($style,'.domains-status::before')&&str_contains($style,'mask:'),'Staff family statuses render a shaped mark');
-foreach(['ok','info','warn','bad','muted'] as $tone){$check(str_contains($style,'.domains-status.domains-tone-'.$tone),'Staff supports the '.$tone.' status tone');}
+foreach(['contacts'=>'Partial','nameservers'=>'Complete','glue'=>'Unsupported','dns'=>'Not read'] as $kind=>$value){
+    $check($dom->query('//*[@data-record-family="'.$kind.'"][normalize-space(.)="'.$value.'"]')->length===1,'Staff record family reports '.$kind.' as '.$value);
+}
+// An unread family and a failed read need different next steps, even without a skin.
+$families['rows'][0]['read_failed']=true;
+$failed=storefrontDom(view('domains::partials.record-families',['recordFamilies'=>$families,'staff'=>true])->render());
+$check($failed->query('//*[@data-record-family="dns"][normalize-space(.)="Missing"]')->length===1,'Failed DNS read reports Missing instead of Not read');
 if(isset($argv[1])){expect(is_dir($argv[1]),'Artifact directory must exist');foreach(['staff','customer'] as $name){copy($dir.'/'.$name.'.html',$argv[1].'/'.$name.'.html');}}
 expect($failures===[],implode('; ',$failures));
 $nativeSuccessful=true;echo "Demo C R10 native layouts passed.\n";
