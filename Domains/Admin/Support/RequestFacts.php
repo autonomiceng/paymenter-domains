@@ -370,8 +370,11 @@ final class RequestFacts
             // Release does not approve a higher complimentary cost, so it is only a retry and approval is the way forward.
             $approval=$open&&ComplimentaryCosts::awaitingApproval($op);
             if ($approval) { $next=(OperationActions::relevant('release',$op)?'Release hold only retries the price check. ':'').'The '.($account?self::queueWords($op,$account):'request').' holds again while the registrar cost is above the usual. It goes ahead at this cost once the registrar cost is approved on the domain page.'; }
-            if($recovery['blocked']!==null){$body=$recovery['blocked'];}
-            elseif ($next!==null) { $body=$body===null?$next.' '.$recovery['body']:$next.' '.$body; }
+            if($recovery['blocked']!==null&&!BalanceRetries::pending($op)){$body=$recovery['blocked'];}
+            elseif ($next!==null) {
+                $automatic=$op->safe_code==='processing'&&$account?->processing_enabled&&OperationClaims::ordersOffReturns($op);
+                $body=$body===null?$next.($automatic?'':' '.$recovery['body']):$next.' '.$body;
+            }
             elseif(!BalanceRetries::pending($op)){$body??=$recovery['body'];}
             if (($try=self::nextTry($op))!==null) { $body=new \Illuminate\Support\HtmlString(($body===null?'':e($body).' ').$try->toHtml()); }
             return ['title'=>rtrim($reason??Labels::reason(null),'.').'.','body'=>$body,'tone'=>'warning','action'=>in_array($op->safe_code,WriteHeld::FINAL_REFUSALS,true)&&OperationActions::relevant('refund',$op)?'refund':(OperationActions::relevant('release',$op)?'release':null),

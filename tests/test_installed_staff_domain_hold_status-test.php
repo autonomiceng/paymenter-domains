@@ -32,9 +32,17 @@ foreach([false,true] as $ordersOn){
     $check(str_contains($request,'On hold')&&str_contains($request,'Put on hold by Alex Admin'),'Held request activity names the staff hold');
     DB::table('domains_accounts')->where('server_id',$op->server_id)->update(['processing_enabled'=>$ordersOn]);
     $clock->instant=$clock->now()->modify('+1 minute');
-    Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])
+    if(!$ordersOn){
+        $before=$op->fresh()->getRawOriginal();
+        Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertActionDisabled('release')
+            ->assertSee('Orders are off for this account; staff must turn Orders on before this request can send.')->callAction('release');
+        same($before,$op->fresh()->getRawOriginal(),'A disabled release preserves the hold and its audit');
+        DB::table('domains_accounts')->where('server_id',$op->server_id)->update(['processing_enabled'=>true]);
+    }
+    Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertActionEnabled('release')
         ->callAction('release')->assertHasNoActionErrors()->assertNotified('Hold released');
-    same(['queued',null],[$op->fresh()->state,$op->fresh()->safe_code],'Release clears the hold independently of Orders');
+    same(['queued',null],[$op->fresh()->state,$op->fresh()->safe_code],'Release clears the hold with Orders on');
+    DB::table('domains_accounts')->where('server_id',$op->server_id)->update(['processing_enabled'=>$ordersOn]);
     [$head,$request,$entry,$text,$xpath]=$page($op);
     $check(!str_contains(strtolower($head.' '.$request),'put on hold by staff')&&!str_contains(strtolower($head.' '.$request),'put on hold by alex admin'),'Released header and request activity drop the old staff hold');
     if($ordersOn){

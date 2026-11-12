@@ -37,10 +37,12 @@ class ViewDomain extends ViewRecord
     { return \Paymenter\Extensions\Servers\Domains\Services\ManagementProgress::for($this->getRecord()); }
     public function syncRetryAt(): ?int
     {
-        $d=$this->getRecord();
-        if(!\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::retryableHold($d)){return null;}
-        $read=\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($d);
-        return $read['read_stopped']?null:$read['next_read'];
+        try {
+            $d=$this->getRecord();
+            if(!\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::retryableHold($d)){return null;}
+            $read=\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($d);
+            return $read['read_stopped']?null:$read['next_read'];
+        } catch (\Throwable) { return null; }
     }
     /** How long the page keeps following waiting changes in the background. Sync now keeps its own window (syncPending). */
     public const FOLLOW_SECONDS=900;
