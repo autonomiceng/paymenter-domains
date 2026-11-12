@@ -131,7 +131,7 @@ $connect('namesilo');$one=$make(1);$thirteen=$make(13);
 $options=\Paymenter\Extensions\Servers\Domains\Admin\Support\DefaultNameservers::options();
 expect(!isset($options[$one->id]),'The chooser leaves out a template a connected registrar refuses');
 same('Count 13: '.implode(', ',$thirteen->fresh()->nameservers).' (test names, not for real domains)',$options[$thirteen->id]??null,'A choice shows its nameservers and marks reserved test names');
-expect(!\Paymenter\Extensions\Servers\Domains\Admin\Support\DefaultNameservers::testNames(['dns01.becotech.com','ns1.exampled.com']),'Real names are not marked');
+expect(!\Paymenter\Extensions\Servers\Domains\Admin\Support\DefaultNameservers::testNames(['dns01.exampled.net','ns1.exampled.com']),'Real names are not marked');
 // A template left out of the list is refused in the dialog, before anything is saved.
 $pageBefore=[SiteDnsDefault::profile()->id,WatchProfile::orderBy('id')->get()->toJson(),\Paymenter\Extensions\Servers\Domains\Models\WatchAudit::count()];
 \Livewire\Livewire::actingAs($manager)->test($page)->callAction('siteDefault',['profile'=>$one->id])
