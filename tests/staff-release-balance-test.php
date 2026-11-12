@@ -223,6 +223,12 @@ same(Paymenter\Extensions\Servers\Domains\Admin\Support\Sheet::moment($nextTry,'
 // The browser shows that moment in the viewer's zone, so the page must carry the retry's own instant and its UTC time.
 $body=(string)RequestFacts::notice($result)['body'];
 expect(str_starts_with($body,'Next try <span title="'.gmdate('M j, Y, g:i A',$nextTry).' UTC">')&&str_contains($body,'datetime="'.gmdate('Y-m-d\TH:i:s',$nextTry).'+00:00"'),'The retry time is the queued retry instant');
+// Pausing Orders keeps the recovery destination while the failed read still has retries.
+DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>false]);
+$paused=RequestFacts::notice($result->fresh());
+same('registrars',$paused['link'],'A retrying read held by Orders off links to the Orders switch');
+same('orders',RequestFacts::SWITCH_LINKS[$paused['link_label']]??null,'The recovery label and destination refer to the same switch');
+DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>true]);
 commerceReject(fn()=>$run($result,'release'));
 foreach(range(2,BalanceRetries::READ_LIMIT) as $i){$step();$result=$lowEngine->execute($failed->id);}
 same(['held','registrar_read_failed',BalanceRetries::READ_LIMIT],[$result->state,$result->safe_code,$result->policy['read_retries']],'Retries stop at the limit');

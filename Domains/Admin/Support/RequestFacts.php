@@ -196,7 +196,8 @@ final class RequestFacts
         try{return \Paymenter\Extensions\Servers\Domains\Services\TransferPolling::expected($op)
             &&($op->policy['reconciliation']['transfer_status']??null)==='pending'
             &&($op->policy['reconciliation']['staff_alert']??true)===false
-            &&!\Paymenter\Extensions\Servers\Domains\Services\TransferPolling::expired($op,$now);
+            &&!\Paymenter\Extensions\Servers\Domains\Services\TransferPolling::expired($op,$now)
+            &&($op->policy['reconciliation']['read_at']??\Paymenter\Extensions\Servers\Domains\Services\TransferPolling::start($op))>$now-86400;
         }catch(\Throwable){return false;}
     }
     public static function status(Operation $op, bool $ordersOff=true, ?Domain $d=null, ?StaffGrants $grants=null, ?array $accounts=null): array
@@ -376,7 +377,10 @@ final class RequestFacts
             $open=$owes===null&&$op->safe_code!=='contact_details_required';
             $sends=$open&&EnomTestRegistration::releaseSends($op,$account)&&OperationActions::relevant('release',$op);
             if ($owes!==null) { $body??=$owes==='payment' ? 'Customer has not paid the invoice. You can release it once it is paid.' : 'Customer has not added the auth code. You can release it once they add it.'; }
-            if (($ready=self::readyMessage($op))!==null) { $reason=$ready;$fix=$account->processing_enabled?($op->safe_code==='registrar_balance_insufficient'?'Go to balance':null):self::ORDERS_SWITCH; }
+            if (($ready=self::readyMessage($op))!==null) {
+                $reason=$ready;$fix=$account->processing_enabled?($op->safe_code==='registrar_balance_insufficient'?'Go to balance':null):self::ORDERS_SWITCH;
+                if(!$account->processing_enabled){$recovery['link']='registrars';}
+            }
             if(in_array($op->safe_code,BalanceRetries::READ_CODES,true)&&!BalanceRetries::pending($op)&&OperationActions::relevant('release',$op)){$body??=BalanceRetries::READ_STOPPED;}
             if(BalanceRetries::legacyHold($op)){$fix=null;$recovery['link']=null;if(OperationActions::relevant('release',$op)){$body??='Release to check this order again.';}}
             // Release hold puts paid work back in the queue, so the button says what it starts before staff press it.

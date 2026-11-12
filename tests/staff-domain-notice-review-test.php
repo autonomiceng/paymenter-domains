@@ -5,7 +5,7 @@ require __DIR__.'/native-app.php';require __DIR__.'/Support/staff-panel.php';
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts,Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainDecisions,DomainFacts,Staff};
 use Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts;
 (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
 staffPanel();[$held,$active,$long]=staffData();
@@ -61,6 +61,8 @@ $observed=$long->fresh()->observation;unset($observed['record_failure']);$long->
 \Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::hold($long->fresh(),'glue_unavailable',new DateTimeImmutable('@'.time()));
 Illuminate\Support\Facades\Auth::setUser($money);$stopped=DomainFacts::notice($long->fresh());
 expect(($stopped['resume']??false)===true&&str_contains((string)$stopped['body'],'Payment received after credit.'),'The stopped read leads and the payment stays beside it');
+expect(!DomainDecisions::syncNow($long->fresh()),'This viewer cannot sync the held domain');
+expect(str_starts_with((string)$stopped['body'],DomainDecisions::restart($long->fresh())),'The glue hold supplies the recovery step available to this viewer');
 $step=(string)DomainFacts::head($long->fresh(),DomainFacts::status($long->fresh()),DomainFacts::for($long->fresh()),(int)$order->id)['step'];
 expect(str_contains($step,'href="'.e($invoiceUrl).'"'),'The invoice link stays beside a stopped read that names a request');
 expect(str_contains($step,'>Check request #'.$order->id.'</a>'),'The stopped read still names its request');
