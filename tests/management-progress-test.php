@@ -92,7 +92,7 @@ expect(ManagementProgress::for($d)['lock']['pending'],'Stopping the poll leaves 
 // Sync now keeps its own window while the change still waits.
 $syncKey=(new \Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords(0,(int)$d->id,$d->authority_generation,$d->account_fingerprint))->uniqueId().':pending';
 Cache::put($syncKey,true,60);$staffPage->call('pollManagement');
-expect(str_contains($staffPage->html(),'wire:poll.10s')&&str_contains($staffPage->html(),'Sync in progress.'),'A running sync keeps the page polling past the change bound');
+expect(str_contains($staffPage->html(),'wire:poll.10s')&&str_contains($staffPage->html(),'Sync in progress;'),'A running sync keeps the page polling past the change bound');
 Cache::forget($syncKey);$staffPage->call('pollManagement');expect(!str_contains($staffPage->html(),'wire:poll.'),'The change bound still holds after the sync');
 // Reopening the page follows the waiting change again.
 $reopened=Livewire\Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$d->id]);
