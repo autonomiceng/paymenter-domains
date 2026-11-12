@@ -24,13 +24,15 @@ function commerceCheckout(User $user, Cart $cart, bool $render = true)
 {
     // Operation fixtures need native checkout writes and hooks, but never inspect cart HTML.
     // Keep the real component and snapshots; explicit page tests retain ordinary rendering.
-    $remove=[];
+    $stop=null;$template=null;
     if (!$render) {
-        foreach (['mount','hydrate'] as $event) {
-            $remove[]=Livewire\Livewire::listen($event,static function($component):void {
-                if ($component::class===App\Livewire\Cart::class) { $component->skipRender(); }
-            });
-        }
+        $template=tempnam((string)getenv('TMPDIR'),'domains-cart-view-');
+        file_put_contents($template,'<div></div>');
+        // Render hooks carry pricing and contact behavior too. Run them before replacing
+        // only the unused theme template; normal view composers and snapshots still run.
+        $stop=\Livewire\after('render',static function($component,$view)use($template):void {
+            if ($component::class===App\Livewire\Cart::class) { $view->setPath($template); }
+        });
     }
     try {
     Illuminate\Support\Once::flush();
@@ -39,7 +41,7 @@ function commerceCheckout(User $user, Cart $cart, bool $render = true)
     $required=['address','city','zip','country','phone'];
     return $user->properties()->whereIn('key',$required)->distinct()->count('key')===count($required) ? $page->call('checkout')
         : $page->call('checkout',['contact'=>commerceOrderContact($user),'save_account'=>false]);
-    } finally { foreach ($remove as $stop) { $stop(); } }
+    } finally { if($stop){$stop();}if($template!==null){unlink($template);} }
 }
 
 function commerceOrderContact(User $user): array
