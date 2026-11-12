@@ -43,7 +43,7 @@ expect(isset($owners->present($d->fresh())->renewNow['url']),'Owner Off offers r
 expect(str_contains($page($d),'>Renew now</a>'),'Late owner page offers renewal');
 $clock->instant=new DateTimeImmutable('2027-10-18T00:00:00Z');$late=$page($d);
 expect(!isset($owners->present($d->fresh())->renewNow['url']),'Cutoff hides manual renewal');
-expect(str_contains($late,'<time datetime="2027-10-18">Oct 18, 2027</time>')&&str_contains($late,'Cancels Oct 18, 2027'),'Owner page after cutoff shows the expiry and cancel date');
+expect(str_contains($late,'<time datetime="2027-10-18">Oct 18, 2027</time>')&&str_contains($late,'Cancels Oct 18, 2027'),'Owner page after cutoff shows the expiry and cancel date, got: '.substr($late,(int)strpos($late,'<dt>Expires'),600));
 expect(!str_contains($late,'Renew now'),'No renewal promise after cutoff');
 $clock->instant=new DateTimeImmutable('2027-09-27T12:00:00Z');
 $summary=(new DomainSummaries)->one($user,'managed',$d->id);expect($summary->renewalOff,'List summary also shows Off');
