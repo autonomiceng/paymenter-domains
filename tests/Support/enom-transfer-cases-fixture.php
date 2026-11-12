@@ -42,6 +42,10 @@ $code=static function(Operation $op,string $secret)use($user,$session):void{
 };
 app(Illuminate\Contracts\Debug\ExceptionHandler::class)->stopIgnoring([Illuminate\Validation\ValidationException::class,Illuminate\Database\Eloquent\ModelNotFoundException::class,Illuminate\Database\MultipleRecordsFoundException::class,Illuminate\Database\RecordNotFoundException::class,Illuminate\Database\RecordsNotFoundException::class]);
 app(Illuminate\Contracts\Debug\ExceptionHandler::class)->reportable(static function(Throwable $error):void {
-    fwrite(STDERR,json_encode(['fixture_reported_error'=>get_class($error),'file'=>basename($error->getFile()),'line'=>$error->getLine()],JSON_THROW_ON_ERROR)."\n");
+    fwrite(STDERR,json_encode(['fixture_reported_error'=>get_class($error),'file'=>basename($error->getFile()),'line'=>$error->getLine(),'trace'=>array_map(static fn($frame)=>[basename($frame['file']??''),$frame['line']??0,$frame['function']??''],array_slice($error->getTrace(),0,12))],JSON_THROW_ON_ERROR)."\n");
+});
+$fixtureHandler=app(Illuminate\Contracts\Debug\ExceptionHandler::class);
+Livewire\Livewire::listen('call',static function($component,$method)use($fixtureHandler):void {
+    if($component instanceof App\Livewire\Cart&&$method==='checkout'){app()->instance(Illuminate\Contracts\Debug\ExceptionHandler::class,$fixtureHandler);}
 });
 $secret='  Synthetic:Case-Sensitive + % é雪  ';
