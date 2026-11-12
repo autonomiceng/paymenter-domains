@@ -3,6 +3,9 @@
 The register, transfer and renewal entrypoints share `Support/staff-release-states.php`
 and `Support/staff-release-reasons.php`. Each scenario restores committed SQLite rows,
 including audit and review tickets, without putting provider calls inside a transaction.
+Paid, unpaid and missing-contact variants are each seeded once per file through real
+native checkout and payment. Restores retain their original clock and actor; each fault
+then exercises its own real hold, claim, release or complimentary-cycle writer.
 No reason rows or writer assertions were removed.
 
 | Entry suffix (after staff[-transfer/-renewal]-release) | Retained guards |

@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\{Labels,OperationActions,
 use Paymenter\Extensions\Servers\Domains\Data\RenewalCode;
 
 
-$reset=nativeFixtureCheckpoint();
+$reset=nativeFixtureCheckpoint();$seeds=[];
 foreach([defined('STAFF_RELEASE_KIND')?STAFF_RELEASE_KIND:'register'] as $kind){
     foreach(['ready','unpaid','registry','contacts','cancel','status','mixed-invoice','retained-cap-enabled','retained-cap-disabled','contact-recovery','contact-peer','contact-owner','contact-limit','contact-authority','contact-cutoff','permission','complimentary','complimentary-permission','missing-code','invalid-code','missing-paid-at','invalid-paid-at','expired-deadline'] as $fault){
         $group=match(true){
@@ -19,18 +19,31 @@ foreach([defined('STAFF_RELEASE_KIND')?STAFF_RELEASE_KIND:'register'] as $kind){
             default=>'order',
         };
         if($group!==STAFF_RELEASE_GROUP){continue;}
-        $reset();
-        $clock->instant=$now;config($deployment);
+        config($deployment);
         if(str_starts_with($fault,'retained-cap')&&$kind==='renew'){continue;}
         if(str_starts_with($fault,'complimentary')&&$kind!=='renew'){continue;}
         if(in_array($fault,['missing-code','invalid-code','missing-paid-at','invalid-paid-at','expired-deadline'],true)&&$kind!=='transfer'){continue;}
         if($fault==='contact-cutoff'&&$kind!=='transfer'){continue;}
         if($kind==='renew'&&(str_starts_with($fault,'contact-')||in_array($fault,['registry','contacts','mixed-invoice','retained-cap-enabled','retained-cap-disabled'],true))){continue;}
-        $name=placeholderComFixtureName('staff-state-'.$kind.'-'.$fault.'-placeholder.com');
-        if($fault==='contacts'||str_starts_with($fault,'contact-')){$user->properties()->where('key','phone')->update(['value'=>'']);}
-        if($kind==='renew'){[$row,$domain]=$makeRenewal($name,paid:$fault!=='unpaid'&&!str_starts_with($fault,'complimentary'));
-            if(str_starts_with($fault,'complimentary')){$cycles->retireUnpaid($row->id);$row=$cycles->complimentary($domain->id,$staff,1,new \Paymenter\Extensions\Servers\Domains\Data\Money('8.95','USD'),'reviewed_gift');}}
-        else{$row=$new($name,$fault!=='unpaid',true,$kind);}
+        $paid=$fault!=='unpaid'&&!str_starts_with($fault,'complimentary');
+        $blankContacts=$fault==='contacts'||str_starts_with($fault,'contact-');
+        $seedKey=$kind.':'.($paid?'paid':'unpaid').':'.($blankContacts?'blank':'complete');
+        if(!isset($seeds[$seedKey])){
+            $reset();$clock->instant=$now;
+            $name=placeholderComFixtureName('staff-state-'.$kind.'-'.$fault.'-placeholder.com');
+            if($blankContacts){$user->properties()->where('key','phone')->update(['value'=>'']);}
+            if($kind==='renew'){[$row,$domain]=$makeRenewal($name,paid:$paid);}
+            else{$row=$new($name,$paid,true,$kind);}
+            $seeds[$seedKey]=['restore'=>nativeFixtureCheckpoint(),'operation'=>$row->id,
+                'instant'=>$clock->instant,'actor'=>Auth::id()];
+        }
+        $seed=$seeds[$seedKey];($seed['restore'])();$clock->instant=$seed['instant'];
+        Auth::setUser(App\Models\User::findOrFail($seed['actor']));
+        $row=\Paymenter\Extensions\Servers\Domains\Models\Operation::findOrFail($seed['operation']);
+        if($kind==='renew'){
+            $domain=$row->domain()->firstOrFail();
+            if(str_starts_with($fault,'complimentary')){$cycles->retireUnpaid($row->id);$row=$cycles->complimentary($domain->id,$staff,1,new \Paymenter\Extensions\Servers\Domains\Data\Money('8.95','USD'),'reviewed_gift');}
+        }
         if($fault==='unpaid'&&$kind==='register'){same('awaiting_payment',$row->state,'Genuine unpaid registration before staff hold');}
         if($fault!=='contact-recovery'){$user->properties()->where('key','phone')->update(['value'=>'+1.2025550100']);}
         if($fault==='registry'){
