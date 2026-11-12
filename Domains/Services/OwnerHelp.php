@@ -25,7 +25,7 @@ final class OwnerHelp
     public static function summary(string $anchor): string
     {
         $company=\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company();
-        return $anchor==='auto-renew'?($company!==''?$company.' sends':'We send').substr(self::SUMMARIES[$anchor],5):self::SUMMARIES[$anchor];
+        return $company!==''?preg_replace('/^We send\b/',$company.' sends',self::SUMMARIES[$anchor]):self::SUMMARIES[$anchor];
     }
     public static function path(): string
     {
