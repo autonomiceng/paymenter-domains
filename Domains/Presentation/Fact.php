@@ -55,10 +55,9 @@ final class Fact
     public static function date(int|\DateTimeInterface $at, Reader $reader): self
     {
         $at = $at instanceof \DateTimeInterface ? $at->getTimestamp() : $at;
+        if ($reader === Reader::Customer) { $day = StaffTime::local($at); return new self('date', $day->format('M j, Y'), $day->format('Y-m-d')); }
         $utc = new \DateTimeImmutable('@'.$at);
-        return $reader === Reader::Staff
-            ? new self('date', StaffTime::at($at), $utc->format('Y-m-d\TH:i:s\Z'), $utc->format('M j, Y, g:i A').' UTC')
-            : new self('date', StaffTime::day($at), $utc->format('Y-m-d'));
+        return new self('date', StaffTime::at($at), $utc->format('Y-m-d\TH:i:s\Z'), $utc->format('M j, Y, g:i A').' UTC');
     }
     /** A calendar date such as an expiry, the same for every reader, with no zone change. Null when it isn't a date. */
     public static function day(string|\DateTimeInterface|null $date): ?self

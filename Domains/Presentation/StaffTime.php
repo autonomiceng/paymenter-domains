@@ -7,11 +7,10 @@ namespace Paymenter\Extensions\Servers\Domains\Presentation;
  * The zone is domains.time_zone when the host app sets it (for example to the staff member's own), else the app zone. */
 final class StaffTime
 {
-    public static function at(int $at): string
-    { return (new \DateTimeImmutable('@'.$at))->setTimezone(new \DateTimeZone(self::zone()))->format('M j, Y, g:i A T'); }
-    /** The calendar day of $at in the same zone, for readers who see dates only: Nov 4, 2026. */
-    public static function day(int $at): string
-    { return (new \DateTimeImmutable('@'.$at))->setTimezone(new \DateTimeZone(self::zone()))->format('M j, Y'); }
+    public static function at(int $at): string { return self::local($at)->format('M j, Y, g:i A T'); }
+    /** $at in the same zone, so a date-only reading and its machine date name the same calendar day. */
+    public static function local(int $at): \DateTimeImmutable
+    { return (new \DateTimeImmutable('@'.$at))->setTimezone(new \DateTimeZone(self::zone())); }
     private static function zone(): string
     {
         $zone=config('domains.time_zone')?:config('app.timezone');
