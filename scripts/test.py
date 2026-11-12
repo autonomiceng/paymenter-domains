@@ -374,7 +374,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         try:
             source_env = workers[worker] if workers else env
             # Syntax parsing never boots or modifies an application fixture.
-            pure = kind in ('lint', 'provider', 'contracts', 'package')
+            pure = kind in ('lint', 'provider', 'contracts', 'package', 'runner')
             if pure and source_env:
                 source_env = {key: value for key, value in source_env.items() if key != 'PAYMENTER_TEST_FIXTURE'}
             context = (nullcontext(source_env) if pure else
@@ -454,7 +454,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         if stderr:
             print(stderr.decode(errors='replace').strip(), file=sys.stderr, flush=True)
 
-    runner_error = None
+    runner_error, runner_error_detail = None, None
     try:
         with timing('commands', timings):
             if jobs == 1:
@@ -495,6 +495,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                             exclusive_running = False
     except BaseException as error:
         runner_error = type(error).__name__
+        runner_error_detail = str(error)
         processes.cancel()
         # Finalize output and metadata together after the pool has drained.
         for future, index in submitted.items():
@@ -551,7 +552,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         first_failure = failures[0] if failures else next(iter(failed_indexes), None)
         timings['run'] = time.monotonic() - started_run
         planned = {argv[-1] for kind, argv in commands if kind != 'lint'}
-        receipt = {'runner_error': runner_error, 'final_guard_complete': final_guard_complete,
+        receipt = {'runner_error': runner_error, 'runner_error_detail': runner_error_detail, 'final_guard_complete': final_guard_complete,
                    'final_guard_error': final_guard_error, 'timings': timings, 'only_tests': sorted(set(only or [])),
                    'lint_base': lint_base,
                    'git_tree': tree, 'git_tree_error': tree_error,
