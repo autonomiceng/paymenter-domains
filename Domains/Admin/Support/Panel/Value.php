@@ -13,12 +13,12 @@ final class Value implements Htmlable
 {
     /** @param list<Fact> $extra Staff only. */
     private function __construct(public readonly string $kind, public readonly string $word, public readonly ?Tone $tone, public readonly ?Fact $fact,
-        public readonly ?string $sub, public readonly ?Reader $reader, public readonly ?string $record, public readonly array $extra = [])
+        public readonly ?string $sub, public readonly ?Reader $reader, public readonly ?string $record, public readonly array $extra = [], public readonly ?State $state = null)
     { assert($sub === null || trim($sub) !== '' && !Fact::isWord($sub), 'A line under a value is a sentence, never a state or plain word: '.$sub); }
 
     /** $record names the record the state belongs to, so a skin sweeps the mark only on a real change. */
     public static function state(State $state, Reader $reader, ?string $reason = null, ?string $record = null): self
-    { return new self('state', $state->label(), $state->tone($reader), null, $reason, $reader, $record); }
+    { return new self('state', $state->label(), $state->tone($reader), null, $reason, $reader, $record, [], $state); }
     /** A provider code's state. An unmapped code keeps the code on the staff line. */
     public static function coded(Coded $coded, Reader $reader, ?string $reason = null, ?string $record = null): self
     { $value = self::state($coded->state, $reader, $reason, $record); return $coded->code === null ? $value : $value->detail($coded->code); }
@@ -30,8 +30,10 @@ final class Value implements Htmlable
     public function detail(Fact ...$facts): self
     {
         if ($this->reader === null) { throw new \LogicException('Only a state has a staff line.'); }
-        return new self($this->kind, $this->word, $this->tone, $this->fact, $this->sub, $this->reader, $this->record, [...$this->extra, ...array_values($facts)]);
+        return new self($this->kind, $this->word, $this->tone, $this->fact, $this->sub, $this->reader, $this->record, [...$this->extra, ...array_values($facts)], $this->state);
     }
+    /** True for Checking: we wait on the registrar, so a row holding it gets the waiting edge. */
+    public function waits(): bool { return $this->state === State::Checking; }
     /** The staff line, empty for customers. @return list<Fact> */
     public function shownExtra(): array { return $this->reader === Reader::Staff ? $this->extra : []; }
     public function toHtml(): string { return view('domains::components.panel.value', ['value' => $this])->render(); }

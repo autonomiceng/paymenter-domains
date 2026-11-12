@@ -67,6 +67,15 @@ final class Fact
         $day = \DateTimeImmutable::createFromFormat('!Y-m-d', $date);
         return $day !== false && $day->format('Y-m-d') === $date ? new self('date', $day->format('M j, Y'), $date) : null;
     }
+    /** Days around an expiry, as the reminder schedule reads: "60, 30, 7 and 1 days before, 3 days after". Null for no days.
+     * @param list<int> $before newest first @param list<int> $after */
+    public static function days(array $before, array $after): ?self
+    {
+        $list = static fn (array $days): string => count($days) > 1 ? implode(', ', array_slice($days, 0, -1)).' and '.end($days) : (string) $days[0];
+        $part = static fn (array $days, string $when): ?string => $days === [] ? null : $list($days).' '.($days === [1] ? 'day' : 'days').' '.$when;
+        $text = implode(', ', array_filter([$part(array_map('intval', $before), 'before'), $part(array_map('intval', $after), 'after')]));
+        return $text === '' ? null : new self('text', $text);
+    }
     /** True when $text is a State or Plain word, so computed text can't pass for one. */
     public static function isWord(string $text): bool
     {

@@ -93,6 +93,26 @@
 .domains-disclosure{cursor:pointer}
 .domains-total{display:block;font-size:1.5rem;font-weight:600;line-height:1.25;font-variant-numeric:tabular-nums}
 
+/* Panel pieces (Value, Row, SettingsRow, Trace) without a skin: stacked lines on phones, the sheet's label, value and
+   action columns from 40rem. Zero specificity, so a skin's rules win whatever order the sheets load in. */
+:where(.beco-val){display:grid;gap:2px;min-width:0}
+:where(.beco-sub){font-size:.75rem;line-height:1.125rem;color:var(--panel-fg-2,inherit)}
+:where(.beco-fact[data-beco-fact=host],.beco-fact[data-beco-fact=code]){font-family:var(--panel-font-mono,ui-monospace,monospace)}
+:where(.beco-fact[data-beco-fact=money],.beco-fact[data-beco-fact=count]){font-variant-numeric:tabular-nums}
+:where(.beco-st){font-weight:500}
+:where(.beco-row){display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 16px;align-items:center;min-height:44px;padding:8px 0;border-top:1px solid var(--panel-line-soft,color-mix(in srgb,currentColor 20%,transparent))}
+:where(.beco-row-k){grid-column:1/-1;min-width:0;color:var(--panel-fg-2,inherit)}
+:where(.beco-row-v){min-width:0;overflow-wrap:anywhere}
+:where(.beco-row-a,.beco-row-a .fi-ac){display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:12px}
+:where(.beco-row-a:empty){display:none}
+:where(.beco-nw){white-space:nowrap}:where(.beco-nw .domains-help){display:inline-flex;vertical-align:middle}
+:where(.beco-blocked){cursor:not-allowed}
+@media(min-width:40rem){:where(.beco-row){grid-template-columns:156px minmax(0,1fr) auto}:where(.beco-row-k){grid-column:auto}}
+:where(.beco-row[data-beco-row=notice]){grid-template-columns:minmax(0,1fr) auto}
+:where(.beco-trace){display:grid;gap:12px;margin:0;padding:0;list-style:none}
+:where(.beco-step){display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px}
+:where(.beco-step-d){font-size:.75rem;line-height:1.125rem;color:var(--panel-fg-2,inherit)}
+:where(.beco-step-w){font-weight:500;white-space:nowrap}
 .domains-phone-note { display:none; }
 @media(max-width:639px) {
  .domains-phone-note { display:block; max-width:calc(100vw - 110px); white-space:normal; overflow-wrap:anywhere; line-height:1.5; }
