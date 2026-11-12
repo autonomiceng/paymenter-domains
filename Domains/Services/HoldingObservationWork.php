@@ -179,10 +179,11 @@ final class HoldingObservationWork
                     self::current($d)->whereIn('safe_code',['records_incomplete','read_exception','read_no_evidence'])->where('tries','<',HoldingReadRetry::LIMIT)
                         ->where('lease_until','<=',$this->clock->now()->getTimestamp())->update(['safe_code'=>'read_failed']);
                 }
-                // Legacy healthy ownership-only jobs must not postpone a missing or stale family read.
+                // Legacy healthy ownership-only jobs must not postpone a missing or stale family read. Only a future
+                // due time moves forward: an overdue one keeps its age, which claim() uses to stop starvation.
                 if($this->observer->readsRecords()&&$d->status==='active'&&ObservationProjection::recordStatus($d,$this->clock->now())['stale']){
                     self::current($d)->where('safe_code','refreshed')->where('lease_until','<=',$this->clock->now()->getTimestamp())
-                        ->update(['due_at'=>$this->clock->now()->getTimestamp()]);
+                        ->where('due_at','>',$this->clock->now()->getTimestamp())->update(['due_at'=>$this->clock->now()->getTimestamp()]);
                 }
             }
             $q->update(['cursor'=>$rows->count()===25?$rows->last()->id:0]);
