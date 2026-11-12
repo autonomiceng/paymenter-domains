@@ -136,3 +136,15 @@ def phase_results(stdout):
         if isinstance(row, dict) and row.get('timing') == 'installed_case':
             rows.append(row)
     return rows
+
+
+def seal_vendor(fixture, *, release=False):
+    """Share dependencies read-only inside the wide runner's private mount namespace."""
+    if os.environ.get('BECO_TEST_OVERLAY') != '1':
+        return
+    vendor = str(fixture/'vendor')
+    if release:
+        subprocess.run(['umount', vendor], check=True)
+    else:
+        subprocess.run(['mount', '--bind', vendor, vendor], check=True)
+        subprocess.run(['mount', '-o', 'remount,bind,ro', vendor], check=True)

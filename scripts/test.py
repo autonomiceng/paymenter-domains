@@ -667,6 +667,7 @@ def main():
     output = Path(tempfile.mkdtemp(prefix='domains-tests-'))
     selected = args.suite or []
     runtime = fixture = None
+    vendor_sealed = False
     workers = None
     timings = {}
     try:
@@ -699,6 +700,8 @@ def main():
                 # copying 27,000 files. Full runs, parallel workers and mixed selections keep a copy.
                 shared = args.jobs == 1 and bool(requested) and requested <= set(suites['native']) | set(suites['ui'])
                 snapshot = native.prepare(source, fixture, share_vendor=shared)
+            test_workers.seal_vendor(fixture)
+            vendor_sealed = os.environ.get('BECO_TEST_OVERLAY') == '1'
             dependency = (source, snapshot)
         binary = extension = None
         if selected != ['mariadb']:
@@ -759,6 +762,8 @@ def main():
         raise
     finally:
         shutil.rmtree(output/'workers', ignore_errors=True)
+        if vendor_sealed:
+            test_workers.seal_vendor(fixture, release=True)
         if runtime:
             shutil.rmtree(runtime)
         if fixture:
