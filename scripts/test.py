@@ -481,8 +481,8 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                     while pending or (index < len(commands) and not stopped.is_set()):
                         while available and index < len(commands):
                             kind, argv = commands[index]
-                            exclusive = kind == 'ui' or (kind != 'lint' and Path(argv[-1]).name.startswith('test_installed_'))
-                            # Installed fixtures and the browser check need the whole pool, including integrity checks.
+                            exclusive = kind == 'ui' or (kind != 'lint' and argv[-1].endswith('.py') and Path(argv[-1]).name.startswith('test_installed_'))
+                            # Python package lifecycles and browser checks still drain the pool; native PHP owns private state.
                             if exclusive_running or (exclusive and pending):
                                 break
                             with scheduling:
