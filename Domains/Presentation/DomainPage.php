@@ -34,6 +34,9 @@ final class DomainPage
     { return !self::noActionSaid($notice) && !DomainStatus::asksCustomer($d->status) && !in_array($notice['tone'] ?? null, ['warn', 'bad'], true) && !($notice['asks'] ?? false); }
     public static function checkHeld(OwnedDomain $d): bool
     { return collect($d->management)->contains(fn ($section) => $section['recordCheckHeld'] ?? false); }
+    /** Held or unconfirmed work without a scheduled status check needs review instead of a completion estimate. */
+    public static function orderHeld(array $order): bool
+    { return in_array($order['progress'] ?? null, ['held', 'uncertain'], true) && !($order['retrying'] ?? false); }
     /** The one notice at the top of the page: text, tone and its one action, or null when nothing needs doing.
      * Amber (warn) means the customer has a step. Work that is ours reads blue (ours()), as Under review does. */
     public static function notice(OwnedDomain $d, ?string $support = null, ?DomainSummary $s = null): ?array
@@ -63,7 +66,7 @@ final class DomainPage
             isset($d->actions['code']) && ($d->transfer['open'] ?? false) && !($d->transfer['received'] ?? false) => ['tone' => 'warn', 'text' => 'Enter the auth code from your current registrar.', 'action' => ['label' => 'Enter auth code', 'url' => $d->actions['code']]],
             ($d->transfer['notice']['tone'] ?? null) === 'warning' => ['tone' => 'warn', 'text' => $d->transfer['notice']['title'].' '.$d->transfer['notice']['body'], 'action' => $contact],
             $order === 'paid' && isset($d->order['check']) => ['tone' => $d->order['check']['tone'] ?? 'warn', 'text' => $d->order['check']['title'].'. '.$d->order['check']['body'], 'action' => $contact],
-            $order === 'paid' && in_array($d->order['progress'] ?? null, ['held', 'uncertain'], true) => self::ours('This '.$word.' is under review. We’ll check it and update you.', $contact),
+            $order === 'paid' && self::orderHeld($d->order) => self::ours('This '.$word.' is under review. We’ll check it and update you.', $contact),
             // A complimentary order has nothing paid, so it says what it is, as its receipt does.
             $order === 'paid' && in_array($d->order['next'] ?? null, [null, 'setup_optional'], true) => self::ours((($d->order['complimentary'] ?? false) ? 'Complimentary. ' : 'Paid. ').self::finishing($word).' '.self::NOTHING_TO_DO, $contact),
             // An Off switch is why changes stop, so its own notice below wins over a stopped read, which the rows already say.

@@ -37,7 +37,7 @@ final class DomainListRow
                 'setup_required' => ['cause' => $basis.'Finish setup to start the '.$word.'.', 'fix' => null],
                 'setup_optional' => ['cause' => $basis.'We’re starting the '.$word.'. You can choose nameservers before it’s sent.', 'fix' => null],
                 // With no notice above it, a complimentary row says what the page notice says.
-                default => ['cause' => $complimentary && !in_array($order['progress'] ?? null, ['held', 'uncertain'], true) ? $basis.DomainPage::finishing($word).' '.DomainPage::NOTHING_TO_DO : Missing::fills(self::WAITS[$word]), 'fix' => null],
+                default => ['cause' => $complimentary && !DomainPage::orderHeld($order) ? $basis.DomainPage::finishing($word).' '.DomainPage::NOTHING_TO_DO : Missing::fills(self::WAITS[$word]), 'fix' => null],
             }],
             'cancelled' => isset($order['credit']) || ($order['unpaid'] ?? false) ? ['missing' => false, 'tone' => null, 'note' => null] : ['missing' => true, 'cause' => 'Order cancelled', 'fix' => Missing::support($support)],
             'failed' => ['missing' => true, 'cause' => ucfirst($word).' did not finish', 'fix' => Missing::support($support)],

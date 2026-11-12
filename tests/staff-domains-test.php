@@ -136,13 +136,13 @@ foreach ([null,'healthy_pending','refreshed','unresolved'] as $code) {
     same([null,'Fills in by itself within a day'],$sync(),'Running sync without a saved read shows Missing with its cause, not a failure');
 }
 DB::table('domains_domains')->where('id',$held->id)->update(['last_synced_at'=>'2026-10-20 15:05:00']);
-same(['Oct 20, 2026 15:05 UTC',null],$sync(),'Last sync shows the saved read time');
+same(['Oct 20, 2026, 3:05 PM UTC',null],$sync(),'Last sync shows the saved read time');
 DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>null,'claim'=>str_repeat('a',32),'lease_until'=>time()+300,'tries'=>1]);
-same(['Oct 20, 2026 15:05 UTC','Syncing now'],$sync(),'A claimed check is syncing now');
+same(['Oct 20, 2026, 3:05 PM UTC','Syncing now'],$sync(),'A claimed check is syncing now');
 DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>'unmapped_reason_code']);
 expect(!str_contains(json_encode(DomainFacts::for($held->fresh())),'unmapped_reason_code'),'Unknown saved work code never echoes');
 DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>'read_unavailable','generation'=>$held->authority_generation+1]);
-same(['Oct 20, 2026 15:05 UTC',null],$sync(),'Foreign generation observation work is excluded');
+same(['Oct 20, 2026, 3:05 PM UTC',null],$sync(),'Foreign generation observation work is excluded');
 DB::table('domains_domains')->where('id',$held->id)->update(['last_synced_at'=>null]);
 DB::table('domains_observation_work')->where('id',$work)->delete();
 Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable('review.example')->assertCanSeeTableRecords([$held])->assertCanNotSeeTableRecords([$active,$long]);
