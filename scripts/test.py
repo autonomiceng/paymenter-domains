@@ -180,7 +180,7 @@ def available_memory_mib(meminfo=Path('/proc/meminfo'), cgroup=Path('/sys/fs/cgr
 def bounded_jobs(requested, memory_mib, *, explicit=False):
     if os.environ.get('DOMAINS_TEST_CGROUP'):
         # Each command owns a hard 256 MiB child; the controller has 512 MiB.
-        fitting = min(6, memory_mib // 256)
+        fitting = min(8, memory_mib // 256)
         if requested > fitting:
             raise ValueError('Requested workers exceed the per-test memory reservation.')
         return requested
@@ -392,7 +392,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         seconds = time.monotonic() - started
         cancelled = interrupted is not None or index in processes.cancelled
         result = {'kind': kind, 'argv': argv, 'exit': code, 'timed_out': timed_out,
-                  'cancelled': cancelled, 'peak_rss_kib': None,
+                  'cancelled': cancelled, 'peak_rss_kib': None, 'command_error': str(interrupted) if interrupted else None,
                   'runtime_unchanged': False, 'runtime_error': 'Integrity verification did not finish.',
                   'guard_complete': False, 'skipped': kind == 'mariadb' and code == 77,
                   'seconds': seconds, 'guard_seconds': 0, 'started_seconds': started-started_run,
@@ -530,7 +530,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                     worker_check()
             except (ValueError, RuntimeError, OSError, KeyError, TypeError, subprocess.CalledProcessError) as error:
                 dependency_unchanged = False
-                dependency_error = type(error).__name__
+                dependency_error = type(error).__name__ + ': ' + str(error)
             final_guard_complete = True
     except BaseException as error:
         final_guard_error = type(error).__name__

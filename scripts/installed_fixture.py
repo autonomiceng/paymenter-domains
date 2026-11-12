@@ -64,7 +64,7 @@ def application(fixture, scenario, *, verify_vendor=True):
 
 def package(source, output, *, builder=None):
     builder = build if builder is None else builder
-    # The runner owns this cache and runs installed scenarios exclusively. Other
+    # The runner owns a cache per private fixture. Other
     # processes/files reuse only immutable ZIPs, never databases or installed apps.
     fingerprint = hashlib.sha256(
         json.dumps(native.hashes(source), sort_keys=True).encode()
