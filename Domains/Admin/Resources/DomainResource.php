@@ -76,7 +76,7 @@ class DomainResource extends Resource
                 ->description(fn(Domain $record,$state,$livewire)=>$state===Missing::LABEL?DomainFacts::unread($record,self::row($record,$livewire)['sync']):null)
                 ->sortable(query: fn(Builder $query,string $direction)=>$query->orderBy('provider_expires_at',$direction))),
             // Renewal applies until the domain has ended, so pending and under-review rows show it too. A pending import bills nothing until import, as on the domain page.
-            OneLine::apply(TextColumn::make('auto_renew')->label('Renewal invoices')->state(fn(Domain $record,$livewire)=>DomainFacts::ended($record)?null:match(true) {
+            OneLine::apply(TextColumn::make('auto_renew')->label('Auto-renew')->state(fn(Domain $record,$livewire)=>DomainFacts::ended($record)?null:match(true) {
                 self::row($record,$livewire)['off']===null=>Missing::LABEL,$record->adoptionPending()||self::row($record,$livewire)['off']||self::row($record,$livewire)['accountOff']=>'Off',default=>'On'})
                 ->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::icon():null)
                 ->description(fn($state,Domain $record,$livewire)=>$state===Missing::LABEL?DomainFacts::UNREADABLE_RENEWAL:($state==='Off'&&$record->adoptionPending()?'Until import':($state==='Off'&&!self::row($record,$livewire)['off']&&self::row($record,$livewire)['accountOff']?'Account renewals off':null)))),

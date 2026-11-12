@@ -55,9 +55,9 @@ final class TldFacts
     { $catalogue=self::catalogue();return !$catalogue->own($t)?'Default pricing':($catalogue->pricing((int)$t->server_id,$t)['mode']==='fixed'?'Fixed price':'Custom markup'); }
     /** Label from the already selected legacy page; no mode query per table row. */
 
-    /** "USD 12.00"; costs keep their exact precision ("USD 12.3456"). Null when there is no amount. */
+    /** "$12.00", the one money format on every page (prices are USD only); costs keep their exact precision ("$12.3456"). Null when there is no amount. */
     public static function money(?string $value,int $places=2): ?string
-    { return $value===null?null:'USD '.($places===4?self::exactMoney(PriceCatalogue::cost($value)):PriceCatalogue::retail($value)); }
+    { return $value===null?null:'$'.($places===4?self::exactMoney(PriceCatalogue::cost($value)):PriceCatalogue::retail($value)); }
     private static function exactMoney(string $value): string
     { return preg_replace('/(\.\d{2}\d*?)0+$/D','$1',$value); }
     /** The renewal price row for one year, the row the list and the prices table show. */
