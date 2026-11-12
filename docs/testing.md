@@ -687,8 +687,8 @@ Each command starts with a fresh mutable app and temporary directory, sharing on
 Console output prints each command's block as it completes; receipts keep scheduled
 plan order and indexed output files.
 Receipts add `jobs` and command `seconds` for concurrency and timing.
-Installed-package commands (`test_installed_*.py`, including NameSilo enrollment) run alone.
-The pool drains before each one and resumes after its integrity check finishes.
+Installed-package commands (`test_installed_*.py`, including NameSilo enrollment) drain the pool and run alone unless `DOMAINS_TEST_CGROUP` is set.
+With it set, at most two installed lifecycles run concurrently (one with two workers). UI checks always drain the pool and run alone.
 Command `started_seconds` and `finished_seconds` are monotonic offsets from run start;
 the finish includes the integrity check, so receipts can verify that commands did not overlap.
 The first failure stops new work; running commands finish by default. `--fail-fast`

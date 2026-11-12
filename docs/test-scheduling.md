@@ -22,8 +22,11 @@ runner's calculated budget.
 The 1024 MiB host reserve applies only to available memory; the default budget
 permits two workers. Explicit `--jobs 1` retains serial support on small hosts
 and requires only a budget of at least 1024 MiB. This is a scheduling reservation,
-not a kernel memory limit. Installed-package and UI checks still drain the pool and run alone;
-they require a budget of at least 2048 MiB. Worker fixtures remain private.
+not a kernel memory limit. UI checks always drain the pool and run alone.
+Installed-package checks also drain the pool and run alone when `DOMAINS_TEST_CGROUP`
+is unset. With it set, at most two installed lifecycles run concurrently (one with
+two workers), leaving spare workers for ordinary native work. Standalone installed-package
+and UI checks require a budget of at least 2048 MiB. Worker fixtures remain private.
 CPU-based default jobs shrink to fit memory, down to one worker on small hosts.
 Receipts record the requested and actual counts and the reason for that reduction.
 An explicit `--jobs` or `DOMAINS_TEST_JOBS` count that cannot fit fails with the
