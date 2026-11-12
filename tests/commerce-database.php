@@ -3,7 +3,7 @@
 declare(strict_types=1);
 require __DIR__.'/native-app.php';
 require_once __DIR__.'/Support/core-database.php';
-require_once __DIR__.'/Support/FakeClock.php';
+require_once __DIR__.'/Support/FakeRegistrar.php';
 app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,
     new Paymenter\Extensions\Servers\Domains\Tests\FakeClock(new DateTimeImmutable('2026-10-18T12:00:00Z')));
 Paymenter\Extensions\Servers\Domains\Services\Runtime::register();
