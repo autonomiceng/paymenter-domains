@@ -47,7 +47,8 @@ $results=[];
 foreach (['managed','watch','mixed','renewing'] as $kind) {
     $actor=commerceUser();$counts=['managed'=>0,'watch'=>0];
     $managedOrder=$clone('orders',(int)$base->service->order_id,['user_id'=>$actor->id]);
-    for ($i=1;$i<=1000;$i++) {
+    // 502 crosses two 250-row boundaries, including both halves of a mixed list.
+    for ($i=1;$i<=502;$i++) {
         $managed=$kind==='managed'||$kind==='renewing'||($kind==='mixed'&&$i%2===1);
         $name=$kind.'-'.$i.'.example.com';
         if ($managed) {
@@ -59,7 +60,7 @@ foreach (['managed','watch','mixed','renewing'] as $kind) {
             $clone('domains_watch_names',(int)$watchBase->id,['user_id'=>$actor->id,'canonical_name'=>$name]);
         }
         $counts[$managed?'managed':'watch']++;
-        if (!in_array($i,[25,250,251,1000],true)) { continue; }
+        if (!in_array($i,[25,250,251,502],true)) { continue; }
         // Warm Blade and application services before counting controller-through-render queries.
         if ($i===25) { $measure($actor); }
         $result=$measure($actor);$results[$kind][$i]=$result['queries'];
@@ -72,7 +73,7 @@ foreach (['managed','watch','mixed','renewing'] as $kind) {
     if ($kind==='mixed') { same($results[$kind][250],$results[$kind][251],'Mixed list stays within its two existing batches'); }
     else {
         $extra=$results[$kind][251]-$results[$kind][250];expect($extra>0,'Crossing 250 rows adds one summary batch');
-        same($results[$kind][25]+3*$extra,$results[$kind][1000],'Four '.$kind.' batches add queries linearly');
+        same($results[$kind][25]+2*$extra,$results[$kind][502],'Three '.$kind.' batches add queries linearly');
     }
 }
 echo 'Owned list query counts (SQLite, controller through Blade, no latency claim): '.json_encode($results,JSON_THROW_ON_ERROR)."\n";
