@@ -5,7 +5,7 @@
 <input type="hidden" name="enabled" value="{{ $domain->autoRenew['enabled'] ? '0' : '1' }}">
 @if ($domain->autoRenew['enabled'])
 @include('domains::partials.owner-confirm', ['id' => 'auto-renew', 'open' => session('domains_confirm') === 'auto-renew', 'cancel' => $domain->actions['show'], 'title' => 'Turn off auto-renew?', 'button' => 'Turn off auto-renew',
-    'risk' => ($domain->expiry ? $domain->name.' expires on '.\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::date($domain->expiry).' unless you renew it.' : $domain->name.' expires unless you renew it.').' We stop sending renewal invoices. An invoice already sent stays payable, and Renew now still works.'])
+    'risk' => ($domain->expiry ? $domain->name.' expires on '.\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::date($domain->expiry).' unless you renew it.' : $domain->name.' expires unless you renew it.').' We stop sending renewal invoices. You can still use Renew now when your domain is eligible. An invoice already sent stays payable. Paying it can still renew '.$domain->name.'.'])
 @endif
 </form>
 @endif

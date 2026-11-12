@@ -90,6 +90,25 @@ foreach(['partial'=>'No glue records known here','complete'=>'0 records']as$stat
     $glue=$domain(['management'=>$management(['glue'=>['family'=>['state'=>$state,'value'=>ucfirst($state),'kind'=>'glue','count'=>0,'at'=>null,'last_good_at'=>null,'customer'=>'']]])]);
     same([$value,['Manage']],$row(storefrontDom($render($glue)),'glue'),'Glue row distinguishes '.$state.' inventory');
 }
+// An unread family can still have saved values. Hiding empty rows must retain those values, without granting edits.
+$unreadRows=static function(string $cap,array $values=[])use($domain):DOMXPath{
+    $family=['kind'=>$cap,'state'=>'unknown','value'=>'Unknown','at'=>null,'last_good_at'=>null,'customer'=>''];
+    $d=$domain(['management'=>[$cap=>['label'=>$cap,'actions'=>[],'url'=>null,'family'=>$family,...$values]]]);
+    return storefrontDom(view('domains::show',['domain'=>$d,'recordFamilies'=>['rows'=>[$family],'stale'=>false,'retained'=>false]])->render());
+};
+foreach([
+    ['nameservers',['current'=>['ns1.saved.example','ns2.saved.example']],['ns1.saved.example','ns2.saved.example']],
+    ['ds',['records'=>[['key_tag'=>54321]]],['54321']],
+    ['dns',['inventory'=>[['name'=>'@','type'=>'A','address'=>'192.0.2.42','ttl'=>300]]],['192.0.2.42']],
+    ['dns',['family_only'=>true,'inventory'=>[],'caa'=>[['name'=>'@','type'=>'CAA','value'=>'0 issue ca.saved.example','ttl'=>3600]]],['0 issue ca.saved.example']],
+    ['ds',['records'=>[]],[]],
+]as[$cap,$values,$saved]){
+    $retained=$unreadRows($cap,$values);$retainedRow=$retained->query('//li[@id="'.$cap.'"]');
+    same(1,$retainedRow->length,'Unread '.$cap.' keeps its saved values visible');
+    foreach($saved as$value){expect(str_contains($retainedRow->item(0)->textContent,$value),'Unread '.$cap.' displays saved value '.$value);}
+    same(0,$retained->query('//li[@id="'.$cap.'"]//form')->length,'Saved '.$cap.' values grant no edits');
+}
+same(0,$unreadRows('nameservers')->query('//li[@id="nameservers"]')->length,'An unread setting without values or actions remains hidden');
 same(['Off',['Add DS record']],[$text('ds'),$action('ds')],'DNSSEC row');
 same(['On',['Turn off']],[$text('lock'),$action('lock')],'Transfer lock row');
 same([null,[]],[$text('privacy'),$action('privacy')],'Paid privacy is hidden while its DTO data stays intact');
@@ -226,7 +245,8 @@ same(1,$dom->query('//section[@id="renewal"]//a[@data-dialog-open][.="Renew now"
 same('domains-btn domains-btn--secondary domains-btn--sm',$dom->query('//section[@id="renewal"]//a[@data-dialog-open][.="Renew now"]')->item(0)?->getAttribute('class'),'Renew now stays secondary until renewal is near');
 // The last day to renew online is a fact about expiry, so it sits under the dialog's Expires date.
 same(['Renew online by Feb 28, 2027.'],array_map($norm,iterator_to_array($dom->query('//dialog[@id="edit-renew"]//dt[.="Expires"]/following-sibling::dd[1]/span[@class="domains-sub"][time[@datetime="2027-02-28"]]'))),'The renewal deadline sits under the dialog Expires date');
-foreach(['Renew '.$name,'>Years<','Create invoice','Turn off auto-renew?','We stop sending renewal invoices. An invoice already sent stays payable, and Renew now still works.']as$t){expect(str_contains($html,$t),'Renewal card: '.$t);}
+same(1,$dom->query('//form[@id="form-auto-renew"][@action="/domains/1/auto-renew"]//input[@name="enabled"][@value="0"]')->length,'The auto-renew form requests turning off future invoices');
+same(1,$dom->query('//form[@id="form-auto-renew"]//dialog[@id="confirm-auto-renew"]//button[@name="confirmed"][@value="1"]')->length,'Turning off auto-renew requires confirmation');
 same(0,$dom->query('//div[contains(@class,"domains-notice")]')->length,'An active domain has no notice');
 same('No changes yet.',$norm($dom->query('//section[@id="history"]//p')->item(0)),'Empty history');
 

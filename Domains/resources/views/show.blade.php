@@ -34,7 +34,16 @@
 @if ($readAt)<p class="domains-hint">Checked @include('domains::partials.moment', ['at' => $readAt]).</p>@endif
 </div>
 {{-- Nothing read yet and nothing to change: the note above says it once, instead of a Not read line per record. --}}
-@php $allUnread = ($recordFamilies ?? null) && collect($settings)->every(fn ($cap) => ($domain->management[$cap]['family']['state'] ?? null) === 'unknown' && empty($domain->management[$cap]['actions'] ?? []) && !($domain->management[$cap]['progress'] ?? null) && !($domain->management[$cap]['off'] ?? false)); @endphp
+@php
+    $allUnread = ($recordFamilies ?? null) && collect($settings)->every(function ($cap) use ($domain) {
+        $section = $domain->management[$cap] ?? [];
+        return ($section['family']['state'] ?? null) === 'unknown'
+            && empty($section['actions']) && empty($section['current'])
+            && empty($section['inventory']) && empty($section['caa'])
+            && ($section['records'] ?? null) === null
+            && !($section['progress'] ?? null) && !($section['off'] ?? false);
+    });
+@endphp
 @unless ($allUnread)<ul class="domains-rows">@include('domains::partials.owner-management', ['caps' => $settings])</ul>@endunless</section>
 @endif
 </div>
