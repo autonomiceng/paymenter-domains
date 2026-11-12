@@ -147,6 +147,13 @@ def verify(source, *, fixture_snapshot=None, shared_vendor=None, force_vendor=Fa
             error = ValueError('Fixture vendor inventory changed.')
             error.changed_paths = sorted(name for name in actual_vendor.keys() | expected_vendor.keys()
                                          if actual_vendor.get(name) != expected_vendor.get(name))
+            error.inventory_detail = dict(expected_files=len(expected_vendor), actual_files=len(actual_vendor),
+                files=[dict(path=name, expected=expected_vendor.get(name), actual=actual_vendor.get(name))
+                       for name in error.changed_paths[:100]])
+            try:
+                error.inventory_detail['read_only'] = bool(os.statvfs(vendor_root).f_flag & os.ST_RDONLY)
+            except OSError:
+                error.inventory_detail['read_only'] = None
             raise error
         return {}, fixture_snapshot
     if git(source, 'rev-parse', '--show-toplevel').decode().strip() != str(source):
