@@ -45,7 +45,7 @@ final class RequestHoldReasons
         'limit'=>['The site administrator','check the request limit for this registrar account before retrying','registrars','Open account'],
         'membership'=>['Staff','confirm the domain is in the assigned registrar account','registrars','Open account'],
         'renewal'=>['Staff','check the domain at the registrar before retrying','domain',null],
-        'availability'=>['Staff','release the hold to check the name and its price again',null,null],
+        'availability'=>['Staff','cancel this order on the domain page if the name or price is still unsuitable','domain',null],
         'unsupported'=>['Staff','cancel this unsupported order on the domain page','domain',null],
         'outcome'=>['Staff','check the original registrar result before retrying','domain',null],
         'unknown'=>['Staff','review the request history on the domain page before retrying','domain',null],
