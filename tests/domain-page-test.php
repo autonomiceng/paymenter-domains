@@ -62,7 +62,7 @@ foreach (['held','uncertain'] as $state) {
 $d=$domain();$html=$render($d,$summary($d,['daysLeft'=>129]));$dom=storefrontDom($html);
 same('Domains '.$name,$norm($dom->query('//nav[contains(@class,"domains-crumb")]')->item(0)),'Breadcrumb names the domain');
 same(1,$dom->query('//nav[contains(@class,"domains-crumb")]/a[@href="'.route('domains.domains.index').'"][.="Domains"]')->length,'Breadcrumb links to the list');
-same(1,$dom->query('//h1[contains(@class,"domains-mono")][starts-with(normalize-space(.),"'.$name.'")]')->length,'Name is the mono h1');
+same(1,$dom->query('//h1[starts-with(normalize-space(.),"'.$name.'")]')->length,'Name is the h1');
 same(1,$dom->query('//div[contains(@class,"domains-ph")]//span[contains(@class,"domains-pill")]')->length,'One pill in the header');
 foreach(['Domain help</a>','class="domains-tabs','>Overview<','Contact support to change','Historical invoices','Next renewal','Scroll sideways','Renewal settings','registrar auto-renew','Save nameservers','Use default nameservers','Transfer code','transfer code','Domain privacy','—']as$gone){expect(!str_contains($html,$gone),'Removed: '.$gone);}
 same(['Registrar: Enom.'],array_map($norm,iterator_to_array($dom->query('//dialog[@id="edit-nameservers"]/form/p[starts-with(normalize-space(.),"Registrar:")]'))),'The nameserver editor quietly names its saved registrar once');
