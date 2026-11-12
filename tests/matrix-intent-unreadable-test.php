@@ -50,7 +50,7 @@ foreach([['defaultLongest'=>11],['maxAnnualCost'=>'not money'],['defaultTransfer
     same(Paymenter\Extensions\Servers\Domains\Presentation\Missing::LABEL,TldFacts::priceState($fact,'register')['value'],'New sale prices stay closed');
     $matrix=$list->read();
     same([],$matrix['skipped'],'Bad account defaults leave no price out of the list');
-    same($retained,'USD '.$matrix['rows'][0]['prices']['renew']['price'],'Price list keeps the saved renewal price');
+    same($retained,'$'.$matrix['rows'][0]['prices']['renew']['price'],'Price list keeps the saved renewal price');
     $renew=$matrix['rows'][0]['prices']['renew'];
     same(['50.0000','-40.2016',true,true,'Below cost'],[$renew['cost'],$renew['profit'],$renew['below_cost'],$renew['loses_money'],$renew['status']],'The saved renewal cost and its loss stay exact');
     same([$healthy->id],array_column($list->read(1,'below_cost')['rows'],'id'),'Below cost keeps the TLD that loses money on renewals');

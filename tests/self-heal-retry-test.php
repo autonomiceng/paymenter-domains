@@ -20,7 +20,7 @@ $assertFamily=static function(string $label,?int $queued=null,?string $cause=nul
   $dom=new DOMDocument;@$dom->loadHTML('<?xml encoding="utf-8" ?>'.$html);$xp=new DOMXPath($dom);
   $nodes=$xp->query('//span[@data-record-family="'.$kind.'"]');expect($nodes->length>0,$surface.' renders the '.$kind.' family');
   // Customers see no mark for a complete read; the row says how many records it found. An unread record is calm for
-  // customers: Not read yet, with one note above the rows.
+  // customers: Not read, with one note above the rows.
   $shown=$surface==='customer'&&$label==='Complete'?'':($surface==='customer'&&$label==='Missing'?\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::NOT_READ:$label);
   foreach($nodes as $node){same($shown,trim($node->textContent),$surface.' family label: expected '.$shown.', got '.trim($node->textContent));
    if($label==='Complete'&&$shown!==$label){same(1,$xp->query('./following-sibling::span[contains(@class,"domains-row__v") and normalize-space(.)="0 records"]',$node->parentNode)->length,'Customer complete family shows its record count');}

@@ -111,7 +111,7 @@ $page=Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$d->id])->
 $page->assertActionDoesNotExist('reprice');$page->assertActionVisible('stop')->mountAction('stop')->assertActionMounted('stop');$page->unmountAction();
 // Stop and Resume sit in the Renewal row itself.
 $renewalButtons=static function(string $html):array{$doc=new DOMDocument();@$doc->loadHTML('<?xml encoding="UTF-8">'.$html);$x=new DOMXPath($doc);
-    $rows=$x->query('//div[contains(concat(" ",normalize-space(@class)," ")," domains-row ")][.//*[@role="term"][normalize-space(.)="Renewal invoices"]]');
+    $rows=$x->query('//div[contains(concat(" ",normalize-space(@class)," ")," domains-row ")][.//*[@role="term"][normalize-space(.)="Auto-renew"]]');
     $all=fn(?DOMNode $in)=>array_values(array_filter(array_map(fn($b)=>trim(preg_replace('/\s+/',' ',$b->textContent)),iterator_to_array($x->query($in?'.//button':'//button',$in))),fn(string $b)=>in_array($b,HoldingActions::LABELS,true)));
     return [$rows->length,$rows->length===1?$all($rows->item(0)):[],$all(null)];};
 $stopRow=$renewalButtons($page->html());same([1,['Turn off'],['Turn off']],$stopRow,'Turn off shows once, in the Renewal row: '.json_encode($stopRow));
@@ -125,7 +125,7 @@ same($beforeInvalidReason,$d->fresh()->getRawOriginal(),'Renewal reason field er
 $page->unmountAction();
 $stopPage=Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$d->id])->mountAction('stop');
 same("Stops new renewal invoices. Invoices already sent stay payable, and renewal requests already created may still run.",$stopPage->instance()->getMountedAction()->getModalDescription(),'Actual stop dialog explains retained debt and issued requests');
-$stopPage->setActionData(['reason'=>'Stop through owned staff modal'])->callMountedAction()->assertNotified('Renewal invoices turned off')->assertRedirect(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource::getUrl('view',['record'=>$d->id]));same(true,$d->fresh()->renewal_policy['renewals_stopped'],'Actual modal invokes owned action');
+$stopPage->setActionData(['reason'=>'Stop through owned staff modal'])->callMountedAction()->assertNotified('Auto-renew turned off')->assertRedirect(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource::getUrl('view',['record'=>$d->id]));same(true,$d->fresh()->renewal_policy['renewals_stopped'],'Actual modal invokes owned action');
 same([1,['Turn on'],['Turn on']],$renewalButtons(Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$d->id])->html()),'After a stop, Turn on shows once, in the Renewal row');
 $resumePage=Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$d->id])->mountAction('resume')->assertActionMounted('resume');
 $stalePage=Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$d->id])->mountAction('resume');
@@ -152,7 +152,7 @@ foreach(['missing-anchor','unconfirmed-anchor','immediate-cancellation'] as $fau
 }
 $viewOnly=staffUser(['admin.domains.view']);$readonly=Livewire\Livewire::actingAs($viewOnly)->test($pageClass,['record'=>$d->id]);$readonly->assertActionDoesNotExist('stop');
 Auth::login($staff);Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager::class,['ownerRecord'=>$d->fresh(),'pageClass'=>$pageClass])
-    ->assertSee('Renewal invoices turned off')->assertSee('Stop through owned staff modal')->assertSee(trim($staff->first_name.' '.$staff->last_name)?:'Staff');
+    ->assertSee('Auto-renew turned off')->assertSee('Stop through owned staff modal')->assertSee(trim($staff->first_name.' '.$staff->last_name)?:'Staff');
 // Native guards and the same Eloquent instance are required: wasRecentlyCreated survives its first gateway save.
 $gateway=\App\Models\Gateway::firstOrCreate(['extension'=>'Manual'],['name'=>'Manual','type'=>'gateway']);
 $payment=\App\Models\InvoiceTransaction::create(['invoice_id'=>$original->invoice_id,'amount'=>'1.00','fee'=>'0.00','status'=>'succeeded']);
