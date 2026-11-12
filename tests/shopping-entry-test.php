@@ -19,20 +19,20 @@ $back=static function(string $html)use($path):array {
     $links=[];foreach(storefrontDom($html)->query('//a[contains(concat(" ",normalize-space(@class)," ")," domains-back ")]') as $link){$links[]=[$path($link->getAttribute('href')),trim($link->textContent)];}
     return $links;
 };
-$list=[$path(route('domains.domains.index')),'Domains'];$register=[$path(route('domains.domains.search')),'Register a domain'];
+$list=[$path(route('domains.domains.index')),'Domains'];
 $response=$visit(null,'/domains/transfer');
 same(200,$response->getStatusCode(),'Guest reaches the real transfer page without a login redirect');
 $transfer=storefrontDom($response->getContent());
 same(1,$transfer->query('//nav[@aria-label="Get a domain"]//a[@aria-current="true" and normalize-space()="Transfer"]')->length,'Transfer tab is current');
-same([$register],$back($response->getContent()),'Guest transfer goes back to Register a domain');
+same([],$back($response->getContent()),'Guest transfer has no back link: the Register tab is the way to registration');
 // A site that asks for verified email keeps the domain list from customers who have not verified yet.
 config(['settings.mail_must_verify'=>true]);
 $user->forceFill(['email_verified_at'=>now()])->save();$unverified=commerceUser();$unverified->forceFill(['email_verified_at'=>null])->save();
 same(200,$visit($user,'/domains')->getStatusCode(),'A verified customer can open the domain list');
 same(302,$visit($unverified,'/domains')->getStatusCode(),'An unverified customer is sent to verify before the domain list');
-foreach(['verified'=>[$user,[$list]],'unverified'=>[$unverified,[$register]]] as $case=>[$who,$expected]){
+foreach(['verified'=>[$user,[$list]],'unverified'=>[$unverified,[]]] as $case=>[$who,$expected]){
     $response=$visit($who,'/domains/transfer');same(200,$response->getStatusCode(),'Signed-in '.$case.' customer reaches transfer');
-    same($expected,$back($response->getContent()),'Signed-in '.$case.' customer gets one reachable transfer back link');
+    same($expected,$back($response->getContent()),'Transfer links back only to a domain list the '.$case.' customer can open');
     $response=$visit($who,'/domains/register');same(200,$response->getStatusCode(),'Signed-in '.$case.' customer reaches registration');
     same($case==='verified'?[$list]:[],$back($response->getContent()),'Registration links back only to a domain list the '.$case.' customer can open');
     $response=$visit($who,'/domains/pricing');same(200,$response->getStatusCode(),'Signed-in '.$case.' customer reaches prices');

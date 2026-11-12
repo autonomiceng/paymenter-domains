@@ -87,6 +87,8 @@
 .domains h3.domains-h3 { font-size: .9375rem; font-weight: 600; }
 
 @media (max-width: 639px) { .domains .domains-head > .domains-btn--ghost { margin-left: -.5rem; } }
+/* Phones: a long domain name stays a two-line-at-most title above its controls, not an oversized heading. */
+@media (max-width: 639px) { .domains .domains-ph .domains-title { font-size: 1.375rem; line-height: 1.875rem; } }
 
 /* Buttons */
 /* Border-box, as the app's base styles already set: one-line buttons keep their min-height; the padding gives a label that must wrap room. */
