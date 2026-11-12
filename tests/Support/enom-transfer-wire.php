@@ -5,7 +5,7 @@ $transferReply=static function(array $p)use($transferState,$clock):string {
     same(0,Illuminate\Support\Facades\DB::transactionLevel(),'Transfer request outside financial locks');
     same(($transferState->environment??'test')==='live'?'https://reseller.enom.com/interface.asp':'https://resellertest.enom.com/interface.asp',$GLOBALS['enomWire']['options'][CURLOPT_URL],'Transfer environment route');
     $cmd=$p['Command'];$name=isset($p['SLD1'])?$p['SLD1'].'.'.$p['TLD1']:(isset($p['SLD'])?$p['SLD'].'.'.$p['TLD']:$transferState->name);
-    if($cmd==='TP_CreateOrder'){$transferState->name=$name;$transferState->bill=$clock->now()->setTimezone(new DateTimeZone('America/Los_Angeles'))->format('n/j/Y g:i:s A');}
+    if($cmd==='TP_CreateOrder'){$transferState->name=$name;$transferState->bill=$clock->now()->setTimezone(new DateTimeZone(($transferState->environment??'test')==='live'?'America/Los_Angeles':'America/Denver'))->format('n/j/Y g:i:s A');}
     $expiry='2028-10-21';[$label,$ending]=array_pad(explode('.',$name,2),2,'com');
     $body=match($cmd){
         'Check'=>'<Domains><Domain><Name>'.$name.'</Name><RRPCode>211</RRPCode><IsPremium>0</IsPremium><IsPlatinum>0</IsPlatinum><IsEAP>0</IsEAP><Properties><Transferable>true</Transferable></Properties></Domain></Domains>',

@@ -198,7 +198,7 @@ $header = ['orderid' => '9001', 'result' => 'true', 'orderbillamount' => '$8.95'
 $order = fn (array $h) => new ProtocolResult('success', data: ['order' => $h]);
 $candidate = OrderCharge::read($attempt(), $execution, $order($header));
 same('8.95', $candidate?->charge?->amount, 'Single exact closed item proves actual USD charge');
-same('2026-11-07T13:40:05+00:00', $candidate?->processedAt?->value, 'BillDate retains provider Pacific time semantics');
+same('2026-11-07T12:40:05+00:00', $candidate?->processedAt?->value, 'Enom TEST BillDate is read as Mountain time');
 // Both order fields accept exactly one optional dollar sign, independently.
 foreach (['8.95', '$8.95'] as $total) {
     foreach (['8.95', '$8.95'] as $paid) {

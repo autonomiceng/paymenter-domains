@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom;
 
-use Paymenter\Extensions\Servers\Domains\Data\{Action, AttemptEvidence, DateEvidence, Money, OrderEvidence, PersistedExecution, CanonicalName, HistoryAcceptance, ExpiryPrecision};
+use Paymenter\Extensions\Servers\Domains\Data\{Action, AttemptEvidence, DateEvidence, Environment, Money, OrderEvidence, PersistedExecution, CanonicalName, HistoryAcceptance, ExpiryPrecision};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ProtocolResult;
 
 /** Single exact item only. A quote, acknowledgement or order ID alone never proves a charge. */
@@ -39,7 +39,7 @@ final class OrderCharge
             if (array_key_exists('currency', $row) && (!is_string($row['currency']) || strtoupper($row['currency']) !== 'USD')) { return null; }
         }
         $processed = self::date($header['billdate'] ?? null, 'enom_order_bill_date',
-            $attempt->executionFacts !== null && $attempt->providerReference !== null && $id === $attempt->providerReference);
+            $attempt->executionFacts !== null && $attempt->providerReference !== null && $id === $attempt->providerReference, self::billZone($attempt->binding->environment));
         return new OrderEvidence($attempt->binding, $query, new Money($amount, 'USD'), $id, $processed, Expiry::read($order));
     }
     /** Order amounts may carry one leading dollar sign; quote parsing stays strict. */
@@ -63,7 +63,11 @@ final class OrderCharge
         }
         return true;
     }
-    private static function date(mixed $value, string $source, bool $captured): ?DateEvidence
+    /** Enom TEST bill dates are US Mountain time: 87 captured TEST orders read UTC-6 until 08:00 UTC on Nov 1, 2026 and UTC-7 after.
+     * Live is not measured and keeps Pacific. */
+    private static function billZone(Environment $environment): string
+    { return $environment === Environment::Test ? 'America/Denver' : 'America/Los_Angeles'; }
+    private static function date(mixed $value, string $source, bool $captured, string $zone): ?DateEvidence
     {
         if (!is_string($value)) { return null; }
         if (preg_match('/^(\d{1,2})\/(\d{1,2})\/(\d{4}) (\d{1,2}):(\d{2}):(\d{2}) (AM|PM)$/D', $value, $m)) {
@@ -75,7 +79,7 @@ final class OrderCharge
             $local = HistoryAcceptance::localDate($value, 'UTC', $source);
             return $local ? new DateEvidence(substr($local->value, 0, 19), ExpiryPrecision::Local, $source) : null;
         }
-        $date = HistoryAcceptance::localDate($value, 'America/Los_Angeles', $source);
+        $date = HistoryAcceptance::localDate($value, $zone, $source);
         return $date ? new DateEvidence((new \DateTimeImmutable($date->value))->setTimezone(new \DateTimeZone('UTC'))->format(DATE_ATOM), ExpiryPrecision::Instant, $source, 'UTC') : null;
     }
 }

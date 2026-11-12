@@ -10,7 +10,7 @@ $data=json_decode(file_get_contents($receipt.'.renewal'),true,512,JSON_THROW_ON_
 $clock=new class implements Clock {public function now():DateTimeImmutable{return new DateTimeImmutable('2027-10-20T13:00:00Z');}};
 app()->instance(Clock::class,$clock);config(['domains.enom_test_sends_per_day'=>1000,'domains.enom_test_sends_per_minute'=>100000]);
 $s=(object)['name'=>$op->domain->domain,'after'=>true,'auto'=>'0','expiry'=>'10/21/2027','day'=>'10/21/2027','price'=>'10.00','order'=>'9002','confirmed'=>'2028-10-21','charge'=>'10.00','orders'=>[],
-    'bill'=>(new DateTimeImmutable($op->attempt['dispatch_attempted_at']))->setTimezone(new DateTimeZone('America/Los_Angeles'))->format('n/j/Y g:i:s A')];
+    'bill'=>(new DateTimeImmutable($op->attempt['dispatch_attempted_at']))->setTimezone(new DateTimeZone('America/Denver'))->format('n/j/Y g:i:s A')];
 require __DIR__.'/enom-renewal-wire.php';Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire(['reply'=>$renewReply]);Cache::flush();
 $worker=new RuntimeWork($clock,new RuntimePorts);$worker->operation($op->id);same('succeeded',$op->fresh()->state,'New process proves retained charge and year expiry');
 same(5,count($GLOBALS['enomWire']['forms']),'Process continuation reads exactly five times');expect(!in_array('Extend',array_column($GLOBALS['enomWire']['forms'],'Command'),true),'Process restart never resends');

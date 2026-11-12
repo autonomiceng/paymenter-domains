@@ -11,7 +11,7 @@ use function Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire;
 // Complete a synthetically paid registration through the captured-order read stub.
 // Binding drift prevented release of its old physical lease; let that lease expire.
 $clock->at=$clock->at->modify('+61 seconds');Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
-$s=(object)['name'=>$registered->domain->domain,'bill'=>(new DateTimeImmutable($registered->attempt['dispatch_attempted_at']))->modify('+1 second')->setTimezone(new DateTimeZone('America/Los_Angeles'))->format('n/j/Y g:i:s A'),'locked'=>true,'renewal'=>false];
+$s=(object)['name'=>$registered->domain->domain,'bill'=>(new DateTimeImmutable($registered->attempt['dispatch_attempted_at']))->modify('+1 second')->setTimezone(new DateTimeZone('America/Denver'))->format('n/j/Y g:i:s A'),'locked'=>true,'renewal'=>false];
 $readWire=new class($s) implements Transport {
     public function __construct(private $s){}
     public function send(Environment $env,ReadCommand $command,array $p,string $uid,string $token,int $timeoutMs):string {

@@ -32,7 +32,7 @@ $reply=static function(array $p)use($clock):string {
     $command=$p['Command'];$name=($p['SLD']??'').'.'.($p['TLD']??'com');
     if($command==='Check'&&($GLOBALS['advanceDuringPreflight']??false)){unset($GLOBALS['advanceDuringPreflight']);$clock->at=$clock->at->modify('+1 second');}
     if(isset($GLOBALS['testRegisteredName'])){$name=$GLOBALS['testRegisteredName'];}
-    $bill=$clock->now()->setTimezone(new DateTimeZone('America/Los_Angeles'))->format('n/j/Y g:i:s A');
+    $bill=$clock->now()->setTimezone(new DateTimeZone('America/Denver'))->format('n/j/Y g:i:s A');
     $body=match($command){
         'GetBalance'=>'<AvailableBalance>100.00</AvailableBalance>',
         'GetTLDList'=>'<TLDList><TLD>com</TLD></TLDList>',

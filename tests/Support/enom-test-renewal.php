@@ -82,7 +82,7 @@ Cache::flush();$used=DB::table(EnomTestSendLimitSchema::SENDS)->count();
 same(['GetDomainInfo','GetExtendInfo','Check','GetDomainInfo','GetRenew','GetBalance','GetDomainInfo','GetExtendInfo','Check','GetDomainInfo','GetRenew','GetBalance','Extend'],$commands,'Two bounded six-read assessments and one Extend: '.json_encode([$op->fresh()->state,$op->fresh()->safe_code,$commands]));
 same('pending',$op->fresh()->state,'Paid renewal acknowledged once');same($used+13,DB::table(EnomTestSendLimitSchema::SENDS)->count(),'Extend counted once among the 13 sends');same($before,$money(),'Renewal dispatch changes no native financial bytes');
 $extend=end($GLOBALS['enomWire']['forms']);same(['1','no'],[$extend['NumYears'],$extend['UseCreditCard']],'One annual renewal without card');
-$s->after=true;$s->bill=(new DateTimeImmutable($op->fresh()->attempt['dispatch_attempted_at']))->setTimezone(new DateTimeZone('America/Los_Angeles'))->format('n/j/Y g:i:s A');
+$s->after=true;$s->bill=(new DateTimeImmutable($op->fresh()->attempt['dispatch_attempted_at']))->setTimezone(new DateTimeZone('America/Denver'))->format('n/j/Y g:i:s A');
 foreach([['2027-10-21','10.00'],['2028-10-20','10.00'],['2028-10-21','invalid']] as [$expiry,$charge]){
     $s->confirmed=$expiry;$s->charge=$charge;Cache::flush();(new RuntimeWork($clock,new RuntimePorts))->operation($op->id);
     same('pending',$op->fresh()->state,'Missing full-year expiry or valid charge cannot complete');same($before,$money(),'Incomplete confirmation keeps paid money unchanged');
@@ -116,7 +116,7 @@ $start('uncertain');$op=$ops['uncertain'];$before=$money();$GLOBALS['enomWire'][
 $count=count($GLOBALS['enomWire']['forms']);Cache::flush();(new RuntimeWork($clock,new RuntimePorts))->operation($op->id);// A lost reply reads the domain once on the next check; without accepted history it never reads the order history or resends.
 same(['GetDomainInfo','GetRenew','GetDomainInfo','GetDomainExp'],array_column(array_slice($GLOBALS['enomWire']['forms'],$count),'Command'),'Missing captured ID and unaccepted history reads the domain but never resends');same(['uncertain','renewal_confirmation_required'],[$op->fresh()->state,$op->fresh()->safe_code],'Domain read alone never settles a lost renewal reply');same(null,(new Refunds($clock))->creditRejected($op->id),'Uncertain renewal grants no automatic credit');same($before,$money(),'Uncertainty retains native invoice/payment/credit bytes');
 expect(!str_contains(json_encode($op->fresh()->attempt),'TEST-SECRET-TOKEN'),'Credential redaction');
-$s->after=true;$s->bill=(new DateTimeImmutable($op->fresh()->attempt['dispatch_attempted_at']))->setTimezone(new DateTimeZone('America/Los_Angeles'))->format('n/j/Y g:i:s A');$clock->at=$clock->at->modify('+10 minutes');
+$s->after=true;$s->bill=(new DateTimeImmutable($op->fresh()->attempt['dispatch_attempted_at']))->setTimezone(new DateTimeZone('America/Denver'))->format('n/j/Y g:i:s A');$clock->at=$clock->at->modify('+10 minutes');
 // The held request offers the history read in one click, only where it can clear this hold.
 $request=fn()=>Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation::class,['record'=>$op->id]);
 $recovery=Paymenter\Extensions\Servers\Domains\Admin\Support\HistoryRecovery::class;$rights=$staff->role->permissions;

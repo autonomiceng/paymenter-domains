@@ -2,9 +2,9 @@
 // Enom d1392a8 managed renewal execution; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\{DB, Log};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Data\{Action, AdmittedOperation, DateEvidence, Disposition, ExpiryPrecision, Money, Query, RenewalCode, RenewalRequest, RequestBudget, RequestContext, RequestOrigin, SendState};
+use Paymenter\Extensions\Servers\Domains\Data\{Action, AdmittedOperation, DateEvidence, Disposition, ExpiryPrecision, Money, Query, RenewalCode, RenewalRequest, RequestBudget, RequestContext, RequestOrigin, SendFailure, SendState};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 /** One sealed attempt. A durable row, request or admission decision is never a live grant. */
 final class RenewalExecution
@@ -120,13 +120,20 @@ final class RenewalExecution
     }
     private function dispatch($seed,int $id,AdmittedOperation $descriptor,RequestContext $context,RenewalWriter $writer): Operation
     {
-        $result = null;
-        try { $result = $writer->renew($descriptor, $context); } catch (\Throwable) {} finally { unset($this->grants[$descriptor]); }
-        return DB::transaction(function () use ($seed, $id, $descriptor, $result, $context) {
+        $result = null; $failure = null;
+        try { $result = $writer->renew($descriptor, $context); }
+        catch (\Throwable $error) {
+            // Enom may already have renewed, so the reason is kept for staff, never the raw error.
+            $failure = $error instanceof SendFailure ? $error : null;
+            Log::warning('Domains renewal reply not recorded.', ['operation_id' => $id, 'exception_class' => $error::class] + ($failure?->facts() ?? []));
+        }
+        finally { unset($this->grants[$descriptor]); }
+        return DB::transaction(function () use ($seed, $id, $descriptor, $result, $failure, $context) {
             $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
             if ($op->state === 'succeeded' || ($op->attempt['claim_key'] ?? null) !== $descriptor->claimKey || array_key_exists('execution', $op->attempt)) { return $op; }
             try { $result?->binding->requireMatch($descriptor->binding); } catch (\Throwable) { $result = null; }
             $a = $op->attempt; $a['execution'] = $result?->jsonSerialize();
+            if ($failure && !$result) { $a['send_failure'] = $failure->facts(); }
             $facts = $result?->evidence()->renewalExecution;
             if ($facts && $facts->query->matches($descriptor->query)) { $a['renewal'] = ['query' => ['name' => $facts->query->name, 'years' => $facts->query->years], 'order_reference' => $facts->orderReference]; }
             $unsent = $result?->sendState === SendState::DefinitelyUnsent;

@@ -30,7 +30,9 @@ foreach (['lower' => '10/18/2026 12:00:00 AM', 'upper' => '10/19/2026 2:05:00 AM
 foreach (['too-late', 'too-early', 'wrong-id', 'history'] as $fault) {
     [$op, $binding] = $prepare(reservedFixtureName('clock-'.$fault.'.example.com'), $fault === 'history' ? 'null' : 'accepted');
     $observation->billDate = match ($fault) {
-        'too-late' => '10/19/2026 2:05:01 AM', 'too-early' => '10/17/2026 11:59:59 PM', default => '10/18/2026 6:02:00 AM',
+        'too-late' => '10/19/2026 2:05:01 AM', 'too-early' => '10/17/2026 11:59:59 PM',
+        // Enom TEST bills in Mountain time, so 7:02 AM is 13:02 UTC: an hour after the 12:00..12:05 window.
+        'history' => '10/18/2026 7:02:00 AM', default => '10/18/2026 6:02:00 AM',
     };
     if ($fault === 'wrong-id') { $observation->reference = '9002'; }
     if ($fault === 'history') {
