@@ -51,7 +51,8 @@ final class CorrectionWork
             return null;
         });
         if(!$plan){return null;}
-        return $plan['existing']??$engine->request($plan['user'],(int)$seed->id,$plan['action'],$plan['input'],$plan['nonce'],$driver,
-            correction:$plan['original']->operation_key);
+        try{return $plan['existing']??$engine->request($plan['user'],(int)$seed->id,$plan['action'],$plan['input'],$plan['nonce'],$driver,
+            correction:$plan['original']->operation_key);}
+        catch(ManagementDeferred){return null;}
     }
 }

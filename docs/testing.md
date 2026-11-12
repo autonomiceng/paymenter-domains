@@ -39,13 +39,13 @@ It compares Register/Transfer/Retry geometry with prior inline-flex/normal-wrap/
 and `tests/test_rendered_managed_dns.py` (DNS monitoring setup list). Default runs with `PAYMENTER_TEST_APP` include it.
 It needs `NODE_PATH` (Playwright) and `CHROME_BIN`, which the runner passes to this suite only; it runs alone (2048 MiB).
 At 1440, 900 and 390px, with the staff sheet after the theme and before it, each long name, customer and Note is one
-line cut with a painted "...": a name exactly 326px, a customer 120px, a Note the rest of the row and at least 160px
-(the approved table, padding included). Domains list cells are no wider than their items, the table fits its card at
-1440px, and the page never scrolls sideways. Each item and its tooltip keep the full text. Only the staff reveal script
+line cut with a painted "...": a name exactly 326px (at most 326px on a phone), a customer 120px, a Note the rest of the
+row and at least 160px (the approved table, padding included). On a phone the Note reads under the domain name. Domains
+list cells are no wider than their items, the table fits its card at 1440px, and the page never scrolls sideways. Each item and its tooltip keep the full text. Only the staff reveal script
 runs: keyboard focus on a row link, or on a cut text in a row that opens nothing (the only texts with their own tab stop,
 kept while cut, also after a late font load), shows the full text in a fixed overlay inside the viewport (at 320 by 225
 and 640 by 450px, a 254 character address fits or scrolls by wheel, arrows and Page keys), and no cell or row moves. The
-client domain heading keeps clamp(1.125rem, 5vw, 1.5rem) and an 18 by 20px status mark at 320/390/768/1280px in both
+client domain heading names the domain, at weight 600 with an 18 by 20px status mark, at 320/390/768/1280px in both
 modes. For a host skin, set
 `DOMAINS_PANEL_SETUP` to a PHP file that is given `$panel`, configures it and returns its built theme; render with
 `R14_RENDER_DIR=OUT scripts/render-reminders.py OUT` and both tests' render files, then run the check on `OUT`. Its

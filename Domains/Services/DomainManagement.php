@@ -420,7 +420,7 @@ final class DomainManagement
         if ($op->funding_basis === 'paid_invoice' && AccountSpendingHolds::query(Operation::where('account_fingerprint',$op->account_fingerprint)->where('id','!=',$op->id))->orderBy('id')->lockForUpdate()->get(['id'])->isNotEmpty()) { throw new WriteHeld('write_rate_limited'); }
     }
     private function peers(array $l, ?int $except = null, ?string $correction = null, ?string $action = null): void
-    { if ($this->unresolved($l, $except, $correction, $action) !== null) { throw new \DomainException('Prior operation unresolved.'); } }
+    { if ($this->unresolved($l, $except, $correction, $action) !== null) { throw new ManagementDeferred('Prior operation unresolved.'); } }
     /** Changes an unconfirmed auth code email can't affect: the email goes to the registrant, and these leave the registrant,
      * the transfer lock and the code alone. Contacts, the lock, privacy and another email still wait for it. */
     private const BESIDE_EMAIL=['nameservers','dns','srv','ds_add','ds_delete','glue_add','glue_update','glue_delete'];

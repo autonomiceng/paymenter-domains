@@ -49,7 +49,8 @@ declare(strict_types=1);
     \Paymenter\Extensions\Servers\Domains\Services\HistoryLinkSchema::install();
     $instant = $clock->now(); $expiry = $instant->setTime(0, 0)->modify('+1 day');
     // An adoption without a record keeps renewal off, so the day before expiry asks the customer to act.
-    foreach (['-1 second' => ['Action required', 'warn'], 'now' => ['Expired', 'bad'], '+1 second' => ['Expired', 'bad']] as $offset => $expected) {
+    // The expiry date itself reads Expires today; the next UTC date reads Expired.
+    foreach (['-1 second' => ['Action required', 'warn'], 'now' => ['Expires today', 'warn'], '+1 second' => ['Expires today', 'warn'], '+1 day' => ['Expired', 'bad']] as $offset => $expected) {
         $clock->instant = $expiry->modify($offset);
         $d = $base->fresh(); $d->status = 'active'; $d->provenance = 'adopted'; $d->provider_expires_at = $expiry;
         $dto = $quiet->present($d, false);

@@ -48,8 +48,8 @@ final class EnomTestManagement
     }
     public static function requireAction(AccountBinding $b,string $action): void
     {
-        if(!self::accepted($b)||!in_array($action,['nameservers','lock','contacts','auth_code_email','dns','srv','ds_add','ds_delete'],true)){
-            throw new \DomainException(($b->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Live?'Live':'TEST').' management acceptance required.');
-        }
+        $message=($b->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Live?'Live':'TEST').' management acceptance required.';
+        if(!self::accepted($b)){throw new ManagementDeferred($message);}
+        if(!in_array($action,['nameservers','lock','contacts','auth_code_email','dns','srv','ds_add','ds_delete'],true)){throw new \DomainException($message);}
     }
 }

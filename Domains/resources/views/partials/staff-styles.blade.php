@@ -28,12 +28,6 @@
 .domains-line,.domains-name-cell{max-width:24rem}
 /* The approved staff table's columns, padding included: a domain name 326px and a customer 120px (above). A list Note takes the rest of the row, and 160px when the table scrolls inside its card. Notes lead with their step; the tooltip has the rest. */
 .domains-name-cell{max-width:326px}.domains-line.domains-list-note{max-width:none;width:160px;min-width:100%}.domains-note-cell{width:100%}
-/* A list Note wraps to two lines before it is cut, and a customer name keeps at least 140px. */
-.domains-line.domains-list-note,.domains-line.domains-list-note>*{white-space:normal}
-.domains-line.domains-list-note>.fi-ta-text-item:not(.fi-bulleted li.fi-ta-text-item),.fi-ta-text-item.domains-line.domains-list-note:not(.fi-bulleted li.fi-ta-text-item){display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;padding-block:0}
-/* The clamp cuts at the padding edge, so a padded note showed part of a third line. Its space moves to the margin. */
-.domains-list-note{margin-block:calc(var(--spacing)*4)}
-.domains-customer-cell .domains-cut{min-width:140px;max-width:220px}
 /* Keyboard focus on a cut text, or on the row link around it, shows the whole text over the page (staff-reveal), so no cell or row changes size. */
 .domains-reveal{position:fixed;z-index:60;max-width:min(24rem,calc(100vw - 16px));max-height:calc(100vh - 16px);max-height:calc(100dvh - 16px);overflow-y:auto;overscroll-behavior:contain;padding:6px 10px;border:1px solid var(--panel-line,color-mix(in srgb,currentColor 20%,transparent));border-radius:6px;background:var(--panel-card-2,#fff);color:var(--panel-fg,#111827);box-shadow:0 4px 12px rgb(0 0 0/.2);font-size:.875rem;line-height:1.25rem;white-space:pre-line;overflow-wrap:anywhere;pointer-events:none}
 .dark .domains-reveal{background:var(--panel-card-2,#18181b);color:var(--panel-fg,#fff)}
