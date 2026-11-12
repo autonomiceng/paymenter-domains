@@ -1,6 +1,7 @@
 <?php
 // Socket-free reviewed renewal responses; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/enom-history.php';
 use Illuminate\Support\Facades\DB;
 $renewReply=static function(array $p)use($s):string {
     same(0,DB::transactionLevel(),'Renewal reads/write outside financial locks');
@@ -15,7 +16,7 @@ $renewReply=static function(array $p)use($s):string {
         'Extend'=>'<RRPCode>200</RRPCode><OrderID>'.$s->order.'</OrderID>',
         'GetDomainExp'=>'<ExpirationDate>'.$s->confirmed.'</ExpirationDate>',
         'GetOrderDetail'=>'<Order><OrderID>'.($p['OrderID']??$s->order).'</OrderID><Result>true</Result><OrderBillAmount>$'.$s->charge.'</OrderBillAmount><BillDate>'.$s->bill.'</BillDate><OrderDetail><Description>'.$s->name.'</Description><ProductType>Renew</ProductType><Quantity>1</Quantity><Status>Successful</Status><OrderStatus>Closed</OrderStatus><AmountPaid>'.$s->charge.'</AmountPaid><ExpiryDateTime>'.$s->confirmed.'</ExpiryDateTime></OrderDetail></Order>',
-        'GetOrderList'=>'<OrderCount>'.count($s->orders).'</OrderCount><OrderList>'.implode('',array_map(static fn($id)=>'<Order><OrderID>'.$id.'</OrderID></Order>',$s->orders)).'</OrderList>',
+        'GetOrderList'=>enomHistoryList($s->orders, $s->bill),
         'GetExpiredDomains'=>'<DomainCount>1</DomainCount><DomainDetail><DomainName>'.$s->name.'</DomainName><DomainNameID>456</DomainNameID><Status>Expired</Status><Expiration-Date>'.$s->day.'</Expiration-Date></DomainDetail>',
         default=>throw new LogicException('Unreviewed renewal command '.$p['Command']),
     };return '<interface-response><Command>'.$p['Command'].'</Command><ErrCount>0</ErrCount><Done>true</Done>'.$body.'</interface-response>';

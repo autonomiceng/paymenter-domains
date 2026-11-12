@@ -43,12 +43,13 @@ function enomHistoryEnvelope(string $payload, string $command = 'GETORDERLIST'):
 }
 
 /** The observed renewal detail, with fictional identity and explicit scenario facts. */
-function enomHistoryDetail(string $id = '901', string $name = 'example.com', string $bill = '11/6/2026 11:55:00 PM', string $expiry = '11/2/2029 4:35:00 AM', string $amount = '17.90', int $years = 2): string
+function enomHistoryDetail(string $id = '901', string $name = 'example.com', string $bill = '11/6/2026 11:55:00 PM', string $expiry = '11/2/2029 4:35:00 AM', string $amount = '17.90', int $years = 2, ?string $placed = null): string
 {
     $doc = new DOMDocument;
     $doc->loadXML(file_get_contents(__DIR__.'/../fixtures/enom-renewal-order.xml'));
     foreach (['OrderID'=>$id, 'Description'=>$name, 'BillDate'=>$bill, 'ExpiryDatetime'=>$expiry, 'OrderBillAmount'=>'$'.$amount, 'AmountPaid'=>$amount, 'Quantity'=>(string)$years] as $key=>$value) {
         $doc->getElementsByTagName($key)->item(0)->textContent = $value;
     }
+    if ($placed !== null) { $doc->getElementsByTagName('OrderDate')->item(0)->textContent = $placed; }
     return $doc->saveXML($doc->documentElement);
 }

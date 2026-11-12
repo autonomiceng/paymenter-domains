@@ -1,6 +1,7 @@
 <?php
 // Installed TEST deployment, socket-free cURL; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/enom-history.php';
 use App\Models\{Currency,Server};
 use Illuminate\Support\Facades\{Auth,Cache,DB,Queue};
 use Livewire\Livewire;
@@ -39,7 +40,7 @@ expect($history->covers($historyAttempt,$historyNow),'Regression fixture carries
 $historyContext=new Paymenter\Extensions\Servers\Domains\Data\RequestContext($binding,RequestOrigin::Interactive,$clock->now()->modify('+25 seconds'),new Paymenter\Extensions\Servers\Domains\Data\RequestBudget(20),$clock,Paymenter\Extensions\Servers\Domains\Services\Runtime::limiter());
 // Accepted registration history opens read-only recovery; an empty XML list cannot establish a purchase.
 $GLOBALS['enomWire']['reply']=static fn(array $p):string=>$p['Command']==='GetOrderList'
-    ?'<interface-response><Command>GetOrderList</Command><ErrCount>0</ErrCount><Done>true</Done><OrderCount>0</OrderCount><OrderList></OrderList></interface-response>'
+    ?enomHistoryEnvelope('<OrderList/>')
     :$reply($p);
 try{$historyResult=$generalReader->reconcile($historyAttempt,$historyContext);}
 finally{$GLOBALS['enomWire']['reply']=$reply;}

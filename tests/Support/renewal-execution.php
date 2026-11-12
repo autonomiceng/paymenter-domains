@@ -1,6 +1,7 @@
 <?php
 // Synthetic Enom d1392a8 managed renewal scenarios; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/enom-history.php';
 require __DIR__.'/reconciliation-fixture.php';
 use App\Models\{Invoice, InvoiceTransaction};
 use Illuminate\Support\Facades\{Cache, DB, Queue};
@@ -33,7 +34,7 @@ $transport = new class($state) implements Transport {
             ReadCommand::Balance => '<AvailableBalance>'.$s->balance.'</AvailableBalance>',
             ReadCommand::Expired => '<DomainCount>1</DomainCount><DomainDetail><DomainName>'.$s->name.'</DomainName><DomainNameID>'.$s->id.'</DomainNameID><Status>'.$s->expired.'</Status><Expiration-Date>'.$s->day.'</Expiration-Date></DomainDetail>',
             ReadCommand::Expiry => '<ExpirationDate>'.$s->after.'</ExpirationDate>',
-            ReadCommand::Orders => '<OrderCount>1</OrderCount><OrderList><Order><OrderID>'.$s->order.'</OrderID></Order></OrderList>',
+            ReadCommand::Orders => enomHistoryList([$s->order], '10/18/'.$s->orderYear.' '.$s->billTime),
             ReadCommand::Order => '<Order><OrderID>'.$s->order.'</OrderID><Result>true</Result><OrderBillAmount>$'.$s->charge.'</OrderBillAmount><BillDate>'.($s->billDate??('10/18/'.$s->orderYear.' '.$s->billTime)).'</BillDate><OrderDetail><Description>'.$s->name.'</Description><ProductType>Renew</ProductType><Quantity>'.$s->years.'</Quantity><Status>Successful</Status><OrderStatus>Closed</OrderStatus><AmountPaid>'.$s->charge.'</AmountPaid><ExpiryDateTime>'.($s->orderExpiry ?? $s->after).'</ExpiryDateTime></OrderDetail></Order>',
             default => throw new LogicException('No spending or unbounded command permitted'),
         };

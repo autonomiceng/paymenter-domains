@@ -70,8 +70,17 @@ final class ResponseParser
             return new ProtocolResult('unknown', $code, registrarReply:$reply);
         }
         if (in_array($command, [ReadCommand::Orders, ReadCommand::Order], true)) {
-            $payload = $command === ReadCommand::Orders ? ['orderlist', 'ordercount'] : ['order'];
-            $data['history_complete'] = !array_diff(array_keys($data), ['command', 'errcount', 'done', 'rrpcode', 'responsecode', 'errors', ...$payload]);
+            $payload = $command === ReadCommand::Orders ? ['orderlist'] : ['order'];
+            $metadata = ['command', 'errcount', 'done', 'rrpcode', 'responsecode', 'apitype', 'language', 'responsecount',
+                'minperiod', 'maxperiod', 'server', 'site', 'islockable', 'isrealtimetld', 'timedifference', 'exectime',
+                'trackingkey', 'requestdatetime', 'debug'];
+            $complete = !array_diff(array_keys($data), ['errors', ...$metadata, ...$payload]);
+            foreach ($metadata as $key) {
+                if (isset($data[$key]) && (!is_string($data[$key]) || strlen($data[$key]) > 512)) { $complete = false; }
+            }
+            // Captured successful history replies count no additional response records.
+            if (isset($data['responsecount']) && $data['responsecount'] !== '0') { $complete = false; }
+            $data['history_complete'] = $complete;
         }
         // Payload-specific validation belongs to each named read normalizer, never to acknowledgement alone.
         return new ProtocolResult('success', $code, $data, strlen($body));

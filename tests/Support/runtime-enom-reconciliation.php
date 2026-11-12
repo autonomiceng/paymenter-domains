@@ -1,6 +1,7 @@
 <?php
 // Synthetic installed charge recovery; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/enom-history.php';
 use Illuminate\Support\Facades\{Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Data\{Action,Environment,HistoryAcceptance};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client,ReadCommand,Transport};
@@ -26,7 +27,7 @@ require_once __DIR__.'/staff-panel.php';
                 ReadCommand::Nameservers=>'<dns>ns1.provider.example</dns><dns>ns2.provider.example</dns>',
                 ReadCommand::Renewal=>'<RenewName>0</RenewName>',ReadCommand::Lock=>'<Reg-Lock>1</Reg-Lock>',
                 ReadCommand::Privacy=>'<GetWPPSInfo><WPPSAllowed>1</WPPSAllowed><WPPSExists>0</WPPSExists><WPPSEnabled>0</WPPSEnabled></GetWPPSInfo>',
-                ReadCommand::Orders=>'<OrderCount>'.($s->fault==='none'?'0':(in_array($s->fault,['duplicate','ambiguous'],true)?'2':'1')).'</OrderCount><OrderList>'.($s->fault==='none'?'':'<Order><OrderID>901</OrderID></Order>').(in_array($s->fault,['duplicate','ambiguous'],true)?'<Order><OrderID>902</OrderID></Order>':'').'</OrderList>',
+                ReadCommand::Orders=>enomHistoryList($s->fault==='none'?[]:(in_array($s->fault,['duplicate','ambiguous'],true)?['901','902']:['901']), $s->bill),
                 ReadCommand::Order=>'<Order><OrderID>'.$p['OrderID'].'</OrderID><Result>true</Result><OrderBillAmount>$99.00</OrderBillAmount>'.($s->fault==='ambiguous'&&$p['OrderID']==='902'?'':'<BillDate>'.$s->bill.'</BillDate>').'<OrderDetail><Description>'.($s->fault==='unrelated'?'unrelated-placeholder.com':$s->name).'</Description><ProductType>Register</ProductType><Quantity>1</Quantity><Status>Successful</Status><OrderStatus>Closed</OrderStatus><AmountPaid>99.00</AmountPaid><ExpiryDateTime>2027-10-18</ExpiryDateTime></OrderDetail></Order>',
                 default=>throw new LogicException('Unexpected recovery command'),
             };

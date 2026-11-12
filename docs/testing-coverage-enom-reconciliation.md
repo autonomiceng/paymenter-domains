@@ -14,10 +14,11 @@ Below-cost recovery completes with a staff alert. Invoices, invoice items,
 transactions and credits remain unchanged. Captured-ID
 recovery does not query account history, and completed attempts do not repeat reads.
 
-All responses are synthetic, reusing existing history and holding fixture shapes;
-these checks do not establish Enom TEST acceptance. Actual GetOrderDetail and
-GetOrderList replies, pagination/completeness, timestamps, retention and visibility
-lag still require provider evidence before the history contract can be accepted.
+History lists use sanitized Enom TEST GetOrderList structure. The captured
+GetOrderDetail renewal supplies the detail metadata contract. Constructed multi-page
+cases cover all 81 rows with contiguous 25-row pages, changing counts, repeated IDs,
+missing pages, unknown metadata and insufficient budgets. These offline checks
+do not establish retention, visibility lag or Live clock behavior.
 Staff service routing/audit and reconstructed worker routing are exercised with
 explicit test bindings; production staff composition and credentialed cURL reads
 are outside this scenario. No production acceptance, action flag or processing
@@ -39,6 +40,22 @@ The strict-window mutation fails the real registration reconciliation regression
 
 Earlier fixtures used Pacific-consistent bill dates, masking provider-clock
 uncertainty. These synthetic checks establish no provider timezone or acceptance.
-History discovery retains its accepted Pacific timezone and strict window;
+History discovery retains strict bill-time matching, with TEST bills interpreted
+as Mountain time and the unmeasured Live clock retaining Pacific;
 provider evidence for timezone/DST behavior, visibility lag and completeness is
 still needed before changing that contract. Expiry parsing is unchanged.
+
+## Lost renewal replies and paged history
+
+`renewal-enom-history-contract-test.php` starts with a funded, sealed renewal whose
+reply was lost. Four list pages plus one matching detail settle it in nine reads
+including holding checks. Missing orders, missing pages and ambiguous or duplicate
+charges retain uncertainty, without another renewal send or native money changes.
+`reconciliation-enom-history-test.php` also covers full-term and timestamp guards.
+
+The captured list contains IDs, OrderDate and status only, with no domain or product
+type. Whole receipt-clock days outside all send-time UTC offsets are excluded
+before details. Every remaining row requires a detail; over 20 details or insufficient
+remaining page/detail capacity keeps history incomplete. The request range spans
+the same conservative whole days, rather than adding a day on both sides of an
+assumed provider clock. No read-budget, send-limit or acceptance default changes.

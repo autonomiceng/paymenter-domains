@@ -1,6 +1,7 @@
 <?php
 // Enom 444f31c/f7175ff transfer reconciliation, stricter unique charge; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/enom-history.php';
 require_once __DIR__.'/reserved-fixtures.php';
 require_once dirname(__DIR__).'/bootstrap.php';
 $transferEnvironment??=Paymenter\Extensions\Servers\Domains\Data\Environment::Live; // All transports remain synthetic.
@@ -41,7 +42,7 @@ $wire=new class($observe) implements Transport {
             ReadCommand::Renewal=>'<RenewName>0</RenewName>', ReadCommand::Lock=>'<Reg-Lock>1</Reg-Lock>',
             ReadCommand::Privacy=>'<GetWPPSInfo><WPPSAllowed>1</WPPSAllowed><WPPSExists>0</WPPSExists><WPPSEnabled>0</WPPSEnabled></GetWPPSInfo>',
             ReadCommand::Transfer=>$s->fault==='status'?'':'<TransferOrder><TransferOrderID>7001</TransferOrderID><StatusID>'.$header.'</StatusID><TransferOrderDetail><SLD>'.$label.'</SLD><TLD>'.$tld.'</TLD><StatusID>'.$detail.'</StatusID></TransferOrderDetail></TransferOrder>',
-            ReadCommand::Orders=>'<OrderCount>'.$s->orders.'</OrderCount><OrderList>'.implode('',array_map(fn($i)=>'<Order><OrderID>'.(9001+$i).'</OrderID></Order>',range(0,$s->orders-1))).'</OrderList>',
+            ReadCommand::Orders=>enomHistoryList(array_map(fn($i)=>(string)(9001+$i), $s->orders ? range(0,$s->orders-1) : []), '10/18/2026 5:00:00 AM'),
             // A clean rejection has complete history whose only order is for another domain.
             ReadCommand::Order=>$s->fault==='reject'?'<Order><OrderID>'.$id.'</OrderID><Result>true</Result><OrderBillAmount>$'.$charge.'</OrderBillAmount><BillDate>10/18/2026 5:00:01 AM</BillDate><OrderDetail>'.str_replace($s->name,'unrelated-'.$s->name,$item).'</OrderDetail></Order>'
                 :(in_array($s->fault,['charge','reject_owned'],true)?'':'<Order><OrderID>'.$id.'</OrderID><Result>true</Result><OrderBillAmount>$'.$charge.'</OrderBillAmount><BillDate>'.($s->billDate??'10/18/2026 '.($s->fault==='late'?'5:10:00':'5:00:01').' AM').'</BillDate><OrderDetail>'.$item.'</OrderDetail>'.($s->fault==='duplicate'?'<OrderDetail>'.$item.'</OrderDetail>':'').'</Order>'),

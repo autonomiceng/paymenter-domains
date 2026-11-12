@@ -54,7 +54,7 @@ enum ReadCommand: string
                 'TLD' => is_string($value) && strlen($value) <= 189 && preg_match('/^[a-z]{2,63}(?:\.[a-z]{2,63})*$/D', $value),
                 'OrderID', 'TransferOrderID' => is_string($value) && preg_match('/^[1-9][0-9]{0,19}$/D', $value),
                 'BeginDate', 'EndDate' => is_string($value) && preg_match('/^\d{2}\/\d{2}\/\d{4}$/D', $value),
-                'Start' => $value === 1,
+                'Start' => is_int($value) && $value >= 1 && $value <= 9999,
                 'ProductType' => in_array($value, [10, 16, 19], true),
                 'Years' => is_int($value) && $value >= 1 && $value <= 10,
                 'Version' => $value === 2,
