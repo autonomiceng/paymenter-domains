@@ -120,7 +120,7 @@ $lowEngine->execute($low->id);same($before+1,$writer->calls,'Repeated execution 
 expect(!OperationClaims::balanceRefusalRetryable($result),'Sealed or uncertain outcome cannot enter balance recovery');
 // A send recovered a day later must still reconcile its own order, charge and billing anchor.
 HistoryAcceptances::save(new HistoryAcceptance($binding,'America/Los_Angeles',0,86400,'enom_registration_v1'));
-$observation->name=$low->domain->domain;$observation->billDate=$clock->now()->setTimezone(new DateTimeZone('America/Los_Angeles'))->format('m/d/Y g:i:s A');$observation->calls=[];
+$observation->name=$low->domain->domain;$observation->billDate=$clock->now()->setTimezone(new DateTimeZone('America/Denver'))->format('m/d/Y g:i:s A');$observation->calls=[];
 $clock->instant=$clock->now()->modify('+301 seconds');
 $result=$reconcile->run($low->id);
 same('succeeded',$result->state,'One-day balance recovery completes through original-attempt reconciliation');

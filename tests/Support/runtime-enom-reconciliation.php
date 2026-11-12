@@ -42,7 +42,7 @@ require_once __DIR__.'/staff-panel.php';
         $op=$new($name);resetWire($captured?['reply'=>$reply]:['timeout'=>true]);$worker->operation($op->id);$op->refresh();
         same(1,count(array_filter($GLOBALS['enomWire']['forms'],static fn($form)=>($form['Command']??null)==='Purchase')),'Recovery begins with exactly one monetary send');
         same($captured?'pending':'uncertain',$op->state,'Only acknowledgement or uncertainty retained after send');
-        $s->name=$name;$s->bill=(new DateTimeImmutable($op->attempt['dispatch_attempted_at']))->modify('+1 second')->setTimezone(new DateTimeZone('America/Los_Angeles'))->format('n/j/Y g:i:s A');
+        $s->name=$name;$s->bill=(new DateTimeImmutable($op->attempt['dispatch_attempted_at']))->modify('+1 second')->setTimezone(new DateTimeZone('America/Denver'))->format('n/j/Y g:i:s A');
         $s->fault='unique';$s->calls=[];$clock->at=$clock->at->modify('+301 seconds');
         Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
         $auth->setProcessing($binding->serverId,false);Cache::flush();return $op;
