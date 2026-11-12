@@ -405,11 +405,11 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                 result['exit'] = code = code or 1
         if bounded and not phased:
             result['limits'] = dict(wall_seconds=10, memory_bytes=256*1024**2)
-            if resource_receipt.is_file():
+            try:
                 result['resources'] = json.loads(resource_receipt.read_text())
-            else:
+            except (OSError, ValueError) as error:
                 result['exit'] = code = code or 1
-                result['resource_error'] = 'Missing per-test resource receipt'
+                result['resource_error'] = 'Invalid per-test resource receipt: '+type(error).__name__
         value = stdout, stderr, result
         # Execution evidence must survive interruption in the integrity guard,
         # RSS read or failure handling, before the main thread can record it.
