@@ -305,7 +305,7 @@ $entry=['action'=>'recheck','phase'=>'read_finished','at'=>$clock->now()->format
 $repeat=[...$entry,'at'=>$clock->now()->modify('+1 minute')->format(DATE_ATOM)];
 $changed=[...$repeat,'at'=>$clock->now()->modify('+2 minutes')->format(DATE_ATOM),'check'=>[...$repeat['check'],'facts'=>['owned'=>true]]];
 $history=new Paymenter\Extensions\Servers\Domains\Models\Operation(['policy'=>['staff_actions'=>[$entry,$repeat,$changed]]]);
-$times=array_map(static fn($entry)=>(new DateTimeImmutable($entry['at']))->setTimezone(new DateTimeZone('UTC'))->format('M j, Y H:i').' UTC',[$entry,$changed]);
+$times=array_map(static fn($entry)=>gmdate(DATE_ATOM,(new DateTimeImmutable($entry['at']))->getTimestamp()),[$entry,$changed]); // Each row carries its instant; the page shows it in the viewer's zone.
 $rows=Paymenter\Extensions\Servers\Domains\Admin\Support\StaffReviewHistory::rows($history);
 same($times,array_column($rows,'time'),'History retains the original and changed ownership answers in recorded order');
 same([$entry,$repeat,$changed],$history->policy['staff_actions'],'The complete status-check audit remains unchanged');
