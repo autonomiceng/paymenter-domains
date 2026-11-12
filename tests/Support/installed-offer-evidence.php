@@ -32,6 +32,6 @@ function installedOfferFailure($binding,$clock,array $actions): void
     $ports=\Paymenter\Extensions\Servers\Domains\Catalogue\CallerPorts::routed();
     foreach($actions as $action){
         $row=$ports->readOffers(new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,['com'],$action),\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Public)[0];
-        fwrite(STDERR,json_encode(['fixture_offer'=>$action,'at'=>$clock->now()->format(DATE_ATOM),'available'=>$row->decision->available,'reason'=>$row->decision->reason],JSON_THROW_ON_ERROR)."\n");
+        fwrite(STDERR,json_encode(['fixture_offer'=>$action,'at'=>$clock->now()->format(DATE_ATOM),'available'=>$row->available,'reason'=>$row->reason],JSON_THROW_ON_ERROR)."\n");
     }
 }
