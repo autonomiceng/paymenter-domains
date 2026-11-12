@@ -23,29 +23,43 @@ def application(fixture, scenario, *, verify_vendor=True):
     ) as temporary:
         root = Path(temporary)
         app = root / "paymenter"
+        overlay = os.environ.get('BECO_TEST_OVERLAY') == '1' and (fixture/'vendor').is_symlink()
         app.mkdir()
-        # GNU cp keeps independent mutable files and avoids thousands of Python
-        # filesystem operations contending between the scheduler's worker threads.
-        entries = [str(path) for path in fixture.iterdir() if path.name != 'vendor']
-        if entries:
-            subprocess.run(['cp', '-a', '--reflink=auto', '--', *entries, str(app)], check=True)
-        for directory, _, names in os.walk(app, followlinks=False):
-            for name in names:
-                if name.endswith('.sqlite') or name == 'domains-editor-routes.php':
-                    (Path(directory)/name).unlink()
-        # Native panel tests can leave the worker linked to the current source.
-        # An installed lifecycle receives only the ZIP it installs in this app.
-        extension = app / "extensions/Servers/Domains"
-        if extension.is_symlink():
-            extension.unlink()
-        (app / "vendor").symlink_to(vendor, target_is_directory=True)
+        if overlay:
+            upper, work = root/'upper', root/'work'
+            upper.mkdir(); work.mkdir()
+            subprocess.run(['mount', '-t', 'overlay', 'overlay', '-o',
+                            f'lowerdir={fixture},upperdir={upper},workdir={work}', str(app)], check=True, timeout=5)
+        else:
+            entries = [str(path) for path in fixture.iterdir() if path.name != 'vendor']
+            if entries:
+                subprocess.run(['cp', '-a', '--reflink=auto', '--', *entries, str(app)], check=True)
         try:
-            yield root, app
+            for directory, _, names in os.walk(app, followlinks=False):
+                if Path(directory).is_relative_to(app/'vendor'):
+                    continue
+                for name in names:
+                    if name.endswith('.sqlite') or name == 'domains-editor-routes.php':
+                        (Path(directory)/name).unlink()
+            if (app/'vendor').is_symlink():
+                (app/'vendor').unlink()
+            # Native panel tests can leave the worker linked to the current source.
+            # An installed lifecycle receives only the ZIP it installs in this app.
+            extension = app / "extensions/Servers/Domains"
+            if extension.is_symlink():
+                extension.unlink()
+            (app / "vendor").symlink_to(vendor, target_is_directory=True)
+            try:
+                yield root, app
+            finally:
+                if verify_vendor and native.admitted_vendor_hashes(vendor) != before:
+                    raise RuntimeError(
+                        "Installed scenario changed shared vendor dependencies."
+                    )
         finally:
-            if verify_vendor and native.admitted_vendor_hashes(vendor) != before:
-                raise RuntimeError(
-                    "Installed scenario changed shared vendor dependencies."
-                )
+            if overlay:
+                subprocess.run(['umount', str(app)], check=True, timeout=5)
+
 
 
 def package(source, output, *, builder=None):
