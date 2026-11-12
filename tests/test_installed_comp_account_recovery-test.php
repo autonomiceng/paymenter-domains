@@ -126,7 +126,8 @@ $check('complimentary price hold release only retries until its cost is approved
         expect(Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::awaitingApproval($op),'The held cost is above the usual with no approval');
         $release=static fn(Paymenter\Extensions\Servers\Domains\Models\Operation $op)=>collect(OperationActions::make($op,'price-check-stamp'))->first(fn($a)=>$a->getName()==='release')->getModalHeading();
         $body=(string)(RequestFacts::notice($op)['body']??'');
-        expect(str_starts_with($body,'Release hold only retries the price check. The test registration holds again while the registrar cost is above the usual. It goes ahead at this cost once the registrar cost is approved on the domain page.'),'Without approval release is a retry: '.$body);
+        same('The registrar cost needs approval; Staff with domain cost and funding access must approve the registrar cost on the domain page.',$body,'Without approval the notice names the person and approval needed');
+        expect(collect(OperationActions::make($op,'price-check-stamp'))->first(fn($a)=>$a->getName()==='release')->isDisabled(),'Release cannot resolve a missing cost approval');
         expect(!str_contains($body,'Release hold sends'),'Without approval the request never says release sends');
         expect($release($op)!=='Send to Enom now?','Without approval release asks nothing about sending');
         // An approval that already covers this cost: release goes ahead, so the request says so and release asks first.

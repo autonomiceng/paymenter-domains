@@ -363,7 +363,7 @@ final class RequestFacts
             if ($owes!==null) { $body??=$owes==='payment' ? 'Customer has not paid the invoice. You can release it once it is paid.' : 'Customer has not added the auth code. You can release it once they add it.'; }
             if (($ready=self::readyMessage($op))!==null) { $reason=$ready;$fix=$account->processing_enabled?($op->safe_code==='registrar_balance_insufficient'?'Go to balance':null):self::ORDERS_SWITCH; }
             if(in_array($op->safe_code,BalanceRetries::READ_CODES,true)&&!BalanceRetries::pending($op)&&OperationActions::relevant('release',$op)){$body??=BalanceRetries::READ_STOPPED;}
-            if(BalanceRetries::legacyHold($op)){$fix=null;if(OperationActions::relevant('release',$op)){$body??='Release to check this order again.';}}
+            if(BalanceRetries::legacyHold($op)){$fix=null;$recovery['link']=null;if(OperationActions::relevant('release',$op)){$body??='Release to check this order again.';}}
             // Release hold puts paid work back in the queue, so the button says what it starts before staff press it.
             $queues=!$sends&&$open&&$account?->processing_enabled&&in_array($op->action,['register','transfer','renew'],true)&&OperationActions::relevant('release',$op);
             $next=$sends ? 'Release hold sends the '.self::sendWords($op,$account).' to Enom.' : ($queues ? 'Release hold queues the '.self::queueWords($op,$account).' to send to '.PaidUncertainty::registrar($op).'.' : null);
@@ -372,7 +372,7 @@ final class RequestFacts
             if ($approval) { $next=(OperationActions::relevant('release',$op)?'Release hold only retries the price check. ':'').'The '.($account?self::queueWords($op,$account):'request').' holds again while the registrar cost is above the usual. It goes ahead at this cost once the registrar cost is approved on the domain page.'; }
             if($recovery['blocked']!==null){$body=$recovery['blocked'];}
             elseif ($next!==null) { $body=$body===null?$next.' '.$recovery['body']:$next.' '.$body; }
-            else{$body??=$recovery['body'];}
+            elseif(!BalanceRetries::pending($op)){$body??=$recovery['body'];}
             if (($try=self::nextTry($op))!==null) { $body=new \Illuminate\Support\HtmlString(($body===null?'':e($body).' ').$try->toHtml()); }
             return ['title'=>rtrim($reason??Labels::reason(null),'.').'.','body'=>$body,'tone'=>'warning','action'=>in_array($op->safe_code,WriteHeld::FINAL_REFUSALS,true)&&OperationActions::relevant('refund',$op)?'refund':(OperationActions::relevant('release',$op)?'release':null),
                 'link'=>$approval?'domain':$recovery['link'],'link_label'=>$fix];
