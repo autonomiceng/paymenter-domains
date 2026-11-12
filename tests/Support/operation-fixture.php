@@ -43,7 +43,7 @@ $new = static function (string $name, bool $paid = true, bool $setup = true, str
     // Retained invalid-contact scenarios predate the new checkout gate.
     try { \Paymenter\Extensions\Servers\Domains\Services\ContactDetails::validate('enom', \Paymenter\Extensions\Servers\Domains\Services\ContactDetails::collect($user)); $legacyContacts=false; }
     catch (\Paymenter\Extensions\Servers\Domains\Services\ContactValidation) { $legacyContacts=true; }
-    $checkout=$legacyContacts?commerceLegacyCheckout($user,$cart):commerceCheckout($user,$cart,render:getenv('PAYMENTER_TEST_RENDER_FIXTURE_CART')==='1');
+    $checkout=$legacyContacts?commerceLegacyCheckout($user,$cart):commerceCheckout($user,$cart);
     $checkout->assertHasNoErrors();
     $op = Domain::where('domain', $name)->sole()->operations()->sole();
     if (!$setup) { \Paymenter\Extensions\Servers\Domains\Services\ContactSetup::recoveryWrite(static fn () => $op->update(['payload' => array_replace($op->payload, ['setup_required' => true])])); }
