@@ -40,4 +40,7 @@ $code=static function(Operation $op,string $secret)use($user,$session):void{
     $r->setUserResolver(fn()=>$user);$r->setLaravelSession($session);$r->request->set('_request_key',FormKeys::issue($r,'owner:'.$op->domain_id.':code'));app(OwnerActionController::class)->code($r,$op->domain_id);
     same($secret,$op->fresh()->payload['epp'],'Owner code exact bytes');expect(!$r->request->has('transfer_code'),'Owner code scrubbed');expect(!str_contains(json_encode($r->session()->all()),$secret),'Code absent from session');expect(!str_contains(DB::table('domains_operations')->find($op->id)->payload,$secret),'Code encrypted at rest');
 };
+app(Illuminate\Contracts\Debug\ExceptionHandler::class)->reportable(static function(Throwable $error):void {
+    fwrite(STDERR,json_encode(['fixture_reported_error'=>get_class($error),'file'=>basename($error->getFile()),'line'=>$error->getLine()],JSON_THROW_ON_ERROR)."\n");
+});
 $secret='  Synthetic:Case-Sensitive + % é雪  ';
