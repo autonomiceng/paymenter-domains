@@ -37,6 +37,26 @@ def detached_waiter(root):
 
 
 class SchedulingTests(unittest.TestCase):
+    def test_workers_share_only_a_read_only_runtime_and_still_verify_its_bytes(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); output = root/'output'; output.mkdir()
+            fixture = root/'fixture'; (fixture/'vendor').mkdir(parents=True)
+            (fixture/'vendor/autoload.php').write_text('<?php'); (fixture/'pristine').write_text('source')
+            runtime = root/'runtime'; (runtime/'usr/bin').mkdir(parents=True)
+            (runtime/'usr/bin/php8.4').write_text('binary')
+            env = {'PAYMENTER_TEST_FIXTURE': str(fixture), 'PAYMENTER_TEST_PHP': str(runtime/'usr/bin/php8.4'),
+                   'DOMAINS_TEST_OVERLAY': '1'}
+            with mock.patch.object(runner.test_workers.os, 'statvfs', return_value=SimpleNamespace(f_flag=os.ST_RDONLY)):
+                workers, fixture_snapshot, runtime_snapshot = runner.test_workers.environments(env, output, 2, runtime)
+            self.assertTrue(all(worker['PAYMENTER_TEST_PHP'] == env['PAYMENTER_TEST_PHP'] for worker in workers))
+            self.assertNotEqual(workers[0]['PAYMENTER_TEST_FIXTURE'], workers[1]['PAYMENTER_TEST_FIXTURE'])
+            self.assertNotEqual(workers[0]['TMPDIR'], workers[1]['TMPDIR'])
+            runner.test_workers.verify(workers, fixture_snapshot, runtime_snapshot)
+            # The final content guard also covers an input whose mount protection was later removed.
+            (runtime/'usr/bin/php8.4').write_text('changed')
+            with self.assertRaises(RuntimeError): runner.test_workers.verify(workers, fixture_snapshot, runtime_snapshot)
+
     def test_mariadb_skips_continue_remaining_commands_and_return_skip(self):
         for fail_fast in [False, True]:
             with self.subTest(fail_fast=fail_fast), tempfile.TemporaryDirectory() as temporary:

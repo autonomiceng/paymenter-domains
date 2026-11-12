@@ -79,7 +79,7 @@ class InstalledPhaseTests(unittest.TestCase):
                 self.assertIsNone(caught.exception.__cause__)
             return calls, str(caught.exception), timings
 
-    def test_admitted_phases_allow_thirty_seconds_without_extending_the_scenario_deadline(self):
+    def test_admitted_phases_keep_thirty_seconds_and_the_scenario_deadline(self):
         for setup, expected in [(0, 32), (100, 10)]:
             with self.subTest(setup=setup):
                 calls, _, _ = self.phase_failure('held', 'install', setup=setup, bounded=True)
@@ -89,7 +89,7 @@ class InstalledPhaseTests(unittest.TestCase):
         for scenario, target, setup, earlier, expected in [
             ('held', 'install', 0, 0, [('install', 45)]),
             ('held', 'held', 0, 45, [('install', 45), ('held', 45)]),
-            ('enom-test-management', 'install-enom-test-management', 0, 0, [('install-enom-test-management', 45)]),
+            ('enom-test-management', 'install', 0, 0, [('install', 45)]),
         ]:
             with self.subTest(scenario=scenario, target=target):
                 calls, error, _ = self.phase_failure(scenario, target, setup=setup, earlier=earlier)
@@ -97,7 +97,7 @@ class InstalledPhaseTests(unittest.TestCase):
                 self.assertIn('exceeded 45 seconds', error)
 
     def test_remaining_budget_includes_setup_and_package_verification(self):
-        for scenario, target, budget in [('held', 'install', 110), ('enom-test-management', 'install-enom-test-management', 90)]:
+        for scenario, target, budget in [('held', 'install', 110), ('enom-test-management', 'install', 90)]:
             for remaining in [10, 0.0005]:
                 with self.subTest(scenario=scenario, remaining=remaining):
                     calls, error, _ = self.phase_failure(scenario, target, setup=budget-remaining-1, verify=1)
@@ -106,7 +106,7 @@ class InstalledPhaseTests(unittest.TestCase):
                     self.assertIn(f'exhausted the {budget}-second scenario deadline', error)
 
     def test_expired_scenario_refuses_php_before_first_and_later_phases(self):
-        for scenario, first, later, budget in [('held', 'install', 'held', 110), ('enom-test-management', 'install-enom-test-management', 'enom-test-management-restart', 90)]:
+        for scenario, first, later, budget in [('held', 'install', 'held', 110), ('enom-test-management', 'install', 'enom-test-management', 90)]:
             for overdue in [0, 1]:
                 with self.subTest(scenario=scenario, overdue=overdue):
                     calls, error, _ = self.phase_failure(scenario, first, setup=budget+overdue)
@@ -117,7 +117,7 @@ class InstalledPhaseTests(unittest.TestCase):
                     self.assertIn(f'phase {later} exhausted', error)
 
     def test_timeout_label_uses_actual_expiry_and_preserves_cause(self):
-        for scenario, target, budget in [('held', 'install', 110), ('enom-test-management', 'install-enom-test-management', 90)]:
+        for scenario, target, budget in [('held', 'install', 110), ('enom-test-management', 'install', 90)]:
             with self.subTest(scenario=scenario, expiry='future'):
                 calls, error, _ = self.phase_failure(scenario, target, expires=45)
                 self.assertEqual(calls, [(target, 45)])
@@ -129,12 +129,16 @@ class InstalledPhaseTests(unittest.TestCase):
                     self.assertEqual(calls, [(target, 10)])
                     self.assertIn(f'exhausted the {budget}-second scenario deadline', error)
 
-    def test_no_deadline_keeps_ordinary_limit_and_exact_special_phase_names(self):
+    def test_no_deadline_keeps_ordinary_limits_for_every_focused_renewal_group(self):
+        groups = [('enom-test-renewal-group-'+group, 45) for group in
+                  ('seed', 'policy', 'confirmation', 'refusals', 'history', 'replacement', 'cap', 'race')]
         for scenario, target, expected in [
             ('fresh', 'install', [('install', 45)]),
-            ('enom-test-renewal', 'enom-test-renewal', [('install', 45), ('enom-test-renewal', 120)]),
             ('enom-live', 'enom-live', [('install', 45), ('enom-live', 120)]),
-            ('enom-test-renewal', 'enom-test-renewal-restart', [('install', 45), ('enom-test-renewal', 120), ('enom-test-renewal-restart', 45)]),
+            *[('enom-test-renewal', name, [('install', 45), *groups[:i+1]])
+              for i, (name, _) in enumerate(groups)],
+            ('enom-test-renewal', 'enom-test-renewal-restart',
+             [('install', 45), *groups, ('enom-test-renewal-restart', 45)]),
         ]:
             with self.subTest(scenario=scenario, target=target):
                 calls, error, _ = self.phase_failure(scenario, target)
@@ -142,9 +146,11 @@ class InstalledPhaseTests(unittest.TestCase):
                 self.assertIn(f'exceeded {expected[-1][1]} seconds', error)
                 self.assertNotIn('scenario deadline', error)
         calls, error, _ = self.phase_failure('enom-test-renewal', 'enom-test-renewal-race-issue')
-        self.assertEqual(calls[:3], [('install', 45), ('enom-test-renewal', 120), ('enom-test-renewal-restart', 45)])
-        self.assertTrue(calls[3:])
-        self.assertTrue(all(name == 'enom-test-renewal-race-issue' and timeout == 45 for name, timeout in calls[3:]))
+        prefix = [('install', 45), *groups, ('enom-test-renewal-restart', 45)]
+        self.assertEqual(calls[:len(prefix)], prefix)
+        self.assertTrue(calls[len(prefix):])
+        self.assertTrue(all(name == 'enom-test-renewal-race-issue' and timeout == 45
+                            for name, timeout in calls[len(prefix):]))
         self.assertIn('exceeded 45 seconds', error)
 
 

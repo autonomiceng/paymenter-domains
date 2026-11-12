@@ -4,8 +4,21 @@ Use `scripts/test.py --fail-fast --jobs 2` for a full run that cancels in-flight
 process trees on the first failure. Without `--fail-fast`, the runner stops
 scheduling and lets in-flight checks finish. Short lint, provider, contract,
 runner and package checks precede native checks. `--timings-from receipt.json`
-puts previous failures and faster files first within each category; it never
-changes the selected case set.
+puts previous failures first within each category, then installed scenarios, then
+faster files. It never changes the selected case set. At most two installed
+scenarios run together (one with two workers); ordinary native checks can use
+remaining workers while further installed scenarios wait.
+
+Wide runs share the verified PHP executable and libraries only after sealing their mount
+read-only in the private namespace. Mutable application files, databases and temporary
+directories remain private. Ordinary runs keep separate PHP copies. Content guards still
+verify all runtime bytes after execution. Shared commerce fixtures submit deferred credit
+selection with checkout in one Livewire request, preserving the real mount and update cycle.
+
+Under per-test cgroup admission, ordinary installed phases have 30 seconds, plus at most
+two seconds for cleanup and resource evidence. Existing scenario deadlines still include
+setup and cap every phase. The existing Enom live phase retains its 60-second admitted limit. Renewal now
+uses focused ordinary phases under the 30-second limit.
 
 `--memory-mib` defaults to 2048 and reserves 1024 MiB per worker. Parallel
 concurrency is bounded by `min(--memory-mib, available - 1024) // 1024`.

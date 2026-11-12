@@ -25,3 +25,14 @@ function installedRenewalFacts($binding,DateTimeImmutable $observedAt,DateTimeIm
     $ports->apply(new FactsObserved($binding,'com',new Facts(['register'=>[],'renew'=>[1],'transfer'=>[]],[],true,false,false,'independent_synthetic_annual_support',$observedAt,$until)),
         $ports->readOffers($query,Context::Staff)[0]->revision);
 }
+
+/** Only failed synthetic setup emits bounded local reasons; never changes sale guards. */
+function installedOfferFailure($binding,$clock,array $actions): void
+{
+    $actor=\Illuminate\Support\Facades\Auth::user();\Illuminate\Support\Facades\Auth::setUser($GLOBALS['staff']);
+    try{$ports=\Paymenter\Extensions\Servers\Domains\Catalogue\CallerPorts::routed();
+    foreach($actions as $action){
+        $row=$ports->readOffers(new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,['com'],$action),\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0];
+        fwrite(STDERR,json_encode(['fixture_offer'=>$action,'at'=>$clock->now()->format(DATE_ATOM),'available'=>$row->available,'reason'=>$row->reason],JSON_THROW_ON_ERROR)."\n");
+    }}finally{if($actor){\Illuminate\Support\Facades\Auth::setUser($actor);}}
+}

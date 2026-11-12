@@ -3,9 +3,13 @@
 declare(strict_types=1);
 $fixtureActivation=static fn()=>null;
 require_once dirname(__DIR__).'/native-app.php';
-// Prepare retained C6 catalogue behavior before exercising the extension lifecycle.
-(new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
-$entry=new Paymenter\Extensions\Servers\Domains\Domains;$entry->installed();
+// Baseline retains the lifecycle guard; other focused cases can restore the
+// runner's verified installed snapshot before any redundant installer mutates it.
+$entry=new Paymenter\Extensions\Servers\Domains\Domains;
+if(defined('NATIVE_PAID_LIFECYCLE')){
+    (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
+    $entry->installed();
+}
 require __DIR__.'/operation-fixture.php';require __DIR__.'/installed.php';require_once __DIR__.'/staff-panel.php';
 require_once __DIR__.'/offline-acquisition.php';
 use Paymenter\Extensions\Servers\Domains\Services\{Runtime, RuntimePorts, RuntimeWork, AccountBindings, NativeCatalogue, PriceCatalogue, SellerPolicies, CartAdmission, InvoiceBinding, OperationReconciliation, RenewalAuthority, RenewalAcceptance, RenewalAdmission, RenewalExecution, RenewalWriter, RenewalCompletion, DomainManagement, WriteFeatures};
