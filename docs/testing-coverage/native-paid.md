@@ -15,6 +15,6 @@ each file owns its mutations and real committed native payment processing.
 | native-paid-hooks | Missing exact Paid listener; scheduler recovery; days-long transfer pacing and single wake; missing exact Service saving hook preserves operation/money, shows staff checks, and recovers once after restoration |
 | native-paid-staff | Actual filtered staff list, request relation, domain next step, invoice URL and invoice permission narrowing |
 
-Staff surface setup arranges only the three required states using real checkout, payment,
+Staff surface setup retains the real domain/hosting/Credit basket alongside closed states, using native checkout, payment,
 refund and retirement. Their full lifecycle assertions live in baseline, refunds and retirement.
 The baseline starts without Credit so its native Credit sibling still proves row creation.

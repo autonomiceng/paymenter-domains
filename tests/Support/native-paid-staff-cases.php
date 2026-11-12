@@ -8,7 +8,10 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement,ContactRecovery,ContactSetup,NativeActivationInformation,NativePaidHooks,Refunds,UnpaidAcquisitionProof};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\AcquisitionPaymentReview;
 // Arrange the three visible states through native payment and closure paths.
-$mixed=$new(placeholderComFixtureName('paid-mixed-placeholder.com'),paid:false);$paid($mixed);
+$cart=commerceCart($user);commerceAdd($cart,$product,placeholderComFixtureName('paid-mixed-placeholder.com'));$hosting=commerceHosting();
+$cart->items()->create(['product_id'=>$hosting->id,'plan_id'=>$hosting->plans()->sole()->id,'quantity'=>1,'config_options'=>[],'checkout_config'=>[]]);commerceCheckout($user,$cart)->assertHasNoErrors();
+$mixed=Domain::where('domain','paid-mixed-placeholder.com')->sole()->operations()->sole();
+Invoice::findOrFail($mixed->invoice_id)->items()->create(['reference_type'=>Credit::class,'reference_id'=>null,'description'=>'Account credit','price'=>'3.00','quantity'=>1]);$paid($mixed);
 $failed=$new(placeholderComFixtureName('paid-failed-placeholder.com'),paid:false);$preflight->supported=false;$paid($failed);$preflight->supported=true;
 $refunds->refundHeld($staff,$failed->id,'customer_cancelled');
 DB::table('invoices')->where('id',$failed->invoice_id)->update(['status'=>'pending']);$paid($failed);
