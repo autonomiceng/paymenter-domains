@@ -142,8 +142,12 @@ def verify(source, *, fixture_snapshot=None, shared_vendor=None, force_vendor=Fa
                 raise ValueError('Fixture dependency path is linked.')
             if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
                 raise ValueError('Fixture dependency changed: '+name)
-        if admitted_vendor_hashes(vendor_root, force=force_vendor) != expected_vendor:
-            raise ValueError('Fixture vendor inventory changed.')
+        actual_vendor = admitted_vendor_hashes(vendor_root, force=force_vendor)
+        if actual_vendor != expected_vendor:
+            error = ValueError('Fixture vendor inventory changed.')
+            error.changed_paths = sorted(name for name in actual_vendor.keys() | expected_vendor.keys()
+                                         if actual_vendor.get(name) != expected_vendor.get(name))
+            raise error
         return {}, fixture_snapshot
     if git(source, 'rev-parse', '--show-toplevel').decode().strip() != str(source):
         raise ValueError('Dependency must be its own checkout.')
