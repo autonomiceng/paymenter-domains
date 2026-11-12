@@ -103,7 +103,7 @@ def main(scenario='refund'):
         for path in (app/'bootstrap/cache').glob('*.php'):
             path.unlink()
         seed = subprocess.run([str(ROOT/'scripts/php-test'), 'tests/Support/refund-browser-seed.php'], cwd=ROOT,
-                              env=dict(os.environ, REFUND_BROWSER_ROOT=str(root)), capture_output=True, text=True, timeout=120)
+                              env=dict(os.environ, REFUND_BROWSER_ROOT=str(root), REFUND_BROWSER_CASE=scenario), capture_output=True, text=True, timeout=120)
         assert seed.returncode == 0, f'Seed failed:\n{seed.stdout}\n{seed.stderr}'
         facts = json.loads((root/'seed.json').read_text())
         database = root/'seed.sqlite'

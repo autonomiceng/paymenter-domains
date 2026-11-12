@@ -58,8 +58,7 @@ async function openRefund(page) {
   await page.click('button:has-text("More")');
   await page.click('.fi-dropdown-list-item:has-text("Cancel and refund")');
   await page.waitForSelector('.fi-modal-window textarea', { state: 'visible' });
-  await page.locator('.fi-modal-window textarea').click();
-  await page.keyboard.type(REASON);
+  await page.locator('.fi-modal-window textarea').fill(REASON);
 }
 
 async function confirm(page) {
