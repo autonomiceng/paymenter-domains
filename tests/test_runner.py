@@ -5,6 +5,7 @@ import io
 import json
 import os
 from pathlib import Path
+import select
 import signal
 import subprocess
 import sys
@@ -534,9 +535,16 @@ class RunnerTests(unittest.TestCase):
         self.assertTrue(timed_out); self.assertEqual(code, 124)
         pid = stdout.decode().strip()
         self.assertTrue(pid.isdigit(), 'Nested child PID was captured before timeout')
-        try: state = (Path('/proc')/pid/'stat').read_text().split()[2]
-        except (FileNotFoundError, ProcessLookupError): state = None
-        self.assertIn(state, [None, 'Z', 'X'], 'Nested child is still running')
+        try:
+            descriptor = os.pidfd_open(int(pid))
+        except ProcessLookupError:
+            return
+        try:
+            # SIGKILL can close stdout before the kernel publishes the exit state.
+            # The process descriptor signals that transition without a scheduling window.
+            self.assertEqual(select.select([descriptor], [], [])[0], [descriptor])
+        finally:
+            os.close(descriptor)
 
     def test_escaped_session_pipe_drain_is_bounded_and_receipted(self):
         with tempfile.TemporaryDirectory() as temp:
