@@ -74,6 +74,9 @@ def verify(workers, fixture_snapshot, runtime_snapshot):
         list(pool.map(check, workers))
 
 
+_COMMAND_SNAPSHOTS = {}
+
+
 @contextmanager
 def command_environment(env, *, fixture_snapshot=None):
     """Keep generated app files private to a case; reuse only verified vendor files."""
@@ -83,15 +86,20 @@ def command_environment(env, *, fixture_snapshot=None):
     fixture = Path(env['PAYMENTER_TEST_FIXTURE'])
     vendor = (fixture/'vendor').resolve(strict=True)
     if fixture_snapshot is not None:
-        # Use the prepared app, which omits upstream cache placeholders.
-        fixture_snapshot = {name: digest for name, digest in fixture_snapshot.items() if name.startswith('vendor/')}
-        for entry in fixture.iterdir():
-            if entry.name == 'vendor':
-                continue
-            if entry.is_dir():
-                fixture_snapshot.update({entry.name+'/'+name: digest for name, digest in native.hashes(entry).items()})
-            elif entry.is_file():
-                fixture_snapshot[entry.name] = hashlib.sha256(entry.read_bytes()).hexdigest()
+        key = (str(fixture), id(fixture_snapshot))
+        cached = _COMMAND_SNAPSHOTS.get(key)
+        if cached is None:
+            original = fixture_snapshot
+            fixture_snapshot = {name: digest for name, digest in original.items() if name.startswith('vendor/')}
+            for entry in fixture.iterdir():
+                if entry.name == 'vendor':
+                    continue
+                if entry.is_dir():
+                    fixture_snapshot.update({entry.name+'/'+name: digest for name, digest in native.hashes(entry).items()})
+                elif entry.is_file():
+                    fixture_snapshot[entry.name] = hashlib.sha256(entry.read_bytes()).hexdigest()
+            cached = _COMMAND_SNAPSHOTS[key] = (original, fixture_snapshot)
+        fixture_snapshot = cached[1]
     with installed_fixture.application(fixture, 'case', verify_vendor=fixture_snapshot is None) as (root, app):
         temporary = root/'tmp'; temporary.mkdir()
         child = dict(env, PAYMENTER_TEST_FIXTURE=str(app), TMPDIR=str(temporary),

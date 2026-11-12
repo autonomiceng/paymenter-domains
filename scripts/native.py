@@ -31,7 +31,7 @@ def hashes(root):
                     with open(entry.path, "rb") as handle:
                         result[name] = hashlib.file_digest(handle, "sha256").hexdigest()
 
-    return dict(sorted(result.items(), key=lambda item: item[0].split('/')))
+    return result
 
 
 # Admission lives only in this runner process, never in a caller-supplied disk cache.
@@ -73,15 +73,28 @@ def admitted_vendor_hashes(root):
                             digest = hashlib.file_digest(handle, 'sha256').hexdigest()
                             if identity(os.fstat(handle.fileno())) != stamp:
                                 raise ValueError('Dependency changed during admission.')
-                    admitted[name] = (stamp, digest)
+                    admitted[name] = cached if cached is not None and cached[0] == stamp else (stamp, digest)
                     result[name] = digest
     # Publish only after a complete successful inventory; no partial admission is trusted.
     _VENDOR_ADMISSIONS[str(root)] = admitted
-    return dict(sorted(result.items(), key=lambda item: item[0].split('/')))
+    return result
 
 
 def git(source, *args):
     return subprocess.check_output(['git', '-C', str(source), *args], stderr=subprocess.PIPE)
+
+
+_FIXTURE_INDEXES = {}
+
+
+def fixture_indexes(snapshot):
+    # Admission snapshots are immutable for the run. Retain their identity with the indexes.
+    cached = _FIXTURE_INDEXES.get(id(snapshot))
+    if cached is None:
+        files = {name: digest for name, digest in snapshot.items() if not name.startswith('vendor/')}
+        vendor = {name[7:]: digest for name, digest in snapshot.items() if name.startswith('vendor/')}
+        cached = _FIXTURE_INDEXES[id(snapshot)] = (snapshot, files, vendor)
+    return cached[1:]
 
 
 def verify(source, *, fixture_snapshot=None, shared_vendor=None):
@@ -94,7 +107,7 @@ def verify(source, *, fixture_snapshot=None, shared_vendor=None):
     if fixture_snapshot is not None:
         # Generated views, caches and installed extensions are fixture-local. Every
         # pristine file and the complete vendor tree must retain their original bytes.
-        files = {name: digest for name, digest in fixture_snapshot.items() if not name.startswith('vendor/')}
+        files, expected_vendor = fixture_indexes(fixture_snapshot)
         ancestors = {parent for name in files for parent in (source/name).parents if parent.is_relative_to(source)}
         vendor_root = source/'vendor'
         if shared_vendor is not None:
@@ -111,8 +124,7 @@ def verify(source, *, fixture_snapshot=None, shared_vendor=None):
                 raise ValueError('Fixture dependency path is linked.')
             if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
                 raise ValueError('Fixture dependency changed: '+name)
-        vendor = {'vendor/'+name: digest for name, digest in admitted_vendor_hashes(vendor_root).items()}
-        if vendor != {name: digest for name, digest in fixture_snapshot.items() if name.startswith('vendor/')}:
+        if admitted_vendor_hashes(vendor_root) != expected_vendor:
             raise ValueError('Fixture vendor inventory changed.')
         return {}, fixture_snapshot
     if git(source, 'rev-parse', '--show-toplevel').decode().strip() != str(source):
