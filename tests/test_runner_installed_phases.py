@@ -18,7 +18,7 @@ sys.path.insert(0, str(ROOT/'scripts'))
 
 class InstalledPhaseTests(unittest.TestCase):
     def phase_failure(
-        self, scenario, target, *, setup=0, earlier=0, expires=None, verify=0
+        self, scenario, target, *, setup=0, earlier=0, expires=None, verify=0, bounded=False
     ):
         spec = importlib.util.spec_from_file_location('installed_phase_limits', ROOT/'tests/test_installed_package.py')
         installed = importlib.util.module_from_spec(spec); spec.loader.exec_module(installed)
@@ -41,6 +41,11 @@ class InstalledPhaseTests(unittest.TestCase):
                 if argv[0] == 'cp':
                     return real_run(argv, **options)
                 name = options['env']['PACKAGE_PHASE']
+                if bounded:
+                    wall = float(argv[argv.index('--wall')+1])
+                    self.assertLessEqual(wall, 30)
+                    self.assertLessEqual(wall, options['timeout'])
+                    self.assertEqual(int(argv[argv.index('--memory')+1]), 256*1024**2)
                 self.assertEqual(argv[-1], str(ROOT/'tests/package-lifecycle.php'))
                 calls.append((name, options['timeout']))
                 if name == target:
@@ -54,7 +59,9 @@ class InstalledPhaseTests(unittest.TestCase):
             def read(path, *args, **kwargs):
                 return 'MemAvailable: 2000000 kB\n' if str(path) == '/proc/meminfo' else read_text(path, *args, **kwargs)
             # Replace this module's clock reference, leaving the runner and process clock real.
-            with mock.patch.dict(os.environ, {'PAYMENTER_TEST_FIXTURE': str(fixture)}), \
+            controls = {'DOMAINS_TEST_CGROUP': '/owned', 'DOMAINS_TEST_BUDGET': '/budget.py',
+                        'DOMAINS_TEST_RECEIPTS': temp} if bounded else {}
+            with mock.patch.dict(os.environ, dict(controls, PAYMENTER_TEST_FIXTURE=str(fixture))), \
                  mock.patch.object(installed, 'time', mock.Mock(monotonic=lambda: clock[0], sleep=advance)), \
                  mock.patch.object(installed.build, 'build', side_effect=build_package), \
                  mock.patch.object(installed.build, 'verify', side_effect=verify_package), \
@@ -71,6 +78,12 @@ class InstalledPhaseTests(unittest.TestCase):
             else:
                 self.assertIsNone(caught.exception.__cause__)
             return calls, str(caught.exception), timings
+
+    def test_admitted_phases_allow_thirty_seconds_without_extending_the_scenario_deadline(self):
+        for setup, expected in [(0, 32), (100, 10)]:
+            with self.subTest(setup=setup):
+                calls, _, _ = self.phase_failure('held', 'install', setup=setup, bounded=True)
+                self.assertEqual(calls, [('install', expected)])
 
     def test_scenario_budget_caps_each_existing_phase_limit(self):
         for scenario, target, setup, earlier, expected in [
