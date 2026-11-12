@@ -27,13 +27,18 @@ $configure=static function(#[SensitiveParameter] array $input, bool $success=tru
             ?Filament\Notifications\Notification::make()->danger()->title("Couldn't save")->body($message)
             :($success?'Saved':"Couldn't save"))->assertSet('mountedActions',[]);
 };
-Log::spy();config(['domains.enom_test_sends_per_day'=>0]);$calls=count($GLOBALS['identityCalls']);
+Log::spy();
+$identityStaffGroup ??= 'all';
+if (in_array($identityStaffGroup,['all','balance'],true)) {
+config(['domains.enom_test_sends_per_day'=>0]);$calls=count($GLOBALS['identityCalls']);
 $configure([],false,'Our test send check stopped this Enom request before sending. '.Paymenter\Extensions\Servers\Domains\Services\EnomTestSendLimit::facts(null));
 same($calls,count($GLOBALS['identityCalls']),'Staff sees identity cap refusal without a provider send');expect(Account::where('server_id',$server->id)->doesntExist(),'Cap refusal saves no unverified account for this server');
+}
 config(['domains.enom_test_sends_per_day'=>1000]);$calls=count($GLOBALS['identityCalls']);$configure([]);same($calls+1,count($GLOBALS['identityCalls']),'Staff verification exactly one read');
 $a=Account::where('server_id',$server->id)->sole();same('secret-uid',$a->stable_identity,'Encrypted verified UID');same(false,$a->processing_enabled,'Processing stays off');
 expect(!str_contains($a->getRawOriginal('stable_identity'),'secret-uid'),'UID encrypted at rest');
 foreach($server->settings()->whereIn('key',['domains_credentials','domains_verified_credentials'])->get() as $s){expect($s->encrypted,'Secrets encrypted before first save');expect(!str_contains($s->getRawOriginal('value'),'secret-token'),'No plaintext token');}
+if (in_array($identityStaffGroup,['all','balance'],true)) {
 $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertSee('API user')->assertSee('secret-uid')->assertSee('Test')->assertSee('Orders paused')->assertDontSee('secret-token');
 $calls=count($GLOBALS['identityCalls']);$page->mountAction($action('probe'))->setActionData(['reason'=>'Read synthetic account balance'])->callMountedAction()->assertNotified('Balance updated');same($calls+1,count($GLOBALS['identityCalls']),'Separate balance probe exactly one call');
 same('9876.54',DB::table('domains_registrar_balances')->where('server_id',$server->id)->value('amount'),'Balance read works before catalogue acceptance');
@@ -45,6 +50,8 @@ $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$serv
 same($calls+2,count($GLOBALS['identityCalls']),'Unavailable probe makes one attempt');
 same('9876.54',DB::table('domains_registrar_balances')->where('server_id',$server->id)->value('amount'),'Failed probe retains last amount');
 $GLOBALS['identityMode']='credentials';
+}
+if (in_array($identityStaffGroup,['all','rotation'],true)) {
 $calls=count($GLOBALS['identityCalls']);$configure(['token'=>'rotated-token']);same($a->account_fingerprint,$a->fresh()->account_fingerprint,'Verified token rotation preserves identity');
 $configure(['uid'=>'SECRET-UID','token'=>'rotated-token']);same('secret-uid',$a->fresh()->stable_identity,'Authenticated UID case canonicalized');
 $configure(['uid'=>'other-uid'],false,'These credentials belong to a different account. The saved account was kept.');same('secret-uid',$a->fresh()->stable_identity,'Different authenticated account refused');
@@ -53,11 +60,13 @@ $configure(['token'=>'wrong-token'],false,'Enom refused the user ID or API token
 $calls=count($GLOBALS['identityCalls']);$configure(['environment'=>'live'],false,'Enom reads for this account type are off on this site. Nothing was sent to the registrar.');
 same($calls,count($GLOBALS['identityCalls']),'Staff environment refusal makes no call');
 $configure(['registrar'=>'namesilo','api_key'=>'synthetic-key'],false,'Connection checks are off on this site. Nothing was sent to the registrar.');
+}
 same(false,$a->fresh()->processing_enabled,'All attempts leave processing off');expect(!app(RuntimePorts::class)->accepted($a->fresh()),'Identity installs no write ports');
 try{app(AccountBindings::class)->requireProcessing(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a->fresh()));expect(false,'Processing guard required');}catch(DomainException){}
 try{app(AccountBindings::class)->reader($server->id);expect(false,'Catalogue acceptance still required');}catch(RuntimeException){}
 Log::shouldNotHaveReceived('warning');Log::shouldNotHaveReceived('error');
 foreach(Review::historyRows($server->fresh()) as $row){$json=json_encode($row);foreach(['secret-uid','secret-token','9876.54'] as $secret){expect(!str_contains($json,$secret),'Audit omits identity/token/balance');}}
+if (in_array($identityStaffGroup,['all','runtime'],true)) {
 // Saved acquisition intent cannot promote the staff-only factory into a scheduler reader.
 $binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a->fresh());
 $catalogue=Paymenter\Extensions\Servers\Domains\Catalogue\CallerPorts::routed();
@@ -85,4 +94,5 @@ $liveBindings->confirmLiveSite($liveServer->id,'https://identity.example.invalid
 $calls=count($GLOBALS['identityCalls']);
 try{app(AccountBindings::class)->reader($liveServer->id,true);expect(false,'TEST factory must refuse live binding');}catch(IdentityRefused $e){same('identity_environment_refused',$e->reason,'Reader environment refusal');}
 same($calls,count($GLOBALS['identityCalls']),'TEST bootstrap cannot read live account');
+}
 echo "Production factory and native Filament identity/balance remain default-held.\n";
