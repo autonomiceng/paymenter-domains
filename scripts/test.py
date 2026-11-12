@@ -385,7 +385,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                    else 120 if kind == 'native' else 180 if kind == 'ui' else 60)
         bounded = bool((env or {}).get('BECO_TEST_CGROUP'))
         resource_receipt = output / f'{index:04d}.resources.json'
-        syntax_lint = kind == 'lint' and len(argv) == 3 and argv[1] == '-l'
+        syntax_lint = kind == 'lint' and len(argv) >= 3 and argv[1] == '-l'
         rss_path = None if syntax_lint else output/f'{index:03d}.rss.txt'
         interrupted = None
         stdout, stderr = b'', b''
@@ -739,7 +739,9 @@ def main():
             env.update(PAYMENTER_TEST_FIXTURE=str(fixture), PAYMENTER_TEST_NATIVE_EXTENSIONS=str(extension.parent),
                        LD_LIBRARY_PATH=str(runtime/'usr/lib/x86_64-linux-gnu'))
         php = str(ROOT/'scripts/php-test')
-        commands = [('lint', [php, '-l', path]) for path in php_files]
+        batch = 32 if env.get('BECO_TEST_CGROUP') else 1
+        commands = [('lint', [php, '-l', *php_files[index:index+batch]])
+                    for index in range(0, len(php_files), batch)]
         if 'lint' in selected:
             commands.append(('lint', [php, 'tests/php83-compatibility-test.php']))
         for kind, paths in suites.items():
