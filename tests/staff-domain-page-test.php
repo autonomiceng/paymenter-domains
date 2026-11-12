@@ -483,7 +483,7 @@ same(['Service #'.$active->service_id.' not found. Check the Services page.','On
 same(false,PendingAdoptionResource::shouldRegisterNavigation(),'Adoption pending is not in navigation');
 same(DomainResource::getUrl('index',['filters'=>['status'=>['values'=>['under_review']]]]),PendingAdoptionResource::redirectUrl(),'Adoption pending opens the Under review filter');
 // Before any read, staff see a neutral Not read. A late read shows Missing that fills in by itself (gray) under "Registrar
-// records are out of date"; a failed read shows red Missing under "Registrar read failed".
+// records are out of date"; a failed read shows a calm Missing under "Registrar read failed". The notice gives the cause once.
 $unreadDomain=Domain::create(['server_id'=>$active->server_id,'registrar_key'=>$active->registrar_key,'account_fingerprint'=>$active->account_fingerprint,
     'user_id'=>$customer->id,'service_id'=>99992,'domain'=>'unread-ui.example.com','sld'=>'unread-ui','tld'=>'example.com','status'=>'active']);
 $nameservers=static function()use($viewer,$unreadDomain):array{
@@ -500,6 +500,6 @@ $unreadWork=DB::table('domains_observation_work')->insertGetId(['server_id'=>$un
 expect([$state,$red,$failedTitle,$lateTitle]===['Missing',false,false,true],'A late read leaves Nameservers gray Missing under Registrar records are out of date: '.json_encode([$state,$red,$failedTitle,$lateTitle]).' '.preg_replace('/\s+/',' ',$row));
 DB::table('domains_observation_work')->where('id',$unreadWork)->update(['safe_code'=>'read_failed','tries'=>1,'due_at'=>time()+3600]);
 [$state,$red,$failedTitle,$lateTitle,$row]=$nameservers();
-expect([$state,$red,$failedTitle,$lateTitle]===['Missing',true,true,false],'A failed read leaves Nameservers red Missing under Registrar read failed: '.json_encode([$state,$red,$failedTitle,$lateTitle]).' '.preg_replace('/\s+/',' ',$row));
+expect([$state,$red,$failedTitle,$lateTitle]===['Missing',false,true,false],'A failed read leaves Nameservers a calm Missing under Registrar read failed, which gives the cause once: '.json_encode([$state,$red,$failedTitle,$lateTitle]).' '.preg_replace('/\s+/',' ',$row));
 
 echo "Staff domain page and list passed.\n";$nativeSuccessful=true;

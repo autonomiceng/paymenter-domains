@@ -19,7 +19,7 @@
         {{-- Nobody needs to fix a record that has not been read yet: a calm word, and the note above the rows says why once. Staff see Missing only once a read failed. --}}
         <span class="domains-muted">{{ \Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::NOT_READ }}</span>
     @else
-        @include('domains::partials.missing', ['cause'=>null])
+        @include('domains::partials.missing', ['cause'=>null, 'calm'=>$calm ?? false])
     @endif
 @else
     @include('domains::partials.status-pill', ['pill'=>['label'=>$family['value'],'tone'=>match($family['state']){'complete'=>'ok','partial'=>$staff?'warn':'info',default=>'muted'}]])

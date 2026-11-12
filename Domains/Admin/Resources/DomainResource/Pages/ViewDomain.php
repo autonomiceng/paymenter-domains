@@ -203,7 +203,10 @@ class ViewDomain extends ViewRecord
         $this->cacheHoldingActions();
         $d=$this->getRecord(); $facts=DomainFacts::besideHead($this->facts(),$this->said()); $edits=$this->edits();
         $late=$this->recordsLate($d);
+        // The notice above the sheet gives the cause and the next step once, so the rows it explains stay calm.
+        $this->calmMissing=$late;
         // The summary above the sheet says once why values are missing, so rows drop the repeated cause.
+        if ($late && is_string($facts['DS records']['sub']??null)) { $facts['DS records']['sub']=trim(preg_replace('/\s*Use Sync now to read them\.?/','',$facts['DS records']['sub']))?:null; }
         if ($late) { foreach ($facts as $label=>$fact) { if (is_string($fact['sub']??null)&&str_contains($fact['sub'],\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainDecisions::NOT_RETURNED)) { $facts[$label]['sub']=trim(str_replace(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainDecisions::NOT_RETURNED,'',$fact['sub']))?:null; } } }
         // Values the registrar read fills in show Not read, in a neutral tone, until a read fails; Missing (red) is kept for that.
         if ($this->unread($d)) { foreach (self::READ_FACTS as $label) { if (isset($facts[$label])&&$facts[$label]['value']===null) { $facts[$label]=[...$facts[$label],'value'=>\Paymenter\Extensions\Servers\Domains\Presentation\Missing::NOT_READ,'tone'=>'gray','alert'=>false,
@@ -268,6 +271,10 @@ class ViewDomain extends ViewRecord
     }
     /** Facts that come from the registrar read. */
     private const READ_FACTS=['Contacts','Nameservers','Glue records','DNS records','In registrar account','Transfer lock','WHOIS privacy','Email auth code','Registrar auto-renew'];
+    /** Rows a late or failed registrar read leaves Missing: the page notice explains them once. */
+    private const CALM_FACTS=[...self::READ_FACTS,'Domain settings','SRV records','DS records'];
+    /** True while the late-read notice explains every Missing registrar value on the page. */
+    private bool $calmMissing=false;
     /** No complete registrar read yet and no failed one: values are not read, not missing. */
     private function unread(Domain $d): bool
     {
@@ -284,15 +291,22 @@ class ViewDomain extends ViewRecord
     /** One summary of the registrar records exception, first on the page. The Registrar records section keeps the read times and causes. */
     private function lateRecords(string|Htmlable|null $note): Callout
     {
-        $s=$this->familyState();
+        $s=$this->familyState(); $d=$this->getRecord();
         $last=$s['last_complete_at']??null;
         $at=static fn($when)=>trim(view('domains::partials.moment',['at'=>is_int($when)?gmdate(DATE_ATOM,$when):$when])->render());
-        // recordsLate() only lets a late or failing read through. One notice: what is wrong, the last complete read, and the
-        // attempts so far; the records section below keeps only its rows.
-        $text=e(trim((string)($s['read_cause']??'The registrar read failed.'))).' '.($last?'Last complete read: '.$at($last).'.':'No complete read yet.').' Missing values fill in after the next successful read.';
+        // recordsLate() only lets a late or failing read through. One notice: the cause and the next step first, then the
+        // read history in one quiet line. The records section below keeps only its rows.
+        $text=e(trim((string)($s['read_cause']??'The registrar read failed.')));
+        if (DomainFacts::syncNow($d)) { $text.=' Use Sync now to read it again.'; }
+        if ($note!==null) {
+            $plain=trim(html_entity_decode(strip_tags((string)($note instanceof Htmlable?$note->toHtml():$note)),ENT_QUOTES|ENT_HTML5));
+            // The general hold has no cause of its own here: the read is the cause.
+            $text.=' '.($plain===DomainEditActions::HELD?'Changes stay paused until a read succeeds.':e($plain));
+        }
+        $history=$last?'Last complete read: '.$at($last).'.':'No complete read yet.';
         $attempts=(int)($s['read_attempts']??0);
-        if ($attempts>=1) { $text.=' '.(($s['read_stopped']??false)?'Stopped after ':'').$attempts.' '.($attempts===1?'attempt':'attempts').'.'.(($s['read_failed_at']??null)?' Last failure: '.$at($s['read_failed_at']).'.':''); }
-        if ($note!==null) { $text.=' '.e(trim(html_entity_decode(strip_tags((string)($note instanceof Htmlable?$note->toHtml():$note)),ENT_QUOTES|ENT_HTML5))); }
+        if ($attempts>=1) { $history.=' '.(($s['read_stopped']??false)?'Stopped after ':'').$attempts.' '.($attempts===1?'attempt':'attempts').'.'.(($s['read_failed_at']??null)?' Last failure: '.$at($s['read_failed_at']).'.':''); }
+        $text.='<span class="domains-sub">'.$history.'</span>';
         // A read that is only overdue has not failed: its records are out of date.
         $failed=($s['read_code']??null)||($s['read_stopped']??false)||($s['failed_family']??null);
         return Callout::make($failed?'Registrar read failed':'Registrar records are out of date')->description(new HtmlString($text))->status('warning')->columnSpanFull();
@@ -333,7 +347,7 @@ class ViewDomain extends ViewRecord
      * A family with no read and a Missing value says Missing once. Families with no own fact (Domain settings, SRV) show the read state, and SRV its change line. */
     private function familyRow(array $family, ?array $fact, array|Html $side, mixed $readAt = null, ?array $progress = null): Flex
     {
-        $status=new HtmlString('<div class="domains">'.view('domains::partials.record-family-status',['family'=>$family,'staff'=>true,'readAt'=>$readAt])->render().'</div>');
+        $status=new HtmlString('<div class="domains">'.view('domains::partials.record-family-status',['family'=>$family,'staff'=>true,'readAt'=>$readAt,'calm'=>$this->calmMissing])->render().'</div>');
         if ($fact===null) {
             $entry=TextEntry::make('family_'.$family['kind'])->label($family['label'])->state($status);
             if ($progress!==null) { $entry->belowContent(self::below(['value'=>null,'sub'=>null,'progress'=>$progress])); }
@@ -419,7 +433,8 @@ class ViewDomain extends ViewRecord
         if (isset($fact['at'])) { $entry->formatStateUsing(fn()=>Sheet::moment($fact['at'])); }
         if ($fact['help']) { $entry->hintAction(HelpHint::make($fact['help'])); }
         if ($fact['demo']) { $entry->suffix(DemoData::tag(inline:true)); }
-        $entry=MissingEntry::apply($entry,cause:$fact['value']===null?$fact['sub']:null,color:$fact['value']!==null&&($fact['alert']??false)?null:$fact['tone']);
+        $entry=MissingEntry::apply($entry,cause:$fact['value']===null?$fact['sub']:null,color:$fact['value']!==null&&($fact['alert']??false)?null:$fact['tone'],
+            calm:$this->calmMissing&&in_array($label,self::CALM_FACTS,true));
         // A timed retry follows the words in the viewer's time zone, under a red Missing too.
         if (isset($fact['retry'])) { $entry->belowContent(self::below($fact)); }
         if (isset($fact['mark'])) { $entry=Sheet::state($entry,$fact['mark'],'lock-'.$this->getRecord()->id); }
