@@ -6,7 +6,8 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Data\RequestOrigin;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\ObservationReader;
-use Paymenter\Extensions\Servers\Domains\Services\{DomainObservation,HoldingObservationWork,ObservationProjection};
+use Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords;
+use Paymenter\Extensions\Servers\Domains\Services\{DomainObservation,HoldingObservationWork,HoldingReadRetry,ObservationProjection};
 
 $wired=new DomainObservation($readBindings,$clock,$budget,$ports,null,static fn($binding)=>new ObservationReader($binding,$exchange));
 $worker=new HoldingObservationWork($wired,$clock);
@@ -37,6 +38,14 @@ same([0,'refreshed',null,$overdue,$start+60],[(int)$held->tries,$held->safe_code
 $clock->instant=$clock->now()->setTimestamp($start+20);
 same('idle',$worker->turn($queue,$guard),'The routine read waits out its retry delay');
 same($overdue,(int)$row($routine)->due_at,'Waiting keeps the overdue due time');
+// The retry delay is not a running read: the status stays overdue and staff can still start Sync now.
+$status=ObservationProjection::recordStatus($d->fresh(),$clock->now());
+same([true,false],[HoldingReadRetry::status($d->fresh(),$clock->now())['read_overdue'],$status['read_checking']],'The retry delay still reads as overdue, not checking');
+expect(!SyncDomainRecords::pending($d->fresh()),'Sync now is enabled during the retry delay');
+$manual=HoldingObservationWork::claimManual($d->fresh(),$clock->now(),300);
+same($routine,$manual[0]??null,'Sync now takes the read lease during the retry delay');
+HoldingObservationWork::releaseManual(...$manual);
+same($overdue,(int)$row($routine)->due_at,'An unfinished Sync now keeps the overdue due time');
 // Capacity returns once the retry delay ends; the transient retry is due by then and competes for the turn.
 $budget->release($binding,RequestOrigin::Interactive,$slot);
 $clock->instant=$clock->now()->setTimestamp($start+61);

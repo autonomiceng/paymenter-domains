@@ -49,7 +49,7 @@ final class HoldingReadRetry
             if(ObservationRecords::identity($seed)!==ObservationRecords::identity($d)){return;}
             if($code==='domain_not_in_account'&&(($d->observation['record_failure']['identity']??null)!==ObservationRecords::identity($d)||($d->observation['record_failure']['code']??null)!==$code)){return;}
             $now=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp();
-            $q=HoldingObservationWork::current($d)->where(fn($q)=>$q->where('lease_until','<=',$now)->when($claim!==null&&$claim!=='',fn($q)=>$q->orWhere('claim',$claim)));
+            $q=HoldingObservationWork::current($d)->where(fn($q)=>$q->whereNull('claim')->orWhere('lease_until','<=',$now)->when($claim!==null&&$claim!=='',fn($q)=>$q->orWhere('claim',$claim)));
             $job=(clone $q)->lockForUpdate()->first();if(!$job){return;}
             $result=self::result($d,$code);$partial=$code==='refreshed'&&$result!==$code;
             $tries=$partial?(int)$job->tries+1:0;
@@ -89,7 +89,7 @@ final class HoldingReadRetry
         $now??=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now();
         return ['read_review'=>$eligible&&$code!==null&&in_array($code,['read_failed','read_deadline','read_no_evidence'],true)&&($stopped||($job->tries??0)>=self::LIMIT||($job->resumes??0)>0),
             'records_paused'=>$job?->safe_code==='records_disabled',
-            'read_overdue'=>$eligible&&$job&&!$stopped&&$job->due_at+self::OVERDUE_GRACE_SECONDS<$now->getTimestamp()&&$job->lease_until<=$now->getTimestamp(),
+            'read_overdue'=>$eligible&&$job&&!$stopped&&$job->due_at+self::OVERDUE_GRACE_SECONDS<$now->getTimestamp()&&!HoldingObservationWork::reading($job,$now->getTimestamp()),
             'next_read'=>$eligible&&$job&&!$stopped?(int)$job->due_at:null,'read_stopped'=>(bool)$stopped,
             'read_code'=>$code,'read_failed_at'=>$code?($d->observation['read_retry']['at']??$d->observation['record_failure']['at']??null):null,'read_attempts'=>(int)($job->tries??0),
             'read_cause'=>match($code){'read_failed'=>'The registrar read failed.','read_deadline'=>'The registrar read timed out.',
