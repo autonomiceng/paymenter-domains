@@ -58,7 +58,15 @@ final class RequestHoldReasons
             [$owner,$step,$link,$label]=['Staff with domain cost and funding access','approve the registrar cost on the domain page','domain',null];
             $blocked='The registrar cost needs approval; '.$owner.' must '.$step.'.';
         }
-        if($kind==='profile'&&($contact=ContactProfileHold::releaseBlocked($op))!==null){$blocked=$contact;}
+        if($kind==='profile'){
+            $blocked=ContactProfileHold::releaseBlocked($op);
+            if($blocked===null&&ContactProfileHold::unsent($op,retry:true)){
+                [$owner,$step,$link,$label]=['Staff','release the hold to retry this order with its saved contact details',null,null];
+            }
+        }
+        if($kind==='orders'&&$account?->processing_enabled){
+            [$owner,$step,$link,$label]=['Staff','release the hold to retry the saved order',null,null];
+        }
         if($kind==='feature'&&$account){
             $feature=match($op->action){'register'=>'registration','transfer'=>'transfer','renew'=>'renewal',default=>'management'};
             $test=$account->environment==='test';
