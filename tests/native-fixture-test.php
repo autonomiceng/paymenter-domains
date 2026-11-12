@@ -1,6 +1,8 @@
 <?php
 // Synthetic native harness probe only; no Domains entry point is installed.
 declare(strict_types=1);
+// This probe verifies the real upstream migrations, including runs that reuse their snapshot.
+putenv('PAYMENTER_TEST_DATABASE');
 require __DIR__.'/native-app.php';
 if (in_array('--fail-after-boot', $argv, true)) { throw new RuntimeException('synthetic native failure'); }
 
