@@ -24,7 +24,7 @@ $wire = new class implements Transport {
             if ($this->fault === 'pagination') { $data .= '<NextPage>2</NextPage>'; }
             if ($this->fault === 'unknown') { $data .= '<UnknownCompleteness>1</UnknownCompleteness>'; }
         } else {
-            $date = ($p['OrderID'] === '902' && $this->fault === 'undated') ? '' : ($this->fault === 'date' && $p['OrderID'] === '902' ? '<BillDate>10/18/2026</BillDate>' : '<BillDate>10/18/2026 5:00:01 AM</BillDate>');
+            $date = ($p['OrderID'] === '902' && $this->fault === 'undated') ? '' : ($this->fault === 'date' && $p['OrderID'] === '902' ? '<BillDate>10/18/2026</BillDate>' : '<BillDate>10/18/2026 6:00:01 AM</BillDate>');
             $name = $p['OrderID'] === '902' && $this->fault === 'foreign' ? 'unrelated-placeholder.com' : ($p['OrderID'] === '902' && $this->fault === 'case' ? 'Example.com' : 'example.com');
             $data = '<Order><OrderID>'.$p['OrderID'].'</OrderID><Result>true</Result><OrderBillAmount>$8.95</OrderBillAmount>'.$date.'<OrderDetail><Description>'.$name.'</Description><ProductType>Register</ProductType><Quantity>3</Quantity><Status>Successful</Status><OrderStatus>Closed</OrderStatus><AmountPaid>8.95</AmountPaid><ExpiryDatetime>2029-10-18</ExpiryDatetime></OrderDetail></Order>';
         }
@@ -44,6 +44,8 @@ $limited = $history->inspect($attempt, new RequestContext($binding, RequestOrigi
 same(false, $limited->historyComplete, 'Insufficient remaining detail budget cannot certify completeness');
 same(1, $wire->calls - $before, 'Refuse oversized detail list before wasting remaining provider reads');
 $facts = $read(); same(true, $facts->historyComplete, 'One complete precise history candidate');
+// Enom TEST bills in Mountain time: 6:00:01 AM MDT is one second after the 12:00 UTC send.
+same('2026-10-18T12:00:01+00:00', $facts->candidates[0]->processedAt->value, 'Enom TEST bill date read as Mountain time');
 $complete = fn ($d, $f) => ReconciliationEvidence::completion($attempt, new Evidence(domain: $d, candidates: $f->candidates, historyComplete: $f->historyComplete), $clock->now());
 same('8.95', $complete($domain('2029-10-18'), $facts)['charge']['amount'], 'Provider-only recovery of full three-year original attempt');
 same(null, $complete($domain('2027-10-18'), $facts), 'Short provider expiry cannot complete purchased three-year term');
