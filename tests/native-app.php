@@ -55,6 +55,8 @@ if ($snapshot !== '') {
     $sql = file_get_contents($snapshot);
     same((string)getenv('PAYMENTER_TEST_DATABASE_SHA256'), hash('sha256', $sql), 'Migrated fixture snapshot retains admitted bytes');
     Illuminate\Support\Facades\DB::connection()->getPdo()->exec($sql);
+    // Migration boot normally initializes the grammar before tests build schema inspectors.
+    Illuminate\Support\Facades\DB::connection()->useDefaultSchemaGrammar();
 } else {
     Illuminate\Support\Facades\Artisan::call('migrate', ['--force' => true]);
 }

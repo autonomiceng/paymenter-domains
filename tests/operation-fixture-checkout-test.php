@@ -4,6 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/Support/operation-fixture.php';
 use App\Models\Invoice;
 use Livewire\Livewire;
+PHPUnit\TextUI\Configuration\Registry::init((new PHPUnit\TextUI\CliArguments\Builder)->fromParameters([]),PHPUnit\TextUI\XmlConfiguration\DefaultConfiguration::create());
 
 $renders=0;
 $stop=Livewire::listen('render',static function($component)use(&$renders):void {
