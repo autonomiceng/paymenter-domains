@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from functools import partial
 import hashlib
+import json
 import os
 from pathlib import Path
 import shutil
@@ -118,3 +119,20 @@ def prepare_database(env, output, root):
                    env=dict(env, PAYMENTER_TEST_DATABASE_EXPORT=str(snapshot)), check=True, timeout=10)
     env.update(PAYMENTER_TEST_DATABASE=str(snapshot),
                PAYMENTER_TEST_DATABASE_SHA256=hashlib.sha256(snapshot.read_bytes()).hexdigest())
+
+
+def installed_phases(path):
+    name = Path(path).name
+    return name.endswith('.py') and (name.startswith('test_installed_package') or name == 'test_installed_namesilo_enrollment.py')
+
+
+def phase_results(stdout):
+    rows = []
+    for line in stdout.decode(errors='replace').splitlines():
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(row, dict) and row.get('timing') == 'installed_case':
+            rows.append(row)
+    return rows
