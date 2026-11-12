@@ -60,7 +60,7 @@ final class WatchFacts
         // Registrar records exist only for a domain we register. The Domain section says their state once.
         if($w->managed_domain_id!==null){
             $domain['Registrar records']=self::fact($e['state'],$e['at']?Sheet::moment((int)strtotime($e['at']),'Checked'):'No registrar read yet.');
-            $domain['Billing and ownership']=self::fact('Separate checks',$e['separation']);
+            $domain['Billing and ownership']=self::fact('From the registrar only',$e['separation']);
         }
         // A paused or stopped name with no saved result has nothing to show; its status already says why.
         if(!$active){foreach(['Nameservers','Registry','Last check'] as $label){if(isset($checks[$label])&&$checks[$label]['value']===null){$checks[$label]['value']='';}}}

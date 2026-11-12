@@ -43,7 +43,7 @@ Livewire::actingAs($manager)->test(ListWatches::class)->filterTable('status','mo
 
 // Monitored domain page: heading pill, header buttons, sections, one notice.
 $view=Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id]);$page=$view->instance();$clean($view->html(),'monitored domain');
-expect(str_contains($page->getHeading()->toHtml(),'font-mono') && str_contains($page->getSubheading()->toHtml(),'Problem found'),'Mono name, then the status line');
+expect(str_contains($page->getHeading()->toHtml(),'domains-wrap') && str_contains($page->getSubheading()->toHtml(),'Problem found'),'Name, then the status line');
 assertDomainNameWraps($page->getHeading()->toHtml(),$watch->canonical_name,'Monitored domain title','title');
 expect(str_contains($page->getSubheading()->toHtml(),'Nameservers changed'),'Observed mismatch leads the heading');
 $seen=preg_replace('/\s+/',' ',html_entity_decode(strip_tags(preg_replace('~<(script|style)\b.*?</\1>~si','',$view->html())),ENT_QUOTES|ENT_HTML5));

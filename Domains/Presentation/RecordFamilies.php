@@ -57,8 +57,8 @@ final class RecordFamilies
         // Only queued, on-time read work can promise the first read; without it each family is Missing.
         $initial=$readable&&!$cancelled&&$d->status==='active'&&$status['last_complete_at']===null&&!$hold&&!$status['read_code']&&!$status['read_stopped']&&!$status['records_paused']
             &&$status['next_read']!==null&&!$status['read_overdue'];
-        // A failed or stopped read is a problem staff fix (Missing, red). A read that has not happened yet is neutral (Not read).
-        $failed=(bool)(($status['read_code']??null)||($status['read_stopped']??false)||($status['failed_family']??null));
+        // A failed, stopped or overdue read is a problem staff fix (Missing, red). A read that has not happened yet is neutral (Not read).
+        $failed=(bool)(($status['read_code']??null)||($status['read_stopped']??false)||($status['read_overdue']??false)||($status['failed_family']??null));
         $rows=[];$caa=[];$caaAt=null;
         foreach(['settings'=>['nameservers'=>'Nameservers','contacts'=>'Contacts','flags'=>'Domain settings'],'families'=>['dns'=>'DNS records','srv'=>'SRV records','ds'=>'DS records','glue'=>'Glue records']] as $group=>$labels){
             foreach($labels as $kind=>$label){$f=$status[$group][$kind];$state=$f['expectation']==='unsupported'?'unsupported':$f['state'];
