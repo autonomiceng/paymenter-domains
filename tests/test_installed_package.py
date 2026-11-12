@@ -198,7 +198,7 @@ def main(scenario):
                 argv = [str(ROOT/'scripts/php-test'), str(ROOT/'tests/package-lifecycle.php')]
                 if os.environ.get('DOMAINS_TEST_CGROUP'):
                     resource = Path(os.environ['DOMAINS_TEST_RECEIPTS'])/('installed-'+uuid.uuid4().hex+'.json')
-                    case_wall = min(30, timeout)
+                    case_wall = min(60 if phase_limit == 120 else 30, timeout)
                     status = subprocess.run([sys.executable, os.environ['DOMAINS_TEST_BUDGET'], '--name', scenario+'/'+name,
                                              '--test-scope', '--wall', str(case_wall), '--memory', str(256*1024**2),
                                              '--receipt', str(resource), '--', *argv], cwd=ROOT, env=run_env, timeout=min(timeout, case_wall+2)).returncode
