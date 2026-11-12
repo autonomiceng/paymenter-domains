@@ -22,7 +22,7 @@ $off=Crypt::encryptString(json_encode(['owner_auto_renew'=>false]));
 $listInvoice=static function(array $r):string {
     $note=(string)($r['note']??'');
     return match (true) { $r['invoiceMissing'] => 'missing', isset($r['noteState']) => 'review', $note==='Invoice cancelled' => 'cancelled',
-        str_starts_with($note,'Next invoice: Paid') => 'paid', str_starts_with($note,'Renewal did not finish') => 'closed', default => 'other' };
+        str_starts_with($note,'Renewal invoice paid') => 'paid', str_starts_with($note,'Renewal did not finish') => 'closed', default => 'other' };
 };
 $pageInvoice=static function(?array $r):string {
     if ($r===null) { return 'other'; }

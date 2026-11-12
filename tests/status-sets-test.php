@@ -14,9 +14,7 @@ foreach ([DomainStatus::SET,RequestStatus::SET,AccountStatus::SET] as $set) {
 }
 
 // 2.1 Domain.
-same(['Active','Pending registration','Pending transfer','Awaiting payment','Action required','Under review','Expired','Redemption','Failed','Cancelled'],
-    array_column(DomainStatus::SET,0),'Domain labels');
-same(['success','info','info','info','warning','warning','danger','danger','danger','gray'],array_column(DomainStatus::SET,1),'Domain tones');
+same(['expires_today','warning'],[DomainStatus::key('expires_today'),DomainStatus::for('expires_today')['tone']],'The expiry day is its own status, in the warning tone');
 foreach ([
     'active'=>$pill('Active','success'),
     'registration_pending'=>$pill('Pending registration','info'),

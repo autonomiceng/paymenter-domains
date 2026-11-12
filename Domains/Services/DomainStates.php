@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus;
 /** The one DomainStatus state for a customer domain. The Domains list, the domain page, the service card and
  * /services all resolve through here, so a domain carries the same label on every page.
  * managed() and watch() return [state, reason]; a null reason keeps the status set's default.
@@ -31,7 +32,7 @@ final class DomainStates
         $expiry = $d->provider_expires_at?->format('Y-m-d');
         return match (true) {
             $expiry === null => ['active_no_expiry', null],
-            $expiry <= $today => ['expired', null],
+            ($day = DomainStatus::expiry($expiry, $today)) !== 'active' => [$day, null],
             $renewalOff && $expiry <= (new \DateTimeImmutable($today, new \DateTimeZone('UTC')))->modify('+'.self::WINDOW.' days')->format('Y-m-d') => ['renewal_off_expiring', null],
             default => ['active', null],
         };

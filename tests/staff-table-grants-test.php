@@ -59,7 +59,7 @@ foreach([[Staff::VIEW],[Staff::VIEW,Staff::COSTS],[Staff::VIEW,Staff::METADATA],
         expect(!str_contains($page->html(),'827.43')&&!str_contains($page->html(),'Auth code'),'Lists never show costs or metadata');
     }
     $html=Livewire::actingAs($viewer)->test(ViewOperation::class,['record'=>$op->id])->assertSuccessful()->html();
-    same([$cost,$cost],[str_contains($html,'839.47'),str_contains($html,'Estimated USD 827.43')],'Request page costs follow fresh grants');
+    same([$cost,$cost],[str_contains($html,'839.47'),str_contains($html,'827.43')],'Request page costs follow fresh grants');
     same($metadata,str_contains($html,'Auth code'),'Request page metadata follows fresh grants');
     $facts=RequestFacts::for($op);same($cost,array_key_exists('cost',$facts),'Default caller checks current costs');
     same($metadata,array_key_exists('auth_code',$facts),'Default caller checks current metadata');

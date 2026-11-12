@@ -18,6 +18,7 @@ use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{CatalogueSalesNotice,EmptyTable,OneLine,RegistrarFacts,Sheet,Staff,StaffDomainStatus,StatusMark,TableColumns,TldFacts};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain};
+use Paymenter\Extensions\Servers\Domains\Presentation\AccountStatus;
 use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
 use Paymenter\Extensions\Servers\Domains\Services\ContactDetails;
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
@@ -89,7 +90,7 @@ class RegistrarSetup extends Page implements HasTable
                 TextColumn::make('status')->label('Status')->badge()->state(fn(Server $record)=>$row($record)['status']['label'])
                     ->color(fn(Server $record)=>$row($record)['status']['tone'])->extraAttributes(fn(Server $record)=>StatusMark::attributes($row($record)['status']['tone'],'registrar-'.$record->id)),
                 OneLine::apply(TextColumn::make('note')->label('Note')->color('gray')->state(fn(Server $record)=>$row($record)['note']['text'])
-                    ->extraAttributes(fn(Server $record)=>StatusMark::note($row($record)['note']['act']))),
+                    ->extraAttributes(fn(Server $record)=>StatusMark::note($row($record)['note']['act'])),OneLine::NOTE),
                 $missing(TextColumn::make('balance')->label('Balance')->state(fn(Server $record)=>$row($record)['balance']?($row($record)['balance']['value']??Missing::LABEL):null)
                     ->alignEnd()->extraAttributes(['class'=>'domains-money'])),
                 TextColumn::make('due')->label('Due in 30 days')->state(fn(Server $record)=>$row($record)['balance']['due']??null)->alignEnd()->extraAttributes(['class'=>'domains-money']),
@@ -125,6 +126,9 @@ class RegistrarSetup extends Page implements HasTable
     /** The account's Note: why it is in this state, then any job on its money, each with its step. @return array{text:?string,act:bool} */
     private static function note(?string $reason,?array $b,?Account $account,?string $held=null,bool $act=false): array
     {
+        // Settings that can't be loaded are also why the balance is Missing, and its cause says so with the step, so the reason
+        // is not said twice.
+        if ($reason===AccountStatus::STATES['configuration_unavailable'][1]&&$b!==null&&$b['value']===null&&$b['cause']!==null) { $reason=null; }
         // Requests under review hold the account, so the row says so first, in amber, as its banner does.
         $jobs=$b===null?($held?[$held]:[]):array_filter([$held,
             $b['value']===null?$b['cause']:null,

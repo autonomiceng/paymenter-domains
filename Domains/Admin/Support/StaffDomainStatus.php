@@ -42,7 +42,7 @@ final class StaffDomainStatus
         $named = null;
         if (!$specific) {
             if ($alerts) { $top = self::topAlert($alerts); [$step, $request] = self::alert($top, $d); $act = true; $named = $top['code']; }
-            elseif ($renewal && in_array($state, ['active', 'renewal_off_expiring'], true)) { [$step, $request, $act] = self::renewal($renewal, $accounts, $release); }
+            elseif ($renewal && in_array($state, ['active', 'renewal_off_expiring', 'expires_today'], true)) { [$step, $request, $act] = self::renewal($renewal, $accounts, $release); }
         }
         // A held or unconfirmed transfer, and a state this version doesn't know, only say a request is in the way.
         // Staff read the customer's head word, then that request in their step. Amber only when staff must act.
@@ -97,7 +97,7 @@ final class StaffDomainStatus
         return [...match ($state) {
             'registration_pending' => [self::REGISTERING, false],
             'transfer_pending' => [self::TRANSFERRING, false],
-            'active', 'renewal_off_expiring' => [null, false],
+            'active', 'renewal_off_expiring', 'expires_today' => [null, false],
             'needs_review' => ['Check the domain and its requests.', false],
             'expired', 'grace', 'redemption' => [self::LATE, true],
             'registration_rejected', 'transfer_rejected', 'cancelled' => [null, true],

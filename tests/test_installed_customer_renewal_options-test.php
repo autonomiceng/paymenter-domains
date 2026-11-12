@@ -71,7 +71,7 @@ same(['paid',0.0],[$invoice->status,(float)$invoice->total],'Authorized complime
 $summary=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,'managed',$d->id,$clock->now()->getTimestamp());
 expect(!$summary->renewalInvoiceMissing,'Funded complimentary renewal is not a missing invoice on the list');
 $row=Paymenter\Extensions\Servers\Domains\Presentation\DomainListRow::renewal($summary);
-same('Next invoice: Paid',$row['note'],'List and customer page agree on the issued renewal state');
+same('Renewal invoice paid',$row['note'],'List and customer page agree on the issued renewal state');
 same('Paid',Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::nextInvoice($owners->present($d->fresh()),$summary,null)['value'],'Detail shows the same paid receipt');
 // An issued invoice is never called missing after expiry.
 try{[$s,$row,$next]=$facts((new DateTimeImmutable($expires))->modify('+1 day')->format('Y-m-d'));same(['Paid',false],[$next['value']??null,$s->renewalInvoiceOverdue],'After expiry an issued invoice keeps its own state');}finally{$clock->instant=$at;}

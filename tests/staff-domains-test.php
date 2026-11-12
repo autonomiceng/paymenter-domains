@@ -369,29 +369,29 @@ DB::table('domains_operations')->where('id',$guardedRow->id)->update(['state'=>'
 expect(!str_ends_with(DomainFacts::notice($held->fresh())['title'],'..'),'Domain notice has one period');
 DB::table('domains_operations')->where('id',$guardedRow->id)->update($guardedSaved);
 expect(!array_key_exists('refund',$plain)&&$plain['outcome']===null&&!isset($plain['correction'])&&!isset($plain['audit']),'Ordinary rows omit refund, outcome, corrections and audit');
-same('USD 0.00',Labels::money('0'),'Known zero is distinct'); same('Unknown',Labels::money(null),'Unknown cost is not zero');
-same('USD 123456789012345678.1234',Labels::money('123456789012345678.12340000'),'Exact money without floats');
+same('$0.00',Labels::money('0'),'Known zero is distinct'); same('Unknown',Labels::money(null),'Unknown cost is not zero');
+same('$123456789012345678.1234',Labels::money('123456789012345678.12340000'),'Exact money without floats');
 // Historic admitted renewals retain the sealed authorization, even without a checkout estimate.
 $costUser=staffUser([Staff::VIEW,Staff::COSTS]); Auth::setUser($costUser);
 $renewal=new Operation(['action'=>'renew','state'=>'succeeded','cost'=>['actual'=>['amount'=>'8.95','currency'=>'USD']],
     'attempt'=>['seal'=>'sealed','authorized_cost'=>['amount'=>'8.9500','currency'=>'USD']],
     'policy'=>['renewal'=>['cost_cap'=>['amount'=>'12.00','currency'=>'USD']]],'funding'=>[]]);
 $retained=$renewal->getAttributes(); $cost=fn(Operation $op)=>[($f=RequestFacts::for($op))['cost'],$f['cost_sub']];
-same(['USD 8.95','Authorized USD 8.95'],$cost($renewal),'Historic renewal shows authorized registrar cost');
+same(['$8.95','Authorized $8.95'],$cost($renewal),'Historic renewal shows authorized registrar cost');
 same($retained,$renewal->getAttributes(),'Reading renewal facts never backfills retained cost evidence');
 $renewal->cost=['estimated'=>'7.00','currency'=>'USD'];
-same([null,'Authorized USD 8.95'],$cost($renewal),'Renewal authorization stays distinct from an existing estimate');
+same([null,'Authorized $8.95'],$cost($renewal),'Renewal authorization stays distinct from an existing estimate');
 foreach(['running','pending','uncertain','held'] as $state){
     $renewal->state=$state;
-    same(['Not confirmed','Authorized USD 8.95'],$cost($renewal),'Retained authorization survives unresolved renewal states');
+    same(['Not confirmed','Authorized $8.95'],$cost($renewal),'Retained authorization survives unresolved renewal states');
 }
 // Nothing sent: no charge yet, and the renewal cap reads as a spending limit, never as a cost.
 foreach(['awaiting_payment','held'] as $state){
     $unsent=new Operation(['action'=>'renew','state'=>$state,'cost'=>null,'attempt'=>[],'funding'=>[],
         'policy'=>['renewal'=>['cost_cap'=>['amount'=>'8.9500','currency'=>'USD']]]]);
-    same(['Not charged yet','Spending limit USD 8.95'],$cost($unsent),'Unsent renewal shows its spending limit: '.$state);
+    same(['Not charged yet','Spending limit $8.95'],$cost($unsent),'Unsent renewal shows its spending limit: '.$state);
     $unsent->action='register'; $unsent->cost=['estimated'=>'8.95','currency'=>'USD'];
-    same(['Not charged yet','Estimated USD 8.95; the registrar price is checked again before sending and cannot exceed this estimate.'],$cost($unsent),'Unsent registration keeps its estimate: '.$state);
+    same(['Not charged yet','Estimated $8.95; the registrar price is checked again before sending and cannot exceed this estimate.'],$cost($unsent),'Unsent registration keeps its estimate: '.$state);
 }
 // An unpaid request that closed before sending never cost anything, so its Cost row is not Missing.
 foreach(['renewal_cancelled_unpaid'=>'renew','acquisition_cancelled_unpaid'=>'register'] as $code=>$action){
@@ -406,12 +406,12 @@ foreach([['amount'=>'8.95'],['amount'=>'8.95','currency'=>'EUR'],['amount'=>8.95
     same([null,'No cost recorded. Check at the registrar.'],$cost($renewal),'Missing or invalid authorization never falls back to estimate or cap');
 }
 $renewal->attempt=['authorized_cost'=>['amount'=>'0','currency'=>'USD']];
-same([null,'Authorized USD 0.00'],$cost($renewal),'Known zero authorization remains distinct from unknown');
+same([null,'Authorized $0.00'],$cost($renewal),'Known zero authorization remains distinct from unknown');
 $renewal->attempt=['authorized_cost'=>['amount'=>'123456789012345678.12340000','currency'=>'USD']];
-same([null,'Authorized USD 123456789012345678.1234'],$cost($renewal),'Authorized cost preserves exact money');
+same([null,'Authorized $123456789012345678.1234'],$cost($renewal),'Authorized cost preserves exact money');
 foreach(['register','transfer'] as $action){
     $renewal->action=$action;
-    same([null,'Estimated USD 7.00'],$cost($renewal),'Acquisitions still render frozen checkout estimates');
+    same([null,'Estimated $7.00'],$cost($renewal),'Acquisitions still render frozen checkout estimates');
 }
 $renewal->action='renew'; Auth::setUser($viewer);
 expect(!array_key_exists('cost',RequestFacts::for($renewal)),'Renewal authorization requires staff cost rights');

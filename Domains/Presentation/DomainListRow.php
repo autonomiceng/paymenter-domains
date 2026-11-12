@@ -44,7 +44,7 @@ final class DomainListRow
             default => null,
         };
     }
-    /** A date with its tone (bad once passed, warn within 30 days) and "In N days", or a pending registration, or Missing with its cause or fix. */
+    /** A date with its tone (bad once passed, warn on the expiry day and within 30 days) and "In N days", or a pending registration, or Missing with its cause or fix. */
     public static function expires(DomainSummary $s): array
     {
         if ($s->expiry === null) {
@@ -57,7 +57,7 @@ final class DomainListRow
         }
         $days = $s->daysLeft;
         $soon = $days !== null && $days > 0 && $days <= 30;
-        return ['missing' => false, 'tone' => $days !== null && $days <= 0 ? 'bad' : ($soon ? 'warn' : null), 'note' => $soon ? 'In '.$days.($days === 1 ? ' day' : ' days') : null];
+        return ['missing' => false, 'tone' => $days !== null && $days < 0 ? 'bad' : ($soon || $days === 0 ? 'warn' : null), 'note' => $soon ? 'In '.$days.($days === 1 ? ' day' : ' days') : null];
     }
     /** Empty for a domain renewed at its own registrar (we send no invoices), or Auto-renew on/off with the price, the cancel date or a missing next invoice. */
     public static function renewal(DomainSummary $s): array
@@ -74,7 +74,7 @@ final class DomainListRow
         $price = !$s->renewalInvoiceMissing && $s->renewalPrice && !($complimentary && str_starts_with(self::expires($s)['cause'] ?? '', 'Complimentary. '))
             ? $s->renewalPrice.($complimentary ? '' : '/yr') : null;
         // Under review is blue, as on the domain page: the check is ours.
-        return ['value' => $s->renewalOffShown()?'Off':'On', 'note' => $s->renewalInvoiceCancelled?DomainPage::INVOICE['cancelled']:($s->renewalInvoicePaid ? 'Next invoice: '.DomainPage::INVOICE['paid'].($s->renewalGoesAt ? '. '.RenewalRepeatWait::NOTHING.' '.RenewalRepeatWait::GOES : '') : ($s->renewalInvoiceReview ? 'Next invoice: '.DomainPage::INVOICE['review'] : $price)),
+        return ['value' => $s->renewalOffShown()?'Off':'On', 'note' => $s->renewalInvoiceCancelled?DomainPage::INVOICE['cancelled']:($s->renewalInvoicePaid ? DomainPage::PAID_LABEL.' '.strtolower(DomainPage::INVOICE['paid']).($s->renewalGoesAt ? '. '.RenewalRepeatWait::NOTHING.' '.RenewalRepeatWait::GOES : '') : ($s->renewalInvoiceReview ? 'Next invoice: '.DomainPage::INVOICE['review'] : $price)),
             'noteState' => $s->renewalInvoiceReview ? ['label' => DomainPage::INVOICE['review'], 'tone' => 'info'] : null,
             'at' => $s->renewalInvoicePaid ? $s->renewalGoesAt : null, 'invoiceMissing' => $s->renewalInvoiceMissing,
             'invoiceCause' => $s->renewalInvoiceMissing ? 'Not issued yet' : null, 'invoiceFix' => $s->renewalInvoiceMissing ? Missing::support($s->urls['support'] ?? null) : null];

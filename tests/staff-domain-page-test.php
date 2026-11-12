@@ -238,10 +238,10 @@ same([1,'Renewal invoices Off Stopped by staff',[]],$renewalRow(Livewire::acting
 DB::table('domains_domains')->where('id',$active->id)->update(['renewal_policy'=>encrypt(json_encode($policy),false)]);
 foreach(['Saved facts','Assignment generation','Observation drift','Follow-up','Data retention','Server #','Domain #','Account spending holds','Preview adoption','Scheduled reads'] as $old){$page->assertDontSee($old);}
 same([DomainResource::getUrl('index')=>'Domains','active.example.com'],$page->instance()->getBreadcrumbs(),'Breadcrumb names the domain');
-// One head line: no box on the page, and green can't sit over rows that need work.
+// One head line: no box on the page. The mark keeps its word's tone; the step says the rows need work.
 $page->assertDontSeeHtml('fi-callout');
 $missingHead=DomainFacts::head($active->fresh(),DomainFacts::status($active->fresh()),DomainFacts::for($active->fresh()));
-same(['warning','Some details are Missing. Each row says what to do.'],[$missingHead['tone'],$missingHead['step']],'Active over a Missing row turns amber and says where to look');
+same(['success','Some details are Missing. Each row says what to do.'],[$missingHead['tone'],$missingHead['step']],'Active over a Missing row stays green and says where to look');
 same(null,DomainFacts::notice($active->fresh()),'A healthy domain has no notice');
 $notice=DomainFacts::notice($held);
 same(['Transfer not sent: old registrar needs approval.','Check request #'.$held->operations()->sole()->id],[$notice['title'],$notice['action']['label']],'Held request notice');

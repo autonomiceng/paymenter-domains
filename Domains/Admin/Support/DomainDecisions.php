@@ -252,12 +252,13 @@ final class DomainDecisions
     public static function status(Domain $d, ?array $inputs=null): array
     {
         $inputs??=StaffDomainInputs::for([$d])[$d->id]; $op=$d->latestAcquisition;
+        // Staff read the same clock as the customer pages, so both agree on the expiry day.
         // Saved request data that can't be read must not break the list.
         // The customer reads an unpaid cancel as plain Cancelled. Staff still check the closed order until it is retired,
         // so staff drop the unpaid mark and skip its payment read.
         try { $order=OwnedDomains::order($d,$op,$inputs['invoice'],$inputs['closed'],[]); } catch (\Throwable) { $order=[]; }
         unset($order['unpaid']);
-        [$state,$reason]=OwnedDomains::orderStatus(DomainStates::managed($d,$op,gmdate('Y-m-d'),(bool)$inputs['off']),$d,$order);
+        [$state,$reason]=OwnedDomains::orderStatus(DomainStates::managed($d,$op,app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d'),(bool)$inputs['off']),$d,$order);
         $shared=['key'=>DomainStatus::key($state),...DomainStatus::for($state,$reason)];
         if ($inputs['late']) { return StaffDomainStatus::late($shared); }
         return StaffDomainStatus::for($shared,$state,$d,$op,$inputs['alerts'],$inputs['renewal'],$inputs['waiting'],$inputs['orders_off']??false,$inputs['accounts']??null,$inputs['release']??null);
@@ -366,11 +367,13 @@ final class DomainDecisions
         if ($account&&DemoData::syncPaused($d,$account)) { return 'paused'; }
         return !self::unconfirmedRegistration($d)&&($stopped??ObservationWork::stopped($d))?'failed':null;
     }
+    /** A value the last registrar read left out. The staff domain page says it once, above the sheet, when the read is late. */
+    public const NOT_RETURNED='Registrar did not return it. Check the domain at the registrar.';
     /** Why a value read from the registrar is Missing. */
     public static function unread(Domain $d, ?string $sync): string
     {
         return $d->adoptionPending()?Missing::fills('after import'):match($sync) {'paused'=>Missing::fills('when sync resumes'),'failed'=>'Sync stopped. '.self::stoppedStep($d),
-            default=>$d->last_synced_at?'Registrar did not return it. Check the domain at the registrar.':Missing::fills('within a day')};
+            default=>$d->last_synced_at?self::NOT_RETURNED:Missing::fills('within a day')};
     }
     /** One safe failure cause, or the stopped-read next step, and when the automatic retry runs. The page shows that time
      * after the words in the viewer's time zone, as every other time there (ViewDomain::below).
@@ -418,7 +421,7 @@ final class DomainDecisions
         $company=\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company();
         $value=null;
         if ($d->price_mode==='complimentary') {
-            $value='Standard renewal price '.$service->currency_code.' '.number_format((float)$service->price,2).' / year, complimentary';
+            $value='Standard renewal price '.($service->currency_code==='USD'?'$':$service->currency_code.' ').number_format((float)$service->price,2).' / year, complimentary';
         } elseif ($service->currency_code==='USD') {
             try {
                 $value=\Paymenter\Extensions\Servers\Domains\Services\Storefront::money(\Paymenter\Extensions\Servers\Domains\Services\HolderPricing::shown($d,$service,app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now())).' / year';

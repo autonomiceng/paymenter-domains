@@ -12,7 +12,7 @@ $summary=fn()=>(new DomainSummaries)->one($user,'managed',$d->id,$clock->now()->
 $detail=fn($s)=>DomainPage::nextInvoice($owners->present($d->fresh()),$s,null);
 $s=$summary();
 same('Paid',$detail($s)['value'],'Valid standard invoice is Paid on the detail page');
-same('Next invoice: Paid',DomainListRow::renewal($s)['note'],'Valid standard invoice is Paid on the list');
+same('Renewal invoice paid',DomainListRow::renewal($s)['note'],'Valid standard invoice is Paid on the list');
 // Paid, but the registrar has not confirmed the renewal: the detail says Under review, so the list must too (demo R18b).
 $state=$op->fresh()->state;$op->forceFill(['state'=>'uncertain'])->saveQuietly();
 $s=$summary();
@@ -20,11 +20,11 @@ same('Under review',$detail($s)['value'],'Detail keeps an unconfirmed paid renew
 same('Next invoice: Under review',DomainListRow::renewal($s)['note'],'List agrees with detail on an unconfirmed paid renewal');
 expect(!$s->renewalInvoicePaid && !$s->renewalInvoiceMissing,'Unconfirmed paid renewal is neither Paid nor not issued');
 $op->forceFill(['state'=>$state])->saveQuietly();
-same('Next invoice: Paid',DomainListRow::renewal($summary())['note'],'Restored renewal is Paid on the list again');
+same('Renewal invoice paid',DomainListRow::renewal($summary())['note'],'Restored renewal is Paid on the list again');
 // Turning off future invoices does not hide an already funded repeat wait.
 $policy=$d->renewal_policy;$d->update(['renewal_policy'=>[...$policy,'owner_auto_renew'=>false]]);
 $s=$summary();expect($s->renewalInvoicePaid,'Future invoices Off retains issued Paid state');
-same('Next invoice: Paid',DomainListRow::renewal($s)['note'],'Off still names the retained paid cycle');
+same('Renewal invoice paid',DomainListRow::renewal($s)['note'],'Off still names the retained paid cycle');
 same('Paid',$detail($s)['value'],'Detail keeps the same retained paid cycle');
 $d->update(['renewal_policy'=>$policy]);
 // A cancelled invoice needs the same full membership checks on list and detail.

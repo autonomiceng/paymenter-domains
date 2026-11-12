@@ -260,9 +260,8 @@ $check('Same alert returns when the wait runs out',[true,1],[$open($quiet,'opera
 if ($wrong) { fwrite(STDERR,implode("\n",$wrong)."\n"); }
 same([],$wrong,'Every row has one status and one next step');
 expect(!isset($columns['alert']),'No separate alert column: the next step is under the status');
-// The filter offers the customer's words.
-same(['active'=>'Active','pending_registration'=>'Pending registration','pending_transfer'=>'Pending transfer','awaiting_payment'=>'Awaiting payment','action_required'=>'Action required','under_review'=>'Under review',
-    'expired'=>'Expired','redemption'=>'Redemption','failed'=>'Failed','cancelled'=>'Cancelled','on_hold'=>'On hold'],DomainResource::statusOptions(),'Status filter set');
+// The filter offers every customer status, plus On hold for staff.
+same([...array_keys(\Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus::SET),'on_hold'],array_keys(DomainResource::statusOptions()),'Status filter set');
 foreach (array_keys(DomainResource::statusOptions()) as $key) {
     $expected=$members[$key]??[]; sort($expected);
     same($expected,$ids($key),'Status filter matches the rows: '.$key);

@@ -5,6 +5,8 @@
     $support = ($summary ?? null)?->urls['support'] ?? \Paymenter\Extensions\Servers\Domains\Presentation\Missing::supportUrl();
     $notice = \Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::notice($domain, $support, $summary ?? null);
     $pill = \Paymenter\Extensions\Servers\Domains\Presentation\StatusPill::owned($domain, $summary ?? null);
+    // The status reason is said once: the page notice already gives it, so the line under the status would repeat it.
+    if ($pill && $notice && filled($pill['reason'] ?? null) && str_contains(strtolower($notice['text']), strtolower(rtrim($pill['reason'], '.')))) { $pill['reason'] = null; }
     $settings = array_values(array_filter(['flags', 'lock', 'privacy', 'auth_code_email', 'contacts', 'nameservers', 'dns', 'srv', 'glue', 'ds'], fn ($cap) => ($cap !== 'privacy' || \Paymenter\Extensions\Servers\Domains\Presentation\PrivacyVisibility::SHOWN) && (isset($domain->management[$cap]) || ($cap === 'nameservers' && $domain->syncPaused))
         // Domain settings only says the settings were read. Once the read is full, the rows below show each one.
         && !($cap === 'flags' && ($domain->management['flags']['family']['state'] ?? null) === 'complete' && ($domain->management['flags']['family_only'] ?? false))));
@@ -25,7 +27,8 @@
 <section class="domains-panel" aria-labelledby="heading-settings"><div class="domains-panel__h"><h2 id="heading-settings" class="domains-h2">{{ ($recordFamilies ?? null) ? 'Registrar records' : 'Settings' }}</h2>
 {{-- When reads are stopped, the page notice already says we can't read this domain and are on it. --}}
 @php $readHeld = \Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::readHeldSaid($notice); @endphp
-@if (($recordFamilies ?? null) && $recordFamilies['stale'] && !($recordFamilies['initial_read_pending'] ?? false) && !$readHeld)<p class="domains-hint">Registrar records are waiting for an update.@if ($recordFamilies['retained']) Last confirmed data is retained.@endif</p>@endif
+@php $unreadRows = ($recordFamilies ?? null) && collect($recordFamilies['rows'] ?? [])->contains('state', 'unknown'); @endphp
+@if (($recordFamilies ?? null) && $recordFamilies['stale'] && !($recordFamilies['initial_read_pending'] ?? false) && !$readHeld && !$unreadRows)<p class="domains-hint">Registrar records are waiting for an update.@if ($recordFamilies['retained']) Last confirmed data is retained.@endif</p>@endif
 @if (($recordFamilies ?? null) && !$readHeld)@include('domains::partials.record-read-note', ['recordFamilies' => $recordFamilies])@endif
 @php $readAt = isset($recordFamilies) ? ($recordFamilies['at'] ?? null) : null; @endphp
 @if ($readAt)<p class="domains-hint">Checked @include('domains::partials.moment', ['at' => $readAt]).</p>@endif

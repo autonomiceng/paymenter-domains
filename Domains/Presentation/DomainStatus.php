@@ -10,7 +10,7 @@ final class DomainStatus
     /** key => [label, tone] */
     public const SET = [
         'active' => ['Active', 'success'], 'pending_registration' => ['Pending registration', 'info'], 'pending_transfer' => ['Pending transfer', 'info'],
-        'awaiting_payment' => ['Awaiting payment', 'info'], 'action_required' => ['Action required', 'warning'], 'under_review' => ['Under review', 'warning'], 'expired' => ['Expired', 'danger'],
+        'awaiting_payment' => ['Awaiting payment', 'info'], 'action_required' => ['Action required', 'warning'], 'under_review' => ['Under review', 'warning'], 'expires_today' => ['Expires today', 'warning'], 'expired' => ['Expired', 'danger'],
         'redemption' => ['Redemption', 'danger'], 'failed' => ['Failed', 'danger'], 'cancelled' => ['Cancelled', 'gray'],
     ];
     /** Shared support fallback for a managed domain past expiry. */
@@ -22,7 +22,7 @@ final class DomainStatus
     public const STOPPED = ['registration_held' => 'warning', 'registration_unconfirmed' => 'warning'];
     /** Internal state => [status key, default reason line]. Domain status column values, request states seen on a domain,
      * watch findings, and derived states: renewal_off_expiring (auto-renew off, expiry within 30 days),
-     * active_no_expiry (active without a confirmed expiry) and setup_required (held until the customer finishes setup). */
+     * active_no_expiry (active without a confirmed expiry), expires_today (DomainStatus::expiry) and setup_required (held until the customer finishes setup). */
     public const STATES = [
         'active' => ['active', null], 'registration_pending' => ['pending_registration', null], 'transfer_pending' => ['pending_transfer', null],
         'registration_held' => ['pending_registration', self::ON_IT], 'registration_unconfirmed' => ['pending_registration', self::ON_IT],
@@ -31,11 +31,15 @@ final class DomainStatus
         'setup_required' => ['action_required', 'Finish setup'], 'watch.not_registered' => ['action_required', 'Not registered'],
         'needs_review' => ['under_review', null], 'adoption_pending' => ['under_review', 'Import not confirmed'],
         'held' => ['under_review', null], 'uncertain' => ['under_review', null], 'active_no_expiry' => ['under_review', 'Expiry missing'],
-        'expired' => ['expired', self::LATE], 'grace' => ['expired', self::LATE], 'watch.expired' => ['expired', 'Renew at your registrar'],
+        'expires_today' => ['expires_today', null], 'expired' => ['expired', self::LATE], 'grace' => ['expired', self::LATE], 'watch.expired' => ['expired', 'Renew at your registrar'],
         'redemption' => ['redemption', self::LATE], 'watch.redemption' => ['redemption', 'Restore at your registrar'],
         'registration_rejected' => ['failed', 'Registration did not finish'], 'transfer_rejected' => ['failed', 'Transfer did not finish'],
         'cancelled' => ['cancelled', null],
     ];
+    /** The expiry-day rule, the same for customers and staff (UTC dates, Y-m-d): before the expiry date the domain is
+     * active, on the date it expires today, and after it it has expired. */
+    public static function expiry(string $expiry, string $today): string
+    { return $expiry < $today ? 'expired' : ($expiry === $today ? 'expires_today' : 'active'); }
     /** @return array{label:string,tone:string,reason:?string} */
     public static function for(?string $state, ?string $reason = null): array
     {

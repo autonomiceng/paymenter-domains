@@ -19,13 +19,12 @@ $assertFamily=static function(string $label,?int $queued=null,?string $cause=nul
  foreach($familyViews() as $surface=>$html){
   $dom=new DOMDocument;@$dom->loadHTML('<?xml encoding="utf-8" ?>'.$html);$xp=new DOMXPath($dom);
   $nodes=$xp->query('//span[@data-record-family="'.$kind.'"]');expect($nodes->length>0,$surface.' renders the '.$kind.' family');
-  // Customers see no mark for a complete read; the row says how many records it found.
-  $shown=$surface==='customer'&&$label==='Complete'?'':$label;
+  // Customers see no mark for a complete read; the row says how many records it found. An unread record is calm for
+  // customers: Not read yet, with one note above the rows.
+  $shown=$surface==='customer'&&$label==='Complete'?'':($surface==='customer'&&$label==='Missing'?\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::NOT_READ:$label);
   foreach($nodes as $node){same($shown,trim($node->textContent),$surface.' family label: expected '.$shown.', got '.trim($node->textContent));
-   if($shown!==$label){same(1,$xp->query('./following-sibling::span[contains(@class,"domains-row__v") and normalize-space(.)="0 records"]',$node->parentNode)->length,'Customer complete family shows its record count');}
-   $calm=$surface==='customer'&&str_contains($html,e(\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::READ_HELD));
-   same($label==='Missing'&&!$calm?1:0,$xp->query('.//svg',$node)->length,$surface.' warning icon only for Missing without a held-read page notice');
-   if($label==='Missing'&&$calm){same(1,$xp->query('.//span[contains(@class,"domains-missing--calm")]',$node)->length,'The held-read page notice leaves the customer family calm');}
+   if($label==='Complete'&&$shown!==$label){same(1,$xp->query('./following-sibling::span[contains(@class,"domains-row__v") and normalize-space(.)="0 records"]',$node->parentNode)->length,'Customer complete family shows its record count');}
+   same($label==='Missing'&&$surface==='staff'?1:0,$xp->query('.//svg',$node)->length,$surface.' warning icon only for staff Missing');
    $row=$node->parentNode;
    // ui-r15 R3: the queued read and the cause are said once above the rows, not on each row. Before the first read
    // customers see that we are checking with the registrar; staff see the queued time.
@@ -33,6 +32,7 @@ $assertFamily=static function(string $label,?int $queued=null,?string $cause=nul
    // Once the read stopped, the staff records head keeps the count, the cause in words and the time, said once.
    if($cause!==null&&$stopped&&$surface==='staff'){expect(substr_count($dom->textContent,'Stopped after 5 attempts. '.$cause)===1&&substr_count($dom->textContent,$cause)===1,'staff records head says the stopped count and cause once');}
    elseif($cause!==null&&$stopped&&$surface==='customer'){same(1,substr_count($dom->textContent,\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::READ_HELD),'The customer stopped-read notice is said once');expect(!str_contains($dom->textContent,$cause),'Customer notice does not repeat the staff failure cause');}
+   elseif($cause!==null&&$surface==='customer'){same(1,substr_count($dom->textContent,\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::NOT_READ_NOTE),'Customers get one plain not-read note');expect(!str_contains($dom->textContent,$cause),'Customer note does not repeat the read cause');}
    elseif($cause!==null){expect(str_contains($dom->textContent,$cause)&&!str_contains($row->textContent,$cause),$surface.' shows safe cause once, above the rows');}
   }
  }

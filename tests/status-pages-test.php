@@ -55,7 +55,8 @@ foreach ($cases as $case=>[$domain,$acquisition,$label,$reason]) {
     $native=app()->make(NativePresenter::class,['owned'=>$owners])->service($user,(int)$d->service_id);
     $seen=['list'=>$text($list,'domains-status',$row),'detail'=>$text($show,'domains-status',$header),'service card'=>$text($card,'domains-status'),'services page'=>[$native?->status]];
     foreach ($seen as $page=>$labels) { same([$label],$labels,'One status label on the '.$page.': '.$case); }
-    $reasons=['list'=>$text($list,'domains-pill-reason',$row),'detail'=>$text($show,'domains-pill-reason',$header),'service card'=>$text($card,'domains-pill-reason')];
+    // The detail page says its reason in the notice instead, so only the list and the service card carry it in the pill.
+    $reasons=['list'=>$text($list,'domains-pill-reason',$row),'service card'=>$text($card,'domains-pill-reason')];
     foreach ($reasons as $page=>$lines) { same($reason===null?[]:[$reason],$lines,'Same reason line on the '.$page.': '.$case); }
     // Tabs name the statuses present; the tab for this status keeps the row, any other tab drops it.
     // A stopped registration reads Pending registration, the same word as the tab that holds it (approved mock).
@@ -67,6 +68,13 @@ foreach ($cases as $case=>[$domain,$acquisition,$label,$reason]) {
     same(0,$controller->index($request(['status'=>$label==='Active'?'expired':'active']))->getData()['domains']->total(),'Other tabs drop the row: '.$case);
 }
 same(count($keys),count(array_unique($keys)),'Each tab has its own filter key');
+// One expiry-day rule for customers and staff: before the date Active, on it Expires today, after it Expired.
+foreach ([1=>'active',0=>'expires_today',-1=>'expired'] as $offset=>$want) {
+    DB::table('domains_domains')->where('id',$d->id)->update([...$base,'status'=>'active','provider_expires_at'=>$day($offset)]);
+    DB::table('domains_operations')->where('id',$op->id)->update(['action'=>'transfer','safe_code'=>null,'state'=>'succeeded']);
+    same(1,$controller->index($request(['status'=>$want]))->getData()['domains']->total(),'Customer list files the domain under '.$want.' at '.$offset.' days');
+    same($want,Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::status($d->fresh())['key'],'Staff read '.$want.' at '.$offset.' days');
+}
 // A real expired domain gets its next step, and never a link to the ticket page that answers 404 when tickets are off.
 DB::table('domains_domains')->where('id',$d->id)->update([...$base,'status'=>'expired','provider_expires_at'=>$day(-5)]);
 DB::table('domains_operations')->where('id',$op->id)->update(['action'=>'transfer','safe_code'=>null,'state'=>'succeeded']);

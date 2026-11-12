@@ -15,8 +15,11 @@
 @elseif ($family['state'] === 'unknown')
     @if (($family['read_checking'] ?? false) || (!$staff && ($family['initial_read_pending'] ?? false)))
         @include('domains::partials.status-pill', ['pill'=>['label'=>'Checking','tone'=>'info']])
+    @elseif (!$staff)
+        {{-- Customers can't fix an unread record: a calm word, and the note above the rows says why once. --}}
+        <span class="domains-muted">{{ \Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::NOT_READ }}</span>
     @else
-        @include('domains::partials.missing', ['cause'=>null, 'calm'=>!$staff && \Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::readHeldSaid($notice ?? null)])
+        @include('domains::partials.missing', ['cause'=>null])
     @endif
 @else
     @include('domains::partials.status-pill', ['pill'=>['label'=>$family['value'],'tone'=>match($family['state']){'complete'=>'ok','partial'=>$staff?'warn':'info',default=>'muted'}]])
