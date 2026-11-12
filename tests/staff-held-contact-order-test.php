@@ -111,7 +111,9 @@ foreach([
 ] as $code=>[$owner,$destination]){
     $row=clone $op;$row->safe_code=$code;
     $notice=RequestFacts::notice($row);
-    expect(str_contains((string)$notice['body'],$owner),'The page names who fixes '.$code);
+    if($code==='registrar_price_missing'){
+        expect(str_contains($notice['title'],'It will retry automatically'),'A pending price check needs the system rather than a staff retry');
+    }else{expect(str_contains((string)$notice['body'],$owner),'The page names who fixes '.$code);}
     same($destination,$notice['link'],'The page leads to the repair for '.$code);
     if(in_array($code,['registry_details_unsupported','future_hold'],true)){
         expect(str_contains((string)$notice['body'],'releasing this hold cannot resolve its cause'),'Permanent and unknown holds explain why release cannot help');
