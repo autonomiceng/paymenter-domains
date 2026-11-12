@@ -403,8 +403,4 @@ expect(DomainQueries::alerting(Domain::whereKey($d->id))->exists(),'A visible st
 $domainColumn=Livewire::actingAs($viewer)->test(ListDomains::class)->instance()->getTable()->getColumn('domain')->record($d);
 $phone=(string)$domainColumn->getDescriptionBelow();
 expect(str_contains($phone,'domains-phone-note')&&str_contains($phone,'On hold')&&str_contains($phone,'Check request'),'Phone summary keeps both Status and Note under the domain');
-if($out=getenv('BECO_OPERATOR_OUT')){
-    if(!is_dir($out)){mkdir($out,0775,true);}
-    file_put_contents($out.'/domains.html',Livewire::actingAs($viewer)->test(ListDomains::class)->html());
-}
 $nativeSuccessful=true; echo "Staff domain status: customer words and one next step per row.\n";
