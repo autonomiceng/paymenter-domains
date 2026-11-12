@@ -73,13 +73,20 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
                 $current=function()use($work,$claim,$clock,&$lost):void {
                     if (!HoldingObservationWork::ownsManual($work,$claim,$clock->now())) { $lost=true; throw new ReadDeferred('Manual read lease lost.'); }
                 };
+                $before=self::recordFacts($d);
                 $result=$observer->run($this->domain,$this->generation,$this->fingerprint,readRecords:true,current:$current);
                 if ($result==='records_disabled') { $this->notice('Records not read','Record checks are paused or not set up for this registrar account. Ask your site admin to check Processing and record-read setup, then press Sync now again.'); return; }
                 $failed=ObservationRecords::held($d->refresh())||in_array($result,ReadFailure::CODES,true)||$result==='read_deferred';
                 if(!$failed&&$result==='refreshed'){HoldingReadRetry::completedManually($d,claim:$claim);}
                 if ($result==='domain_not_in_account') { HoldingReadRetry::completedManually($d,$result,$claim); $this->notice("Couldn't read all records",'Domain is not in the registrar account. Check the assigned account or complete the transfer there, then use Sync now.'); return; }
                 if (!$failed&&$result!=='refreshed') { $this->notice('Sync needs a check','The registrar read finished, but its facts differ from the saved domain. Check the domain and its open request.'); return; }
-                $this->notice($failed?"Couldn't read all records":'Domain synced',$failed?(ObservationRecords::limitNotice($d)??'Open the domain and check the sync notice, then try Sync now again.'):'The saved records are up to date.');
+                if ($failed) { $this->notice("Couldn't read all records",ObservationRecords::limitNotice($d)??'Open the domain and check the sync notice, then try Sync now again.'); }
+                else {
+                    $after=self::recordFacts($d);
+                    $changed=(bool)array_filter(array_keys($before),fn($key)=>array_key_exists($key,$after)&&$before[$key]!==$after[$key]);
+                    $this->notice('Domain synced','The saved records are up to date.',bell:false);
+                    if ($changed) { $this->bell('Domain records changed','The saved registrar records changed. Open the domain to review them.'); }
+                }
             } catch (\Throwable) {
                 // After its lease expires, the scheduler may claim the work, so this read must not save its result.
                 if ($lost) { $this->notice('Sync stopped','The registrar read ran past its time limit. Press Sync now again.'); return; }
@@ -109,10 +116,32 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
         try { $this->recordHistory($event); }
         catch (\Throwable $error) { report($error); }
     }
-    private function notice(string $title,string $body): void
+    /** Compare confirmed values only. Read times, history and newly confirmed families do not need a bell notice. */
+    private static function recordFacts(Domain $d): array
+    {
+        $record=ObservationRecords::current($d); $facts=[];
+        foreach (['families'=>'records','settings'=>'facts'] as $group=>$field) {
+            foreach ($record[$group]??[] as $kind=>$family) {
+                if (($family['state']??null)==='complete') { $facts[$group.'.'.$kind]=self::ordered($family[$field]??[]); }
+            }
+        }
+        return $facts;
+    }
+    private static function ordered(array $values): array
+    {
+        $list=array_is_list($values);
+        foreach ($values as &$value) { if (is_array($value)) { $value=self::ordered($value); } } unset($value);
+        if ($list) { usort($values,fn($a,$b)=>serialize($a)<=>serialize($b)); } else { ksort($values); }
+        return $values;
+    }
+    private function notice(string $title,string $body,bool $bell=true): void
     {
         Cache::put($this->uniqueId().':result',compact('title','body'),self::UNIQUE_FOR);
         $this->tryHistory($title);
+        if ($bell) { $this->bell($title,$body); }
+    }
+    private function bell(string $title,string $body): void
+    {
         if (!Staff::allows(User::find($this->actor))) { return; }
         $route='filament.admin.resources.domains.view';
         // Several syncs can finish in a row, so each bell item names its domain. The page compares the cached title, so the title stays as is.

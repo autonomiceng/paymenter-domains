@@ -47,8 +47,7 @@ foreach($work as $transaction){
 }
 same(0,DB::table('jobs')->count(),'Worker consumes the job');
 same(0,DB::table('failed_jobs')->count(),'No failed queue job');
-same('Domain synced',App\Models\Notification::where('user_id',$actor->id)->latest('id')->value('title'),'Worker completes a registrar read');
-same($d->domain.': The saved records are up to date.',App\Models\Notification::where('user_id',$actor->id)->latest('id')->value('body'),'The bell item names the synced domain');
+same(0,App\Models\Notification::where('user_id',$actor->id)->count(),'A first successful read only confirms records and stays out of the bell');
 same($clock->now()->format(DATE_ATOM),$d->fresh()->last_synced_at->format(DATE_ATOM),'Worker advances saved domain facts');
 $page->call('pollManagement')->assertSee('0 records')->assertDontSee('Not read yet')->assertSee('Domain synced');
 expect(str_contains($queuedHtml,'wire:poll.2s.keep-alive="pollManagement"'),'An open staff page must poll while its sync is queued');
@@ -76,6 +75,23 @@ foreach ($saved['sync_history'] as &$entry) { unset($entry['actor_name']); } uns
 $d->update(['observation'=>$saved]);
 $legacy=array_values(array_filter(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::entries($d->fresh()),fn($entry)=>is_array($entry)&&in_array($entry['event']??null,['Sync requested','Domain synced'],true)));
 same(['Updated Operator','Updated Operator'],array_column($legacy,'by'),'Existing sync history identifies staff from its saved ID');
+// The same facts with a new read time are quiet; changed records deserve one staff notice.
+$sync=static function()use($actor,$d,$clock):void {
+    $clock->instant=$clock->now()->modify('+61 seconds');
+    same(true,SyncDomainRecords::enqueue($actor->id,$d->fresh()),'Another explicit sync queues');
+    Artisan::call('queue:work',['--stop-when-empty'=>true,'--sleep'=>0,'--tries'=>1]);
+};
+$sync();
+same(0,App\Models\Notification::where('user_id',$actor->id)->count(),'An unchanged successful sync creates no bell notice');
+$state->dns=[['name'=>'@','type'=>'A','address'=>'192.0.2.10','mx_pref'=>10],['name'=>'www','type'=>'A','address'=>'192.0.2.11','mx_pref'=>10]];
+$sync();
+same(1,App\Models\Notification::where('user_id',$actor->id)->count(),'Changed registrar records create one bell notice');
+same('Domain records changed',App\Models\Notification::where('user_id',$actor->id)->latest('id')->value('title'),'Change notice says what changed');
+expect(str_starts_with(App\Models\Notification::where('user_id',$actor->id)->latest('id')->value('body'),$d->domain.': '),'Change notice identifies its domain');
+$state->dns=array_reverse($state->dns);$sync();
+same(1,App\Models\Notification::where('user_id',$actor->id)->count(),'Record ordering alone is not a change');
+$state->dns=[];$sync();
+same(2,App\Models\Notification::where('user_id',$actor->id)->count(),'Removing saved records creates a change notice');
 // A pre-read failure used to disappear into the notification inbox, leaving old facts with no page explanation.
 $last=$d->fresh()->last_synced_at->format(DATE_ATOM);
 DB::table('extensions')->where('id',$d->server_id)->update(['enabled'=>false]);

@@ -39,6 +39,8 @@ class OperationResource extends Resource
         if (!Staff::can()) { return null; }
         return NavigationCount::read('requests',fn()=>OperationQueries::status(static::getEloquentQuery(),self::NEEDS_STAFF)->count());
     }
+    public static function getNavigationBadgeUrl(): string { return static::getUrl('index',['filters'=>['status'=>['values'=>self::NEEDS_STAFF]]]); }
+    public static function getNavigationBadgeTooltip(): ?string { return 'Registrar requests on hold or under review'; }
     public static function getNavigationBadgeColor(): string { return 'warning'; }
     public static function table(Table $table): Table
     {

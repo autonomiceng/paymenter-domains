@@ -47,6 +47,7 @@ class DomainResource extends Resource
         if (!Staff::can()) { return null; }
         return NavigationCount::read('domains',fn()=>DomainQueries::openAlertCount(Domain::query()));
     }
+    public static function getNavigationBadgeUrl(): string { return static::getUrl('index',['filters'=>['alerts'=>['isActive'=>true]]]); }
     public static function getNavigationBadgeTooltip(): ?string { return 'Domains with open alerts across all registrar accounts'; }
     public static function getNavigationBadgeColor(): string { return 'warning'; }
     public static function table(Table $table): Table
@@ -95,7 +96,7 @@ class DomainResource extends Resource
                         ->whereDate('provider_expires_at','<=',CarbonImmutable::today()->addDays($days)) : $query;
                 }),
             // The account page's Domain alerts row links here with this filter and the account.
-            Filter::make('alerts')->label('Open alerts')->toggle()
+            Filter::make('alerts')->label('Needs attention')->toggle()
                 ->query(fn(Builder $query)=>DomainQueries::alerting($query)),
         ])->recordUrl(fn(Domain $record)=>static::getUrl('view',['record'=>$record]))
             ->defaultSort('domain')->paginated([25,50,100])->defaultPaginationPageOption(25)->searchPlaceholder('Search domain or customer');
