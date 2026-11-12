@@ -194,6 +194,7 @@ final class RequestFacts
     {
         $now=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp();
         try{return \Paymenter\Extensions\Servers\Domains\Services\TransferPolling::expected($op)
+            &&($op->policy['reconciliation']['transfer_status']??null)==='pending'
             &&($op->policy['reconciliation']['staff_alert']??true)===false
             &&!\Paymenter\Extensions\Servers\Domains\Services\TransferPolling::expired($op,$now);
         }catch(\Throwable){return false;}
