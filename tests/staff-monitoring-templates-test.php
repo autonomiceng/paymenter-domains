@@ -17,7 +17,7 @@ $ns=$templates->instance()->getTable()->getColumn('nameservers');same([true,2],[
 same(['No DNS templates','Add one with Add DNS template.'],[$templates->instance()->getTable()->getEmptyStateHeading(),$templates->instance()->getTable()->getEmptyStateDescription()],'No templates says how to add one');
 same('DNS templates',$templates->instance()->getTitle(),'Templates title');
 // the card owns the default, rather than the subheading.
-$templates->assertSee('Default nameservers')->assertSee('Use another template');same('Add DNS template',$templates->instance()->getAction('save')->getLabel(),'Add template');
+$templates->assertSee('Default nameservers')->assertActionHidden('siteDefault');same('Add DNS template',$templates->instance()->getAction('save')->getLabel(),'Add template');
 foreach(['name'=>'Template','nameservers'=>'Nameservers','enabled'=>'Status'] as $name=>$label){same($label,$column($templates,$name)->getLabel(),'Template column '.$name);}
 same(null,$column($templates,'revision'),'No revision column');same('On',$column($templates,'enabled')->record($profile)->getState(),'Status On');same(null,$column($templates,'used_by'),'No Used by column');
 // The list retains status marks; the detail page has a reversible monitoring switch.

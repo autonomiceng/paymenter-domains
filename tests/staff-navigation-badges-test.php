@@ -26,15 +26,16 @@ same('2',OperationResource::getNavigationBadge(),'Changed requests wait for the 
 $advance();
 same(null,OperationResource::getNavigationBadge(),'Nothing to act on: no count');
 
-// Domains: domains with an open alert, the list's Open alerts filter. Two alerts on one domain count it once.
+// The retained cancelled order on $long still needs staff without an alert row.
+// Two alerts on $done add one domain to that existing attention count.
 ObligationAlerts::record($done,'unknown_expiry',time());ObligationAlerts::record($done,'missing_obligation',time());
 $advance();
-same('1',DomainResource::getNavigationBadge(),'One domain with open alerts');
+same('2',DomainResource::getNavigationBadge(),'The alerted domain and the cancelled order each need staff');
 same(null,OperationResource::getNavigationBadge(),'Quiet requests are cached too');
 DB::table('domains_obligation_alerts')->where('domain_id',$done->id)->update(['resolved_at'=>time()]);
-same('1',DomainResource::getNavigationBadge(),'Resolved alerts wait for the minute cache');
+same('2',DomainResource::getNavigationBadge(),'Resolved alerts wait for the minute cache');
 $advance();
-same(null,DomainResource::getNavigationBadge(),'Resolved alerts leave the count');
+same('1',DomainResource::getNavigationBadge(),'Resolved alerts leave the cancelled order in the count');
 
 // Install keys do not reuse another site's warm count.
 $op($held)->update(['authority_generation'=>1]);
