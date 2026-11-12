@@ -303,8 +303,10 @@ echo "Native staff actions: permissions, confirmations, reasons, audit, stale/re
 
 $entry=['action'=>'recheck','phase'=>'read_finished','at'=>$clock->now()->format(DATE_ATOM),'actor_name'=>'Synthetic staff','check'=>['outcome'=>'awaiting_answer','registrar'=>'Enom','answer_after'=>0,'facts'=>['owned'=>false]]];
 $repeat=[...$entry,'at'=>$clock->now()->modify('+1 minute')->format(DATE_ATOM)];
-$changed=[...$repeat,'check'=>[...$repeat['check'],'facts'=>['owned'=>true]]];
+$changed=[...$repeat,'at'=>$clock->now()->modify('+2 minutes')->format(DATE_ATOM),'check'=>[...$repeat['check'],'facts'=>['owned'=>true]]];
 $history=new Paymenter\Extensions\Servers\Domains\Models\Operation(['policy'=>['staff_actions'=>[$entry,$repeat,$changed]]]);
-same(2,count(Paymenter\Extensions\Servers\Domains\Admin\Support\StaffReviewHistory::rows($history)),'History shows an unchanged answer once, but keeps a changed ownership answer');
-same(3,count($history->policy['staff_actions']),'The complete status-check audit remains retained');
+$times=array_map(static fn($entry)=>(new DateTimeImmutable($entry['at']))->setTimezone(new DateTimeZone('UTC'))->format('M j, Y H:i').' UTC',[$entry,$changed]);
+$rows=Paymenter\Extensions\Servers\Domains\Admin\Support\StaffReviewHistory::rows($history);
+same($times,array_column($rows,'time'),'History retains the original and changed ownership answers in recorded order');
+same([$entry,$repeat,$changed],$history->policy['staff_actions'],'The complete status-check audit remains unchanged');
 $nativeSuccessful=true;
