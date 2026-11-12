@@ -247,7 +247,6 @@ def main(scenario):
             phase(name)
         if scenario == 'held':
             phase('held')
-            phase('activation')
             for group in ('balance', 'rotation', 'runtime'):
                 phase('identity-group-'+group)
             phase('catalogue')

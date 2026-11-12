@@ -25,6 +25,14 @@ foreach($renewalCases as $case){
     $worker->operation($original->id);Cache::flush();$worker->operation($original->id);
     same('succeeded',$original->fresh()->state,'Renewal starts with proven original holding');$holders[$case]=$original->domain()->firstOrFail();unset($GLOBALS['testRegisteredName']);
 }
+// The original registration setup left sealed pending work, keeping read-only
+// recovery composed when the confirmation case disables every write permission.
+if($renewalGroup==='confirmation'){
+    $clock->at=$clock->at->modify('+61 seconds');Cache::flush();
+    $recoverySeed=$new(placeholderComFixtureName('renewal-recovery-route-placeholder.com'));
+    $worker->operation($recoverySeed->id);
+    same('pending',$recoverySeed->fresh()->state,'Real sealed work retains the read-only recovery route');
+}
 $money=static fn()=>array_map(static fn($table)=>DB::table($table)->orderBy('id')->get()->map(static fn($row)=>(array)$row)->all(),['invoices','invoice_items','invoice_transactions','credits']);
 $make=static function($domain)use($clock,$bindings,$user,$server,$staff,$binding):Operation {
     $clock->at=new DateTimeImmutable('2027-09-27T12:00:00Z');Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());Cache::flush();

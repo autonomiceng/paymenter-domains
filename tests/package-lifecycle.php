@@ -191,13 +191,6 @@ if($phase==='bridge-seed'){
     same(7,DB::table(Paymenter\Extensions\Servers\Domains\Services\EnomTestSendLimitSchema::SENDS)->where('account',Paymenter\Extensions\Servers\Domains\Services\EnomTestSendLimit::account('counter-race-uid'))->count(),'TEST send attempts remain retained across process restart and reinstall');
 }elseif($phase==='held'){
     require __DIR__.'/Support/registration-held.php';
-    file_put_contents($receipt.'.held',json_encode(['staff'=>$staff->id,'user'=>$user->id,'server'=>$server->id,'holding'=>$holding->id,'operation'=>$op->id],JSON_THROW_ON_ERROR));
-}elseif($phase==='activation'){
-    require __DIR__.'/Support/commerce.php';require __DIR__.'/Support/native-commerce.php';require __DIR__.'/Support/staff-panel.php';
-    $held=json_decode(file_get_contents($receipt.'.held'),true,512,JSON_THROW_ON_ERROR);
-    $staff=App\Models\User::findOrFail($held['staff']);$user=App\Models\User::findOrFail($held['user']);
-    $server=App\Models\Server::findOrFail($held['server']);$holding=Domain::findOrFail($held['holding']);$op=Operation::findOrFail($held['operation']);
-    $account=Account::where('server_id',$server->id)->sole();$binding=AccountBindings::binding($account);
     require __DIR__.'/Support/runtime-activation.php';
 }elseif($phase==='namesilo-enrollment'){
     require __DIR__.'/Support/namesilo-enrollment-wire.php';

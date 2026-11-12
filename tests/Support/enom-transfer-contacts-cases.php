@@ -28,5 +28,5 @@ foreach(['bad_history','bad_deferrals','unknown_key','wrong_terminal','wrong_sen
 Auth::setUser($user);$forms=count($GLOBALS['enomWire']['forms']);$dto=app(OwnedDomains::class)->present($restart->domain->fresh());same($forms,count($GLOBALS['enomWire']['forms']),'Owner page silence');expect(!str_contains(json_encode($dto),$secret)&&!str_contains(json_encode($restart->fresh()),$secret),'Owner and model serialization redact code');
 file_put_contents($receipt.'.transfer',json_encode(['operation'=>$restart->id,'bill'=>$restartBill,'credits'=>DB::table('credits')->count()],JSON_THROW_ON_ERROR));$nativeSuccessful=true;echo "Installed TEST paid transfer, code timing, cap, unique-charge completion, uncertainty and timeout passed.\n";
 
-file_put_contents($receipt.'.transfer-fixture',json_encode(['staff'=>$staff->id,'user'=>$user->id,'server'=>$server->id,'tld'=>$tld->id],JSON_THROW_ON_ERROR));
+file_put_contents($receipt.'.transfer-fixture',json_encode(['staff'=>$staff->id,'user'=>$user->id,'server'=>$server->id,'tld'=>$tld->id,'at'=>$clock->now()->format(DATE_ATOM)],JSON_THROW_ON_ERROR));
 $nativeSuccessful=true;

@@ -14,7 +14,7 @@ use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerActionController;
 use function Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire;
 $nativeSuccessful=false;expect(app()->bound(\Paymenter\Extensions\Servers\Domains\Services\TransferPrecheck::class),'Deployment composes transfer precheck before native cart boot');config(['domains.enom_writes.registration'=>false,'domains.enom_test_sends_per_day'=>1000,'domains.enom_test_sends_per_minute'=>100000]);
-$clock->at=new DateTimeImmutable('2026-10-22T00:10:00Z');Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
+$clock->at=new DateTimeImmutable($resumeTransfer['at']??'2026-10-22T00:10:00Z');Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
 if($transferGroup==='arrival'){
 foreach([false,'true',1,null] as $off){config(['domains.enom_writes.transfer'=>$off]);expect(!TransferPolicy::enabled($binding),'Strict transfer opt-in');}
 config(['domains.enom_writes.transfer'=>true]);foreach(['live','',null] as $env){config(['domains.enom_identity.environment'=>$env]);expect(!TransferPolicy::enabled($binding),'TEST transfer refuses live/unset');}

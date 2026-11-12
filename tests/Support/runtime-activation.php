@@ -31,7 +31,7 @@ same(0,RuntimeCandidates::billing(Domain::query())->count(),'Display holdings ex
 $before=[Invoice::count(),InvoiceItem::count(),Credit::sum('amount'),Operation::orderBy('id')->get()->map->getRawOriginal()->all()];
 $worker->tick();$worker->service(9001);$clock->at=$clock->at->modify('+1 minute');$worker->tick();
 same($before,[Invoice::count(),InvoiceItem::count(),Credit::sum('amount'),Operation::orderBy('id')->get()->map->getRawOriginal()->all()],'Display fixtures cannot invoice, credit, or mutate attempts');
-same([],array_values(array_filter($logs,fn($e)=>$e['level']==='warning'&&$e['message']==='Domains runtime work failed.')),'Display rows produce no runtime producer warnings: '.json_encode($logs));
+same([],array_values(array_filter($logs,fn($e)=>$e['level']==='warning'&&$e['message']==='Domains runtime work failed.')),'Display rows produce no runtime producer warnings');
 expect(!in_array($op->id,array_merge(...array_values(ObservationCandidates::next('timeout'))),true),'Offline transfer never reaches timeout guards');
 DB::table('domains_operations')->where('id',$op->id)->update(['funding_basis'=>'paid_invoice']);
 same(RuntimeReason::NoInvoiceAuthority,RuntimeCandidates::billingReason($holding->fresh()),'Billing without native invoice reason');
