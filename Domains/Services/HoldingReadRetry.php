@@ -23,18 +23,38 @@ final class HoldingReadRetry
     public static function scheduled(Domain $d, string $code, int $tries): string
     { return $code==='domain_not_in_account'&&in_array($d->status,['registration_pending','transfer_pending'],true)&&$tries<self::LIMIT?'read_failed':$code; }
     public static function delay(int $tries): int { return min(3600,60*(2**min(6,max(0,$tries-1)))); }
-    /** A successful staff retry restores idle current read work or its own manual lease, never another live lease or financial job. */
+    /** Partial supported reads can recover; known unsupported data and identity/configuration failures need review. */
+    public static function retryableHold(Domain $d): bool
+    {
+        if(!ObservationRecords::held($d)){return false;}
+        $hold=$d->observation['record_hold'];
+        return in_array($hold['reason']??null,['records_unavailable','glue_unavailable'],true)
+            && in_array($hold['code']??null,[null,'read_failed','read_deadline','read_exception','read_no_evidence'],true);
+    }
+    /** A core success can still contain a partial family; use the same retry policy for scheduled and manual reads. */
+    public static function result(Domain $d,string $code): string
+    {
+        if($code!=='refreshed'||!ObservationRecords::held($d)){return $code;}
+        if(self::retryableHold($d)){return 'read_failed';}
+        $held=$d->observation['record_hold'];
+        return in_array($held['code']??null,ReadFailure::CODES,true)?$held['code']:'records_incomplete';
+    }
+    /** Staff completion updates only idle current work or its own manual lease, never another live lease or financial job. */
     public static function completedManually(Domain $seed, string $code='refreshed', ?string $claim=null): void
     {
         if(!in_array($code,['refreshed','domain_not_in_account'],true)){throw new \InvalidArgumentException('Invalid manual read result.');}
         if(!\Illuminate\Support\Facades\Schema::hasTable('domains_observation_work')){return;}
         \Illuminate\Support\Facades\DB::transaction(function()use($seed,$code,$claim):void {
             $locked=HoldingLocks::take($seed);$d=$locked['domain'];
-            if(ObservationRecords::identity($seed)!==ObservationRecords::identity($d)||($code==='refreshed'&&ObservationRecords::held($d))){return;}
+            if(ObservationRecords::identity($seed)!==ObservationRecords::identity($d)){return;}
             if($code==='domain_not_in_account'&&(($d->observation['record_failure']['identity']??null)!==ObservationRecords::identity($d)||($d->observation['record_failure']['code']??null)!==$code)){return;}
             $now=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp();
-            HoldingObservationWork::current($d)->where(fn($q)=>$q->where('lease_until','<=',$now)->when($claim!==null&&$claim!=='',fn($q)=>$q->orWhere('claim',$claim)))
-                ->update(['tries'=>0,'claim'=>null,'lease_until'=>0,'safe_code'=>$code,'due_at'=>$now+($code==='refreshed'&&($d->observation['followup']['state']??null)==='pending'?300:86400)]);
+            $q=HoldingObservationWork::current($d)->where(fn($q)=>$q->where('lease_until','<=',$now)->when($claim!==null&&$claim!=='',fn($q)=>$q->orWhere('claim',$claim)));
+            $job=(clone $q)->lockForUpdate()->first();if(!$job){return;}
+            $result=self::result($d,$code);$partial=$code==='refreshed'&&$result!==$code;
+            $tries=$partial?(int)$job->tries+1:0;
+            $q->update(['tries'=>$tries,'claim'=>null,'lease_until'=>0,'safe_code'=>$result,
+                'due_at'=>$now+($partial?self::delay($tries):($code==='refreshed'&&($d->observation['followup']['state']??null)==='pending'?300:86400))]);
         });
     }
     /** This identity's confirmed not-found read, unless a later read of the same identity proved ownership. Other read failures are never absence. */

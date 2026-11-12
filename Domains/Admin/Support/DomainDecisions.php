@@ -313,11 +313,20 @@ final class DomainDecisions
     {
         Staff::requireView();
         try {
+            $retryable=\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::retryableHold($d);
+            if($retryable&&\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::pending($d)){return null;}
             if (!ObservationRecords::stopped($d)) {
+                if($retryable){return null;}
                 if (!ObservationRecords::held($d)||($next=HoldingObservationWork::nextRead($d))===null) { return null; }
                 return ['text'=>ucfirst(self::familyName($d->observation['record_hold']['family']??null)??'DNS records').' held '.self::untilRead($next).'.','stopped'=>false];
             }
             if (!ObservationRecords::held($d)) { return ['text'=>self::readCause($d),'stopped'=>true]; }
+            $read=\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($d);
+            if($retryable&&$read['read_attempts']>=\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::LIMIT){
+                $family=self::familyName($d->observation['record_hold']['family']??null)??'DNS records';
+                $action=self::syncNow($d)?'use Sync now to try again':'ask staff who can sync this domain';
+                return ['text'=>"Couldn't read ".$family.' after '.$read['read_attempts'].' attempts; '.$action.'.','stopped'=>true];
+            }
             return ['text'=>ObservationRecords::limitNotice($d)??match($d->observation['record_hold']['reason']??null) {
                 'ownership_drift'=>'Sync stopped: domain is not in the registrar account.',
                 'glue_unavailable'=>"Couldn't read glue records. Other domain facts were saved. Use Sync now to try again.",

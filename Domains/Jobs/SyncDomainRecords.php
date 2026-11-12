@@ -38,7 +38,10 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
     public static function result(Domain $d): ?array
     {
         $job=new self(0,(int)$d->id,$d->authority_generation,$d->account_fingerprint);
-        return Cache::get($job->uniqueId().':result');
+        $result=Cache::get($job->uniqueId().':result');
+        // A later automatic read supersedes the manual partial result.
+        if(($result['title']??null)==='Sync retry scheduled'&&!ObservationRecords::held($d)){Cache::forget($job->uniqueId().':result');return null;}
+        return $result;
     }
     public static function enqueue(int $actor,Domain $d): bool
     {
@@ -77,7 +80,11 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
                 $result=$observer->run($this->domain,$this->generation,$this->fingerprint,readRecords:true,current:$current);
                 if ($result==='records_disabled') { $this->notice('Records not read','Record checks are paused or not set up for this registrar account. Ask your site admin to check Processing and record-read setup, then press Sync now again.'); return; }
                 $failed=ObservationRecords::held($d->refresh())||in_array($result,ReadFailure::CODES,true)||$result==='read_deferred';
-                if(!$failed&&$result==='refreshed'){HoldingReadRetry::completedManually($d,claim:$claim);}
+                if($result==='refreshed'){HoldingReadRetry::completedManually($d,claim:$claim);}
+                $retry=HoldingReadRetry::status($d);
+                if($failed&&HoldingReadRetry::retryableHold($d)&&!$retry['read_stopped']&&$retry['next_read']!==null){
+                    $this->notice('Sync retry scheduled','Some settings could not be read; sync will retry automatically.');return;
+                }
                 if ($result==='domain_not_in_account') { HoldingReadRetry::completedManually($d,$result,$claim); $this->notice("Couldn't read all records",'Domain is not in the registrar account. Check the assigned account or complete the transfer there, then use Sync now.'); return; }
                 if (!$failed&&$result!=='refreshed') { $this->notice('Sync needs a check','The registrar read finished, but its facts differ from the saved domain. Check the domain and its open request.'); return; }
                 if ($failed) { $this->notice("Couldn't read all records",ObservationRecords::limitNotice($d)??'Open the domain and check the sync notice, then try Sync now again.'); }
