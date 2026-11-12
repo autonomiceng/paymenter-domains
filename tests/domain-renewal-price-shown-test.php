@@ -12,6 +12,7 @@ $user=$d->service->user;
 $renewNow=Storefront::money($ownerBilling->renewalChoices($d->fresh())['next_annual']);
 // The service keeps the price from when the domain was last billed; prices changed since.
 DB::table('services')->where('id',$d->service_id)->update(['price'=>'10.99']);
+$saved=DB::table('services')->where('id',$d->service_id)->value('price');
 expect($renewNow!=='$10.99','Fixture: the current renewal price differs from the saved one');
 same($renewNow,$owners->present($d->fresh())->renewalPrice,'The domain page shows the Renew now price');
 same($renewNow,(new DomainSummaries)->one($user,'managed',(int)$d->id,$clock->now()->getTimestamp())->renewalPrice,'The domain summary shows the Renew now price');
@@ -19,7 +20,7 @@ same($renewNow,(new DomainSummaries)->listed($user,$clock->now()->getTimestamp()
 staffPanel();Illuminate\Support\Facades\Auth::setUser($staff);
 $staffPrice=\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::for($d->fresh())['Renewal price'];
 same($renewNow.' / year',$staffPrice['value'],'Staff quote the same next renewal price as the customer');
-same('10.99',$d->service->fresh()->price,'Reading renewal prices leaves the purchase price unchanged');
+same($saved,$d->service->fresh()->price,'Reading renewal prices leaves the purchase price unchanged');
 $holder=app(\Paymenter\Extensions\Servers\Domains\Services\HolderPricing::class);
 app()->bind(\Paymenter\Extensions\Servers\Domains\Services\HolderPricing::class,static fn()=>throw new DomainException('Synthetic missing quote'));
 try{
