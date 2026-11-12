@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom;
 
-use Paymenter\Extensions\Servers\Domains\Data\{Action, AttemptEvidence, DateEvidence, Environment, Money, OrderEvidence, PersistedExecution, CanonicalName, HistoryAcceptance, ExpiryPrecision};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AttemptEvidence, DateEvidence, Environment, Money, OrderEvidence, PersistedExecution, CanonicalName, HistoryAcceptance, ExpiryPrecision, Query};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ProtocolResult;
 
 /** Single exact item only. A quote, acknowledgement or order ID alone never proves a charge. */
@@ -17,11 +17,30 @@ final class OrderCharge
     /** Discovery candidates need a complete accepted history contract at the engine, never fabricated execution. */
     public static function candidate(AttemptEvidence $attempt, ProtocolResult $order): ?OrderEvidence
     {
-        $query = $attempt->query; $header = $order->value('order');
+        $id = $order->value('order.orderid');
+        if ($attempt->providerReference !== null && $id !== $attempt->providerReference) { return null; }
+        return self::normalize($attempt->binding, $attempt->query, $order,
+            $attempt->executionFacts !== null && $attempt->providerReference !== null && $id === $attempt->providerReference);
+    }
+    /** Validate an observed order on its own facts before comparing it with a lost attempt. */
+    public static function fromHistory(AccountBinding $binding, ProtocolResult $order): ?OrderEvidence
+    {
+        $item = $order->value('order.orderdetail');
+        if (!is_array($item) || array_is_list($item) || !is_string($item['description'] ?? null)
+            || !is_string($item['producttype'] ?? null) || !is_string($item['quantity'] ?? null)
+            || !preg_match('/^(?:[1-9]|10)$/D', $item['quantity'])) { return null; }
+        $action = Action::tryFrom(strtolower($item['producttype']));
+        if (!in_array($action, [Action::Register, Action::Renew, Action::Transfer], true)) { return null; }
+        try { $query = new Query(strtolower($item['description']), $action, (int)$item['quantity']); }
+        catch (\InvalidArgumentException) { return null; }
+        return self::normalize($binding, $query, $order, false);
+    }
+    private static function normalize(AccountBinding $binding, Query $query, ProtocolResult $order, bool $captured): ?OrderEvidence
+    {
+        $header = $order->value('order');
         $id = is_array($header) ? ($header['orderid'] ?? null) : null;
-        if (!in_array($query->action, [Action::Register, Action::Renew, Action::Transfer], true) || $attempt->binding->registrarKey !== 'enom'
+        if (!in_array($query->action, [Action::Register, Action::Renew, Action::Transfer], true) || $binding->registrarKey !== 'enom'
             || !is_string($id) || !preg_match('/^[1-9][0-9]{0,19}$/D', $id)
-            || ($attempt->providerReference !== null && $id !== $attempt->providerReference)
             || $order->status !== 'success' || !is_array($header) || strtolower($header['result'] ?? '') !== 'true') { return null; }
         $items = $header['orderdetail'] ?? null;
         if (!is_array($items)) { return null; }
@@ -39,8 +58,8 @@ final class OrderCharge
             if (array_key_exists('currency', $row) && (!is_string($row['currency']) || strtoupper($row['currency']) !== 'USD')) { return null; }
         }
         $processed = self::date($header['billdate'] ?? null, 'enom_order_bill_date',
-            $attempt->executionFacts !== null && $attempt->providerReference !== null && $id === $attempt->providerReference, self::billZone($attempt->binding->environment));
-        return new OrderEvidence($attempt->binding, $query, new Money($amount, 'USD'), $id, $processed, Expiry::read($order));
+            $captured, self::billZone($binding->environment));
+        return new OrderEvidence($binding, $query, new Money($amount, 'USD'), $id, $processed, Expiry::read($order));
     }
     /** Order amounts may carry one leading dollar sign; quote parsing stays strict. */
     private static function orderAmount(mixed $value): ?string

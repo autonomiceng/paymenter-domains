@@ -43,7 +43,7 @@ $priorJob=DB::table('domains_observation_work')->where('id',$job->id)->sole();
 $observation->during=static fn()=>throw new \Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit;
 same('read_deferred',$work->tick(2)[$d->server_id]['holding'],'TEST call cap defers scheduled primary read');
 $capped=DB::table('domains_observation_work')->where('id',$job->id)->sole();
-same([$priorJob->tries,$priorJob->safe_code,null,0,$clock->now()->getTimestamp()+60],[$capped->tries,$capped->safe_code,$capped->claim,$capped->lease_until,$capped->due_at],'Cap clears lease and restores tries and prior safe code');
+same([$priorJob->tries,$priorJob->safe_code,null,$clock->now()->getTimestamp()+60,(int)$priorJob->due_at],[$capped->tries,$capped->safe_code,$capped->claim,(int)$capped->lease_until,(int)$capped->due_at],'Cap retries in a minute, keeps the due time and restores tries and prior safe code');
 $calls=count($observation->calls);$clock->instant=$clock->now()->modify('+60 seconds');
 same('refreshed',$work->tick(2)[$d->server_id]['holding'],'Capacity recovery needs no staff resume');expect(count($observation->calls)>$calls,'Next due tick performs read');
 same($before,$original->fresh()->getAttributes(),'Cap recovery preserves original operation evidence');
@@ -53,7 +53,7 @@ foreach([1,2] as $turn){
  DB::table('domains_observation_work')->where('id',$job->id)->update(['due_at'=>$clock->now()->getTimestamp()]);
  $observation->during=static fn()=>\Paymenter\Extensions\Servers\Domains\Services\EnomTestSendLimit::admit(\Paymenter\Extensions\Servers\Domains\Data\Environment::Test,'synthetic-uid','GetDomainInfo');
  same('read_deferred',$work->tick(2)[$d->server_id]['holding'],'Cap zero remains deferred on due turn '.$turn);
- $zero=DB::table('domains_observation_work')->where('id',$job->id)->sole();same([0,'refreshed',null,0,$clock->now()->getTimestamp()+60],[$zero->tries,$zero->safe_code,$zero->claim,$zero->lease_until,$zero->due_at],'Cap zero never spends a failure try or stops work');
+ $zero=DB::table('domains_observation_work')->where('id',$job->id)->sole();same([0,'refreshed',null,$clock->now()->getTimestamp()+60,$clock->now()->getTimestamp()],[(int)$zero->tries,$zero->safe_code,$zero->claim,(int)$zero->lease_until,(int)$zero->due_at],'Cap zero never spends a failure try or stops work');
  $clock->instant=$clock->now()->modify('+60 seconds');
 }
 config(['domains.enom_test_sends_per_day'=>$capConfig]);same('refreshed',$work->tick(2)[$d->server_id]['holding'],'Restored capacity recovers without staff resume');

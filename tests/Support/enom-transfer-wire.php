@@ -1,6 +1,7 @@
 <?php
 // Synthetic reviewed Enom transfer protocol; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/enom-history.php';
 $transferReply=static function(array $p)use($transferState,$clock):string {
     same(0,Illuminate\Support\Facades\DB::transactionLevel(),'Transfer request outside financial locks');
     same(($transferState->environment??'test')==='live'?'https://reseller.enom.com/interface.asp':'https://resellertest.enom.com/interface.asp',$GLOBALS['enomWire']['options'][CURLOPT_URL],'Transfer environment route');
@@ -18,7 +19,7 @@ $transferReply=static function(array $p)use($transferState,$clock):string {
         'GetWPPSInfo'=>'<GetWPPSInfo><WPPSAllowed>1</WPPSAllowed><WPPSExists>0</WPPSExists><WPPSEnabled>0</WPPSEnabled></GetWPPSInfo>',
         'GetDomainExp'=>'<ExpirationDate>'.$expiry.'</ExpirationDate>',
         'TP_GetOrder'=>'<TransferOrder><TransferOrderID>7001</TransferOrderID><StatusID>'.($transferState->pending?'5':'3').'</StatusID><TransferOrderDetail><SLD>'.$label.'</SLD><TLD>'.$ending.'</TLD><StatusID>'.($transferState->pending?'100':'5').'</StatusID></TransferOrderDetail></TransferOrder>',
-        'GetOrderList'=>'<OrderCount>1</OrderCount><OrderList><Order><OrderID>9001</OrderID></Order></OrderList>',
+        'GetOrderList'=>enomHistoryList(['9001'], $transferState->bill),
         'GetOrderDetail'=>$transferState->charge?'<Order><OrderID>9001</OrderID><Result>true</Result><OrderBillAmount>$10.00</OrderBillAmount><BillDate>'.$transferState->bill.'</BillDate><OrderDetail><Description>'.$name.'</Description><ProductType>Transfer</ProductType><Quantity>1</Quantity><Status>Successful</Status><OrderStatus>Closed</OrderStatus><AmountPaid>$10.00</AmountPaid><ExpiryDateTime>'.$expiry.'</ExpiryDateTime></OrderDetail></Order>':'',
         default=>throw new LogicException('Unreviewed transfer fixture command '.$cmd),
     };

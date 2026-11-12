@@ -168,10 +168,10 @@ DB::table('domains_observation_work')->where('id',$readJob)->update(['safe_code'
 $withoutPermission=commerceUser();commerceReject(fn()=>$resume($withoutPermission,$ticket($withoutPermission)));
 $stale=$ticket($staff);$readDomain->fresh()->update(['observation'=>[...$readDomain->fresh()->observation,'synthetic_review_change'=>true]]);
 commerceReject(fn()=>$resume($staff,$stale));
-DB::table('domains_observation_work')->where('id',$readJob)->update(['lease_until'=>$clock->now()->getTimestamp()+60]);
+DB::table('domains_observation_work')->where('id',$readJob)->update(['claim'=>str_repeat('w',32),'lease_until'=>$clock->now()->getTimestamp()+60]);
 commerceReject(fn()=>$resume($staff,$ticket($staff)));
 same(1,(int)DB::table('domains_observation_work')->where('id',$readJob)->value('resumes'),'Permission, stale review and live lease refusals cannot consume a resume');
-DB::table('domains_observation_work')->where('id',$readJob)->update(['lease_until'=>0,'resumes'=>20]);
+DB::table('domains_observation_work')->where('id',$readJob)->update(['claim'=>null,'lease_until'=>0,'resumes'=>20]);
 commerceReject(fn()=>$resume($staff,$ticket($staff)));
 same(20,(int)DB::table('domains_observation_work')->where('id',$readJob)->value('resumes'),'Active recovery preserves the resume cap');
 // The installed global form ticket must match the routed Writer's all-account stamp.

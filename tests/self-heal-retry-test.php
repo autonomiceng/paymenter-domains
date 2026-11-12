@@ -47,9 +47,9 @@ try {
  });
 } catch(ReadDeferred) {}
 $clock->instant=$clock->now()->setTimestamp($queued+20*60);$assertFamily('Checking',$queued); // A normal discovery batch queues up to 25 one-minute account turns.
-$current=HoldingObservationWork::current($d->fresh());$current->update(['due_at'=>0,'lease_until'=>$clock->now()->getTimestamp()+300]);
+$current=HoldingObservationWork::current($d->fresh());$current->update(['due_at'=>0,'claim'=>str_repeat('w',32),'lease_until'=>$clock->now()->getTimestamp()+300]);
 $assertFamily('Checking',0); // An active worker lease is still an in-progress read, even after its due time.
-$current->update(['due_at'=>$queued,'lease_until'=>0]);
+$current->update(['due_at'=>$queued,'claim'=>null,'lease_until'=>0]);
 $clock->instant=$clock->now()->setTimestamp($queued+31*60);$assertFamily('Missing',cause:'The scheduled registrar read is overdue.');
 $observation->during=static fn()=>throw new DomainException('Registrar read failed.');
 same('read_failed',$worker->turn($queue,$guard),'Transient primary failure is retained');

@@ -29,7 +29,7 @@ class ViewDomain extends ViewRecord
         $now=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp();
         if ($this->resumeStarted!==null&&$now<$this->resumeStarted+900) {
             $job=\Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::current($this->getRecord(),true)->first();
-            if ($job&&($job->safe_code===null||$job->lease_until>$now)) { return true; }
+            if ($job&&($job->safe_code===null||\Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::reading($job,$now))) { return true; }
         }
         return \Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::pending($this->getRecord());
     }

@@ -13,7 +13,8 @@ final class HoldingObservationWork
     {
         if ($d->status!=='active'||!Schema::hasTable('domains_observation_work')) { return; }
         DB::table('domains_observation_work')->insertOrIgnore(['server_id'=>$d->server_id,'account_fingerprint'=>$d->account_fingerprint,
-            'domain_id'=>$d->id,'generation'=>$d->authority_generation,'phase'=>self::phase($d),'due_at'=>$now->getTimestamp()]);
+            'domain_id'=>$d->id,'generation'=>$d->authority_generation,'phase'=>self::phase($d),'due_at'=>$now->getTimestamp(),
+            'safe_code'=>self::firstRecordRead($d)?self::INITIAL_READ:null]);
     }
     /**
      * What the current read waits for, and when it is due. 'first': the first scheduled read has not finished (never tried, resumed
@@ -34,9 +35,9 @@ final class HoldingObservationWork
         } catch (\Throwable) { return null; }
         $job=self::current($d,true)->orderByDesc('id')->first();
         if ($job===null||$job->safe_code==='records_disabled') { return null; }
-        $first=$job->safe_code===null&&(int)$job->resumes===0
-            &&((int)$job->tries===0||((int)$job->tries===1&&(int)$job->lease_until>app(Clock::class)->now()->getTimestamp()));
-        $retry=$job->safe_code===null||in_array($job->safe_code,HoldingReadRetry::TRANSIENT,true);
+        $first=in_array($job->safe_code,[null,self::INITIAL_READ],true)&&(int)$job->resumes===0
+            &&((int)$job->tries===0||((int)$job->tries===1&&self::reading($job,app(Clock::class)->now()->getTimestamp())));
+        $retry=in_array($job->safe_code,[null,self::INITIAL_READ],true)||in_array($job->safe_code,HoldingReadRetry::TRANSIENT,true);
         return ['wait'=>$first?'first':($retry?'retry':'next'),'due'=>(int)$job->due_at];
     }
     /** Only the current binding, generation and follow-up phase can stop this holding. */
@@ -76,12 +77,21 @@ final class HoldingObservationWork
     public static function discardUnsent(Domain $d, \DateTimeImmutable $now, ?\Illuminate\Support\Collection $operations=null): bool
     {
         if (ObservationEligibility::allows($d,$operations)) { return false; }
-        if (Schema::hasTable('domains_observation_work')) { self::current($d)->where('lease_until','<=',$now->getTimestamp())->delete(); }
+        if (Schema::hasTable('domains_observation_work')) { self::idle(self::current($d),$now->getTimestamp())->delete(); }
         return true;
     }
-    /** A live lease means a scheduled or manual registrar read for this holding is running now. */
+    /** A live claim means a scheduled or manual registrar read for this holding is running now. */
     public static function leased(Domain $d, \DateTimeImmutable $now): bool
-    { return Schema::hasTable('domains_observation_work')&&self::current($d,true)->where('lease_until','>',$now->getTimestamp())->exists(); }
+    { return Schema::hasTable('domains_observation_work')&&self::current($d,true)->whereNotNull('claim')->where('lease_until','>',$now->getTimestamp())->exists(); }
+    /**
+     * A read is running only while a claim holds a live lease. An unclaimed live lease is the retry delay after a local
+     * deferral: only claim() waits for it. Status, Sync now and staff actions treat that job as idle.
+     */
+    public static function reading(object $job, int $now): bool
+    { return $job->claim!==null&&(int)$job->lease_until>$now; }
+    /** Work no read is running on, including work waiting out a deferral's retry delay. */
+    public static function idle(\Illuminate\Database\Query\Builder $q, int $now): \Illuminate\Database\Query\Builder
+    { return $q->where(fn($q)=>$q->whereNull('claim')->orWhere('lease_until','<=',$now)); }
     /**
      * Manual Sync now takes the same lease the scheduler claims, so the two never read one holding at once.
      * Returns the work id and claim, or null while another read holds the lease. Tries and due time stay with the scheduler.
@@ -94,7 +104,7 @@ final class HoldingObservationWork
             self::queueInitial($d,$now);
             $job=self::current($d)->lockForUpdate()->first();
             if (!$job) { return [0,'']; }
-            if ($job->lease_until>$now->getTimestamp()) { return null; }
+            if (self::reading($job,$now->getTimestamp())) { return null; }
             $claim=bin2hex(random_bytes(16));
             DB::table('domains_observation_work')->where('id',$job->id)->update(['claim'=>$claim,'lease_until'=>$now->getTimestamp()+$seconds]);
             return [(int)$job->id,$claim];
@@ -125,7 +135,7 @@ final class HoldingObservationWork
         $seed=Domain::findOrFail(DB::table('domains_observation_work')->where('id',$id)->value('domain_id'));
         DB::transaction(function () use ($id,$reason,$seed,$review,$current): void {
             $l=HoldingLocks::take($seed,$review?->actorId); $current((int)$seed->server_id); $review?->check($l); $d=$l['domain']; $q=DB::table('domains_observation_work')->where('id',$id); $job=(clone $q)->lockForUpdate()->firstOrFail();
-            if ($job->domain_id!=$d->id||$job->server_id!=$d->server_id||$job->phase!==self::phase($d)||(int)$job->generation!==$d->authority_generation||$job->account_fingerprint!==$d->account_fingerprint||$job->lease_until>$this->clock->now()->getTimestamp()||$job->resumes>=20) { throw new \DomainException('Read resume unavailable.'); }
+            if ($job->domain_id!=$d->id||$job->server_id!=$d->server_id||$job->phase!==self::phase($d)||(int)$job->generation!==$d->authority_generation||$job->account_fingerprint!==$d->account_fingerprint||self::reading($job,$this->clock->now()->getTimestamp())||$job->resumes>=20) { throw new \DomainException('Read resume unavailable.'); }
             if ($blocked=ObservationWork::resumeBlocked($d)) { throw new StaffReviewRefused($blocked); }
             $p=$d->observation??[]; unset($p['record_hold']); $p['resumptions']=[...($p['resumptions']??[]),['work_id'=>$id,'reason'=>$reason,'at'=>$this->clock->now()->format(DATE_ATOM)]];
             $d->update(['observation'=>$p]); $q->update(['resumes'=>$job->resumes+1,'tries'=>0,'claim'=>null,'safe_code'=>null,'due_at'=>$this->clock->now()->getTimestamp()]); $review?->record($l);
@@ -167,7 +177,7 @@ final class HoldingObservationWork
                 if ($d->adoptionPending() || !in_array($d->status,['active','registration_pending','transfer_pending'],true)||$d->account_fingerprint!==$a->account_fingerprint) { continue; }
                 // Financial transfer reconciliation already reads status, history and ownership. Avoid a second automatic poller.
                 if(TransferPolling::ownsObservation($d)){
-                    self::current($d)->where('lease_until','<=',$this->clock->now()->getTimestamp())->delete();continue;
+                    self::idle(self::current($d),$this->clock->now()->getTimestamp())->delete();continue;
                 }
                 if (self::discardUnsent($d,$this->clock->now())) { continue; }
                 DB::table('domains_observation_work')->insertOrIgnore(['server_id'=>$d->server_id,'account_fingerprint'=>$d->account_fingerprint,
@@ -175,13 +185,14 @@ final class HoldingObservationWork
                 $this->recover($d);
                 // Older partial-family jobs stopped at their first failure. Keep their attempts and resume the bounded policy.
                 if(HoldingReadRetry::retryableHold($d)){
-                    self::current($d)->whereIn('safe_code',['records_incomplete','read_exception','read_no_evidence'])->where('tries','<',HoldingReadRetry::LIMIT)
-                        ->where('lease_until','<=',$this->clock->now()->getTimestamp())->update(['safe_code'=>'read_failed']);
+                    self::idle(self::current($d)->whereIn('safe_code',['records_incomplete','read_exception','read_no_evidence'])->where('tries','<',HoldingReadRetry::LIMIT),$this->clock->now()->getTimestamp())
+                        ->update(['safe_code'=>'read_failed']);
                 }
-                // Legacy healthy ownership-only jobs must not postpone a missing or stale family read.
+                // Legacy healthy ownership-only jobs must not postpone a missing or stale family read. Only a future
+                // due time moves forward: an overdue one keeps its age, which claim() uses to stop starvation.
                 if($this->observer->readsRecords()&&$d->status==='active'&&ObservationProjection::recordStatus($d,$this->clock->now())['stale']){
-                    self::current($d)->where('safe_code','refreshed')->where('lease_until','<=',$this->clock->now()->getTimestamp())
-                        ->update(['due_at'=>$this->clock->now()->getTimestamp()]);
+                    self::idle(self::current($d)->where('safe_code','refreshed'),$this->clock->now()->getTimestamp())
+                        ->where('due_at','>',$this->clock->now()->getTimestamp())->update(['due_at'=>$this->clock->now()->getTimestamp()]);
                 }
             }
             $q->update(['cursor'=>$rows->count()===25?$rows->last()->id:0]);
@@ -191,7 +202,7 @@ final class HoldingObservationWork
     private function recover(Domain $d): void
     {
         $job=self::current($d)->lockForUpdate()->first();$now=$this->clock->now()->getTimestamp();
-        if(!$job||$job->lease_until>$now||!in_array($job->safe_code,HoldingReadRetry::RECOVERABLE,true)
+        if(!$job||self::reading($job,$now)||!in_array($job->safe_code,HoldingReadRetry::RECOVERABLE,true)
             ||($job->safe_code!=='configuration_unverified'&&$job->tries<HoldingReadRetry::LIMIT)||$job->resumes>=20){return;}
         try{$a=Account::where('server_id',$d->server_id)->sole();$credential=app(AccountBindings::class)->holdingCredentialRevision(AccountBindings::binding($a));}
         catch(\Throwable){return;}
@@ -210,11 +221,15 @@ final class HoldingObservationWork
                 ->where('account_fingerprint',$queue->account_fingerprint)->where('due_at','<=',$now)->where('tries','<',28)->where('lease_until','<=',$now)
                 ->where(function($q){$q->whereNull('safe_code')->orWhereNotIn('safe_code',HoldingReadRetry::STOPPED)
                     ->orWhere(fn($q)=>$q->whereIn('safe_code',HoldingReadRetry::TRANSIENT)->where('tries','<',HoldingReadRetry::LIMIT));});
-            // Oldest due first, except that a new domain's first record read goes ahead of routine reads: its page says
-            // "Checking" until that read finishes, while routine reads only refresh what the page already shows.
-            $due=$q->orderBy('due_at')->orderBy('id')->limit(self::FIRST_READ_WINDOW)->lockForUpdate()->get(); if ($due->isEmpty()) { return null; }
+            // Acquisition completion marks its initial read before discovery. Select those jobs before the bounded
+            // window so an older backlog cannot hide them. Due transient retries follow, before routine refreshes.
+            // Work overdue by more than ROUTINE_WAIT ranks with initial reads by due time, so a steady stream of new
+            // domains or retries can't starve a routine refresh.
+            $starved=$now-self::ROUTINE_WAIT;
+            $due=$q->orderByRaw("CASE WHEN safe_code = ? OR due_at < ? THEN 0 WHEN safe_code IN (?, ?) THEN 1 ELSE 2 END",[self::INITIAL_READ,$starved,...HoldingReadRetry::TRANSIENT])->orderBy('due_at')->orderBy('id')->limit(self::FIRST_READ_WINDOW)->lockForUpdate()->get(); if ($due->isEmpty()) { return null; }
             $domains=Domain::whereIn('id',$due->pluck('domain_id'))->get()->keyBy('id');
-            $job=$due->first(fn($row)=>self::firstRecordRead($domains->get($row->domain_id))) ?? $due->first();
+            $oldest=$due->first();
+            $job=(int)$oldest->due_at<$starved?$oldest:($due->first(fn($row)=>self::firstRecordRead($domains->get($row->domain_id))) ?? $oldest);
             $d=$domains->get($job->domain_id);
             if($d&&TransferPolling::ownsObservation($d)){DB::table('domains_observation_work')->where('id',$job->id)->delete();return null;}
             if ($d && (!in_array($d->status,['active','registration_pending','transfer_pending'],true)||!ObservationEligibility::allows($d)||$d->account_fingerprint!==$job->account_fingerprint||$d->adoptionPending() || (int)$job->generation!==$d->authority_generation || $job->phase!==self::phase($d))) {
@@ -226,8 +241,12 @@ final class HoldingObservationWork
             return $job;
         });
     }
+    /** Pending initial read, preserved on local deferral until the registrar returns a result. */
+    private const INITIAL_READ='initial_read';
     /** Due rows the scheduler looks through for a first record read. */
     private const FIRST_READ_WINDOW=25;
+    /** Seconds a due read may wait behind initial reads and retries before it takes its turn by due time. */
+    private const ROUTINE_WAIT=3600;
     /**
      * An active domain with no completed record read yet. Saved history that fails validation (unreadable, a time
      * after now, a sequence ahead of management) is not a first read: it waits its turn like a routine read.
@@ -258,9 +277,11 @@ final class HoldingObservationWork
     private function finishCurrent(object $job, string $code, ?string $credential): void
     {
         $now=$this->clock->now()->getTimestamp();
+        // A local deferral is not a read. Keep due_at, so an overdue job keeps the wait claim() ranks it by, and
+        // retry after a minute through an unclaimed lease, which claim() already skips.
         if ($code==='read_deferred') {
             DB::table('domains_observation_work')->where('id',$job->id)->where('claim',$job->claim)->update([
-                'claim'=>null,'lease_until'=>0,'tries'=>$job->tries,'safe_code'=>$job->safe_code,'due_at'=>$now+60]); return;
+                'claim'=>null,'lease_until'=>$now+60,'tries'=>$job->tries,'safe_code'=>$job->safe_code]); return;
         }
         $d=Domain::findOrFail($job->domain_id); $tries=$job->tries+1;
         $code=HoldingReadRetry::result($d,$code);

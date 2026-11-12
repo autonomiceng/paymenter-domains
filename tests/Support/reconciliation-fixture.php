@@ -1,6 +1,7 @@
 <?php
 // Synthetic Enom 444f31c registration reconciliation scenarios; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/enom-history.php';
 require_once __DIR__.'/operation-fixture.php';
 use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, DateEvidence, Disposition, DriverResult, Environment, Evidence, ExpiryPrecision, HistoryAcceptance, RegistrationEvidence, RequestBudget, RequestContext, RequestOrigin, ResultReason, SendState};
@@ -29,8 +30,7 @@ $wire = new class($observation) implements Transport {
             ReadCommand::Renewal => '<RenewName>0</RenewName>', ReadCommand::Lock => '<Reg-Lock>1</Reg-Lock>',
             ReadCommand::Privacy => '<GetWPPSInfo><WPPSAllowed>1</WPPSAllowed><WPPSExists>0</WPPSExists><WPPSEnabled>0</WPPSEnabled></GetWPPSInfo>',
             ReadCommand::Order => '<Order><OrderID>'.($s->fault === 'history-multiple' ? $parameters['OrderID'] : $s->reference).'</OrderID><Result>true</Result><OrderBillAmount>$8.95</OrderBillAmount><BillDate>'.$s->billDate.'</BillDate><OrderDetail>'.$item.'</OrderDetail>'.($s->fault === 'multiple' ? '<OrderDetail>'.$item.'</OrderDetail>' : '').'</Order>',
-            ReadCommand::Orders => '<OrderCount>'.($s->fault === 'history-multiple' ? '2' : '1').'</OrderCount><OrderList><Order><OrderID>'.$s->reference.'</OrderID></Order>'
-                    .($s->fault === 'history-multiple' ? '<Order><OrderID>9002</OrderID></Order>' : '').'</OrderList>',
+            ReadCommand::Orders => enomHistoryList($s->fault === 'history-multiple' ? [$s->reference, '9002'] : [$s->reference], $s->billDate),
             default => '',
         };
         if ($command === ReadCommand::Order) {
