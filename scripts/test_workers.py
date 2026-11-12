@@ -36,10 +36,15 @@ def environment(index, *, env, output, runtime, fixture, fixture_snapshot, runti
         child['PAYMENTER_TEST_SHARED_VENDOR'] = str(vendor)
         child['PAYMENTER_TEST_FIXTURE'] = str(copy)
     if runtime:
-        copy = directory/'runtime'
-        shutil.copytree(runtime, copy, symlinks=True)
-        if runtime_hashes(copy) != runtime_snapshot:
-            raise RuntimeError('Worker PHP runtime copy changed.')
+        # The wide runner seals its verified runtime inside a private mount namespace.
+        # Sharing those read-only inodes also shares executable/library pages between workers.
+        # Ordinary runs retain private copies, including their mutation guards.
+        shared_runtime = env.get('DOMAINS_TEST_OVERLAY') == '1' and bool(os.statvfs(runtime).f_flag & os.ST_RDONLY)
+        copy = runtime if shared_runtime else directory/'runtime'
+        if not shared_runtime:
+            shutil.copytree(runtime, copy, symlinks=True)
+            if runtime_hashes(copy) != runtime_snapshot:
+                raise RuntimeError('Worker PHP runtime copy changed.')
         for name in ['PAYMENTER_TEST_PHP', 'PAYMENTER_TEST_CURL_EXTENSION',
                      'PAYMENTER_TEST_NATIVE_EXTENSIONS', 'LD_LIBRARY_PATH']:
             if name in child:
@@ -143,13 +148,21 @@ def phase_results(stdout):
     return rows
 
 
-def seal_vendor(fixture, *, release=False):
-    """Share dependencies read-only inside the wide runner's private mount namespace."""
+def seal_path(path, *, release=False):
+    """Share verified inputs read-only inside the wide runner's private mount namespace."""
     if os.environ.get('DOMAINS_TEST_OVERLAY') != '1':
         return
-    vendor = str(fixture/'vendor')
+    path = str(path)
     if release:
-        subprocess.run(['umount', vendor], check=True)
+        subprocess.run(['umount', path], check=True)
     else:
-        subprocess.run(['mount', '--bind', vendor, vendor], check=True)
-        subprocess.run(['mount', '-o', 'remount,bind,ro', vendor], check=True)
+        subprocess.run(['mount', '--bind', path, path], check=True)
+        try:
+            subprocess.run(['mount', '-o', 'remount,bind,ro', path], check=True)
+        except BaseException:
+            subprocess.run(['umount', path], check=True)
+            raise
+
+
+def seal_vendor(fixture, *, release=False):
+    seal_path(fixture/'vendor', release=release)

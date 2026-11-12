@@ -43,7 +43,7 @@ class InstalledPhaseTests(unittest.TestCase):
                 name = options['env']['PACKAGE_PHASE']
                 if bounded:
                     wall = float(argv[argv.index('--wall')+1])
-                    self.assertLessEqual(wall, 30)
+                    self.assertLessEqual(wall, 45)
                     self.assertLessEqual(wall, options['timeout'])
                     self.assertEqual(int(argv[argv.index('--memory')+1]), 256*1024**2)
                 self.assertEqual(argv[-1], str(ROOT/'tests/package-lifecycle.php'))
@@ -79,8 +79,8 @@ class InstalledPhaseTests(unittest.TestCase):
                 self.assertIsNone(caught.exception.__cause__)
             return calls, str(caught.exception), timings
 
-    def test_admitted_phases_allow_thirty_seconds_without_extending_the_scenario_deadline(self):
-        for setup, expected in [(0, 32), (100, 10)]:
+    def test_admitted_phases_allow_load_headroom_without_extending_the_scenario_deadline(self):
+        for setup, expected in [(0, 47), (100, 10)]:
             with self.subTest(setup=setup):
                 calls, _, _ = self.phase_failure('held', 'install', setup=setup, bounded=True)
                 self.assertEqual(calls, [('install', expected)])

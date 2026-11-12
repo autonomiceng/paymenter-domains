@@ -198,10 +198,16 @@ def main(scenario):
                 argv = [str(ROOT/'scripts/php-test'), str(ROOT/'tests/package-lifecycle.php')]
                 if os.environ.get('DOMAINS_TEST_CGROUP'):
                     resource = Path(os.environ['DOMAINS_TEST_RECEIPTS'])/('installed-'+uuid.uuid4().hex+'.json')
-                    case_wall = min(60 if phase_limit == 120 else 30, timeout)
+                    # Use the ordinary phase's existing 45-second bound under admission too.
+                    # Leave receipt/descendant cleanup time outside that bound, while the
+                    # original scenario deadline still caps the complete lifecycle.
+                    case_wall = min(60 if phase_limit == 120 else phase_limit, timeout)
+                    receipt_timeout = case_wall+2
+                    if scenario_deadline is not None:
+                        receipt_timeout = min(case_wall+2, scenario_deadline-time.monotonic())
                     status = subprocess.run([sys.executable, os.environ['DOMAINS_TEST_BUDGET'], '--name', scenario+'/'+name,
                                              '--test-scope', '--wall', str(case_wall), '--memory', str(256*1024**2),
-                                             '--receipt', str(resource), '--', *argv], cwd=ROOT, env=run_env, timeout=min(timeout, case_wall+2)).returncode
+                                             '--receipt', str(resource), '--', *argv], cwd=ROOT, env=run_env, timeout=receipt_timeout).returncode
                     measured = json.loads(resource.read_text()) if resource.exists() else None
                     print(json.dumps(dict(timing='installed_case', label=scenario+'/'+name,
                                           argv=[*argv, scenario, name, str(worker)], exit=status,

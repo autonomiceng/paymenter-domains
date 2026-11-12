@@ -7,6 +7,16 @@ runner and package checks precede native checks. `--timings-from receipt.json`
 puts previous failures and faster files first within each category; it never
 changes the selected case set.
 
+Wide runs share the verified PHP executable and libraries only after sealing their mount
+read-only in the private namespace. Mutable application files, databases and temporary
+directories remain private. Ordinary runs keep separate PHP copies. Content guards still
+verify all runtime bytes after execution. Shared commerce fixtures submit deferred credit
+selection with checkout in one Livewire request, preserving the real mount and update cycle.
+
+Under per-test cgroup admission, ordinary installed phases have 45 seconds, plus at most
+two seconds for cleanup and resource evidence. Existing scenario deadlines still include
+setup and cap every phase. The two long Enom phases retain their 60-second admitted limit.
+
 `--memory-mib` defaults to 2048 and reserves 1024 MiB per worker. Parallel
 concurrency is bounded by `min(--memory-mib, available - 1024) // 1024`.
 Available memory is `MemAvailable`, lowered to the smallest cgroup v2 headroom

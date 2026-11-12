@@ -259,7 +259,7 @@ class RunnerTests(unittest.TestCase):
             (runtime/'usr/bin/php8.4').write_text('binary')
             (runtime/'usr/bin/php').symlink_to('php8.4')
             env = {'PATH': os.environ['PATH'], 'PAYMENTER_TEST_FIXTURE': str(fixture),
-                   'PAYMENTER_TEST_PHP': str(runtime/'usr/bin/php8.4')}
+                   'PAYMENTER_TEST_PHP': str(runtime/'usr/bin/php8.4'), 'DOMAINS_TEST_OVERLAY': '1'}
             workers, fixture_snapshot, runtime_snapshot = runner.test_workers.environments(env, output, 2, runtime)
             self.assertTrue(all(worker['PYTHONDONTWRITEBYTECODE'] == '1' for worker in workers))
             rendezvous = root/'ready'; rendezvous.mkdir(); os.mkfifo(rendezvous/'one'); os.mkfifo(rendezvous/'two')
