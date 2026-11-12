@@ -22,7 +22,7 @@ final class AccountChecklist
     /** The worker runs every minute; no run for this long means it stopped. */
     public const WORKER_STALE_SECONDS=900;
     public const TRANSFER_LABEL='Transfers (Experimental)';
-    private const PRICES='Prices refresh from the registrar once a day while the scheduler and queue worker run. Sync prices is an optional retry; it does not start background work.';
+    private const PRICES='Prices refresh from the registrar once a day while the full scheduler and queue worker run. A site set to send orders only does not refresh prices, so if prices stop updating while the worker looks current, check that the full scheduler runs. Sync prices is an optional retry; it does not start background work.';
     private const PAYMENTS='Starts domain orders when an invoice is paid. If it fails, restart the queue worker.';
     private const EDITOR='Adds the domain fields and warnings to Paymenter’s service page. If it fails, update Paymenter or Domains.';
     private const WORKER='Runs background work every minute: sending orders, retries and domain checks. If it stops, start the scheduler and the queue worker.';
