@@ -16,7 +16,6 @@
     --e-bad: color-mix(in srgb, hsl(var(--color-error)) 80%, black);
     --e-quiet: hsl(var(--color-muted));
     --e-mono: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
-    --e-on-accent: hsl(var(--color-inverted, 0 0% 100%));
     max-width: 72rem; margin-inline: auto; color: var(--e-fg); overflow-wrap: anywhere;
 }
 .dark .domains {
@@ -24,6 +23,39 @@
     --e-info: color-mix(in srgb, hsl(var(--color-info)) 80%, white);
     --e-warn: color-mix(in srgb, hsl(var(--color-warning)) 85%, white);
     --e-bad: color-mix(in srgb, hsl(var(--color-error)) 82%, white);
+}
+/* Text on filled buttons. A theme's own --on-primary or --on-danger wins (the Beco theme sets --on-primary).
+   Otherwise the text is black or white, whichever contrasts more with the fill: relative luminance 0.1791 is
+   where both give the same ratio, so the pick is always at least 4.58:1. A theme's inverted text colour is
+   not used: stock Paymenter dark sets it to grey. Hover moves the fill away from the text, never toward it.
+   Without relative colours the text is black (AA on stock Paymenter fills) and hover keeps the fill. */
+.domains, .domains-dialog {
+    --e-danger: hsl(var(--color-error));
+    --e-on-accent: var(--on-primary, #000);
+    --e-on-danger: var(--on-danger, #000);
+    --e-accent-hover: var(--e-accent);
+    --e-danger-hover: var(--e-danger);
+}
+.domains-dialog { --e-accent: hsl(var(--color-primary)); }
+@supports (color: color(from red srgb-linear r g b)) {
+    .domains, .domains-dialog {
+        --e-on-accent: var(--on-primary, color(from var(--e-accent) srgb-linear
+            clamp(0, (.1791 - (.2126 * r + .7152 * g + .0722 * b)) * 1e5, 1)
+            clamp(0, (.1791 - (.2126 * r + .7152 * g + .0722 * b)) * 1e5, 1)
+            clamp(0, (.1791 - (.2126 * r + .7152 * g + .0722 * b)) * 1e5, 1) / 1));
+        --e-on-danger: var(--on-danger, color(from var(--e-danger) srgb-linear
+            clamp(0, (.1791 - (.2126 * r + .7152 * g + .0722 * b)) * 1e5, 1)
+            clamp(0, (.1791 - (.2126 * r + .7152 * g + .0722 * b)) * 1e5, 1)
+            clamp(0, (.1791 - (.2126 * r + .7152 * g + .0722 * b)) * 1e5, 1) / 1));
+        --e-accent-hover: color-mix(in srgb, var(--e-accent) 85%, color(from var(--e-on-accent) srgb-linear
+            clamp(0, (.1791 - (.2126 * r + .7152 * g + .0722 * b)) * 1e5, 1)
+            clamp(0, (.1791 - (.2126 * r + .7152 * g + .0722 * b)) * 1e5, 1)
+            clamp(0, (.1791 - (.2126 * r + .7152 * g + .0722 * b)) * 1e5, 1) / 1));
+        --e-danger-hover: color-mix(in srgb, var(--e-danger) 85%, color(from var(--e-on-danger) srgb-linear
+            clamp(0, (.1791 - (.2126 * r + .7152 * g + .0722 * b)) * 1e5, 1)
+            clamp(0, (.1791 - (.2126 * r + .7152 * g + .0722 * b)) * 1e5, 1)
+            clamp(0, (.1791 - (.2126 * r + .7152 * g + .0722 * b)) * 1e5, 1) / 1));
+    }
 }
 .domains [hidden] { display: none !important; }
 .domains > * + * { margin-top: 1.5rem; }
@@ -60,14 +92,14 @@
     border-radius: .375rem; border: 1px solid transparent; font-size: .875rem; font-weight: 600; line-height: max(1.25rem, 1.4em); text-align: center; overflow-wrap: break-word;
     cursor: pointer; transition: background-color .15s, border-color .15s, color .15s; text-decoration: none; }
 .domains .domains-btn--primary { background: var(--e-accent); color: var(--e-on-accent); transition: background-color .15s, box-shadow .15s; }
-.domains .domains-btn--primary:is(:hover, :focus-visible) { background: hsl(var(--color-primary) / .85); box-shadow: 0 0 14px hsl(var(--color-primary) / .35); }
+.domains .domains-btn--primary:is(:hover, :focus-visible) { background: var(--e-accent-hover); box-shadow: 0 0 14px hsl(var(--color-primary) / .35); }
 .domains .domains-btn--secondary { background: var(--e-panel); border-color: var(--e-line); color: var(--e-fg); }
 .domains .domains-panel .domains-btn--secondary { background: var(--e-bg); }
 .domains .domains-btn--secondary:hover { border-color: color-mix(in srgb, var(--e-fg) 30%, var(--e-line)); }
 .domains .domains-btn--ghost { background: transparent; color: var(--e-accent); padding-inline: .5rem; }
 .domains .domains-btn--ghost:hover { background: hsl(var(--color-primary) / .08); }
-.domains .domains-btn--danger { background: hsl(var(--color-error)); color: var(--e-on-accent); }
-.domains .domains-btn--danger:hover { background: hsl(var(--color-error) / .85); }
+.domains .domains-btn--danger { background: var(--e-danger); color: var(--e-on-danger); }
+.domains .domains-btn--danger:hover { background: var(--e-danger-hover); }
 .domains .domains-btn--sm { min-height: 2rem; padding: 0 .75rem; font-size: .8125rem; }
 .domains .domains-btn:disabled, .domains .domains-btn[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
 @media (pointer: coarse) { .domains .domains-btn { min-height: 2.75rem; } .domains .domains-btn--sm { min-height: 2.5rem; } }
@@ -351,9 +383,10 @@
 .domains-dialog .domains-dialog__actions { display: flex; flex-wrap: wrap-reverse; justify-content: flex-end; gap: .5rem; margin-top: 1.5rem; }
 .domains-dialog .domains-btn { display: inline-flex; align-items: center; justify-content: center; min-height: 2.5rem; padding: 0 1rem; border-radius: .375rem; font-size: .875rem; font-weight: 600; cursor: pointer; border: 1px solid transparent; }
 .domains-dialog .domains-btn--secondary { background: transparent; border-color: hsl(var(--color-neutral)); color: hsl(var(--color-base)); }
-.domains-dialog .domains-btn--primary { background: hsl(var(--color-primary)); color: hsl(var(--color-inverted, 0 0% 100%)); }
-.domains-dialog .domains-btn--primary:is(:hover, :focus-visible) { box-shadow: 0 0 14px hsl(var(--color-primary) / .35); }
-.domains-dialog .domains-btn--danger { background: hsl(var(--color-error)); color: hsl(var(--color-inverted, 0 0% 100%)); }
+.domains-dialog .domains-btn--primary { background: var(--e-accent); color: var(--e-on-accent); }
+.domains-dialog .domains-btn--primary:is(:hover, :focus-visible) { background: var(--e-accent-hover); box-shadow: 0 0 14px hsl(var(--color-primary) / .35); }
+.domains-dialog .domains-btn--danger { background: var(--e-danger); color: var(--e-on-danger); }
+.domains-dialog .domains-btn--danger:hover { background: var(--e-danger-hover); }
 .domains-dialog :focus-visible { outline: 2px solid hsl(var(--color-primary)); outline-offset: 2px; }
 
 /* Help */

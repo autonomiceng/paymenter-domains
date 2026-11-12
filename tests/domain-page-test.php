@@ -89,6 +89,13 @@ expect(str_contains($html,'.domains .domains-row__a .domains-a:hover, .domains .
 $inlineHover=strpos($html,'.domains .domains-a:hover { text-decoration: underline; }');
 $actionHover=strpos($html,'.domains .domains-row__a .domains-a:hover, .domains .domains-card dd > .domains-a:hover, .domains .domains-card__a .domains-a:hover, .domains .domains-linkbtn:hover { text-decoration: none; }');
 expect($inlineHover!==false&&$actionHover!==false&&$actionHover>$inlineHover,'Action hover exceptions follow the inline rule so equal-specificity link buttons keep no underline');
+// Filled button text: stock Paymenter dark sets the inverted text colour to grey (1.46:1 on primary), so buttons use their own tokens.
+expect(!str_contains($html,'var(--color-inverted'),'Button text never uses the theme inverted text colour');
+foreach(['.domains .domains-btn--primary { background: var(--e-accent); color: var(--e-on-accent);','.domains .domains-btn--danger { background: var(--e-danger); color: var(--e-on-danger); }',
+    '.domains-dialog .domains-btn--primary { background: var(--e-accent); color: var(--e-on-accent); }','.domains-dialog .domains-btn--danger { background: var(--e-danger); color: var(--e-on-danger); }']as$rule){
+    expect(str_contains($html,$rule),'Filled button uses its text token: '.$rule);
+}
+expect(str_contains($html,'--e-on-accent: var(--on-primary, #000);')&&str_contains($html,'--e-on-danger: var(--on-danger, #000);'),'A theme on-colour wins; black is the fallback that passes AA on stock fills');
 same(['We email it to the owner',['Email code']],[$text('auth_code_email'),$action('auth_code_email')],'Auth code row');
 same(0,$dom->query('//li[@id="auto_renew_off"]')->length,'Registrar auto-renew row is staff only');
 foreach(['nameservers'=>'nameservers','dns'=>'dns-records','glue'=>'glue-records','ds'=>'dnssec','lock'=>'transfer-lock','auth_code_email'=>'transfer-code']as$id=>$anchor){
