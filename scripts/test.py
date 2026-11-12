@@ -367,6 +367,9 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         bounded = bool((env or {}).get('DOMAINS_TEST_CGROUP'))
         phased = bounded and test_workers.installed_phases(argv[-1])
         resource_receipt = output / f'{index:04d}.resources.json'
+        # Browser cases run alone and include Chromium, Node and the PHP server.
+        test_limits = dict(wall_seconds=60 if kind == 'ui' else 30 if kind == 'native' else 10,
+                           memory_bytes=(768 if kind == 'ui' else 256)*1024**2)
         syntax_lint = kind == 'lint' and len(argv) >= 3 and argv[1] == '-l'
         rss_path = None if syntax_lint else output/f'{index:03d}.rss.txt'
         interrupted = None
@@ -381,9 +384,11 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                        test_workers.command_environment(source_env, fixture_snapshot=dependency[1] if dependency else None))
             with context as child:
                 launched = ([sys.executable, env['DOMAINS_TEST_BUDGET'], '--name', argv[-1],
-                             '--test-scope', '--receipt', str(resource_receipt), '--', *argv] if bounded and not phased else argv)
+                             '--test-scope', '--wall', str(test_limits['wall_seconds']),
+                             '--memory', str(test_limits['memory_bytes']),
+                             '--receipt', str(resource_receipt), '--', *argv] if bounded and not phased else argv)
                 stdout, stderr, code, timed_out = execute(launched, cwd=ROOT, env=child,
-                                                        timeout=12 if bounded and not phased else timeout, graceful=60 if kind == 'mariadb' else 0,
+                                                        timeout=test_limits['wall_seconds']+2 if bounded and not phased else timeout, graceful=60 if kind == 'mariadb' else 0,
                                                         processes=processes, index=index, rss_path=rss_path)
         except BaseException as error:
             interrupted = error
@@ -404,7 +409,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
             if not result['cases'] or any(row.get('exit') != 0 or not row.get('resources') for row in result['cases']):
                 result['exit'] = code = code or 1
         if bounded and not phased:
-            result['limits'] = dict(wall_seconds=10, memory_bytes=256*1024**2)
+            result['limits'] = test_limits
             try:
                 result['resources'] = json.loads(resource_receipt.read_text())
             except (OSError, ValueError) as error:
