@@ -13,7 +13,8 @@ $syncActor=staffUser([\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff:
 $syncJob=new \Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords($syncActor->id,$d->id,$d->authority_generation,$d->account_fingerprint);
 $clock->instant=$clock->now()->modify('+61 seconds');$syncJob->handle($observer);
 same($clock->now()->format(DATE_ATOM),$d->fresh()->observation['records']['at'],'Queued worker saves record inventory through the observer');
-same('Domain synced',App\Models\Notification::where('user_id',$syncActor->id)->latest('id')->value('title'),'Queued worker reports completion in the staff inbox');
+same('Domain synced',\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::result($d->fresh())['title'],'Queued worker reports completion on the domain page');
+same(0,App\Models\Notification::where('user_id',$syncActor->id)->count(),'Queued worker keeps unchanged records out of the staff inbox');
 // A closed record gate still refreshes core facts, but cannot promise fresh records.
 $syncInventory=$d->fresh()->observation['records'];$syncIo=[count($state->calls),count($observation->calls)];
 $clock->instant=$clock->now()->modify('+61 seconds');
