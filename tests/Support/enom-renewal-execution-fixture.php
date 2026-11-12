@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 use Illuminate\Support\Facades\{Cache,DB};
+use function Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire;
 use Paymenter\Extensions\Servers\Domains\Services\{RuntimePorts,RuntimeWork};
 $ops=[];foreach($holders as $case=>$domain){if($case!=='issuance'){$ops[$case]=$make($domain);}}
 
