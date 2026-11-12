@@ -254,7 +254,7 @@ same(0,$dom->query('//a[.="Renew now"]')->length,'No Renew now while an invoice 
 // After a failed charge (Auto Pay or a card), the row says it failed and what to do, not only that the invoice is ready.
 $d=$domain(['renewalDue'=>'2027-02-01','renewNow'=>['invoice'=>'/invoices/9','declined'=>true]]);
 same('Due Feb 1, 2027 The last payment failed. Pay the invoice with another card. Pay invoice',$card(storefrontDom($render($d,$summary($d))),'Next invoice'),'A failed charge says so with its next step');
-same('Paid Current date. The new one shows once the renewal completes.',$card(storefrontDom($render($domain(['renewNow'=>['status'=>'paid']]))),'Renewal invoice').' '.preg_replace('/^.*2027 /','',$card(storefrontDom($render($domain(['renewNow'=>['status'=>'paid']]))),'Expires')),'Paid invoice');
+same('Paid Current expiry date. It updates when the renewal completes.',$card(storefrontDom($render($domain(['renewNow'=>['status'=>'paid']]))),'Renewal invoice').' '.preg_replace('/^.*2027 /','',$card(storefrontDom($render($domain(['renewNow'=>['status'=>'paid']]))),'Expires')),'Paid invoice');
 same('Missing Contact support Invoice cancelled',$card(storefrontDom($render($d=$domain(['renewNow'=>['status'=>'cancelled']]),$summary($d))),'Next invoice'),'Cancelled invoice');
 $dom=storefrontDom($render($d=$domain(['renewal'=>'Off','renewNow'=>['status'=>'review']]),$summary($d)));
 same('Under review Renewal being checked. No action needed.',$card($dom,'Next invoice'),'Invoice under review shows even with auto-renew off');
@@ -332,7 +332,7 @@ same('Changes are on hold until we finish checking an earlier request. There’s
 $dom=storefrontDom($render($d=$domain(['changesUnavailable'=>true,'changesRefused'=>7,'renewNow'=>['status'=>'review']]),$summary($d)));
 same('Under review Renewal being checked.',$card($dom,'Next invoice'),'Renewal under review leaves the no-action line to the notice');
 $text=$dom->document->textContent;same(1,substr_count($text,'nothing you need to do')+substr_count($text,'No action needed'),'No-action reassurance once per page');
-same('Changes to this domain are on hold right now. Try again later.',DomainPage::notice($domain(['changesUnavailable'=>true]),'/tickets/create')['text']??null,'No known cause stays general');
+same('Changes to this domain are paused while we check it with the registrar. There’s nothing you need to do.',DomainPage::notice($domain(['changesUnavailable'=>true]),'/tickets/create')['text']??null,'No known cause stays general');
 $expired=DomainPage::notice($domain(['statusReason'=>\Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus::LATE]),'/tickets/create');
 same(['This domain has expired. Contact support to check whether it can still be renewed.','Contact support','/tickets/create'],[$expired['text'],$expired['action']['label'],$expired['action']['url']],'An expired domain says what to do next, with the way to do it');
 

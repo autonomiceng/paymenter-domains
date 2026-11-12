@@ -15,7 +15,7 @@ $op=Operation::where('domain_id',$d->id)->where('action','renew')->sole();$invoi
 same(route('invoices.show',$invoice),$response->getTargetUrl(),'Retained-cycle fixture starts with an issued owner invoice');
 // Retained cycles remain visible under every gate that prevents creating a new invoice.
 $cycleStates=['pending'=>['state'=>'awaiting_payment','result'=>['invoice'=>route('invoices.show',$invoice)],'heading'=>'Pay invoice'],
-    'paid'=>['state'=>'pending','result'=>['status'=>'paid'],'heading'=>'Current date. The new one shows once the renewal completes.'],
+    'paid'=>['state'=>'pending','result'=>['status'=>'paid'],'heading'=>'Current expiry date. It updates when the renewal completes.'],
     'cancelled'=>['state'=>'awaiting_payment','result'=>['status'=>'cancelled'],'heading'=>'Invoice cancelled'],
     'held'=>['state'=>'held','result'=>['status'=>'review'],'heading'=>'Renewal being checked. No action needed.']];
 foreach(['manual','stop','service','domain','cutoff','calendar'] as $gate){

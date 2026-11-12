@@ -57,7 +57,7 @@ foreach (['saved'=>'editing','pending'=>'pending','review'=>'review','cutoff'=>'
     $pages['transfer-'.$name]=view('domains::code',['domain'=>$copy])->render();
 }
 $copy=new OwnedDomain(...[...get_object_vars($enom),'management'=>[],'changesUnavailable'=>true]);$pages['changes-unavailable']=view('domains::show',['domain'=>$copy])->render();
-expect(str_contains($pages['changes-unavailable'],'Changes to this domain are on hold right now. Try again later.'),'Hidden tools say why');
+expect(str_contains($pages['changes-unavailable'],'Changes to this domain are paused while we check it with the registrar. There’s nothing you need to do.'),'Hidden tools say why');
 app('view')->share('errors',(new Illuminate\Support\ViewErrorBag)->put('default',new Illuminate\Support\MessageBag(['nameservers'=>'Check the nameservers.','privacy'=>'WHOIS privacy isn’t available for this domain.'])));
 $pages['setup-errors']=view('domains::setup',['domain'=>$setup])->render();
 $copy=new OwnedDomain(...[...get_object_vars($setup),'testEnvironment'=>true]);$pages['test-mode']=view('domains::setup',['domain'=>$copy])->render();
