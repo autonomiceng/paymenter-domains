@@ -33,7 +33,7 @@ def hashes(root):
                     with open(entry.path, "rb") as handle:
                         result[name] = hashlib.file_digest(handle, "sha256").hexdigest()
 
-    return dict(sorted(result.items()))
+    return {name: result[name] for name in sorted(result, key=Path)}
 
 
 # Admission lives only in this runner process, never in a caller-supplied disk cache.
