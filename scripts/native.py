@@ -14,7 +14,7 @@ COMMIT = 'ee729f7d99ac18942625b79f3f93d8d8b21255e8'
 LOCK_SHA256 = 'fd6bdeb5557b3af0976d5688d92081abc6f7c3235806a6c4b77f4b8bca9186be'
 
 
-def hashes(root, *, release_cache=False):
+def hashes(root):
     result = {}
 
     pending = [(root, '')] if root.is_dir() else []
@@ -30,14 +30,7 @@ def hashes(root, *, release_cache=False):
                 elif entry.is_file(follow_symlinks=False):
                     with open(entry.path, "rb") as handle:
                         result[name] = hashlib.file_digest(handle, "sha256").hexdigest()
-                        if release_cache:
-                            # Verification streams the entire read-only vendor tree. Do not keep its
-                            # hundreds of MiB of file cache charged alongside the PHP fixture.
-                            try:
-                                os.posix_fadvise(handle.fileno(), 0, 0, os.POSIX_FADV_DONTNEED)
-                            except OSError:
-                                pass  # Optional filesystem hint; every byte was still verified.
-    # Preserve relative Path component ordering without allocating Path objects.
+
     return dict(sorted(result.items(), key=lambda item: item[0].split('/')))
 
 
@@ -80,10 +73,6 @@ def admitted_vendor_hashes(root):
                             digest = hashlib.file_digest(handle, 'sha256').hexdigest()
                             if identity(os.fstat(handle.fileno())) != stamp:
                                 raise ValueError('Dependency changed during admission.')
-                            try:
-                                os.posix_fadvise(handle.fileno(), 0, 0, os.POSIX_FADV_DONTNEED)
-                            except OSError:
-                                pass
                     admitted[name] = (stamp, digest)
                     result[name] = digest
     # Publish only after a complete successful inventory; no partial admission is trusted.
