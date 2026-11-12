@@ -18,7 +18,7 @@ const NAME = ['domains-name-cell', 326], PERSON = ['domains-cut', 120], NOTE = [
 const ORDERS = ['staff sheet after theme', 'staff sheet before theme'];
 const words = text => text.replace(/\s+/g, ' ').trim();
 const sentences = text => words(text).split(/(?<=\.)\s+/).sort();
-const SCOPES = ['lists', 'managed'];
+const SCOPES = ['staff', 'watch', 'heading', 'managed'];
 // A late font load (managed scope): a pinned font from the Paymenter fixture's vendor tree, read from disk, no network.
 const FONT = 'vendor/dompdf/dompdf/lib/fonts/DejaVuSans.ttf';
 // The longest valid address: a 64-character local part and labels of 63, 63, 56 and 4 characters (254 in all).
@@ -34,7 +34,7 @@ async function main() {
     const directory = process.argv[2];
     if (!directory) throw new Error('usage: node scripts/check-name-and-heading.cjs RENDER_DIRECTORY [lists|managed]');
     const scopes = process.argv[3] ? [process.argv[3]] : SCOPES;
-    if (!scopes.every(scope => SCOPES.includes(scope))) throw new Error(`Unknown scope: ${process.argv[3]}`);
+    if (!scopes.every(scope => [...SCOPES, 'lists'].includes(scope))) throw new Error(`Unknown scope: ${process.argv[3]}`);
     const output = path.resolve(directory);
     const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_BIN, timeout: 15000,
         args: ['--no-sandbox', '--disable-background-networking'] });
@@ -332,10 +332,11 @@ async function main() {
 
     try {
         for (const order of ORDERS) for (const width of [1440, 900, 390]) {
-            if (scopes.includes('lists')) await lists(order, width);
+            if (scopes.includes('lists') || scopes.includes('staff')) await lists(order, width);
+            if (scopes.includes('lists') || scopes.includes('watch')) await watchLists(order, width);
             if (scopes.includes('managed')) await managed(order, width);
         }
-        if (scopes.includes('lists')) await headings();
+        if (scopes.includes('lists') || scopes.includes('heading')) await headings();
         check(requests.length === 0, 'Fixtures must not attempt any network resources');
         console.log(JSON.stringify({ complete: failures.length === 0, browser: browser.version(), scopes, measured, columns, failures }));
         process.exitCode = failures.length ? 1 : 0;
@@ -372,6 +373,9 @@ async function main() {
             if (count === 1) await measure(name, items, px, width, { full: value, column: true });
         }
         await linkedStops(where);
+    }
+
+    async function watchLists(order, width) {
         // The monitoring list's name and person items, with a name too long for its column.
         for (const state of ['paused', 'retired']) {
             const at = `Staff monitoring list, ${state}, ${order}, ${width}px`;
