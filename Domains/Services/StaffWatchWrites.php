@@ -12,8 +12,8 @@ final class StaffWatchWrites
     public const VIEW='admin.domains.watch.view',MANAGE='admin.domains.watch.manage';
     public const BUSY='Every check for this domain is running or waiting to retry. Try again in a few minutes.';
     public const UNREADABLE='Saved DNS records cannot be read. Restore the template before changing it.';
-    public static function ticket(int $actor,string $kind,int $id,int $revision,string $action): string
-    { return Crypt::encryptString(json_encode(compact('actor','kind','id','revision','action')+['until'=>time()+600,'key'=>bin2hex(random_bytes(16))],JSON_THROW_ON_ERROR)); }
+    public static function ticket(int $actor,string $kind,int $id,int $revision,string $action,?int $defaultId=null): string
+    { return Crypt::encryptString(json_encode(compact('actor','kind','id','revision','action','defaultId')+['until'=>time()+600,'key'=>bin2hex(random_bytes(16))],JSON_THROW_ON_ERROR)); }
     public static function authorize(User $actor): void
     { abort_unless(Staff::allows($actor,self::VIEW) && Staff::allows($actor,self::MANAGE),403); }
     public function run(User $actor,string $kind,int $id,string $action,string $ticket,string $reason,array $input=[]): void
@@ -31,6 +31,10 @@ final class StaffWatchWrites
             $class=match($kind){'watch'=>WatchName::class,'profile'=>WatchProfile::class,'mapping'=>WatchProductMap::class,default=>throw new \DomainException('Reload and try again.')};
             $row=$id?$class::whereKey($id)->lockForUpdate()->firstOrFail():new $class;
             if(($row->exists?(int)$row->revision:0)!==($t['revision']??null)){throw new \DomainException('The saved details changed. Reload and try again.');}
+            if($kind==='profile' && $action==='save'){
+                if(($t['defaultId']??null)!==null && ($id!==$t['defaultId'] || SiteDnsDefault::profile(true)?->id!==$t['defaultId'])){throw new \DomainException('The default nameservers changed. Reload the page and try again.');}
+                if(SiteDnsDefault::uses($id,true)){SiteDnsDefault::authorize($actor);}
+            }
             if($kind==='profile'&&$row->exists&&$row->readProfile()===null&&$action!=='delete'){throw new \DomainException(self::UNREADABLE);}
             $before=$row->exists?$row->revision:0;$data=[];
             if($kind==='watch'){

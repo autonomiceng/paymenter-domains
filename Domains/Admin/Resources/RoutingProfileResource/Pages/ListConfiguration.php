@@ -10,6 +10,7 @@ use Filament\View\PanelsRenderHook;
 use Livewire\Attributes\Locked;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DefaultNameservers,Sheet,Staff,WatchActions};
+use Paymenter\Extensions\Servers\Domains\Models\WatchProfile;
 use Paymenter\Extensions\Servers\Domains\Services\{SiteDnsDefault,StaffWatchWrites as Writes};
 /** Domains > DNS templates: the default nameservers for new domains on top, the templates they come from below. */
 class ListConfiguration extends ListRecords
@@ -30,17 +31,18 @@ class ListConfiguration extends ListRecords
     public function refreshTemplate(): void{$this->loadDefault();unset($this->cachedSchemas['content']);$this->cachedActions=[];$this->cachedHeaderActions=[];$this->cacheInteractsWithHeaderActions();}
     /** Edit the default template in place. The page's revision binds the write, like the template's own page. Hidden with no default.
      * Here it changes the default nameservers, so it also needs the right to change them. */
-    public function editDefaultAction(): Action
+    public function editDefaultAction(?WatchProfile $p=null): Action
     {
-        $p=$this->defaultId?\Paymenter\Extensions\Servers\Domains\Models\WatchProfile::find($this->defaultId):null;
-        return $p?Sheet::edit(WatchActions::configuration($p,$this->defaultRevision)->name('editDefault'),'default nameservers')
+        $p??=$this->defaultId?WatchProfile::find($this->defaultId):null;
+        return $p?Sheet::edit(WatchActions::configuration($p,$this->defaultRevision,$this->defaultId)->name('editDefault'),'default nameservers')
             ->visible(fn()=>Staff::can(Writes::VIEW)&&Staff::can(Writes::MANAGE)&&Staff::canEditDefaultDns()):Action::make('editDefault')->hidden();
     }
     public function siteDefaultAction(): Action{return DefaultNameservers::choose(fn()=>$this->refreshTemplate());}
     public function content(Schema $schema): Schema
     {
+        $default=$this->defaultId?WatchProfile::find($this->defaultId):null;
         return $schema->components([
-            DefaultNameservers::card($this->defaultId?$this->editDefaultAction():null,$this->siteDefaultAction()),
+            DefaultNameservers::card($default,$default?$this->editDefaultAction($default):null,$this->siteDefaultAction()),
             $this->getTabsContentComponent(),
             RenderHook::make(PanelsRenderHook::RESOURCE_PAGES_LIST_RECORDS_TABLE_BEFORE),
             EmbeddedTable::make(),

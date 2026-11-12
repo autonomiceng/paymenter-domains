@@ -85,6 +85,25 @@ $settings->assertSee('ns1.deployment.test')->assertDontSee(SiteDnsDefault::MISSI
 $settings->callAction('editDefault',['name'=>$default->name,'nameservers'=>"ns1.edited.test\nns2.edited.test"])->assertNotified('DNS template saved')->assertNoRedirect();
 same(['ns1.edited.test','ns2.edited.test'],SiteDnsDefault::profile()->nameservers,'Edit in place changes the default nameservers');
 $settings->assertSee('ns1.edited.test');
+// Another tab changes the default after this page captured it. The card and Edit keep the same template.
+$stale=\Livewire\Livewire::actingAs($manager)->test($page);
+SiteDnsDefault::save($manager,$replacement->id);
+$stale->call('$refresh');
+$cardHtml=$stale->html();
+$before=[SiteDnsDefault::profile()->id,WatchProfile::orderBy('id')->get()->toJson(),\Paymenter\Extensions\Servers\Domains\Models\WatchAudit::count(),DB::table('domains_watch_staff_claims')->count()];
+$stale->callAction('editDefault',['name'=>$default->name,'nameservers'=>"ns1.stale.test\nns2.stale.test"])
+    ->assertNotified('The default nameservers changed. Reload the page and try again.')->assertNotNotified('DNS template saved')->assertActionMounted('editDefault');
+same($before,[SiteDnsDefault::profile()->id,WatchProfile::orderBy('id')->get()->toJson(),\Paymenter\Extensions\Servers\Domains\Models\WatchAudit::count(),DB::table('domains_watch_staff_claims')->count()],'Stale default edit preserves both templates, selection, audit and claim');
+$dom=new DOMDocument();@$dom->loadHTML($cardHtml);$xpath=new DOMXPath($dom);
+$card=$xpath->query('//*[contains(concat(" ",normalize-space(@class)," ")," domains-sheet ")]')->item(0);
+expect($card instanceof DOMElement,'The default card is rendered');
+expect(str_contains($card->textContent,'ns1.edited.test')&&!str_contains($card->textContent,'ns1.other.test'),'The card shows the template captured by Edit');
+// An edit dialog already open when another tab selects a different template is refused too.
+$mounted=\Livewire\Livewire::actingAs($manager)->test($page)->mountAction('editDefault')->setActionData(['name'=>$replacement->name,'nameservers'=>"ns1.stale.test\nns2.stale.test"]);
+SiteDnsDefault::save($manager,$default->id);
+$before=[WatchProfile::orderBy('id')->get()->toJson(),\Paymenter\Extensions\Servers\Domains\Models\WatchAudit::count()];
+$mounted->callMountedAction()->assertNotified('The default nameservers changed. Reload the page and try again.')->assertNotNotified('DNS template saved');
+same($before,[WatchProfile::orderBy('id')->get()->toJson(),\Paymenter\Extensions\Servers\Domains\Models\WatchAudit::count()],'Changing the default while Edit is open changes neither template');
 \Livewire\Livewire::actingAs($manager)->test($settingsPage)->assertSee('ns1.edited.test, ns2.edited.test');
 $default=$default->fresh();
 app(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class)->boot();

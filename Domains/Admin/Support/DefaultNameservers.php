@@ -64,9 +64,9 @@ final class DefaultNameservers
     }
     /** The card: the nameservers new domains get, the template they come from, and the two ways to change them.
      * $edit edits the default template in place; it is null when there is no usable default to edit. */
-    public static function card(?Action $edit,Action $choose): Group
+    public static function card(?WatchProfile $default,?Action $edit,Action $choose): Group
     {
-        $default=SiteDnsDefault::profile();$canEdit=Staff::canEditDefaultDns();$refusal=SiteDnsDefault::refusal($canEdit);
+        $canEdit=Staff::canEditDefaultDns();$refusal=SiteDnsDefault::refusal($canEdit);
         $problem=$refusal??($default?null:($canEdit?SiteDnsDefault::MISSING:'Default nameservers are Missing. New domains have no nameservers to use. '.SiteDnsDefault::ASK));
         // A default a registrar refuses still shows its nameservers and Edit, which is one of its two fixes.
         $names=TextEntry::make('default_nameservers')->label('Nameservers')->state($default?$default->nameservers:Missing::LABEL)

@@ -86,7 +86,7 @@ final class SiteDnsDefault
         });
         if($changed){self::reconcile();}
     }
-    private static function authorize(User $actor): void
+    public static function authorize(User $actor): void
     {
         $staff=\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::class;
         abort_unless($staff::allows($actor,$staff::POLICY) && $staff::allows($actor,self::MANAGE),403);
