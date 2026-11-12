@@ -179,8 +179,9 @@ def available_memory_mib(meminfo=Path('/proc/meminfo'), cgroup=Path('/sys/fs/cgr
 
 def bounded_jobs(requested, memory_mib, *, explicit=False):
     if os.environ.get('DOMAINS_TEST_CGROUP'):
-        # Each command owns a hard 256 MiB child; the controller has 512 MiB.
-        fitting = min(8, memory_mib // 256)
+        # Native process trees measured below 192 MiB. The enclosing scope still caps
+        # all workers and the controller together; individual cases retain their own caps.
+        fitting = min(10, memory_mib // 192)
         if requested > fitting:
             raise ValueError('Requested workers exceed the per-test memory reservation.')
         return requested
@@ -368,7 +369,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         phased = bounded and test_workers.installed_phases(argv[-1])
         resource_receipt = output / f'{index:04d}.resources.json'
         # Browser cases run alone and include Chromium, Node and the PHP server.
-        test_limits = dict(wall_seconds=60 if kind == 'ui' else 30 if kind == 'native' else 10,
+        test_limits = dict(wall_seconds=60 if Path(argv[-1]).name == 'native-paid-baseline-test.php' else 30 if kind in ('ui', 'native') else 10,
                            memory_bytes=(768 if kind == 'ui' else 256)*1024**2)
         syntax_lint = kind == 'lint' and len(argv) >= 3 and argv[1] == '-l'
         rss_path = None if syntax_lint else output/f'{index:03d}.rss.txt'
