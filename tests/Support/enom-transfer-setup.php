@@ -21,9 +21,9 @@ $rdapMode=(object)['mode'=>'ok','calls'=>0];$rdap=new \Paymenter\Extensions\Serv
 app()->instance(\Paymenter\Extensions\Servers\Domains\Services\TransferPrecheck::class,new \Paymenter\Extensions\Servers\Domains\Services\TransferPrecheck($rdap));
 // Fresh install's contract inspected these adapters before this fixture supplied its offline RDAP.
 foreach(['CheckoutEligibility','CartAdmission','InvoiceBinding','Storefront'] as $adapter){app()->forgetInstance('Paymenter\\Extensions\\Servers\\Domains\\Services\\'.$adapter);}
-$staff=staffUser([...array_keys(Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::permissions()),'admin.invoices.update']);Auth::setUser($staff);
+$staff=isset($resumeTransfer)?App\Models\User::findOrFail($resumeTransfer['staff']):staffUser([...array_keys(Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::permissions()),'admin.invoices.update']);Auth::setUser($staff);
 Currency::firstOrCreate(['code'=>'USD'],['name'=>'US Dollar','format'=>'1,000.00','prefix'=>'$','suffix'=>'']);
-$server=Server::create(['name'=>'Synthetic TEST transfer','type'=>'server','extension'=>'Domains','enabled'=>true]);(new Paymenter\Extensions\Servers\Domains\Domains)->boot();
+$server=isset($resumeTransfer)?Server::findOrFail($resumeTransfer['server']):Server::create(['name'=>'Synthetic TEST transfer','type'=>'server','extension'=>'Domains','enabled'=>true]);(new Paymenter\Extensions\Servers\Domains\Domains)->boot();
 $transferEnvironment??='test';$transferUid=$transferEnvironment==='live'?'live-uid':'test-uid';
 $transferState=(object)['name'=>'setup.example.com','bill'=>'','pending'=>true,'charge'=>true,'environment'=>$transferEnvironment,'uid'=>$transferUid];require __DIR__.'/enom-transfer-wire.php';
 $setupReply=static function(array $p)use($transferReply):string {
@@ -35,10 +35,11 @@ $setupReply=static function(array $p)use($transferReply):string {
 };
 Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire(['reply'=>$setupReply]);config(['domains.enom_test_sends_per_day'=>1000,'domains.enom_test_sends_per_minute'=>100000]);
 $settings=app(StaffSettingsWrites::class);$write=static function(string $action,array $data=[],?int $tld=null)use($settings,$staff,$server):void{Auth::setUser($staff);$r=new Review($staff->id,$server->id,$tld,$action,Review::ticket($staff->id,$server->id,$tld,$action,Review::stamp($server->id,$tld)),'Review synthetic TEST transfer');$settings->run($r,$data);};
-$write('configure',['registrar'=>'enom','environment'=>$transferEnvironment,'uid'=>$transferUid,'token'=>'TEST-SECRET-TOKEN']);$a=Account::where('server_id',$server->id)->sole();$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a);
+if(!isset($resumeTransfer)){$write('configure',['registrar'=>'enom','environment'=>$transferEnvironment,'uid'=>$transferUid,'token'=>'TEST-SECRET-TOKEN']);}$a=Account::where('server_id',$server->id)->sole();$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a);
 if(isset($transferConfigured)){$transferConfigured();}
-$write('probe');
 require_once __DIR__.'/installed-offer-evidence.php';
+if(!isset($resumeTransfer)){
+$write('probe');
 // Independent synthetic annual prices/support cover this fixture's seven-day transfer watch.
 $tld=installedOfferEvidence($binding,$clock,true,7);
 if($transferEnvironment==='test'){config(['domains.enom_writes.renewal'=>true]);$write('test_renewal',['accept'=>true,'verified'=>true]);}
@@ -52,6 +53,9 @@ if($transferEnvironment==='test'){$server->settings()->create(['key'=>'domains_t
 Illuminate\Support\Facades\Schema::create('cache',static function($t):void{$t->string('key')->primary();$t->mediumText('value');$t->integer('expiration')->index();});Illuminate\Support\Facades\Schema::create('cache_locks',static function($t):void{$t->string('key')->primary();$t->string('owner');$t->integer('expiration');});
 config(['cache.default'=>'database','session.driver'=>'database','queue.default'=>'database','queue.connections.database.retry_after'=>900]);Queue::fake();if($transferEnvironment==='test'){$write('processing',['enabled'=>true,'confirmed'=>true]);}
 $user=commerceUser();$user->update(['email'=>'transfer-owner@example.com']);foreach(['address'=>'1 Synthetic Street','city'=>'Seattle','state'=>'WA','zip'=>'98101','country'=>'US','phone'=>'(206) 555-0100'] as $key=>$value){$user->properties()->create(['key'=>$key,'name'=>$key,'value'=>$value]);}
+}else{$tld=Tld::findOrFail($resumeTransfer['tld']);$user=App\Models\User::findOrFail($resumeTransfer['user']);}
+config(['cache.default'=>'database','session.driver'=>'database','queue.default'=>'database','queue.connections.database.retry_after'=>900]);Queue::fake();
+
 
 $offlinePsl=static fn():never=>throw new \Paymenter\Extensions\Servers\Domains\Services\PslFailure('transport_failed');app()->instance(\Paymenter\Extensions\Servers\Domains\Services\PslTransport::class,new \Paymenter\Extensions\Servers\Domains\Services\PslTransport($offlinePsl));
 app(\Paymenter\Extensions\Servers\Domains\Services\ObservationWork::class)->enroll($server->id);

@@ -14,6 +14,15 @@ $traceTiming=static function(string $stage,int $started)use($lifecycleStarted,$b
             'boot_seconds'=>round($bootSeconds,3),'total_seconds'=>round((hrtime(true)-$lifecycleStarted)/1e9,3)],JSON_THROW_ON_ERROR)."\n");
     }
 };
+if(getenv('PACKAGE_TIMINGS')==='1'){
+    register_shutdown_function(static function()use($lifecycleStarted):void {
+        $usage=getrusage();$gc=gc_status();
+        fwrite(STDERR,json_encode(['timing'=>'package_resources','phase'=>(string)getenv('PACKAGE_PHASE'),
+            'seconds'=>(hrtime(true)-$lifecycleStarted)/1e9,
+            'cpu_seconds'=>$usage['ru_utime.tv_sec']+$usage['ru_utime.tv_usec']/1e6+$usage['ru_stime.tv_sec']+$usage['ru_stime.tv_usec']/1e6,
+            'gc_seconds'=>$gc['collector_time'],'gc_runs'=>$gc['runs'],'peak_bytes'=>memory_get_peak_usage(true)],JSON_THROW_ON_ERROR)."\n");
+    });
+}
 use Illuminate\Support\Facades\{Artisan,DB,Event,Schema};
 use Paymenter\Extensions\Servers\Domains\Services\{Installation,Runtime,AccountBindings,NativeCatalogue,PriceCatalogue,SellerPolicies};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
@@ -149,9 +158,9 @@ if($phase==='bridge-seed'){
     }else{assertRetained($receipt);echo "Native upload retained all recorded data (".$phase.").\n";}
 }elseif($phase==='enom-live'){
     require __DIR__.'/Support/enom-live.php';
-}elseif($phase==='enom-test-transfer'){
-    require __DIR__.'/Support/enom-transfer-setup.php';
-    require __DIR__.'/Support/enom-test-transfer.php';
+}elseif(str_starts_with($phase,'enom-test-transfer-group-')){
+    $group=substr($phase,strlen('enom-test-transfer-group-'));expect(in_array($group,['arrival','capacity','preflight','contacts'],true),'Known transfer guard group');
+    require __DIR__.'/Support/enom-transfer-'.$group.'-cases.php';
 }elseif($phase==='enom-test-transfer-restart'){
     require __DIR__.'/Support/enom-transfer-restart.php';
 }elseif($phase==='enom-test-management'){
@@ -163,27 +172,41 @@ if($phase==='bridge-seed'){
     $traceTiming('management_assertions',$managementStarted);
 }elseif($phase==='enom-test-management-restart'){
     require __DIR__.'/Support/enom-management-restart.php';
-}elseif($phase==='enom-test-renewal'){
-    require __DIR__.'/Support/enom-test-registration.php';
-    require __DIR__.'/Support/enom-test-renewal.php';
+}elseif(str_starts_with($phase,'enom-test-renewal-group-')){
+    $group=substr($phase,strlen('enom-test-renewal-group-'));
+    expect(in_array($group,['policy','confirmation','cap','refusals','history','replacement','race'],true),'Known renewal guard group');
+    require __DIR__.'/Support/enom-renewal-'.$group.'-cases.php';
 }elseif($phase==='enom-test-renewal-restart'){
     require __DIR__.'/Support/enom-renewal-restart.php';
 }elseif(str_starts_with($phase,'enom-test-renewal-race-')){
     require __DIR__.'/Support/enom-renewal-race.php';
-}elseif($phase==='enom-test-registration'){
-    require __DIR__.'/Support/enom-test-registration.php';
+}elseif(str_starts_with($phase,'enom-test-registration-group-')){
+    $group=substr($phase,strlen('enom-test-registration-group-'));
+    expect(in_array($group,['contracts','work','contacts','cap','balance','reconciliation','scope','checkout'],true),'Known registration guard group');
+    require __DIR__.'/Support/enom-registration-'.$group.'-cases.php';
+    file_put_contents($receipt.'.enom-sales-fixture',json_encode(['staff'=>$staff->id,'server'=>$server->id,'user'=>$user->id,'tld'=>$tld->id,'at'=>$clock->now()->format(DATE_ATOM)],JSON_THROW_ON_ERROR));
 }elseif($phase==='enom-test-calls'){
     require __DIR__.'/Support/installed-test-counter.php';
 }elseif($phase==='enom-test-call-count'){
     same(7,DB::table(Paymenter\Extensions\Servers\Domains\Services\EnomTestSendLimitSchema::SENDS)->where('account',Paymenter\Extensions\Servers\Domains\Services\EnomTestSendLimit::account('counter-race-uid'))->count(),'TEST send attempts remain retained across process restart and reinstall');
 }elseif($phase==='held'){
     require __DIR__.'/Support/registration-held.php';
+    file_put_contents($receipt.'.held',json_encode(['staff'=>$staff->id,'user'=>$user->id,'server'=>$server->id,'holding'=>$holding->id,'operation'=>$op->id],JSON_THROW_ON_ERROR));
+}elseif($phase==='activation'){
+    require __DIR__.'/Support/commerce.php';require __DIR__.'/Support/native-commerce.php';require __DIR__.'/Support/staff-panel.php';
+    $held=json_decode(file_get_contents($receipt.'.held'),true,512,JSON_THROW_ON_ERROR);
+    $staff=App\Models\User::findOrFail($held['staff']);$user=App\Models\User::findOrFail($held['user']);
+    $server=App\Models\Server::findOrFail($held['server']);$holding=Domain::findOrFail($held['holding']);$op=Operation::findOrFail($held['operation']);
+    $account=Account::where('server_id',$server->id)->sole();$binding=AccountBindings::binding($account);
     require __DIR__.'/Support/runtime-activation.php';
 }elseif($phase==='namesilo-enrollment'){
     require __DIR__.'/Support/namesilo-enrollment-wire.php';
+    $enrollmentInstalledSmoke=true;
     require __DIR__.'/Support/namesilo-enrollment-staff.php';
     expect(str_starts_with((new ReflectionClass(Paymenter\Extensions\Servers\Domains\Services\NameSiloSandbox::class))->getFileName(),base_path('extensions/Servers/Domains/')),'Enrollment uses installed ZIP');
-}elseif($phase==='identity'){
+}elseif(str_starts_with($phase,'identity-group-')){
+    $identityStaffGroup=substr($phase,strlen('identity-group-'));
+    expect(in_array($identityStaffGroup,['balance','rotation','runtime'],true),'Known identity guard group');
     require __DIR__.'/Support/enom-identity.php';$GLOBALS['identityCalls']=[];
     require __DIR__.'/Support/enom-identity-staff.php';
 }elseif($phase==='catalogue'){
@@ -220,8 +243,12 @@ if($phase==='bridge-seed'){
         require __DIR__.'/Support/namesilo-registration-fixture.php';
         require __DIR__.'/Support/namesilo-nexus.php';
     }else{require __DIR__.'/renewal-execution-namesilo-test.php';}
-}elseif(in_array($phase,['acquisition','enom-exchange'],true)){
-    require __DIR__.'/Support/runtime-acquisition.php';
+}elseif(str_starts_with($phase,'acquisition-group-')){
+    $group=substr($phase,strlen('acquisition-group-'));expect(in_array($group,['guards','dispatch'],true),'Known acquisition guard group');
+    require __DIR__.'/Support/runtime-acquisition-'.$group.'.php';
+}elseif(str_starts_with($phase,'enom-exchange-group-')){
+    $group=substr($phase,strlen('enom-exchange-group-'));expect(in_array($group,['dispatch','authority','reconciliation'],true),'Known exchange guard group');
+    require __DIR__.'/Support/runtime-enom-exchange-'.$group.'.php';
 }elseif($phase==='seed'){
     require __DIR__.'/Support/commerce.php';require __DIR__.'/Support/native-commerce.php';
     expect(!is_link(base_path('extensions/Servers/Domains')),'Runtime is installed files, never a source link');

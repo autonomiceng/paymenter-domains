@@ -136,6 +136,9 @@ $GLOBALS['enrollmentExpectedContext']='api';
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$s->id])->assertSee('Add funds')->assertSeeHtml('https://ote.namesilo.com/cart/add-funds')->assertDontSee('www.namesilo.com');
 $n=$GLOBALS['enrollmentCalls'];$refuse(fn()=>$attempt(['api_key'=>'synthetic-ote-key']),'Duplicate key must use original enrollment');same($n,$GLOBALS['enrollmentCalls'],'Duplicate key refuses before read');
 
+// The full refusal, recovery and tampering matrices remain in namesilo-enrollment-test.php.
+// Installed acceptance above proves native forms, wire, encryption, balance and scheduler integration.
+if($enrollmentInstalledSmoke??false){return;}
 // Render recovery forms before unrelated guard fixtures accumulate.
 $uncertain=$fresh();$GLOBALS['enrollmentExpectedContext']='api';$GLOBALS['enrollmentExpectedTimeout']=10000;
 $GLOBALS['enrollmentDuringRead']=static function()use($uncertain):void {DB::table('domains_runtime_turns')->insert(['server_id'=>$uncertain->id,'account_fingerprint'=>str_repeat('b',64)]);};

@@ -22,9 +22,9 @@ $hot=storage_path('framework/domains-assets-hot');file_put_contents($hot,'http:/
 require_once app_path('Classes/helpers.php');tldPanel();
 $rdap=new Paymenter\Extensions\Servers\Domains\Services\Rdap(static function(string $url):array{$path=parse_url($url,PHP_URL_PATH);$data=str_ends_with($path,'dns.json')?['services'=>[[['com'],['https://rdap.example.com/']]]]:['objectClassName'=>'domain','ldhName'=>basename($path),'status'=>['active'],'events'=>[['eventAction'=>'registration','eventDate'=>'2020-01-01T00:00:00Z'],['eventAction'=>'expiration','eventDate'=>'2027-10-21T00:00:00Z']]];return ['status'=>200,'body'=>json_encode($data,JSON_THROW_ON_ERROR)];});
 app()->instance(Paymenter\Extensions\Servers\Domains\Services\TransferPrecheck::class,new Paymenter\Extensions\Servers\Domains\Services\TransferPrecheck($rdap));
-$staff=staffUser([...array_keys(Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::permissions()),'admin.invoices.update']);Auth::setUser($staff);
+$staff=isset($resumeEnomFixture)?App\Models\User::findOrFail($resumeEnomFixture['staff']):staffUser([...array_keys(Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::permissions()),'admin.invoices.update']);Auth::setUser($staff);
 Currency::firstOrCreate(['code'=>'USD'],['name'=>'US Dollar','format'=>'1,000.00','prefix'=>'$','suffix'=>'']);
-$server=Server::create(['name'=>'Synthetic TEST registration','type'=>'server','extension'=>'Domains','enabled'=>true]);
+$server=isset($resumeEnomFixture)?Server::findOrFail($resumeEnomFixture['server']):Server::create(['name'=>'Synthetic TEST registration','type'=>'server','extension'=>'Domains','enabled'=>true]);
 (new Paymenter\Extensions\Servers\Domains\Domains)->boot();
 $reply=static function(array $p)use($clock):string {
     same(0,DB::transactionLevel(),'Every physical request outside financial locks');
@@ -57,6 +57,6 @@ expect($settings->connectionAvailable(),'Installed TEST phase boots staff connec
 $write=static function(string $action,array $data=[],?int $tld=null)use($settings,$staff,$server):void {
     Auth::setUser($staff);$r=new Review($staff->id,$server->id,$tld,$action,Review::ticket($staff->id,$server->id,$tld,$action,Review::stamp($server->id,$tld)),'Review synthetic TEST registration');$settings->run($r,$data);
 };
-$write('configure',['registrar'=>'enom','environment'=>'test','uid'=>'test-uid','token'=>'TEST-SECRET-TOKEN']);
+if(!isset($resumeEnomFixture)){$write('configure',['registrar'=>'enom','environment'=>'test','uid'=>'test-uid','token'=>'TEST-SECRET-TOKEN']);}
 $a=Account::where('server_id',$server->id)->sole();$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a);
-same(false,$a->processing_enabled,'Identity leaves processing off');$write('probe');
+if(!isset($resumeEnomFixture)){same(false,$a->processing_enabled,'Identity leaves processing off');$write('probe');}

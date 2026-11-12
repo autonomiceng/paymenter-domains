@@ -36,13 +36,27 @@ $app=require $fixture.'/bootstrap/app.php';
 // rollback journal for every migration. These process-restart tests do not simulate power loss.
 $app->afterBootstrapping(Illuminate\Foundation\Bootstrap\LoadConfiguration::class,
     static fn()=>config(['database.connections.sqlite.journal_mode'=>'WAL','database.connections.sqlite.synchronous'=>'NORMAL']));
-if(in_array(getenv('PACKAGE_PHASE'),['enom-test-transfer','enom-test-transfer-restart','enom-test-management','install-enom-test-management','enom-test-management-restart','enom-test-registration','enom-test-renewal','enom-test-renewal-restart','enom-test-renewal-race-issue','enom-test-renewal-race-admit','enom-test-renewal-race-verify'],true)){
+$packagePhase=(string)getenv('PACKAGE_PHASE');
+$renewalGroup=str_starts_with($packagePhase,'enom-test-renewal-group-');
+$registrationGroup=str_starts_with($packagePhase,'enom-test-registration-group-');
+$transferGroup=str_starts_with($packagePhase,'enom-test-transfer-group-');
+if($renewalGroup||$registrationGroup||$transferGroup||in_array($packagePhase,[
+    'enom-test-transfer','enom-test-transfer-restart','enom-test-management','install-enom-test-management',
+    'enom-test-management-restart','enom-test-registration','enom-test-renewal','enom-test-renewal-restart',
+    'enom-test-renewal-race-issue','enom-test-renewal-race-admit','enom-test-renewal-race-verify'],true)){
+    $registration=$renewalGroup||$registrationGroup||$transferGroup||in_array($packagePhase,[
+        'enom-test-transfer','enom-test-management','install-enom-test-management','enom-test-registration','enom-test-renewal'],true);
+    $transfer=$transferGroup||in_array($packagePhase,['enom-test-transfer','enom-test-transfer-restart'],true);
     $app->afterBootstrapping(Illuminate\Foundation\Bootstrap\LoadConfiguration::class,
-        static fn()=>config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,'domains.enom_writes.registration'=>in_array(getenv('PACKAGE_PHASE'),['enom-test-transfer','enom-test-management','install-enom-test-management','enom-test-registration','enom-test-renewal'],true),'domains.enom_writes.transfer'=>in_array(getenv('PACKAGE_PHASE'),['enom-test-transfer','enom-test-transfer-restart'],true),'domains.enom_writes.management'=>getenv('PACKAGE_PHASE')==='enom-test-management-restart','domains.enom_writes.renewal'=>str_starts_with((string)getenv('PACKAGE_PHASE'),'enom-test-renewal-')]));
+        static fn()=>config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,
+            'domains.enom_writes.registration'=>$registration,'domains.enom_writes.transfer'=>$transfer,
+            'domains.enom_writes.management'=>$packagePhase==='enom-test-management-restart',
+            'domains.enom_writes.renewal'=>str_starts_with($packagePhase,'enom-test-renewal-')]));
 }
-if(in_array(getenv('PACKAGE_PHASE'), ['identity','catalogue','catalogue-retained'], true)){
+if(str_starts_with($packagePhase,'identity-group-')||in_array($packagePhase,['identity','catalogue','catalogue-retained'],true)){
     $app->afterBootstrapping(Illuminate\Foundation\Bootstrap\LoadConfiguration::class,
-        static fn()=>config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>getenv('PACKAGE_PHASE')!=='identity']));
+        static fn()=>config(['domains.enom_identity.environment'=>'test',
+            'domains.enom_catalogue.enabled'=>!str_starts_with($packagePhase,'identity-group-')&&$packagePhase!=='identity']));
 }
 if(getenv('PACKAGE_PHASE')==='enom-live'){
     $app->afterBootstrapping(Illuminate\Foundation\Bootstrap\LoadConfiguration::class,static fn()=>config(['domains.enom_identity.environment'=>'live','app.url'=>'https://billing.example.com']));

@@ -11,6 +11,7 @@ import tarfile
 import time
 import zipfile
 import stat
+import sqlite3
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -198,10 +199,10 @@ def main(scenario):
                 argv = [str(ROOT/'scripts/php-test'), str(ROOT/'tests/package-lifecycle.php')]
                 if os.environ.get('DOMAINS_TEST_CGROUP'):
                     resource = Path(os.environ['DOMAINS_TEST_RECEIPTS'])/('installed-'+uuid.uuid4().hex+'.json')
-                    # Use the ordinary phase's existing 45-second bound under admission too.
+                    # Keep the admitted phase's 30-second bound; focused phases reduce its work.
                     # Leave receipt/descendant cleanup time outside that bound, while the
                     # original scenario deadline still caps the complete lifecycle.
-                    case_wall = min(60 if phase_limit == 120 else phase_limit, timeout)
+                    case_wall = min(60 if phase_limit == 120 else 30, timeout)
                     receipt_timeout = case_wall+2
                     if scenario_deadline is not None:
                         receipt_timeout = min(case_wall+2, scenario_deadline-time.monotonic())
@@ -235,13 +236,20 @@ def main(scenario):
                             frozen_obligations_retained=True, converter_removed=True)
             print(json.dumps(evidence), flush=True)
             return
-        if scenario == 'enom-test-management':
-            phase('install-enom-test-management', first)
-        else:
-            phase('install', first)
+        phase('install', first)
+        if scenario in ('acquisition', 'enom-exchange'):
+            # Seed once through the real ZIP uploader, then fork committed SQLite bytes.
+            with sqlite3.connect(database) as source, sqlite3.connect(root/'installed-seed.sqlite') as target:
+                source.backup(target)
+        def isolated_phase(name):
+            with sqlite3.connect(root/'installed-seed.sqlite') as source, sqlite3.connect(database) as target:
+                source.backup(target)
+            phase(name)
         if scenario == 'held':
             phase('held')
-            phase('identity')
+            phase('activation')
+            for group in ('balance', 'rotation', 'runtime'):
+                phase('identity-group-'+group)
             phase('catalogue')
             phase('upload', 'current')
             phase('catalogue-retained')
@@ -251,14 +259,17 @@ def main(scenario):
             phase('enom-live')
             evidence['live_registration_renewal_and_refusals_offline'] = True
         elif scenario == 'enom-test-transfer':
-            phase(scenario)
+            for group in ('arrival', 'capacity', 'preflight', 'contacts'):
+                phase('enom-test-transfer-group-'+group)
             phase('enom-test-transfer-restart')
             evidence['test_transfer_paid_code_cap_history_restart_timeout'] = True
         elif scenario == 'enom-test-management':
+            phase('enom-test-management')
             phase('enom-test-management-restart')
             evidence['test_management_readback_and_restart'] = True
         elif scenario == 'enom-test-renewal':
-            phase(scenario)
+            for group in ('policy', 'confirmation', 'cap', 'refusals', 'history', 'replacement', 'race'):
+                phase('enom-test-renewal-group-'+group)
             phase('enom-test-renewal-restart')
             from concurrent.futures import ThreadPoolExecutor
             for race in ('issue', 'admit'):
@@ -268,7 +279,8 @@ def main(scenario):
             evidence['overlapping_issuance_and_admission_workers'] = True
             evidence['test_renewal_native_payment_charge_expiry'] = True
         elif scenario == 'enom-test-registration':
-            phase('enom-test-registration')
+            for group in ('contracts', 'work', 'contacts', 'cap', 'balance', 'reconciliation', 'scope', 'checkout'):
+                phase('enom-test-registration-group-'+group)
             from concurrent.futures import ThreadPoolExecutor
             with ThreadPoolExecutor(max_workers=2) as workers:
                 list(workers.map(lambda worker: phase('enom-test-calls', worker=worker), (1, 2)))
@@ -288,7 +300,8 @@ def main(scenario):
             evidence['test_registration_and_cap_survive_restart_and_reinstall'] = True
         elif scenario == 'enom-exchange':
             phase('exchange-contracts')
-            phase('enom-exchange')
+            for group in ('dispatch', 'authority', 'reconciliation'):
+                isolated_phase('enom-exchange-group-'+group)
             evidence['bounded_enom_exchange'] = True
         elif scenario == 'namesilo-enrollment':
             phase(scenario)
@@ -297,7 +310,8 @@ def main(scenario):
             phase(scenario)
             evidence['namesilo_frozen_nexus' if scenario.endswith('registration') else 'namesilo_renewal_readback'] = True
         elif scenario == 'acquisition':
-            phase('acquisition')
+            for group in ('guards', 'dispatch'):
+                isolated_phase('acquisition-group-'+group)
             evidence['typed_acquisition_routing'] = True
         else:
             phase('seed')
