@@ -367,11 +367,13 @@ final class DomainDecisions
         if ($account&&DemoData::syncPaused($d,$account)) { return 'paused'; }
         return !self::unconfirmedRegistration($d)&&($stopped??ObservationWork::stopped($d))?'failed':null;
     }
+    /** A value the last registrar read left out. The staff domain page says it once, above the sheet, when the read is late. */
+    public const NOT_RETURNED='Registrar did not return it. Check the domain at the registrar.';
     /** Why a value read from the registrar is Missing. */
     public static function unread(Domain $d, ?string $sync): string
     {
         return $d->adoptionPending()?Missing::fills('after import'):match($sync) {'paused'=>Missing::fills('when sync resumes'),'failed'=>'Sync stopped. '.self::stoppedStep($d),
-            default=>$d->last_synced_at?'Registrar did not return it. Check the domain at the registrar.':Missing::fills('within a day')};
+            default=>$d->last_synced_at?self::NOT_RETURNED:Missing::fills('within a day')};
     }
     /** One safe failure cause, or the stopped-read next step, and when the automatic retry runs. The page shows that time
      * after the words in the viewer's time zone, as every other time there (ViewDomain::below).

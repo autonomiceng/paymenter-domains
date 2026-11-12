@@ -59,8 +59,7 @@ class DomainResource extends Resource
             ->with(['user:id,first_name,last_name,email', 'server:id,name', 'latestAcquisition'])),[
             DemoTag::apply(OneLine::apply(TextColumn::make('domain')->label('Domain')->searchable()->sortable()->fontFamily(FontFamily::Mono)
                 ->description(fn(Domain $record,$livewire)=>new \Illuminate\Support\HtmlString('<span class="domains-phone-note">'.e(self::status($record,$livewire)['label']).'<br>'.e(self::note($record,$livewire)['text']).'</span>')),OneLine::NAME)),
-            OneLine::apply(TextColumn::make('customer')->label('Customer')->state(fn(Domain $record)=>$record->user?(trim($record->user->first_name.' '.$record->user->last_name)?:$record->user->email):null)
-                ->searchable(query:fn(Builder $query,string $search)=>self::customerSearch($query,$search)),[...OneLine::SHORT,'domains-customer-cell']),
+            // Status and its next step come right after the name, so a phone shows them without scrolling.
             TextColumn::make('status')->label('Status')->badge()->state(fn(Domain $record,$livewire)=>self::label($record,$livewire))
                 ->extraAttributes(fn(Domain $record,$livewire)=>StatusMark::attributes(self::tone($record,$livewire),'domain-'.$record->id))
                 ->color(fn(Domain $record,$livewire)=>self::tone($record,$livewire)),
@@ -69,6 +68,8 @@ class DomainResource extends Resource
                 ->formatStateUsing(fn(string $state,Domain $record,$livewire)=>DomainFacts::noteStep($state,self::status($record,$livewire)))
                 ->url(fn(Domain $record,$livewire)=>DomainFacts::requestUrl(self::status($record,$livewire)))
                 ->extraAttributes(fn(Domain $record,$livewire)=>StatusMark::note(self::note($record,$livewire)['act'])),OneLine::NOTE),
+            OneLine::apply(TextColumn::make('customer')->label('Customer')->state(fn(Domain $record)=>$record->user?(trim($record->user->first_name.' '.$record->user->last_name)?:$record->user->email):null)
+                ->searchable(query:fn(Builder $query,string $search)=>self::customerSearch($query,$search)),[...OneLine::SHORT,'domains-customer-cell']),
             OneLine::apply(TextColumn::make('provider_expires_at')->label('Expires')->state(fn(Domain $record)=>$record->provider_expires_at?->format('M j, Y')
                 ?? (self::registered($record)?Missing::LABEL:null))->color(fn($state,Domain $record,$livewire)=>$state===Missing::LABEL?Missing::color(DomainFacts::unread($record,self::row($record,$livewire)['sync'])):null)
                 ->icon(fn($state,Domain $record,$livewire)=>$state===Missing::LABEL?Missing::icon(DomainFacts::unread($record,self::row($record,$livewire)['sync'])):null)

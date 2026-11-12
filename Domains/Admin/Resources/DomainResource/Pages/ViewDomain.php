@@ -202,6 +202,9 @@ class ViewDomain extends ViewRecord
     {
         $this->cacheHoldingActions();
         $d=$this->getRecord(); $facts=DomainFacts::besideHead($this->facts(),$this->said()); $edits=$this->edits();
+        $late=$this->recordsLate($d);
+        // The summary above the sheet says once why values are missing, so rows drop the repeated cause.
+        if ($late) { foreach ($facts as $label=>$fact) { if (is_string($fact['sub']??null)&&str_contains($fact['sub'],\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainDecisions::NOT_RETURNED)) { $facts[$label]['sub']=trim(str_replace(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainDecisions::NOT_RETURNED,'',$fact['sub']))?:null; } } }
         // WHOIS privacy stays stored and read, but the page does not show it (PrivacyVisibility).
         if (!\Paymenter\Extensions\Servers\Domains\Presentation\PrivacyVisibility::SHOWN) { unset($facts['WHOIS privacy']); }
         // Reminder issues sit on Renewal, then on Open alerts, which they open when neither row exists.
@@ -222,11 +225,14 @@ class ViewDomain extends ViewRecord
             $sections[]=Sheet::section($title,$rows,$title===$held?$edits['note']:null);
         }
         // Like the approved mock, an active domain leads with its registrar records. Other states lead with registration and billing.
-        $records=[$this->recordFamilies($d,$facts,$edits,$recordsHeld?$edits['note']:null)];
-        // The registrar records section above already shows each family's state and the last read, so Monitoring keeps only the public DNS evidence.
-        $monitoring=Sheet::section('Monitoring',[\Filament\Schemas\Components\Html::make(fn()=>view('domains::admin.monitoring-evidence',['evidence'=>\Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence::read($d),'withRecords'=>true]))]);
+        $note=$recordsHeld?$edits['note']:null;
+        $records=[$this->recordFamilies($d,$facts,$edits,$late?null:$note)];
+        // The registrar records section above already shows each family's state and the last read, so Monitoring keeps only the public DNS evidence,
+        // with the DNS setup step when monitoring can't compare this domain yet.
+        $monitoring=Sheet::section('Monitoring',[...$this->dnsSetup($d),\Filament\Schemas\Components\Html::make(fn()=>view('domains::admin.monitoring-evidence',['evidence'=>\Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence::read($d),'withRecords'=>true]))]);
         $sheet=$d->status==='active'?[...$records,...$sections]:[...$sections,...$records];
-        return $schema->components([Sheet::split([...$this->notices($d),...$sheet,$monitoring],[$this->activity($d)])]);
+        $summary=$late?[$this->lateRecords($note)]:[];
+        return $schema->components([Sheet::split([...$this->notices($d),...$summary,...$sheet,$monitoring],[$this->activity($d)])]);
     }
     /** @return list<Callout> */
     private function notices(Domain $d): array
@@ -248,11 +254,31 @@ class ViewDomain extends ViewRecord
             &&!$recordsHeld){
             $out[]=Callout::make($sync['title'])->description($sync['body'])->status('warning')->columnSpanFull();
         }
-        if(\Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::affected(time())->whereKey($d->id)->exists()){
-            $out[]=Callout::make('Set the default nameservers in Domains > DNS templates to start DNS monitoring.')->status('info')->columnSpanFull()
-                ->footer(Staff::can(\Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites::VIEW) && Staff::canEditDefaultDns()?new HtmlString('<a class="fi-link domains-link" href="'.e(\Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource::getUrl()).'">'.\Paymenter\Extensions\Servers\Domains\Admin\Support\DefaultNameservers::TITLE.'</a>'):null);
-        }
         return $out;
+    }
+    /** @return list<Callout> The DNS setup step, inside Monitoring: it starts DNS monitoring and changes nothing at the registrar. */
+    private function dnsSetup(Domain $d): array
+    {
+        if(!\Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::affected(time())->whereKey($d->id)->exists()){return [];}
+        return [Callout::make('Set the default nameservers in Domains > DNS templates to start DNS monitoring.')->status('info')->columnSpanFull()
+            ->footer(Staff::can(\Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites::VIEW) && Staff::canEditDefaultDns()?new HtmlString('<a class="fi-link domains-link" href="'.e(\Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource::getUrl()).'">'.\Paymenter\Extensions\Servers\Domains\Admin\Support\DefaultNameservers::TITLE.'</a>'):null)];
+    }
+    /** The registrar read is overdue or failing on a domain that has records to read. */
+    private function recordsLate(Domain $d): bool
+    {
+        $s=$this->familyState();
+        if (DomainFacts::ended($d)||($s['not_at_registrar']??null)!==null||($s['cancelled_without_records']??false)) { return false; }
+        return (bool)(($s['read_overdue']??false)||($s['read_code']??null)||($s['failed_family']??null));
+    }
+    /** One summary of the registrar records exception, first on the page. The Registrar records section keeps the read times and causes. */
+    private function lateRecords(string|Htmlable|null $note): Callout
+    {
+        $s=$this->familyState();
+        $last=$s['last_complete_at']??null;
+        $text=($last?'Last complete read: '.trim(view('domains::partials.moment',['at'=>$last])->render()).'.':'No complete registrar read yet.')
+            .' Missing values fill in after the next successful read.';
+        if ($note!==null) { $text.=' '.e(trim(html_entity_decode(strip_tags((string)($note instanceof Htmlable?$note->toHtml():$note)),ENT_QUOTES|ENT_HTML5))); }
+        return Callout::make('Registrar records are out of date')->description(new HtmlString($text))->status('warning')->columnSpanFull();
     }
     /** A domain monitoring can't compare says so on its DNS row, beside the way to fix it. */
     private static function withDnsSetup(Domain $d, array $facts): array
