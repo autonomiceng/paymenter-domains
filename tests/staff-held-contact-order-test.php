@@ -106,7 +106,7 @@ foreach([
     'provider_membership_unconfirmed'=>['Staff','registrars'],
     'renewal_invoice_unpaid'=>['Staff','invoice'],
     'automatic_spend_paused'=>['Staff','domain'],
-    'registry_details_unsupported'=>['Staff','domain'],
+    'registry_details_unsupported'=>['Staff',null],
     'future_hold'=>['Staff','domain'],
 ] as $code=>[$owner,$destination]){
     $row=clone $op;$row->safe_code=$code;
@@ -115,16 +115,23 @@ foreach([
         expect(str_contains($notice['title'],'It will retry automatically'),'A pending price check needs the system rather than a staff retry');
     }else{expect(str_contains((string)$notice['body'],$owner),'The page names who fixes '.$code);}
     same($destination,$notice['link'],'The page leads to the repair for '.$code);
-    if(in_array($code,['registry_details_unsupported','future_hold'],true)){
+    if($code==='future_hold'){
         expect(str_contains((string)$notice['body'],'releasing this hold cannot resolve its cause'),'Permanent and unknown holds explain why release cannot help');
+    }
+    if($code==='registry_details_unsupported'){
+        same(null,\Paymenter\Extensions\Servers\Domains\Admin\Support\RequestHoldReasons::releaseBlocked($row),'Safe registry holds defer to the writer no-send proof');
     }
 }
 
-// A paused account offers its Orders setting and explains the disabled release beside it.
+// A paused account accepts release into the queue while its purchase and contact step remain unsent.
+$paused=$heldOrder('held-contact-paused-release-placeholder.com');
 DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>false]);
-$page=Livewire::actingAs($costStaff)->test(ViewOperation::class,['record'=>$op->id]);
-$page->assertActionDisabled('release')->assertSee('Orders are off for this account; staff must turn Orders on before this request can send.');
-$page->callAction('release')->assertHasNoActionErrors();same('held',$op->fresh()->state,'A disabled release leaves the request held');
+$before=[$nativeMoney(),$sent->contactAdd,$sent->registerDomain,$paused->attempt];
+$page=Livewire::actingAs($costStaff)->test(ViewOperation::class,['record'=>$paused->id]);
+$page->assertActionEnabled('release')->callAction('release')->assertHasNoActionErrors()->assertNotified('Hold released');
+same(['queued',null],[$paused->fresh()->state,$paused->fresh()->safe_code],'Orders off allows release into the queue');
+same($before,[$nativeMoney(),$sent->contactAdd,$sent->registerDomain,$paused->fresh()->attempt],'Orders off release sends nothing and preserves money and unsent proof');
+same(false,$account->fresh()->processing_enabled,'Release leaves Orders off');
 DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>true]);
 Auth::login($costStaff);
 [$heading,$submit,$words]=RequestFacts::releaseConfirmation($op,$account,null,false);

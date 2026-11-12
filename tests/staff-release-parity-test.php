@@ -74,7 +74,7 @@ foreach([defined('STAFF_RELEASE_KIND')?STAFF_RELEASE_KIND:'register'] as $kind){
             same($cause,$notice['body']??null,'Notice names contact recovery refusal: '.$fault);
             Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$row->id])->assertActionHidden('release')->assertSee($cause)->assertSee($financialFacts['invoice'])->assertDontSee('Ask your site admin to check the encryption key.');
         }
-        if($visible){Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$row->id])->assertActionVisible('release');}
+        if($visible){Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$row->id])->assertActionVisible('release')->assertActionEnabled('release');}
         $accepted=true;try{$run($row,'release');}catch(DomainException){$accepted=false;}
         if(!$accepted){same($before,$row->fresh()->getRawOriginal(),'Refusal preserves snapshot: '.$kind.':'.$fault);}
         same(in_array($fault,['ready','complimentary','retained-cap-enabled'],true),$accepted,'Actual writer result: '.$kind.':'.$fault);
@@ -114,6 +114,10 @@ foreach([defined('STAFF_RELEASE_KIND')?STAFF_RELEASE_KIND:'register'] as $kind){
             if($code==='enom_test_renewal_call_cap'){same($kind==='renew'&&$enabled,$visible,'Renewal cap recovery requires its own deployment: '.$kind);}
             if(in_array($code,['enom_test_call_cap','enom_test_transfer_call_cap'],true)){expect(!$visible,'Call cap without retained unsent refusal proof stays hidden: '.$kind);}
             same($visible,($notice['action']??null)==='release','Notice and page offer the same recovery: '.$kind.':'.($code??'null'));
+            if($visible&&($enabled||$code===RenewalCode::Term->value)){
+                $release=collect(OperationActions::make($row,'release-parity'))->first(fn($action)=>$action->getName()==='release');
+                expect(!$release->isDisabled(),'Offered release button is enabled: '.$kind.':'.($code??'null'));
+            }
             $accepted=true;try{$run($row,'release');}catch(DomainException){$accepted=false;}
             same($visible,$accepted,'Code offer equals actual writer: '.$kind.':'.($code??'null'));
             if(!$accepted){same($row->getRawOriginal(),$op->fresh()->getRawOriginal(),'Hidden refusal preserves frozen snapshot');continue;}

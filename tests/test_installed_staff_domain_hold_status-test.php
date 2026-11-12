@@ -32,17 +32,11 @@ foreach([false,true] as $ordersOn){
     $check(str_contains($request,'On hold')&&str_contains($request,'Put on hold by Alex Admin'),'Held request activity names the staff hold');
     DB::table('domains_accounts')->where('server_id',$op->server_id)->update(['processing_enabled'=>$ordersOn]);
     $clock->instant=$clock->now()->modify('+1 minute');
-    if(!$ordersOn){
-        $before=$op->fresh()->getRawOriginal();
-        Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertActionDisabled('release')
-            ->assertSee('Orders are off for this account; staff must turn Orders on before this request can send.')->callAction('release');
-        same($before,$op->fresh()->getRawOriginal(),'A disabled release preserves the hold and its audit');
-        DB::table('domains_accounts')->where('server_id',$op->server_id)->update(['processing_enabled'=>true]);
-    }
     Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertActionEnabled('release')
         ->callAction('release')->assertHasNoActionErrors()->assertNotified('Hold released');
-    same(['queued',null],[$op->fresh()->state,$op->fresh()->safe_code],'Release clears the hold with Orders on');
-    DB::table('domains_accounts')->where('server_id',$op->server_id)->update(['processing_enabled'=>$ordersOn]);
+    same(['queued',null],[$op->fresh()->state,$op->fresh()->safe_code],'Release clears the hold with Orders on or off');
+    same($ordersOn,(bool)\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->sole()->processing_enabled,'Release preserves the Orders switch');
+    same(0,$state->writes,'Hold and release do not send purchases');
     [$head,$request,$entry,$text,$xpath]=$page($op);
     $check(!str_contains(strtolower($head.' '.$request),'put on hold by staff')&&!str_contains(strtolower($head.' '.$request),'put on hold by alex admin'),'Released header and request activity drop the old staff hold');
     if($ordersOn){
@@ -89,7 +83,18 @@ same(array_reverse($expected),$keys,'Same-second actions remain newest first bef
 [$head,$request,$entry,$text,$xpath]=$page($op);
 $latest=$xpath->query('//*['.$class('domains-rail').']//*['.$class('domains-trace-title').']')->item(0);
 same('Put on hold',$text($latest),'The final same-second hold leads the rendered Activity rail');
+// An Orders hold can be released before staff turn Orders on; it only queues the paid request.
+DB::table('domains_accounts')->update(['processing_enabled'=>true]);
+$paused=$new(placeholderComFixtureName('orders-held-release-placeholder.com'),action:'transfer');
+$paused->update(['state'=>'held','safe_code'=>'processing']);
+DB::table('domains_accounts')->where('server_id',$paused->server_id)->update(['processing_enabled'=>false]);
+$money=$nativeMoney();$attempt=$paused->attempt;
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$paused->id])->assertActionVisible('release')->assertActionEnabled('release')
+    ->callAction('release')->assertHasNoActionErrors()->assertNotified('Hold released');
+same(['queued',null],[$paused->fresh()->state,$paused->fresh()->safe_code],'An Orders hold releases into the queue while Orders is off');
+same([$money,$attempt,0],[$nativeMoney(),$paused->fresh()->attempt,$state->writes],'Orders hold release preserves money and no-send proof');
 // A queued paid renewal needs the same Orders-on instruction in its header and Activity.
+DB::table('domains_accounts')->update(['processing_enabled'=>true]);
 [$renewal,$renewalDomain]=$makeRenewal(placeholderComFixtureName('orders-renewal-placeholder.com'));
 DB::table('domains_operations')->where('id',$renewal->id)->update(['state'=>'queued']);
 foreach([false,true] as $ordersOn){

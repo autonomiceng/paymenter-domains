@@ -240,8 +240,12 @@ class ViewDomain extends ViewRecord
             catch(\Throwable){$out[]=Callout::make('Registrar cost details are unavailable.')->status('warning')->columnSpanFull();}
         }}
         $sync=\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::result($d);
+        $recordsHeld=false;
+        if(($sync['title']??null)==="Couldn't read all records"){
+            try{$recordsHeld=\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::held($d);}catch(\Throwable){}
+        }
         if($sync!==null&&!in_array($sync['title'],['Domain synced','Sync retry scheduled'],true)
-            &&!($sync['title']==="Couldn't read all records"&&\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::held($d))){
+            &&!$recordsHeld){
             $out[]=Callout::make($sync['title'])->description($sync['body'])->status('warning')->columnSpanFull();
         }
         if(\Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::affected(time())->whereKey($d->id)->exists()){

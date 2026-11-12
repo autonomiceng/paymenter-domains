@@ -8,7 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{ComplimentaryCosts,ContactPro
 final class RequestHoldReasons
 {
     private const REASONS=[
-        'staff'=>['staff_review_required'],
+        'staff'=>['staff_review_required','pre_send_interrupted','renewal_term_refused','registry_details_unsupported'],
         'orders'=>['processing','processing_off'],
         'balance'=>['funding','balance','registrar_balance_insufficient_or_unknown','registrar_balance_insufficient'],
         'feature'=>['awaiting_acceptance','write_disabled','write_acceptance_required','renewal_acceptance_required','late_renewal_paused','grace_capability_unaccepted'],
@@ -25,8 +25,8 @@ final class RequestHoldReasons
         'membership'=>['owner','provider_membership_unconfirmed','domain_not_in_account'],
         'renewal'=>['provider_auto_renew_unconfirmed','renewal_state_unconfirmed','state','target_changed'],
         'availability'=>['name_unavailable','premium_name'],
-        'unsupported'=>['order_not_supported','registry_details_unsupported','renewal_term_refused','term','renewal_restore_refused'],
-        'outcome'=>['prior_attempt','reconciliation_required','renewal_prior_outcome_unresolved','pre_send_interrupted','management_unconfirmed','renewal_confirmation_required','acquisition_definitely_unsent','renewal_definitely_unsent','management_definitely_unsent'],
+        'unsupported'=>['order_not_supported','term','renewal_restore_refused'],
+        'outcome'=>['prior_attempt','reconciliation_required','renewal_prior_outcome_unresolved','management_unconfirmed','renewal_confirmation_required','acquisition_definitely_unsent','renewal_definitely_unsent','management_definitely_unsent'],
     ];
     // Owner, next step, destination, link label. Causes remain the closed vocabulary in Labels::reason.
     private const FIXES=[
@@ -76,11 +76,6 @@ final class RequestHoldReasons
             if(config($key,$op->registrar_key==='namesilo'&&$test)!==true){
                 $blocked='This request type is off on this site; the site administrator must enable it before this order can retry.';
             }
-        }
-        // Turning Orders on is a separate deliberate staff choice; releasing a hold cannot change that setting.
-        if($blocked===null&&in_array($kind,['staff','profile','orders'],true)&&$account&&!$account->processing_enabled){
-            [$owner,$step,$link,$label]=self::FIXES['orders'];
-            $blocked='Orders are off for this account; staff must turn Orders on before this request can send.';
         }
         return ['kind'=>$kind,'owner'=>$owner,'step'=>$step,'body'=>$owner.' must '.$step.'.','link'=>$link,'link_label'=>$label,'blocked'=>$blocked];
     }

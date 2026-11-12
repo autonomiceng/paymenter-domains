@@ -25,15 +25,11 @@ foreach ($releaseOps as $request) {
 }
 $clock->instant=$clock->now()->modify('+5 minutes');
 DB::table('domains_accounts')->where('server_id',$releaseOps[0]->server_id)->update(['processing_enabled'=>false]);
-$before=$releaseOps[0]->fresh()->getRawOriginal();
-Livewire::actingAs($releaseStaff)->test(ViewOperation::class,['record'=>$releaseOps[0]->id])->assertActionVisible('release')->assertActionDisabled('release')
-    ->assertSee('Orders are off for this account; staff must turn Orders on before this request can send.')->callAction('release');
-same($before,$releaseOps[0]->fresh()->getRawOriginal(),'Orders off blocks release without changing the request or its audit');
-DB::table('domains_accounts')->where('server_id',$releaseOps[0]->server_id)->update(['processing_enabled'=>true]);
+$before=$nativeMoney();
 Livewire::actingAs($releaseStaff)->test(ViewOperation::class,['record'=>$releaseOps[0]->id])->assertActionEnabled('release')
     ->callAction('release')->assertHasNoActionErrors()->assertNotified('Hold released');
-same('queued',$releaseOps[0]->fresh()->state,'The real Release queues the request after Orders is restored');
-DB::table('domains_accounts')->where('server_id',$releaseOps[0]->server_id)->update(['processing_enabled'=>false]);
+same('queued',$releaseOps[0]->fresh()->state,'The real Release queues the request while Orders is off');
+same($before,$nativeMoney(),'Paused release preserves money');
 foreach ($releaseOps as $i=>$request) {
     $html=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$request->domain_id])->assertSuccessful()->html();
     $dom=new DOMDocument;@$dom->loadHTML($html);$xpath=new DOMXPath($dom);

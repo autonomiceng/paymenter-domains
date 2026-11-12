@@ -40,7 +40,11 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
         $job=new self(0,(int)$d->id,$d->authority_generation,$d->account_fingerprint);
         $result=Cache::get($job->uniqueId().':result');
         // A later automatic read supersedes the manual partial result.
-        if(($result['title']??null)==='Sync retry scheduled'&&!ObservationRecords::held($d)){Cache::forget($job->uniqueId().':result');return null;}
+        if(($result['title']??null)==='Sync retry scheduled'){
+            try { $held=ObservationRecords::held($d); }
+            catch(\Throwable){return $result;}
+            if(!$held){Cache::forget($job->uniqueId().':result');return null;}
+        }
         return $result;
     }
     public static function enqueue(int $actor,Domain $d): bool
