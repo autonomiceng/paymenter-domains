@@ -20,28 +20,14 @@ function commerceAdd(Cart $cart, Product $product, string $name, int $term = 1):
     return $cart->items()->create(['product_id' => $product->id, 'plan_id' => $product->plans()->where('billing_period', $term)->sole()->id,
         'quantity' => 1, 'config_options' => [], 'checkout_config' => ['domain' => $name, 'epp' => 'discard-me', 'authority' => 'forged']]);
 }
-function commerceCheckout(User $user, Cart $cart, bool $render = true)
+function commerceCheckout(User $user, Cart $cart)
 {
-    // Operation fixtures need native checkout writes and hooks, but never inspect cart HTML.
-    // Keep the real component and snapshots; explicit page tests retain ordinary rendering.
-    $stop=null;$template=null;
-    if (!$render) {
-        $template=tempnam((string)getenv('TMPDIR'),'domains-cart-view-');
-        file_put_contents($template,'<div></div>');
-        // Render hooks carry pricing and contact behavior too. Run them before replacing
-        // only the unused theme template; normal view composers and snapshots still run.
-        $stop=\Livewire\after('render',static function($component,$view)use($template):void {
-            if ($component::class===App\Livewire\Cart::class) { $view->setPath($template); }
-        });
-    }
-    try {
     Illuminate\Support\Once::flush();
     $page=Livewire\Livewire::actingAs($user)->withCookies(['cart' => $cart->ulid])->test(App\Livewire\Cart::class)->set('use_credits', false);
     // Ordinary commerce cases supply the contact form; account-specific cases define their own properties.
     $required=['address','city','zip','country','phone'];
     return $user->properties()->whereIn('key',$required)->distinct()->count('key')===count($required) ? $page->call('checkout')
         : $page->call('checkout',['contact'=>commerceOrderContact($user),'save_account'=>false]);
-    } finally { if($stop){$stop();}if($template!==null){unlink($template);} }
 }
 
 function commerceOrderContact(User $user): array
