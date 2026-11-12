@@ -517,7 +517,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                                     'finished_seconds': time.monotonic()-started_run}
     results = [completed[index] for index in sorted(completed)]
     final_guard_complete, final_guard_error = False, None
-    dependency_unchanged, dependency_error = False, None
+    dependency_unchanged, dependency_error, dependency_detail = False, None, None
     try:
         with timing('final_guards', timings):
             # A final guard catches changes after the last per-command check.
@@ -530,7 +530,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                     worker_check()
             except (ValueError, RuntimeError, OSError, KeyError, TypeError, subprocess.CalledProcessError) as error:
                 dependency_unchanged = False
-                dependency_error = type(error).__name__ + ': ' + str(error)
+                dependency_error, dependency_detail = type(error).__name__, str(error)
             final_guard_complete = True
     except BaseException as error:
         final_guard_error = type(error).__name__
@@ -574,7 +574,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
                    'selected_suites': selected, 'omitted_suites': [s for s in CATEGORIES if s not in selected],
                    'unimplemented_suites': [s for s, paths in suites.items() if not paths],
                    'dependency': {'commit': native.COMMIT, 'lock_sha256': native.LOCK_SHA256, 'source_sha256': dependency[1]} if dependency else None,
-                   'skipped_suites': [r['kind'] for r in results if r['skipped']], 'dependency_unchanged': dependency_unchanged, 'dependency_error': dependency_error, 'real_provider_calls': 0,
+                   'skipped_suites': [r['kind'] for r in results if r['skipped']], 'dependency_unchanged': dependency_unchanged, 'dependency_error': dependency_error, 'dependency_detail': dependency_detail, 'real_provider_calls': 0,
                    'scope': 'Synthetic offline tests and native ZIP install/retention; no live provider, delivered mail, shared-database or production acceptance.'}
         (output/'receipt.json').write_text(json.dumps(receipt, indent=2)+'\n')
         print(json.dumps({'complete': complete, 'commands_run': len(results), 'commands_planned': len(commands),
