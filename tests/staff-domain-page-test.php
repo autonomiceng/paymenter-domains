@@ -482,4 +482,24 @@ same(['Service #'.$active->service_id.' not found. Check the Services page.','On
 
 same(false,PendingAdoptionResource::shouldRegisterNavigation(),'Adoption pending is not in navigation');
 same(DomainResource::getUrl('index',['filters'=>['status'=>['values'=>['under_review']]]]),PendingAdoptionResource::redirectUrl(),'Adoption pending opens the Under review filter');
+// Before any read, staff see a neutral Not read. A late read shows Missing that fills in by itself (gray) under "Registrar
+// records are out of date"; a failed read shows red Missing under "Registrar read failed".
+$unreadDomain=Domain::create(['server_id'=>$active->server_id,'registrar_key'=>$active->registrar_key,'account_fingerprint'=>$active->account_fingerprint,
+    'user_id'=>$customer->id,'service_id'=>99992,'domain'=>'unread-ui.example.com','sld'=>'unread-ui','tld'=>'example.com','status'=>'active']);
+$nameservers=static function()use($viewer,$unreadDomain):array{
+    $html=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$unreadDomain->id])->html();
+    $row=preg_match('/>\s*Nameservers\s*</',$html,$at,PREG_OFFSET_CAPTURE)?substr($html,$at[0][1],2500):'';
+    preg_match('/Not read|Missing/',$row,$m);
+    return [$m[0]??null,str_contains($row,'danger'),str_contains($html,'Registrar read failed'),str_contains($html,'Registrar records are out of date'),$row];
+};
+[$state,$red,$failedTitle,$lateTitle,$row]=$nameservers();
+expect([$state,$red,$failedTitle,$lateTitle]===['Not read',false,false,false],'Before any read, Nameservers is a neutral Not read with no read notice: '.json_encode([$state,$red,$failedTitle,$lateTitle]).' '.preg_replace('/\s+/',' ',$row));
+$unreadWork=DB::table('domains_observation_work')->insertGetId(['server_id'=>$unreadDomain->server_id,'account_fingerprint'=>$unreadDomain->account_fingerprint,
+    'domain_id'=>$unreadDomain->id,'generation'=>$unreadDomain->authority_generation,'due_at'=>time()-3600,'safe_code'=>null,'tries'=>0]);
+[$state,$red,$failedTitle,$lateTitle,$row]=$nameservers();
+expect([$state,$red,$failedTitle,$lateTitle]===['Missing',false,false,true],'A late read leaves Nameservers gray Missing under Registrar records are out of date: '.json_encode([$state,$red,$failedTitle,$lateTitle]).' '.preg_replace('/\s+/',' ',$row));
+DB::table('domains_observation_work')->where('id',$unreadWork)->update(['safe_code'=>'read_failed','tries'=>1,'due_at'=>time()+3600]);
+[$state,$red,$failedTitle,$lateTitle,$row]=$nameservers();
+expect([$state,$red,$failedTitle,$lateTitle]===['Missing',true,true,false],'A failed read leaves Nameservers red Missing under Registrar read failed: '.json_encode([$state,$red,$failedTitle,$lateTitle]).' '.preg_replace('/\s+/',' ',$row));
+
 echo "Staff domain page and list passed.\n";$nativeSuccessful=true;
