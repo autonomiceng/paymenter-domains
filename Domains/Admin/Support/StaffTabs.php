@@ -24,10 +24,10 @@ final class StaffTabs
     }
     /** @return list<NavigationItem> */
     public static function registrars(string $active): array
-    { return self::items($active,['Accounts'=>[RegistrarSetup::canAccess(),fn()=>RegistrarSetup::getUrl()],'Registrar requests'=>[OperationResource::canViewAny(),fn()=>OperationResource::getUrl('index')]]); }
+    { return self::items($active,['All accounts'=>[RegistrarSetup::canAccess(),fn()=>RegistrarSetup::getUrl()],'Registrar requests'=>[OperationResource::canViewAny(),fn()=>OperationResource::getUrl('index')]]); }
     /** @return list<NavigationItem> */
     public static function tlds(string $active): array
-    { return self::items($active,['TLDs'=>[TldResource::canViewAny(),fn()=>TldResource::getUrl('index')],'What you sell'=>[WhatYouSell::canAccess(),fn()=>WhatYouSell::getUrl()]]); }
+    { return self::items($active,['All TLDs'=>[TldResource::canViewAny(),fn()=>TldResource::getUrl('index')],'What you sell'=>[WhatYouSell::canAccess(),fn()=>WhatYouSell::getUrl()]]); }
     /** One tab left is no choice, so it draws no row. A page the panel never registered drops out. A tab may carry a count. */
     private static function items(string $active, array $tabs): array
     {

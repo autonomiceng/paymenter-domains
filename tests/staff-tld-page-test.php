@@ -76,10 +76,13 @@ foreach([
     same(0,$editButtons($hidden->html())->length,'Missing price-edit or publish grants hides Edit prices');
 }
 Auth::setUser($u);
-same((int)$enom->server_id,(int)$page->instance()->getRecord()->server_id,'The TLD page belongs to its account');
+// The browser title is '<tab> - <record>'; the record part names the page.
+$named=static fn($c):string=>(string)preg_replace('/^(Overview|History) - /','',(string)$c->instance()->getTitle());
+same('Overview - ',substr((string)$page->instance()->getTitle(),0,11),'The browser title names the open tab first');
+same('.com on Enom TEST identity check',$named($page),'A TLD offered by two accounts is titled by its account');
 // The other account's page for the same TLD names its own account.
 $other=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$silo->id])->assertSuccessful();
-same((int)$silo->server_id,(int)$other->instance()->getRecord()->server_id,'The second account opens its own TLD record');
+same('.com on OFFLINE DEMO NameSilo (synthetic)',$named($other),'Two pages for one TLD never share a title');
 // Each price shows the cost for the same action, so a price never reads against another action's cost.
 expect(substr_count($text($page->html()),'Cost USD ')>=2,'Registration and renewal each show their own cost');
 // Change registrar says what it does to sales before it is saved.
@@ -93,7 +96,7 @@ expect(TldFacts::history((int)$enom->server_id,(int)$enom->id)!==[],'Published f
 // The History tab lists those events under the same head and sales actions as the Overview tab.
 $events=TldFacts::history((int)$enom->server_id,(int)$enom->id);
 $history=Livewire::actingAs($u)->test(TldHistory::class,['record'=>$enom->id])->assertSuccessful()->assertSee($events[0]['change']);
-$names=static fn($c)=>[$c->instance()->getRecord()->getKey(),array_map(static fn($a)=>$a instanceof Filament\Actions\Action?$a->getName():'More',array_values($c->instance()->getCachedHeaderActions()))];
+$names=static fn($c)=>[$named($c),array_map(static fn($a)=>$a instanceof Filament\Actions\Action?$a->getName():'More',array_values($c->instance()->getCachedHeaderActions()))];
 same($names($page),$names($history),'History keeps the TLD head and its actions');
 $auditQuery=DB::table('domains_audit_archives')->where('server_id',$enom->server_id);
 $auditBytes=(clone $auditQuery)->get()->map(fn($r)=>(array)$r)->all();
@@ -240,9 +243,11 @@ $page=Livewire::actingAs($viewer)->test(ViewTld::class,['record'=>$silo->id])->a
 foreach(['registrar_key'=>'retired','account_fingerprint'=>'retired-account'] as $field=>$stale){
     DB::table('domains_tlds')->where('id',$silo->id)->update([$field=>$stale]);
     $current=Livewire::actingAs($viewer)->test(ViewTld::class,['record'=>$enom->id])->assertSuccessful();
+    same('.com',$named($current),'Stale '.$field.' does not make the title shared');
     $accounts=array_column(TldFacts::accounts($enom,Staff::requireView()),'name');
     expect(!in_array('OFFLINE DEMO NameSilo (synthetic)',$accounts,true),'Stale sibling is also absent from account rows');
     DB::table('domains_tlds')->where('id',$silo->id)->update([$field=>$silo->{$field}]);
 }
 $current=Livewire::actingAs($viewer)->test(ViewTld::class,['record'=>$enom->id])->assertSuccessful();
+same('.com on Enom TEST identity check',$named($current),'A current sibling still makes the title shared');
 echo "Native TLDs & pricing list and TLD page passed.\n";$nativeSuccessful=true;

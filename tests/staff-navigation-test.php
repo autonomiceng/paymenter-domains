@@ -33,7 +33,7 @@ same(['domains','registrar-requests','domain-tlds','registrar-setup','domain-wat
     [DomainResource::getSlug(),OperationResource::getSlug(),TldResource::getSlug(),RegistrarSetup::getSlug(),WatchResource::getSlug(),RoutingProfileResource::getSlug(),PublicSuffixList::getSlug(),DnsResolver::getSlug()],'Slugs kept');
 
 Auth::setUser(staffUser([Staff::VIEW,Staff::COSTS]));
-same(2,count(\Paymenter\Extensions\Servers\Domains\Admin\Support\StaffTabs::tlds('TLDs')),'Pricing has two views');
+same(2,count(\Paymenter\Extensions\Servers\Domains\Admin\Support\StaffTabs::tlds('All TLDs')),'Pricing has two views');
 
 app()->forgetInstance(WatchWork::class);
 

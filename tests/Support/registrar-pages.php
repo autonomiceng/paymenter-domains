@@ -106,7 +106,8 @@ Livewire::actingAs($staff)->test(BalancesPage::class)->assertRedirect(RegistrarS
 Livewire::actingAs($staff)->test(ActivationStatus::class)->assertRedirect(RegistrarSetup::getUrl());
 Livewire::actingAs(staffUser([]))->test(RegistrarSetup::class)->assertForbidden();
 // List page.
-$list=Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSuccessful()->assertSee('Registrars')->assertActionDoesNotExist('add_account')->assertSee('Accounts');
+$list=Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSuccessful()->assertSee('Registrars')->assertActionDoesNotExist('add_account');
+same(1,count(array_filter($list->instance()->getSubNavigation(),fn($tab)=>$tab->isActive())),'The accounts list is the one active tab of Registrars');
 staffTableStandard($list,'Search account',['name','note'],['balance','due']);
 staffRowsStandard($list,['checked','domains'],['balance','due']);
 // One line per account: the reason, a missing balance's cause and a low balance go in Note, each with its step.

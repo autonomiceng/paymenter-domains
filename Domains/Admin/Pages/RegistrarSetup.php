@@ -23,7 +23,7 @@ class RegistrarSetup extends QueryListPage
     protected static ?string $title='Registrars';
     protected static ?string $slug='registrar-setup';
     protected static ?\Filament\Pages\Enums\SubNavigationPosition $subNavigationPosition=\Filament\Pages\Enums\SubNavigationPosition::Top;
-    public function getSubNavigation(): array { return StaffTabs::registrars('Accounts'); }
+    public function getSubNavigation(): array { return StaffTabs::registrars('All accounts'); }
     /** Row facts per server for one render. */
     private array $rows=[];
     /** The menu item stays marked on an account and on Registrar requests. */
