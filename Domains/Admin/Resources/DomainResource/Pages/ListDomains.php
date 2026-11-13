@@ -32,12 +32,13 @@ class ListDomains extends RecordListPage
         return [Action::make('adopt')->label('Import domain')->url(DomainResource::getUrl('adopt'))
             ->visible(fn (): bool => config('domains.adoption.enabled', false) === true && collect(AdoptionCommit::PERMISSIONS)->every(fn ($permission) => Staff::can($permission)))];
     }
-    /** A held registrar account says what its paid orders wait for, with its request. */
+    /** Each held registrar account says what its paid orders wait for, with its request. A section starts with its one
+     * notice, so each account gets its own section. */
     protected function notices(): array
     {
-        $rows = array_map(static fn (array $h): Row => Row::notice('paid-'.$h['server_id'], Value::state(State::UnderReview, Reader::Staff, PaidUncertainty::line($h)),
-            $h['url'] ? Sheet::link('paid_request_'.$h['server_id'], $h['label'], $h['url']) : null), PaidUncertainty::holds());
-        return $rows === [] ? [] : [Section::make('Paid orders', $rows, null, 'paid-orders')];
+        return array_map(static fn (array $h): Section => Section::make('Paid orders on '.$h['name'], [Row::notice('paid-'.$h['server_id'],
+            Value::state(State::UnderReview, Reader::Staff, PaidUncertainty::line($h)),
+            $h['url'] ? Sheet::link('paid_request_'.$h['server_id'], $h['label'], $h['url']) : null)], null, 'paid-orders-'.$h['server_id']), PaidUncertainty::holds());
     }
     protected function query(): Builder { return parent::query()->with(['user:id,first_name,last_name,email', 'server:id,name', 'latestAcquisition']); }
     protected function columns(): array

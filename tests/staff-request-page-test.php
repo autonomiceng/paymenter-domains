@@ -342,6 +342,11 @@ DB::table('domains_operations')->where('id',$doneOp->id)->update(['state'=>'unce
 same(['Check 2 requests Paid orders on '.$name($heldOp->server_id).' have no registrar result yet.','Check request #'.$doneOp->id.' A paid order on '.$name($doneOp->server_id).' has no registrar result yet.'],
     $lines,'Two held accounts, each named once');
 same($oneAccount,$twoAccounts,'Held accounts are read together, not one by one');
+// The Domains list shows both held accounts, each with the link to its requests.
+$domains=Livewire::actingAs(Auth::user())->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ListDomains::class)->assertSuccessful();
+foreach ([RegistrarFacts::requestsUrl((int)$heldOp->server_id,['under_review']),Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::requestUrl(['request'=>$doneOp->id])] as $url) {
+    expect(is_string($url)&&str_contains($domains->html(),'href="'.e($url).'"'),'Each held account links to its requests on the Domains list');
+}
 foreach ($saved as $row) { DB::table('domains_operations')->where('id',$row->id)->update(['state'=>$row->state,'safe_code'=>$row->safe_code]); }
 // A sealed transfer with stale reads returns to staff review before its seven-day deadline.
 $readNow=time();$storedTransfer=array_intersect_key($longOp->fresh()->getRawOriginal(),array_flip(['state','safe_code','started_at','policy']));
