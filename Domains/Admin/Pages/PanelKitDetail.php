@@ -42,7 +42,7 @@ class PanelKitDetail extends DetailPage
     {
         return [Section::make('Activity', [Trace::make(Reader::Staff)
             ->step('Renewal sent to Enom TEST', State::Checking, PanelKit::AT, null, null, 'kit-detail-renewal')
-            ->step('Invoice #100', State::Paid, PanelKit::AT - 60, 'the customer')
+            ->step('Invoice 100', State::Paid, PanelKit::AT - 60, 'the customer')
             ->step('Registrar read', State::CouldntRead, PanelKit::AT - 4320, null, 'We couldn\'t reach the registrar.')
             ->step('Auto-renew at registrar', State::Stopped, PanelKit::AT - 950400, 'Ilya')])
             ->link(Sheet::link('kit_history', 'History', PanelKitHistory::getUrl())),

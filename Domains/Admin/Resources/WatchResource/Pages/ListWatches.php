@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages;
 use Filament\Actions\Action;
 use Illuminate\Database\Eloquent\Builder;
+use Paymenter\Extensions\Servers\Domains\Admin\Pages\{PublicSuffixList,RegistrarSetup};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\{RoutingProfileResource,WatchResource};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DefaultNameservers,Sheet,Staff,StaffDomainStatus,StaffTabs,WatchFacts,WatchFindings,WatchQueries,WatchRows};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Head,Row,Trace,Value};
@@ -57,14 +58,17 @@ class ListWatches extends RecordListPage
     /** The steps to connect monitoring, in order. They have no state of their own, so they carry no mark. */
     private function setupSteps(): Section
     {
-        $psl=\App\Models\Server::where('extension','Domains')->exists()?'Registrars > System checks':'Public suffix list';
-        return Section::make('Set up domain monitoring',[Trace::make(Reader::Staff)
+        // The DNS templates tab sits beside this list; the suffix list page does not, so the one link goes there.
+        $page=\App\Models\Server::where('extension','Domains')->exists()?RegistrarSetup::class:PublicSuffixList::class;
+        $psl=$page===RegistrarSetup::class?'Registrars > System checks':'Public suffix list';
+        $open=\Illuminate\Support\Facades\Route::has($page::getRouteName())&&$page::canAccess();
+        $steps=Section::make('Set up domain monitoring',[Trace::make(Reader::Staff)
             ->step('Ask your site admin to connect monitoring on the server',null,reason:'Changing the resolver in Settings does not turn monitoring on.')
-            ->step('The public suffix list downloads automatically',null,reason:'Failed updates appear under '.$psl.'.')
+            ->step('The public suffix list downloads automatically',null,reason:($open?'Failed updates appear under ':'A staff member with domain monitoring access can check failed updates under ').$psl.'.')
             ->step('Add expected nameservers and records in DNS templates',null,reason:'Do this if you want DNS checks. Expiry checks run without one.')
             ->step('Hosting products with a domain field are monitored by themselves',null,reason:'Once monitoring is connected, the Monitoring settings tab lists each one with an on/off switch.')
-            ->step('Check that an active hosting service shows up here and finishes a check',null,reason:'Checks run every five minutes. Monitoring reads public DNS and registry data. It doesn\'t buy or register domains.')])
-            ->link(Sheet::link('setup_templates','DNS templates',RoutingProfileResource::getUrl()));
+            ->step('Check that an active hosting service shows up here and finishes a check',null,reason:'Checks run every five minutes. Monitoring reads public DNS and registry data. It doesn\'t buy or register domains.')]);
+        return $open?$steps->link(Sheet::link('setup_suffix_list',$psl,$page::getUrl())):$steps;
     }
     protected function columns(): array
     {

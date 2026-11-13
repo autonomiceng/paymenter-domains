@@ -2,11 +2,11 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page;
+use Filament\Support\Enums\FontFamily;
 use Filament\Tables\Columns\TextColumn;
 use Illuminate\Database\Eloquent\{Builder, Model};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DemoTag, OneLine};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Value;
-use Paymenter\Extensions\Servers\Domains\Presentation\DomainName;
 /** One list column, as data: plain text, a domain name, or a panel Value (a state with its mark, a plain word or a
  * fact). The list type builds the Filament column, so a page can't add classes, colours or markup to a cell.
  * A row is an array (ListPage) or a saved record (RecordListPage, QueryListPage); value and text closures get it. */
@@ -18,9 +18,10 @@ final class Column
     private ?\Closure $searchQuery = null;
     private ?\Closure $sortQuery = null;
     private ?string $from = null;
+    private ?\Closure $link = null;
     private bool $optional = false;
     private function __construct(public readonly string $name, public readonly string $label, public readonly string $kind, public bool $searchable = false, public bool $sortable = false) {}
-    /** Plain text: the row's own field, or what $text returns for the row. @param ?\Closure(array|Model):?string $text */
+    /** Plain text on one line, cut with "..." and the full text on hover: the row's own field, or what $text returns for the row. @param ?\Closure(array|Model):?string $text */
     public static function text(string $name, string $label, ?\Closure $text = null): self { $c = new self($name, $label, 'text'); $c->text = $text; return $c; }
     /** A domain name: one line, cut with "..." and the full name on hover and focus. A demo record shows its Demo tag. */
     public static function domain(string $name, string $label): self { return new self($name, $label, 'domain'); }
@@ -39,6 +40,9 @@ final class Column
         if (!in_array($width, self::FROM, true)) { throw new \InvalidArgumentException('A column shows from sm, md, lg or xl.'); }
         $this->from = $width; return $this;
     }
+    /** Where the cell opens, such as the request a note names; null opens the row's own link.
+     * @param \Closure(array|Model):?string $link */
+    public function link(\Closure $link): self { $this->link = $link; return $this; }
     /** Staff can show it from the Columns menu; it starts hidden. */
     public function optional(): self { $this->optional = true; return $this; }
     public function isOptional(): bool { return $this->optional; }
@@ -58,11 +62,12 @@ final class Column
         $column->sortable($this->sortable, $sort === null ? null : static fn (Builder $query, string $direction): Builder => $sort($query, $direction));
         if ($this->searchable) { $column->searchable(query: $find === null ? null : static fn (Builder $query, string $search) => $find($query, $search)); }
         if ($this->from !== null) { $column->visibleFrom($this->from); }
+        if ($this->link !== null) { $link = $this->link; $column->url(static fn (array|Model $record): ?string => $link($record)); }
         return match ($this->kind) {
-            'domain' => DemoTag::apply(OneLine::apply($column->formatStateUsing(static fn (string $state) => DomainName::html($state)), OneLine::NAME)),
+            'domain' => DemoTag::apply(OneLine::apply($column->fontFamily(FontFamily::Mono), OneLine::NAME)),
             'value' => $column->state(fn (array|Model $record): ?string => $this->valueOf($record)?->word)
                 ->formatStateUsing(fn (array|Model $record): string => (string) $this->valueOf($record)?->toHtml())->html(),
-            default => ($this->text === null ? $column : $column->state(fn (array|Model $record): ?string => ($this->text)($record)))->wrap()->lineClamp(2),
+            default => OneLine::apply($this->text === null ? $column : $column->state(fn (array|Model $record): ?string => ($this->text)($record))),
         };
     }
 }
