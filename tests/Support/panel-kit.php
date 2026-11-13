@@ -6,7 +6,7 @@ require_once __DIR__.'/staff-panel.php';
 require_once __DIR__.'/accounts.php';
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\Route;
-use Paymenter\Extensions\Servers\Domains\Admin\Pages\{PanelKit,PanelKitDetail,PanelKitHistory,PanelKitList,PanelKitSettings};
+use Paymenter\Extensions\Servers\Domains\Admin\Pages\{PanelKit,PanelKitDetail,PanelKitHistory,PanelKitList,PanelKitRecords,PanelKitSettings};
 use Paymenter\Extensions\Servers\Domains\Services\{AuditBatchRetirement, AuditEventSchema, FoundationSchema, ReminderSchedules, ReminderSchema, StaffAuditSchema};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 
@@ -19,8 +19,8 @@ function panelKitFixture(): int
     StaffAuditSchema::install();AuditEventSchema::install();AuditBatchRetirement::install();
     $account=fixtureAccount(1,'enom',DemoData::ACCOUNTS['enom']);
     ReminderSchedules::enroll($account['server_id']);
-    // The kit and its four page type examples.
-    $pages=[PanelKit::class,PanelKitDetail::class,PanelKitSettings::class,PanelKitList::class,PanelKitHistory::class];
+    // The kit and its page type examples.
+    $pages=[PanelKit::class,PanelKitDetail::class,PanelKitSettings::class,PanelKitList::class,PanelKitRecords::class,PanelKitHistory::class];
     $panel=Filament::getPanel('admin');$panel->pages($pages);
     Route::name('filament.admin.')->prefix($panel->getPath())->group(static function()use($panel,$pages){foreach($pages as $page){$page::registerRoutes($panel);}});
     app('router')->getRoutes()->refreshNameLookups();app('router')->getRoutes()->refreshActionLookups();

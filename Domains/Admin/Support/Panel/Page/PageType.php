@@ -8,5 +8,5 @@ namespace Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page;
 interface PageType
 {
     /** The type's classes. A page extends exactly one. */
-    public const TYPES = [DetailPage::class, RecordDetailPage::class, SettingsPage::class, ResourceSettingsPage::class, ListPage::class, HistoryPage::class, RecordHistoryPage::class];
+    public const TYPES = [DetailPage::class, RecordDetailPage::class, SettingsPage::class, ResourceSettingsPage::class, ListPage::class, QueryListPage::class, RecordListPage::class, HistoryPage::class, RecordHistoryPage::class];
 }

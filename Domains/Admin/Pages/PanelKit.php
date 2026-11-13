@@ -51,7 +51,7 @@ class PanelKit extends Page
         }
         return count($items) > 1 ? $items : [];
     }
-    private const TABS = ['Pieces' => self::class, 'Detail' => PanelKitDetail::class, 'Settings' => PanelKitSettings::class, 'List' => PanelKitList::class, 'History' => PanelKitHistory::class];
+    private const TABS = ['Pieces' => self::class, 'Detail' => PanelKitDetail::class, 'Settings' => PanelKitSettings::class, 'List' => PanelKitList::class, 'Record list' => PanelKitRecords::class, 'History' => PanelKitHistory::class];
     private function head(): Head
     {
         return Head::make('fieldnote.example', Reader::Staff)->domain()->tag(true, false)->state(State::Active, 'kit-domain')
