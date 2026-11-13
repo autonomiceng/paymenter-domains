@@ -16,13 +16,13 @@ $unrelatedService=$service->replicate();$unrelatedService->fill(['user_id'=>$oth
 $unrelatedService->properties()->create(['key'=>'domain','value'=>'unrelated.example.com']);
 $unrelatedSource=(array)$source->getRawOriginal();unset($unrelatedSource['id']);
 DB::table('domains_watch_sources')->insert([...$unrelatedSource,'user_id'=>$other->id,'service_id'=>$unrelatedService->id,'watch_id'=>$unrelatedWatch,'hostname'=>'unrelated.example.com','registrable_name'=>'unrelated.example.com']);
-expect($dns->stamp($unrelatedWatch,(int)$other->id)!==null,'Unrelated watch has a valid native target before deletion');
+expect($dns->currentStamp($unrelatedWatch,(int)$other->id)!==null,'Unrelated watch has a valid native target before deletion');
 $deleting=$owner->fresh();$deleting->id=$other->id;$deleting->delete();
 expect(DB::table('domains_watch_names')->where('id',$unrelatedWatch)->exists(),'Changed in-memory key cannot erase another customer watch');
 expect($other->properties()->where('key','phone')->exists(),'Changed in-memory key cannot erase another customer contact');
 expect(DB::table(UserDeletionSchema::TABLE)->where('user_id',$uid)->exists(),'Deletion retains the fence for the erased customer');
 expect(!DB::table(UserDeletionSchema::TABLE)->where('user_id',$other->id)->exists(),'Changed in-memory key cannot fence another customer');
-expect($dns->stamp($unrelatedWatch,(int)$other->id)!==null,'Unrelated watch remains eligible for DNS checks');
+expect($dns->currentStamp($unrelatedWatch,(int)$other->id)!==null,'Unrelated watch remains eligible for DNS checks');
 DB::transaction(fn()=>NativeUserDeletion::requireOwner((int)$other->id));
 expect(!DB::table('domains_contact_profiles')->where('id',$profileId)->exists(),'Customer deletion removes owned contact details');
 expect(!DB::table('domains_watch_names')->where('id',$watch->id)->exists(),'Customer deletion removes watch names');
