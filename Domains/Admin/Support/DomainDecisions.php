@@ -178,7 +178,8 @@ final class DomainDecisions
                 }
                 $autoPay = \Paymenter\Extensions\Servers\Domains\Services\RenewalAutoPay::ready($service);
                 $amount = $f['Renewal price']['value'] === null ? null : preg_replace('~ / year$~', '', $f['Renewal price']['value']);
-                $f['Renewal']['sub'] = implode(' ', array_filter([$off, \Paymenter\Extensions\Servers\Domains\Presentation\RenewalPayment::line(!$off, $amount, $autoPay, $autoPay ? $service->billingAgreement->name : null, $calendar, $d->price_mode === 'complimentary')]));
+                // Off: the line gives the reason. On: it says how the renewal is paid.
+                $f['Renewal']['sub'] = $off ?: \Paymenter\Extensions\Servers\Domains\Presentation\RenewalPayment::line(true, $amount, $autoPay, $autoPay ? $service->billingAgreement->name : null, $calendar, $d->price_mode === 'complimentary');
                 $f['Renewal']['help'] = null;
             }
             $expired=$d->provider_expires_at&&$d->provider_expires_at->format('Y-m-d')<=gmdate('Y-m-d');
