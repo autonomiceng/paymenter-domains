@@ -25,6 +25,8 @@ enum State: string implements HasLabel
 
     #[Entry([State::Checking, State::CouldntRead], 'A value never read, or waiting its turn, with nothing for anyone to do. Checking is a read happening now and Couldn\'t read is a read that failed.', 'Replaces calm Missing, Not read, Unknown and Not checked. Ilya, Nov 12, 2026, decision 4.')]
     case NotReadYet = 'not_read_yet';
+    #[Entry([State::NotReadYet, State::Delayed], 'A renewal invoice we have not issued yet. Not read yet is a value read from elsewhere and Delayed is late work that needs someone.', 'Replaces Couldn\'t read on a renewal invoice not issued yet, Nov 13, 2026, DS-panel-system pages r1.')]
+    case NotIssuedYet = 'not_issued_yet';
     #[Entry([State::NotSupported, State::Paused], 'We don\'t sell it, by choice or because the registrar doesn\'t offer it. Not supported means it can\'t be done at all.', 'Not offered and Not sold merged into it. Ilya, Nov 12, 2026, decision 2.')]
     case NotForSale = 'not_for_sale';
     #[Entry([State::NotForSale], 'The registrar or registry can\'t do this. Not for sale would be false for something like DNSSEC.', 'Unsupported merged into it. Ilya, Nov 12, 2026, decisions 2 and 3.')]
@@ -69,6 +71,8 @@ enum State: string implements HasLabel
     case ExpiresToday = 'expires_today';
     #[Entry([State::NeedsReview], 'Registrar funds are below what renewals need, so staff add funds.', 'DESIGN.md Panels seed list, Nov 12, 2026.')]
     case LowBalance = 'low_balance';
+    #[Entry([State::LowBalance, State::NeedsReview], 'A price under its registrar cost, so each sale loses money. Low balance is account funds and Needs review is a check that found a problem.', 'Parent ruling for pass 2, Nov 13, 2026: the value carries the amber mark, not a plain note.')]
+    case BelowCost = 'below_cost';
     #[Entry([State::Queued, State::OutOfDate], 'Work that should have run by now and hasn\'t. Queued is still on time.', 'DESIGN.md Panels seed list, Nov 12, 2026.')]
     case Delayed = 'delayed';
     #[Entry([State::NotReadYet, State::CouldntRead], 'Data that was read but is older than it should be. Not read yet was never read.', 'Stale and Cost out of date merged into it. DESIGN.md Panels, Nov 12, 2026.')]
@@ -92,12 +96,12 @@ enum State: string implements HasLabel
     {
         return match ($this) {
             self::Ok => 'OK', self::Active => 'Active', self::Monitored => 'Monitored', self::Completed => 'Completed', self::Paid => 'Paid', self::ForSale => 'For sale',
-            self::NotReadYet => 'Not read yet', self::NotForSale => 'Not for sale', self::NotSupported => 'Not supported', self::NotConnected => 'Not connected',
+            self::NotReadYet => 'Not read yet', self::NotIssuedYet => 'Not issued yet', self::NotForSale => 'Not for sale', self::NotSupported => 'Not supported', self::NotConnected => 'Not connected',
             self::Paused => 'Paused', self::Stopped => 'Stopped', self::Cancelled => 'Cancelled', self::NotRecognized => 'Not recognized', self::Unpaid => 'Unpaid',
             self::Checking => 'Checking', self::Queued => 'Queued', self::Running => 'Running', self::PendingRegistration => 'Pending registration',
             self::PendingTransfer => 'Pending transfer', self::AwaitingPayment => 'Awaiting payment', self::UnderReview => 'Under review',
             self::NotSet => 'Not set', self::NeedsReview => 'Needs review', self::ActionRequired => 'Action required', self::OrdersPaused => 'Orders paused',
-            self::ExpiresToday => 'Expires today', self::LowBalance => 'Low balance', self::Delayed => 'Delayed', self::OutOfDate => 'Out of date',
+            self::ExpiresToday => 'Expires today', self::LowBalance => 'Low balance', self::BelowCost => 'Below cost', self::Delayed => 'Delayed', self::OutOfDate => 'Out of date',
             self::CouldntRead => 'Couldn\'t read', self::Failed => 'Failed', self::ConnectionFailed => 'Connection failed', self::Expired => 'Expired', self::Redemption => 'Redemption',
         };
     }
@@ -111,9 +115,9 @@ enum State: string implements HasLabel
             self::AwaitingPayment => $reader === Reader::Staff ? Tone::Progress : Tone::Attention,
             self::Unpaid => $reader === Reader::Staff ? Tone::Off : Tone::Attention,
             self::Ok, self::Active, self::Monitored, self::Completed, self::Paid, self::ForSale => Tone::Ok,
-            self::NotReadYet, self::NotForSale, self::NotSupported, self::NotConnected, self::Paused, self::Stopped, self::Cancelled, self::NotRecognized => Tone::Off,
+            self::NotReadYet, self::NotIssuedYet, self::NotForSale, self::NotSupported, self::NotConnected, self::Paused, self::Stopped, self::Cancelled, self::NotRecognized => Tone::Off,
             self::Checking, self::Queued, self::Running, self::PendingRegistration, self::PendingTransfer => Tone::Progress,
-            self::NotSet, self::NeedsReview, self::ActionRequired, self::OrdersPaused, self::ExpiresToday, self::LowBalance, self::Delayed, self::OutOfDate => Tone::Attention,
+            self::NotSet, self::NeedsReview, self::ActionRequired, self::OrdersPaused, self::ExpiresToday, self::LowBalance, self::BelowCost, self::Delayed, self::OutOfDate => Tone::Attention,
             self::CouldntRead, self::Failed, self::ConnectionFailed, self::Expired, self::Redemption => Tone::Failed,
         };
     }

@@ -170,7 +170,7 @@ $failurePage=Livewire::actingAs($manager)->test(ListDnsFailures::class)->assertC
 // The staff monitoring page must name local/product failures beside a resolver outage.
 DB::table('domains_watch_schedule')->where('scope','dispatch')->update(['data'=>json_encode(['local_failures'=>['products'=>$now,'discovery'=>$now]])]);
 Livewire::actingAs($viewer)->test(ListWatches::class)->assertSee('DNS checks and Domain products and Domain discovery have failed since ')
-    ->assertDontSee("DNS checks can't reach the resolver.")->assertDontSee('Resolver settings');
+    ->assertDontSee("DNS checks can't reach the resolver.")->assertDontSee('Resolver settings')->assertSee('Affected checks');
 DB::table('domains_watch_schedule')->where('scope','dispatch')->update(['data'=>null]);
 if(isset($argv[1])){
     $css=file_get_contents($fixture.'/vendor/filament/filament/dist/theme.css');

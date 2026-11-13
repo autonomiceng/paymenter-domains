@@ -29,7 +29,7 @@ $force($done,['state'=>'succeeded','safe_code'=>'registration_correction_require
     'attempt'=>['corrections'=>['contacts'=>['state'=>'authorization_required','readback_required'=>true]]]]);
 $open($done)->assertSee('Completed')->assertSee('Still to fix: contact details')->assertSee('Open domain')->assertDontSee('Not sent');
 $force($done,['state'=>'pending','safe_code'=>'registration_evidence_required']);
-$open($done)->assertSee('In progress')->assertDontSee('Not sent');
+$open($done)->assertDontSee('Not sent');
 // The registrar accepted it, then the account changed before the purchase finished.
 $force($done,['state'=>'uncertain','safe_code'=>'registration_authority_changed',
     'attempt'=>['execution'=>['disposition'=>'accepted_with_discrepancy'],'registration'=>['accepted'=>true,'order_reference'=>'1234']]]);

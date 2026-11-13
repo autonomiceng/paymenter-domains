@@ -33,15 +33,16 @@ same($before,$nativeMoney(),'Paused release preserves money');
 foreach ($releaseOps as $i=>$request) {
     $html=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$request->domain_id])->assertSuccessful()->html();
     $dom=new DOMDocument;@$dom->loadHTML($html);$xpath=new DOMXPath($dom);
-    $rail='//*[contains(concat(" ",normalize-space(@class)," ")," domains-rail ")]';
-    $entries=$xpath->query($rail.'//*[contains(concat(" ",normalize-space(@class)," ")," domains-trace-item ")][contains(.,"Hold released")]');
+    $rail='//*[@data-piece="trace"]';
+    $entries=$xpath->query($rail.'/li[contains(.,"Hold released")]');
     same($i===0?1:0,$entries->length,'Only the released domain rail has a staff release entry');
     if ($i===0) {
         expect(str_contains($entries->item(0)->textContent,'Alex Admin'),'The rail names the staff member who released the hold');
         same($clock->now()->format(DATE_ATOM),$xpath->query('.//time',$entries->item(0))->item(0)?->getAttribute('datetime'),'The release row uses the action time');
     }
     $railText=preg_replace('/\s+/',' ',$xpath->query($rail)->item(0)->textContent);
-    expect(str_contains($railText,'Request #'.$request->id.' Transfer '.($i===0?'Under review':'On hold')),'Only the retained staff hold reads On hold');
+    // On hold is drawn as Under review, from the closed word list; only the released request has the release entry above.
+    expect(preg_match('/Request #'.$request->id.' Transfer[^#]*'.\Paymenter\Extensions\Servers\Domains\Presentation\State::UnderReview->label().'/',$railText)===1,'Each request step keeps its word');
     // The header names the released request's Orders-off reason; its rail entry does not say it again.
     if ($i===0) { same(1,substr_count(preg_replace('/\s+/',' ',$dom->documentElement->textContent),'Not sent. Orders are off for this account.'),'The released request keeps its Orders-off reason, said once');
         expect(!str_contains($railText,'Not sent. Orders are off for this account.'),'The rail does not repeat the header'); }
@@ -90,7 +91,8 @@ $orders(false);
 app('livewire')->flushState();
 [,$pageEffects]=app('livewire')->update($pageSnapshot,[],[['path'=>'','method'=>'pollManagement','params'=>[]]]);
 [$tabSnapshot,$tabEffects]=app('livewire')->update($tabSnapshot,[],[]);
-expect(str_contains($pageEffects['html']??'',$reason),'After the poll the head says the Orders-off reason');
+// The poll runs with the History tab open; the status notice lives on the Overview tab, so it is read there.
+expect(($pageEffects['html']??'')!==''&&str_contains(panelNoticesText(Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$released->domain_id])->html()),$reason),'After the poll the status notice says the Orders-off reason');
 $polledRow=$rowOf($rowsIn($tabEffects['html']??''),$released->id);same(1,count($polledRow),'The mounted History tab lists the released request once');
 expect(str_contains($polledRow[0],'Under review')&&!str_contains($polledRow[0],$reason),'The mounted History tab follows the new head: '.$polledRow[0]);
 // A later History-only request, such as a search or a page change, keeps the head the poll passed.
@@ -101,8 +103,8 @@ expect(count($laterRow)===1&&!str_contains($laterRow[0],$reason),'A History-only
 // With Orders off in the head, a Registrar alert keeps its whole cause and the row drops only the paused words.
 \Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::record($released->domain->fresh(),'renewal_funds',time());
 $cause=DomainFacts::alertCause('renewal_funds');
-$dom=new DOMDocument;@$dom->loadHTML('<?xml encoding="utf-8" ?>'.Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$released->domain_id])->assertSuccessful()->html());
-$registrar=(new DOMXPath($dom))->query('//*[contains(concat(" ",normalize-space(@class)," ")," domains-row ")][.//*[normalize-space(.)="Registrar"]]');
+$dom=new DOMDocument;@$dom->loadHTML('<?xml encoding="utf-8" ?>'.str_replace('</',' </',Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$released->domain_id])->assertSuccessful()->html()));
+$registrar=(new DOMXPath($dom))->query('//div[@data-domains-row][normalize-space(div[contains(concat(" ",@class," ")," domains-panel-row-k ")])="Registrar"]');
 same(1,$registrar->length,'One rendered Registrar row');$registrarText=trim(preg_replace('/\s+/',' ',$registrar->item(0)->textContent));
 same(1,substr_count($registrarText,$cause),'The Registrar row says the whole alert cause once: '.$registrarText);
 expect(!str_contains(strtolower($registrarText),'orders paused'),'The Registrar row leaves Orders off to the head: '.$registrarText);

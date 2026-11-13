@@ -50,13 +50,13 @@ foreach ($cases as $case=>[$domain,$acquisition,$label,$reason]) {
     $list=storefrontDom($controller->index($request($hidden?['status'=>'cancelled']:[]))->render());
     $row=$list->query('//tbody/tr')->item(0);
     $show=storefrontDom($controller->show($request(),$d->id)->render());
-    $header=$show->query('//div[@class="domains-ph"]/span[@class="domains-pill"]')->item(0);
+    $header=$show->query('//*[@data-piece="head-line"]')->item(0);
     $card=storefrontDom(view('domains::service',['domain'=>$owners->present($d->fresh())])->render());
     $native=app()->make(NativePresenter::class,['owned'=>$owners])->service($user,(int)$d->service_id);
-    $seen=['list'=>$text($list,'domains-status',$row),'detail'=>$text($show,'domains-status',$header),'service card'=>$text($card,'domains-status'),'services page'=>[$native?->status]];
+    $seen=['list'=>$text($list,'domains-panel-st',$list->query('td[@data-label="Status"]',$row)->item(0)),'detail'=>$text($show,'domains-panel-st',$header),'service card'=>$text($card,'domains-status'),'services page'=>[$native?->status]];
     foreach ($seen as $page=>$labels) { same([$label],$labels,'One status label on the '.$page.': '.$case); }
-    // The detail page says its reason in the notice instead, so only the list and the service card carry it in the pill.
-    $reasons=['list'=>$text($list,'domains-pill-reason',$row),'service card'=>$text($card,'domains-pill-reason')];
+    // The detail page says its reason in the notice instead, so only the list and the service card carry it under the state.
+    $reasons=['list'=>array_map(fn($n)=>trim($n->textContent),iterator_to_array($list->query('td[@data-label="Status"]//*[contains(@class,"domains-panel-sub")]',$row))),'service card'=>$text($card,'domains-pill-reason')];
     foreach ($reasons as $page=>$lines) { same($reason===null?[]:[$reason],$lines,'Same reason line on the '.$page.': '.$case); }
     // Tabs name the statuses present; the tab for this status keeps the row, any other tab drops it.
     // A stopped registration reads Pending registration, the same word as the tab that holds it (approved mock).
@@ -98,13 +98,13 @@ foreach ([0,1] as $registrar) {
     same(['paid',null,true],[$dto->order['state'],$dto->order['next'],$dto->transfer['received']],'Saved code leaves no customer step');
     same(['Pending transfer',null],[$dto->status,$dto->statusReason],'Saved code immediately clears the stale code request');
     $detail=storefrontDom($controller->show($request(),$saved->domain_id)->render());
-    $header=$detail->query('//div[@class="domains-ph"]/span[@class="domains-pill"]')->item(0);
-    same(['Pending transfer'],$text($detail,'domains-status',$header),'Detail header agrees with the paid no-action notice');
-    same([],$text($detail,'domains-pill-reason',$header),'Detail no longer asks for a saved code');
+    $header=$detail->query('//*[@data-piece="head-line"]')->item(0);
+    same(['Pending transfer'],$text($detail,'domains-panel-st',$header),'Detail header agrees with the paid no-action notice');
+    same([],$text($detail,'domains-panel-sub',$header),'Detail no longer asks for a saved code');
     $list=storefrontDom($controller->index($request())->render());
     $row=$list->query('//tbody/tr[.//a[@href="'.route('domains.domains.show',$saved->domain_id).'"]]')->item(0);
     expect($row!==null,'Saved transfer exists in the customer list');
-    same(['Pending transfer'],$text($list,'domains-status',$row),'List immediately clears the code request');
+    same(['Pending transfer'],$text($list,'domains-panel-st',$list->query('td[@data-label="Status"]',$row)->item(0)),'List immediately clears the code request');
     $native=app()->make(NativePresenter::class,['owned'=>$owners])->service($user,(int)$saved->service_id);
     same(['Pending transfer',null],[$native?->status,$native?->statusReason],'Native service uses the same saved-code status');
     // A real staff hold or uncertain send still has priority over the saved code.

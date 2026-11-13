@@ -23,7 +23,7 @@ final class PslActions
     private static function requireManage(): void { abort_unless(self::manage(),403); }
     private static function date(int $at): string { return gmdate('M j, Y H:i \U\T\C',$at); }
     /** Seconds-since-epoch of the next allowed download, or null when one is allowed now. */
-    private static function limitedUntil(Lists $list): ?int
+    public static function limitedUntil(Lists $list): ?int
     { $at=$list->nextAllowedAt(); return $at!==null&&app(Clock::class)->now()->getTimestamp()<$at?$at:null; }
     /** @return array{label:string,value:?string,tone:?string,cause:?string,action:null,help:string,buttons:list<Action>} */
     public static function row(callable $refresh): array

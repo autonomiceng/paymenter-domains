@@ -7,7 +7,7 @@ $profile=Illuminate\Support\Facades\DB::transaction(fn()=>\Paymenter\Extensions\
     'enabled'=>true,'edited_by'=>$staff->id,'reason'=>'Synthetic site default']));
 fixtureClearBusinessChoice(\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::KEY);
 fixtureBusinessChoice(\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::KEY,(string)$profile->id,'string');
-$nsAction=\Filament\Actions\Testing\TestAction::make('edit_nameservers')->schemaComponent('fact_'.md5('Nameservers'),'infolist');
+$nsAction=\Filament\Actions\Testing\TestAction::make('edit_nameservers')->schemaComponent('relationManagerTabs.sheet','content');
 $nsModal=\Livewire\Livewire::actingAs($staff)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$d->id])->mountAction($nsAction);
 $nsRegistrar=$d->registrar_key==='enom'?'Enom':'NameSilo';
 $nsModal->assertMountedActionModalSee('Registrar: '.$nsRegistrar.'.')->assertMountedActionModalSee('Use site default nameservers');

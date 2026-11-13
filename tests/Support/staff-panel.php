@@ -107,7 +107,7 @@ function staffData(bool $ordinaryCompleted = false): array
 function setupAction(string $action,int $server): string|\Filament\Actions\Testing\TestAction
 {
     return in_array($action,['configure','enroll_sandbox'],true)?$action.'_'.$server
-        :\Filament\Actions\Testing\TestAction::make($action.'_'.$server)->schemaComponent('account_'.$server,'content');
+        :\Filament\Actions\Testing\TestAction::make($action.'_'.$server)->schemaComponent('sheet','content');
 }
 
 /** Read one rendered settings section without confusing it with another row's state. */
@@ -146,4 +146,25 @@ function settingsRowValue(string $html, string $label): ?array
         return ['word'=>$word?trim($word->textContent):null,'tone'=>$tone?->getAttribute('data-domains-tone'),'text'=>trim(preg_replace('/\s+/',' ',$row->textContent))];
     }
     return null;
+}
+/** The text of every notice row on the page, in order, joined by spaces. */
+function panelNoticesText(string $html): string
+{
+    $dom=new DOMDocument;@$dom->loadHTML('<?xml encoding="utf-8"?>'.$html);$text=[];
+    foreach((new DOMXPath($dom))->query('//div[@data-domains-row="notice"]') as $n){$text[]=trim((string)preg_replace('/\s+/u',' ',$n->textContent));}
+    return implode(' ',$text);
+}
+/** The whole text of a panel row (its label, value, the line under it, a change or alert, and its actions), or null. */
+function panelRowText(string $html, string $label): ?string
+{
+    $dom=new DOMDocument;@$dom->loadHTML('<?xml encoding="utf-8"?>'.$html);$xpath=new DOMXPath($dom);
+    $rows=$xpath->query('//div[@data-domains-row][starts-with(normalize-space(div[contains(concat(" ",@class," ")," domains-panel-row-k ")]),"'.$label.'")]');
+    return $rows->length!==1?null:trim((string)preg_replace('/\s+/u',' ',$rows->item(0)->textContent));
+}
+/** The links in the page's notice rows. @return list<string> */
+function panelNoticeLinks(string $html): array
+{
+    $dom=new DOMDocument;@$dom->loadHTML('<?xml encoding="utf-8"?>'.$html);$links=[];
+    foreach((new DOMXPath($dom))->query('//div[@data-domains-row="notice"]//a[@href]') as $a){$links[]=$a->getAttribute('href');}
+    return $links;
 }

@@ -27,14 +27,14 @@ DB::table('domains_observation_queues')->where('server_id',$t->server_id)->updat
 $fact=$c->page(collect([$t->fresh()]))[$t->id];$fact['prices']=[];$fact['selected']=true;
 $check(str_contains(TldFacts::priceState($fact)['cause']??'',"Not in the registrar's price feed"),'Feed success after checkpoint confirms absence');
 $intent=OfferState::decode($t->catalogue_intent);DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_intent'=>OfferState::json([...$intent,'transfers'=>false,'pricing_rule'=>['mode'=>'invalid']])]);
-$html=TldFacts::accountsTable($t->fresh(),Staff::requireView())->toHtml();$dom=new DOMDocument;@$dom->loadHTML($html);$xp=new DOMXPath($dom);
-$transfer=$xp->query('//tbody/tr/td[5]')->item(0)?->textContent??'';$check(str_contains($transfer,'Missing'),'Disabled transfer cannot hide an invalid price as Off');
+$own=TldFacts::accounts($t->fresh(),Staff::requireView())[0];
+$check(($own['transfer']['value']??null)==='Missing','Disabled transfer cannot hide an invalid price as Off');
 $broken=Livewire\Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewTld::class,['record'=>$t->id]);
-$check(str_contains(strip_tags($broken->instance()->getSubheading()->toHtml()),'Edit prices'),'The page head retains the invalid-rule repair beside the shared state');
+$check(str_contains(strip_tags(TldFacts::salesState($t->fresh())['reason']),'Edit prices')&&str_contains($broken->html(),'Edit prices'),'The page retains the invalid-rule repair beside the shared state');
 // A broken own pricing rule must not hide the independent no-registrar cause in the real account table.
 DB::table('domains_sales_policies')->where('tld',$t->tld)->update(['server_id'=>null]);
-$accountHtml=TldFacts::accountsTable($t->fresh(),Staff::requireView())->toHtml();
-$check(str_contains($accountHtml,TldFacts::NO_SELLER),'Invalid own pricing keeps the independent missing registrar reason');
+$accountNote=TldFacts::accounts($t->fresh(),Staff::requireView())[0]['note'];
+$check(str_contains($accountNote,TldFacts::NO_SELLER),'Invalid own pricing keeps the independent missing registrar reason');
 $reader=staffUser([Staff::VIEW]);Auth::setUser($reader);
 $notes=Livewire\Livewire::actingAs($reader)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ListTlds::class);
 $column=$notes->instance()->getTable()->getColumn('note')->record($tlds[1]);
@@ -44,14 +44,14 @@ Auth::setUser($actor);
 $a=Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$t->server_id)->sole();$defaults=OfferState::decode($a->catalogue_defaults);unset($defaults['defaultTransfers']);$a->catalogue_defaults=OfferState::json($defaults);$a->save();
 DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_intent'=>OfferState::json([...array_diff_key($intent,['transfers'=>true]),'defaultTransfers'=>true])]);
 Paymenter\Extensions\Servers\Domains\Models\Price::where(['server_id'=>$t->server_id,'tld'=>$t->tld,'action'=>'transfer'])->delete();
-$html=TldFacts::accountsTable($t->fresh(),Staff::requireView())->toHtml();$dom=new DOMDocument;@$dom->loadHTML($html);$xp=new DOMXPath($dom);
-$check(trim($xp->query('//tbody/tr/td[5]')->item(0)?->textContent??'')!=='Off','Retained enabled transfer intent is not displayed as Off');
+$own=TldFacts::accounts($t->fresh(),Staff::requireView())[0];
+$check($own['transfer']!==null,'Retained enabled transfer intent is not displayed as Off');
 DB::table('domains_sales_policies')->where('id',$p['id'])->update($p);
 // Missing prices must carry the recovery instruction into the actual account-table note.
 DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_retained_annual_retail'=>null]);
 DB::table('domains_prices')->where(['server_id'=>$t->server_id,'tld'=>$t->tld,'action'=>'renew'])->update(['retail'=>null]);
-$html=TldFacts::accountsTable($t->fresh(),Staff::requireView())->toHtml();$dom=new DOMDocument;@$dom->loadHTML($html);$xp=new DOMXPath($dom);
-$check(str_contains($xp->query('//tbody/tr/td[4]')->item(0)?->textContent??'','Missing')&&str_contains($xp->query('//tr[@class="domains-table-note"]')->item(0)?->textContent??'','Edit prices must supply a valid price.'),'Actual missing-renewal cell has its displayed price-edit next step: '.json_encode([$xp->query('//tbody/tr/td[4]')->item(0)?->textContent,$xp->query('//tr[@class="domains-table-note"]')->item(0)?->textContent]));
+$own=TldFacts::accounts($t->fresh(),Staff::requireView())[0];
+$check(($own['renew']['value']??null)==='Missing'&&str_contains($own['note'],'Edit prices must supply a valid price.'),'Actual missing-renewal price has its displayed price-edit next step: '.json_encode([$own['renew'],$own['note']]));
 // Actual Filament filter composition must scope its summary before reading other accounts.
 $unscoped=false;$observe=false;DB::listen(static function($q)use(&$observe,&$unscoped):void{if($observe&&str_starts_with($q->sql,'select * from "domains_accounts"')&&!str_contains($q->sql,'where')){$unscoped=true;}});
 $list=Livewire\Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ListTlds::class)->filterTable('server_id',(string)$t->server_id);

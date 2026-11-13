@@ -34,7 +34,7 @@ class ListWatches extends RecordListPage
     protected function actions(): array
     {
         return [Action::make('affected')->label('Affected checks')->color('gray')->url(fn()=>WatchResource::getUrl('dns-failures'))
-            ->visible(fn()=>($this->notice()['action']??null)==='settings'&&in_array('managed_dns',$this->failedFamilies,true))];
+            ->visible(fn()=>$this->notice()!==null&&in_array('managed_dns',$this->failedFamilies,true))];
     }
     protected function notices(): array
     {

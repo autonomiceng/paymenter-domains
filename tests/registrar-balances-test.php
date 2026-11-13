@@ -66,7 +66,7 @@ same('123.45',DB::table(BalanceSchema::TABLE)->where('account_fingerprint',$fore
 same('7.99',$row($a)->amount,'Same server account isolation');
 BalanceReads::record($binding,null,$clock->now(),'manual','PRIVATE-PROVIDER-REPLY');
 same('7.99',$row($a)->amount,'Failure retains last value');same('read_failed',$row($a)->last_error_code,'Failure category allowlist');
-$failedFacts=RegistrarBalances::facts($a,$clock->now());same('Missing',$failedFacts['status'],'A failed check is Missing');same('Last check failed. Use Check balance.',$failedFacts['cause'],'Missing balance names its cause');same(null,$failedFacts['balance'],'A failed check hides the old amount');
+$failedFacts=RegistrarBalances::facts($a,$clock->now());same('Missing',$failedFacts['status'],'A failed check is Missing');same('Last check failed. Use Check balance.',$failedFacts['cause'],'Missing balance names its cause');same(null,$failedFacts['balance'],'A failed check hides the old amount');same(\Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead,$failedFacts['missing'],'An attempted, failed check reads Couldn\'t read');
 $failed=new DriverResult($binding,Disposition::Unknown,SendState::PossiblySent,ResultReason::Unverified);
 $failedReader=new FakeRegistrar($binding,new Capabilities($binding,[]),$failed);
 $context=new RequestContext($binding,RequestOrigin::Interactive,$clock->now()->modify('+25 seconds'),new RequestBudget(1),$clock);
@@ -313,8 +313,8 @@ try{
 // Render actual Filament page; neither credentials, fingerprints nor provider error text reach HTML or Livewire state.
 Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
 $shown=RegistrarBalances::facts($a,$clock->now());$serverName=App\Models\Server::findOrFail($a->server_id)->name;
-$render=Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSee('Registrars')->assertSee('Add funds')->assertSee($serverName)->assertSee($shown['balance']??'Missing');
-$account=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$a->server_id])->assertSee('Check balance')->assertSee('Add funds')->assertSee($shown['balance']??'Missing')->assertSee('Unpaid hold')->assertSee(Paymenter\Extensions\Servers\Domains\Services\UnpaidHoldSetting::minutes((int)$a->server_id).' minutes');
+$render=Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSee('Registrars')->assertSee('Add funds')->assertSee($serverName)->assertSee($shown['balance']??$shown['missing']->label());
+$account=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$a->server_id])->assertSee('Check balance')->assertSee('Add funds')->assertSee($shown['balance']??$shown['missing']->label())->assertSee('Unpaid hold')->assertSee(Paymenter\Extensions\Servers\Domains\Services\UnpaidHoldSetting::minutes((int)$a->server_id).' minutes');
 $html=$render->html().$account->html();foreach(['https://cp.enom.com/','https://ote.namesilo.com/cart/add-funds','noopener noreferrer'] as $needle){expect(str_contains($html,$needle),'Rendered account structure and official external links: '.$needle);}
 expect(!str_contains($html,'https://www.namesilo.com/cart/add-funds'),'OTE accounts never link to live funding');
 $liveServer=App\Models\Server::create(['name'=>'Synthetic live balance','extension'=>'Domains','type'=>'server','enabled'=>true]);

@@ -16,7 +16,10 @@ trait HistoryType
     /** Newest first. Null when the saved history can't be read. `time` is an ISO 8601 instant or null; `url`, when
      * set, opens the event's request. @return ?list<array{time:?string,change:string,reason:string,by:string,url?:string}> */
     abstract protected function events(): ?array;
-    final public function content(Schema $schema): Schema { return $schema->components([EmbeddedTable::make()]); }
+    /** Above the table, only while something needs saying: each section opens with a notice, as on a list.
+     * @return list<\Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\Section> */
+    protected function notices(): array { return []; }
+    final public function content(Schema $schema): Schema { return $schema->components([...self::noticesAbove($this->notices(), 'Above a history', 'history-notices'), EmbeddedTable::make()]); }
     final public function table(Table $table): Table
     {
         return HistoryTable::apply($table, function (): ?array {

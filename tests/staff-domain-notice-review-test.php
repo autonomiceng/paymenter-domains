@@ -2,13 +2,18 @@
 // Native reminder review and all fallback slots. MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/native-app.php';require __DIR__.'/Support/staff-panel.php';
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\{DB,Route};
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain;
+use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainDecisions,DomainFacts,Staff};
 use Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts;
 (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
 staffPanel();[$held,$active,$long]=staffData();
+// Register the account destination the read-problem notice links to, as the installed panel does.
+$panel=\Filament\Facades\Filament::getCurrentPanel();$panel->pages([RegistrarAccount::class]);
+Route::name('filament.admin.')->prefix($panel->getPath())->group(fn()=>RegistrarAccount::registerRoutes($panel));
+app('router')->getRoutes()->refreshNameLookups();
 Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
 app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new Paymenter\Extensions\Servers\Domains\Data\SystemClock);
 // One click on the domain page closes what a retry cannot: an open failed notice and an uncertain email, with no resend. Nothing open, no button.
@@ -45,11 +50,15 @@ $order=$long->fresh()->latestAcquisition;DB::table('domains_operations')->where(
 $observed=$long->fresh()->observation;$observed['record_failure']=['identity'=>\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::identity($long->fresh()),'code'=>'domain_not_in_account','at'=>time()];
 $long->update(['observation'=>$observed]);
 $invoiceUrl=\App\Admin\Resources\InvoiceResource::getUrl('edit',['record'=>$late->id]);
-$head=static function(string $payment,string $label)use($money,$long,$invoiceUrl):void {
+$accountUrl=RegistrarAccount::getUrl(['account'=>$long->server_id]);
+$head=static function(string $payment,string $label)use($money,$long,$invoiceUrl,$accountUrl):void {
     $html=Livewire::actingAs($money)->test(ViewDomain::class,['record'=>$long->id])->html();$text=html_entity_decode(strip_tags($html),ENT_QUOTES);
     expect(str_contains($text,'Domain is not in the registrar account.'),$label.': the read problem still leads');
     expect(str_contains($text,$payment),$label.': the payment notice stays beside the read problem');
     expect(str_contains($html,'href="'.e($invoiceUrl).'"'),$label.': the invoice link stays beside the read problem');
+    // A notice keeps one link: the read problem keeps its own, and the invoice gets its own row with its link.
+    expect(in_array($accountUrl,panelNoticeLinks($html),true),$label.': the read problem keeps its account link');
+    expect(str_contains((string)panelRowText($html,'Invoice to check'),'Open invoice'),$label.': the invoice has its own row with Open invoice');
 };
 ObligationAlerts::record($long->fresh(),'acquisition_late_money',time(),$order->id);
 $head('Payment activity after the order closed. Check the invoice and payments before contacting the customer.','Late money');
@@ -71,9 +80,9 @@ $items=0;DB::listen(function($q)use(&$items):void{if(preg_match('/from "invoice_
 $page=Livewire::actingAs($money)->test(ViewDomain::class,['record'=>$long->id]);
 same(1,$items,'The page reads the payment notice once per render');
 // A refresh reads it again: the same page drops the notice once the payment is resolved.
-$view=$page->instance();expect(str_contains((string)$view->getSubheading(),'Payment received after credit.'),'The head shows the payment before it is resolved');
+expect(str_contains(panelNoticesText($page->html()),'Payment received after credit.'),'The page shows the payment notice before it is resolved');
 DB::table('domains_operations')->where('id',$replacement->id)->update(['action'=>'register']);
-expect(str_contains((string)$view->getSubheading(),'Payment received after credit.'),'Within one render the head reuses the notice it read');
-$view->pollManagement();
-expect(!str_contains((string)$view->getSubheading(),'Payment received after credit.'),'A refresh reads the notice again');
+expect(str_contains(panelNoticesText($page->html()),'Payment received after credit.'),'Within one render the page reuses the notice it read');
+$page->call('pollManagement');
+expect(!str_contains(panelNoticesText($page->html()),'Payment received after credit.'),'A refresh reads the notice again');
 echo "Staff domain reminder review and fallback slots passed.\n";$nativeSuccessful=true;

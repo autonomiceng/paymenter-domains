@@ -53,7 +53,7 @@ echo "Release guard passed.\n";
 // Authorized native hold and refund confirmations invoke only the engine refund path.
 $holdText='Put on hold by '.trim($staff->first_name.' '.$staff->last_name);
 $actions=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('hold')->assertNotified('Request on hold')
-    ->assertSee('On hold')->assertSee($holdText)->assertActionHidden('hold')->assertActionVisible('release');
+    ->assertSee(\Paymenter\Extensions\Servers\Domains\Presentation\State::UnderReview->label())->assertSee($holdText)->assertActionHidden('hold')->assertActionVisible('release');
 echo "Native hold passed.\n"; same('held',$op->fresh()->state,'Native hold action'); $before=$credit();
 $actions->assertActionVisible('refund')->callAction('refund',['reason'=>'Customer cancelled this unsent order'])->assertHasNoActionErrors()->assertNotified('Request cancelled')
     ->assertSee('Cancelled')->assertSee('Credit added')->assertDontSee('On hold')->assertDontSee($holdText)

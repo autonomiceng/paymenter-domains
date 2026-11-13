@@ -89,10 +89,14 @@ final readonly class RegistrarBalances
         // Missing always carries its cause; a failed check hides the retained amount.
         $cause=match(true){$code==='configuration_unavailable'=>"Couldn't load the account's settings. Use Edit API credentials.",$code==='rate_limited'=>'Check delayed. Try again in a minute.',
             $code!==null=>'Last check failed. Use Check balance.',!$row?->read_at||$row->amount===null=>'Not checked yet. Use Check balance.',$unknown=>'Balance is not in USD. Ask the registrar to switch this account to USD.',default=>null};
-        return ['status'=>$unknown?\Paymenter\Extensions\Servers\Domains\Presentation\Missing::LABEL:($low?'Low balance':'OK'),'low'=>$low,
+        return ['status'=>$unknown?\Paymenter\Extensions\Servers\Domains\Presentation\Missing::LABEL:($low?'Low balance':'OK'),'low'=>$low,'missing'=>$unknown?self::missing($row):null,
             'balance'=>$unknown?null:self::money($row->amount,$row->currency),'checked'=>$unknown?null:gmdate('M j, Y H:i \\U\\T\\C',(int)$row->read_at),
             'cause'=>$cause,'total'=>self::money($forecast['total'],$forecast['currency']),'unknown'=>$forecast['unknown'],'unreadable'=>$forecast['unreadable'],'unpriced'=>$forecast['unpriced'],'unobserved'=>$forecast['unobserved']];
     }
+    /** The word for a balance we can't show follows the data, not the page: never checked reads Not read yet, and a
+     * check that ran and failed (or can't be shown) reads Couldn't read. */
+    private static function missing(?object $row): \Paymenter\Extensions\Servers\Domains\Presentation\State
+    { return $row===null||((int)$row->attempted_at===0&&!$row->read_at)?\Paymenter\Extensions\Servers\Domains\Presentation\State::NotReadYet:\Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead; }
     /** Staff money: "USD 49,642.19". */
     private static function money(string $amount,string $currency): string
     {

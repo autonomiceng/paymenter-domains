@@ -34,6 +34,21 @@ $check=static function(bool $visible,string $scenario,bool $retired=false)use($p
             continue;
         }
         $schema=$instance->content(Schema::make($instance));
+        if(in_array(Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\Concerns\BuildsList::class,class_uses_recursive($instance))){
+            // A list page says it as a notice row above its table, in the page's own words.
+            $above=implode('',array_map(static fn($c)=>$c->toHtml(),array_values(array_filter($schema->getComponents(),static fn($c)=>!$c instanceof Filament\Schemas\Components\EmbeddedTable))));
+            $above=html_entity_decode(strip_tags($above),ENT_QUOTES|ENT_HTML5,'UTF-8');
+            same($visible?1:0,substr_count($above,$step),$scenario.': one sales notice with its next step on '.$page);
+            continue;
+        }
+        if($instance instanceof RegistrarAccount){
+            // A Detail page says the gap in one notice row of its sheet, with the cause and next step once.
+            $rows=array_values(array_filter($schema->getFlatComponents(false),static fn($c)=>$c instanceof Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Row
+                && Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\Section::isNotice($c) && str_contains(html_entity_decode(strip_tags($c->toHtml()),ENT_QUOTES|ENT_HTML5,'UTF-8'),$step)));
+            same($visible?1:0,count($rows),$scenario.': one notice names the gap on '.$page);
+            foreach($rows as $row){ same(1,substr_count(html_entity_decode(strip_tags($row->toHtml()),ENT_QUOTES|ENT_HTML5,'UTF-8'),$step),$scenario.': the rendered cause and next step on '.$page); }
+            continue;
+        }
         $notices=array_values(array_filter($schema->getComponents(),static fn($c)=>$c instanceof Callout && $c->getHeading()===$heading));
         same($visible?1:0,count($notices),$scenario.': one Missing notice on '.$page);
         foreach($notices as $notice){

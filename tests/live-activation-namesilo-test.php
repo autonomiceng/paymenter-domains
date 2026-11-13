@@ -136,7 +136,7 @@ $panel=Filament\Facades\Filament::getCurrentPanel();
 $pages=[Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::class,Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarHistory::class];$panel->pages($pages);
 Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($panel,$pages){foreach($pages as $page){$page::registerRoutes($panel);}});
 app('router')->getRoutes()->refreshNameLookups();
-$action=Filament\Actions\Testing\TestAction::make('activate_live')->schemaComponent('account_'.$server->id.'.live_sales','content');
+$action=Filament\Actions\Testing\TestAction::make('activate_live')->schemaComponent('sheet','content');
 $page=Livewire\Livewire::actingAs($full)->test($pages[0],['account'=>$server->id])->mountAction($action)->assertActionMounted($action);
 $page->callMountedAction()->assertNotified('Could not activate');
 expect(!$a->fresh()->processing_enabled,'Missing prices keep Live spending closed');

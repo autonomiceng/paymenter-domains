@@ -12,6 +12,17 @@ use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\{OwnedDomainController, OwnerRenewalController};
 use Illuminate\Http\Request;
 
+/** A customer settings row by its label: its text and its links by label, or null. @return ?array{text:string,links:array<string,string>} */
+function adoptionSettingRow(string $html, string $label): ?array
+{
+    $dom=new DOMDocument;@$dom->loadHTML('<?xml encoding="utf-8"?>'.$html);$x=new DOMXPath($dom);
+    foreach($x->query('//*[@data-piece="settings-row"]') as $row){
+        if(!str_starts_with(trim((string)$x->query('./*[1]',$row)->item(0)?->textContent),$label)){continue;}
+        $links=[];foreach($x->query('.//a[@href]',$row) as $a){$links[trim($a->textContent)]=$a->getAttribute('href');}
+        return ['text'=>trim((string)preg_replace('/\s+/u',' ',$row->textContent)),'links'=>$links];
+    }
+    return null;
+}
 /** The original customer matrix, partitioned without replacing native finance. */
 function adoptionCustomerScenario(string $part): void
 {
@@ -31,7 +42,7 @@ $issued=DB::table('invoices')->where('id',$old->id)->value('created_at');DB::tab
 $paidAt=DB::table('invoice_transactions')->insertGetId(['invoice_id'=>$old->id,'amount'=>'13.00','fee'=>'0.00','status'=>'succeeded','created_at'=>'2026-01-20 10:00:00','updated_at'=>'2026-01-20 10:00:00']);
 same('2026-01-20',$owners->present($d,false)->history[0]['date'],'History dates a paid invoice by its payment');DB::table('invoice_transactions')->where('id',$paidAt)->delete();DB::table('invoices')->where('id',$old->id)->update(['created_at'=>$issued]);
 $html=view('domains::show',['domain'=>$dto])->render();
-expect(!str_contains($html,'Company&gt; Registration')&&!str_contains($html,'<Synthetic & Company>'),'Detail has no registration badge and never renders the company unescaped');expect(str_contains($html,'<span class="domains-sub">Cancels ')&&preg_match('~<dt>Auto-renew .*?</dt><dd><span class="domains-card__v">Off</span> <span class="domains-row__a domains-card__a"><a class="domains-a" href="[^"]+">Contact support</a></span></dd>~s',$html)===1,'Approved cancellation copy');
+expect(!str_contains($html,'Company&gt; Registration')&&!str_contains($html,'<Synthetic & Company>'),'Detail has no registration badge and never renders the company unescaped');$auto=adoptionSettingRow($html,'Renewal invoices');expect($auto!==null&&str_contains($auto['text'],'Off')&&isset($auto['links']['Contact support']),'A cancelled renewal reads Off and asks for support');
 $activity=storefrontDom($html);
 same(1,$activity->query('//*[@id="history"]//ol[@class="domains-trace"]/li[div/b[normalize-space(.)="Imported"] and span[last()][normalize-space(.)="Completed"]]')->length,'Adoption visible in activity');
 same('cancellation',$dto->renewalOff,'Native cancellation takes precedence over adopted stop');
@@ -85,7 +96,7 @@ $issued=$owners->present($d->fresh(),false);same('2027-10-13',$issued->renewalDu
 $issuedHtml=preg_replace('/\s+/',' ',view('domains::show',['domain'=>$issued])->render());expect(str_contains($issuedHtml,'<dt>Next invoice</dt><dd><span class="domains-card__v">'.Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus::earlyRenewal('2027-10-13').'</span> <span class="domains-row__a domains-card__a"><a class="domains-a" href="'.route('invoices.show',$invoice).'">Pay invoice</a></span>'),'Actual issued-debt label');expect(!str_contains($issuedHtml,'An invoice will be issued'),'Issued debt never promises a second invoice');
 $c=App\Models\ServiceCancellation::create(['service_id'=>$service->id,'type'=>'end_of_period','reason'=>'Stop the next renewal after issued debt']);
 $stopped=$owners->present($d->fresh(),false);same('Off',$stopped->renewal,'Later stop turns future renewal off');same(false,$stopped->originalDoNotRenew,'Later stop is distinct from original DNR');same('pending',$stopped->renewalInvoice['state'],'Issued debt remains visible after later stop');
-$stoppedHtml=view('domains::show',['domain'=>$stopped])->render();expect(preg_match('~<dt>Auto-renew .*?</dt><dd><span class="domains-card__v">Off</span> <span class="domains-row__a domains-card__a"><a class="domains-a" href="[^"]+">Contact support</a></span></dd>~s',$stoppedHtml)===1&&str_contains($stoppedHtml,'>Pay invoice</a>'),'Later stop asks for support');expect(!str_contains($stoppedHtml,'No renewal invoices or renewal reminders are scheduled.'),'Later stop never promises suppression of issued reminders');
+$stoppedHtml=view('domains::show',['domain'=>$stopped])->render();$auto=adoptionSettingRow($stoppedHtml,'Renewal invoices');expect($auto!==null&&str_contains($auto['text'],'Off')&&isset($auto['links']['Contact support'])&&str_contains($stoppedHtml,'>Pay invoice</a>'),'Later stop asks for support');expect(!str_contains($stoppedHtml,'No renewal invoices or renewal reminders are scheduled.'),'Later stop never promises suppression of issued reminders');
 DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'paid']);
 $paid=$owners->present($d->fresh(),false);same(null,$paid->plannedRenewalDue,'Paid issued cycle never projects a new invoice');same('paid',$paid->renewalInvoice['state'],'Paid debt presented distinctly');
 $paidHtml=view('domains::show',['domain'=>$paid])->render();$paidDom=storefrontDom($paidHtml);

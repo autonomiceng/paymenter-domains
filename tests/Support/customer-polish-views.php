@@ -82,7 +82,7 @@ use Paymenter\Extensions\Servers\Domains\Services\DomainSummaryStrings;
     // One list: hosting domains are rows after the registered domains on this page.
     $html = view('domains::index', ['domains' => new \Illuminate\Pagination\LengthAwarePaginator([...$summaries, ...$watches], count($summaries) + count($watches), 25)])->render();
     $dom = storefrontDom($html);
-    $pills = static fn ($dom, $context = null) => array_map(fn ($span) => trim($span->textContent), iterator_to_array($dom->query('.//span[contains(@class,"domains-badge")]', $context ?? $dom->document->documentElement)));
+    $pills = static fn ($dom, $context = null) => array_map(fn ($span) => trim($span->textContent), iterator_to_array($dom->query('.//span[contains(@class,"domains-badge")] | .//td[@data-label="Status"]//*[@data-domains-tone]', $context ?? $dom->document->documentElement)));
     foreach (array_keys($rows) as $i => $name) {
         same([$rows[$name][3]], $pills($dom, $dom->query('//tbody/tr['.($i + 1).']')->item(0)), 'List row has one status pill: '.$name);
     }
@@ -91,7 +91,7 @@ use Paymenter\Extensions\Servers\Domains\Services\DomainSummaryStrings;
     same([], array_intersect($pills($dom), $evidence), 'No registration, DNS, renewal or check pills on the list');
     $related = array_map(fn ($i) => $dom->query('//tbody/tr['.$i.']')->item(0), range(count($summaries) + 1, count($summaries) + count($watches)));
     same([[], [], ['Active']], array_map(fn ($node) => $pills($dom, $node), $related), 'Hosting rows: no pill without current registry facts; managed row shows Active');
-    same(['', '', 'Off'], array_map(fn ($node) => trim($dom->query('td[@data-label="Auto-renew"]', $node)->item(0)->textContent), $related), 'Hosting rows have no renewal invoices; a registered row keeps its own renewal');
+    same(['', '', 'Off'], array_map(fn ($node) => trim($dom->query('td[@data-label="Renewal invoices"]', $node)->item(0)->textContent), $related), 'Hosting rows have no renewal invoices; a registered row keeps its own renewal');
     $detail = view('domains::partials.summary', ['summary' => $summaries[2]])->render();
     foreach (['domain.registration.unknown', 'domain.dns.unknown', 'domain.points.unknown', 'watch.not_checked'] as $key) { expect(!str_contains($detail, '>'.$strings[$key].'<'), 'Detail shows no chip that only says something is unknown: '.$key); }
     $nameservers = static fn (DOMXPath $dom) => preg_replace('/\s+/', ' ', trim($dom->query('//div[@class="domains-fact"][dt="Nameservers"]/dd')->item(0)?->textContent ?? ''));
@@ -120,7 +120,7 @@ use Paymenter\Extensions\Servers\Domains\Services\DomainSummaryStrings;
     same(['Under review'], $pills($compact($adopting)), 'Pending outranks active');
     same([], $pills($compact($adopting, ['summaryOnManaged' => true])), 'Managed context leaves the pill to the page header');
     $offRow = $dom->query('//tbody/tr[td/a[normalize-space()="renewal-off.example"]]')->item(0);
-    same('Off', trim($dom->query('td[@data-label="Auto-renew"]', $offRow)->item(0)->textContent), 'Renewal column says Off');
+    same('Off', trim($dom->query('td[@data-label="Renewal invoices"]', $offRow)->item(0)->textContent), 'Renewal column says Off');
     same(0, substr_count($offRow->textContent, 'Auto-renew off'), 'Index row leaves Off to the Renewal column');
     $pendingOff = new DomainSummary('pending-off.example', null, 'managed', 'domain.registration.unknown', $unknown, null, null, ['adopt.pending', 'adopt.renewal_off'], $strings, null, null, null, [], null, null, [], [], ['detail' => '/domains/pending-off.example'], renewalOff: true);
     $pendingRow = storefrontDom(view('domains::index', ['domains' => new \Illuminate\Pagination\LengthAwarePaginator([$pendingOff], 1, 25)])->render())->query('//tbody/tr')->item(0);

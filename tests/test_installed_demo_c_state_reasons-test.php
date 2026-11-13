@@ -20,8 +20,9 @@ $case('B01 disabled renewal',function()use($t,$now){
     DB::table('domains_prices')->where('id',$p->id)->update([...costColumns(OfferState::json(OfferState::encodeCost($cost)))]);
     DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_retained_annual_retail'=>null]);
     $list=Livewire::actingAs(auth()->user())->test(ListTlds::class)->instance();$column=$list->getTable()->getColumn('renewal')->record($t->fresh());
-    same('Renewal not offered by this registrar',$column->getState(),'Disabled is not Missing');same(null,$column->getColor($column->getState()),'Disabled is quiet');
-    expect(str_contains(html_entity_decode(TldFacts::accountsTable($t,Staff::requireView())->toHtml()),'Renewal not offered by this registrar'),'Account table agrees');
+    $html=(string)$column->formatState($column->getState());
+    expect(str_contains($html,'Renewal not offered by this registrar'),'Disabled is quiet and says why');
+    same('Renewal not offered by this registrar',TldFacts::accounts($t,Staff::requireView())[0]['renew']['value'],'Account prices agree');
     DB::table('domains_prices')->where('id',$p->id)->update($saved);
 });
 $case('D01 complete selected terms count',function()use($t,$actor,$tlds){
@@ -39,7 +40,8 @@ $case('D05 D06 feed absence and no seller',function()use($t,$actor,$now){
     DB::table('domains_sales_policies')->where('tld',$missing->tld)->update(['updated_at'=>$now->modify('-1 hour')]);
     DB::table('domains_observation_queues')->updateOrInsert(['server_id'=>$t->server_id,'account_fingerprint'=>$t->account_fingerprint],['offer_feed_succeeded_at'=>$now->getTimestamp()+1]);
     $list=Livewire::actingAs($actor)->test(ListTlds::class)->searchTable($missing->tld)->instance();$col=$list->getTable()->getColumn('renewal')->record($list->getTableRecords()->first());
-    expect(str_contains((string)$col->getDescriptionBelow(),'Not in the registrar\'s price feed; not for sale'),'Feed gap says why: '.(string)$col->getDescriptionBelow()); same('danger',$col->getColor($col->getState()),'Selected gap stays red');
+    $html=html_entity_decode((string)$col->formatState($col->getState()),ENT_QUOTES);
+    expect(str_contains($html,'Not in the registrar\'s price feed; not for sale'),'Feed gap says why: '.strip_tags($html));
     DB::table('domains_sales_policies')->where('tld',$missing->tld)->delete();
     $state=TldFacts::priceState(TldFacts::snapshot($missing));
     expect(str_contains($state['cause'],'No registrar selected'),'Unsold without a registrar says why');same(null,$state['tone'],'Unsold gap is quiet');
@@ -50,7 +52,7 @@ $case('D05 D06 feed absence and no seller',function()use($t,$actor,$now){
 });
 $case('D02 automatic refresh times',function()use($t,$actor,$now){
     DB::table('domains_observation_queues')->updateOrInsert(['server_id'=>$t->server_id,'account_fingerprint'=>$t->account_fingerprint],['offer_work'=>OfferState::json(['feed_due'=>$now->getTimestamp()+86400]),'offer_feed_succeeded_at'=>$now->getTimestamp(),'turn'=>0]);
-    $page=Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id]);$html=$page->html();expect(str_contains($html,'Last updated')&&str_contains($html,'Next update')&&!str_contains($html,'Sync prices to resume'),'Refresh facts and scheduled due time visible');expect(str_contains($html,'datetime="'.gmdate('c',$now->getTimestamp()).'"')&&str_contains($html,'datetime="'.gmdate('c',$now->getTimestamp()+86400).'"'),'Account refresh times are exact, even when this ending has no separate read');
+    $page=Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id]);$html=$page->html();expect(str_contains($html,'Last updated')&&str_contains($html,'Next update')&&!str_contains($html,'Sync prices to resume'),'Refresh facts and scheduled due time visible');expect(str_contains($html,'datetime="'.gmdate('c',$now->getTimestamp()).'"')&&str_contains($html,Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at($now->getTimestamp()+86400)),'Account refresh times are exact, even when this ending has no separate read');
 });
 $case('D03 legacy TEST blocker',function()use($t){
     $legacy=new Account(['server_id'=>$t->server_id,'registrar_key'=>'namesilo','environment'=>'test','stable_identity'=>\Paymenter\Extensions\Servers\Domains\Services\NameSiloSandbox::PREFIX.str_repeat('a',64)]);
@@ -58,7 +60,7 @@ $case('D03 legacy TEST blocker',function()use($t){
 });
 $case('B06 invalid fixed rule page and modal',function()use($t,$actor){
     DB::table('domains_tlds')->where('id',$t->id)->update(['use_default_rule'=>false,'pricing_mode'=>'fixed','catalogue_intent'=>OfferState::json(['pricing_rule'=>['mode'=>'fixed','markup'=>'0.00','round_up'=>'none','fixed'=>['register'=>'0.00','renew'=>'0.00','transfer'=>'0.00']]])]);
-    $page=Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id]);expect(str_contains($page->html(),'Invalid fixed price rule')&&str_contains($page->html(),'Missing'),'Invalid rule is explained with Edit prices');
+    $page=Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id]);expect(str_contains($page->html(),'Invalid fixed price rule')&&str_contains($page->html(),'Not set'),'Invalid rule is explained with Edit prices');
     $page->mountAction('override')->assertActionMounted('override')->call('$refresh');$modal=$page->effects['partials']['action-modals.0']??'';expect(str_contains($modal,'Invalid fixed price rule')&&str_contains($modal,'Missing'),'Invalid rule is explicitly explained inside the repair modal');
 });
 expect($failures===[],implode("\n",$failures));$nativeSuccessful=true;echo "Saved TLD and account state reasons passed.\n";

@@ -49,7 +49,7 @@ expect(!EnomTestRenewal::accepted($binding)&&!RenewalBillingSettings::anyOn($ser
 expect(!$server->settings()->where('key',EnomLiveActivation::KEY)->exists(),'Audit refusal rolls back activation receipt');
 $historyBefore=$staffHistoryCount();
 // Exercise the actual one-click + confirm native staff action, not an acceptance-row seed.
-$activateAction=Filament\Actions\Testing\TestAction::make('activate_live')->schemaComponent('account_'.$server->id.'.live_sales','content');
+$activateAction=Filament\Actions\Testing\TestAction::make('activate_live')->schemaComponent('sheet','content');
 $problems=EnomLiveActivation::problems($a->fresh(),$activation);same([],$problems,'Synthetic activation prerequisites: '.json_encode($problems));
 $page=Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$server->id])->mountAction($activateAction)->assertActionMounted($activateAction);
 $page->callMountedAction()->assertHasNoActionErrors()->assertNotified('Live features activated');

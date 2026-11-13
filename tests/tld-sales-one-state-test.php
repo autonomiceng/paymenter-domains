@@ -16,14 +16,17 @@ $t=$tlds[0];$account=Account::where('server_id',$t->server_id)->sole();$binding=
 $actor=staffUser(array_keys(Staff::permissions()));Auth::setUser($actor);
 $offer=static fn(string $action)=>$ports->readOffers(new Query($binding,['com'],$action),Context::Staff)[0];
 $head=static fn()=>trim(preg_replace('/\s+/',' ',strip_tags(Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->instance()->getSubheading()->toHtml())));
+$said=static fn()=>preg_replace('/\s+/',' ',html_entity_decode(strip_tags(preg_replace('~<(script|style)\b.*?</\1>~si','',Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->html())),ENT_QUOTES));
 $ports->apply(new FactsObserved($binding,'com',new Facts(['register'=>[1,3],'renew'=>[1],'transfer'=>[1]],[],true,false,false,'synthetic',$now,$now->modify('+1 day'))),$offer('register')->revision);
 // The account sells only TLDs set to Sell, and .com has no choice of its own.
 DB::table('domains_accounts')->where('id',$account->id)->update(['catalogue_defaults'=>OfferState::json([...OfferState::decode($account->catalogue_defaults),'defaultSell'=>false])]);
 $ports->apply(Edit::override($binding,'com',new Intent(stops:[])),$offer('register')->revision);
 same('Not sold by default',TldFacts::salesState($t->fresh())['reason'],'The TLD list says Not sold by default');
-same('Not for sale Not sold by default',$head(),'The head says the same');
+same('Not for sale',$head(),'The head says the state');
+expect(str_contains($said(),'Not sold by default'),'The page says why: Not sold by default');
 // Staff stopped .com: both say Stopped by staff.
 $ports->apply(Edit::override($binding,'com',new Intent(sell:true,stops:['register','transfer'])),$offer('register')->revision);
 same('Stopped by staff',TldFacts::salesState($t->fresh())['reason'],'The TLD list says Stopped by staff');
-same('Not for sale Stopped by staff',$head(),'The head says the same');
+same('Not for sale',$head(),'The head says the state');
+expect(str_contains($said(),'Stopped by staff'),'The page says why: Stopped by staff');
 echo "TLD sales one state passed.\n";$nativeSuccessful=true;

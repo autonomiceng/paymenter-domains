@@ -205,9 +205,9 @@ class PanelKit extends Page
     public const EXPIRES = 1804180320;
     private const WORDS = [
         'OK' => [State::Ok, State::Active, State::Monitored, State::Completed, State::Paid, State::ForSale],
-        'Off' => [State::NotReadYet, State::NotForSale, State::NotSupported, State::NotConnected, State::Paused, State::Stopped, State::Cancelled, State::NotRecognized, State::Unpaid],
+        'Off' => [State::NotReadYet, State::NotIssuedYet, State::NotForSale, State::NotSupported, State::NotConnected, State::Paused, State::Stopped, State::Cancelled, State::NotRecognized, State::Unpaid],
         'In progress' => [State::Checking, State::Queued, State::Running, State::PendingRegistration, State::PendingTransfer, State::AwaitingPayment],
-        'Needs attention' => [State::NotSet, State::NeedsReview, State::ActionRequired, State::OrdersPaused, State::ExpiresToday, State::LowBalance, State::Delayed, State::OutOfDate, State::UnderReview],
+        'Needs attention' => [State::NotSet, State::NeedsReview, State::ActionRequired, State::OrdersPaused, State::ExpiresToday, State::LowBalance, State::BelowCost, State::Delayed, State::OutOfDate, State::UnderReview],
         'Failed' => [State::CouldntRead, State::Failed, State::ConnectionFailed, State::Expired, State::Redemption],
     ];
     /** Every word of one tone, as staff read it. @param list<State> $states */

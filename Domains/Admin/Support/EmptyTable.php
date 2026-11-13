@@ -8,11 +8,13 @@ final class EmptyTable
 {
     public const CLEAR='Clear the search or filters to see all rows.';
     /** @param ?\Closure():?string $blocked a heading that takes over with no step, such as rows that can't be read */
-    public static function apply(Table $table, string $empty, string $next, string $noMatch, ?\Closure $blocked=null): Table
+    /** @param string|\Closure():string $noMatch read when the table draws, so it can name the filters applied then */
+    public static function apply(Table $table, string $empty, string $next, string|\Closure $noMatch, ?\Closure $blocked=null): Table
     {
+        $noMatch=$noMatch instanceof \Closure?$noMatch:fn()=>$noMatch;
         $hidden=fn($livewire)=>filled($livewire->getTableSearch())||$livewire->getTable()->isFiltered();
         $blocked??=fn()=>null;
-        return $table->extraAttributes(['data-piece'=>'table'],merge:true)->emptyStateHeading(fn($livewire)=>$blocked()??($hidden($livewire)?$noMatch:$empty))
+        return $table->extraAttributes(['data-piece'=>'table'],merge:true)->emptyStateHeading(fn($livewire)=>$blocked()??($hidden($livewire)?$noMatch():$empty))
             ->emptyStateDescription(fn($livewire)=>$blocked()!==null?null:($hidden($livewire)?self::CLEAR:$next));
     }
 }

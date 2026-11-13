@@ -35,7 +35,7 @@ foreach (range(0,15) as $mask) {
     $page->assertCanSeeTableRecords([$held,$active,$long])->assertSeeHtml('domains-name-cell');
     staffTableStandard($page,'Search domain or customer',['domain','customer','note','server_id']);staffRowsStandard($page,['server_id']);
     $page=Livewire::actingAs($user)->test(ViewDomain::class,['record'=>$held->id]);
-    $page->assertSuccessful()->assertSee('Registration')->assertSee('Billing')->assertSet('data',[]);
+    $page->assertSuccessful()->assertSee('Registration')->assertSee('Billing')->assertSet('data',null);
     $activity=Livewire::actingAs($user)->test(RequestsRelationManager::class,['ownerRecord'=>$held,'pageClass'=>ViewDomain::class]);
     $activity->assertSee('Request #'.$held->operations()->sole()->id);
     $body=$page->html().json_encode($page->snapshot).$activity->html().json_encode($activity->snapshot);
@@ -103,7 +103,7 @@ foreach (['history_limit'=>'Missing: saved record history needs a fresh read. Us
     'records_unavailable'=>"Sync stopped: couldn't read DNS records.",'unmapped_reason_code'=>'Sync stopped: DNS record check failed.'] as $reason=>$label) {
     $recordService::hold($active->fresh(),$reason,new DateTimeImmutable('2026-10-18T12:00:00Z'));
     $alert=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id]);
-    $alert->assertSee($label)->assertDontSee('Check request #'.$requestId)->assertDontSee('unmapped_reason_code')->assertDontSee('Resume sync')->assertSet('data',[]);
+    $alert->assertSee($label)->assertDontSee('Check request #'.$requestId)->assertDontSee('unmapped_reason_code')->assertDontSee('Resume sync')->assertSet('data',null);
     expect(!str_contains(json_encode($alert->snapshot),'record_hold'),'Encrypted hold is absent from public state');
 }
 $op=$active->operations()->sole();DB::table('domains_operations')->where('id',$op->id)->update(['authority_generation'=>$active->authority_generation+1]);

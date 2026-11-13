@@ -43,6 +43,7 @@ foreach([[$held,'Under review','Old registrar needs approval. Check request #'.$
     same(null,$column->getTooltip(),'No tooltip: the reason is visible');
     same(OwnedDomains::acquisition($record->operations,$record)?->id,$record->latestAcquisition?->id,'Batch matches customer acquisition lookup');
     same($customer,$columns['customer']->record($record)->getState(),'Customer name has its own column');
+    same([$label,$reason],array_slice(preg_split('~<br>~',html_entity_decode(strip_tags((string)$columns['domain']->record($record)->getDescriptionBelow(),'<br>'))),0,2),'A phone reads the status and next step under the name');
     expect(!str_contains((string)$columns['domain']->record($record)->getTooltip(),$customer),'The name tooltip carries no customer identifiers');
     same(null,$columns['provider_expires_at']->record($record)->getState(),'Expiry of a domain under review is blank, not Missing');
 }

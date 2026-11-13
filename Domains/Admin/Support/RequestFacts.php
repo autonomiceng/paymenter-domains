@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus;
+use Paymenter\Extensions\Servers\Domains\Presentation\{RequestStatus,State};
 use Paymenter\Extensions\Servers\Domains\Services\{BalanceRetries, ComplimentaryCosts, ContactProfileHold, EnomTestManagement, EnomTestRegistration, ManagementEvidence, ManagementProgress, OperationClaims, RegistrarCheck, RegistrationDns, RenewalCycles, RenewalReplacements, StaffOperationWrites, UnpaidAcquisitionProof, WriteHeld};
 /** Request page facts and its one notice. A null fact value is Missing and its "_sub" key names the cause. */
 final class RequestFacts
@@ -205,6 +205,15 @@ final class RequestFacts
             &&($op->policy['reconciliation']['read_at']??\Paymenter\Extensions\Servers\Domains\Services\TransferPolling::start($op))>$now-86400;
         }catch(\Throwable){return false;}
     }
+    /** The closed state word for a request's status. On hold reads Under review, as its domain does, and In progress is work
+     * waiting on the registrar, so it reads Checking. @param array{label:string} $status */
+    public static function state(array $status): \Paymenter\Extensions\Servers\Domains\Presentation\State
+    {
+        return match($status['label']){
+            'On hold'=>State::UnderReview,'In progress'=>State::Checking,
+            default=>State::tryFrom(strtolower(str_replace(' ','_',$status['label'])))??State::NeedsReview,
+        };
+    }
     public static function status(Operation $op, bool $ordersOff=true, ?Domain $d=null, ?StaffGrants $grants=null, ?array $accounts=null): array
     {
         if(self::automaticTransfer($op)){return ['label'=>'In progress','tone'=>'info','reason'=>self::AUTO_TRANSFER];}
@@ -283,11 +292,11 @@ final class RequestFacts
         return $op->state==='held' ? 'Ready to send. Release the hold.' : null;
     }
     /** When a timed retry runs next, in the viewer's time zone like every other time here. Nothing once it is due: the next tick takes it. */
-    private static function nextTry(Operation $op): ?\Illuminate\Support\HtmlString
+    private static function nextTry(Operation $op): ?int
     {
         if (!BalanceRetries::pending($op)) { return null; }
         $due=(int)\Illuminate\Support\Facades\DB::table('domains_runtime_operations')->where('operation_id',$op->id)->value('due_at');
-        return $due>app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp()?new \Illuminate\Support\HtmlString(Sheet::moment($due,'Next try')->toHtml().'.'):null;
+        return $due>app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp()?$due:null;
     }
     /** Only a financially confirmed, nameserver-only registration fallback needs no staff task. */
     public static function quietRegistrationDns(Operation $op): bool
@@ -400,9 +409,8 @@ final class RequestFacts
                 $body=$body===null?$next.($automatic?'':' '.$recovery['body']):$next.' '.$body;
             }
             elseif(!BalanceRetries::pending($op)){$body??=$recovery['body'];}
-            if (($try=self::nextTry($op))!==null) { $body=new \Illuminate\Support\HtmlString(($body===null?'':e($body).' ').$try->toHtml()); }
             return ['title'=>rtrim($reason??Labels::reason(null),'.').'.','body'=>$body,'tone'=>'warning','action'=>in_array($op->safe_code,WriteHeld::FINAL_REFUSALS,true)&&OperationActions::relevant('refund',$op)?'refund':(OperationActions::relevant('release',$op)?'release':null),
-                'link'=>$approval?'domain':$recovery['link'],'link_label'=>$fix];
+                'link'=>$approval?'domain':$recovery['link'],'link_label'=>$fix,'next_try'=>self::nextTry($op)];
         }
         return null;
     }

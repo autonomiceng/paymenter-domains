@@ -2,232 +2,215 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Pages;
-use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 use App\Models\Server;
-use Filament\Actions\{Action,ActionGroup};
-use Filament\Infolists\Components\TextEntry;
-use Filament\Navigation\NavigationItem;
+use Filament\Actions\Action;
 use Filament\Pages\Enums\SubNavigationPosition;
-use Filament\Pages\Page;
 use Filament\Panel;
-use Filament\Schemas\{Schema,Components\Actions,Components\Flex,Components\Html,Components\Text};
-use Filament\Support\Enums\{FontFamily,FontWeight,Width};
 use Illuminate\Contracts\Support\Htmlable;
-use Illuminate\Support\HtmlString;
 use Livewire\Attributes\Locked;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{CatalogueSalesNotice,AccountChecklist,BalanceCheck,HelpHint,LiveActivationAction,MissingEntry,OnOffSwitch,PaidUncertainty,PslActions,RegistrarFacts,RequestFacts,SettingsActions,Sheet,Staff,TldFacts,StatusMark};
-use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Tld};
-use Paymenter\Extensions\Servers\Domains\Presentation\{AccountStatus,Missing};
-use Paymenter\Extensions\Servers\Domains\Services\{SiteDnsDefault,StaffSettingsReview};
-use Paymenter\Extensions\Servers\Domains\Support\DemoData;
-/** One registrar account (a Domains server): status, balance and setup. Reached from the Registrars list. */
-class RegistrarAccount extends Page
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{AccountChecklist, ApiCallLimitAction, BalanceCheck, LiveActivationAction, PaidUncertainty, PriceFreshnessAction, PslActions, RegistrarFacts, RegistrarPage, RegistrarRows, RequestFacts, SettingsActions, Sheet, Staff, TldFacts};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Row, Value};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\{DetailPage, Section};
+use Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness;
+use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain};
+use Paymenter\Extensions\Servers\Domains\Presentation\{AccountStatus, Fact, Reader, State};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, EnomLiveActivation, SiteDnsDefault};
+/** One registrar account (a Domains server): its own state in the head, then Account, Balance and usage, Sales,
+ * Renewals and Domain settings, with System checks on the rail. Reached from the Registrars list. Each switch sits with
+ * what it controls; a link that came for a switch lands on it. A cause the head used to say opens the section it concerns. */
+class RegistrarAccount extends DetailPage
 {
-    protected static ?string $slug='registrar-account';
-    protected static bool $shouldRegisterNavigation=false;
-    protected static ?SubNavigationPosition $subNavigationPosition=SubNavigationPosition::Top;
-    protected Width|string|null $maxContentWidth=Sheet::WIDTH;
-    #[Locked] public int $account=0;
-    public string $reviewStamp='';
+    use RegistrarPage { mount as private openAccount; }
+    protected static ?string $slug = 'registrar-account';
+    protected static bool $shouldRegisterNavigation = false;
+    protected static ?SubNavigationPosition $subNavigationPosition = SubNavigationPosition::Top;
     /** The switch a link came for (RegistrarFacts::SWITCHES). */
-    #[Locked] public ?string $switch=null;
-    private ?array $status=null;
+    #[Locked] public ?string $switch = null;
     public static function canAccess(): bool { return Staff::can(); }
     public static function getRoutePath(Panel $panel): string { return '/'.static::getSlug($panel).'/{account}'; }
     public function mount(int $account): void
     {
-        Staff::requireView();
-        abort_unless(Server::where('extension','Domains')->whereKey($account)->exists(),404);
-        $this->account=$account;$this->reviewStamp=StaffSettingsReview::stamp($account,null);
-        $switch=request()->query('switch');$this->switch=is_string($switch)&&isset(RegistrarFacts::SWITCHES[$switch])?$switch:null;
-        // The Domain alerts row counts by the badge's rule, so the badge is refreshed here too.
-        \Paymenter\Extensions\Servers\Domains\Admin\Support\NavigationCount::forget('domains');
-    }
-    protected function server(): Server { return Server::where('extension','Domains')->findOrFail($this->account); }
-    private function record(): ?Account { return Account::where('server_id',$this->account)->first(); }
-    /** @return array{label:string,tone:string,reason:?string} */
-    private function status(): array { return $this->status??=RegistrarFacts::status($this->server(),$this->record()); }
-    public function getTitle(): string { Staff::requireView(); return (string)$this->server()->name; }
-    public function getHeading(): HtmlString
-    {
-        $a=$this->record();
-        $test=$a&&RegistrarFacts::mode($a)==='Test';
-        return new HtmlString(e($this->getTitle()).($test||($a&&DemoData::is($a))?DemoData::tag(inline:true,test:$test)->toHtml():''));
-    }
-    public function getSubheading(): string|Htmlable|null
-    {
-        $status=$this->status();
-        // On Overview the API connection row says why the connection failed or is off, so the head names only the status.
-        $rowSays=!$this instanceof RegistrarHistory&&$this->record()&&in_array($status['label'],[AccountStatus::SET['connection_failed'][0],AccountStatus::SET['not_connected'][0]],true);
-        $line=StatusMark::line($status['tone'],$status['label'],'registrar-'.$this->account,$rowSays?null:$status['reason']);
-        // The account-wide hold on paid changes, as the Domains list says it.
-        $held=PaidUncertainty::accounts($this->account);
-        return $held?new HtmlString($line->toHtml().'<br>'.$held->toHtml()):$line;
-    }
-    /** @return list<NavigationItem> */
-    public function getSubNavigation(): array
-    {
-        $id=['account'=>$this->account];$history=$this instanceof RegistrarHistory;
-        try { $url=RegistrarHistory::getUrl($id); } catch (\Throwable) { return []; }
-        return [NavigationItem::make('Overview')->url(RegistrarAccount::getUrl($id))->isActiveWhen(fn()=>!$history),
-            NavigationItem::make('History')->url($url)->isActiveWhen(fn()=>$history)->visible(RegistrarHistory::canAccess())];
-    }
-    public function getBreadcrumbs(): array { return [RegistrarSetup::getUrl()=>'Registrars',$this->getTitle()]; }
-    protected function afterActionCalled(Action $action): void
-    {
-        parent::afterActionCalled($action);
-        // Writers load their own models. Rebuild the page so the next change needs no reload.
-        $this->status=null;$this->reviewStamp=StaffSettingsReview::stamp($this->account,null);
-        $this->resetContent();$this->cachedActions=[];$this->cachedHeaderActions=[];
-        $this->cacheInteractsWithHeaderActions();$this->forceRender();
-    }
-    protected function getHeaderActions(): array
-    {
-        $id=$this->account;$setup=fn(string $name)=>SettingsActions::setup($id,$this->reviewStamp,$name);
-        if (!$this->record()) { return [$setup('configure'),$setup('enroll_sandbox')]; }
-        return [...($this->record()->environment==='test'&&!$this->record()->processing_enabled?[$setup('processing')->name('activate_test')->label('Activate')]:[]),ActionGroup::make([$setup('configure')])
-            ->label('More')->button()->outlined()->color('gray')->size('sm')->icon('heroicon-m-chevron-down')->iconPosition('after')];
+        $this->openAccount($account);
+        $switch = request()->query('switch');$this->switch = is_string($switch) && isset(RegistrarFacts::SWITCHES[$switch]) ? $switch : null;
     }
     /** Rebuild the page after a System checks action changed what it shows. */
     private function resetContent(): void { unset($this->cachedSchemas['content']); }
     public function checkBalance(): void { BalanceCheck::run($this->account); }
     public function checkBalanceAction(): Action
-    { return Sheet::button(Action::make('checkBalance')->label('Check balance')->visible(fn()=>RegistrarFacts::connected($this->record(),$this->status()))->action(fn()=>$this->checkBalance())); }
-    public function content(Schema $schema): Schema
+    { return Sheet::button(Action::make('checkBalance')->label('Check balance')->visible(fn () => RegistrarFacts::connected($this->record(), $this->status()))->action(fn () => $this->checkBalance())); }
+
+    protected function sections(): array
     {
-        Staff::requireView();$s=$this->server();$a=$this->record();
-        $sections=[];$checks=$this->checks();
-        if ($a) {
-            $id=(int)$s->id;
-            $rows=array_column([...AccountChecklist::setup($a,$this->status()),...AccountChecklist::renewals($id),AccountChecklist::whois($a)??self::fact('WHOIS privacy','Free when supported by the TLD.')],null,'label');
-            $checks['failing']=[...AccountChecklist::pausedChecks($rows),...$checks['failing']];
-            $pick=fn(string ...$labels)=>array_values(array_filter(array_map(fn(string $label)=>$rows[$label]??null,$labels)));
-            $sections=[Sheet::section('Account',$this->rows('account',[...$this->accountRows($a),...$pick('API connection')]))];
-            if(LiveActivationAction::offered($a)){
-                $sections[]=Sheet::section('Live sales',[Html::make(fn()=>LiveActivationAction::summary($a)),Actions::make([LiveActivationAction::make($a,$this->reviewStamp)])],key:'live_sales');
-            }
-            $funds=RegistrarFacts::connected($a,$this->status())?RegistrarFacts::balance($a)['funds']:null;
-            $sections[]=Sheet::section('Balance and usage',$this->rows('usage',$this->usageRows($s,$a)),after:$funds?[Sheet::link('add_funds','Add funds',$funds,external:true)]:[]);
-            $sections[]=Sheet::section('Sales',$this->rows('sales',$pick('Orders','Registrations',AccountChecklist::TRANSFER_LABEL,'What you sell','TLD prices','Customer pays','Card fee')));
-            $sections[]=Sheet::section('Renewals',$this->rows('renewal',$pick('Renewals','Late renewal','Customer can renew early','Invoice issued','Invoice due','Unpaid hold','Scheduled renewals','Selected TLD terms','Reminder emails','Reminder schedule')));
-            $sections[]=Sheet::section('Domain settings',$this->rows('settings',[self::newDomainsUse($a),...$pick('DNS, nameservers and contacts','WHOIS privacy')]));
-        } else {
-            $sections[]=Sheet::section('Account',$this->rows('account',[self::fact('Registrar',null,'Account not set up yet. Use Connect account.'),self::fact('Domains',(string)Domain::where('server_id',$s->id)->count())]));
+        Staff::requireView();$s = $this->server();$a = $this->record();
+        if (!$a) {
+            return [Section::make('Account', [...$this->notice('account'), RegistrarRows::row(['label' => 'Registrar', 'value' => null, 'tone' => null, 'cause' => 'Account not set up yet. Use Connect account.']),
+                Row::make('Domains', Value::fact(Fact::count(Domain::where('server_id', $s->id)->count())))], null, 'account')];
         }
-        $steps=array_map(fn(array $r)=>['label'=>$r['label'],'value'=>$r['value']??Missing::LABEL,'tone'=>$r['tone'],'detail'=>$r['cause'],'help'=>$r['help'],'buttons'=>$r['buttons']??[]],[...$checks['failing'],...$checks['passing']]);
-        $ok=count($checks['passing']).' of '.count($steps).' OK';
-        return $schema->components([...CatalogueSalesNotice::components(),Sheet::split($sections,[Sheet::section('System checks',[Sheet::trace($steps)],key:'system_checks',after:[Text::make($ok)])],'account_'.$this->account)]);
+        $id = (int) $s->id;
+        $rows = array_column([...AccountChecklist::setup($a, $this->status()), ...AccountChecklist::renewals($id), self::whois($a)], null, 'label');
+        $pick = fn (string ...$labels) => array_values(array_filter(array_map(fn (string $label) => $rows[$label] ?? null, $labels)));
+        $funds = RegistrarFacts::connected($a, $this->status()) ? RegistrarFacts::balance($a)['funds'] : null;
+        $usage = Section::make('Balance and usage', [...$this->notice('usage'), ...$this->rows($this->usageRows($s, $a))], null, 'usage');
+        return [
+            Section::make('Account', [...$this->notice('account'), ...$this->rows([...$this->accountRows($a), ...$pick('API connection')])], null, 'account'),
+            $funds ? $usage->link(Sheet::link('add_funds', 'Add funds', $funds, external: true)) : $usage,
+            // Live sales, Prices stay current for and the TLD term rows sit with the sales they govern.
+            Section::make('Sales', [...$this->notice('sales'), ...$this->rows($pick('Orders', 'Registrations', AccountChecklist::TRANSFER_LABEL, 'What you sell', 'TLD prices')),
+                ...$this->rows([$this->freshness($s, $a)]), ...$this->rows($pick('Customer pays', 'Card fee')), ...$this->liveSales($a)], null, 'sales'),
+            Section::make('Renewals', $this->rows($pick('Renewals', 'Late renewal', 'Customer can renew early', 'Invoice issued', 'Invoice due', 'Unpaid hold', 'Scheduled renewals', 'Selected TLD terms', 'Reminder emails', 'Reminder schedule')), null, 'renewal'),
+            Section::make('Domain settings', [$this->newDomainsUse($a), ...$this->rows($pick('DNS, nameservers and contacts', 'WHOIS privacy'))], null, 'settings'),
+        ];
+    }
+    protected function rail(): array
+    {
+        $checks = $this->checks();$a = $this->record();
+        if ($a) {
+            $rows = array_column([...AccountChecklist::setup($a, $this->status()), ...AccountChecklist::renewals((int) $a->server_id)], null, 'label');
+            $checks['failing'] = [...AccountChecklist::pausedChecks($rows), ...$checks['failing']];
+        }
+        $all = [...$checks['failing'], ...$checks['passing']];
+        return [Section::make('System checks', [RegistrarRows::checks($all)], count($checks['passing']).' of '.count($all).' checks OK.', 'system_checks')];
     }
     /** System checks for this account, failing first. @return array{failing:list<array>,passing:list<array>} */
     public function checks(): array
     {
-        $system=AccountChecklist::system();$a=$this->record();
-        if (Staff::can(PslActions::VIEW)) { $psl=PslActions::row(fn()=>$this->resetContent());if(in_array($psl['tone'],['danger','warning'],true)){$system['failing'][]=$psl;} }
+        $system = AccountChecklist::system();$a = $this->record();
+        if (Staff::can(PslActions::VIEW)) { $psl = PslActions::row(fn () => $this->resetContent());if (in_array($psl['tone'], ['danger', 'warning'], true)) { $system['failing'][] = $psl; } }
         if ($a) {
-            $runtime=AccountChecklist::runtime($a);$system[$runtime['value']===null?'failing':'passing'][]=$runtime;
-            $alerts=AccountChecklist::alerts($a);$system[$alerts['tone']==='success'?'passing':'failing'][]=$alerts;
-            if($this->status()['label']===AccountStatus::SET['not_selling'][0]){$system['failing'][]=AccountChecklist::notSelling($a,$this->status()['reason']);}
-
+            $runtime = AccountChecklist::runtime($a);$system[$runtime['value'] === null ? 'failing' : 'passing'][] = $runtime;
+            $alerts = AccountChecklist::alerts($a);$system[$alerts['tone'] === 'success' ? 'passing' : 'failing'][] = $alerts;
+            if ($this->status()['label'] === AccountStatus::SET['not_selling'][0]) { $system['failing'][] = AccountChecklist::notSelling($a, (string) $this->status()['reason']); }
         }
         return $system;
     }
-    /** The default nameservers as they apply here: the template name, its nameservers and Change, which opens Domains > DNS templates where they are set.
-     * Change and the fix text need both that page and the right to change the default; other staff are told who can. */
-    private static function newDomainsUse(Account $a): array
+    /** The section's one notice: the account's cause for the section it concerns, the site-wide sales gap, or the hold on
+     * paid orders. Two causes in one section read as one notice with the first one's word and action. @return list<Row> */
+    private function notice(string $section): array
     {
-        $canEdit=Staff::canEditDefaultDns()&&RoutingProfileResource::canViewAny();$default=SiteDnsDefault::profile();$refusal=SiteDnsDefault::refusal($canEdit);
-        $names=$default&&!$refusal?'<span class="domains-mono">'.e(implode(', ',array_map('strval',(array)$default->nameservers))).'</span><br>':'';
-        $row=self::fact('New domains use',$refusal?null:$default?->name,$refusal??($default
-            ?new HtmlString($names.'New registrations use these nameservers unless the customer chooses others. Transfers keep the nameservers they already have.')
-            :'New registrations have no site-default nameservers. '.($a->registrar_key==='namesilo'?'NameSilo needs explicit nameservers before an order can be sent. ':'').($canEdit?'Choose one in Domains > DNS templates.':SiteDnsDefault::ASK)));
-        try { $url=$canEdit?RoutingProfileResource::getUrl():null; } catch (\Throwable) { $url=null; }
-        return [...$row,'buttons'=>$url?[Action::make('new_domains_use')->label('Change')->link()->size('sm')->url($url)]:[]];
+        $status = $this->status();$label = $status['label'];$a = $this->record();$items = [];
+        // The API connection row says why a connected account failed or is off; without an account the Account section says it.
+        $connection = in_array($label, [AccountStatus::SET['connection_failed'][0], AccountStatus::SET['not_connected'][0]], true);
+        if ($section === 'account' && $connection && !$a && $status['reason'] !== null) {
+            $items[] = [$label === AccountStatus::SET['not_connected'][0] ? State::NotConnected : State::ConnectionFailed, $status['reason'], null];
+        }
+        if ($section === 'sales') {
+            if ($label === AccountStatus::SET['orders_paused'][0] && $status['reason'] !== null) { $items[] = [State::Stopped, $status['reason'], null]; }
+            if ($label === AccountStatus::SET['not_selling'][0] && $status['reason'] !== null && $a) {
+                $items[] = [State::NotForSale, $status['reason'], AccountChecklist::notSelling($a, (string) $status['reason'])['buttons'][0] ?? null];
+            }
+        }
+        // The catalogue gap concerns sales; a page with no account yet has only its Account section to say it in.
+        if ($section === ($a ? 'sales' : 'account')) {
+            foreach (\Paymenter\Extensions\Servers\Domains\Admin\Support\CatalogueSalesNotice::lines() as $line) { $items[] = [State::NeedsReview, $line, null]; }
+        }
+        if ($section === 'usage') {
+            foreach (PaidUncertainty::holds($this->account) as $h) {
+                $items[] = [State::UnderReview, PaidUncertainty::line($h), $h['url'] ? Sheet::link('paid_request_'.$h['server_id'], $h['label'], $h['url']) : null];
+            }
+        }
+        if ($items === []) { return []; }
+        $action = array_values(array_filter(array_column($items, 2)))[0] ?? null;
+        $line = implode(' ', array_map(static fn (array $i): string => (string) RegistrarRows::sentence($i[1]), $items));
+        return [Row::notice($section.'-cause', Value::state($items[0][0], Reader::Staff, $line, 'registrar-'.$this->account.'-'.$section), $action)];
     }
-    /** A value with no fix of its own. */
-    private static function fact(string $label,?string $value,string|Htmlable|null $cause=null,?string $help=null): array
-    { return ['label'=>$label,'value'=>$value,'tone'=>null,'cause'=>$cause,'action'=>null,'help'=>$help]; }
-    /** Rows with a value and their action column. A value of On or Off gets a switch. Missing shows in danger with its cause. */
-    private function rows(string $prefix,array $rows): array
-
+    /** Rows with their action column. A value of On or Off with a control is a switch; a switch a link can name is its target. @return list<Row> */
+    private function rows(array $rows): array
     {
-        $out=[];
-        foreach ($rows as $i=>$r) {
-            $key=$prefix.'_'.$i;$entry=$this->entry($key,$r);
-            $switch=in_array($r['value'],['On','Off'],true)&&(!empty($r['buttons'])||$r['action']||$r['cause']);
-            $out[]=$this->anchored($switch?$this->switchRow($entry,$r):Sheet::row($entry,$this->side($r)),$r['label']);
+        $out = [];
+        foreach ($rows as $r) {
+            $isSwitch = in_array($r['value'], ['On', 'Off'], true) && (!empty($r['buttons']) || $r['action'] || $r['cause']);
+            $control = $isSwitch ? ($r['buttons'][0] ?? ($r['action'] ? $this->setup($r['action']) : null)) : null;
+            [, $link] = RegistrarRows::line($r['cause'] ?? null, 'row');
+            $row = RegistrarRows::row($r, $isSwitch ? [] : [...$this->side($r), $link], $control !== null && $control->isVisible() ? $control : null);
+            $name = array_search($r['label'], RegistrarFacts::SWITCHES, true);
+            $out[] = $name === false ? $row : $row->key('switch-'.$name)->target($name === $this->switch);
         }
         return $out;
-    }
-    /** A switch row has its anchor. A link that came for it marks it and brings it into view, also when SPA navigation leaves :target unset. It waits two frames because SPA navigation scrolls to the top after Alpine starts. */
-    private function anchored(Flex $row,string $label): Flex
-    {
-        $name=array_search($label,RegistrarFacts::SWITCHES,true);
-        if ($name===false) { return $row; }
-        return $row->extraAttributes(['id'=>'switch-'.$name,...($name===$this->switch?['class'=>'domains-row-target','x-init'=>"requestAnimationFrame(()=>requestAnimationFrame(()=>\$el.scrollIntoView({block:'center'})))"]:[])],merge:true);
     }
     /** A row's action column. Rows that change a saved value say Edit. */
     private function side(array $r): array
     {
-        $edit=$r['edit']??false;
-        if (!empty($r['buttons'])) { return $edit?[Sheet::edit($r['buttons'][0],$r['label'])]:$r['buttons']; }
+        $edit = $r['edit'] ?? false;
+        if (!empty($r['buttons'])) { return $edit ? [Sheet::edit($r['buttons'][0], $r['label'])] : $r['buttons']; }
         if (!$r['action']) { return []; }
-        return [$edit||!in_array($r['action'],['probe','configure'],true)?Sheet::edit($this->setup($r['action']),$r['label']):Sheet::button($this->setup($r['action']))];
+        return [$edit || !in_array($r['action'], ['probe', 'configure'], true) ? Sheet::edit($this->setup($r['action']), $r['label']) : Sheet::button($this->setup($r['action']))];
     }
-    private function setup(string $name): Action { return SettingsActions::setup($this->account,$this->reviewStamp,$name); }
-    private function entry(string $key,array $r): TextEntry
+    private function setup(string $name): Action { return SettingsActions::setup($this->account, $this->reviewStamp, $name); }
+    /** A value with no fix of its own. */
+    private static function fact(string $label, ?string $value, string|Htmlable|null $cause = null, ?string $help = null): array
+    { return ['label' => $label, 'value' => $value, 'tone' => null, 'cause' => $cause, 'action' => null, 'help' => $help]; }
+    /** The default nameservers as they apply here: the template, its nameservers and Change, which opens Domains > DNS templates.
+     * Change and the fix need both that page and the right to change the default; other staff are told who can. */
+    private function newDomainsUse(Account $a): Row
     {
-        $word=in_array($r['value'],['On','Off'],true);
-        $entry=MissingEntry::apply(TextEntry::make($key)->label($r['label'])->state($r['value']),cause:$r['value']===null?$r['cause']:null);
-        if ($r['value']!==null&&$r['tone']!==null&&!$word) { Sheet::state($entry,$r['tone'],'registrar-'.$this->account.'-'.$key); }
-        if ($r['value']!==null&&$r['cause']!==null) { $entry->belowContent(is_string($r['cause'])&&in_array($r['tone'],['danger','warning'],true)?RegistrarFacts::tone($r['cause'],$r['tone']):$r['cause']); }
-        if ($r['help']) { $entry->hintAction(HelpHint::make($r['help'])); }
-        if ($r['mono']??false) { $entry->fontFamily(FontFamily::Mono); }
-        if ($r['copy']??false) { $entry->copyable(); }
-        if ($r['money']??false) { $entry->weight(FontWeight::SemiBold)->extraAttributes(['class'=>'domains-money']); }
-        return $entry;
+        $canEdit = Staff::canEditDefaultDns() && RoutingProfileResource::canViewAny();$default = SiteDnsDefault::profile();$refusal = SiteDnsDefault::refusal($canEdit);
+        $cause = $refusal ?? ($default
+            ? 'Nameservers: '.implode(', ', array_map('strval', (array) $default->nameservers)).'. New registrations use these nameservers unless the customer chooses others. Transfers keep the nameservers they already have.'
+            : 'New registrations have no site-default nameservers. '.($a->registrar_key === 'namesilo' ? 'NameSilo needs explicit nameservers before an order can be sent. ' : '').($canEdit ? 'Choose one in Domains > DNS templates.' : SiteDnsDefault::ASK));
+        try { $url = $canEdit ? RoutingProfileResource::getUrl() : null; } catch (\Throwable) { $url = null; }
+        // A saved template this registrar can't use is set, but staff must change it before orders can go out.
+        $fact = $refusal ? [...self::fact('New domains use', $default?->name ?? State::NeedsReview->label(), $cause), 'state' => State::NeedsReview] : self::fact('New domains use', $default?->name, $cause);
+        return RegistrarRows::row($fact, $url ? [Action::make('new_domains_use')->label('Change')->link()->size('sm')->url($url)] : []);
     }
-    /** One that can't be used here shows its state only, and says why under the value. */
-    private function switchRow(TextEntry $entry,array $r): Flex
+    /** Enom charges for WHOIS privacy and this site does not sell it: Not for sale, with why. */
+    private static function whois(Account $a): array
     {
-        $on=$r['value']==='On';$action=$r['buttons'][0]??($r['action']?$this->setup($r['action']):null);
-        return Sheet::row($entry,$action?->isVisible()?[OnOffSwitch::apply($action,$on,$r['label'],false)]:Html::make(OnOffSwitch::html($on,$r['label'],false)));
+        $row = AccountChecklist::whois($a) ?? self::fact('WHOIS privacy', 'Free when supported by the TLD.');
+        return str_starts_with((string) $row['value'], 'Not offered. ') ? [...$row, 'value' => State::NotForSale->label(), 'cause' => substr((string) $row['value'], strlen('Not offered. '))] : $row;
     }
     private function accountRows(Account $a): array
     {
-        $rows=[self::fact('Registrar',TldFacts::registrar($a->registrar_key)),self::fact('Mode',RegistrarFacts::mode($a),null,RegistrarFacts::MODE_HELP)];
-        if ($a->registrar_key==='enom') { $rows[]=[...self::fact('API user',$user=RegistrarFacts::apiUser($a),$user===null?'Identity not verified yet. Use Edit.':null),'action'=>'configure','edit'=>true,'mono'=>true]; }
-        if ($a->registrar_key==='enom'&&$a->environment==='live') {
-            try { $fingerprint=AccountBindings::binding($a)->fingerprint; } catch (\Throwable) { $fingerprint=null; }
+        $rows = [self::fact('Registrar', TldFacts::registrar($a->registrar_key)), self::fact('Mode', RegistrarFacts::mode($a), null, RegistrarFacts::MODE_HELP)];
+        if ($a->registrar_key === 'enom') { $rows[] = [...self::fact('API user', $user = RegistrarFacts::apiUser($a), $user === null ? 'Identity not verified yet. Use Edit.' : null), 'action' => 'configure', 'edit' => true, 'mono' => true]; }
+        if ($a->registrar_key === 'enom' && $a->environment === 'live') {
+            try { $fingerprint = AccountBindings::binding($a)->fingerprint; } catch (\Throwable) { $fingerprint = null; }
             // Operators copy it into domains.enom_live.accounts (release-runbook.md).
-            $rows[]=[...self::fact('Live account ID',$fingerprint,$fingerprint===null?"Saved credentials can't be read. Use More, then Edit API credentials.":null),'mono'=>true,'copy'=>true];
+            $copy = $fingerprint === null ? [] : [Action::make('copy_live_account_id')->label('Copy')->link()->size('sm')->alpineClickHandler('window.navigator.clipboard.writeText('.json_encode($fingerprint).')')];
+            $rows[] = [...self::fact('Live account ID', $fingerprint, $fingerprint === null ? "Saved credentials can't be read. Use More, then Edit API credentials." : null), 'mono' => true, 'buttons' => $copy];
         }
         return $rows;
     }
-    private function usageRows(Server $s,Account $a): array
+    private function usageRows(Server $s, Account $a): array
     {
-        $rows=[];
-        if (RegistrarFacts::connected($a,$this->status())) {
-            $b=RegistrarFacts::balance($a);
-            // The fix for a Missing balance is the Check balance button on this row.
-            $checked=$b['value']===null?$b['cause']:new HtmlString(implode('. ',array_filter([Sheet::moment((string)$b['checked'],'Checked')->toHtml(),$b['low']?RegistrarFacts::warn('Low balance')->toHtml():null])));
-            $rows[]=[...self::fact('Balance',$b['value'],$checked),'money'=>true,'buttons'=>[$this->checkBalanceAction()]];
-            $rows[]=self::fact('Due in 30 days',$b['due'],RegistrarFacts::dueLine(RegistrarFacts::dueGap($a,$b)),RegistrarFacts::DUE_HELP);
+        $rows = [];
+        if (RegistrarFacts::connected($a, $this->status())) {
+            $b = RegistrarFacts::balance($a);
+            // The fix for an unread balance is the Check balance button on this row.
+            $checked = $b['value'] === null ? $b['cause'] : 'Checked '.\Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at((int) strtotime((string) $b['checked'])).'.';
+            $rows[] = [...self::fact('Balance', $b['value'], $checked), 'state' => $b['low'] ? State::LowBalance : $b['missing'], 'buttons' => [$this->checkBalanceAction()]];
+            $rows[] = self::fact('Due in 30 days', $b['due'], RegistrarFacts::dueLine(RegistrarFacts::dueGap($a, $b)), RegistrarFacts::DUE_HELP);
         }
-        $filter=['filters'=>['server_id'=>['value'=>(string)$s->id]]];
-        try { $domains=DomainResource::getUrl('index',$filter); } catch (\Throwable) { $domains=null; }
-        $rows[]=[...self::fact('Domains',(string)Domain::where('server_id',$s->id)->count()),'buttons'=>[Sheet::link('view_domains','View domains',$domains)]];
-        // Each count links to the list filtered to exactly its rows. On hold and Under review wait on staff, so they are amber.
-        $requests=RegistrarFacts::requests((int)$s->id);$staff=array_filter($requests['staff']);
-        // Every open status is in the breakdown; only the statuses that wait on staff are amber and linked.
-        $parts=[];
-        foreach(array_filter(array_diff_key($requests['statuses'],$requests['staff'])) as $key=>$n){$parts[]=e($n.' '.strtolower(RequestFacts::STATUSES[$key][0]));}
-        if($staff!==[]){$parts[]=RegistrarFacts::tone(implode(', ',array_map(fn(string $key,int $n)=>$n.' '.strtolower(RequestFacts::STATUSES[$key][0]),array_keys($staff),$staff)),'warning',RegistrarFacts::requestsUrl((int)$s->id,array_keys($staff)))->toHtml();}
-        $waiting=$parts===[]?null:new HtmlString(implode(', ',$parts));
-        $rows[]=[...self::fact('Registrar requests',$requests['open'].' open',$waiting),'buttons'=>[Sheet::link('view_requests','View requests',RegistrarFacts::requestsUrl((int)$s->id,RegistrarFacts::OPEN_REQUESTS))]];
-        if ($calls=RegistrarFacts::calls($a)) { $rows[]=[...self::fact($a->environment==='live'?'API calls, today (UTC)':'API calls, last 24 hours',$calls['value'],$calls['sub'],$calls['help']),'tone'=>$calls['tone'],'edit'=>true,'buttons'=>[\Paymenter\Extensions\Servers\Domains\Admin\Support\ApiCallLimitAction::make($a,$this->reviewStamp)]]; }
-        $rows[]=[...self::fact('Prices stay current for',\Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness::forAccount((int)$s->id)->hours.' hours',null,'Prices sync daily. Older prices stop new orders until checked again.'),'edit'=>true,'buttons'=>[\Paymenter\Extensions\Servers\Domains\Admin\Support\PriceFreshnessAction::make($a,$this->reviewStamp)]];
+        try { $domains = DomainResource::getUrl('index', ['filters' => ['server_id' => ['value' => (string) $s->id]]]); } catch (\Throwable) { $domains = null; }
+        $rows[] = [...self::fact('Domains', (string) Domain::where('server_id', $s->id)->count()), 'buttons' => [Sheet::link('view_domains', 'View domains', $domains)]];
+        // Every open status is in the line; the statuses that wait on staff are the row's linked count, gone at zero.
+        $requests = RegistrarFacts::requests((int) $s->id);$staff = array_filter($requests['staff']);
+        $parts = array_map(static fn (string $key, int $n): string => $n.' '.strtolower(RequestFacts::STATUSES[$key][0]), array_keys($open = array_filter(array_diff_key($requests['statuses'], $requests['staff']))), $open);
+        $count = implode(', ', array_map(static fn (string $key, int $n): string => $n.' '.strtolower(RequestFacts::STATUSES[$key][0]), array_keys($staff), $staff));
+        $buttons = [Sheet::link('view_requests', 'View requests', RegistrarFacts::requestsUrl((int) $s->id, RegistrarFacts::OPEN_REQUESTS))];
+        if ($staff !== []) { $buttons[] = Sheet::link('staff_requests', $count, RegistrarFacts::requestsUrl((int) $s->id, array_keys($staff))); }
+        $rows[] = [...self::fact('Registrar requests', $requests['open'].' open', $parts === [] ? null : ucfirst(implode(', ', $parts)).'.'), 'buttons' => $buttons];
+        if ($calls = RegistrarFacts::calls($a)) { $rows[] = [...self::fact($a->environment === 'live' ? 'API calls, today (UTC)' : 'API calls, last 24 hours', $calls['value'], $calls['sub'], $calls['help']), 'tone' => $calls['tone'], 'edit' => true, 'buttons' => [ApiCallLimitAction::make($a, $this->reviewStamp)]]; }
         return $rows;
+    }
+    private function freshness(Server $s, Account $a): array
+    {
+        return [...self::fact('Prices stay current for', CatalogueFreshness::forAccount((int) $s->id)->hours.' hours', null, 'Prices sync daily. Older prices stop new orders until checked again.'),
+            'edit' => true, 'buttons' => [PriceFreshnessAction::make($a, $this->reviewStamp)]];
+    }
+    /** Live sales, for staff who can activate: what activation does, its open causes, and Activate. The full summary is in its dialog. @return list<Row> */
+    private function liveSales(Account $a): array
+    {
+        if (!LiveActivationAction::offered($a)) { return []; }
+        try {
+            $v = EnomLiveActivation::summary($a);
+            $value = Value::fact(Fact::names(['Activate the selected Live features']), RegistrarRows::sentence(trim(substr((string) $v['text'], strlen('Activate the selected Live features.')).' New eligible orders can be sent after activation. '.implode(' ', array_map(static fn ($m): string => (string) RegistrarRows::sentence($m), (array) $v['missing'])))));
+            $help = trim((string) ($v['help'] ?? ''));
+        } catch (\Throwable) {
+            $value = Value::state(State::CouldntRead, Reader::Staff, 'Live setup can’t be read. Reload this page, then check System checks.');$help = '';
+        }
+        $row = Row::make('Live sales', $value)->actions(LiveActivationAction::make($a, $this->reviewStamp))->key('live_sales');
+        return [$help === '' ? $row : $row->help($help)];
     }
 }

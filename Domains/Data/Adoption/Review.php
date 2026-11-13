@@ -33,13 +33,24 @@ final readonly class Review implements \JsonSerializable
         'unknown_price', 'unknown_margin' => 'Registrar cost missing. Check the published annual price.',
         default => "Saved annual price needs a check. Couldn't confirm the current cost.",
     }; }
-    public static function renewalNotice(array $details): string
+    /** Which renewal sentence applies: test, off, unproven, unconfirmed or on. */
+    public static function renewalCase(array $details): string
     {
         return match (true) {
-            ($details['test_only'] ?? false) => 'Test only. No invoice or charge is created.',
-            ($details['do_not_renew'] ?? false) => 'Do not renew. The domain ends at its expiry date.',
-            ($details['renewal_eligibility']['reason'] ?? null) === 'imported_renewal_unproven' => \Paymenter\Extensions\Servers\Domains\Services\AdoptionRenewalEligibility::STAFF,
-            ($details['renewal_eligibility']['eligible'] ?? false) !== true => 'Renewal not confirmed yet. Run Check to see if this domain can renew here.',
+            ($details['test_only'] ?? false) => 'test',
+            ($details['do_not_renew'] ?? false) => 'off',
+            ($details['renewal_eligibility']['reason'] ?? null) === 'imported_renewal_unproven' => 'unproven',
+            ($details['renewal_eligibility']['eligible'] ?? false) !== true => 'unconfirmed',
+            default => 'on',
+        };
+    }
+    public static function renewalNotice(array $details): string
+    {
+        return match (self::renewalCase($details)) {
+            'test' => 'Test only. No invoice or charge is created.',
+            'off' => 'Do not renew. The domain ends at its expiry date.',
+            'unproven' => \Paymenter\Extensions\Servers\Domains\Services\AdoptionRenewalEligibility::STAFF,
+            'unconfirmed' => 'Renewal not confirmed yet. Run Check to see if this domain can renew here.',
             default => 'Renewal stays on. Normal invoices apply. If the domain is already due, an invoice may go out right away.',
         };
     }

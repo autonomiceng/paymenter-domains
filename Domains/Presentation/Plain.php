@@ -13,7 +13,7 @@ enum Plain: string implements HasLabel
     case No = 'no';
     #[Entry([Plain::Yes], 'A setting that is on. Plain text with no mark, so it can\'t read as a status.', 'On stops being a status word (K14). DESIGN.md Panels, Nov 12, 2026.')]
     case On = 'on';
-    #[Entry([Plain::No, State::Stopped], 'A setting that is off. Stopped is a status.', 'Off stops being a status word (K14). DESIGN.md Panels, Nov 12, 2026.')]
+    #[Entry([Plain::No], 'A setting that is off. Stopped is a status.', 'Off stops being a status word (K14). DESIGN.md Panels, Nov 12, 2026.')]
     case Off = 'off';
     #[Entry([Plain::Test], 'A registrar account\'s mode that spends real money.', 'DESIGN.md Panels, Records and jobs, Nov 12, 2026.')]
     case Live = 'live';

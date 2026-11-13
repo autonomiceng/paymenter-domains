@@ -104,7 +104,7 @@ class MonitoringSettings extends ResourceSettingsPage
                 SettingsRow::setting('Registrar refresh',Value::plain(Plain::Daily,'Daily refresh reads domain facts. Use Sync now on a domain to read DNS, SRV, DS and glue records. Unsupported families remain unsupported.'),$system)
                     ->help('Registrar changes come from the registrar only. '.RecordFamilies::EVIDENCE),
                 SettingsRow::setting('Public DNS checks',Value::plain(Plain::Default,'Nameservers at least every 6 hours, records daily. Failed checks retry while monitoring and its background worker are on. Paused checks wait; resume monitoring first.'),$system),
-                SettingsRow::setting('Registrar read failures',Value::plain(Plain::None,'Shown on the domain page, beside Resume sync. There is no email alert for them.'),$system),
+                SettingsRow::setting('Registrar read failure emails',Value::plain(Plain::None,'Shown on the domain page, beside Resume sync. There is no email alert for them.'),$system),
             ]),
             Section::make('DNS resolver',[
                 ...($forced?[Row::notice('resolver-forced',Value::state(State::NotSupported,$staff,$reason))]:[]),

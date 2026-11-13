@@ -61,7 +61,7 @@ BalanceReads::record(\Paymenter\Extensions\Servers\Domains\Services\AccountBindi
 $facts=RegistrarBalances::facts($enom,$clock->now());
 same('USD 7.99',$facts['balance'],'Staff money puts the currency first');same('Low balance',$facts['status'],'Balance below Due in 30 days is Low balance');
 same('USD 8.00',$facts['total'],'Due in 30 days');same('Oct 18, 2026 12:00 UTC',$facts['checked'],'Checked date in staff format');same(null,$facts['cause'],'A read balance has no cause');
-$siloFacts=RegistrarBalances::facts($silo,$clock->now());same(null,$siloFacts['balance'],'Unread balance is Missing');same('Not checked yet. Use Check balance.',$siloFacts['cause'],'Missing balance names its cause');
+$siloFacts=RegistrarBalances::facts($silo,$clock->now());same(null,$siloFacts['balance'],'Unread balance is Missing');same('Not checked yet. Use Check balance.',$siloFacts['cause'],'Missing balance names its cause');same(\Paymenter\Extensions\Servers\Domains\Presentation\State::NotReadYet,$siloFacts['missing'],'A balance never checked reads Not read yet');
 same('https://ote.namesilo.com/cart/add-funds',RegistrarBalances::fundsUrl('namesilo','test'),'NameSilo Test funds the sandbox account');
 same('https://www.namesilo.com/cart/add-funds',RegistrarBalances::fundsUrl('namesilo','live'),'NameSilo Live funds the live account');
 same('https://cp.enom.com/',RegistrarBalances::fundsUrl('enom','test'),'Enom funding home');
@@ -110,7 +110,7 @@ $list=Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSuccessful(
 staffTableStandard($list,'Search account',['name','note'],['balance','due']);
 staffRowsStandard($list,['checked','domains'],['balance','due']);
 // One line per account: the reason, a missing balance's cause and a low balance go in Note, each with its step.
-// Neither fixture account sells a TLD under the installed rules, so each leads with Nothing for sale and its fix.
+// Neither fixture account sells a TLD under the installed rules, so each leads with Not for sale and its fix.
 $rows=$list->instance()->getTableRecords()->keyBy('id');$cell=fn(string $column,int $id)=>$list->instance()->getTable()->getColumn($column)->record($rows[$id]);
 same('No TLDs are for sale. Check registrar account for .com. Open the TLD to see what it needs. Low balance. Add funds.',$cell('note',$enom->server_id)->getState(),'Low balance says to add funds');
 same('warn',$cell('note',$enom->server_id)->getExtraAttributes()['data-domains-tone']??null,'Low balance is a job');
@@ -123,8 +123,8 @@ expect(str_contains((string)$cell('checked',$enom->server_id)->formatState($cell
 // This keeps filters independent and tests every real request without remounting an unchanged list.
 // No accounts yet says how to add one; a search that hides every account says so.
 (clone $list)->searchTable('no-such-account')->assertSee('No accounts match')->assertSee('Clear the search or filters to see all rows.')->assertDontSee('Add one to start selling domains.');
-foreach(['Account','Registrar','Mode','Status','Note','Balance','Due in 30 days','Enom test account','Test','Nothing for sale','USD 7.99','Low balance','USD 8.00',
-    'Missing','Not checked yet','Add funds','Not connected','Connect','Off in Paymenter','Demo NameSilo','Demo'] as $needle){$list->assertSee($needle);}
+foreach(['Account','Registrar','Mode','Status','Note','Balance','Due in 30 days','Enom test account','Test','Not for sale','USD 7.99','Low balance','USD 8.00',
+    'Not read yet','Not checked yet','Add funds','Not connected','Connect','Off in Paymenter','Demo NameSilo','Demo'] as $needle){$list->assertSee($needle);}
 $html=$list->html();
 foreach(['https://ote.namesilo.com/cart/add-funds','https://cp.enom.com/','noopener noreferrer',RegistrarAccount::getUrl(['account'=>$enom->server_id]),RegistrarAccount::getUrl(['account'=>$silo->server_id])] as $needle){
     expect(str_contains($html,$needle),'List links: '.$needle);}
@@ -161,7 +161,7 @@ unset($list,$rows,$cell);gc_collect_cycles();gc_mem_caches();
 if ($registrarsPart === 'account') {
 // Account page.
 $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSuccessful();
-foreach(['Enom test account','Nothing for sale','Check balance','Account','Registrar','Enom','Mode','Test','Balance','USD 7.99','Low balance','Add funds','Due in 30 days','USD 8.00',
+foreach(['Enom test account','Not for sale','Check balance','Account','Registrar','Enom','Mode','Test','Balance','USD 7.99','Low balance','Add funds','Due in 30 days','USD 8.00',
     'Domains','API calls, last 24 hours','0 of 1,000'] as $needle){$page->assertSee($needle);}
 $html=$page->html();
 foreach(['https://cp.enom.com/','Registrars'] as $needle){expect(str_contains($html,$needle),'Account page: '.$needle);}
@@ -183,6 +183,10 @@ foreach(['Time','Change','Detail','By','Sales settings changed','Reviewed &lt;st
     expect(str_contains($history->html(),$needle),'History tab renders readable escaped rows: '.$needle);
 }
 $history->searchTable('no such change')->assertDontSee('Sales settings changed')->assertSee('No changes match')->assertSee('Clear the search or filters to see all rows.')->assertDontSee('Changes show here');
+// The setup actions are the same on both tabs, so a change can start from History.
+$headerNames=static fn(string $page)=>array_keys(Livewire::actingAs($admin)->test($page,['account'=>$enom->server_id])->instance()->getCachedHeaderActions());
+expect($headerNames(RegistrarAccount::class)!==[],'The account has setup actions');
+same($headerNames(RegistrarAccount::class),$headerNames(RegistrarHistory::class),'History keeps the account\'s setup actions');
 $detail=$history->instance()->getTable()->getColumn('reason');same([true,2],[$detail->canWrap(),$detail->getLineClamp()],'History Detail wraps to 2 lines');
 same('Changes show here as they happen.',Livewire::actingAs($admin)->test(RegistrarHistory::class,['account'=>$empty->id])->assertSee('No changes yet')->instance()->getTable()->getEmptyStateDescription(),'An empty history says what fills it');
 unset($history,$detail);gc_collect_cycles();gc_mem_caches();
@@ -192,14 +196,14 @@ expect(preg_match('/<button\b[^>]*x-tooltip[^>]*>/s',$dialog->instance()->getSch
 expect(!str_contains($help[0],'wire:click'),'Help button runs nothing');
 unset($dialog);gc_collect_cycles();gc_mem_caches();
 
-$reminderAction=TestAction::make('reminders_'.$enom->server_id)->schemaComponent('account_'.$enom->server_id,'content');
+$reminderAction=TestAction::make('reminders_'.$enom->server_id)->schemaComponent('sheet','content');
 $beforeInvalidReason=(array)DB::table('domains_reminder_schedules')->where('server_id',$enom->server_id)->sole();
 $page->callAction($reminderAction,['reason'=>"Reviewed\u{2029}reminders"])->assertHasActionErrors(['reason'=>'regex']);
 same($beforeInvalidReason,(array)DB::table('domains_reminder_schedules')->where('server_id',$enom->server_id)->sole(),'Reminder reason field error changes no schedule');
 $page->unmountAction();
 // The switch keeps the reminder revision check: a page left open can't undo a newer change.
 $schedule=static fn()=>DB::table('domains_reminder_schedules')->where('server_id',$enom->server_id)->sole();$saved=$schedule();
-$switch=TestAction::make('reminders_switch_'.$enom->server_id)->schemaComponent('account_'.$enom->server_id,'content')->arguments(['revision'=>(int)$saved->revision]);
+$switch=TestAction::make('reminders_switch_'.$enom->server_id)->schemaComponent('sheet','content')->arguments(['revision'=>(int)$saved->revision]);
 $stale=Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSeeHtml('role="switch"')->assertSeeHtml('aria-label="Reminder emails"');
 // The switch reaches customers, so it asks first and says who it reaches; opening the question changes nothing.
 $asked=Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->mountAction($switch)->assertActionMounted($switch);
@@ -261,7 +265,7 @@ foreach(['saving','updating','updated'] as $event){Illuminate\Support\Facades\Ev
 Illuminate\Support\Facades\Event::forget(App\Events\Invoice\Paid::class);
 $checks=static fn($page)=>array_column(array_merge(...array_values($page->instance()->checks())),null,'label');
 $check=static fn(string $label)=>$checks($page)[$label];
-$page->assertSeeHtml('class="domains-trace')->assertSeeHtml('role="listitem"');
+$page->assertSeeHtml('data-piece="trace"')->assertSeeHtml('<li class="domains-panel-step"');
 same(['Delayed','warning'],[$check('Payment events')['value'],$check('Payment events')['tone']],'Missing paid listener delays paid orders');
 same(['Not running','danger'],[$check('Background worker')['value'],$check('Background worker')['tone']],'A stopped worker is danger');
 // Domain monitoring on with a queue timeout under 180 seconds: the Background worker row names the cause, once.
@@ -347,31 +351,29 @@ Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$liveCapSer
 config(['domains.enom_identity.environment'=>$identityEnvironment]);
 
 config(['domains.enom_test_sends_per_day'=>'many']);
-$capPage->call('$refresh')->assertSee('Missing')->assertSee('Our test send limit on this site is invalid, so no Enom test requests are sent. Ask your site admin to fix it.');
+$capPage->call('$refresh')->assertSee(\Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead->label())->assertSee('Our test send limit on this site is invalid, so no Enom test requests are sent. Ask your site admin to fix it.');
 config(['domains.enom_test_sends_per_day'=>1000]);
 unset($capPage);gc_collect_cycles();gc_mem_caches();
-Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$silo->server_id])->assertSee('NameSilo test account')->assertSee('Missing')->assertSee('Not checked yet')
+Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$silo->server_id])->assertSee('NameSilo test account')->assertSee(\Paymenter\Extensions\Servers\Domains\Presentation\State::NotReadYet->label())->assertSee('Not checked yet')
     ->assertSee('Add funds')->assertSeeHtml('https://ote.namesilo.com/cart/add-funds')->assertDontSee('API calls, last 24 hours');
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$off->id])->assertSee('Not connected')->assertSee('Off in Paymenter')->assertDontSee('Add funds');
-// Overview has an API connection row; History and an account without setup keep the cause in the head.
+// Overview has an API connection row; History and an account without setup say the cause in a notice.
 $historyViewer=staffUser([Staff::VIEW,Staff::POLICY]);
 App\Models\Server::whereKey($silo->server_id)->update(['enabled'=>false]);
 $disconnected=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$silo->server_id])->assertSee('Not connected');
 same(1,substr_count($disconnected->html(),'Off in Paymenter'),'The connection cause appears once on Overview');
 expect(!str_contains(strip_tags((string)$disconnected->instance()->getSubheading()),'Off in Paymenter'),'Overview leaves the connection cause to the API row');
-$historyHead=Livewire::actingAs($historyViewer)->test(RegistrarHistory::class,['account'=>$silo->server_id])->assertSuccessful()->instance()->getSubheading();
-expect(str_contains(strip_tags((string)$historyHead),'Off in Paymenter'),'History keeps the connection cause when there is no API row');
+Livewire::actingAs($historyViewer)->test(RegistrarHistory::class,['account'=>$silo->server_id])->assertSuccessful()->assertSee('Off in Paymenter');
 App\Models\Server::whereKey($silo->server_id)->update(['enabled'=>true]);
 $identityBefore=$silo->getRawOriginal('stable_identity');
 DB::table('domains_accounts')->where('id',$silo->id)->update(['stable_identity'=>'broken ciphertext']);
 $failed=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$silo->server_id])->assertSee('Connection failed');
 same(1,substr_count($failed->html(),'Could not load account settings'),'A failed connection cause appears once on Overview');
 expect(!str_contains(strip_tags((string)$failed->instance()->getSubheading()),'Could not load account settings'),'Failed Overview leaves its cause to the API row');
-$failedHistory=Livewire::actingAs($historyViewer)->test(RegistrarHistory::class,['account'=>$silo->server_id])->assertSuccessful()->instance()->getSubheading();
-expect(str_contains(strip_tags((string)$failedHistory),'Could not load account settings'),'History keeps the failed connection cause');
+Livewire::actingAs($historyViewer)->test(RegistrarHistory::class,['account'=>$silo->server_id])->assertSuccessful()->assertSee('Could not load account settings');
 DB::table('domains_accounts')->where('id',$silo->id)->update(['stable_identity'=>$identityBefore]);
-$emptyHead=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$off->id])->instance()->getSubheading();
-expect(str_contains(strip_tags((string)$emptyHead),'Off in Paymenter'),'An unconfigured account keeps the cause in the head');
+$unset=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$off->id]);
+same([1,false],[substr_count($unset->html(),'Off in Paymenter'),str_contains(strip_tags((string)$unset->instance()->getSubheading()),'Off in Paymenter')],'An unconfigured account says the cause once, in its Account notice, not the head');
 
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$empty->id])->assertSee('Not connected')->assertDontSee('Check balance');
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$demo->server_id])->assertSee('Demo NameSilo')->assertSee('Demo');
@@ -404,24 +406,24 @@ $ports->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::seller($enom
 // A paid request waiting for the registrar shows on the Registrar requests row, never as the account's state.
 Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertDontSee('Request #'.$held->id.' unconfirmed');
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$silo->server_id])->assertSee('Registrar requests')->assertSee('1 under review');
-// The rendered head shows the account-wide hold as a working link under the status, not as escaped markup; the other account has none.
+// The account-wide hold is the Balance and usage notice, with a working link to its request; the head keeps only the account's state; the other account has none.
 $renderedHead=static function(int $server)use($staff):array {
-    $html=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server])->assertSuccessful()->html();
-    $heads=\Dom\HTMLDocument::createFromString($html,LIBXML_NOERROR)->querySelectorAll('.fi-header-subheading');same(1,count($heads),'The page has one subheading');
-    $links=[];foreach($heads[0]->querySelectorAll('a[href]') as $a){$links[trim($a->textContent)]=$a->getAttribute('href');}
-    return ['text'=>trim(preg_replace('/\s+/',' ',$heads[0]->textContent)),'links'=>$links];
+    $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server])->assertSuccessful();
+    $notices=\Dom\HTMLDocument::createFromString($page->html(),LIBXML_NOERROR)->querySelectorAll('[data-domains-row="notice"][id*="usage-cause"]');
+    $links=[];foreach($notices[0]?->querySelectorAll('a[href]')??[] as $a){$links[trim($a->textContent)]=$a->getAttribute('href');}
+    return ['text'=>trim(preg_replace('/\s+/',' ',$notices[0]?->textContent??'')),'links'=>$links,'head'=>strip_tags((string)$page->instance()->getSubheading())];
 };
 $heldHead=$renderedHead((int)$silo->server_id);$holdUrl=Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::requestUrl(['request'=>$held->id]);
 expect($holdUrl!==null,'The held request has a staff page');
-expect(str_contains($heldHead['text'],'Check request #'.$held->id.' A paid order on '.App\Models\Server::findOrFail($silo->server_id)->name.' has no registrar result yet.'),'The rendered head names the paid changes hold: '.$heldHead['text']);
+expect(str_contains($heldHead['text'],'A paid order on '.App\Models\Server::findOrFail($silo->server_id)->name.' has no registrar result yet.'),'The Balance and usage notice names the paid changes hold: '.$heldHead['text']);
 same($holdUrl,$heldHead['links']['Check request #'.$held->id]??null,'The hold links to its request');
-expect(!str_contains($heldHead['text'],'<a')&&!str_contains($heldHead['text'],'&lt;'),'The hold is markup, not escaped text');
+expect(!str_contains($heldHead['head'],'no registrar result yet'),'The head keeps only the account state');
 $clearHead=$renderedHead((int)$enom->server_id);
 expect(!str_contains($clearHead['text'],'no registrar result yet'),'An account without a hold shows none: '.$clearHead['text']);unset($heldHead,$clearHead);gc_collect_cycles();gc_mem_caches();
 // The Balance sits by its label on the account sheet; money right-aligns only in table cells.
 $sheet=\Dom\HTMLDocument::createFromString(Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$silo->server_id])->html(),LIBXML_NOERROR);
-$money=iterator_to_array($sheet->querySelectorAll('.domains-money'));
-expect($money!==[]&&array_filter($money,fn($node)=>$node->closest('.fi-ta-cell')!==null)===[],'The Balance is money on the sheet, not in a table');
+$money=iterator_to_array($sheet->querySelectorAll('[data-domains-row][id$="row-balance"]'));
+expect($money!==[]&&array_filter($money,fn($node)=>$node->closest('.fi-ta-cell')!==null)===[],'The Balance is a row on the sheet, not in a table');
 expect(preg_match('/(^|})\.domains-money\{[^}]*text-align/m',file_get_contents(dirname(__DIR__,2).'/Domains/resources/views/partials/staff-styles.blade.php'))===0,'Money right-aligns only in table cells, so the Balance stays by its label');
 unset($sheet,$money);gc_collect_cycles();gc_mem_caches();
 DB::table('domains_operations')->where('id',$held->id)->update(['state'=>'succeeded']);
@@ -602,7 +604,7 @@ $template=DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Models\Wat
     'nameservers'=>['ns1.provider.example','ns2.provider.example'],'website_endpoints'=>[],'email_endpoints'=>[],
     'edited_by'=>$admin->id,'reason'=>'Synthetic registration template']));
 App\Models\Server::findOrFail($enom->server_id)->settings()->create(['key'=>'domains_new_domain_dns_template','type'=>'string','encrypted'=>false,'value'=>'']);
-$action=TestAction::make('new_domain_dns_'.$enom->server_id)->schemaComponent('account_'.$enom->server_id,'content');
+$action=TestAction::make('new_domain_dns_'.$enom->server_id)->schemaComponent('sheet','content');
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertActionDoesNotExist($action);
 Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertActionDoesNotExist($action)->assertDontSee('None: keep registrar defaults');
 

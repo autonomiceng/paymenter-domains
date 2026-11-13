@@ -17,8 +17,8 @@ $case('malformed intent renders safely',function()use($t,$actor){
     DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_intent'=>'{"sell":']);
     $fact=TldFacts::snapshot($t->fresh());expect($fact['unreadable'],'Malformed row is unreadable');
     Livewire::actingAs($actor)->test(ListTlds::class)->assertSee('.com');
-    Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->assertSee('Missing');
-    expect(str_contains(TldFacts::accountsTable($t->fresh(),Staff::requireView())->toHtml(),'Missing'),'Account table renders the malformed row');
+    Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->assertSee('Not set');
+    $own=TldFacts::accounts($t->fresh(),Staff::requireView())[0];expect(($own['register']['value']??null)==='Missing','The account prices render the malformed row');
 });
 DB::table('domains_tlds')->where('id',$t->id)->update($original);
 $case('unread feed retains real account cause',function()use($t,$now){
@@ -51,7 +51,7 @@ foreach(['markup_percent','fixed','default'] as $kind){$case('invalid '.$kind.' 
     $expected=match($kind){'fixed'=>'Invalid fixed price rule','default'=>'Invalid default pricing rule',default=>'Invalid markup rule'};
     expect(str_contains($cause,$expected),'Correct rule kind: '.$cause);
     if($kind!=='fixed'){expect(!str_contains($cause,'all three positive prices')&&!str_contains($fact['sales']['reason'],'Invalid fixed'),'Markup/default do not pretend to be fixed');}
-    $html=TldFacts::accountsTable($t->fresh(),Staff::requireView())->toHtml();expect(str_contains($html,'Missing')&&str_contains($html,'href=')&&str_contains($html,$kind==='default'?'Edit default pricing':'Edit prices'),'Invalid rule keeps a repair link');
+    $own=TldFacts::accounts($t->fresh(),Staff::requireView())[0];expect(($own['register']['value']??null)==='Missing'&&($own['fix']['url']??'')!==''&&($own['fix']['label']??null)===($kind==='default'?'Edit default pricing':'Edit prices'),'Invalid rule keeps a repair link');
     $page=Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->mountAction('override')->call('$refresh');
     $modal=$page->effects['partials']['action-modals.0']??'';expect(str_contains($modal,$expected),'Modal names its actual invalid rule');
 });DB::table('domains_tlds')->where('id',$t->id)->update($original);fixtureBusinessChoice(PricingRules::KEY,PricingRule::DEFAULT);}

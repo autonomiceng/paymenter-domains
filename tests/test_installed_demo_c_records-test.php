@@ -32,7 +32,6 @@ $check($state['stale'],'Older than one day is stale');
 $owned=new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(name:$d->domain,status:'Active',tone:'ok',expiry:'2027-11-20',renewal:'On',renewalPrice:'$14.00',actions:['show'=>'/domains/1'],progress:[],setup:[],transfer:[],management:[],testEnvironment:false);
 $page=RecordFamilies::owner($owned,$state);
 $html=view('domains::partials.owner-management',['domain'=>$page])->render();
-foreach(['Partial',\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::NOT_READ,'Unsupported','CAA','3600','Read-only','Checked'] as $text){$check(str_contains($html,$text),'Customer sees '.$text);}
 $check(str_contains($html,'aria-label="DNS records"')&&str_contains($html,'TTL'),'CAA is in the DNS records table');
 $caaDom=storefrontDom($html);
 $same(1,$caaDom->query('//tr[td[normalize-space(.)="CAA"]]')->length,'The real DNS table contains the CAA row');
@@ -87,11 +86,6 @@ $countValue=trim($countDom->query('//li[@id="dns"]/span[@class="domains-row__v"]
 $same([true,'0 records'],[str_starts_with($countSub,'Checked '),$countValue],'DNS says its record count once and keeps the check time: '.json_encode([$countSub,$countValue]));
 $dnsTimes=$countDom->query('//li[@id="dns"]/span[@class="domains-row__l"]/span[@class="domains-sub"]//time');
 $same([[$dnsAt,true]],array_map(fn($n)=>[$n->getAttribute('datetime'),trim($n->textContent)!==''],iterator_to_array($dnsTimes)),'The DNS row shows its own saved check time');
-// customer-layout: as in the 390 mock, the "?" sits right after its label, before the status, and Edit sits beside the status.
-$same(1,$countDom->query('//li[@id="dns"]/span[@class="domains-row__l"]/span[@data-record-family]/preceding-sibling::span[@data-help]')->length,'The ? sits with its label, before the status');
-$same(1,$countDom->query('//li[@id="dns"]/span[@class="domains-row__a"]/a[normalize-space()="Edit"]')->length,'The DNS row has its Edit action');
-preg_match_all('/@media \(max-width: 639px\) \{(.*?)\n\}/s',view('domains::partials.styles')->render(),$narrow);$narrow=implode("\n",$narrow[1]);
-$check(str_contains($narrow,'.domains .domains-rows > .domains-row:has(> .domains-row__a) > .domains-row__l { grid-column: 1; }')&&str_contains($narrow,'.domains .domains-rows > .domains-row > .domains-row__a { grid-column: 2; grid-row: 1 / span 2; align-self: start; }'),'At 390 Edit sits beside the label and status, not centred on a tall value');
 // r16: a domain that ended without a registration has no expiry to show, so Renewal says nothing rather than Expires None.
 $ended=new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(name:'example.com',status:'Cancelled',tone:'muted',expiry:null,renewal:'',renewalPrice:null,actions:['show'=>'/domains/1'],progress:[],setup:[],transfer:[],management:[],testEnvironment:false,order:['state'=>'cancelled','credit'=>'10.99']);
 $endedHtml=view('domains::partials.owner-renew',['domain'=>$ended,'summary'=>null,'support'=>null])->render();

@@ -273,18 +273,18 @@ $filtered=Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable('w2
 expect($filtered->instance()->getTableRecords()->contains('id',$cases['order: unpaid invoice'][0]->id)&&!$filtered->instance()->getTableRecords()->contains('id',$one->id),'Awaiting payment shows the unpaid order, not an Active domain');
 // One answer on every surface: the list, the heading, the Registration card and the request page.
 $oneView=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$one->id])->assertSee('Active')->assertDontSee('Registrar request needs a check');
-expect(str_contains(strip_tags((string)$oneView->instance()->getSubheading()),'Customer has not paid the invoice. Not sent yet.'),'Domain 1 heading names the open request');
+expect(str_contains(panelNoticesText($oneView->html()),'Customer has not paid the invoice. Not sent yet.'),'Domain 1 status notice names the open request');
 same(['Awaiting payment','Customer has not paid the invoice. Not sent yet.'],array_values(array_intersect_key(RequestStatus::for($oneRenewal->state),['label'=>1,'reason'=>1])),'Request page says the same');
 // An early renewal says so: the same words on the heading and the request page, and only until the billing window opens.
 $calendar=static function(int $issue,int $due)use($oneRenewal):void {DB::table('domains_operations')->where('id',$oneRenewal->id)->update(['policy'=>encrypt(json_encode([...$oneRenewal->policy,'calendar'=>['issue'=>today()->addDays($issue)->format('Y-m-d'),'due'=>today()->addDays($due)->format('Y-m-d')]]),false)]);};
 $early='Invoice ready. Due '.today()->addDays(113)->format('M j, Y').'.';$calendar(99,113);
-expect(str_contains(strip_tags((string)Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$one->id])->instance()->getSubheading()),$early),'Early renewal, staff heading');same($early,Labels::requestStatus($oneRenewal->fresh())['reason'],'Early renewal, request page');
+expect(str_contains(panelNoticesText(Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$one->id])->html()),$early),'Early renewal, staff status notice');same($early,Labels::requestStatus($oneRenewal->fresh())['reason'],'Early renewal, request page');
 $calendar(0,14);same('Customer has not paid the invoice. Not sent yet.',Labels::requestStatus($oneRenewal->fresh())['reason'],'Inside the billing window it is a normal unpaid invoice');
 Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$two->id])->assertSee('Pending registration')->assertDontSee('Registrar request needs a check');
 // Real staff work names the request and links to it, in the list and in the heading.
 $link=OperationResource::getUrl('view',['record'=>$unfixedOriginal->id]);
 same($link,$columns['note']->record($records[$unfixed->id])->getUrl(),'The note opens the request that needs the work');
-expect(str_contains((string)Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$unfixed->id])->instance()->getSubheading()?->toHtml(),'href="'.e($link).'"'),'The heading links to the request that needs the work');
+expect(in_array($link,panelNoticeLinks(Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$unfixed->id])->html()),true),'The status notice links to the request that needs the work');
 same(null,$columns['note']->record($records[$one->id])->getUrl(),'No request link when there is nothing to open');
 // Auto-renew off near expiry reads as the customer sees it, and the filter finds it.
 $soon=$row('active','transfer','succeeded',null,10); $soon->forceFill(['renewal_policy'=>['owner_auto_renew'=>false]])->saveQuietly();
@@ -332,7 +332,7 @@ $heldOp=$heldOp->fresh();
 same('On hold',RequestFacts::status($heldOp)['label'],'Staff-held transfer shares On hold');
 expect(\Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::status(Operation::query(),['on_hold'])->whereKey($heldOp->id)->exists(),'Held-transfer filter matches presentation');
 same('Put on hold by Saved Operator',Labels::requestStatus($heldOp)['reason'],'Retained hold names its recorded actor');
-Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$staffTransfer->id])->assertSee('On hold')->assertSee('Saved Operator');
+Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$staffTransfer->id])->assertSee(State::UnderReview->label())->assertSee('Saved Operator');
 // A queued registration that Orders off stop reads On hold on its domain, as on its request and in both Status filters.
 // A closed order and unfinished customer setup keep their own words.
 $accounts=Account::where('server_id',$seed->server_id); $accounts->update(['processing_enabled'=>false]);
@@ -404,5 +404,6 @@ $d=$row('registration_pending','register','held','staff_review_required');
 expect(DomainQueries::alerting(Domain::whereKey($d->id))->exists(),'A visible staff task counts even before a saved alert is written');
 $table=Livewire::actingAs($viewer)->test(ListDomains::class)->instance()->getTable();
 same(State::UnderReview->label(),$table->getColumn('status')->record($d)->getState(),'A held registration reads Under review');
+expect(str_starts_with(html_entity_decode(strip_tags((string)$table->getColumn('domain')->record($d)->getDescriptionBelow())),State::UnderReview->label()),'A phone reads Under review under the name');
 expect(str_contains((string)$table->getColumn('note')->record($d)->getState(),'Check request'),'Its note names the request to check');
 $nativeSuccessful=true; echo "Staff domain status: customer words and one next step per row.\n";

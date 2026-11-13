@@ -13,14 +13,14 @@ $stale=$held(placeholderComFixtureName('truth-stale-placeholder.com'));
 $first=$open($stale);$second=$open($stale);
 $first->callAction('release')->assertNotified('Hold released');
 $audit=count($stale->fresh()->policy['staff_actions']);
-$second->call('mountAction','release')->assertNotified('Hold already released')->assertSee('In progress')
-    ->assertDontSee('On hold')->assertActionHidden('release')->assertActionVisible('hold');
+$second->call('mountAction','release')->assertNotified('Hold already released')->assertSee(\Paymenter\Extensions\Servers\Domains\Presentation\State::Queued->label())
+    ->assertDontSee(\Paymenter\Extensions\Servers\Domains\Presentation\State::UnderReview->label())->assertActionHidden('release')->assertActionVisible('hold');
 $first->call('mountAction','release')->assertNotified('Hold already released');
 same($audit,count($stale->fresh()->policy['staff_actions']),'An old Release writes nothing');
 // That click refreshed the page, so its next action runs from current facts.
-$second->callAction('hold')->assertNotified('Request on hold')->assertSee('On hold')->assertActionVisible('release');
+$second->callAction('hold')->assertNotified('Request on hold')->assertSee(\Paymenter\Extensions\Servers\Domains\Presentation\State::UnderReview->label())->assertActionVisible('release');
 same(['held',$audit+1],[$stale->fresh()->state,count($stale->fresh()->policy['staff_actions'])],'Put on hold works on the same page after an old click');
-$first->call('mountAction','hold')->assertNotified('Already on hold')->assertSee('On hold')->assertActionHidden('hold');
+$first->call('mountAction','hold')->assertNotified('Already on hold')->assertSee(\Paymenter\Extensions\Servers\Domains\Presentation\State::UnderReview->label())->assertActionHidden('hold');
 same($audit+1,count($stale->fresh()->policy['staff_actions']),'An old Put on hold writes nothing');
 $same=$open($stale);
 $same->callAction('release')->assertNotified('Hold released')->call('mountAction','release')->assertNotified('Hold already released');

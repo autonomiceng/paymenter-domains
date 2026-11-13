@@ -21,7 +21,7 @@ same($forms->length,$dom->query('//form/input[@name="_token"]')->length,'Every f
 same($forms->length,$dom->query('//form/input[@name="_request_key"]')->length,'Every form has single-use intent');
 same(0,$dom->query('//input[@type="checkbox"]')->length,'Owner management forms have no checkboxes');
 same(1,$dom->query('//li[@id="contacts"]/span[contains(@class,"domains-row__v")][contains(.,"'.$registrant['email_address'].'")]')->length,'Owner row shows the registrant email');
-if(isset($dto->management['auth_code_email'])){same($free?'NameSilo emails it to the admin contact email':'Enom emails it to the registrant email',trim(preg_replace('/\s+/',' ',$dom->query('//li[@id="auth_code_email"]/span[contains(@class,"domains-row__v")]/span[contains(@class,"domains-muted")]')->item(0)->textContent)),'Auth code row names who receives the code');}
+if(isset($dto->management['auth_code_email'])){same($free?'Goes to your admin contact email':'Goes to your registrant email',trim(preg_replace('/\s+/',' ',$dom->query('//li[@id="auth_code_email"]/span[contains(@class,"domains-row__v")]/span[contains(@class,"domains-card__v")]')->item(0)->textContent)),'Auth code row names who receives the code');}
 same(0,$dom->query('//input[@name="confirmed"]')->length,'No form carries a ticked or hidden confirmation');
 foreach(['nameservers','lock','auth_code_email']as$risky){if(isset($dto->management[$risky])&&!($risky==='lock'&&($dto->management['lock']['state']??null)===false)){same(1,$dom->query('//li[@id="'.$risky.'"]//form[@data-confirm]//dialog[@data-confirm-dialog][not(@open)]//button[@name="confirmed"]')->length,'Risky action has a closed confirm dialog: '.$risky);}}
 foreach(['contacts']as$plain){if(isset($dto->management[$plain])){same(1,$dom->query('//li[@id="'.$plain.'"]')->length,'Plain action row rendered: '.$plain);same(0,$dom->query('//li[@id="'.$plain.'"]//dialog[@data-confirm-dialog]|//li[@id="'.$plain.'"]//form[@data-confirm]')->length,'Plain action has no confirm step: '.$plain);}}
@@ -39,7 +39,7 @@ if($free){ // Stopped reads never restart by themselves, so an unknown row names
     expect(str_contains((new OwnedDomainController($owners))->show($r,$d->id)->render(),e(\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::INITIAL_READ)),'The real owner page explains the initial read');
     Illuminate\Support\Facades\DB::table('domains_observation_work')->where('id',$firstRead)->update(['due_at'=>0,'safe_code'=>'read_unavailable']);$stoppedRead=$firstRead;
     same([],$owners->present($d->fresh())->management['dns']['actions'],'This registrar has no record changes');
-    same('Missing',$lockRow(),'A stopped read promises no time; the page notice says it once');
+    same('Not read yet',$lockRow(),'A stopped read promises no time; the page notice says it once');
     expect(str_contains((new OwnedDomainController($owners))->show($r,$d->id)->render(),e(\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::READ_HELD)),'A stopped read explains recovery in the rendered page notice'); // slop-sweep
     Illuminate\Support\Facades\DB::table('domains_observation_work')->where('id',$stoppedRead)->delete();
 }

@@ -5,35 +5,51 @@ namespace Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pag
 use Filament\Actions\Action;
 use Filament\Forms\Components\{Hidden,Select};
 use Filament\Notifications\Notification;
-use Filament\Resources\Pages\ListRecords;
-use Filament\Tables\{Table,Columns\TextColumn};
+use Illuminate\Database\Eloquent\{Builder,Model};
 use Illuminate\Support\Facades\Auth;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\{WatchResource,RoutingProfileResource};
-use Filament\Support\Enums\FontFamily;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{OneLine,Staff,StaffTabs};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,StaffTabs};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Head,Row,Value};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\{Column,RecordListPage,Section};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,WatchProfile};
+use Paymenter\Extensions\Servers\Domains\Presentation\{Reader,State};
 use Paymenter\Extensions\Servers\Domains\Services\{ManagedDnsSetup,StaffManagedDnsSetup,StaffWatchWrites};
-/** A filtered native table, rather than a new configuration style. */
-class ListManagedDns extends ListRecords
+/** Domains > DNS monitoring setup, a List page: the managed domains that need a DNS template. These are managed
+ * domains, so the external-watch resource's columns and filters do not apply. */
+class ListManagedDns extends RecordListPage
 {
     protected static string $resource=WatchResource::class;
-    // These are managed domains, so the external-watch resource's columns and filters do not apply.
-    protected function makeTable(): Table{return $this->makeBaseTable();}
-    public function getTitle(): string{return 'DNS monitoring setup';}
-    public function getSubheading(): ?string{return 'Set the default nameservers in Domains > DNS templates. These domains inherit them automatically. Their expiry monitoring continues.';}
     public function getSubNavigation(): array{return StaffTabs::domains('DNS monitoring setup');}
     public function getBreadcrumbs(): array{return [];}
-    protected function getHeaderActions(): array
-    {return [Action::make('templates')->label('Default nameservers')->url(RoutingProfileResource::getUrl())];}
-    protected function domains(): \Illuminate\Database\Eloquent\Builder{return ManagedDnsSetup::affected(time());}
-    public function table(Table $table): Table
+    protected function head(): Head{return Head::make('DNS monitoring setup',Reader::Staff);}
+    protected function actions(): array
+    {return [Action::make('templates')->label('Default nameservers')->color('gray')->url(RoutingProfileResource::getUrl())];}
+    protected function domains(): Builder{return ManagedDnsSetup::affected(time());}
+    protected function query(): Builder{return $this->domains()->with('user');}
+    protected function rowUrl(Model $record): ?string{return null;}
+    /** What the DNS comparison column says for a row of this list. */
+    protected function comparison(): State{return State::NotSet;}
+    protected function notices(): array
     {
-        return $table->query($this->domains()->with('user'))->recordUrl(null)->columns([
-            OneLine::apply(TextColumn::make('domain')->label('Domain')->searchable()->sortable()->fontFamily(FontFamily::Mono),OneLine::NAME),
-            OneLine::apply(TextColumn::make('user.email')->label('Customer'),OneLine::SHORT),
-            TextColumn::make('comparison')->label('DNS comparison')->state(fn()=>$this instanceof ListDnsFailures?'Retrying automatically':'Not configured'),
-        ])->recordActions([            Action::make('assignTemplate')->label('Assign template')->modalSubmitActionLabel('Assign template')
-            ->visible(fn()=>!($this instanceof ListDnsFailures) && Staff::can(StaffWatchWrites::MANAGE) && WatchProfile::where('enabled',true)->get()->contains(fn($p)=>ManagedDnsSetup::usable($p)))
+        if(!$this->domains()->exists()){return [];}
+        return [Section::make('DNS monitoring',[Row::notice('dns-setup',Value::state(State::NotSet,Reader::Staff,
+            'Set the default nameservers in Domains > DNS templates. These domains inherit them automatically. Their expiry monitoring continues.'))])];
+    }
+    protected function columns(): array
+    {
+        return [
+            Column::domain('domain','Domain',false)->searchable()->sortable(),
+            Column::text('user.email','Customer')->short(),
+            Column::value('comparison','DNS comparison',fn(Domain $d): Value=>Value::state($this->comparison(),Reader::Staff,null,'dns-'.$d->id)),
+        ];
+    }
+    protected function defaultSort(): ?array{return ['domain','asc'];}
+    protected function searchLabel(): ?string{return 'Search domain';}
+    protected function emptyLine(): array{return ['DNS monitoring is set up','No eligible domains need a DNS template.','No domains match'];}
+    protected function recordActions(): array
+    {
+        return [Action::make('assignTemplate')->label('Assign template')->modalSubmitActionLabel('Assign template')
+            ->visible(fn()=>$this->canAssign() && Staff::can(StaffWatchWrites::MANAGE) && WatchProfile::where('enabled',true)->get()->contains(fn($p)=>ManagedDnsSetup::usable($p)))
             ->modalDescription('The intended DNS could not be found automatically. Future checks compare against this template.')
             ->schema([Hidden::make('ticket')->default(fn(Domain $record)=>StaffManagedDnsSetup::ticket(Auth::user(),$record)),
                 Select::make('profile')->label('DNS template')->options(fn()=>WatchProfile::where('enabled',true)->get()->filter(fn($p)=>ManagedDnsSetup::usable($p))->pluck('name','id')->all())->required(),
@@ -42,8 +58,8 @@ class ListManagedDns extends ListRecords
                 try{(new StaffManagedDnsSetup())->assign(Auth::user(),(int)$record->id,(string)($data['ticket']??''),(int)($data['profile']??0),$data['expected_dns']??null);}
                 catch(\DomainException|\Illuminate\Database\Eloquent\ModelNotFoundException){Notification::make()->warning()->title('This domain or template changed. Reload and choose an enabled DNS template.')->send();return;}
                 Notification::make()->success()->title('DNS template assigned')->send();
-            })])->defaultSort('domain')->paginated([25,50,100])->defaultPaginationPageOption(25)->searchPlaceholder('Search domain')
-            ->emptyStateHeading($this instanceof ListDnsFailures?'No affected DNS checks':'DNS monitoring is set up')
-            ->emptyStateDescription($this instanceof ListDnsFailures?'No eligible managed domains have failed DNS checks.':'No eligible domains need a DNS template.');
+            })];
     }
+    /** Failed checks retry on their own, so only the setup list offers a template. */
+    protected function canAssign(): bool{return true;}
 }
