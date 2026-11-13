@@ -32,8 +32,9 @@ class AdoptDomain extends Page
     #[\Livewire\Attributes\Locked] public ?string $refusal = null;
     public function mount(): void { self::permission(); }
     private static function permission(): void { abort_unless(Staff::can(Staff::ADOPT_PREVIEW), 403); }
-    public function getTitle(): string { return 'Import a domain'; }
-    public function getBreadcrumb(): string { return 'Import domain'; }
+    // One name from the Domains list button to the crumb and the title.
+    public function getTitle(): string { return 'Import domain'; }
+    public function getBreadcrumb(): string { return $this->getTitle(); }
     protected function getHeaderActions(): array { return []; }
     public function chooseAction(): Action
     {
