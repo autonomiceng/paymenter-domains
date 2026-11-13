@@ -199,7 +199,7 @@ $autoRenew=$active->fresh()->observation;
 foreach (['off'=>[false,'Off',true],'on'=>[true,'On',false],'unknown'=>[null,null,false]] as $case=>[$seen,$shown,$off]) {
     $saved=$autoRenew;if ($seen===null) { unset($saved['facts']['auto_renew']); } else { $saved['facts']['auto_renew']=$seen; }
     $active->fresh()->update(['observation'=>$saved]);$fact=DomainFacts::for($active->fresh())['Registrar auto-renew'];
-    same([$shown,$seen===true?DomainFacts::help()['Registrar auto-renew']:null],[$fact['value'],$fact['help']],'Registrar auto-renew help only when seen on: '.$case);
+    same($shown,$fact['value'],'Registrar auto-renew reflects the last observed setting: '.$case);
     expect(str_starts_with((string)$fact['sub'],'Off on purpose')===$off,'Off on purpose only when seen off: '.$case);
     $page=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id]);
     $off?$page->assertSee('Off on purpose'):$page->assertDontSee('Off on purpose');

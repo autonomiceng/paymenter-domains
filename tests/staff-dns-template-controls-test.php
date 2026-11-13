@@ -71,7 +71,7 @@ $check('Dependencies refuse turn off and delete with a reason',function()use($pr
     expect(!$button->hasAttribute('disabled')&&!$button->hasAttribute('wire:click'),'Blocked Delete stays focusable without a silent write handler');
     same($reason,$page->instance()->getAction('delete')->getTooltip(),'Delete uses the shared blocked-control tooltip');
     $switch=$xpath->query('//button[@role="switch"]')->item(0);
-    expect($switch instanceof DOMElement && str_contains(' '.$switch->getAttribute('class').' ',' domains-blocked '),'The blocked monitoring switch is also dimmed');
+    expect($switch instanceof DOMElement && $switch->getAttribute('aria-disabled') === 'true' && !$switch->hasAttribute('disabled') && !$switch->hasAttribute('wire:click'),'The blocked monitoring switch stays focusable and cannot send a write');
     siteDnsFixture(null);
     // Existing watch, managed-domain and product assignments each block independently.
     $cases=[['domains_watch_names','ns_profile_id','id',$watch->id],['domains_managed_public_config','profile_id','domain_id',900001],['domains_watch_product_maps','expected_ns_profile_id','id',$map->id]];
