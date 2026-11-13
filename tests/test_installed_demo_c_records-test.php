@@ -143,6 +143,8 @@ $dom=storefrontDom($customer);
 // slop-sweep: a family checked at the page's read time no longer repeats it; the head says it once.
 if($dom->query('//time[@data-domains-time and @datetime="2026-11-04T09:00:00+00:00"]')->length!==1||$dom->query('//dd[span[@data-record-family="glue"]]//time[@datetime="2026-11-04T09:00:00+00:00"]')->length!==0){$reviewFailures[]='Customer glue read time is not said once, in the head';}
 if(str_contains($customer,'Replacing the whole list')||str_contains($customer,'preflight')){$reviewFailures[]='Customer glue contains staff-only words';}
+// Customers never see the registrar's name.
+if(preg_match('/\b(enom|namesilo)\b/i',$dom->document->textContent)){$reviewFailures[]='Customer glue names the registrar';}
 expect($reviewFailures===[],implode('; ',$reviewFailures));
 // Cancellation alone never proves no send. Reuse the engine's terminal no-send proof.
 $cancelled=clone $enom;$cancelled->status='cancelled';$cancelled->observation=[];$cancelled->service_id=1;
