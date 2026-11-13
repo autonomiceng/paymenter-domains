@@ -59,7 +59,7 @@ trait RegistrarPage
             AccountStatus::SET['connection_failed'][0] => State::ConnectionFailed, AccountStatus::SET['not_selling'][0] => State::NotForSale, default => null,
         };
         if ($state !== null && $status['reason'] !== null) { $sections[] = Section::make('Account', [Row::notice('registrar-status', Value::state($state, Reader::Staff, $status['reason']))], null, 'account'); }
-        $holds = array_map(fn (array $h): Row => Row::notice('paid-'.$h['server_id'], Value::state(State::UnderReview, Reader::Staff, PaidUncertainty::line($h)),
+        $holds = array_map(fn (array $h): Row => Row::notice('paid-'.$h['server_id'], Value::state($h['state'], Reader::Staff, PaidUncertainty::line($h)),
             $h['url'] ? Sheet::link('paid_request_'.$h['server_id'], $h['label'], $h['url']) : null), PaidUncertainty::holds($this->account));
         return $holds === [] ? $sections : [...$sections, Section::make('Paid orders', $holds, null, 'paid-orders')];
     }

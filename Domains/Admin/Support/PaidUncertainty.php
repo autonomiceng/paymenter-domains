@@ -63,7 +63,7 @@ final class PaidUncertainty
         return PrivacyVisibility::SHOWN ? 'Paid WHOIS privacy orders on '.$h['name'].' wait until '.$h['until'].'.'
             : ($h['count']===1?'A paid order on '.$h['name'].' has':'Paid orders on '.$h['name'].' have').' no registrar result yet.';
     }
-    /** @return list<array{server_id:int,label:string,url:?string,until:string,name:string,count:int}> */
+    /** @return list<array{server_id:int,label:string,url:?string,until:string,name:string,count:int,state:State}> State is Checking, or Delayed once a held request is past its normal time. */
     public static function holds(?int $server=null): array
     {
         Staff::requireView();

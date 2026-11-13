@@ -166,7 +166,7 @@ class PanelKit extends Page implements \Filament\Tables\Contracts\HasTable
                         ->blocked('Transfers can\'t be turned on without a Live registrar account.', Sheet::link('kit_live', 'Connect a Live account', '#kit-toggle')),
                 ], null, 'kit-toggle-orders'),
                 Sheet::section('Payment', [
-                    SettingsRow::setting('Auto Pay', Value::plain(Plain::On, 'We charge Visa 4242 USD 10.99 when we issue the invoice on Nov 6, 2027.'), 'Set by the customer on their payment page.'),
+                    SettingsRow::setting('Auto-renew', Value::plain(Plain::On, 'Paid by Auto Pay. We charge Visa 4242 $10.99 on Oct 14, 2027.'), 'Set by the customer on their domain page.'),
                 ], null, 'kit-toggle-payment'),
                 Sheet::section('Domain lock', [
                     Row::make('Transfer lock', Value::plain(Plain::On))->actions(self::kit('lock', 'Turn off', 'Transfer lock')),
@@ -192,7 +192,8 @@ class PanelKit extends Page implements \Filament\Tables\Contracts\HasTable
             Sheet::single([
                 Sheet::section('Before', [Row::make('Transfer lock', Value::plain(Plain::On))->key('row-live-before')->actions(self::kit('live_before', 'Turn off', 'Transfer lock'))], null, 'kit-live-before'),
                 Sheet::section('Sent', [Row::make('Transfer lock', Value::plain(Plain::On, 'Turning off at the registrar. The button comes back when this finishes.'))->key('row-live-sent')->running(Value::state(State::Checking, $staff))], null, 'kit-live-sent'),
-                Sheet::section('After the normal wait', [Row::make('Transfer lock', Value::plain(Plain::On, 'Check the request before sending another change.'))->key('row-live-slow')->running(Value::state(State::Delayed, $staff))], null, 'kit-live-slow'),
+                Sheet::section('After 30 seconds', [Row::make('Transfer lock', Value::plain(Plain::On, 'This is taking longer than usual. We\'ll keep trying.'))->key('row-live-slow')->running(Value::state(State::Checking, $staff))], null, 'kit-live-slow'),
+                Sheet::section('Past its normal time, for staff', [Row::make('Transfer lock', Value::plain(Plain::On, 'The registrar has not confirmed this change. Check request #84 before sending another.'))->key('row-live-delayed')->running(Value::state(State::Delayed, $staff))], null, 'kit-live-delayed'),
                 Sheet::section('Done', [Row::make('Transfer lock', Value::plain(Plain::Off, 'Turned off. Confirmed at the registrar', Fact::date(self::AT + 120, $staff)))->key('row-live-done')->actions(self::kit('live_done', 'Turn on', 'Transfer lock'))], null, 'kit-live-done'),
                 Sheet::section('Failed', [Row::make('Transfer lock', Value::plain(Plain::On))->key('row-live-failed')->result(Value::state(State::Failed, $staff, 'The registrar didn\'t answer. Nothing changed.'))->actions(self::kit('live_retry', 'Try again', 'Transfer lock'))], null, 'kit-live-failed'),
             ], 'kit-live'),
