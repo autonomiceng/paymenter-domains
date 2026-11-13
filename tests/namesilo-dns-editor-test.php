@@ -75,7 +75,7 @@ Cache::flush();same('succeeded',$management->run($op->id,$driver)->state,'The se
 $progress('Request #'.$op->id.': all 2 changes verified.');same(['dnsUpdateRecord','dnsUpdateRecord','dnsDeleteRecord'],$wire->writes,'One write per change');
 // Staff save through the same editor and sequence.
 $rows=$form();$rows[1]['address']='v=spf1 mx -all';
-$staffPage()->callAction(TestAction::make('edit_dns')->schemaComponent('fact_'.md5('DNS records'),'infolist'),['records'=>$rows,'preimage_digest'=>$section()['digest']])->assertHasNoActionErrors();
+$staffPage()->callAction(TestAction::make('edit_dns')->schemaComponent('relationManagerTabs.sheet','content'),['records'=>$rows,'preimage_digest'=>$section()['digest']])->assertHasNoActionErrors();
 $op=$latest();same((int)$staff->id,(int)$op->authorized_by,'The staff save is one request');Cache::flush();$management->run($op->id,$driver);
 $progress('Request #'.$op->id.': 1 change verified.');same($caa,$by('CAA'),'Staff edits keep read-only rows');
 // A valid save that changes a saved row's type sends that row as new, with the registrar default TTL; other rows stay.

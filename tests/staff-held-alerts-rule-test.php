@@ -38,11 +38,11 @@ $cause=DomainFacts::alertCause('held_obligation');
 $details=[];
 foreach ([$released, $unreleased] as $d) {
     $html=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$d->id])->assertSuccessful()->html();
-    $text=preg_replace('/\s+/',' ',html_entity_decode(strip_tags($html),ENT_QUOTES)); preg_match_all('/>Check request #(\d+)</',$html,$links);
+    $text=preg_replace('/\s+/',' ',html_entity_decode(strip_tags($html),ENT_QUOTES)); preg_match_all('/>\s*Check request #(\d+)\s*</',$html,$links);
     $links=array_map('intval',$links[1]);
     $details[]=$d->id===$released->id
         ?['held alert'=>str_contains($text,$cause)||in_array($renewals[$d->id],$links,true)]
-        :['links'=>$links,'renewal held in rail'=>str_contains($text,'Request #'.$renewals[$d->id].' Renewal Under review')];
+        :['links'=>$links,'renewal held in rail'=>preg_match('/Request #'.$renewals[$d->id].' Renewal[^#]*Under review/',$text)===1];
 }
 $actual=[$badge,$filtered,$details];
 same(['2',[$released->id,$unreleased->id],[['held alert'=>false],['links'=>[$held[$unreleased->id]],'renewal held in rail'=>true]]],$actual,

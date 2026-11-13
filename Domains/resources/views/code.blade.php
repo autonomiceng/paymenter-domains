@@ -1,9 +1,10 @@
 @component('layouts.app', ['title' => 'Auth code', 'sidebar' => true])
 <div class="container mt-14 mb-10"><div class="domains">
 @include('domains::partials.styles')
-<a class="domains-back" href="{{ $domain->actions['show'] }}">{{ $domain->name }}</a>{{ \Paymenter\Extensions\Servers\Domains\Support\DemoData::label($domain->demo, $domain->testEnvironment) }}
-<h1 class="domains-title">Auth code</h1>
+<x-domains::customer.head title="Auth code" :back="[$domain->name, $domain->actions['show']]" :demo="$domain->demo" :test="$domain->testEnvironment" />
 @include('domains::partials.notices', ['fieldKeys' => ['transfer_code'], 'summary' => false])
-<section class="domains-panel domains-section">@include('domains::partials.transfer-code')</section>
+<x-domains::customer.split>
+<x-domains::customer.section id="transfer-code" :padded="true">@include('domains::partials.transfer-code')</x-domains::customer.section>
+</x-domains::customer.split>
 </div></div>
 @endcomponent

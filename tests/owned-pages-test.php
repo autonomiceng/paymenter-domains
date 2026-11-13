@@ -43,7 +43,7 @@ foreach ([0,1] as $i) {
 }
 $index=$controller->index($request($user))->render();same(2,storefrontDom($index)->query('//tbody/tr')->length,'Only current native and ledger owner records');
 expect(!str_contains($index,'This page uses a test system.'),'Owned domain list has no test notice');
-expect(str_contains($index,'domains-tone-warn'),'D3 real summary index actionable status tone');
+expect(str_contains($index,'data-domains-tone="warn"'),'D3 real summary index actionable status tone');
 $r=$request($user);$r->query->add(['q'=>'other','sort'=>'-name','status'=>'under_review']);$page=$controller->index($r);
 same(1,$page->getData()['domains']->total(),'Owner search and status filter retain the native/ledger predicate');same(2,$page->getData()['filterCounts'][''],'Counts cover only current owner');
 $r->query->set('q','%');same(0,$controller->index($r)->getData()['domains']->total(),'Search wildcard is literal');expect(str_contains($controller->index($r)->render(),'Show all domains'),'Filtered empty state has an escape');

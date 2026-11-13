@@ -57,6 +57,9 @@ final class StaffDomainStatus
         } elseif ($unknown && $step === self::CHECK) {
             [$step, $request] = [$op ? 'Status missing.'.self::check($op->id) : 'Status missing. Check the domain at the registrar.', $op?->id];
         }
+        if ($step === RequestFacts::AUTO_TRANSFER) {
+            $shared = [...$shared, 'key' => 'pending_transfer', 'label' => 'Pending transfer', 'tone' => 'info', 'reason' => null];
+        }
         // A queued registration that Orders off stop is On hold, as its request reads. A closed order or customer setup keeps its own word.
         if ($op && in_array($d->status,self::ACQUIRING,true) && RequestFacts::heldAcquisition($op, $state==='registration_held'||$state==='registration_pending'&&$ordersOff)) {
             $shared=[...$shared,'key'=>'on_hold','label'=>'On hold','tone'=>'warning'];

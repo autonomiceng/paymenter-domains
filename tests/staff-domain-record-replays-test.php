@@ -32,7 +32,7 @@ foreach(['dns'=>[[...$add,'address'=>'8.8.8.8'],['name'=>'mail','type'=>'A','add
     same('refreshed',(new DomainObservation($readBindings,$clock,new AccountReadBudget($clock),$ports))->run($d->id),'A new '.$kind.' record is observed');$before=Operation::count();
     $page->callMountedAction()->assertNotified($changed);same($before,Operation::count(),'A stale '.$kind.' list queues nothing');
 }
-$stale=$open('Transfer lock','lock');$view()->callAction(TestAction::make('edit_lock')->schemaComponent('fact_'.md5('Transfer lock'),'infolist'));$op=$last('lock');same(false,$op->payload['locked'],'Turn off asks for no lock');$finish($op);
+$stale=$open('Transfer lock','lock');$view()->callAction(TestAction::make('edit_lock')->schemaComponent('relationManagerTabs.sheet','content'));$op=$last('lock');same(false,$op->payload['locked'],'Turn off asks for no lock');$finish($op);
 same('Turn on',DomainEditActions::for($d->fresh())['rows']['Transfer lock'][0]->getLabel(),'The page now offers the opposite step');
 $before=Operation::count();$stale->callMountedAction()->assertNotified($changed);same($before,Operation::count(),'A stale Turn off queues nothing');
 $stale=$open('Transfer lock','lock');$seen=$d->fresh()->observation;unset($seen['sections']['lock'],$seen['facts']['locked']);$d->fresh()->update(['observation'=>$seen]);

@@ -12,11 +12,12 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Sheet, Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Row, Value};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{CanonicalName, Environment};
 use Paymenter\Extensions\Servers\Domains\Data\Adoption\{RefusalCode, Review, StaffContext, Target};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Adoption, Domain};
-use Paymenter\Extensions\Servers\Domains\Presentation\StaffTime;
+use Paymenter\Extensions\Servers\Domains\Presentation\{Fact, Reader, StaffTime, State};
 use Paymenter\Extensions\Servers\Domains\Services\{AdoptionCommit, AdoptionReader, AdoptionRefused, StaffReason};
 /** Native staff wizard. Request keys, digests and private evidence never leave the server. */
 class AdoptDomain extends Page
@@ -171,14 +172,13 @@ class AdoptDomain extends Page
     public function content(Schema $schema): Schema
     {
         self::permission(); $sections = []; $enabled = config('domains.adoption.enabled', false) === true;
-        $readiness = Section::make($enabled ? 'Before you import' : 'Import is off on this site')
-            ->description($enabled ? 'Nothing is charged now. Import does not buy, transfer or renew a domain. Past invoices stay the same.'
-                : 'You can check a domain here, but nothing is imported. Set domains.adoption.enabled to true in the site config to allow imports.')->schema([]);
-        if (!$enabled) { $readiness->icon('heroicon-o-exclamation-triangle')->iconColor('warning'); }
-        $sections[] = $readiness;
-        $sections[] = Section::make('1. Customer, service and account')->columns(2)->schema([
-            TextEntry::make('selection')->label('Selected domain')->state($this->target ? $this->target['name'].', '.$this->customerLabel().', Service #'.$this->target['service'] : 'Choose a domain service.'),
-            TextEntry::make('environment')->label('Registrar account')->state($this->target ? (Server::find($this->target['account'])?->name ?? 'Account #'.$this->target['account']).', '.($this->target['environment'] === 'test' ? 'Test account. It cannot confirm a live domain.' : 'Live') : 'Not selected'),
+        if ($enabled) {
+            $sections[] = Section::make('Before you import')->description('Nothing is charged now. Import does not buy, transfer or renew a domain. Past invoices stay the same.')->schema([]);
+        }
+        $sections[] = Section::make('1. Customer, service and account')->schema([
+            ...(!$enabled ? [Row::notice('import-off', Value::state(State::Paused, Reader::Staff, 'Domain imports are off. Ask your site admin to enable them. You can still check a domain.'))] : []),
+            Row::make('Selected domain', Value::fact(Fact::entered($this->target ? $this->target['name'].', '.$this->customerLabel().', Service #'.$this->target['service'] : 'Choose a domain service.'))),
+            Row::make('Registrar account', Value::fact(Fact::entered($this->target ? (Server::find($this->target['account'])?->name ?? 'Account #'.$this->target['account']).', '.($this->target['environment'] === 'test' ? 'Test account. It cannot confirm a live domain.' : 'Live') : 'Not selected'))),
             Actions::make([$this->chooseAction()])->columnSpanFull()]);
         if ($this->target && $this->adoptedId === null) { $sections[] = Section::make('2. Check at the registrar')->description('The result lasts 2 minutes.')->schema([Actions::make([$this->readbackAction()])]); }
         if ($this->refusal) { $sections[] = Section::make('Import not finished')->description($this->refusal)->schema([]); }

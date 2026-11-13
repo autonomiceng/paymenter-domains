@@ -8,11 +8,9 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\PageType;
 
 /** Built before the page types, 2026-11-13. Remove a page when it moves to its type; never add one. */
 const PAGES_BEFORE_TYPES = [
-    'Pages\PanelKit',
-    'Pages\WhatYouSell',
-    'Resources\DomainResource\Pages\AdoptDomain', 'Resources\DomainResource\Pages\AdoptionPreview',
-    'Resources\DomainResource\Pages\ViewDomain',
-    'Resources\PendingAdoptionResource\Pages\ListPending', 'Resources\PendingAdoptionResource\Pages\ViewPending',
+    'Pages\PanelKit', 'Pages\WhatYouSell',
+    'Resources\DomainResource\Pages\AdoptDomain',
+    'Resources\PendingAdoptionResource\Pages\ListPending',
     'Resources\TldResource\Pages\PriceList',
 ];
 $admin = dirname(__DIR__).'/Domains/Admin';

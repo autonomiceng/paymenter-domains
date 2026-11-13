@@ -20,7 +20,7 @@ require __DIR__.'/Support/staff-site-nameservers.php';
 $contactCallOffset=count($ms->calls);
 $writes=static fn()=>array_values(array_filter(array_slice($ms->calls,$contactCallOffset),fn($row)=>!in_array($row[0],['getDomainInfo','contactList','listRegisteredNameServers'],true)));
 $edit=static fn(string $action,array $data=[])=>Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$d->id])
-    ->callAction(TestAction::make('edit_'.$action)->schemaComponent('fact_'.md5('Contacts'),'infolist'),$data);
+    ->callAction(TestAction::make('edit_'.$action)->schemaComponent('relationManagerTabs.sheet','content'),$data);
 $last=static fn(string $action)=>$d->operations()->where('action',$action)->orderByDesc('id')->first();
 $checkProgress=static function(string $text,bool $warning=false)use(&$d,$ports,$management,$clock,$user,$staff,$ms):void {
     storefrontViews();$before=$ms->calls;$owners=new OwnedDomains($clock,$ports,$management);
@@ -33,7 +33,7 @@ $checkProgress=static function(string $text,bool $warning=false)use(&$d,$ports,$
     same($warning,str_contains($status->getAttribute('class'),'domains-tone-text-warn'),'Owner support status is amber');
     $page=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$d->id]);same($row,$page->instance()->managementProgress()['contacts'],'Staff and owner share all progress facts');
     expect(str_contains(html_entity_decode($page->html(),ENT_QUOTES|ENT_HTML5),$text),'Staff page shows the shared words');
-    if($warning){$warn=storefrontDom($page->html())->query('//*[contains(@class,"fi-color-warning")]');expect((bool)array_filter(iterator_to_array($warn),fn($node)=>str_contains($node->textContent,$text)),'Staff support status is amber');}
+    if($warning){$warn=storefrontDom($page->html())->query('//div[@data-domains-row][.//*[@data-domains-tone="warn"]]');expect((bool)array_filter(iterator_to_array($warn),fn($node)=>str_contains($node->textContent,$text)),'Staff support status is amber');}
     same($before,$ms->calls,'Neither page nor polling calls the registrar');
 };
 
@@ -50,7 +50,7 @@ same('succeeded',$management->run($op->id,$driver)->state,'The same queue comple
 same(['contactAdd','contactDomainAssociate'],array_column($writes(),0),'One grant per automatic step');
 $checkProgress('Contact details verified.');
 // A modal opened against older stored contacts cannot silently overwrite a later save.
-$open=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$d->id])->mountAction(TestAction::make('edit_contacts')->schemaComponent('fact_'.md5('Contacts'),'infolist'));
+$open=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$d->id])->mountAction(TestAction::make('edit_contacts')->schemaComponent('relationManagerTabs.sheet','content'));
 $edit('contacts',[...$contact,'first_name'=>'Bea'])->assertNotified(ManagementForms::REQUESTED);Cache::flush();
 $new=$last('contacts');$management->run($new->id,$driver);Cache::flush();same('succeeded',$management->run($new->id,$driver)->state,'Newer saved contacts complete');
 $before=$d->operations()->count();$open->callMountedAction()->assertNotified(Filament\Notifications\Notification::make()->danger()->title("Couldn't save this change")->body('This changed after you opened it. Reload the page and try again.'));

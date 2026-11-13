@@ -111,7 +111,7 @@ $page=Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$d->id])->
 $page->assertActionDoesNotExist('reprice');$page->assertActionVisible('stop')->mountAction('stop')->assertActionMounted('stop');$page->unmountAction();
 // Stop and Resume sit in the Renewal row itself.
 $renewalButtons=static function(string $html):array{$doc=new DOMDocument();@$doc->loadHTML('<?xml encoding="UTF-8">'.$html);$x=new DOMXPath($doc);
-    $rows=$x->query('//div[contains(concat(" ",normalize-space(@class)," ")," domains-row ")][.//*[@role="term"][normalize-space(.)="Auto-renew"]]');
+    $rows=$x->query('//div[@data-domains-row][starts-with(normalize-space(div[contains(concat(" ",@class," ")," domains-panel-row-k ")]),"Auto-renew")]');
     $all=fn(?DOMNode $in)=>array_values(array_filter(array_map(fn($b)=>trim(preg_replace('/\s+/',' ',$b->textContent)),iterator_to_array($x->query($in?'.//button':'//button',$in))),fn(string $b)=>in_array($b,HoldingActions::LABELS,true)));
     return [$rows->length,$rows->length===1?$all($rows->item(0)):[],$all(null)];};
 $stopRow=$renewalButtons($page->html());same([1,['Turn off'],['Turn off']],$stopRow,'Turn off shows once, in the Renewal row: '.json_encode($stopRow));

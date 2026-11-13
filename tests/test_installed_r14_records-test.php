@@ -19,7 +19,7 @@ $facts=DomainFacts::for($d->fresh());$recordFamilies=RecordFamilies::read($d->fr
 $body=view('domains::partials.record-families',compact('recordFamilies')+['staff'=>true])->render();
 $nativePage=new \Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain;
 $row=new ReflectionMethod($nativePage,'row');$rows=[];
-foreach(['Last sync','DNS records']as$label){$rows[]=$row->invoke($nativePage,$label,$facts[$label],[]);}
+foreach(['Last sync','DNS records']as$label){$rows[]=$row->invoke($nativePage,$label,$facts[$label],[]);array_push($rows,...\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainRows::retry($facts[$label]));}
 $top=\Filament\Schemas\Schema::make($nativePage)->components($rows)->toHtml();
 writeRenderArtifact((getenv('R14_RENDER_DIR')?:sys_get_temp_dir()).'/r14-records.html','<!doctype html><html class="dark"><head><meta charset="utf-8"><style>'.file_get_contents($fixture.'/vendor/filament/filament/dist/theme.css').'</style>'.view('domains::partials.staff-styles')->render().'</head><body><main class="domains-sec">'.$top.$body.'</main></body></html>');
 $dom=new DOMDocument;@$dom->loadHTML($body);$xp=new DOMXPath($dom);$errors=[];
@@ -34,9 +34,9 @@ expect(!str_contains($facts['Contacts']['sub']??'','Next automatic retry:'),'Mis
 expect(!str_contains($facts['Expires']['sub']??'','Next automatic retry:'),'Missing confirmed expiry does not promise an observation confirmation');
 same([null,null],[$facts['Nameservers']['value'],$facts['Nameservers']['sub']],'Unread nameservers stay Missing; Last sync names the automatic retry once');
 expect($errors===[],implode('; ',$errors));
-expect(str_contains($top,'The registrar read failed.')&&str_contains($top,'Next automatic retry:'),'Native top rows render the actual failed read and due time');
+expect(str_contains($top,'The registrar read failed.')&&str_contains($top,'Next automatic retry'),'Native top rows render the actual failed read and due time');
 // The retry time reads in the viewer's time zone like the rest of the page, with UTC only on hover.
-expect(preg_match('~Next automatic retry: <span title="[^"]+ UTC"><time datetime="[^"]+" data-domains-time=~',$top)===1&&!str_contains($top,' UTC.'),'The automatic retry time is a viewer-time moment');
+expect(preg_match('~Next automatic retry.{0,1500}?title="[^"]+ UTC"><time datetime="[^"]+" data-domains-time=~s',$top)===1&&!str_contains($top,' UTC.'),'The automatic retry time is a viewer-time moment');
 // ui-r15 R4: a registrar read can return contacts while the domain has none saved here (an import). The moved Contacts row
 // shows the read state above its own red Missing, as it did before it moved onto the family row.
 $known=['state'=>'complete','records'=>[]];
@@ -48,8 +48,8 @@ same([null,'complete'],[$contactsFact['value'],$contactsFamily['state']],'Fixtur
 $familyRow=new ReflectionMethod($nativePage,'familyRow');
 $contactsHtml=\Filament\Schemas\Schema::make($nativePage)->components([$familyRow->invoke($nativePage,$contactsFamily,$contactsFact,[])])->toHtml();
 $contactsDom=new DOMDocument;@$contactsDom->loadHTML($contactsHtml);$contactsXp=new DOMXPath($contactsDom);
-same(1,$contactsXp->query('//span[@data-record-family="contacts"]//*[normalize-space(.)="Complete"]')->length,'The read state stays above the row');
-same(1,$contactsXp->query('//div[contains(@class,"fi-color-danger")][normalize-space(.)="Missing"]')->length,'No saved contacts stays red Missing under the read state');
+same(\Paymenter\Extensions\Servers\Domains\Presentation\State::NotSet->label(),panelRowValue($contactsHtml,'Contacts'),'A complete read with no saved contacts reads Not set, not a failed read');
+expect(str_contains($contactsHtml,'data-domains-tone="warn"'),'No saved contacts stays a job for staff');
 expect(str_contains($contactsHtml,DomainFacts::ADD_CONTACTS),'Missing contacts keep their own step during a failed read');
 // ui-r15 R5: once the read stopped, a sync won't help. DS is a plain red Missing, and partial families ask for no refresh.
 DB::table('domains_observation_work')->where('domain_id',$d->id)->update(['safe_code'=>'read_unavailable','tries'=>5,'due_at'=>0]);
@@ -57,7 +57,7 @@ $s=$d->fresh()->observation;$s['records']['families']['ds']=['state'=>'unknown',
 same('Read stopped',DomainFacts::for($d->fresh())['Last sync']['value'],'Fixture: the read stopped');
 $ds=\Paymenter\Extensions\Servers\Domains\Presentation\DsState::staff($d->fresh());same([null,null],[$ds['value'],$ds['sub']],'Stopped read: DS is plain Missing');
 $dsHtml=\Filament\Schemas\Schema::make($nativePage)->components([$familyRow->invoke($nativePage,array_column(RecordFamilies::read($d->fresh(),$now)['rows'],null,'kind')['ds'],$ds,[])])->toHtml();
-expect(!str_contains($dsHtml,'Sync this domain')&&str_contains($dsHtml,'fi-color-danger'),'Stopped read: the DS row is red and asks for no sync');
+expect(!str_contains($dsHtml,'Sync this domain')&&str_contains($dsHtml,'data-domains-tone="err"'),'Stopped read: the DS row is red and asks for no sync');
 $glue=array_column(RecordFamilies::read($d->fresh(),$now)['rows'],null,'kind')['glue'];
 expect($glue['state']==='partial'&&!str_contains($glue['staff'],'before editing'),'Stopped read: a partial family asks for no refresh');
 $nativeSuccessful=true;echo "Compact native staff Missing and consistent failed-read guidance passed.\n";

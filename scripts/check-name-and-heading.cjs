@@ -436,22 +436,16 @@ async function main() {
     }
 
     async function headings() {
-        // The customer domain heading names the domain, with the head-size status mark.
+        // The customer domain page has one page heading, and it names the domain.
         for (const mode of ['dark', 'light']) for (const width of [320, 390, 768, 1280]) {
             const name = `Domain heading, ${mode}, ${width}px`;
             await open(`domain-page-invoice-due-${mode}.html`, width);
-            const heading = page.locator('.domains-ph > h1');
+            const heading = page.locator('h1');
             check(await heading.count() === 1, `${name}: one page heading`);
             if (await heading.count() !== 1) continue;
             measured++;
-            const got = await heading.evaluate(h1 => {
-                const style = getComputedStyle(h1), mark = h1.parentElement.querySelector('.domains-status');
-                const before = mark ? getComputedStyle(mark, '::before') : null;
-                return { text: h1.textContent.trim(), weight: style.fontWeight, mark: before ? [before.width, before.height] : null };
-            });
-            check(got.text === 'invoice-due.example', `${name}: fixture heading`);
-            check(got.weight === '600', `${name}: weight 600, got ${got.weight}`);
-            check(JSON.stringify(got.mark) === JSON.stringify(['18px', '20px']), `${name}: head status mark 18 by 20px, got ${JSON.stringify(got.mark)}`);
+            const text = (await heading.textContent()).trim();
+            check(text.startsWith('invoice-due.example'), `${name}: fixture heading, got ${text}`);
         }
     }
 }

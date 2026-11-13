@@ -28,7 +28,7 @@ ObservationSchema::install();
 same('refreshed',(new DomainObservation($readBindings,$clock,new AccountReadBudget($clock),$ports))->run($d->id),'Complete empty records');
 same('0 records',DomainFacts::for($d->fresh())['DNS records']['value'],'Registration card counts DNS records');
 same('Turn on',DomainEditActions::for($d->fresh())['rows']['Transfer lock'][0]->getLabel(),'A known lock state offers its one next step');
-$view()->callAction(TestAction::make('edit_lock')->schemaComponent('fact_'.md5('Transfer lock'),'infolist'))->assertNotified(ManagementForms::REQUESTED);$op=$last('lock');same(true,$op->payload['locked'],'Turn on asks for the lock');$finish($op);
+$view()->callAction(TestAction::make('edit_lock')->schemaComponent('relationManagerTabs.sheet','content'))->assertNotified(ManagementForms::REQUESTED);$op=$last('lock');same(true,$op->payload['locked'],'Turn on asks for the lock');$finish($op);
 $add=['name'=>'www','type'=>'A','address'=>'8.8.4.4','mx_pref'=>''];
 $edit('DNS records','dns',['records'=>[['name'=>'www','type'=>'A','address'=>'not-an-ip','mx_pref'=>'']]])->assertNotified("Couldn't save this change");
 $edit('DNS records','dns',['records'=>[$add]])->assertNotified(ManagementForms::REQUESTED);
@@ -36,8 +36,7 @@ $op=$last('dns');same(['www','A','8.8.4.4'],[$op->payload['records'][0]['name'],
 $edit('DNS records','srv',['records'=>[['service'=>'sip','protocol'=>'tcp','priority'=>'1','weight'=>'2','port'=>'5060','target'=>'sip.example.com.','_source'=>'']]])->assertNotified(ManagementForms::REQUESTED);
 $op=$last('srv');same('sip',$op->payload['records'][0]['service'],'Staff SRV row reaches the request');$finish($op);
 // DNS and SRV share one zone write: each row keeps its own finished change, and a waiting one shows on both rows.
-$row=static function(string $html,string $label):string{$doc=new DOMDocument();@$doc->loadHTML('<?xml encoding="UTF-8">'.$html);
-    return trim((string)(new DOMXPath($doc))->query('//*[contains(concat(" ",normalize-space(@class)," ")," fi-in-entry ")][.//*[@role="term"][normalize-space(.)="'.$label.'"]]')->item(0)?->textContent);};
+$row=static fn(string $html,string $label):string=>(string)panelRowText($html,$label);
 same(['srv',false],[ManagementProgress::for($d->fresh())['dns']['section'],ManagementProgress::for($d->fresh())['dns']['pending']],'The finished SRV change is the latest on the shared DNS setting');
 $html=$view()->html();
 expect(str_contains($row($html,'SRV records'),'Saved.'),'A finished SRV change shows on the SRV row');

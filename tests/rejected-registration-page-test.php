@@ -8,7 +8,8 @@ use Paymenter\Extensions\Servers\Domains\Presentation\{DomainPage, Missing, Owne
 use Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns;
 
 storefrontViews();
-$norm=static fn(string $html)=>preg_replace('/\s+/',' ',trim(html_entity_decode(strip_tags($html),ENT_QUOTES|ENT_HTML5)));
+// Tags become spaces: a heading, a label and a value piece sit next to each other with no whitespace between them.
+$norm=static fn(string $html)=>trim(preg_replace('/\s+/',' ',html_entity_decode(strip_tags(preg_replace('/<[^>]+>/',' $0 ',$html)),ENT_QUOTES|ENT_HTML5)));
 $owned=static fn(string $reason,string $renewal,?string $refundTo=null)=>new OwnedDomain(...['rejected.example','Failed','bad',null,$renewal,null,['show'=>'/domains/1'],[],[],[],[],false,'statusReason'=>$reason,...($refundTo===null?[]:['refundTo'=>$refundTo])]);
 // Start with the existing no-payment DTO shape, before any newly added return helper.
 $money=[null=>'', 'original'=>'Any refund goes back to your original payment method.','credit'=>'Any refund goes to your account credit.',
@@ -20,7 +21,7 @@ foreach(['Registration did not finish'=>['Not registered',''],'Transfer did not 
         same(['missing'=>false,'tone'=>null,'value'=>$value,'note'=>$note],DomainPage::expires($owned($reason,'',$to),null,'/tickets/create'),$reason.' / '.($to??'nothing paid').': Expires says what happened and where the money goes');
         $card=$norm(view('domains::partials.owner-renew',['domain'=>$owned($reason,'',$to),'support'=>'/tickets/create'])->render());
         $want=trim($value.' '.$note).(Missing::supportUrl()!==null?' Contact support':'');
-        expect(str_starts_with($card,'Renewal Expires'.$want)&&!str_contains($card,Missing::FILLS)&&!str_contains($card,Missing::LABEL),$reason.' / '.($to??'nothing paid').': the Renewal card reads '.$want.', got '.$card);
+        expect(str_starts_with($card,'Renewal Expires '.$want)&&!str_contains($card,Missing::FILLS)&&!str_contains($card,Missing::LABEL),$reason.' / '.($to??'nothing paid').': the Renewal card reads '.$want.', got '.$card);
     }
     same(null,DomainPage::nextInvoice($owned($reason,'On','credit'),null,'/tickets/create'),$reason.': no next invoice is promised');
 }

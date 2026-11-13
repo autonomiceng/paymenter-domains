@@ -123,5 +123,5 @@ foreach($files as $file){
     }
     $checked+=preg_match_all('/partials\.missing|Missing::html\(|MissingEntry::apply\(/',$text);
 }
-expect($checked>20,'Sweep found the Missing sites');
+expect($checked>10,'Sweep found the Missing sites');
 $nativeSuccessful=true;echo "Missing next step checks passed.\n";

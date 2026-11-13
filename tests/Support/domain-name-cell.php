@@ -44,14 +44,15 @@ function assertDomainNameWraps(string $html, string $name, string $where, string
 {
     // The HTML5 parser treats <wbr> as a void element, as browsers do.
     $dom = Dom\HTMLDocument::createFromString('<!doctype html><meta charset="utf-8">'.$html, LIBXML_NOERROR);
-    $items = array_values(array_filter(iterator_to_array($dom->querySelectorAll(['link'=>'a', 'title'=>'span.domains-wrap'][$element])),
+    $items = array_values(array_filter(iterator_to_array($dom->querySelectorAll(['link'=>'a', 'title'=>'span.domains-wrap, span.domains-panel-head-title'][$element])),
         static fn(Dom\Element $node) => trim($node->textContent) === $name));
     same(1, count($items), $where.': one rendered domain name');
     $item = $items[0];
     $markup = trim($item->innerHTML);
     same(domainNameMarkup($name), $markup, $where.': line breaks only after dots and hyphens, got '.$markup);
-    // A title with domains-wrap wraps from the Domains staff stylesheet, so a plain install wraps it too.
-    if (str_contains((string) $item->getAttribute('class'), 'domains-wrap')) { expect(str_contains(file_get_contents(dirname(__DIR__,2).'/Domains/resources/views/partials/staff-styles.blade.php'), '.domains-wrap,'), $where.': the staff stylesheet wraps the name'); }
+    // A title with domains-wrap, or a panel head title, wraps from the Domains staff stylesheet, so a plain install wraps it too.
+    $wrap = array_values(array_intersect(['domains-wrap', 'domains-panel-head-title'], explode(' ', (string) $item->getAttribute('class'))))[0] ?? null;
+    if ($wrap !== null) { expect(str_contains(file_get_contents(dirname(__DIR__,2).'/Domains/resources/views/partials/staff-styles.blade.php'), '.'.$wrap.','), $where.': the staff stylesheet wraps the name'); }
     else { same('anywhere', domainNameStyle($item)['overflow-wrap'] ?? null, $where.': labels break only when wider than the line'); }
     expect(!isset(domainNameStyle($item)['word-break']), $where.': no word-break override');
 }
