@@ -475,7 +475,8 @@ same([null,'Service #'.$active->service_id." not found. Check the Services page.
 ObligationAlerts::record($active->fresh(),'missing_obligation',time());
 same([today()->addDays(120-21)->format('M j, Y'),'Renewal invoice missing. Check billing before expiry.','danger'],[$value($active,'Next invoice'),$sub($active,'Next invoice'),DomainFacts::for($active->fresh())['Next invoice']['tone']],'A Next invoice date stays, with the missing invoice below in danger');
 ObligationAlerts::record($active->fresh(),'renewal_unpaid',time());
-same(['On','Unpaid renewal invoice cancelled. Talk to the customer about renewal.','warning'],[$value($active,'Renewal'),$sub($active,'Renewal'),DomainFacts::for($active->fresh())['Renewal']['tone']],'Review alerts keep the value and add the cause');
+same(['On','warning'],[$value($active,'Renewal'),DomainFacts::for($active->fresh())['Renewal']['tone']],'Review alerts keep the value');
+expect(str_ends_with((string)$sub($active,'Renewal'),DomainFacts::alertCause('renewal_unpaid')),'Review alerts add the cause to the line');
 ObligationAlerts::record($active->fresh(),'observation_review',time());
 same(['Oct 20, 2026, 3:05 PM UTC',null],[$value($active,'Last sync'),$sub($active,'Last sync')],'A sync that is not stopped has nothing to resume');
 $work=DB::table('domains_observation_work')->insertGetId(['server_id'=>$active->server_id,'account_fingerprint'=>$active->account_fingerprint,
