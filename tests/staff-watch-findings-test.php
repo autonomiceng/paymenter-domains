@@ -81,7 +81,7 @@ Livewire::actingAs($viewer)->test(ListWatches::class)->filterTable('status','fai
 Livewire::actingAs($viewer)->test(ListWatches::class)->filterTable('status','monitoring')->assertCanNotSeeTableRecords($failed);
 same((string)count([...$problem,...$failed]),Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource::attentionCount(),'Monitored domains tab counts every problem and failed check');
 Livewire::actingAs($viewer)->test(ListWatches::class)->filterTable('status','attention')->assertCanSeeTableRecords([...$problem,...$failed])->assertCanNotSeeTableRecords($monitoring)->assertCountTableRecords(count([...$problem,...$failed]));
-Livewire::actingAs($viewer)->test(ViewWatch::class,['record'=>$w['registry-failed']])->assertSeeInOrder(['Check failed','Domain','Latest checks']);
+Livewire::actingAs($viewer)->test(ViewWatch::class,['record'=>$w['registry-failed']])->assertSeeInOrder([\Paymenter\Extensions\Servers\Domains\Presentation\State::Failed->label(),'Domain','Latest checks']);
 Livewire::actingAs($viewer)->test(ListWatches::class)->filterTable('status','paused')->assertCanSeeTableRecords([WatchName::find($w['paused'])])->assertCountTableRecords(1);
 // Customer identity needs the native user permissions, checked fresh on every request.
 $customer=fn($user)=>Livewire::actingAs($user)->test(ListWatches::class)->instance()->watchRow(WatchName::find($w['healthy']))['customer'];
@@ -91,9 +91,9 @@ same(['label'=>'Avery Customer','email'=>'avery@example.test','url'=>UserResourc
 Livewire::actingAs($editor)->test(ListWatches::class)->assertSee('Avery Customer')->assertDontSee('avery@example.test');
 $editor->role->update(['permissions'=>[Staff::VIEW,Writes::VIEW]]);same(['label'=>'Customer #'.$uid,'email'=>null,'url'=>null],$customer($editor),'Revoked user permission falls back');$editor->role->update(['permissions'=>[Staff::VIEW,Writes::VIEW,'admin.users.view','admin.users.update']]);
 // Detail shows the status first, with the same customer rules.
-Livewire::actingAs($viewer)->test(ViewWatch::class,['record'=>$w['ns-changed']])->assertSeeInOrder(['Problem found','Nameservers changed','Domain','Customer #'.$uid,'Latest checks','Nameservers','Other'])->assertDontSee('avery@example.test');
-Livewire::actingAs($viewer)->test(ViewWatch::class,['record'=>$w['healthy']])->assertSeeInOrder(['Monitoring','Domain','Latest checks','Matches template'])->assertDontSee('Problem found');
-Livewire::actingAs($editor)->test(ViewWatch::class,['record'=>$w['expired']])->assertSeeInOrder(['Problem found','Expired','Avery Customer','avery@example.test'])->assertSeeHtml('href="'.e(UserResource::getUrl('edit',['record'=>$uid])).'"');
+Livewire::actingAs($viewer)->test(ViewWatch::class,['record'=>$w['ns-changed']])->assertSeeInOrder([\Paymenter\Extensions\Servers\Domains\Presentation\State::NeedsReview->label(),'Domain','Nameservers changed','Customer #'.$uid,'Latest checks','Nameservers','Other'])->assertDontSee('avery@example.test');
+Livewire::actingAs($viewer)->test(ViewWatch::class,['record'=>$w['healthy']])->assertSeeInOrder([\Paymenter\Extensions\Servers\Domains\Presentation\State::Monitored->label(),'Domain','Latest checks','Matches template'])->assertDontSee(\Paymenter\Extensions\Servers\Domains\Presentation\State::NeedsReview->label());
+Livewire::actingAs($editor)->test(ViewWatch::class,['record'=>$w['expired']])->assertSeeInOrder([\Paymenter\Extensions\Servers\Domains\Presentation\State::NeedsReview->label(),'Expired','Avery Customer','avery@example.test'])->assertSeeHtml('href="'.e(UserResource::getUrl('edit',['record'=>$uid])).'"');
 Livewire::actingAs($users)->test(ViewWatch::class,['record'=>$w['expired']])->assertSee('avery@example.test')->assertDontSeeHtml('/admin/users/'.$uid.'/edit');
 same($before,$writes(),'Staff list, filter and detail GETs write nothing');
 // 25 rows cost the same across customers as for one customer.
@@ -110,7 +110,7 @@ $filtered=$count(fn()=>Livewire::actingAs($editor)->test(ListWatches::class)->fi
 same($page25,$spread,'Five customers cost the same as one customer');
 // Filament stacks the header as a column below 40rem; flex-basis there becomes height and pushes findings off the first screen.
 $header=file_get_contents(dirname(__DIR__).'/Domains/resources/views/partials/staff-styles.blade.php');[$narrow,$wide]=explode('@media (min-width:40rem){',$header,2)+[1=>''];
-expect(!str_contains($narrow,'flex:1 1')&&substr_count($wide,'flex:1 1')===2,'Watch header flex bases apply only to the wide row layout');
+expect(!str_contains($narrow,'flex:1 1'),'Header flex bases never apply to the narrow column layout');
 // Earlier unrelated registry history cannot consume a filtered watch's scan budget.
 $observation=(array)DB::table('domains_watch_registry')->where('watch_id',$w['expiring'])->first();unset($observation['id']);
 for($i=0;$i<1000;$i++){

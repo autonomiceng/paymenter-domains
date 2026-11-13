@@ -24,7 +24,7 @@ try{
   $testClock->instant=new DateTimeImmutable('@'.$at);
   same($next,\Paymenter\Extensions\Servers\Domains\Admin\Support\WatchFacts::for(\Paymenter\Extensions\Servers\Domains\Models\WatchName::findOrFail($id))['Checks']['Next check']['value'],'Next check at lease end minus '.($boundary-$at).' seconds');
   $detail=\Livewire\Livewire::actingAs($manager)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\ViewWatch::class,['record'=>$id]);
-  same($next,$detail->instance()->getSchema('infolist')->getComponentByStatePath('fact_'.md5('Next check'))->getState(),'Page Next check at lease end minus '.($boundary-$at).' seconds');
+  same($next==='Checking now'?\Paymenter\Extensions\Servers\Domains\Presentation\State::Checking->label():$next,panelRowValue($detail->html(),'Next check'),'Page Next check at lease end minus '.($boundary-$at).' seconds');
  }
 }finally{app()->instance($clockKey,$originalClock);}
 same($originalClock,app($clockKey),'The real clock is restored');

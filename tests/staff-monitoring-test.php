@@ -43,9 +43,9 @@ Livewire::actingAs($manager)->test(ListWatches::class)->filterTable('status','mo
 
 // Monitored domain page: heading pill, header buttons, sections, one notice.
 $view=Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id]);$page=$view->instance();$clean($view->html(),'monitored domain');
-expect(str_contains($page->getHeading()->toHtml(),'domains-wrap') && str_contains($page->getSubheading()->toHtml(),'Problem found'),'Name, then the status line');
-assertDomainNameWraps($page->getHeading()->toHtml(),$watch->canonical_name,'Monitored domain title','title');
-expect(str_contains($page->getSubheading()->toHtml(),'Nameservers changed'),'Observed mismatch leads the heading');
+expect(str_contains(html_entity_decode(strip_tags($page->getHeading()->toHtml())),$watch->canonical_name) && str_contains($page->getSubheading()->toHtml(),\Paymenter\Extensions\Servers\Domains\Presentation\State::NeedsReview->label()),'Name, then the status line');
+expect(str_contains($page->getHeading()->toHtml(),'<span class="domains-panel-head-title">'.domainNameMarkup($watch->canonical_name).'</span>'),'Monitored domain title breaks only after dots and hyphens');
+expect(str_contains(panelNoticeText($view->html()),'Nameservers changed'),'Observed mismatch leads the sheet');
 $seen=preg_replace('/\s+/',' ',html_entity_decode(strip_tags(preg_replace('~<(script|style)\b.*?</\1>~si','',$view->html())),ENT_QUOTES|ENT_HTML5));
 same([1,0],[substr_count($seen,'Nameservers changed'),substr_count($seen,'Nameservers changed:')],'Nameservers changed shows once, with no notice repeating the found nameservers');
 same([WatchResource::getUrl(),0],array_keys($page->getBreadcrumbs()),'Breadcrumb leads back to the monitored domains list');

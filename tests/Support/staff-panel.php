@@ -118,3 +118,20 @@ function resolverSectionText(string $html): string
     same(1,$sections->length,'The rendered page contains one DNS resolver section');
     return $sections->item(0)->textContent;
 }
+/** The word or fact a panel row shows after its label (a state word, a plain word or a fact), without the line under it.
+ * Null when the page has no such row. */
+function panelRowValue(string $html, string $label): ?string
+{
+    $dom=new DOMDocument;@$dom->loadHTML('<?xml encoding="utf-8"?>'.$html);$xpath=new DOMXPath($dom);
+    $rows=$xpath->query('//div[@data-domains-row][starts-with(normalize-space(div[contains(concat(" ",@class," ")," domains-panel-row-k ")]),"'.$label.'")]');
+    if($rows->length!==1){return null;}
+    $value=$xpath->query('.//div[contains(concat(" ",@class," ")," domains-panel-val ")]/*[1]',$rows->item(0))->item(0);
+    return $value===null?null:trim((string)preg_replace('/\s+/u',' ',$value->textContent));
+}
+/** The text of the page's first notice row, or an empty string when it has none. */
+function panelNoticeText(string $html): string
+{
+    $dom=new DOMDocument;@$dom->loadHTML('<?xml encoding="utf-8"?>'.$html);
+    $notice=(new DOMXPath($dom))->query('//div[@data-domains-row="notice"]')->item(0);
+    return $notice===null?'':trim((string)preg_replace('/\s+/u',' ',$notice->textContent));
+}
