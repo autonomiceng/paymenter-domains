@@ -91,8 +91,10 @@ class Row extends Component implements HasEmbeddedView
     /** The actions this reader can use now. */
     protected function shownControls(): array
     { return $this->live !== null ? [] : array_values(array_filter($this->controls, static fn (Action $a): bool => $a->isVisible())); }
-    /** The "?" text. A setting row adds who sets it when this reader has no control. */
+    /** The "?" text: what the row means, never a fact. */
     protected function tip(): ?string { return $this->help; }
+    /** The value as this reader sees it. A setting row adds who sets it when this reader has no control. */
+    protected function shownValue(): Value { return $this->rowValue; }
 
     /** A blocked action runs nothing even when a request names it, since Filament won't mount or call a disabled action.
      * It reads as enabled only while this row paints it, so its button stays focusable. This replaces any disabled
@@ -120,7 +122,7 @@ class Row extends Component implements HasEmbeddedView
         }
         $tip = $this->tip();
         return view('domains::components.panel.row', [
-            'kind' => $this->kind, 'id' => $this->anchor(), 'linked' => $this->linked, 'label' => $this->rowLabel, 'value' => $this->rowValue,
+            'kind' => $this->kind, 'id' => $this->anchor(), 'linked' => $this->linked, 'label' => $this->rowLabel, 'value' => $this->shownValue(),
             'help' => $tip === null ? null : HelpHint::make($tip, 'About '.$this->rowLabel)->toHtml(),
             'live' => $this->live, 'result' => $this->result, 'waits' => $this->waits(),
             'blocked' => $this->blocked, 'fix' => $this->fix?->toHtml(), 'why' => $this->blocked !== null ? $why : null,

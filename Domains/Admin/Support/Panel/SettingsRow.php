@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Admin\Support\Panel;
 use Filament\Actions\Action;
 use Paymenter\Extensions\Servers\Domains\Presentation\Plain;
 /** A setting: the same row as Row, for values someone chooses. It always knows who sets it, so a reader with no
- * control here (no permission, or someone else's setting) sees the plain value and a "?" that says who sets it.
+ * control here (no permission, or someone else's setting) sees the value with who sets it on the line under it.
  * A switch is the page's own native action drawn as a toggle; the row's value says On or Off from the same bool, so
  * the word and the switch can't disagree. */
 final class SettingsRow extends Row
@@ -40,10 +40,12 @@ final class SettingsRow extends Row
         parent::actions($switch, $action);
         return $this;
     }
-    protected function tip(): ?string
+    /** Who sets it is a fact, so it goes on the visible line under the value, never in the "?". A reader with the
+     * control sets it, so they get no such line. */
+    protected function shownValue(): Value
     {
-        if ($this->shownControls() !== []) { return $this->help; }
-        return trim($this->setBy.' '.($this->help ?? ''));
+        $controls = array_filter($this->controls, static fn (Action $a): bool => $a->isVisible());
+        return $controls === [] && $this->setBy !== null ? parent::shownValue()->then($this->setBy) : parent::shownValue();
     }
     public function toEmbeddedHtml(): string
     {

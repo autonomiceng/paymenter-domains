@@ -113,10 +113,12 @@ foreach ([['Registrations', 'true', 'On', true], ['Renewals', 'false', 'Off', tr
     same([$checked, $label, $word, $runs], [$switch?->getAttribute('aria-checked'), $switch?->getAttribute('aria-label'), trim($q($r, './/*[@class="domains-panel-plain"]')->item(0)?->nodeValue ?? ''), $switch?->hasAttribute('wire:click')], 'Switch '.$label);
 }
 
-// A setting with no control here says who sets it; a reader with the control gets no such line.
+// A setting with no control here says who sets it on the line under the value; the "?" keeps only what it means. A
+// reader with the control gets no such line.
 $tip = static fn (DOMElement $r): string => html_entity_decode((string) $q($r, './/*[contains(@class,"domains-help")]/@x-tooltip')->item(0)?->nodeValue, ENT_QUOTES);
-expect(str_contains($tip($row('kit-rows-account', 'Mode')), 'Set by staff when the account is connected.') && str_contains($tip($row('kit-rows-account', 'Mode')), 'Test and Live are separate'), 'A read-only setting says who sets it, then what it means');
-same(['', 1], [$tip($row('kit-rows-account', 'Reminder schedule')), $q($row('kit-rows-account', 'Reminder schedule'), './/button[@aria-label="Edit Reminder schedule"]')->length], 'Staff who set reminders get the control, not who sets it');
+$under = static fn (DOMElement $r): string => trim((string) $q($r, './/*[@class="domains-panel-row-v"]//*[@class="domains-panel-sub"]')->item(0)?->textContent);
+same([true, true, false], [str_ends_with($under($row('kit-rows-account', 'Mode')), 'Set by staff when the account is connected.'), str_contains($tip($row('kit-rows-account', 'Mode')), 'Test and Live are separate'), str_contains($tip($row('kit-rows-account', 'Mode')), 'Set by')], 'A read-only setting says who sets it under the value and what it means in the "?"');
+same([false, '', 1], [str_contains($under($row('kit-rows-account', 'Reminder schedule')), 'Set by'), $tip($row('kit-rows-account', 'Reminder schedule')), $q($row('kit-rows-account', 'Reminder schedule'), './/button[@aria-label="Edit Reminder schedule"]')->length], 'Staff who set reminders get the control, not who sets it');
 $savedDays = panelKitSavedDays($server);
 expect($savedDays['before'] !== [] && $savedDays['after'] !== [], 'The kit has saved reminder days on both sides');
 same($savedDays, panelKitShownDays((string) $q($row('kit-rows-account', 'Reminder schedule'), './/*[@data-domains-fact]')->item(0)?->nodeValue), 'Staff see each saved reminder day on its own side of the expiry');
@@ -125,7 +127,7 @@ same($savedDays, panelKitShownDays((string) $q($row('kit-rows-account', 'Reminde
 $reader = staffUser([Staff::VIEW]);
 $dom = storefrontDom(Livewire::actingAs($reader)->test(PanelKit::class)->assertSuccessful()->html());
 $r = $dom->query('//div[@data-domains-row][normalize-space(div[@class="domains-panel-row-k"])="Reminder schedule"]')->item(0);
-same([0, true], [$dom->query('.//button[@aria-label="Edit Reminder schedule"]', $r)->length, str_contains(html_entity_decode((string) $dom->query('.//*[contains(@class,"domains-help")]/@x-tooltip', $r)->item(0)?->nodeValue, ENT_QUOTES), 'Set by staff who can change domain policy.')], 'A read-only reader sees the days and who sets them');
+same([0, true], [$dom->query('.//button[@aria-label="Edit Reminder schedule"]', $r)->length, str_ends_with(trim((string) $dom->query('.//*[@class="domains-panel-row-v"]//*[@class="domains-panel-sub"]', $r)->item(0)?->textContent), 'Set by staff who can change domain policy.')], 'A read-only reader sees the days and who sets them');
 // The kit is for staff on demo systems only.
 Illuminate\Support\Facades\Auth::forgetUser();expect(!PanelKit::canAccess(), 'Signed-out readers can\'t open the kit');
 Illuminate\Support\Facades\Auth::setUser(staffUser([]));expect(!PanelKit::canAccess(), 'Staff without the Domains view can\'t open the kit');
