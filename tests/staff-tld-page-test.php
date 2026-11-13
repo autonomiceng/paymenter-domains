@@ -76,9 +76,12 @@ foreach([
     same(0,$editButtons($hidden->html())->length,'Missing price-edit or publish grants hides Edit prices');
 }
 Auth::setUser($u);
-// The browser title is '<tab> - <record>'; the record part names the page.
-$named=static fn($c):string=>(string)preg_replace('/^(Overview|History) - /','',(string)$c->instance()->getTitle());
-same('Overview - ',substr((string)$page->instance()->getTitle(),0,11),'The browser title names the open tab first');
+// One tab is active and opens this record; the browser title names that tab and the record. The record part names the page.
+$activeTab=static fn($c)=>array_values(array_filter($c->instance()->getSubNavigation(),static fn($item):bool=>$item->isActive()));
+$named=static fn($c):string=>trim((string)preg_replace('/^'.preg_quote((string)($activeTab($c)[0]??null)?->getLabel(),'/').'\W+/','',(string)$c->instance()->getTitle()));
+$tab=$activeTab($page);
+same([1,ViewTld::getUrl(['record'=>$enom->id])],[count($tab),$tab[0]?->getUrl()],'One active tab, and it opens this record');
+expect(str_contains((string)$page->instance()->getTitle(),(string)$tab[0]->getLabel()),'The browser title names the open tab');
 same('.com on Enom TEST identity check',$named($page),'A TLD offered by two accounts is titled by its account');
 // The other account's page for the same TLD names its own account.
 $other=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$silo->id])->assertSuccessful();
