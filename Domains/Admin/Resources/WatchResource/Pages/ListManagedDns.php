@@ -21,7 +21,8 @@ class ListManagedDns extends ListRecords
     protected function makeTable(): Table{return $this->makeBaseTable();}
     public function getTitle(): string{return 'DNS monitoring setup';}
     public function getSubheading(): ?string{return 'Set the default nameservers in Domains > DNS templates. These domains inherit them automatically. Their expiry monitoring continues.';}
-    public function getSubNavigation(): array{return StaffTabs::monitoring('DNS monitoring setup');}
+    public function getSubNavigation(): array{return StaffTabs::domains('DNS monitoring setup');}
+    public function getBreadcrumbs(): array{return [];}
     protected function getHeaderActions(): array
     {return [Action::make('templates')->label('Default nameservers')->url(RoutingProfileResource::getUrl())];}
     protected function domains(): \Illuminate\Database\Eloquent\Builder{return ManagedDnsSetup::affected(time());}

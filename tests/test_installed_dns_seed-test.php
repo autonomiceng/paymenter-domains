@@ -10,6 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\MonitoringSettings;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,WatchProfile,WatchAudit};
 use Paymenter\Extensions\Servers\Domains\Services\{Installation,SiteDnsDefault};
+use Paymenter\Extensions\Servers\Domains\Presentation\{State,Tone};
 // Native lifecycle, encrypted account bindings and rendered Missing rows need the real installed fixture.
 $entry=new \Paymenter\Extensions\Servers\Domains\Domains([]);$entry->installed();
 $staff=staffUser(['admin.domains.view','admin.domains.watch.view','admin.domains.watch.manage']);
@@ -30,11 +31,9 @@ $reject=static function(int $n,string $rule)use($names,$staff):void {
     same(null,SiteDnsDefault::profile(),'Normal installation refuses an incompatible deployment default: '.$rule);
     same(null,fixtureBusinessRaw(SiteDnsDefault::KEY),'Rejected deployment leaves the default unset');
     same($before,[WatchProfile::count(),WatchAudit::count()],'Rejected deployment creates no template or audit');
-    $page=Livewire::actingAs($staff)->test(MonitoringSettings::class)->assertSee('Missing')->assertSee($rule);
-    $row=$page->instance()->getSchema('content')->getComponent('site_dns',withHidden:true);
-    same('Missing',$row->getState(),'Rejected seed is Missing on the actual settings row');
-    same('danger',$row->getColor($row->getState()),'Rejected seed is red');
-    unset($row,$page);gc_collect_cycles();gc_mem_caches();
+    $row=settingsRowValue(Livewire::actingAs($staff)->test(MonitoringSettings::class)->assertSee($rule)->html(),'Default nameservers');
+    same([State::NotSet->label(),Tone::Attention->value],[$row['word']??null,$row['tone']??null],'Rejected seed reads Not set on the actual settings row');
+    unset($row);gc_collect_cycles();gc_mem_caches();
 };
 $connect('namesilo');
 // This staff user cannot change the default nameservers, so the page keeps the cause and names who can fix it.

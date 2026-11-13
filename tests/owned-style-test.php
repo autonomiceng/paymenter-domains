@@ -5,8 +5,6 @@ declare(strict_types=1);
 const ALLOWED=[
     // Existing main pages leave this list when their later sheet/customer slice lands.
     'resources/views/admin/native-editor-notice.blade.php'=>2,
-    'resources/views/admin/watch-products.blade.php'=>2,
-    'resources/views/admin/watch-setup.blade.php'=>10,
     'resources/views/admin/what-you-sell.blade.php'=>4,
     'resources/views/partials/demo-tag-colors.blade.php'=>4,
     'resources/views/partials/demo-tag.blade.php'=>1,

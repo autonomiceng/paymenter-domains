@@ -18,7 +18,8 @@ $switch=function(bool $on)use($active){
 $cell=function()use($viewer,$active){
     $page=Livewire::actingAs($viewer)->test(ListDomains::class)->assertSuccessful()->instance();
     $c=$page->getTable()->getColumn('auto_renew')->record($page->getTableRecords()->firstWhere('id',$active->id));
-    return [$c->getState(),$c->getDescriptionBelow()];
+    $text=trim(preg_replace('/\s+/',' ',html_entity_decode(strip_tags((string)$c->formatState($c->getState())))));
+    return [$c->getState(),$text===$c->getState()?null:trim(substr($text,strlen((string)$c->getState())))];
 };
 DB::table('domains_domains')->where('id',$active->id)->update(['billing_managed'=>true]);
 $switch(true);

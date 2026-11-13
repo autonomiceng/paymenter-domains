@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Admin\Pages;
 use Filament\Pages\Page;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
-/** The DNS resolver moved to Domain monitoring > Settings; this address redirects there. */
+/** The DNS resolver moved to Domains > Monitoring settings; this address redirects there. */
 class DnsResolver extends Page
 {
     protected static string|\UnitEnum|null $navigationGroup = 'Domains';

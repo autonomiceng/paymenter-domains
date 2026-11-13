@@ -10,32 +10,33 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\{Li
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource\Pages\{ListConfiguration as ListTemplates,ViewConfiguration as ViewTemplate};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,WatchFacts,WatchFindings};
 use Paymenter\Extensions\Servers\Domains\Models\{WatchName,WatchProfile};
+use Paymenter\Extensions\Servers\Domains\Presentation\State;
 use Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites as Writes;
 // Unchecked: Monitoring, with Last check Missing and its cause.
 $list=Livewire::actingAs($manager)->test(ListWatches::class)->assertCanSeeTableRecords([$watch]);$clean($list->html(),'monitoring list');
 assertDomainNameOneLine($list->html(),$watch->canonical_name,'Monitoring list');
-same('Domain monitoring',$list->instance()->getTitle(),'List title');same(null,$list->instance()->getSubheading(),'No list subheading');
+same(null,$list->instance()->getSubheading(),'No list subheading');
 foreach(['canonical_name'=>'Domain','status'=>'Status','registration'=>'Registrar','delegation.dns'=>'Nameservers','last_check'=>'Last check','expiry'=>'Expires'] as $name=>$label){same($label,$column($list,$name)->getLabel(),'Column '.$name);}
 foreach(['findings','user_id','state','work_due'] as $gone){same(null,$column($list,$gone),'Old column '.$gone.' removed');}
-same('Monitoring',$column($list,'status')->record($watch)->getState(),'Unchecked domain is Monitoring');
-same('Missing',$column($list,'last_check')->record($watch)->getState(),'Last check Missing');same('Fills in by itself after the next check',$column($list,'last_check')->record($watch)->getDescriptionBelow(),'Missing says its cause');
-expect(str_contains($column($list,'last_check')->record($watch)->getExtraAttributes()['class']??'','domains-line')&&preg_match('/\.domains-line\.fi-ta-text-has-descriptions\{display:flex/',file_get_contents(dirname(__DIR__).'/Domains/resources/views/partials/staff-styles.blade.php'))===1,'Missing and its cause share one line');
-same('Missing',$column($list,'registration')->record($watch)->getState(),'Registrar Missing');same('Fills in by itself after the next check',$column($list,'registration')->record($watch)->getDescriptionBelow(),'Registrar Missing says its cause');
+same(State::Monitored->label(),$column($list,'status')->record($watch)->getState(),'Unchecked domain is Monitored');
+$cause=fn($cell)=>html_entity_decode(strip_tags((string)$cell->formatState($cell->getState())));
+same(State::NotReadYet->label(),$column($list,'last_check')->record($watch)->getState(),'Last check not read yet');expect(str_contains($cause($column($list,'last_check')->record($watch)),'Fills in by itself after the next check'),'Not read yet says its cause');
+same(State::NotReadYet->label(),$column($list,'registration')->record($watch)->getState(),'Registrar not read yet');expect(str_contains($cause($column($list,'registration')->record($watch)),'Fills in by itself after the next check'),'Registrar not read yet says its cause');
 same('Customer #'.$uid,$column($list,'customer')->record($watch)->getState(),'Customer has its own column');same(null,$column($list,'canonical_name')->record($watch)->getDescriptionBelow(),'The name is one line');
 foreach(['status'=>'Status','customer'=>'Customer','expiry'=>'Expires within'] as $name=>$label){same($label,$filter($list,$name)->getLabel(),'Filter '.$name);}
 same(null,$filter($list,'attention'),'Attention filter merged into Status');same(null,$filter($list,'drift'),'Drift filter merged into Status');same(null,$filter($list,'state'),'State filter merged into Status');
 // operator-pass-review-R1 The status filter includes the shared Needs attention destination.
-same(['attention'=>'Needs attention','monitoring'=>'Monitoring','problem'=>'Problem found','failed'=>'Check failed','paused'=>'Paused','stopped'=>'Stopped'],$filter($list,'status')->getOptions(),'Status filter options');
+same(['attention'=>'Needs attention','monitoring'=>State::Monitored->label(),'problem'=>State::NeedsReview->label(),'failed'=>State::Failed->label(),'paused'=>State::Paused->label(),'stopped'=>State::Stopped->label()],$filter($list,'status')->getOptions(),'Status filter options');
 Livewire::actingAs($manager)->test(ListWatches::class)->filterTable('status','paused')->assertCountTableRecords(0)->assertSee('No monitored domains match')->assertSee('Clear the search or filters to see all rows.')->assertDontSee('Turn on monitoring on a hosting product.');
 Livewire::actingAs($manager)->test(ListWatches::class)->filterTable('customer',['customer'=>(string)$uid])->assertCanSeeTableRecords([$watch]);
 
 // Checked: nameservers moved away and expiry within 30 days is Problem found with the reason.
 extract($checked());
 $list=Livewire::actingAs($manager)->test(ListWatches::class);$record=WatchName::find($id);
-same('Problem found',$column($list,'status')->record($record)->getState(),'Problem found pill');same('warning',$column($list,'status')->record($record)->getColor('Problem found'),'Problem found is warning');
+same(State::NeedsReview->label(),$column($list,'status')->record($record)->getState(),'Problem found reads Needs review');
 same('Nameservers changed. Expires in '.$days.' days.',$column($list,'note')->record($record)->getState(),'Note retains the observed mismatch and the expiry warning');
 same('Other',$column($list,'delegation.dns')->record($record)->getState(),'Nameservers elsewhere read Other');
-expect($column($list,'last_check')->record($record)->getState()!=='Missing','Last check has a time');
+expect($column($list,'last_check')->record($record)->getState()!==State::NotReadYet->label(),'Last check has a time');
 expect(str_contains((string)$column($list,'last_check')->record($record)->formatState($column($list,'last_check')->getState()),'data-domains-time'),'Last check shows in the viewer time');
 same(null,$column($list,'expiry')->record($record)->getDescriptionBelow(),'Expires is one value; the days left are in Note');
 Livewire::actingAs($manager)->test(ListWatches::class)->filterTable('status','problem')->assertCanSeeTableRecords([$record]);
@@ -43,12 +44,11 @@ Livewire::actingAs($manager)->test(ListWatches::class)->filterTable('status','mo
 
 // Monitored domain page: heading pill, header buttons, sections, one notice.
 $view=Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id]);$page=$view->instance();$clean($view->html(),'monitored domain');
-expect(str_contains($page->getHeading()->toHtml(),'domains-wrap') && str_contains($page->getSubheading()->toHtml(),'Problem found'),'Name, then the status line');
-assertDomainNameWraps($page->getHeading()->toHtml(),$watch->canonical_name,'Monitored domain title','title');
-expect(str_contains($page->getSubheading()->toHtml(),'Nameservers changed'),'Observed mismatch leads the heading');
+expect(str_contains(html_entity_decode(strip_tags($page->getHeading()->toHtml())),$watch->canonical_name) && str_contains($page->getSubheading()->toHtml(),\Paymenter\Extensions\Servers\Domains\Presentation\State::NeedsReview->label()),'Name, then the status line');
+expect(str_contains(panelNoticeText($view->html()),'Nameservers changed'),'Observed mismatch leads the sheet');
 $seen=preg_replace('/\s+/',' ',html_entity_decode(strip_tags(preg_replace('~<(script|style)\b.*?</\1>~si','',$view->html())),ENT_QUOTES|ENT_HTML5));
 same([1,0],[substr_count($seen,'Nameservers changed'),substr_count($seen,'Nameservers changed:')],'Nameservers changed shows once, with no notice repeating the found nameservers');
-same([WatchResource::getUrl()=>'Domain monitoring','example.com'],$page->getBreadcrumbs(),'Breadcrumb');
+same([WatchResource::getUrl(),0],array_keys($page->getBreadcrumbs()),'Breadcrumb leads back to the monitored domains list');
 foreach(['read'=>'Check now','pause'=>'Pause monitoring','profile'=>'Change DNS template','note'=>'Add note'] as $name=>$label){same($label,$page->getAction($name)?->getLabel(),'Action '.$name);}
 $view->assertActionHidden('resume');
 foreach(['read','pause'] as $name){same(false,$page->getAction($name)->isConfirmationRequired(),$name.' has no dialog');}

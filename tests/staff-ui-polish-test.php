@@ -37,15 +37,13 @@ assertDomainNameWraps(Livewire::actingAs($viewer)->test(\Paymenter\Extensions\Se
 foreach([[$held,'Under review','Old registrar needs approval. Check request #'.$held->operations()->sole()->id.'.'],[$uncertain,'Under review','Old registrar needs approval. Check request #'.$uncertain->operations()->sole()->id.'.'],[$active,'Under review','Check the domain and its requests.']] as [$domain,$label,$reason]){
     $record=$records[$domain->id];$column=$columns['status']->record($record);
     same($label,$column->getState(),'A held or unconfirmed transfer reads the customer word');
-    same('warning',$column->getColor($column->getState()),'Staff have a job here');
+    expect(str_contains((string)$column->formatState($column->getState()),'data-domains-tone="'.\Paymenter\Extensions\Servers\Domains\Presentation\Tone::Attention->value.'"'),'Staff have a job here');
     same($reason,$columns['note']->record($record)->getState(),'The next step sits in the note');
     same(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::status($domain->fresh()),\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::status($record),'Batched list status matches the page');
     same(null,$column->getTooltip(),'No tooltip: the reason is visible');
     same(OwnedDomains::acquisition($record->operations,$record)?->id,$record->latestAcquisition?->id,'Batch matches customer acquisition lookup');
     same($customer,$columns['customer']->record($record)->getState(),'Customer name has its own column');
-    $phone=$columns['domain']->record($record)->getDescriptionBelow();
-    same('<span class="domains-phone-note">'.e($label).'<br>'.e($reason).'</span>',$phone?->toHtml(),'Phone summary keeps the status and next step from the row');
-    same($label.$reason,$columns['domain']->getTooltip(),'The description tooltip keeps the phone summary without customer identifiers');
+    expect(!str_contains((string)$columns['domain']->record($record)->getTooltip(),$customer),'The name tooltip carries no customer identifiers');
     same(null,$columns['provider_expires_at']->record($record)->getState(),'Expiry of a domain under review is blank, not Missing');
 }
 // A newer unrelated action, stale generation or foreign binding must not displace the acquisition.
@@ -64,7 +62,7 @@ same(['Under review','Check the domain and its requests.'],[$column->getState(),
 DB::table('domains_domains')->where('id',$held->id)->update(['user_id'=>999999,'server_id'=>999999]);
 $fallback=Livewire::actingAs($viewer)->test(ListDomains::class)->assertSeeText($held->domain)->assertDontSee('#999999');
 $record=$fallback->instance()->getTableRecords()->keyBy('id')[$held->id];$columns=$fallback->instance()->getTable()->getColumns();
-same([null,'Missing'],[$columns['customer']->record($record)->getState(),$columns['server_id']->record($record)->getState()],'Missing customer and registrar account keep the row');
+same([null,\Paymenter\Extensions\Servers\Domains\Presentation\State::NotConnected->label()],[$columns['customer']->record($record)->getState(),$columns['server_id']->record($record)->getState()],'Missing customer and registrar account keep the row');
 // Age grammar and exact staff copy; frozen timestamps avoid dependence on fixture business clocks.
 $op=clone $base;$op->state='uncertain';$op->funding_basis='paid_invoice';$op->safe_code=null;
 // The account hold names the one thing it holds and the time it began, never an age that grows per request.

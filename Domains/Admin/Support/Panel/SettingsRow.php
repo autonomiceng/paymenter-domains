@@ -33,6 +33,13 @@ final class SettingsRow extends Row
         if ($this->on !== null && count($actions) !== 1) { throw new \InvalidArgumentException('A switch row has one control: its switch.'); }
         return parent::actions(...$actions);
     }
+    /** The one control a switch row may have after its switch, such as a link that changes what the switch uses. */
+    public function also(Action $action): self
+    {
+        if ($this->on === null || ($switch = $this->controls[0] ?? null) === null) { throw new \LogicException('Only a switch row takes a control after its switch.'); }
+        parent::actions($switch, $action);
+        return $this;
+    }
     protected function tip(): ?string
     {
         if ($this->shownControls() !== []) { return $this->help; }

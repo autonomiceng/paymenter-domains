@@ -3,6 +3,8 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Pages;
 use Filament\Actions\Action;
+use Filament\Navigation\NavigationItem;
+use Filament\Pages\Enums\SubNavigationPosition;
 use Filament\Pages\Page;
 use Filament\Schemas\Components\{Component, Html, Section};
 use Filament\Schemas\Schema;
@@ -26,6 +28,7 @@ class PanelKit extends Page
 {
     protected static ?string $slug = 'panel-kit';
     protected static bool $shouldRegisterNavigation = false;
+    protected static ?SubNavigationPosition $subNavigationPosition = SubNavigationPosition::Top;
     protected Width|string|null $maxContentWidth = Sheet::WIDTH;
     #[Locked] public int $server = 0;
     public static function canAccess(): bool { return Staff::can() && DemoData::present(); }
@@ -37,6 +40,18 @@ class PanelKit extends Page
         $this->server = (int) $server;
     }
     public function getTitle(): string { return 'Panel kit'; }
+    public function getSubNavigation(): array { return self::tabs('Pieces'); }
+    /** The kit's tabs: every piece, then one example page of each page type. @return list<NavigationItem> */
+    public static function tabs(string $active): array
+    {
+        $items = [];
+        // A page the panel never registered drops out, as on the other staff tabs.
+        foreach (self::TABS as $label => $page) {
+            try { $items[] = NavigationItem::make($label)->url($page::getUrl())->isActiveWhen(static fn (): bool => $label === $active); } catch (\Throwable) { continue; }
+        }
+        return count($items) > 1 ? $items : [];
+    }
+    private const TABS = ['Pieces' => self::class, 'Detail' => PanelKitDetail::class, 'Settings' => PanelKitSettings::class, 'List' => PanelKitList::class, 'Record list' => PanelKitRecords::class, 'History' => PanelKitHistory::class];
     private function head(): Head
     {
         return Head::make('fieldnote.example', Reader::Staff)->domain()->tag(true, false)->state(State::Active, 'kit-domain')
@@ -186,8 +201,8 @@ class PanelKit extends Page
         ]);
     }
     /** Nov 12, 2026, 17:12 UTC, the kit's "now". */
-    private const AT = 1794503520;
-    private const EXPIRES = 1804180320;
+    public const AT = 1794503520;
+    public const EXPIRES = 1804180320;
     private const WORDS = [
         'OK' => [State::Ok, State::Active, State::Monitored, State::Completed, State::Paid, State::ForSale],
         'Off' => [State::NotReadYet, State::NotForSale, State::NotSupported, State::NotConnected, State::Paused, State::Stopped, State::Cancelled, State::NotRecognized, State::Unpaid],
@@ -210,7 +225,7 @@ class PanelKit extends Page
         return $days === null ? Value::plain(Plain::None) : Value::fact($days);
     }
     /** A kit button: a native action that runs nothing. $row names the row for screen readers ("Edit Nameservers"). */
-    private static function kit(string $name, string $label, ?string $row = null): Action
+    public static function kit(string $name, string $label, ?string $row = null): Action
     {
         $action = Sheet::button(Action::make('kit_'.$name)->label($label)->action(static fn (): null => null));
         return $row === null ? $action : $action->extraAttributes(['aria-label' => $label.' '.$row]);

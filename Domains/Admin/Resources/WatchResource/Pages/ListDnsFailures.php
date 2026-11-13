@@ -8,7 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{ManagedDnsSetup,ManagedPublic
 class ListDnsFailures extends ListManagedDns
 {
     public function getTitle(): string{return 'Affected DNS checks';}
-    public function getSubheading(): ?string{return 'Managed domains with failed DNS checks. External domain checks are listed under Domain monitoring.';}
+    public function getSubheading(): ?string{return 'Managed domains with failed DNS checks. External domain checks are listed under Monitored domains.';}
     protected function getHeaderActions(): array
     {return [Action::make('watches')->label('External domain checks')->url(WatchResource::getUrl('index',['filters'=>['status'=>['value'=>'problem']]]))];}
     protected function domains(): \Illuminate\Database\Eloquent\Builder

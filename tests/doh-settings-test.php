@@ -61,7 +61,7 @@ $setRights([]); Livewire::actingAs($staff)->test(Page::class)->assertForbidden()
 $setRights([Staff::VIEW, PublicSuffixList::MANAGE]); same(false, Page::canAccess(), 'Manage alone cannot view');
 $setRights([Staff::VIEW, PublicSuffixList::VIEW]);
 $configured=Livewire::actingAs($staff)->test(Page::class)->assertSee('cloudflare-dns.com')->assertSee(DohEndpoint::IP)->assertSee('Default nameservers')->assertActionHidden('configure')->assertActionHidden('check');
-expect(!str_contains(resolverSectionText($configured->html()),'Missing'),'Saved resolver has no missing state in its section');
+expect(!str_contains(resolverSectionText($configured->html()),\Paymenter\Extensions\Servers\Domains\Presentation\State::NotSet->label()),'Saved resolver has no missing state in its section');
 same(0, $calls, 'Rendering no query'); $setRights($rights);
 // The ? text must match FallbackDnsReader: a failed resolver query retries once with the server's resolver.
 // Filament serializes tooltip content for Alpine, including the apostrophe as \u0027.
@@ -96,7 +96,7 @@ foreach ([2 => 'SERVFAIL', 5 => 'REFUSED'] as $code => $label) {
 $response = ['status' => 200, 'body' => '{"Status":3,"Question":[{"name":"example.com","type":1}]}']; $page->callAction('check')->assertNotified('Resolver works, but returned no address for example.com.');
 same($nativeBefore, $nativeCalls, 'Checks never call native for any answer');
 Setting::where('key', DnsResolverSettings::KEY)->delete();
-$before = $calls; Livewire::actingAs($staff)->test(Page::class)->assertSee('Missing')->assertSee("No resolver set. Checks use the server's resolver.")->assertActionHidden('check');
+$before = $calls; Livewire::actingAs($staff)->test(Page::class)->assertSee(\Paymenter\Extensions\Servers\Domains\Presentation\State::NotSet->label())->assertSee("No resolver set. Checks use the server's resolver.")->assertActionHidden('check');
 same(['ok' => false, 'message' => "No resolver set. Checks use the server's resolver."], $settings->check(), 'Missing settings check names the cause');
 same($before, $calls, 'Missing settings check no network');
 putenv('SSLKEYLOGFILE=/synthetic-disabled');

@@ -3,6 +3,6 @@
     $click = $why === null && ! $action->isDisabled() ? $action->getLivewireClickHandler() : null;
     $colors = \Illuminate\Support\Arr::toCssClasses(\Filament\Support\get_component_color_classes(\Filament\Support\View\Components\ToggleComponent::class, $on ? 'primary' : 'gray'));
 @endphp
-<button type="button" role="switch" aria-checked="{{ $on ? 'true' : 'false' }}" aria-label="{{ $name }}"
+<button type="button" role="switch" data-piece="switch" aria-checked="{{ $on ? 'true' : 'false' }}" aria-label="{{ $name }}"
     @if ($click) wire:click="{{ $click }}" wire:loading.attr="disabled" @elseif ($why !== null) aria-disabled="true" aria-describedby="{{ $why }}" @else disabled @endif
     class="fi-toggle domains-panel-switch {{ $on ? 'fi-toggle-on' : 'fi-toggle-off' }} {{ $colors }}"><div><div aria-hidden="true"></div><div aria-hidden="true"></div></div></button>

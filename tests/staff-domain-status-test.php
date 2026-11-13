@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource, Operat
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\{ListDomains, ViewDomain};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts, DomainQueries, Labels, RequestFacts, Staff};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Presentation\{DomainStatus, RequestStatus};
+use Paymenter\Extensions\Servers\Domains\Presentation\{DomainStatus, RequestStatus, State};
 use Paymenter\Extensions\Servers\Domains\Services\{ManagementCorrections, ObligationAlerts};
 staffPanel(); [, $seed]=staffData();
 $viewer=staffUser([Staff::VIEW]); Auth::setUser($viewer);
@@ -157,7 +157,9 @@ foreach ($cases as $name=>$case) {
     [$d,$key,$label,$step]=$case; $note=isset($case[4])?$case[4].' '.$step:$step;
     $cell=$columns['status']->record($records[$d->id]); $status=DomainFacts::status($d->fresh());
     $list=[$cell->getState(),$columns['note']->record($records[$d->id])->getState()];
-    if ($list!==[$label,$note]) { $wrong[]=$name.': list shows "'.implode(' / ',array_filter($list)).'", want "'.implode(' / ',array_filter([$label,$note])).'"'; }
+    // The list draws On hold as Under review, from the closed word list; the note keeps who held it.
+    $shown=$key==='on_hold'?State::UnderReview->label():$label;
+    if ($list!==[$shown,$note]) { $wrong[]=$name.': list shows "'.implode(' / ',array_filter($list)).'", want "'.implode(' / ',array_filter([$shown,$note])).'"'; }
     $line=DomainFacts::statusLine($status);
     if ([$status['label'],$line]!==[$label,$step]) { $wrong[]=$name.': domain page shows "'.implode(' / ',array_filter([$status['label'],$line])).'", want the same as the list'; }
     $members[$key][]=$d->id;
@@ -297,7 +299,7 @@ same('Sync stopped after a failed check. Use Resume sync below.',DomainFacts::no
 $orphan=$row('active','transfer','succeeded'); DB::table('domains_domains')->where('id',$orphan->id)->update(['account_fingerprint'=>str_repeat('0',64)]);
 $page=Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable('w2-case-')->set('tableRecordsPerPage',100);
 $columns=$page->instance()->getTable()->getColumns(); $record=$page->instance()->getTableRecords()->keyBy('id')[$orphan->id];
-same(['Registrar account not found. Check Registrars.','warning'],[$columns['note']->record($record)->getState(),$columns['status']->record($record)->getColor($columns['status']->record($record)->getState())],'The list says the registrar account is missing');
+same(['Registrar account not found. Check Registrars.',State::NeedsReview->label()],[$columns['note']->record($record)->getState(),$columns['status']->record($record)->getState()],'The list says the registrar account is missing and asks staff to look');
 // An ended domain places no orders, so a saved pause on it says nothing. A live one still says it.
 $pausedPolicy=['automatic_spend_paused'=>true];
 $ended=$row('cancelled','register','disposed'); $ended->forceFill(['renewal_policy'=>$pausedPolicy])->saveQuietly();
@@ -370,7 +372,8 @@ foreach (['on_hold'=>'On hold','pending_registration'=>'Pending registration'] a
                 $step=(string)$note->record($record)->getState();
                 if ((str_contains($step,'Orders are off for this account.')&&str_contains($step,'Turn them on in Registrars.'))!==($label==='On hold')) { $parity[]="$key, Orders turned ".($enabled?'on':'off').": the step reads \"$step\""; }
             }
-            if (($shown=$column->record($record)->getState())!==$label) { $parity[]="$key, Orders turned ".($enabled?'on':'off').": {$record->domain} reads $shown"; }
+            // On hold is drawn as Under review, from the closed word list.
+            if (($shown=$column->record($record)->getState())!==($label==='On hold'?State::UnderReview->label():$label)) { $parity[]="$key, Orders turned ".($enabled?'on':'off').": {$record->domain} reads $shown"; }
         }
     }
 }
@@ -399,7 +402,7 @@ expect(Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::stat
 
 $d=$row('registration_pending','register','held','staff_review_required');
 expect(DomainQueries::alerting(Domain::whereKey($d->id))->exists(),'A visible staff task counts even before a saved alert is written');
-$domainColumn=Livewire::actingAs($viewer)->test(ListDomains::class)->instance()->getTable()->getColumn('domain')->record($d);
-$phone=(string)$domainColumn->getDescriptionBelow();
-expect(str_contains($phone,'domains-phone-note')&&str_contains($phone,'On hold')&&str_contains($phone,'Check request'),'Phone summary keeps both Status and Note under the domain');
+$table=Livewire::actingAs($viewer)->test(ListDomains::class)->instance()->getTable();
+same(State::UnderReview->label(),$table->getColumn('status')->record($d)->getState(),'A held registration reads Under review');
+expect(str_contains((string)$table->getColumn('note')->record($d)->getState(),'Check request'),'Its note names the request to check');
 $nativeSuccessful=true; echo "Staff domain status: customer words and one next step per row.\n";

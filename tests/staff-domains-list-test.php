@@ -54,7 +54,8 @@ foreach (['status'=>['status'=>'adoption_pending'],'provenance'=>['provenance'=>
     same(['Off','Until import'],[$page['value'],$page['sub']],'Domain page says Off until import: pending '.$case);
     // Customers and staff see one name for the setting.
     same('Auto-renew',$columns['auto_renew']->getLabel(),'List column says Auto-renew, as the domain page row');
-    same([$page['value'],$page['sub']],[$cell->getState(),$cell->getDescriptionBelow()],'List matches the domain page: pending '.$case);
+    $text=trim(preg_replace('/\s+/',' ',html_entity_decode(strip_tags((string)$cell->formatState($cell->getState())))));
+    same([$page['value'],$page['sub']],[$cell->getState(),trim(substr($text,strlen((string)$cell->getState())))?:null],'List matches the domain page: pending '.$case);
     DB::table('domains_domains')->where('id',$held->id)->update($saved);
 }
 DB::table('domains_domains')->where('id',$held->id)->update(['status'=>'cancelled']);
@@ -62,7 +63,7 @@ DB::table('domains_domains')->where('id',$held->id)->update(['status'=>'cancelle
 DB::table('domains_domains')->where('id',$held->id)->update($saved);
 DB::table('domains_domains')->where('id',$held->id)->update(['renewal_policy'=>'not-readable']);
 [$columns,$records]=$list();$cell=$columns['auto_renew']->record($records[$held->id]);
-same(['Missing',DomainFacts::UNREADABLE_RENEWAL],[$cell->getState(),$cell->getDescriptionBelow()],'Unreadable renewal settings show Missing with the cause');
+same(\Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead->label(),$cell->getState(),'Unreadable renewal settings read Couldn\'t read');expect(str_contains(html_entity_decode(strip_tags((string)$cell->formatState($cell->getState()))),DomainFacts::UNREADABLE_RENEWAL),'Unreadable renewal settings say the cause');
 DB::table('domains_domains')->where('id',$held->id)->update(['renewal_policy'=>Domain::find($active->id)->getRawOriginal('renewal_policy')]);
 
 // One demo-paused definition: the list, the page and the customer view agree, and the list row says why sync stops.

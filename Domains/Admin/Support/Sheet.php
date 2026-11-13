@@ -11,7 +11,7 @@ use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Presentation\{Missing, StaffTime};
 /** The one detail page layout: a sheet of sections with a rail beside it. A row is a label, a value and an action column.
- * It emits plain Filament plus domains-* class names. A skin draws the sheet from those; without one it stays stacked Filament sections. */
+ * It emits plain Filament plus domains-* class names, and data-piece on each piece's root so a walk can crop it. A skin draws the sheet from those; without one it stays stacked Filament sections. */
 final class Sheet
 {
     /** Detail pages stop here. Tables keep the full width. */
@@ -22,20 +22,20 @@ final class Sheet
     public static function split(array $sheet,array $rail,?string $key=null): Group
     {
         return Group::make([
-            Group::make($sheet)->key($key)->columnSpan(['default'=>1,'xl'=>2])->extraAttributes(['class'=>'domains-sheet']),
-            Group::make($rail)->columnSpan(1)->extraAttributes(['class'=>'domains-rail']),
-        ])->columns(['default'=>1,'xl'=>3])->columnSpanFull()->extraAttributes(['class'=>'domains-split']);
+            Group::make($sheet)->key($key)->columnSpan(['default'=>1,'xl'=>2])->extraAttributes(['class'=>'domains-sheet','data-piece'=>'sheet']),
+            Group::make($rail)->columnSpan(1)->extraAttributes(['class'=>'domains-rail','data-piece'=>'rail']),
+        ])->columns(['default'=>1,'xl'=>3])->columnSpanFull()->extraAttributes(['class'=>'domains-split','data-piece'=>'split']);
     }
     /** A sheet with nothing beside it: one column, so no empty rail space. @param list<Component> $sheet */
     public static function single(array $sheet,?string $key=null): Group
     {
-        return Group::make([Group::make($sheet)->key($key)->extraAttributes(['class'=>'domains-sheet'])])
-            ->columnSpanFull()->extraAttributes(['class'=>'domains-split domains-split-single']);
+        return Group::make([Group::make($sheet)->key($key)->extraAttributes(['class'=>'domains-sheet','data-piece'=>'sheet'])])
+            ->columnSpanFull()->extraAttributes(['class'=>'domains-split domains-split-single','data-piece'=>'split']);
     }
     /** @param list<Component> $rows @param list<Action|Component> $after Beside the title. */
     public static function section(string $title,array $rows,string|Htmlable|null $note=null,?string $key=null,array $after=[]): Section
     {
-        $section=Section::make($title)->schema($rows)->description($note)->extraAttributes(['class'=>'domains-sec']);
+        $section=Section::make($title)->schema($rows)->description($note)->extraAttributes(['class'=>'domains-sec','data-piece'=>'section']);
         if($key!==null){$section->key($key);}
         return $after?$section->afterHeader($after):$section;
     }
@@ -44,7 +44,7 @@ final class Sheet
     {
         $side=is_array($side)?array_values(array_filter($side)):$side;
         return Flex::make($side===[]?[$entry->inlineLabel()]:[$entry->inlineLabel(),$side instanceof Component?$side->grow(false):Actions::make($side)->key($key)->grow(false)])
-            ->from('md')->extraAttributes(['class'=>'domains-row'.($pending?' domains-row-pending':'')]);
+            ->from('md')->extraAttributes(['class'=>'domains-row'.($pending?' domains-row-pending':''),'data-piece'=>'sheet-row']);
     }
     /** A state word with its mark. Plain Filament shows the same word as a badge. */
     public static function state(TextEntry $entry,?string $tone,?string $record=null): TextEntry
@@ -92,6 +92,6 @@ final class Sheet
             $body=[Html::make(new HtmlString(view('domains::admin.trace-step',$step)->render()))];
             if(!empty($step['buttons'])){$body[]=Actions::make($step['buttons']);}
             return Group::make($body)->extraAttributes(['class'=>'domains-trace-item','role'=>'listitem','data-domains-tone'=>StatusMark::tone($step['tone'])??'ok','data-domains-record'=>'trace-'.md5($step['label'])]);
-        },$steps))->extraAttributes(['class'=>'domains-trace','role'=>'list']);
+        },$steps))->extraAttributes(['class'=>'domains-trace','role'=>'list','data-piece'=>'sheet-trace']);
     }
 }

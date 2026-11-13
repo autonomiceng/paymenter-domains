@@ -1,6 +1,6 @@
 {{-- MIT, Copyright (c) 2026 Autonomic Engineering. One panel value (Panel\Value): a state with its mark, a plain word or a fact, then a sentence under it and, for staff, a line of times and codes. Without a skin it reads as stacked text. --}}
 @props(['value'])
-<div class="domains-panel-val" data-domains-kind="{{ $value->kind }}">
+<div class="domains-panel-val" data-piece="value" data-domains-kind="{{ $value->kind }}">
 @if ($value->tone)<span class="domains-panel-st" data-domains-tone="{{ $value->tone->value }}" @if ($value->record !== null) data-domains-record="{{ $value->record }}" @endif>{{ $value->word }}</span>
 @elseif ($value->fact)@include('domains::components.panel.fact', ['fact' => $value->fact])
 @else<span class="domains-panel-plain">{{ $value->word }}</span>@endif

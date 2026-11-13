@@ -45,30 +45,30 @@ same($originalWait,$check->get('pendingCheck'),'Retry preserves the original dea
 same(1,\Paymenter\Extensions\Servers\Domains\Models\WatchAudit::where('subject_id',$id)->where('event','staff_read_requested')->count(),'Throttled tabs do not add a request');
 \Carbon\Carbon::setTestNow();
 $check->call('pollCheck')->assertSee('wire:poll.5s="pollCheck"',false)->assertNotNotified('Check finished');
-same(WatchFacts::date($at+900),$check->instance()->getSchema('infolist')->getComponentByStatePath('fact_'.md5('Last check'))->getState(),'Pending page keeps its saved Last check');
+same(WatchFacts::date($at+900),panelRowValue($check->html(),'Last check'),'Pending page keeps its saved Last check');
 // A read already in flight can start before the request and save a newer Last check afterwards.
 $completedAt=$requestAt-1;DB::table('domains_watch_work')->where('watch_id',$id)->where('kind','delegation')->update(['due_at'=>$completedAt,'backoff_until'=>null]);
 $t=$dns->begin($id,$uid,'delegation',$completedAt);expect($t!==null,'In-flight DNS ticket');
 expect($dns->finish($t,new \Paymenter\Extensions\Servers\Domains\Dns\DnsReading('delegation','external'),$requestAt+1),'In-flight DNS result saved after the request');
 $check->call('pollCheck')->assertSee(WatchFacts::date($completedAt))->assertNotified('Check finished')->assertDontSee('wire:poll.5s',false)->assertSee('wire:poll.60s="refreshFacts"',false)->assertNoRedirect();
 same($passiveKey,$pollKey($check),'Completion restores the stable passive element');
-same(WatchFacts::date($completedAt),$check->instance()->getSchema('infolist')->getComponentByStatePath('fact_'.md5('Last check'))->getState(),'Poll updates the Last check entry itself');
+same(WatchFacts::date($completedAt),panelRowValue($check->html(),'Last check'),'Poll updates the Last check entry itself');
 $check->call('pollCheck')->assertNotNotified('Check finished');
 foreach($waitingPages as $label=>$waitingPage){
     $waitingPage->call('pollCheck')->assertNotified('Check finished')->assertDontSee('wire:poll.5s',false)->assertSee('wire:poll.60s="refreshFacts"',false);
-    same(WatchFacts::date($completedAt),$waitingPage->instance()->getSchema('infolist')->getComponentByStatePath('fact_'.md5('Last check'))->getState(),$label.' receives the new Last check');
+    same(WatchFacts::date($completedAt),panelRowValue($waitingPage->html(),'Last check'),$label.' receives the new Last check');
 }
 Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id])->assertDontSee('wire:poll.5s',false)->assertSee('wire:poll.60s="refreshFacts"',false)->assertNotNotified('Check finished');
 // Autonomous work after Check finished must refresh this same open page, including Next check.
 $autonomousAt=$requestAt+120;
 DB::table('domains_watch_work')->where('watch_id',$id)->where('kind','points')->update(['due_at'=>$autonomousAt,'backoff_until'=>null]);
 $t=$dns->begin($id,$uid,'points',$autonomousAt);expect($t!==null,'Autonomous points ticket');
-$check->call('refreshFacts')->assertSee('Checking now')->assertNotNotified('Check finished');
+$check->call('refreshFacts')->assertNotNotified('Check finished');same(\Paymenter\Extensions\Servers\Domains\Presentation\State::Checking->label(),panelRowValue($check->html(),'Next check'),'Passive refresh shows the running check');
 expect($dns->finish($t,new \Paymenter\Extensions\Servers\Domains\Dns\DnsReading('points',website:true,email:true),$autonomousAt+1),'Autonomous points result');
 $audits=\Paymenter\Extensions\Servers\Domains\Models\WatchAudit::count();
-$check->call('refreshFacts')->assertSee(WatchFacts::date($autonomousAt))->assertDontSee('Checking now')->assertNotNotified('Check finished');
-same(WatchFacts::date($autonomousAt),$check->instance()->getSchema('infolist')->getComponentByStatePath('fact_'.md5('Last check'))->getState(),'Passive refresh updates Last check on the open page');
-same(WatchFacts::for(WatchName::find($id))['Checks']['Next check']['value'],$check->instance()->getSchema('infolist')->getComponentByStatePath('fact_'.md5('Next check'))->getState(),'Passive refresh replaces Next check after work finishes');
+$check->call('refreshFacts')->assertSee(WatchFacts::date($autonomousAt))->assertNotNotified('Check finished');expect(panelRowValue($check->html(),'Next check')!==\Paymenter\Extensions\Servers\Domains\Presentation\State::Checking->label(),'The running check ends on the open page');
+same(WatchFacts::date($autonomousAt),panelRowValue($check->html(),'Last check'),'Passive refresh updates Last check on the open page');
+same(WatchFacts::for(WatchName::find($id))['Checks']['Next check']['value'],panelRowValue($check->html(),'Next check'),'Passive refresh replaces Next check after work finishes');
 same($audits,\Paymenter\Extensions\Servers\Domains\Models\WatchAudit::count(),'Passive refresh requests no checks or writes');
 // Age the synthetic request claim so a second real Check now action can be tested.
 DB::table('domains_watch_staff_claims')->where('subject_type','watch')->where('subject_id',$id)->where('action','read')->update(['created_at'=>time()-301]);

@@ -2,7 +2,7 @@
 <style>
 /* Filament reverses end-aligned footers. Keep the configured Cancel-first DOM and keyboard order visible. */
 .domains-dialog .fi-modal-footer:is(.fi-align-end,.fi-align-right) .fi-modal-footer-actions{flex-direction:row;justify-content:flex-end}
-.domains-mono,.domains-wrap,.domains-row .fi-in-entry-content-col{overflow-wrap:anywhere}
+.domains-mono,.domains-wrap,.domains-panel-head-title,.domains-row .fi-in-entry-content-col{overflow-wrap:anywhere}
 .domains-title{display:inline-flex;flex-wrap:wrap;align-items:center;gap:.5rem;min-width:0}
 /* Not read and other calm words: the panel's muted gray, the same tone as a gray fact value. */
 .domains .domains-muted{color:var(--e-muted,var(--gray-400))}
@@ -35,8 +35,8 @@
 .domains-reveal[data-domains-scroll]{pointer-events:auto}
 .domains-line.fi-ta-text-has-descriptions{display:flex;align-items:baseline;gap:.375rem}.domains-line.fi-ta-text-has-descriptions>.fi-ta-text-item{flex:none}.domains-line.fi-ta-text-has-descriptions>.fi-ta-text-description{min-width:0}
 .domains-money{font-variant-numeric:tabular-nums;white-space:nowrap}.fi-ta-cell .domains-money{text-align:end}
-.domains-watch-header .fi-ac{flex-wrap:wrap}
-@media (min-width:40rem){.domains-watch-header{flex-wrap:wrap!important}.domains-watch-header>div:first-child{flex:1 1 100%;min-width:0}.domains-watch-header .fi-header-actions-ctn{flex:1 1 30rem;min-width:0}}
+.domains-panel-page-head .fi-ac{flex-wrap:wrap}
+@media (min-width:40rem){.domains-panel-page-head{flex-wrap:wrap!important}.domains-panel-page-head>div:first-child{min-width:0}}
 .domains-small{font-size:.75rem;opacity:.75}
 .domains-quiet{opacity:.75}
 .domains-strong{font-weight:500}

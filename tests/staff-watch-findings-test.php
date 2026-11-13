@@ -10,6 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\{RoutingProfileResource
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\{ListWatches,ViewWatch};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,WatchFacts,WatchFindings};
 use Paymenter\Extensions\Servers\Domains\Models\WatchName;
+use Paymenter\Extensions\Servers\Domains\Presentation\State;
 use Paymenter\Extensions\Servers\Domains\Dns\DnsReading;
 use Paymenter\Extensions\Servers\Domains\Services\{DomainSummaries,StaffWatchWrites as Writes,WatchNoticePreferences};
 require dirname(__DIR__).'/Domains/routes/web.php';require dirname(__DIR__).'/Domains/routes/owned.php';$f=noticeFixture();extract($f);\Paymenter\Extensions\Servers\Domains\Services\StaffWatchSchema::install();staffPanel();$panel=Filament::getCurrentPanel();$resources=[WatchResource::class,RoutingProfileResource::class,UserResource::class];$panel->resources($resources);
@@ -44,11 +45,15 @@ $expected=['healthy'=>[],'ns-changed'=>['watch.ns_changed'],'ns-pending'=>['watc
 $writes=fn()=>DB::table('domains_watch_work')->get()->toJson().DB::table('domains_watch_observations')->count().DB::table('domains_watch_registry')->count().DB::table('domains_watch_notice_state')->count();$before=$writes();
 // Status per row on the real native list; staff keys agree with the customer summary keys.
 Auth::setUser($viewer);$page=Livewire::actingAs($viewer)->test(ListWatches::class);$list=$page->instance();$records=$list->getTableRecords()->keyBy('id');$column=$list->getTable()->getColumn('status');$reader=new DomainSummaries();
-$status=['healthy'=>['Monitoring','success',null],'ns-changed'=>['Problem found','warning','Nameservers changed'],'ns-pending'=>['Problem found','warning','Nameservers changed'],'expired'=>['Problem found','warning','Expired'],'expiring'=>['Problem found','warning','Expires in '.intdiv(strtotime(gmdate('Y-m-d',$at+10*86400).' 00:00:00 UTC')-strtotime(gmdate('Y-m-d').' 00:00:00 UTC'),86400).' days'],'stale'=>['Monitoring','success',null],'not-checked'=>['Monitoring','success',null],'paused'=>['Paused','gray',null]];
-foreach($expected as $name=>$keys){$record=$records[$w[$name]];same($keys,$list->watchRow($record)['keys'],'Staff findings for '.$name);[$label,$tone,$reason]=$status[$name];same($label,$column->record($record)->getState(),'Status for '.$name);same($tone,$column->record($record)->getColor($label),'Tone for '.$name);same($reason,$list->watchRow($record)['status']['reason'],'Reason for '.$name);$note=(string)$list->getTable()->getColumn('note')->record($record)->getState();expect($reason===null||str_starts_with($note,$reason),'Note leads with the reason for '.$name);
+$status=['healthy'=>['Monitoring',State::Monitored,null],'ns-changed'=>['Problem found',State::NeedsReview,'Nameservers changed'],'ns-pending'=>['Problem found',State::NeedsReview,'Nameservers changed'],'expired'=>['Problem found',State::NeedsReview,'Expired'],'expiring'=>['Problem found',State::NeedsReview,'Expires in '.intdiv(strtotime(gmdate('Y-m-d',$at+10*86400).' 00:00:00 UTC')-strtotime(gmdate('Y-m-d').' 00:00:00 UTC'),86400).' days'],'stale'=>['Monitoring',State::Monitored,null],'not-checked'=>['Monitoring',State::Monitored,null],'paused'=>['Paused',State::Paused,null]];
+foreach($expected as $name=>$keys){$record=$records[$w[$name]];same($keys,$list->watchRow($record)['keys'],'Staff findings for '.$name);[$label,$state,$reason]=$status[$name];same($label,$list->watchRow($record)['status']['label'],'Status for '.$name);same($state->label(),$column->record($record)->getState(),'State word for '.$name);same($reason,$list->watchRow($record)['status']['reason'],'Reason for '.$name);$note=(string)$list->getTable()->getColumn('note')->record($record)->getState();expect($reason===null||str_starts_with($note,$reason),'Note leads with the reason for '.$name);
     if($name!=='paused'){same(array_values(array_filter($keys,fn($k)=>!str_starts_with($k,'staff.'))),array_values(array_intersect(WatchFindings::KEYS,$reader->one($owner,'watch',$w[$name])->stateKeys)),'Customer summary agrees for '.$name);}}
-$page->assertSee('Problem found')->assertSee('Nameservers changed')->assertSee('Expired')->assertSee('Monitoring')->assertSee('Paused')->assertSee('Fills in by itself after the next check')->assertDontSee('No findings')->assertDontSee('Pointer check');
-same(null,WatchFacts::lastCheck($records[$w['stale']],$list->watchRow($records[$w['stale']])['summary'])['tone'],'Old evidence waits for its next check without implying a failure');same('Missing',$list->getTable()->getColumn('last_check')->record($records[$w['not-checked']])->getState(),'Never checked reads Missing');
+// The count on the Monitored domains tab opens only the domains it counts.
+\Paymenter\Extensions\Servers\Domains\Admin\Support\NavigationCount::forget('monitoring');$tab=collect(\Paymenter\Extensions\Servers\Domains\Admin\Support\StaffTabs::domains('Monitored domains'))->first(fn($item)=>$item->getLabel()==='Monitored domains');
+expect($tab!==null&&$tab->getBadge()!==null,'Monitored domains tab carries the attention count');parse_str((string)parse_url($tab->getUrl(),PHP_URL_QUERY),$query);
+Livewire::withQueryParams($query)->actingAs($viewer)->test(ListWatches::class)->assertCanSeeTableRecords([$records[$w['ns-changed']],$records[$w['expired']]])->assertCanNotSeeTableRecords([$records[$w['healthy']],$records[$w['paused']]]);Livewire::withQueryParams([]);
+$page->assertSee(State::NeedsReview->label())->assertSee('Nameservers changed')->assertSee('Expired')->assertSee(State::Monitored->label())->assertSee(State::Paused->label())->assertSee('Fills in by itself after the next check')->assertDontSee('No findings')->assertDontSee('Pointer check');
+same(null,WatchFacts::lastCheck($records[$w['stale']],$list->watchRow($records[$w['stale']])['summary'])['tone'],'Old evidence waits for its next check without implying a failure');same(State::NotReadYet->label(),$list->getTable()->getColumn('last_check')->record($records[$w['not-checked']])->getState(),'Never checked reads Not read yet');
 // Preserved failed results promise retries only while this name is monitored.
 $watch=clone $records[$w['healthy']];$watch->setRelation('work',$watch->work->map(fn($job)=>clone $job));
 $summary=$list->watchRow($records[$w['healthy']])['summary'];
@@ -76,12 +81,12 @@ $problem=array_map(fn($n)=>WatchName::find($w[$n]),['ns-changed','ns-pending','e
 Livewire::actingAs($viewer)->test(ListWatches::class)->filterTable('status','problem')->assertCanSeeTableRecords($problem)->assertCanNotSeeTableRecords([...$monitoring,WatchName::find($w['paused'])])->assertCountTableRecords(count($problem));
 Livewire::actingAs($viewer)->test(ListWatches::class)->filterTable('status','monitoring')->assertCanSeeTableRecords($monitoring)->assertCanNotSeeTableRecords([...$problem,WatchName::find($w['paused'])])->assertCountTableRecords(count($monitoring));
 $failed=array_map(fn($n)=>WatchName::find($w[$n]),['registry-failed','partly-checked']);
-foreach($failed as $row){same('Check failed',$column->record($records[$row->id])->getState(),'Saved failed check reads Check failed for '.$row->canonical_name);}
+foreach($failed as $row){same(State::Failed->label(),$column->record($records[$row->id])->getState(),'Saved failed check reads Failed for '.$row->canonical_name);}
 Livewire::actingAs($viewer)->test(ListWatches::class)->filterTable('status','failed')->assertCanSeeTableRecords($failed)->assertCanNotSeeTableRecords([...$problem,...$monitoring,WatchName::find($w['paused'])])->assertCountTableRecords(count($failed));
 Livewire::actingAs($viewer)->test(ListWatches::class)->filterTable('status','monitoring')->assertCanNotSeeTableRecords($failed);
-same((string)count([...$problem,...$failed]),Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource::getNavigationBadge(),'Monitoring badge counts every problem and failed check');
+same((string)count([...$problem,...$failed]),Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource::attentionCount(),'Monitored domains tab counts every problem and failed check');
 Livewire::actingAs($viewer)->test(ListWatches::class)->filterTable('status','attention')->assertCanSeeTableRecords([...$problem,...$failed])->assertCanNotSeeTableRecords($monitoring)->assertCountTableRecords(count([...$problem,...$failed]));
-Livewire::actingAs($viewer)->test(ViewWatch::class,['record'=>$w['registry-failed']])->assertSeeInOrder(['Check failed','Domain','Latest checks']);
+Livewire::actingAs($viewer)->test(ViewWatch::class,['record'=>$w['registry-failed']])->assertSeeInOrder([\Paymenter\Extensions\Servers\Domains\Presentation\State::Failed->label(),'Domain','Latest checks']);
 Livewire::actingAs($viewer)->test(ListWatches::class)->filterTable('status','paused')->assertCanSeeTableRecords([WatchName::find($w['paused'])])->assertCountTableRecords(1);
 // Customer identity needs the native user permissions, checked fresh on every request.
 $customer=fn($user)=>Livewire::actingAs($user)->test(ListWatches::class)->instance()->watchRow(WatchName::find($w['healthy']))['customer'];
@@ -91,9 +96,9 @@ same(['label'=>'Avery Customer','email'=>'avery@example.test','url'=>UserResourc
 Livewire::actingAs($editor)->test(ListWatches::class)->assertSee('Avery Customer')->assertDontSee('avery@example.test');
 $editor->role->update(['permissions'=>[Staff::VIEW,Writes::VIEW]]);same(['label'=>'Customer #'.$uid,'email'=>null,'url'=>null],$customer($editor),'Revoked user permission falls back');$editor->role->update(['permissions'=>[Staff::VIEW,Writes::VIEW,'admin.users.view','admin.users.update']]);
 // Detail shows the status first, with the same customer rules.
-Livewire::actingAs($viewer)->test(ViewWatch::class,['record'=>$w['ns-changed']])->assertSeeInOrder(['Problem found','Nameservers changed','Domain','Customer #'.$uid,'Latest checks','Nameservers','Other'])->assertDontSee('avery@example.test');
-Livewire::actingAs($viewer)->test(ViewWatch::class,['record'=>$w['healthy']])->assertSeeInOrder(['Monitoring','Domain','Latest checks','Matches template'])->assertDontSee('Problem found');
-Livewire::actingAs($editor)->test(ViewWatch::class,['record'=>$w['expired']])->assertSeeInOrder(['Problem found','Expired','Avery Customer','avery@example.test'])->assertSeeHtml('href="'.e(UserResource::getUrl('edit',['record'=>$uid])).'"');
+Livewire::actingAs($viewer)->test(ViewWatch::class,['record'=>$w['ns-changed']])->assertSeeInOrder([\Paymenter\Extensions\Servers\Domains\Presentation\State::NeedsReview->label(),'Domain','Nameservers changed','Customer #'.$uid,'Latest checks','Nameservers','Other'])->assertDontSee('avery@example.test');
+Livewire::actingAs($viewer)->test(ViewWatch::class,['record'=>$w['healthy']])->assertSeeInOrder([\Paymenter\Extensions\Servers\Domains\Presentation\State::Monitored->label(),'Domain','Latest checks','Matches template'])->assertDontSee(\Paymenter\Extensions\Servers\Domains\Presentation\State::NeedsReview->label());
+Livewire::actingAs($editor)->test(ViewWatch::class,['record'=>$w['expired']])->assertSeeInOrder([\Paymenter\Extensions\Servers\Domains\Presentation\State::NeedsReview->label(),'Expired','Avery Customer','avery@example.test'])->assertSeeHtml('href="'.e(UserResource::getUrl('edit',['record'=>$uid])).'"');
 Livewire::actingAs($users)->test(ViewWatch::class,['record'=>$w['expired']])->assertSee('avery@example.test')->assertDontSeeHtml('/admin/users/'.$uid.'/edit');
 same($before,$writes(),'Staff list, filter and detail GETs write nothing');
 // 25 rows cost the same across customers as for one customer.
@@ -108,9 +113,6 @@ foreach(WatchName::where('canonical_name','like','bulk%')->orderBy('id')->get()-
 $spread=$count(fn()=>Livewire::actingAs($editor)->test(ListWatches::class)->assertCountTableRecords(25));
 $filtered=$count(fn()=>Livewire::actingAs($editor)->test(ListWatches::class)->filterTable('status','monitoring')->assertCountTableRecords(18));expect($filtered<=2*$spread+$batch+10,'Filtering is one more render plus one multi-owner batch, evaluated once per request ('.$filtered.' <= 2 x '.$spread.' + '.$batch.' + 10)');
 same($page25,$spread,'Five customers cost the same as one customer');
-// Filament stacks the header as a column below 40rem; flex-basis there becomes height and pushes findings off the first screen.
-$header=file_get_contents(dirname(__DIR__).'/Domains/resources/views/partials/staff-styles.blade.php');[$narrow,$wide]=explode('@media (min-width:40rem){',$header,2)+[1=>''];
-expect(!str_contains($narrow,'flex:1 1')&&substr_count($wide,'flex:1 1')===2,'Watch header flex bases apply only to the wide row layout');
 // Earlier unrelated registry history cannot consume a filtered watch's scan budget.
 $observation=(array)DB::table('domains_watch_registry')->where('watch_id',$w['expiring'])->first();unset($observation['id']);
 for($i=0;$i<1000;$i++){

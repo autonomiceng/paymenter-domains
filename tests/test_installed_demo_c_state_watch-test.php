@@ -47,7 +47,7 @@ foreach(['paused'=>'Paused','retired'=>'Stopped']as$state=>$expected){
  $record=$w->fresh();
  same($expected,$list->instance()->getTable()->getColumn('status')->record($record)->getState(),'The row names its monitoring state');
  $rowDom=storefrontDom($list->html());$nativeRow=$rowDom->query('//*[@*[name()="wire:key" and contains(.,".table.records.'.$id.'")]]')->item(0);
- $badges=$nativeRow===null?[]:array_map(fn($n)=>trim($n->textContent),iterator_to_array($rowDom->query('.//td[contains(concat(" ",normalize-space(@class)," ")," fi-ta-cell-status ")]//*[@data-domains-record="watch-'.$id.'"]/span[contains(concat(" ",normalize-space(@class)," ")," fi-badge ")]',$nativeRow)));
+ $badges=$nativeRow===null?[]:array_map(fn($n)=>trim($n->textContent),iterator_to_array($rowDom->query('.//*[@data-domains-record="watch-'.$id.'"]',$nativeRow)));
  same([$expected],$badges,'The row status badge itself names its state, independent of the filter options');
  foreach(['registration','delegation.dns','last_check']as$name){$column=$list->instance()->getTable()->getColumn($name)->record($record);
   // Status says Paused or Stopped once per row (ui-r15); the fact cells stay empty instead of repeating it.
@@ -62,7 +62,8 @@ foreach(['paused'=>'Paused','retired'=>'Stopped']as$state=>$expected){
 require dirname(__DIR__).'/Domains/routes/web.php';require dirname(__DIR__).'/Domains/routes/owned.php';app('router')->getRoutes()->refreshNameLookups();
 $detail=fn()=>storefrontDom(\Livewire\Livewire::test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\ViewWatch::class,['record'=>$id])->html());
 $times=fn(DOMXPath $dom,?DOMNode $in=null)=>array_map(fn($n)=>[$n->getAttribute('datetime'),trim($n->textContent)!==''],iterator_to_array($dom->query($in?'.//time':'//time',$in)));
-$publicRow=fn(DOMXPath $dom)=>$dom->query('//div[contains(concat(" ",normalize-space(@class)," ")," domains-row ")][.//*[@role="term" and normalize-space(.)="Public DNS"]]');
+// A sheet row is a data-piece="row" whose first child is its label.
+$publicRow=fn(DOMXPath $dom)=>$dom->query('//*[@data-piece="row"][*[1][normalize-space(.)="Public DNS"]]');
 \Illuminate\Support\Facades\DB::table('domains_watch_names')->where('id',$id)->update(['state'=>'active']);noticeRegistry($f,$now);
 \Illuminate\Support\Facades\DB::table('domains_watch_names')->where('id',$id)->update(['state'=>'paused']);
 $registryAt=gmdate('c',$now);$publicAt=1700000000;
@@ -73,7 +74,7 @@ $w=WatchName::findOrFail($id);
 \Illuminate\Support\Facades\DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Models\WatchDnsObservation::create(['watch_id'=>$id,'user_id'=>$uid,'watch_revision'=>$w->revision,'profile_id'=>$profile->id,'profile_revision'=>$profile->revision,'psl_revision'=>$w->psl_revision,'mixed'=>false,'check_kind'=>'points','started_at'=>$publicAt,'completed_at'=>$publicAt+1,'result'=>'complete','partial'=>false,'valid_until'=>$publicAt+300,'facts'=>['version'=>1,'queries'=>[]],'digest'=>str_repeat('b',64),'source_digest'=>str_repeat('c',64)]));
 $saved=$detail();$row=$publicRow($saved)->item(0);
 same(1,$publicRow($saved)->length,'A paused name with an empty saved answer keeps its Public DNS row');
-same('Unknown',trim($row===null?'':$saved->query('.//*[@role="definition"]//div[contains(@class,"fi-in-text-item")]',$row)->item(0)?->textContent??''),'An empty answer is not shown as a confirmed empty record list');
+same(\Paymenter\Extensions\Servers\Domains\Presentation\State::NotReadYet->label(),trim($row===null?'':$saved->query('.//*[@data-piece="value"]/*[1]',$row)->item(0)?->textContent??''),'An empty answer is not shown as a confirmed empty record list');
 same([[gmdate('c',$publicAt),true]],$row===null?[]:$times($saved,$row),'The Public DNS row keeps its own earlier time, not the later registry check');
 expect(in_array([$registryAt,true],$times($saved),true),'The later registry check still shows on the page');
 expect($failures===[],implode('; ',$failures));$nativeSuccessful=true;echo "Watch missing facts respect stopped, paused and queued work.\n";

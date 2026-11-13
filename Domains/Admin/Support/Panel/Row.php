@@ -53,7 +53,8 @@ class Row extends Component implements HasEmbeddedView
         if ($this->kind === 'notice' && count($actions) > 1) { throw new \InvalidArgumentException('A notice has at most one action.'); }
         $this->controls = array_values($actions);
         $this->holdBlocked();
-        return $this->schema($actions === [] ? [] : [Actions::make($this->controls)->key($this->getKey(false).'-actions')]);
+        // The actions' key follows the row's key, so a row keyed after its actions still names them by its own key.
+        return $this->schema($actions === [] ? [] : [Actions::make($this->controls)->key(fn (): string => $this->getKey(false).'-actions')]);
     }
     /** A change running in place: its state takes the action's place until it finishes, and nothing else moves. */
     public function running(Value $state): static { $this->live = self::needsState($state); return $this; }

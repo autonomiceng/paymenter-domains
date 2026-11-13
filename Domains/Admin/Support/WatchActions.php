@@ -50,7 +50,7 @@ final class WatchActions
                     if($id){$livewire->refreshTemplate();}
                     return;
                 }
-                $livewire->redirect(match($kind){'watch'=>WatchResource::getUrl('view',['record'=>$id]),'profile'=>RoutingProfileResource::getUrl(),default=>WatchResource::getUrl()});
+                $livewire->redirect(match($kind){'watch'=>WatchResource::getUrl('view',['record'=>$id]),'profile'=>RoutingProfileResource::getUrl(),default=>WatchResource::getUrl('settings')});
             });
     }
     /** Write errors in page words. */
@@ -118,10 +118,10 @@ final class WatchActions
             ->requiresConfirmation()->modalHeading('Delete DNS template?')->modalDescription('The saved nameservers and records will be deleted. This cannot be undone.')
             ->modalSubmitActionLabel('Delete');
     }
-    /** The one control on a hosting product line. The revision is the one the page loaded, so a stale page changes nothing. */
-    public static function productSwitch(): Action
+    /** The switch on a hosting product's settings row (Monitoring settings). $canManage is the page's permission, read once per request. The revision is the one the page loaded, so a stale page changes nothing. */
+    public static function productSwitch(\Closure $canManage): Action
     {
-        return Action::make('productSwitch')->view('domains::admin.watch-switch')->visible(fn($livewire)=>$livewire->canManageProducts())
+        return Action::make('productSwitch')->visible($canManage)
             ->action(function(array $arguments):void {
                 $id=(int)($arguments['map']??0);$on=WatchProductMap::whereKey($id)->value('enabled');$action=$on?'disable':'enable';
                 try{(new Writes())->run(Auth::user(),'mapping',$id,$action,Writes::ticket((int)Auth::id(),'mapping',$id,(int)($arguments['revision']??0),$action),$on?'Monitoring turned off':'Monitoring turned on');}
@@ -129,9 +129,9 @@ final class WatchActions
             });
     }
     /** For a line that isn't monitored. The system can't tell which field holds the domain, or that a field it or staff chose is wrong, so a person says which. */
-    public static function chooseField(): Action
+    public static function chooseField(\Closure $canManage): Action
     {
-        return self::action('mapping',0,0,'save','Choose a field')->name('chooseField')->visible(fn($livewire)=>$livewire->canManageProducts())->link()->modalHeading('Choose the domain field')->modalDescription('Choose the field that holds the main domain. Monitoring starts when you save.')->modalSubmitActionLabel('Save')
+        return self::action('mapping',0,0,'save','Choose a field')->name('chooseField')->visible($canManage)->link()->modalHeading('Choose the domain field')->modalDescription('Choose the field that holds the main domain. Monitoring starts when you save.')->modalSubmitActionLabel('Save')
             ->schema(function(array $arguments):array {$fields=WatchProducts::fields(\App\Models\Product::findOrFail((int)($arguments['product_id']??0)));
                 return [Select::make('property_key')->label('Domain field')->options($fields)->required()
                     ->helperText($fields===[]?'No service on this product has a text field yet. If it has a domain, add a text option for it.':null)];});

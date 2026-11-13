@@ -1,5 +1,5 @@
 <?php
-// Staff navigation, the Domain monitoring Settings tab and its maintenance notice. MIT, Copyright (c) 2026 Autonomic Engineering.
+// Staff navigation, the one Domains area with its tabs, the Monitoring settings tab and its maintenance notice. MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/doh-environment.php';
 require __DIR__.'/Support/watch-notices.php';
@@ -17,13 +17,14 @@ require dirname(__DIR__).'/Domains/routes/web.php';require dirname(__DIR__).'/Do
 $resources=[TldResource::class,WatchResource::class,RoutingProfileResource::class,\App\Admin\Resources\FailedJobResource::class];$pages=[DnsResolver::class,PublicSuffixList::class,RegistrarSetup::class,WhatYouSell::class];$panel->resources($resources)->pages($pages);
 Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($resources,$pages,$panel){foreach([...$resources,...$pages] as$r){$r::registerRoutes($panel);}});app('router')->getRoutes()->refreshNameLookups();
 
-// Four pages in one Domains group, in the planned order; every other page leaves the menu but keeps its route.
+// Three pages in one Domains group, in the planned order; monitoring and DNS templates are tabs of Domains (Ilya, decision 1).
+// Every other page leaves the menu but keeps its route.
 $all=[DomainResource::class,OperationResource::class,TldResource::class,RegistrarSetup::class,WatchResource::class,RoutingProfileResource::class,
     PendingAdoptionResource::class,RegistrarAccount::class,RegistrarBalances::class,ActivationStatus::class,PublicSuffixList::class,DnsResolver::class];
-same(['Domains','TLDs & pricing','Registrars','Domain monitoring'],array_map(fn($c)=>$c::getNavigationLabel(),array_values(array_filter($all,fn($c)=>$c::shouldRegisterNavigation()))),'Dormant menu hides monitoring configuration');
+same([DomainResource::class,TldResource::class,RegistrarSetup::class],array_values(array_filter($all,fn($c)=>$c::shouldRegisterNavigation())),'Monitoring and DNS templates have no menu item of their own');
 app()->instance(WatchWork::class,new WatchWork(new \Paymenter\Extensions\Servers\Domains\Dns\NativeDnsReader(static fn()=>[]),new \Paymenter\Extensions\Servers\Domains\Services\WatchDiscoveryWork(static fn()=>null),true));
 $menu=array_values(array_filter($all,fn($c)=>$c::shouldRegisterNavigation()));usort($menu,fn($a,$b)=>[$a::getNavigationSort()??PHP_INT_MAX]<=>[$b::getNavigationSort()??PHP_INT_MAX]);
-same(['Domains','Registrars','TLDs & pricing','Domain monitoring'],array_map(fn($c)=>$c::getNavigationLabel(),$menu),'Four staff pages in order');
+same([DomainResource::class,RegistrarSetup::class,TldResource::class],$menu,'Three staff pages in order');
 foreach($menu as $c){same('Domains',$c::getNavigationGroup(),'One Domains group: '.$c);}
 // Resource breadcrumbs read like the menu, not Filament's title-cased plural label.
 foreach(array_filter($all,fn($c)=>is_subclass_of($c,\Filament\Resources\Resource::class)) as $c){same($c::getNavigationLabel(),$c::getBreadcrumb(),'Sentence-case breadcrumb: '.$c);}
@@ -43,22 +44,36 @@ Livewire::actingAs($manager)->test(DnsResolver::class)->assertRedirect(WatchReso
 Livewire::actingAs($manager)->test(PublicSuffixList::class)->assertSuccessful()->assertNoRedirect();
 Livewire::actingAs(staffUser([Staff::VIEW]))->test(MonitoringSettings::class)->assertForbidden();
 
-// Normal monitoring pages hide deployment settings; direct settings bookmarks still work.
-$tabs=fn($page)=>array_map(fn(NavigationItem $i)=>[$i->getLabel(),$i->isActive()],$page->instance()->getSubNavigation());
-$list=Livewire::actingAs($manager)->test(ListWatches::class)->assertSuccessful();same([['Monitored domains',true],['Settings',false]],$tabs($list),'List tabs');
-// List pages carry no breadcrumb, like Domains and Registrars.
-same([],$list->instance()->getBreadcrumbs(),'Monitoring list has no breadcrumb');
-foreach([RoutingProfileResource\Pages\ListConfiguration::class] as $page){same([],Livewire::actingAs($manager)->test($page)->instance()->getBreadcrumbs(),'No breadcrumb: '.$page);}
+// One Domains area (Ilya, decision 1): every tab page draws the same tab row, each tab opens its own unchanged URL, and the
+// page a URL opens marks its own tab, so a reload or a bookmark lands on the same tab.
+$tabs=fn($page)=>array_map(fn(NavigationItem $i)=>[$i->getUrl(),$i->isActive()],$page->instance()->getSubNavigation());
+$area=[DomainResource::getUrl('index'),WatchResource::getUrl('index'),RoutingProfileResource::getUrl('index'),WatchResource::getUrl('settings')];
+same(['/admin/domains','/admin/domain-watch','/admin/dns-routing-profiles','/admin/domain-watch/settings'],array_map(fn($u)=>parse_url($u,PHP_URL_PATH),$area),'Tab URLs are the old page URLs');
+$open=['index'=>\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ListDomains::class,'watch'=>ListWatches::class,'templates'=>RoutingProfileResource\Pages\ListConfiguration::class,'settings'=>MonitoringSettings::class];
+foreach(array_values($open) as $n=>$page){
+    $test=Livewire::actingAs($manager)->test($page)->assertSuccessful();
+    same(array_map(fn($u,$i)=>[$u,$i===$n],$area,array_keys($area)),$tabs($test),'One tab row, its own tab marked: '.$page);
+    // Tab pages carry no breadcrumb, like Domains and Registrars.
+    same([],$test->instance()->getBreadcrumbs(),'No breadcrumb: '.$page);
+}
+// The Monitored domains tab carries the count the old menu item had.
+same(WatchResource::attentionCount(),(Livewire::actingAs($manager)->test(ListWatches::class)->instance()->getSubNavigation()[1])->getBadge(),'Monitored domains tab count');
+// The Domains menu item stays marked on every page of the area, the monitored domain pages included.
+$marked=fn(string $route)=>collect((array)DomainResource::getNavigationItemActiveRoutePattern())->contains(fn($p)=>\Illuminate\Support\Str::is($p,$route));
+foreach(['index','settings','view','history','dns-setup'] as $name){expect($marked(WatchResource::getRouteBaseName().'.'.$name),'Domains marked on monitoring '.$name);}
+expect($marked(RoutingProfileResource::getRouteBaseName().'.index')&&!$marked(TldResource::getRouteBaseName().'.index'),'Domains marked on DNS templates only, not on TLDs');
+// Permissions stay per tab: staff who can't read monitoring see Domains alone, so no tab row.
+same([],Livewire::actingAs(staffUser([Staff::VIEW]))->test($open['index'])->instance()->getSubNavigation(),'No monitoring rights, no tab row');
 $settings=app(DnsResolverSettings::class);
-$tab=Livewire::actingAs($manager)->test(MonitoringSettings::class)->assertSuccessful();same([['Monitored domains',false],['Settings',true]],$tabs($tab),'Settings tabs');
+$tab=Livewire::actingAs($manager)->test(MonitoringSettings::class)->assertSuccessful();
 // No saved resolver: Missing with its cause and the fix beside it, said once; nothing to test yet, no bootstrap IP.
 $once=fn($test,string $copy)=>same(1,substr_count(html_entity_decode(strip_tags($test->html()),ENT_QUOTES),$copy),'Said once: '.$copy);
-$tab->assertSee('DNS resolver')->assertSee('Resolver')->assertSee('Missing')->assertSee("No resolver set. Checks use the server's resolver.")->assertDontSee('Server default')->assertDontSee('Resolver IP address')->assertSee('If the resolver fails, checks retry once with the server')
+$tab->assertSee('DNS resolver')->assertSee('Resolver')->assertSee(\Paymenter\Extensions\Servers\Domains\Presentation\State::NotSet->label())->assertSee("No resolver set. Checks use the server's resolver.")->assertDontSee('Server default')->assertDontSee('Resolver IP address')->assertSee('If the resolver fails, checks retry once with the server')
     ->assertActionHidden('configure')->assertActionHidden('check')->assertDontSee('Test resolver')
     ->assertDontSee('Resolver check')->assertDontSee('Last check this visit')->assertDontSee('DNS-over-HTTPS configured')->assertDontSee('Public domain checks');
 $once($tab,'Edit resolver');
-Livewire::actingAs($viewer)->test(MonitoringSettings::class)->assertSuccessful()->assertActionHidden('configure')->assertActionHidden('check')->assertDontSee('Edit resolver')->assertSee('Missing');
-$edit=\Filament\Actions\Testing\TestAction::make('edit')->schemaComponent('resolver','content');
+Livewire::actingAs($viewer)->test(MonitoringSettings::class)->assertSuccessful()->assertActionHidden('configure')->assertActionHidden('check')->assertDontSee('Edit resolver')->assertSee(\Paymenter\Extensions\Servers\Domains\Presentation\State::NotSet->label());
+$edit=\Filament\Actions\Testing\TestAction::make('edit')->schemaComponent('sheet.sec-dns-resolver.row-resolver.row-resolver-actions','content');
 $modal=fn($test)=>html_entity_decode($test->html().implode('',$test->effects['partials']??[]),ENT_QUOTES);
 $invalid=Livewire::actingAs($manager)->test(MonitoringSettings::class)->mountAction($edit)->setActionData(['url'=>'http://resolver.example.org','ip'=>'127.0.0.1'])->callMountedAction()->assertHasActionErrors(['url','ip']);
 foreach(['Use an HTTPS URL with a public hostname.','Use a public IPv4 or IPv6 address.'] as $text){expect(str_contains($modal($invalid),$text),'Field error: '.$text);}
@@ -69,12 +84,12 @@ $form->setActionData(['url'=>DohEndpoint::URL,'ip'=>DohEndpoint::IP])->callMount
 $saved=Livewire::actingAs($manager)->test(MonitoringSettings::class)->assertSee('cloudflare-dns.com')->assertSee('Resolver IP address')->assertSee(DohEndpoint::IP)->assertDontSee('Server default')->assertSee('Default nameservers')
     ->assertActionVisible('configure')->assertActionVisible('check');
 $once($saved,'Edit resolver');
-expect(!str_contains(resolverSectionText($saved->html()),'Missing'),'Saved resolver has no missing state in its section');
+expect(!str_contains(resolverSectionText($saved->html()),\Paymenter\Extensions\Servers\Domains\Presentation\State::NotSet->label()),'Saved resolver has no missing state in its section');
 // Unreadable saved settings: Missing with its cause and the fix next to it.
 \App\Models\Setting::where('key',DnsResolverSettings::KEY)->update(['value'=>'{']);
-Livewire::actingAs($manager)->test(MonitoringSettings::class)->assertSee('Missing')->assertSee("Saved settings can't be read.")->assertDontSee('Server default')->assertActionHidden('configure')->assertActionHidden('check')->assertSee('Edit resolver');
+Livewire::actingAs($manager)->test(MonitoringSettings::class)->assertSee(\Paymenter\Extensions\Servers\Domains\Presentation\State::NotSet->label())->assertSee("Saved settings can't be read.")->assertDontSee('Server default')->assertActionHidden('configure')->assertActionHidden('check')->assertSee('Edit resolver');
 // The server cannot use a custom resolver: the error notice and the server default, not Missing.
-putenv('SSLKEYLOGFILE=/synthetic-disabled');$forced=Livewire::actingAs($manager)->test(MonitoringSettings::class)->assertSee('Turn off SSLKEYLOGFILE on the server to use a custom resolver.')->assertSee('Server default')->assertSee('Default nameservers')->assertActionHidden('configure')->assertActionHidden('check')->assertDontSee('Edit resolver');expect(!str_contains(resolverSectionText($forced->html()),'Missing'),'Forced server resolver has no missing state in its section');putenv('SSLKEYLOGFILE');
+putenv('SSLKEYLOGFILE=/synthetic-disabled');$forced=Livewire::actingAs($manager)->test(MonitoringSettings::class)->assertSee('Turn off SSLKEYLOGFILE on the server to use a custom resolver.')->assertSee('Server default')->assertSee('Default nameservers')->assertActionHidden('configure')->assertActionHidden('check')->assertDontSee('Edit resolver');expect(!str_contains(resolverSectionText($forced->html()),\Paymenter\Extensions\Servers\Domains\Presentation\State::NotSet->label()),'Forced server resolver has no missing state in its section');putenv('SSLKEYLOGFILE');
 $GLOBALS['domainsTestCurlMissing']=true;
 same([null,'Install the PHP cURL extension to use a custom resolver.',true],$settings->configuration(),'Missing PHP cURL forces the server resolver');
 Livewire::actingAs($manager)->test(MonitoringSettings::class)->assertSee('Install the PHP cURL extension to use a custom resolver.')->assertSee('Server default')->assertActionHidden('configure')->assertActionHidden('check')->assertDontSee('Edit resolver');

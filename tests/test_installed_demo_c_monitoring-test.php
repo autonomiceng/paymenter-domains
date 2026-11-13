@@ -29,7 +29,8 @@ $otherWatch=clone $watch;$otherWatch->user_id=$other->id;same([],MonitoringEvide
 staffPanel();$panel=Filament::getCurrentPanel();$resources=[WatchResource::class,Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource::class];$panel->resources($resources);Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($resources,$panel){foreach($resources as $resource){$resource::registerRoutes($panel);}});app('router')->getRoutes()->refreshNameLookups();
 $html=Livewire\Livewire::test(ViewWatch::class,['record'=>$watch->id])->html();expect(str_contains($html,'192.0.2.10')&&str_contains($html,'192.0.2.20')&&str_contains($html,'Evidence'),'Real monitoring detail renders both observations');
 $html=Livewire\Livewire::test(WatchHistory::class,['record'=>$watch->id])->html();expect(str_contains($html,'Registrar read partial'),'Real monitoring history renders registrar reads');
-$html=Livewire\Livewire::test(Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\MonitoringSettings::class)->html();expect(str_contains($html,'Daily')&&str_contains($html,'Registrar read failures')&&str_contains($html,'No separate alert switch'),'Real settings shows daily reads and the unavailable alert switch');
+$html=Livewire\Livewire::test(Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\MonitoringSettings::class)->html();
+same([\Paymenter\Extensions\Servers\Domains\Presentation\Plain::Daily->label(),\Paymenter\Extensions\Servers\Domains\Presentation\Plain::None->label()],[settingsRowValue($html,'Registrar refresh')['word']??null,settingsRowValue($html,'Registrar read failures')['word']??null],'Real settings shows daily reads and no alert switch for read failures');
 expect(str_contains($html,'Sync now')&&str_contains($html,'domain facts'),'Settings distinguishes daily facts from manual record sync');
 // Outdated saved answers remain evidence of a past check, never current IP answers.
 foreach(['expired','revision','failed'] as $case){
@@ -59,8 +60,9 @@ expect(str_contains((string)($recordFact['sub']??''),'template'),'Unconfigured c
 same($at->getTimestamp()-30,(int)($missingFacts['Checks']['Last check']['at']??0),'Last check is the separate nameserver check');
 same([gmdate('c',$at->getTimestamp()-60)],array_map(fn($n)=>$n->getAttribute('datetime'),iterator_to_array(storefrontDom('<div id="records-sub">'.($recordFact['sub']??'').'</div>')->query('//*[@id="records-sub"]//time'))),'DNS records keeps the saved answer time');
 $html=Livewire\Livewire::test(ViewWatch::class,['record'=>$watch->id])->html();
-$x=storefrontDom($html);$row=$x->query('//*[contains(concat(" ",normalize-space(@class)," ")," domains-row ")][.//*[normalize-space(.)="DNS records"]]')->item(0);
-expect($row!==null&&str_contains($row->textContent,'192.0.2.10')&&!str_contains($row->textContent,'Missing'),'Real monitoring row renders the saved public record');
+$x=storefrontDom($html);$row=$x->query('//*[@data-piece="row"][*[1][normalize-space(.)="DNS records"]]')->item(0);
+$unread=array_map(fn($s)=>$s->label(),[\Paymenter\Extensions\Servers\Domains\Presentation\State::NotReadYet,\Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead]);
+expect($row!==null&&str_contains($row->textContent,'192.0.2.10')&&!array_filter($unread,fn($w)=>str_contains($row->textContent,$w)),'Real monitoring row renders the saved public record');
 // Expired watch answers remain historical, with guidance for the actual template state.
 $dnsFailures=[];
 $public->valid_until=$at->getTimestamp()-1;
