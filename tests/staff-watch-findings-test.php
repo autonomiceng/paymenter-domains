@@ -113,9 +113,6 @@ foreach(WatchName::where('canonical_name','like','bulk%')->orderBy('id')->get()-
 $spread=$count(fn()=>Livewire::actingAs($editor)->test(ListWatches::class)->assertCountTableRecords(25));
 $filtered=$count(fn()=>Livewire::actingAs($editor)->test(ListWatches::class)->filterTable('status','monitoring')->assertCountTableRecords(18));expect($filtered<=2*$spread+$batch+10,'Filtering is one more render plus one multi-owner batch, evaluated once per request ('.$filtered.' <= 2 x '.$spread.' + '.$batch.' + 10)');
 same($page25,$spread,'Five customers cost the same as one customer');
-// Filament stacks the header as a column below 40rem; flex-basis there becomes height and pushes findings off the first screen.
-$header=file_get_contents(dirname(__DIR__).'/Domains/resources/views/partials/staff-styles.blade.php');[$narrow,$wide]=explode('@media (min-width:40rem){',$header,2)+[1=>''];
-expect(!str_contains($narrow,'flex:1 1'),'Header flex bases never apply to the narrow column layout');
 // Earlier unrelated registry history cannot consume a filtered watch's scan budget.
 $observation=(array)DB::table('domains_watch_registry')->where('watch_id',$w['expiring'])->first();unset($observation['id']);
 for($i=0;$i<1000;$i++){

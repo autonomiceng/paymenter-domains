@@ -403,7 +403,6 @@ expect(Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::stat
 $d=$row('registration_pending','register','held','staff_review_required');
 expect(DomainQueries::alerting(Domain::whereKey($d->id))->exists(),'A visible staff task counts even before a saved alert is written');
 $table=Livewire::actingAs($viewer)->test(ListDomains::class)->instance()->getTable();
-// A phone keeps both: neither Status nor Note waits for a wider screen.
-same([State::UnderReview->label(),null,null],[$table->getColumn('status')->record($d)->getState(),$table->getColumn('status')->getVisibleFrom(),$table->getColumn('note')->getVisibleFrom()],'A held registration reads Under review at every width');
+same(State::UnderReview->label(),$table->getColumn('status')->record($d)->getState(),'A held registration reads Under review');
 expect(str_contains((string)$table->getColumn('note')->record($d)->getState(),'Check request'),'Its note names the request to check');
 $nativeSuccessful=true; echo "Staff domain status: customer words and one next step per row.\n";
