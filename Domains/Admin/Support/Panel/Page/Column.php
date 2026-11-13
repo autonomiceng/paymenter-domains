@@ -5,6 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page;
 use Filament\Support\Enums\FontFamily;
 use Filament\Tables\Columns\TextColumn;
 use Illuminate\Database\Eloquent\{Builder, Model};
+use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DemoTag, OneLine};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Value;
 /** One list column, as data: plain text, a domain name, or a panel Value (a state with its mark, a plain word or a
@@ -66,7 +67,8 @@ final class Column
         return match ($this->kind) {
             'domain' => DemoTag::apply(OneLine::apply($column->fontFamily(FontFamily::Mono), OneLine::NAME)),
             'value' => $column->state(fn (array|Model $record): ?string => $this->valueOf($record)?->word)
-                ->formatStateUsing(fn (array|Model $record): string => (string) $this->valueOf($record)?->toHtml())->html(),
+                // Our own escaped piece markup, passed as Htmlable: Filament's sanitizer would drop its data-* markers.
+                ->formatStateUsing(fn (array|Model $record): HtmlString => new HtmlString((string) $this->valueOf($record)?->toHtml())),
             default => OneLine::apply($this->text === null ? $column : $column->state(fn (array|Model $record): ?string => ($this->text)($record))),
         };
     }

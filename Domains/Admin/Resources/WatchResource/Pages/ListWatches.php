@@ -97,7 +97,7 @@ class ListWatches extends RecordListPage
     }
     protected function defaultSort(): ?array{return ['canonical_name','asc'];}
     protected function searchLabel(): ?string{return 'Search domain';}
-    protected function emptyLine(): array{return ['No monitored domains','Turn on monitoring on a hosting product.'];}
+    protected function emptyLine(): array{return ['No monitored domains','Turn on monitoring on a hosting product.','No monitored domains match'];}
     /** A value not saved yet reads Not read yet with its cause. While monitoring is paused or stopped no check is expected:
      * Status says so once and these cells stay empty. */
     private function fact(WatchName $w,array $fact): ?Value
