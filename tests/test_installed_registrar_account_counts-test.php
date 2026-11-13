@@ -72,11 +72,11 @@ expect(!str_contains($line,'domains-warn')&&!str_contains($line,'Sync prices'),'
 $undated=RegistrarFacts::dueGap($account,['unreadable'=>0,'without_cost'=>2,'unpriced'=>1]);
 expect(str_contains($undated['text'],'1 renewal with no known date')&&str_contains($undated['text'],'1 renewal not priced yet.'),
     'Mixed gaps explain both the undated and unpriced renewals');
-$mixedNote=(new ReflectionMethod(RegistrarSetup::class,'note'))->invoke(null,null,['value'=>'USD 9.00','low'=>false,'cause'=>null,'unreadable'=>0,'without_cost'=>2,'unpriced'=>1],$account);
+$mixedNote=(new ReflectionMethod(RegistrarSetup::class,'note'))->invoke(null,null,['value'=>'$9.00','low'=>false,'cause'=>null,'unreadable'=>0,'without_cost'=>2,'unpriced'=>1],$account);
 expect(str_contains($mixedNote['text'],'1 renewal not priced yet.'),'The Registrars note retains the mixed unpriced count');
 expect($undated['act']&&str_contains((string)RegistrarFacts::dueLine($undated),'domains-warn'),'A renewal with no known date needs staff, so it is amber');
 // The Registrars list Note says the same words and is not amber for it.
-$note=(new ReflectionMethod(RegistrarSetup::class,'note'))->invoke(null,null,['value'=>'USD 9.00','low'=>false,'cause'=>null,...$unpriced],$account);
+$note=(new ReflectionMethod(RegistrarSetup::class,'note'))->invoke(null,null,['value'=>'$9.00','low'=>false,'cause'=>null,...$unpriced],$account);
 expect(!$note['act']&&str_contains((string)$note['text'],'not priced yet')&&!str_contains((string)$note['text'],'Sync prices'),'The Note waits on our price read too: '.json_encode($note));
 
 // A failed price read that we retry automatically (registrar timeout) stays grey and shows the retry time;
@@ -95,7 +95,7 @@ same(["1 renewal not priced yet. The price read failed: Registrar didn't answer 
     [$retry['text']??null,$retry['act']??null,$retry['at']??null],'A timeout we retry is not a staff job and shows the retry time');
 $retryLine=(string)RegistrarFacts::dueLine($retry);
 expect(!str_contains($retryLine,'domains-warn')&&!str_contains($retryLine,'Fix that'),'A retried read is not amber: '.$retryLine);
-$note=(new ReflectionMethod(RegistrarSetup::class,'note'))->invoke(null,null,['value'=>'USD 9.00','low'=>false,'cause'=>null,...$unpriced],$account);
+$note=(new ReflectionMethod(RegistrarSetup::class,'note'))->invoke(null,null,['value'=>'$9.00','low'=>false,'cause'=>null,...$unpriced],$account);
 expect(!$note['act'],'The Note does not make a retried read a job: '.json_encode($note));
 $failRead('configuration_unverified');
 $fix=RegistrarFacts::dueGap($account,$unpriced);

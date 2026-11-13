@@ -292,7 +292,7 @@ foreach(['manual','daily']as$source){foreach(['throw','leases','fingerprint']as$
         foreach(['manual_due_at','daily_due_at']as$field){unset($before[$field],$after[$field]);}
         same($before,$after,'Pre-budget '.$damage.' through '.$source.' preserves all balance evidence');
         same($wireBefore,$balanceReads(),'Pre-budget failure makes no balance/provider send');
-        same('USD 6.00',RegistrarBalances::facts($a,$clock->now())['balance'],'Local failure keeps retained balance visible');
+        same('$6.00',RegistrarBalances::facts($a,$clock->now())['balance'],'Local failure keeps retained balance visible');
         DB::table('domains_read_budgets')->where('server_id',$a->server_id)->update($savedBudget);
         $clock->instant=$clock->now()->modify($source==='manual'?'+60 seconds':'+1 day');
         if($source==='manual'){same('refreshed',$balances->refresh($a->server_id),'Repaired limiter recovers after manual cooldown');}else{$balances->daily($a);}

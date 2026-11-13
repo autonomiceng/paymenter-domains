@@ -31,7 +31,7 @@ class RegistrarSetup extends QueryListPage
     { return [static::getRouteName(),RegistrarAccount::getRouteName(),RegistrarHistory::getRouteName(),RegistrarBalances::getRouteName(),ActivationStatus::getRouteName(),OperationResource::getRouteBaseName().'.*']; }
     public static function canAccess(): bool {return Staff::can();}
     public function mount(): void {Staff::requireView();}
-    protected function head(): Head { return Head::make('Registrars', Reader::Staff); }
+    protected function head(): Head { return Head::make('Registrars', Reader::Staff)->note(Fact::IN_USD); }
     /** Add registrar account: name it here, then connect it on its own page. The stock Create Server form asks for a Paymenter
      * extension and shows no registrar fields, so staff landed on a page that never said what to do next. */
     protected function actions(): array
@@ -72,10 +72,10 @@ class RegistrarSetup extends QueryListPage
     protected function defaultSort(): ?array { return ['id','asc']; }
     protected function searchLabel(): ?string { return 'Search account'; }
     protected function emptyLine(): array { return ['No registrar accounts','Add one to start selling domains.','No accounts match']; }
-    /** A registrar amount keeps its currency first, as saved: "USD 12.00". */
+    /** A registrar amount as money ("$12.00"), with tabular figures; the head names the currency once. */
     private static function money(?string $amount): ?Value
     {
-        $fact=$amount===null?null:Fact::names([$amount]);
+        $fact=$amount===null?null:(preg_match('/^-?\$[\d,]+\.\d+$/D',$amount)===1?Fact::money(str_replace(['$',','],'',$amount)):Fact::names([$amount]));
         return $fact===null?null:Value::fact($fact);
     }
     protected function columns(): array
