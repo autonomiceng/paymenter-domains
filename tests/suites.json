@@ -53,6 +53,7 @@
     "tests/test_gitleaks_policy.py"
   ],
   "ui": [
+    "tests/test_staff_table_preferences.py",
     "tests/test_rendered_layout.py",
     "tests/test_rendered_watch_lists.py",
     "tests/test_rendered_domain_heading.py",

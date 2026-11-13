@@ -66,9 +66,7 @@ same(1,$dom->query('//nav[contains(@class,"domains-crumb")]/a[@href="'.route('do
 same(1,$dom->query('//h1[starts-with(normalize-space(.),"'.$name.'")]')->length,'Name is the h1');
 same(1,$dom->query('//*[@data-piece="head-line"]//*[@data-domains-tone]')->length,'One state in the head line');
 foreach(['Domain help</a>','class="domains-tabs','>Overview<','Contact support to change','Historical invoices','Next renewal','Scroll sideways','Renewal settings','registrar auto-renew','Save nameservers','Use default nameservers','Transfer code','transfer code','Domain privacy','—']as$gone){expect(!str_contains($html,$gone),'Removed: '.$gone);}
-same(['Registrar: Enom.'],array_map($norm,iterator_to_array($dom->query('//dialog[@id="edit-nameservers"]/form/p[starts-with(normalize-space(.),"Registrar:")]'))),'The nameserver editor quietly names its saved registrar once');
-$outsideEditors=storefrontDom($html);foreach(iterator_to_array($outsideEditors->query('//dialog'))as$dialog){$dialog->parentNode->removeChild($dialog);}
-foreach(['Enom','NameSilo','enom','namesilo']as$registrar){expect(!str_contains($outsideEditors->document->textContent,$registrar),'No registrar name outside editors: '.$registrar);}
+same($management()['nameservers']['registrar'],trim($dom->evaluate('string(//li[@data-piece="row"][span[normalize-space(.)="Registrar"]]/span[2])')),'Registrar identity is visible before any editor opens');
 expect(!preg_match('/unavailable/i',strip_tags($html)),'No unavailable wording');
 
 // As the approved mock: Renewal then Settings on the sheet, History in the rail.
