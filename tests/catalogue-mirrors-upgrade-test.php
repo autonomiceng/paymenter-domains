@@ -9,6 +9,14 @@ use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,CatalogueMirr
 extract(commerceFixture());
 foreach(['enabled','register_enabled','renew_enabled','transfer_enabled','min_years','max_years'] as $column){expect(!Schema::hasColumn('domains_tlds',$column),'Legacy TLD mirror removed: '.$column);}
 expect(!Schema::hasColumn('domains_prices','catalogue_observation'),'Duplicate current cost JSON removed');
+// Translated fixture flags retain global disablement before action-specific choices.
+$t=$tlds[0];$binding=AccountBindings::binding(Account::where('server_id',$t->server_id)->sole());
+$renew=new Query($binding,['com'],'renew');$savedIntent=$t->catalogue_intent;
+DB::table('domains_tlds')->where('id',$t->id)->update(tldColumns(['enabled'=>false,'renew_enabled'=>true],$t));
+same('staff_stopped',$ports->readOffers($renew,Context::Staff)[0]->reason,'Global disablement still refuses renewal when its individual flag is on');
+DB::table('domains_tlds')->where('id',$t->id)->update(tldColumns(['enabled'=>true,'renew_enabled'=>true],$t));
+expect($ports->readOffers($renew,Context::Staff)[0]->available,'A globally enabled fixture can enable renewal');
+DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_intent'=>$savedIntent]);
 // Restore the exact previous column order around populated current rows, then run the real drop.
 // SQLite's ADD COLUMN appends fields, unlike a retained table, so use a disposable fixture rebuild.
 function priorCatalogueTable(string $table,array $insertions): void

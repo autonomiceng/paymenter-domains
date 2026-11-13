@@ -25,9 +25,10 @@ final class WatchNotices
             if ($changed) { $state['dns']=WatchNoticePlan::relinked($state['dns']??[]); }
             $state['target']=[$kind,$id];$plans=[];
             if (isset($state['dns']['episode'])) {
-                $state['dns']['delivered']=DB::table('domains_watch_deliveries as d')->join('domains_watch_notices as n','n.id','=','d.notice_id')
+                $acceptedChannels=DB::table('domains_watch_deliveries as d')->join('domains_watch_notices as n','n.id','=','d.notice_id')
                     ->where('n.scope',$scope)->where('n.kind','ns_changed')->where('d.state','accepted')->get(['d.channel','n.data'])
                     ->filter(fn($r)=>(json_decode(Crypt::decryptString($r->data),true)['episode']??null)===$state['dns']['episode'])->pluck('channel')->unique()->values()->all();
+                $state['dns']['delivered']=array_values(array_unique(array_merge($state['dns']['delivered']??[],$acceptedChannels)));
             }
             if ($kind==='watch') { $plans['expiry']=WatchNoticePlan::expiry($state['expiry']??[],$t['registry'],$now); }
             $plans['dns']=WatchNoticePlan::dns($state['dns']??[],$t['delegation'],$now,$t['expected']);

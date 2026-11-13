@@ -38,7 +38,7 @@ function tldColumns(array $values,?\Paymenter\Extensions\Servers\Domains\Models\
     $stops=$intent['stops']??[];
     if(isset($values['enabled'])){$stops=$values['enabled']?[]:['register','renew','transfer'];}
     foreach(['register','renew','transfer'] as $action){
-        if(array_key_exists($action.'_enabled',$values)){
+        if(array_key_exists($action.'_enabled',$values)&&(!isset($values['enabled'])||$values['enabled'])){
             $stops=array_values(array_diff($stops,[$action]));if(!$values[$action.'_enabled']){$stops[]=$action;}
         }
     }
