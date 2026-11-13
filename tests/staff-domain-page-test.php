@@ -416,7 +416,7 @@ foreach(['Unconfirmed','See Registrar requests','Payment review','Customer #','S
 $filter=static function($page,string $name,mixed $value){$page->filterTable($name,$value);return $page->set('tableDeferredFilters',$page->get('tableFilters'))->call('applyTableFilters');};
 $filter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['under_review'])->assertCanSeeTableRecords([$held,$long])->assertCanNotSeeTableRecords([$active]);
 $filter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['active'])->assertCanSeeTableRecords([$active])->assertCanNotSeeTableRecords([$held,$long]);
-same([...array_keys(Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus::SET),'on_hold'],array_keys(DomainResource::statusOptions()),'Staff status filter includes held registration');
+same(array_keys(Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus::SET),array_keys(DomainResource::statusOptions()),'The status filter uses the shared states');
 // Import shows only when it can finish: switched on, and the role holds every permission the import needs.
 $full=[Staff::VIEW,Staff::ADOPT_PREVIEW,Staff::ADOPT,'admin.domains.manage','admin.services.update'];$importer=staffUser($full);
 config(['domains.adoption.enabled'=>false]);

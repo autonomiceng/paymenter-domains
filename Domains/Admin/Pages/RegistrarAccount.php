@@ -71,7 +71,7 @@ class RegistrarAccount extends DetailPage
             $checks['failing'] = [...AccountChecklist::pausedChecks($rows), ...$checks['failing']];
         }
         $all = [...$checks['failing'], ...$checks['passing']];
-        return [Section::make('System checks', [RegistrarRows::checks($all)], count($checks['passing']).' of '.count($all).' checks OK.', 'system_checks')];
+        return [Section::make('System checks ('.count($checks['passing']).' of '.count($all).' OK)', [RegistrarRows::checks($all)], null, 'system_checks')];
     }
     /** System checks for this account, failing first. @return array{failing:list<array>,passing:list<array>} */
     public function checks(): array
@@ -107,7 +107,7 @@ class RegistrarAccount extends DetailPage
         }
         if ($section === 'usage') {
             foreach (PaidUncertainty::holds($this->account) as $h) {
-                $items[] = [State::UnderReview, PaidUncertainty::line($h), $h['url'] ? Sheet::link('paid_request_'.$h['server_id'], $h['label'], $h['url']) : null];
+                $items[] = [$h['state'], PaidUncertainty::line($h), $h['url'] ? Sheet::link('paid_request_'.$h['server_id'], $h['label'], $h['url']) : null];
             }
         }
         if ($items === []) { return []; }

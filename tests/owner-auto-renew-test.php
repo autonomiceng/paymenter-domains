@@ -20,8 +20,9 @@ $card=App\Models\BillingAgreement::create(['user_id'=>$user->id,'gateway_id'=>$g
 same(false,$owners->present($d->fresh())->autoPay,'No saved card, no Auto Pay');
 $d->service->update(['billing_agreement_id'=>$card->id]);
 same(true,$owners->present($d->fresh())->autoPay,'A saved card on a live gateway is charged');
+same($card->name,$owners->present($d->fresh())->autoPayMethod,'The owner sees the method that will be charged');
 App\Models\Gateway::whereKey($gateway->id)->update(['enabled'=>false]);same(false,$owners->present($d->fresh())->autoPay,'A disabled gateway cannot charge');App\Models\Gateway::whereKey($gateway->id)->update(['enabled'=>true]);
-$card->update(['user_id'=>$other->id]);same(false,$owners->present($d->fresh())->autoPay,'Another user\'s card is never charged');$card->update(['user_id'=>$user->id]);
+$card->update(['user_id'=>$other->id]);same(false,$owners->present($d->fresh())->autoPay,'Another user\'s card is never charged');same(null,$owners->present($d->fresh())->autoPayMethod,'Another user method is never shown');$card->update(['user_id'=>$user->id]);
 $card->delete();same(false,$owners->present($d->fresh())->autoPay,'A removed card is not charged, though the service keeps its id');
 $d->service->update(['billing_agreement_id'=>null]);$card->forceDelete();App\Models\Gateway::whereKey($gateway->id)->delete();
 same([],$owners->present($d->fresh(),false)->autoRenew,'Read-only presentation hides switch');

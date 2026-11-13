@@ -43,7 +43,7 @@ final class Trace extends Component implements HasEmbeddedView
         $any = array_filter($this->steps, static fn (array $s): bool => $s['action'] !== null) !== [];
         foreach ($any ? $this->getChildSchema()->getComponents() : [] as $c) { $placed[(string) $c->getKey(false)] = $c; }
         return view('domains::components.panel.trace', ['steps' => array_map(fn (array $step, int $i): array => [...$step,
-            'tone' => $step['state']?->tone($this->reader), 'word' => $step['state']?->label(),
+            'tone' => $step['state']?->tone($this->reader) ?? \Paymenter\Extensions\Servers\Domains\Presentation\Tone::Off, 'word' => $step['state']?->label(),
             'action' => $step['action'] !== null && $step['action']->isVisible() && isset($placed['step-'.$i.'-actions']) ? $placed['step-'.$i.'-actions']->toHtml() : null],
             $this->steps, array_keys($this->steps))])->render();
     }

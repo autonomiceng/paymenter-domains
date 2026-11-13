@@ -4,7 +4,8 @@
     $instant = static fn ($at) => $at === null ? null : (is_numeric($at) ? (int) $at : strtotime((string) $at));
     $ownTime = $family['at'] && $instant($family['at']) !== $instant($readAt ?? null);
     // Customers: a full read is good news, so it gets no mark. The row's own value says what was read; a row with no other value ($asValue) says how many it found.
-    $quiet = !$staff && $family['state'] === 'complete';
+    $retainedChecking = ($family['read_checking'] ?? false) && ($family['last_good_at'] ?? null) !== null;
+    $quiet = !$staff && ($family['state'] === 'complete' || $retainedChecking);
     $asValue ??= false;
     $count = $family['count'] ?? 0;
     $unit = match ($family['kind']) { 'nameservers' => 'nameserver', 'contacts' => 'contact', 'flags' => 'setting', default => 'record' };

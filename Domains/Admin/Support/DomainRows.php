@@ -30,7 +30,7 @@ final class DomainRows
     public static function progress(Row $row, array $progress, bool $alert = false): Row
     {
         if (($text = RegistrarRows::sentence($progress['text'] ?? null)) === null) { return $row; }
-        if ($progress['waiting'] ?? false) { return $row->running(Value::state(($progress['tone'] ?? null) === 'warning' ? State::NeedsReview : State::Checking, Reader::Staff, $text)); }
+        if ($progress['waiting'] ?? false) { return $row->running(Value::state(($progress['delayed'] ?? false) ? State::Delayed : (($progress['tone'] ?? null) === 'warning' ? State::NeedsReview : State::Checking), Reader::Staff, $text)); }
         return $alert ? $row : $row->result(Value::state(match ($progress['tone'] ?? null) { 'danger' => State::Failed, 'warning' => State::NeedsReview, default => State::Completed }, Reader::Staff, $text));
     }
     /** A fact's value. $sub is the sentence under it. */

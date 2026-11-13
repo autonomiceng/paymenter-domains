@@ -4,11 +4,11 @@
     $staff ??= false;
     $unread = !($recordFamilies['cancelled_without_records'] ?? false) && collect($recordFamilies['rows'] ?? [])->contains('state', 'unknown');
 @endphp
-@if ($unread)
+@if ($unread || ($recordFamilies['read_checking'] ?? false))
 @if (!$staff && ($recordFamilies['initial_read_pending'] ?? false))
 @unless (($notice['text'] ?? null) === \Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::INITIAL_READ)<p class="domains-hint">{{ \Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::INITIAL_READ }}</p>@endunless
 @elseif ($recordFamilies['read_checking'] ?? false)
-@unless ($staff)<p class="domains-hint">Registrar read queued for @include('domains::partials.moment', ['at' => gmdate(DATE_ATOM, (int) $recordFamilies['next_read'])]).</p>@endunless
+<p class="domains-hint">{{ \Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Value::state(\Paymenter\Extensions\Servers\Domains\Presentation\State::Checking, $staff ? \Paymenter\Extensions\Servers\Domains\Presentation\Reader::Staff : \Paymenter\Extensions\Servers\Domains\Presentation\Reader::Customer) }}</p>
 @elseif ($recordFamilies['records_paused'] ?? false)
 <p class="domains-hint">Record checks are paused or not set up for this registrar account.@if ($staff) Check Processing and record-read setup.@endif</p>
 @elseif (!$staff)

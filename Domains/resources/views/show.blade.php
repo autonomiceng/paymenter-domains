@@ -41,7 +41,8 @@
 <x-slot:head>@if (($recordFamilies ?? null) && $recordFamilies['stale'] && !($recordFamilies['initial_read_pending'] ?? false) && !$readHeld && !$unreadRows)<p class="domains-hint">Registrar records are waiting for an update.@if ($recordFamilies['retained']) Last confirmed data is retained.@endif</p>@endif
 @if (($recordFamilies ?? null) && !$readHeld)@include('domains::partials.record-read-note', ['recordFamilies' => $recordFamilies])@endif
 @if ($readAt)<p class="domains-hint">Checked @include('domains::partials.moment', ['at' => $readAt]).</p>@endif</x-slot:head>
-@unless ($allUnread)<ul class="domains-rows">@include('domains::partials.owner-management', ['caps' => $settings])</ul>@endunless
+@unless ($allUnread)<ul class="domains-rows">
+@if ($registrar = $domain->management['nameservers']['registrar'] ?? null)<li class="domains-row" data-piece="row"><span class="domains-row__l">Registrar</span><span class="domains-row__v">{{ $registrar }}</span></li>@endif@include('domains::partials.owner-management', ['caps' => $settings])</ul>@endunless
 </x-domains::customer.section>
 @endif
 <x-slot:rail>@unless ($domain->setupPending)@include('domains::partials.activity')@endunless</x-slot:rail>

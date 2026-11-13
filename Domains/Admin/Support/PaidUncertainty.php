@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource;
 use Paymenter\Extensions\Servers\Domains\Services\AccountSpendingHolds;
-use Paymenter\Extensions\Servers\Domains\Presentation\PrivacyVisibility;
+use Paymenter\Extensions\Servers\Domains\Presentation\{PrivacyVisibility, State};
 /** Read-only projection, never a settlement or spending-release authority. */
 final class PaidUncertainty
 {
@@ -75,6 +75,7 @@ final class PaidUncertainty
         $reviews=OperationQueries::status(OperationResource::getEloquentQuery()->whereIn('domains_operations.server_id',$ids),['under_review'],$off)->toBase()
             ->selectRaw('domains_operations.server_id as server_id, count(*) as total, min(domains_operations.id) as first')->groupBy('domains_operations.server_id')->get()->keyBy('server_id');
         $names=\App\Models\Server::whereIn('id',$ids)->pluck('name','id');
+        $waiting = AccountSpendingHolds::query(Operation::whereIn('server_id',$ids))->get()->groupBy('server_id');
         $out=[];
         foreach ($held as $id=>$oldest) {
             $review=$reviews->get($id);
@@ -83,9 +84,20 @@ final class PaidUncertainty
             [$label,$url,$until]=$count===1
                 ? ['Check request #'.$first,DomainFacts::requestUrl(['request'=>$first]),'it is checked']
                 : ['Check '.$count.' requests',RegistrarFacts::requestsUrl((int)$id,['under_review']),'they are checked'];
-            $out[]=['server_id'=>(int)$id,'label'=>$label,'url'=>$url,'until'=>$until,'name'=>(string)($names->get($id) ?: 'this registrar account'),'count'=>$count];
+            $out[]=['server_id'=>(int)$id,'label'=>$label,'url'=>$url,'until'=>$until,'name'=>(string)($names->get($id) ?: 'this registrar account'),'count'=>$count,'state'=>collect($waiting->get($id,[]))->contains(fn(Operation $op): bool => self::waitState($op) === State::Delayed) ? State::Delayed : State::Checking];
         }
         return $out;
+    }
+    /** Read-only urgency. Transfers have their accepted seven-day wait; other sends use their execution lease.
+     * An absent start time grants no invented deadline. The link still opens the requests staff can check. */
+    public static function waitState(Operation $op): State
+    {
+        $now = app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp();
+        $start = $op->started_at?->getTimestamp();
+        $deadline = $op->action === 'transfer' && $start !== null
+            ? \Paymenter\Extensions\Servers\Domains\Services\TransferPolling::deadline($op)
+            : ($op->lease_expires_at?->getTimestamp() ?? ($start === null ? null : $start + \Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation::LEASE_SECONDS));
+        return $deadline !== null && $now >= $deadline ? State::Delayed : State::Checking;
     }
     public static function title(Operation $op): string
     { return self::registrar($op).' has not confirmed this '.(['register'=>'registration','transfer'=>'transfer','renew'=>'renewal'][$op->action]??'change').'.'; }

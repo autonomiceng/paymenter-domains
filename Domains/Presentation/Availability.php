@@ -13,6 +13,7 @@ final class Availability
     {
         if (!$supported) { return State::NotSupported; }
         if (!$sold) { return State::NotForSale; }
+        if ($read->checking && $read->lastGoodAt !== null && $hasValue) { return null; }
         if ($read->checking || $read->lastGoodAt === null || self::failedLast($read)) { return self::unread($read); }
         return $hasValue ? null : Plain::None;
     }

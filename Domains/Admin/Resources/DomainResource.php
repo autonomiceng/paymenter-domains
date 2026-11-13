@@ -45,7 +45,7 @@ class DomainResource extends Resource
     public static function getNavigationBadgeTooltip(): ?string { return 'Domains, '.(static::getNavigationBadge() ?? '0').' need staff action'; }
     public static function getNavigationBadgeColor(): string { return 'warning'; }
     /** The domain statuses, in DomainStatus order. */
-    public static function statusOptions(): array { return [...array_map(fn(array $s)=>$s[0],DomainStatus::SET),'on_hold'=>'On hold']; }
+    public static function statusOptions(): array { return array_map(fn(array $s)=>$s[0],DomainStatus::SET); }
     public static function getRelations(): array { return [RequestsRelationManager::class]; }
     public static function getPages(): array { return ['index'=>ListDomains::route('/'),'adopt'=>AdoptDomain::route('/adopt'),'view'=>ViewDomain::route('/{record}'),'adoption'=>AdoptionPreview::route('/{record}/adoption')]; }
 }

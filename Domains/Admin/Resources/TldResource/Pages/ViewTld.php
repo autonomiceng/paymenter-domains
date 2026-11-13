@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages;
 use Filament\Pages\Enums\SubNavigationPosition;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{RegistrarFacts,Staff,TldFacts,TldRows};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{RegistrarFacts,Sheet,Staff,TldFacts,TldRows};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Row,Value};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\{RecordDetailPage,Section};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
@@ -32,7 +32,7 @@ class ViewTld extends RecordDetailPage
         $refresh=$snapshot['refresh']??[];
         $next=isset($refresh['due_at'])?'Next update '.StaffTime::at((int)$refresh['due_at']).'.':'No update scheduled. Check Site setup on the Registrar account page, and the background worker.';
         $sync=[Row::make('Last updated',isset($refresh['succeeded_at'])?Value::fact(Fact::date((int)$refresh['succeeded_at'],$staff),$next):Value::state(State::NotReadYet,$staff,$next))
-            ->actions($this->syncPricesAction()->label('Sync prices'))];
+            ->actions(Sheet::button($this->syncPricesAction()->label('Sync prices')))];
         if($failure=TldFacts::syncFailure((int)$t->server_id)){
             $failed=Value::state(State::Failed,$staff,(string)$failure['cause']);
             $sync[]=Row::make('Last refresh failure',isset($failure['timestamp'])?$failed->when((int)$failure['timestamp']):$failed);
