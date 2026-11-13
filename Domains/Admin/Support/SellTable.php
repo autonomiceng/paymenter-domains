@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Paymenter\Extensions\Servers\Domains\Data\AccountBinding;
 use Paymenter\Extensions\Servers\Domains\Models\{OfferRow,Tld};
+use Paymenter\Extensions\Servers\Domains\Presentation\Fact;
 use Paymenter\Extensions\Servers\Domains\Services\{EndingChoices,PriceList};
 /** The rows What you sell shows and what each one says. One request only: a page reads an account once, not per cell. */
 final class SellTable
@@ -221,7 +222,7 @@ final class SellTable
     private function savedCell(?array $saved,string $field,string $sold,array $step): array
     {
         $value=$saved[$field]??null;$loss=self::loss($saved['below_cost']??false,$saved['loses_money']??false);
-        if($value!==null){return $field==='profit'?self::cellOf(PriceList::profit($value),$loss===null?null:'danger',$loss):self::cellOf($field==='cost'?PriceList::cost($value):$value);}
+        if($value!==null){return $field==='profit'?self::cellOf(self::dollars(PriceList::profit($value)),$loss===null?null:'danger',$loss):self::cellOf(self::dollars($field==='cost'?PriceList::cost($value):$value));}
         if($sold==='off'||($saved['status']??null)===PriceList::TRANSFERS_OFF){return self::cellOf('Off','gray');}
         if($field==='profit'){return self::cellOf(null);}
         if(($step['state']??null)==='off'){return [...self::cellOf('Off','gray'),...$step];}
@@ -256,6 +257,8 @@ final class SellTable
             &&\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor($retained)>0;
     }
 
+    /** "$10.99": the page names its currency once, so a cell shows only the amount. The CSV keeps bare amounts. */
+    private static function dollars(string $value): string {return Fact::money($value)?->text??$value;}
     private static function cellOf(?string $text,?string $tone=null,?string $hint=null): array {return ['text'=>$text,'tone'=>$tone,'hint'=>$hint,'mark'=>false];}
     private static function missing(string $step): array {return ['text'=>'Missing','tone'=>'danger','hint'=>$step,'mark'=>true];}
     private static function loss(bool $below,bool $loses): ?string {return $below?'This price is below registrar cost.':($loses?'This price loses money after the card fee.':null);}

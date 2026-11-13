@@ -24,6 +24,6 @@ foreach([['sell'=>false],['sell'=>false,'stops'=>['renew']],['defaultSell'=>fals
     same('Missing',$cell['text'],'Missing retained-holder renewal cost must stay visible');
     same('Use Sync prices.',$cell['hint'],'Retained renewal cost gives the repair step');
     same(true,$cell['mark'],'Missing retained renewal cost is marked for repair');
-    same($holder->retail,$table->cell($page[0],'renew','price')['text'],'Retained annual retail remains visible');
+    same('$'.$holder->retail,$table->cell($page[0],'renew','price')['text'],'Retained annual retail remains visible');
 }
 $nativeSuccessful=true;echo "Disabled acquisition does not hide missing retained-holder renewal costs.\n";

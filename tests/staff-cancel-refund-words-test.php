@@ -8,7 +8,7 @@ use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Labels,RequestFacts};
 $op=$held('staff-cancel-refund-placeholder.com');
-$amount='USD '.number_format((float)$op->amount,2,'.','');
+$amount='$'.number_format((float)$op->amount,2);
 // The registrar refused the order for good (request #71).
 DB::table('domains_operations')->where('id',$op->id)->update(['safe_code'=>'order_not_supported']);
 \Illuminate\Support\Facades\Auth::setUser($staff);

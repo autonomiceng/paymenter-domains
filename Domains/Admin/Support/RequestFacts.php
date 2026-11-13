@@ -462,7 +462,7 @@ final class RequestFacts
     {
         $minor=0;
         foreach ([...(isset($f['refund'])?[$f['refund']]:[]),...($f['late_credits']??[])] as $p) { if (($p['to']??null)==='account_credit'&&is_numeric($p['amount']??null)) { $minor+=\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)$p['amount']); } }
-        $value=$minor>0?'Credit added: USD '.\Paymenter\Extensions\Servers\Domains\Services\PricingRule::decimal($minor):'Credit added';
+        $value=$minor>0?'Credit added: '.\Paymenter\Extensions\Servers\Domains\Presentation\Fact::money(\Paymenter\Extensions\Servers\Domains\Services\PricingRule::decimal($minor))?->text:'Credit added';
         $why=($f['refund']['bridge_reason']??null)==='gateway_return_unavailable'?'The original payment could not be refunded. ':'';
         return [$value,$why.'Check the customer\'s account credit.'];
     }
