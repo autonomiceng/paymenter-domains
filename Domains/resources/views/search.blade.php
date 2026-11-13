@@ -2,7 +2,6 @@
 @php
     $tldNames = array_column($endings, 'tld');
     $nameValue = $sld ?? (string) old('domain', $name);
-    $termLabel = fn (int $n) => $n.' '.($n === 1 ? 'year' : 'years');
 @endphp
 <div class="container mt-14 mb-10">
 <div class="domains">
