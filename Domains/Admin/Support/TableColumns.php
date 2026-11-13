@@ -7,7 +7,7 @@ use Filament\Tables\Columns\Column;
 use Filament\Tables\Table;
 /**
  * An owned table with more than 4 columns, or with an optional column, gets a Columns button. The first column names the row, so it always stays.
- * Defaults must be right on their own: the choice lasts one session.
+ * Defaults must be right on their own. The browser remembers choices per table, with native Reset.
  */
 final class TableColumns
 {
@@ -20,6 +20,10 @@ final class TableColumns
             }
             $table->columnManagerTriggerAction(fn(Action $action)=>$action->label('Columns')->button());
         }
-        return $table->columns($columns);
+        return $table->columns($columns)->persistColumnsInSession(false)->extraAttributes([
+            'data-domains-table' => '',
+            'data-domains-columns-key' => $table->getLivewire()->getTableColumnsSessionKey(),
+            'x-init' => '$nextTick(() => window.domainsColumns?.($el, $wire))',
+        ]);
     }
 }

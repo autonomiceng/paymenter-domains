@@ -28,7 +28,7 @@ class ListWatches extends RecordListPage
     protected array $failedFamilies=[];
     public function getBreadcrumbs(): array{return [];}
     public function getSubNavigation(): array{return StaffTabs::domains('Monitored domains');}
-    protected function head(): Head{return Head::make('Monitored domains',Reader::Staff);}
+    protected function head(): Head{return Head::make('Domains',Reader::Staff);}
     private function notice(): ?array{if($this->notice===false){$health=app(WatchWork::class)->status();$this->failedFamilies=$health['families']??[];$this->notice=WatchMaintenance::notice($health);}return $this->notice;}
     /** A DNS failure that reached managed DNS lists its affected checks; the notice keeps the resolver link. */
     protected function actions(): array

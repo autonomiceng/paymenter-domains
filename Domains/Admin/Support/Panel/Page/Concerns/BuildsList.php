@@ -73,15 +73,6 @@ trait BuildsList
         $bulk = array_values($this->bulkActions());
         foreach ($bulk as $action) { if (!$action instanceof BulkAction) { throw new \InvalidArgumentException('A bulk action is a native Filament bulk action.'); } }
         $built = array_map(static fn (Column $c) => $c->toColumn(), $columns);
-        // Phones: the values marked to stack sit under the name, so the first column carries them (P-TBL-12).
-        $stack = array_values(array_filter($columns, static fn (Column $c): bool => $c->stacksOnPhone()));
-        if ($stack !== []) {
-            if ($columns[0]->stacksOnPhone()) { throw new \InvalidArgumentException('The first column names the row, so it never stacks under itself.'); }
-            $built[0]->description(static function (array|Model $record) use ($stack): ?HtmlString {
-                $lines = array_values(array_filter(array_map(static fn (Column $c): ?string => $c->phoneText($record), $stack), static fn (?string $line): bool => $line !== null));
-                return $lines === [] ? null : new HtmlString('<span class="domains-phone-note">'.implode('<br>', array_map('e', $lines)).'</span>');
-            });
-        }
         $hidden = array_values(array_map(static fn (Column $c): string => $c->name, array_filter($columns, static fn (Column $c): bool => $c->isOptional())));
         $table = TableColumns::choose(EmptyTable::apply($table, $empty, $next, $noMatch), $built, $hidden)
             ->filters(array_map(static fn (Filter $f) => $f->toFilter(), $filters))

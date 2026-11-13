@@ -21,7 +21,7 @@ class ListManagedDns extends RecordListPage
     protected static string $resource=WatchResource::class;
     public function getSubNavigation(): array{return StaffTabs::domains('DNS monitoring setup');}
     public function getBreadcrumbs(): array{return [];}
-    protected function head(): Head{return Head::make('DNS monitoring setup',Reader::Staff);}
+    protected function head(): Head{return Head::make('Domains',Reader::Staff);}
     protected function actions(): array
     {return [Action::make('templates')->label('Default nameservers')->color('gray')->url(RoutingProfileResource::getUrl())];}
     protected function domains(): Builder{return ManagedDnsSetup::affected(time());}

@@ -24,7 +24,7 @@ class ListConfiguration extends RecordListPage
     private function loadDefault(): void{$p=SiteDnsDefault::profile();$this->defaultId=(int)($p?->id??0);$this->defaultRevision=(int)($p?->revision??0);}
     public function getSubNavigation(): array{return StaffTabs::domains('DNS templates');}
     public function getBreadcrumbs(): array{return [];}
-    protected function head(): Head{return Head::make('DNS templates',Reader::Staff);}
+    protected function head(): Head{return Head::make('Domains',Reader::Staff);}
     protected function actions(): array{return [WatchActions::configuration(null)];}
     /** Called after the default or its template is saved here. */
     public function refreshTemplate(): void{$this->loadDefault();unset($this->cachedSchemas['content']);$this->cachedActions=[];$this->cachedHeaderActions=[];$this->cacheInteractsWithHeaderActions();}

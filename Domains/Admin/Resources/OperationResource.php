@@ -38,7 +38,7 @@ class OperationResource extends Resource
         return NavigationCount::read('requests',fn()=>OperationQueries::status(static::getEloquentQuery(),self::NEEDS_STAFF)->count());
     }
     public static function getNavigationBadgeUrl(): string { return static::getUrl('index',['filters'=>['status'=>['values'=>self::NEEDS_STAFF]]]); }
-    public static function getNavigationBadgeTooltip(): ?string { return 'Registrar requests on hold or under review'; }
+    public static function getNavigationBadgeTooltip(): ?string { return 'Registrar requests, '.(static::getNavigationBadge() ?? '0').' need staff action'; }
     public static function getNavigationBadgeColor(): string { return 'warning'; }
     /** Demo requests keep the Demo tag; a row whose saved data can't be read still lists. */
     public static function demo(Operation $op): bool { try { return DemoData::is($op); } catch (\Throwable) { return false; } }

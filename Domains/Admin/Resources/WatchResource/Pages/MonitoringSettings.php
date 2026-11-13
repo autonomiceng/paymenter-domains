@@ -81,7 +81,7 @@ class MonitoringSettings extends ResourceSettingsPage
                     $notice=Notification::make()->title($result['message']);($result['ok']?$notice->success():$notice->warning())->send();
                 })];
     }
-    protected function head(): Head { return Head::make('Monitoring settings', Reader::Staff); }
+    protected function head(): Head { return Head::make('Domains', Reader::Staff); }
     protected function actions(): array { return $this->getHeaderActionsList(); }
     protected function sections(): array
     {

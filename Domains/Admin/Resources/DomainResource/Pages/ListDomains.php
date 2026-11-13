@@ -25,7 +25,7 @@ class ListDomains extends RecordListPage
     /** The list's Needs attention filter and the menu count name the same domains; opening the list refreshes the count. */
     public function mount(): void { parent::mount(); NavigationCount::forget('domains'); }
     public function getBreadcrumbs(): array { return []; }
-    public function getSubNavigation(): array { return StaffTabs::domains('Domains'); }
+    public function getSubNavigation(): array { return StaffTabs::domains('All domains'); }
     protected function head(): Head { return Head::make('Domains', Reader::Staff); }
     protected function actions(): array
     {
@@ -55,7 +55,7 @@ class ListDomains extends RecordListPage
             Column::value('auto_renew', 'Auto-renew', fn (Domain $d): ?Value => $this->renewal($d)),
             Column::value('server_id', 'Registrar', fn (Domain $d): Value => $d->server
                 ? Value::fact(Fact::names([$d->server->name.' #'.$d->server_id]), self::REGISTRARS[$d->registrar_key] ?? null)
-                : Value::state(State::NotConnected, Reader::Staff, DomainFacts::NO_ACCOUNT))->optional(),
+                : Value::state(State::NotConnected, Reader::Staff, DomainFacts::NO_ACCOUNT)),
         ];
     }
     protected function filters(): array
