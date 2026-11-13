@@ -23,6 +23,19 @@ foreach ($examples as $page) {
 // Each example is one tab on the kit, so the kit reaches every type.
 Auth::setUser($staff);
 same(['Pieces', 'Detail', 'Settings', 'List', 'Record list', 'History'], array_map(static fn ($item): string => $item->getLabel(), PanelKit::tabs('Detail')), 'The kit has one tab per type');
+// The kit table pages and filters real row data, and Reset restores its designed column set.
+$pieces = Livewire::actingAs($staff)->test(PanelKit::class)->assertSuccessful();
+same(28,$pieces->instance()->getTableRecords()->total(),'Kit table has more than one page');
+$pieces->filterTable('status','needs_review')->assertCountTableRecords(1);
+$pieces->searchTable('no-such-domain')->assertCountTableRecords(0);
+$pieces = Livewire::actingAs($staff)->test(PanelKit::class);
+$columns = $pieces->instance()->tableColumns;
+foreach ($columns as &$column) { if ($column['name'] === 'amount') { $column['isToggled'] = false; } } unset($column);
+$pieces->call('applyTableColumnManager',$columns);
+same(true,$pieces->instance()->isTableColumnToggledHidden('amount'),'Columns can hide an optional value');
+$pieces->call('resetTableColumnManager');
+same(false,$pieces->instance()->isTableColumnToggledHidden('amount'),'Reset restores the default visible value');
+same(true,$pieces->instance()->isTableColumnToggledHidden('nameservers'),'Reset keeps optional nameservers hidden');
 // The head's actions are the page's own native actions.
 Livewire::actingAs($staff)->test(PanelKitDetail::class)->assertActionExists('kit_renew')->callAction('kit_renew')->assertHasNoActionErrors();
 // M0's toggle rows that are not settings stay on the kit through the Detail type, with their own buttons.

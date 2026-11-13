@@ -31,7 +31,7 @@ a .domains-name-cell,a .domains-list-note{overflow:hidden;text-overflow:ellipsis
 [data-domains-table] .fi-ta-content{overflow-x:auto}
 @media(max-width:1279px){
  [data-domains-table] .fi-ta-table{width:max-content;min-width:100%}
- [data-domains-table] .fi-ta-row>td:first-child,[data-domains-table] .fi-ta-header>tr>th:first-child{position:sticky;inset-inline-start:0;z-index:1;background:var(--panel-card,#111B36)}
+ [data-domains-table] .fi-ta-row>td:first-child,[data-domains-table] .fi-ta-table>thead>tr>th:first-child{position:sticky;inset-inline-start:0;z-index:1;background:var(--panel-card,#111B36)}
  [data-domains-table] .fi-ta-row>td:first-child:has(input[type=checkbox])+td{position:sticky;inset-inline-start:44px;z-index:1;background:var(--panel-card,#111B36)}
 }
 /* Keyboard focus on a cut text, or on the row link around it, shows the whole text over the page (staff-reveal), so no cell or row changes size. */

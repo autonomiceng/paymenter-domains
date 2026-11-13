@@ -24,6 +24,6 @@ final class TableColumns
             'data-domains-table' => '',
             'data-domains-columns-key' => $table->getLivewire()->getTableColumnsSessionKey(),
             'x-init' => '$nextTick(() => window.domainsColumns?.($el, $wire))',
-        ]);
+        ], merge:true);
     }
 }

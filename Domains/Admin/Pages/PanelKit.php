@@ -24,8 +24,9 @@ use Paymenter\Extensions\Servers\Domains\Support\DemoData;
  * against the mock. Demo systems only: it opens while a seeded demo registrar account exists, and it is not in the menu.
  * Its data is made up and its buttons run nothing, except Edit reminders, which is the account page's own action on the
  * demo account. */
-class PanelKit extends Page
+class PanelKit extends Page implements \Filament\Tables\Contracts\HasTable
 {
+    use \Filament\Tables\Concerns\InteractsWithTable;
     protected static ?string $slug = 'panel-kit';
     protected static bool $shouldRegisterNavigation = false;
     protected static ?SubNavigationPosition $subNavigationPosition = SubNavigationPosition::Top;
@@ -83,11 +84,13 @@ class PanelKit extends Page
                     ->step('Renewal sent to Enom TEST', State::Checking, self::AT, null, null, 'kit-renewal')
                     ->step('Invoice 100', State::Paid, self::AT - 60, 'the customer')
                     ->step('Registrar read', State::CouldntRead, self::AT - 4320, null, 'We couldn\'t reach the registrar.')
+                    ->step('Check the renewal price', State::NeedsReview, self::AT - 8000, null, 'Compare the renewal price with the current registrar cost.')
                     ->step('Monitoring paused', State::Paused, self::AT - 86400, 'Ilya')
                     ->step('Auto-renew at registrar', State::Stopped, self::AT - 950400, 'Ilya')], null, 'kit-activity', [Sheet::link('kit_all_activity', 'History', PanelKitHistory::getUrl())]),
             ], 'kit-split'),
             Sheet::single([
                 Sheet::section('A failed record', [Html::make(Head::make('fieldnote.example', $staff)->state(State::Failed, 'kit-failed-record')->line())], null, 'kit-failed-head'),
+                Sheet::section('A review', [Html::make(Head::make('fieldnote.example', $staff)->state(State::NeedsReview, 'kit-review-record')->line())], null, 'kit-review-head'),
                 Sheet::section('An unpaid invoice', [Html::make(Head::make('Invoice 100', $staff)->state(State::Unpaid, 'kit-unpaid-record')->fact('Balance', Fact::entered('$120.00 USD'))->line())], null, 'kit-unpaid-head'),
                 ...array_map(static fn (string $tone, array $states): Section => Sheet::section($tone, [self::words($states)], null, 'kit-words-'.strtolower(str_replace(' ', '-', $tone))), array_keys(self::WORDS), self::WORDS),
                 Sheet::section('One word for both readers', [
@@ -117,6 +120,8 @@ class PanelKit extends Page
                     Row::make('Version', Value::fact(Fact::entered('1.5.9'))),
                     Row::make('TLDs for sale', Value::fact(Fact::tlds(['com', 'net', 'org', ...array_map(static fn (int $i): string => 'kit'.$i, range(1, 596))]))),
                     Row::make('Last read', Value::fact(Fact::date(self::AT, $staff))),
+                    Row::make('Nameservers', Value::fact(Fact::lines(['ns1.example.net', 'ns2.example.net'])))->help('Nameservers answer DNS queries for this domain.'),
+                    Row::make('Registrar response', Value::state(State::CouldntRead, $staff, 'The registrar did not answer.')->detail(Fact::code('2400'))),
                     Row::make('Read errors', Value::fact(Fact::lines(['The registrar did not answer.', 'The saved balance could not be read.']))),
                     Row::make('Expires for staff', Value::fact(Fact::date(self::EXPIRES, $staff))),
                     Row::make('Expires for customers', Value::fact(Fact::date(self::EXPIRES, Reader::Customer))),
@@ -143,7 +148,7 @@ class PanelKit extends Page
                 ], null, 'kit-rows-domain'),
                 Sheet::section('Registrar account', [
                     Row::make('Balance', Value::fact(Fact::money('1240.00')))->actions(self::kit('balance', 'Check balance'), Sheet::link('kit_funds', 'Add funds', '#kit-rows')),
-                    SettingsRow::toggle('Renewal invoices', true, self::kit('invoices', 'Renewal invoices'), 'Set by staff on the registrar account.', 'A renewal invoice is sent 30 days before a domain expires.'),
+                    SettingsRow::toggle('Auto-renew', true, self::kit('invoices', 'Auto-renew'), 'Set by staff on the registrar account.', 'Paid by an invoice we email 30 days before expiry.'),
                     SettingsRow::setting('Mode', Value::plain(Plain::Test), 'Set by staff when the account is connected.')->help('Test and Live are separate registrar accounts, each with its own login, domains and money.'),
                     SettingsRow::setting('Reminder schedule', $this->reminderDays(), 'Set by staff who can change domain policy.')->actions(Sheet::edit(ReminderAction::make($this->server), 'Reminder schedule')),
                 ], 'All amounts in USD.', 'kit-rows-account'),
@@ -161,7 +166,7 @@ class PanelKit extends Page
                         ->blocked('Transfers can\'t be turned on without a Live registrar account.', Sheet::link('kit_live', 'Connect a Live account', '#kit-toggle')),
                 ], null, 'kit-toggle-orders'),
                 Sheet::section('Payment', [
-                    SettingsRow::setting('Auto Pay', Value::plain(Plain::On), 'Set by the customer on their payment page.'),
+                    SettingsRow::setting('Auto Pay', Value::plain(Plain::On, 'We charge Visa 4242 USD 10.99 when we issue the invoice on Nov 6, 2027.'), 'Set by the customer on their payment page.'),
                 ], null, 'kit-toggle-payment'),
                 Sheet::section('Domain lock', [
                     Row::make('Transfer lock', Value::plain(Plain::On))->actions(self::kit('lock', 'Turn off', 'Transfer lock')),
@@ -187,7 +192,7 @@ class PanelKit extends Page
             Sheet::single([
                 Sheet::section('Before', [Row::make('Transfer lock', Value::plain(Plain::On))->key('row-live-before')->actions(self::kit('live_before', 'Turn off', 'Transfer lock'))], null, 'kit-live-before'),
                 Sheet::section('Sent', [Row::make('Transfer lock', Value::plain(Plain::On, 'Turning off at the registrar. The button comes back when this finishes.'))->key('row-live-sent')->running(Value::state(State::Checking, $staff))], null, 'kit-live-sent'),
-                Sheet::section('After 30 seconds', [Row::make('Transfer lock', Value::plain(Plain::On, 'This is taking longer than usual. We\'ll keep trying.'))->key('row-live-slow')->running(Value::state(State::Checking, $staff))], null, 'kit-live-slow'),
+                Sheet::section('After the normal wait', [Row::make('Transfer lock', Value::plain(Plain::On, 'Check the request before sending another change.'))->key('row-live-slow')->running(Value::state(State::Delayed, $staff))], null, 'kit-live-slow'),
                 Sheet::section('Done', [Row::make('Transfer lock', Value::plain(Plain::Off, 'Turned off. Confirmed at the registrar', Fact::date(self::AT + 120, $staff)))->key('row-live-done')->actions(self::kit('live_done', 'Turn on', 'Transfer lock'))], null, 'kit-live-done'),
                 Sheet::section('Failed', [Row::make('Transfer lock', Value::plain(Plain::On))->key('row-live-failed')->result(Value::state(State::Failed, $staff, 'The registrar didn\'t answer. Nothing changed.'))->actions(self::kit('live_retry', 'Try again', 'Transfer lock'))], null, 'kit-live-failed'),
             ], 'kit-live'),
@@ -195,8 +200,8 @@ class PanelKit extends Page
                 Sheet::section('Updating', [Row::notice('kit-update-guide', Value::state(State::NeedsReview, $staff, 'See the updating guide for how to update.'), Sheet::link('kit_update_guide', 'Updating guide', 'https://example.com/updating', true))], null, 'kit-update-guide'),
                 Sheet::section('From the registrar', [
                     Row::notice('read-failed', Value::state(State::CouldntRead, $staff, 'We couldn\'t reach the registrar.')->when(self::AT), self::kit('notice_sync', 'Sync now')),
-                    Row::make('Transfer lock', Value::state(State::CouldntRead, $staff))->key('row-notice-lock'),
-                    Row::make('Nameservers', Value::state(State::CouldntRead, $staff))->key('row-notice-ns'),
+                    Row::make('Transfer lock', Value::plain(Plain::On))->key('row-notice-lock'),
+                    Row::make('Nameservers', Value::fact(Fact::lines(['ns1.example.net', 'ns2.example.net'])))->key('row-notice-ns'),
                     Row::make('Contacts', Value::state(State::CouldntRead, $staff))->key('row-notice-contacts'),
                 ], null, 'kit-notice-read'),
                 Sheet::section('Registrar account', [
@@ -204,7 +209,33 @@ class PanelKit extends Page
                     Row::make('Balance', Value::fact(Fact::money('42.10')))->key('row-notice-balance')->actions(self::kit('notice_balance', 'Check balance')),
                 ], 'All amounts in USD.', 'kit-notice-account'),
             ], 'kit-notice'),
+            \Filament\Schemas\Components\EmbeddedTable::make(),
         ]);
+    }
+    /** Native table variants: Columns and Reset, attention notes, inline actions, currency codes and two pages. */
+    public function table(\Filament\Tables\Table $table): \Filament\Tables\Table
+    {
+        $c = \Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\Column::class;
+        $columns = [
+            $c::domain('domain', 'Domain')->searchable(),
+            $c::value('status', 'Status', static fn (array $r): Value => Value::state(State::from($r['status']), Reader::Staff)),
+            $c::note('note', 'Note', static fn (array $r): ?string => $r['note'])->actWhen(static fn (array $r): bool => $r['status'] === 'needs_review'),
+            $c::text('customer', 'Customer'),
+            $c::value('amount', 'Renewal price', static fn (array $r): Value => Value::fact(Fact::money($r['amount'], $r['currency'])))->end(),
+            $c::value('nameservers', 'Nameservers', static fn (array $r): Value => Value::fact(Fact::lines(['ns1.example.net', 'ns2.example.net'])))->optional(),
+        ];
+        return \Paymenter\Extensions\Servers\Domains\Admin\Support\TableColumns::choose($table, array_map(static fn ($c) => $c->toColumn(), $columns), ['nameservers'])
+            ->records(static function (?string $search, array $filters, int $page, int $recordsPerPage): \Illuminate\Pagination\LengthAwarePaginator {
+                $rows = collect(range(1, 28))->mapWithKeys(static fn (int $n): array => [$n => [
+                    'domain' => 'fieldnote-'.$n.'.example', 'status' => $n === 1 ? 'needs_review' : 'active',
+                    'note' => $n === 1 ? 'Compare the renewal price with the registrar cost.' : null,
+                    'customer' => $n === 1 ? 'Maximiliana Featherstonehaugh' : 'Ada Park', 'amount' => '14.99', 'currency' => $n % 2 ? 'USD' : 'EUR',
+                ]])->filter(static fn (array $r): bool => (blank($search) || str_contains($r['domain'], $search))
+                    && (blank($filters['status']['value'] ?? null) || $r['status'] === $filters['status']['value']));
+                return new \Illuminate\Pagination\LengthAwarePaginator($rows->forPage($page, $recordsPerPage), $rows->count(), $recordsPerPage, $page);
+            })->recordUrl(static fn (): string => PanelKitDetail::getUrl())->paginated([25, 50])->defaultPaginationPageOption(25)
+            ->filters([\Filament\Tables\Filters\SelectFilter::make('status')->options(['active' => State::Active->label(), 'needs_review' => State::NeedsReview->label()])])
+            ->recordActions([Sheet::link('kit_view', 'View', PanelKitDetail::getUrl())]);
     }
     /** Nov 12, 2026, 17:12 UTC, the kit's "now". */
     public const AT = 1794503520;
