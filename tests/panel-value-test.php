@@ -91,6 +91,15 @@ same([0.0, '<b>x</b> broke.'], [$escaped->evaluate('count(//b)'), $text($escaped
 // The Blade component renders the same value.
 same($failed(Reader::Staff)->toHtml(), Blade::render('<x-domains::panel.value :value="$value" />', ['value' => $failed(Reader::Staff)]), 'The component tag and the PHP piece agree');
 
+// Customer trace: a mark only where a step has a state. A step with no state has none, whatever its label or word says.
+$trace = $read(Blade::render('<x-domains::customer.trace :steps="$steps" />', ['steps' => [
+    ['label' => 'Invoice #7', 'state' => State::Paid], ['label' => 'Registration', 'state' => State::Checking],
+    ['label' => 'Transfer', 'state' => State::Cancelled], ['label' => 'Cancelled', 'state' => null], ['label' => 'Active', 'word' => 'Skipped'],
+]]));
+same([['Invoice #7', 'ok', 1.0], ['Registration', 'prog', 1.0], ['Transfer', 'off', 1.0], ['Cancelled', '', 0.0], ['Active', '', 0.0]],
+    array_map(static fn (DOMNode $li): array => [$trace->evaluate('normalize-space(./div/*[1])', $li), $trace->evaluate('string(@data-domains-tone)', $li), $trace->evaluate('count(./*[@class="domains-trace-mark"])', $li)],
+        iterator_to_array($trace->query('//ol[@data-piece="trace"]/li'))), 'Customer trace marks follow the state, never the wording');
+
 // Head: title with its tag, then the record's own state, facts and one link.
 $head = Head::make('fieldnote.example', Reader::Staff)->domain()->tag(demo: false, test: true)->state(State::Active, 'domain-8')->fact('Expires', Fact::day('2027-03-04'))->link('Enom TEST', '/admin/registrar-account/3');
 $title = $read($head->heading()->toHtml());
