@@ -185,9 +185,10 @@ final class RequestFacts
      * for staff: it reads as held (RequestStatus::READS_AS), the same word as its domain and the Status filter. With its domain (passed, or loaded with the row) a change reads as
      * customer History does (ManagementProgress::statusKey), on the rail, the list and the request page. Lists pass $ordersOff as for reason(),
      * and $accounts, the OperationQueries::ordersOffAccounts() snapshot their Status filter reads. */
-    /** Staff alone name a registration stopped here, or a transfer staff held, On hold: one word for one hold. Setup still waits on the customer. */
-    public const STATUSES = [...RequestStatus::SET, 'on_hold'=>['On hold','warning']];
-    /** A transfer reads On hold only when staff held it; a transfer waiting on its old registrar keeps its own word. */
+    /** A registration stopped here, or a transfer staff held, waits for a staff check, so it reads Under review (P-STA-8):
+     * one word for one hold. Its own key keeps it apart in the Status filter. Setup still waits on the customer. */
+    public const STATUSES = [...RequestStatus::SET, 'on_hold'=>RequestStatus::SET['under_review']];
+    /** A transfer reads as held only when staff held it; a transfer waiting on its old registrar keeps its own word. */
     public const HELD_TRANSFER_CODE = 'staff_review_required';
     public static function heldAcquisition(Operation $op, bool $ordersOff=false): bool
     {
@@ -205,12 +206,11 @@ final class RequestFacts
             &&($op->policy['reconciliation']['read_at']??\Paymenter\Extensions\Servers\Domains\Services\TransferPolling::start($op))>$now-86400;
         }catch(\Throwable){return false;}
     }
-    /** The closed state word for a request's status. On hold reads Under review, as its domain does, and In progress is work
-     * waiting on the registrar, so it reads Checking. @param array{label:string} $status */
+    /** The closed state word for a request's status. In progress is work waiting on the registrar, so it reads Checking. @param array{label:string} $status */
     public static function state(array $status): \Paymenter\Extensions\Servers\Domains\Presentation\State
     {
         return match($status['label']){
-            'On hold'=>State::UnderReview,'In progress'=>State::Checking,
+            'In progress'=>State::Checking,
             default=>State::tryFrom(strtolower(str_replace(' ','_',$status['label'])))??State::NeedsReview,
         };
     }
@@ -223,7 +223,9 @@ final class RequestFacts
         try { $key=$d?ManagementProgress::statusKey($op,$d,$off):null; } catch (\Throwable) { $key=null; }
         if ($key!==null) { [$status['label'],$status['tone']]=RequestStatus::SET[$key]; }
         if ($paid=self::paidWaiting($op,$accounts)) { [$status['label'],$status['tone']]=RequestStatus::SET['in_progress'];$status['reason']=$paid; }
-        return self::heldAcquisition($op,$off) ? [...$status,'label'=>'On hold','tone'=>'warning'] : $status;
+        if (!self::heldAcquisition($op,$off)) { return $status; }
+        [$status['label'],$status['tone']]=self::STATUSES['on_hold'];
+        return $status;
     }
     /** The request still reads awaiting_payment until the paid invoice is picked up, as customers see it (OwnedDomains).
      * Staff read that it is paid, and whether it goes out on its own or waits on Orders. Null when the invoice is not paid. */

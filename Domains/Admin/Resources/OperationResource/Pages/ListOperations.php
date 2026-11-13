@@ -50,7 +50,7 @@ class ListOperations extends RecordListPage
     }
     protected function filters(): array
     {
-        // On hold reads Under review, so one word picks both.
+        // A held request reads Under review, so one word picks both.
         $words = [];
         foreach (array_keys(RequestFacts::STATUSES) as $key) { if ($key !== 'on_hold') { $words[$key] = RequestFacts::state(['label' => RequestFacts::STATUSES[$key][0]])->label(); } }
         return [

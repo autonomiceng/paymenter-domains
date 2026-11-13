@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\{DomainStatus, RequestStatus};
 /** The staff view of a domain's status: the customer's status words, with the one staff step under them.
- * Status words come from DomainStatus, except held registrations and staff-held transfers: staff read On hold and customers read Under review. The step is staff-only.
+ * Status words come from DomainStatus, except held registrations and staff-held transfers: both read Under review, amber for staff and cyan for customers (P-STA-8). The step is staff-only.
  * Where the domain only says a request is in the way, the head word stays the customer's and the step names that request (RequestFacts::status reason).
  * Request history and every open alert stay on the domain and request pages.
  * This is the only copy of the rule: the list, the heading and the status filter all read it through DomainFacts::status(). */
@@ -60,9 +60,10 @@ final class StaffDomainStatus
         if ($step === RequestFacts::AUTO_TRANSFER) {
             $shared = [...$shared, 'key' => 'pending_transfer', 'label' => 'Pending transfer', 'tone' => 'info', 'reason' => null];
         }
-        // A queued registration that Orders off stop is On hold, as its request reads. A closed order or customer setup keeps its own word.
+        // A queued registration that Orders off stop is held for staff, Under review, as its request reads. A closed order or customer setup keeps its own word.
         if ($op && in_array($d->status,self::ACQUIRING,true) && RequestFacts::heldAcquisition($op, $state==='registration_held'||$state==='registration_pending'&&$ordersOff)) {
-            $shared=[...$shared,'key'=>'on_hold','label'=>'On hold','tone'=>'warning'];
+            [$label,$tone]=RequestFacts::STATUSES['on_hold'];
+            $shared=[...$shared,'key'=>'on_hold','label'=>$label,'tone'=>$tone];
         }
         return [...self::forStaff($shared), 'step' => $step, 'request' => $request, 'act' => $act, 'alert' => $named];
     }

@@ -99,7 +99,7 @@ class ListDomains extends RecordListPage
         $status = $this->status($d); $row = $this->row($d);
         // Sync stopped or no matching account: staff must look, and the note says what to fix.
         if (DomainFacts::listTone($status, $row['sync'], $row['noAccount']) !== $status['tone']) { return State::NeedsReview; }
-        // On hold has no word of its own in the closed list: staff are reviewing it, and the note says who held it.
+        // A hold for staff reads Under review, and the note says who held it.
         return State::tryFrom((string) $status['key']) ?? State::UnderReview;
     }
     private function note(Domain $d): array { $row = $this->row($d); return DomainFacts::note($this->status($d), $row['sync'], $row['noAccount'], $d); }

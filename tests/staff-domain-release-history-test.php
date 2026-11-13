@@ -66,7 +66,7 @@ $releasedRows=$historyRows($released->domain_id);$releasedRow=$rowOf($releasedRo
 expect(str_contains($releasedRow[0],'Under review'),'History keeps the released request status: '.$releasedRow[0]);
 expect(!str_contains($releasedRow[0],$reason),'History does not repeat the head reason: '.$releasedRow[0]);
 $heldRow=$rowOf($historyRows($releaseOps[1]->domain_id),$releaseOps[1]->id);same(1,count($heldRow),'History lists the held request once');
-expect(str_contains($heldRow[0],'On hold'),'The retained hold keeps its status in History: '.$heldRow[0]);
+expect(str_contains($heldRow[0],'Under review'),'The retained hold keeps its status in History: '.$heldRow[0]);
 // Another request with the same words is not the one the head names, so it keeps them.
 $other=$released->domain->operations()->create(['server_id'=>$released->server_id,'registrar_key'=>$released->registrar_key,'account_fingerprint'=>$released->account_fingerprint,
     'service_id'=>$released->service_id,'authority_generation'=>$released->authority_generation,'operation_key'=>'history-other-queued','action'=>'contacts','state'=>'queued',
