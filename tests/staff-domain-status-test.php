@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource, Operat
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\{ListDomains, ViewDomain};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts, DomainQueries, Labels, RequestFacts, Staff};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Presentation\{DomainStatus, RequestStatus};
+use Paymenter\Extensions\Servers\Domains\Presentation\{DomainStatus, RequestStatus, State};
 use Paymenter\Extensions\Servers\Domains\Services\{ManagementCorrections, ObligationAlerts};
 staffPanel(); [, $seed]=staffData();
 $viewer=staffUser([Staff::VIEW]); Auth::setUser($viewer);
@@ -157,7 +157,9 @@ foreach ($cases as $name=>$case) {
     [$d,$key,$label,$step]=$case; $note=isset($case[4])?$case[4].' '.$step:$step;
     $cell=$columns['status']->record($records[$d->id]); $status=DomainFacts::status($d->fresh());
     $list=[$cell->getState(),$columns['note']->record($records[$d->id])->getState()];
-    if ($list!==[$label,$note]) { $wrong[]=$name.': list shows "'.implode(' / ',array_filter($list)).'", want "'.implode(' / ',array_filter([$label,$note])).'"'; }
+    // The list draws On hold as Under review, from the closed word list; the note keeps who held it.
+    $shown=$key==='on_hold'?State::UnderReview->label():$label;
+    if ($list!==[$shown,$note]) { $wrong[]=$name.': list shows "'.implode(' / ',array_filter($list)).'", want "'.implode(' / ',array_filter([$shown,$note])).'"'; }
     $line=DomainFacts::statusLine($status);
     if ([$status['label'],$line]!==[$label,$step]) { $wrong[]=$name.': domain page shows "'.implode(' / ',array_filter([$status['label'],$line])).'", want the same as the list'; }
     $members[$key][]=$d->id;
@@ -399,7 +401,8 @@ expect(Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::stat
 
 $d=$row('registration_pending','register','held','staff_review_required');
 expect(DomainQueries::alerting(Domain::whereKey($d->id))->exists(),'A visible staff task counts even before a saved alert is written');
-$domainColumn=Livewire::actingAs($viewer)->test(ListDomains::class)->instance()->getTable()->getColumn('domain')->record($d);
-$phone=(string)$domainColumn->getDescriptionBelow();
-expect(str_contains($phone,'domains-phone-note')&&str_contains($phone,'On hold')&&str_contains($phone,'Check request'),'Phone summary keeps both Status and Note under the domain');
+$table=Livewire::actingAs($viewer)->test(ListDomains::class)->instance()->getTable();
+// A phone keeps both: neither Status nor Note waits for a wider screen.
+same([State::UnderReview->label(),null,null],[$table->getColumn('status')->record($d)->getState(),$table->getColumn('status')->getVisibleFrom(),$table->getColumn('note')->getVisibleFrom()],'A held registration reads Under review at every width');
+expect(str_contains((string)$table->getColumn('note')->record($d)->getState(),'Check request'),'Its note names the request to check');
 $nativeSuccessful=true; echo "Staff domain status: customer words and one next step per row.\n";

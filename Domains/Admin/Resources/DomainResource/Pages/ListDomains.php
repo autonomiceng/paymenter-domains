@@ -45,8 +45,9 @@ class ListDomains extends RecordListPage
         return [
             Column::domain('domain', 'Domain')->searchable()->sortable(),
             Column::value('status', 'Status', fn (Domain $d): Value => Value::state($this->state($d), Reader::Staff, null, 'domain-'.$d->id)),
-            // The step comes first, so a cut note still shows it. A step that names a request opens it.
-            Column::text('note', 'Note', fn (Domain $d): ?string => $this->note($d)['text'])->from('sm')->link(fn (Domain $d): ?string => DomainFacts::requestUrl($this->status($d))),
+            // Status and the step show at every width, so a phone reads both. The step comes first, so a cut note still
+            // shows it. A step that names a request opens it.
+            Column::text('note', 'Note', fn (Domain $d): ?string => $this->note($d)['text'])->link(fn (Domain $d): ?string => DomainFacts::requestUrl($this->status($d))),
             Column::text('customer', 'Customer', fn (Domain $d): ?string => $d->user ? (trim($d->user->first_name.' '.$d->user->last_name) ?: $d->user->email) : null)
                 ->searchable(fn (Builder $query, string $search): Builder => self::customerSearch($query, $search)),
             Column::value('provider_expires_at', 'Expires', fn (Domain $d): ?Value => $this->expires($d))
@@ -88,11 +89,13 @@ class ListDomains extends RecordListPage
         });
     }
     private function status(Domain $d): array { return DomainFacts::status($d, $this->row($d)['inputs']); }
-    /** The status word follows the list tone: a row that would read Active but can't be synced says why instead. */
+    /** The status word follows the list tone: a row that would read Active but can't be synced reads Needs review. */
     private function state(Domain $d): State
     {
         $status = $this->status($d); $row = $this->row($d);
-        if (DomainFacts::listTone($status, $row['sync'], $row['noAccount']) !== $status['tone']) { return $row['noAccount'] ? State::NotConnected : State::CouldntRead; }
+        // Sync stopped or no matching account: staff must look, and the note says what to fix.
+        if (DomainFacts::listTone($status, $row['sync'], $row['noAccount']) !== $status['tone']) { return State::NeedsReview; }
+        // On hold has no word of its own in the closed list: staff are reviewing it, and the note says who held it.
         return State::tryFrom((string) $status['key']) ?? State::UnderReview;
     }
     private function note(Domain $d): array { $row = $this->row($d); return DomainFacts::note($this->status($d), $row['sync'], $row['noAccount'], $d); }

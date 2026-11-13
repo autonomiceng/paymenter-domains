@@ -54,7 +54,8 @@ foreach (['status'=>['status'=>'adoption_pending'],'provenance'=>['provenance'=>
     same(['Off','Until import'],[$page['value'],$page['sub']],'Domain page says Off until import: pending '.$case);
     // Customers and staff see one name for the setting.
     same('Auto-renew',$columns['auto_renew']->getLabel(),'List column says Auto-renew, as the domain page row');
-    same([$page['value'],$page['sub']],[$cell->getState(),$cell->getDescriptionBelow()],'List matches the domain page: pending '.$case);
+    $text=trim(preg_replace('/\s+/',' ',html_entity_decode(strip_tags((string)$cell->formatState($cell->getState())))));
+    same([$page['value'],$page['sub']],[$cell->getState(),trim(substr($text,strlen((string)$cell->getState())))?:null],'List matches the domain page: pending '.$case);
     DB::table('domains_domains')->where('id',$held->id)->update($saved);
 }
 DB::table('domains_domains')->where('id',$held->id)->update(['status'=>'cancelled']);

@@ -37,7 +37,7 @@ assertDomainNameWraps(Livewire::actingAs($viewer)->test(\Paymenter\Extensions\Se
 foreach([[$held,'Under review','Old registrar needs approval. Check request #'.$held->operations()->sole()->id.'.'],[$uncertain,'Under review','Old registrar needs approval. Check request #'.$uncertain->operations()->sole()->id.'.'],[$active,'Under review','Check the domain and its requests.']] as [$domain,$label,$reason]){
     $record=$records[$domain->id];$column=$columns['status']->record($record);
     same($label,$column->getState(),'A held or unconfirmed transfer reads the customer word');
-    same('warning',$column->getColor($column->getState()),'Staff have a job here');
+    expect(str_contains((string)$column->formatState($column->getState()),'data-domains-tone="'.\Paymenter\Extensions\Servers\Domains\Presentation\Tone::Attention->value.'"'),'Staff have a job here');
     same($reason,$columns['note']->record($record)->getState(),'The next step sits in the note');
     same(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::status($domain->fresh()),\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::status($record),'Batched list status matches the page');
     same(null,$column->getTooltip(),'No tooltip: the reason is visible');

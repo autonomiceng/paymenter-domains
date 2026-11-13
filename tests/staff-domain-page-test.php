@@ -10,6 +10,7 @@ use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource, PendingAdoptionResource};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\{ListDomains, ViewDomain};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager;
+use Paymenter\Extensions\Servers\Domains\Presentation\State;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{AcquisitionActions, DomainEditActions, DomainFacts, HoldingActions, Staff};
 use Paymenter\Extensions\Servers\Domains\Data\{DateEvidence, DomainSnapshot, ExpiryPrecision, TransferStatus};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, WatchAudit};
@@ -288,7 +289,9 @@ same('The registrar read stopped.',DomainFacts::notice($active->fresh())['title'
 DB::table('domains_domains')->where('id',$active->id)->update(['provider_expires_at'=>null]);
 same(null,$sub($active,'Expires'),'Missing expiry leaves stopped-read recovery to the page notice');
 DB::table('domains_domains')->where('id',$active->id)->update(['provider_expires_at'=>today()->addDays(120)->format('Y-m-d')]);
-Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($active->domain)->assertSee('Active')->assertSee('Sync stopped')->assertSeeHtml('data-domains-tone="warn" data-domains-record="domain-'.$active->id.'"');
+Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($active->domain)->assertSee('Sync stopped')->assertSeeHtml('data-domains-record="domain-'.$active->id.'"');
+$synced=Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($active->domain)->instance();
+same(State::NeedsReview->label(),$synced->getTable()->getColumn('status')->record($synced->getTableRecords()->firstWhere('id',$active->id))->getState(),'A stopped sync asks staff to look');
 same('success',DomainFacts::listTone(['tone'=>'success'],null),'A healthy row stays green in the list');same('danger',DomainFacts::listTone(['tone'=>'danger'],'failed'),'A stopped sync never softens a worse status');
 Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$active->id])->assertSee('The registrar read stopped.')->assertSee('Resume sync')->assertSee('Read stopped')->assertSee('Stopped after 5 attempts.')->assertDontSee('Cause: read_unavailable.');
 Auth::setUser($staff);$stoppedHead=DomainFacts::head($active->fresh(),DomainFacts::status($active->fresh()),DomainFacts::for($active->fresh()));
