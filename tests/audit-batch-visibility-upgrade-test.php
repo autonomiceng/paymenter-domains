@@ -9,6 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts;
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Services\{AuditArchives,AuditBatchRetirement,ReminderSchedules,StaffSettingsReview};
 extract(commerceFixture());$server=Server::findOrFail($tlds[0]->server_id);
+$newServer=Server::create(['name'=>'Synthetic upgrade enrollment','type'=>'server','extension'=>'Domains','enabled'=>true]);
 DB::table(AuditArchives::TABLE)->where('server_id',$server->id)->delete();
 $server->settings()->whereIn('key',[StaffSettingsReview::KEY,StaffSettingsReview::KEY.'.catalogue'])->delete();
 $change=static fn(string $key,string $action,string $at)=>['key'=>$key,'at'=>$at,'phase'=>'completed','action'=>$action,'actor_id'=>null,'reason'=>'Synthetic '.$key];
@@ -22,7 +23,6 @@ $reminderAt='2026-11-02T02:00:00+00:00';
 DB::table('domains_reminder_schedules')->where('server_id',$server->id)->update(['audit'=>encrypt([['revision'=>2,'at'=>$reminderAt,'reason'=>'Synthetic reminder change','before'=>['enabled'=>false],'after'=>['enabled'=>true]]])]);
 // Enrollment can run with the required legacy column before the retirement migration.
 Schema::table('domains_reminder_schedules',static fn($t)=>$t->text('audit')->nullable(false)->change());
-$newServer=Server::create(['name'=>'Synthetic upgrade enrollment','type'=>'server','extension'=>'Domains','enabled'=>true]);
 $account=Account::withVerifiedBindingWrite(static fn()=>Account::create(['server_id'=>$newServer->id,'registrar_key'=>'enom','environment'=>'test','stable_identity'=>'upgrade-enrollment']));
 ReminderSchedules::enroll($newServer->id);
 $enrolled=DB::table('domains_reminder_schedules')->where('server_id',$newServer->id)->sole();
