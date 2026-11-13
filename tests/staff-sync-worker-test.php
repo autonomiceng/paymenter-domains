@@ -49,7 +49,11 @@ same(0,DB::table('jobs')->count(),'Worker consumes the job');
 same(0,DB::table('failed_jobs')->count(),'No failed queue job');
 same(0,App\Models\Notification::where('user_id',$actor->id)->count(),'A first successful read only confirms records and stays out of the bell');
 same($clock->now()->format(DATE_ATOM),$d->fresh()->last_synced_at->format(DATE_ATOM),'Worker advances saved domain facts');
-$page->call('pollManagement')->assertSee('0 records')->assertDontSee('Not read')->assertSee('Domain synced');
+$page->call('pollManagement')->assertSee('0 records')->assertSee('Domain synced');
+// The read records leave Not read; a family this read did not return keeps its own state until its scheduled read.
+$doc=new DOMDocument();libxml_use_internal_errors(true);$doc->loadHTML('<?xml encoding="utf-8"?>'.$page->html());libxml_clear_errors();
+$dnsRow=(new DOMXPath($doc))->query('//div[@data-piece="row"][div[contains(@class,"domains-panel-row-k")][normalize-space()="DNS records"]]');
+expect($dnsRow->length===1&&!str_contains($dnsRow->item(0)->textContent,'Not read'),'A completed read leaves the DNS records row read');
 expect(str_contains($queuedHtml,'wire:poll.2s.keep-alive="pollManagement"'),'An open staff page must poll while its sync is queued');
 expect(!str_contains($page->html(),'wire:poll.'),'Completed sync stops polling');
 $syncEvents=array_values(array_filter(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::entries($d->fresh()),fn($entry)=>is_array($entry)&&in_array($entry['event']??null,['Sync requested','Domain synced'],true)));
