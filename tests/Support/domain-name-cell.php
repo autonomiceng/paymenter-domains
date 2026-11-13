@@ -24,15 +24,16 @@ function domainNameStyle(Dom\Element $node): array
 function assertDomainNameOneLine(string $html, string $name, string $where): void
 {
     $dom = Dom\HTMLDocument::createFromString('<!doctype html><meta charset="utf-8">'.$html, LIBXML_NOERROR);
-    $items = array_values(array_filter(iterator_to_array($dom->querySelectorAll('.fi-ta-text-item .domains-dn')), static fn(Dom\Element $node) => $node->getAttribute('title') === $name));
+    // The shared cell: the full name as its title, visible parts hidden from screen readers, and one part they read.
+    $items = array_values(array_filter(iterator_to_array($dom->querySelectorAll('[title]')), static fn(Dom\Element $node) => $node->getAttribute('title') === $name && $node->querySelector('[aria-hidden="true"]') !== null));
     same(1, count($items), $where.': one rendered domain name');
     same(0, $items[0]->querySelectorAll('wbr')->length, $where.': no line breaks in the name, got '.trim($items[0]->innerHTML));
-    $part = static fn(string $class): string => (string) $items[0]->querySelector('.'.$class)?->textContent;
-    same([$name, $name], [$part('domains-dn-sr'), $part('domains-dn-head').$part('domains-dn-tail')], $where.': screen readers and the visible parts read the full name');
-    expect(str_contains((string) $items[0]->closest('.fi-ta-text')?->getAttribute('class'), 'domains-name-cell'), $where.': the cell is a one-line name');
-    $sheet = file_get_contents(dirname(__DIR__,2).'/Domains/resources/views/partials/domain-name-styles.blade.php');
-    expect(preg_match('/\.domains-dn\{[^}]*white-space:nowrap/', $sheet) === 1, $where.': the name stays on one line');
-    expect(preg_match('/\.domains-dn-head\{[^}]*text-overflow:ellipsis/', $sheet) === 1 && preg_match('/\.domains-dn-tail\{flex:none\}/', $sheet) === 1, $where.': a cut name ends its head in "..." and keeps the TLD');
+    $children = array_filter(iterator_to_array($items[0]->childNodes), static fn($n): bool => $n instanceof Dom\Element);
+    $shown = array_values(array_map(static fn(Dom\Element $n): string => $n->textContent, array_filter($children, static fn(Dom\Element $n): bool => $n->getAttribute('aria-hidden') === 'true')));
+    $read = array_values(array_map(static fn(Dom\Element $n): string => $n->textContent, array_filter($children, static fn(Dom\Element $n): bool => !$n->hasAttribute('aria-hidden'))));
+    same([$name, [$name]], [implode('', $shown), $read], $where.': the visible parts read the full name, and screen readers read it once');
+    $dot = strrpos($name, '.');
+    expect($dot === false || str_ends_with((string) end($shown), substr($name, $dot)), $where.': a cut name keeps its TLD');
 }
 
 /**

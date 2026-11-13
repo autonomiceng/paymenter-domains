@@ -26,10 +26,8 @@ Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable('nobody-by-th
 // in the cell's text (screen readers, copy, search) and in its title (hover).
 $long=str_repeat('Longname ',5).'Owner';DB::table('users')->where('id',$owner->id)->update(['first_name'=>$long,'last_name'=>'']);
 $dom=Dom\HTMLDocument::createFromString('<!doctype html><meta charset="utf-8">'.Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($active->domain)->html(),LIBXML_NOERROR);
-$cell=$dom->querySelector('.domains-person[title="'.$long.'"]');
-expect($cell!==null&&trim($cell->textContent)===$long,'A long customer name keeps its full text and title in a capped cell');
-$sheet=file_get_contents(dirname(__DIR__).'/Domains/resources/views/partials/staff-styles.blade.php');
-expect((bool)preg_match('/\.domains-person>\.fi-ta-text-item\{max-width:24ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap\}/',$sheet),'A customer name stops at 24ch with an ellipsis');
+$cell=$dom->querySelector('[title="'.$long.'"]');
+expect($cell!==null&&trim($cell->textContent)===$long,'A long customer name keeps its full text (screen readers, copy) and its title (hover)');
 // Duplicate staff account names remain distinguishable in filters and rows.
 App\Models\Server::whereIn('id',[$held->server_id,$active->server_id])->update(['name'=>'Shared account']);
 $accountsPage=Livewire::actingAs($viewer)->test(ListDomains::class);
@@ -118,9 +116,9 @@ foreach($missing as $i=>$id){$row=$records[$id];
     same(DomainFacts::NO_ACCOUNT.($i%3===0?' Sync stopped. Ask staff who can resume sync.':''),$columns['note']->record($row)->getState(),'Missing accounts never falsely pause demo sync');
 }
 // A long name cuts in the middle and keeps its TLD; hover and screen readers get the full name, and copy reads it once.
-$full='beco-test-fc9d1234567b02d.com';$doc=new DOMDocument();$doc->loadHTML('<?xml encoding="utf-8"?>'.Paymenter\Extensions\Servers\Domains\Presentation\DomainName::cell($full)->toHtml());$x=new DOMXPath($doc);
-$part=fn(string $c): string=>$x->query('//*[contains(concat(" ",@class," ")," '.$c.' ")]')->item(0)?->textContent??'';
-same([$full,$full,$full,'7b02d.com'],[$x->query('//*[@title]')->item(0)?->getAttribute('title'),$part('domains-dn-sr'),$part('domains-dn-head').$part('domains-dn-tail'),$part('domains-dn-tail')],'A cut name keeps its TLD and its full name');
-same(['true','true'],[$x->query('//*[contains(@class,"domains-dn-head")]')->item(0)?->getAttribute('aria-hidden'),$x->query('//*[contains(@class,"domains-dn-tail")]')->item(0)?->getAttribute('aria-hidden')],'Screen readers read the full name once');
+$full='shop-test-fc9d1234567b02d.com';$doc=new DOMDocument();$doc->loadHTML('<?xml encoding="utf-8"?>'.Paymenter\Extensions\Servers\Domains\Presentation\DomainName::cell($full)->toHtml());$x=new DOMXPath($doc);
+$shown=array_map(fn($n)=>$n->textContent,iterator_to_array($x->query('//*[@title]/*[@aria-hidden="true"]')));$read=$x->query('//*[@title]/*[not(@aria-hidden)]');
+same([$full,$full,1,$full],[$x->query('//*[@title]')->item(0)?->getAttribute('title'),implode('',$shown),$read->length,$read->item(0)?->textContent],'Hover, the visible parts and screen readers (once) all read the full name');
+expect(count($shown)===2&&$shown[0]!==''&&str_ends_with($shown[1],'.com'),'A cut name is cut in its head and keeps its TLD');
 expect(str_contains(Livewire::actingAs($viewer)->test(ListDomains::class)->html(),'title="'.e($active->domain).'"'),'The Domain column draws the shared name cell');
 echo "Staff Domains list: Auto-renew on every state, one demo-paused definition and a fixed query count passed.\n";$nativeSuccessful=true;

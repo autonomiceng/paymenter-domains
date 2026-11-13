@@ -6,6 +6,6 @@
 @elseif ($value->fact)@if ($value->fact->kind === 'code')<div class="domains-panel-sub domains-panel-extra">@endif@include('domains::components.panel.fact', ['fact' => $value->fact])@if ($value->fact->kind === 'code')</div>@endif
 @else<span class="domains-panel-plain">{{ $value->word }}</span>@endif
 @if ($value->tag !== null) {{ $value->tag }}</div>@endif
-@if ($value->sub !== null || $value->then !== null)<div class="domains-panel-sub">@if ($value->sub !== null){{ $value->sub }}@if ($value->subAt !== null && $value->kind === 'fact') @include('domains::components.panel.fact', ['fact' => $value->subAt])@elseif ($value->subAt !== null), @include('domains::components.panel.fact', ['fact' => $value->subAt]).@endif{{ $value->then !== null ? ' ' : '' }}@endif{{ $value->then }}</div>@endif
+@if ($value->sub !== null || $value->then !== null)<div class="domains-panel-sub" data-piece="sub">@if ($value->sub !== null){{ $value->sub }}@if ($value->subAt !== null && $value->kind === 'fact') @include('domains::components.panel.fact', ['fact' => $value->subAt])@elseif ($value->subAt !== null), @include('domains::components.panel.fact', ['fact' => $value->subAt]).@endif{{ $value->then !== null ? ' ' : '' }}@endif{{ $value->then }}</div>@endif
 @if ($extra = $value->shownExtra())<div class="domains-panel-sub domains-panel-extra">@foreach ($extra as $fact)@include('domains::components.panel.fact', ['fact' => $fact])@if (!$loop->last), @endif @endforeach</div>@endif
 </div>
