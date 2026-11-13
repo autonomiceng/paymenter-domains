@@ -12,7 +12,6 @@ use Livewire\Attributes\Url;
 abstract class RecordListPage extends Page implements PageType, HasTable
 {
     use Concerns\RecordListType;
-    protected const WIDE = true;
     protected const PAGE_CLASSES = ['domains-page-list', 'fi-resource-list-records-page'];
     /** The search, sort and filters live in the address, as on Filament's own list page, so a link or a bookmark opens
      * the same rows. @var array<string,mixed>|null */

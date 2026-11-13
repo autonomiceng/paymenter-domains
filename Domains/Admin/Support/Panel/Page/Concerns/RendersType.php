@@ -52,7 +52,7 @@ trait RendersType
     final protected function getHeaderWidgets(): array { return []; }
     final protected function getFooterWidgets(): array { return []; }
     final public function getView(): string { return 'filament-panels::pages.page'; }
-    final public function getMaxContentWidth(): Width|string|null { return static::WIDE ? Width::Full : Sheet::WIDTH; }
+    final public function getMaxContentWidth(): Width|string|null { return Sheet::WIDTH; }
     /** The type's class on the page, plus Filament's own view or list class so a host skin styles one type one way. */
     final public function getPageClasses(): array { return [...parent::getPageClasses(), ...static::PAGE_CLASSES]; }
 

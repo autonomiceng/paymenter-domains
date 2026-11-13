@@ -31,6 +31,7 @@ class WhatYouSell extends Page implements HasTable
 {
     use InteractsWithTable {handleTableFilterUpdates as private filamentFilterUpdates;}
     private const KEEP='keep';
+    protected \Filament\Support\Enums\Width|string|null $maxContentWidth = Sheet::WIDTH;
     /** One save reviews at most this many TLDs. */
     private const MOST=25;
     /** The account choice that reads every account. Saves belong to one account, so this view is read-only. */

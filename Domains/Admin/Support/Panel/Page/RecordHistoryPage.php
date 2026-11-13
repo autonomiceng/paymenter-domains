@@ -9,6 +9,5 @@ abstract class RecordHistoryPage extends Page implements PageType, HasTable
 {
     use Concerns\HistoryType;
     use Concerns\ForRecord;
-    protected const WIDE = false;
     protected const PAGE_CLASSES = ['domains-page-history'];
 }

@@ -23,6 +23,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{AdoptionCommit, AdoptionReade
 class AdoptDomain extends Page
 {
     protected static string $resource = DomainResource::class;
+    protected \Filament\Support\Enums\Width|string|null $maxContentWidth = Sheet::WIDTH;
     #[\Livewire\Attributes\Locked] public array $target = [];
     #[\Livewire\Attributes\Locked] public array $review = [];
     #[\Livewire\Attributes\Locked] public string $reason = '';

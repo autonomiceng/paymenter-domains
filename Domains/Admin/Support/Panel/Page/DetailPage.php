@@ -7,6 +7,5 @@ use Filament\Pages\Page;
 abstract class DetailPage extends Page implements PageType
 {
     use Concerns\DetailType;
-    protected const WIDE = false;
     protected const PAGE_CLASSES = ['domains-page-detail', 'fi-resource-view-record-page'];
 }
