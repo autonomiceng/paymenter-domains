@@ -64,7 +64,7 @@ same(['Under review','Check the domain and its requests.'],[$column->getState(),
 DB::table('domains_domains')->where('id',$held->id)->update(['user_id'=>999999,'server_id'=>999999]);
 $fallback=Livewire::actingAs($viewer)->test(ListDomains::class)->assertSeeText($held->domain)->assertDontSee('#999999');
 $record=$fallback->instance()->getTableRecords()->keyBy('id')[$held->id];$columns=$fallback->instance()->getTable()->getColumns();
-same([null,'Missing'],[$columns['customer']->record($record)->getState(),$columns['server_id']->record($record)->getState()],'Missing customer and registrar account keep the row');
+same([null,\Paymenter\Extensions\Servers\Domains\Presentation\State::NotConnected->label()],[$columns['customer']->record($record)->getState(),$columns['server_id']->record($record)->getState()],'Missing customer and registrar account keep the row');
 // Age grammar and exact staff copy; frozen timestamps avoid dependence on fixture business clocks.
 $op=clone $base;$op->state='uncertain';$op->funding_basis='paid_invoice';$op->safe_code=null;
 // The account hold names the one thing it holds and the time it began, never an age that grows per request.

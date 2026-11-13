@@ -79,6 +79,9 @@ class ListDomains extends RecordListPage
     protected function searchLabel(): ?string { return 'Search domain or customer'; }
     protected function emptyLine(): array { return ['No domains yet', 'They show here after a customer orders one.', 'No domains match']; }
     private function orders(): array { return $this->orders ??= OperationQueries::ordersOffAccounts(); }
+    /** The Orders switches are read once at boot, before the table is built or any other read, so a switch that changes
+     * while the page is built can't split the filter from the rows. */
+    public function boot(): void { $this->orders(); }
     /** Every word has to match the customer's name or email, so a full name finds them. */
     private static function customerSearch(Builder $query, string $search): Builder
     {
