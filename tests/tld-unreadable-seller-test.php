@@ -59,7 +59,7 @@ foreach([[$bad,$good,'transfer',1],[$good,$bad,'register',3]] as [$t,$sibling,$a
     $ports->apply(new Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($b,'com',[new Paymenter\Extensions\Servers\Domains\Catalogue\Cost('renew',1,true,'9.5000',Paymenter\Extensions\Servers\Domains\Data\CostUnit::TermTotal,'synthetic',$fresh,$fresh->modify('+1 day'))]),
         $codec::revision($t,$codec::decode($account->catalogue_defaults),DB::table('domains_sales_policies')->where('tld','com')->first()));
     $renew=$codec::query('domains_prices')->where('server_id',$t->server_id)->where('action','renew')->where('term',1)->sole();
-    same(['9.5000','9.5000'],[$codec::decode(costEvidence($renew))['total'],$codec::money($renew->wholesale,4)],'The repaired renewal is saved and published at its exact cost: '.$t->registrar_key);
+    same(['9.5000','12.35'],[$codec::decode(costEvidence($renew))['total'],$codec::money($renew->retail,2)],'The repaired renewal saves cost and publishes retail with the fixture margin: '.$t->registrar_key);
     same((array)$damaged,(array)$row($t,$action,$term)->first(),'The damaged '.$action.' cost it left out is unchanged');
     $offers=$ports->displayBatch([new Paymenter\Extensions\Servers\Domains\Catalogue\Query($b,['com'],$action)])[0]['com']??[];
     expect(!($offers[$action.':'.$term]->decision->available??false),'The damaged '.$action.' offer stays closed');

@@ -480,8 +480,9 @@ final class Writer implements Catalogue
             catch (\Throwable) { $old = null; }
             if ($old && $old->observedAt > $cost->observedAt) { continue; }
             if ($old && $old->observedAt == $cost->observedAt) {
-                $a = OfferState::encodeCost($old); $b = OfferState::encodeCost($cost); unset($a['source_unit'], $b['source_unit']);
-                if ($a !== $b) {
+                $a = OfferState::encodeCost($old); $b = OfferState::encodeCost($cost);
+                unset($a['source_unit'], $b['source_unit'], $a['observed_at'], $b['observed_at'], $a['fresh_until'], $b['fresh_until']);
+                if ($a !== $b || $old->freshUntil != $cost->freshUntil) {
                     throw new \DomainException('Conflicting cost observation.');
                 }
                 continue;

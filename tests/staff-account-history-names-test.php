@@ -72,7 +72,8 @@ foreach(['broken ciphertext',Illuminate\Support\Facades\Crypt::encryptString('nu
 }
 (clone $reminder)->where('id',$last->id)->update(['payload'=>$last->payload]);
 Illuminate\Support\Facades\DB::table('domains_reminder_schedules')->where('server_id',$server)->delete();
-expect(is_array(TldFacts::accountHistory($server)),'Reminder events survive schedule removal');
+$afterRemoval=TldFacts::accountHistory($server);
+same($reminderRows,array_values(array_filter($afterRemoval,fn($r)=>str_starts_with($r['change'],'Reminder '))),'Reminder events and their details survive schedule removal');
 same(['Synthetic newest','Reminder emails turned off','Synthetic oldest','Synthetic invalid'],array_column($selected,'change'),'Parsed event times sort newest first with invalid times last');
 same(['zz-invalid-time','Readable retained detail'],[$selected[3]['time'],$selected[3]['reason']],'Invalid audit time retains its details');
 $nativeSuccessful=true;echo "Staff account history names passed\n";

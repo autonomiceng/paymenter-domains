@@ -36,7 +36,7 @@ final class CurrentCostSchema
                         $cost=OfferState::cost(OfferState::decode($p->catalogue_observation));
                         $values=CurrentCost::values($cost);
                         if($cost->action!==$p->action||$cost->term!==(int)$p->term||$cost->currency!==$p->currency||$p->unit!=='term_total'
-                            ||OfferState::money($p->wholesale,4)!==$cost->total||$p->source!==$cost->source
+                            ||($p->wholesale===null)!==($cost->total===null)||OfferState::money($p->wholesale,4)!==$cost->total||$p->source!==$cost->source
                             ||new \DateTimeImmutable($p->observed_at,new \DateTimeZone('UTC'))!=$cost->observedAt
                             ||!$p->fresh_until||new \DateTimeImmutable($p->fresh_until,new \DateTimeZone('UTC'))!=$cost->freshUntil){throw new \DomainException;}
                         DB::table('domains_prices')->where('id',$p->id)->update($values);
