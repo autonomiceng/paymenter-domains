@@ -161,7 +161,7 @@ foreach (['name'=>'other.example.com','generation'=>2,'fingerprint'=>str_repeat(
 // With record checks off a read saves ownership but no records, so the hold stays. Only a strictly newer owned read of the same identity answers membership.
 require_once __DIR__.'/Support/storefront.php';
 $membershipRow=static function(Domain $d):string{
-    $rows=storefrontDom(Livewire::actingAs(Auth::user())->test(ViewDomain::class,['record'=>$d->id])->assertSuccessful()->html())->query('//*[@data-domains-row][.//*[contains(@class,"domains-panel-row-k")][starts-with(normalize-space(.),"In registrar account")]]');
+    $rows=storefrontDom(Livewire::actingAs(Auth::user())->test(ViewDomain::class,['record'=>$d->id])->assertSuccessful()->html())->query('//*[@data-piece="row"][starts-with(normalize-space(.),"In registrar account")]');
     same(1,$rows->length,'One rendered membership row');return trim(preg_replace('/\s+/',' ',$rows->item(0)->textContent));};
 $holdAt=$heldFacts['record_hold']['at'];$after=(new DateTimeImmutable($holdAt))->modify('+1 second')->format(DATE_ATOM);
 foreach (['newer'=>[$after,[],'Yes'],'equal'=>[$holdAt,[],'No'],'stale'=>[(new DateTimeImmutable($holdAt))->modify('-1 second')->format(DATE_ATOM),[],'No'],
@@ -228,7 +228,7 @@ DB::table('domains_domains')->where('id',$active->id)->update(['renewal_policy'=
 
 // Page: no internal facts, one notice, breadcrumb uses the name.
 $page=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSuccessful()->assertSet('data',null);
-$page->assertDontSee('WHOIS privacy')->assertSee('Renewal')->assertSee('Registration')->assertSee('Billing')->assertSee('Ada Lovelace')->assertSee(\Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead->label())->assertSee('Needs the linked service. Check the Services page.')->assertSeeHtml('domains-sheet');
+$page->assertDontSee('WHOIS privacy')->assertSee('Renewal')->assertSee('Registration')->assertSee('Billing')->assertSee('Ada Lovelace')->assertSee(\Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead->label())->assertSee('Needs the linked service. Check the Services page.')->assertSeeHtml('data-piece="sheet"');
 // The Renewal row holds its own value, not just Renewal text somewhere on the page. Stop and Resume in it: staff-holding-test.
 $renewalRow=static function(string $html):array{$doc=new DOMDocument();@$doc->loadHTML('<?xml encoding="UTF-8">'.str_replace('</',' </',$html));$x=new DOMXPath($doc);$t=static fn(DOMNode $n)=>trim(preg_replace('/\s+/',' ',$n->textContent));
     $rows=$x->query('//div[@data-domains-row][.//*[contains(@class,"domains-panel-row-k")][starts-with(normalize-space(.),"Auto-renew")]]');
