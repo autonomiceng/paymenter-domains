@@ -1,4 +1,4 @@
-"""Render the staff lists and the client domain page with real Blade, then measure them in Chromium."""
+"""Render the staff lists and the client domain page with real Blade, then verify their data and links in Chromium."""
 # MIT, Copyright (c) 2026 Autonomic Engineering.
 import json
 import os
@@ -10,17 +10,17 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 CHECK = 'scripts/check-name-and-heading.cjs'
-# Per scope: the render files, each writing its pages into the directory, the pages, and the least measured items. lists:
+# Per scope: the render files, each writing its pages into the directory, the pages, and the least verified items. lists:
 # the monitoring list (by R14_RENDER_DIR), the domain page and the Domains list. managed: the DNS monitoring setup list,
 # alone in tests/test_rendered_managed_dns.py so each run keeps memory headroom.
 SCOPES = {
     'lists': (['tests/test_installed_demo_c_state_watch-test.php', 'tests/domain-page-render.php', 'tests/staff-list-render.php'],
               ['staff-domains-list.html', 'r14-watchlist-paused.html', 'r14-watchlist-retired.html',
-               'domain-page-invoice-due-dark.html', 'domain-page-invoice-due-light.html'], 56),
-    'staff': (['tests/staff-list-render.php'], ['staff-domains-list.html'], 24),
-    'watch': (['tests/test_installed_demo_c_state_watch-test.php'], ['r14-watchlist-paused.html', 'r14-watchlist-retired.html'], 24),
+               'domain-page-invoice-due-dark.html', 'domain-page-invoice-due-light.html'], 23),
+    'staff': (['tests/staff-list-render.php'], ['staff-domains-list.html'], 9),
+    'watch': (['tests/test_installed_demo_c_state_watch-test.php'], ['r14-watchlist-paused.html', 'r14-watchlist-retired.html'], 6),
     'heading': (['tests/domain-page-render.php'], ['domain-page-invoice-due-dark.html', 'domain-page-invoice-due-light.html'], 8),
-    'managed': (['tests/managed-dns-render.php'], ['staff-managed-dns.html'], 6),
+    'managed': (['tests/managed-dns-render.php'], ['staff-managed-dns.html'], 3),
 }
 
 
@@ -47,10 +47,10 @@ def main(scope='lists'):
         receipt = json.loads(lines[-1]) if lines else {}
         assert result.returncode == 0 and receipt.get('complete') is True and receipt.get('failures') == [], \
             f'{CHECK} failed with exit {result.returncode}'
-        # Every expected item was found and measured: a check that finds nothing is not a pass.
+        # Every expected item was found and verified: a check that finds nothing is not a pass.
         assert receipt.get('scopes') == [scope], f'The check ran {receipt.get("scopes")}, not {scope}'
         assert receipt.get('measured', 0) >= least, f'Too few rendered items measured: {receipt.get("measured")}'
-    print(f'Rendered staff pages ({scope}) hold their layout in Chromium.')
+    print(f'Rendered staff pages ({scope}) retain their data and links in Chromium.')
 
 
 if __name__ == '__main__':

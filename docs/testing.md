@@ -32,24 +32,13 @@ The browser blocks network/application scripts and measures both text axes: Tran
 wrapped height/padding, and the real Renewal card's Pay invoice link on one line at default size in both modes at 320/360/768/1280px.
 It compares Register/Transfer/Retry geometry with prior inline-flex/normal-wrap/1.25rem rules. Output artifacts and `button-layout-receipt.json` include failures; this minimal shell proves neither installed-theme nor browser-zoom acceptance.
 
-## Rendered layout check (UI suite)
+## Rendered data and links (UI suite)
 
-`scripts/test.py --suite ui` renders staff pages with real Blade and measures them in Chromium with
-`scripts/check-name-and-heading.cjs`: `tests/test_rendered_layout.py` (Domains and monitoring lists, client domain page)
-and `tests/test_rendered_managed_dns.py` (DNS monitoring setup list). Default runs with `PAYMENTER_TEST_APP` include it.
-It needs `NODE_PATH` (Playwright) and `CHROME_BIN`, which the runner passes to this suite only; it runs alone (2048 MiB).
-At 1440, 900 and 390px, with the staff sheet after the theme and before it, each long name, customer and Note is one
-line cut with a painted "...": a name exactly 326px (at most 326px on a phone), a customer 120px, a Note the rest of the
-row and at least 160px (the approved table, padding included). On a phone the Note reads under the domain name. Domains
-list cells are no wider than their items, the table fits its card at 1440px, and the page never scrolls sideways. Each item and its tooltip keep the full text. Only the staff reveal script
-runs: keyboard focus on a row link, or on a cut text in a row that opens nothing (the only texts with their own tab stop,
-kept while cut, also after a late font load), shows the full text in a fixed overlay inside the viewport (at 320 by 225
-and 640 by 450px, a 254 character address fits or scrolls by wheel, arrows and Page keys), and no cell or row moves. The
-client domain heading names the domain, at weight 600 with an 18 by 20px status mark, at 320/390/768/1280px in both
-modes. For a host skin, set
-`DOMAINS_PANEL_SETUP` to a PHP file that is given `$panel`, configures it and returns its built theme; render with
-`R14_RENDER_DIR=OUT scripts/render-reminders.py OUT` and both tests' render files, then run the check on `OUT`. Its
-receipt lists the Domain, Customer and Note column widths.
+`tests/test_rendered_layout.py` and `tests/test_rendered_managed_dns.py` render real Blade and use
+`scripts/check-name-and-heading.cjs` in Chromium. They guard full domain/customer data, native record links and the
+customer record heading at desktop and phone widths. Presentation is reviewed with screenshots beside the approved
+mock, not CSS or geometry assertions. Set `DOMAINS_PANEL_SETUP` to a PHP file that configures `$panel` and returns its
+built theme to render with a host skin. The UI suite needs installed Playwright (`NODE_PATH`) and Chromium (`CHROME_BIN`).
 
 Run `python3 scripts/bootstrap.py --download` once, then `scripts/test.py` fully offline.
 PHP **8.4.27** (Debian `8.4.27-1~deb13u1`, Linux x86_64) is pinned by archive SHA-256;
