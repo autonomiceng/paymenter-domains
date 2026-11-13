@@ -8,6 +8,8 @@ final class ListNote
 {
     /** How staff restart a stopped sync (DomainDecisions::stoppedStep): after "Sync stopped." it is not the row's own step. */
     private const RESTART = '/^(?:Use (?:Sync now|Resume sync)\b|Ask staff who can resume sync\b)/';
+    /** Blocking reasons, short, for "Paid · Orders off". */
+    private const BLOCKED = ['Orders are off for this account' => 'Orders off'];
     /** Long first sentences and the clause a list says instead. */
     private const SHORT = [
         "/^couldn't confirm the order's contact at .+$/i" => 'Contact not confirmed at registrar',
@@ -19,6 +21,11 @@ final class ListNote
     {
         $text = trim((string) $text);
         if ($text === '') { return null; }
+        // A paid (or complimentary) order that can't go out keeps what blocks it: "Paid · Orders off", never just "Paid".
+        if (preg_match('/^(Paid|Complimentary)\.\s+(Not sent\b.+)$/s', $text, $m) === 1) {
+            $blocked = (string) self::clause($m[2], $request);
+            return $m[1].' · '.(self::BLOCKED[$blocked] ?? $blocked);
+        }
         $text = (string) preg_replace('/^(?:Not sent|Sent|Ready to send)(?::\s*|\.\s+(?=\S))/i', '', $text);
         [$first, $rest] = preg_split('/(?<=[.!?])\s+/', $text, 2) + [1 => ''];
         // "Sync stopped." before the row's own step (an alert, a missing fact) gives way to that step; before only how to
