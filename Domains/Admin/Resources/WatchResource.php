@@ -26,5 +26,7 @@ class WatchResource extends WatchReadResource
         if(!static::canViewAny()){return null;}
         return \Paymenter\Extensions\Servers\Domains\Admin\Support\NavigationCount::read('monitoring',fn()=>count(WatchFindings::statusIds('attention')));
     }
+    /** Where the count leads: the list filtered to the domains that need attention. */
+    public static function attentionUrl(): string{return static::getUrl('index',['filters'=>['status'=>['value'=>'attention']]]);}
     public static function getPages(): array{return ['index'=>ListWatches::route('/'),'dns-failures'=>ListDnsFailures::route('/dns-failures'),'dns-setup'=>ListManagedDns::route('/dns-setup'),'settings'=>MonitoringSettings::route('/settings'),'view'=>ViewWatch::route('/{record}'),'history'=>WatchResource\Pages\WatchHistory::route('/{record}/history')];}
 }
