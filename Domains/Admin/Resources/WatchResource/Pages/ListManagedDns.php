@@ -39,7 +39,7 @@ class ListManagedDns extends RecordListPage
     {
         return [
             Column::domain('domain','Domain',false)->searchable()->sortable(),
-            Column::text('user.email','Customer')->short(),
+            Column::text('user.email','Customer')->person(),
             Column::value('comparison','DNS comparison',fn(Domain $d): Value=>Value::state($this->comparison(),Reader::Staff,null,'dns-'.$d->id)),
         ];
     }

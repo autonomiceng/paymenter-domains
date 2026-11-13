@@ -19,22 +19,29 @@
 .domains-missing__cause{margin-inline-start:.5rem;color:var(--panel-fg-2,var(--gray-500))}
 .domains-note{min-width:14rem;max-width:24rem;overflow-wrap:anywhere}
 .domains-narrow{max-width:12rem}
-/* Structured values and customers stay complete. Only linked names and notes can shorten. */
-.domains-line,.domains-cut{display:block;max-width:none;white-space:nowrap;overflow:visible}
-.domains-cut{white-space:normal}
-.domains-name-cell{display:block;max-width:none;white-space:nowrap}
-a .domains-name-cell,a .domains-list-note{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.domains-list-note{max-width:none;white-space:normal}
+/* P-TBL-7: columns size to content. Structured values stay whole on one line, people's names wrap, and only a linked
+   name or note shortens with "..." (the record it opens shows it in full). */
+.domains-line{display:block;white-space:nowrap}
+.domains-cut{display:block;white-space:normal;overflow-wrap:break-word}
+.domains-name-cell{display:block;white-space:nowrap}
+.domains-list-note{white-space:normal}
+a :is(.domains-name-cell,.domains-list-note),a :is(.domains-name-cell,.domains-list-note)>.fi-ta-text-item{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Filament draws each table text item as a line-clamp -webkit-box, which paints no "...". Ours are plain blocks. */
+.fi-ta-text-item:is(.domains-cut,.domains-line,.domains-name-cell):not(.fi-bulleted li.fi-ta-text-item),:is(.domains-cut,.domains-line,.domains-name-cell)>.fi-ta-text-item:not(.fi-bulleted li.fi-ta-text-item){display:block}
 [data-domains-table] .fi-ta-table{table-layout:auto;width:100%}
 [data-domains-table] .fi-ta-header-cell{white-space:nowrap}
-/* Linked free text shares the room left by structured values; no fixed text width cuts a fitting name. */
+/* Linked free text takes the room the other columns leave, so no fixed width cuts a name that fits. */
 @media(min-width:1280px){[data-domains-table] td:has(a .domains-name-cell),[data-domains-table] td:has(a .domains-list-note){max-width:0}}
-[data-domains-table] .fi-ta-cell-customer .domains-line{white-space:normal;min-width:8ch}
+/* P-TBL-12: narrower than the default columns, the table scrolls inside its surface. The identity column stays put, and
+   once the rows have scrolled under it, it casts an edge shadow. Browsers without scroll timelines skip the shadow. */
 [data-domains-table] .fi-ta-content-ctn{overflow-x:auto}
-@media(max-width:1279px){
- [data-domains-table] .fi-ta-table{width:max-content;min-width:100%}
- [data-domains-table] .fi-ta-row>td:first-child,[data-domains-table] .fi-ta-table>thead>tr>th:first-child{position:sticky;inset-inline-start:0;z-index:1;background:var(--panel-card,#111B36)}
- [data-domains-table] .fi-ta-row>td:first-child:has(input[type=checkbox])+td,[data-domains-table] .fi-ta-table>thead>tr>th:first-child:has(input[type=checkbox])+th{position:sticky;inset-inline-start:44px;z-index:1;background:var(--panel-card,#111B36)}
+@media(max-width:1279px){[data-domains-table] .fi-ta-table{width:max-content;min-width:100%}}
+[data-domains-table] :is(.fi-ta-row>td,.fi-ta-table>thead>tr>th):first-child{position:sticky;inset-inline-start:0;z-index:1;background:var(--panel-card,#111B36)}
+[data-domains-table] :is(.fi-ta-row>td,.fi-ta-table>thead>tr>th):first-child:has(input[type=checkbox])+:is(td,th){position:sticky;inset-inline-start:44px;z-index:1;background:var(--panel-card,#111B36)}
+@keyframes domains-edge{from{box-shadow:none}to{box-shadow:8px 0 8px -8px rgb(0 0 0/.6)}}
+@supports (animation-timeline:scroll()){
+ [data-domains-table] :is(.fi-ta-row>td,.fi-ta-table>thead>tr>th):first-child:not(:has(input[type=checkbox])),
+ [data-domains-table] :is(.fi-ta-row>td,.fi-ta-table>thead>tr>th):first-child:has(input[type=checkbox])+:is(td,th){animation:domains-edge linear both;animation-timeline:scroll(nearest inline);animation-range:0 24px}
 }
 /* Keyboard focus on a cut text, or on the row link around it, shows the whole text over the page (staff-reveal), so no cell or row changes size. */
 .domains-reveal{position:fixed;z-index:60;max-width:min(24rem,calc(100vw - 16px));max-height:calc(100vh - 16px);max-height:calc(100dvh - 16px);overflow-y:auto;overscroll-behavior:contain;padding:6px 10px;border:1px solid var(--panel-line,color-mix(in srgb,currentColor 20%,transparent));border-radius:6px;background:var(--panel-card-2,#fff);color:var(--panel-fg,#111827);box-shadow:0 4px 12px rgb(0 0 0/.2);font-size:.875rem;line-height:1.25rem;white-space:pre-line;overflow-wrap:anywhere;pointer-events:none}

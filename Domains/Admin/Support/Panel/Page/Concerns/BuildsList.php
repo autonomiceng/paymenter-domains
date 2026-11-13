@@ -8,7 +8,6 @@ use Filament\Schemas\Schema;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{EmptyTable, Sheet, TableColumns};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\{Column, Filter, Section};
 /** What both list types share: the head, any notices, then the standard table. The page supplies notices, columns,

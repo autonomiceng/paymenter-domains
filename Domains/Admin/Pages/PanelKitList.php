@@ -28,7 +28,7 @@ class PanelKitList extends ListPage
             Column::domain('domain', 'Domain')->searchable()->sortable(),
             Column::value('status', 'Status', static fn (array $row): Value => Value::state(State::from($row['status']), Reader::Staff)),
             Column::note('note', 'Note', static fn (array $row): string => $row['note']),
-            Column::text('customer', 'Customer')->searchable(),
+            Column::text('customer', 'Customer')->person()->searchable(),
         ];
     }
     protected function filters(): array

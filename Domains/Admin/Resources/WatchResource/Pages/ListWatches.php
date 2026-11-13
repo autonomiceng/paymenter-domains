@@ -75,13 +75,13 @@ class ListWatches extends RecordListPage
         $staff=Reader::Staff;
         return [
             Column::domain('canonical_name','Domain')->searchable()->sortable(),
-            Column::text('customer','Customer',fn(WatchName $w)=>$this->watchRow($w)['customer']['label'])->short(),
+            Column::text('customer','Customer',fn(WatchName $w)=>$this->watchRow($w)['customer']['label'])->person(),
             Column::value('status','Status',function(WatchName $w)use($staff){$status=$this->watchRow($w)['status'];return Value::state(WatchRows::state($status['label']),$staff,null,'watch-'.$w->id);}),
             Column::text('note','Note',fn(WatchName $w)=>$this->note($w)),
-            Column::value('registration','Registrar',fn(WatchName $w)=>$this->fact($w,['value'=>WatchFindings::who($w->registration),'cause'=>WatchFacts::missingCause($w,'expiry')]))->from('xl')->optional(),
-            Column::value('delegation.dns','Nameservers',fn(WatchName $w)=>$this->fact($w,['value'=>WatchFindings::who($w->delegation?->dns),'cause'=>WatchFacts::missingCause($w,'delegation')]))->from('lg')->optional(),
-            Column::value('last_check','Last check',fn(WatchName $w)=>$this->fact($w,[...$this->lastCheck($w),'sub'=>null]))->from('md'),
-            Column::value('expiry','Expires',fn(WatchName $w)=>$this->fact($w,[...$this->expires($w),'sub'=>null]))->from('lg'),
+            Column::value('registration','Registrar',fn(WatchName $w)=>$this->fact($w,['value'=>WatchFindings::who($w->registration),'cause'=>WatchFacts::missingCause($w,'expiry')]))->optional(),
+            Column::value('delegation.dns','Nameservers',fn(WatchName $w)=>$this->fact($w,['value'=>WatchFindings::who($w->delegation?->dns),'cause'=>WatchFacts::missingCause($w,'delegation')]))->optional(),
+            Column::value('last_check','Last check',fn(WatchName $w)=>$this->fact($w,[...$this->lastCheck($w),'sub'=>null])),
+            Column::value('expiry','Expires',fn(WatchName $w)=>$this->fact($w,[...$this->expires($w),'sub'=>null])),
         ];
     }
     protected function filters(): array

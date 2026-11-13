@@ -221,7 +221,7 @@ class PanelKit extends Page implements \Filament\Tables\Contracts\HasTable
             $c::domain('domain', 'Domain')->searchable(),
             $c::value('status', 'Status', static fn (array $r): Value => Value::state(State::from($r['status']), Reader::Staff)),
             $c::note('note', 'Note', static fn (array $r): ?string => $r['note'])->actWhen(static fn (array $r): bool => $r['status'] === 'needs_review'),
-            $c::text('customer', 'Customer'),
+            $c::text('customer', 'Customer')->person(),
             $c::value('amount', 'Renewal price', static fn (array $r): Value => Value::fact(Fact::money($r['amount'], $r['currency'])))->end(),
             $c::value('nameservers', 'Nameservers', static fn (array $r): Value => Value::fact(Fact::lines(['ns1.example.net', 'ns2.example.net'])))->optional(),
         ];
