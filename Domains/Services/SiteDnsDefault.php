@@ -11,7 +11,8 @@ final class SiteDnsDefault
 {
     public const KEY='domains_site_dns_template';
     public const MANAGE='admin.domains.settings.new_domain_dns';
-    public const MISSING='Default nameservers are Missing. New domains have no nameservers to use. Choose a template in Domains > DNS templates.';
+    public const NONE='New domains have no nameservers to use. Choose a template in Domains > DNS templates.';
+    public const MISSING='Default nameservers are Missing. '.self::NONE;
     public const REPLACE='Choose another template for new domains first.';
     public const RETAINED='This template is saved for new domains but cannot be used. Choose another template for new domains first.';
     public const ASK='Ask staff who can change the default nameservers.';

@@ -75,7 +75,7 @@ $settings=\Livewire\Livewire::actingAs($manager)->test($page)->assertSee(SiteDns
 // ui-r15 R4: the step is said once, in the red callout; the Default nameservers row shows only Missing.
 same(1,substr_count($settings->html(),'Choose a template in Domains &gt; DNS templates'),'Default nameservers step shows once');
 // dns-defaults-ux-r1: monitoring settings no longer change the default; they show it and link to DNS templates.
-$monitoring=\Livewire\Livewire::actingAs($manager)->test($settingsPage)->assertActionDoesNotExist('siteDefault')->assertSee(SiteDnsDefault::MISSING);
+$monitoring=\Livewire\Livewire::actingAs($manager)->test($settingsPage)->assertActionDoesNotExist('siteDefault')->assertSee(SiteDnsDefault::NONE);
 same(1,substr_count($monitoring->html(),'Choose a template in Domains &gt; DNS templates'),'Monitoring settings say the step once');
 expect(str_contains($monitoring->html(),'href="'.$templates::getUrl().'"'),'Monitoring settings link to DNS templates');
 $settings->callAction('siteDefault',['profile'=>$default->id])->assertHasNoActionErrors()->assertNotified('Default nameservers saved');

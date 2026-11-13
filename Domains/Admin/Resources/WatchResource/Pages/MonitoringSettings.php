@@ -99,7 +99,7 @@ class MonitoringSettings extends ResourceSettingsPage
         return [
             ...(($products=$this->products())!==[]?[Section::make('Hosting products',$products,null,'hosting-products')]:[]),
             Section::make('Monitoring',[
-                ...($missingDefault?[Row::notice('default-nameservers',Value::state(State::NotSet,$staff,$refusal??($canEdit?SiteDnsDefault::MISSING:'Default nameservers are Missing. New domains have no nameservers to use. '.SiteDnsDefault::ASK)))]:[]),
+                ...($missingDefault?[Row::notice('default-nameservers',Value::state(State::NotSet,$staff,$refusal??($canEdit?SiteDnsDefault::NONE:'New domains have no nameservers to use. '.SiteDnsDefault::ASK)))]:[]),
                 $nameservers,
                 SettingsRow::setting('Registrar refresh',Value::plain(Plain::Daily,'Daily refresh reads domain facts. Use Sync now on a domain to read DNS, SRV, DS and glue records. Unsupported families remain unsupported.'),$system)
                     ->help('Registrar changes come from the registrar only. '.RecordFamilies::EVIDENCE),
