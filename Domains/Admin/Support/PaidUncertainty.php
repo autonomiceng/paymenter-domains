@@ -63,7 +63,7 @@ final class PaidUncertainty
         return PrivacyVisibility::SHOWN ? 'Paid WHOIS privacy orders on '.$h['name'].' wait until '.$h['until'].'.'
             : ($h['count']===1?'A paid order on '.$h['name'].' has':'Paid orders on '.$h['name'].' have').' no registrar result yet.';
     }
-    /** @return list<array{server_id:int,label:string,url:?string,until:string,name:string,count:int,state:State}> State is Checking, or Delayed once a held request is past its normal time. */
+    /** @return list<array{server_id:int,label:string,url:?string,until:string,name:string,count:int,state:State}> State is Checking, or Delayed once the oldest held request is past its normal time. */
     public static function holds(?int $server=null): array
     {
         Staff::requireView();
@@ -75,7 +75,8 @@ final class PaidUncertainty
         $reviews=OperationQueries::status(OperationResource::getEloquentQuery()->whereIn('domains_operations.server_id',$ids),['under_review'],$off)->toBase()
             ->selectRaw('domains_operations.server_id as server_id, count(*) as total, min(domains_operations.id) as first')->groupBy('domains_operations.server_id')->get()->keyBy('server_id');
         $names=\App\Models\Server::whereIn('id',$ids)->pluck('name','id');
-        $waiting = AccountSpendingHolds::query(Operation::whereIn('server_id',$ids))->get()->groupBy('server_id');
+        // The oldest held request per account decides Delayed: one bounded read of the rows already found.
+        $firstOps = Operation::whereKey($held->values()->map(fn($id)=>(int)$id)->all())->get()->keyBy('server_id');
         $out=[];
         foreach ($held as $id=>$oldest) {
             $review=$reviews->get($id);
@@ -84,7 +85,7 @@ final class PaidUncertainty
             [$label,$url,$until]=$count===1
                 ? ['Check request #'.$first,DomainFacts::requestUrl(['request'=>$first]),'it is checked']
                 : ['Check '.$count.' requests',RegistrarFacts::requestsUrl((int)$id,['under_review']),'they are checked'];
-            $out[]=['server_id'=>(int)$id,'label'=>$label,'url'=>$url,'until'=>$until,'name'=>(string)($names->get($id) ?: 'this registrar account'),'count'=>$count,'state'=>collect($waiting->get($id,[]))->contains(fn(Operation $op): bool => self::waitState($op) === State::Delayed) ? State::Delayed : State::Checking];
+            $out[]=['server_id'=>(int)$id,'label'=>$label,'url'=>$url,'until'=>$until,'name'=>(string)($names->get($id) ?: 'this registrar account'),'count'=>$count,'state'=>($op=$firstOps->get($id)) !== null && self::waitState($op) === State::Delayed ? State::Delayed : State::Checking];
         }
         return $out;
     }
