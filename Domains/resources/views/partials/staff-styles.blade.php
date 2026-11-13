@@ -22,17 +22,19 @@
 /* Structured values and customers stay complete. Only linked names and notes can shorten. */
 .domains-line,.domains-cut{display:block;max-width:none;white-space:nowrap;overflow:visible}
 .domains-cut{white-space:normal}
-.domains-name-cell{display:block;max-width:326px;white-space:nowrap}
+.domains-name-cell{display:block;max-width:none;white-space:nowrap}
 a .domains-name-cell,a .domains-list-note{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.domains-list-note{max-width:24rem;white-space:normal}
+.domains-list-note{max-width:none;white-space:normal}
 [data-domains-table] .fi-ta-table{table-layout:auto;width:100%}
 [data-domains-table] .fi-ta-header-cell{white-space:nowrap}
+/* Linked free text shares the room left by structured values; no fixed text width cuts a fitting name. */
+@media(min-width:1280px){[data-domains-table] td:has(a .domains-name-cell),[data-domains-table] td:has(a .domains-list-note){max-width:0}}
 [data-domains-table] .fi-ta-cell-customer .domains-line{white-space:normal;min-width:8ch}
 [data-domains-table] .fi-ta-content-ctn{overflow-x:auto}
 @media(max-width:1279px){
  [data-domains-table] .fi-ta-table{width:max-content;min-width:100%}
  [data-domains-table] .fi-ta-row>td:first-child,[data-domains-table] .fi-ta-table>thead>tr>th:first-child{position:sticky;inset-inline-start:0;z-index:1;background:var(--panel-card,#111B36)}
- [data-domains-table] .fi-ta-row>td:first-child:has(input[type=checkbox])+td{position:sticky;inset-inline-start:44px;z-index:1;background:var(--panel-card,#111B36)}
+ [data-domains-table] .fi-ta-row>td:first-child:has(input[type=checkbox])+td,[data-domains-table] .fi-ta-table>thead>tr>th:first-child:has(input[type=checkbox])+th{position:sticky;inset-inline-start:44px;z-index:1;background:var(--panel-card,#111B36)}
 }
 /* Keyboard focus on a cut text, or on the row link around it, shows the whole text over the page (staff-reveal), so no cell or row changes size. */
 .domains-reveal{position:fixed;z-index:60;max-width:min(24rem,calc(100vw - 16px));max-height:calc(100vh - 16px);max-height:calc(100dvh - 16px);overflow-y:auto;overscroll-behavior:contain;padding:6px 10px;border:1px solid var(--panel-line,color-mix(in srgb,currentColor 20%,transparent));border-radius:6px;background:var(--panel-card-2,#fff);color:var(--panel-fg,#111827);box-shadow:0 4px 12px rgb(0 0 0/.2);font-size:.875rem;line-height:1.25rem;white-space:pre-line;overflow-wrap:anywhere;pointer-events:none}
