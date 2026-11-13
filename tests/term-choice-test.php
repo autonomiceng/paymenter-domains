@@ -20,4 +20,4 @@ same([],$guard,'Term choices word their years through TermChoice, not by hand');
 foreach(['partials/result.blade.php','cart-edit.blade.php','partials/owner-renew.blade.php'] as $picker){
     expect(str_contains((string)file_get_contents($views.'/'.$picker),'TermChoice::label('),"$picker labels its term options with TermChoice");
 }
-echo "Term choice: checks passed.\n";
+$nativeSuccessful=true;echo "Term choice: checks passed.\n";
