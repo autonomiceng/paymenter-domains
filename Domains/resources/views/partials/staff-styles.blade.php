@@ -29,6 +29,9 @@ a :is(.domains-name-cell,.domains-list-note),a :is(.domains-name-cell,.domains-l
 /* Filament draws each table text item as a line-clamp -webkit-box, which paints no "...". Ours are plain blocks. */
 .fi-ta-text-item:is(.domains-cut,.domains-line,.domains-name-cell):not(.fi-bulleted li.fi-ta-text-item),:is(.domains-cut,.domains-line,.domains-name-cell)>.fi-ta-text-item:not(.fi-bulleted li.fi-ta-text-item){display:block}
 [data-domains-table] .fi-ta-table{table-layout:auto;width:100%}
+/* P-TBL-7: a staff row is one line, 44px: 20px of text, 12px above and 11px below, and the 1px line between rows. */
+[data-domains-table] .fi-ta-row>td .fi-ta-text{padding-block:12px 11px}
+[data-domains-table] .fi-ta-row>td :is(.fi-ta-text,.fi-ta-text-item,.domains-panel-val){line-height:20px}
 [data-domains-table] .fi-ta-header-cell{white-space:nowrap}
 /* P-TBL-7: a linked name or note keeps its full width while the row has room, and shortens with '...' only when it has none. */
 [data-domains-table] td:has(a .domains-list-note)>*{display:grid;grid-template-columns:minmax(0,max-content)}
