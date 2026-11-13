@@ -63,9 +63,10 @@ final class TldFacts
     /** The renewal price row for one year, the row the list and the prices table show. */
     public static function renewal(array $rows): ?array
     { return collect($rows)->first(fn($r)=>$r['action']==='renew'&&$r['term']===1)??collect($rows)->firstWhere('action','renew'); }
+    public const BELOW_COST='Below cost';
     /** "Below cost" when the cost is known and above the price, null otherwise. */
     public static function costNote(?array $row): ?string
-    { return $row!==null&&in_array('below_cost',$row['flags'],true)?'Below cost':null; }
+    { return $row!==null&&in_array('below_cost',$row['flags'],true)?self::BELOW_COST:null; }
     /** "1 year", "3 years" or "1 to 3 years". */
     public static function terms(Tld $t): string
     {
@@ -125,64 +126,45 @@ final class TldFacts
         return ['value'=>$invalid?\Paymenter\Extensions\Servers\Domains\Presentation\Missing::LABEL:($notOffered?$cause:($value??($missing?\Paymenter\Extensions\Servers\Domains\Presentation\Missing::LABEL:'Not for sale'))),
             'cause'=>$notOffered&&!$invalid?null:$cause,'tone'=>$missing||($value!==null&&self::costNote($row))?'danger':null,'missing'=>$missing];
     }
-    private const DANGER='fi-color fi-color-danger fi-text-color-600 dark:fi-text-color-400';
-    private static function notOffered(): string
-    { return '<span class="domains-quiet">'.e(self::NOT_OFFERED).'</span>'; }
-    private static function cell(string $html, bool $nowrap = true): string
-    { return '<td'.($nowrap?' class="domains-nowrap"':'').'>'.$html.'</td>'; }
-    /** Prices by registrar account: one row per account that sells this TLD. A price cell shows its value; why a price is
-     * missing is said once, under its account row. The page head already says when no registrar is selected, and why the
-     * page's own TLD is not for sale, and its Price sync row shows that account's refresh, so the table leaves those out. */
-    public static function accountsTable(Tld $t, StaffGrants $grants): HtmlString
+    /** One entry per registrar account that offers this TLD: the facts the page's price sections show. Each price is
+     * {value, cost}: a money text, or a word that explains why there is none. Transfer is null while transfers are off.
+     * @return list<array{name:string,url:?string,demo:bool,seller:bool,pricing:string,holders:int,note:string,fix:?array{label:string,url:string},register:array,renew:array,transfer:?array}> */
+    public static function accounts(Tld $t, StaffGrants $grants): array
     {
         $rows=self::bound(Tld::query()->where('tld',$t->tld))->with('server:id,name')->orderBy('server_id')->get();
-        if($rows->isEmpty()){return new HtmlString('No prices yet');}
-        $facts=self::page($rows,$grants);
-        // Each price shows the registrar cost for the same action under it, so no price reads against another action's cost.
-        $head=['Account','Pricing','Registration','Renewal','Transfer','Domains'];
-        $html='<div class="domains-table-wrap"><table class="domains-table"><thead><tr>';
-        foreach($head as $label){
-            $cell=$label==='Registration'&&$grants->costs?HelpHint::beside(e($label),'Each price shows its registrar cost under it. Registrations and transfers below cost are held. Renewals are billed.','About cost')->toHtml():e($label);
-            $html.='<th scope="col">'.$cell.'</th>';
-        }
-        $html.='</tr></thead><tbody>';
+        if($rows->isEmpty()){return [];}
+        $facts=self::page($rows,$grants);$out=[];
         $said=($facts[$t->id]['sales']['reason']??null);
         foreach($rows as $row){
             $fact=$facts[$row->id];$prices=$fact['prices'];$own=(int)$row->id===(int)$t->id;$causes=[];$gap=false;
             $first=static fn(string $action)=>collect($prices)->where('action',$action)->sortBy('term')->first();
             $price=static function(string $action,string $field='retail')use($fact,&$causes,&$gap):string{
                 $state=self::priceState($fact,$action,$field,false);
-                $tone=$state['missing']||$state['tone']==='danger';
-                $html=$tone?'<span class="domains-strong '.self::DANGER.'">'.e($state['value']).'</span>':e($state['value']);
                 if($state['cause']!==null&&$state['cause']!==''){$causes[]=$state['cause'];}
                 $gap=$gap||($state['value']!==null&&in_array($state['value'],[\Paymenter\Extensions\Servers\Domains\Presentation\Missing::LABEL,'Not for sale'],true));
-                return $html;
+                return (string)$state['value'];
             };
-            $withCost=static fn(string $action)=>$price($action).($grants->costs?' <span class="domains-sub">Cost '.$price($action,'cost').'</span>':'');
+            // Below cost marks the price itself (amber), so the account note does not repeat it.
+            $both=static fn(string $action)=>['value'=>$price($action),'cost'=>$grants->costs?$price($action,'cost'):null,'below'=>self::costNote($first($action))!==null];
             $transfers=!in_array('transfer',$fact['intent']['stops']??[],true)&&($fact['intent']['transfers']??$fact['intent']['defaultTransfers']??false);
-            $transfer=$first('transfer');$transfer=!($fact['unreadable']??false)&&!($fact['invalid_rule']??false)&&!$transfers&&($transfer['retail']??null)===null?'Off':$withCost('transfer');
-            $name=(string)$row->server?->name;
-            $account=(RegistrarFacts::accountLink((int)$row->server_id,$name)?->toHtml()??e($name)).($fact['demo']?' '.DemoData::tag(inline:true)->toHtml():'')
-                .($fact['seller']===(int)$row->server_id?' <span class="domains-table-tag">New orders</span>':'');
-            $cells=self::cell($account,false).self::cell(e($fact['pricing']))
-                .self::cell($withCost('register')).self::cell($withCost('renew')).self::cell($transfer);
-            $cells.=self::cell(e((string)$fact['holders']));
+            $transfer=$first('transfer');$off=!($fact['unreadable']??false)&&!($fact['invalid_rule']??false)&&!$transfers&&($transfer['retail']??null)===null;
+            $register=$both('register');$renew=$both('renew');$transfer=$off?null:$both('transfer');
             // Said in the page head: no registrar selected, or this TLD's own reason.
             if(($fact['seller']??null)===null&&$said!==self::NO_SELLER){$causes[]=self::NO_SELLER;}
-            $causes=array_values(array_filter(array_unique($causes),fn(string $c)=>!($c===self::NO_SELLER&&$said===self::NO_SELLER)&&!($own&&$c===$said)));
+            $causes=array_values(array_filter(array_unique($causes),fn(string $c)=>$c!==self::BELOW_COST&&!($c===self::NO_SELLER&&$said===self::NO_SELLER)&&!($own&&$c===$said)));
             $note=implode(' ',array_map(fn(string $c)=>rtrim($c,'.').'.',$causes));
             // Another account's refresh is not on this page yet. The page's own account shows it in Price sync.
             if($gap&&!$own&&!($fact['invalid_rule']??false)){$note=trim($note.' '.self::refreshText($fact['refresh']??[]));}
-            $link='';
+            $fix=null;
             if($fact['invalid_rule']??false){
                 try{$kind=$fact['invalid_rule_kind']??null;$label=match($kind){'default'=>'Edit default pricing','account_defaults'=>'Edit default for new TLDs',default=>'Edit prices'};
                     $url=match($kind){'default'=>\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::getUrl(),'account_defaults'=>\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::getUrl(['account'=>(int)$row->server_id]),default=>\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource::getUrl('view',['record'=>$row])};
-                    $link='<a class="domains-link" href="'.e($url).'">'.$label.'</a>';}catch(\Throwable){}
+                    $fix=['label'=>$label,'url'=>$url];}catch(\Throwable){}
             }
-            $html.='<tr'.($note!==''||$link!==''?' class="domains-table-noted"':'').'>'.$cells.'</tr>';
-            if($note!==''||$link!==''){$html.='<tr class="domains-table-note"><td></td><td colspan="'.(count($head)-1).'"><span class="domains-small">'.e($note).'</span>'.($note!==''&&$link!==''?' ':'').$link.'</td></tr>';}
+            $out[]=['name'=>(string)$row->server?->name,'url'=>RegistrarFacts::accountUrl((int)$row->server_id),'demo'=>(bool)$fact['demo'],'seller'=>$fact['seller']===(int)$row->server_id,
+                'pricing'=>(string)$fact['pricing'],'holders'=>(int)$fact['holders'],'note'=>$note,'fix'=>$fix,'register'=>$register,'renew'=>$renew,'transfer'=>$transfer];
         }
-        return new HtmlString($html.'</tbody></table></div>');
+        return $out;
     }
 
     /** Saving What you sell records how orders are sent. Older saves catch up with one save, only where orders are offered. */

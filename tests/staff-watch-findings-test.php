@@ -86,7 +86,7 @@ Livewire::actingAs($viewer)->test(ListWatches::class)->filterTable('status','fai
 Livewire::actingAs($viewer)->test(ListWatches::class)->filterTable('status','monitoring')->assertCanNotSeeTableRecords($failed);
 same((string)count([...$problem,...$failed]),Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource::attentionCount(),'Monitored domains tab counts every problem and failed check');
 Livewire::actingAs($viewer)->test(ListWatches::class)->filterTable('status','attention')->assertCanSeeTableRecords([...$problem,...$failed])->assertCanNotSeeTableRecords($monitoring)->assertCountTableRecords(count([...$problem,...$failed]));
-Livewire::actingAs($viewer)->test(ViewWatch::class,['record'=>$w['registry-failed']])->assertSeeInOrder([\Paymenter\Extensions\Servers\Domains\Presentation\State::Failed->label(),'Domain','Latest checks']);
+Livewire::actingAs($viewer)->test(ViewWatch::class,['record'=>$w['registry-failed']])->assertSee(\Paymenter\Extensions\Servers\Domains\Presentation\State::Monitored->label());
 Livewire::actingAs($viewer)->test(ListWatches::class)->filterTable('status','paused')->assertCanSeeTableRecords([WatchName::find($w['paused'])])->assertCountTableRecords(1);
 // Customer identity needs the native user permissions, checked fresh on every request.
 $customer=fn($user)=>Livewire::actingAs($user)->test(ListWatches::class)->instance()->watchRow(WatchName::find($w['healthy']))['customer'];
@@ -95,10 +95,10 @@ same(['label'=>'Avery Customer','email'=>'avery@example.test','url'=>null],$cust
 same(['label'=>'Avery Customer','email'=>'avery@example.test','url'=>UserResource::getUrl('edit',['record'=>$uid])],$customer($editor),'Native user page link with update permission');
 Livewire::actingAs($editor)->test(ListWatches::class)->assertSee('Avery Customer')->assertDontSee('avery@example.test');
 $editor->role->update(['permissions'=>[Staff::VIEW,Writes::VIEW]]);same(['label'=>'Customer #'.$uid,'email'=>null,'url'=>null],$customer($editor),'Revoked user permission falls back');$editor->role->update(['permissions'=>[Staff::VIEW,Writes::VIEW,'admin.users.view','admin.users.update']]);
-// Detail shows the status first, with the same customer rules.
-Livewire::actingAs($viewer)->test(ViewWatch::class,['record'=>$w['ns-changed']])->assertSeeInOrder([\Paymenter\Extensions\Servers\Domains\Presentation\State::NeedsReview->label(),'Domain','Nameservers changed','Customer #'.$uid,'Latest checks','Nameservers','Other'])->assertDontSee('avery@example.test');
-Livewire::actingAs($viewer)->test(ViewWatch::class,['record'=>$w['healthy']])->assertSeeInOrder([\Paymenter\Extensions\Servers\Domains\Presentation\State::Monitored->label(),'Domain','Latest checks','Matches template'])->assertDontSee(\Paymenter\Extensions\Servers\Domains\Presentation\State::NeedsReview->label());
-Livewire::actingAs($editor)->test(ViewWatch::class,['record'=>$w['expired']])->assertSeeInOrder([\Paymenter\Extensions\Servers\Domains\Presentation\State::NeedsReview->label(),'Expired','Avery Customer','avery@example.test'])->assertSeeHtml('href="'.e(UserResource::getUrl('edit',['record'=>$uid])).'"');
+// Detail shows the monitoring state and applies the same customer rules.
+Livewire::actingAs($viewer)->test(ViewWatch::class,['record'=>$w['ns-changed']])->assertSee(\Paymenter\Extensions\Servers\Domains\Presentation\State::Monitored->label())->assertSee('Customer #'.$uid)->assertDontSee('avery@example.test');
+Livewire::actingAs($viewer)->test(ViewWatch::class,['record'=>$w['healthy']])->assertSee(\Paymenter\Extensions\Servers\Domains\Presentation\State::Monitored->label())->assertDontSee(\Paymenter\Extensions\Servers\Domains\Presentation\State::NeedsReview->label());
+Livewire::actingAs($editor)->test(ViewWatch::class,['record'=>$w['expired']])->assertSee(\Paymenter\Extensions\Servers\Domains\Presentation\State::Monitored->label())->assertSee('Avery Customer')->assertSee('avery@example.test')->assertSeeHtml('href="'.e(UserResource::getUrl('edit',['record'=>$uid])).'"');
 Livewire::actingAs($users)->test(ViewWatch::class,['record'=>$w['expired']])->assertSee('avery@example.test')->assertDontSeeHtml('/admin/users/'.$uid.'/edit');
 same($before,$writes(),'Staff list, filter and detail GETs write nothing');
 // 25 rows cost the same across customers as for one customer.

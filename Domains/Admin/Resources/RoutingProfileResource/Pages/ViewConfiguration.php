@@ -3,33 +3,28 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource\Pages;
 use Filament\Actions\Action;
-use Filament\Resources\Pages\ViewRecord;
-use Filament\Schemas\Schema;
-use Filament\Infolists\Components\TextEntry;
-use Filament\Support\Enums\{FontFamily,Width};
-use Illuminate\Contracts\Support\Htmlable;
 use Livewire\Attributes\Locked;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{Sheet,StatusMark,WatchActions,WatchFacts};
-use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{WatchActions,WatchFacts};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Head,Row,Value};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\{RecordDetailPage,Section};
+use Paymenter\Extensions\Servers\Domains\Presentation\{Fact,Plain,Reader,State};
 use Paymenter\Extensions\Servers\Domains\Services\{DnsTemplateUsage,SiteDnsDefault};
-class ViewConfiguration extends ViewRecord
+/** A DNS template: its records and where it is used, with the monitoring switch on its own row. Edit and Delete are
+ * the page's native header actions. */
+class ViewConfiguration extends RecordDetailPage
 {
     protected static string $resource=RoutingProfileResource::class;
-    protected Width|string|null $maxContentWidth=Sheet::WIDTH;
     /** The revision this page shows; writes from a stale page are refused. */
     #[Locked] public int $revision=0;
     public function mount(int|string $record): void{parent::mount($record);$this->revision=(int)$this->getRecord()->revision;}
-    protected function fillForm(): void{$this->data=[];}
-    public function getTitle(): string{return (string)$this->getRecord()->name;}
-    /** The status once, under the title. A template that can't be read says so after it. */
-    public function getSubheading(): string|Htmlable|null
+    protected function head(): Head
     {
-        $r=$this->getRecord();$status=RoutingProfileResource::status($r);
-        return StatusMark::line($status['tone'],$status['label'],'template-'.$r->id,$r->readProfile()===null?WatchFacts::TEMPLATE_UNAVAILABLE:null);
+        $r=$this->getRecord();
+        return Head::make((string)$r->name,Reader::Staff)->state($r->enabled?State::Active:State::Paused,'template-'.$r->id);
     }
     public function getBreadcrumbs(): array{return [RoutingProfileResource::getUrl()=>'DNS templates',$this->getTitle()];}
-    protected function getHeaderActions(): array{return [WatchActions::configuration($this->getRecord(),$this->revision),WatchActions::deleteTemplate($this->getRecord(),$this->revision)];}
+    protected function actions(): array{return [WatchActions::configuration($this->getRecord(),$this->revision),WatchActions::deleteTemplate($this->getRecord(),$this->revision)];}
     public function refreshTemplate(): void
     {
         $this->record=$this->getRecord()->fresh();$this->revision=(int)$this->record->revision;
@@ -37,26 +32,27 @@ class ViewConfiguration extends ViewRecord
     }
     public function enableAction(): Action{return WatchActions::enable($this->getRecord(),$this->revision);}
     public function disableAction(): Action{return WatchActions::disable($this->getRecord(),$this->revision);}
-    /** One line per kind of record; kinds with no values are left out. */
+    /** One line per kind of record; kinds with no values are left out. @return list<string> */
     private static function records(array $r): array
     {
         $out=[];foreach(['exact'=>'Hostnames','suffix'=>'Hostname suffixes','ips'=>'IP addresses'] as $type=>$label){if($r[$type]??[]){$out[]=$label.': '.implode(', ',$r[$type]);}}
-        return $out?:['None'];
+        return $out;
     }
-    public function infolist(Schema $schema): Schema
+    private static function list(array $items): Value{return ($fact=Fact::lines($items))===null?Value::plain(Plain::None):Value::fact($fact);}
+    protected function sections(): array
     {
-        $r=$this->getRecord();$profile=$r->readProfile();
-        $row=fn(string $label,mixed $value)=>Sheet::row(TextEntry::make('fact_'.md5($label))->label($label)->state($value)->listWithLineBreaks()->extraAttributes(['class'=>'domains-wrap']));
-        $nameservers=Sheet::row(TextEntry::make('nameservers_list')->label('Nameservers')->state($profile?->nameservers??Missing::LABEL)->listWithLineBreaks()->fontFamily($profile?FontFamily::Mono:null)->extraAttributes(['class'=>'domains-wrap']));
-        return $schema->components([Sheet::single([
-            Sheet::section('Records',[$nameservers,$row('Website records',$profile?self::records($profile->website):Missing::LABEL),$row('Email records',$profile?self::records($profile->email):Missing::LABEL)]),
-            Sheet::section('Used by',[
-                Sheet::row(TextEntry::make('new_domains_use')->label('New domains use')->state(SiteDnsDefault::profile()?->name??Missing::LABEL)),
-                Sheet::row(TextEntry::make('monitored_domains')->label('Monitored domains')->state((string)($usage=WatchFacts::usage((int)$r->id))['checked'])->belowContent(WatchFacts::usageNote($usage))->extraAttributes(['class'=>'domains-wrap'])),
-                Sheet::row(TextEntry::make('monitoring')->label('Monitoring')->state($r->enabled?'On':'Off')
-                    ->belowContent(DnsTemplateUsage::refusal((int)$r->id)??($profile===null?WatchFacts::TEMPLATE_UNAVAILABLE:'Monitoring checks domains against this template.')),
-                    [$this->enableAction(),$this->disableAction()]),
-            ]),
-        ])]);
+        $r=$this->getRecord();$profile=$r->readProfile();$staff=Reader::Staff;
+        $unreadable=Value::state(State::CouldntRead,$staff);
+        $records=$profile===null?[Row::notice('template',Value::state(State::CouldntRead,$staff,WatchFacts::TEMPLATE_UNAVAILABLE)),
+                Row::make('Nameservers',$unreadable),Row::make('Website records',$unreadable),Row::make('Email records',$unreadable)]
+            :[Row::make('Nameservers',self::list($profile->nameservers)),Row::make('Website records',self::list(self::records($profile->website))),
+                Row::make('Email records',self::list(self::records($profile->email)))];
+        $default=SiteDnsDefault::profile();$usage=WatchFacts::usage((int)$r->id);
+        return [Section::make('Records',$records),Section::make('Used by',[
+            Row::make('New domains use',$default===null?Value::state(State::NotSet,$staff):Value::fact(Fact::attr($default,'name')??Fact::count((int)$default->id))),
+            Row::make('Monitored domains',Value::fact(Fact::count((int)$usage['checked']),WatchFacts::usageNote($usage))),
+            Row::make('Monitoring',Value::state($r->enabled?State::Active:State::Paused,$staff,DnsTemplateUsage::refusal((int)$r->id)??($profile===null?WatchFacts::TEMPLATE_UNAVAILABLE:'Monitoring checks domains against this template.')))
+                ->actions($this->enableAction(),$this->disableAction()),
+        ])];
     }
 }

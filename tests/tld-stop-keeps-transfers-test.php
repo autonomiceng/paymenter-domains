@@ -33,7 +33,7 @@ $page->mountAction('stop_selling')->callMountedAction()->assertHasNoActionErrors
 same(true,$intent()['transfers']??null,'Stop selling keeps the TLD’s own transfer choice');
 same(false,$offer('transfer')->available,'Stop selling ends transfers');
 $page->mountAction('start_selling');
-expect(str_contains($page->instance()->getMountedAction()->getModalDescription(),'transfers')&&str_contains((string)$page->instance()->getMountedAction()->getModalContent()?->toHtml(),'Transfer'),'The confirm names transfers again');
+expect(str_contains($page->instance()->getMountedAction()->getModalDescription(),'transfers')&&str_contains((string)$page->instance()->getMountedAction()->getModalDescription(),'Transfer'),'The confirm names transfers again');
 $page->callMountedAction()->assertHasNoActionErrors()->assertNotified('Change recorded');
 same([true,true,[]],[$intent()['sell']??null,$intent()['transfers']??null,$intent()['stops']??[]],'Start selling restores what was sold before');
 same(true,$offer('transfer')->available,'Start selling reopens transfers: '.$offer('transfer')->reason);

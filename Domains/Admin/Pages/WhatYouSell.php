@@ -19,7 +19,9 @@ use Illuminate\Support\Facades\{Auth,Blade,Log};
 use Illuminate\Support\HtmlString;
 use Livewire\Attributes\{Locked,Url};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{CatalogueSalesNotice,HelpHint,SellTable,SettingsActions,Staff,StatusMark,TldFacts};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{CatalogueSalesNotice,HelpHint,SellTable,SettingsActions,Sheet,Staff,StatusMark,TldFacts};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Row,Value};
+use Paymenter\Extensions\Servers\Domains\Presentation\{Fact,Reader,State};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,CanonicalName};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,OfferRow};
@@ -312,10 +314,16 @@ class WhatYouSell extends Page implements HasTable
             $where=($one?'It is':'They are').($this->switchedOn('for_sale')||$this->show()!==null?' not shown on this page.':' on another page of this list.');
             $fix=$shared===null?'Open '.($one?'it':'each one').' to fix the pricing.':($said?'':$shared.' Fix it in Default pricing at the top of this page.');
             $more=$count-count($hidden['rows']);
-            $components[]=Callout::make($one?'Prices left out for '.$hidden['rows'][0]['tld']:'Prices left out for '.number_format($count).($saved['warnings']===[]?'':' more').' TLDs')->warning()->columnSpanFull()
-                ->description(trim($where.' '.$fix))
-                ->footer($shared!==null?null:new HtmlString(implode(' ',array_map(fn(array $row)=>$button('Open '.$row['tld'],TldResource::getUrl('view',['record'=>$row['id']]))->toHtml(),$hidden['rows']))
-                    .($more>0?' <span class="domains-small">and '.number_format($more).' more</span>':'')));
+            $heading=$one?'Prices left out for '.$hidden['rows'][0]['tld']:'Prices left out for '.number_format($count).($saved['warnings']===[]?'':' more').' TLDs';
+            $open=static fn(array $row)=>Sheet::link('open-omitted-'.$row['id'],'Open '.$row['tld'],TldResource::getUrl('view',['record'=>$row['id']]));
+            $reason=trim($where.' '.$fix);
+            $rows=[Row::notice('hidden-prices',Value::state(State::NeedsReview,Reader::Staff,$reason),$shared===null&&$one?$open($hidden['rows'][0]):null)];
+            if($shared===null&&!$one){
+                foreach($hidden['rows'] as $row){$rows[]=Row::make('TLD',Value::fact(Fact::names([$row['tld']])))->key('omitted-'.$row['id'])->actions($open($row));}
+                if($more>0){$rows[]=Row::make('More TLDs',Value::fact(Fact::count($more)));}
+            }
+            $components[]=Sheet::single([Sheet::section($heading,$rows)]);
+
         }
         return $schema->components([...$components,EmbeddedTable::make()]);
     }

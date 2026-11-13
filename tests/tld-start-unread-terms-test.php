@@ -17,7 +17,7 @@ app()->instance(StaffSettingsWrites::class,new StaffSettingsWrites($native,$sell
 $t=$tlds[0];$account=Account::where('server_id',$t->server_id)->sole();$binding=AccountBindings::binding($account);
 $actor=staffUser(array_keys(Staff::permissions()));Auth::setUser($actor);
 $offer=static fn(string $action)=>$ports->readOffers(new Query($binding,['com'],$action),Context::Staff)[0];
-$head=static fn($page)=>trim(preg_replace('/\s+/',' ',html_entity_decode(strip_tags($page->instance()->getSubheading()->toHtml()),ENT_QUOTES)));
+$said=static fn($page)=>trim(preg_replace('/\s+/',' ',html_entity_decode(strip_tags(preg_replace('~<(script|style)\b.*?</\1>~si','',$page->html())),ENT_QUOTES)));
 // The account sells only TLDs set to Sell, and .com has no choice of its own (the demo's .abc).
 DB::table('domains_accounts')->where('id',$account->id)->update(['catalogue_defaults'=>OfferState::json([...OfferState::decode($account->catalogue_defaults),'defaultSell'=>false])]);
 // Its registrar terms were read once and are out of date now.
@@ -29,7 +29,7 @@ same(false,OfferState::facts($t->fresh()->catalogue_facts)->fresh($now),'.com te
 $page=Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->assertActionVisible('start_selling');
 // Not set to sell while its terms wait: the words promise no sale.
 same('Not sold by default',TldFacts::salesState($t->fresh())['reason'],'The TLD list says .com is not sold by default');
-expect(str_contains($head($page),'Not sold by default'),'The head says .com is not sold by default: '.$head($page));
+expect(str_contains($said($page),'Not sold by default'),'The page says .com is not sold by default: '.$said($page));
 same('primary',$page->instance()->startSellingAction()->getColor(),'Start selling is the primary button');
 $page->mountAction('start_selling');$confirm=$page->instance()->getMountedAction()->getModalDescription();
 $page->callMountedAction()->assertHasNoActionErrors()->assertNotified('Change recorded');
@@ -40,12 +40,12 @@ same(true,StaffCatalogue::routed()->setting($current,'enabled'),'.com is on');
 // Set to sell while its terms wait: the words say so without promising a sale, and Stop selling is the one sales action.
 $page->assertActionHidden('start_selling')->assertActionVisible('stop_selling');
 same('Set to sell; checking registrar terms',TldFacts::salesState($current)['reason'],'The TLD list says .com is set to sell while its terms are checked');
-expect(str_contains($head($page),'Set to sell; checking registrar terms'),'The head says .com is set to sell while its terms are checked: '.$head($page));
+expect(str_contains($said($page),'Set to sell; checking registrar terms'),'The page says .com is set to sell while its terms are checked: '.$said($page));
 // Fresh terms need nameservers at registration, which checkout can't send. It stays set to sell, so Stop selling stays.
 $facts([1,3],0,true);
 $page=Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->assertActionHidden('start_selling')->assertActionVisible('stop_selling');
 same(['label'=>'Not for sale','tone'=>'warning','reason'=>'Set to sell, but this registrar needs nameservers at registration'],TldFacts::salesState($t->fresh()),'The TLD list names the requirement .com fails, with the amber mark');
-expect(str_contains($head($page),'Set to sell, but this registrar needs nameservers at registration'),'The head names the requirement: '.$head($page));
+expect(str_contains($said($page),'Set to sell, but this registrar needs nameservers at registration'),'The page names the requirement: '.$said($page));
 same('Use Change registrar to sell it through another account.',TldFacts::fixText(TldFacts::salesState($t->fresh())['reason'],true),'The list Note says what to do');
 same(TldFacts::ASK_SELLER,TldFacts::fixText(TldFacts::salesState($t->fresh())['reason'],false),'Staff who cannot change the registrar are told who can');
 $change=collect($page->instance()->getCachedHeaderActions())->first(fn($a)=>$a instanceof \Filament\Actions\Action&&$a->getName()==='seller');
@@ -64,7 +64,7 @@ $ports->apply(Edit::override($binding,'com',new Intent(longest:1,stops:[])),$off
 $facts([3],0);
 $page=Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->assertActionHidden('start_selling');
 same('Not offered by this registrar',TldFacts::salesState($t->fresh())['reason'],'The TLD list names the registrar block');
-expect(str_contains($head($page),'Not offered by this registrar'),'The head names the registrar block: '.$head($page));
+expect(str_contains($said($page),'Not offered by this registrar'),'The page names the registrar block: '.$said($page));
 $change=collect($page->instance()->getCachedHeaderActions())->first(fn($a)=>$a instanceof \Filament\Actions\Action&&$a->getName()==='seller');
 same(['Change registrar','primary'],[$change?->getLabel(),$change?->getColor()],'Change registrar is the primary button');
 echo "TLD start with unread terms passed.\n";$nativeSuccessful=true;
