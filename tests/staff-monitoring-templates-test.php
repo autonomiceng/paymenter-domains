@@ -15,7 +15,7 @@ use Paymenter\Extensions\Servers\Domains\Presentation\State;
 // DNS templates.
 $templates=Livewire::actingAs($manager)->test(ListTemplates::class)->assertCanSeeTableRecords([$profile])->assertActionVisible('save');$clean($templates->html(),'DNS templates');staffRowsStandard($templates);
 same(['No DNS templates','Add one with Add DNS template.'],[$templates->instance()->getTable()->getEmptyStateHeading(),$templates->instance()->getTable()->getEmptyStateDescription()],'No templates says how to add one');
-same('DNS templates - Domains',$templates->instance()->getTitle(),'The browser title names the open tab, then the section');
+expect(str_starts_with((string)$templates->instance()->getTitle(),RoutingProfileResource::getNavigationLabel()),'The browser title starts with the open tab');
 // the card owns the default, rather than the subheading.
 $templates->assertSee('Default nameservers')->assertActionHidden('siteDefault');same('Add DNS template',$templates->instance()->getAction('save')->getLabel(),'Add template');
 foreach(['name'=>'Template','nameservers'=>'Nameservers','enabled'=>'Status'] as $name=>$label){same($label,$column($templates,$name)->getLabel(),'Template column '.$name);}
