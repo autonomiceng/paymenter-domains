@@ -32,12 +32,12 @@ $make=static fn(int $n)=>DB::transaction(fn()=>WatchProfile::create(['name'=>'Co
 $snapshot=static fn()=>array_map(fn($table)=>DB::table($table)->orderBy('id')->get()->toJson(),[
     'domains_domains','domains_operations','domains_watch_names','domains_watch_profiles','domains_watch_audit']);
 $connect=static function(string $registrar)use($snapshot):Account {
-    $before=$snapshot();$saved=Setting::where('key',SiteDnsDefault::KEY)->sole()->getRawOriginal();
+    $before=$snapshot();$saved=fixtureBusinessRaw(SiteDnsDefault::KEY);
     $server=Server::create(['name'=>'Synthetic '.$registrar,'extension'=>'Domains','type'=>'server','enabled'=>true]);
     $account=Account::withVerifiedBindingWrite(fn()=>Account::create(['server_id'=>$server->id,'registrar_key'=>$registrar,
         'environment'=>'test','stable_identity'=>'synthetic-'.$registrar,'processing_enabled'=>false]));
     same($before,$snapshot(),'Connecting '.$registrar.' never rewrites defaults, domain nameservers, watches or audits');
-    same($saved,Setting::where('key',SiteDnsDefault::KEY)->sole()->getRawOriginal(),'Connection preserves the exact saved default');
+    same($saved,fixtureBusinessRaw(SiteDnsDefault::KEY),'Connection preserves the exact saved default');
     return $account;
 };
 $row=static fn($page)=>$page->instance()->getSchema('content')->getComponent(fn($c)=>$c instanceof TextEntry&&in_array($c->getLabel(),['Default nameservers','New domains use'],true));
@@ -109,10 +109,9 @@ $readOnly=static function(Account $account,string $detail,string $hidden)use($vi
     same('danger',$entry->getColor($entry->getState()),'A read-only Default nameservers row is red');
     unset($entry,$page);gc_collect_cycles();gc_mem_caches();
 };
-$saved=Setting::where('key',SiteDnsDefault::KEY)->whereNull('settingable_type')->whereNull('settingable_id');
-(clone $saved)->update(['value'=>(string)$thirteen->id]);
+fixtureBusinessChoice(SiteDnsDefault::KEY,(string)$thirteen->id,'string');
 $readOnly($enom,'Enom takes 2 to 12 nameservers. '.SiteDnsDefault::ASK,'Update this DNS template or choose another one.');
-config(['domains.site_dns_default.nameservers'=>[]]);(clone $saved)->update(['value'=>'']);
+config(['domains.site_dns_default.nameservers'=>[]]);fixtureBusinessChoice(SiteDnsDefault::KEY,'','string');
 $readOnly($silo,'New registrations have no site-default nameservers. NameSilo needs explicit nameservers before an order can be sent. '.SiteDnsDefault::ASK,'Choose one in Domains > DNS templates.');
 $readOnly($enom,'New registrations have no site-default nameservers. '.SiteDnsDefault::ASK,'NameSilo needs explicit nameservers');
 $nativeSuccessful=true;echo "DNS default compatibility after registrar connection passed.\n";

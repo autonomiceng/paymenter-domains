@@ -31,7 +31,7 @@ class ViewWatch extends ViewRecord
     protected function fillForm(): void{$this->data=[];}
     public function waitForCheck(): void
     {
-        $w=$this->getRecord();$at=WatchAudit::where('subject_type','watch')->where('subject_id',$w->id)->where('event','staff_read_requested')->orderByDesc('id')->first(['created_at'])?->created_at?->getTimestamp();
+        $w=$this->getRecord();$at=WatchAudit::where('subject_type','watch')->where('subject_id',$w->id)->where('event','staff_read_requested')->orderByDesc('id')->first(['created_at','time_zone'])?->created_at?->getTimestamp();
         $this->pendingCheck=[];if($w->state!=='active' || !$at){return;}
         $before=max((int)WatchDnsObservation::where('watch_id',$w->id)->where('completed_at','<',$at)->max('started_at'),
             (int)WatchRegistryObservation::where('watch_id',$w->id)->where('completed_at','<',$at)->max('started_at'));

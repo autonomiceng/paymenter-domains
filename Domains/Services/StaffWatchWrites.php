@@ -26,9 +26,10 @@ final class StaffWatchWrites
             self::authorize($actor);
             $claim=hash('sha256',$ticket);
             if(!DB::table('domains_watch_staff_claims')->insertOrIgnore(['claim'=>$claim,'subject_type'=>$kind,'subject_id'=>$id,'action'=>$action,'created_at'=>time()])){throw new \DomainException('Reload and try again.');}
-            if($kind==='profile'){\App\Models\Setting::orderBy('id')->select('id')->lockForUpdate()->get();}
+            if($kind==='profile'){BusinessSetting::singleton(true);}
             if($kind==='mapping'){$product=$id?WatchProductMap::findOrFail($id)->product_id:(int)($input['product_id']??0);\App\Models\Product::whereKey($product)->lockForUpdate()->firstOrFail();}
             $class=match($kind){'watch'=>WatchName::class,'profile'=>WatchProfile::class,'mapping'=>WatchProductMap::class,default=>throw new \DomainException('Reload and try again.')};
+            if($kind==='watch'){BusinessSetting::singleton(true);}
             $row=$id?$class::whereKey($id)->lockForUpdate()->firstOrFail():new $class;
             if(($row->exists?(int)$row->revision:0)!==($t['revision']??null)){throw new \DomainException('The saved details changed. Reload and try again.');}
             if($kind==='profile' && $action==='save'){

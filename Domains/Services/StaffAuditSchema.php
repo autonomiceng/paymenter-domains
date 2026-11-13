@@ -23,6 +23,7 @@ final class StaffAuditSchema
         $table->string('family',32);
         $table->text('payload');
         $table->index(['server_id','family','id']);
+        if(Schema::hasColumn('domains_audit_archives','event_key')){AuditEventSchema::columns($table);}
     }
     public static function install(): void
     {

@@ -43,8 +43,7 @@ function curl_exec($h): bool {
 $clock=new FakeClock(new \DateTimeImmutable('2026-11-03T12:00:00Z'));app()->instance(Clock::class,$clock);$now=$clock->now();$GLOBALS['nsCatalogueClock']=$clock;CallerRouting::reset();
 Currency::firstOrCreate(['code'=>'USD'],['name'=>'US Dollar','format'=>'1,000.00','prefix'=>'$','suffix'=>'']);
 Category::create(['name'=>'Domains','slug'=>'domains']);
-Setting::updateOrCreate(['key'=>'domains_pricing_default_rule','settingable_type'=>null,'settingable_id'=>null],
-    ['type'=>'array','encrypted'=>false,'value'=>PricingRule::DEFAULT]);
+fixtureBusinessChoice('domains_pricing_default_rule',PricingRule::DEFAULT);
 auth()->login($staff);$binding=AccountBindings::binding($account->fresh());$bindings=app(AccountBindings::class);
 same('active',UpgradeGate::routeState()['state'],'Real fresh installation has already activated current catalogue');
 // This commerce fixture needs a reviewed renewal path, including both billing switches.

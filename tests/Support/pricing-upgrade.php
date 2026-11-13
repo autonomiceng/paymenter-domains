@@ -28,6 +28,8 @@ $upgrade=static function(array $rows,?array $steps=null)use($mark,$pin,$share):v
         DB::table('settings')->insert(['key'=>$key,'value'=>json_encode($value),'type'=>'array','encrypted'=>false,'settingable_type'=>$server->getMorphClass(),'settingable_id'=>$server->id,'created_at'=>$at,'updated_at'=>$at]);
     }
     foreach($steps??[$mark,$pin,$share] as $step){(require dirname(__DIR__,2).'/Domains/database/migrations/2026_11_01_'.$step.'.php')->up();}
+    DB::table('domains_business_settings')->where('id',1)->update(['pricing_rule'=>null,'card_fee'=>null,'imported'=>false]);
+    \Paymenter\Extensions\Servers\Domains\Services\BusinessSettingsSchema::install();
     same(0,DB::table('settings')->whereNotNull('settingable_type')->whereIn('key',[PricingRules::KEY,CardFee::KEY])->count(),'No per-account pricing key remains');
     same(0,DB::table('settings')->where('key','domains_pricing_saved_through')->count(),'The mark is gone once it is read');
 };
@@ -40,7 +42,7 @@ foreach([
 ] as $case=>[$rows,$expected]){
     $upgrade(array_map(static fn($row)=>[$row[0],PricingRules::KEY,$row[1],$row[2]],$rows));
     same($expected,$rule($pricingRules),$case);
-    same(1,Setting::whereNull('settingable_type')->where('key',PricingRules::KEY)->count(),'One business rule');
+    expect(fixtureBusinessRaw(PricingRules::KEY)!==null,'One business rule');
 }
 // Rows 000048 provably wrote were nobody's choice, so accounts that only have those take the new-account default.
 $upgrade([]);

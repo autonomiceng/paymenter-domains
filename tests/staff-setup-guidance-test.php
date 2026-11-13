@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Services\{RuntimePorts,SiteDnsDefault};
 extract(commerceFixture());tldPanel();pinStaffClock($now);$actor=staffUser(array_keys(Staff::permissions()));Auth::setUser($actor);
 $failures=[];$check=static function(bool $ok,string $why)use(&$failures):void{if(!$ok){$failures[]=$why;}};
-App\Models\Setting::where('key',SiteDnsDefault::KEY)->delete();config(['domains.site_dns_default.nameservers'=>null]);
+fixtureClearBusinessChoice(SiteDnsDefault::KEY);config(['domains.site_dns_default.nameservers'=>null]);
 foreach(Account::all()as$a){
  $html=Livewire::actingAs($actor)->test(RegistrarAccount::class,['account'=>$a->server_id])->html();
  $check(str_contains(strip_tags($html),'New registrations have no site-default nameservers.'),'Account missing default names its registration consequence');

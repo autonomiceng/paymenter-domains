@@ -9,7 +9,7 @@ function fixtureAccount(int $serverId, string $registrar, string $identity): arr
     App\Models\Server::create(['id' => $serverId, 'name' => 'Synthetic registrar', 'extension' => 'Domains', 'type' => 'server', 'enabled' => true]);
     $account = Account::withVerifiedBindingWrite(static fn () => Account::create(['server_id' => $serverId, 'registrar_key' => $registrar, 'environment' => Environment::Test->value, 'stable_identity' => $identity]));
     // Generic arithmetic fixtures retain their known percentage rule; real connections cover the new default.
-    App\Models\Setting::updateOrCreate(['key'=>'domains_pricing_default_rule','settingable_type'=>null,'settingable_id'=>null],
-        ['type' => 'array', 'encrypted' => false, 'value' => \Paymenter\Extensions\Servers\Domains\Services\PricingRule::DEFAULT]);
+    if(!\Illuminate\Support\Facades\Schema::hasTable(\Paymenter\Extensions\Servers\Domains\Services\BusinessSettingsSchema::TABLE)){\Paymenter\Extensions\Servers\Domains\Services\BusinessSettingsSchema::install();}
+    \Illuminate\Support\Facades\DB::transaction(static fn()=>\Paymenter\Extensions\Servers\Domains\Services\BusinessSetting::saveLocked(\Paymenter\Extensions\Servers\Domains\Services\PricingRules::KEY,\Paymenter\Extensions\Servers\Domains\Services\PricingRule::DEFAULT));
     return ['server_id' => $serverId, 'registrar_key' => $registrar, 'account_fingerprint' => $account->account_fingerprint];
 }

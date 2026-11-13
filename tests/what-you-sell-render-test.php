@@ -16,8 +16,7 @@ Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domai
 config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,'domains.enom_writes.registration'=>true]);
 App\Models\Server::whereKey($first->server_id)->update(['name'=>'Enom account']);
 App\Models\Server::whereKey($second->server_id)->update(['name'=>'NameSilo account']);
-App\Models\Setting::updateOrCreate(['key'=>'domains_pricing_default_rule','settingable_type'=>null,'settingable_id'=>null],['type'=>'array','encrypted'=>false,
-    'value'=>['mode'=>'markup_fee_percent','markup'=>'5','round_up'=>'ending_99']]);
+fixtureBusinessChoice('domains_pricing_default_rule',['mode'=>'markup_fee_percent','markup'=>'5','round_up'=>'ending_99']);
 activeFixtureRepublish($prices,$first);
 storefrontFixtureEdit($second,rule:storefrontFixtureRule('7.80','8.10','9.10'));
 DB::table('domains_prices')->where(['server_id'=>$second->server_id,'action'=>'renew','term'=>1])->update(['retail'=>'8.10']);

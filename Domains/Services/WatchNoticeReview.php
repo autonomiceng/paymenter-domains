@@ -45,7 +45,7 @@ final class WatchNoticeReview
             $key=hash('sha256','resend|'.$id.'|'.$requestKey);
             if (!WatchAudit::where('subject_type','notice_delivery')->where('subject_id',$id)->where('event','notice_resend')->get()->contains(fn($a)=>($a->data['key']??null)===$key)) {
                 WatchAudit::create(['after_revision'=>hash('sha256',(string)$now),'subject_type'=>'notice_delivery','subject_id'=>$id,'user_id'=>$d->user_id,'actor_id'=>$actor->id,'event'=>'notice_resend','reason'=>trim($reason),
-                    'data'=>['key'=>$key,'channel'=>$d->channel,'native_id'=>$nativeId,'prior_state'=>$d->state],'created_at'=>gmdate('Y-m-d H:i:s',$now)]);
+                    'data'=>['key'=>$key,'channel'=>$d->channel,'native_id'=>$nativeId,'prior_state'=>$d->state],'created_at'=>new \DateTimeImmutable('@'.$now)]);
             }
             return ['notice'=>$n->id,'channel'=>$d->channel,'id'=>$id,'actor'=>(int)$actor->id,'key'=>$key];
         });

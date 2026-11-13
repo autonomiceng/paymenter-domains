@@ -69,7 +69,7 @@ final readonly class PslRebaseline
                 'byte_size' => strlen($body), 'icann_count' => count($diff['rules']['icann']), 'private_count' => count($diff['rules']['private']),
                 'fetched_at' => $candidate->fetched_at, 'validated_at' => $candidate->fetched_at, 'compressed_body' => $candidate->compressed_body]);
             WatchAudit::create(['subject_type' => 'psl', 'subject_id' => 1, 'actor_id' => $actor->id, 'event' => 'psl_rebaseline', 'reason' => $reason,
-                'before_revision' => $old->revision, 'after_revision' => $revision, 'data' => ['removed' => $diff['removed'], 'icu_incompatible' => $diff['icu_incompatible'], 'rejected' => $diff['rejected']], 'created_at' => gmdate('Y-m-d H:i:s', $now)]);
+                'before_revision' => $old->revision, 'after_revision' => $revision, 'data' => ['removed' => $diff['removed'], 'icu_incompatible' => $diff['icu_incompatible'], 'rejected' => $diff['rejected']], 'created_at' => new \DateTimeImmutable('@'.$now)]);
             DB::table('domains_psl_candidates')->delete();
             DB::table('domains_psl_status')->where('id', 1)->update(['last_result' => 'rebaselined', 'attempt_token' => null, 'consecutive_failures' => 0]);
         });

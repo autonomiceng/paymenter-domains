@@ -14,45 +14,36 @@ final class SiteDnsDefault
     public const MISSING='Default nameservers are Missing. New domains have no nameservers to use. Choose a template in Domains > DNS templates.';
     public const REPLACE='Choose another template for new domains first.';
     public const RETAINED='This template is saved for new domains but cannot be used. Choose another template for new domains first.';
-    /** Settings writes refuse duplicates, so only someone with database access can remove the extra row. */
-    public const DUPLICATE='The default nameservers are saved more than once. Ask your site admin to remove the extra setting.';
     public const ASK='Ask staff who can change the default nameservers.';
-    private static function query(): \Illuminate\Database\Eloquent\Builder
-    { return Setting::whereNull('settingable_type')->whereNull('settingable_id')->where('key',self::KEY); }
-    /** A locking read sees rows committed after an older read view opened. */
-    private static function rows(bool $lock=false): \Illuminate\Support\Collection
-    { return self::query()->when($lock,fn($q)=>$q->lockForUpdate())->get(); }
-    private static function usable(\Illuminate\Support\Collection $rows,bool $lock=false): ?WatchProfile
+    private static function row(bool $lock=false): ?object
+    { return BusinessSetting::row(self::KEY,$lock); }
+    private static function usable(?object $row,bool $lock=false): ?WatchProfile
     {
-        if($rows->count()!==1 || $rows[0]->type!=='string' || $rows[0]->encrypted){return null;}
-        $id=$rows[0]->value;
+        if($row===null || $row->type!=='string' || $row->encrypted){return null;}
+        $id=$row->value;
         $p=is_string($id)&&ctype_digit($id)?WatchProfile::whereKey($id)->when($lock,fn($q)=>$q->lockForUpdate())->first():null;
         return ManagedDnsSetup::usable($p)?$p:null;
     }
-    private static function saves(\Illuminate\Support\Collection $rows,int $id): bool
-    { return $id>0 && $rows->contains(fn($row)=>$row->type==='string' && !$row->encrypted && $row->value===(string)$id); }
+    private static function saves(?object $row,int $id): bool
+    { return $id>0 && $row?->type==='string' && !$row->encrypted && $row->value===(string)$id; }
     public static function profile(bool $lock=false): ?WatchProfile
-    { return self::usable(self::rows($lock),$lock); }
+    { return self::usable(self::row($lock),$lock); }
     public static function uses(int $id,bool $lock=false): bool
-    { return self::saves(self::rows($lock),$id); }
-    /** Why a saved reference keeps this template, or null. Unusable and duplicate references stay protected. */
+    { return self::saves(self::row($lock),$id); }
+    /** Why a saved reference keeps this template, or null. Unusable references stay protected. */
     public static function usesRefusal(int $id,bool $lock=false): ?string
     {
-        $rows=self::rows($lock);
-        if(!self::saves($rows,$id)){return null;}
-        if($rows->count()>1){return self::DUPLICATE;}
-        return self::usable($rows,$lock)?->id===$id?self::REPLACE:self::RETAINED;
+        $row=self::row($lock);
+        if(!self::saves($row,$id)){return null;}
+        return self::usable($row,$lock)?->id===$id?self::REPLACE:self::RETAINED;
     }
     /** DNS template list markers from one settings read. @return array<int,string> */
     public static function marks(): array
     {
-        $rows=self::rows();$live=self::usable($rows)?->id;$out=[];
-        foreach($rows as $row){
-            if($row->type!=='string' || $row->encrypted || !is_string($row->value) || !ctype_digit($row->value)){continue;}
-            $id=(int)$row->value;
-            $out[$id]=$id===$live?'Used for new domains':($rows->count()>1?'Saved for new domains more than once':'Saved for new domains but cannot be used');
-        }
-        return $out;
+        $row=self::row();
+        if($row?->type!=='string'||$row->encrypted||!is_string($row->value)||!ctype_digit($row->value)){return [];}
+        $id=(int)$row->value;
+        return [$id=>self::usable($row)?->id===$id?'Used for new domains':'Saved for new domains but cannot be used'];
     }
     public static function watchProfile(WatchName $watch,bool $lock=false): ?WatchProfile
     {
@@ -66,10 +57,10 @@ final class SiteDnsDefault
     {
         $changed=Cache::lock('domains-site-dns-default',30)->block(5,static function():bool {
             return DB::transaction(static function():bool {
-                Setting::orderBy('id')->select('id')->lockForUpdate()->get();
                 Setting::where('settingable_type',(new \App\Models\Server)->getMorphClass())->where('key','domains_new_domain_dns_template')
                     ->whereIn('settingable_id',\App\Models\Server::where('extension','Domains')->select('id'))->delete();
-                if(self::query()->exists()){return false;} // Deployment changes never move a saved choice.
+                BusinessSetting::singleton(true);
+                if(self::row(true)!==null){return false;} // Deployment changes never move a saved choice.
                 $names=config('domains.site_dns_default.nameservers');
                 if(!is_array($names) || !$names){return false;}
                 try{$routing=new RoutingProfile($names,[],[]);}catch(\InvalidArgumentException|\TypeError){return false;}
@@ -96,7 +87,7 @@ final class SiteDnsDefault
         self::authorize($actor);
         Cache::lock('domains-site-dns-default',30)->block(5,static function()use($actor,$id):void {
             DB::transaction(static function()use($actor,$id):void {
-                self::authorize($actor);Setting::orderBy('id')->select('id')->lockForUpdate()->get();
+                self::authorize($actor);BusinessSetting::singleton(true);
                 $p=WatchProfile::whereKey($id)->lockForUpdate()->first();
                 if(!ManagedDnsSetup::usable($p)){throw new \DomainException('Choose an enabled DNS template.');}
                 self::validateRegistrars($p->nameservers);
@@ -139,9 +130,8 @@ final class SiteDnsDefault
      */
     public static function refusal(bool $canEdit=true): ?string
     {
-        $rows=self::rows();
-        if($rows->count()>1){return self::DUPLICATE;}
-        $p=self::usable($rows);
+        $row=self::row();
+        $p=self::usable($row);
         if($p){$cause=self::rule($p->nameservers);$fix='Update this DNS template or choose another one.';}
         else{
             $names=config('domains.site_dns_default.nameservers');
@@ -154,10 +144,7 @@ final class SiteDnsDefault
     }
     private static function write(WatchProfile $p): void
     {
-        $rows=self::query()->lockForUpdate()->get();
-        if($rows->count()>1){throw new \DomainException(self::DUPLICATE);}
-        $s=$rows->first()??new Setting(['key'=>self::KEY,'settingable_type'=>null,'settingable_id'=>null]);
-        $s->fill(['type'=>'string','encrypted'=>false,'value'=>(string)$p->id])->save();
+        BusinessSetting::saveLocked(self::KEY,(string)$p->id);
     }
     /** Restart durable bounded cursors, then process one local page through the admitted workers. No DNS I/O. */
     public static function reconcile(?int $profileId=null,bool $inherited=false): void
@@ -173,6 +160,7 @@ final class SiteDnsDefault
         if($watch){
             // Settings, then templates, as the default save locks them.
             WatchDnsRefresh::request(static function()use($profileId,$inherited):array {
+                BusinessSetting::singleton(true);
                 $keys=[];$d=$inherited?self::profile(true):null;
                 if($inherited){$keys[WatchDnsRefresh::DEFAULT]=$d?$d->id.':'.$d->revision:'none';}
                 if($profileId!==null){$p=WatchProfile::whereKey($profileId)->lockForUpdate()->first();$keys[WatchDnsRefresh::scope($profileId)]=$p?$p->id.':'.$p->revision:'missing';}

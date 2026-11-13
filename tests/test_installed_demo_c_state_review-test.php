@@ -44,7 +44,7 @@ DB::table('domains_tlds')->where('id',$t->id)->update($original);
 foreach(['markup_percent','fixed','default'] as $kind){$case('invalid '.$kind.' wording',function()use($t,$kind,$actor){
     $rule=[...PricingRule::DEFAULT,'mode'=>$kind==='fixed'?'fixed':'markup_percent','markup'=>'invalid'];
     if($kind==='fixed'){$rule['fixed']=['register'=>'0','renew'=>'0','transfer'=>'0'];}
-    if($kind==='default'){\App\Models\Setting::where('key',PricingRules::KEY)->firstOrFail()->update(['value'=>$rule]);$intent=[];}
+    if($kind==='default'){fixtureBusinessChoice(PricingRules::KEY,$rule);$intent=[];}
     else{$intent=['pricing_rule'=>$rule];}
     DB::table('domains_tlds')->where('id',$t->id)->update(['use_default_rule'=>$kind==='default','pricing_mode'=>$kind==='fixed'?'fixed':'markup_percent','catalogue_intent'=>OfferState::json($intent)]);
     $fact=TldFacts::snapshot($t->fresh());$cause=TldFacts::priceState($fact)['cause'];
@@ -54,5 +54,5 @@ foreach(['markup_percent','fixed','default'] as $kind){$case('invalid '.$kind.' 
     $html=TldFacts::accountsTable($t->fresh(),Staff::requireView())->toHtml();expect(str_contains($html,'Missing')&&str_contains($html,'href=')&&str_contains($html,$kind==='default'?'Edit default pricing':'Edit prices'),'Invalid rule keeps a repair link');
     $page=Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->mountAction('override')->call('$refresh');
     $modal=$page->effects['partials']['action-modals.0']??'';expect(str_contains($modal,$expected),'Modal names its actual invalid rule');
-});DB::table('domains_tlds')->where('id',$t->id)->update($original);\App\Models\Setting::where('key',PricingRules::KEY)->firstOrFail()->update(['value'=>PricingRule::DEFAULT]);}
+});DB::table('domains_tlds')->where('id',$t->id)->update($original);fixtureBusinessChoice(PricingRules::KEY,PricingRule::DEFAULT);}
 expect($failures===[],implode("\n",$failures));$nativeSuccessful=true;echo "Independent review state regressions passed.\n";

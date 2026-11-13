@@ -22,13 +22,13 @@ $connect=static function(string $registrar):void {
         'environment'=>'test','stable_identity'=>'synthetic-'.$registrar,'processing_enabled'=>false]));
 };
 $names=static fn(int $n)=>array_map(fn($i)=>sprintf('ns%02d.seed.test',$i),range(1,$n));
-$unset=static fn()=>Setting::where('key',SiteDnsDefault::KEY)->whereNull('settingable_type')->whereNull('settingable_id')->delete();
+$unset=static fn()=>fixtureClearBusinessChoice(SiteDnsDefault::KEY);
 $reject=static function(int $n,string $rule)use($names,$staff):void {
     config(['domains.site_dns_default.nameservers'=>$names($n)]);
     $before=[WatchProfile::count(),WatchAudit::count()];
     app(Installation::class)->install();
     same(null,SiteDnsDefault::profile(),'Normal installation refuses an incompatible deployment default: '.$rule);
-    same(false,Setting::where('key',SiteDnsDefault::KEY)->exists(),'Rejected deployment leaves the default unset');
+    same(null,fixtureBusinessRaw(SiteDnsDefault::KEY),'Rejected deployment leaves the default unset');
     same($before,[WatchProfile::count(),WatchAudit::count()],'Rejected deployment creates no template or audit');
     $page=Livewire::actingAs($staff)->test(MonitoringSettings::class)->assertSee('Missing')->assertSee($rule);
     $row=$page->instance()->getSchema('content')->getComponent('site_dns',withHidden:true);

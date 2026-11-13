@@ -123,6 +123,7 @@ final class WatchDnsChecks
         $orders = Order::whereIn('id', $orderIds)->orderBy('id')->when($lock, fn($q) => $q->lockForUpdate())->get()->keyBy('id');
         $services = Service::whereIn('id', $sources->pluck('service_id'))->orderBy('id')->when($lock, fn($q) => $q->lockForUpdate())->get()->keyBy('id');
         $products = Product::whereIn('id', $services->pluck('product_id'))->orderBy('id')->when($lock, fn($q) => $q->lockForUpdate())->get()->keyBy('id');
+        if($lock){BusinessSetting::singleton(true);}
         $maps = WatchProductMap::whereIn('id', $sources->pluck('map_id'))->orderBy('id')->when($lock, fn($q) => $q->lockForUpdate())->get()->keyBy('id');
         $profile = SiteDnsDefault::watchProfile($candidate,$lock);
         $watch = WatchName::whereKey($watchId)->where('user_id', $userId)->when($lock, fn($q) => $q->lockForUpdate())->first();

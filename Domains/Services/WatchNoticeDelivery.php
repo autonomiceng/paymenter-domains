@@ -68,7 +68,7 @@ final class WatchNoticeDelivery
                     && $predecessor->scope===$n->scope && $predecessor->episode_key===$n->episode_key
                     && ($prior->state==='reserved' || ($prior->state==='suppressed' && $prior->safe_code==='registration_managed'))) {
                     \Paymenter\Extensions\Servers\Domains\Models\WatchAudit::create(['after_revision'=>hash('sha256',(string)$now),'subject_type'=>'notice_delivery','subject_id'=>$prior->id,'user_id'=>$n->user_id,
-                        'event'=>'notice_claim_relinked','reason'=>'Unhanded channel follows managed registration','data'=>['predecessor_notice_id'=>$prior->notice_id,'notice_id'=>$n->id], 'created_at'=>gmdate('Y-m-d H:i:s',$now)]);
+                        'event'=>'notice_claim_relinked','reason'=>'Unhanded channel follows managed registration','data'=>['predecessor_notice_id'=>$prior->notice_id,'notice_id'=>$n->id], 'created_at'=>new \DateTimeImmutable('@'.$now)]);
                     DB::table('domains_watch_deliveries')->where('id',$prior->id)->update(['notice_id'=>$n->id,'state'=>$on?'reserved':'suppressed','safe_code'=>$on?null:'preference_off']);
                     return $on?(int)$prior->id:null;
                 }

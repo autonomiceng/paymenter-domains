@@ -140,7 +140,7 @@ final class WatchDiscovery
         $watch->fill($attrs);if(!$watch->isDirty()){return;}$before=$watch->revision;$watch->revision=$before+1;$watch->save();$this->audit($watch,$event,$before,$now);
     }
     private function audit(WatchName $watch,string $event,int $before,int $now): void
-    {WatchAudit::create(['subject_type'=>'watch','subject_id'=>$watch->id,'user_id'=>$watch->user_id,'event'=>$event,'before_revision'=>(string)$before,'after_revision'=>(string)$watch->revision,'data'=>[],'created_at'=>gmdate('Y-m-d H:i:s',$now)]);}
+    {WatchAudit::create(['subject_type'=>'watch','subject_id'=>$watch->id,'user_id'=>$watch->user_id,'event'=>$event,'before_revision'=>(string)$before,'after_revision'=>(string)$watch->revision,'data'=>[],'created_at'=>new \DateTimeImmutable('@'.$now)]);}
     private function stop(WatchName $watch,string $reason,int $now): void
     {
         DB::table('domains_watch_work')->where('watch_id',$watch->id)->update(['claim'=>null,'lease_until'=>null,'safe_code'=>$reason]);

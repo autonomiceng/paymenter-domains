@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{CorrectionWork,SiteDnsDefault
 
 $profile=DB::transaction(fn()=>WatchProfile::create(['name'=>'Correction DNS','nameservers'=>['ns1.example.com','ns2.example.com'],
     'website_endpoints'=>[],'email_endpoints'=>[],'enabled'=>true,'edited_by'=>$user->id,'reason'=>'Synthetic registration default']));
-App\Models\Setting::create(['key'=>SiteDnsDefault::KEY,'type'=>'string','encrypted'=>false,'value'=>(string)$profile->id]);
+fixtureBusinessChoice(SiteDnsDefault::KEY,(string)$profile->id,'string');
 [$d,$driver,$original]=$holding(placeholderComFixtureName('correction-prior-renewal-placeholder.com'));
 // A sent renewal can legitimately coexist with an unstarted ancillary registration correction.
 $renewal=$original->replicate(['invoice_item_id']);

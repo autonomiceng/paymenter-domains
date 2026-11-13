@@ -69,7 +69,7 @@ app('router')->getRoutes()->refreshNameLookups();
 $settingsPage=\Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\MonitoringSettings::class;
 $page=\Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource\Pages\ListConfiguration::class;
 \Livewire\Livewire::actingAs($viewer)->test($page)->assertActionHidden('siteDefault')->assertActionHidden('editDefault');
-\App\Models\Setting::where('key',SiteDnsDefault::KEY)->whereNull('settingable_type')->delete();
+fixtureClearBusinessChoice(SiteDnsDefault::KEY);
 config(['domains.site_dns_default.nameservers'=>null]);$entry->upgraded();
 $settings=\Livewire\Livewire::actingAs($manager)->test($page)->assertSee(SiteDnsDefault::MISSING);
 // ui-r15 R4: the step is said once, in the red callout; the Default nameservers row shows only Missing.
@@ -150,7 +150,7 @@ same(2,count(SiteDnsDefault::profile()->nameservers),'Both connected registrars 
 // Hostname refusals are not server-count failures; no saved default means create/select recovery.
 try{SiteDnsDefault::validateRegistrars(['invalid host','ns2.example.test']);expect(false,'Invalid hostname refused');}
 catch(DomainException $e){expect(str_contains(strtolower($e->getMessage()),'hostname')&&!str_contains($e->getMessage(),'takes 2 to'),'Hostname refusal explains the relevant rule');}
-\App\Models\Setting::where('key',SiteDnsDefault::KEY)->delete();DB::table('domains_watch_profiles')->update(['enabled'=>false]);
+fixtureClearBusinessChoice(SiteDnsDefault::KEY);DB::table('domains_watch_profiles')->update(['enabled'=>false]);
 config(['domains.site_dns_default.nameservers'=>null]);
 \Livewire\Livewire::actingAs($viewer)->test($page)->assertSee('Ask staff who can change the default nameservers.')->assertDontSee('Choose a template in Domains > DNS templates');
 $empty=\Livewire\Livewire::actingAs($manager)->test($page)->mountAction('siteDefault')->call('$refresh');
@@ -172,7 +172,7 @@ config(['domains.site_dns_default.nameservers'=>$hosts(14)]);
 \Livewire\Livewire::actingAs($viewer)->test($page)->assertSee('Deployment DNS default lists more than 13 nameservers.')->assertSee('Ask staff who can change the default nameservers.')->assertDontSee('Create and turn on a compatible DNS template');
 \Livewire\Livewire::actingAs($manager)->test($page)->assertSee('Create and turn on a compatible DNS template')->assertDontSee('Ask staff who can change the default nameservers.');
 DB::table('domains_watch_profiles')->where('id',$thirteen->id)->update(['enabled'=>true]);
-\App\Models\Setting::updateOrCreate(['key'=>SiteDnsDefault::KEY,'settingable_type'=>null,'settingable_id'=>null],['type'=>'string','encrypted'=>false,'value'=>(string)$thirteen->id]);
+fixtureBusinessChoice(SiteDnsDefault::KEY,(string)$thirteen->id,'string');
 same('Enom takes 2 to 12 nameservers. Update this DNS template or choose another one.',SiteDnsDefault::refusal(),'Editors are told to update or replace a saved default');
 \Livewire\Livewire::actingAs($viewer)->test($page)->assertSee('Enom takes 2 to 12 nameservers. Ask staff who can change the default nameservers.')->assertDontSee('Update this DNS template or choose another one.');
 $nativeSuccessful=true;echo "Site DNS installation default passed.\n";

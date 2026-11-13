@@ -200,6 +200,8 @@ do not preserve current-key authority seals after rotation.
 
 ## Rollback boundaries
 
+After migration 000061, do not roll code back to a build before that migration; global domain settings have moved out of native settings.
+
 Before any entry point is re-enabled, restore the pre-stage database, matching files
 and encryption keys from the rehearsed backup into an empty recreated database.
 Remove Domains from active discovery, restore the pinned legacy runtime to its original
