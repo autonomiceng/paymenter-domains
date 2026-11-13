@@ -12,7 +12,7 @@ final class WatchMaintenance
         $title=$health['reason']==='checks_unsuccessful'?'Domain monitoring checks failed':'Domain monitoring stopped';
         // The fact only. Domain monitoring shows the full notice with its next step.
         $body=$health['reason']==='dispatch_overdue'?'Checks have not run since '.self::date($health['since']??null).'.':self::notice($health)['line'];
-        return \Paymenter\Extensions\Servers\Domains\Admin\Support\StaffAlert::send($title,$body,'filament.admin.resources.domain-watch.index','admin.domains.watch.view','watch:'.$health['alert_key']);
+        return \Paymenter\Extensions\Servers\Domains\Admin\Support\StaffAlert::send($title,$body,'filament.admin.resources.monitored-domains.index','admin.domains.watch.view','watch:'.$health['alert_key']);
     }
     private function families(int $now): array
     {

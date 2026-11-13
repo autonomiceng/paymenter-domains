@@ -21,7 +21,7 @@ class RegistrarSetup extends QueryListPage
     protected static string|\UnitEnum|null $navigationGroup='Domains';
     protected static ?int $navigationSort=2;
     protected static ?string $title='Registrars';
-    protected static ?string $slug='registrar-setup';
+    protected static ?string $slug='registrars';
     protected static ?\Filament\Pages\Enums\SubNavigationPosition $subNavigationPosition=\Filament\Pages\Enums\SubNavigationPosition::Top;
     public function getSubNavigation(): array { return StaffTabs::registrars('All accounts'); }
     /** Row facts per server for one render. */

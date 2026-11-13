@@ -19,7 +19,7 @@ $now=1800000000;$m=new WatchMaintenance();same('waiting',$m->health($now)['reaso
 $logs=[];\Illuminate\Support\Facades\Log::listen(static function($event)use(&$logs):void{$logs[]=$event->message;});
 DB::table('domains_watch_schedule')->insert(['scope'=>'dispatch','due_at'=>$now+300,'progress_at'=>$now,'data'=>json_encode(['started_at'=>$now])]);expect(!$m->health($now+599)['outage'],'Two intervals not elapsed');same('dispatch_overdue',$m->health($now+600)['reason'],'Two missed turns alert');$m->tick($now+600);$alert=DB::table('domains_watch_schedule')->where('scope','dispatch')->value('alert_at');same($now+600,(int)$alert,'Outage marker retained');$m->tick($now+700);same((int)$alert,(int)DB::table('domains_watch_schedule')->where('scope','dispatch')->value('alert_at'),'Alert deduplicated');
 same(['Domain monitoring needs staff review.'],$logs,'Alert log names Domain monitoring, once');
-staffAlerts('Domain monitoring stopped','Checks have not run since Jan 15, 2027, 12:00 AM PST.',route('filament.admin.resources.domain-watch.index'),$staff);
+staffAlerts('Domain monitoring stopped','Checks have not run since Jan 15, 2027, 12:00 AM PST.',route('filament.admin.resources.monitored-domains.index'),$staff);
 // Missing native storage/columns skip silently without queueing a fallback.
 $send=static fn()=>\Paymenter\Extensions\Servers\Domains\Admin\Support\StaffAlert::send('Unavailable inbox','Body','missing.route');
 \Illuminate\Support\Facades\Schema::rename('notifications','notifications_unavailable');
@@ -169,5 +169,5 @@ DB::table('domains_watch_schedule')->where('scope','dispatch')->update(['alert_a
 $h=$m->health($july+600);same(['dispatch_overdue',$july],[$h['reason'],$h['since']],'July outage starts at the last progress');
 same('Monitoring checks have not run since '.$julyAt.'. Ask your site admin to restart them.',WatchMaintenance::notice($h)['text'],'July notice reads PDT');
 App\Models\Notification::where('title','Domain monitoring stopped')->delete();$m->tick($july+600);
-staffAlerts('Domain monitoring stopped','Checks have not run since '.$julyAt.'.',route('filament.admin.resources.domain-watch.index'),$staff);
+staffAlerts('Domain monitoring stopped','Checks have not run since '.$julyAt.'.',route('filament.admin.resources.monitored-domains.index'),$staff);
 $nativeSuccessful=true;echo "Two missed turns, day-long outage, deduplicated health and ninety-day retained last-good/notice evidence passed.\n";

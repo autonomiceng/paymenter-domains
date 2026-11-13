@@ -24,7 +24,7 @@ $template->update(['body'=>'@php throw new \\RuntimeException("Synthetic render 
 $before=DB::table('domains_watch_deliveries')->count();$health=WatchAudit::where('event','notice_health')->count();
 expect($delivery->reserve($n->id,'mail',$at)===null,'Render failure does not claim');expect($delivery->reserve($n->id,'mail',$at)===null,'Repeated render failure safe');
 same($before,DB::table('domains_watch_deliveries')->count(),'No delivery identity on render error');same($health+1,WatchAudit::where('event','notice_health')->count(),'Render health deduplicated');
-staffAlerts('Domain monitoring check failed','A customer notice for '.\Paymenter\Extensions\Servers\Domains\Models\WatchName::findOrFail($id)->canonical_name.' could not be prepared.',route('filament.admin.resources.domain-watch.view',['record'=>$id]),$staff);
+staffAlerts('Domain monitoring check failed','A customer notice for '.\Paymenter\Extensions\Servers\Domains\Models\WatchName::findOrFail($id)->canonical_name.' could not be prepared.',route('filament.admin.resources.monitored-domains.view',['record'=>$id]),$staff);
 // The alert's page says why the customer alert failed and what to do, until an alert goes out again.
 require dirname(__DIR__).'/Domains/routes/web.php';require dirname(__DIR__).'/Domains/routes/owned.php';staffPanel();\Paymenter\Extensions\Servers\Domains\Services\StaffWatchSchema::install();
 \Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(fn()=>\Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource::registerRoutes($panel));app('router')->getRoutes()->refreshNameLookups();

@@ -19,7 +19,7 @@ final class WatchNoticeHealth
         DB::afterCommit(static function()use($line,$managed,$id):void {
             try {
                 \Paymenter\Extensions\Servers\Domains\Admin\Support\StaffAlert::send('Domain monitoring check failed',$line,
-                    $managed?'filament.admin.resources.domains.view':'filament.admin.resources.domain-watch.view','admin.domains.watch.view',parameters:['record'=>$id]);
+                    $managed?'filament.admin.resources.domains.view':'filament.admin.resources.monitored-domains.view','admin.domains.watch.view',parameters:['record'=>$id]);
             } catch (\Throwable) { \Illuminate\Support\Facades\Log::warning('Public notice staff inbox unavailable.'); }
         });
     }

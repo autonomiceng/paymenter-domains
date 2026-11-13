@@ -14,6 +14,6 @@ class RoutingProfileResource extends WatchReadResource
     protected static ?string $modelLabel='DNS template';
     protected static ?string $pluralModelLabel='DNS templates';
     protected static ?string $breadcrumb='DNS templates';
-    protected static ?string $slug='dns-routing-profiles';
+    protected static ?string $slug='dns-templates';
     public static function getPages(): array{return ['index'=>ListConfiguration::route('/'),'view'=>ViewConfiguration::route('/{record}')];}
 }

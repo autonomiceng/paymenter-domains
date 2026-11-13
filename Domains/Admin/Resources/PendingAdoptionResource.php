@@ -14,7 +14,7 @@ class PendingAdoptionResource extends WatchReadResource
     protected static ?string $navigationLabel='Import pending';
     protected static ?string $pluralModelLabel='Import pending';
     protected static ?string $breadcrumb='Import pending';
-    protected static ?string $slug='adoption-pending';
+    protected static ?string $slug='import-pending';
     public static function canViewAny(): bool{return Staff::can(Staff::ADOPT);}
     /** Imports waiting for review are Under review on the Domains list; old links land on that filter. */
     public static function shouldRegisterNavigation(): bool{return false;}

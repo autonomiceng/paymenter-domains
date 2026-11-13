@@ -66,7 +66,7 @@ final class SyncPrices implements ShouldQueue,ShouldBeUnique
     private function notice(string $title,string $body): void
     {
         if(!Staff::allows(User::find($this->actor),Staff::VIEW)){return;}
-        $route=$this->reviewKey===null?'filament.admin.pages.what-you-sell':'filament.admin.resources.domain-tlds.index';
+        $route=$this->reviewKey===null?'filament.admin.pages.what-you-sell':'filament.admin.resources.tlds.index';
         Notification::create(['user_id'=>$this->actor,'title'=>$title,'body'=>$body,'url'=>Route::has($route)?route($route,['account'=>$this->server]):null]);
     }
 }

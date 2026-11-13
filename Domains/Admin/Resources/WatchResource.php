@@ -17,7 +17,7 @@ class WatchResource extends WatchReadResource
     protected static ?string $modelLabel='monitored domain';
     protected static ?string $pluralModelLabel='Monitored domains';
     protected static ?string $breadcrumb='Monitored domains';
-    protected static ?string $slug='domain-watch';
+    protected static ?string $slug='monitored-domains';
     protected static ?SubNavigationPosition $subNavigationPosition=SubNavigationPosition::Top;
     public static function getEloquentQuery(): Builder{return parent::getEloquentQuery()->with(['delegation','registry','work']);}
     /** Active domains needing attention, first 1,000: the count on the Monitored domains tab. Null at zero, so the tab shows none. */
@@ -28,5 +28,5 @@ class WatchResource extends WatchReadResource
     }
     /** Where the count leads: the list filtered to the domains that need attention. */
     public static function attentionUrl(): string{return static::getUrl('index',['filters'=>['status'=>['value'=>'attention']]]);}
-    public static function getPages(): array{return ['index'=>ListWatches::route('/'),'dns-failures'=>ListDnsFailures::route('/dns-failures'),'dns-setup'=>ListManagedDns::route('/dns-setup'),'settings'=>MonitoringSettings::route('/settings'),'view'=>ViewWatch::route('/{record}'),'history'=>WatchResource\Pages\WatchHistory::route('/{record}/history')];}
+    public static function getPages(): array{return ['index'=>ListWatches::route('/'),'dns-failures'=>ListDnsFailures::route('/affected-dns-checks'),'dns-setup'=>ListManagedDns::route('/dns-monitoring-setup'),'settings'=>MonitoringSettings::route('/monitoring-settings'),'view'=>ViewWatch::route('/{record}'),'history'=>WatchResource\Pages\WatchHistory::route('/{record}/history')];}
 }

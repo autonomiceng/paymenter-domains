@@ -19,7 +19,7 @@ class TldResource extends Resource
     protected static ?string $modelLabel='TLD';
     protected static ?string $pluralModelLabel='TLDs';
     protected static ?string $breadcrumb='TLDs & pricing';
-    protected static ?string $slug='domain-tlds';
+    protected static ?string $slug='tlds';
     public static function canViewAny(): bool {return Staff::can();}
     public static function canView(Model $record): bool {return Staff::can();}
     public static function canCreate(): bool {return false;}
