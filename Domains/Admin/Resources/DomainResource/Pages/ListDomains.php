@@ -55,7 +55,7 @@ class ListDomains extends RecordListPage
             Column::value('auto_renew', 'Auto-renew', fn (Domain $d): ?Value => $this->renewal($d)),
             Column::value('server_id', 'Registrar', fn (Domain $d): Value => $d->server
                 ? Value::fact(Fact::names([$d->server->name.' #'.$d->server_id]), self::REGISTRARS[$d->registrar_key] ?? null)
-                : Value::state(State::NotConnected, Reader::Staff, DomainFacts::NO_ACCOUNT)),
+                : Value::state(State::NotConnected, Reader::Staff, DomainFacts::NO_ACCOUNT))->optional(),
         ];
     }
     protected function filters(): array

@@ -30,8 +30,8 @@ a :is(.domains-name-cell,.domains-list-note),a :is(.domains-name-cell,.domains-l
 .fi-ta-text-item:is(.domains-cut,.domains-line,.domains-name-cell):not(.fi-bulleted li.fi-ta-text-item),:is(.domains-cut,.domains-line,.domains-name-cell)>.fi-ta-text-item:not(.fi-bulleted li.fi-ta-text-item){display:block}
 [data-domains-table] .fi-ta-table{table-layout:auto;width:100%}
 [data-domains-table] .fi-ta-header-cell{white-space:nowrap}
-/* Linked free text takes the room the other columns leave, so no fixed width cuts a name that fits. */
-@media(min-width:1280px){[data-domains-table] td:has(a .domains-name-cell),[data-domains-table] td:has(a .domains-list-note){max-width:0}}
+/* P-TBL-7: a linked name or note keeps its full width while the row has room, and shortens with '...' only when it has none. */
+[data-domains-table] td:has(a .domains-name-cell)>*,[data-domains-table] td:has(a .domains-list-note)>*{display:grid;grid-template-columns:minmax(0,max-content)}
 /* P-TBL-12: narrower than the default columns, the table scrolls inside its surface. The identity column stays put, and
    once the rows have scrolled under it, it casts an edge shadow. Browsers without scroll timelines skip the shadow. */
 [data-domains-table] .fi-ta-content-ctn{overflow-x:auto}
