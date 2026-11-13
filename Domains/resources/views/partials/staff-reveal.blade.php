@@ -26,7 +26,8 @@
     }
     const queue = () => { if (!queued) { queued = true; requestAnimationFrame(scan); } };
     // Fixed to the viewport, so no table, row or scroll container changes size. Below the text, or above it; when neither
-    // side has room (a short screen), over the text. Never past the viewport: staff-styles caps its height, and it scrolls.
+    // side has room (a short screen), over the text. Never past the viewport, even for text scrolled out of view: staff-styles
+    // caps its height, and it scrolls.
     function place() {
         if (!anchor) return;
         // Measured at the origin: a fixed box shrinks to the room right of its last left, which would wrap it taller.
@@ -35,7 +36,7 @@
         overlay.style.left = `${Math.max(edge, Math.min(box.left, innerWidth - overlay.offsetWidth - edge))}px`;
         const below = box.bottom + gap, above = box.top - gap - height;
         const top = below + height <= innerHeight - edge ? below : above >= edge ? above : innerHeight - edge - height;
-        overlay.style.top = `${Math.max(edge, top)}px`;
+        overlay.style.top = `${Math.max(edge, Math.min(top, innerHeight - edge - height))}px`;
         // Only an overlay whose text still overflows takes the mouse (to scroll); otherwise hover reaches the rows under it.
         overlay.toggleAttribute(SCROLL, overlay.scrollHeight > overlay.clientHeight);
     }
