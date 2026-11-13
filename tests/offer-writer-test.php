@@ -164,6 +164,12 @@ $normalized = json_decode($oldFact, true); ksort($normalized['terms']); ksort($n
 DB::table('domains_tlds')->where('id', $enom->id)->update(['catalogue_facts' => json_encode($normalized)]);
 expect($stable->matches($writer->apply(new FactsObserved($b, 'com', $facts($now)), $stable)), 'Storage key ordering does not create conflicting facts');
 expect($stable->matches($writer->apply(new FeedObserved($b, 'com', [$cost('register', 3, '1.0000', $now)]), $stable)), 'Older cost cannot replace current term');
+$unchanged = $state();
+$offsetTime = $clock->time->setTimezone(new DateTimeZone('America/Los_Angeles'));
+expect($stable->matches($writer->apply(new FeedObserved($b, 'com', [$cost('register', 3, '20.0001', $offsetTime)]), $stable)), 'An equal cost at the same instant is a no-op across timezone offsets');
+same($unchanged, $state(), 'An equivalent observation preserves prices, publication and audit rows');
+commerceReject(static fn () => $writer->apply(new FeedObserved($b, 'com', [new Cost('register', 3, true, '20.0001', CostUnit::TermTotal,
+    'synthetic_feed', $offsetTime, $offsetTime->modify('+2 days'))]), $stable));
 commerceReject(static fn () => $writer->apply(new FeedObserved($b, 'com', [$cost('register', 3, '1.0000', $clock->time)]), $stable));
 $apply(new FeedObserved($b, 'com', [$cost('renew', 1, null, $clock->time)]));
 same(false, $read($b)->available, 'Positive disabled renewal observation withdraws new acquisitions');

@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Models\{Server,User};
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 /** New connections enroll On; the upgrade pins existing accounts Off before this default applies. */
@@ -34,8 +34,10 @@ final class ReminderSchedules
             Server::whereKey($serverId)->lockForUpdate()->firstOrFail();$a=Account::where('server_id',$serverId)->lockForUpdate()->firstOrFail();
             $row=DB::table('domains_reminder_schedules')->where('server_id',$serverId)->lockForUpdate()->first();
             if($row){if($row->account_fingerprint!==$a->account_fingerprint){throw new \DomainException('Reminder account changed.');}return;}
-            DB::table('domains_reminder_schedules')->insert(['server_id'=>$serverId,'account_fingerprint'=>$a->account_fingerprint,
-                'enabled'=>true,'before_days'=>'[1,7,30,60]','after_days'=>'[3]']);
+            $schedule=['server_id'=>$serverId,'account_fingerprint'=>$a->account_fingerprint,
+                'enabled'=>true,'before_days'=>'[1,7,30,60]','after_days'=>'[3]'];
+            if(Schema::hasColumn('domains_reminder_schedules','audit')){$schedule['audit']=encrypt([]);}
+            DB::table('domains_reminder_schedules')->insert($schedule);
         });
     }
     public static function save(User $actor,int $serverId,int $revision,bool $enabled,string $before,string $after,string $reason):void
