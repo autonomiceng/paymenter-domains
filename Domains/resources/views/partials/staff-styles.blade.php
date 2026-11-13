@@ -28,7 +28,7 @@ a .domains-name-cell,a .domains-list-note{overflow:hidden;text-overflow:ellipsis
 [data-domains-table] .fi-ta-table{table-layout:auto;width:100%}
 [data-domains-table] .fi-ta-header-cell{white-space:nowrap}
 [data-domains-table] .fi-ta-cell-customer .domains-line{white-space:normal;min-width:8ch}
-[data-domains-table] .fi-ta-content{overflow-x:auto}
+[data-domains-table] .fi-ta-content-ctn{overflow-x:auto}
 @media(max-width:1279px){
  [data-domains-table] .fi-ta-table{width:max-content;min-width:100%}
  [data-domains-table] .fi-ta-row>td:first-child,[data-domains-table] .fi-ta-table>thead>tr>th:first-child{position:sticky;inset-inline-start:0;z-index:1;background:var(--panel-card,#111B36)}

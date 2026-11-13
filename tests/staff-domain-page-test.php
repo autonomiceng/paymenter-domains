@@ -189,7 +189,7 @@ $storeNs($active,['ns1.example.net','ns2.example.net']);
 same([null,'Service #'.$active->service_id.' not found. Check the Services page.'],[$f['Service']['value'],$f['Service']['sub']],'Deleted service is Missing with its cause');
 same([null,'Needs the linked service. Check the Services page.'],[$f['Renewal price']['value'],$f['Renewal price']['sub']],'Renewal price without a service names the cause');
 same(['Ada Lovelace','ada@example.test'],[$f['Customer']['value'],$f['Customer']['sub']],'Customer name with email');
-same(['On',null],[$f['Renewal']['value'],$f['Renewal']['sub']],'Renewals on');
+same('On',$f['Renewal']['value'],'Renewals on');
 expect(!isset($f['Auto-renew']),'Auto-renew and renewal invoices are one row');
 same(today()->addDays(120-21)->format('M j, Y'),$f['Next invoice']['value'],'Next invoice from the billing calendar');
 expect(!isset($f['Open invoice']),'Open invoice hidden when none');

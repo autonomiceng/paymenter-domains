@@ -40,7 +40,8 @@ function browser(key) {
   }
 })().catch(error=>{console.error(error);process.exitCode=1});
 """
-        result = subprocess.run(["node", "-e", script + probe], text=True, capture_output=True, timeout=15)
+        setup, run = probe.split("(async()=>{", 1)
+        result = subprocess.run(["node", "-e", setup + script + "(async()=>{" + run], text=True, capture_output=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
