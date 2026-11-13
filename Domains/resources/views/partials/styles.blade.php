@@ -615,6 +615,10 @@
 .domains .domains-sheet > .domains-panel + .domains-panel { border-top: 1px solid var(--e-line); }
 .domains .domains-sheet .domains-panel__h { padding: 1.125rem 1.5rem .625rem; border-bottom: 0; }
 .domains .domains-sheet .domains-panel__b { padding: 0; }
+/* Prose or steps inside a sheet section line up with its heading and rows. */
+.domains .domains-sec-body { padding: .25rem 1.5rem 1.25rem; }
+.domains .domains-sec-body > * + * { margin-top: .875rem; }
+@media (max-width: 639px) { .domains .domains-sec-body { padding: .25rem 1rem 1rem; } }
 .domains .domains-rail { min-width: 0; }
 .domains .domains-rail > .domains-panel { background: none; border: 0; border-radius: 0; }
 .domains .domains-rail .domains-panel__h { display: flex; align-items: baseline; justify-content: space-between; gap: .75rem; padding: 0; margin-bottom: .75rem; border-bottom: 0; }

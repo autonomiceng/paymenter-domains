@@ -22,7 +22,8 @@
 {{-- Steps are a trace (DESIGN.md P-MRK-2); the prices are their own section beside them, not inside the steps. --}}
 <x-domains::customer.split>
 <x-domains::customer.section id="domains-before" title="Before you start" note="Do these at your current registrar.">
-<div class="domains-panel__b"><x-domains::customer.trace :steps="[['label' => 'Turn off the transfer lock.'], ['label' => 'Get the auth code (also called EPP code). You’ll enter it after checkout.'], ['label' => 'Make sure the owner email address is current. The registrar may send an approval email there.']]" />
+{{-- Steps to do, in order, so they are numbered (not a history trace). --}}
+<div class="domains-sec-body"><ol class="domains-steps2"><li>Turn off the transfer lock.</li><li>Get the auth code (also called EPP code). You’ll enter it after checkout.</li><li>Make sure the owner email address is current. The registrar may send an approval email there.</li></ol>
 <p class="domains-small domains-muted domains-fine">Domains registered or transferred in the last 60 days can’t be transferred yet. Most transfers finish within 5 to 7 days.</p></div>
 </x-domains::customer.section>
 <x-slot:rail>
