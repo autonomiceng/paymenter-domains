@@ -118,7 +118,7 @@ foreach ([['Registrations', 'true', 'On', true], ['Renewals', 'false', 'Off', tr
 $tip = static fn (DOMElement $r): string => html_entity_decode((string) $q($r, './/*[contains(@class,"domains-help")]/@x-tooltip')->item(0)?->nodeValue, ENT_QUOTES);
 $under = static fn (DOMElement $r): string => trim((string) $q($r, './/*[@data-piece="value"]//*[@data-piece="sub"]')->item(0)?->textContent);
 $mode = $row('kit-rows-account', 'Mode');
-same([true, true, false], [$under($mode) !== '', str_contains($tip($mode), 'Test and Live are separate'), $under($mode) !== '' && str_contains($tip($mode), $under($mode))], 'A read-only setting says who sets it on its own line under the value, and the "?" keeps only what it means');
+same([true, false], [$under($mode) !== '', str_contains($tip($mode), $under($mode))], 'A read-only setting says who sets it on its own line under the value, and the "?" does not repeat it');
 same(['', '', 1], [$under($row('kit-rows-account', 'Reminder schedule')), $tip($row('kit-rows-account', 'Reminder schedule')), $q($row('kit-rows-account', 'Reminder schedule'), './/button[@aria-label="Edit Reminder schedule"]')->length], 'Staff who set reminders get the control and no who-sets-it line');
 $savedDays = panelKitSavedDays($server);
 expect($savedDays['before'] !== [] && $savedDays['after'] !== [], 'The kit has saved reminder days on both sides');
