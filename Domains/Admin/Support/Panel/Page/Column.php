@@ -24,7 +24,8 @@ final class Column
     public static function text(string $name, string $label, ?\Closure $text = null): self { $c = new self($name, $label, 'text'); $c->text = $text; return $c; }
     /** A domain name: one line, cut with "..." and the full name on hover and focus. A demo record shows its Demo tag. */
     public static function domain(string $name, string $label): self { return new self($name, $label, 'domain'); }
-    /** A value from the row, drawn by the Value piece. @param \Closure(array|Model):Value $value */
+    /** A value from the row, drawn by the Value piece; null leaves the cell empty. The cell's state is the value's word,
+     * so a reader or a test reads the word the mark stands beside. @param \Closure(array|Model):?Value $value */
     public static function value(string $name, string $label, \Closure $value): self { $c = new self($name, $label, 'value'); $c->value = $value; return $c; }
     /** Search matches this column. On a saved-record list, $query narrows the query itself, for a column that is not a
      * plain field (a customer's name). @param ?\Closure(Builder,string):Builder $query */
@@ -41,6 +42,12 @@ final class Column
     /** Staff can show it from the Columns menu; it starts hidden. */
     public function optional(): self { $this->optional = true; return $this; }
     public function isOptional(): bool { return $this->optional; }
+    private function valueOf(array|Model $record): ?Value
+    {
+        $value = ($this->value)($record);
+        if ($value !== null && !$value instanceof Value) { throw new \UnexpectedValueException('A value column returns a Value or null.'); }
+        return $value;
+    }
     public function queries(): bool { return $this->searchQuery !== null || $this->sortQuery !== null; }
     /** Built by the list type only. */
     public function toColumn(): TextColumn
@@ -53,11 +60,8 @@ final class Column
         if ($this->from !== null) { $column->visibleFrom($this->from); }
         return match ($this->kind) {
             'domain' => DemoTag::apply(OneLine::apply($column->formatStateUsing(static fn (string $state) => DomainName::html($state)), OneLine::NAME)),
-            'value' => $column->state(fn (array|Model $record): string => (function () use ($record): string {
-                $value = ($this->value)($record);
-                if (!$value instanceof Value) { throw new \UnexpectedValueException('A value column returns a Value.'); }
-                return $value->toHtml();
-            })())->html(),
+            'value' => $column->state(fn (array|Model $record): ?string => $this->valueOf($record)?->word)
+                ->formatStateUsing(fn (array|Model $record): string => (string) $this->valueOf($record)?->toHtml())->html(),
             default => ($this->text === null ? $column : $column->state(fn (array|Model $record): ?string => ($this->text)($record)))->wrap()->lineClamp(2),
         };
     }

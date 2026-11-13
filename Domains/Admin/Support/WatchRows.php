@@ -20,6 +20,20 @@ final class WatchRows
      *  @param ?\Closure():Action $check the Check now action, for a check time that isn't saved yet */
     public static function row(string $label, array $fact, ?\Closure $check): Row
     {
+        [$shown, $problem, $word, $sub] = self::shown($fact);$staff = Reader::Staff;$value = $fact['value'];
+        $row = Row::make($label, $shown);
+        if ($problem) { $row->result(Value::state($word ?? (($fact['tone'] ?? null) === 'danger' ? State::Failed : State::NeedsReview), $staff, $sub)); }
+        $actions = [];
+        if (($fact['url'] ?? null) !== null) { $actions[] = Sheet::link('open_'.substr(md5($label), 0, 8), 'Open', $fact['url'])->extraAttributes(['aria-label' => 'Open '.$label]); }
+        // Check now sits beside a value that isn't saved yet, as a quiet row button.
+        if ($value === null && ($fact['check'] ?? false) && $check !== null) { $actions[] = Sheet::button($check()); }
+        return $actions === [] ? $row : $row->actions(...$actions);
+    }
+    /** The fact's value alone, as a list cell shows it: a value not saved yet reads Not read yet with its cause. */
+    public static function value(array $fact): Value { return self::shown($fact)[0]; }
+    /** @return array{0:Value,1:bool,2:?State,3:?string} the value, whether the fact is a problem, its one-word state and its line */
+    private static function shown(array $fact): array
+    {
         $staff = Reader::Staff;$sub = self::sentence($fact['sub'] ?? null);$value = $fact['value'];
         $problem = in_array($fact['tone'] ?? null, ['warning', 'danger'], true) && $value !== null && $sub !== null;
         // A one-word line ("Expired") is a state word, never a sentence: it becomes the result's state.
@@ -35,13 +49,7 @@ final class WatchRows
             $value === 'Checking now' => Value::state(State::Checking, $staff, $sub),
             default => self::fact([(string) $value], $problem ? null : $sub),
         };
-        $row = Row::make($label, $shown);
-        if ($problem) { $row->result(Value::state($word ?? (($fact['tone'] ?? null) === 'danger' ? State::Failed : State::NeedsReview), $staff, $sub)); }
-        $actions = [];
-        if (($fact['url'] ?? null) !== null) { $actions[] = Sheet::link('open_'.substr(md5($label), 0, 8), 'Open', $fact['url'])->extraAttributes(['aria-label' => 'Open '.$label]); }
-        // Check now sits beside a value that isn't saved yet, as a quiet row button.
-        if ($value === null && ($fact['check'] ?? false) && $check !== null) { $actions[] = Sheet::button($check()); }
-        return $actions === [] ? $row : $row->actions(...$actions);
+        return [$shown, $problem, $word, $sub];
     }
     /** The status reason as the sheet's first row. A one-word reason ("Expired") is the notice's own state word. */
     public static function notice(string $label, mixed $reason): Row

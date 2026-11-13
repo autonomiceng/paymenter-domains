@@ -7,10 +7,10 @@ use Filament\Schemas\Components\EmbeddedTable;
 use Filament\Schemas\Schema;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Table;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{EmptyTable, TableColumns};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\{Column, Filter};
-/** What both list types share: the head, then the standard table. The page supplies columns, filters, the empty line
- * and its bulk actions as data; search, sort, paging, the empty state, the column menu and the row link belong to
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{EmptyTable, Sheet, TableColumns};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\{Column, Filter, Section};
+/** What both list types share: the head, any notices, then the standard table. The page supplies notices, columns,
+ * filters, the empty line and its bulk actions as data; search, sort, paging, the empty state, the column menu and the row link belong to
  * the type. */
 trait BuildsList
 {
@@ -27,7 +27,18 @@ trait BuildsList
     protected function bulkActions(): array { return []; }
     /** The search box's words, when the list is searchable. */
     protected function searchLabel(): ?string { return null; }
-    final public function content(Schema $schema): Schema { return $schema->components([EmbeddedTable::make()]); }
+    /** Above the table, only while something needs saying: each section opens with a notice, or holds the steps it
+     * asks for as a trace. @return list<Section> */
+    protected function notices(): array { return []; }
+    final public function content(Schema $schema): Schema
+    {
+        $notices = self::sectionsOnly($this->notices(), 'Above a list');
+        foreach ($notices as $section) {
+            $first = $section->rows[0] ?? null;
+            if (!$section->hasTrace() && !($first instanceof \Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Row && Section::isNotice($first))) { throw new \InvalidArgumentException('A section above a list opens with a notice or holds steps.'); }
+        }
+        return $schema->components([...($notices === [] ? [] : [Sheet::single(array_map(static fn (Section $s) => $s->toSchema(), $notices), 'list-notices')]), EmbeddedTable::make()]);
+    }
     /** @return array{0:list<Column>,1:list<Filter>} */
     private function listParts(): array
     {
