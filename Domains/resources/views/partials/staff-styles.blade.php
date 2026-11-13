@@ -19,7 +19,7 @@
 .domains-missing__cause{margin-inline-start:.5rem;color:var(--panel-fg-2,var(--gray-500))}
 .domains-note{min-width:14rem;max-width:24rem;overflow-wrap:anywhere}
 .domains-narrow{max-width:12rem}
-/* P-TBL-7: columns size to content. Structured values stay whole on one line, people's names wrap, and only a linked
+/* P-TBL-7: columns size to content. Values and people's names stay whole on one line, and only a linked
    name or note shortens with "..." (the record it opens shows it in full). */
 .domains-line{display:block;white-space:nowrap}
 .domains-cut{display:block;white-space:normal;overflow-wrap:break-word}
@@ -38,6 +38,13 @@ a :is(.domains-name-cell,.domains-list-note),a :is(.domains-name-cell,.domains-l
 @media(max-width:1279px){[data-domains-table] .fi-ta-table{width:max-content;min-width:100%}}
 /* The fixed name column never takes most of a narrow screen: past the cap a very long name shortens with '...', and its link opens it in full. */
 @media(max-width:1279px){[data-domains-table] td:has(a .domains-name-cell)>*{max-width:min(20rem,45vw)}}
+/* P-TBL-7: every column but Note sizes to its content on one line. Note is the last column and takes only the room left:
+   it shortens with '...' and the reveal shows it in full. From 1280px a linked name keeps its full width up to 24rem. */
+@media(min-width:1280px){[data-domains-table] td.domains-note-cell{width:100%;min-width:8rem}}
+@media(max-width:1279px){[data-domains-table] td.domains-note-cell>*{max-width:24rem}}
+[data-domains-table] .domains-list-note,[data-domains-table] .domains-list-note>.fi-ta-text-item{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+[data-domains-table] .domains-note{min-width:0;max-width:none}
+@media(min-width:1280px){[data-domains-table] td:has(a .domains-name-cell)>*{width:max-content;max-width:24rem}}
 [data-domains-table] :is(.fi-ta-row>td,.fi-ta-table>thead>tr>th):first-child{position:sticky;inset-inline-start:0;z-index:1;background:var(--panel-card,#111B36)}
 [data-domains-table] :is(.fi-ta-row>td,.fi-ta-table>thead>tr>th):first-child:has(input[type=checkbox])+:is(td,th){position:sticky;inset-inline-start:44px;z-index:1;background:var(--panel-card,#111B36)}
 @keyframes domains-edge{from{box-shadow:none}to{box-shadow:8px 0 8px -8px rgb(0 0 0/.6)}}

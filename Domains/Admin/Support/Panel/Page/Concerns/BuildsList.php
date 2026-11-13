@@ -62,7 +62,9 @@ trait BuildsList
         foreach ($columns as $c) { if (!$c instanceof Column) { throw new \InvalidArgumentException('A list column is a Column.'); } }
         foreach ($filters as $f) { if (!$f instanceof Filter) { throw new \InvalidArgumentException('A list filter is a Filter.'); } }
         if ($columns === []) { throw new \InvalidArgumentException('A list has at least one column.'); }
-        return [$columns, $filters];
+        // P-TBL-7: a note is the last column, so it takes only the room the other columns leave.
+        $notes = array_filter($columns, static fn (Column $c): bool => $c->isNote());
+        return [[...array_values(array_diff_key($columns, $notes)), ...array_values($notes)], $filters];
     }
     /** @param list<Column> $columns @param list<Filter> $filters */
     private function standardTable(Table $table, array $columns, array $filters, string $noMatch): Table

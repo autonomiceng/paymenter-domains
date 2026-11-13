@@ -45,7 +45,7 @@ final class Column
     /** Where the cell opens, such as the request a note names; null opens the row's own link.
      * @param \Closure(array|Model):?string $link */
     public function link(\Closure $link): self { $this->link = $link; return $this; }
-    /** A text cell that holds a person's name or email: it wraps and never shortens (P-TBL-7). */
+    /** A text cell that holds a person's name or email: one line that never shortens (P-TBL-7). */
     public function person(): self { $this->short = true; return $this; }
     /** A demo record shows its Demo tag after this plain text, as it does on a domain name. */
     /** The Demo tag beside the cell's first line when the record $of returns for the row is demo data, such as the account a TLD row belongs to. */
@@ -60,6 +60,7 @@ final class Column
     public function actWhen(\Closure $act): self { $this->act = $act; return $this; }
     public function optional(): self { $this->optional = true; return $this; }
     public function isOptional(): bool { return $this->optional; }
+    public function isNote(): bool { return $this->kind === 'note'; }
     private function nameCell(TextColumn $column): TextColumn
     { $name = OneLine::apply($column->fontFamily(FontFamily::Mono), OneLine::NAME); return $this->tag ? DemoTag::apply($name) : $name; }
     private function noted(TextColumn $column): TextColumn
