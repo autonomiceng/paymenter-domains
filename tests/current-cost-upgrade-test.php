@@ -28,7 +28,14 @@ $retiredMirror=!Schema::hasColumn('domains_prices','catalogue_observation');
 if($retiredMirror){
     $retirement=DB::table('migrations')->where('migration','2026_11_11_000066_retire_catalogue_mirrors')->sole();
     DB::table('migrations')->where('id',$retirement->id)->delete();
-    Schema::table('domains_prices',static fn($t)=>$t->json('catalogue_observation')->nullable());
+    // SQLite appends columns; rebuild the old tail in order for the retained-schema verifier.
+    $tail=DB::table('domains_prices')->get(['id','catalogue_created','cost_enabled','cost_source_unit']);
+    Schema::table('domains_prices',static fn($t)=>$t->dropColumn(['catalogue_created','cost_enabled','cost_source_unit']));
+    Schema::table('domains_prices',static function($t):void {
+        $t->json('catalogue_observation')->nullable();$t->boolean('catalogue_created')->default(false);
+        $t->boolean('cost_enabled')->nullable();$t->string('cost_source_unit',32)->nullable();
+    });
+    foreach($tail as $row){$values=(array)$row;unset($values['id']);DB::table('domains_prices')->where('id',$row->id)->update($values);}
 }
 DB::table('migrations')->where('migration',CurrentCostSchema::MIGRATION)->delete();
 DB::table('domains_prices')->where('id',$p->id)->update(['catalogue_observation'=>OfferState::json(OfferState::encodeCost($cost)),'cost_enabled'=>null,'cost_source_unit'=>null]);
