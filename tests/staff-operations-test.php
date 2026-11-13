@@ -37,10 +37,16 @@ Livewire::actingAs($viewer)->test(ViewOperation::class,['record'=>$ops[0]->id])-
     ->assertDontSee('WHOIS privacy');
 Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->assertSuccessful()->assertDontSee('WHOIS privacy');
 same(['Request #'.$ops[0]->id.' unconfirmed'],PaidUncertainty::for($held),'Account-wide hold names the request');
-// The registrar account page says the account-wide hold under its status, as the Domains list does.
+// The registrar account page says the account-wide hold in its Balance and usage notice, as the Domains list does; the head keeps the account's own state.
 $accountHold=PaidUncertainty::accounts((int)$ops[0]->server_id);expect($accountHold!==null,'Fixture holds paid changes on the account');
 $accountPage=new \Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount;$accountPage->account=(int)$ops[0]->server_id;$accountHead=$accountPage->getSubheading();
-expect(str_contains((string)($accountHead instanceof \Illuminate\Contracts\Support\Htmlable?$accountHead->toHtml():$accountHead),$accountHold->toHtml()),'Registrar account head names the paid changes hold');
+$holdText=static fn($html)=>html_entity_decode(strip_tags($html instanceof \Illuminate\Contracts\Support\Htmlable?$html->toHtml():(string)$html),ENT_QUOTES|ENT_HTML5);
+// This fixture's catalogue is retired, so only the Balance and usage notice is built, not the whole sheet.
+$usageNotice=(fn()=>$this->notice('usage')[0]??null)->call($accountPage);
+$accountHolds=PaidUncertainty::holds((int)$ops[0]->server_id);
+expect($usageNotice!==null&&str_contains((string)(fn()=>$this->rowValue->sub)->call($usageNotice),PaidUncertainty::line($accountHolds[0])),'Registrar account usage notice names the paid changes hold');
+same($accountHolds[0]['label'],(fn()=>$this->controls[0]->getLabel())->call($usageNotice),'The usage notice links the held request');
+expect(!str_contains($holdText($accountHead),$accountHolds[0]['label']),'Registrar account head shows only the account state');
 same(null,PaidUncertainty::holdSummary($ops[0]),'No orders-paused line while WHOIS privacy is not sold');
 same(null,RequestFacts::for($ops[1])['reason'],'Absent reason remains absent');
 $completed=clone $ops[0];$completed->state='succeeded';$completed->attempt=['execution'=>null];same([null,null],[RequestFacts::for($completed)['outcome'],RequestFacts::notice($completed)],'Completed readback has no unconfirmed notice');

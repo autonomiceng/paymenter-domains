@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\{SettingsActions,AccountC
 $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id]);
 $page->assertSee('Customer pays')->assertSee('Card fee')->assertSee('2.9% + $0.30 per payment');
 foreach(['customer_pays','card_fee'] as $control){
-    $action=Filament\Actions\Testing\TestAction::make('default_pricing_'.$control)->schemaComponent('account_'.$server->id,'content');
+    $action=Filament\Actions\Testing\TestAction::make('default_pricing_'.$control)->schemaComponent('sheet','content');
     $page->assertActionVisible($action)->mountAction($action)->assertActionMounted($action);
     same('Edit default pricing?',$page->instance()->getMountedAction()->getModalHeading(),'Pricing rows open the shared reviewed pricing form');$page->unmountAction();gc_collect_cycles();gc_mem_caches();
 }

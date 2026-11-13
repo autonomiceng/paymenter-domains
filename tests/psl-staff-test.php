@@ -102,7 +102,7 @@ same(0,App\Models\Notification::where('title','Public suffix list update failed'
 expect(App\Models\Notification::where('title','Public suffix list update failed')->count()>$notices,'Failed scheduled update alerts staff');
 $alert=App\Models\Notification::where('title','Public suffix list update failed')->where('user_id',$staff->id)->latest('id')->firstOrFail();
 same(['The saved list is still in use.',Page::getUrl()],[$alert->body,$alert->url],'One short line and the page with the next step');
-Livewire::actingAs($staff)->test(Page::class)->assertSee('Last download failed')->assertSee("Couldn't download: timed out.");$notices=App\Models\Notification::where('title','Public suffix list update failed')->count();
+Livewire::actingAs($staff)->test(Page::class)->assertSee(['Last download','Failed'])->assertSee("Couldn't download: timed out.");$notices=App\Models\Notification::where('title','Public suffix list update failed')->count();
 same(1,$failures,'Due job attempts one failed download');same('timeout',$list->status()->last_result,'Job retains the download failure');
 $failedAt=$list->status()->last_attempt_at;
 for($minute=1;$minute<=5;$minute++){$clock->at+=60;$job->handle($failedList);}

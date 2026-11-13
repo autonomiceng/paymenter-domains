@@ -218,11 +218,12 @@ $result=$lowEngine->execute($failed->id);$claim=$result->attempt['claim_key'];$p
 same(['held','registrar_read_failed','absent'],[$result->state,$result->safe_code,$result->attempt['seal']],'A failed read is proven unsent');
 $open($result)->assertSee("Not sent: couldn't read from the registrar. It will retry automatically.")->assertActionHidden('release');
 Illuminate\Support\Facades\Auth::setUser($staff);$nextTry=(int)DB::table('domains_runtime_operations')->where('operation_id',$result->id)->value('due_at');
-// The page shows every time in the viewer's time zone, so the retry time uses the same moment as the rest.
-same(Paymenter\Extensions\Servers\Domains\Admin\Support\Sheet::moment($nextTry,'Next try')->toHtml().'.',(string)RequestFacts::notice($result)['body'],'A timed retry shows when it runs');
-// The browser shows that moment in the viewer's zone, so the page must carry the retry's own instant and its UTC time.
-$body=(string)RequestFacts::notice($result)['body'];
-expect(str_starts_with($body,'Next try <span title="'.gmdate('M j, Y, g:i A',$nextTry).' UTC">')&&str_contains($body,'datetime="'.gmdate('Y-m-d\TH:i:s',$nextTry).'+00:00"'),'The retry time is the queued retry instant');
+// The notice supplies the scheduled instant separately from its text; the rendered page keeps it as a time.
+same($nextTry,RequestFacts::notice($result)['next_try'],'A timed retry retains its queued instant');
+$retryPage=$open($result)->html();$retryDom=new DOMDocument;@$retryDom->loadHTML('<?xml encoding="utf-8"?>'.$retryPage);
+$retryTimes=(new DOMXPath($retryDom))->query('//*[@data-piece="notice"]//time[@datetime]');$instants=[];
+foreach($retryTimes as $time){$instants[]=(new DateTimeImmutable($time->getAttribute('datetime')))->getTimestamp();}
+expect(in_array($nextTry,$instants,true),'The rendered notice shows the queued retry instant');
 // Pausing Orders keeps the recovery destination while the failed read still has retries.
 DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>false]);
 $paused=RequestFacts::notice($result->fresh());

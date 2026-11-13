@@ -110,8 +110,8 @@ foreach([$first,$second] as $server){
     $disabled=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertActionDoesNotExist($processingAction($server))->assertSee('Fix the API connection first.');
     DB::table('domains_accounts')->where('id',$a->id)->update(['processing_enabled'=>true]);
     same(['label'=>'Connection failed','tone'=>'danger','reason'=>'Could not load account settings'],RegistrarFacts::status($server->fresh(),$a->fresh()),'Hold covers credential and digest settings');
-    // The account shows Connection failed with its cause; Balance is Missing with the same cause and Add funds stays available.
-    Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertSee('Connection failed')->assertSee('Could not load account settings')->assertSee('Missing')
+    // The account shows Connection failed with its cause; Balance reads Couldn't read with the same cause and Add funds stays available.
+    Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertSee('Connection failed')->assertSee('Could not load account settings')->assertSee(\Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead->label())
         ->assertSee('Add funds')->assertSeeHtml(RegistrarBalances::fundsUrl($a->registrar_key,'test'))->assertDontSee('PRIVATE-WRONG');
     $balanceState=(array)DB::table(BalanceSchema::TABLE)->where('server_id',$server->id)->sole();
     try{Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->call('checkBalance')

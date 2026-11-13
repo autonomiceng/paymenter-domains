@@ -123,7 +123,7 @@ $check('Release waits until the cost is approved',static function()use($staff,$r
     $page->assertActionDisabled('release');
     expect(str_contains($text,'The registrar cost needs approval; Staff with domain cost and funding access must approve the registrar cost on the domain page.'),'The request directs staff to approve the cost before release');
     expect(!str_contains($text,'Release hold queues')&&!str_contains($text,'Release hold sends'),'The request never says release sends the held cost');
-    expect(preg_match('~href="'.preg_quote(e(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource::getUrl('view',['record'=>$d->id])),'~').'"[^>]*>\s*Open domain\s*<~',$page->html())===1,'The notice opens the domain page with Approve registrar cost');
+    expect(preg_match('~href="'.preg_quote(e(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource::getUrl('view',['record'=>$d->id])),'~').'"[^>]*>(?:\s|<[^>]+>)*Open domain\s*<~',$page->html())===1,'The notice opens the domain page with Approve registrar cost');
     same(['held','registrar_price_increased'],[$retry->fresh()->state,$retry->fresh()->safe_code],'Rendering the request changes nothing');
 });
 [$broken,$d]=$hold('approval-unreadable-placeholder.com');

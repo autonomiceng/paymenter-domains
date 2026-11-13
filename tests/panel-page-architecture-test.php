@@ -8,10 +8,10 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\PageType;
 
 /** Built before the page types, 2026-11-13. Remove a page when it moves to its type; never add one. */
 const PAGES_BEFORE_TYPES = [
-    'Pages\ActivationStatus', 'Pages\DnsResolver', 'Pages\PanelKit', 'Pages\PublicSuffixList', 'Pages\RegistrarAccount',
-    'Pages\RegistrarBalances', 'Pages\RegistrarHistory', 'Pages\RegistrarSetup', 'Pages\WhatYouSell',
+    'Pages\PanelKit',
+    'Pages\WhatYouSell',
     'Resources\DomainResource\Pages\AdoptDomain', 'Resources\DomainResource\Pages\AdoptionPreview',
-    'Resources\DomainResource\Pages\ViewDomain', 'Resources\OperationResource\Pages\ListOperations', 'Resources\OperationResource\Pages\ViewOperation',
+    'Resources\DomainResource\Pages\ViewDomain',
     'Resources\PendingAdoptionResource\Pages\ListPending', 'Resources\PendingAdoptionResource\Pages\ViewPending',
     'Resources\RoutingProfileResource\Pages\ListConfiguration', 'Resources\RoutingProfileResource\Pages\ViewConfiguration',
     'Resources\TldResource\Pages\ListTlds', 'Resources\TldResource\Pages\PriceList', 'Resources\TldResource\Pages\TldHistory', 'Resources\TldResource\Pages\ViewTld',

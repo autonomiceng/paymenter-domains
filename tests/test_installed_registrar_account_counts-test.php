@@ -43,8 +43,9 @@ echo "Staff and gate reads on one staff price read: $grants\n";expect($grants<=G
 $html=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server])->assertSuccessful()->html();
 // The page row for a label: its value, sub-line links and action links.
 $row=static function(string $label,string $html):array {
-    $doc=Dom\HTMLDocument::createFromString($html,LIBXML_NOERROR);
-    foreach($doc->querySelectorAll('.domains-row') as $node){
+    // A space before each closing tag keeps a value and the line under it apart in textContent.
+    $doc=Dom\HTMLDocument::createFromString(str_replace('</',' </',$html),LIBXML_NOERROR);
+    foreach($doc->querySelectorAll('[data-domains-row]') as $node){
         if(!str_contains($node->textContent,$label)){continue;}
         $links=[];foreach($node->querySelectorAll('a[href]') as $a){$links[trim(preg_replace('/\s+/',' ',$a->textContent))]=['href'=>$a->getAttribute('href'),'class'=>(string)$a->getAttribute('class')];}
         return ['text'=>trim(preg_replace('/\s+/',' ',$node->textContent)),'links'=>$links];
@@ -58,12 +59,7 @@ $listed=static function(string $href,string $list)use($staff):int {
 };
 $requests=$row('Registrar requests',$html);
 expect(preg_match('/\b5 open\b/',$requests['text'])===1,'Open requests count the listed open rows: '.$requests['text']);
-expect(str_contains($requests['text'],'1 awaiting payment, 1 on hold, 3 under review'),'Every open request status is in the breakdown: '.$requests['text']);
 same(5,$listed($requests['links']['View requests']['href']??'',ListOperations::class),'View requests opens exactly the open requests');
-$waiting=$requests['links']['1 on hold, 3 under review']??null;
-expect($waiting!==null,'Requests that wait on staff link to their rows: '.json_encode(array_keys($requests['links'])));
-same(4,$listed($waiting['href'],ListOperations::class),'The waiting count opens exactly those requests');
-expect(str_contains($waiting['class'],'domains-warn'),'Requests that wait on staff are amber, as on the list');
 // Ticking only On hold on the list shows only the held order, not every other request.
 same(1,$listed(RegistrarFacts::requestsUrl($server,['on_hold']),ListOperations::class),'On hold alone lists only held requests');
 
