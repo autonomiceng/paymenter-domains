@@ -327,7 +327,8 @@ final readonly class OwnedDomains
         $schedule=$renewal==='On' && $d->status==='active' && $state->calendar && !isset($renewNow['invoice']) && !isset($renewNow['status'])
             && $state->calendar['issue'] >= $this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d') ? $state->calendar : [];
         $test=Account::where('server_id',$d->server_id)->value('environment')==='test';
-        if ($service) { $actions['autoPay']=route('services.show',$service->id).'#auto-pay'; }
+        // Auto Pay is one account setting on the native Payment methods page.
+        if ($service) { $actions['autoPay']=route('account.payment-methods'); }
         try { $dnsCorrection=RegistrationDns::pending($op,$d); } catch (\Throwable) { $dnsCorrection=false; }
         if($d->price_mode==='complimentary'){$price=ComplimentaryAccounts::LABEL;}
         $page=new OwnedDomain($d->domain,$pill['label'],$pill['tone'],$d->provider_expires_at?->format('Y-m-d'),$renewal,$price,

@@ -6,6 +6,31 @@ namespace Paymenter\Extensions\Servers\Domains\Presentation;
  * Staff and customers read the same words. Dates come from the saved billing calendar, never guessed from expiry. */
 final class RenewalPayment
 {
+    /** The owner's Auto-renew line. How the invoice is paid has its own Auto Pay row, so this says only whether one is sent. */
+    public static function ownerLine(bool $on, bool $complimentary = false): string
+    {
+        if (!$on) { return self::line(false, null, false, null, []); }
+        return $complimentary ? 'Complimentary. Nothing is charged.' : 'We send a renewal invoice each year.';
+    }
+
+    /** The owner's Auto Pay row, in the same words as the service page: state, card, and the one link label. */
+    public static function autoPayState(bool $autoPay, ?string $method): string
+    {
+        if (!$autoPay) { return 'Off. You pay each renewal invoice.'; }
+        $method = trim((string) $method);
+        $card = match (true) {
+            (bool) preg_match('/([0-9]{4})$/D', $method, $last) => '•••• '.$last[1],
+            str_starts_with(strtolower($method), 'link') => 'Link wallet',
+            default => $method,
+        };
+        return $card === '' ? 'On.' : 'On, '.$card.'.';
+    }
+
+    public static function autoPayLink(bool $autoPay): string
+    {
+        return $autoPay ? 'Manage Auto Pay' : 'Turn on Auto Pay';
+    }
+
     /** @param array{issue?:string,due?:string} $calendar */
     public static function line(bool $on, ?string $amount, bool $autoPay, ?string $method, array $calendar, bool $complimentary = false): string
     {

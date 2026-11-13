@@ -267,6 +267,9 @@ $autoPay=static fn(DOMXPath $dom)=>$dom->query('//section[@id="renewal"]//a[@hre
 same(1,$autoPay(storefrontDom($render($on,$summary($on)))),'Renewal links to the service payment controls');
 $on=$domain(['renewal'=>'On','autoPay'=>true]);
 same(0,$autoPay(storefrontDom($render($on,$summary($on)))),'No payment link without its URL');
+// Auto Pay has nothing to pay while Auto-renew is off, so the row and its link leave.
+$off=$domain(['renewal'=>'Off','renewalOff'=>'owner','autoRenew'=>['url'=>'/domains/1/auto-renew','enabled'=>false],'actions'=>['show'=>'/domains/1','autoPay'=>'/services/1#auto-pay']]);
+same(0,$autoPay(storefrontDom($render($off,$summary($off)))),'No Auto Pay link while Auto-renew is off');
 $d=$domain();same('Issues Feb 1, 2027. Due Feb 8, 2027.',$card(storefrontDom($render($d,$summary($d,['renewalDueAt'=>'2027-02-08','renewalIssueAt'=>'2027-02-01']))),'Next invoice'),'Planned invoice says when it is issued and when it is due');
 $d=$domain(['renewalDue'=>'2027-02-01','renewNow'=>['invoice'=>'/invoices/9']]);$dom=storefrontDom($render($d,$summary($d)));
 same('Due Feb 1, 2027 Pay invoice',$card($dom,'Next invoice'),'Due invoice');
