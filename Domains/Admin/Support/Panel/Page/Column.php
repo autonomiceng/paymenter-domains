@@ -70,8 +70,12 @@ final class Column
         $name = OneLine::apply($column->fontFamily(FontFamily::Mono)->formatStateUsing(static fn (?string $state): ?HtmlString => $state === null ? null : DomainName::cell($state)), OneLine::NAME);
         return $this->tag ? DemoTag::apply($name) : $name;
     }
+    /** A note shows one clause and may be cut; its full text is the cell's title, so a mouse hover reads it as focus does. */
     private function noted(TextColumn $column): TextColumn
-    { $act = $this->act; return $act === null ? $column : $column->extraAttributes(static fn (array|Model $record): array => \Paymenter\Extensions\Servers\Domains\Admin\Support\StatusMark::note((bool) $act($record)), merge: true); }
+    {
+        $column->extraAttributes(static fn (mixed $state): array => filled($state) ? ['title' => (string) $state] : [], merge: true);
+        $act = $this->act; return $act === null ? $column : $column->extraAttributes(static fn (array|Model $record): array => \Paymenter\Extensions\Servers\Domains\Admin\Support\StatusMark::note((bool) $act($record)), merge: true);
+    }
     private function tagged(TextColumn $column): TextColumn { return $this->demo ? DemoTag::apply($column) : $column; }
     private function valueOf(array|Model $record): ?Value
     {
