@@ -21,10 +21,10 @@ function panelTheme(string $fixture): void
 }
 /** The list page in the panel layout, without the panel's scripts. As installed, the staff sheet follows the theme and any
  * skin, and the staff reveal script ends the body. */
-function writePanelPage(string $path, mixed $list): void
+function writePanelPage(string $path, mixed $list, string $samples = ''): void
 {
     $html=Blade::render('<x-filament-panels::layout :livewire="$page">{!! $body !!}</x-filament-panels::layout>',['page'=>$list->instance(),'body'=>$list->html()]);
     $html=preg_replace('~<script\b[^>]*>.*?</script>|<link\b[^>]*>~si','',$html);
     expect(substr_count($html,'</head>')===1&&substr_count($html,'</body>')===1,'One document head and body');
-    writeRenderArtifact($path,str_replace(['</head>','</body>'],[view('domains::partials.staff-styles')->render().'</head>',view('domains::partials.staff-reveal')->render().'</body>'],$html));
+    writeRenderArtifact($path,str_replace(['</head>','</body>'],[view('domains::partials.staff-styles')->render().'</head>',$samples.view('domains::partials.staff-reveal')->render().'</body>'],$html));
 }

@@ -10,7 +10,7 @@ final class AccountStatus
     public const TEST_MODE_OFF = 'Test mode turned off on this site';
     /** key => [label, tone] */
     public const SET = [
-        'active' => ['Active', 'success'], 'orders_paused' => ['Orders paused', 'warning'], 'not_selling' => ['Nothing for sale', 'warning'],
+        'active' => ['Active', 'success'], 'orders_paused' => ['Orders paused', 'warning'], 'not_selling' => ['Not for sale', 'warning'],
         'not_connected' => ['Not connected', 'gray'], 'connection_failed' => ['Connection failed', 'danger'],
     ];
     /** AccountBindings::configurationStatus() => [status key, default reason line] */

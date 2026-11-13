@@ -113,6 +113,8 @@
 :where(.domains-panel-step){display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px}
 :where(.domains-panel-step-d){font-size:.75rem;line-height:1.125rem;color:var(--panel-fg-2,inherit)}
 :where(.domains-panel-step-w){font-weight:500;white-space:nowrap}
+:where(.domains-panel-step-a){display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin-top:4px}:where(.domains-panel-step-a:empty){display:none}
+:where(.domains-panel-partial){display:block;min-width:0;overflow-wrap:anywhere}
 .domains-phone-note { display:none; }
 @media(max-width:639px) {
  .domains-phone-note { display:block; max-width:calc(100vw - 110px); white-space:normal; overflow-wrap:anywhere; line-height:1.5; }

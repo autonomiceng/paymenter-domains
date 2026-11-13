@@ -2,11 +2,13 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\Concerns;
-use Filament\Actions\{BulkAction, BulkActionGroup};
+use Filament\Actions\{Action, ActionGroup, BulkAction, BulkActionGroup};
 use Filament\Schemas\Components\EmbeddedTable;
 use Filament\Schemas\Schema;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{EmptyTable, Sheet, TableColumns};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\{Column, Filter, Section};
 /** What both list types share: the head, any notices, then the standard table. The page supplies notices, columns,
@@ -26,8 +28,16 @@ trait BuildsList
     abstract protected function emptyLine(): array;
     /** Native bulk actions on the rows staff tick. Each checks its own permission when it runs. @return list<BulkAction> */
     protected function bulkActions(): array { return []; }
+    /** Native actions at the end of each row: at most two, then a menu (P-ACT-9). Each checks its own permission and
+     * gets the row. @return list<Action|ActionGroup> */
+    protected function recordActions(): array { return []; }
+    /** The one next step an empty list offers, as a native action; the page decides when it shows. */
+    protected function emptyAction(): ?Action { return null; }
     /** The search box's words, when the list is searchable. */
     protected function searchLabel(): ?string { return null; }
+    /** Above the table, rows that say where the list stands, such as the default the templates below it feed. Each
+     * section holds rows (Row, SettingsRow). @return list<Section> */
+    protected function summary(): array { return []; }
     /** Above the table, only while something needs saying: each section opens with a notice, or holds the steps it
      * asks for as a trace. @return list<Section> */
     protected function notices(): array { return []; }
@@ -38,7 +48,13 @@ trait BuildsList
             $first = $section->rows[0] ?? null;
             if (!$section->hasTrace() && !($first instanceof \Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Row && Section::isNotice($first))) { throw new \InvalidArgumentException('A section above a list opens with a notice or holds steps.'); }
         }
-        return $schema->components([...($notices === [] ? [] : [Sheet::single(array_map(static fn (Section $s) => $s->toSchema(), $notices), 'list-notices')]), EmbeddedTable::make()]);
+        $summary = self::sectionsOnly($this->summary(), 'The summary above a list');
+        foreach ($summary as $section) { if ($section->hasTrace()) { throw new \InvalidArgumentException('The summary above a list holds rows, not steps.'); } }
+        return $schema->components([
+            ...($summary === [] ? [] : [Sheet::single(array_map(static fn (Section $s) => $s->toSchema(), $summary), 'list-summary')]),
+            ...($notices === [] ? [] : [Sheet::single(array_map(static fn (Section $s) => $s->toSchema(), $notices), 'list-notices')]),
+            EmbeddedTable::make(),
+        ]);
     }
     /** @return array{0:list<Column>,1:list<Filter>} */
     private function listParts(): array
@@ -52,14 +68,29 @@ trait BuildsList
     /** @param list<Column> $columns @param list<Filter> $filters */
     private function standardTable(Table $table, array $columns, array $filters, string $noMatch): Table
     {
-        [$empty, $next] = $line = $this->emptyLine();$noMatch = $line[2] ?? $noMatch;
+        // The no-match line is read when the table draws, so a filter applied after the table was built names itself.
+        [$empty, $next] = $this->emptyLine();$fallback = $noMatch;$noMatch = fn (): string => $this->emptyLine()[2] ?? $fallback;
         $bulk = array_values($this->bulkActions());
         foreach ($bulk as $action) { if (!$action instanceof BulkAction) { throw new \InvalidArgumentException('A bulk action is a native Filament bulk action.'); } }
         $built = array_map(static fn (Column $c) => $c->toColumn(), $columns);
+        // Phones: the values marked to stack sit under the name, so the first column carries them (P-TBL-12).
+        $stack = array_values(array_filter($columns, static fn (Column $c): bool => $c->stacksOnPhone()));
+        if ($stack !== []) {
+            if ($columns[0]->stacksOnPhone()) { throw new \InvalidArgumentException('The first column names the row, so it never stacks under itself.'); }
+            $built[0]->description(static function (array|Model $record) use ($stack): ?HtmlString {
+                $lines = array_values(array_filter(array_map(static fn (Column $c): ?string => $c->phoneText($record), $stack)));
+                return $lines === [] ? null : new HtmlString('<span class="domains-phone-note">'.implode('<br>', array_map('e', $lines)).'</span>');
+            });
+        }
         $hidden = array_values(array_map(static fn (Column $c): string => $c->name, array_filter($columns, static fn (Column $c): bool => $c->isOptional())));
         $table = TableColumns::choose(EmptyTable::apply($table, $empty, $next, $noMatch), $built, $hidden)
             ->filters(array_map(static fn (Filter $f) => $f->toFilter(), $filters))
             ->paginated([25, 50, 100])->defaultPaginationPageOption(25);
+        $row = array_values($this->recordActions());
+        foreach ($row as $action) { if (!$action instanceof Action && !$action instanceof ActionGroup) { throw new \InvalidArgumentException('A row action is a native Filament action.'); } }
+        if (count($row) > 2) { throw new \InvalidArgumentException('A row has at most two actions; the rest go in an ActionGroup.'); }
+        if ($row !== []) { $table->recordActions($row); }
+        if (($next = $this->emptyAction()) !== null) { $table->emptyStateActions([$next]); }
         if ($bulk !== []) { $table->toolbarActions([BulkActionGroup::make($bulk)->label('Selected')]); }
         $label = $this->searchLabel();
         return $label === null ? $table : $table->searchPlaceholder($label);

@@ -132,3 +132,11 @@ Illuminate\Support\Facades\Auth::setUser(staffUser([]));expect(!PanelKit::canAcc
 
 $nativeSuccessful = true;
 echo "Panel rows, settings rows and traces checked.\n";
+
+// A request notice with a timed retry: a typed body reaches the page as text, escaped once, and the retry stays a time.
+$notice = Paymenter\Extensions\Servers\Domains\Admin\Support\RequestRows::notice(['title' => 'Held for balance.', 'body' => new Illuminate\Support\HtmlString('Funds are <b>low</b> &amp; due.'), 'tone' => 'warning', 'next_try' => $at], State::Queued, null)->toEmbeddedHtml();
+expect(!str_contains($notice, '&lt;b&gt;') && !str_contains($notice, '&amp;amp;') && str_contains($notice, 'Funds are low &amp; due.'), 'A typed notice body is text, escaped once');
+expect(str_contains($notice, 'data-domains-fact="date"') && str_contains($notice, 'data-domains-time') && str_contains($notice, 'wire:key="moment-' . $at . '"'), 'The next try is the retry instant, shown as a time fact');
+// An inventory shows every value: a domain's five nameservers read as five names, never "and 2 more".
+$five = ['ns1.example.net', 'ns2.example.net', 'ns3.example.net', 'ns4.example.net', 'ns5.example.net'];
+same(implode(', ', $five), Paymenter\Extensions\Servers\Domains\Admin\Support\DomainRows::value(['value' => $five], null)->word, 'Nameservers and glue list every value');

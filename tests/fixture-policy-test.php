@@ -124,8 +124,10 @@ foreach (['fieldnote.example', 'ns1.example.net'] as $name) {
     expect(fixtureHostnameAllowed($name, 'PanelKit.php'), 'The panel kit accepts a reserved name: '.$name);
 }
 // The staff panel kit is a shipped demo page, so the names it shows are reserved too.
-foreach (fixtureHostnameLiterals(file_get_contents(dirname(__DIR__).'/Domains/Admin/Pages/PanelKit.php')) as $name) {
-    expect(fixtureHostnameAllowed($name, 'PanelKit.php'), 'The panel kit shows a reserved name: '.$name);
+foreach (['PanelKit.php', 'PanelKitList.php', 'PanelKitHistory.php'] as $page) {
+    foreach (fixtureHostnameLiterals(file_get_contents(dirname(__DIR__).'/Domains/Admin/Pages/'.$page)) as $name) {
+        expect(fixtureHostnameAllowed($name, 'PanelKit.php'), 'The panel kit shows a reserved name: '.$name);
+    }
 }
 
 /** Known IP fixture strings have no escapes; PHP tokens make quote spelling irrelevant. */

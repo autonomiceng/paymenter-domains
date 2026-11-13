@@ -26,9 +26,9 @@ class PanelKitList extends ListPage
     {
         return [
             Column::domain('domain', 'Domain')->searchable()->sortable(),
-            Column::value('status', 'Status', static fn (array $row): Value => Value::state(State::from($row['status']), Reader::Staff)),
-            Column::text('customer', 'Customer')->searchable(),
-            Column::text('note', 'Note'),
+            Column::value('status', 'Status', static fn (array $row): Value => Value::state(State::from($row['status']), Reader::Staff))->stackOnPhone(),
+            Column::note('note', 'Note', static fn (array $row): string => $row['note'])->stackOnPhone(),
+            Column::text('customer', 'Customer')->short()->searchable(),
         ];
     }
     protected function filters(): array
@@ -43,7 +43,7 @@ class PanelKitList extends ListPage
     }
     protected function emptyLine(): array { return ['No monitored domains yet.', 'Add a domain to start checking it.']; }
     private const ROWS = [
-        ['domain' => 'fieldnote.dev', 'status' => 'monitored', 'customer' => 'Ada Park', 'note' => 'Nameservers match the template.'],
+        ['domain' => 'fieldnote.example', 'status' => 'monitored', 'customer' => 'Ada Park', 'note' => 'Nameservers match the template.'],
         ['domain' => 'harbor-lights.example', 'status' => 'needs_review', 'customer' => 'Rui Costa', 'note' => 'Expires in 11 days.'],
         ['domain' => 'quietfield.example', 'status' => 'paused', 'customer' => 'Ada Park', 'note' => 'Paused by staff.'],
         ['domain' => 'saltmarsh.example', 'status' => 'failed', 'customer' => 'Mina Ito', 'note' => 'The last check failed.'],

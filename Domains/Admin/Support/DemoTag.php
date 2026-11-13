@@ -15,7 +15,12 @@ final class DemoTag
     /** Adds the Demo tag after the value when the row's record is demo data. */
     public static function apply(TextEntry|TextColumn $component): TextEntry|TextColumn
     {
-        return $component->suffix(static fn (mixed $record): ?HtmlString => DemoData::is($record) ? DemoData::tag(inline: true) : null);
+        return $component->suffix(static fn (mixed $record): ?HtmlString => self::tag($record));
+    }
+    /** The inline tag for a demo record. A record whose saved data can't be read still lists, so it reads as no demo. */
+    public static function tag(mixed $record): ?HtmlString
+    {
+        try { return DemoData::is($record) ? DemoData::tag(inline: true) : null; } catch (\Throwable) { return null; }
     }
     /** One line at the top of Domains staff pages while seeded demo accounts exist. */
     public static function banner(): string

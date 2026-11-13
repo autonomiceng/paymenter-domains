@@ -1,0 +1,4 @@
+{{-- MIT, Copyright (c) 2026 Autonomic Engineering. The page notice row (DESIGN.md Panels, Notices): one sentence under the head and
+     its one action. $tone is the notice tone (info, warn, bad); $action is [label, url, button] or null. --}}
+@props(['tone' => 'info', 'action' => null])
+<div class="domains-notice domains-notice--{{ $tone }}" data-piece="notice" role="status"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v4M12 16h.01"/><circle cx="12" cy="12" r="10"/></svg><span class="domains-notice__tx">{{ $slot }}</span>@if ($action) <a class="{{ ($action['button'] ?? false) ? 'domains-btn domains-btn--primary domains-btn--sm' : 'domains-a' }}" href="{{ $action['url'] }}">{{ $action['label'] }}</a>@endif</div>
