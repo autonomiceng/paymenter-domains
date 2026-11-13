@@ -18,11 +18,14 @@ DB::table('domains_reminder_schedules')->where('server_id',$server->id)->update(
 DB::table('migrations')->where('migration',AuditEventSchema::MIGRATION)->delete();
 Illuminate\Support\Facades\Schema::table(AuditArchives::TABLE,fn($t)=>$t->dropUnique(['event_key']));
 (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
+same([],AuditEvents::recent($server->id,'staff_settings'),'The schema migration leaves reader batches for the cutover');
+same(json_encode([$entry]),$setting->fresh()->value,'The schema migration does not drain the current batch');
+AuditEvents::import();
 same([$entry,$entry,$entry],AuditEvents::recent($server->id,'staff_settings'),'Every original ordinal, including identical events, is retained');
-same([$global],array_values(array_filter(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::historyRows($server),fn($row)=>$row['key']==='global-choice-import')),'Preparatory import preserves global history exactly once');
+same([$global],array_values(array_filter(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::historyRows($server),fn($row)=>$row['key']==='global-choice-import')),'Import preserves global history exactly once');
 same('reminder history',AuditEvents::recent($server->id,'reminders')[0]['reason'],'Reminder history imported from its encrypted schedule');
 same('[]',$setting->fresh()->value,'Mutable batch drained after archive creation');
-$rows=DB::table(AuditArchives::TABLE)->orderBy('id')->get()->toJson();AuditEventSchema::install();
+$rows=DB::table(AuditArchives::TABLE)->orderBy('id')->get()->toJson();AuditEventSchema::install();AuditEvents::import();
 same($rows,DB::table(AuditArchives::TABLE)->orderBy('id')->get()->toJson(),'Rerun preserves event identities and encrypted bytes');
 // Preparatory deployment can still receive old batch writes. A later drain must import them once.
 $setting->refresh();$setting->value=json_encode([[...$entry,'reason'=>'later write']]);$setting->save();

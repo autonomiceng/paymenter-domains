@@ -37,7 +37,7 @@ final class AuditEvents
         return array_reverse($q->get()->map(static fn($r)=>self::decode($r->payload))->all());
     }
     /** Drain mutable batches under the existing server mutex before assigning archive-id/ordinal identities.
-     * Old writers may continue after this preparatory migration; the cutover drains their final batches too. */
+     * Only the reader cutover runs this, so readers never see a drained batch. Reruns import each ordinal once. */
     public static function import(): void
     {
         OperationClaims::outside();

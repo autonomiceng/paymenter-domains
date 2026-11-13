@@ -26,8 +26,8 @@ final class AuditEventSchema
         if(!$recorded&&!Schema::hasIndex(AuditArchives::TABLE,['event_key'],'unique')){
             Schema::table(AuditArchives::TABLE,static fn(Blueprint $t)=>$t->unique('event_key'));
         }
+        // Readers still use the batches; the reader cutover imports and drains them in the same release.
         self::verify();
-        AuditEvents::import();
     }
     public static function verify(): void
     {
