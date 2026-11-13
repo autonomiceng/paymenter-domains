@@ -234,7 +234,9 @@ $renewalRow=static function(string $html):array{$doc=new DOMDocument();@$doc->lo
     $rows=$x->query('//div[@data-domains-row][.//*[contains(@class,"domains-panel-row-k")][starts-with(normalize-space(.),"Auto-renew")]]');
     if($rows->length!==1){return [$rows->length,'',[]];}
     return [1,'Auto-renew '.$t($x->query('.//*[contains(@class,"domains-panel-row-v")]',$rows->item(0))->item(0)),array_values(array_filter(array_map($t,iterator_to_array($x->query('.//button',$rows->item(0)))),fn(string $b)=>in_array($b,HoldingActions::LABELS,true)))];};
-same([1,'Auto-renew On',[]],$renewalRow(Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSuccessful()->html()),'One Renewal row says On, with no Stop or Resume for a viewer');
+$on=$renewalRow(Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSuccessful()->html());
+same([1,[]],[$on[0],$on[2]],'One Renewal row, with no Stop or Resume for a viewer');
+expect(str_starts_with($on[1],'Auto-renew On Paid by '),'The On row says how the renewal is paid: '.$on[1]);
 DB::table('domains_domains')->where('id',$active->id)->update(['renewal_policy'=>encrypt(json_encode([...$policy,'renewals_stopped'=>true]),false)]);
 same([1,'Auto-renew Off Stopped by staff',[]],$renewalRow(Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSuccessful()->html()),'The Renewal row says Off, Stopped by staff');
 DB::table('domains_domains')->where('id',$active->id)->update(['renewal_policy'=>encrypt(json_encode($policy),false)]);
