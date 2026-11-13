@@ -18,7 +18,7 @@ final class WatchDiscovery
         $peek=Service::find($id);
         DB::transaction(function()use($peek,$id,$productId,$now):void {
             // Match the native-before-watch order used by the observation and notice guards.
-            if($peek){User::whereKey($peek->user_id)->lockForUpdate()->first();Order::whereKey($peek->order_id)->lockForUpdate()->first();}
+            if($peek){$owner=User::whereKey($peek->user_id)->lockForUpdate()->first();if(!$owner||DB::table(UserDeletionSchema::TABLE)->where('user_id',$owner->id)->exists()){return;}Order::whereKey($peek->order_id)->lockForUpdate()->first();}
             $service=Service::whereKey($id)->lockForUpdate()->first();
             if($service && (!$peek || (int)$service->user_id!==(int)$peek->user_id || (int)$service->order_id!==(int)$peek->order_id)){throw new \DomainException('Discovery native identity changed.');}
             $product=Product::whereKey($service?->product_id??$productId)->lockForUpdate()->first();

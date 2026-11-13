@@ -24,7 +24,7 @@ extract(commerceFixture(active:true));
 $b = \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id', $enom->server_id)->sole());
 $n = \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id', $namesilo->server_id)->sole());
 // A retained staff master stop is independent of saved/default selling intent.
-$enom->update(['enabled' => false]);
+$enom->update(tldColumns(['enabled' => false],$enom));
 $converter = new \Paymenter\Extensions\Servers\Domains\Tests\OfferFixture;
 $converter->batch($b); $converter->batch($n);
 $convertedIntent = json_decode(DB::table('domains_tlds')->where('id', $enom->id)->value('catalogue_intent'), true);

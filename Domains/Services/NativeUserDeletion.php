@@ -35,12 +35,15 @@ final class NativeUserDeletion
             $services=Service::where(fn($q)=>$q->whereIn('user_id',$ids)->orWhereIn('order_id',$orders->pluck('id')))->orderBy('id')->lockForUpdate()->get();
             $domains=Domain::where(fn($q)=>$q->whereIn('user_id',$ids)->orWhereIn('service_id',$services->pluck('id')))->orderBy('id')->lockForUpdate()->get(['id']);
             $operations=Operation::where(fn($q)=>$q->whereIn('domain_id',$domains->pluck('id'))->orWhereIn('service_id',$services->pluck('id'))->orWhereIn('invoice_id',$invoices->pluck('id')))->orderBy('id')->lockForUpdate()->get(['id']);
+            // Native user deletion cascades invoices. No core schema change is permitted here, so retain the owner.
+            if($invoices->isNotEmpty()||DB::table(ProfileContactSchema::TABLE)->whereIn('user_id',$ids)->exists()){self::refuse($user,self::RETAINED);}
             if($domains->isNotEmpty()||$operations->isNotEmpty()||$services->contains(fn($s)=>NativeIdentity::routed($s))){self::refuse($user,self::RETAINED);}
             foreach($ids as$id){
                 if(!DB::table(UserDeletionSchema::TABLE)->where('user_id',$id)->lockForUpdate()->exists()){
                     DB::table(UserDeletionSchema::TABLE)->insert(['user_id'=>$id,'created_at'=>now()]);
                 }
             }
+            WatchCustomerDeletion::erase((int)($user->getRawOriginal('id')??$user->id));
         };
         if(DB::transactionLevel()===0){DB::transaction($write);}else{$write();}
     }

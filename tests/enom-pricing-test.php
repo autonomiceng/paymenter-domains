@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ReadComman
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver;
 use Paymenter\Extensions\Servers\Domains\Services\{FoundationSchema, PriceCatalogue, PricingRule, PricingRules};
 FoundationSchema::install(); $account = fixtureAccount(1, 'enom', 'offline');
-Tld::create([...$account, 'tld' => 'com', 'enabled' => false, 'renew_enabled' => true]);
+Tld::create(tldColumns([...$account, 'tld' => 'com', 'enabled' => false, 'renew_enabled' => true]));
 $clock = new class implements Clock { public function now(): DateTimeImmutable { return new DateTimeImmutable('2026-10-18T12:00:00Z'); } };
 $binding = new AccountBinding('enom', 1, Environment::Test, 'offline');
 $context = fn () => new RequestContext($binding, RequestOrigin::Background, $clock->now()->modify('+1 hour'), new RequestBudget(5), $clock);

@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\{L
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts, Staff};
 use Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus;
 use Paymenter\Extensions\Servers\Domains\Services\{ObligationAlerts, PslReviewSchema};
-staffPanel(); [, $domain]=staffData(ordinaryCompleted:true); PslReviewSchema::install();
+staffPanel(); [, $domain]=staffData(ordinaryCompleted:true); PslReviewSchema::install(); \Paymenter\Extensions\Servers\Domains\Services\RetentionSchema::install();
 Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
 app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new Paymenter\Extensions\Servers\Domains\Data\SystemClock);
 $viewer=staffUser([Staff::VIEW]); Auth::setUser($viewer);

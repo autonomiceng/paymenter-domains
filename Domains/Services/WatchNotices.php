@@ -64,7 +64,7 @@ final class WatchNotices
         $lineage=in_array($event['kind'],['expiring','expired'],true)?'':$t['lineage'];
         $episode=WatchNoticePlan::key($t['owner'],$t['name'],$lineage,$event['episode'],$event['kind'],$event['threshold']);
         $key=hash('sha256',$t['kind'].'|'.$t['id'].'|'.$episode);
-        if (WatchNotice::where('notice_key',$key)->exists()) { return; }
+        if (HistoryRetention::replayed('notice',$key) || WatchNotice::where('notice_key',$key)->exists()) { return; }
         if (in_array($event['kind'],['expiring','expired'],true)) {
             WatchNotice::where('scope',$scope)->where('state','open')->whereIn('kind',['expiring','expired'])->where('threshold','>',$event['threshold'])
                 ->get()->filter(fn($n)=>$n->data['episode']===$event['episode'])->each(fn($n)=>$n->update(['state'=>'resolved','resolved_at'=>$now]));

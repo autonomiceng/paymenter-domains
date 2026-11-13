@@ -13,7 +13,7 @@ class Price extends Model
 
     protected $table = 'domains_prices';
     protected $guarded = [];
-    protected $hidden = ['cost_enabled', 'cost_source_unit', 'catalogue_observation', 'account_fingerprint', 'wholesale', 'source', 'catalogue_created'];
+    protected $hidden = ['cost_enabled', 'cost_source_unit', 'account_fingerprint', 'wholesale', 'source', 'catalogue_created'];
     protected $casts = ['wholesale' => 'decimal:8', 'retail' => 'decimal:8', 'revision' => 'integer', 'term' => 'integer', 'observed_at' => 'immutable_datetime', 'fresh_until' => 'immutable_datetime'];
     protected static function booted(): void
     {

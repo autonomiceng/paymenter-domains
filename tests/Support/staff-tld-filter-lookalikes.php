@@ -21,7 +21,7 @@ function staffTldFilterLookalikes($viewer, array $tlds): void
         $rows = [];
         foreach ($bindings as $key => $binding) {
             // Identical endings ensure search/sort cannot distinguish these account-bound rows.
-            $rows[$key] = ['tld' => Tld::create([...$binding, 'tld' => 'filter-selectors.example.com'])];
+            $rows[$key] = ['tld' => Tld::create(tldColumns([...$binding, 'tld' => 'filter-selectors.example.com']))];
         }
         Livewire::actingAs($viewer)->test(ListTlds::class)->searchTable('filter-')
             ->assertCanSeeTableRecords(array_column($rows, 'tld'))->assertCountTableRecords(3);

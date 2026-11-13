@@ -37,7 +37,7 @@ final readonly class Reminders
             $alerts=ObligationAlerts::retained($l,$now->getTimestamp());
             if(isset($schedule->account_fingerprint)&&$schedule->account_fingerprint!==$d->account_fingerprint){$alerts[]=ObligationAlerts::record($d,'schedule_binding',$now->getTimestamp());}
             $candidates=[RenewalReminders::plan($l,$schedule,$now,$alerts,$this->bindings),TransferNotifications::plan($l,$now,$alerts),self::refund($l,$now,$alerts)];$notice=null;
-            foreach($candidates as $candidate){if($candidate&&($schedule->enabled||in_array($candidate['template'],['domains_transfer_code_paid','domains_domain_order_refunded'],true))&&!DB::table('domains_reminder_deliveries')->where('delivery_key',hash('sha256',$d->id.':'.$candidate['identity']))->exists()){$notice=$candidate;break;}}
+            foreach($candidates as $candidate){if($candidate&&($schedule->enabled||in_array($candidate['template'],['domains_transfer_code_paid','domains_domain_order_refunded'],true))&&!HistoryRetention::replayed('reminder',hash('sha256',$d->id.':'.$candidate['identity']))&&!DB::table('domains_reminder_deliveries')->where('delivery_key',hash('sha256',$d->id.':'.$candidate['identity']))->exists()){$notice=$candidate;break;}}
             foreach(DB::table('domains_reminder_deliveries')->where('domain_id',$id=$d->id)->whereIn('state',['handoff','uncertain'])->get() as $delivery){
                 $alerts[]=ObligationAlerts::record($d,'delivery_uncertain',$now->getTimestamp());
             }
@@ -74,7 +74,7 @@ final readonly class Reminders
                 ||$op->account_fingerprint!==$d->account_fingerprint||$op->authority_generation!==$d->authority_generation){continue;}
             $credit=$l['credit'];
             if(!$credit||$credit->id!==($r['credit_id']??null)||$credit->user_id!==$d->user_id||$credit->currency_code!=='USD'){continue;}
-            if(DB::table('domains_reminder_deliveries')->where('delivery_key',hash('sha256',$d->id.':'.$identity))->exists()){continue;}
+            if(HistoryRetention::replayed('reminder',hash('sha256',$d->id.':'.$identity))||DB::table('domains_reminder_deliveries')->where('delivery_key',hash('sha256',$d->id.':'.$identity))->exists()){continue;}
             try{$at=new \DateTimeImmutable($r['at']??'invalid');}catch(\Throwable){$at=null;}
             if(!$at||$at>$now){$alerts[]=ObligationAlerts::record($d,'credit_notice_overdue',$now->getTimestamp(),(int)$op->id);continue;}
             return ['identity'=>$identity,'template'=>'domains_domain_order_refunded','data'=>['domain'=>$d->domain,

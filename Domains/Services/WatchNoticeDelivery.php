@@ -61,6 +61,7 @@ final class WatchNoticeDelivery
             $key=hash('sha256',$n->episode_key.'|'.$channel.($resend?'|'.$resend['key']:''));
             $on=self::current($prepared,$n->user_id,$channel) && WatchNoticePreferences::enabled($n->user_id,$t['name'],true);
             if ($on) { $this->renderRecovered($n,$channel,$state,$now); }
+            if(HistoryRetention::replayed('delivery',$key)){return null;}
             $prior=DB::table('domains_watch_deliveries')->where('delivery_key',$key)->lockForUpdate()->first();
             if ($prior) {
                 $predecessor=WatchNotice::find($prior->notice_id);
@@ -111,7 +112,7 @@ final class WatchNoticeDelivery
                     $prior=DB::table('domains_watch_deliveries')->where('delivery_key',$otherKey)->first();
                     if (!$prior || $prior->state==='reserved') { return false; }
                 }
-                if (!DB::table('domains_watch_mail_days')->insertOrIgnore(['scope'=>$day,'delivery_id'=>$id,'created_at'=>$now])) {
+                if (HistoryRetention::replayed('mail_day',$day) || !DB::table('domains_watch_mail_days')->insertOrIgnore(['scope'=>$day,'delivery_id'=>$id,'created_at'=>$now])) {
                     if ($d->resend_of) { $q->update(['state'=>'suppressed','safe_code'=>'daily_mail_limit']); }return false;
                 }
             }

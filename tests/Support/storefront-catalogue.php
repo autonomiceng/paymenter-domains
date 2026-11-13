@@ -41,8 +41,8 @@ function storefrontCatalogueFixture(array $fixture, array $endings, array $terms
     $rows = array_fill_keys($endings, ['register' => $terms, 'renew' => [1], 'transfer' => [1], 'registry' => true, 'renewal_safe' => true]);
     $catalogueTlds = [];
     foreach ($endings as $ending) {
-        $tld = Tld::create(['server_id' => $server->id, 'registrar_key' => 'enom', 'account_fingerprint' => $binding->fingerprint,
-            'tld' => $ending, 'enabled' => true,'catalogue_converted'=>true]);
+        $tld = Tld::create(tldColumns(['server_id' => $server->id, 'registrar_key' => 'enom', 'account_fingerprint' => $binding->fingerprint,
+            'tld' => $ending, 'enabled' => true,'catalogue_converted'=>true]));
         $rates = [new CatalogueRate('renew', 1, '8.00', 'synthetic', $now, $now->modify('+1 day')),
             new CatalogueRate('transfer', 1, '7.00', 'synthetic', $now, $now->modify('+1 day'))];
         foreach ($terms as $term) { $rates[] = new CatalogueRate('register', $term, '6.00', 'synthetic', $now, $now->modify('+1 day')); }

@@ -32,6 +32,7 @@ final class WatchSchema
         $t->unsignedBigInteger('watch_id')->nullable(); $t->unsignedBigInteger('managed_domain_id')->nullable();
         $t->string('state', 16); $t->string('safe_code', 64)->nullable(); $t->string('source_digest', 64);
         $t->unsignedBigInteger('revision')->default(1); $t->unsignedBigInteger('last_seen_at'); $t->timestamps();
+        RetentionOwnerIndex::define($t,'domains_watch_sources');
         $t->index(['watch_id', 'state']); $t->index(['map_id', 'state']);
     }
     public static function tables(): array { return ['domains_watch_product_maps', 'domains_watch_names', 'domains_watch_sources']; }

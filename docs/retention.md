@@ -1,0 +1,17 @@
+# Domains retention
+
+Policy approved 2026-11-11. Money, tax and registrar-operation evidence is retained for at least seven years and never deleted automatically. The sweep has no financial-table deletion path.
+
+The normal runtime runs one bounded pass per fact family, independent of public-check activation. Each pass examines at most 100 rows, resumes by primary key and wraps. A claimed cursor commits before work; interrupted work is retried on a later pass. Each source removal, encrypted cold copy and replay digest commits in one transaction. Row work takes only one owner's existing mutex, or the TEST account or audit server mutex. Progress locks never overlap those locks. Owner indexes keep customer cleanup out of other customers’ history.
+
+Ordinary observations, closed notices, accepted/suppressed deliveries, completed audit events and reminder receipts stay active for 13 calendar months. They then move to `domains_retention_history`, which normal pages never read. Staff settings, catalogue and reminder-policy history use the individual encrypted event rows introduced before retention. Their event identities and content digests survive cold expiry so replay remains idempotent and changed identities still refuse. Cold payloads expire after three calendar years from the history time, with at most 100 deletions per runtime turn. Retention boundaries are UTC; exact boundary instants remain retained.
+
+Current observation evidence, pinned references, open notices, unresolved sends/work and current discovery/adoption authority stay active. Notice, delivery, mail-day and reminder replay digests survive payload expiry. Staff claims and review keys remain retained. TEST physical send attempts expire after 30 days under the existing account mutex; the live rolling count window remains intact.
+
+New watch audit rows receive a separate UTC recording epoch; earlier rows with an explicit UTC zone also have a proven instant. Existing unmarked mixed-zone wall times are never reinterpreted. Only known ordinary events with a proven epoch and explicitly dated completed audit events can move. Unknown events, malformed dates, unreadable events and missing ownership stay active. Their identifiers and reasons are listed in `domains_retention_marks` (`reason IS NOT NULL`), ordered by `(family, source_id)` for bounded inspection. Neither that list nor scheduler logs contain payloads or contact details.
+
+A watch-only customer deletion removes watch names, sources, work, observations, notices, deliveries, preferences, audit history, cold copies, owned contact profiles and native contact properties. The existing deletion intent prevents discovery and public workers from recreating them, including after a later native deletion failure. An outer native rollback restores the cleanup and intent together. Opaque replay digests and staff claim identities remain.
+
+Paymenter cascades native invoices when deleting a user. This extension therefore refuses native deletion when invoices, holdings, routed services or registrar/profile-operation evidence exist. It cannot complete the requested invoice-bearing customer deletion with only retained name/email without a separate native financial-retention boundary. No invoice, payment, snapshot or uncertain operation is cascaded by this change. This is a remaining policy gap, not completed customer anonymization.
+
+The additive migration verifies all retained tables and refuses partial or unrecorded history. Rollback refuses to drop history or replay protection.

@@ -18,6 +18,7 @@ final class PslReviewSchema
         $t->unsignedBigInteger('user_id')->nullable(); $t->unsignedBigInteger('actor_id')->nullable();
         $t->string('event', 64); $t->text('reason')->nullable();
         $t->string('before_revision', 64)->nullable(); $t->string('after_revision', 64);
+        RetentionOwnerIndex::define($t,'domains_watch_audit');
         $t->longText('data'); ($legacyDates ? $t->timestamp('created_at') : $t->dateTime('created_at'));
         HistoryAccountIndex::define($t,'domains_watch_audit');
         if(!Schema::hasTable('domains_watch_audit') || Schema::hasColumn('domains_watch_audit','time_zone')){$t->string('time_zone',64)->nullable();}

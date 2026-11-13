@@ -161,7 +161,7 @@ final class StaffSettingsReview
             catch(\Throwable){$live='unavailable';}
         }
         return ['server_id'=>$server,'binding'=>$a?->account_fingerprint,'processing'=>$a?->processing_enabled,'tld_id'=>$tld,
-            'rule'=>$rule,'tld'=>$t?array_intersect_key($t->getAttributes(),array_flip(['enabled','register_enabled','transfer_enabled','renew_enabled','use_default_rule','min_years','max_years'])):null,'offer'=>$t?['revision'=>$t->catalogue_revision,'intent'=>$t->catalogue_intent]:null,
+            'rule'=>$rule,'offer'=>$t?['revision'=>$t->catalogue_revision,'intent'=>$t->catalogue_intent]:null,
             'history'=>array_map(function($action)use($a){try{$b=$a?AccountBindings::binding($a):null;$v=$b?HistoryAcceptances::load($b,$action):null;
                 // Built-in TEST values are not a saved setting, so the review names them as built in.
                 return $v?['timezone'=>$v->timezone,'lag'=>$v->lagSeconds,'retention'=>$v->retentionSeconds,'vocabulary'=>$v->vocabulary,...(HistoryAcceptances::builtIn($b,$action)?['source'=>'built_in']:[])]:null;}catch(\Throwable){return 'unavailable';}},[\Paymenter\Extensions\Servers\Domains\Data\Action::Register,\Paymenter\Extensions\Servers\Domains\Data\Action::Renew,\Paymenter\Extensions\Servers\Domains\Data\Action::Transfer]),

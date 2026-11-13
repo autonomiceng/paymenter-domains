@@ -279,6 +279,10 @@ same(['alternate_reason','default_reason','fallback_reason','field_reason','held
 // These values have separate presenters or describe results, audit events, inputs or configuration.
 // Exclusions are per file and code: a new reason in any service still fails coverage.
 $excluded=[
+    // Retention diagnostics stay in retained marks; they are not operation reason codes.
+    'RetentionFacts.php'=>['missing_notice','unclassified_audit_event','unclassified_family','unknown_audit_time',
+        'unknown_delivery_state','unknown_notice_state','unknown_observation_result','unknown_reminder_state',
+        'unmarked_audit_time','unreadable_audit_event','unresolved_audit_event'],
     // These results have their own owner/money presenters, not operation reason labels.
     'OwnedDomains.php'=>['closed','credited','paid','pending','registration','returned','review','split'], // registration: a word in the transfer-out date line.
     'DomainStates.php'=>['closed','paid','pending','review'], // Renewal invoice states, shown by DomainPage::nextInvoice.

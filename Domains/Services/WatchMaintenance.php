@@ -139,28 +139,9 @@ final class WatchMaintenance
                 if($pending['alert_attempts']===1){try{Log::warning('Domain monitoring alert will be retried.');}catch(\Throwable){}}
             }
         }
-        foreach(['registry'=>['domains_watch_registry','watch_id','facts'],'watch_dns'=>['domains_watch_observations','watch_id','complete'],
-            'managed_dns'=>['domains_managed_public_observations','domain_id','complete']]as$family=>[$table,$target,$success]) {
-            $old=DB::table($table.' as o')->where('o.completed_at','<',$now-90*86400)
-                ->whereNotExists(fn($q)=>$q->selectRaw('1')->from('domains_public_evidence_refs as r')->where('r.family',$family)->whereColumn('r.observation_id','o.id'))
-                ->where(function($q)use($table,$target,$success,$family) {
-                    if ($family==='registry') {
-                        $q->where('o.result','<>',$success)->orWhereExists(fn($n)=>$n->selectRaw('1')->from($table.' as newer')->whereColumn('newer.'.$target,'o.'.$target)->whereColumn('newer.user_id','o.user_id')->where('newer.result',$success)->whereColumn('newer.id','>','o.id'));
-                        return;
-                    }
-                    foreach(['dns','website','email']as$axis) {
-                        $q->where(fn($a)=>$a->whereNull('o.'.$axis)->orWhereExists(fn($n)=>$n->selectRaw('1')->from($table.' as newer')->whereColumn('newer.'.$target,'o.'.$target)->whereColumn('newer.user_id','o.user_id')->whereColumn('newer.check_kind','o.check_kind')->whereNotNull('newer.'.$axis)->whereColumn('newer.id','>','o.id')));
-                    }
-                })->orderBy('o.id')->limit(100)->pluck('o.id');
-            foreach($old as$id) {
-                DB::transaction(function()use($table,$family,$id):void {
-                    if (!DB::table($table)->where('id',$id)->lockForUpdate()->exists()) { return; }
-                    if (!DB::table('domains_public_evidence_refs')->where('family',$family)->where('observation_id',$id)->lockForUpdate()->exists()) { DB::table($table)->where('id',$id)->delete(); }
-                });
-            }
-        }
     }
-    /** The notice producer pins references before delivery; retained reference rows are append-only. */
+
+    /** The notice producer pins references before delivery; references remain active until their notice history moves to cold storage. */
     public function retain(string $family,int $id): void
     {
         if (DB::transactionLevel()<1 || !in_array($family,['registry','watch_dns','managed_dns'],true) || $id<1) { throw new \DomainException('Invalid public evidence reference.'); }

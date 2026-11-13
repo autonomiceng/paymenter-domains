@@ -27,7 +27,7 @@ Cache::flush();$ns=$submit($d,$driver,'nameservers',['nameservers'=>['NS3.Exampl
 // A new-sales stop must leave the holder's renewal price and transfer-out tools usable.
 $stopped=Paymenter\Extensions\Servers\Domains\Models\Tld::where(['server_id'=>$d->server_id,'tld'=>$d->tld])->sole();
 $holderPrice=(new Paymenter\Extensions\Servers\Domains\Services\HolderPricing($prices))->renewal($d,'USD',$clock->now())->retail;
-$acquisition=$stopped->only(['register_enabled','transfer_enabled']);$stopped->update(['register_enabled'=>false,'transfer_enabled'=>false]);
+$acquisition=$stopped->only(['catalogue_intent']);$stopped->update(tldColumns(['register_enabled'=>false,'transfer_enabled'=>false],$stopped));
 activeFixtureRepublish($native,$stopped->id,$clock->now());
 same($holderPrice,(new Paymenter\Extensions\Servers\Domains\Services\HolderPricing($prices))->renewal($d,'USD',$clock->now())->retail,'New-sales stop keeps the holder renewal price');
 Cache::flush();$email=$submit($d,$driver,'auth_code_email');same('auth_email_accepted',$management->run($email->id,$driver)->safe_code,'Email accepted distinct from delivery');commerceReject(fn()=>$submit($d,$driver,'auth_code_email'));

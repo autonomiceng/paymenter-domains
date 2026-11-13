@@ -28,7 +28,7 @@ final class OfferFixture
                     DB::table('domains_prices')->where('id',$price->id)->update([...costColumns(OfferState::json(OfferState::encodeCost($cost)))]);
                 }
                 $intent=new Intent(defaultSell:false,sell:$terms!==[],longest:$terms?max($terms):null,transfers:$transfers,
-                    stops:$tld->enabled?[]:['register','renew','transfer']);
+                    stops:OfferState::decode($tld->catalogue_intent)['stops']??[]);
                 DB::table('domains_tlds')->where('id',$tld->id)->update(['catalogue_intent'=>OfferState::json($intent),
                     'catalogue_facts'=>null,'catalogue_revision'=>1,'catalogue_converted'=>true,'catalogue_retained_annual_retail'=>$retained]);
             }

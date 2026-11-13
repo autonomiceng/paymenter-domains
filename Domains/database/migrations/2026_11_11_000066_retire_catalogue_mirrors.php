@@ -1,0 +1,9 @@
+<?php
+// MIT, Copyright (c) 2026 Autonomic Engineering.
+declare(strict_types=1);
+use Illuminate\Database\Migrations\Migration;
+use Paymenter\Extensions\Servers\Domains\Services\CatalogueMirrorRetirement;
+return new class extends Migration {
+    public function up(): void {CatalogueMirrorRetirement::install();}
+    public function down(): void {} // Retain current catalogue and review evidence.
+};

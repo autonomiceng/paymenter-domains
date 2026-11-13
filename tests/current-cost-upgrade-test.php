@@ -24,6 +24,7 @@ same('ready',\Paymenter\Extensions\Servers\Domains\Catalogue\SellerAvailability:
 $foreign=(array)$p;unset($foreign['id']);$foreign['currency']='EUR';DB::table('domains_prices')->insert($foreign);
 same('ready',\Paymenter\Extensions\Servers\Domains\Catalogue\SellerAvailability::state(Account::where('server_id',$t->server_id)->sole(),$t->fresh()),'An unrelated currency cannot make USD seller evidence unreadable');
 // Rehearse retained legacy rows, with both matching and conflicting representations.
+if(Illuminate\Support\Facades\Schema::hasColumn('domains_prices','catalogue_observation')){
 DB::table('migrations')->where('migration',CurrentCostSchema::MIGRATION)->delete();
 DB::table('domains_prices')->where('id',$p->id)->update(['catalogue_observation'=>OfferState::json(OfferState::encodeCost($cost)),'cost_enabled'=>null,'cost_source_unit'=>null]);
 CurrentCostSchema::install();same('9.1234',CurrentCost::read(OfferState::query('domains_prices')->where('id',$p->id)->sole())->total,'Matching old columns and JSON imported without changing cost');
@@ -34,6 +35,7 @@ same(null,CurrentCost::read(OfferState::query('domains_prices')->where('id',$p->
 $issues=OfferState::decode(DB::table('domains_tlds')->where('id',$t->id)->value('catalogue_issues'));
 expect(isset($issues['current_cost_review'][$p->id]),'Both conflicting sources retained for a person');
 $rows=DB::table('domains_prices')->orderBy('id')->get()->toJson();CurrentCostSchema::install();same($rows,DB::table('domains_prices')->orderBy('id')->get()->toJson(),'Interrupted backfill reruns without reclassifying rows');
+}else{expect(!Illuminate\Support\Facades\Schema::hasColumn('domains_prices','catalogue_observation'),'Completed retirement has no legacy observation to import');}
 // Repair from fresh provider evidence, then republish locally; holder retail remains distinct.
 DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_intent'=>$t->catalogue_intent]);
 $clock->instant=$clock->instant->modify('+1 hour');$fresh=new Cost('renew',1,true,'10.0000',CostUnit::TermTotal,'synthetic',$clock->instant,$clock->instant->modify('+1 day'));

@@ -70,7 +70,7 @@ same(41, $operation->domain->id, 'ID-preserving relation');
 same(71, $domain->operations()->first()->id, 'ID-preserving history');
 expect(!str_contains($account->getRawOriginal('stable_identity'), 'synthetic'), 'Identity encrypted on first save');
 same(false, $account->fresh()->processing_enabled, 'Processing defaults off');
-$tld = Tld::create($binding + ['id' => 101, 'tld' => 'com']);
+$tld = Tld::create(tldColumns($binding + ['id' => 101, 'tld' => 'com']));
 expect(!Schema::hasColumn('domains_tlds','cost_register_terms'),'Current installation retires the legacy cost mirror');
 $priceData = $binding + ['tld' => 'com', 'action' => 'register', 'term' => 2, 'currency' => 'USD',
     'unit' => 'exact_term', 'source' => 'synthetic', 'observed_at' => '2026-10-18 00:00:00'];

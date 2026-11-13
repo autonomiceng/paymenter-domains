@@ -21,11 +21,10 @@ class Tld extends Model
     protected $guarded = [];
     protected $hidden = ['catalogue_intent', 'catalogue_facts', 'catalogue_issues', 'account_fingerprint', 'markup', 'catalogue_revision', 'catalogue_published_revision', 'catalogue_retained_annual_retail', 'catalogue_converted', 'catalogue_created'];
     protected $casts = [
-        'enabled' => 'boolean', 'register_enabled' => 'boolean', 'renew_enabled' => 'boolean', 'transfer_enabled' => 'boolean',
         'use_default_rule' => 'boolean', 'markup' => 'decimal:2', 'fixed_register' => 'decimal:2', 'fixed_renew' => 'decimal:2', 'fixed_transfer' => 'decimal:2',
         'sort_order' => 'integer',
         'catalogue_retained_annual_retail' => 'decimal:2',
-        'min_years' => 'integer', 'max_years' => 'integer', 'registry_fields' => 'array',
+        'registry_fields' => 'array',
     ];
 
     public function server() { return $this->belongsTo(Server::class); }

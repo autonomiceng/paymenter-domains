@@ -15,6 +15,7 @@
     "composer.lock"
   ],
   "explicit": {
+    "tests/Support/staff-tld-filter-lookalikes.php": ["tests/staff-tld-page-test.php"],
     "Domains/database/migrations/*": [
       "tests/test_installed_package_fresh.py",
       "tests/test_installed_package_upgrade.py",

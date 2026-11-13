@@ -89,7 +89,7 @@ same('Exact registrar costs are missing. See the last successful refresh and nex
     SettingsActions::refusal(new DomainException('Costs required before publication.'),'override'),'Plain missing-cost refusal');
 
 // Saving the account default publishes every TLD that follows it and names the ones it could not publish.
-$net=Tld::create(['server_id'=>$t->server_id,'registrar_key'=>$t->registrar_key,'account_fingerprint'=>$t->account_fingerprint,'tld'=>'net','enabled'=>true,'min_years'=>1,'max_years'=>1,'catalogue_converted'=>true,'registry_fields'=>[],'catalogue_intent'=>'{"pricing_rule":null}']);
+$net=Tld::create(tldColumns(['server_id'=>$t->server_id,'registrar_key'=>$t->registrar_key,'account_fingerprint'=>$t->account_fingerprint,'tld'=>'net','enabled'=>true,'min_years'=>1,'max_years'=>1,'catalogue_converted'=>true,'registry_fields'=>[],'catalogue_intent'=>'{"pricing_rule":null}']));
 $before=array_map(fn(Price $p)=>$p->revision,$rows($t->fresh()));
 $summary=$writer->run(pricingReview($u->id),pricingForm(['mode'=>'markup_percent','markup'=>'50','round_up'=>'whole']),$now);
 same(['published'=>2,'failed'=>['Synthetic #'.$t->server_id=>['.net']],'skipped'=>[]],$summary,'Default change publishes followers and names skipped TLDs');
@@ -137,7 +137,7 @@ foreach(['register','transfer'] as $action){
 Price::whereKey($renew->id)->update([...costColumns($cost)]);
 // Only TLDs on this account follow its default, and a TLD that switches to its own prices meanwhile is left alone.
 // A TLD left over from an earlier account binding.
-$org=Tld::create(['server_id'=>$t->server_id,'registrar_key'=>$t->registrar_key,'account_fingerprint'=>$t->account_fingerprint,'tld'=>'org','enabled'=>true,'min_years'=>1,'max_years'=>1,'catalogue_converted'=>true,'registry_fields'=>[],'catalogue_intent'=>'{"pricing_rule":null}']);
+$org=Tld::create(tldColumns(['server_id'=>$t->server_id,'registrar_key'=>$t->registrar_key,'account_fingerprint'=>$t->account_fingerprint,'tld'=>'org','enabled'=>true,'min_years'=>1,'max_years'=>1,'catalogue_converted'=>true,'registry_fields'=>[],'catalogue_intent'=>'{"pricing_rule":null}']));
 Tld::whereKey($org->id)->update(['account_fingerprint'=>'synthetic-earlier-account']);
 $writer->run($review('remove_override',$t->id),[],$now);$before=array_map(fn(Price $p)=>$p->revision,$rows($t->fresh()));
 // The switch lands after the reviewed default is saved, before the TLD is published.

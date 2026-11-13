@@ -97,8 +97,8 @@ final class FoundationSchema
             $table->id();
             self::binding($table);
             $table->string('tld', 63);
-            $table->boolean('enabled')->default(false);
-            foreach (['register', 'renew', 'transfer'] as $action) { $table->boolean($action.'_enabled')->default(false); }
+            if(!CatalogueMirrorRetirement::omitted('domains_tlds','enabled')){$table->boolean('enabled')->default(false);}
+            foreach (['register', 'renew', 'transfer'] as $action) { if(!CatalogueMirrorRetirement::omitted('domains_tlds',$action.'_enabled')){$table->boolean($action.'_enabled')->default(false);} }
             $table->boolean('use_default_rule')->default(true);
             $table->string('round_up', 16)->default('none');
             $table->string('pricing_mode', 32)->default('markup_percent');
@@ -111,8 +111,8 @@ final class FoundationSchema
             if (!OfferRetirement::omitted('domains_tlds', 'cost_transfer')) { $table->decimal('cost_transfer', 12, 4)->nullable(); }
             if (!OfferRetirement::omitted('domains_tlds', 'costs_synced_at')) { $table->timestamp('costs_synced_at')->nullable(); }
             $table->unsignedInteger('sort_order')->default(100);
-            $table->unsignedTinyInteger('min_years')->default(1);
-            $table->unsignedTinyInteger('max_years')->default(10);
+            if(!CatalogueMirrorRetirement::omitted('domains_tlds','min_years')){$table->unsignedTinyInteger('min_years')->default(1);}
+            if(!CatalogueMirrorRetirement::omitted('domains_tlds','max_years')){$table->unsignedTinyInteger('max_years')->default(10);}
             $table->json('registry_fields')->nullable();
             $table->timestamps();
             $table->unique(['server_id', 'tld']);

@@ -44,7 +44,7 @@ $excluded=$seed('excluded',static function(array &$cost)use($now):bool{
     if($cost['action']==='transfer'||$cost['action']==='register'&&$cost['term']===3){$cost['observed_at']=$now->modify('-1 day')->format(DATE_ATOM);$cost['fresh_until']=$now->format(DATE_ATOM);}
     if($cost['action']==='register'&&$cost['term']===1){$cost['enabled']=false;$cost['total']=null;}
     return true;
-});$excluded->update(['max_years'=>1]);
+});$excluded->update(tldColumns(['max_years'=>1],$excluded));
 $seed('foreign');DB::table('domains_prices')->where('server_id',$t->server_id)->where('tld','foreign')->update(['account_fingerprint'=>'synthetic-other-binding']);
 // Other currency rows cannot make a current USD follower stale or fill a missing cost. A follower on another account counts: the rule is shared.
 $eur=$base->first()->replicate();$eur->currency='EUR';$eur->fresh_until=$now;$eur->save();

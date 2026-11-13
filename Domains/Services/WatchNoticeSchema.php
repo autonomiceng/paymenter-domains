@@ -26,6 +26,7 @@ final class WatchNoticeSchema
         $t->string('template_key',64);$t->string('state',16);$t->unsignedInteger('attempts')->default(1);$t->unsignedBigInteger('reserved_at');
         $t->unsignedBigInteger('accepted_at')->nullable();$t->string('safe_code',64)->nullable();$t->unsignedBigInteger('native_id')->nullable();
         $t->unsignedBigInteger('resend_of')->nullable();$t->unsignedBigInteger('actor_id')->nullable();$t->string('reason',500)->nullable();
+        RetentionOwnerIndex::define($t,'domains_watch_deliveries');
         $t->index(['notice_id','channel']);
     }
     private static function preferences(Blueprint $t,bool $legacy=false): void

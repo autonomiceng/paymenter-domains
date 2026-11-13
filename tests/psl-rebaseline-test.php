@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Services\{PslSchema,PslReviewSchema,PslValidator,PslRebaseline,PslTransport,PublicSuffixList as Lists,PslFailure};
 use Paymenter\Extensions\Servers\Domains\Models\WatchAudit;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
-PslSchema::install(); PslReviewSchema::install(); $clock=new PslClock; $v=new PslValidator(128,5,1); $body=pslFixture();
+PslSchema::install(); \Paymenter\Extensions\Servers\Domains\Services\RetentionSchema::install(); PslReviewSchema::install(); $clock=new PslClock; $v=new PslValidator(128,5,1); $body=pslFixture();
 $headersSeen=[];$status=200;$nested=null;
 $lists=new Lists($clock,new PslTransport(function($url,$headers)use(&$body,&$headersSeen,&$status,&$nested){if($nested){$nested();}$headersSeen=$headers;return ['status'=>$status,'body'=>$body];}),$v);
 $reviews=new PslRebaseline($clock,$v);same('updated',$lists->update(),'Initial validated list');$original=$lists->revision();
