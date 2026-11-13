@@ -36,7 +36,8 @@ same(['domains','registrar-requests','tlds','registrars','monitored-domains','dn
 $moved=static function(string $old):array{$page=app('request');$r=app()->handle(Illuminate\Http\Request::create(url($old)));app()->instance('request',$page);app('url')->setRequest($page);return [$r->getStatusCode(),parse_url((string)$r->headers->get('Location'),PHP_URL_PATH).(($q=parse_url((string)$r->headers->get('Location'),PHP_URL_QUERY))?'?'.$q:'')];};
 foreach(['/admin/dns-routing-profiles'=>'/admin/dns-templates','/admin/dns-routing-profiles/4?tab=x'=>'/admin/dns-templates/4?tab=x','/admin/domain-tlds/7/history'=>'/admin/tlds/7/history',
     '/admin/domain-watch/settings'=>'/admin/monitored-domains/monitoring-settings','/admin/domain-watch/dns-setup'=>'/admin/monitored-domains/dns-monitoring-setup','/admin/domain-watch/dns-failures'=>'/admin/monitored-domains/affected-dns-checks',
-    '/admin/domain-watch/12/history'=>'/admin/monitored-domains/12/history','/admin/registrar-setup'=>'/admin/registrars','/admin/adoption-pending/3'=>'/admin/import-pending/3','/admin/domains/9/adoption'=>'/admin/domains/9/import-preview'] as $old=>$new){
+    '/admin/domain-watch/12/history'=>'/admin/monitored-domains/12/history','/admin/registrar-setup'=>'/admin/registrars','/admin/adoption-pending/3'=>'/admin/import-pending/3','/admin/domains/9/adoption'=>'/admin/domains/9/import-preview',
+    '/admin/domains/adopt?q=1'=>'/admin/domains/import?q=1','/admin/tlds/price-list'=>'/admin/what-you-sell'] as $old=>$new){
     same([301,$new],$moved($old),'Old address redirects: '.$old);
 }
 
