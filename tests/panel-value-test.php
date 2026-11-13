@@ -52,6 +52,14 @@ same(0.0, $read(Value::fact(Fact::date($at, Reader::Customer)))->evaluate('count
 same([['Nov 12, 2026', '2026-11-12', null], ['Mar 4, 2027', '2027-03-04']], [[Fact::date($at, Reader::Customer)->text, Fact::date($at, Reader::Customer)->datetime, Fact::date($at, Reader::Customer)->title], [Fact::day('2027-03-04 00:00:00')?->text, Fact::day('2027-03-04')?->datetime]], 'Customers read dates only; calendar days stay as stored');
 same([null, '.com, .net, .org and 2 more', 'Enom TEST, NameSilo', 'ns1.example.net', null, null], [Fact::day('2027-02-30'), Fact::tlds(['io', 'org', 'dev', 'com', 'net'])?->text, Fact::names(['Enom TEST', ' NameSilo '])?->text, Fact::host('NS1.Example.net.')?->text, Fact::host('not a host'), Fact::names([])], 'Facts from typed data, null when there is nothing to show');
 
+// Nameserver lists carry host metadata; account labels and mixed lists stay text.
+same(['host', 'text', 'text', 'ns1.example.net, ns2.example.net'], [
+    Fact::names(['ns1.example.net', 'ns2.example.net'])?->kind,
+    Fact::names(['Enom TEST', 'NameSilo'])?->kind,
+    Fact::names(['ns1.example.net', 'Enom TEST'])?->kind,
+    Fact::names(['ns1.example.net', 'ns2.example.net'])?->text,
+], 'Host lists preserve their values and identify hosts separately from account names');
+
 // The boundary: no free text, no status column, no state word passed off as data or as a reason.
 $model = (new class extends Model {})->forceFill(['name' => 'Enom TEST', 'status' => 'active', 'note' => null, 'enabled' => true]);
 same(['Enom TEST', null], [Fact::attr($model, 'name')?->text, Fact::attr($model, 'note')], 'A model attribute, null when empty');
