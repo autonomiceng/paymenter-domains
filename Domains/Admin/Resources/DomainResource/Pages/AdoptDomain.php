@@ -176,7 +176,7 @@ class AdoptDomain extends Page
             $sections[] = Section::make('Before you import')->description('Nothing is charged now. Import does not buy, transfer or renew a domain. Past invoices stay the same.')->schema([]);
         }
         $sections[] = Section::make('1. Customer, service and account')->schema([
-            ...(!$enabled ? [Row::notice('import-off', Value::state(State::Paused, Reader::Staff, 'Importing is off. Your server administrator can turn it on.'), Sheet::link('import_docs', 'How to turn it on', 'https://github.com/autonomiceng/paymenter-domains/blob/main/docs/adoption.md#enable-imports', true))] : []),
+            ...(!$enabled ? [Row::notice('import-off', Value::state(State::Paused, Reader::Staff, 'Importing is off. Your server administrator can turn it on.'), Sheet::link('import_docs', 'How to turn it on', 'https://github.com/autonomiceng/paymenter-domains/blob/main/docs/adoption.md#turn-on-imports', true))] : []),
             Row::make('Selected domain', Value::fact(Fact::entered($this->target ? $this->target['name'].', '.$this->customerLabel().', Service #'.$this->target['service'] : 'Choose a domain service.'))),
             Row::make('Registrar account', Value::fact(Fact::entered($this->target ? (Server::find($this->target['account'])?->name ?? 'Account #'.$this->target['account']).', '.($this->target['environment'] === 'test' ? 'Test account. It cannot confirm a live domain.' : 'Live') : 'Not selected'))),
             Actions::make([$this->chooseAction()])->columnSpanFull()]);
