@@ -30,7 +30,7 @@ $renew=static fn($t)=>'USD '.PriceCatalogue::retail(Price::where(['server_id'=>$
 $list=Livewire::actingAs($u)->test(ListTlds::class)->assertSuccessful()->assertCanSeeTableRecords($tlds)->assertSeeHtml('data-domains-record="tld-'.$tlds[0]->id.'"');same([],$list->instance()->getBreadcrumbs(),'TLD list has no breadcrumb, like Domains');
 staffTableStandard($list,'Search TLD',['tld','account','note'],['renewal','cost']);
 foreach(['Registrar account','Renewal price','Cost','Domains','Status','Enom TEST identity check','OFFLINE DEMO NameSilo (synthetic)',
-    'Enom, default pricing, new orders','NameSilo, default pricing','For sale','USD 8.00',$renew($enom)] as $see){$list->assertSee($see);}
+    'Enom, default pricing, new orders','NameSilo, default pricing','For sale','$8.00',\Paymenter\Extensions\Servers\Domains\Presentation\Fact::IN_USD,$renew($enom)] as $see){$list->assertSee($see);}
 $plain=$text($list->html());
 expect(str_contains($plain,'OFFLINE DEMO NameSilo (synthetic) Demo'),'List: Demo tag after the demo account name');
 expect(!str_contains($plain,'NameSilo, default pricing, new orders'),'List: only the selected account takes new orders');
@@ -231,7 +231,7 @@ $clock->instant=$now;Carbon\Carbon::setTestNow($now);
 $rules=new \Paymenter\Extensions\Servers\Domains\Services\PricingRules;
 saveDefaultRule(['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed'=>array_fill_keys(['register','renew','transfer'],'1.00')],static fn($ending)=>activeFixtureRepublish($prices,$ending));
 same(['label'=>'Not for sale','tone'=>'gray','reason'=>'Below cost'],TldFacts::salesState($enom->fresh()),'Below cost is not for sale');
-$list=Livewire::actingAs($u)->test(ListTlds::class)->assertSuccessful()->assertSee('Not for sale')->assertSee(State::BelowCost->label())->assertSee('USD 1.00');
+$list=Livewire::actingAs($u)->test(ListTlds::class)->assertSuccessful()->assertSee('Not for sale')->assertSee(State::BelowCost->label())->assertSee('$1.00');
 $clean($list->html(),'List below cost');
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$enom->id])->assertSuccessful()->assertSee('Not for sale')->assertSee('Below cost');
 // The price itself says Below cost, so staff see the money risk on the value.
@@ -240,8 +240,8 @@ $clean($page->html(),'TLD page below cost');
 
 // Without the costs permission no cost is shown.
 $viewer=staffUser([Staff::VIEW]);Auth::setUser($viewer);
-$list=Livewire::actingAs($viewer)->test(ListTlds::class)->assertSuccessful()->assertDontSee('USD 8.00')->assertDontSee('$8.00');
-$page=Livewire::actingAs($viewer)->test(ViewTld::class,['record'=>$silo->id])->assertSuccessful()->assertDontSee('USD 8.00')->assertDontSee('$8.00')->assertDontSee('Restore fee');
+$list=Livewire::actingAs($viewer)->test(ListTlds::class)->assertSuccessful()->assertDontSee('$8.00');
+$page=Livewire::actingAs($viewer)->test(ViewTld::class,['record'=>$silo->id])->assertSuccessful()->assertDontSee('$8.00')->assertDontSee('Restore fee');
 // A retained sibling from an old registrar or account is not a current shared ending.
 foreach(['registrar_key'=>'retired','account_fingerprint'=>'retired-account'] as $field=>$stale){
     DB::table('domains_tlds')->where('id',$silo->id)->update([$field=>$stale]);

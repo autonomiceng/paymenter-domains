@@ -22,7 +22,7 @@ class ListTlds extends RecordListPage
     protected ?\Paymenter\Extensions\Servers\Domains\Admin\Support\StaffGrants $read=null;
     public function getSubNavigation(): array{return StaffTabs::tlds('All TLDs');}
     public function getBreadcrumbs(): array{return [];}
-    protected function head(): Head{$this->grants();return Head::make('TLDs & pricing',Reader::Staff);}
+    protected function head(): Head{$this->grants();return Head::make('TLDs & pricing',Reader::Staff)->note(Fact::IN_USD);}
     protected function actions(): array
     {
         $servers=[];

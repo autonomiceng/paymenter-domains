@@ -43,8 +43,9 @@ same('warn', $text($read(Value::coded(InvoiceStatus::state('pending', '2026-11-1
 $plain = $read(Value::plain(Plain::Off));
 same(['Off', 0.0], [$text($plain, '//*[@class="domains-panel-plain"]'), $plain->evaluate('count(//*[@data-domains-tone])')], 'Off is plain text with no tone');
 $money = $read(Value::fact(Fact::money('1240'), '3 renew in November.'));
-same(['USD 1,240.00', 'money', '3 renew in November.', 0.0], [$text($money, '//*[@class="domains-panel-fact"]'), $text($money, '//*[@class="domains-panel-fact"]/@data-domains-fact'), $text($money, '//*[@class="domains-panel-sub"]'), $money->evaluate('count(//*[@data-domains-tone])')], 'Money fact with a line under it');
-same(['USD 12.3456', 'USD -5.50', null, null], [Fact::money('12.3456')?->text, Fact::money('-5.5')?->text, Fact::money('12,00'), Fact::money('5', 'usd')], 'Money reads currency code first, never rounds and refuses non-decimals');
+same(['$1,240.00', 'money', '3 renew in November.', 0.0], [$text($money, '//*[@class="domains-panel-fact"]'), $text($money, '//*[@class="domains-panel-fact"]/@data-domains-fact'), $text($money, '//*[@class="domains-panel-sub"]'), $money->evaluate('count(//*[@data-domains-tone])')], 'Money fact with a line under it');
+same(['$12.3456', '-$5.50', null, null], [Fact::money('12.3456')?->text, Fact::money('-5.5')?->text, Fact::money('12,00'), Fact::money('5', 'usd')], 'Money reads $120.00, never rounds and refuses non-decimals');
+same(['$14.99 USD', "\u{20AC}14.99 EUR", '14.99 CHF'], [Fact::money('14.99', 'USD', true)?->text, Fact::money('14.99', 'EUR', true)?->text, Fact::money('14.99', 'CHF')?->text], 'A mixed-currency list shows the code on every amount; a currency without a symbol always does');
 // A schedule: the fact, then a label and its time under it.
 $next = $read(Value::fact(Fact::entered('Weekly, Sunday 03:00'), 'Next', Fact::date($at, Reader::Staff)));
 same(['Weekly, Sunday 03:00', 1.0, 'Next '.Fact::date($at, Reader::Staff)->text], [$text($next, '//*[@class="domains-panel-val"]/*[@class="domains-panel-fact"]'), $next->evaluate('count(//*[@class="domains-panel-sub"]//*[@data-domains-fact="date"])'), preg_replace('/\s+/', ' ', trim($text($next, '//*[@class="domains-panel-sub"]')))], 'A fact takes a label and its time, as the mock reads');

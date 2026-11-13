@@ -27,13 +27,19 @@ final class Fact
         return $text === '' ? null : new self('text', $text);
     }
     public static function count(int $count): self { return new self('count', number_format($count)); }
-    /** "USD 1,240.00" from a decimal string: the currency code first, as on registrar balances, so money has one
-     * format. Never rounds: a cost with more places keeps them ("USD 12.3456"). */
-    public static function money(?string $decimal, string $currency = 'USD'): ?self
+    /** The one line that names the currency for a page or section whose amounts are all USD. */
+    public const IN_USD = 'All amounts in USD.';
+    /** Currencies with a symbol of their own. Any other currency always carries its code. */
+    private const SYMBOLS = ['USD' => '$', 'EUR' => "\u{20AC}", 'GBP' => "\u{00A3}"];
+    /** "$1,240.00" from a decimal string. The page names the currency once ("All amounts in USD."); $code adds it to
+     * the amount ("$1,240.00 USD") for a list with more than one currency. A currency without a symbol here always
+     * shows its code ("1,240.00 CHF"). Never rounds: a cost with more places keeps them ("$12.3456"). */
+    public static function money(?string $decimal, string $currency = 'USD', bool $code = false): ?self
     {
         if ($decimal === null || preg_match('/^[A-Z]{3}$/D', $currency) !== 1 || preg_match('/^(-?)(\d{1,18})(?:\.(\d{1,8}))?$/D', $decimal, $m) !== 1) { return null; }
         $places = str_pad(rtrim($m[3] ?? '', '0'), 2, '0');
-        return new self('money', $currency.' '.$m[1].number_format((int) $m[2]).'.'.$places);
+        $symbol = self::SYMBOLS[$currency] ?? '';
+        return new self('money', $m[1].$symbol.number_format((int) $m[2]).'.'.$places.($code || $symbol === '' ? ' '.$currency : ''));
     }
     /** Host lists keep host metadata. At most three names, then a count: "Enom TEST, NameSilo and 4 more". Callers order them, most used first. @param list<string> $names */
     public static function names(array $names): ?self

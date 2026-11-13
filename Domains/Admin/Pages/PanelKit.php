@@ -125,7 +125,7 @@ class PanelKit extends Page implements \Filament\Tables\Contracts\HasTable
                     Row::make('Read errors', Value::fact(Fact::lines(['The registrar did not answer.', 'The saved balance could not be read.']))),
                     Row::make('Expires for staff', Value::fact(Fact::date(self::EXPIRES, $staff))),
                     Row::make('Expires for customers', Value::fact(Fact::date(self::EXPIRES, Reader::Customer))),
-                ], 'All amounts in USD.', 'kit-value-fact'),
+                ], Fact::IN_USD, 'kit-value-fact'),
             ], 'kit-value'),
             Sheet::single([
                 Sheet::section('From the registrar', [
@@ -151,7 +151,7 @@ class PanelKit extends Page implements \Filament\Tables\Contracts\HasTable
                     SettingsRow::toggle('Auto-renew', true, self::kit('invoices', 'Auto-renew'), 'Set by staff on the registrar account.', 'Paid by an invoice we email 30 days before expiry.'),
                     SettingsRow::setting('Mode', Value::plain(Plain::Test), 'Set by staff when the account is connected.')->help('Test and Live are separate registrar accounts, each with its own login, domains and money.'),
                     SettingsRow::setting('Reminder schedule', $this->reminderDays(), 'Set by staff who can change domain policy.')->actions(Sheet::edit(ReminderAction::make($this->server), 'Reminder schedule')),
-                ], 'All amounts in USD.', 'kit-rows-account'),
+                ], Fact::IN_USD, 'kit-rows-account'),
             ], [
                 Sheet::section('Account', [
                     Row::make('Domains', Value::fact(Fact::count(9))),
@@ -208,7 +208,7 @@ class PanelKit extends Page implements \Filament\Tables\Contracts\HasTable
                 Sheet::section('Registrar account', [
                     Row::notice('low-balance', Value::state(State::LowBalance, $staff, 'Renewals due by Nov 24, 2026 need $41.00. Renewals stop below $25.00.'), Sheet::link('kit_low_funds', 'Add funds', '#kit-notice')),
                     Row::make('Balance', Value::fact(Fact::money('42.10')))->key('row-notice-balance')->actions(self::kit('notice_balance', 'Check balance')),
-                ], 'All amounts in USD.', 'kit-notice-account'),
+                ], Fact::IN_USD, 'kit-notice-account'),
             ], 'kit-notice'),
             \Filament\Schemas\Components\EmbeddedTable::make(),
         ]);
@@ -222,7 +222,7 @@ class PanelKit extends Page implements \Filament\Tables\Contracts\HasTable
             $c::value('status', 'Status', static fn (array $r): Value => Value::state(State::from($r['status']), Reader::Staff)),
             $c::note('note', 'Note', static fn (array $r): ?string => $r['note'])->actWhen(static fn (array $r): bool => $r['status'] === 'needs_review'),
             $c::text('customer', 'Customer')->person(),
-            $c::value('amount', 'Renewal price', static fn (array $r): Value => Value::fact(Fact::money($r['amount'], $r['currency'])))->end(),
+            $c::value('amount', 'Renewal price', static fn (array $r): Value => Value::fact(Fact::money($r['amount'], $r['currency'], true)))->end(),
             $c::value('nameservers', 'Nameservers', static fn (array $r): Value => Value::fact(Fact::lines(['ns1.example.net', 'ns2.example.net'])))->optional(),
         ];
         return \Paymenter\Extensions\Servers\Domains\Admin\Support\TableColumns::choose($table, array_map(static fn ($c) => $c->toColumn(), $columns), ['nameservers'])

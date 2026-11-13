@@ -57,7 +57,7 @@ final class AdoptionRows
                 : (($details['do_not_renew'] ?? false) ? Value::plain(Plain::Yes, 'Requested for review. No cancellation was created.') : Value::plain(Plain::No))),
         ];
         $note = 'Preview only. Nothing is charged or imported, and past invoices stay the same.'.($environment === 'test' ? ' This is a test account. It cannot confirm a live domain.' : '');
-        return [Section::make('Import is off on this site', $identity, $note), Section::make('Check', $check), Section::make('Renewal and price', $price)];
+        return [Section::make('Import is off on this site', $identity, $note), Section::make('Check', $check), Section::make('Renewal and price', $price, Fact::IN_USD)];
     }
     /** A calendar date stays a date and an instant shows in the viewer's zone. Anything else was not confirmed. */
     private static function when(?string $value): Value

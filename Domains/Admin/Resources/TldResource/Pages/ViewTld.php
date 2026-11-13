@@ -13,12 +13,14 @@ use Paymenter\Extensions\Servers\Domains\Presentation\{Fact,Reader,State,StaffTi
  * words and tab bar are shared with the History tab (Concerns\TldSalesPage). */
 class ViewTld extends RecordDetailPage
 {
-    use Concerns\TldSalesPage;
+    use Concerns\TldSalesPage { head as salesHead; }
     protected static string $resource=TldResource::class;
     protected static ?SubNavigationPosition $subNavigationPosition=SubNavigationPosition::Top;
     public const CHOOSE_SELLER='Use More → Change registrar.';
     public const CHOOSE_SELLER_HEAD='Use Choose registrar above.';
     protected function actions(): array {return $this->tldActions();}
+    /** Prices and costs on this tab are all USD, so the head says it once. */
+    protected function head(): \Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Head {return $this->salesHead()->note(Fact::IN_USD);}
     /** The sales state and its reason, then price sync; the rail holds the newest changes. */
     protected function sections(): array
     {

@@ -19,6 +19,7 @@ final class Head
     /** @var list<array{label:string,fact:Fact}> */
     private array $facts = [];
     private ?array $link = null;
+    private ?string $note = null;
     private function __construct(public readonly string $title, public readonly Reader $reader) {}
     public static function make(string $title, Reader $reader): self { return new self($title, $reader); }
     /** The title is a domain name: it wraps after dots and hyphens. */
@@ -31,13 +32,21 @@ final class Head
     public function fact(string $label, Fact $fact): self { $this->facts[] = ['label' => $label, 'fact' => $fact]; return $this; }
     /** The one link on the line, such as the registrar account. */
     public function link(string $label, string $url): self { $this->link = ['label' => $label, 'url' => $url]; return $this; }
+    /** One sentence that holds for the whole page, last on the line, such as "All amounts in USD." */
+    public function note(string $sentence): self
+    {
+        $sentence = trim($sentence);
+        if ($sentence === '' || !str_ends_with($sentence, '.')) { throw new \InvalidArgumentException('A head note is one sentence.'); }
+        $this->note = $sentence;
+        return $this;
+    }
     public function heading(): Htmlable
     { return new HtmlString(view('domains::components.panel.head-title', ['title' => $this->title, 'domain' => $this->domain, 'demo' => $this->demo, 'test' => $this->test])->render()); }
     /** Null when there is nothing to say under the title. */
     public function line(): ?Htmlable
     {
-        if ($this->state === null && $this->facts === [] && $this->link === null) { return null; }
+        if ($this->state === null && $this->facts === [] && $this->link === null && $this->note === null) { return null; }
         return new HtmlString(view('domains::components.panel.head-line', ['tone' => $this->state?->tone($this->reader), 'word' => $this->state?->label(),
-            'record' => $this->record, 'facts' => $this->facts, 'link' => $this->link])->render());
+            'record' => $this->record, 'facts' => $this->facts, 'link' => $this->link, 'note' => $this->note])->render());
     }
 }
