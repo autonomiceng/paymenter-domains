@@ -42,11 +42,7 @@ final class PaidUncertainty
     public static function accounts(?int $server=null): ?\Illuminate\Support\HtmlString
     {
         $lines=[];
-        foreach (self::holds($server) as $h) {
-            $lines[]=($h['url']?DomainFacts::requestLink($h['url'],$h['label']):e($h['label'])).' '.e(PrivacyVisibility::SHOWN
-                ? 'Paid WHOIS privacy orders on '.$h['name'].' wait until '.$h['until'].'.'
-                : ($h['count']===1?'A paid order on '.$h['name'].' has':'Paid orders on '.$h['name'].' have').' no registrar result yet.');
-        }
+        foreach (self::holds($server) as $h) { $lines[]=($h['url']?DomainFacts::requestLink($h['url'],$h['label']):e($h['label'])).' '.e(self::line($h)); }
         return $lines?new \Illuminate\Support\HtmlString(implode('<br>',$lines)):null;
     }
     /** The Registrars list Note for a held account: the same step as its banner, so the list never shows the account as clear. */
@@ -61,8 +57,14 @@ final class PaidUncertainty
         if($h===null&&count($holds)===100){$h=self::holds($server)[0]??null;}
         return $h?$h['label'].(PrivacyVisibility::SHOWN?'. Paid WHOIS privacy orders wait.':'. No registrar result yet.'):null;
     }
+    /** What a held account's paid orders wait for, as one sentence. @param array{name:string,until:string,count:int} $h */
+    public static function line(array $h): string
+    {
+        return PrivacyVisibility::SHOWN ? 'Paid WHOIS privacy orders on '.$h['name'].' wait until '.$h['until'].'.'
+            : ($h['count']===1?'A paid order on '.$h['name'].' has':'Paid orders on '.$h['name'].' have').' no registrar result yet.';
+    }
     /** @return list<array{server_id:int,label:string,url:?string,until:string,name:string,count:int}> */
-    private static function holds(?int $server): array
+    public static function holds(?int $server=null): array
     {
         Staff::requireView();
         $off=OperationQueries::ordersOffAccounts();

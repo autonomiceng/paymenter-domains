@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\PageType;
 const PAGES_BEFORE_TYPES = [
     'Pages\ActivationStatus', 'Pages\DnsResolver', 'Pages\PanelKit', 'Pages\PublicSuffixList', 'Pages\RegistrarAccount',
     'Pages\RegistrarBalances', 'Pages\RegistrarHistory', 'Pages\RegistrarSetup', 'Pages\WhatYouSell',
-    'Resources\DomainResource\Pages\AdoptDomain', 'Resources\DomainResource\Pages\AdoptionPreview', 'Resources\DomainResource\Pages\ListDomains',
+    'Resources\DomainResource\Pages\AdoptDomain', 'Resources\DomainResource\Pages\AdoptionPreview',
     'Resources\DomainResource\Pages\ViewDomain', 'Resources\OperationResource\Pages\ListOperations', 'Resources\OperationResource\Pages\ViewOperation',
     'Resources\PendingAdoptionResource\Pages\ListPending', 'Resources\PendingAdoptionResource\Pages\ViewPending',
     'Resources\RoutingProfileResource\Pages\ListConfiguration', 'Resources\RoutingProfileResource\Pages\ViewConfiguration',
