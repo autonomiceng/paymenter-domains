@@ -60,7 +60,7 @@ catch(\Paymenter\Extensions\Servers\Domains\Services\RuntimeIneligible $e){same(
 $preference=new \Paymenter\Extensions\Servers\Domains\Services\OwnerAutoRenew($clock);
 $refused=false;try{$preference->set($owner,$d->id,true);}catch(DomainException){$refused=true;}expect($refused,'Adopted DNR switch cannot be toggled');
 same([],$owners->present($d)->autoRenew,'Adopted hard stop hides switch');same([],$owners->present($d)->renewNow,'Adopted hard stop hides manual request');
-$text=strip_tags(preg_replace('~<(script|style)\b[^>]*>.*?</\1>~si','',$html));foreach(['account-enom','synthetic-secret','provider_domain_id','account_fingerprint']as$private){expect(!str_contains($text,$private),'Customer excludes registrar/private identity');}
+$text=strip_tags(preg_replace('~<(script|style)\b[^>]*>.*?</\1>~si','',$html));foreach(['Enom','NameSilo','account-enom','synthetic-secret','provider_domain_id','account_fingerprint']as$private){expect(!str_contains($text,$private),'Customer excludes registrar/private identity');}
 $money=scenarioMoney();$clock->time=new DateTimeImmutable('2027-10-21T00:00:00Z');$expired=$owners->present($d,false);same(['Expired','bad'],[$expired->status,$expired->tone],'Read-only expired display');same($dto->history,$expired->history,'Expired history remains accessible');same('example.com',$d->fresh()->reservation_name,'Expired name stays reserved');same($money,scenarioMoney(),'Presentation never rewrites finances');
 try{$owners->owned($other,$d->id);expect(false,'Cross-owner detail must refuse');}catch(Illuminate\Database\Eloquent\ModelNotFoundException){}
 return;
