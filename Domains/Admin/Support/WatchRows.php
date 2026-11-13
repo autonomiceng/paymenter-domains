@@ -45,11 +45,21 @@ final class WatchRows
             is_array($value) => self::fact($value, $problem ? null : $sub),
             $value === 'On' => Value::plain(Plain::On, $sub),
             $value === 'Off' => Value::plain(Plain::Off, $sub),
-            $value === 'Unknown' => Value::state(State::NotReadYet, $staff, $sub),
-            $value === 'Checking now' => Value::state(State::Checking, $staff, $sub),
+            $value === 'Unknown' => self::timed(State::NotReadYet, $fact['sub'] ?? null, $sub),
+            $value === 'Checking now' => self::timed(State::Checking, $fact['sub'] ?? null, $sub),
             default => self::fact([(string) $value], $problem ? null : $sub),
         };
         return [$shown, $problem, $word, $sub];
+    }
+    /** A state whose line ends with a check time ("Checked <time>") keeps that time as its staff time, in the viewer's zone,
+     * and the rest of the line as its sentence. */
+    private static function timed(State $state, mixed $raw, ?string $sub): Value
+    {
+        if (!$raw instanceof Htmlable || !preg_match('~<time\b[^>]*\bdatetime="([^"]+)"~', $html = $raw->toHtml(), $m) || ($at = strtotime(html_entity_decode($m[1]))) === false) {
+            return Value::state($state, Reader::Staff, $sub);
+        }
+        $rest = self::sentence(new \Illuminate\Support\HtmlString((string) preg_replace('~(Checked\s+)?(<span\b[^>]*>\s*)?<time\b.*?</time>(\s*</span>)?~s', '', $html)));
+        return Value::state($state, Reader::Staff, $rest !== null && Fact::isWord($rest) ? null : $rest)->when($at);
     }
     /** The status reason as the sheet's first row. A one-word reason ("Expired") is the notice's own state word. */
     public static function notice(string $label, mixed $reason): Row
