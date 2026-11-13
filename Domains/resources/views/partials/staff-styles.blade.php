@@ -36,6 +36,8 @@ a :is(.domains-name-cell,.domains-list-note),a :is(.domains-name-cell,.domains-l
    once the rows have scrolled under it, it casts an edge shadow. Browsers without scroll timelines skip the shadow. */
 [data-domains-table] .fi-ta-content-ctn{overflow-x:auto}
 @media(max-width:1279px){[data-domains-table] .fi-ta-table{width:max-content;min-width:100%}}
+/* The fixed name column never takes most of a narrow screen: past the cap a very long name shortens with '...', and its link opens it in full. */
+@media(max-width:1279px){[data-domains-table] td:has(a .domains-name-cell)>*{max-width:min(20rem,45vw)}}
 [data-domains-table] :is(.fi-ta-row>td,.fi-ta-table>thead>tr>th):first-child{position:sticky;inset-inline-start:0;z-index:1;background:var(--panel-card,#111B36)}
 [data-domains-table] :is(.fi-ta-row>td,.fi-ta-table>thead>tr>th):first-child:has(input[type=checkbox])+:is(td,th){position:sticky;inset-inline-start:44px;z-index:1;background:var(--panel-card,#111B36)}
 @keyframes domains-edge{from{box-shadow:none}to{box-shadow:8px 0 8px -8px rgb(0 0 0/.6)}}
