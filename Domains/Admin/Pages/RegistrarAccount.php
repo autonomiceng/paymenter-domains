@@ -71,7 +71,10 @@ class RegistrarAccount extends DetailPage
             $checks['failing'] = [...AccountChecklist::pausedChecks($rows), ...$checks['failing']];
         }
         $all = [...$checks['failing'], ...$checks['passing']];
-        return [Section::make('System checks ('.count($checks['passing']).' of '.count($all).' OK)', [RegistrarRows::checks($all)], null, 'system_checks')];
+        // The title stays put; the count is a plain sentence under it, led by what needs staff.
+        $failing = count($checks['failing']);
+        $note = $all === [] ? null : ($failing === 0 ? 'All '.count($all).' pass.' : $failing.' of '.count($all).' '.($failing === 1 ? 'needs' : 'need').' attention.');
+        return [Section::make('System checks', [RegistrarRows::checks($all)], $note, 'system_checks')];
     }
     /** System checks for this account, failing first. @return array{failing:list<array>,passing:list<array>} */
     public function checks(): array
