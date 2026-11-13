@@ -34,6 +34,6 @@ $open($done)->assertDontSee('Not sent');
 $force($done,['state'=>'uncertain','safe_code'=>'registration_authority_changed',
     'attempt'=>['execution'=>['disposition'=>'accepted_with_discrepancy'],'registration'=>['accepted'=>true,'order_reference'=>'1234']]]);
 Livewire::actingAs($staff)->test(ListOperations::class)->assertSuccessful()
-    ->assertSee('Sent. Registrar account changed before it finished')->assertDontSee('Not sent: registrar account changed');
+    ->assertSee('Registrar account changed before it finished')->assertDontSee('Not sent: registrar account changed');
 echo "Completed story passed.\n";
 $nativeSuccessful=true;

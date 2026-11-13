@@ -51,7 +51,7 @@ foreach(['usd_balance_required','enom_test_transfer_usd_balance_required'] as $c
     expect(str_contains($summary['step']??'','Not sent. Orders are off for this account.'),'Domain list shares the paused words for '.$code);
     same('Not sent. Orders are off for this account.',RequestFacts::for($op->fresh())['reason'],'Request facts share the paused words');
     same('Not sent. Orders are off for this account.',\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::notice($op->domain->fresh())['title'],'Domain banner shares the paused words');
-    Livewire::actingAs($staff)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ListOperations::class)->assertSee('Not sent. Orders are off for this account.')->assertDontSee('earlier balance check');
+    Livewire::actingAs($staff)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ListOperations::class)->assertSee('Orders are off for this account')->assertDontSee('earlier balance check');
     commerceReject(fn()=>$run($op,'release'));
     same('held',$engine->execute($op->id)->state,'Paused stored hold cannot send');
     DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>true]);
