@@ -74,11 +74,12 @@ $wire->during=null;$actor->role->update(['permissions'=>['admin.domains.view','a
 $reviewed=$preview();$wire->during=static function()use($setExpected):void {$setExpected('other@example.com');};
 $reject(fn()=>$accept($reviewed),'Account settings changed. Open this review again.');$wire->during=null;$setExpected('new@example.com');
 // Audit persistence failure rolls back pin replacement and single-use key consumption.
-$reviewed=$preview();$auditSetting=$server->settings()->where('key',Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::KEY)->sole();$auditValue=$auditSetting->value;
-$auditSetting->value='broken audit';$auditSetting->save();
-$reject(fn()=>$accept($reviewed),'Audit unavailable. Changes held.');
+$reviewed=$preview();
+Illuminate\Support\Facades\DB::statement("CREATE TRIGGER refuse_contact_audit BEFORE INSERT ON domains_audit_archives BEGIN SELECT RAISE(ABORT, 'synthetic audit refusal'); END");
+try{$accept($reviewed);expect(false,'Audit persistence failure refused');}catch(Illuminate\Database\QueryException $e){expect(str_contains($e->getMessage(),'synthetic audit refusal'),'Expected audit storage failure');}
 same('901',json_decode($server->settings()->where('key',$guardKey)->sole()->value,true)['contact_id'],'Audit failure rolls back the fingerprint');
-$auditSetting->value=$auditValue;$auditSetting->save();$accept($reviewed);same(2,count($history()),'Same review remains usable after an atomic rollback');
+Illuminate\Support\Facades\DB::statement('DROP TRIGGER refuse_contact_audit');
+$accept($reviewed);same(2,count($history()),'Same review remains usable after an atomic rollback');
 // Two overlapping reviews: the commit during the first read wins, and the stale writer refuses.
 // Synthetic interleaving checks the locked comparison; SQLite cannot prove production row-lock scheduling.
 require_once __DIR__.'/Support/WireLimit.php';

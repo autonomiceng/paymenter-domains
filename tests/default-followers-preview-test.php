@@ -25,9 +25,9 @@ $base=Price::where('server_id',$t->server_id)->where('tld','com')->orderBy('id')
 $seed=static function(string $ending,?callable $change=null)use($t,$base):Tld{
     $next=$t->replicate();$next->tld=$ending;$next->save();
     foreach($base as $price){
-        $copy=$price->replicate();$copy->tld=$ending;$cost=OfferState::decode($copy->catalogue_observation);
+        $copy=$price->replicate();$copy->tld=$ending;$cost=OfferState::decode(costEvidence($copy));
         if($change!==null&&!$change($cost)){continue;}
-        $copy->catalogue_observation=OfferState::json($cost);$copy->save();
+        $copy->forceFill(costColumns(OfferState::json($cost)));$copy->save();
     }
     return $next;
 };

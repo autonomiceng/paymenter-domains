@@ -51,8 +51,8 @@ same($issued, $frozen(), 'The issued invoice amount stands after a retail change
 same([], array_values(array_filter($logged, static fn ($l) => $l[0] === 'Domains pay refused.')), 'Allowed pay logs no refusal');
 // A cost rise past the issued total and spending ceiling refuses pay, says what to do, and logs why.
 $clock->instant = $now->modify('+1 minute'); $costs = [];
-foreach (DB::table('domains_prices')->where('server_id', $binding->serverId)->where('tld', 'com')->whereNotNull('catalogue_observation')->get() as $row) {
-    $c = OfferState::cost(OfferState::decode($row->catalogue_observation));
+foreach (DB::table('domains_prices')->where('server_id', $binding->serverId)->where('tld', 'com')->whereNotNull('cost_enabled')->get() as $row) {
+    $c = OfferState::cost(OfferState::decode(costEvidence($row)));
     $costs[] = $c->key() === 'register:1' ? new Cost($c->action, $c->term, true, '20.0000', $c->sourceUnit, $c->source, $clock->now(), $c->freshUntil) : $c;
 }
 $ports->apply(new FeedObserved($binding, 'com', $costs), $revision());
@@ -82,8 +82,8 @@ $quoting->register('enom', ['token'], new class implements Paymenter\Extensions\
         new OrderQuery('staff-save-placeholder.com', Action::Register, 1), new Money('20.0000', 'USD'), CostUnit::TermTotal,
         'enom_product_price', $clock->now(), $clock->now()->modify('+5 minutes'))))));
 $clock->instant = $now->modify('+2 minutes'); $costs = [];
-foreach (DB::table('domains_prices')->where('server_id', $binding->serverId)->where('tld', 'com')->whereNotNull('catalogue_observation')->get() as $row) {
-    $c = OfferState::cost(OfferState::decode($row->catalogue_observation));
+foreach (DB::table('domains_prices')->where('server_id', $binding->serverId)->where('tld', 'com')->whereNotNull('cost_enabled')->get() as $row) {
+    $c = OfferState::cost(OfferState::decode(costEvidence($row)));
     $costs[] = $c->key() === 'register:1' ? new Cost($c->action, $c->term, true, '9.0000', $c->sourceUnit, $c->source, $clock->now(), $clock->now()->modify('+1 second')) : $c;
 }
 $ports->apply(new FeedObserved($binding, 'com', $costs), $revision());
@@ -98,9 +98,9 @@ same(['price_changed', Paymenter\Extensions\Servers\Domains\Services\PaymentPric
 same($issued, $frozen(), 'A refreshed-quote cost refusal leaves the issued invoice untouched');
 // A fresh over-ceiling acquisition quote survives a later renewal-read failure.
 $renew = DB::table('domains_prices')->where('server_id', $binding->serverId)->where('tld', 'com')->where('action', 'renew')->where('term', 1)->sole();
-$expired = OfferState::decode($renew->catalogue_observation);
+$expired = OfferState::decode(costEvidence($renew));
 $expired['fresh_until'] = $clock->now()->modify('-1 second')->format(DATE_ATOM);
-DB::table('domains_prices')->where('id', $renew->id)->update(['catalogue_observation' => OfferState::json($expired)]);
+DB::table('domains_prices')->where('id', $renew->id)->update([...costColumns(OfferState::json($expired))]);
 $refused = $pay->stop($invoice);
 same('The price of staff-save-placeholder.com went up after this invoice was issued. You have not been charged. Try again later, or contact us for a new invoice.',
     $refused['text'] ?? null, 'A failed renewal quote preserves the known acquisition price-change refusal');
@@ -116,12 +116,12 @@ same(['unavailable', DomainException::class], [$log[4][1]['reason'] ?? null, $lo
 same('pending', $invoice->fresh()->status, 'Temporary refusals keep the invoice open');
 // A missing acquisition observation must preserve the original typed refusal, not fail in the wrapper.
 $missing = DB::table('domains_prices')->where('server_id',$binding->serverId)->where('tld','com')->where('action','register')->where('term',1)->sole();
-DB::table('domains_prices')->where('id',$missing->id)->update(['catalogue_observation'=>null]);
+DB::table('domains_prices')->where('id',$missing->id)->update([...costColumns(null)]);
 try {
     $offers->checkoutSelection('missing-cost-placeholder.com','com','register',1,null,
         new Paymenter\Extensions\Servers\Domains\Services\CheckoutRefreshBudget,$binding->serverId,$binding->fingerprint);
     throw new RuntimeException('Missing acquisition observation must refuse checkout');
 } catch (DomainException) {}
-DB::table('domains_prices')->where('id',$missing->id)->update(['catalogue_observation'=>$missing->catalogue_observation]);
+DB::table('domains_prices')->where('id',$missing->id)->update([...costColumns(costEvidence($missing))]);
 $nativeSuccessful = true;
 echo "Offer pay after staff save: ok\n";

@@ -107,7 +107,7 @@ DB::table('services')->where('id', $service->id)->update(['price' => '9.99']);
 $refuseSave(['price' => '11.44'], $priceRefusal);
 same('9.99', RetailLine::decimal($service->fresh()->price), 'Native price edits require an owned projection even at current retail');
 // Unknown-cost retained retail also grants no manual edit authority under Option E.
-$price = Price::where(['server_id' => $server->id, 'action' => 'renew'])->sole(); $price->update(['wholesale' => null, 'revision' => $price->revision + 1]);
+$price = Price::where(['server_id' => $server->id, 'action' => 'renew'])->sole(); $price->update(['wholesale' => null, 'cost_enabled' => null, 'revision' => $price->revision + 1]);
 DB::table('services')->where('id', $service->id)->update(['price' => '9.99']);
 $refuseSave(['price' => '11.44'], $priceRefusal);
 $service->fresh()->update(['status' => 'suspended', 'expires_at' => '2030-01-01']);

@@ -7,7 +7,7 @@ require_once __DIR__.'/accounts.php';
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\Route;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\PanelKit;
-use Paymenter\Extensions\Servers\Domains\Services\{FoundationSchema, ReminderSchedules, ReminderSchema};
+use Paymenter\Extensions\Servers\Domains\Services\{AuditBatchRetirement, AuditEventSchema, FoundationSchema, ReminderSchedules, ReminderSchema, StaffAuditSchema};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 
 /** The kit's account server id. A host skin (DOMAINS_PANEL_SETUP) is set up before the page is built. */
@@ -15,6 +15,8 @@ function panelKitFixture(): int
 {
     config(['domains.time_zone' => 'America/Los_Angeles']);
     staffPanel();FoundationSchema::install();ReminderSchema::install();
+    // Reminder changes are audit events, so the kit carries the event store as an upgraded install has it.
+    StaffAuditSchema::install();AuditEventSchema::install();AuditBatchRetirement::install();
     $account=fixtureAccount(1,'enom',DemoData::ACCOUNTS['enom']);
     ReminderSchedules::enroll($account['server_id']);
     $panel=Filament::getPanel('admin');$panel->pages([PanelKit::class]);

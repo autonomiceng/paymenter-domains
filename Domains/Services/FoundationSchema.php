@@ -142,6 +142,7 @@ final class FoundationSchema
             $table->timestamps();
             $table->unique(['server_id', 'tld', 'action', 'term', 'currency'], $table->getTable().'_price_unique');
             OfferSchema::retained($table, 'domains_prices');
+            CurrentCostSchema::retained($table);
         });
     }
 

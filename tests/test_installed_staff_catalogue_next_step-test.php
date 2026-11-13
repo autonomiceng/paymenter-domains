@@ -122,8 +122,8 @@ DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>OfferS
 } catch (Throwable $error) {$failures[]='Case 7: '.$error->getMessage();}
 try {
 $reset();$clearPrice();
-$cost=OfferState::decode($priceRows->first(fn($p)=>$p->action==='register'&&(int)$p->term===1)->catalogue_observation);$cost['enabled']=false;$cost['total']=null;
-DB::table('domains_prices')->where('server_id',$binding->serverId)->where('tld','com')->where('action','register')->where('term',1)->update(['catalogue_observation'=>OfferState::json($cost)]);
+$cost=OfferState::decode(costEvidence($priceRows->first(fn($p)=>$p->action==='register'&&(int)$p->term===1)));$cost['enabled']=false;$cost['total']=null;
+DB::table('domains_prices')->where('server_id',$binding->serverId)->where('tld','com')->where('action','register')->where('term',1)->update([...costColumns(OfferState::json($cost))]);
 [$table,$row]=nextTable();same('Off',$table->cell($row,'register','price')['text'],'An explicitly disabled registrar offer is Off');
 
 } catch (Throwable $error) {$failures[]='Case 8: '.$error->getMessage();}
@@ -152,8 +152,8 @@ DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>OfferS
 } catch (Throwable $error) {$failures[]='Case 11: '.$error->getMessage();}
 try {
 $reset();$clearPrice();
-$cost=OfferState::decode($priceRows->first(fn($p)=>$p->action==='register'&&(int)$p->term===1)->catalogue_observation);$cost['fresh_until']=$now->modify('-1 second')->format(DATE_ATOM);$cost['observed_at']=$now->modify('-2 days')->format(DATE_ATOM);
-DB::table('domains_prices')->where('server_id',$binding->serverId)->where('tld','com')->where('action','register')->where('term',1)->update(['catalogue_observation'=>OfferState::json($cost)]);
+$cost=OfferState::decode(costEvidence($priceRows->first(fn($p)=>$p->action==='register'&&(int)$p->term===1)));$cost['fresh_until']=$now->modify('-1 second')->format(DATE_ATOM);$cost['observed_at']=$now->modify('-2 days')->format(DATE_ATOM);
+DB::table('domains_prices')->where('server_id',$binding->serverId)->where('tld','com')->where('action','register')->where('term',1)->update([...costColumns(OfferState::json($cost))]);
 [$table,$row]=nextTable();same('Checking',$table->cell($row,'register','price')['text'],'Expired costs queue a price read');
 
 } catch (Throwable $error) {$failures[]='Case 12: '.$error->getMessage();}
@@ -340,19 +340,19 @@ config(['domains.namesilo_test.accounts'=>$originalAccounts]);
 } catch (Throwable $error) {$failures[]='NameSilo TEST facts recovery: '.$error->getMessage();}
 try {
 $reset();$clearPrice();
-$cost=OfferState::decode($priceRows->first(fn($p)=>$p->action==='register'&&(int)$p->term===1)->catalogue_observation);
+$cost=OfferState::decode(costEvidence($priceRows->first(fn($p)=>$p->action==='register'&&(int)$p->term===1)));
 $cost['enabled']=false;$cost['total']=null;$cost['fresh_until']=$now->modify('-1 second')->format(DATE_ATOM);$cost['observed_at']=$now->modify('-2 days')->format(DATE_ATOM);
-DB::table('domains_prices')->where('server_id',$binding->serverId)->where('tld','com')->where('action','register')->where('term',1)->update(['catalogue_observation'=>OfferState::json($cost)]);
+DB::table('domains_prices')->where('server_id',$binding->serverId)->where('tld','com')->where('action','register')->where('term',1)->update([...costColumns(OfferState::json($cost))]);
 [$table,$row]=nextTable();same('Checking',$table->cell($row,'register','price')['text'],'An expired disabled cost queues a new price read');
 same($now->getTimestamp(),$work->status($binding)['due_at'],'Expired refusal schedules the existing price worker');
 } catch (Throwable $error) {$failures[]='Expired disabled cost: '.$error->getMessage();}
 foreach(['renew','transfer'] as $action){foreach([true,false] as $canRead){
 try {
 $reset();$readable=$canRead;
-$cost=OfferState::decode($priceRows->first(fn($p)=>$p->action===$action&&(int)$p->term===1)->catalogue_observation);
+$cost=OfferState::decode(costEvidence($priceRows->first(fn($p)=>$p->action===$action&&(int)$p->term===1)));
 $cost['source']='enom_bulk_bucket_1';$cost['enabled']=false;$cost['total']=null;
 $cost['fresh_until']=$now->modify('-1 second')->format(DATE_ATOM);$cost['observed_at']=$now->modify('-2 days')->format(DATE_ATOM);
-DB::table('domains_prices')->where('server_id',$binding->serverId)->where('tld','com')->where('action',$action)->where('term',1)->update(['catalogue_observation'=>OfferState::json($cost)]);
+DB::table('domains_prices')->where('server_id',$binding->serverId)->where('tld','com')->where('action',$action)->where('term',1)->update([...costColumns(OfferState::json($cost))]);
 $metadata=OfferState::facts($original['catalogue_facts']);
 $refusal=new \Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding,'com',[OfferState::cost($cost)]);
 DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>OfferState::encodeFacts($refusal->facts($metadata))]);

@@ -135,10 +135,10 @@ $frozen = static function (): array {
 $obligations = $frozen();
 $state = static fn () => [DB::table('domains_tlds')->orderBy('id')->get()->toJson(), DB::table('domains_prices')->orderBy('id')->get()->toJson(),
     Product::orderBy('id')->get()->toJson(), Plan::orderBy('id')->get()->toJson(), DB::table('prices')->orderBy('id')->get()->toJson(),
-    Server::find($b->serverId)->settings()->where('key', StaffSettingsReview::KEY)->value('value')];
+    DB::table('domains_audit_archives')->orderBy('id')->get()->toJson()];
 // Force a late audit failure after price/projection writes; everything must roll back together.
-$before = $state(); $setting = Server::find($b->serverId)->settings()->where('key', StaffSettingsReview::KEY)->sole();
-DB::statement('CREATE TRIGGER refuse_offer_audit BEFORE UPDATE ON settings WHEN NEW.id = '.$setting->id." BEGIN SELECT RAISE(ABORT, 'synthetic audit refusal'); END");
+$before = $state();
+DB::statement("CREATE TRIGGER refuse_offer_audit BEFORE INSERT ON domains_audit_archives BEGIN SELECT RAISE(ABORT, 'synthetic audit refusal'); END");
 try { $apply(Edit::override($b, 'com', new Intent(sell: false))); expect(false, 'Audit fault must roll back'); }
 catch (Illuminate\Database\QueryException $error) { expect(str_contains($error->getMessage(), 'synthetic audit refusal'), 'Expected injected late failure'); }
 DB::statement('DROP TRIGGER refuse_offer_audit');

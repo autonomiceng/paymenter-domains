@@ -21,8 +21,8 @@ $t = Tld::findOrFail($tlds[0]->id);
 same([1,3], $caps->facts($binding, 'com')->terms['register'], 'Deselection and staff stops do not withdraw provider capabilities');
 same('10.40', $caps->holder($binding, 'com')->retail, 'Holder retail survives public withdrawal');
 same('8.0000', $caps->cost($binding, 'com')->total, 'Cost uses normalized observation');
-DB::table('domains_prices')->where('server_id', $binding->serverId)->update(['wholesale'=>'999.0000', 'retail'=>'999.00']);
-same('8.0000', $caps->cost($binding, 'com')->total, 'Obsolete wholesale does not affect current costs');
+DB::table('domains_prices')->where('server_id', $binding->serverId)->update(['retail'=>'999.00']);
+same('8.0000', $caps->cost($binding, 'com')->total, 'Published retail does not affect current costs');
 DB::transaction(function () use ($caps, $binding, $t): void {
     $t = Tld::whereKey($t->id)->lockForUpdate()->sole();
     $rows = Paymenter\Extensions\Servers\Domains\Models\Price::where('server_id', $binding->serverId)->where('tld','com')->lockForUpdate()->get();

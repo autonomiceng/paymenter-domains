@@ -183,13 +183,12 @@ final class StaffCatalogue
         $cost=DB::table('domains_prices')->where('action','register')->where('term',1)->where('currency','USD');
         $q->leftJoinSub($cost,'p',fn($j)=>$j->on('p.server_id','=','domains_tlds.server_id')->on('p.tld','=','domains_tlds.tld')->on('p.account_fingerprint','=','domains_tlds.account_fingerprint'));
         $intent="case when json_valid(domains_tlds.catalogue_intent) then domains_tlds.catalogue_intent else null end";
-        $extract="json_extract(p.catalogue_observation, '$.total')";
-        if(DB::getDriverName()!=='sqlite'){$extract='json_unquote('.$extract.')';}
+        $extract='p.wholesale';
         $q->select('domains_tlds.id','domains_tlds.server_id','domains_tlds.account_fingerprint','domains_tlds.tld')
             ->selectRaw('null as renew_cost,null as transfer_cost,null as high_cost,null as prices,null as read_at,1 as listed')
             ->selectRaw("case json_extract($intent, '$.sell') when true then 'sell' when false then 'skip' else null end as choice")
             ->selectRaw("json_extract($intent, '$.longest') as longest,json_extract($intent, '$.transfers') as transfer")
-            ->selectRaw(($costs?'cast('.$extract.' as decimal(18,4))':'null').' as register_cost');
+            ->selectRaw(($costs?'case when p.cost_enabled = 1 then cast('.$extract.' as decimal(18,4)) else null end':'null').' as register_cost');
         return OfferRow::query()->fromSub($q,'domains_offer_rows')->when($focus!==null,fn($q)=>$q->where('tld',$focus));
     }
     public function restorable(Tld $t): array
@@ -432,9 +431,9 @@ final class StaffCatalogue
             $bound=$rows->filter(fn($t)=>$t->catalogue_converted&&$t->account_fingerprint===$a->account_fingerprint&&$t->registrar_key===$a->registrar_key)->keyBy('tld');
             if($bound->isEmpty()){continue;}
             $saved=[];
-            foreach(DB::table('domains_prices')->where('server_id',$id)->whereIn('tld',$bound->keys()->all())->whereIn('term',array_unique([1,$years]))->where('currency','USD')
+            foreach(OfferState::query('domains_prices')->where('server_id',$id)->whereIn('tld',$bound->keys()->all())->whereIn('term',array_unique([1,$years]))->where('currency','USD')
                 ->where('account_fingerprint',$a->account_fingerprint)->where('registrar_key',$a->registrar_key)->orderBy('id')->get() as $p){
-                $cost=OfferState::savedCost($p->catalogue_observation);
+                $cost=OfferState::savedCost($p);
                 if($cost===null||$cost->action!==$p->action||$cost->term!==(int)$p->term){continue;}
                 $saved[(int)$bound[$p->tld]->id][$cost->key()]=$cost;
             }

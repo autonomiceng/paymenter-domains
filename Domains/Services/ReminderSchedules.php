@@ -35,7 +35,7 @@ final class ReminderSchedules
             $row=DB::table('domains_reminder_schedules')->where('server_id',$serverId)->lockForUpdate()->first();
             if($row){if($row->account_fingerprint!==$a->account_fingerprint){throw new \DomainException('Reminder account changed.');}return;}
             DB::table('domains_reminder_schedules')->insert(['server_id'=>$serverId,'account_fingerprint'=>$a->account_fingerprint,
-                'enabled'=>true,'before_days'=>'[1,7,30,60]','after_days'=>'[3]','audit'=>encrypt([])]);
+                'enabled'=>true,'before_days'=>'[1,7,30,60]','after_days'=>'[3]']);
         });
     }
     public static function save(User $actor,int $serverId,int $revision,bool $enabled,string $before,string $after,string $reason):void
@@ -49,17 +49,11 @@ final class ReminderSchedules
             $q=DB::table('domains_reminder_schedules')->where('server_id',$serverId);$old=(clone $q)->lockForUpdate()->first();
             if(!$old||$s->extension!=='Domains'||$old->account_fingerprint!==$account->account_fingerprint||(int)$old->revision!==$revision){throw new \DomainException('Reload the reminder schedule.');}
             if(self::storedDays($old->before_days)===null||self::storedDays($old->after_days)===null){throw new \DomainException('Reload the reminder schedule.');}
-            $audit=decrypt($old->audit);if(!is_array($audit)){throw new \DomainException('Reminder audit unavailable.');}
             $next=['enabled'=>$enabled,'before_days'=>json_encode($b),'after_days'=>json_encode($a)];
             $entry=['actor_id'=>(int)$u->id,'reason'=>$reason,'at'=>gmdate(DATE_ATOM),'revision'=>$revision+1,
                 'before'=>['enabled'=>(bool)$old->enabled,'before_days'=>$old->before_days,'after_days'=>$old->after_days],'after'=>$next];
-            if(count($audit)>=100||strlen(encrypt([...$audit,$entry]))>60000){
-                if(!$audit){throw new \DomainException('Reminder audit entry too large.');}
-                $json=json_encode(['through_revision'=>$revision,'rows'=>$audit],JSON_THROW_ON_ERROR);
-                AuditArchives::append((int)$s->id,'reminders',$json);$audit=[];
-            }
-            $audit[]=$entry;
-            $q->update([...$next,'revision'=>$revision+1,'audit'=>encrypt($audit)]);
+            AuditEvents::append((int)$s->id,'reminders',$entry);
+            $q->update([...$next,'revision'=>$revision+1]);
         });
     }
     /** Account turns and cursors commit before any mail work. Failure cannot pin the next account. */

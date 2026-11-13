@@ -118,29 +118,14 @@ final class StaffSettingsReview
     /** Independent recent windows: bulk syncs cannot evict staff saves. Never replay authority. */
     public static function historyRows(Server $s,bool $lock=false): array
     {
-        $global=[];foreach(array_reverse(AuditArchives::recent(0,'staff_settings',self::HISTORY_LIMIT,$lock)) as $batch){array_push($global,...self::decode($batch));}
+        $global=AuditEvents::recent(0,'staff_settings',self::HISTORY_LIMIT,$lock);
         $rows=[...$global,...self::historyWindow($s,self::KEY,'staff_settings',$lock),...self::historyWindow($s,self::SYNC_KEY,'catalogue_sync',$lock)];
         usort($rows,static fn(array $a,array $b)=>strtotime($a['at'])<=>strtotime($b['at']));
         return $rows;
     }
     private static function historyWindow(Server $s,string $key,string $family,bool $lock): array
     {
-        $query=$s->settings()->where('key',$key);if($lock){$query->lockForUpdate();}
-        $current=$query->first();$archive=AuditArchives::latest((int)$s->id,$family,$lock);
-        return array_slice([...($archive!==null?self::decode($archive):[]),...($current?self::batch($current):[])],-self::HISTORY_LIMIT);
-    }
-    private static function batch($setting): array
-    {
-        if(!$setting->encrypted){throw new \DomainException('Audit unavailable. Changes held.');}
-        return self::decode($setting->value);
-    }
-    private static function decode(string $json): array
-    {
-        try{$rows=json_decode($json,true,16,JSON_THROW_ON_ERROR);
-            if(!is_array($rows)||!array_is_list($rows)){throw new \DomainException;}
-            foreach($rows as $r){if(!is_array($r)||!is_string($r['key']??null)){throw new \DomainException;}}
-            return $rows;
-        }catch(\Throwable){throw new \DomainException('Audit unavailable. Changes held.');}
+        return AuditEvents::recent((int)$s->id,$family,self::HISTORY_LIMIT,$lock);
     }
     public function record(string $phase='completed',?array $outcome=null): void
     {
@@ -158,16 +143,7 @@ final class StaffSettingsReview
         if(DB::transactionLevel()!==1){throw new \LogicException('Outer audit transaction required.');}
         $sync=in_array($entry['action'],['catalogue_feed','catalogue_facts','catalogue_republish','catalogue_sync'],true)||($entry['phase']??null)==='catalogue_imported';
         $key=$sync?self::SYNC_KEY:self::KEY;$family=$sync?'catalogue_sync':'staff_settings';
-        $setting=$s->settings()->where('key',$key)->lockForUpdate()->first()??$s->settings()->make(['key'=>$key]);
-        $rows=$setting->exists?self::batch($setting):[];
-        $rows[]=$entry;
-        $json=json_encode($rows,JSON_THROW_ON_ERROR);
-        if(strlen(Crypt::encryptString($json))>64000){
-            $last=array_pop($rows);if(!$rows){throw new \DomainException('Audit entry too large. Changes held.');}
-            AuditArchives::append((int)$s->id,$family,json_encode($rows,JSON_THROW_ON_ERROR));
-            $json=json_encode([$last],JSON_THROW_ON_ERROR);if(strlen(Crypt::encryptString($json))>64000){throw new \DomainException('Audit entry too large. Changes held.');}
-        }
-        $setting->encrypted=true;$setting->type='string';$setting->value=$json;$setting->save();
+        AuditEvents::append((int)$s->id,$family,$entry);
     }
     private function state(int $server,?int $tld): array
     {

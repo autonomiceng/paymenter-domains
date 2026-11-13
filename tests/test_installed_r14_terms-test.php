@@ -15,7 +15,7 @@ DB::table('domains_observation_queues')->updateOrInsert(['server_id'=>$t->server
 $stale=new \Paymenter\Extensions\Servers\Domains\Catalogue\Cost('register',3,true,'18.0000',\Paymenter\Extensions\Servers\Domains\Data\CostUnit::TermTotal,'synthetic',$now->modify('-2 days'),$now->modify('-1 day'));
 $termPrice=DB::table('domains_prices')->where('server_id',$t->server_id)->where('action','register')->where('term',3)->first();
 $missing=new \Paymenter\Extensions\Servers\Domains\Catalogue\Cost('register',3,false,null,\Paymenter\Extensions\Servers\Domains\Data\CostUnit::TermTotal,'synthetic',$now,$now->modify('+1 day'));
-DB::table('domains_prices')->where('id',$termPrice->id)->update(['retail'=>null,'catalogue_observation'=>\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::json(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::encodeCost($missing))]);
+DB::table('domains_prices')->where('id',$termPrice->id)->update(['retail'=>null,...costColumns(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::json(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::encodeCost($missing)))]);
 $offer=(new StaffCatalogue($ports,$clock))->rows([\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$t->server_id)->sole())],$t->tld)->sole();
 // Mounting the actual native bulk action is required: the old test rendered the price partial alone.
 $page=Livewire::actingAs($actor)->test(WhatYouSell::class);$key=$page->instance()->getTableRecordKey($offer);
@@ -24,7 +24,7 @@ expect(str_contains($modal,'Missing'),'Fixture includes unpriced registrar term 
 foreach(['No saved registrar total for these terms.','Prices updated ','Next update ','Sync prices is an optional retry.']as$text){if(!str_contains($modal,$text)){$errors[]='Terms dialog lacks '.$text;}}
 if(str_contains($modal,'Sync prices to read these term totals')){$errors[]='Terms still requires a sync';}
 // Restore the saved amount with an expired cost and render the same native action again.
-DB::table('domains_prices')->where('id',$termPrice->id)->update(['retail'=>$termPrice->retail,'catalogue_observation'=>\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::json(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::encodeCost($stale))]);
+DB::table('domains_prices')->where('id',$termPrice->id)->update(['retail'=>$termPrice->retail,...costColumns(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::json(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::encodeCost($stale)))]);
 $stalePage=Livewire::actingAs($actor)->test(WhatYouSell::class);
 $stalePage->mountTableBulkAction('edit',[$key])->call('$refresh');$staleModal=$stalePage->effects['partials']['action-modals.0']??'';
 // The first year costs $6 and two renewals cost $8 each, above the saved three-year quote of $18.

@@ -17,10 +17,10 @@ same(CardFee::DEFAULT,CardFee::read(),'Large conflicting evidence does not block
 $parts=[];
 foreach(DB::table('domains_audit_archives')->where('server_id',0)->where('family','staff_settings')->orderBy('id')->get() as $batch){
     expect(strlen($batch->payload)<=64000,'Each encrypted batch fits retained storage');
-    foreach(json_decode(Crypt::decryptString($batch->payload),true,512,JSON_THROW_ON_ERROR) as $event){
-        $other=$event['before']['discarded'][0];same($source,$other['id'],'Every fragment keeps source identity');
-        $parts[$other['part']]=base64_decode($other['value_base64'],true);
-    }
+    expect($batch->event_key!==null,'Conflict fragments use retained event identities');
+    $event=json_decode(Crypt::decryptString($batch->payload),true,512,JSON_THROW_ON_ERROR);
+    $other=$event['before']['discarded'][0];same($source,$other['id'],'Every fragment keeps source identity');
+    $parts[$other['part']]=base64_decode($other['value_base64'],true);
 }
 ksort($parts);same($value,implode('',$parts),'Every conflicting source byte is retained');
 same(count($parts),count(StaffSettingsReview::historyRows($server)),'Staff history includes all recent conflict batches');

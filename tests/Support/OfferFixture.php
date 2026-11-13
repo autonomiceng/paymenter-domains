@@ -25,7 +25,7 @@ final class OfferFixture
                     if($price->action==='renew'&&(int)$price->term===1){$retained=$price->retail;}
                     if($price->wholesale===null||$price->fresh_until===null){continue;}
                     $cost=new Cost($price->action,(int)$price->term,true,OfferState::money($price->wholesale,4),CostUnit::TermTotal,$price->source,$price->observed_at->toDateTimeImmutable(),$price->fresh_until->toDateTimeImmutable());
-                    DB::table('domains_prices')->where('id',$price->id)->update(['catalogue_observation'=>OfferState::json(OfferState::encodeCost($cost))]);
+                    DB::table('domains_prices')->where('id',$price->id)->update([...costColumns(OfferState::json(OfferState::encodeCost($cost)))]);
                 }
                 $intent=new Intent(defaultSell:false,sell:$terms!==[],longest:$terms?max($terms):null,transfers:$transfers,
                     stops:$tld->enabled?[]:['register','renew','transfer']);

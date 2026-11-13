@@ -15,7 +15,7 @@ $u=staffUser($permissions);Auth::setUser($u);$writer=new StaffSettingsWrites($na
 $review=static fn(string $action,?int $tld)=>new Review($u->id,$t->server_id,$tld,$action,Review::ticket($u->id,$t->server_id,$tld,$action,Review::stamp($t->server_id,$tld)),'Update prices for these TLDs');
 $fee=static fn(string $percent,string $fixed)=>pricingForm(fee:['percent'=>$percent,'fixed'=>$fixed]);
 $saved=static fn()=>collect(Review::historyRows(App\Models\Server::findOrFail($t->server_id)))->where('phase','completed')->last();
-$rows=static fn()=>Price::where('server_id',$t->server_id)->orderBy('id')->get()->map(fn($p)=>[$p->id,$p->revision,$p->retail,$p->catalogue_observation])->all();
+$rows=static fn()=>Price::where('server_id',$t->server_id)->orderBy('id')->get()->map(fn($p)=>[$p->id,$p->revision,$p->retail,costEvidence($p)])->all();
 same(['percent'=>'2.90','fixed'=>'0.30'],CardFee::read(),'Default card fee');
 $oldRule=Pricing::rule($t);$before=$rows();
 same(['published'=>0,'failed'=>[],'skipped'=>[]],$writer->run(pricingReview($u->id),$fee('3.10','0.40'),$now),'Changing fee does not publish ordinary modes');
@@ -67,10 +67,10 @@ same(['published'=>2,'failed'=>[],'skipped'=>[]],$writer->run(pricingReview($u->
 commerceReject(fn()=>$prices->current($t->server_id,$t->account_fingerprint,'com','register',1,'USD',$later));
 same($now->format('Y-m-d H:i:s'),Price::where(['server_id'=>$t->server_id,'tld'=>'com','action'=>'register','term'=>1])->sole()->observed_at->format('Y-m-d H:i:s'),'Card-fee republication never refreshes the saved cost');
 // Missing annual cost still blocks publication without undoing the saved fee.
-$renewal=Price::where(['server_id'=>$t->server_id,'tld'=>'com','action'=>'renew'])->sole();$cost=$renewal->catalogue_observation;$renewal->update(['catalogue_observation'=>null,'revision'=>$renewal->revision+1]);$before=$rows();
+$renewal=Price::where(['server_id'=>$t->server_id,'tld'=>'com','action'=>'renew'])->sole();$cost=costEvidence($renewal);$renewal->update([...costColumns(null),'revision'=>$renewal->revision+1]);$before=$rows();
 same(['published'=>1,'failed'=>['Synthetic #'.$t->server_id=>['.com']],'skipped'=>[]],$writer->run(pricingReview($u->id),$fee('22','2'),$later),'Follower missing annual cost reports its name');
 same(['percent'=>'22.00','fixed'=>'2.00'],CardFee::read(),'Fee still commits when publication cost is missing');same($before,$rows(),'Failed publication retains every old revision');
-$renewal->update(['catalogue_observation'=>$cost,'revision'=>$renewal->revision+1]);
+$renewal->update([...costColumns($cost),'revision'=>$renewal->revision+1]);
 // Register a real postcommit race on the matching fee save, after the completed audit and before fanout.
 $server=App\Models\Server::findOrFail($t->server_id);$default=\Paymenter\Extensions\Servers\Domains\Services\BusinessSetting::row('domains_pricing_default_rule')->value;
 $pending=true;$raced=false;

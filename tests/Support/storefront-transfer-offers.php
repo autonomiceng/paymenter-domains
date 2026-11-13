@@ -92,18 +92,18 @@ $parity(false, 'Registration-only policy');
 DB::table('domains_sales_policies')->where('tld', 'com')->update(['transfer_enabled' => true]);
 foreach (['transfer', 'renew'] as $action) {
     $pricesBefore=DB::table('domains_prices')->where('server_id',$tlds[0]->server_id)->where('action',$action)->get();
-    foreach($pricesBefore as $row){$cost=Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($row->catalogue_observation);$change=$action==='renew'?['enabled'=>false,'total'=>null]:['total'=>'999.0000'];DB::table('domains_prices')->where('id',$row->id)->update(['catalogue_observation'=>json_encode([...$cost,...$change])]);}
+    foreach($pricesBefore as $row){$cost=Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode(costEvidence($row));$change=$action==='renew'?['enabled'=>false,'total'=>null]:['total'=>'999.0000'];DB::table('domains_prices')->where('id',$row->id)->update([...costColumns(json_encode([...$cost,...$change]))]);}
     $parity(false, 'Held '.$action.' price');
-    foreach($pricesBefore as $row){DB::table('domains_prices')->where('id',$row->id)->update(['catalogue_observation'=>$row->catalogue_observation]);}
+    foreach($pricesBefore as $row){DB::table('domains_prices')->where('id',$row->id)->update([...costColumns(costEvidence($row))]);}
 }
 // A below-cost retained annual renewal stays billable; an unavailable annual path above still closes new transfers.
 $renewalRow=DB::table('domains_prices')->where('server_id',$tlds[0]->server_id)->where('action','renew')->sole();
-$renewalCost=Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($renewalRow->catalogue_observation);
-DB::table('domains_prices')->where('id',$renewalRow->id)->update(['catalogue_observation'=>json_encode([...$renewalCost,'total'=>'999.0000'])]);
+$renewalCost=Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode(costEvidence($renewalRow));
+DB::table('domains_prices')->where('id',$renewalRow->id)->update([...costColumns(json_encode([...$renewalCost,'total'=>'999.0000']))]);
 $parity(true,'Retained renewal below cost');
 $renewalBinding=Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$tlds[0]->server_id)->sole());
 same('below_cost',$caps->holder($renewalBinding,'com')->staffAlert,'Retained renewal margin keeps its staff alert');
-DB::table('domains_prices')->where('id',$renewalRow->id)->update(['catalogue_observation'=>$renewalRow->catalogue_observation]);
+DB::table('domains_prices')->where('id',$renewalRow->id)->update([...costColumns(costEvidence($renewalRow))]);
 // A failing earlier candidate must not hide a later valid offer.
 DB::table('domains_sales_policies')->insert(['tld' => 'aaa', 'transfer_enabled' => true]);
 $parity(true, 'Unavailable earlier seller');

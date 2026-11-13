@@ -65,7 +65,7 @@ function assertInstalledUpgradeAudit(): void
     $row=DB::table('domains_audit_archives')->where('family','staff_settings')->first();
     if(!$row){return;} // A baseline predating staff storage has no archive to retain.
     $json=AuditArchives::latest($row->server_id,'staff_settings');
-    $archive=json_decode($json,true,512,JSON_THROW_ON_ERROR);
+    $archive=array_values(array_filter(json_decode($json,true,512,JSON_THROW_ON_ERROR),static fn($event)=>($event['key']??null)==='synthetic-retained-upgrade'));
     same('synthetic-retained-upgrade',$archive[0]['key'],'Retained archive decrypts through upgraded code');
     same('Synthetic retained archive review',$archive[0]['reason'],'Retained archive keeps its staff reason');
     same('2026-10-22T12:00:00+00:00',$archive[0]['at'],'Retained archive keeps its UTC time');

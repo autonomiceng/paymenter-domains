@@ -371,7 +371,7 @@ final class SettingsActions
         $waiting=$followers->filter(function(Tld $t)use($now,$prices){
             $rows=$prices->get($t->server_id.':'.$t->registrar_key.':'.$t->account_fingerprint.':'.$t->tld,collect());
             if($rows->isEmpty()){return true;}
-            foreach($rows as $row){try{if($row->catalogue_observation===null||!\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::cost(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($row->catalogue_observation))->fresh($now)){return true;}}catch(\Throwable){return true;}}
+            foreach($rows as $row){try{if($row->cost_enabled===null||!\Paymenter\Extensions\Servers\Domains\Catalogue\CurrentCost::read($row)->fresh($now)){return true;}}catch(\Throwable){return true;}}
             return false;
         });
         return ['default'=>$followers->count(),'own'=>$tlds->count()-$followers->count(),'waiting'=>$waiting->pluck('tld')->unique()->values()->all(),'off'=>$off->values()->all()];

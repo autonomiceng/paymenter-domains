@@ -16,7 +16,10 @@ Paymenter\Extensions\Servers\Domains\Models\Account::withVerifiedBindingWrite(st
 // so the native migrator actually upgrades the existing account and preserves saved choices.
 $upgradePaths=glob(dirname(__DIR__,2).'/Domains/database/migrations/2026_11_01_000047_preserve_reminder_defaults.php');
 if($upgradePaths!==[]){DB::table('migrations')->where('migration','2026_11_01_000047_preserve_reminder_defaults')->delete();}
-app(Illuminate\Database\Migrations\Migrator::class)->run($upgradePaths,['force'=>true]);
+$legacyAudit=legacyReminderAuditColumn();
+try{app(Illuminate\Database\Migrations\Migrator::class)->run($upgradePaths,['force'=>true]);}finally{
+    if($legacyAudit){Illuminate\Support\Facades\Schema::table('domains_reminder_schedules',static fn($t)=>$t->dropColumn('audit'));}
+}
 ReminderSchedules::enroll($legacyServerId);
 same(false,(bool)DB::table('domains_reminder_schedules')->where('server_id',$legacyServerId)->value('enabled'),'Existing account without a schedule remains Off after upgrade and worker enrollment');
 foreach($customSchedules as $saved){same($saved,(array)DB::table('domains_reminder_schedules')->where('server_id',$saved['server_id'])->sole(),'Upgrade preserves saved On, Off and custom days');}

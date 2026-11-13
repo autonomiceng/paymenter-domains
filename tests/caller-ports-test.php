@@ -77,7 +77,7 @@ DB::table('domains_sales_policies')->where('tld', 'com')->update(['server_id' =>
     'registrar_key' => $n->registrarKey, 'account_fingerprint' => $n->fingerprint, 'register_enabled' => false, 'transfer_enabled' => false]);
 DB::table('domains_tlds')->where('id', $tlds[0]->id)->update(['catalogue_intent' => OfferState::json(new Intent(sell: false)),
     'catalogue_facts' => null, 'catalogue_published_revision' => null]);
-DB::table('domains_prices')->where('server_id', $b->serverId)->update(['catalogue_observation' => null]);
+DB::table('domains_prices')->where('server_id', $b->serverId)->update([...costColumns(null)]);
 Server::whereKey($b->serverId)->update(['enabled' => false]); $feature = false;
 DB::transaction(function () use ($ports, $holder): void {
     $loaded = $ports->loadBatch([$holder], Context::Holder, true)[0][0]; $retained = $loaded->renewal();

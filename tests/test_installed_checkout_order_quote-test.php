@@ -13,11 +13,11 @@ $cart = commerceCart($user);
 $first = commerceAdd($cart, $product, 'first-line-placeholder.com');
 $second = commerceAdd($cart, $product, 'second-line-placeholder.com');
 foreach ($original as $row) {
-    $cost = json_decode($row['catalogue_observation'], true);
+    $cost = json_decode(costEvidence((object)$row), true);
     $cost['source'] = 'enom_bulk_bucket_'.($row['term'] === 3 ? 2 : 1);
     $cost['observed_at'] = $now->modify('-49 hours')->format(DATE_ATOM);
     $cost['fresh_until'] = $now->modify('-1 hour')->format(DATE_ATOM);
-    DB::table('domains_prices')->where('id', $row['id'])->update(['catalogue_observation' => json_encode($cost)]);
+    DB::table('domains_prices')->where('id', $row['id'])->update([...costColumns(json_encode($cost))]);
 }
 $batch = new \Paymenter\Extensions\Servers\Domains\Services\CheckoutRefreshBudget;
 $offers->checkoutSelection('first-line-placeholder.com', 'com', 'register', 1, null, $batch, $binding->serverId, $binding->fingerprint);
@@ -45,7 +45,7 @@ $q = new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding, ['com']
 $revision = fn () => $publication->readOffers($q, \Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision;
 $costs = [];
 foreach ($original as $row) {
-    $cost = json_decode($row['catalogue_observation'], true);
+    $cost = json_decode(costEvidence((object)$row), true);
     $cost['source'] = 'enom_bulk_bucket_'.($row['term'] === 3 ? 2 : 1);
     $cost['observed_at'] = $clock->now()->format(DATE_ATOM);
     $cost['fresh_until'] = $clock->now()->modify('+48 hours')->format(DATE_ATOM);

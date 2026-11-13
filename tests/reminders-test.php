@@ -53,11 +53,11 @@ same($before,$siblings->map(fn($row)=>$row->fresh()->getAttributes())->all(),'Ot
 
 $row=DB::table('domains_reminder_schedules')->where('server_id',$d->server_id)->first();ReminderSchedules::enroll((int)$d->server_id);
 same((array)$row,(array)DB::table('domains_reminder_schedules')->where('server_id',$d->server_id)->first(),'Custom schedule survives upgrade');
-same(1,count(decrypt($row->audit)),'Schedule change has retained actor/reason/before/after audit');
+same(1,count(\Paymenter\Extensions\Servers\Domains\Services\AuditEvents::recent($d->server_id,'reminders')),'Schedule change has retained actor/reason/before/after audit');
 commerceReject(fn()=>ReminderSchedules::save($staff,(int)$d->server_id,1,true,'7','3','test_stale'));
 foreach([str_repeat('é',4),str_repeat('é',501),"valid\xff"] as $bad){commerceReject(fn()=>ReminderSchedules::save($staff,(int)$d->server_id,$row->revision,true,'7','3',$bad));}
 ReminderSchedules::save($staff,(int)$d->server_id,$row->revision,true,'7','3',str_repeat('🦦',500));
-$unicodeRow=DB::table('domains_reminder_schedules')->where('server_id',$d->server_id)->first();$unicodeAudit=decrypt($unicodeRow->audit);same(str_repeat('🦦',500),end($unicodeAudit)['reason'],'Schedule accepts 500 Unicode characters');
+$unicodeRow=DB::table('domains_reminder_schedules')->where('server_id',$d->server_id)->first();$unicodeAudit=\Paymenter\Extensions\Servers\Domains\Services\AuditEvents::recent($d->server_id,'reminders');same(str_repeat('🦦',500),end($unicodeAudit)['reason'],'Schedule accepts 500 Unicode characters');
 commerceReject(fn()=>ReminderSchedules::offsets('bogus,7'));ReminderSchema::install();ReminderSchema::verify();
 // Unknowns and missing/held obligations create staff alerts without a customer guess.
 foreach(['expiry','cost','price','held','missing'] as $case){
@@ -65,7 +65,7 @@ foreach(['expiry','cost','price','held','missing'] as $case){
     if($case==='expiry'){$x->update(['provider_expires_at'=>null]);}
     if($case==='held'){$renew->update(['state'=>'held']);}
     $rate=Price::where('server_id',$x->server_id)->where('action','renew')->sole();$original=$rate->getAttributes();$tld=\Paymenter\Extensions\Servers\Domains\Models\Tld::where(['server_id'=>$x->server_id,'tld'=>$x->tld])->sole();$retained=$tld->getRawOriginal('catalogue_retained_annual_retail');
-    if($case==='cost'){$rate->update(['revision'=>$rate->revision+1,'catalogue_observation'=>null]);}if($case==='price'){$tld->update(['catalogue_retained_annual_retail'=>null]);}
+    if($case==='cost'){$rate->update(['revision'=>$rate->revision+1,...costColumns(null)]);}if($case==='price'){$tld->update(['catalogue_retained_annual_retail'=>null]);}
     $before=Mail::queued(DomainNotice::class)->count();same(in_array($case,['cost','price'],true),$reminders->remind((int)$x->id),'Known issued invoice is independent of current quote/cost: '.$case);
     same($before+(in_array($case,['cost','price'],true)?1:0),Mail::queued(DomainNotice::class)->count(),'No customer guess for '.$case);
     $code=['expiry'=>'unknown_expiry','cost'=>'unknown_cost','price'=>'unknown_price','held'=>'held_obligation','missing'=>'missing_obligation'][$case];

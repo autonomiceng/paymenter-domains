@@ -24,9 +24,9 @@ same([1,1],[substr_count($seen,'Invalid fixed price rule'),substr_count($seen,'R
 // Disabled feed entries and malformed rules coexist in saved native accounts.
 DB::table('domains_tlds')->where('id',$t->id)->update(['tld'=>'com']);
 foreach(DB::table('domains_prices')->where('server_id',$t->server_id)->where('tld','com')->get() as $price){
-    $cost=json_decode($price->catalogue_observation,true,flags:JSON_THROW_ON_ERROR);
+    $cost=json_decode(costEvidence($price),true,flags:JSON_THROW_ON_ERROR);
     $cost['enabled']=false;$cost['total']=null;
-    DB::table('domains_prices')->where('id',$price->id)->update(['catalogue_observation'=>json_encode($cost,JSON_THROW_ON_ERROR)]);
+    DB::table('domains_prices')->where('id',$price->id)->update([...costColumns(json_encode($cost,JSON_THROW_ON_ERROR))]);
 }
 $problem='Invalid fixed price rule. Use Edit prices to enter all three positive prices.';
 Livewire\Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->assertSee($problem);

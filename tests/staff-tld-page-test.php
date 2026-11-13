@@ -91,13 +91,13 @@ foreach(['For sale','Change registrar','More','Sales','Registrar for new orders'
     'Prices by registrar account','Edit prices','Account','Pricing','Registration','Renewal','Transfer','Default pricing','New orders','History'] as $see){$page->assertSee($see);}
 // Current fixture publication leaves real history; separately arrange an empty retained window.
 expect(TldFacts::history((int)$enom->server_id,(int)$enom->id)!==[],'Published fixture has catalogue history');
-$auditQuery=DB::table('settings')->where('settingable_type',(new App\Models\Server)->getMorphClass())->where('settingable_id',$enom->server_id)->whereIn('key',[Review::KEY,Review::KEY.'.catalogue']);
-$auditBytes=(clone $auditQuery)->get(['id','value']);
+$auditQuery=DB::table('domains_audit_archives')->where('server_id',$enom->server_id);
+$auditBytes=(clone $auditQuery)->get()->map(fn($r)=>(array)$r)->all();
 try{
-    $auditQuery->update(['value'=>Illuminate\Support\Facades\Crypt::encryptString('[]')]);
+    $auditQuery->delete();
     same([],TldFacts::history((int)$enom->server_id,(int)$enom->id),'Empty history fixture contains no events');
     Livewire::actingAs($u)->test(ViewTld::class,['record'=>$enom->id])->assertSee('No changes yet');
-}finally{foreach($auditBytes as $saved){DB::table('settings')->where('id',$saved->id)->update(['value'=>$saved->value]);}}
+}finally{DB::table('domains_audit_archives')->insert($auditBytes);}
 $plain=$text($page->html());
 expect(!str_contains($plain,'grace')&&!str_contains($plain,'Redemption'),'The TLD page asks staff nothing about grace or redemption');
 expect(str_contains($plain,'OFFLINE DEMO NameSilo (synthetic) Demo'),'Prices table: Demo tag after the demo account');

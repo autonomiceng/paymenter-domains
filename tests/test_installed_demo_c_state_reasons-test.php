@@ -17,7 +17,7 @@ $failures=[];$case=static function(string $name,Closure $check)use(&$failures):v
 $case('B01 disabled renewal',function()use($t,$now){
     $p=Price::where('server_id',$t->server_id)->where('action','renew')->firstOrFail();$saved=$p->getAttributes();
     $cost=new Cost('renew',1,false,null,CostUnit::TermTotal,'synthetic',$now,$now->modify('+1 day'));
-    DB::table('domains_prices')->where('id',$p->id)->update(['catalogue_observation'=>OfferState::json(OfferState::encodeCost($cost))]);
+    DB::table('domains_prices')->where('id',$p->id)->update([...costColumns(OfferState::json(OfferState::encodeCost($cost)))]);
     DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_retained_annual_retail'=>null]);
     $list=Livewire::actingAs(auth()->user())->test(ListTlds::class)->instance();$column=$list->getTable()->getColumn('renewal')->record($t->fresh());
     same('Renewal not offered by this registrar',$column->getState(),'Disabled is not Missing');same(null,$column->getColor($column->getState()),'Disabled is quiet');

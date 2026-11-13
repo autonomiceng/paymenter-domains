@@ -3,6 +3,7 @@
 declare(strict_types=1);
 require_once __DIR__.'/Support/default-rule.php';
 require_once __DIR__.'/Support/render-artifacts.php';
+require_once __DIR__.'/Support/catalogue-columns.php';
 
 spl_autoload_register(static function (string $name): void {
     $prefix = 'Paymenter\\Extensions\\Servers\\Domains\\';

@@ -72,7 +72,7 @@ $preview=collect((new \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatal
 same(['register1','register3','renew1','transfer1'],$preview->keys()->all(),'Aged preview retains every observed sold term');
 same(['7.50','26.50','10.40','8.50'],$preview->pluck('new')->all(),'Aged preview shows exact publication prices, preserving retained annual renewal');
 foreach($rows($t->fresh()) as $p){
-    $observation=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::cost(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($p->catalogue_observation));
+    $observation=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::cost(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode(costEvidence($p)));
     expect($observation->freshUntil<=$clock->now(),'Saved cost has expired at the composed clock');
 }
 expect($preview->every(fn($r)=>!$r['synced']),'Preview marks every retained cost out of date');
@@ -120,7 +120,7 @@ same($before,array_map(fn(Price $p)=>$p->revision,$rows($t->fresh())),'Denied sa
 same($default,(new PricingRules)->defaultRule(),'Denied default save changes nothing');
 Auth::setUser($u);
 // Staff may save pending intent without renewal cost; that intent cannot authorize a sale.
-$renew=$rows($t->fresh())['renew1'];$cost=$renew->getRawOriginal('catalogue_observation');Price::whereKey($renew->id)->update(['catalogue_observation'=>null]);
+$renew=$rows($t->fresh())['renew1'];$cost=costEvidence($renew);Price::whereKey($renew->id)->update([...costColumns(null)]);
 $beforeMissing=array_map(fn(Price $p)=>[$p->revision,$p->retail],$rows($t->fresh()));
 $pending=$writer->run($review('override',$t->id),$fields($low),$now);
 same([], $pending['failed'],'Missing cost does not block recording pending staff intent');
@@ -134,7 +134,7 @@ $missingBinding=$bindings::binding(\Paymenter\Extensions\Servers\Domains\Models\
 foreach(['register','transfer'] as $action){
     commerceReject(fn()=>$ports->loadBatch([new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($missingBinding,['com'],$action)],\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Public)[0][0]->price());
 }
-Price::whereKey($renew->id)->update(['catalogue_observation'=>$cost]);
+Price::whereKey($renew->id)->update([...costColumns($cost)]);
 // Only TLDs on this account follow its default, and a TLD that switches to its own prices meanwhile is left alone.
 // A TLD left over from an earlier account binding.
 $org=Tld::create(['server_id'=>$t->server_id,'registrar_key'=>$t->registrar_key,'account_fingerprint'=>$t->account_fingerprint,'tld'=>'org','enabled'=>true,'min_years'=>1,'max_years'=>1,'catalogue_converted'=>true,'registry_fields'=>[],'catalogue_intent'=>'{"pricing_rule":null}']);
@@ -154,8 +154,8 @@ same(['published'=>0,'failed'=>[],'skipped'=>[]],$empty,'No followers changes on
 $history=Review::historyRows(App\Models\Server::findOrFail($t->server_id));same($empty,end($history)['outcome'],'Empty publication outcome is retained');
 // Losing the final audit cannot undo the already committed default and follower publication.
 $setFixtureRule($t->fresh(),null);$auditWrites=0;$failAudit=true;
-App\Models\Setting::saving(static function($setting)use(&$auditWrites,&$failAudit):void{
-    if($failAudit&&$setting->key===Review::KEY&&++$auditWrites===3){throw new RuntimeException('Synthetic outcome audit failure');}
+Illuminate\Support\Facades\DB::listen(static function($query)use(&$auditWrites,&$failAudit):void{
+    if($failAudit&&str_starts_with($query->sql,'insert into')&&str_contains($query->sql,'domains_audit_archives')&&in_array('staff_settings',$query->bindings,true)&&++$auditWrites===3){throw new RuntimeException('Synthetic outcome audit failure');}
 });
 $before=array_map(fn(Price $p)=>$p->revision,$rows($t->fresh()));
 $failedAudit=$writer->run(pricingReview($u->id),pricingForm(['mode'=>'markup_percent','markup'=>'30','round_up'=>'none']),$now);$failAudit=false;
@@ -181,11 +181,11 @@ same('35.00',(new PricingRules)->defaultRule()['markup'],'Staff warning leaves t
 // One save covers every account. Each publishes alone, a failure names its account, and saving again publishes what it missed.
 $other=$tlds[1];$otherServer=App\Models\Server::findOrFail($other->server_id);$otherServer->update(['name'=>'Second account']);
 $setFixtureRule($other->fresh(),null);$revisions=static fn(Tld $tld)=>array_map(fn(Price $p)=>$p->revision,$rows($tld->fresh()));
-$missing=$rows($t->fresh())['renew1'];$cost=$missing->getRawOriginal('catalogue_observation');Price::whereKey($missing->id)->update(['catalogue_observation'=>null]);
+$missing=$rows($t->fresh())['renew1'];$cost=costEvidence($missing);Price::whereKey($missing->id)->update([...costColumns(null)]);
 $before=$revisions($other);$form=pricingForm(['mode'=>'markup_percent','markup'=>'45','round_up'=>'none']);
 same(['published'=>1,'failed'=>['Synthetic #'.$t->server_id=>['.com']],'skipped'=>[]],$writer->run(pricingReview($u->id),$form,$now),'A failed account is named and the other still publishes');
 foreach($revisions($other) as $key=>$revision){same($before[$key]+1,$revision,'The other account published');}
-Price::whereKey($missing->id)->update(['catalogue_observation'=>$cost]);$before=$revisions($other);
+Price::whereKey($missing->id)->update([...costColumns($cost)]);$before=$revisions($other);
 same(['published'=>1,'failed'=>[],'skipped'=>[]],$writer->run(pricingReview($u->id),$form,$now),'Saving again publishes only the account that missed out');
 same($before,$revisions($other),'An account already on the rule is left alone');
 same('8.70',$prices->current($t->server_id,$t->account_fingerprint,'com','register',1,'USD',$now)->retail,'Saving again repaired the failed account');
@@ -220,9 +220,9 @@ same(['published'=>1,'failed'=>[],'skipped'=>[]],$writer->run(pricingReview($u->
 foreach($revisions($other) as $key=>$revision){same($before[$key]+1,$revision,'Own card-fee TLD republished');}
 same($held,$revisions($t),'A fee change leaves a percentage default alone');
 // A fee change it can't follow is named, not counted as unchanged, and saving again once the cost is back moves it.
-$gap=$rows($other->fresh())['renew1'];$cost=$gap->getRawOriginal('catalogue_observation');Price::whereKey($gap->id)->update(['catalogue_observation'=>null]);$before=$revisions($other);$form=pricingForm(['fee_percent'=>'3.50']);
+$gap=$rows($other->fresh())['renew1'];$cost=costEvidence($gap);Price::whereKey($gap->id)->update([...costColumns(null)]);$before=$revisions($other);$form=pricingForm(['fee_percent'=>'3.50']);
 same(['published'=>0,'failed'=>['Second account #'.$other->server_id=>['.com']],'skipped'=>[]],$writer->run(pricingReview($u->id),$form,$now),'Own card-fee TLD with a missing cost is named');
-same($before,$revisions($other),'A missing cost keeps the old prices');Price::whereKey($gap->id)->update(['catalogue_observation'=>$cost]);
+same($before,$revisions($other),'A missing cost keeps the old prices');Price::whereKey($gap->id)->update([...costColumns($cost)]);
 same(['published'=>1,'failed'=>[],'skipped'=>[]],$writer->run(pricingReview($u->id),$form,$now),'Saving again publishes once the cost is back');
 foreach($revisions($other) as $key=>$revision){same($before[$key]+1,$revision,'Own card-fee TLD caught up');}$before=$revisions($other);
 same(['published'=>0,'failed'=>[],'skipped'=>[]],$writer->run(pricingReview($u->id),$form,$now),'Once caught up it is unchanged');same($before,$revisions($other),'Unchanged prices stay');

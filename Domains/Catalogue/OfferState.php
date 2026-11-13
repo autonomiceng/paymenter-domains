@@ -104,10 +104,10 @@ final class OfferState
     }
     /** A saved cost, or null when there is none or it can't be read. Writers skip a damaged one, so its offer stays
      * closed while the other saved costs publish. A price sync replaces it. */
-    public static function savedCost(mixed $observation): ?Cost
+    public static function savedCost(?object $observation): ?Cost
     {
         if ($observation === null) { return null; }
-        try { return self::cost(self::decode($observation)); } catch (\Throwable) { return null; }
+        try { return CurrentCost::read($observation); } catch (\Throwable) { return null; }
     }
     public static function encodeCost(Cost $c): array
     {
@@ -197,8 +197,8 @@ final class OfferState
         $costs = $retail = [];
         $freshness ??= \Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness::forAccount($binding->serverId);
         foreach ($prices as $p) {
-            if ($p->catalogue_observation === null || $p->currency !== 'USD') { continue; }
-            $c = $freshness->cost(self::cost(self::decode($p->catalogue_observation))); $costs[] = $c;
+            if ($p->cost_enabled === null || $p->currency !== 'USD') { continue; }
+            $c = $freshness->cost(CurrentCost::read($p)); $costs[] = $c;
             if ($p->retail !== null) { $retail[$c->key()] = OfferState::money($p->retail, 2) ?? throw new \DomainException('Invalid published retail.'); }
         }
         $revision = self::revision($tld, $defaults, $policy);
