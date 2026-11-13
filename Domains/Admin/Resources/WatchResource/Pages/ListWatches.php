@@ -23,10 +23,10 @@ class ListWatches extends ListRecords
     protected ?bool $expiryCapped=null;
     /** Request-scoped scans keyed by interval and incoming query, including filter bindings. */
     protected array $expiryScans=[];
-    public function getTitle(): string{return 'Domain monitoring';}
+    public function getTitle(): string{return 'Monitored domains';}
     public function getBreadcrumbs(): array{return [];}
     public function getSubheading(): ?string{return null;}
-    public function getSubNavigation(): array{return StaffTabs::monitoring('Monitored domains');}
+    public function getSubNavigation(): array{return StaffTabs::domains('Monitored domains');}
     /** Request-scoped maintenance notice; false until read. */
     protected array|false|null $notice=false;
     protected array $failedFamilies=[];

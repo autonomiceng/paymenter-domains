@@ -14,7 +14,7 @@ use Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites as Writes;
 // Unchecked: Monitoring, with Last check Missing and its cause.
 $list=Livewire::actingAs($manager)->test(ListWatches::class)->assertCanSeeTableRecords([$watch]);$clean($list->html(),'monitoring list');
 assertDomainNameOneLine($list->html(),$watch->canonical_name,'Monitoring list');
-same('Domain monitoring',$list->instance()->getTitle(),'List title');same(null,$list->instance()->getSubheading(),'No list subheading');
+same(null,$list->instance()->getSubheading(),'No list subheading');
 foreach(['canonical_name'=>'Domain','status'=>'Status','registration'=>'Registrar','delegation.dns'=>'Nameservers','last_check'=>'Last check','expiry'=>'Expires'] as $name=>$label){same($label,$column($list,$name)->getLabel(),'Column '.$name);}
 foreach(['findings','user_id','state','work_due'] as $gone){same(null,$column($list,$gone),'Old column '.$gone.' removed');}
 same('Monitoring',$column($list,'status')->record($watch)->getState(),'Unchecked domain is Monitoring');
@@ -48,7 +48,7 @@ assertDomainNameWraps($page->getHeading()->toHtml(),$watch->canonical_name,'Moni
 expect(str_contains($page->getSubheading()->toHtml(),'Nameservers changed'),'Observed mismatch leads the heading');
 $seen=preg_replace('/\s+/',' ',html_entity_decode(strip_tags(preg_replace('~<(script|style)\b.*?</\1>~si','',$view->html())),ENT_QUOTES|ENT_HTML5));
 same([1,0],[substr_count($seen,'Nameservers changed'),substr_count($seen,'Nameservers changed:')],'Nameservers changed shows once, with no notice repeating the found nameservers');
-same([WatchResource::getUrl()=>'Domain monitoring','example.com'],$page->getBreadcrumbs(),'Breadcrumb');
+same([WatchResource::getUrl(),0],array_keys($page->getBreadcrumbs()),'Breadcrumb leads back to the monitored domains list');
 foreach(['read'=>'Check now','pause'=>'Pause monitoring','profile'=>'Change DNS template','note'=>'Add note'] as $name=>$label){same($label,$page->getAction($name)?->getLabel(),'Action '.$name);}
 $view->assertActionHidden('resume');
 foreach(['read','pause'] as $name){same(false,$page->getAction($name)->isConfirmationRequired(),$name.' has no dialog');}

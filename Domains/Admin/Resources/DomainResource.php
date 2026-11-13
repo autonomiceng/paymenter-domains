@@ -22,8 +22,8 @@ class DomainResource extends Resource
     protected static string|\UnitEnum|null $navigationGroup = 'Domains';
     protected static ?string $navigationLabel = 'Domains';
     protected static ?int $navigationSort = 1;
-    /** The menu item stays marked on DNS templates, its tab. */
-    public static function getNavigationItemActiveRoutePattern(): string|array { return [static::getRouteBaseName().'.*',RoutingProfileResource::getRouteBaseName().'.*']; }
+    /** The menu item stays marked on every tab of the Domains area (StaffTabs::domains) and the pages under them. */
+    public static function getNavigationItemActiveRoutePattern(): string|array { return [static::getRouteBaseName().'.*',RoutingProfileResource::getRouteBaseName().'.*',WatchResource::getRouteBaseName().'.*']; }
     protected static ?string $modelLabel = 'domain';
     protected static ?string $pluralModelLabel = 'domains';
     protected static ?string $breadcrumb = 'Domains';

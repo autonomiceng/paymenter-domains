@@ -15,17 +15,19 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\{DefaultNameservers,HelpH
 use Paymenter\Extensions\Servers\Domains\Dns\DohEndpoint;
 use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
 use Paymenter\Extensions\Servers\Domains\Services\DnsResolverSettings;
-/** Domain monitoring > Settings: the DNS resolver monitoring checks use. Settings live in native encrypted settings.
+/** Domains > Monitoring settings: the DNS resolver monitoring checks use. Settings live in native encrypted settings.
  * The default nameservers are shown here and changed in Domains > DNS templates. */
 class MonitoringSettings extends Page
 {
     protected static string $resource=WatchResource::class;
-    protected static ?string $title='Domain monitoring';
-    protected static ?string $breadcrumb='Settings';
+    protected static ?string $title='Monitoring settings';
+    protected static ?string $breadcrumb='Monitoring settings';
     protected Width|string|null $maxContentWidth=Sheet::WIDTH;
     public static function canAccess(array $parameters=[]): bool{return Staff::can(PublicSuffixList::VIEW);}
     public function mount(): void{abort_unless(self::canAccess(),403);}
-    public function getSubNavigation(): array{return StaffTabs::monitoring('Settings');}
+    public function getSubNavigation(): array{return StaffTabs::domains('Monitoring settings');}
+    /** A tab of the Domains area, so no breadcrumb, like the other tabs. */
+    public function getBreadcrumbs(): array{return [];}
     private static function requireManage(): void{abort_unless(self::canAccess()&&Staff::can(PublicSuffixList::MANAGE),403);}
     /** One resolver form: in the header once a resolver is saved, otherwise as the fix beside Missing. */
     private function edit(string $name): Action

@@ -79,7 +79,7 @@ $failed=array_map(fn($n)=>WatchName::find($w[$n]),['registry-failed','partly-che
 foreach($failed as $row){same('Check failed',$column->record($records[$row->id])->getState(),'Saved failed check reads Check failed for '.$row->canonical_name);}
 Livewire::actingAs($viewer)->test(ListWatches::class)->filterTable('status','failed')->assertCanSeeTableRecords($failed)->assertCanNotSeeTableRecords([...$problem,...$monitoring,WatchName::find($w['paused'])])->assertCountTableRecords(count($failed));
 Livewire::actingAs($viewer)->test(ListWatches::class)->filterTable('status','monitoring')->assertCanNotSeeTableRecords($failed);
-same((string)count([...$problem,...$failed]),Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource::getNavigationBadge(),'Monitoring badge counts every problem and failed check');
+same((string)count([...$problem,...$failed]),Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource::attentionCount(),'Monitored domains tab counts every problem and failed check');
 Livewire::actingAs($viewer)->test(ListWatches::class)->filterTable('status','attention')->assertCanSeeTableRecords([...$problem,...$failed])->assertCanNotSeeTableRecords($monitoring)->assertCountTableRecords(count([...$problem,...$failed]));
 Livewire::actingAs($viewer)->test(ViewWatch::class,['record'=>$w['registry-failed']])->assertSeeInOrder(['Check failed','Domain','Latest checks']);
 Livewire::actingAs($viewer)->test(ListWatches::class)->filterTable('status','paused')->assertCanSeeTableRecords([WatchName::find($w['paused'])])->assertCountTableRecords(1);

@@ -74,7 +74,7 @@ class ViewWatch extends ViewRecord
         return [NavigationItem::make('Overview')->url(WatchResource::getUrl('view',$id))->isActiveWhen(fn()=>!$history),
             NavigationItem::make('History')->url(WatchResource::getUrl('history',$id))->isActiveWhen(fn()=>$history)];
     }
-    public function getBreadcrumbs(): array{return [WatchResource::getUrl()=>'Domain monitoring',$this->getTitle()];}
+    public function getBreadcrumbs(): array{return [WatchResource::getUrl()=>'Monitored domains',$this->getTitle()];}
     public function getHeader(): ?\Illuminate\Contracts\View\View{return view('domains::staff.watch-header');}
     protected function getHeaderActions(): array{return WatchActions::watch($this->getRecord(),$this->revision);}
     /** Check now next to a missing check time; mounted as a page action. */
