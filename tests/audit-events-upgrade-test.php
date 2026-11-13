@@ -14,7 +14,6 @@ $global=[...$entry,'key'=>'global-choice-import'];
 DB::transaction(fn()=>AuditArchives::retainBatch(0,'staff_settings',json_encode([$global])));
 $setting=$server->settings()->create(['key'=>'domains_staff_settings_audit','encrypted'=>true,'type'=>'string','value'=>json_encode([$entry])]);
 ReminderSchedules::enroll($server->id);
-require_once __DIR__.'/Support/legacy-reminder-audit.php';
 legacyReminderAuditColumn();
 DB::table('domains_reminder_schedules')->where('server_id',$server->id)->update(['audit'=>encrypt([['revision'=>2,'at'=>$entry['at'],'reason'=>'reminder history']])]);
 DB::table('migrations')->where('migration',AuditEventSchema::MIGRATION)->delete();
