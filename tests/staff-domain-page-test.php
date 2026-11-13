@@ -488,7 +488,8 @@ Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->as
 // held requests and unreadable data need staff even without saved alert rows.
 $filter(Livewire::actingAs($viewer)->test(ListDomains::class),'alerts',true)->assertCanSeeTableRecords([$active,$held,$long])->assertCanNotSeeTableRecords([$demo]);
 DB::table('domains_obligation_alerts')->update(['resolved_at'=>time()]);
-same(['Service #'.$active->service_id.' not found. Check the Services page.','On'],[$sub($active,'Service'),$sub($active,'Renewal')??$value($active,'Renewal')],'Resolved alerts leave the rows');
+same(['Service #'.$active->service_id.' not found. Check the Services page.','On'],[$sub($active,'Service'),$value($active,'Renewal')],'Resolved alerts leave the rows');
+expect(!str_contains((string)$sub($active,'Renewal'),DomainFacts::alertCause('renewal_unpaid')),'A resolved alert leaves the Renewal line');
 
 same(false,PendingAdoptionResource::shouldRegisterNavigation(),'Adoption pending is not in navigation');
 same(DomainResource::getUrl('index',['filters'=>['status'=>['values'=>['under_review']]]]),PendingAdoptionResource::redirectUrl(),'Adoption pending opens the Under review filter');
