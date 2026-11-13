@@ -43,8 +43,8 @@ foreach([[$held,'Under review','Old registrar needs approval. Check request #'.$
     same(null,$column->getTooltip(),'No tooltip: the reason is visible');
     same(OwnedDomains::acquisition($record->operations,$record)?->id,$record->latestAcquisition?->id,'Batch matches customer acquisition lookup');
     same($customer,$columns['customer']->record($record)->getState(),'Customer name has its own column');
-    $phone=$columns['domain']->record($record)->getDescriptionBelow();
-    same('<span class="domains-phone-note">'.e($label).'<br>'.e($reason).'</span>',$phone?->toHtml(),'Phone summary keeps the status and next step from the row');
+    // A phone keeps the status and next step: neither column waits for a wider screen.
+    same([null,null,$reason],[$columns['status']->getVisibleFrom(),$columns['note']->getVisibleFrom(),$columns['note']->record($record)->getState()],'Phone keeps the status and next step from the row');
     same($label.$reason,$columns['domain']->getTooltip(),'The description tooltip keeps the phone summary without customer identifiers');
     same(null,$columns['provider_expires_at']->record($record)->getState(),'Expiry of a domain under review is blank, not Missing');
 }

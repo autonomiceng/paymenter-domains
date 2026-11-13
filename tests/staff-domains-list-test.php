@@ -63,7 +63,7 @@ DB::table('domains_domains')->where('id',$held->id)->update(['status'=>'cancelle
 DB::table('domains_domains')->where('id',$held->id)->update($saved);
 DB::table('domains_domains')->where('id',$held->id)->update(['renewal_policy'=>'not-readable']);
 [$columns,$records]=$list();$cell=$columns['auto_renew']->record($records[$held->id]);
-same(['Missing',DomainFacts::UNREADABLE_RENEWAL],[$cell->getState(),$cell->getDescriptionBelow()],'Unreadable renewal settings show Missing with the cause');
+same(\Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead->label(),$cell->getState(),'Unreadable renewal settings read Couldn\'t read');expect(str_contains(html_entity_decode(strip_tags((string)$cell->formatState($cell->getState()))),DomainFacts::UNREADABLE_RENEWAL),'Unreadable renewal settings say the cause');
 DB::table('domains_domains')->where('id',$held->id)->update(['renewal_policy'=>Domain::find($active->id)->getRawOriginal('renewal_policy')]);
 
 // One demo-paused definition: the list, the page and the customer view agree, and the list row says why sync stops.

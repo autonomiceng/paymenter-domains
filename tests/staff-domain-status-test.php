@@ -299,7 +299,7 @@ same('Sync stopped after a failed check. Use Resume sync below.',DomainFacts::no
 $orphan=$row('active','transfer','succeeded'); DB::table('domains_domains')->where('id',$orphan->id)->update(['account_fingerprint'=>str_repeat('0',64)]);
 $page=Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable('w2-case-')->set('tableRecordsPerPage',100);
 $columns=$page->instance()->getTable()->getColumns(); $record=$page->instance()->getTableRecords()->keyBy('id')[$orphan->id];
-same(['Registrar account not found. Check Registrars.','warning'],[$columns['note']->record($record)->getState(),$columns['status']->record($record)->getColor($columns['status']->record($record)->getState())],'The list says the registrar account is missing');
+same(['Registrar account not found. Check Registrars.',State::NeedsReview->label()],[$columns['note']->record($record)->getState(),$columns['status']->record($record)->getState()],'The list says the registrar account is missing and asks staff to look');
 // An ended domain places no orders, so a saved pause on it says nothing. A live one still says it.
 $pausedPolicy=['automatic_spend_paused'=>true];
 $ended=$row('cancelled','register','disposed'); $ended->forceFill(['renewal_policy'=>$pausedPolicy])->saveQuietly();
