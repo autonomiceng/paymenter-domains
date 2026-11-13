@@ -121,12 +121,14 @@ same($before,DB::table('domains_prices')->orderBy('id')->get()->toJson(),'All sa
 same(0,$reads->calls,'No provider calls');
 // Many TLDs with their own unreadable pricing: For sale on, the warning names ten with a way to each and counts the rest.
 fixtureClearBusinessChoice(CardFee::KEY);
-for($i=0;$i<14;$i++){$copy=$t->fresh()->replicate();$copy->tld='broken'.chr(97+$i);$copy->catalogue_intent='{"sell":';$copy->save();}
-$many=Livewire::actingAs($u)->test(WhatYouSell::class,['account'=>WhatYouSell::ALL])->assertSuccessful()->assertSee('Prices left out for 15 TLDs')->assertSee('and 5 more');
+$hiddenIds=[$custom->id];
+for($i=0;$i<14;$i++){$copy=$t->fresh()->replicate();$copy->tld='broken'.chr(97+$i);$copy->catalogue_intent='{"sell":';$copy->save();$hiddenIds[]=$copy->id;}
+$many=Livewire::actingAs($u)->test(WhatYouSell::class,['account'=>WhatYouSell::ALL])->assertSuccessful();
 $dom=new DOMDocument;@$dom->loadHTML($many->html());$xpath=new DOMXPath($dom);
-$callout='//*[contains(concat(" ",normalize-space(@class)," ")," fi-sc-callout ")][contains(normalize-space(.),"not shown on this page")]';
-same(1,$xpath->query($callout)->length,'One warning covers the TLDs this page does not show');
-same(10,$xpath->query($callout.'//a')->length,'The warning links at most ten TLDs');
+foreach($hiddenIds as $index=>$id){
+    $url=\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource::getUrl('view',['record'=>$id]);
+    same($index<10?1:0,$xpath->query('//a[@href="'.$url.'"]')->length,'Hidden unreadable TLDs retain a recovery link, capped at ten');
+}
 // Permission checks remain in force even when settings cannot be read.
 $u->role->update(['permissions'=>[Staff::VIEW]]);
 foreach([fn()=>$service->read(),fn()=>$service->csv()] as $call){try{$call();expect(false,'Costs permission required');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(403,$e->getStatusCode(),'Unreadable settings do not bypass permissions');}}

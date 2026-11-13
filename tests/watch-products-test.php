@@ -76,10 +76,11 @@ expect(!str_contains(Livewire::actingAs($manager)->test(ListWatches::class)->htm
 $readOnly=$page($viewer)->html();same(0,storefrontDom($readOnly)->query('//button[@role="switch"]')->length,'View-only staff get no switch');
 expect($rowAt($readOnly,$product->id)!==null&&!str_contains($readOnly,'chooseField'),'View-only staff see the rows without the picker');
 // The row's own action, as its click names it: the switch or picker of that product's row.
-$at=function($test,string $name,int $product):TestAction{
+$component=function($test,string $name,int $product):string{
     expect(preg_match('/mountAction\((?:\'|&#039;)'.$name.'(?:\'|&#039;)[^"]*?schemaComponent\\\\u0022:\\\\u0022([a-z0-9._-]*row-product-'.$product.'-actions)\\\\u0022/',$test->html(),$m)===1,$name.' sits in the row of product '.$product);
-    return TestAction::make($name)->schemaComponent(substr($m[1],strlen('content.')),'content');
+    return $m[1];
 };
+$at=fn($test,string $name,int $product):TestAction=>TestAction::make($name)->schemaComponent(substr($component($test,$name,$product),strlen('content.')),'content');
 
 // Permission is read once for the section, so more products never mean more permission queries.
 $queries=function()use($manager){DB::flushQueryLog();DB::enableQueryLog();Livewire::actingAs($manager)->test(MonitoringSettings::class);$count=count(DB::getQueryLog());DB::disableQueryLog();return $count;};
@@ -93,7 +94,7 @@ same('false',$switchOf($rowAt($test->html(),$product->id))?->getAttribute('aria-
 $test->callAction($at($test,'productSwitch',$product->id)->arguments(['map'=>$map->id,'revision'=>$revision]))->assertNotified('This product changed. Reload the page and try again.');same([false,$revision+1],[WatchProductMap::find($map->id)->enabled,WatchProductMap::find($map->id)->revision],'Stale switch changes nothing');
 $test->callAction($at($test,'productSwitch',$product->id)->arguments(['map'=>$map->id,'revision'=>$revision+1]));same([true,$revision+2],[WatchProductMap::find($map->id)->enabled,WatchProductMap::find($map->id)->revision],'Switch turns monitoring on');
 // A forged switch click from read-only staff changes nothing.
-$ro=$page($viewer);try{$ro->call('mountAction','productSwitch',['map'=>$map->id,'revision'=>$revision+2],['schemaComponent'=>'content.'.$at($test,'productSwitch',$product->id)->schemaComponent])->callMountedAction();}catch(Throwable){}
+$forged=$component($test,'productSwitch',$product->id);$page($viewer)->call('mountAction','productSwitch',['map'=>$map->id,'revision'=>$revision+2],['schemaComponent'=>$forged])->callMountedAction();
 same([true,$revision+2],[WatchProductMap::find($map->id)->enabled,WatchProductMap::find($map->id)->revision],'Read-only staff change nothing');
 
 // Choosing a field is only for No domain found; it saves and starts monitoring in one step, and never shows a customer value.

@@ -28,7 +28,7 @@ expect(str_contains($nativeNotice,'Changing a price here can stop new orders for
 DB::table('settings')->where('key','domains_credentials')->where('settingable_id',$t->server_id)->update(['value'=>'synthetic-unreadable-ciphertext']);
 $before=retainedOfferObligations();$calls=$reads->calls;
 Livewire\Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])
-    ->assertSee('.com')->assertSee('Prices')->assertDontSee('Ask your site admin to check the encryption key.');
+    ->assertSee('.com')->assertSee('Registration')->assertDontSee('Ask your site admin to check the encryption key.');
 same($before,retainedOfferObligations(),'Installed staff page preserves every retained identity and financial obligation');
 same($calls,$reads->calls,'Installed staff page never resolves a provider');
 $nativeSuccessful=true;

@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\WatchHistory;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Head;
 use Paymenter\Extensions\Servers\Domains\Models\{WatchAudit, WatchDnsObservation, WatchRegistryObservation};
-use Paymenter\Extensions\Servers\Domains\Presentation\Reader;
+use Paymenter\Extensions\Servers\Domains\Presentation\{Reader, State};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 /** What a monitored domain's Overview and History tabs share: the head, the header actions, the tabs, and the wait for
  * a check staff asked for. Data only; the page types draw it. */
@@ -56,7 +56,7 @@ trait WatchPage
     protected function head(): Head
     {
         $w = $this->getRecord();
-        return Head::make($w->canonical_name, Reader::Staff)->domain()->tag(DemoData::is($w), false)->state(WatchRows::state($this->watchFacts()['status']['label']), 'watch-'.$w->id);
+        return Head::make($w->canonical_name, Reader::Staff)->domain()->tag(DemoData::is($w), false)->state(match ($w->state) { 'active' => State::Monitored, 'paused' => State::Paused, default => State::Stopped }, 'watch-'.$w->id);
     }
     protected function actions(): array { return WatchActions::watch($this->getRecord(), $this->revision); }
     protected function poll(): ?array { return $this->pendingCheck ? ['pollCheck', 5] : ($this->getRecord()->state === 'active' ? ['refreshFacts', 60] : null); }

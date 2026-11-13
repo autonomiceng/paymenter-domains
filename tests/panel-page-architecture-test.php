@@ -13,9 +13,7 @@ const PAGES_BEFORE_TYPES = [
     'Resources\DomainResource\Pages\AdoptDomain', 'Resources\DomainResource\Pages\AdoptionPreview',
     'Resources\DomainResource\Pages\ViewDomain',
     'Resources\PendingAdoptionResource\Pages\ListPending', 'Resources\PendingAdoptionResource\Pages\ViewPending',
-    'Resources\RoutingProfileResource\Pages\ListConfiguration', 'Resources\RoutingProfileResource\Pages\ViewConfiguration',
-    'Resources\TldResource\Pages\ListTlds', 'Resources\TldResource\Pages\PriceList', 'Resources\TldResource\Pages\TldHistory', 'Resources\TldResource\Pages\ViewTld',
-    'Resources\WatchResource\Pages\ListDnsFailures', 'Resources\WatchResource\Pages\ListManagedDns',
+    'Resources\TldResource\Pages\PriceList',
 ];
 $admin = dirname(__DIR__).'/Domains/Admin';
 $prefix = 'Paymenter\\Extensions\\Servers\\Domains\\Admin\\';

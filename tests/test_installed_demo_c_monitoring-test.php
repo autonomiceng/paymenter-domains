@@ -30,7 +30,7 @@ staffPanel();$panel=Filament::getCurrentPanel();$resources=[WatchResource::class
 $html=Livewire\Livewire::test(ViewWatch::class,['record'=>$watch->id])->html();expect(str_contains($html,'192.0.2.10')&&str_contains($html,'192.0.2.20')&&str_contains($html,'Evidence'),'Real monitoring detail renders both observations');
 $html=Livewire\Livewire::test(WatchHistory::class,['record'=>$watch->id])->html();expect(str_contains($html,'Registrar read partial'),'Real monitoring history renders registrar reads');
 $html=Livewire\Livewire::test(Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\MonitoringSettings::class)->html();
-same([\Paymenter\Extensions\Servers\Domains\Presentation\Plain::Daily->label(),\Paymenter\Extensions\Servers\Domains\Presentation\Plain::None->label()],[settingsRowValue($html,'Registrar refresh')['word']??null,settingsRowValue($html,'Registrar read failures')['word']??null],'Real settings shows daily reads and no alert switch for read failures');
+same([\Paymenter\Extensions\Servers\Domains\Presentation\Plain::Daily->label(),\Paymenter\Extensions\Servers\Domains\Presentation\Plain::None->label()],[settingsRowValue($html,'Registrar refresh')['word']??null,settingsRowValue($html,'Registrar read failure emails')['word']??null],'Real settings shows daily reads and no alert switch for read failures');
 expect(str_contains($html,'Sync now')&&str_contains($html,'domain facts'),'Settings distinguishes daily facts from manual record sync');
 // Outdated saved answers remain evidence of a past check, never current IP answers.
 foreach(['expired','revision','failed'] as $case){

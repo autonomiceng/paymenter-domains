@@ -17,6 +17,13 @@ $write=function(WatchProfile $row,string $action)use($manager):void {
         Writes::ticket((int)$manager->id,'profile',(int)$row->id,(int)$row->revision,$action),'Synthetic template change');
 };
 $errors=[];
+/** The line a template's name cell carries under its name: the mark that says it supplies new domains, or null. */
+function tplMark($column,$record): ?string
+{
+    $text=trim(html_entity_decode(strip_tags((string)$column->record($record)->formatState($column->getState())),ENT_QUOTES));
+    $rest=str_starts_with($text,(string)$record->name)?trim(substr($text,strlen((string)$record->name))):$text;
+    return $rest===''?null:$rest;
+}
 $check=function(string $name,Closure $run)use(&$errors):void{try{$run();echo "PASS $name\n";}catch(Throwable $e){$errors[]=$name.': '.$e->getMessage();}};
 $check('Turn off and delete an unused On template',function()use($make,$write,$manager):void{
     $row=$make('Unused template');
@@ -92,8 +99,8 @@ $check('One New domains use choice is shown',function()use($profile,$make,$manag
     $other=$make('Other enabled template');siteDnsFixture($profile->id);
     $list=Livewire::actingAs($manager)->test(ListConfiguration::class)->assertSee('Default nameservers')->assertSee($profile->name);
     $column=$list->instance()->getTable()->getColumn('name');
-    same('Used for new domains',$column->record($profile)->getDescriptionBelow(),'Chosen template marked');
-    same(null,$column->record($other)->getDescriptionBelow(),'Other On template is not marked');
+    same('Used for new domains',tplMark($column,$profile),'Chosen template marked');
+    same(null,tplMark($column,$other),'Other On template is not marked');
     $page=Livewire::actingAs($manager)->test(ViewConfiguration::class,['record'=>$other->id])->assertSee('New domains use')->assertSee($profile->name)->assertDontSee('Site DNS default');
 });
 $check('Add and edit show done messages without losing page state',function()use($make,$manager):void{
@@ -148,10 +155,10 @@ $check('Default template saves require both default permissions',function()use($
 $check('Default label lookup is constant per table render',function()use($profile,$make,$manager):void{
  $count=0;DB::listen(static function($q)use(&$count):void{if(str_contains($q->sql,'"domains_business_settings"')){$count++;}});
  foreach([1,25,100]as$size){$page=Livewire::actingAs($manager)->test(ListConfiguration::class);$column=$page->instance()->getTable()->getColumn('name');$count=0;
-  for($i=0;$i<$size;$i++){$column->record($profile)->getDescriptionBelow();}expect($count<=1,'Default lookup stays constant for '.$size.' rows');}
+  for($i=0;$i<$size;$i++){tplMark($column,$profile);}expect($count<=1,'Default lookup stays constant for '.$size.' rows');}
  siteDnsFixture(null);$page=Livewire::actingAs($manager)->test(ListConfiguration::class);$column=$page->instance()->getTable()->getColumn('name');$count=0;
- for($i=0;$i<100;$i++){same(null,$column->record($profile)->getDescriptionBelow(),'Missing default has no row marker');}expect($count<=1,'Missing default is cached within this render');
- siteDnsFixture($profile->id);$page=Livewire::actingAs($manager)->test(ListConfiguration::class);same('Used for new domains',$page->instance()->getTable()->getColumn('name')->record($profile)->getDescriptionBelow(),'Next request sees changed default');
+ for($i=0;$i<100;$i++){same(null,tplMark($column,$profile),'Missing default has no row marker');}expect($count<=1,'Missing default is cached within this render');
+ siteDnsFixture($profile->id);$page=Livewire::actingAs($manager)->test(ListConfiguration::class);same('Used for new domains',tplMark($page->instance()->getTable()->getColumn('name'),$profile),'Next request sees changed default');
 });
 $check('Paused and linked assignments refuse independently',function()use($watch,$make,$write):void{
     $row=$make('Watch state template');siteDnsFixture(null);$held=DB::table('domains_watch_names')->where('id',$watch->id)->first();
@@ -210,7 +217,7 @@ $check('Turn off and delete read assignments committed while they wait for the t
 });
 $check('Unusable defaults stay protected and retired native rows cannot replace them',function()use($make,$write,$manager):void{
     $row=$make('Retained default');siteDnsFixture($row->id);$stored=DB::table('domains_watch_profiles')->where('id',$row->id)->value('nameservers');
-    $marker=fn()=>Livewire::actingAs($manager)->test(ListConfiguration::class)->instance()->getTable()->getColumn('name')->record($row)->getDescriptionBelow();
+    $marker=fn()=>tplMark(Livewire::actingAs($manager)->test(ListConfiguration::class)->instance()->getTable()->getColumn('name'),$row);
     $retained='This template is saved for new domains but cannot be used. Choose another template for new domains first.';
     try{
         DB::table('domains_watch_profiles')->where('id',$row->id)->update(['nameservers'=>'["bad host"]']);

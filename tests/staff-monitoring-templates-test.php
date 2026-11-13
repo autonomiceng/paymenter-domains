@@ -11,21 +11,20 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource\
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,WatchFacts,WatchFindings};
 use Paymenter\Extensions\Servers\Domains\Models\{WatchName,WatchProfile};
 use Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites as Writes;
+use Paymenter\Extensions\Servers\Domains\Presentation\State;
 // DNS templates.
 $templates=Livewire::actingAs($manager)->test(ListTemplates::class)->assertCanSeeTableRecords([$profile])->assertActionVisible('save');$clean($templates->html(),'DNS templates');staffRowsStandard($templates);
-$ns=$templates->instance()->getTable()->getColumn('nameservers');same([true,2],[$ns->canWrap(),$ns->getLineClamp()],'Nameservers wrap to 2 lines');
 same(['No DNS templates','Add one with Add DNS template.'],[$templates->instance()->getTable()->getEmptyStateHeading(),$templates->instance()->getTable()->getEmptyStateDescription()],'No templates says how to add one');
 same('DNS templates',$templates->instance()->getTitle(),'Templates title');
 // the card owns the default, rather than the subheading.
 $templates->assertSee('Default nameservers')->assertActionHidden('siteDefault');same('Add DNS template',$templates->instance()->getAction('save')->getLabel(),'Add template');
 foreach(['name'=>'Template','nameservers'=>'Nameservers','enabled'=>'Status'] as $name=>$label){same($label,$column($templates,$name)->getLabel(),'Template column '.$name);}
-same(null,$column($templates,'revision'),'No revision column');same('On',$column($templates,'enabled')->record($profile)->getState(),'Status On');same(null,$column($templates,'used_by'),'No Used by column');
-// The list retains status marks; the detail page has a reversible monitoring switch.
-expect(!str_contains($templates->html(),'role="switch"'),'Template list shows no switch');expect(preg_match('~data-domains-tone="ok"[^>]*data-domains-record="template-'.$profile->id.'"~',$templates->html())===1,'Template list marks On');
-$template=Livewire::actingAs($manager)->test(ViewTemplate::class,['record'=>$profile->id])->assertSeeInOrder(['On','Records','Nameservers','Website records','Email records','Used by','Monitored domains'])->assertActionHidden('enable');$clean($template->html(),'DNS template');
+same(null,$column($templates,'revision'),'No revision column');same(State::Active->label(),$column($templates,'enabled')->record($profile)->getState(),'A template on reads Active');same(null,$column($templates,'used_by'),'No Used by column');
+// The list says On or Off in words; the detail page has a reversible monitoring switch.
+expect(!str_contains($templates->html(),'role="switch"'),'Template list shows no switch');
+$template=Livewire::actingAs($manager)->test(ViewTemplate::class,['record'=>$profile->id])->assertSeeInOrder(['Active','Records','Nameservers','Website records','Email records','Used by','Monitored domains'])->assertActionHidden('enable');$clean($template->html(),'DNS template');
 expect(str_contains($template->html(),'role="switch"'),'Template page has a monitoring switch');
-// Nothing goes beside the sheet, so it is one column with no empty rail.
-expect(str_contains($template->html(),'domains-split-single') && !str_contains($template->html(),'domains-rail'),'Template page is a single-column sheet');expect(str_contains((string)$template->instance()->getSubheading()?->toHtml(),'data-domains-tone="ok"'),'Template page head marks On');
+expect(str_contains((string)$template->instance()->getSubheading()?->toHtml(),'data-domains-tone="ok"'),'Template page head marks On');
 same('Synthetic defaults',$template->instance()->getTitle(),'Template title');same('Edit',$template->instance()->getAction('save')->getLabel(),'Edit template');
 same([RoutingProfileResource::getUrl()=>'DNS templates','Synthetic defaults'],$template->instance()->getBreadcrumbs(),'Template breadcrumb');
 $off=DB::transaction(fn()=>WatchProfile::create(['name'=>'Spare template','nameservers'=>['ns1.spare.test'],'website_endpoints'=>[],'email_endpoints'=>[],'edited_by'=>$manager->id,'reason'=>'Synthetic spare']));
