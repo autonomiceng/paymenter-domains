@@ -70,6 +70,8 @@ $select=static function(WatchProfile $profile,array $accounts,string $oldRule)us
     same($watches,WatchName::orderBy('id')->get()->toJson(),'Selecting a default leaves watch assignments unchanged');
     foreach([[MonitoringSettings::class,[]],...array_map(fn($a)=>[RegistrarAccount::class,['account'=>$a->server_id]],$accounts)]as[$class,$params]){
         $page=Livewire::actingAs($staff)->test($class,$params)->assertDontSee($oldRule);
+        // Monitoring settings draws it as a panel row; the account page keeps its entry.
+        if($class===MonitoringSettings::class){same($profile->name,settingsRowValue($page->html(),'Default nameservers')['word']??null,'Valid staff choice is the Monitoring settings default');continue;}
         $entry=$row($page);same($profile->name,$entry?->getState(),'Valid staff choice clears Missing on each native page');
         // The account page names what new domains get, with its nameservers and Change, as in the approved mock.
         if($class===RegistrarAccount::class){same('New domains use',$entry->getLabel(),'Account row says what new domains use');

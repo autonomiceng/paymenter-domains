@@ -60,8 +60,9 @@ expect(str_contains((string)($recordFact['sub']??''),'template'),'Unconfigured c
 same($at->getTimestamp()-30,(int)($missingFacts['Checks']['Last check']['at']??0),'Last check is the separate nameserver check');
 same([gmdate('c',$at->getTimestamp()-60)],array_map(fn($n)=>$n->getAttribute('datetime'),iterator_to_array(storefrontDom('<div id="records-sub">'.($recordFact['sub']??'').'</div>')->query('//*[@id="records-sub"]//time'))),'DNS records keeps the saved answer time');
 $html=Livewire\Livewire::test(ViewWatch::class,['record'=>$watch->id])->html();
-$x=storefrontDom($html);$row=$x->query('//*[contains(concat(" ",normalize-space(@class)," ")," domains-row ")][.//*[normalize-space(.)="DNS records"]]')->item(0);
-expect($row!==null&&str_contains($row->textContent,'192.0.2.10')&&!str_contains($row->textContent,'Missing'),'Real monitoring row renders the saved public record');
+$x=storefrontDom($html);$row=$x->query('//*[@data-piece="row"][*[1][normalize-space(.)="DNS records"]]')->item(0);
+$unread=array_map(fn($s)=>$s->label(),[\Paymenter\Extensions\Servers\Domains\Presentation\State::NotReadYet,\Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead]);
+expect($row!==null&&str_contains($row->textContent,'192.0.2.10')&&!array_filter($unread,fn($w)=>str_contains($row->textContent,$w)),'Real monitoring row renders the saved public record');
 // Expired watch answers remain historical, with guidance for the actual template state.
 $dnsFailures=[];
 $public->valid_until=$at->getTimestamp()-1;
