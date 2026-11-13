@@ -604,6 +604,8 @@
 .domains .domains-trace b { font-weight: 500; }
 /* The text keeps its column when a step has no mark. */
 .domains .domains-trace li > div { grid-column: 2; }
+/* A customer step with no state has no mark, so the line runs through it. */
+.domains .domains-trace[data-piece="trace"] li:not([data-domains-tone])::before { top: 0; }
 .domains .domains-trace li > .domains-status { height: 16px; margin-top: .125rem; }
 .domains .domains-trace li > .domains-status::before { content: ""; display: block; }
 .domains .domains-panel__h { padding: 1rem 1.25rem; border-bottom: 1px solid var(--e-line); }
