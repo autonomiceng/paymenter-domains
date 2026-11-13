@@ -79,8 +79,8 @@ final class RecordFamilies
                     $known=count($f['candidates']??[]);$coverage=$known?' '.$known.' known child hosts, '.$count.' records returned.':'';
                     $explanation=($f['read_failed']??false)?'Known glue check failed. Saved records are retained':($known?'Known glue checked':'No known child hosts to check').". This registrar can't list every child host";
                     $rows[$index]['staff']=$explanation.'.'.$coverage.' You can change one glue record at a time. Replacing the whole list stays blocked.';
-                    // Enom checks named hosts only: the row lists the ones we know, and support handles one not shown.
-                    $rows[$index]['customer']=(($f['read_failed']??false)?'Our last check didn’t finish. ':'')."Enom can’t return a full list, so only the ones we know are shown.";
+                    // Enom checks named hosts only: the row lists the ones we know, and support handles one not shown. Customers never see the registrar name.
+                    $rows[$index]['customer']=(($f['read_failed']??false)?'Our last check didn’t finish. ':'')."The registrar can’t return a full list, so only the ones we know are shown.";
                     $rows[$index]['support']=true;
                 }
                 // A full list shows its hosts, so only an empty one needs words.
