@@ -50,12 +50,13 @@ final class WatchRows
         if ($reason !== null && Fact::isWord($reason)) { return Row::notice('status', Value::state(State::tryFrom(strtolower(str_replace(' ', '_', $reason))) ?? self::state($label), Reader::Staff)); }
         return Row::notice('status', Value::state(self::state($label), Reader::Staff, $reason));
     }
-    /** History rows, newest first, as rail steps. An event has no state of its own, so it takes the state it left. */
+    /** History rows, newest first, as rail steps. A monitoring change takes the state it left and a finished read
+     * reads Completed; a note, a request or a template change has no state of its own, so it draws no mark. */
     public static function trace(array $rows): Trace
     {
         $trace = Trace::make(Reader::Staff);
         foreach ($rows as $r) {
-            $state = match ($r['event']) { 'Monitoring paused' => State::Paused, 'Monitoring stopped' => State::Stopped, WatchFacts::RESUME_SAVED => State::Queued, 'Monitoring resumed' => State::Monitored, default => State::Completed };
+            $state = match ($r['event']) { 'Monitoring paused' => State::Paused, 'Monitoring stopped' => State::Stopped, WatchFacts::RESUME_SAVED => State::Queued, 'Monitoring resumed' => State::Monitored, 'Registrar read complete' => State::Completed, default => null };
             $reason = self::sentence($r['note'] ?? null);
             $at = is_string($r['time'] ?? null) && ($t = strtotime($r['time'])) !== false ? $t : null;
             $trace->step((string) $r['event'], $state, $at, $r['by'] ?? null, $reason !== null && !Fact::isWord($reason) ? $reason : null);
