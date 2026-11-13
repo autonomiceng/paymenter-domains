@@ -69,11 +69,11 @@ final class AdoptionRows
     }
     private static function renewal(array $details): Value
     {
-        return match (Review::renewalCase($details)) {
-            'test' => Value::plain(Plain::Test, 'No invoice or charge is created.'),
-            'off' => Value::plain(Plain::Off, 'The domain ends at its expiry date.'),
-            'unproven' => Value::state(State::NotReadYet, Reader::Staff, AdoptionRenewalEligibility::STAFF),
-            'unconfirmed' => Value::state(State::NotReadYet, Reader::Staff, 'Run Check to see if this domain can renew here.'),
+        return match (true) {
+            ($details['test_only'] ?? false) => Value::plain(Plain::Test, 'No invoice or charge is created.'),
+            ($details['do_not_renew'] ?? false) => Value::plain(Plain::Off, 'The domain ends at its expiry date.'),
+            ($details['renewal_eligibility']['reason'] ?? null) === 'imported_renewal_unproven' => Value::state(State::NotReadYet, Reader::Staff, AdoptionRenewalEligibility::STAFF),
+            ($details['renewal_eligibility']['eligible'] ?? false) !== true => Value::state(State::NotReadYet, Reader::Staff, 'Run Check to see if this domain can renew here.'),
             default => Value::plain(Plain::On, 'Normal invoices apply. If the domain is already due, an invoice may go out right away.'),
         };
     }

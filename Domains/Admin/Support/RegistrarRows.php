@@ -60,6 +60,8 @@ final class RegistrarRows
         if ($switch !== null) {
             [$sub] = self::line($r['cause'] ?? null);
             $row = SettingsRow::toggle($r['label'], $r['value'] === 'On', $switch, self::SET_BY, $sub);
+            $extra = array_values(array_filter($actions))[0] ?? null;
+            if ($extra !== null) { $row->also($extra); }
         } else {
             $row = Row::make($r['label'], self::value($r));
             $actions = array_slice(array_values(array_filter($actions)), 0, Row::MAX_ACTIONS);

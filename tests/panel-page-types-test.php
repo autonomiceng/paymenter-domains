@@ -161,6 +161,23 @@ $first = new class extends Paymenter\Extensions\Servers\Domains\Admin\Support\Pa
 };
 $refused(static fn () => $first->table(Filament\Tables\Table::make($first)), 'The name column never stacks under itself');
 
+// Permission-hidden fields are never evaluated for a phone description.
+$grant = false;
+$private = $Column::text('private', 'Private', static fn (array $r): string => throw new LogicException('A hidden field must not be read.'))->stackOnPhone()->visibleWhen(static fn (): bool => $grant);
+same(null, $private->phoneText([]), 'A permission-hidden column contributes no phone text');
+// Zero is a real count, including on a phone.
+$zero = $table->getColumn('domain')->record(['domain' => 'a.example', 'note' => '0'])->getDescriptionBelow();
+expect(preg_match('/\b0\b/', strip_tags(str_replace('<br>', ' ', (string) $zero))) === 1, 'A phone keeps a zero value');
+// List summaries have the same partial-view boundary as other non-record sections.
+$summary = new class extends Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\ListPage {
+    protected function head(): Head { return Head::make('Example', Reader::Staff); }
+    protected function columns(): array { return [Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\Column::text('name', 'Name')]; }
+    protected function rows(): array { return []; }
+    protected function emptyLine(): array { return ['None yet.', 'Add one.']; }
+    protected function summary(): array { return [Section::make('Account', [Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Partial::make('domains::partials.moment', ['at' => null])])]; }
+};
+$refused(static fn () => $summary->content(Filament\Schemas\Schema::make($summary)), 'A list summary refuses partial views');
+
 // A history says what needs saying above its table, in a notice as on a list; anything else there is refused.
 $noticed = new class extends Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\HistoryPage {
     public bool $plain = false;

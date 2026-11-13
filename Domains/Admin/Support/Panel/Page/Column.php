@@ -63,6 +63,7 @@ final class Column
     /** The words this column adds under the name on a phone: a value's word, or the text. Built by the list type only. */
     public function phoneText(array|Model $record): ?string
     {
+        if ($this->visibleWhen !== null && !($this->visibleWhen)()) { return null; }
         $text = $this->kind === 'value' ? $this->valueOf($record)?->word : ($this->text === null ? data_get($record, $this->name) : ($this->text)($record));
         return is_scalar($text) && trim((string) $text) !== '' ? trim((string) $text) : null;
     }

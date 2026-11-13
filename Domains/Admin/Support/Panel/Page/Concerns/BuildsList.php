@@ -49,7 +49,7 @@ trait BuildsList
             if (!$section->hasTrace() && !($first instanceof \Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Row && Section::isNotice($first))) { throw new \InvalidArgumentException('A section above a list opens with a notice or holds steps.'); }
         }
         $summary = self::sectionsOnly($this->summary(), 'The summary above a list');
-        foreach ($summary as $section) { if ($section->hasTrace()) { throw new \InvalidArgumentException('The summary above a list holds rows, not steps.'); } }
+        foreach ($summary as $section) { if ($section->hasTrace() || $section->hasPartial()) { throw new \InvalidArgumentException('The summary above a list holds rows only.'); } }
         return $schema->components([
             ...($summary === [] ? [] : [Sheet::single(array_map(static fn (Section $s) => $s->toSchema(), $summary), 'list-summary')]),
             ...($notices === [] ? [] : [Sheet::single(array_map(static fn (Section $s) => $s->toSchema(), $notices), 'list-notices')]),
@@ -78,7 +78,7 @@ trait BuildsList
         if ($stack !== []) {
             if ($columns[0]->stacksOnPhone()) { throw new \InvalidArgumentException('The first column names the row, so it never stacks under itself.'); }
             $built[0]->description(static function (array|Model $record) use ($stack): ?HtmlString {
-                $lines = array_values(array_filter(array_map(static fn (Column $c): ?string => $c->phoneText($record), $stack)));
+                $lines = array_values(array_filter(array_map(static fn (Column $c): ?string => $c->phoneText($record), $stack), static fn (?string $line): bool => $line !== null));
                 return $lines === [] ? null : new HtmlString('<span class="domains-phone-note">'.implode('<br>', array_map('e', $lines)).'</span>');
             });
         }

@@ -38,7 +38,7 @@ final class PslRows
             $result = in_array($status->last_result, [null, 'checking'], true) ? null : PslActions::result($status->last_result);
             $downloads[] = Row::make('Last download', Value::state(State::Failed, $staff, $result, 'psl-download')->when((int) $status->last_attempt_at));
         }
-        if (!$review && ($at = PslActions::limitedUntil($list)) !== null) {
+        if (!$review && ($at = $list->nextAllowedAt()) !== null && app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp() < $at) {
             $downloads[] = Row::make('Next download allowed', Value::fact(Fact::date($at, $staff)));
         }
         if ($downloads !== []) { $sections[] = Section::make('Downloads', $downloads); }

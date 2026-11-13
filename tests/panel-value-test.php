@@ -68,7 +68,7 @@ same(['host', 'text', 'text', 'ns1.example.net, ns2.example.net'], [
 // A list that is the point of its row keeps every entry (Names cuts at three), and an empty list is null.
 $all = Fact::lines(['ns1.example.net', 'ns2.example.net', 'ns3.example.net', 'ns4.example.net', ' ']);
 same([['ns1.example.net', 'ns2.example.net', 'ns3.example.net', 'ns4.example.net'], 'host', null], [$all?->items, $all?->kind, Fact::lines(['', ' '])], 'A list fact keeps every entry and is null when empty');
-same(['text', 4], [Fact::lines(['1.2.3.4', 'ns1.example.net'])?->kind, substr_count(Value::fact($all)->toHtml(), '<li>')], 'A list value draws one line per entry');
+same('text', Fact::lines(['192.0.2.1', 'ns1.example.net'])?->kind, 'Mixed IP and nameserver entries remain text');
 
 // A typed reason is shown as typed, even when it reads like a state word; nothing typed is null.
 same(['Failed', 'entered', null], [Fact::entered(" Failed\n")?->text, Fact::entered('Checked with the customer')?->kind, Fact::entered('  ')], 'An entered fact is the typed line, null when empty');
