@@ -24,7 +24,7 @@ $banned=['Catalogue reader unavailable','read_unavailable','catalogue_','Pricing
 $clean=static function(string $html,string $where)use($text,$banned):void {
     $plain=$text($html);foreach($banned as $old){expect(!str_contains($plain,$old),$where.': no "'.$old.'"');}
 };
-$renew=static fn($t)=>'USD '.PriceCatalogue::retail(Price::where(['server_id'=>$t->server_id,'tld'=>'com','action'=>'renew','term'=>1])->value('retail'));
+$renew=static fn($t)=>'$'.PriceCatalogue::retail(Price::where(['server_id'=>$t->server_id,'tld'=>'com','action'=>'renew','term'=>1])->value('retail'));
 
 // Prices synced: one row per registrar account, the account that takes new orders is marked.
 $list=Livewire::actingAs($u)->test(ListTlds::class)->assertSuccessful()->assertCanSeeTableRecords($tlds)->assertSeeHtml('data-domains-record="tld-'.$tlds[0]->id.'"');same([],$list->instance()->getBreadcrumbs(),'TLD list has no breadcrumb, like Domains');
@@ -87,7 +87,7 @@ same('.com on Enom TEST identity check',$named($page),'A TLD offered by two acco
 $other=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$silo->id])->assertSuccessful();
 same('.com on OFFLINE DEMO NameSilo (synthetic)',$named($other),'Two pages for one TLD never share a title');
 // Each price shows the cost for the same action, so a price never reads against another action's cost.
-expect(substr_count($text($page->html()),'Cost USD ')>=2,'Registration and renewal each show their own cost');
+expect(substr_count($text($page->html()),'Cost $')>=2,'Registration and renewal each show their own cost');
 // Change registrar says what it does to sales before it is saved.
 $dialog=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$enom->id])->mountAction('seller')->call('$refresh');
 expect(str_contains($text($dialog->effects['partials']['action-modals.0']??''),'new orders for .com stop until that account\'s terms and prices are checked, and open carts drop .com'),'Change registrar warns that sales stop and carts drop the TLD');
