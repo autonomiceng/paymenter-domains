@@ -79,8 +79,8 @@ $calls = [];
 Illuminate\Support\Facades\Event::listen(Filament\Actions\Events\ActionCalling::class, static function (Action $action) use (&$calls): void { $calls[] = $action->getName(); });
 $page = Livewire::actingAs($writer)->test(PanelKit::class);
 foreach ([['kit_blocked_ns', 'kit-blocked.kit-blocked-registrar.row-blocked-ns'], ['kit_blocked_lock', 'kit-blocked.kit-blocked-registrar.row-blocked-lock'],
-    ['kit_records', 'kit-blocked.kit-blocked-dns.row-host-records'], ['kit_transfers', 'kit-toggle.kit-toggle-orders.row-transfers'], ['kit_sync', 'kit-blocked.kit-blocked-registrar.row-last-sync']] as [$name, $at]) {
-    $context = ['schemaComponent' => 'content.'.$at.'.'.substr($at, strrpos($at, '.') + 1).'-actions'];
+    ['kit_records', 'kit-blocked.kit-blocked-dns.row-host-records'], ['kit_transfers', 'kit-toggle.kit-toggle-orders.row-transfers'], ['kit_sync', 'kit-blocked.kit-blocked-registrar.row-last-sync']] as [$name, $path]) {
+    $context = ['schemaComponent' => 'content.'.$path.'.'.substr($path, strrpos($path, '.') + 1).'-actions'];
     $runs = $name === 'kit_sync' ? [$name] : [];
     $calls = [];$page->call('mountAction', $name, [], $context)->set('mountedActions', []);
     same($runs, $calls, 'Clicked by name, only the open action runs: '.$name);
@@ -129,6 +129,40 @@ same([0, true], [$dom->query('.//button[@aria-label="Edit Reminder schedule"]', 
 // The kit is for staff on demo systems only.
 Illuminate\Support\Facades\Auth::forgetUser();expect(!PanelKit::canAccess(), 'Signed-out readers can\'t open the kit');
 Illuminate\Support\Facades\Auth::setUser(staffUser([]));expect(!PanelKit::canAccess(), 'Staff without the Domains view can\'t open the kit');
+
+// A request notice with a timed retry: a typed body reaches the page as text, escaped once, and the retry stays a time.
+$noticeRow = Paymenter\Extensions\Servers\Domains\Admin\Support\RequestRows::notice(['title' => 'Held for balance.', 'body' => new Illuminate\Support\HtmlString('Funds are <b>low</b> &amp; due.'), 'tone' => 'warning', 'next_try' => $at], State::Queued, null);
+Schema::make($page->instance())->components([$noticeRow])->getComponents();
+$notice = $noticeRow->toEmbeddedHtml();
+expect(!str_contains($notice, '&lt;b&gt;') && !str_contains($notice, '&amp;amp;') && str_contains($notice, 'Funds are low &amp; due.'), 'A typed notice body is text, escaped once');
+$noticeDom = storefrontDom($notice);
+same($at, (new DateTimeImmutable($noticeDom->evaluate('string(//time/@datetime)')))->getTimestamp(), 'The next try preserves the retry instant');
+// An inventory shows every value: a domain's five nameservers read as five names, never "and 2 more".
+$five = ['ns1.example.net', 'ns2.example.net', 'ns3.example.net', 'ns4.example.net', 'ns5.example.net'];
+same(implode(', ', $five), Paymenter\Extensions\Servers\Domains\Admin\Support\DomainRows::value(['value' => $five], null)->word, 'Nameservers and glue list every value');
+
+// The preview and the list status build before a check or download has happened.
+require __DIR__.'/Support/psl.php';
+Paymenter\Extensions\Servers\Domains\Services\PslSchema::install();
+$clock = new PslClock;
+app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class, $clock);
+$list = new Paymenter\Extensions\Servers\Domains\Services\PublicSuffixList($clock, new Paymenter\Extensions\Servers\Domains\Services\PslTransport(static fn () => throw new LogicException('No download expected.')), new Paymenter\Extensions\Servers\Domains\Services\PslValidator(128, 5, 1));
+$domain = new Paymenter\Extensions\Servers\Domains\Models\Domain(['domain' => 'fieldnote.example', 'user_id' => $writer->id, 'service_id' => 100, 'renewal_policy' => []]);
+$errors = [];
+foreach ([
+    'import preview' => static fn (): array => Paymenter\Extensions\Servers\Domains\Admin\Support\AdoptionRows::sections($domain, [], '', null, 'Imports are off.'),
+    'public suffix list' => static fn (): array => Paymenter\Extensions\Servers\Domains\Admin\Support\PslRows::sections($list),
+] as $name => $build) {
+    try { expect($build() !== [], 'The section is available: '.$name); }
+    catch (Throwable $error) { $errors[] = $name.': '.$error->getMessage(); }
+}
+expect($errors === [], implode("\n", $errors));
+
+// A switch keeps the additional account control supplied by the page.
+$accountRow = Paymenter\Extensions\Servers\Domains\Admin\Support\RegistrarRows::row(['label' => 'Processing', 'value' => 'On'], [Action::make('account')->url('https://registrar.example/account')], $act('processing'));
+Schema::make($page->instance())->components([$accountRow])->getComponents();
+$accountDom = storefrontDom($accountRow->toEmbeddedHtml());
+same([1.0, 1.0], [$accountDom->evaluate('count(//button[@role="switch"])'), $accountDom->evaluate('count(//a[@href="https://registrar.example/account"])')], 'The switch and account link are both usable');
 
 $nativeSuccessful = true;
 echo "Panel rows, settings rows and traces checked.\n";

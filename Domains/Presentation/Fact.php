@@ -9,9 +9,10 @@ use Illuminate\Database\Eloquent\Model;
 final class Fact
 {
     /** How the value reads: text, code and host are names (host and code in mono), money and count are numbers. */
-    public const KINDS = ['text', 'code', 'host', 'money', 'count', 'date'];
-    private function __construct(public readonly string $kind, public readonly string $text, public readonly ?string $datetime = null, public readonly ?string $title = null, public readonly bool $instant = false)
-    { assert($kind === 'code' || !self::isWord($text), 'A fact never reads as a state or plain word: '.$text); }
+    public const KINDS = ['text', 'code', 'host', 'money', 'count', 'date', 'entered'];
+    /** @param ?list<string> $items The whole list, one per line, when the fact is a list. */
+    private function __construct(public readonly string $kind, public readonly string $text, public readonly ?string $datetime = null, public readonly ?string $title = null, public readonly bool $instant = false, public readonly ?array $items = null)
+    { assert($kind === 'code' || $kind === 'entered' || !self::isWord($text), 'A fact never reads as a state or plain word: '.$text); }
 
     /** A model attribute. Status and state columns are refused: their word comes from State. */
     public static function attr(Model $model, string $column): ?self
@@ -26,12 +27,13 @@ final class Fact
         return $text === '' ? null : new self('text', $text);
     }
     public static function count(int $count): self { return new self('count', number_format($count)); }
-    /** "$1,240.00" from a USD decimal string. Never rounds: a cost with more places keeps them ("$12.3456"). */
-    public static function money(?string $decimal): ?self
+    /** "USD 1,240.00" from a decimal string: the currency code first, as on registrar balances, so money has one
+     * format. Never rounds: a cost with more places keeps them ("USD 12.3456"). */
+    public static function money(?string $decimal, string $currency = 'USD'): ?self
     {
-        if ($decimal === null || preg_match('/^(-?)(\d{1,18})(?:\.(\d{1,8}))?$/D', $decimal, $m) !== 1) { return null; }
+        if ($decimal === null || preg_match('/^[A-Z]{3}$/D', $currency) !== 1 || preg_match('/^(-?)(\d{1,18})(?:\.(\d{1,8}))?$/D', $decimal, $m) !== 1) { return null; }
         $places = str_pad(rtrim($m[3] ?? '', '0'), 2, '0');
-        return new self('money', $m[1].'$'.number_format((int) $m[2]).'.'.$places);
+        return new self('money', $currency.' '.$m[1].number_format((int) $m[2]).'.'.$places);
     }
     /** Host lists keep host metadata. At most three names, then a count: "Enom TEST, NameSilo and 4 more". Callers order them, most used first. @param list<string> $names */
     public static function names(array $names): ?self
@@ -40,6 +42,22 @@ final class Fact
         if ($names === []) { return null; }
         $kind = count(array_filter($names, static fn (string $name): bool => self::host($name) !== null)) === count($names) ? 'host' : 'text';
         return new self($kind, implode(', ', array_slice($names, 0, 3)).(count($names) > 3 ? ' and '.(count($names) - 3).' more' : ''));
+    }
+    /** One line a person typed, such as a reason, shown back as typed. It is never a state word: a reason that reads
+     * "Failed" is still the reason. Null when nothing was typed. */
+    public static function entered(?string $text): ?self
+    {
+        $text = trim((string) preg_replace('/\s+/u', ' ', (string) $text));
+        return $text === '' ? null : new self('entered', $text);
+    }
+    /** Every name or value, one per line and never cut short, for a list that is the point of the row (a template's
+     * nameservers or records). Host names keep the host look. Null when there is nothing to list. @param list<string> $items */
+    public static function lines(array $items): ?self
+    {
+        $items = array_values(array_filter(array_map(static fn (string $item): string => trim(preg_replace('/\s+/u', ' ', $item)), $items), static fn (string $item): bool => $item !== ''));
+        if ($items === []) { return null; }
+        $kind = count(array_filter($items, static fn (string $item): bool => self::host($item) !== null)) === count($items) ? 'host' : 'text';
+        return new self($kind, implode(', ', $items), null, null, false, $items);
     }
     /** TLDs, popular ones first: ".com, .net, .org and 596 more". @param list<string> $tlds without the dot */
     public static function tlds(array $tlds): ?self { return $tlds === [] ? null : new self('text', TldNames::summary($tlds)); }

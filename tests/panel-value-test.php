@@ -43,8 +43,13 @@ same('warn', $text($read(Value::coded(InvoiceStatus::state('pending', '2026-11-1
 $plain = $read(Value::plain(Plain::Off));
 same(['Off', 0.0], [$text($plain, '//*[@class="domains-panel-plain"]'), $plain->evaluate('count(//*[@data-domains-tone])')], 'Off is plain text with no tone');
 $money = $read(Value::fact(Fact::money('1240'), '3 renew in November.'));
-same(['$1,240.00', 'money', '3 renew in November.', 0.0], [$text($money, '//*[@class="domains-panel-fact"]'), $text($money, '//*[@class="domains-panel-fact"]/@data-domains-fact'), $text($money, '//*[@class="domains-panel-sub"]'), $money->evaluate('count(//*[@data-domains-tone])')], 'Money fact with a line under it');
-same(['$12.3456', '-$5.50', null], [Fact::money('12.3456')?->text, Fact::money('-5.5')?->text, Fact::money('12,00')], 'Money never rounds and refuses non-decimals');
+same(['USD 1,240.00', 'money', '3 renew in November.', 0.0], [$text($money, '//*[@class="domains-panel-fact"]'), $text($money, '//*[@class="domains-panel-fact"]/@data-domains-fact'), $text($money, '//*[@class="domains-panel-sub"]'), $money->evaluate('count(//*[@data-domains-tone])')], 'Money fact with a line under it');
+same(['USD 12.3456', 'USD -5.50', null, null], [Fact::money('12.3456')?->text, Fact::money('-5.5')?->text, Fact::money('12,00'), Fact::money('5', 'usd')], 'Money reads currency code first, never rounds and refuses non-decimals');
+// A schedule: the fact, then a label and its time under it.
+$next = $read(Value::fact(Fact::entered('Weekly, Sunday 03:00'), 'Next', Fact::date($at, Reader::Staff)));
+same(['Weekly, Sunday 03:00', 1.0, 'Next '.Fact::date($at, Reader::Staff)->text], [$text($next, '//*[@class="domains-panel-val"]/*[@class="domains-panel-fact"]'), $next->evaluate('count(//*[@class="domains-panel-sub"]//*[@data-domains-fact="date"])'), preg_replace('/\s+/', ' ', trim($text($next, '//*[@class="domains-panel-sub"]')))], 'A fact takes a label and its time, as the mock reads');
+$bare = false; try { Value::fact(Fact::entered('Weekly'), null, Fact::date($at, Reader::Staff)); } catch (InvalidArgumentException) { $bare = true; }
+expect($bare, 'A time under a fact follows a label');
 // Late evening in the site's zone is already the next day in UTC: the customer's text and machine date name one day.
 $late = Fact::date(new DateTimeImmutable('2026-11-12T01:00:00Z'), Reader::Customer);
 same(['Nov 11, 2026', '2026-11-11'], [$late->text, $late->datetime], 'A customer date reads and encodes the same calendar day');
@@ -59,6 +64,14 @@ same(['host', 'text', 'text', 'ns1.example.net, ns2.example.net'], [
     Fact::names(['ns1.example.net', 'Enom TEST'])?->kind,
     Fact::names(['ns1.example.net', 'ns2.example.net'])?->text,
 ], 'Host lists preserve their values and identify hosts separately from account names');
+
+// A list that is the point of its row keeps every entry (Names cuts at three), and an empty list is null.
+$all = Fact::lines(['ns1.example.net', 'ns2.example.net', 'ns3.example.net', 'ns4.example.net', ' ']);
+same([['ns1.example.net', 'ns2.example.net', 'ns3.example.net', 'ns4.example.net'], 'host', null], [$all?->items, $all?->kind, Fact::lines(['', ' '])], 'A list fact keeps every entry and is null when empty');
+same('text', Fact::lines(['192.0.2.1', 'ns1.example.net'])?->kind, 'Mixed IP and nameserver entries remain text');
+
+// A typed reason is shown as typed, even when it reads like a state word; nothing typed is null.
+same(['Failed', 'entered', null], [Fact::entered(" Failed\n")?->text, Fact::entered('Checked with the customer')?->kind, Fact::entered('  ')], 'An entered fact is the typed line, null when empty');
 
 // The boundary: no free text, no status column, no state word passed off as data or as a reason.
 $model = (new class extends Model {})->forceFill(['name' => 'Enom TEST', 'status' => 'active', 'note' => null, 'enabled' => true]);
@@ -77,6 +90,15 @@ $escaped = $read(Value::state(State::Failed, Reader::Staff, '<b>x</b> broke.'));
 same([0.0, '<b>x</b> broke.'], [$escaped->evaluate('count(//b)'), $text($escaped, '//*[@class="domains-panel-sub"]')], 'A reason is text, never markup');
 // The Blade component renders the same value.
 same($failed(Reader::Staff)->toHtml(), Blade::render('<x-domains::panel.value :value="$value" />', ['value' => $failed(Reader::Staff)]), 'The component tag and the PHP piece agree');
+
+// Customer trace: a mark only where a step has a state. A step with no state has none, whatever its label or word says.
+$trace = $read(Blade::render('<x-domains::customer.trace :steps="$steps" />', ['steps' => [
+    ['label' => 'Invoice #7', 'state' => State::Paid], ['label' => 'Registration', 'state' => State::Checking],
+    ['label' => 'Transfer', 'state' => State::Cancelled], ['label' => 'Cancelled', 'state' => null], ['label' => 'Active', 'word' => 'Skipped'],
+]]));
+same([['Invoice #7', 'ok', 1.0], ['Registration', 'prog', 1.0], ['Transfer', 'off', 1.0], ['Cancelled', '', 0.0], ['Active', '', 0.0]],
+    array_map(static fn (DOMNode $li): array => [$trace->evaluate('normalize-space(./div/*[1])', $li), $trace->evaluate('string(@data-domains-tone)', $li), $trace->evaluate('count(./*[@class="domains-trace-mark"])', $li)],
+        iterator_to_array($trace->query('//ol[@data-piece="trace"]/li'))), 'Customer trace marks follow the state, never the wording');
 
 // Head: title with its tag, then the record's own state, facts and one link.
 $head = Head::make('fieldnote.example', Reader::Staff)->domain()->tag(demo: false, test: true)->state(State::Active, 'domain-8')->fact('Expires', Fact::day('2027-03-04'))->link('Enom TEST', '/admin/registrar-account/3');

@@ -140,6 +140,40 @@
 .domains .domains-status.domains-tone-warn::before { mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 18'%3E%3Cmask id='m'%3E%3Crect width='16' height='18' fill='white'/%3E%3Cpath d='M8 5.4v4.2' stroke='black' stroke-width='1.7' stroke-linecap='round'/%3E%3Ccircle cx='8' cy='12.4' r='1.1'/%3E%3C/mask%3E%3Cpath mask='url(%23m)' d='M8 1 15 5v8l-7 4-7-4V5z' stroke='black' stroke-width='1.4' stroke-linejoin='round'/%3E%3C/svg%3E"); }
 .domains .domains-status.domains-tone-bad::before { mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 18'%3E%3Cmask id='m'%3E%3Crect width='16' height='18' fill='white'/%3E%3Cpath d='M5.7 6.7l4.6 4.6M10.3 6.7l-4.6 4.6' stroke='black' stroke-width='1.7' stroke-linecap='round'/%3E%3C/mask%3E%3Cpath mask='url(%23m)' d='M8 1 15 5v8l-7 4-7-4V5z' stroke='black' stroke-width='1.4' stroke-linejoin='round'/%3E%3C/svg%3E"); }
 
+/* Panel pieces on customer pages: the same Value, Trace and head pieces staff pages draw (data-piece), with the same marks.
+   A State's tone comes from data-domains-tone: ok, off, prog, warn, err. The word is --fg, grey when off, amber and red for warn and err. */
+.domains .domains-panel-val { display: grid; justify-items: start; gap: .1875rem; min-width: 0; }
+.domains .domains-panel-st, .domains .domains-trace-mark { --domains-mark: var(--e-quiet); }
+.domains .domains-panel-st { display: inline-flex; align-items: center; gap: .4375rem; font-weight: 500; color: var(--e-fg); }
+.domains .domains-panel-st::before, .domains .domains-trace-mark::before { content: ""; width: 14px; height: 16px; flex: none; background: var(--domains-mark); mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 18'%3E%3Cpath d='M8 1 15 5v8l-7 4-7-4V5z' fill='none' stroke='black' stroke-width='1.4' stroke-linejoin='round'/%3E%3Cpath d='M5.6 9h4.8' stroke='black' stroke-width='1.7' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat; }
+.domains [data-domains-tone="off"] > .domains-trace-mark, .domains .domains-panel-st[data-domains-tone="off"] { color: var(--e-muted); }
+.domains .domains-panel-st[data-domains-tone="ok"], .domains [data-domains-tone="ok"] > .domains-trace-mark { --domains-mark: var(--e-ok); }
+.domains .domains-panel-st[data-domains-tone="prog"], .domains [data-domains-tone="prog"] > .domains-trace-mark { --domains-mark: var(--e-info); }
+.domains .domains-panel-st[data-domains-tone="warn"], .domains [data-domains-tone="warn"] > .domains-trace-mark { --domains-mark: var(--e-warn); }
+.domains .domains-panel-st[data-domains-tone="err"], .domains [data-domains-tone="err"] > .domains-trace-mark { --domains-mark: var(--e-bad); }
+.domains .domains-panel-st[data-domains-tone="warn"], .domains [data-domains-tone="warn"] > .domains-trace-word { color: var(--e-warn); }
+.domains .domains-panel-st[data-domains-tone="err"], .domains [data-domains-tone="err"] > .domains-trace-word { color: var(--e-bad); }
+.domains [data-domains-tone="off"] > .domains-trace-word { color: var(--e-muted); }
+.domains .domains-panel-st[data-domains-tone="ok"]::before, .domains [data-domains-tone="ok"] > .domains-trace-mark::before { mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 18'%3E%3Cmask id='m'%3E%3Crect width='16' height='18' fill='white'/%3E%3Cpath d='M4.9 9.3 7 11.4l4.1-4.7' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/mask%3E%3Cpath mask='url(%23m)' d='M8 1 15 5v8l-7 4-7-4V5z' stroke='black' stroke-width='1.4' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+.domains .domains-panel-st[data-domains-tone="prog"]::before, .domains [data-domains-tone="prog"] > .domains-trace-mark::before { mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 18'%3E%3Cpath d='M8 1 15 5v8l-7 4-7-4V5z' fill='none' stroke='black' stroke-width='1.4' stroke-linejoin='round'/%3E%3Ccircle cx='8' cy='9' r='2'/%3E%3C/svg%3E"); }
+.domains .domains-panel-st[data-domains-tone="warn"]::before, .domains [data-domains-tone="warn"] > .domains-trace-mark::before { mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 18'%3E%3Cmask id='m'%3E%3Crect width='16' height='18' fill='white'/%3E%3Cpath d='M8 5.4v4.2' stroke='black' stroke-width='1.7' stroke-linecap='round'/%3E%3Ccircle cx='8' cy='12.4' r='1.1'/%3E%3C/mask%3E%3Cpath mask='url(%23m)' d='M8 1 15 5v8l-7 4-7-4V5z' stroke='black' stroke-width='1.4' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+.domains .domains-panel-st[data-domains-tone="err"]::before, .domains [data-domains-tone="err"] > .domains-trace-mark::before { mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 18'%3E%3Cmask id='m'%3E%3Crect width='16' height='18' fill='white'/%3E%3Cpath d='M5.7 6.7l4.6 4.6M10.3 6.7l-4.6 4.6' stroke='black' stroke-width='1.7' stroke-linecap='round'/%3E%3C/mask%3E%3Cpath mask='url(%23m)' d='M8 1 15 5v8l-7 4-7-4V5z' stroke='black' stroke-width='1.4' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+.domains .domains-head-line .domains-panel-st::before { width: 18px; height: 20px; }
+.domains .domains-trace .domains-trace-mark::before { display: block; width: 12px; height: 14px; margin: .125rem auto 0; }
+.domains .domains-trace-word { font-weight: 500; white-space: nowrap; }
+/* A step that has not started yet has no state: its name is quiet. */
+.domains .domains-trace li:not([data-domains-tone]) > div > b { font-weight: 400; color: var(--e-muted); }
+.domains .domains-panel-sub { font-size: .75rem; line-height: 1.125rem; font-weight: 400; color: var(--e-muted); }
+.domains .domains-panel-fact[data-domains-fact="host"], .domains .domains-panel-fact[data-domains-fact="code"] { font-family: var(--e-mono); }
+.domains .domains-panel-fact[data-domains-fact="money"], .domains .domains-panel-fact[data-domains-fact="count"] { font-variant-numeric: tabular-nums; }
+/* Page head: crumbs or back link, the title with the page's actions, then the one status line. */
+.domains .domains-head--page { display: block; }
+.domains .domains-head-main { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 1rem; }
+.domains .domains-head-back { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.domains .domains-head-line { margin-top: .375rem; }
+/* Empty list: one line and the next step, left aligned inside the list's surface. */
+.domains .domains-list-empty { padding: 1rem 1.25rem; color: var(--e-muted); }
+
 /* Notices */
 .domains .domains-notice { display: flex; align-items: flex-start; gap: .75rem; padding: .875rem 1rem; border-radius: .5rem; font-size: .875rem; line-height: 1.375rem;
     border: 1px solid color-mix(in srgb, var(--tone, var(--e-info)) 35%, transparent); background: color-mix(in srgb, var(--tone, var(--e-info)) 8%, transparent); }
@@ -244,6 +278,8 @@
     .domains .domains-list td[data-label]::before { grid-column: 1; grid-row: 1 / span 2; }
     .domains .domains-list td[data-label] > * { grid-column: 2; min-width: 0; text-align: right; }
     .domains .domains-list td[data-label] > .domains-status { justify-self: end; }
+    .domains .domains-list td[data-label] > .domains-panel-val { justify-items: end; }
+    .domains .domains-list td[data-label]:not(:has(*)) { display: none; }
 }
 
 /* Search */
@@ -545,11 +581,11 @@
 .domains .domains-ph .domains-status::before { width: 18px; height: 20px; }
 .domains .domains-ph__sub { flex-basis: 100%; margin: -.5rem 0 0; color: var(--e-muted); font-size: .875rem; }
 .domains h1.domains-mono { font-size: clamp(1.125rem, 5vw, 1.5rem); line-height: 1.5; font-weight: 600; overflow-wrap: anywhere; }
-.domains .domains-ph ~ .domains-notice { align-items: center; margin-bottom: 1.5rem; }
+.domains .domains-ph ~ .domains-notice, .domains .domains-head--page ~ .domains-notice { align-items: center; margin-bottom: 1.5rem; }
 .domains .domains-notice__tx { flex: 1; }
 @media (max-width: 719px) {
-    .domains .domains-ph ~ .domains-notice { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; }
-    .domains .domains-ph ~ .domains-notice > a { grid-column: 2; justify-self: start; }
+    .domains .domains-ph ~ .domains-notice, .domains .domains-head--page ~ .domains-notice { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; }
+    .domains .domains-ph ~ .domains-notice > a, .domains .domains-head--page ~ .domains-notice > a { grid-column: 2; justify-self: start; }
 }
 .domains .domains-cols { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 2.25rem; align-items: start; }
 .domains .domains-sheet { --e-field: var(--e-bg); min-width: 0; background: var(--e-panel); border: 1px solid var(--e-line); border-radius: .5rem; }
@@ -566,6 +602,10 @@
 .domains .domains-trace li:last-child { padding-bottom: 0; }
 .domains .domains-trace li:last-child::before { display: none; }
 .domains .domains-trace b { font-weight: 500; }
+/* The text keeps its column when a step has no mark. */
+.domains .domains-trace li > div { grid-column: 2; }
+/* A customer step with no state has no mark, so the line runs through it. */
+.domains .domains-trace[data-piece="trace"] li:not([data-domains-tone])::before { top: 0; }
 .domains .domains-trace li > .domains-status { height: 16px; margin-top: .125rem; }
 .domains .domains-trace li > .domains-status::before { content: ""; display: block; }
 .domains .domains-panel__h { padding: 1rem 1.25rem; border-bottom: 1px solid var(--e-line); }

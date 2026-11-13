@@ -24,6 +24,8 @@ class Row extends Component implements HasEmbeddedView
     /** @var list<Action> */
     protected array $controls = [];
     private bool $painting = false;
+    private bool $target = false;
+    private bool $linked = false;
 
     final public function __construct(protected string $rowLabel, protected Value $rowValue) {}
     public static function make(string $label, Value $value): static
@@ -71,8 +73,20 @@ class Row extends Component implements HasEmbeddedView
         return $this;
     }
     public function waits(): bool { return $this->rowValue->waits() || $this->live?->waits() === true; }
-    /** The row's id on the page, from its full key, so rows with the same label in other sections stay apart. */
-    public function anchor(): string { return 'domains-panel-'.trim((string) preg_replace('/[^A-Za-z0-9_-]+/', '-', $this->getKey() ?? (string) $this->getKey(false)), '-'); }
+    /** A row a link can land on: its own key is its id on the page, so `#<key>` reaches it. $linked marks the one the link
+     * came for and brings it into view, also when SPA navigation leaves :target unset (two frames, after SPA scrolls to top). */
+    public function target(bool $linked = false): static
+    {
+        if (!preg_match('/^[a-z][a-z0-9-]*$/', (string) $this->getKey(false))) { throw new \InvalidArgumentException('A target row needs a plain key.'); }
+        $this->target = true; $this->linked = $linked;
+        return $this;
+    }
+    /** The row's id on the page, from its full key, so rows with the same label in other sections stay apart. A target row's id is its own key. */
+    public function anchor(): string
+    {
+        if ($this->target) { return (string) $this->getKey(false); }
+        return 'domains-panel-'.trim((string) preg_replace('/[^A-Za-z0-9_-]+/', '-', $this->getKey() ?? (string) $this->getKey(false)), '-');
+    }
 
     /** The actions this reader can use now. */
     protected function shownControls(): array
@@ -106,7 +120,7 @@ class Row extends Component implements HasEmbeddedView
         }
         $tip = $this->tip();
         return view('domains::components.panel.row', [
-            'kind' => $this->kind, 'id' => $this->anchor(), 'label' => $this->rowLabel, 'value' => $this->rowValue,
+            'kind' => $this->kind, 'id' => $this->anchor(), 'linked' => $this->linked, 'label' => $this->rowLabel, 'value' => $this->rowValue,
             'help' => $tip === null ? null : HelpHint::make($tip, 'About '.$this->rowLabel)->toHtml(),
             'live' => $this->live, 'result' => $this->result, 'waits' => $this->waits(),
             'blocked' => $this->blocked, 'fix' => $this->fix?->toHtml(), 'why' => $this->blocked !== null ? $why : null,

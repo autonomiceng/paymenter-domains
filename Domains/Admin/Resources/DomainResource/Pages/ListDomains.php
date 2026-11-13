@@ -46,9 +46,8 @@ class ListDomains extends RecordListPage
         return [
             Column::domain('domain', 'Domain')->searchable()->sortable(),
             Column::value('status', 'Status', fn (Domain $d): Value => Value::state($this->state($d), Reader::Staff, null, 'domain-'.$d->id)),
-            // Status and the step show at every width, so a phone reads both. The step comes first, so a cut note still
-            // shows it. A step that names a request opens it.
-            Column::text('note', 'Note', fn (Domain $d): ?string => $this->note($d)['text'])->note()->link(fn (Domain $d): ?string => DomainFacts::requestUrl($this->status($d))),
+            // The step comes first, so a cut note still shows it. A step that names a request opens it.
+            Column::note('note', 'Note', fn (Domain $d): ?string => $this->note($d)['text'])->link(fn (Domain $d): ?string => DomainFacts::requestUrl($this->status($d))),
             Column::text('customer', 'Customer', fn (Domain $d): ?string => $d->user ? (trim($d->user->first_name.' '.$d->user->last_name) ?: $d->user->email) : null)
                 ->short()->searchable(fn (Builder $query, string $search): Builder => self::customerSearch($query, $search)),
             Column::value('provider_expires_at', 'Expires', fn (Domain $d): ?Value => $this->expires($d))

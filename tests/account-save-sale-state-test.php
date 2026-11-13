@@ -58,10 +58,10 @@ same('Active',$staff(fn()=>RegistrarFacts::status($server,$account()))['label'],
 DB::table('domains_tlds')->where('id',$com->id)->increment('catalogue_revision');
 commerceReject(fn()=>$price());
 $status=$staff(fn()=>RegistrarFacts::status($server,$account()));
-same(['Nothing for sale','warning'],[$status['label'],$status['tone']],'An account with Orders on that sells nothing does not read Active');
+same(['Not for sale','warning'],[$status['label'],$status['tone']],'An account with Orders on that sells nothing does not read Active');
 same('No TLDs are for sale. Prices not published for .com. Open Edit prices and save.',$status['reason'],'The head names the cause and the fix');
 $row=AccountChecklist::notSelling($account(),$status['reason']);
-same(['Sales','Nothing for sale','warning'],[$row['label'],$row['value'],$row['tone']],'System checks lists the account that sells nothing');
+same(['Sales','Not for sale','warning'],[$row['label'],$row['value'],$row['tone']],'System checks lists the account that sells nothing');
 $note=(new ReflectionMethod(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::class,'note'))->invoke(null,$status['reason'],null,$account(),null,$status['act']??false);
 same(true,$note['act'],'The registrar list marks the reason as something staff must act on');
 

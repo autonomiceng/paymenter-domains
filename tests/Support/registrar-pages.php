@@ -110,7 +110,7 @@ $list=Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSuccessful(
 staffTableStandard($list,'Search account',['name','note'],['balance','due']);
 staffRowsStandard($list,['checked','domains'],['balance','due']);
 // One line per account: the reason, a missing balance's cause and a low balance go in Note, each with its step.
-// Neither fixture account sells a TLD under the installed rules, so each leads with Nothing for sale and its fix.
+// Neither fixture account sells a TLD under the installed rules, so each leads with Not for sale and its fix.
 $rows=$list->instance()->getTableRecords()->keyBy('id');$cell=fn(string $column,int $id)=>$list->instance()->getTable()->getColumn($column)->record($rows[$id]);
 same('No TLDs are for sale. Check registrar account for .com. Open the TLD to see what it needs. Low balance. Add funds.',$cell('note',$enom->server_id)->getState(),'Low balance says to add funds');
 same('warn',$cell('note',$enom->server_id)->getExtraAttributes()['data-domains-tone']??null,'Low balance is a job');
@@ -123,7 +123,7 @@ expect(str_contains((string)$cell('checked',$enom->server_id)->formatState($cell
 // This keeps filters independent and tests every real request without remounting an unchanged list.
 // No accounts yet says how to add one; a search that hides every account says so.
 (clone $list)->searchTable('no-such-account')->assertSee('No accounts match')->assertSee('Clear the search or filters to see all rows.')->assertDontSee('Add one to start selling domains.');
-foreach(['Account','Registrar','Mode','Status','Note','Balance','Due in 30 days','Enom test account','Test','Nothing for sale','USD 7.99','Low balance','USD 8.00',
+foreach(['Account','Registrar','Mode','Status','Note','Balance','Due in 30 days','Enom test account','Test','Not for sale','USD 7.99','Low balance','USD 8.00',
     'Missing','Not checked yet','Add funds','Not connected','Connect','Off in Paymenter','Demo NameSilo','Demo'] as $needle){$list->assertSee($needle);}
 $html=$list->html();
 foreach(['https://ote.namesilo.com/cart/add-funds','https://cp.enom.com/','noopener noreferrer',RegistrarAccount::getUrl(['account'=>$enom->server_id]),RegistrarAccount::getUrl(['account'=>$silo->server_id])] as $needle){
@@ -161,7 +161,7 @@ unset($list,$rows,$cell);gc_collect_cycles();gc_mem_caches();
 if ($registrarsPart === 'account') {
 // Account page.
 $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSuccessful();
-foreach(['Enom test account','Nothing for sale','Check balance','Account','Registrar','Enom','Mode','Test','Balance','USD 7.99','Low balance','Add funds','Due in 30 days','USD 8.00',
+foreach(['Enom test account','Not for sale','Check balance','Account','Registrar','Enom','Mode','Test','Balance','USD 7.99','Low balance','Add funds','Due in 30 days','USD 8.00',
     'Domains','API calls, last 24 hours','0 of 1,000'] as $needle){$page->assertSee($needle);}
 $html=$page->html();
 foreach(['https://cp.enom.com/','Registrars'] as $needle){expect(str_contains($html,$needle),'Account page: '.$needle);}

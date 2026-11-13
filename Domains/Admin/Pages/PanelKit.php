@@ -83,9 +83,12 @@ class PanelKit extends Page
                     ->step('Renewal sent to Enom TEST', State::Checking, self::AT, null, null, 'kit-renewal')
                     ->step('Invoice 100', State::Paid, self::AT - 60, 'the customer')
                     ->step('Registrar read', State::CouldntRead, self::AT - 4320, null, 'We couldn\'t reach the registrar.')
-                    ->step('Auto-renew at registrar', State::Stopped, self::AT - 950400, 'Ilya')], null, 'kit-activity'),
+                    ->step('Monitoring paused', State::Paused, self::AT - 86400, 'Ilya')
+                    ->step('Auto-renew at registrar', State::Stopped, self::AT - 950400, 'Ilya')], null, 'kit-activity', [Sheet::link('kit_all_activity', 'History', PanelKitHistory::getUrl())]),
             ], 'kit-split'),
             Sheet::single([
+                Sheet::section('A failed record', [Html::make(Head::make('fieldnote.example', $staff)->state(State::Failed, 'kit-failed-record')->line())], null, 'kit-failed-head'),
+                Sheet::section('An unpaid invoice', [Html::make(Head::make('Invoice 100', $staff)->state(State::Unpaid, 'kit-unpaid-record')->fact('Balance', Fact::entered('$120.00 USD'))->line())], null, 'kit-unpaid-head'),
                 ...array_map(static fn (string $tone, array $states): Section => Sheet::section($tone, [self::words($states)], null, 'kit-words-'.strtolower(str_replace(' ', '-', $tone))), array_keys(self::WORDS), self::WORDS),
                 Sheet::section('One word for both readers', [
                     Row::make('Staff', Value::state(State::UnderReview, $staff, 'This paid change waits for staff review.'))->actions(Sheet::link('kit_request', 'Check request #84', '#kit-words')),
@@ -111,8 +114,10 @@ class PanelKit extends Page
                 Sheet::section('A fact', [
                     Row::make('Balance', Value::fact(Fact::money('1240.00'))),
                     Row::make('Domains', Value::fact(Fact::count(9), '3 renew in November.')),
+                    Row::make('Version', Value::fact(Fact::entered('1.5.9'))),
                     Row::make('TLDs for sale', Value::fact(Fact::tlds(['com', 'net', 'org', ...array_map(static fn (int $i): string => 'kit'.$i, range(1, 596))]))),
                     Row::make('Last read', Value::fact(Fact::date(self::AT, $staff))),
+                    Row::make('Read errors', Value::fact(Fact::lines(['The registrar did not answer.', 'The saved balance could not be read.']))),
                     Row::make('Expires for staff', Value::fact(Fact::date(self::EXPIRES, $staff))),
                     Row::make('Expires for customers', Value::fact(Fact::date(self::EXPIRES, Reader::Customer))),
                 ], 'All amounts in USD.', 'kit-value-fact'),
@@ -187,6 +192,7 @@ class PanelKit extends Page
                 Sheet::section('Failed', [Row::make('Transfer lock', Value::plain(Plain::On))->key('row-live-failed')->result(Value::state(State::Failed, $staff, 'The registrar didn\'t answer. Nothing changed.'))->actions(self::kit('live_retry', 'Try again', 'Transfer lock'))], null, 'kit-live-failed'),
             ], 'kit-live'),
             Sheet::single([
+                Sheet::section('Updating', [Row::notice('kit-update-guide', Value::state(State::NeedsReview, $staff, 'See the updating guide for how to update.'), Sheet::link('kit_update_guide', 'Updating guide', 'https://example.com/updating', true))], null, 'kit-update-guide'),
                 Sheet::section('From the registrar', [
                     Row::notice('read-failed', Value::state(State::CouldntRead, $staff, 'We couldn\'t reach the registrar.')->when(self::AT), self::kit('notice_sync', 'Sync now')),
                     Row::make('Transfer lock', Value::state(State::CouldntRead, $staff))->key('row-notice-lock'),
@@ -205,9 +211,9 @@ class PanelKit extends Page
     public const EXPIRES = 1804180320;
     private const WORDS = [
         'OK' => [State::Ok, State::Active, State::Monitored, State::Completed, State::Paid, State::ForSale],
-        'Off' => [State::NotReadYet, State::NotForSale, State::NotSupported, State::NotConnected, State::Paused, State::Stopped, State::Cancelled, State::NotRecognized, State::Unpaid],
+        'Off' => [State::NotReadYet, State::NotIssuedYet, State::NotForSale, State::NotSupported, State::NotConnected, State::Paused, State::Stopped, State::Cancelled, State::NotRecognized, State::Unpaid],
         'In progress' => [State::Checking, State::Queued, State::Running, State::PendingRegistration, State::PendingTransfer, State::AwaitingPayment],
-        'Needs attention' => [State::NotSet, State::NeedsReview, State::ActionRequired, State::OrdersPaused, State::ExpiresToday, State::LowBalance, State::Delayed, State::OutOfDate, State::UnderReview],
+        'Needs attention' => [State::NotSet, State::NeedsReview, State::ActionRequired, State::OrdersPaused, State::ExpiresToday, State::LowBalance, State::BelowCost, State::Delayed, State::OutOfDate, State::UnderReview],
         'Failed' => [State::CouldntRead, State::Failed, State::ConnectionFailed, State::Expired, State::Redemption],
     ];
     /** Every word of one tone, as staff read it. @param list<State> $states */

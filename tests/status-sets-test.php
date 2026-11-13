@@ -7,8 +7,8 @@ use Paymenter\Extensions\Servers\Domains\Presentation\{AccountStatus, DomainStat
 $pill=static fn(string $label,string $tone,?string $reason=null)=>['label'=>$label,'tone'=>$tone,'reason'=>$reason];
 foreach ([DomainStatus::SET,RequestStatus::SET,AccountStatus::SET] as $set) {
     foreach ($set as [$label,$tone]) {
-        // Nothing for sale is the one three-word pill: an account with Orders on that sells no TLD.
-        expect((str_word_count($label)<=2||$label==='Nothing for sale')&&!preg_match('/\d/',$label),'Pill text is one or two words, no digits: '.$label);
+        // Not for sale is the one three-word pill: an account with Orders on that sells no TLD.
+        expect((str_word_count($label)<=2||$label==='Not for sale')&&!preg_match('/\d/',$label),'Pill text is one or two words, no digits: '.$label);
         expect(in_array($tone,['success','info','warning','danger','gray'],true),'Tone is a status colour: '.$label);
     }
 }
@@ -63,9 +63,9 @@ same($pill('Failed','danger','Registrar rejected the transfer'),RequestStatus::f
 same($pill('Under review','warning','Status missing'),RequestStatus::for(null),'No request state is Under review with the cause');
 
 // 2.3 Registrar account.
-same(['Active','Orders paused','Nothing for sale','Not connected','Connection failed'],array_column(AccountStatus::SET,0),'Account labels');
+same(['Active','Orders paused','Not for sale','Not connected','Connection failed'],array_column(AccountStatus::SET,0),'Account labels');
 same(['success','warning','warning','gray','danger'],array_column(AccountStatus::SET,1),'Account tones');
-same(['label'=>'Nothing for sale','tone'=>'warning','reason'=>'No TLD on sale','act'=>true],AccountStatus::notSelling('No TLD on sale'),'An account that sells nothing asks staff to act');
+same(['label'=>'Not for sale','tone'=>'warning','reason'=>'No TLD on sale','act'=>true],AccountStatus::notSelling('No TLD on sale'),'An account that sells nothing asks staff to act');
 foreach ([
     'matched'=>$pill('Active','success'),
     'not_configured'=>$pill('Not connected','gray'),

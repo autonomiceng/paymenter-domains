@@ -22,7 +22,7 @@ class PanelKitDetail extends DetailPage
     public function getSubNavigation(): array { return PanelKit::tabs('Detail'); }
     protected function head(): Head
     {
-        return Head::make('fieldnote.dev', Reader::Staff)->domain()->tag(true, false)->state(State::Active, 'kit-detail')
+        return Head::make('fieldnote.example', Reader::Staff)->domain()->tag(true, false)->state(State::Active, 'kit-detail')
             ->fact('Expires', Fact::day('2027-03-04'))->link('Enom TEST', '#sec-registration');
     }
     protected function actions(): array { return [PanelKit::kit('renew', 'Renew')]; }
@@ -35,7 +35,7 @@ class PanelKitDetail extends DetailPage
             Row::make('Expires', Value::fact(Fact::date(PanelKit::EXPIRES, $staff))),
             Row::make('Nameservers', Value::fact(Fact::names(['ns1.example.net', 'ns2.example.net'])))->actions(PanelKit::kit('ns', 'Edit', 'Nameservers')),
         ]), Section::make('Domain lock', [
-            Row::make('Transfer lock', Value::plain(Plain::On))->actions(PanelKit::kit('lock', 'Turn off', 'Transfer lock')),
+            Row::make('Transfer lock', Value::plain(Plain::On))->actions(PanelKit::kit('lock', 'Turn off', 'Transfer lock'))->key('switch-lock')->target(request()->query('switch') === 'lock'),
         ])];
     }
     protected function rail(): array
@@ -43,8 +43,8 @@ class PanelKitDetail extends DetailPage
         return [Section::make('Activity', [Trace::make(Reader::Staff)
             ->step('Renewal sent to Enom TEST', State::Checking, PanelKit::AT, null, null, 'kit-detail-renewal')
             ->step('Invoice 100', State::Paid, PanelKit::AT - 60, 'the customer')
-            ->step('Registrar read', State::CouldntRead, PanelKit::AT - 4320, null, 'We couldn\'t reach the registrar.')
-            ->step('Auto-renew at registrar', State::Stopped, PanelKit::AT - 950400, 'Ilya')])
+            ->step('Registrar read', State::CouldntRead, PanelKit::AT - 4320, null, 'We couldn\'t reach the registrar.', null, PanelKit::kit('read', 'Read again'))
+            ->step('Auto-renew at registrar', State::Stopped, PanelKit::AT - 950400, 'Ilya', null, null, Sheet::link('kit_settings', 'Settings', '#switch-lock'))])
             ->link(Sheet::link('kit_history', 'History', PanelKitHistory::getUrl())),
             Section::make('Registrar account', [
                 Row::make('Balance', Value::fact(Fact::money('1240.00')))->actions(PanelKit::kit('balance', 'Check balance')),

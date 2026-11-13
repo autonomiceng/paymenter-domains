@@ -91,6 +91,23 @@ final class DomainHistory
             return Sheet::event($row['event'],$sub,$row['time']?->getTimestamp(),$row['by'],$row['status']['tone']??'gray',$row['status']['label']??null);
         },$entries);
     }
+    /** The same steps as a panel trace, for the domain's Detail page rail. A step's word comes from its request status; a
+     * staff note or sync event has no state of its own. */
+    public static function trace(Domain $domain, array $entries, ?int $request = null, ?string $said = null): Panel\Trace
+    {
+        $off=self::ordersOff($domain); $trace=Panel\Trace::make(\Paymenter\Extensions\Servers\Domains\Presentation\Reader::Staff);
+        foreach ($entries as $entry) {
+            $row=self::row($entry,$domain,$off);
+            $sub=$row['sub']?StaffDomainStatus::sentence($row['sub']):null;
+            if (self::repeatsHead($entry,$sub,$request,$said)) { $sub=null; }
+            $label=$row['status']['label']??null;
+            $state=$label===null?null:(\Paymenter\Extensions\Servers\Domains\Presentation\State::tryFrom(strtolower((string)preg_replace('/[^A-Za-z]+/','_',$label)))
+                ??($entry instanceof Operation&&$label==='In progress'?RequestRows::state(['label'=>$label],$entry):\Paymenter\Extensions\Servers\Domains\Presentation\State::UnderReview));
+            $reason=RequestRows::sentence($sub);
+            $trace->step((string)$row['event'],$state,$row['time'],$row['by'],$reason!==null&&!\Paymenter\Extensions\Servers\Domains\Presentation\Fact::isWord($reason)?$reason:null);
+        }
+        return $trace;
+    }
     /** Whether a row's reason sentence only repeats the head: $said is the page's status line, which names request $request.
      * Other requests, and every status, keep their words. */
     public static function repeatsHead(Operation|array $entry, ?string $sentence, ?int $request, ?string $said): bool

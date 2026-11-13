@@ -19,7 +19,7 @@ class PanelKitHistory extends HistoryPage
     public function mount(): void { Staff::requireView(); abort_unless(DemoData::present(), 404); }
     public function getSubNavigation(): array { return PanelKit::tabs('History'); }
     protected function head(): Head
-    { return Head::make('fieldnote.dev', Reader::Staff)->domain()->tag(true, false)->state(State::Active, 'kit-detail')->fact('Expires', Fact::day('2027-03-04')); }
+    { return Head::make('fieldnote.example', Reader::Staff)->domain()->tag(true, false)->state(State::Active, 'kit-detail')->fact('Expires', Fact::day('2027-03-04')); }
     protected function events(): ?array
     {
         $at = static fn (int $offset): string => gmdate('c', PanelKit::AT - $offset);
