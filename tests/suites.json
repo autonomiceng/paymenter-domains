@@ -76,7 +76,8 @@
     "tests/test_runner_speed.py",
     "tests/test_retired_catalogue_references.py",
     "tests/test_runner_affected.py",
-    "tests/test_runner_installed_schedule.py"
+    "tests/test_runner_installed_schedule.py",
+    "tests/test_native_path.py"
   ],
   "package": [
     "tests/test_package.py"
