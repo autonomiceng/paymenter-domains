@@ -19,8 +19,7 @@
             'reason' => $note, 'date' => $step['date'] ?? null, 'moment' => $step['moment'] ?? false,
         ];
     }, $rows);
-    // The head and notice already say an order is under way, so the empty rail only says there is no history yet.
-    $empty = 'No changes yet.';
+    $empty = in_array($domain->order['kind'] ?? null, ['registration', 'transfer'], true) && ($domain->order['state'] ?? null) === 'paid' ? ucfirst($domain->order['kind']).' is in progress.' : 'No changes yet.';
 @endphp
 <x-domains::customer.section id="history" title="History">
 <x-slot:link>@if (count($steps) > 5 && !$all)<a class="domains-a" href="{{ $domain->actions['show'] }}?history=all#history">View all {{ count($steps) }}</a>@endif</x-slot:link>

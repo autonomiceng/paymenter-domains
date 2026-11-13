@@ -18,7 +18,8 @@ use Paymenter\Extensions\Servers\Domains\Services\DomainSummaryStrings;
         $html = $render($rows, $test); $dom = storefrontDom($html);
         same($test ? 1 : 0, $dom->query('//*[@class="domains-testbar"]')->length, 'D7 pricing banner presence: '.json_encode($test));
         if ($test) { expect(str_contains($html, $test === true ? $all : $some), 'D7 exact pricing banner: '.json_encode($test)); }
-        same($test === true ? 3 : ($test === 'some' ? 1 : 0), $dom->query('//tbody/tr/th/span[normalize-space()="Test"]')->length, 'D7 pricing test tags match rows');
+        // A page that is all test says so once in the banner; only a mixed list tags its test rows (DESIGN.md P-WRD-3).
+        same($test === 'some' ? 1 : 0, $dom->query('//tbody/tr/th/span[contains(concat(" ",@class," ")," domains-demo-tag--test ")]')->length, 'D7 pricing test tags match rows');
         same(4, $dom->query('//thead/tr/th')->length, 'D7 annual pricing has four columns');
         same(0, $dom->query('//td[@data-label="Register for"]')->length, 'D7 annual term cells hidden');
         same(3, $dom->query('//td[@data-label="Renew"]')->length, 'D7 mobile renew labels match the column');
@@ -35,10 +36,10 @@ use Paymenter\Extensions\Servers\Domains\Services\DomainSummaryStrings;
     $html = $render($rows, false); $dom = storefrontDom($html);
     same(5, $dom->query('//thead/tr/th')->length, 'D7 longer or absent registration terms retain column');
     same(3, $dom->query('//td[@data-label="Register for"]')->length, 'D7 conditional column retains every row cell');
-    same('Missing Contact support before you buy', preg_replace('/\s+/', ' ', trim($dom->query('//td[@data-label="Renew"]')->item(1)->textContent)), 'D7 missing renewal price says what to do next');
+    same(\Paymenter\Extensions\Servers\Domains\Presentation\State::NotSet->label().' '.\Paymenter\Extensions\Servers\Domains\Presentation\Missing::ASK_FIRST, preg_replace('/\s+/', ' ', trim($dom->query('//td[@data-label="Renew"]')->item(1)->textContent)), 'D7 missing renewal price says what to do next');
     $rows[1]['transfer'] = null; $rows[1]['transfersOn'] = true; $rows[2]['transfer'] = null; $rows[2]['transfersOn'] = false;
     $cells = storefrontDom($render($rows, false))->query('//td[@data-label="Transfer"]');
-    same(['Missing Contact support before you buy', 'Transfers off'], array_map(fn($i) => preg_replace('/\s+/', ' ', trim($cells->item($i)->textContent)), [1, 2]), 'D7 a transfer with no price says what to do next; off stays off');
+    same([\Paymenter\Extensions\Servers\Domains\Presentation\State::NotSet->label().' '.\Paymenter\Extensions\Servers\Domains\Presentation\Missing::ASK_FIRST, \Paymenter\Extensions\Servers\Domains\Presentation\State::NotForSale->label().' We don’t take transfers for this TLD.'], array_map(fn($i) => preg_replace('/\s+/', ' ', trim($cells->item($i)->textContent)), [1, 2]), 'D7 a transfer with no price says what to do next; off stays off');
     expect(str_contains($html, 'Longer terms are priced per term; search for a name to see each total.'), 'D7 longer single term qualifies for footnote');
     $rows[0]['terms'] = [1];
     expect(!str_contains($render($rows, false), 'Longer terms are priced'), 'D7 absent registration terms do not invent longer terms');

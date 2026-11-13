@@ -28,13 +28,13 @@ final class WatchPage
             default => null,
         };
     }
-    /** The head state: Stopped or Paused while checks are off (the watch's own state, gray, with what happens next), else the domain's state. */
-    public static function state(DomainSummary $s): ?Value
+    /** The head state while checks are off: Stopped or Paused (the watch's own state, gray, with what happens next), else null and the status pill shows. */
+    public static function offState(DomainSummary $s): ?Value
     {
         $keys = $s->stateKeys;
         if (in_array('watch.retired', $keys, true)) { return Value::state(State::Stopped, Reader::Customer, self::STOPPED); }
         if (in_array('watch.paused', $keys, true)) { return Value::state(State::Paused, Reader::Customer, self::PAUSED); }
-        return CustomerValues::status($s->statusState, $s->statusReason);
+        return null;
     }
     public const STOPPED = 'We no longer check this domain.';
     public const PAUSED = 'We check it again when monitoring resumes.';

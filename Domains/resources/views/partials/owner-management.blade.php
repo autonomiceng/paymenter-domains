@@ -50,7 +50,7 @@
 <span class="domains-row__v">
 @if ($cap==='ds' && isset($section['progress']['state']))<strong data-ds-state>{{ $section['progress']['state'] }}</strong>@endif
 @if (!$paused && $cap === 'nameservers' && ($section['current'] ?? []))
-@include('domains::partials.nameserver-list', ['servers' => $section['current'], 'count' => true])
+@include('domains::partials.nameserver-list', ['servers' => $section['current']])
 @endif
 <span @class(['domains-tone-text-warn' => ($section['progress']['tone'] ?? null) === 'warning', 'domains-sub' => !$paused && $cap === 'nameservers' && ($section['current'] ?? [])]) role="status" data-management-pending="{{ $cap }}" data-operation="{{ $section['progress']['id'] }}">{{ $section['progress']['text'] }}</span>
 </span>
@@ -58,7 +58,7 @@
 @if ($paused)
 <span class="domains-row__v"><x-domains::customer.unread :cause="$fills('when sync resumes')" /></span>
 @elseif ($cap === 'nameservers')
-<span class="domains-row__v">@if (!($section['current'] ?? []) && \Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::initialRead($domain)){{ $value::state($st::Checking, $customer) }}@elseif (!($section['current'] ?? []))<x-domains::customer.unread :cause="$waits" :calm="$waits === null" />@else @include('domains::partials.nameserver-list', ['servers' => $section['current'], 'count' => true])@endif</span>
+<span class="domains-row__v">@if (!($section['current'] ?? []) && \Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::initialRead($domain)){{ $value::state($st::Checking, $customer) }}@elseif (!($section['current'] ?? []))<x-domains::customer.unread :cause="$waits" :calm="$waits === null" />@else @include('domains::partials.nameserver-list', ['servers' => $section['current']])@endif</span>
 @if ($checking && $section['actions'])
 <span class="domains-row__a"><button class="domains-a domains-linkbtn" type="button" aria-disabled="true" disabled>Edit</button></span>
 @elseif ($section['actions'])

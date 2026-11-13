@@ -15,7 +15,9 @@
     // Not for sale is a state with its hollow gray mark, never bare words (DESIGN.md P-AVL-6).
     $notForSale = fn (?string $reason = null) => \Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Value::state(\Paymenter\Extensions\Servers\Domains\Presentation\State::NotForSale, \Paymenter\Extensions\Servers\Domains\Presentation\Reader::Customer, $reason);
     // The whole site in test mode already says so in the top bar; a Test tag after a TLD marks only that TLD (P-LAY-12).
-    $tldTest = fn (array $row) => ($row['testEnvironment'] ?? false) && !$testEnvironment;
+    // A price staff haven't set is Not set, with what to do (DESIGN.md glossary): not a failed read.
+    $askFirst = \Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Value::state(\Paymenter\Extensions\Servers\Domains\Presentation\State::NotSet, \Paymenter\Extensions\Servers\Domains\Presentation\Reader::Customer, \Paymenter\Extensions\Servers\Domains\Presentation\Missing::ASK_FIRST);
+    $tldTest = fn (array $row) => ($row['testEnvironment'] ?? false) && $testEnvironment !== true; // 'some' marks a mixed list; true is a whole test page, said once in the banner
 @endphp
 <div class="container mt-14 mb-10">
 <div class="domains">
@@ -59,8 +61,8 @@
                             <tr data-tld="{{ $row['tld'] }}">
                                 <th scope="row" class="domains-domain domains-mono">.{{ $row['tld'] }}@if ($tldTest($row)){{ \Paymenter\Extensions\Servers\Domains\Support\DemoData::label(false, true) }}@endif</th>
                                 <td class="domains-end domains-num" data-label="Register">@if (($row['register'] ?? null) !== null){{ $row['register'] }}@else<span data-not-for-sale>{{ $notForSale() }}</span>@endif</td>
-                                <td class="domains-end domains-num" data-label="Renew">@if ($row['renew']){{ $row['renew'] }}@else<x-domains::customer.unread :cause="\Paymenter\Extensions\Servers\Domains\Presentation\Missing::ASK_FIRST" />@endif</td>
-                                <td class="domains-end domains-num" data-label="Transfer">@if ($row['transfer'] !== null){{ $row['transfer'] }}@elseif ($row['transfersOn'] ?? false)<x-domains::customer.unread :cause="\Paymenter\Extensions\Servers\Domains\Presentation\Missing::ASK_FIRST" />@else<span data-not-for-sale>{{ $notForSale('We don’t take transfers for this TLD.') }}</span>@endif</td>
+                                <td class="domains-end domains-num" data-label="Renew">@if ($row['renew']){{ $row['renew'] }}@else{{ $askFirst }}@endif</td>
+                                <td class="domains-end domains-num" data-label="Transfer">@if ($row['transfer'] !== null){{ $row['transfer'] }}@elseif ($row['transfersOn'] ?? false){{ $askFirst }}@else<span data-not-for-sale>{{ $notForSale('We don’t take transfers for this TLD.') }}</span>@endif</td>
                                 @if ($showTerms)<td class="domains-end" data-label="Register for">{{ $termRange($row['terms']) }}</td>@endif
                             </tr>
                         @endforeach
