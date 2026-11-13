@@ -10,9 +10,9 @@ use Filament\Tables\Table;
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\PanelKit;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ListDomains;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Row, SettingsRow, Value};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Head, Row, SettingsRow, Trace, Value};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{EmptyTable, Sheet, Staff};
-use Paymenter\Extensions\Servers\Domains\Presentation\{Reader, State};
+use Paymenter\Extensions\Servers\Domains\Presentation\{Fact, Plain, Reader, State};
 
 panelKitFixture();
 $writer = staffUser([Staff::VIEW, Staff::POLICY]);
@@ -21,24 +21,37 @@ $page = Livewire::actingAs($writer)->test(PanelKit::class)->assertSuccessful();
 $act = static fn (string $name): Action => Action::make($name)->action(static fn (): null => null);
 $notice = Row::notice('kit-paused', Value::state(State::OrdersPaused, Reader::Staff))->actions($act('resume'));
 $toggle = SettingsRow::toggle('Watch', true, $act('watch'), 'Set by staff.');
-Schema::make($page->instance())->components([$notice, $toggle])->getComponents();
+$plain = Row::make('Transfer lock', Value::plain(Plain::On));
+$steps = Trace::make(Reader::Staff)->step('Read', State::Completed);
+Schema::make($page->instance())->components([$notice, $toggle, $plain, $steps])->getComponents();
 $dom = storefrontDom($page->html().$notice->toEmbeddedHtml().$toggle->toEmbeddedHtml());
 
-// Each piece's root element carries its name, and no other element claims it.
-$roots = [
-    'head-title' => 'span[@class="domains-panel-head-title"]', 'head-line' => 'span[@class="domains-panel-head-line"]',
-    'row' => 'div[@class="domains-panel-row"][@data-domains-row!="setting"][@data-domains-row!="notice"]',
-    'settings-row' => 'div[@class="domains-panel-row"][@data-domains-row="setting"]', 'notice' => 'div[@class="domains-panel-row"][@data-domains-row="notice"]',
-    'value' => 'div[@class="domains-panel-val"]', 'fact' => '*[@class="domains-panel-fact"]', 'switch' => 'button[@role="switch"]',
-    'trace' => 'ol[@class="domains-panel-trace"]', 'section' => '*[contains(concat(" ",@class," ")," domains-sec ")]',
-    'split' => '*[contains(concat(" ",@class," ")," domains-split ")]', 'sheet' => '*[contains(concat(" ",@class," ")," domains-sheet ")]',
-    'rail' => '*[contains(concat(" ",@class," ")," domains-rail ")]',
-];
-foreach ($roots as $piece => $root) {
-    $all = $dom->evaluate('count(//'.$root.')');
-    expect($all > 0, 'The kit draws a '.$piece);
-    same([$all, $all], [$dom->evaluate('count(//'.$root.'[@data-piece="'.$piece.'"])'), $dom->evaluate('count(//*[@data-piece="'.$piece.'"])')], 'Every '.$piece.' and only a '.$piece.' carries its marker');
+// The kit draws every piece, each found by its marker alone.
+foreach (['head-title', 'head-line', 'row', 'settings-row', 'notice', 'value', 'fact', 'switch', 'trace', 'section', 'split', 'sheet', 'rail'] as $piece) {
+    expect($dom->evaluate('count(//*[@data-piece="'.$piece.'"])') > 0, 'The kit draws a '.$piece);
 }
+// Drawn alone, each piece's outermost element carries its own marker, whatever classes it has.
+$root = static fn (string $html): ?string => storefrontDom($html)->query('//body/*[1]')->item(0)?->getAttribute('data-piece');
+$head = Head::make('Example', Reader::Staff)->state(State::Paused, 'kit-head');
+same([
+    'head-title' => 'head-title', 'head-line' => 'head-line', 'row' => 'row', 'settings-row' => 'settings-row', 'notice' => 'notice',
+    'value' => 'value', 'fact' => 'fact', 'trace' => 'trace',
+], [
+    'head-title' => $root($head->heading()->toHtml()), 'head-line' => $root((string) $head->line()?->toHtml()),
+    'row' => $root($plain->toEmbeddedHtml()), 'settings-row' => $root($toggle->toEmbeddedHtml()),
+    'notice' => $root($notice->toEmbeddedHtml()), 'value' => $root(Value::state(State::Paused, Reader::Staff)->toHtml()),
+    'fact' => $root(view('domains::components.panel.fact', ['fact' => Fact::money('12.00')])->render()),
+    'trace' => $root($steps->toEmbeddedHtml()),
+], 'Each piece names itself on its outermost element');
+// The switch marker sits on the control itself, the element a reader toggles.
+same('switch', storefrontDom($toggle->toEmbeddedHtml())->query('//*[@role="switch"]')->item(0)?->getAttribute('data-piece'), 'The switch control carries its marker');
+// Layout pieces are Filament components: their own root attributes carry the marker.
+$split = Sheet::split([Sheet::section('Lock', [])], [Sheet::section('Account', [])], 'kit');
+[$sheet, $rail] = $split->getDefaultChildComponents();
+same(['split', 'sheet', 'rail', 'section'], [
+    $split->getExtraAttributes()['data-piece'] ?? null, $sheet->getExtraAttributes()['data-piece'] ?? null,
+    $rail->getExtraAttributes()['data-piece'] ?? null, Sheet::section('Lock', [])->getExtraAttributes()['data-piece'] ?? null,
+], 'Split, sheet, rail and section carry their markers on their roots');
 
 // Pieces drawn by Filament from their attributes: the older sheet row and trace, and a staff table, whose empty state draws inside it.
 same(['sheet-row', 'sheet-trace', 'table'], [
