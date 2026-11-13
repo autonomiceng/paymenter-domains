@@ -226,7 +226,8 @@ $check('Unusable defaults stay protected and retired native rows cannot replace 
             expect(WatchProfile::find($row->id)?->enabled===true,'The duplicate reference keeps the template after '.$action);
         }
         same(null,SiteDnsDefault::refusal(),'A retired native row has no settings authority');
-        same('Used for new domains',$marker(),'The list retains the owned default marker');
+        same((int)$row->id,SiteDnsDefault::profile()?->id,'The owned reference still selects the template for new domains');
+        expect(SiteDnsDefault::uses((int)$row->id),'The owned reference still protects the template');
         DB::table('settings')->where('id',$duplicate)->delete();
     }finally{DB::table('domains_watch_profiles')->where('id',$row->id)->update(['nameservers'=>$stored]);siteDnsFixture(null);}
 });
