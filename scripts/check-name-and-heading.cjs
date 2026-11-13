@@ -21,7 +21,9 @@ async function main() {
     const page = await context.newPage();
     async function open(file, width) {
         await page.setViewportSize({ width, height: 900 });
-        const html = fs.readFileSync(path.join(output, file), 'utf8').replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '');
+        // No scripts, and a policy that blocks every outside resource, such as the core avatar image, before it is requested.
+        const html = fs.readFileSync(path.join(output, file), 'utf8').replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+            .replace(/<head\b[^>]*>/i, head => head + '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; font-src data:">');
         await page.setContent(html, { waitUntil: 'domcontentloaded' });
     }
     async function fullText(text, where) {
