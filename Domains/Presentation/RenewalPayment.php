@@ -19,7 +19,8 @@ final class RenewalPayment
         if (!$autoPay) { return 'Off. You pay each renewal invoice.'; }
         $method = trim((string) $method);
         $card = match (true) {
-            (bool) preg_match('/([0-9]{4})$/D', $method, $last) => '•••• '.$last[1],
+            // A no-break space keeps the dots with the digits in a narrow value column.
+            (bool) preg_match('/([0-9]{4})$/D', $method, $last) => "••••\u{00A0}".$last[1],
             str_starts_with(strtolower($method), 'link') => 'Link wallet',
             default => $method,
         };
