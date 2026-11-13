@@ -8,16 +8,7 @@
 <div class="domains">
     @include('domains::partials.styles')
     @include('domains::partials.test-banner', ['test' => $testEnvironment])
-    <div>
-        @if (!$guest && \Paymenter\Extensions\Servers\Domains\Http\DomainList::reachable() && \Illuminate\Support\Facades\Route::has('domains.domains.index'))<a class="domains-back" href="{{ route('domains.domains.index') }}"><x-ri-arrow-left-s-line class="domains-i" aria-hidden="true" />Domains</a>@endif
-        <div class="domains-head domains-head--search">
-            <div>
-                <h1 class="domains-title">{{ $guest ? 'Find a domain' : 'Register a domain' }}</h1>
-                <p class="domains-lede">Type the name you want. We check it across every TLD we sell.</p>
-            </div>
-        </div>
-        @if (\Illuminate\Support\Facades\Route::has('domains.domains.transfer') && ($transfersOffered ?? collect($endings)->contains(fn($row) => $row['transfer'] !== null)))@include('domains::partials.acquire-tabs', ['current' => 'register'])@endif
-    </div>
+    @include('domains::partials.store-head', ['title' => 'Get a domain', 'lede' => 'Type the name you want. We check it across every TLD we sell.'] + ((\Illuminate\Support\Facades\Route::has('domains.domains.transfer') && ($transfersOffered ?? collect($endings)->contains(fn($row) => $row['transfer'] !== null))) ? ['tabs' => 'register'] : []))
     @include('domains::partials.notices', ['fieldKeys' => ['domain'], 'summary' => false])
     @include('domains::partials.order-closed')
     @if ($replace ?? null)
@@ -43,9 +34,9 @@
             @if ($error || $errors->has('domain'))<p id="domains-name-error" class="domains-error" role="alert">{{ $error ?? $errors->first('domain') }}</p>@endif
             <p class="domains-endings" aria-label="First-year prices">
                 @foreach ($endings as $ending)
-                    <span><b>.{{ $ending['tld'] }}</b>@if ($ending['price']) {{ $ending['price'] }} first year @endif</span>
+                    <span><b class="domains-mono">.{{ $ending['tld'] }}</b>@if ($ending['price']) {{ $ending['price'] }} first year @endif</span>
                 @endforeach
-                <a class="domains-a" href="{{ route('domains.domains.pricing') }}">All prices</a>
+                <a class="domains-a domains-tap" href="{{ route('domains.domains.pricing') }}">All prices</a>
             </p>
         </form>
 
@@ -61,7 +52,8 @@
                         @include('domains::partials.result', ['first' => $index === 0])
                     @endforeach
                 </ul>
-                <p class="domains-small domains-muted" style="margin-top:.75rem">
+                <p class="domains-small domains-muted domains-fine" style="margin-top:.75rem">
+                    {{ \Paymenter\Extensions\Servers\Domains\Presentation\Fact::IN_USD }}
                     @if ($guest)
                         Prices plus tax where applicable. You’ll sign in or create an account at checkout.
                     @else

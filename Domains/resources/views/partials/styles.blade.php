@@ -360,6 +360,17 @@
 /* Price list */
 .domains .domains-pricelist tbody th { font-size: .9375rem; color: var(--e-fg); padding: .875rem 1rem; border-bottom: 1px solid var(--e-line); font-weight: 700; }
 .domains .domains-pricelist tbody tr:last-child th { border-bottom: 0; }
+/* Price columns take their content's width; the TLD column takes what is left, so no gap opens between two prices (DESIGN.md P-TBL-7). */
+@media (min-width: 720px) {
+    .domains .domains-pricelist thead th:not(:first-child), .domains .domains-pricelist td { width: 1%; white-space: nowrap; padding-left: 2rem; }
+    .domains .domains-pricelist td .domains-sub { display: block; white-space: normal; min-width: 12rem; }
+}
+/* Fine print reads as one measure, never the full sheet width. */
+.domains .domains-fine { max-width: 64ch; }
+.domains .domains-store-head { margin-bottom: 1.5rem; }
+.domains .domains-store-head .domains-head--page { margin-bottom: 0; }
+.domains .domains-store-head .domains-acquire-tabs { margin-top: 1.25rem; }
+@media (max-width: 640px) { .domains .domains-tap { display: inline-flex; align-items: center; min-height: 44px; } }
 @media (max-width: 719px) {
     .domains .domains-pricelist.domains-stackable tr { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .domains .domains-pricelist.domains-stackable tbody th { display: block; padding: 0; border: 0; grid-column: 1 / -1; }
@@ -566,6 +577,8 @@
 .domains .domains-help-toc { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: .5rem 1.25rem; margin-top: .5rem; }
 .domains .domains-prose h2 { margin-top: 1.75rem; scroll-margin-top: 5rem; }
 .domains .domains-prose h2:first-child { margin-top: 0; }
+.domains .domains-help-nav { padding-bottom: 1.25rem; border-bottom: 1px solid var(--e-line); }
+.domains .domains-help-nav + h2 { margin-top: 1.25rem; }
 .domains .domains-prose p, .domains .domains-prose ul { margin-top: .625rem; max-width: 42rem; }
 .domains .domains-prose ul { padding-left: 1.25rem; list-style: disc; }
 .domains .domains-prose li + li { margin-top: .25rem; }
@@ -640,6 +653,7 @@
 /* Renewal and Settings labels: one size and weight, as in the mock. */
 .domains .domains-sheet .domains-card dt, .domains .domains-sheet .domains-row__l { font-size: inherit; font-weight: 400; }
 .domains .domains-ns-list { display: flex; flex-direction: column; gap: 2px; font-size: .8125rem; overflow-wrap: anywhere; }
+.domains .domains-ns-names { overflow-wrap: anywhere; }
 .domains .domains-sheet .domains-card dd { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 1rem; align-items: center; text-align: left; font-weight: 400; }
 .domains .domains-sheet .domains-card dd > * { grid-column: 1; }
 .domains .domains-sheet .domains-card dd > .domains-card__a { grid-column: 2; grid-row: 1 / span 3; margin-top: 0; }
@@ -654,6 +668,20 @@
 .domains .domains-edit { width: min(40rem, calc(100vw - 2rem)); }
 .domains .domains-edit:not(:modal) { max-width: none; }
 .domains .domains-edit__close { display: flex; justify-content: flex-end; margin-top: .75rem; }
+/* One button row in every edit dialog: Cancel then the primary on the right, a quieter third choice apart on the left (P-COH-1).
+   In an open dialog that scrolls (a long contact form on a phone) the row stays at the bottom of the view. */
+.domains .domains-edit .domains-edit__buttons { justify-content: flex-end; margin-top: 1.25rem; }
+.domains .domains-edit .domains-edit__aside { margin-right: auto; }
+.domains .domains-edit:modal .domains-edit__buttons { position: sticky; bottom: -1.5rem; z-index: 1; margin: 1.25rem -1.5rem -1.5rem; padding: .875rem 1.5rem; border-top: 1px solid var(--e-line); background: var(--e-panel); }
+/* A record grid gets the room its columns need on a wide screen; below 720px it stacks, one record per block. */
+.domains .domains-edit:has(.domains-record-form) { width: min(64rem, calc(100vw - 2rem)); }
+@media (max-width: 719px) {
+    .domains .domains-records { min-width: 0; }
+    .domains .domains-records.domains-stackable tr { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .domains .domains-records.domains-stackable td { padding: 0; }
+    .domains .domains-records.domains-stackable td[data-label]::before { display: block; margin-bottom: .125rem; }
+    .domains .domains-records .domains-input { min-width: 0; width: 100%; }
+}
 @media (max-width: 1100px) { .domains .domains-cols { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 639px) {
     .domains .domains-sheet .domains-panel__h { padding-inline: 1rem; }

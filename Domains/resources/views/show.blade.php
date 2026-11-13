@@ -7,6 +7,8 @@
     $pill = \Paymenter\Extensions\Servers\Domains\Presentation\StatusPill::owned($domain, $summary ?? null);
     // The status reason is said once: the page notice already gives it, so the line under the status would repeat it.
     if ($pill && $notice && filled($pill['reason'] ?? null) && str_contains(strtolower($notice['text']), strtolower(rtrim($pill['reason'], '.')))) { $pill['reason'] = null; }
+    // Work that is ours (a cyan or green head) is said once, by the notice; an amber or red head keeps its reason (P-STA-11).
+    if ($pill && $notice && !in_array($pill['tone'] ?? null, ['warn', 'bad'], true)) { $pill['reason'] = null; }
     $state = $pill ? \Paymenter\Extensions\Servers\Domains\Presentation\CustomerValues::labelled($pill['label'], $pill['reason'] ?? null) : null;
     $settings = array_values(array_filter(['flags', 'lock', 'privacy', 'auth_code_email', 'contacts', 'nameservers', 'dns', 'srv', 'glue', 'ds'], fn ($cap) => ($cap !== 'privacy' || \Paymenter\Extensions\Servers\Domains\Presentation\PrivacyVisibility::SHOWN) && (isset($domain->management[$cap]) || ($cap === 'nameservers' && $domain->syncPaused))
         // Domain settings only says the settings were read. Once the read is full, the rows below show each one.

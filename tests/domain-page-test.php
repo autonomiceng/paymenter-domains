@@ -66,7 +66,8 @@ same(1,$dom->query('//nav[contains(@class,"domains-crumb")]/a[@href="'.route('do
 same(1,$dom->query('//h1[starts-with(normalize-space(.),"'.$name.'")]')->length,'Name is the h1');
 same(1,$dom->query('//*[@data-piece="head-line"]//*[@data-domains-tone]')->length,'One state in the head line');
 foreach(['Domain help</a>','class="domains-tabs','>Overview<','Contact support to change','Historical invoices','Next renewal','Scroll sideways','Renewal settings','registrar auto-renew','Save nameservers','Use default nameservers','Transfer code','transfer code','Domain privacy','—']as$gone){expect(!str_contains($html,$gone),'Removed: '.$gone);}
-same(['Registrar: Enom.'],array_map($norm,iterator_to_array($dom->query('//dialog[@id="edit-nameservers"]/form/p[starts-with(normalize-space(.),"Registrar:")]'))),'The nameserver editor quietly names its saved registrar once');
+// Customers never see a registrar's name, in an editor or its confirm step either.
+$editor=$norm($dom->query('//dialog[@id="edit-nameservers"]')->item(0));foreach(['Enom','NameSilo','Registrar:']as$registrar){expect(!str_contains($editor,$registrar),'The nameserver editor names no registrar: '.$registrar);}
 $outsideEditors=storefrontDom($html);foreach(iterator_to_array($outsideEditors->query('//dialog'))as$dialog){$dialog->parentNode->removeChild($dialog);}
 foreach(['Enom','NameSilo','enom','namesilo']as$registrar){expect(!str_contains($outsideEditors->document->textContent,$registrar),'No registrar name outside editors: '.$registrar);}
 expect(!preg_match('/unavailable/i',strip_tags($html)),'No unavailable wording');
@@ -160,7 +161,7 @@ foreach(['nameservers'=>'nameservers','dns'=>'dns-records','glue'=>'glue-records
 // Editors open in a dialog; without script the link opens it on the server.
 same(1,$dom->query('//li[@id="nameservers"]//a[@data-dialog-open][@href="/domains/1?edit=nameservers#edit-nameservers"]')->length,'Change opens the editor');
 same(1,$dom->query('//li[@id="nameservers"]//dialog[@id="edit-nameservers"][not(@open)]//textarea[@name="nameservers"]')->length,'Editor dialog closed by default');
-foreach(['Nameservers, one per line','2 to 12, like ns1.example.com.','Use site default nameservers','>Save<','Change nameservers?','If the new nameservers aren’t set up, your website and email stop working.']as$t){expect(str_contains($html,$t),'Nameservers dialog: '.$t);}
+foreach(['Nameservers, one per line','2 to 12, like ns1.example.com.','Use '.\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::nameservers(),'>Save<','Change nameservers?','If the new nameservers aren’t set up, your website and email stop working.']as$t){expect(str_contains($html,$t),'Nameservers dialog: '.$t);}
 foreach(['Turn off transfer lock?','Anyone with the auth code can then move '.$name.' to another registrar.']as$t){expect(str_contains($html,$t),'Lock dialog: '.$t);}
 same(1,$dom->query('//li[@id="lock"]//form[@data-confirm]//dialog[not(@open)]//button[@name="confirmed"][normalize-space(.)="Turn off"]')->length,'Lock off confirms in a dialog');
 foreach(['Email the auth code?','We’ll email it to the owner.']as$t){expect(str_contains($html,$t),'Auth code dialog: '.$t);}

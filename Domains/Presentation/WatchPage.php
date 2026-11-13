@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Presentation;
 use Carbon\CarbonImmutable;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Value;
 use Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels;
 /** The hosting domain page: its one notice, the Expires and Nameservers rows and History, from the summary and open notices alone. */
 final class WatchPage
@@ -14,8 +15,8 @@ final class WatchPage
         $expiry = $s->expiry ? DomainPage::date($s->expiry) : null;
         $days = $s->daysLeft;
         return match (true) {
-            in_array('watch.retired', $keys, true) => ['tone' => 'info', 'text' => 'Monitoring stopped.'],
-            in_array('watch.paused', $keys, true) => ['tone' => 'info', 'text' => 'Monitoring paused.'],
+            // Stopped and Paused are the watch's own state: the head says them once, in gray (DESIGN.md P-STA-3, P-NTC-5).
+            (bool) array_intersect(['watch.retired', 'watch.paused'], $keys) => null,
             in_array('watch.not_registered', $keys, true) => ['tone' => 'warn', 'text' => 'The registry has no record of '.$s->name.'. Check with your registrar.'],
             (bool) array_intersect(['watch.expired', 'watch.redemption'], $keys) || (bool) array_intersect(['expired', 'registry_expiry_reached'], $kinds)
                 => ['tone' => 'bad', 'text' => $s->name.' expired'.($expiry ? ' on '.$expiry : '').'. Renew it at your registrar.'],
@@ -27,6 +28,16 @@ final class WatchPage
             default => null,
         };
     }
+    /** The head state: Stopped or Paused while checks are off (the watch's own state, gray, with what happens next), else the domain's state. */
+    public static function state(DomainSummary $s): ?Value
+    {
+        $keys = $s->stateKeys;
+        if (in_array('watch.retired', $keys, true)) { return Value::state(State::Stopped, Reader::Customer, self::STOPPED); }
+        if (in_array('watch.paused', $keys, true)) { return Value::state(State::Paused, Reader::Customer, self::PAUSED); }
+        return CustomerValues::status($s->statusState, $s->statusReason);
+    }
+    public const STOPPED = 'We no longer check this domain.';
+    public const PAUSED = 'We check it again when monitoring resumes.';
     /** Expires: the date with its tone and one sub line, or Missing with its cause (when it shows, if the notice already says why). */
     public static function expires(DomainSummary $s, array $portal): array
     {

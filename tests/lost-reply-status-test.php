@@ -16,7 +16,7 @@ $words=Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::for($result
 same(['title'=>'Enom has not answered yet','body'=>"Ask Enom to check this attempt. You can record Enom’s answer after ".$at.'.'],$words,'Staff gets a real Pacific time and next step');
 $page=Livewire\Livewire::test(Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation::class,['record'=>$result->id]);
 $page->assertSee('Ask Enom to check this attempt.')->assertSee('You can record Enom’s answer after '.$at.'.')->assertDontSee('has not confirmed this registration')->assertDontSee('Cannot check registrar')->assertDontSee('PRIVATE-REPLY');
-$customerAt=(new DateTimeImmutable($result->attempt['dispatch_attempted_at']))->modify('+24 hours')->setTimezone(new DateTimeZone('America/Los_Angeles'))->format('M j, g:i A').' PT';
+$customerAt=(new DateTimeImmutable($result->attempt['dispatch_attempted_at']))->modify('+24 hours')->setTimezone(new DateTimeZone('America/Los_Angeles'))->format('M j'); // Customers read dates only (DESIGN.md P-TYP-9).
 require __DIR__.'/Support/owner-pages.php';
 $customer=App\Models\User::findOrFail($result->domain->user_id);
 Illuminate\Support\Facades\Auth::setUser($customer);

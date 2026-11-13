@@ -42,7 +42,7 @@ same(['0','1','2'],array_map(fn($i)=>$i->getAttribute('value'),iterator_to_array
 expect(!str_contains($html,'original')&&!str_contains($html,'opaque'),'Provider record IDs stay server-side');
 $fixed=array_map(fn($row)=>array_map($text,iterator_to_array($row->getElementsByTagName('td'))),iterator_to_array($dom->query('//li[@id="dns"]//*[@data-fixed-records]')));
 // A complete read lists CAA last with the other DNS records, and every read-only row shows the TTL that read returned.
-same([['_sip._tcp','SRV','5:5060:sip.example.com.','—','900','Read-only'],['@','CAA','0:issue:ca.example.com','—','600','Read-only']],$fixed,'Every read-only row has its type, value and read TTL');
+same([['_sip._tcp','SRV','5:5060:sip.example.com.','','900','Read-only'],['@','CAA','0:issue:ca.example.com','','600','Read-only']],$fixed,'Every read-only row has its type, value and read TTL');
 // Saved editable rows show the TTL they keep; blank rows get the registrar default.
 $ttls=fn($dom,$rows)=>array_map(fn($row)=>$text($row->getElementsByTagName('td')->item(4)),iterator_to_array($dom->query('//li[@id="dns"]//table[contains(@class,"domains-records")]/tbody/tr'.$rows)));
 same(['300','3600','7207'],$ttls($dom,'[@data-record]'),'Saved editable rows show the TTL the registrar read returned');
