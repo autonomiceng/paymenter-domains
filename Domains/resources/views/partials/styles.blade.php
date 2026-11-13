@@ -410,7 +410,7 @@
 /* Toolbar, tabs and pager */
 .domains .domains-toolbar { display: flex; gap: 1rem; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
 .domains .domains-tabs { display: flex; flex: 1; gap: 1.5rem; min-width: 0; border-bottom: 1px solid var(--e-line); overflow-x: auto; scrollbar-width: none; }
-.domains .domains-tab { display: inline-flex; justify-content: center; min-width: 2.75rem; padding: .5625rem 0; font-size: .875rem; font-weight: 500; color: var(--e-muted); white-space: nowrap; }
+.domains .domains-tab { display: inline-flex; flex-shrink: 0; justify-content: center; min-width: 2.75rem; padding: .5625rem 0; font-size: .875rem; font-weight: 500; color: var(--e-muted); white-space: nowrap; }
 .domains .domains-tab:hover, .domains .domains-tab[aria-current="true"] { color: var(--e-fg); }
 .domains .domains-tab[aria-current="true"] { box-shadow: inset 0 -2px 0 var(--e-accent); }
 .domains .domains-tab small { margin-inline-start: .25rem; font-size: inherit; font-weight: 400; color: var(--e-muted); }

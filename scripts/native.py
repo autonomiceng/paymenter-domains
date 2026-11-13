@@ -3,6 +3,7 @@
 # Copyright (c) 2026 Autonomic Engineering.
 import hashlib
 import io
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -10,7 +11,11 @@ import shutil
 import subprocess
 import tarfile
 import threading
-from fixture_watch import UnchangedTree
+# Callers may load this helper by file path, outside the scripts import path.
+_watch_spec = importlib.util.spec_from_file_location('domains_fixture_watch', Path(__file__).with_name('fixture_watch.py'))
+_watch = importlib.util.module_from_spec(_watch_spec)
+_watch_spec.loader.exec_module(_watch)
+UnchangedTree = _watch.UnchangedTree
 
 COMMIT = 'ee729f7d99ac18942625b79f3f93d8d8b21255e8'
 LOCK_SHA256 = 'fd6bdeb5557b3af0976d5688d92081abc6f7c3235806a6c4b77f4b8bca9186be'

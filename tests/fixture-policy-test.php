@@ -59,6 +59,7 @@ function fixtureHostnameLiterals(string $source): array
 function fixtureHostnameAllowed(string $name, string $fixture = ''): bool
 {
     if (preg_match('/(?:^|\.)example\.(?:com|net|org)\z|\.(?:test|example|invalid)\z/', $name) === 1) { return true; }
+    if ($fixture === 'PanelKit.php') { return false; }
     if (preg_match('/\A[a-z0-9-]*-placeholder(?:-[0-9]+)?\.com\z/', $name) === 1) { return true; }
     // This exact negative fixture must remain inside its purchased domain.
     if ($fixture === 'owner-actions-test.php' && $name === 'ns1.owner-register-1-placeholder.com') { return true; }
@@ -115,9 +116,16 @@ foreach (['invoice-binding-test.php', 'management-privacy-test.php', 'owner-acti
         expect(fixtureHostnameAllowed($name, $fixture), $fixture.' uses a reserved or explicit placeholder name: '.$name);
     }
 }
+// Shipped demo pages cannot use protocol constants or commerce-only placeholders.
+foreach (['reseller.enom.com', 'foo-placeholder.com'] as $name) {
+    expect(!fixtureHostnameAllowed($name, 'PanelKit.php'), 'The panel kit refuses a nonreserved name: '.$name);
+}
+foreach (['fieldnote.example', 'ns1.example.net'] as $name) {
+    expect(fixtureHostnameAllowed($name, 'PanelKit.php'), 'The panel kit accepts a reserved name: '.$name);
+}
 // The staff panel kit is a shipped demo page, so the names it shows are reserved too.
 foreach (fixtureHostnameLiterals(file_get_contents(dirname(__DIR__).'/Domains/Admin/Pages/PanelKit.php')) as $name) {
-    expect(fixtureHostnameAllowed($name), 'The panel kit shows a reserved name: '.$name);
+    expect(fixtureHostnameAllowed($name, 'PanelKit.php'), 'The panel kit shows a reserved name: '.$name);
 }
 
 /** Known IP fixture strings have no escapes; PHP tokens make quote spelling irrelevant. */

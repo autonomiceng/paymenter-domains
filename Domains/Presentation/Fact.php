@@ -33,12 +33,13 @@ final class Fact
         $places = str_pad(rtrim($m[3] ?? '', '0'), 2, '0');
         return new self('money', $m[1].'$'.number_format((int) $m[2]).'.'.$places);
     }
-    /** At most three names, then a count: "Enom TEST, NameSilo and 4 more". Callers order them, most used first. @param list<string> $names */
+    /** Host lists keep host metadata. At most three names, then a count: "Enom TEST, NameSilo and 4 more". Callers order them, most used first. @param list<string> $names */
     public static function names(array $names): ?self
     {
         $names = array_values(array_filter(array_map(static fn (string $name): string => trim(preg_replace('/\s+/u', ' ', $name)), $names), static fn (string $name): bool => $name !== ''));
         if ($names === []) { return null; }
-        return new self('text', implode(', ', array_slice($names, 0, 3)).(count($names) > 3 ? ' and '.(count($names) - 3).' more' : ''));
+        $kind = count(array_filter($names, static fn (string $name): bool => self::host($name) !== null)) === count($names) ? 'host' : 'text';
+        return new self($kind, implode(', ', array_slice($names, 0, 3)).(count($names) > 3 ? ' and '.(count($names) - 3).' more' : ''));
     }
     /** TLDs, popular ones first: ".com, .net, .org and 596 more". @param list<string> $tlds without the dot */
     public static function tlds(array $tlds): ?self { return $tlds === [] ? null : new self('text', TldNames::summary($tlds)); }
