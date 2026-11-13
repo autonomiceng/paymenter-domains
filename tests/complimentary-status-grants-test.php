@@ -47,8 +47,9 @@ foreach($cases as $role=>$permissions){
             $text=$read();expect(is_string($text)&&$text!=='','The current hold reason is present');
             if($costs){expect(str_contains($text,'8.01')&&str_contains($text,'8.00'),'Authorized staff retain both costs');}
             else{expect(!str_contains($text,'8.01')&&!str_contains($text,'8.00'),'Registrar costs must be redacted');}
-            same($approve,str_contains($text,'Use Approve registrar cost'),'Approval instruction requires the full current grant');
-            if(!$costs){expect(str_contains($text,'Ask staff with access to domain costs to review it.'),'Restricted staff retain a clear next step');}
+            // The list's note is one clause that opens the request; the request page says the step.
+            if($surface!=='list page'){same($approve,str_contains($text,'Use Approve registrar cost'),'Approval instruction requires the full current grant');}
+            if(!$costs&&$surface!=='list page'){expect(str_contains($text,'Ask staff with access to domain costs to review it.'),'Restricted staff retain a clear next step');}
         }catch(Throwable $e){$failures[]=$role.' / '.$surface.': '.$e->getMessage();}
     }
 }

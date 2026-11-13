@@ -46,7 +46,7 @@ foreach ($cases as $case=>[$status,$action,$state,$code]) {
     same(DomainFacts::for($held->fresh())['Renewal']['value']??'Missing',$cell->getState(),'Auto-renew cell matches the domain page: '.$case);
     expect(in_array($cell->getState(),['On','Off','Missing'],true),'Auto-renew cell is not blank: '.$case);
 }
-// A pending import never bills renewals: the list says Off, Until import, like the domain page. By status or by provenance alone.
+// A pending import never bills renewals: the list says Off on one line, and the domain page says Off, Until import. By status or by provenance alone.
 $saved=(array)DB::table('domains_domains')->where('id',$held->id)->first(['status','provenance','provider_expires_at']);
 foreach (['status'=>['status'=>'adoption_pending'],'provenance'=>['provenance'=>'adoption_pending']] as $case=>$pending) {
     DB::table('domains_domains')->where('id',$held->id)->update([...$pending,'provider_expires_at'=>today()->addDays(200)->format('Y-m-d')]);
@@ -55,7 +55,7 @@ foreach (['status'=>['status'=>'adoption_pending'],'provenance'=>['provenance'=>
     // Customers and staff see one name for the setting.
     same('Auto-renew',$columns['auto_renew']->getLabel(),'List column says Auto-renew, as the domain page row');
     $text=trim(preg_replace('/\s+/',' ',html_entity_decode(strip_tags((string)$cell->formatState($cell->getState())))));
-    same([$page['value'],$page['sub']],[$cell->getState(),trim(substr($text,strlen((string)$cell->getState())))?:null],'List matches the domain page: pending '.$case);
+    same([$page['value'],null],[$cell->getState(),trim(substr($text,strlen((string)$cell->getState())))?:null],'List says Off, as the domain page: pending '.$case);
     DB::table('domains_domains')->where('id',$held->id)->update($saved);
 }
 DB::table('domains_domains')->where('id',$held->id)->update(['status'=>'cancelled']);
@@ -63,7 +63,7 @@ DB::table('domains_domains')->where('id',$held->id)->update(['status'=>'cancelle
 DB::table('domains_domains')->where('id',$held->id)->update($saved);
 DB::table('domains_domains')->where('id',$held->id)->update(['renewal_policy'=>'not-readable']);
 [$columns,$records]=$list();$cell=$columns['auto_renew']->record($records[$held->id]);
-same(\Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead->label(),$cell->getState(),'Unreadable renewal settings read Couldn\'t read');expect(str_contains(html_entity_decode(strip_tags((string)$cell->formatState($cell->getState()))),DomainFacts::UNREADABLE_RENEWAL),'Unreadable renewal settings say the cause');
+same(\Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead->label(),$cell->getState(),'Unreadable renewal settings read Couldn\'t read');same($cell->getState(),trim(html_entity_decode(strip_tags((string)$cell->formatState($cell->getState())))),'Unreadable renewal settings read one line; why is on the domain page');
 DB::table('domains_domains')->where('id',$held->id)->update(['renewal_policy'=>Domain::find($active->id)->getRawOriginal('renewal_policy')]);
 
 // One demo-paused definition: the list, the page and the customer view agree, and the list row says why sync stops.

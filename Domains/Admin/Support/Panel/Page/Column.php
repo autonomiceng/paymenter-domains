@@ -6,7 +6,7 @@ use Filament\Support\Enums\FontFamily;
 use Filament\Tables\Columns\TextColumn;
 use Illuminate\Database\Eloquent\{Builder, Model};
 use Illuminate\Support\HtmlString;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{DemoTag, OneLine};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{DemoTag, ListNote, OneLine};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Value;
 use Paymenter\Extensions\Servers\Domains\Presentation\DomainName;
 /** One list column, as data: plain text, a domain name, or a panel Value (a state with its mark, a plain word or a
@@ -19,6 +19,7 @@ final class Column
     private ?\Closure $searchQuery = null;
     private ?\Closure $sortQuery = null;
     private ?\Closure $link = null;
+    private ?\Closure $names = null;
     private bool $optional = false;
     private bool $short = false;
     private bool $end = false;
@@ -30,7 +31,7 @@ final class Column
     private function __construct(public readonly string $name, public readonly string $label, public readonly string $kind, public bool $searchable = false, public bool $sortable = false) {}
     /** Plain text that stays complete: the row's own field, or what $text returns for the row. @param ?\Closure(array|Model):?string $text */
     public static function text(string $name, string $label, ?\Closure $text = null): self { $c = new self($name, $label, 'text'); $c->text = $text; return $c; }
-    /** A note: the step a row needs, that may shorten only when its linked record holds the full text (P-TBL-7). */
+    /** A note: the step a row needs as one short clause (ListNote), last in the row, shortening with '...' (P-TBL-7). */
     public static function note(string $name, string $label, \Closure $text): self { $c = new self($name, $label, 'note'); $c->text = $text; return $c; }
     /** A domain name: one line up to the cap, then cut in the middle so the TLD stays (DomainName::cell). A demo record shows its Demo tag. */
     public static function domain(string $name, string $label, bool $demoTag = true): self { $c = new self($name, $label, 'domain'); $c->tag = $demoTag; return $c; }
@@ -46,6 +47,8 @@ final class Column
     /** Where the cell opens, such as the request a note names; null opens the row's own link.
      * @param \Closure(array|Model):?string $link */
     public function link(\Closure $link): self { $this->link = $link; return $this; }
+    /** The request a note names, so its clause reads "Request #N needs a check". @param \Closure(array|Model):?int $request */
+    public function names(\Closure $request): self { $this->names = $request; return $this; }
     /** A text cell that holds a person's name or email: one line that never shortens (P-TBL-7). */
     public function person(): self { $this->short = true; return $this; }
     /** A demo record shows its Demo tag after this plain text, as it does on a domain name. */
@@ -92,7 +95,9 @@ final class Column
         if ($this->end) { $column->alignEnd()->extraAttributes(['class' => 'domains-money domains-nowrap'], merge: true); }
         return match ($this->kind) {
             'domain' => $this->nameCell($column),
-            'note' => $this->noted(OneLine::apply($column->color('gray')->state(fn (array|Model $record): ?string => ($this->text)($record)), OneLine::NOTE)),
+            // The state stays the full note; the cell shows it as one short clause.
+            'note' => $this->noted(OneLine::apply($column->color('gray')->state(fn (array|Model $record): ?string => ($this->text)($record))
+                ->formatStateUsing(fn (?string $state, array|Model $record): ?string => ListNote::clause($state, $this->names === null ? null : ($this->names)($record))), OneLine::NOTE)),
             'value' => $column->state(fn (array|Model $record): ?string => $this->valueOf($record)?->word)
                 // Our own escaped piece markup, passed as Htmlable: Filament's sanitizer would drop its data-* markers.
                 ->formatStateUsing(fn (array|Model $record): HtmlString => new HtmlString((string) $this->valueOf($record)?->toHtml())),

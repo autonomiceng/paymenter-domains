@@ -20,8 +20,8 @@ foreach(['canonical_name'=>'Domain','status'=>'Status','registration'=>'Registra
 foreach(['findings','user_id','state','work_due'] as $gone){same(null,$column($list,$gone),'Old column '.$gone.' removed');}
 same(State::Monitored->label(),$column($list,'status')->record($watch)->getState(),'Unchecked domain is Monitored');
 $cause=fn($cell)=>html_entity_decode(strip_tags((string)$cell->formatState($cell->getState())));
-same(State::NotReadYet->label(),$column($list,'last_check')->record($watch)->getState(),'Last check not read yet');expect(str_contains($cause($column($list,'last_check')->record($watch)),'Fills in by itself after the next check'),'Not read yet says its cause');
-same(State::NotReadYet->label(),$column($list,'registration')->record($watch)->getState(),'Registrar not read yet');expect(str_contains($cause($column($list,'registration')->record($watch)),'Fills in by itself after the next check'),'Registrar not read yet says its cause');
+same(State::NotReadYet->label(),$column($list,'last_check')->record($watch)->getState(),'Last check not read yet');same(State::NotReadYet->label(),trim($cause($column($list,'last_check')->record($watch))),'Not read yet is one line; its cause is on the domain page');
+same(State::NotReadYet->label(),$column($list,'registration')->record($watch)->getState(),'Registrar not read yet');same(State::NotReadYet->label(),trim($cause($column($list,'registration')->record($watch))),'Registrar not read yet is one line');
 same('Customer #'.$uid,$column($list,'customer')->record($watch)->getState(),'Customer has its own column');same(null,$column($list,'canonical_name')->record($watch)->getDescriptionBelow(),'The name is one line');
 foreach(['status'=>'Status','customer'=>'Customer','expiry'=>'Expires within'] as $name=>$label){same($label,$filter($list,$name)->getLabel(),'Filter '.$name);}
 same(null,$filter($list,'attention'),'Attention filter merged into Status');same(null,$filter($list,'drift'),'Drift filter merged into Status');same(null,$filter($list,'state'),'State filter merged into Status');
