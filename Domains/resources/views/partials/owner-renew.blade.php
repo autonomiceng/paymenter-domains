@@ -30,7 +30,7 @@
 {{-- Auto Pay is the account setting that pays renewal invoices; it has nothing to pay while Auto-renew is off or the domain is complimentary. Status and one link, never a second switch. --}}
 @if (isset($domain->actions['autoPay']) && $renewalOn && !$complimentary)
 <x-domains::customer.row label="Auto Pay"><span class="domains-card__v">{{ \Paymenter\Extensions\Servers\Domains\Presentation\RenewalPayment::autoPayState($domain->autoPay, $domain->autoPayMethod) }}</span>
-<span class="domains-row__a domains-card__a"><a class="domains-a" href="{{ $domain->actions['autoPay'] }}">{{ \Paymenter\Extensions\Servers\Domains\Presentation\RenewalPayment::autoPayLink($domain->autoPay) }}</a></span>
+<span class="domains-row__a domains-card__a"><a class="domains-a" href="{{ $domain->actions['autoPay'] }}">{{ \Paymenter\Extensions\Servers\Domains\Presentation\RenewalPayment::autoPayLink($domain->autoPay, $domain->autoPayAccount) }}</a></span>
 </x-domains::customer.row>
 @endif
 @endif

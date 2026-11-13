@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
 use App\Helpers\{ExtensionHelper, NotificationHelper};
-use App\Models\{BillingAgreement, Gateway, Invoice, InvoiceItem, InvoiceTransaction, Service, ServiceCancellation};
+use App\Models\{BillingAgreement, Gateway, Invoice, InvoiceItem, InvoiceTransaction, Service, ServiceCancellation, User};
 use Illuminate\Support\Facades\{DB, Log};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Adoption, Operation, Tld};
@@ -19,6 +19,25 @@ final readonly class RenewalAutoPay
     {
         $agreement = $service?->billingAgreement;
         return $agreement && (int)$agreement->user_id === (int)$service->user_id && (bool)$agreement->gateway?->enabled;
+    }
+
+    /** Whether the account's Auto Pay switch on Payment methods reads On: an enabled gateway keeps an account-wide
+     * default, or a renewing service is linked to one of the owner's saved methods. Errors read Off. */
+    public static function account(?User $user): bool
+    {
+        if (!$user) { return false; }
+        try {
+            $gateways = Gateway::where('enabled', true)->get();
+            foreach ($gateways as $gateway) {
+                $class = '\\Paymenter\\Extensions\\Gateways\\'.$gateway->extension.'\\'.$gateway->extension;
+                if (class_exists($class) && method_exists($class, 'autoPayDefault')
+                    && ExtensionHelper::getExtension('gateway', $gateway->extension, $gateway->settings)->autoPayDefault($user)) { return true; }
+            }
+            return $user->services()->whereNull('subscription_id')->where('status', 'active')->where('price', '>', 0)
+                ->whereDoesntHave('cancellation')->whereHas('plan', fn ($q) => $q->where('type', 'recurring'))
+                ->whereIn('billing_agreement_id', BillingAgreement::where('user_id', $user->id)->whereIn('gateway_id', $gateways->pluck('id'))->select('id'))
+                ->exists();
+        } catch (\Throwable) { return false; }
     }
 
     /** Caller holds HoldingLocks in the invoice-issuing transaction, after native credit settlement. */

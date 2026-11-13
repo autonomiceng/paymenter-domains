@@ -16,7 +16,9 @@ class DomainRenewalGateway
     public static array $calls = [];
     public static $during = null;
     public static string $mode = 'paid';
+    public static ?array $default = null;
     public function __construct(array $settings) {}
+    public function autoPayDefault($user, bool $lock = false): ?array { return self::$default; }
     public function charge(Invoice $invoice, $amount, BillingAgreement $agreement): bool
     {
         same(0, DB::transactionLevel(), 'Gateway is outside all financial locks');
@@ -288,5 +290,17 @@ same($count, count(DomainRenewalGateway::$calls), 'Cancellation never charges');
 $off = $holder('off'); $off->update(['renewal_policy'=>[...$off->renewal_policy,'renewals_stopped'=>true]]);
 same(null, $billing->invoice($off->id), 'Renewal Off creates no invoice or charge');
 same($count, count(DomainRenewalGateway::$calls), 'Renewal Off makes no gateway call');
+// The account switch reads On from a linked renewing service or a gateway's account default, and Off when neither can charge.
+App\Models\Service::where('user_id',$user->id)->update(['billing_agreement_id'=>null]);
+same(false, RenewalAutoPay::account($user), 'No linked service and no default: account Off');
+$linked = $holder('account');
+same(true, RenewalAutoPay::account($user), 'A renewing service on a saved method: account On');
+$gateway->update(['enabled'=>false]);
+same(false, RenewalAutoPay::account($user), 'A disabled gateway charges nothing: account Off');
+$gateway->update(['enabled'=>true]); $linked->service->update(['billing_agreement_id'=>null]);
+DomainRenewalGateway::$default = ['agreement_id'=>$agreement->id];
+same(true, RenewalAutoPay::account($user), 'An account default with no linked service: account On');
+DomainRenewalGateway::$default = null;
+same(false, RenewalAutoPay::account(null), 'No owner: account Off');
 echo "Scheduled renewal Auto Pay: committed once-only attempts, credits, failures, skips, staff facts and native funding passed.\n";
 $nativeSuccessful = true;

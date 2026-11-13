@@ -27,9 +27,10 @@ final class RenewalPayment
         return $card === '' ? 'On.' : 'On, '.$card.'.';
     }
 
-    public static function autoPayLink(bool $autoPay): string
+    /** Manage while the domain or the account switch is On, so the link never offers to turn on what is already on. */
+    public static function autoPayLink(bool $autoPay, bool $account = false): string
     {
-        return $autoPay ? 'Manage Auto Pay' : 'Turn on Auto Pay';
+        return $autoPay || $account ? 'Manage Auto Pay' : 'Turn on Auto Pay';
     }
 
     /** @param array{issue?:string,due?:string} $calendar */
