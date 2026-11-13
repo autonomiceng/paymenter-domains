@@ -53,18 +53,18 @@ same(1,substr_count($text,'Renewal invoice missing'),'Fallback cause appears onc
 $page=Livewire::actingAs($viewer)->test(ListDomains::class)
     ->filterTable('server_id',(string)$domain->server_id)->filterTable('alerts',true);
 $page->set('tableDeferredFilters',$page->get('tableFilters'))->call('applyTableFilters')
-    ->assertCanSeeTableRecords([$domain])->assertSee('Expiry missing.')->assertDontSee('Renewal invoice missing')->assertDontSee('+1 more');
+    ->assertCanSeeTableRecords([$domain])->assertSee('Expiry missing')->assertDontSee('Renewal invoice missing')->assertDontSee('+1 more');
 // The row names one step, the first danger alert; the domain page lists the rest. Resolved causes leave the row.
 ObligationAlerts::record($domain,'unknown_expiry',time(),identity:'second-expiry-check');
-Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($domain->domain)->assertSee('Expiry missing.')->assertDontSee('+1 more')->assertDontSee('+2 more');
+Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($domain->domain)->assertSee('Expiry missing')->assertDontSee('+1 more')->assertDontSee('+2 more');
 DB::table('domains_obligation_alerts')->where('domain_id',$domain->id)->where('code','unknown_expiry')->update(['resolved_at'=>time()]);
-Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($domain->domain)->assertSee('Renewal invoice missing.')->assertDontSee('Expiry missing');
+Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($domain->domain)->assertSee('Renewal invoice missing')->assertDontSee('Expiry missing');
 Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$domain->id])->assertDontSee('Expiry missing')->assertSee('Renewal invoice missing');
-// Every allowlisted kind, including late payments, has a cause in the actual list cell.
+// Every allowlisted kind, including late payments, has its cause, as the list's one clause, in the actual list cell.
 foreach([...array_keys(DomainFacts::ALERTS),'acquisition_late_money'] as $code){
     DB::table('domains_obligation_alerts')->where('domain_id',$domain->id)->update(['resolved_at'=>time()]);
     ObligationAlerts::record($domain,$code,time());
-    Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($domain->domain)->assertSee(DomainFacts::alertCause($code));
+    Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($domain->domain)->assertSee(\Paymenter\Extensions\Servers\Domains\Admin\Support\ListNote::clause(DomainFacts::alertCause($code)));
 }
 // Unreadable renewal settings hide billing rows, but never their alert causes.
 DB::table('domains_obligation_alerts')->where('domain_id',$domain->id)->update(['resolved_at'=>time()]);

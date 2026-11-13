@@ -168,7 +168,7 @@ echo "Release sends a held contact step order once.\n";
 $op=$heldOrder('held-contact-refund-placeholder.com');$viaGateway($op,'receipt_held_contact_refund');
 MoneyReceiptGateway::$lost=false;MoneyReceiptGateway::$outcome='refunded';$sends=MoneyReceiptGateway::$sends;
 $words=OperationActions::refundWords($op);
-expect(str_starts_with($words,'Cancels this order and its service, then refunds USD '.number_format((float)$op->amount,2,'.','').' to the original payment.'),'The confirm says it cancels first and what it refunds');
+expect(str_starts_with($words,'Cancels this order and its service, then refunds $'.number_format((float)$op->amount,2).' to the original payment.'),'The confirm says it cancels first and what it refunds');
 expect(str_contains($words,'Nothing was sent to NameSilo, so there is no registrar cost.'),'The confirm says there is no registrar cost');
 $seenAtRefund=null;
 MoneyReceiptGateway::$onAllocated=static function()use($op,&$seenAtRefund,$serviceStatus):void {
