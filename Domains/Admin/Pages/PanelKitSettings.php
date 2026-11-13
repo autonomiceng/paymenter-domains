@@ -9,6 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\{Section, Sett
 use Paymenter\Extensions\Servers\Domains\Presentation\{Plain, Reader};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 /** The kit's Settings example: the M0 toggle sheet's settings (on, off, blocked, someone else's) supplied as data only.
+ * Its Balance and Transfer lock rows are not settings, so they sit on the Detail example.
  * Demo systems only, like the kit. Its data is made up and its switches run nothing. */
 class PanelKitSettings extends SettingsPage
 {

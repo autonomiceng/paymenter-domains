@@ -6,9 +6,11 @@ use Filament\Pages\Enums\SubNavigationPosition;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Sheet, Staff};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Head, Row, Trace, Value};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\{DetailPage, Section};
-use Paymenter\Extensions\Servers\Domains\Presentation\{Fact, Reader, State};
+use Paymenter\Extensions\Servers\Domains\Presentation\{Fact, Plain, Reader, State};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
-/** The kit's Detail example: the M0 frame (head, one sheet section, the Activity rail) supplied as data only.
+/** The kit's Detail example: the M0 frame (head, sheet, the Activity rail) supplied as data only. It also holds the M0
+ * toggle rows that are not settings: Transfer lock waits on the registrar, so it is a button on the domain's sheet, and
+ * Balance with Check balance is a fact about the account on the rail. The Settings example keeps the switches.
  * Demo systems only, like the kit. Its data is made up and its buttons run nothing. */
 class PanelKitDetail extends DetailPage
 {
@@ -32,6 +34,8 @@ class PanelKitDetail extends DetailPage
             Row::make('Registrar', Value::fact(Fact::names(['Enom TEST'])))->actions(Sheet::link('kit_account', 'Open account', '#sec-registration')),
             Row::make('Expires', Value::fact(Fact::date(PanelKit::EXPIRES, $staff))),
             Row::make('Nameservers', Value::fact(Fact::names(['ns1.example.net', 'ns2.example.net'])))->actions(PanelKit::kit('ns', 'Edit', 'Nameservers')),
+        ]), Section::make('Domain lock', [
+            Row::make('Transfer lock', Value::plain(Plain::On))->actions(PanelKit::kit('lock', 'Turn off', 'Transfer lock')),
         ])];
     }
     protected function rail(): array
@@ -41,6 +45,9 @@ class PanelKitDetail extends DetailPage
             ->step('Invoice #100', State::Paid, PanelKit::AT - 60, 'the customer')
             ->step('Registrar read', State::CouldntRead, PanelKit::AT - 4320, null, 'We couldn\'t reach the registrar.')
             ->step('Auto-renew at registrar', State::Stopped, PanelKit::AT - 950400, 'Ilya')])
-            ->link(Sheet::link('kit_history', 'History', PanelKitHistory::getUrl()))];
+            ->link(Sheet::link('kit_history', 'History', PanelKitHistory::getUrl())),
+            Section::make('Registrar account', [
+                Row::make('Balance', Value::fact(Fact::money('1240.00')))->actions(PanelKit::kit('balance', 'Check balance')),
+            ], 'All amounts in USD.')];
     }
 }

@@ -25,6 +25,8 @@ Auth::setUser($staff);
 same(['Pieces', 'Detail', 'Settings', 'List', 'History'], array_map(static fn ($item): string => $item->getLabel(), PanelKit::tabs('Detail')), 'The kit has one tab per type');
 // The head's actions are the page's own native actions.
 Livewire::actingAs($staff)->test(PanelKitDetail::class)->assertActionExists('kit_renew')->callAction('kit_renew')->assertHasNoActionErrors();
+// M0's toggle rows that are not settings stay on the kit through the Detail type, with their own buttons.
+Livewire::actingAs($staff)->test(PanelKitDetail::class)->assertActionExists('kit_lock')->assertActionExists('kit_balance');
 
 // A list searches and filters its rows, and each row opens its record.
 $list = static fn () => Livewire::actingAs($staff)->test(PanelKitList::class);
