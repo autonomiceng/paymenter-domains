@@ -105,8 +105,9 @@ final class Column
         $column->sortable($this->sortable, $sort === null ? null : static fn (Builder $query, string $direction): Builder => $sort($query, $direction));
         if ($this->searchable) { $column->searchable(query: $find === null ? null : static fn (Builder $query, string $search) => $find($query, $search)); }
         if ($this->visibleWhen !== null) { $show = $this->visibleWhen; $column->visible(static fn (): bool => (bool) $show()); }
-
         if ($this->link !== null) { $link = $this->link; $column->url(static fn (array|Model $record): ?string => $link($record)); }
+        // An empty cell is not a link: a link with no words gives a keyboard stop with no name.
+        $column->disabledClick(static fn (mixed $state): bool => blank($state));
         if ($this->end) { $column->alignEnd()->extraAttributes(['class' => 'domains-money domains-nowrap'], merge: true); }
         return match ($this->kind) {
             'domain' => $this->nameCell($column),
