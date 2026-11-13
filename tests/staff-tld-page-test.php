@@ -78,7 +78,7 @@ foreach([
 Auth::setUser($u);
 // One tab is active and opens this record; the browser title names that tab and the record. The record part names the page.
 $activeTab=static fn($c)=>array_values(array_filter($c->instance()->getSubNavigation(),static fn($item):bool=>$item->isActive()));
-$named=static fn($c):string=>trim((string)preg_replace('/^'.preg_quote((string)($activeTab($c)[0]??null)?->getLabel(),'/').'\W+/','',(string)$c->instance()->getTitle()));
+$named=static fn($c):string=>trim((string)preg_replace('/^'.preg_quote((string)($activeTab($c)[0]??null)?->getLabel(),'/').'\s+-\s+/','',(string)$c->instance()->getTitle()));
 $tab=$activeTab($page);
 same([1,ViewTld::getUrl(['record'=>$enom->id])],[count($tab),$tab[0]?->getUrl()],'One active tab, and it opens this record');
 expect(str_contains((string)$page->instance()->getTitle(),(string)$tab[0]->getLabel()),'The browser title names the open tab');
