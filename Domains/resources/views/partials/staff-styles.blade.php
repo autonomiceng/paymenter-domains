@@ -46,6 +46,9 @@ a :is(.domains-name-cell,.domains-list-note),a :is(.domains-name-cell,.domains-l
 @media(min-width:1280px){[data-domains-table] td.domains-note-cell{width:100%;min-width:8rem}}
 @media(max-width:1279px){[data-domains-table] td.domains-note-cell>*{max-width:24rem}}
 [data-domains-table] .domains-list-note,[data-domains-table] .domains-list-note>.fi-ta-text-item{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+{{-- The shared admin CSS gives a clamped note margin instead of padding; a one-line note keeps the cell padding, so the row stays 44px. --}}
+[data-domains-table] .fi-ta-cell .domains-list-note{margin-block:0}
+td.domains-history-detail{min-width:20rem}
 [data-domains-table] .domains-note{min-width:0;max-width:none}
 [data-domains-table] :is(.fi-ta-row>td,.fi-ta-table>thead>tr>th):first-child{position:sticky;inset-inline-start:0;z-index:1;background:var(--panel-card,#111B36)}
 [data-domains-table] :is(.fi-ta-row>td,.fi-ta-table>thead>tr>th):first-child:has(input[type=checkbox])+:is(td,th){position:sticky;inset-inline-start:44px;z-index:1;background:var(--panel-card,#111B36)}

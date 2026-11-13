@@ -188,7 +188,7 @@ $history->searchTable('no such change')->assertDontSee('Sales settings changed')
 $headerNames=static fn(string $page)=>array_keys(Livewire::actingAs($admin)->test($page,['account'=>$enom->server_id])->instance()->getCachedHeaderActions());
 expect($headerNames(RegistrarAccount::class)!==[],'The account has setup actions');
 same($headerNames(RegistrarAccount::class),$headerNames(RegistrarHistory::class),'History keeps the account\'s setup actions');
-$detail=$history->instance()->getTable()->getColumn('reason');same([true,2],[$detail->canWrap(),$detail->getLineClamp()],'History Detail wraps to 2 lines');
+$detail=$history->instance()->getTable()->getColumn('reason');same([true,2],[$detail->canWrap(),$detail->getLineClamp()],'History Detail wraps to 2 lines');same(false,$history->instance()->getTable()->getColumn('change')->canWrap(),'History Change stays one line');
 same('Changes show here as they happen.',Livewire::actingAs($admin)->test(RegistrarHistory::class,['account'=>$empty->id])->assertSee('No changes yet')->instance()->getTable()->getEmptyStateDescription(),'An empty history says what fills it');
 unset($history,$detail);gc_collect_cycles();gc_mem_caches();
 // Dialog help is a button keyboard users can reach, and a click can't open another action over the dialog.
