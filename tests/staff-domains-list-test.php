@@ -22,6 +22,14 @@ $list=function(?callable $queries=null)use($viewer){
 $owner=App\Models\User::create(['first_name'=>'Ada','last_name'=>'Lovelace','email'=>'ada@example.test','password'=>'synthetic-password']);DB::table('domains_domains')->where('id',$active->id)->update(['user_id'=>$owner->id]);same(true,isset($list()[0]['customer']),'Customer column');
 Livewire::actingAs($viewer)->test(ListDomains::class)->assertSee('Search domain or customer')->searchTable($owner->first_name.' '.$owner->last_name)->assertCanSeeTableRecords([$active]);
 Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable('nobody-by-this-name')->assertCountTableRecords(0);
+// A long customer name can't widen the table: one line, cut at the end past about 24 characters, with the full name kept
+// in the cell's text (screen readers, copy, search) and in its title (hover).
+$long=str_repeat('Longname ',5).'Owner';DB::table('users')->where('id',$owner->id)->update(['first_name'=>$long,'last_name'=>'']);
+$dom=Dom\HTMLDocument::createFromString('<!doctype html><meta charset="utf-8">'.Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($active->domain)->html(),LIBXML_NOERROR);
+$cell=$dom->querySelector('.domains-person[title="'.$long.'"]');
+expect($cell!==null&&trim($cell->textContent)===$long,'A long customer name keeps its full text and title in a capped cell');
+$sheet=file_get_contents(dirname(__DIR__).'/Domains/resources/views/partials/staff-styles.blade.php');
+expect((bool)preg_match('/\.domains-person>\.fi-ta-text-item\{max-width:24ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap\}/',$sheet),'A customer name stops at 24ch with an ellipsis');
 // Duplicate staff account names remain distinguishable in filters and rows.
 App\Models\Server::whereIn('id',[$held->server_id,$active->server_id])->update(['name'=>'Shared account']);
 $accountsPage=Livewire::actingAs($viewer)->test(ListDomains::class);

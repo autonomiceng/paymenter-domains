@@ -22,6 +22,8 @@
 /* P-TBL-7: columns size to content. Values and people's names stay whole on one line, and only a linked
    name or note shortens with "..." (the record it opens shows it in full). */
 .domains-line{display:block;white-space:nowrap}
+/* A person's name stays on one line and stops at about 24 characters with '...'; the cell's title holds the full name. */
+.fi-ta-text-item.domains-person,.domains-person>.fi-ta-text-item{max-width:24ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .domains-cut{display:block;white-space:normal;overflow-wrap:break-word}
 .domains-name-cell{display:block;white-space:nowrap}
 .domains-list-note{white-space:normal}

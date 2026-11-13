@@ -49,7 +49,7 @@ final class Column
     public function link(\Closure $link): self { $this->link = $link; return $this; }
     /** The request a note names, so its clause reads "Request #N needs a check". @param \Closure(array|Model):?int $request */
     public function names(\Closure $request): self { $this->names = $request; return $this; }
-    /** A text cell that holds a person's name or email: one line that never shortens (P-TBL-7). */
+    /** A text cell that holds a person's name or email: one line, cut at the end past about 24 characters (OneLine::PERSON). */
     public function person(): self { $this->short = true; return $this; }
     /** A demo record shows its Demo tag after this plain text, as it does on a domain name. */
     /** The Demo tag beside the cell's first line when the record $of returns for the row is demo data, such as the account a TLD row belongs to. */
@@ -102,7 +102,7 @@ final class Column
                 // Our own escaped piece markup, passed as Htmlable: Filament's sanitizer would drop its data-* markers.
                 ->formatStateUsing(fn (array|Model $record): HtmlString => new HtmlString((string) $this->valueOf($record)?->toHtml())),
             default => $this->tagged(OneLine::apply($this->text === null ? $column : $column->state(fn (array|Model $record): ?string => ($this->text)($record)),
-                $this->short ? OneLine::SHORT : OneLine::LINE)),
+                $this->short ? OneLine::PERSON : OneLine::LINE)->extraAttributes(fn (mixed $state): array => $this->short && filled($state) ? ['title' => (string) $state] : [], merge: true)),
         };
     }
 }

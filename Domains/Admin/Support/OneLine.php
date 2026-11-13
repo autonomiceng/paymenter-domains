@@ -9,8 +9,9 @@ final class OneLine
 {
     /** A linked domain name may shorten when structured columns use the available room. */
     public const NAME=['domains-name-cell',30];
-    /** A person or account stays whole on one line. */
-    public const SHORT=['domains-line',0];
+    /** A person or account: one line up to about 24 characters, then cut at the end with '...' so a long name can't widen
+     * the table. The cell's title and its text keep the full name for hover, screen readers, copy and search. */
+    public const PERSON=['domains-line domains-person',24];
     /** Ordinary text stays complete. */
     public const LINE=['domains-line',44];
     /** A note is the last column: it takes the room left and shortens with '...'; the reveal shows it in full. */
