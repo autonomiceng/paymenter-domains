@@ -14,6 +14,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\Mon
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,WatchName,WatchProfile};
 use Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault;
+use Paymenter\Extensions\Servers\Domains\Presentation\{State,Tone};
 // The installed fixture exercises native pages, encrypted account/domain rows and the real settings action.
 // Synthetic verified bindings replace only external authentication; no provider call or credential is used.
 config(['domains.site_dns_default.nameservers'=>['ns01.connection.test']]);
@@ -43,7 +44,10 @@ $connect=static function(string $registrar)use($snapshot):Account {
 $row=static fn($page)=>$page->instance()->getSchema('content')->getComponent(fn($c)=>$c instanceof TextEntry&&in_array($c->getLabel(),['Default nameservers','New domains use'],true));
 $assertMissing=static function(Account $account,string $rule)use($staff,$row):void {
     // Account first: it must show the problem immediately after connect, without revisiting settings or upgrading.
-    foreach([[RegistrarAccount::class,['account'=>$account->server_id]],[MonitoringSettings::class,[]]]as[$class,$params]){
+    // Monitoring settings draws it as a panel row: Not set, in the attention tone.
+    $settings=settingsRowValue(Livewire::actingAs($staff)->test(MonitoringSettings::class)->assertSee($rule)->html(),'Default nameservers');
+    same([State::NotSet->label(),Tone::Attention->value],[$settings['word']??null,$settings['tone']??null],'Monitoring settings says the newly incompatible default is not set');
+    foreach([[RegistrarAccount::class,['account'=>$account->server_id]]]as[$class,$params]){
         $page=Livewire::actingAs($staff)->test($class,$params)->assertSee($rule);
         $entry=$row($page);expect($entry!==null,'Native page has a Site DNS default row');
         same('Missing',$entry->getState(),'Newly incompatible default is Missing');
