@@ -11,11 +11,15 @@ use Filament\Schemas\{Schema,Components\Callout};
 use Filament\Support\Enums\Width;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\PublicSuffixList;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{DefaultNameservers,HelpHint,MissingEntry,Sheet,Staff,StaffTabs};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{DefaultNameservers,HelpHint,MissingEntry,Sheet,Staff,StaffTabs,WatchActions};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{SettingsRow,Value};
+use Paymenter\Extensions\Servers\Domains\Presentation\{Reader,State};
+use Paymenter\Extensions\Servers\Domains\Services\{StaffWatchWrites,WatchProducts,WatchWork};
 use Paymenter\Extensions\Servers\Domains\Dns\DohEndpoint;
 use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
 use Paymenter\Extensions\Servers\Domains\Services\DnsResolverSettings;
-/** Domains > Monitoring settings: the DNS resolver monitoring checks use. Settings live in native encrypted settings.
+/** Domains > Monitoring settings: which hosting products are monitored (Ilya, decision 2) and the DNS resolver monitoring
+ * checks use. Settings live in native encrypted settings.
  * The default nameservers are shown here and changed in Domains > DNS templates. */
 class MonitoringSettings extends Page
 {
@@ -28,6 +32,34 @@ class MonitoringSettings extends Page
     public function getSubNavigation(): array{return StaffTabs::domains('Monitoring settings');}
     /** A tab of the Domains area, so no breadcrumb, like the other tabs. */
     public function getBreadcrumbs(): array{return [];}
+    /** Request-scoped, so a long product list reads permission once; every write checks it again. */
+    protected ?bool $canManage=null;
+    public function canManageProducts(): bool{return $this->canManage??=Staff::can(StaffWatchWrites::VIEW)&&Staff::can(StaffWatchWrites::MANAGE);}
+    protected function afterActionCalled(Action $action): void
+    {
+        parent::afterActionCalled($action);
+        // A switch or field choice changes the product rows. Rebuild them, so the next change reads the new revision.
+        unset($this->cachedSchemas['content']);
+    }
+    /** One settings row per hosting product, while monitoring runs. The system finds each product's domain field; staff
+     * switch a product on or off, or choose the field when the system can't tell. */
+    private function products(): array
+    {
+        if(!app(WatchWork::class)->active()){return [];}
+        $setBy='Set by staff who manage domain monitoring.';
+        return array_map(function(array $line)use($setBy){
+            $key='row-product-'.$line['product'];
+            $can=fn()=>$this->canManageProducts();
+            $pick=fn()=>WatchActions::chooseField($can)->arguments(['product_id'=>$line['product'],'map'=>$line['map'],'revision'=>$line['revision']]);
+            if($line['map']!==null){
+                $row=SettingsRow::toggle($line['name'],$line['on'],WatchActions::productSwitch($can)->arguments(['map'=>$line['map'],'revision'=>$line['revision']]),$setBy)->key($key);
+                return $line['pick']?$row->also($pick()):$row;
+            }
+            return $line['pick']
+                ?SettingsRow::setting($line['name'],Value::state(State::NotSet,Reader::Staff,'No field clearly holds the domain. Choose the one that does.'),$setBy)->key($key)->actions($pick())
+                :SettingsRow::setting($line['name'],Value::state(State::NotReadYet,Reader::Staff,'This product has no services yet, so there is no field to read.'),$setBy)->key($key);
+        },WatchProducts::lines());
+    }
     private static function requireManage(): void{abort_unless(self::canAccess()&&Staff::can(PublicSuffixList::MANAGE),403);}
     /** One resolver form: in the header once a resolver is saved, otherwise as the fix beside Missing. */
     private function edit(string $name): Action
@@ -69,7 +101,7 @@ class MonitoringSettings extends Page
         return $schema->components([
             ...(!$default||$refusal?[Callout::make($refusal??($canEdit?\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::MISSING:'Default nameservers are Missing. New domains have no nameservers to use. '.\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::ASK))->status('danger')->columnSpanFull()]:[]),
             ...($forced?[Callout::make($reason)->status('danger')->columnSpanFull()]:[]),
-            Sheet::split([Sheet::section('Monitoring',[
+            Sheet::split([...(($products=$this->products())!==[]?[Sheet::section('Hosting products',$products,null,'hosting-products')]:[]),Sheet::section('Monitoring',[
                 Sheet::row(MissingEntry::apply(TextEntry::make('site_dns')->label(DefaultNameservers::TITLE)->state($refusal?Missing::LABEL:($default?->name??Missing::LABEL)),cause:$refusal??null)->belowContent($default?implode(', ',$default->nameservers):null),
                     [Sheet::link('defaults',$canEdit?'Change':'View',DefaultNameservers::url())->extraAttributes(['aria-label'=>($canEdit?'Change':'View').' default nameservers in DNS templates'])]),
                 Sheet::row(TextEntry::make('registrar_refresh')->label('Registrar refresh')->state('Daily')->belowContent('Daily refresh reads domain facts. Use Sync now on a domain to read DNS, SRV, DS and glue records. Unsupported families remain unsupported.')),

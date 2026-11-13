@@ -1,12 +1,16 @@
 <?php
-// Hosting product lines on Domain monitoring: the system finds the domain field, staff only switch. MIT, Copyright (c) 2026 Autonomic Engineering.
+// Hosting products on the Monitoring settings tab, one settings row each (Ilya, decision 2): the system finds the domain field, staff only switch. MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require __DIR__.'/Support/doh-environment.php';
 require __DIR__.'/Support/watch-notices.php';
+require __DIR__.'/Support/storefront.php';
 use Illuminate\Support\Facades\{Auth,DB,Route};
 use Livewire\Livewire;
 use Filament\Facades\Filament;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\{RoutingProfileResource,WatchResource};
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\ListWatches;
+use Filament\Actions\Testing\TestAction;
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\{ListWatches,MonitoringSettings};
+use Paymenter\Extensions\Servers\Domains\Presentation\State;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\PublicSuffixList;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Dns\NativeDnsReader;
@@ -56,39 +60,62 @@ $registrar=$hosting('Domain server',\App\Models\Server::create(['name'=>'Registr
 $lines=collect(WatchProducts::lines())->keyBy('name');expect(!$lines->has('Sold domains')&&!$lines->has('Domain server'),'Domains products are not hosting products');
 same(['No services yet',false],[$lines['Native']['state'],$lines['Native']['pick']??false],'A product with no services has nothing to find');same(['Monitored','Not monitored','No domain found'],[$lines['Hosting']['state'],$lines['Staff turned off']['state'],$lines['Two like']['state']],'Line states');
 app()->instance(WatchWork::class,$work(true,$now+1500));
-Livewire::actingAs($manager)->test(ListWatches::class)->assertSeeInOrder(['Hosting products','Both','No domain found','Choose a field','Hosting','Monitored','Staff turned off','Not monitored'])->assertDontSee('Sold domains')->assertDontSee('box1.example.net');
-$readOnly=Livewire::actingAs($viewer)->test(ListWatches::class)->assertSee('Monitored')->assertDontSee('Choose a field');expect(!str_contains($readOnly->html(),'role="switch"'),'View-only staff get no switch');
+// Each product is a settings row on Monitoring settings; the monitored domains list no longer carries them.
+$page=fn($user=null)=>Livewire::actingAs($user??$manager)->test(MonitoringSettings::class)->assertSuccessful();
+$rowAt=function(string $html,int $product):?DOMElement{foreach(storefrontDom($html)->query('//div[@data-domains-row="setting"]') as $r){if(preg_match('/(^|-)row-product-'.$product.'$/',$r->getAttribute('id'))){return $r;}}return null;};
+$word=fn(?DOMElement $r)=>$r?trim((new DOMXPath($r->ownerDocument))->evaluate('string(.//div[contains(@class,"domains-panel-row-v")]//*[contains(@class,"domains-panel-st") or contains(@class,"domains-panel-plain")][1])',$r)):null;
+$switchOf=fn(?DOMElement $r)=>$r?(new DOMXPath($r->ownerDocument))->query('.//button[@role="switch"]',$r)->item(0):null;
+$html=$page()->html();
+foreach([$catalogue,$registrar] as $gone){same(null,$rowAt($html,$gone->id),'Domains products are not hosting products');}
+same(State::NotSet->label(),$word($rowAt($html,$both->id)),'No domain found reads Not set');
+same(State::NotReadYet->label(),$word($rowAt($html,$native->id)),'No services yet reads Not read yet');
+same('true',$switchOf($rowAt($html,$product->id))?->getAttribute('aria-checked'),'A monitored product has its switch on');
+same('false',$switchOf($rowAt($html,$mine->id))?->getAttribute('aria-checked'),'A product staff turned off has its switch off');
+expect(!str_contains($html,'box1.example.net'),'No customer value on the page');
+expect(!str_contains(Livewire::actingAs($manager)->test(ListWatches::class)->html(),'row-product-'),'The monitored domains list has no product rows');
+$readOnly=$page($viewer)->html();same(0,storefrontDom($readOnly)->query('//button[@role="switch"]')->length,'View-only staff get no switch');
+expect($rowAt($readOnly,$product->id)!==null&&!str_contains($readOnly,'chooseField'),'View-only staff see the rows without the picker');
+// The row's own action, as its click names it: the switch or picker of that product's row.
+$at=function($test,string $name,int $product):TestAction{
+    expect(preg_match('/mountAction\((?:\'|&#039;)'.$name.'(?:\'|&#039;)[^"]*?schemaComponent\\\\u0022:\\\\u0022([a-z0-9._-]*row-product-'.$product.'-actions)\\\\u0022/',$test->html(),$m)===1,$name.' sits in the row of product '.$product);
+    return TestAction::make($name)->schemaComponent(substr($m[1],strlen('content.')),'content');
+};
 
 // Permission is read once for the section, so more products never mean more permission queries.
-$queries=function()use($manager){DB::flushQueryLog();DB::enableQueryLog();Livewire::actingAs($manager)->test(ListWatches::class);$count=count(DB::getQueryLog());DB::disableQueryLog();return $count;};
+$queries=function()use($manager){DB::flushQueryLog();DB::enableQueryLog();Livewire::actingAs($manager)->test(MonitoringSettings::class);$count=count(DB::getQueryLog());DB::disableQueryLog();return $count;};
 $queries();$few=$queries();foreach(range(1,10) as$more){$saved($hosting('Query growth '.$more),[]);}same($few,$queries(),'Ten more products add no queries');
 
 // The switch: no form, no reason, and a stale page changes nothing.
-$page=Livewire::actingAs($manager)->test(ListWatches::class);expect(str_contains($page->html(),'role="switch"'),'Managers get the switch');
+$test=$page();expect(str_contains($test->html(),'role="switch"'),'Managers get the switch');
 $revision=(int)WatchProductMap::find($map->id)->revision;
-$page->callAction('productSwitch',[],['map'=>$map->id,'revision'=>$revision]);$fresh=WatchProductMap::find($map->id);same([false,$revision+1],[$fresh->enabled,$fresh->revision],'Switch turns monitoring off');
-$page->callAction('productSwitch',[],['map'=>$map->id,'revision'=>$revision])->assertNotified('This product changed. Reload the page and try again.');same([false,$revision+1],[WatchProductMap::find($map->id)->enabled,WatchProductMap::find($map->id)->revision],'Stale switch changes nothing');
-$page->callAction('productSwitch',[],['map'=>$map->id,'revision'=>$revision+1]);same([true,$revision+2],[WatchProductMap::find($map->id)->enabled,WatchProductMap::find($map->id)->revision],'Switch turns monitoring on');
+$test->callAction($at($test,'productSwitch',$product->id)->arguments(['map'=>$map->id,'revision'=>$revision]));$fresh=WatchProductMap::find($map->id);same([false,$revision+1],[$fresh->enabled,$fresh->revision],'Switch turns monitoring off');
+same('false',$switchOf($rowAt($test->html(),$product->id))?->getAttribute('aria-checked'),'The same open page shows the switch off');
+$test->callAction($at($test,'productSwitch',$product->id)->arguments(['map'=>$map->id,'revision'=>$revision]))->assertNotified('This product changed. Reload the page and try again.');same([false,$revision+1],[WatchProductMap::find($map->id)->enabled,WatchProductMap::find($map->id)->revision],'Stale switch changes nothing');
+$test->callAction($at($test,'productSwitch',$product->id)->arguments(['map'=>$map->id,'revision'=>$revision+1]));same([true,$revision+2],[WatchProductMap::find($map->id)->enabled,WatchProductMap::find($map->id)->revision],'Switch turns monitoring on');
+// A forged switch click from read-only staff changes nothing.
+$ro=$page($viewer);try{$ro->call('mountAction','productSwitch',['map'=>$map->id,'revision'=>$revision+2],['schemaComponent'=>'content.'.$at($test,'productSwitch',$product->id)->schemaComponent])->callMountedAction();}catch(Throwable){}
+same([true,$revision+2],[WatchProductMap::find($map->id)->enabled,WatchProductMap::find($map->id)->revision],'Read-only staff change nothing');
 
 // Choosing a field is only for No domain found; it saves and starts monitoring in one step, and never shows a customer value.
-Livewire::actingAs($manager)->test(ListWatches::class)->mountAction('chooseField',['product_id'=>$twoLike->id])
+$test=$page();$pick=$at($test,'chooseField',$twoLike->id);
+$test->mountAction($pick->arguments(['product_id'=>$twoLike->id]))
     ->assertFormFieldExists('property_key',fn($select)=>$select->getOptions()===['mirror'=>'mirror','site'=>'site'])->assertDontSee('shop.example.com')
     ->setActionData(['property_key'=>'made_up'])->callMountedAction()->assertHasActionErrors(['property_key']);
 same(0,WatchProductMap::where('product_id',$twoLike->id)->count(),'Made-up field saves nothing');
-Livewire::actingAs($manager)->test(ListWatches::class)->callAction('chooseField',['property_key'=>'site'],['product_id'=>$twoLike->id])->assertHasNoActionErrors()->assertNotified('Saved');
+$test=$page();$test->callAction($at($test,'chooseField',$twoLike->id)->arguments(['product_id'=>$twoLike->id]),['property_key'=>'site'])->assertHasNoActionErrors()->assertNotified('Saved')->assertRedirect(WatchResource::getUrl('settings'));
 $chosen=WatchProductMap::where('product_id',$twoLike->id)->sole();same(['site',true],[$chosen->property_key,$chosen->enabled],'Chosen field is monitored');
-// Off is no dead end: the picker stays on the line, a new pick keeps the row, and a stale page changes nothing.
-$pickers=fn()=>substr_count(Livewire::actingAs($manager)->test(ListWatches::class)->html(),'Choose a field');$before=$pickers();
-Livewire::actingAs($manager)->test(ListWatches::class)->callAction('productSwitch',[],['map'=>$chosen->id,'revision'=>$chosen->revision]);same($before+1,$pickers(),'An off line offers the picker');
+// Off is no dead end: the picker stays on the row beside the switch, a new pick keeps the row, and a stale page changes nothing.
+$test=$page();$test->callAction($at($test,'productSwitch',$twoLike->id)->arguments(['map'=>$chosen->id,'revision'=>$chosen->revision]));
+$test=$page();$at($test,'chooseField',$twoLike->id);same('false',$switchOf($rowAt($test->html(),$twoLike->id))?->getAttribute('aria-checked'),'An off row keeps its switch beside the picker');
 $off=WatchProductMap::find($chosen->id);$repick=['product_id'=>$twoLike->id,'map'=>$off->id];
-Livewire::actingAs($manager)->test(ListWatches::class)->callAction('chooseField',['property_key'=>'mirror'],$repick+['revision'=>$off->revision-1])->assertNotified('This product changed. Reload the page and try again.');same(['site',false],[WatchProductMap::find($off->id)->property_key,WatchProductMap::find($off->id)->enabled],'A stale pick changes nothing');
-Livewire::actingAs($manager)->test(ListWatches::class)->callAction('chooseField',['property_key'=>'mirror'],$repick+['revision'=>$off->revision])->assertHasNoActionErrors()->assertNotified('Saved');
-$picked=WatchProductMap::where('product_id',$twoLike->id)->sole();same([$off->id,'mirror',true,$off->revision+2],[$picked->id,$picked->property_key,$picked->enabled,$picked->revision],'A new pick on an off line starts monitoring on the same row');
+$test->callAction($at($test,'chooseField',$twoLike->id)->arguments($repick+['revision'=>$off->revision-1]),['property_key'=>'mirror'])->assertNotified('This product changed. Reload the page and try again.');same(['site',false],[WatchProductMap::find($off->id)->property_key,WatchProductMap::find($off->id)->enabled],'A stale pick changes nothing');
+$test=$page();$test->callAction($at($test,'chooseField',$twoLike->id)->arguments($repick+['revision'=>$off->revision]),['property_key'=>'mirror'])->assertHasNoActionErrors()->assertNotified('Saved');
+$picked=WatchProductMap::where('product_id',$twoLike->id)->sole();same([$off->id,'mirror',true,$off->revision+2],[$picked->id,$picked->property_key,$picked->enabled,$picked->revision],'A new pick on an off row starts monitoring on the same row');
 $work(true,$now+1200)->tick();same('mirror',WatchProductMap::find($off->id)->property_key,'The tick leaves a staff pick alone');
-$bare=$hosting('Bare');$saved($bare,[]);Livewire::actingAs($manager)->test(ListWatches::class)->mountAction('chooseField',['product_id'=>$bare->id])
+$bare=$hosting('Bare');$saved($bare,[]);$test=$page();$test->mountAction($at($test,'chooseField',$bare->id)->arguments(['product_id'=>$bare->id]))
     ->assertFormFieldExists('property_key',fn($select)=>str_contains($select->toHtml(),'No service on this product has a text field yet. If it has a domain, add a text option for it.'));
 
-// While monitoring is off the page has no product lines to act on.
+// While monitoring is off the tab has no product rows to act on.
 app()->forgetInstance(WatchWork::class);
-Livewire::actingAs($manager)->test(ListWatches::class)->assertSuccessful()->assertDontSee('No domain found')->assertDontSee('Not monitored');
-$nativeSuccessful=true;echo "Hosting product lines work.\n";
+expect(!str_contains($page()->html(),'row-product-'),'No product rows while monitoring is off');
+$nativeSuccessful=true;echo "Hosting product rows work.\n";

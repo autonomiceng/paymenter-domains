@@ -2,7 +2,6 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages;
-use Filament\Actions\Action;
 use Filament\Resources\Pages\ListRecords;
 use Filament\Schemas\Components\{Callout,EmbeddedTable,RenderHook,View};
 use Filament\Schemas\Schema;
@@ -10,7 +9,7 @@ use Filament\View\PanelsRenderHook;
 use Illuminate\Support\HtmlString;
 use Illuminate\Database\Eloquent\Builder;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,StaffTabs,WatchActions,WatchFindings,WatchQueries};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,StaffTabs,WatchFindings,WatchQueries};
 use Paymenter\Extensions\Servers\Domains\Models\WatchName;
 use Paymenter\Extensions\Servers\Domains\Services\{StaffWatchWrites,WatchMaintenance,WatchWork,ManagedDnsSetup};
 class ListWatches extends ListRecords
@@ -46,15 +45,9 @@ class ListWatches extends ListRecords
         if($dnsFailure && in_array('managed_dns',$this->failedFamilies,true)){$button.=view('filament::components.button.index',['tag'=>'a','href'=>WatchResource::getUrl('dns-failures'),'color'=>'gray','size'=>'sm','slot'=>'Affected checks'])->render();}
         return $schema->components([...($setup?[$setup]:[]),...($notice?[Callout::make($notice['text'])->status($notice['tone'])->footer($button?new HtmlString($button):null)->columnSpanFull()]:[]),
             ...(($notice['action']??null)==='setup'&&Staff::can(StaffWatchWrites::MANAGE)?[View::make('domains::admin.watch-setup')]:[]),
-            ...(app(WatchWork::class)->active()?[View::make('domains::admin.watch-products')]:[]),
             $this->getTabsContentComponent(),RenderHook::make(PanelsRenderHook::RESOURCE_PAGES_LIST_RECORDS_TABLE_BEFORE),
             EmbeddedTable::make(),RenderHook::make(PanelsRenderHook::RESOURCE_PAGES_LIST_RECORDS_TABLE_AFTER)]);
     }
-    /** Request-scoped, so a long product list reads permission once; every write checks it again. */
-    protected ?bool $canManage=null;
-    public function canManageProducts(): bool{return $this->canManage??=Staff::can(StaffWatchWrites::VIEW)&&Staff::can(StaffWatchWrites::MANAGE);}
-    public function productSwitchAction(): Action{return WatchActions::productSwitch();}
-    public function chooseFieldAction(): Action{return WatchActions::chooseField();}
     /** @return list<int> */
     public function statusIds(string $status): array{return $this->status[$status]??=WatchFindings::statusIds($status);}
     public function expiryQuery(Builder $query,int $days): Builder

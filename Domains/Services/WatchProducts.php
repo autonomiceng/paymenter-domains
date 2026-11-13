@@ -20,7 +20,7 @@ final class WatchProducts
     /** The next products with something to read. Rows only exist once decided, so this skips every product staff switched off. */
     public static function unmapped(int $after,int $limit): Collection
     {return self::hosting()->has('services')->whereNotIn('id',WatchProductMap::select('product_id'))->where('id','>',$after)->orderBy('id')->limit($limit)->get();}
-    /** One line per hosting product for the Domain monitoring page. A line can be re-picked once it is off; with no services there is nothing to pick from. */
+    /** One line per hosting product for the Monitoring settings tab. A line can be re-picked once it is off; with no services there is nothing to pick from. */
     public static function lines(): array
     {
         $maps=WatchProductMap::get(['id','product_id','enabled','revision'])->keyBy('product_id');
