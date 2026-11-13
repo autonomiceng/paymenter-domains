@@ -372,7 +372,8 @@ foreach (['on_hold'=>'On hold','pending_registration'=>'Pending registration'] a
                 $step=(string)$note->record($record)->getState();
                 if ((str_contains($step,'Orders are off for this account.')&&str_contains($step,'Turn them on in Registrars.'))!==($label==='On hold')) { $parity[]="$key, Orders turned ".($enabled?'on':'off').": the step reads \"$step\""; }
             }
-            if (($shown=$column->record($record)->getState())!==$label) { $parity[]="$key, Orders turned ".($enabled?'on':'off').": {$record->domain} reads $shown"; }
+            // On hold is drawn as Under review, from the closed word list.
+            if (($shown=$column->record($record)->getState())!==($label==='On hold'?State::UnderReview->label():$label)) { $parity[]="$key, Orders turned ".($enabled?'on':'off').": {$record->domain} reads $shown"; }
         }
     }
 }

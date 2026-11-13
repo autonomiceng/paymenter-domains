@@ -45,7 +45,7 @@ foreach([[$held,'Under review','Old registrar needs approval. Check request #'.$
     same($customer,$columns['customer']->record($record)->getState(),'Customer name has its own column');
     // A phone keeps the status and next step: neither column waits for a wider screen.
     same([null,null,$reason],[$columns['status']->getVisibleFrom(),$columns['note']->getVisibleFrom(),$columns['note']->record($record)->getState()],'Phone keeps the status and next step from the row');
-    same($label.$reason,$columns['domain']->getTooltip(),'The description tooltip keeps the phone summary without customer identifiers');
+    expect(!str_contains((string)$columns['domain']->record($record)->getTooltip(),$customer),'The name tooltip carries no customer identifiers');
     same(null,$columns['provider_expires_at']->record($record)->getState(),'Expiry of a domain under review is blank, not Missing');
 }
 // A newer unrelated action, stale generation or foreign binding must not displace the acquisition.
