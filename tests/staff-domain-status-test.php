@@ -262,8 +262,8 @@ $check('Same alert returns when the wait runs out',[true,1],[$open($quiet,'opera
 if ($wrong) { fwrite(STDERR,implode("\n",$wrong)."\n"); }
 same([],$wrong,'Every row has one status and one next step');
 expect(!isset($columns['alert']),'No separate alert column: the next step is under the status');
-// The filter offers every customer status, plus On hold for staff.
-same([...array_keys(\Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus::SET),'on_hold'],array_keys(DomainResource::statusOptions()),'Status filter set');
+// The filter offers the customer statuses: staff read the same words, and Under review includes held domains.
+same(array_keys(\Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus::SET),array_keys(DomainResource::statusOptions()),'Status filter set');
 foreach (array_keys(DomainResource::statusOptions()) as $key) {
     $expected=$members[$key]??[]; sort($expected);
     same($expected,$ids($key),'Status filter matches the rows: '.$key);
@@ -346,6 +346,7 @@ same(['Action required','Action required'],$word($setupOff),'Customer setup keep
 same('warning',DomainFacts::status($queuedOff->fresh())['tone'],'The held registration is amber');
 $onHold=DomainQueries::status(Domain::whereKey([$queuedOff->id,$closedOff->id,$setupOff->id]),['on_hold'])->pluck('id')->all();
 same([$queuedOff->id],$onHold,'Domain Status filter: only the stopped registration is On hold');
+expect(in_array($queuedOff->id,DomainQueries::status(Domain::whereKey($queuedOff->id),['under_review'])->pluck('id')->all(),true),'The Under review filter includes the held registration');
 expect(\Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::status(Operation::query(),['on_hold'])->whereKey($queuedOp->id)->exists(),'Request Status filter: the stopped registration is On hold');
 $accounts->update(['processing_enabled'=>true]);
 same(['Pending registration','In progress'],$word($queuedOff),'Orders on: the registration moves again');
