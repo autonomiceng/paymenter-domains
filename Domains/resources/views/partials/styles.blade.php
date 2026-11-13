@@ -16,8 +16,10 @@
     --e-bad: color-mix(in srgb, hsl(var(--color-error)) 80%, black);
     --e-quiet: hsl(var(--color-muted));
     --e-mono: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
-    max-width: 1120px; margin-inline: auto; color: var(--e-fg); overflow-wrap: anywhere;
+    color: var(--e-fg); overflow-wrap: anywhere;
 }
+/* The host page sets the width and alignment: beside a signed-in sidebar that is the whole column, left aligned like the
+   dashboard; a guest page keeps the host's centred container. The wrapper never centres or caps itself. */
 .dark .domains {
     --e-ok: color-mix(in srgb, hsl(var(--color-success)) 80%, white);
     --e-info: color-mix(in srgb, hsl(var(--color-info)) 80%, white);
@@ -183,7 +185,6 @@
 .domains .domains-notice--bad { --tone: var(--e-bad); }
 .domains .domains-notice strong { font-weight: 700; }
 .domains .domains-notice ul { margin-top: .25rem; }
-.domains[data-domains-cart-notice] { max-width: none; margin-inline: 0; }
 .domains .domains-notice--cart { display: grid; grid-template-columns: 1.375rem minmax(0, 1fr); column-gap: .75rem; padding: .875rem 1.125rem .875rem .875rem;
     border-radius: .375rem; border-left: 4px solid var(--e-info); font-size: .9375rem; background: color-mix(in srgb, var(--e-info) 12%, transparent); }
 .dark .domains .domains-notice--cart { background: color-mix(in srgb, var(--e-info) 9%, transparent); }
