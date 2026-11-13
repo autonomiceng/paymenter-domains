@@ -54,7 +54,7 @@ $domain=new OwnedDomain('example.com','Active','ok','2027-01-15','On','$14.00',[
 $dom=storefrontDom(view('domains::show',['domain'=>$domain])->render());
 same(0,$dom->query('//a[normalize-space()="Domain help"]')->length,'Help is said once, in each row popover, not again in the header');
 $buttons=$dom->query('//*[@data-help]/button');
-same(count($management),$buttons->length,'Each visible section and renewal invoices have one help button');
+same(count($management),$buttons->length,'Each visible section and Auto-renew have one help button');
 foreach ($buttons as $button) {
     same(['button','false'],[$button->getAttribute('type'),$button->getAttribute('aria-expanded')],'Help trigger is a collapsed button');
     expect(str_starts_with($button->getAttribute('aria-label'),'About '),'Help trigger has an accessible name');
