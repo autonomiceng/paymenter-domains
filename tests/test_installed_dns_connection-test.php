@@ -42,25 +42,30 @@ $connect=static function(string $registrar)use($snapshot):Account {
     return $account;
 };
 $row=static fn($page)=>$page->instance()->getSchema('content')->getComponent(fn($c)=>$c instanceof TextEntry&&in_array($c->getLabel(),['Default nameservers','New domains use'],true));
-$assertMissing=static function(Account $account,string $rule)use($staff,$row):void {
+// The rendered New domains use row: its text and its links by label.
+$dnsRow=static function(string $html):array {
+    $rows=array_values(array_filter(iterator_to_array(Dom\HTMLDocument::createFromString($html,LIBXML_NOERROR)->querySelectorAll('[data-domains-row]')),fn($node)=>str_contains($node->textContent,'New domains use')));
+    same(1,count($rows),'The page has one New domains use row');$links=[];
+    foreach($rows[0]->querySelectorAll('a[href]') as $a){$links[trim(preg_replace('/\s+/',' ',$a->textContent))]=$a->getAttribute('href');}
+    return ['text'=>trim(preg_replace('/\s+/',' ',$rows[0]->textContent)),'links'=>$links];
+};
+$assertMissing=static function(Account $account,string $rule)use($staff,$row,$dnsRow):void {
     // Account first: it must show the problem immediately after connect, without revisiting settings or upgrading.
     // Monitoring settings draws it as a panel row: Not set, in the attention tone.
     $settings=settingsRowValue(Livewire::actingAs($staff)->test(MonitoringSettings::class)->assertSee($rule)->html(),'Default nameservers');
     same([State::NotSet->label(),Tone::Attention->value],[$settings['word']??null,$settings['tone']??null],'Monitoring settings says the newly incompatible default is not set');
     foreach([[RegistrarAccount::class,['account'=>$account->server_id]]]as[$class,$params]){
         $page=Livewire::actingAs($staff)->test($class,$params)->assertSee($rule);
+        if($class===RegistrarAccount::class){
+            // The account page's row keeps the saved template and asks staff to review it.
+            expect(str_contains($dnsRow($page->html())['text'],State::NeedsReview->label()),'Newly incompatible default needs review on the account page');
+            unset($page);gc_collect_cycles();gc_mem_caches();continue;
+        }
         $entry=$row($page);expect($entry!==null,'Native page has a Site DNS default row');
         same('Missing',$entry->getState(),'Newly incompatible default is Missing');
         same('danger',$entry->getColor($entry->getState()),'Newly incompatible default is red');
         unset($entry,$page);gc_collect_cycles();gc_mem_caches();
     }
-};
-// The rendered New domains use row: its text and its links by label.
-$dnsRow=static function(string $html):array {
-    $rows=array_values(array_filter(iterator_to_array(Dom\HTMLDocument::createFromString($html,LIBXML_NOERROR)->querySelectorAll('.domains-row')),fn($node)=>str_contains($node->textContent,'New domains use')));
-    same(1,count($rows),'The page has one New domains use row');$links=[];
-    foreach($rows[0]->querySelectorAll('a[href]') as $a){$links[trim(preg_replace('/\s+/',' ',$a->textContent))]=$a->getAttribute('href');}
-    return ['text'=>trim(preg_replace('/\s+/',' ',$rows[0]->textContent)),'links'=>$links];
 };
 $select=static function(WatchProfile $profile,array $accounts,string $oldRule)use($staff,$row,$dnsRow):void {
     $domains=Domain::orderBy('id')->get()->toJson();$watches=WatchName::orderBy('id')->get()->toJson();
@@ -72,12 +77,14 @@ $select=static function(WatchProfile $profile,array $accounts,string $oldRule)us
         $page=Livewire::actingAs($staff)->test($class,$params)->assertDontSee($oldRule);
         // Monitoring settings draws it as a panel row; the account page keeps its entry.
         if($class===MonitoringSettings::class){same($profile->name,settingsRowValue($page->html(),'Default nameservers')['word']??null,'Valid staff choice is the Monitoring settings default');continue;}
-        $entry=$row($page);same($profile->name,$entry?->getState(),'Valid staff choice clears Missing on each native page');
         // The account page names what new domains get, with its nameservers and Change, as in the approved mock.
-        if($class===RegistrarAccount::class){same('New domains use',$entry->getLabel(),'Account row says what new domains use');
+        if($class===RegistrarAccount::class){
             $dns=$dnsRow($page->html());
+            expect(str_contains($dns['text'],$profile->name)&&!str_contains($dns['text'],State::NeedsReview->label()),'Valid staff choice clears the review on the account page');
             foreach([implode(', ',$profile->nameservers),'New registrations use these nameservers unless the customer chooses others. Transfers keep the nameservers they already have.'] as $text){expect(str_contains($dns['text'],$text),'The DNS row says: '.$text);}
-            same(['Change'=>RoutingProfileResource::getUrl()],$dns['links'],'The DNS row links Change to DNS templates');}
+            same(['Change'=>RoutingProfileResource::getUrl()],$dns['links'],'The DNS row links Change to DNS templates');
+            unset($page);gc_collect_cycles();gc_mem_caches();continue;}
+        $entry=$row($page);same($profile->name,$entry?->getState(),'Valid staff choice clears Missing on each native page');
         expect($entry->getColor($entry->getState())!=='danger','Valid default is no longer red');
         unset($entry,$page);gc_collect_cycles();gc_mem_caches();
     }
@@ -109,15 +116,15 @@ foreach(['view only'=>[Staff::VIEW],'no settings page'=>array_values(array_diff(
 }
 // Staff who cannot change the site default see the cause on the registrar page and are sent to staff who can.
 $viewer=staffUser(array_values(array_diff(array_keys(Staff::permissions()),[SiteDnsDefault::MANAGE])));
-$readOnly=static function(Account $account,string $detail,string $hidden)use($viewer,$row):void {
+$readOnly=static function(Account $account,string $detail,string $hidden,\Paymenter\Extensions\Servers\Domains\Presentation\State $word)use($viewer,$dnsRow):void {
     $page=Livewire::actingAs($viewer)->test(RegistrarAccount::class,['account'=>$account->server_id])->assertSee($detail)->assertDontSee($hidden);
-    $entry=$row($page);same('Missing',$entry?->getState(),'A read-only Default nameservers row is Missing');
-    same('danger',$entry->getColor($entry->getState()),'A read-only Default nameservers row is red');
-    unset($entry,$page);gc_collect_cycles();gc_mem_caches();
+    $dns=$dnsRow($page->html());expect(str_contains($dns['text'],$word->label()),'A read-only New domains use row reads '.$word->label());
+    same([],$dns['links'],'A read-only New domains use row offers no Change');
+    unset($dns,$page);gc_collect_cycles();gc_mem_caches();
 };
 fixtureBusinessChoice(SiteDnsDefault::KEY,(string)$thirteen->id,'string');
-$readOnly($enom,'Enom takes 2 to 12 nameservers. '.SiteDnsDefault::ASK,'Update this DNS template or choose another one.');
+$readOnly($enom,'Enom takes 2 to 12 nameservers. '.SiteDnsDefault::ASK,'Update this DNS template or choose another one.',\Paymenter\Extensions\Servers\Domains\Presentation\State::NeedsReview);
 config(['domains.site_dns_default.nameservers'=>[]]);fixtureBusinessChoice(SiteDnsDefault::KEY,'','string');
-$readOnly($silo,'New registrations have no site-default nameservers. NameSilo needs explicit nameservers before an order can be sent. '.SiteDnsDefault::ASK,'Choose one in Domains > DNS templates.');
-$readOnly($enom,'New registrations have no site-default nameservers. '.SiteDnsDefault::ASK,'NameSilo needs explicit nameservers');
+$readOnly($silo,'New registrations have no site-default nameservers. NameSilo needs explicit nameservers before an order can be sent. '.SiteDnsDefault::ASK,'Choose one in Domains > DNS templates.',\Paymenter\Extensions\Servers\Domains\Presentation\State::NotSet);
+$readOnly($enom,'New registrations have no site-default nameservers. '.SiteDnsDefault::ASK,'NameSilo needs explicit nameservers',\Paymenter\Extensions\Servers\Domains\Presentation\State::NotSet);
 $nativeSuccessful=true;echo "DNS default compatibility after registrar connection passed.\n";

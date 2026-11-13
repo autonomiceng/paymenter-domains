@@ -107,7 +107,7 @@ function staffData(bool $ordinaryCompleted = false): array
 function setupAction(string $action,int $server): string|\Filament\Actions\Testing\TestAction
 {
     return in_array($action,['configure','enroll_sandbox'],true)?$action.'_'.$server
-        :\Filament\Actions\Testing\TestAction::make($action.'_'.$server)->schemaComponent('account_'.$server,'content');
+        :\Filament\Actions\Testing\TestAction::make($action.'_'.$server)->schemaComponent('sheet','content');
 }
 
 /** Read one rendered settings section without confusing it with another row's state. */

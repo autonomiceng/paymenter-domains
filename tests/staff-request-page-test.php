@@ -50,7 +50,7 @@ $list=Livewire::actingAs($viewer)->test(ListOperations::class)->assertSuccessful
     ->assertSee('Request #'.$heldOp->id)->assertSeeHtml('2026-10-20T15:05:00+00:00')->assertSee('Synthetic registrar')
     ->assertSee('Under review')->assertSee('Old registrar needs approval')->assertSee('Registrar account')->assertSee('Note')->assertSeeHtml('placeholder="Search domain"')
     ->assertDontSee('Awaiting reconciliation')->assertDontSee('Requests appear when');
-same(['Registrar requests','List'],array_values($list->instance()->getBreadcrumbs()),'List breadcrumb in sentence case, like the title');
+same([],array_values($list->instance()->getBreadcrumbs()),'The list has no crumb tail, as the other tab lists');
 // Registrar account starts under Columns so the defaults fit inside the card at 1440px.
 staffTableStandard($list,'Search domain',['domain.domain','state','note']);staffRowsStandard($list,['server_id']);
 same(['id','state','domain.domain','action'],array_slice(array_keys($list->instance()->getTable()->getColumns()),0,4),'Status sits beside the request number, so a phone shows it without scrolling');
@@ -141,7 +141,7 @@ DB::table('domains_operations')->where('id',$heldOp->id)->update(['action'=>'tra
 
 // Pending: no notice, no Sent to registrar row.
 DB::table('domains_operations')->where('id',$heldOp->id)->update(['state'=>'pending','safe_code'=>null,'started_at'=>'2026-10-20 15:06:00']);
-Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$heldOp->id])->assertSee('In progress')->assertSee('Sent to registrar')->assertSeeHtml('2026-10-20T15:06:00+00:00');
+Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$heldOp->id])->assertSee(\Paymenter\Extensions\Servers\Domains\Presentation\State::Checking->label())->assertSee('Sent to registrar')->assertSeeHtml('2026-10-20T15:06:00+00:00');
 
 // Paid and unconfirmed: the notice names the registrar and how long new orders have been paused.
 DB::table('domains_operations')->where('id',$heldOp->id)->update(['state'=>'uncertain','funding_basis'=>'paid_invoice','started_at'=>now()->subHours(73)]);
@@ -259,7 +259,8 @@ $flip=static function(bool $enabled) use ($orders): void {
     });
 };
 $parity=[]; $seen=[];
-foreach (['on_hold'=>'On hold','in_progress'=>'In progress'] as $key=>$word) {
+// On hold reads Under review and In progress reads Checking, the closed state words.
+foreach (['on_hold'=>'Under review','in_progress'=>'Checking'] as $key=>$word) {
     foreach ([false,true] as $enabled) {
         $orders->update(['processing_enabled'=>!$enabled]);
         $p=Livewire::actingAs(Auth::user())->test(ListOperations::class)->filterTable('status',[$key]);
@@ -269,9 +270,9 @@ foreach (['on_hold'=>'On hold','in_progress'=>'In progress'] as $key=>$word) {
             if ($record->id===$queued->id) {
                 $seen[$enabled?'on':'off'][]=$key;
                 // The note reads the same switches as the word: Orders off at the start, so the row says so.
-                if (str_contains((string)$note->record($record)->getState(),'Orders are off for this account.')!==($word==='On hold')) { $parity[]="$key, Orders turned ".($enabled?'on':'off').': the note reads "'.$note->record($record)->getState().'"'; }
+                if (str_contains((string)$note->record($record)->getState(),'Orders are off for this account.')!==($key==='on_hold')) { $parity[]="$key, Orders turned ".($enabled?'on':'off').': the note reads "'.$note->record($record)->getState().'"'; }
             }
-            if (($shown=$column->record($record)->formatState($column->getState()))!==$word) { $parity[]="$key, Orders turned ".($enabled?'on':'off').": request #{$record->id} reads $shown"; }
+            if (($shown=$column->record($record)->getState())!==$word) { $parity[]="$key, Orders turned ".($enabled?'on':'off').": request #{$record->id} reads $shown"; }
         }
     }
 }
@@ -303,7 +304,7 @@ DB::table('domains_accounts')->where('server_id','>=',500)->update(['processing_
 expect($manyBindings<=$fewBindings&&$manyBytes<=$fewBytes+200,"61 paused accounts keep the statement bounded: $fewBindings/$fewBytes then $manyBindings/$manyBytes");
 same(null,Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::ordersOffAccounts(),'Past the limit the list reads the switches live');
 $page->assertCanSeeTableRecords([$queued]);
-same('On hold',$page->instance()->getTable()->getColumns()['state']->record($queued->fresh())->formatState($page->instance()->getTable()->getColumns()['state']->getState()),'The row still reads its status');
+same('Under review',$page->instance()->getTable()->getColumns()['state']->record($queued->fresh())->getState(),'The row still reads its status');
 $filter('status',['in_progress'])->assertCanNotSeeTableRecords([$queued]);
 DB::table('domains_accounts')->where('server_id','>=',500)->delete(); App\Models\Server::where('id','>=',500)->delete();
 $orders->update(['processing_enabled'=>true]);

@@ -106,15 +106,27 @@ final class RegistrarFacts
         catch (\Throwable) { return null; }
     }
     /** Add funds and balance checks apply once the account is set up and its server is on. */
+    /** The state word for an account's status, from the words the account status carries. */
+    public static function state(array $status): \Paymenter\Extensions\Servers\Domains\Presentation\State
+    {
+        return match ($status['label']) {
+            AccountStatus::SET['orders_paused'][0] => \Paymenter\Extensions\Servers\Domains\Presentation\State::OrdersPaused,
+            AccountStatus::SET['not_selling'][0] => \Paymenter\Extensions\Servers\Domains\Presentation\State::NotForSale,
+            AccountStatus::SET['not_connected'][0] => \Paymenter\Extensions\Servers\Domains\Presentation\State::NotConnected,
+            AccountStatus::SET['connection_failed'][0] => \Paymenter\Extensions\Servers\Domains\Presentation\State::ConnectionFailed,
+            default => \Paymenter\Extensions\Servers\Domains\Presentation\State::Active,
+        };
+    }
     public static function connected(?Account $account, array $status): bool
     { return $account!==null&&$status['label']!==AccountStatus::SET['not_connected'][0]; }
     public static function mode(?Account $account): ?string
     { return $account?($account->environment==='live'?'Live':'Test'):null; }
-    /** @return array{value:?string,checked:?string,low:bool,cause:?string,due:string,without_cost:int,funds:?string} */
+    /** The balance facts every page reads; 'missing' is the State for a balance it can't show (RegistrarBalances::facts).
+     * @return array{value:?string,checked:?string,low:bool,missing:?\Paymenter\Extensions\Servers\Domains\Presentation\State,cause:?string,due:string,without_cost:int,funds:?string} */
     public static function balance(Account $account): array
     {
         $f=RegistrarBalances::facts($account,app(Clock::class)->now());
-        return ['value'=>$f['balance'],'checked'=>$f['checked'],'low'=>$f['low'],'cause'=>$f['cause'],'due'=>$f['total'],'without_cost'=>$f['unknown'],'unreadable'=>$f['unreadable'],'unpriced'=>$f['unpriced'],'unobserved'=>$f['unobserved'],
+        return ['value'=>$f['balance'],'checked'=>$f['checked'],'low'=>$f['low'],'missing'=>$f['missing'],'cause'=>$f['cause'],'due'=>$f['total'],'without_cost'=>$f['unknown'],'unreadable'=>$f['unreadable'],'unpriced'=>$f['unpriced'],'unobserved'=>$f['unobserved'],
             'funds'=>RegistrarBalances::fundsUrl($account->registrar_key,$account->environment)];
     }
     /** Why Due in 30 days leaves renewals out, and who fills them. Only a gap staff must fix acts (amber).

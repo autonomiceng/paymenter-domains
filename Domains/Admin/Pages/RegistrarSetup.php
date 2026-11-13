@@ -4,35 +4,26 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Pages;
 use App\Models\Server;
 use Filament\Actions\Action;
-use Filament\Pages\Page;
-use Filament\Schemas\{Schema,Components\Callout,Components\EmbeddedTable};
 use Filament\Support\Enums\IconPosition;
-use Filament\Tables\Columns\TextColumn;
-use Filament\Tables\Concerns\InteractsWithTable;
-use Filament\Tables\Contracts\HasTable;
-use Filament\Tables\Filters\SelectFilter;
-use Filament\Tables\Table;
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Facades\Blade;
-use Illuminate\Support\HtmlString;
+use Illuminate\Database\Eloquent\{Builder,Model};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{CatalogueSalesNotice,EmptyTable,OneLine,RegistrarFacts,Sheet,Staff,StaffDomainStatus,StatusMark,TableColumns,TldFacts};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{CatalogueSalesNotice,RegistrarFacts,Sheet,Staff,StaffDomainStatus,StaffTabs,TldFacts};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Head,Row,Value};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\{Column,Filter,QueryListPage,Section};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain};
-use Paymenter\Extensions\Servers\Domains\Presentation\AccountStatus;
-use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
+use Paymenter\Extensions\Servers\Domains\Presentation\{AccountStatus,Fact,Reader,State};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,ContactDetails};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 /** Registrars: every registrar account (Domains server) with its status and balance. The slug keeps the old address. */
-class RegistrarSetup extends Page implements HasTable
+class RegistrarSetup extends QueryListPage
 {
-    use InteractsWithTable;
     protected static string|\BackedEnum|null $navigationIcon='heroicon-o-cog-6-tooth';
     protected static string|\UnitEnum|null $navigationGroup='Domains';
     protected static ?int $navigationSort=2;
     protected static ?string $title='Registrars';
     protected static ?string $slug='registrar-setup';
     protected static ?\Filament\Pages\Enums\SubNavigationPosition $subNavigationPosition=\Filament\Pages\Enums\SubNavigationPosition::Top;
-    public function getSubNavigation(): array { return \Paymenter\Extensions\Servers\Domains\Admin\Support\StaffTabs::registrars('Accounts'); }
+    public function getSubNavigation(): array { return StaffTabs::registrars('Accounts'); }
     /** Row facts per server for one render. */
     private array $rows=[];
     /** The menu item stays marked on an account and on Registrar requests. */
@@ -40,9 +31,10 @@ class RegistrarSetup extends Page implements HasTable
     { return [static::getRouteName(),RegistrarAccount::getRouteName(),RegistrarHistory::getRouteName(),RegistrarBalances::getRouteName(),ActivationStatus::getRouteName(),OperationResource::getRouteBaseName().'.*']; }
     public static function canAccess(): bool {return Staff::can();}
     public function mount(): void {Staff::requireView();}
+    protected function head(): Head { return Head::make('Registrars', Reader::Staff); }
     /** Add registrar account: name it here, then connect it on its own page. The stock Create Server form asks for a Paymenter
      * extension and shows no registrar fields, so staff landed on a page that never said what to do next. */
-    protected function getHeaderActions(): array
+    protected function actions(): array
     {
         $resource=\App\Admin\Resources\ServerResource::class;
         if(self::resourceUrl($resource,'create')===null||!$resource::canCreate()){return [];}
@@ -65,54 +57,65 @@ class RegistrarSetup extends Page implements HasTable
                 $this->redirect(RegistrarAccount::getUrl(['account'=>$server->id]));
             })];
     }
-    public function content(Schema $schema): Schema
+    protected function notices(): array
     {
-        Staff::requireView();$components=CatalogueSalesNotice::components();
+        $sections=CatalogueSalesNotice::sections();
         if ($missing=ContactDetails::missingRequiredProperties()) {
             $open=self::resourceUrl(\App\Admin\Resources\CustomPropertyResource::class,'index');
-            $components[]=Callout::make("Customers can't enter ".implode(', ',$missing).' in Account. Add them as custom properties.')->warning()->columnSpanFull()
-                ->footer($open?new HtmlString(Blade::render('<x-filament::button tag="a" :href="$url" color="gray" size="sm">Open custom properties</x-filament::button>',['url'=>$open])):null);
+            $sections[]=Section::make('Customer details',[Row::notice('contact-details',Value::state(State::NotSet,Reader::Staff,"Customers can't enter ".implode(', ',$missing).' in Account. Add them as custom properties.'),
+                $open?Sheet::link('open_custom_properties','Open custom properties',$open):null)]);
         }
-        return $schema->components([...$components,EmbeddedTable::make()]);
+        return $sections;
     }
-    public function table(Table $table): Table
+    protected function query(): Builder { return self::accounts(); }
+    protected function rowUrl(Model $record): ?string { return RegistrarAccount::getUrl(['account'=>$record->id]); }
+    protected function defaultSort(): ?array { return ['id','asc']; }
+    protected function searchLabel(): ?string { return 'Search account'; }
+    protected function emptyLine(): array { return ['No registrar accounts','Add one to start selling domains.','No accounts match']; }
+    /** A registrar amount keeps its currency first, as saved: "USD 12.00". */
+    private static function money(?string $amount): ?Value
+    {
+        $fact=$amount===null?null:Fact::names([$amount]);
+        return $fact===null?null:Value::fact($fact);
+    }
+    protected function columns(): array
     {
         $row=fn(Server $s)=>$this->row($s);
-        $missing=static fn(TextColumn $column)=>$column->color(fn($state,Server $record)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::icon():null);
-        $table=$table->query(self::accounts())->defaultSort('id')->paginated([25,50,100])->defaultPaginationPageOption(25)->heading('Accounts')->searchPlaceholder('Search account')
-            ->recordUrl(fn(Server $record)=>RegistrarAccount::getUrl(['account'=>$record->id]));
         // One line per account. The reason, a missing balance's cause, a low balance and missing costs go in Note, each with its step.
-        return TableColumns::choose(EmptyTable::apply($table,'No registrar accounts','Add one to start selling domains.','No accounts match'),[
-                OneLine::apply(TextColumn::make('name')->label('Account')->searchable()->weight('medium')
-                    ->suffix(fn(Server $record)=>$row($record)['demo']?DemoData::tag(inline:true):null)),
-                TextColumn::make('registrar')->label('Registrar')->state(fn(Server $record)=>$row($record)['account']?TldFacts::registrar($row($record)['account']->registrar_key):null),
-                TextColumn::make('mode')->label('Mode')->state(fn(Server $record)=>$row($record)['connected']?RegistrarFacts::mode($row($record)['account']):null),
-                TextColumn::make('status')->label('Status')->badge()->state(fn(Server $record)=>$row($record)['status']['label'])
-                    ->color(fn(Server $record)=>$row($record)['status']['tone'])->extraAttributes(fn(Server $record)=>StatusMark::attributes($row($record)['status']['tone'],'registrar-'.$record->id)),
-                OneLine::apply(TextColumn::make('note')->label('Note')->color('gray')->state(fn(Server $record)=>$row($record)['note']['text'])
-                    ->extraAttributes(fn(Server $record)=>StatusMark::note($row($record)['note']['act'])),OneLine::NOTE),
-                $missing(TextColumn::make('balance')->label('Balance')->state(fn(Server $record)=>$row($record)['balance']?($row($record)['balance']['value']??Missing::LABEL):null)
-                    ->alignEnd()->extraAttributes(['class'=>'domains-money'])),
-                TextColumn::make('due')->label('Due in 30 days')->state(fn(Server $record)=>$row($record)['balance']['due']??null)->alignEnd()->extraAttributes(['class'=>'domains-money']),
-                TextColumn::make('checked')->label('Balance checked')->state(fn(Server $record)=>$row($record)['balance']['checked']??null)->formatStateUsing(fn($state)=>Sheet::moment((string)$state)),
-                TextColumn::make('domains')->label('Domains')->state(fn(Server $record)=>$row($record)['domains'])->alignEnd(),
-            ],['checked','domains'])
-            ->filters([
-                SelectFilter::make('registrar')->label('Registrar')->options(fn()=>Account::query()->distinct()->pluck('registrar_key')->mapWithKeys(fn(string $key)=>[$key=>TldFacts::registrar($key)])->all())
-                    ->query(fn(Builder $query,array $data)=>$query->when($data['value']??null,fn(Builder $q,string $key)=>$q->whereIn('id',Account::where('registrar_key',$key)->select('server_id')))),
-                SelectFilter::make('mode')->label('Mode')->options(['live'=>'Live','test'=>'Test'])
-                    ->query(fn(Builder $query,array $data)=>$query->when($data['value']??null,fn(Builder $q,string $mode)=>$q->whereIn('id',Account::where('environment',$mode==='live'?'=':'!=','live')->select('server_id')))),
-                // Status is worked out per account, so this one reads the rows.
-                SelectFilter::make('status')->label('Status')->options(fn()=>self::accounts()->get()->map(fn(Server $s)=>$this->row($s)['status']['label'])->unique()->sort()->mapWithKeys(fn(string $label)=>[$label=>$label])->all())
-                    ->query(fn(Builder $query,array $data)=>$query->when($data['value']??null,fn(Builder $q,string $label)=>$q->whereIn('id',self::accounts()->get()->filter(fn(Server $s)=>$this->row($s)['status']['label']===$label)->modelKeys()))),
-            ])
-            ->recordActions([
-                Action::make('add_funds')->label('Add funds')->link()->icon('heroicon-m-arrow-top-right-on-square')->iconPosition(IconPosition::After)
-                    ->visible(fn(Server $record)=>$row($record)['balance']!==null)->url(fn(Server $record)=>$row($record)['balance']['funds']??null)->openUrlInNewTab()
-                    ->extraAttributes(['rel'=>'noopener noreferrer']),
-                Action::make('connect')->label('Connect')->link()->visible(fn(Server $record)=>$row($record)['account']===null)
-                    ->url(fn(Server $record)=>RegistrarAccount::getUrl(['account'=>$record->id])),
-            ]);
+        return [
+            Column::value('name','Account',fn(Server $s): Value=>Value::fact(Fact::names([(string)$s->name])))->searchable()->demoOf(fn(Server $s)=>$row($s)['account']),
+            Column::text('registrar','Registrar',fn(Server $s): ?string=>$row($s)['account']?TldFacts::registrar($row($s)['account']->registrar_key):null),
+            Column::text('mode','Mode',fn(Server $s): ?string=>$row($s)['connected']?RegistrarFacts::mode($row($s)['account']):null),
+            Column::value('status','Status',fn(Server $s): Value=>Value::state(RegistrarFacts::state($row($s)['status']),Reader::Staff,null,'registrar-'.$s->id)),
+            Column::note('note','Note',fn(Server $s): ?string=>$row($s)['note']['text'])->actWhen(fn(Server $s): bool=>$row($s)['note']['act']),
+            Column::value('balance','Balance',fn(Server $s): ?Value=>($b=$row($s)['balance'])===null?null:(self::money($b['value'])??Value::state($b['missing']??State::CouldntRead,Reader::Staff,null,'balance-'.$s->id)))->end(),
+            Column::value('due','Due in 30 days',fn(Server $s): ?Value=>self::money($row($s)['balance']['due']??null))->end(),
+            Column::value('checked','Balance checked',fn(Server $s): ?Value=>($c=$row($s)['balance']['checked']??null)&&($t=strtotime((string)$c))?Value::fact(Fact::date($t,Reader::Staff)):null)->optional(),
+            Column::value('domains','Domains',fn(Server $s): Value=>Value::fact(Fact::count((int)$row($s)['domains'])))->end()->optional(),
+        ];
+    }
+    protected function filters(): array
+    {
+        return [
+            Filter::select('registrar','Registrar',Account::query()->distinct()->pluck('registrar_key')->mapWithKeys(fn(string $key)=>[$key=>TldFacts::registrar($key)])->all())
+                ->query(fn(Builder $query,array $data)=>$query->when($data['value']??null,fn(Builder $q,string $key)=>$q->whereIn('id',Account::where('registrar_key',$key)->select('server_id')))),
+            Filter::select('mode','Mode',['live'=>'Live','test'=>'Test'])
+                ->query(fn(Builder $query,array $data)=>$query->when($data['value']??null,fn(Builder $q,string $mode)=>$q->whereIn('id',Account::where('environment',$mode==='live'?'=':'!=','live')->select('server_id')))),
+            // Status is worked out per account, so this one reads the rows.
+            Filter::select('status','Status',self::accounts()->get()->map(fn(Server $s)=>$this->row($s)['status']['label'])->unique()->sort()->mapWithKeys(fn(string $label)=>[$label=>$label])->all())
+                ->query(fn(Builder $query,array $data)=>$query->when($data['value']??null,fn(Builder $q,string $label)=>$q->whereIn('id',self::accounts()->get()->filter(fn(Server $s)=>$this->row($s)['status']['label']===$label)->modelKeys()))),
+        ];
+    }
+    protected function recordActions(): array
+    {
+        $row=fn(Server $s)=>$this->row($s);
+        return [
+            Action::make('add_funds')->label('Add funds')->link()->icon('heroicon-m-arrow-top-right-on-square')->iconPosition(IconPosition::After)
+                ->visible(fn(Server $record)=>$row($record)['balance']!==null)->url(fn(Server $record)=>$row($record)['balance']['funds']??null)->openUrlInNewTab()
+                ->extraAttributes(['rel'=>'noopener noreferrer']),
+            Action::make('connect')->label('Connect')->link()->visible(fn(Server $record)=>$row($record)['account']===null)
+                ->url(fn(Server $record)=>RegistrarAccount::getUrl(['account'=>$record->id])),
+        ];
     }
     /** @return array{account:?Account,status:array,connected:bool,domains:int,demo:bool,balance:?array,note:array{text:?string,act:bool}} */
     private function row(Server $s): array

@@ -291,7 +291,10 @@ $before=[$lostRenew->attempt,$lostRenew->funding,$lostDomain->fresh()->provider_
 expect(in_array(ReadCommand::Info,$state->calls,true),'Automatic renewal recovery reads before staff ask for a case');
 same(false,$lostRenew->fresh()->policy['status_check']['facts']['charge_confirmed'],'A later expiry is not proof of this renewal charge');
 same($before,[$lostRenew->fresh()->attempt,$lostRenew->fresh()->funding,$lostDomain->fresh()->provider_expires_at->format('Y-m-d'),$credit(),$state->writes],'Unknown renewal cost keeps its original authority and money');
-Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$lostRenew->id])->assertActionVisible('recheck')->assertActionVisible('enom_answer');
+// When the answer leads, Check status stays on the page: staff can read again before answering.
+same('enom_answer',RequestFacts::notice($lostRenew->fresh())['primary']??null,'An unconfirmed renewal past the answer wait leads with the answer');
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$lostRenew->id])->assertActionVisible('recheck')->assertActionVisible('enom_answer')
+    ->assertSee(\Paymenter\Extensions\Servers\Domains\Admin\Support\EnomAnswerAction::LABEL)->assertSee('Check status');
 // Unreadable saved attempt data renders the request page without an answer form or a send.
 $storedAttempt=$lostRenew->fresh()->getRawOriginal('attempt');$writes=$state->writes;
 DB::table('domains_operations')->where('id',$lostRenew->id)->update(['attempt'=>'d29-explicit-unreadable-fixture']);

@@ -3,14 +3,13 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Pages;
 use App\Models\Server;
-use Filament\Pages\Page;
-use Filament\Schemas\Schema;
-use Filament\Infolists\Components\TextEntry;
-use Filament\Support\Enums\Width;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{Sheet,Staff,PslActions,HelpHint};
-use Paymenter\Extensions\Servers\Domains\Services\PslRebaseline;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{PslActions,PslRows,Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Head;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\DetailPage;
+use Paymenter\Extensions\Servers\Domains\Presentation\Reader;
+use Paymenter\Extensions\Servers\Domains\Services\{PslRebaseline,PublicSuffixList as Lists};
 /** Registrar sites use System checks; monitoring-only sites retain the same exceptional review. */
-class PublicSuffixList extends Page
+class PublicSuffixList extends DetailPage
 {
     public const VIEW = 'admin.domains.watch.view';
     public const MANAGE = 'admin.domains.watch.manage';
@@ -18,19 +17,13 @@ class PublicSuffixList extends Page
     protected static string|\UnitEnum|null $navigationGroup = 'Domains';
     protected static ?string $title = 'Public suffix list';
     protected static ?string $slug = 'public-suffix-list';
-    protected Width|string|null $maxContentWidth = Sheet::WIDTH;
     public static function canAccess(): bool { return Staff::can(self::VIEW); }
     public static function shouldRegisterNavigation(): bool
-    { return !Server::where('extension','Domains')->exists()&&app(PslRebaseline::class)->preview()!==null; }
+    { return !Server::where('extension', 'Domains')->exists() && app(PslRebaseline::class)->preview() !== null; }
     public function mount(): void
-    { abort_unless(self::canAccess(),403);if(Server::where('extension','Domains')->exists()){$this->redirect(RegistrarSetup::getUrl());} }
-    protected function getHeaderActions(): array
-    { return [PslActions::accept(function():void {unset($this->cachedSchemas['content']);})]; }
-    public function content(Schema $schema): Schema
-    {
-        abort_unless(self::canAccess(),403);$row=PslActions::row(fn()=>null);
-        return $schema->components([Sheet::section('Public suffix list',[
-            Sheet::row(TextEntry::make('status')->state($row['value'])->color($row['tone'])->hintAction(HelpHint::make($row['help']))),
-        ],$row['cause'])]);
-    }
+    { abort_unless(self::canAccess(), 403); if (Server::where('extension', 'Domains')->exists()) { $this->redirect(RegistrarSetup::getUrl()); } }
+    protected function head(): Head { abort_unless(self::canAccess(), 403); return Head::make('Public suffix list', Reader::Staff); }
+    protected function actions(): array
+    { return [PslActions::accept(function (): void { unset($this->cachedSchemas['content']); })]; }
+    protected function sections(): array { abort_unless(self::canAccess(), 403); return PslRows::sections(app(Lists::class)); }
 }
