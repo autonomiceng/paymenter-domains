@@ -8,7 +8,9 @@
     const SCROLL = 'data-domains-scroll', KEYS = { ArrowDown: [1, 'line'], ArrowUp: [-1, 'line'], PageDown: [1, 'page'], PageUp: [-1, 'page'] };
     let overlay = null, anchor = null, queued = false;
     // Cut: the item, or a block inside it, is narrower than its text. Inline children have no box of their own.
-    const cut = item => [item, ...item.children].some(box => box.clientWidth > 0 && box.scrollWidth > box.clientWidth);
+    // A domain name cut in the middle (DomainName::cell) is cut in its head.
+    const cut = item => [item, ...item.children, ...item.querySelectorAll('.domains-dn-head')].some(box => box.clientWidth > 0 && box.scrollWidth > box.clientWidth);
+    const text = item => item.querySelector('.domains-dn')?.title ?? item.innerText.replace(/\s+/g, ' ').trim();
     // A row link or button already takes focus. Otherwise only a cut text needs a tab stop, and only the ones added here are removed.
     function sync(item) {
         const want = !item.closest('a[href],button') && cut(item), own = item.hasAttribute(OWN);
@@ -49,7 +51,7 @@
             // A press on it would move focus off the text and close it.
             overlay.addEventListener('mousedown', event => event.preventDefault());
         }
-        overlay.textContent = items.map(item => item.innerText.replace(/\s+/g, ' ').trim()).join('\n');
+        overlay.textContent = items.map(text).join('\n');
         anchor = items[0];
         overlay.hidden = false;
         overlay.scrollTop = 0;

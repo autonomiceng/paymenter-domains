@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\{Builder, Model};
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DemoTag, OneLine};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Value;
+use Paymenter\Extensions\Servers\Domains\Presentation\DomainName;
 /** One list column, as data: plain text, a domain name, or a panel Value (a state with its mark, a plain word or a
  * fact). The list type builds the Filament column, so a page can't add classes, colours or markup to a cell.
  * A row is an array (ListPage) or a saved record (RecordListPage, QueryListPage); value and text closures get it. */
@@ -31,7 +32,7 @@ final class Column
     public static function text(string $name, string $label, ?\Closure $text = null): self { $c = new self($name, $label, 'text'); $c->text = $text; return $c; }
     /** A note: the step a row needs, that may shorten only when its linked record holds the full text (P-TBL-7). */
     public static function note(string $name, string $label, \Closure $text): self { $c = new self($name, $label, 'note'); $c->text = $text; return $c; }
-    /** A domain name: one line that may shorten; its record link holds the full name. A demo record shows its Demo tag. */
+    /** A domain name: one line up to the cap, then cut in the middle so the TLD stays (DomainName::cell). A demo record shows its Demo tag. */
     public static function domain(string $name, string $label, bool $demoTag = true): self { $c = new self($name, $label, 'domain'); $c->tag = $demoTag; return $c; }
     /** A value from the row, drawn by the Value piece; null leaves the cell empty. The cell's state is the value's word,
      * so a reader or a test reads the word the mark stands beside. @param \Closure(array|Model):?Value $value */
@@ -62,7 +63,10 @@ final class Column
     public function isOptional(): bool { return $this->optional; }
     public function isNote(): bool { return $this->kind === 'note'; }
     private function nameCell(TextColumn $column): TextColumn
-    { $name = OneLine::apply($column->fontFamily(FontFamily::Mono), OneLine::NAME); return $this->tag ? DemoTag::apply($name) : $name; }
+    {
+        $name = OneLine::apply($column->fontFamily(FontFamily::Mono)->formatStateUsing(static fn (?string $state): ?HtmlString => $state === null ? null : DomainName::cell($state)), OneLine::NAME);
+        return $this->tag ? DemoTag::apply($name) : $name;
+    }
     private function noted(TextColumn $column): TextColumn
     { $act = $this->act; return $act === null ? $column : $column->extraAttributes(static fn (array|Model $record): array => \Paymenter\Extensions\Servers\Domains\Admin\Support\StatusMark::note((bool) $act($record)), merge: true); }
     private function tagged(TextColumn $column): TextColumn { return $this->demo ? DemoTag::apply($column) : $column; }

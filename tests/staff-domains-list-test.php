@@ -109,4 +109,10 @@ foreach($missing as $i=>$id){$row=$records[$id];
     same($i%3===0?'failed':null,DomainFacts::sync($row),'Direct callers still lazily read the identity and stopped state');
     same(DomainFacts::NO_ACCOUNT.($i%3===0?' Sync stopped. Ask staff who can resume sync.':''),$columns['note']->record($row)->getState(),'Missing accounts never falsely pause demo sync');
 }
+// A long name cuts in the middle and keeps its TLD; hover and screen readers get the full name, and copy reads it once.
+$full='beco-test-fc9d1234567b02d.com';$doc=new DOMDocument();$doc->loadHTML('<?xml encoding="utf-8"?>'.Paymenter\Extensions\Servers\Domains\Presentation\DomainName::cell($full)->toHtml());$x=new DOMXPath($doc);
+$part=fn(string $c): string=>$x->query('//*[contains(concat(" ",@class," ")," '.$c.' ")]')->item(0)?->textContent??'';
+same([$full,$full,$full,'7b02d.com'],[$x->query('//*[@title]')->item(0)?->getAttribute('title'),$part('domains-dn-sr'),$part('domains-dn-head').$part('domains-dn-tail'),$part('domains-dn-tail')],'A cut name keeps its TLD and its full name');
+same(['true','true'],[$x->query('//*[contains(@class,"domains-dn-head")]')->item(0)?->getAttribute('aria-hidden'),$x->query('//*[contains(@class,"domains-dn-tail")]')->item(0)?->getAttribute('aria-hidden')],'Screen readers read the full name once');
+expect(str_contains(Livewire::actingAs($viewer)->test(ListDomains::class)->html(),'title="'.e($active->domain).'"'),'The Domain column draws the shared name cell');
 echo "Staff Domains list: Auto-renew on every state, one demo-paused definition and a fixed query count passed.\n";$nativeSuccessful=true;
