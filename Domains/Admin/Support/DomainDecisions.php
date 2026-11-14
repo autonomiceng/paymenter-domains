@@ -162,7 +162,7 @@ final class DomainDecisions
         // Paid current-cycle debt still owns the payment date after its renewal finishes.
         $settledRenewal=$d->provider_expires_at!==null&&DB::table('invoices')->where('status','paid')
             ->whereIn('id',$currentRenewals->where('service_id',$d->service_id)->reject(
-                fn(Operation $op)=>\Paymenter\Extensions\Servers\Domains\Services\RenewalReplacements::reviewed($op,$d))->pluck('invoice_id'))->exists();
+                fn(Operation $op)=>$op->safe_code==='renewal_cancelled_unpaid'||\Paymenter\Extensions\Servers\Domains\Services\RenewalReplacements::reviewed($op,$d))->pluck('invoice_id'))->exists();
         $invoice=$renewalInvoice??$invoices->where('o.action','!=','renew')->first(['i.id','i.due_at']);
         if ($policy!==null&&!self::ended($d)) {
             try { $renewal=RenewalStop::read($d); } catch (\Throwable) { $renewal=null; }

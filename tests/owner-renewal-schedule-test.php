@@ -81,4 +81,14 @@ Paymenter\Extensions\Servers\Domains\Services\RenewalReplacements::recoverDomain
 same('paid',$invoice->fresh()->status,'A refunded invoice retains its native paid status');
 expect(Paymenter\Extensions\Servers\Domains\Services\RenewalReplacements::reviewed($renewal->fresh(),$d->fresh()),'Returned funding releases this cycle for replacement');
 expect(str_contains($staffRenewal(),$issue),'A refunded renewal authorized for replacement retains the future payment forecast');
+// A late payment on an early renewal closed unpaid becomes credit, not funding for this cycle.
+$closedInvoice=$billing->invoice($d->id,$user,1);
+$closedRenewal=Operation::where('invoice_id',$closedInvoice->id)->sole();
+$closedInvoice->update(['status'=>'cancelled']);$cycles->closeEarlyUnpaid($d->id);
+same('renewal_cancelled_unpaid',$closedRenewal->fresh()->safe_code,'The cancelled early renewal closes unpaid');
+App\Helpers\ExtensionHelper::addPayment($closedInvoice->id,null,$closedRenewal->amount);
+(new Paymenter\Extensions\Servers\Domains\Services\Refunds($clock))->creditRejected($closedRenewal->id);
+same('paid',$closedInvoice->fresh()->status,'A late-paid closed invoice retains its native paid status');
+expect(!empty($closedRenewal->fresh()->funding['late_credits']),'The closed renewal payment is returned as account credit');
+expect(str_contains($staffRenewal(),$issue),'A late-paid closed renewal credited to the account retains the future payment forecast');
 $nativeSuccessful=true;echo "Owner renewal schedule passed.\n";
