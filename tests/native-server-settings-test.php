@@ -74,7 +74,7 @@ foreach([$first,$second] as $server){
     $bindings->setProcessing($server->id,true,static fn()=>null);
     BalanceReads::record($binding,new Money('42.17','USD'),$clock->now(),'manual');
     expect($bindings->configurationAvailable($server->id),'Local configuration validated without constructing reader');
-    same('USD 42.17',RegistrarBalances::facts($a,$clock->now())['balance'],'Valid original account displays own cached amount');
+    same('$42.17',RegistrarBalances::facts($a,$clock->now())['balance'],'Valid original account displays own cached amount');
     $route=app('router')->getRoutes()->getByName('filament.admin.resources.servers.edit');
     same(EditServer::class,explode('@',$route->getActionName())[0],'Native route remains native');
     // Cached native route remains native; no Secure* class or mount guard participates.
@@ -125,7 +125,7 @@ foreach([$first,$second] as $server){
     $configure($server,$a->registrar_key,'PRIVATE-ROTATED-'.$a->registrar_key);
     same($binding->fingerprint,$a->fresh()->account_fingerprint,'Verified same-account rotation retains B1 fingerprint key');
     same(false,$a->fresh()->processing_enabled,'Verified recovery requires explicit resume');
-    same('USD 42.17',RegistrarBalances::facts($a,$clock->now())['balance'],'Same verified account can display its retained amount again');
+    same('$42.17',RegistrarBalances::facts($a,$clock->now())['balance'],'Same verified account can display its retained amount again');
     $digest=$server->settings()->where('key','domains_verified_credentials')->sole();$savedDigest=$digest->value;$digest->update(['value'=>str_repeat('f',64)]);
     serverSettingsReject(fn()=>$bindings->reader($server->id));same(null,RegistrarBalances::facts($a,$clock->now())['balance'],'Digest-only changes also hide the balance');$digest->update(['value'=>$savedDigest]);
     $bindings->setProcessing($server->id,true,static fn()=>null);$server->refresh()->update(['enabled'=>false]);
@@ -170,7 +170,7 @@ same('site_unbound',$bindings->configurationStatus($live->id),'Unbound live site
 same(['label'=>'Connection failed','tone'=>'danger','reason'=>'Site address not approved for live mode'],RegistrarFacts::status($live->fresh(),$liveAccount->fresh()),'Unbound-site status names its cause');
 same(null,RegistrarBalances::facts($liveAccount,$clock->now())['balance'],'Unbound live site hides cached amount');
 $bindings->confirmLiveSite($live->id,'https://native-settings.example.invalid');
-same('USD 77.00',RegistrarBalances::facts($liveAccount,$clock->now())['balance'],'Explicit site binding permits same-account cached display');
+same('$77.00',RegistrarBalances::facts($liveAccount,$clock->now())['balance'],'Explicit site binding permits same-account cached display');
 config(['app.url'=>'https://moved-native-settings.example.invalid']);
 same('site_mismatch',$bindings->configurationStatus($live->id),'Changed application URL holds live configuration');
 same(['label'=>'Connection failed','tone'=>'danger','reason'=>'Site address changed'],RegistrarFacts::status($live->fresh(),$liveAccount->fresh()),'Site mismatch names the site, not credentials');

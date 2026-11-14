@@ -41,16 +41,16 @@ class ListOperations extends RecordListPage
             Column::domain('domain.domain', 'Domain', false)->searchable(),
             Column::text('action', 'Type', fn (Operation $o): string => Labels::action($o->action)),
             Column::note('note', 'Note', fn (Operation $o): ?string => RequestFacts::reason($o, OperationQueries::ordersOff($o, $this->off()), $this->grants(), $this->off())),
-            Column::value('created_at', 'Created', fn (Operation $o): Value => Value::fact(Fact::date($o->created_at->getTimestamp(), Reader::Staff)))->sortable()->from('lg'),
+            Column::value('created_at', 'Created', fn (Operation $o): Value => Value::fact(Fact::date($o->created_at->getTimestamp(), Reader::Staff)))->sortable(),
             // The account starts under Columns so the default columns fit inside the card at 1440px; the request page and the filter name it.
             Column::value('server_id', 'Registrar account', static fn (Operation $o): Value => isset($servers[$o->server_id])
                 ? Value::fact(Fact::names([$servers[$o->server_id]]))
-                : Value::state(State::NotConnected, Reader::Staff, 'Registrar account not found. Check Registrars.'))->from('xl')->optional(),
+                : Value::state(State::NotConnected, Reader::Staff, 'Registrar account not found. Check Registrars.'))->optional(),
         ];
     }
     protected function filters(): array
     {
-        // On hold reads Under review, so one word picks both.
+        // A held request reads Under review, so one word picks both.
         $words = [];
         foreach (array_keys(RequestFacts::STATUSES) as $key) { if ($key !== 'on_hold') { $words[$key] = RequestFacts::state(['label' => RequestFacts::STATUSES[$key][0]])->label(); } }
         return [

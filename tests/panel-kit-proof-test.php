@@ -48,7 +48,7 @@ $view = Livewire::actingAs($reader)->test(PanelKit::class)->assertSuccessful();
 same($stored(), $days($view->html()), 'A read-only reader sees the saved days');
 same(0, storefrontDom($view->html())->query('//button[@aria-label="Edit Reminder schedule"]')->length, 'No Edit control for a read-only reader');
 $view->assertActionDoesNotExist($edit);
-expect(str_contains(html_entity_decode($view->html(), ENT_QUOTES), 'Set by staff who can change domain policy.'), 'The "?" says who sets it');
+expect(str_contains(html_entity_decode($view->html(), ENT_QUOTES), 'Set by staff who can change domain policy.'), 'The row says who sets it');
 // A forged click, as a browser would send it, saves nothing.
 try { $view->call('mountAction', 'reminders_'.$server, [], ['schemaComponent' => $m[1]])->fillForm(['before' => '1', 'after' => '1', 'reason' => 'Read-only save attempt'])->callMountedAction(); } catch (Throwable) {}
 same($saved, (array) $schedule(), 'A read-only reader changes nothing');

@@ -33,7 +33,7 @@ class PanelKitRecords extends QueryListPage
                 ->searchable(static fn (Builder $q, string $search): Builder => $q->whereIn('server_id', Server::where('name', 'like', '%'.$search.'%')->pluck('id')))->sortable(),
             Column::text('registrar_key', 'Registrar', static fn (Account $a): string => ['enom' => 'Enom', 'namesilo' => 'NameSilo'][$a->registrar_key] ?? $a->registrar_key)->sortable(),
             Column::value('environment', 'Mode', static fn (Account $a): Value => Value::plain($a->environment === Environment::Live->value ? Plain::Live : Plain::Test)),
-            Column::value('processing_enabled', 'Orders', static fn (Account $a): Value => Value::plain($a->processing_enabled ? Plain::On : Plain::Off))->from('md'),
+            Column::value('processing_enabled', 'Orders', static fn (Account $a): Value => Value::plain($a->processing_enabled ? Plain::On : Plain::Off)),
         ];
     }
     protected function filters(): array

@@ -7,15 +7,13 @@ use Illuminate\Contracts\Support\Htmlable;
 /** Content-sized staff columns. Only a linked name or note can shorten; structured values stay complete. */
 final class OneLine
 {
-    /** A domain name: 326px of mono, padding included (the approved staff table). */
+    /** A linked domain name may shorten when structured columns use the available room. */
     public const NAME=['domains-name-cell',30];
-    /** A person or account: 120px, padding included. Glyph widths decide where so short a line is cut, so any nonempty text
-     * keeps its full text in the tooltip. */
+    /** A person or account wraps and keeps its complete value. */
     public const SHORT=['domains-cut',0];
-    /** A note or a longer name: 24rem. */
+    /** Ordinary text stays complete. */
     public const LINE=['domains-line',44];
-    /** A list Note: its cell takes the rest of the row, and 160px when the table scrolls. Glyph widths and the table decide
-     * where it is cut, so every nonempty note keeps its full text in the tooltip. */
+    /** A linked note shares the remaining room with the name; unlinked notes wrap. */
     public const NOTE=['domains-line domains-list-note',0,'domains-note-cell'];
     /** @param array{0:string,1:int,2?:string} $kind The item class, the length that always fits, and an optional cell class. */
     public static function apply(TextColumn $column, array $kind=self::LINE): TextColumn

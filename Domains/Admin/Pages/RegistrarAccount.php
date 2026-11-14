@@ -52,7 +52,7 @@ class RegistrarAccount extends DetailPage
         $rows = array_column([...AccountChecklist::setup($a, $this->status()), ...AccountChecklist::renewals($id), self::whois($a)], null, 'label');
         $pick = fn (string ...$labels) => array_values(array_filter(array_map(fn (string $label) => $rows[$label] ?? null, $labels)));
         $funds = RegistrarFacts::connected($a, $this->status()) ? RegistrarFacts::balance($a)['funds'] : null;
-        $usage = Section::make('Balance and usage', [...$this->notice('usage'), ...$this->rows($this->usageRows($s, $a))], null, 'usage');
+        $usage = Section::make('Balance and usage', [...$this->notice('usage'), ...$this->rows($this->usageRows($s, $a))], RegistrarFacts::connected($a, $this->status()) ? \Paymenter\Extensions\Servers\Domains\Presentation\Fact::IN_USD : null, 'usage');
         return [
             Section::make('Account', [...$this->notice('account'), ...$this->rows([...$this->accountRows($a), ...$pick('API connection')])], null, 'account'),
             $funds ? $usage->link(Sheet::link('add_funds', 'Add funds', $funds, external: true)) : $usage,

@@ -151,13 +151,18 @@ final class DomainDecisions
         $invoices=DB::table('domains_operations as o')->join('invoices as i','i.id','=','o.invoice_id')->where('o.domain_id',$d->id)
             ->where('o.service_id',$d->service_id)->where('i.status','pending')->orderByDesc('i.id');
         // Reopened native debt does not restore a terminal or superseded renewal's authority.
-        $renewalOperations=$d->operations()->where('action','renew')->whereNotIn('state',RequestStatus::FINISHED)->get();
+        $renewalOperations=$d->operations()->where('action','renew')->get();
         // Missing expiry cannot establish a current cycle, but open native debt still needs staff review.
         // This display fallback grants no renewal authority and retains the same binding and terminal exclusions.
-        $renewals=($d->provider_expires_at!==null?RenewalCycles::current($d,$renewalOperations):$renewalOperations->filter(
+        $currentRenewals=$d->provider_expires_at!==null?RenewalCycles::current($d,$renewalOperations):$renewalOperations->filter(
             fn(Operation $op)=>$op->authority_generation===$d->authority_generation&&$op->account_fingerprint===$d->account_fingerprint
-                &&(int)$op->server_id===(int)$d->server_id&&$op->registrar_key===$d->registrar_key))->pluck('id');
+                &&(int)$op->server_id===(int)$d->server_id&&$op->registrar_key===$d->registrar_key);
+        $renewals=$currentRenewals->whereNotIn('state',RequestStatus::FINISHED)->pluck('id');
         $renewalInvoice=(clone $invoices)->whereIn('o.id',$renewals)->first(['i.id','i.due_at']);
+        // Paid current-cycle debt still owns the payment date after its renewal finishes.
+        $settledRenewal=$d->provider_expires_at!==null&&DB::table('invoices')->where('status','paid')
+            ->whereIn('id',$currentRenewals->where('service_id',$d->service_id)->reject(
+                fn(Operation $op)=>$op->safe_code==='renewal_cancelled_unpaid'||\Paymenter\Extensions\Servers\Domains\Services\RenewalReplacements::reviewed($op,$d))->pluck('invoice_id'))->exists();
         $invoice=$renewalInvoice??$invoices->where('o.action','!=','renew')->first(['i.id','i.due_at']);
         if ($policy!==null&&!self::ended($d)) {
             try { $renewal=RenewalStop::read($d); } catch (\Throwable) { $renewal=null; }
@@ -170,7 +175,7 @@ final class DomainDecisions
             $f['Renewal price']=self::price($d,$service,$observation);
             if ($renewal !== null) {
                 $calendar = [];
-                if ($d->provider_expires_at !== null && !$renewalInvoice) {
+                if ($d->provider_expires_at !== null && !$renewalInvoice && !$settledRenewal) {
                     $server = \App\Models\Server::with('settings')->find($d->server_id);
                     $timing = BillingCalendar::timing($server?->settings ?? collect());
                     $dates = BillingCalendar::dates($d->provider_expires_at, $timing['issue'], $timing['due']);

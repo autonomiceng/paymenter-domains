@@ -15,7 +15,8 @@ app()->instance(StaffSettingsWrites::class,new StaffSettingsWrites($native,$sell
 $t=$tlds[0];$account=Account::where('server_id',$t->server_id)->sole();$binding=AccountBindings::binding($account);
 $actor=staffUser(array_keys(Staff::permissions()));Auth::setUser($actor);
 $offer=static fn(string $action)=>$ports->readOffers(new Query($binding,['com'],$action),Context::Staff)[0];
-$head=static fn()=>trim(preg_replace('/\s+/',' ',strip_tags(Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->instance()->getSubheading()->toHtml())));
+// The head says the sales state; the page's currency line beside it is not part of the state.
+$head=static fn()=>trim(str_replace(\Paymenter\Extensions\Servers\Domains\Presentation\Fact::IN_USD,'',preg_replace('/\s+/',' ',strip_tags(Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->instance()->getSubheading()->toHtml()))));
 $said=static fn()=>preg_replace('/\s+/',' ',html_entity_decode(strip_tags(preg_replace('~<(script|style)\b.*?</\1>~si','',Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->html())),ENT_QUOTES));
 $ports->apply(new FactsObserved($binding,'com',new Facts(['register'=>[1,3],'renew'=>[1],'transfer'=>[1]],[],true,false,false,'synthetic',$now,$now->modify('+1 day'))),$offer('register')->revision);
 // The account sells only TLDs set to Sell, and .com has no choice of its own.

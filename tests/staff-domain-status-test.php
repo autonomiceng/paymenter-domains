@@ -38,7 +38,7 @@ $d=$row('active','register','succeeded',null,730,['operation_review','renewal_un
 $cases['walk: active with a saved correction review']=[$d,'active','Active','Registrar request needs a check. Check the request.'];
 foreach (['walk: paid registration held for staff (1)','walk: paid registration held for staff (2)'] as $name) {
     $d=$row('registration_pending','register','held','staff_review_required',120,['operation_review']);
-    $cases[$name]=[$d,'on_hold','On hold','Put on hold by staff. '.$req($d)];
+    $cases[$name]=[$d,'on_hold','Under review','Put on hold by staff. '.$req($d)];
 }
 $d=$row('registration_pending','register','cancelled');
 $cases['walk: old cancelled request on a pending domain']=[$d,'pending_registration','Pending registration','Request cancelled, order still open. Cancel the order to release the name. '.$req($d)];
@@ -165,7 +165,7 @@ foreach ($cases as $name=>$case) {
     $members[$key][]=$d->id;
 }
 // One head word: for every status, staff read the customer's word and add their detail in the step.
-$heads=[]; foreach ($cases as $name=>[$d]) { $s=DomainFacts::status($d->fresh()); $customer=$s['key']==='on_hold'?'On hold':DomainStatus::SET[$s['key']][0]; if ($s['label']!==$customer) { $heads[]=$name.': staff "'.$s['label'].'", customer "'.$customer.'"'; } }
+$heads=[]; foreach ($cases as $name=>[$d]) { $s=DomainFacts::status($d->fresh()); $customer=$s['key']==='on_hold'?'Under review':DomainStatus::SET[$s['key']][0]; if ($s['label']!==$customer) { $heads[]=$name.': staff "'.$s['label'].'", customer "'.$customer.'"'; } }
 same([],$heads,'Customers and staff read one head word for every status');
 same('warning',DomainFacts::status($cases['held transfer'][0]->fresh())['tone'],'A held transfer is a staff job, so staff read it in amber');
 // The amber note is for staff jobs only.
@@ -321,8 +321,8 @@ foreach ([$offTransfer,$offChange] as $d) {
 }
 // POL-held: staff registration holds differ from customer presentation, including the request filter.
 $pol=$row('registration_pending','register','held','staff_review_required'); $polOp=$pol->operations()->sole();
-same(['On hold','warning'],array_values(array_intersect_key(RequestFacts::status($polOp),array_flip(['label','tone']))),'Staff request is On hold in amber');
-same(['On hold','warning'],[DomainFacts::status($pol)['label'],DomainFacts::status($pol)['tone']],'Staff domain is On hold in amber');
+same(['Under review','warning'],array_values(array_intersect_key(RequestFacts::status($polOp),array_flip(['label','tone']))),'Staff request is Under review in amber');
+same(['Under review','warning'],[DomainFacts::status($pol)['label'],DomainFacts::status($pol)['tone']],'Staff domain is Under review in amber');
 same(['Under review','info'],array_slice(array_values(\Paymenter\Extensions\Servers\Domains\Presentation\StatusPill::of('registration_held')),0,2),'Customer domain stays Under review in blue');
 expect(\Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::status(Operation::query(),['on_hold'])->whereKey($polOp->id)->exists(),'Staff On hold filter includes registration hold');
 expect(!\Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::status(Operation::query(),['under_review'])->whereKey($polOp->id)->exists(),'Staff Under review filter excludes registration hold');
@@ -330,7 +330,7 @@ expect(!\Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::st
 $staffTransfer=$row('transfer_pending','transfer','held','staff_review_required');$heldOp=$staffTransfer->operations()->sole();
 $heldOp->update(['policy'=>['staff_actions'=>[['action'=>'hold','phase'=>'completed','actor_name'=>'Saved Operator','at'=>date(DATE_ATOM)]]]]);
 $heldOp=$heldOp->fresh();
-same('On hold',RequestFacts::status($heldOp)['label'],'Staff-held transfer shares On hold');
+same('Under review',RequestFacts::status($heldOp)['label'],'Staff-held transfer shares Under review');
 expect(\Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::status(Operation::query(),['on_hold'])->whereKey($heldOp->id)->exists(),'Held-transfer filter matches presentation');
 same('Put on hold by Saved Operator',Labels::requestStatus($heldOp)['reason'],'Retained hold names its recorded actor');
 Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$staffTransfer->id])->assertSee(State::UnderReview->label())->assertSee('Saved Operator');
@@ -341,8 +341,8 @@ $queuedOff=$row('registration_pending','register','queued'); $queuedOp=$queuedOf
 $closedOff=$row('registration_pending','register','queued'); DB::table('services')->where('id',$closedOff->service_id)->update(['status'=>'cancelled']);
 $setupOff=$row('registration_pending','register','held','contact_details_required');
 $word=static fn(Domain $d)=>[DomainFacts::status($d->fresh())['label'],RequestFacts::status($d->operations()->sole())['label']];
-same(['On hold','On hold'],$word($queuedOff),'Queued registration with Orders off: domain and request');
-same(['Under review','On hold'],$word($closedOff),'A closed order keeps its domain word');
+same(['Under review','Under review'],$word($queuedOff),'Queued registration with Orders off: domain and request');
+same(['Under review','Under review'],$word($closedOff),'A closed order reads Under review too; only the Status filter key tells them apart');
 same(['Action required','Action required'],$word($setupOff),'Customer setup keeps its word');
 same('warning',DomainFacts::status($queuedOff->fresh())['tone'],'The held registration is amber');
 $onHold=DomainQueries::status(Domain::whereKey([$queuedOff->id,$closedOff->id,$setupOff->id]),['on_hold'])->pluck('id')->all();
@@ -361,7 +361,7 @@ $flip=static function(bool $enabled) use ($seed): void {
     });
 };
 $parity=[]; $seen=[];
-foreach (['on_hold'=>'On hold','pending_registration'=>'Pending registration'] as $key=>$label) {
+foreach (['on_hold'=>'Under review','pending_registration'=>'Pending registration'] as $key=>$label) {
     foreach ([false,true] as $enabled) {
         $accounts->update(['processing_enabled'=>!$enabled]);
         $page=Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($queuedOff->domain)->filterTable('status',[$key]);
@@ -372,10 +372,10 @@ foreach (['on_hold'=>'On hold','pending_registration'=>'Pending registration'] a
                 $seen[$enabled?'on':'off'][]=$key;
                 // The step reads the same switches as the word: On hold names the Orders switch, a moving registration does not.
                 $step=(string)$note->record($record)->getState();
-                if ((str_contains($step,'Orders are off for this account.')&&str_contains($step,'Turn them on in Registrars.'))!==($label==='On hold')) { $parity[]="$key, Orders turned ".($enabled?'on':'off').": the step reads \"$step\""; }
+                if ((str_contains($step,'Orders are off for this account.')&&str_contains($step,'Turn them on in Registrars.'))!==($key==='on_hold')) { $parity[]="$key, Orders turned ".($enabled?'on':'off').": the step reads \"$step\""; }
             }
             // On hold is drawn as Under review, from the closed word list.
-            if (($shown=$column->record($record)->getState())!==($label==='On hold'?State::UnderReview->label():$label)) { $parity[]="$key, Orders turned ".($enabled?'on':'off').": {$record->domain} reads $shown"; }
+            if (($shown=$column->record($record)->getState())!==($key==='on_hold'?State::UnderReview->label():$label)) { $parity[]="$key, Orders turned ".($enabled?'on':'off').": {$record->domain} reads $shown"; }
         }
     }
 }

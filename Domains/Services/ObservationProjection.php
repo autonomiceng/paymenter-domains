@@ -138,7 +138,8 @@ final class ObservationProjection
         $read=HoldingReadRetry::status($d,$now);
         $held=ObservationRecords::held($d);
         $read['records_paused']=$read['records_paused']&&!$failed&&!$held;
-        $read['read_checking']=$read['next_read']!==null&&!$read['read_code']&&!$read['records_paused']&&!$read['read_overdue']&&!$failed&&!$held;
+        // Checking only while the read is due or running; a later scheduled read is a time, not a state.
+        $read['read_checking']=$read['next_read']!==null&&$read['next_read']<=$now->getTimestamp()&&!$read['read_code']&&!$read['records_paused']&&!$read['read_overdue']&&!$failed&&!$held;
         $read['read_cause']??=($failed||$held)?'The registrar did not return a complete supported record family.':($read['read_overdue']?'The scheduled registrar read is overdue.':null);
         $out=[...$read,'at'=>$r['at']??null,'last_complete_at'=>$r['last_complete_at']??null,
             'stale'=>$failed||!$r||new \DateTimeImmutable($r['at'])<=$now->modify('-1 day'),

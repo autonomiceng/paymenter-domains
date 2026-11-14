@@ -662,6 +662,9 @@
     .domains .domains-rows > .domains-row:has(> .domains-row__a) > .domains-row__l { grid-column: 1; }
     .domains .domains-rows > .domains-row > .domains-row__a { grid-column: 2; grid-row: 1 / span 2; align-self: start; }
     .domains .domains-sheet .domains-card > div { grid-template-columns: minmax(0, 1fr); padding: .5rem 1rem; }
+    /* Two controls beside a value leave it a sliver on a phone: the value and its line take the full width, the controls follow. */
+    .domains .domains-sheet .domains-card dd:has(> .domains-card__a > :nth-child(2)) { grid-template-columns: minmax(0, 1fr); }
+    .domains .domains-sheet .domains-card dd > .domains-card__a:has(> :nth-child(2)) { grid-column: 1; grid-row: auto; justify-content: flex-start; flex-wrap: wrap; gap: 0 1rem; margin-top: .25rem; }
     .domains .domains-sheet .domains-btn--block { width: calc(100% - 2rem); margin-inline: 1rem; }
     .domains .domains-row__a .domains-a { min-height: 2.75rem; }
 }

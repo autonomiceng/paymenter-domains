@@ -13,16 +13,13 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Value;
  * A row is an array (ListPage) or a saved record (RecordListPage, QueryListPage); value and text closures get it. */
 final class Column
 {
-    public const FROM = ['sm', 'md', 'lg', 'xl'];
     private ?\Closure $value = null;
     private ?\Closure $text = null;
     private ?\Closure $searchQuery = null;
     private ?\Closure $sortQuery = null;
-    private ?string $from = null;
     private ?\Closure $link = null;
     private bool $optional = false;
     private bool $short = false;
-    private bool $stack = false;
     private bool $end = false;
     private bool $demo = false;
     private ?\Closure $demoOf = null;
@@ -45,32 +42,11 @@ final class Column
     /** @param ?\Closure(Builder,string):Builder $query orders a saved-record list by something that is not a plain field;
      * it gets the query and 'asc' or 'desc' */
     public function sortable(?\Closure $query = null): self { $this->sortable = true; $this->sortQuery = $query; return $this; }
-    /** Retained for callers using the old responsive API. Staff columns now stay visible at every width. */
-    public function from(string $width): self
-    {
-        if (!in_array($width, self::FROM, true)) { throw new \InvalidArgumentException('A column shows from sm, md, lg or xl.'); }
-        if ($this->stack) { throw new \InvalidArgumentException('A column that stacks on phones already shows from sm.'); }
-        $this->from = $width; return $this;
-    }
-    /** Retained for callers using the old phone API. Staff tables now scroll with the same columns at every width. */
-    public function stackOnPhone(): self
-    {
-        if ($this->from !== null) { throw new \InvalidArgumentException('A column that stacks on phones already shows from sm.'); }
-        return $this;
-    }
-    public function stacksOnPhone(): bool { return $this->stack; }
-    /** The words this column adds under the name on a phone: a value's word, or the text. Built by the list type only. */
-    public function phoneText(array|Model $record): ?string
-    {
-        if ($this->visibleWhen !== null && !($this->visibleWhen)()) { return null; }
-        $text = $this->kind === 'value' ? $this->valueOf($record)?->word : ($this->text === null ? data_get($record, $this->name) : ($this->text)($record));
-        return is_scalar($text) && trim((string) $text) !== '' ? trim((string) $text) : null;
-    }
     /** Where the cell opens, such as the request a note names; null opens the row's own link.
      * @param \Closure(array|Model):?string $link */
     public function link(\Closure $link): self { $this->link = $link; return $this; }
-    /** A text cell that holds a person's name: it wraps instead of shortening. */
-    public function short(): self { return $this; }
+    /** A text cell that holds a person's name or email: it wraps and never shortens (P-TBL-7). */
+    public function person(): self { $this->short = true; return $this; }
     /** A demo record shows its Demo tag after this plain text, as it does on a domain name. */
     /** The Demo tag beside the cell's first line when the record $of returns for the row is demo data, such as the account a TLD row belongs to. */
     public function demoOf(\Closure $of): self { $this->demoOf = $of; return $this; }

@@ -97,13 +97,9 @@ final readonly class RegistrarBalances
      * check that ran and failed (or can't be shown) reads Couldn't read. */
     private static function missing(?object $row): \Paymenter\Extensions\Servers\Domains\Presentation\State
     { return $row===null||((int)$row->attempted_at===0&&!$row->read_at)?\Paymenter\Extensions\Servers\Domains\Presentation\State::NotReadYet:\Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead; }
-    /** Staff money: "USD 49,642.19". */
+    /** Staff money in the one money format: "$49,642.19". The page names the currency once. */
     private static function money(string $amount,string $currency): string
-    {
-        [$whole,$fraction]=array_pad(explode('.',ltrim($amount,'+')),2,'');$sign=str_starts_with($whole,'-')?'-':'';$whole=ltrim($whole,'-');
-        $fraction=rtrim($fraction,'0');$fraction=str_pad($fraction,max(2,strlen($fraction)),'0');
-        return $currency.' '.$sign.preg_replace('/\B(?=(\d{3})+(?!\d))/',',',$whole).'.'.$fraction;
-    }
+    { return \Paymenter\Extensions\Servers\Domains\Presentation\Fact::money(ltrim($amount,'+'),$currency)?->text??$currency.' '.$amount; }
     private function armAlert(Account $account): void
     {
         if(!Schema::hasTable(BalanceAlertSchema::TABLE)){return;}

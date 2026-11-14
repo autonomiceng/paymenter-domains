@@ -19,7 +19,8 @@ $offer=static fn(string $action)=>$ports->readOffers(new Query($binding,['com'],
 // Independent synthetic registrar terms, as the registrar would report them.
 $ports->apply(new FactsObserved($binding,'com',new Facts(['register'=>[1,3],'renew'=>[1],'transfer'=>[1]],[],true,false,false,'synthetic',$now,$now->modify('+1 day'))),$offer('register')->revision);
 $ports->apply(Edit::override($binding,'com',new Intent(sell:false,stops:['register','renew','transfer'])),$offer('register')->revision);
-$head=static fn($page)=>trim(preg_replace('/\s+/',' ',strip_tags($page->instance()->getSubheading()->toHtml())));
+// The head says the sales state; the page's currency line beside it is not part of the state.
+$head=static fn($page)=>trim(str_replace(\Paymenter\Extensions\Servers\Domains\Presentation\Fact::IN_USD,'',preg_replace('/\s+/',' ',strip_tags($page->instance()->getSubheading()->toHtml()))));
 $said=static fn($page)=>trim(preg_replace('/\s+/',' ',html_entity_decode(strip_tags(preg_replace('~<(script|style)\b.*?</\1>~si','',$page->html())),ENT_QUOTES)));
 // Stopped: Start selling is the primary button, and its confirm names the prices going on sale.
 $page=Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->assertActionVisible('start_selling')->assertActionHidden('stop_selling')->assertDontSee('Open in What you sell');

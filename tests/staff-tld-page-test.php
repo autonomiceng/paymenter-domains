@@ -24,13 +24,13 @@ $banned=['Catalogue reader unavailable','read_unavailable','catalogue_','Pricing
 $clean=static function(string $html,string $where)use($text,$banned):void {
     $plain=$text($html);foreach($banned as $old){expect(!str_contains($plain,$old),$where.': no "'.$old.'"');}
 };
-$renew=static fn($t)=>'USD '.PriceCatalogue::retail(Price::where(['server_id'=>$t->server_id,'tld'=>'com','action'=>'renew','term'=>1])->value('retail'));
+$renew=static fn($t)=>'$'.PriceCatalogue::retail(Price::where(['server_id'=>$t->server_id,'tld'=>'com','action'=>'renew','term'=>1])->value('retail'));
 
 // Prices synced: one row per registrar account, the account that takes new orders is marked.
 $list=Livewire::actingAs($u)->test(ListTlds::class)->assertSuccessful()->assertCanSeeTableRecords($tlds)->assertSeeHtml('data-domains-record="tld-'.$tlds[0]->id.'"');same([],$list->instance()->getBreadcrumbs(),'TLD list has no breadcrumb, like Domains');
 staffTableStandard($list,'Search TLD',['tld','account','note'],['renewal','cost']);
 foreach(['Registrar account','Renewal price','Cost','Domains','Status','Enom TEST identity check','OFFLINE DEMO NameSilo (synthetic)',
-    'Enom, default pricing, new orders','NameSilo, default pricing','For sale','USD 8.00',$renew($enom)] as $see){$list->assertSee($see);}
+    'Enom, default pricing, new orders','NameSilo, default pricing','For sale','$8.00',\Paymenter\Extensions\Servers\Domains\Presentation\Fact::IN_USD,$renew($enom)] as $see){$list->assertSee($see);}
 $plain=$text($list->html());
 expect(str_contains($plain,'OFFLINE DEMO NameSilo (synthetic) Demo'),'List: Demo tag after the demo account name');
 expect(!str_contains($plain,'NameSilo, default pricing, new orders'),'List: only the selected account takes new orders');
@@ -76,12 +76,18 @@ foreach([
     same(0,$editButtons($hidden->html())->length,'Missing price-edit or publish grants hides Edit prices');
 }
 Auth::setUser($u);
-same((int)$enom->server_id,(int)$page->instance()->getRecord()->server_id,'The TLD page belongs to its account');
+// One tab is active and opens this record; the browser title names that tab and the record. The record part names the page.
+$activeTab=static fn($c)=>array_values(array_filter($c->instance()->getSubNavigation(),static fn($item):bool=>$item->isActive()));
+$named=static fn($c):string=>trim((string)preg_replace('/^'.preg_quote((string)($activeTab($c)[0]??null)?->getLabel(),'/').'\s+-\s+/','',(string)$c->instance()->getTitle()));
+$tab=$activeTab($page);
+same([1,ViewTld::getUrl(['record'=>$enom->id])],[count($tab),$tab[0]?->getUrl()],'One active tab, and it opens this record');
+expect(str_contains((string)$page->instance()->getTitle(),(string)$tab[0]->getLabel()),'The browser title names the open tab');
+same('.com on Enom TEST identity check',$named($page),'A TLD offered by two accounts is titled by its account');
 // The other account's page for the same TLD names its own account.
 $other=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$silo->id])->assertSuccessful();
-same((int)$silo->server_id,(int)$other->instance()->getRecord()->server_id,'The second account opens its own TLD record');
+same('.com on OFFLINE DEMO NameSilo (synthetic)',$named($other),'Two pages for one TLD never share a title');
 // Each price shows the cost for the same action, so a price never reads against another action's cost.
-expect(substr_count($text($page->html()),'Cost USD ')>=2,'Registration and renewal each show their own cost');
+expect(substr_count($text($page->html()),'Cost $')>=2,'Registration and renewal each show their own cost');
 // Change registrar says what it does to sales before it is saved.
 $dialog=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$enom->id])->mountAction('seller')->call('$refresh');
 expect(str_contains($text($dialog->effects['partials']['action-modals.0']??''),'new orders for .com stop until that account\'s terms and prices are checked, and open carts drop .com'),'Change registrar warns that sales stop and carts drop the TLD');
@@ -93,7 +99,7 @@ expect(TldFacts::history((int)$enom->server_id,(int)$enom->id)!==[],'Published f
 // The History tab lists those events under the same head and sales actions as the Overview tab.
 $events=TldFacts::history((int)$enom->server_id,(int)$enom->id);
 $history=Livewire::actingAs($u)->test(TldHistory::class,['record'=>$enom->id])->assertSuccessful()->assertSee($events[0]['change']);
-$names=static fn($c)=>[$c->instance()->getRecord()->getKey(),array_map(static fn($a)=>$a instanceof Filament\Actions\Action?$a->getName():'More',array_values($c->instance()->getCachedHeaderActions()))];
+$names=static fn($c)=>[$named($c),array_map(static fn($a)=>$a instanceof Filament\Actions\Action?$a->getName():'More',array_values($c->instance()->getCachedHeaderActions()))];
 same($names($page),$names($history),'History keeps the TLD head and its actions');
 $auditQuery=DB::table('domains_audit_archives')->where('server_id',$enom->server_id);
 $auditBytes=(clone $auditQuery)->get()->map(fn($r)=>(array)$r)->all();
@@ -225,7 +231,7 @@ $clock->instant=$now;Carbon\Carbon::setTestNow($now);
 $rules=new \Paymenter\Extensions\Servers\Domains\Services\PricingRules;
 saveDefaultRule(['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed'=>array_fill_keys(['register','renew','transfer'],'1.00')],static fn($ending)=>activeFixtureRepublish($prices,$ending));
 same(['label'=>'Not for sale','tone'=>'gray','reason'=>'Below cost'],TldFacts::salesState($enom->fresh()),'Below cost is not for sale');
-$list=Livewire::actingAs($u)->test(ListTlds::class)->assertSuccessful()->assertSee('Not for sale')->assertSee(State::BelowCost->label())->assertSee('USD 1.00');
+$list=Livewire::actingAs($u)->test(ListTlds::class)->assertSuccessful()->assertSee('Not for sale')->assertSee(State::BelowCost->label())->assertSee('$1.00');
 $clean($list->html(),'List below cost');
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$enom->id])->assertSuccessful()->assertSee('Not for sale')->assertSee('Below cost');
 // The price itself says Below cost, so staff see the money risk on the value.
@@ -234,15 +240,17 @@ $clean($page->html(),'TLD page below cost');
 
 // Without the costs permission no cost is shown.
 $viewer=staffUser([Staff::VIEW]);Auth::setUser($viewer);
-$list=Livewire::actingAs($viewer)->test(ListTlds::class)->assertSuccessful()->assertDontSee('USD 8.00')->assertDontSee('$8.00');
-$page=Livewire::actingAs($viewer)->test(ViewTld::class,['record'=>$silo->id])->assertSuccessful()->assertDontSee('USD 8.00')->assertDontSee('$8.00')->assertDontSee('Restore fee');
+$list=Livewire::actingAs($viewer)->test(ListTlds::class)->assertSuccessful()->assertDontSee('$8.00');
+$page=Livewire::actingAs($viewer)->test(ViewTld::class,['record'=>$silo->id])->assertSuccessful()->assertDontSee('$8.00')->assertDontSee('Restore fee');
 // A retained sibling from an old registrar or account is not a current shared ending.
 foreach(['registrar_key'=>'retired','account_fingerprint'=>'retired-account'] as $field=>$stale){
     DB::table('domains_tlds')->where('id',$silo->id)->update([$field=>$stale]);
     $current=Livewire::actingAs($viewer)->test(ViewTld::class,['record'=>$enom->id])->assertSuccessful();
+    same('.com',$named($current),'Stale '.$field.' does not make the title shared');
     $accounts=array_column(TldFacts::accounts($enom,Staff::requireView()),'name');
     expect(!in_array('OFFLINE DEMO NameSilo (synthetic)',$accounts,true),'Stale sibling is also absent from account rows');
     DB::table('domains_tlds')->where('id',$silo->id)->update([$field=>$silo->{$field}]);
 }
 $current=Livewire::actingAs($viewer)->test(ViewTld::class,['record'=>$enom->id])->assertSuccessful();
+same('.com on Enom TEST identity check',$named($current),'A current sibling still makes the title shared');
 echo "Native TLDs & pricing list and TLD page passed.\n";$nativeSuccessful=true;

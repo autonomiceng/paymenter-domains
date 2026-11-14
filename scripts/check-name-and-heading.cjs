@@ -8,10 +8,13 @@ const { chromium } = require('playwright');
 const SCOPES = ['staff', 'watch', 'heading', 'managed'];
 
 async function main() {
+    // A hung browser fails the check instead of holding the suite.
+    setTimeout(() => { console.error('Browser check exceeded 90 seconds'); process.exit(1); }, 90000).unref();
+    if (!process.argv[2]) throw new Error('usage: node scripts/check-name-and-heading.cjs RENDER_DIRECTORY [lists|staff|watch|heading|managed]');
     const output = path.resolve(process.argv[2]);
     const scopes = process.argv[3] ? [process.argv[3]] : SCOPES;
     if (!scopes.every(scope => [...SCOPES, 'lists'].includes(scope))) throw new Error('Unknown scope');
-    const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_BIN,
+    const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_BIN, timeout: 15000,
         args: ['--no-sandbox', '--disable-background-networking'] });
     const context = await browser.newContext({ serviceWorkers: 'block' });
     const requests = [], failures = [];
