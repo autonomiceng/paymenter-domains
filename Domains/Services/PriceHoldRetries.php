@@ -8,6 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Operation;
 /** Retry a paid, unsent acquisition through Release. The normal preflight still enforces both frozen price limits. */
 final class PriceHoldRetries
 {
+    private const MAX_AUTOMATIC_TRIES=3;
     public static function candidate(Operation $op): bool
     {
         return $op->state==='held'&&$op->safe_code==='registrar_price_increased'&&$op->funding_basis==='paid_invoice'
@@ -15,17 +16,17 @@ final class PriceHoldRetries
     }
     private static function due(Operation $op,\DateTimeImmutable $now): bool
     {
-        $last=$op->started_at;$tries=0;$history=$op->policy['staff_actions']??[];
-        // Leave room for a staff release and its return hold in the existing bounded history.
-        if(!is_array($history)||!array_is_list($history)||count($history)>=97){return false;}
+        $last=$op->started_at;$tries=0;$automaticTries=0;$history=$op->policy['staff_actions']??[];
+        // Retained History also needs room for staff Release, its return hold, and Cancel and refund.
+        if(!is_array($history)||!array_is_list($history)||count($history)>=95){return false;}
         foreach($history as $event){
             if(($event['action']??null)!=='release'||($event['phase']??null)!=='completed'
                 ||($event['before']['reason']??null)!=='registrar_price_increased'){continue;}
             try{$last=new \DateTimeImmutable($event['at']);}catch(\Throwable){return false;}
-            $tries++;
+            $tries++;if(($event['automatic']??false)===true){$automaticTries++;}
         }
         $delay=$tries===0?900:($tries===1?3600:21600);
-        return $last!==null&&$last->getTimestamp()+$delay<=$now->getTimestamp();
+        return $automaticTries<self::MAX_AUTOMATIC_TRIES&&$last!==null&&$last->getTimestamp()+$delay<=$now->getTimestamp();
     }
     public static function readmit(int $id,Clock $clock): bool
     {

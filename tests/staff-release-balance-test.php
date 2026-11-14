@@ -329,6 +329,36 @@ foreach(['possibly_sent','sealed','execution','complimentary','staff_hold'] as $
 }
 // The clock advanced; retain fresh catalogue rows for the following independent checkout.
 DB::table('domains_prices')->where('server_id',$binding->serverId)->update(['observed_at'=>$clock->now()->format('Y-m-d H:i:s'),'fresh_until'=>$clock->now()->modify('+1 day')->format('Y-m-d H:i:s')]);
+// A persistent increase exhausts three automatic tries without consuming staff recovery or refund history.
+config(['domains.enom_writes.registration'=>true]);$capped=$new(placeholderComFixtureName('capped-price-placeholder.com'));
+config(['domains.enom_writes.registration'=>false]);$query=OperationClaims::query($capped,$capped->domain);$quoteCost='6.01';
+$capped=$lowEngine->execute($capped->id);$before=$writer->calls;
+foreach([900,3600,21600] as $wait){
+    $scheduled($wait);
+    same('queued',$capped->fresh()->state,'Each of the three spaced automatic tries releases the paid price hold');
+    config(['domains.enom_writes.registration'=>false]);$capped=$lowEngine->execute($capped->id);
+    same(['held','registrar_price_increased'],[$capped->state,$capped->safe_code],'The still higher quote holds each automatic try without sending');
+}
+$history=$capped->policy['staff_actions'];$scheduled(21600);
+same('held',$capped->fresh()->state,'The fourth automatic price retry stays held for staff');
+same($history,$capped->fresh()->policy['staff_actions'],'Exhausted automatic retries leave staff History unchanged');
+Illuminate\Support\Facades\Queue::assertNotPushed(\Paymenter\Extensions\Servers\Domains\Jobs\RunOperation::class,fn($job)=>$job->operationId===$capped->id);
+app(\Paymenter\Extensions\Servers\Domains\Services\Reminders::class)->remind((int)$capped->domain_id);
+expect(\Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::open([(int)$capped->domain_id])->where('operation_id',$capped->id)->where('code','operation_review')->exists(),'An exhausted price hold retains its normal staff alert');
+$run($capped->fresh(),'release');same('queued',$capped->fresh()->state,'Staff Release still works after automatic tries run out');
+config(['domains.enom_writes.registration'=>false]);$capped=$lowEngine->execute($capped->id);
+same(['held','registrar_price_increased'],[$capped->state,$capped->safe_code],'A staff release at the high quote returns to held');
+$scheduled(21600);same('held',$capped->fresh()->state,'Staff Release does not restart exhausted automatic retries');
+$beforeCredit=\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)$credit());
+$run($capped->fresh(),'refund');$capped=$capped->fresh();
+same(['rejected','refund_approved'],[$capped->state,$capped->safe_code],'Reviewed Cancel and refund works after the failed staff Release');
+$expectedCredit=$beforeCredit+\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)$capped->amount);
+same($expectedCredit,\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)$credit()),'Exhausted retry cancellation returns exactly the original paid amount');
+app(\Paymenter\Extensions\Servers\Domains\Services\Refunds::class)->creditRejected((int)$capped->id);
+same($expectedCredit,\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)$credit()),'Retrying the exhausted order refund never credits twice');
+$lowEngine->execute($capped->id);same($before,$writer->calls,'Automatic tries, staff Release and cancellation at a high price never send');
+// The independent checkout below needs current catalogue freshness after the capped retry window.
+DB::table('domains_prices')->where('server_id',$binding->serverId)->update(['observed_at'=>$clock->now()->format('Y-m-d H:i:s'),'fresh_until'=>$clock->now()->modify('+1 day')->format('Y-m-d H:i:s')]);
 config(['domains.enom_writes.registration'=>true]);$legacy=$new(placeholderComFixtureName('retry-preclaim-refund-placeholder.com'));
 config(['domains.enom_writes.registration'=>false]);$legacy->update(['state'=>'held','safe_code'=>'usd_balance_required']);
 same(false,$claims->readmitBalance((int)$legacy->id),'Stored pre-claim check gets the normal backoff');
