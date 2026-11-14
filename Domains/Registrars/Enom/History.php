@@ -143,7 +143,7 @@ final class History
         return $counts;
     }
     /** Fixed 25-record pages, stable total, contiguous positions, and an explicit terminal page. Live returns a counted single page
-     * with no pagination fields at all (Nov 14 2026 sample); that is accepted only for Start=1 with every listed row present. */
+     * with no pagination fields at all (Nov 14 2026 sample); that is accepted only for Start=1, fewer than 25 orders and every listed row present. */
     private static function page(ProtocolResult $reply, int $start, \DateTimeImmutable $begin, \DateTimeImmutable $end): ?array
     {
         $list = $reply->value('orderlist');
@@ -160,7 +160,8 @@ final class History
         $count = (int)$list['recordcount']; $rows = $list['orderdetail'] ?? [];
         if (!is_array($rows)) { return null; }
         $rows = array_is_list($rows) ? $rows : [$rows];
-        if (!$paging && ($start !== 1 || $count > 25 || count($rows) !== $count)) { return null; }
+        // A full 25-row page without pagination cannot show that no second page exists.
+        if (!$paging && ($start !== 1 || $count >= 25 || count($rows) !== $count)) { return null; }
         foreach ($paging ? ['showpreviousandnext', 'showpreviouslink', 'shownextlink'] : [] as $key) {
             if (!in_array($list[$key] ?? null, ['Yes', 'No'], true)) { return null; }
         }
