@@ -69,6 +69,11 @@ $first=clone $d;$first->observation=['record_failure'=>['identity'=>ObservationR
 $failedFirst=MonitoringEvidence::rows(MonitoringEvidence::read($first))['Registrar records'];
 same(Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead,$failedFirst->state,'A failed first registrar read is Couldn\'t read');
 same(strtotime('2026-11-05T10:00:00Z'),strtotime((string)$failedFirst->subAt?->datetime),'A failed first registrar read names when it was tried');
+// A later failed read keeps the old inventory, but its attempt time belongs to the later failure.
+$later=clone $d;$later->observation=[...$d->observation,'record_failure'=>$first->observation['record_failure']];
+$laterEvidence=MonitoringEvidence::read($later);$laterRow=MonitoringEvidence::rows($laterEvidence)['Registrar records'];
+same($e['registrar'],$laterEvidence['registrar'],'A failed refresh retains the saved registrar addresses');
+same(strtotime($first->observation['record_failure']['at']),strtotime((string)$laterRow->subAt?->datetime),'A failed refresh names the latest attempt, not the retained inventory time');
 // Addresses from a registrar read that did not finish stay listed, with the same unfinished words and time as an empty one.
 $listed=static fn(?string $state)=>MonitoringEvidence::rows(['registrar'=>['A @ → 192.0.2.20'],'registrar_at'=>'2026-11-05T09:00:00+00:00','registrar_read'=>$state])['Registrar records'];
 foreach(['partial','unknown'] as $state){$unfinished=$listed($state);
