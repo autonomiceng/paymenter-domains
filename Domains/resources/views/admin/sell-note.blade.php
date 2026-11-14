@@ -1,8 +1,5 @@
 <span data-price-omission>
-    @if($warning['cause'] === 'unreadable')
-        <span data-omitted-tld>{{ $warning['tlds'][0] }}</span> on {{ $warning['account'] }} has prices left out: its saved settings can't be read, so Edit prices can't fix them.
-        Ask your site admin to restore them from a backup.
-    @elseif($warning['cause'] === 'custom_rule')
+    @if($warning['cause'] === 'custom_rule')
         <span data-omitted-tld>{{ $warning['tlds'][0] }}</span> on {{ $warning['account'] }} has prices left out: its custom pricing can't be read.
         Open {{ $warning['tlds'][0] }} and use Edit prices.
     @else

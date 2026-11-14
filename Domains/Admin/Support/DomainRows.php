@@ -75,7 +75,6 @@ final class DomainRows
     public static function family(array $family): Value
     {
         $sub = RegistrarRows::sentence($family['staff'] ?? null);
-        if ($family['state'] === 'partial' && ($family['limited'] ?? false)) { return Value::state(State::Ok, Reader::Staff, $sub); }
         return match ($family['state']) {
             'unknown' => Value::state(($family['read_checking'] ?? false) ? State::Checking : (($family['read_failed'] ?? false) ? State::CouldntRead : State::NotReadYet), Reader::Staff),
             'complete' => ($f = Fact::names([(string) $family['value']])) !== null && !Fact::isWord((string) $family['value']) ? Value::fact($f, $sub) : Value::state(State::Ok, Reader::Staff, $sub),

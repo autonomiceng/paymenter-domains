@@ -2,11 +2,18 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom;
-use Paymenter\Extensions\Servers\Domains\Data\{AttemptEvidence, Evidence, ExpiryPrecision, RequestContext};
+use Paymenter\Extensions\Servers\Domains\Data\{AttemptEvidence, Evidence, ExpiryPrecision, HistoryScan, RequestContext};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ReadCommand, ProtocolResult};
-/** Accepted, counted Enom history only. No partial scan can establish uniqueness. */
+/** Accepted, counted Enom history only. No partial scan can establish uniqueness. A dense day continues on later scheduled
+ * reads: each read lists every page again, keeps validated order outcomes bound to their listed IDs and dates, and reads
+ * the next orders within the read budget. Only a full scan with every order resolved is complete. */
 final class History
 {
+    /** Order details per read, and listed orders per scan (ten pages). */
+    private const DETAILS = 20, ORDERS = 250;
+    /** Sanitized reasons a read could not finish the scan, saved with counts so a stuck scan can be diagnosed. */
+    private const REFUSALS = ['read_budget', 'list_invalid', 'list_changed', 'list_too_large', 'list_duplicate', 'order_open', 'detail_ceiling',
+        'detail_unavailable', 'detail_unsupported', 'order_date_changed', 'order_unreadable', 'multiple_matches'];
     public function __construct(private readonly Client $client) {}
     public function inspect(AttemptEvidence $attempt, RequestContext $context): Evidence
     {
@@ -17,43 +24,102 @@ final class History
         $begin = $attempt->windowStart->setTimezone($utc)->modify('-12 hours')->setTime(0, 0);
         $end = $attempt->windowEnd->setTimezone($utc)->modify('+14 hours')->setTime(0, 0)->modify('+1 day');
         $parameters = ['BeginDate'=>$begin->format('m/d/Y'), 'EndDate'=>$end->format('m/d/Y')];
-        $start = 1; $total = null; $ids = []; $details = [];
+        $key = HistoryScan::key($attempt); $saved = $attempt->historyScan?->key === $key ? $attempt->historyScan->state : [];
+        $known = self::outcomes($saved['orders'] ?? null); $refusals = [];
+        $refuse = function (string $category) use (&$refusals): void { $refusals[$category] = ($refusals[$category] ?? 0) + 1; };
+        $result = function (bool $complete, array $orders, array $candidates, int $listed, int $window, bool $progressed) use (&$refusals, $saved, $key): Evidence {
+            $totals = self::counts($saved['refusal_totals'] ?? null);
+            foreach ($refusals as $category=>$count) { $totals[$category] = min(1000000, ($totals[$category] ?? 0) + $count); }
+            $encoded = [];
+            foreach ($orders as $id=>[$outcome, $signature]) { $encoded[(string)$id] = $outcome.':'.$signature; }
+            $state = ['orders'=>$encoded, 'listed'=>$listed, 'in_window'=>$window, 'resolved'=>count($orders), 'complete'=>$complete,
+                'reads'=>min(1000000, (int)($saved['reads'] ?? 0) + 1), 'refusals'=>$refusals, 'refusal_totals'=>$totals];
+            return new Evidence(candidates: $candidates, historyComplete: $complete, historyScan: new HistoryScan($key, $state, $progressed && !$complete));
+        };
+        $stop = function (string $category) use ($refuse, $result, $known, $saved): Evidence {
+            $refuse($category); return $result(false, $known, [], (int)($saved['listed'] ?? 0), (int)($saved['in_window'] ?? 0), false);
+        };
+        $start = 1; $total = null; $ids = []; $rows = [];
         do {
-            if ($context->budget->remaining() < 1) { return new Evidence; }
+            if ($context->budget->remaining() < 1) { return $stop('read_budget'); }
             $reply = $this->client->read(ReadCommand::Orders, $parameters + ['Start'=>$start], $context);
             $page = self::page($reply, $start, $begin, $end);
-            if (!$page || ($total !== null && $total !== $page['count'])) { return new Evidence; }
+            if (!$page) { return $stop('list_invalid'); }
+            if ($total !== null && $total !== $page['count']) { return $stop('list_changed'); }
+            if ($page['count'] > self::ORDERS) { return $stop('list_too_large'); }
             $total = $page['count'];
             foreach ($page['rows'] as $row) {
-                $id = $row['orderid'];
-                if (isset($ids[$id])) { return new Evidence; }
-                $ids[$id] = true;
+                if (isset($ids[$row['orderid']])) { return $stop('list_duplicate'); }
+                $ids[$row['orderid']] = true;
                 $placed = self::localClock($row['orderdate']);
                 // Each row was validated by page(). A different day cannot be this original send.
-                if ($placed >= $begin && $placed < $end) { $details[] = $row; }
+                if ($placed >= $begin && $placed < $end) { $rows[] = $row; }
             }
-            // Preserve the existing detail cap and reserve capacity for every remaining list page.
-            $pagesLeft = (int)ceil(($total - count($ids)) / 25);
-            if (count($details) > 20 || count($details) + $pagesLeft > $context->budget->remaining()) { return new Evidence; }
             $start = $page['next'];
         } while ($start !== null);
-        if (count($ids) !== $total) { return new Evidence; }
-        $candidates = []; $complete = true;
-        foreach ($details as $row) {
-            if ($row['statusdesc'] !== 'Order complete' || $row['orderprocessflag'] !== 'True') { $complete = false; continue; }
-            $id = $row['orderid'];
-            $order = $this->client->read(ReadCommand::Order, ['OrderID'=>$id], $context);
-            if (!self::supported($order) || $order->value('order.orderid') !== $id) { $complete = false; continue; }
-            if ($order->value('order.orderdate') !== null && self::localClock($order->value('order.orderdate')) != self::localClock($row['orderdate'])) { $complete = false; continue; }
-            if (OrderCharge::unrelated($attempt, $order)) { continue; }
-            $candidate = OrderCharge::fromHistory($attempt->binding, $order);
-            if (!$candidate || $candidate->processedAt?->precision !== ExpiryPrecision::Instant) { $complete = false; continue; }
-            $processed = new \DateTimeImmutable($candidate->processedAt->value);
-            // A validated different action/term or bill time cannot be this original send.
-            if (!$candidate->query->matches($attempt->query) || $processed < $attempt->windowStart || $processed > $attempt->windowEnd) { continue; }
-            $candidates[] = $candidate;
+        if (count($ids) !== $total) { return $stop('list_changed'); }
+        // A saved outcome counts only for the same listed order and receipt date; a candidate is read again before it is used.
+        $orders = []; $pending = []; $stale = []; $complete = true;
+        foreach ($rows as $row) {
+            if ($row['statusdesc'] !== 'Order complete' || $row['orderprocessflag'] !== 'True') { $complete = false; $refuse('order_open'); continue; }
+            $id = $row['orderid']; $signature = substr(hash('sha256', $row['orderdate']), 0, 12); $row['signature'] = $signature;
+            if (($known[$id][1] ?? null) === $signature) { $orders[$id] = $known[$id]; if ($known[$id][0] === 'c') { $stale[] = $row; } }
+            else { $pending[] = $row; }
         }
-        return new Evidence(candidates:$candidates, historyComplete:$complete);
+        $candidates = []; $read = 0; $added = 0;
+        foreach ($pending as $row) {
+            if ($read >= self::DETAILS || $context->budget->remaining() <= count($stale)) { $complete = false; $refuse($read >= self::DETAILS ? 'detail_ceiling' : 'read_budget'); break; }
+            $read++; [$outcome, $candidate] = $this->detail($attempt, $context, $row);
+            if (!in_array($outcome, ['n', 'c'], true)) { $complete = false; $refuse($outcome); continue; }
+            $orders[$row['orderid']] = [$outcome, $row['signature']]; $added++;
+            if ($candidate) { $candidates[] = $candidate; }
+        }
+        if ($complete && $context->budget->remaining() < count($stale)) { $complete = false; $refuse('read_budget'); }
+        if ($complete) {
+            foreach ($stale as $row) {
+                [$outcome, $candidate] = $this->detail($attempt, $context, $row);
+                if ($candidate) { $candidates[] = $candidate; }
+                elseif ($outcome === 'n') { $orders[$row['orderid']] = ['n', $row['signature']]; }
+                else { unset($orders[$row['orderid']]); $complete = false; $refuse($outcome); }
+            }
+            if ($complete && count($candidates) > 1) { $refuse('multiple_matches'); }
+        }
+        return $result($complete, $orders, $candidates, count($ids), count($rows), $added > 0);
+    }
+    /** One exact order: 'n' a validated non-match, 'c' a matching candidate, otherwise a refusal category. */
+    private function detail(AttemptEvidence $attempt, RequestContext $context, array $row): array
+    {
+        $id = $row['orderid'];
+        $order = $this->client->read(ReadCommand::Order, ['OrderID'=>$id], $context);
+        if ($order->status !== 'success') { return ['detail_unavailable', null]; }
+        if (!self::supported($order) || $order->value('order.orderid') !== $id) { return ['detail_unsupported', null]; }
+        if ($order->value('order.orderdate') !== null && self::localClock($order->value('order.orderdate')) != self::localClock($row['orderdate'])) { return ['order_date_changed', null]; }
+        if (OrderCharge::unrelated($attempt, $order)) { return ['n', null]; }
+        $candidate = OrderCharge::fromHistory($attempt->binding, $order);
+        if (!$candidate || $candidate->processedAt?->precision !== ExpiryPrecision::Instant) { return ['order_unreadable', null]; }
+        $processed = new \DateTimeImmutable($candidate->processedAt->value);
+        // A validated different action/term or bill time cannot be this original send.
+        if (!$candidate->query->matches($attempt->query) || $processed < $attempt->windowStart || $processed > $attempt->windowEnd) { return ['n', null]; }
+        return ['c', $candidate];
+    }
+    /** Saved outcomes keyed by order ID; anything malformed starts the scan again. */
+    private static function outcomes(mixed $saved): array
+    {
+        if (!is_array($saved) || count($saved) > self::ORDERS) { return []; }
+        $known = [];
+        foreach ($saved as $id=>$value) {
+            if (!preg_match('/^[1-9][0-9]{0,19}$/D', (string)$id) || !is_string($value) || !preg_match('/^([nc]):([a-f0-9]{12})$/D', $value, $m)) { return []; }
+            $known[(string)$id] = [$m[1], $m[2]];
+        }
+        return $known;
+    }
+    private static function counts(mixed $saved): array
+    {
+        $counts = [];
+        foreach (is_array($saved) ? $saved : [] as $category=>$count) {
+            if (in_array($category, self::REFUSALS, true) && is_int($count) && $count >= 0) { $counts[$category] = $count; }
+        }
+        return $counts;
     }
     /** Fixed 25-record pages, stable total, contiguous positions, and an explicit terminal page. */
     private static function page(ProtocolResult $reply, int $start, \DateTimeImmutable $begin, \DateTimeImmutable $end): ?array

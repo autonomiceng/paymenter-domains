@@ -29,10 +29,8 @@ final class MonitoringEvidence
             foreach($q['records']??[] as $r){if(is_string($r['value']??null)&&filter_var($r['value'],FILTER_VALIDATE_IP)){$answers[]=$q['type'].' @ → '.$r['value'];}}}}
         catch(\Illuminate\Contracts\Encryption\DecryptException){$answers=[];$asked=[];}
         $publicRead=$public===null?null:($answers!==[]?'answered':($asked!==[]&&array_unique($asked)===['negative']?'negative':'unknown'));
-        $registrarAt=$families['families']['dns']['at']??null;$failedAt=$families['read_failed_at']??null;
-        if($failedAt!==null&&($registrarAt===null||strtotime($failedAt)>strtotime($registrarAt))){$registrarAt=$failedAt;}
         return ['state'=>$state,'public_stale'=>self::publicStale($d,$public,$name),'public'=>$answers,'public_at'=>$public?->started_at,'public_read'=>$publicRead,
-            'registrar'=>$registrar,'registrar_at'=>$registrarAt,'registrar_read'=>$families['families']['dns']['state']??null,'at'=>$families['at']??null,'families'=>$families,
+            'registrar'=>$registrar,'registrar_at'=>$families['families']['dns']['at']??($registrar===[]?($families['read_failed_at']??null):null),'registrar_read'=>$families['families']['dns']['state']??null,'at'=>$families['at']??null,'families'=>$families,
             'separation'=>RecordFamilies::EVIDENCE];
     }
     /** Use the established public-signal freshness and structural target checks; retained answers are historical. */
@@ -70,7 +68,7 @@ final class MonitoringEvidence
             if (($when = $time($at)) === null) { return $answers === [] ? Value::state(State::NotReadYet, Reader::Staff) : Value::fact(Fact::lines($answers)); }
             $label = $unfinished ? $failed : ($stale ? 'Not current. Last checked' : $checked);
             if ($answers !== []) { return Value::fact(Fact::lines($answers), $label, $when); }
-            return $confirmed ? Value::plainAt(Plain::None, $label, $when) : Value::stateAt(State::CouldntRead, Reader::Staff, $stale ? 'Not current. '.$failed : $failed, $when);
+            return $confirmed ? Value::plainAt(Plain::None, $label, $when) : Value::state(State::CouldntRead, Reader::Staff, $failed, null, $when);
         };
         $refresh = ($at = $time($evidence['at'] ?? null)) === null ? Value::state(State::NotReadYet, Reader::Staff) : Value::fact(Fact::entered($evidence['state']), 'Read', $at);
         return [...($withRecords ? [] : ['Registrar refresh' => $refresh]),

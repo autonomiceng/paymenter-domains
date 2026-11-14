@@ -76,13 +76,9 @@ final class RecordFamilies
                 $index=array_key_last($rows);
                 if($cancelled){$rows[$index]['value']='Not applicable';$rows[$index]['staff']=$rows[$index]['customer']='Registration cancelled; no registrar records to check';}
                 elseif($kind==='glue'&&$d->registrar_key==='enom'&&$state==='partial'){
-                    $known=count($f['candidates']??[]);$failedGlue=(bool)($f['read_failed']??false);
-                    $found=$count.' glue '.($count===1?'record':'records');
-                    $explanation=$failedGlue?"Our last check of the known hosts didn't finish, so the saved records are kept. This registrar can't list every glue record."
-                        :"This registrar can't list every glue record, ".($known?'so we check the '.$known.' '.($known===1?'host':'hosts').' we know about and found '.$found.'.':'and we know of no hosts to check.');
-                    $rows[$index]['staff']=$explanation.' You can change glue records one at a time, but not replace the whole list.';
-                    // A finished check of the known hosts is all this registrar allows, so staff have nothing to review.
-                    $rows[$index]['limited']=!$failedGlue;
+                    $known=count($f['candidates']??[]);$coverage=$known?' '.$known.' known child hosts, '.$count.' records returned.':'';
+                    $explanation=($f['read_failed']??false)?'Known glue check failed. Saved records are retained':($known?'Known glue checked':'No known child hosts to check').". This registrar can't list every child host";
+                    $rows[$index]['staff']=$explanation.'.'.$coverage.' You can change one glue record at a time. Replacing the whole list stays blocked.';
                     // Enom checks named hosts only: the row lists the ones we know, and support handles one not shown. Customers never see the registrar name.
                     $rows[$index]['customer']=(($f['read_failed']??false)?'Our last check didn’t finish. ':'')."The registrar can’t return a full list, so only the ones we know are shown.";
                     $rows[$index]['support']=true;

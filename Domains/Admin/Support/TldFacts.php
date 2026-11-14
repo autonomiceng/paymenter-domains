@@ -17,8 +17,6 @@ final class TldFacts
     public const NO_SELLER='No registrar selected';
     /** Followed by the account's name. */
     public const OTHER_SELLER='New orders go to';
-    /** Edit prices reads the same saved settings before it writes, so it can't repair them. */
-    public const UNREADABLE_SETTINGS="Saved TLD settings can't be read, so Edit prices can't fix them. Ask your site admin to restore them from a backup.";
     public const TERMS_FAILED="Set to sell; couldn't read registrar terms";
     /** Registrations here need annual renewals on the same account, and its Renewals switch is off. */
     public const RENEWALS_OFF='Renewals are off for this account';
@@ -90,7 +88,7 @@ final class TldFacts
             'markup'=>'Invalid markup rule. Use Edit prices to enter a valid markup and rounding rule.',
             'default'=>'Invalid default pricing rule. Open Default pricing in What you sell to repair it.',
             'account_defaults'=>"This account's default for new TLDs is invalid. Open Default for new TLDs in What you sell and save it.",
-            'unreadable'=>self::UNREADABLE_SETTINGS,
+            'unreadable'=>'Saved TLD settings unreadable. Use Edit prices to repair them.',
             default=>'Invalid pricing rule. Use Edit prices to repair it.',
         };
     }

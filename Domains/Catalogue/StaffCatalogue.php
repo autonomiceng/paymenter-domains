@@ -402,7 +402,7 @@ final class StaffCatalogue
     private static function pricingCause(Tld $t,array $state,bool $unreadable=false): ?string
     {
         if($state['fee']===null){return 'card_fee';}
-        if($unreadable){return 'unreadable';}
+        if($unreadable){return 'custom_rule';}
         try{$own=Pricing::hasOwn($t);if(!$own&&$state['default']===null){return 'default_rule';}
             Pricing::rule($t,$state['default'],$state['fee']);return null;
         }catch(\DomainException|\InvalidArgumentException){return 'custom_rule';}
@@ -455,7 +455,7 @@ final class StaffCatalogue
                 [$d,$name]=$settings[$id];$accounts[$id]=$name;
                 $identity=['id'=>(int)$t->id,'tld'=>'.'.$t->tld,'server_id'=>$id,'account'=>$name,'years'=>$years,'pricing'=>$own?'Custom':'Default','currency'=>'USD'];
                 if(($cause=self::pricingCause($t,$state,$s['unreadable']))!==null){
-                    $skipped[]=[...$identity,'cause'=>$cause];$key=in_array($cause,['custom_rule','unreadable'],true)?$id.':'.$t->tld:$cause;
+                    $skipped[]=[...$identity,'cause'=>$cause];$key=$cause==='custom_rule'?$id.':'.$t->tld:$cause;
                     $warnings[$key]??=['server_id'=>$id,'account'=>$name,'cause'=>$cause,'tlds'=>[]];
                     if(!in_array('.'.$t->tld,$warnings[$key]['tlds'],true)){$warnings[$key]['tlds'][]='.'. $t->tld;}
                     continue;

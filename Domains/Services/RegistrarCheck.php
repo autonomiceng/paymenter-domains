@@ -15,6 +15,8 @@ final class RegistrarCheck
     public ?int $answerAfter = null;
     /** Set when reconciliation already counted this read toward the read limit. */
     public bool $counted = false;
+    /** Set when an order history scan resolved more orders and has more to read: the next turn comes soon. */
+    public bool $continued = false;
     public function __construct(private readonly Clock $clock) {}
     private ?string $identity = null;
     private ?array $seen = null;
@@ -68,8 +70,9 @@ final class RegistrarCheck
             if (Schema::hasTable('domains_runtime_operations') && !$stopped && $op->state !== 'succeeded' && ($outcome === 'deferred' || $outcome === 'checked')) {
                 if ($watch) { $next = max($now + 60, (int) $transferNext); }
                 else {
-                    $next = max($now + 300, (int) DB::table('domains_runtime_operations')->where('operation_id', $op->id)->value('due_at'));
-                    DB::table('domains_runtime_operations')->updateOrInsert(['operation_id' => $op->id], ['due_at' => $next]);
+                    $continued = $this->continued && $outcome === 'checked';
+                    $next = $continued ? $now + 60 : max($now + 300, (int) DB::table('domains_runtime_operations')->where('operation_id', $op->id)->value('due_at'));
+                    DB::table('domains_runtime_operations')->updateOrInsert(['operation_id' => $op->id], ['due_at' => $next, ...($continued ? ['attempts' => 0] : [])]);
                 }
             }
             $op->update(['policy' => [...($op->policy ?? []), 'status_check' => ['outcome' => $outcome, 'at' => $now, 'started' => $this->started, 'order' => $this->order, 'next_at' => $next, 'reason' => $this->deferred, 'attempt_identity'=>$this->identity, 'read_attempted'=>($this->context?->exchanges()??0)>0||self::attempted($op), 'facts'=>$this->facts, ...($this->awaitingAnswer !== null ? ['registrar'=>$this->awaitingAnswer,'answer_after'=>$this->answerAfter] : [])]]]);

@@ -193,7 +193,7 @@ final readonly class RenewalCycles
                 if (WriteMoney::compare($cap->amount, $term['cost']['amount']) < 0) { throw new \DomainException('Complimentary cap is below the registrar cost.'); }
             }
             $key = self::next($l);
-            if ($l['operations']->contains(fn ($op) => RenewalAuthority::blocksRenewal($op, $l))) { throw new \DomainException('Prior renewal outcome unavailable.'); }
+            if ($l['operations']->contains(fn ($op) => !HoldingAnchor::resolved($op, $l))) { throw new \DomainException('Prior renewal outcome unavailable.'); }
             $authorization = ['actor' => (int) $staff->id, 'reason' => $reason, 'generation' => $d->authority_generation,
                 'expiry' => $d->provider_expires_at->format('Y-m-d'), 'years' => $years, 'cap' => ['amount' => $cap->amount, 'currency' => 'USD'], 'at' => $this->clock->now()->format(DATE_ATOM)];
             $d->update(['renewal_policy' => [...$d->renewal_policy, 'complimentary' => $authorization]]);

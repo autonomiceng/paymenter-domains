@@ -60,7 +60,7 @@ final class OperationReconciliation
         });
         if (!$capture) { return Operation::findOrFail($id); }
         [$attempt, $stamp, $contract, $requestedNameservers, $watch, $light] = $capture; $proof = null; $nameservers = null; $covered = false; $transferConflict = false; $transfer = \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Unknown;
-        $callCapBlocked = false; $pendingAnomaly = false; $privacyBlocked = false;
+        $callCapBlocked = false; $pendingAnomaly = false; $privacyBlocked = false; $scan = null;
         $limiter=$watch?new TransferReadBudget($this->clock,Runtime::limiter()):null;
         try {
             $context = $check->context = new RequestContext($attempt->binding, RequestOrigin::Background, $this->clock->now()->modify('+250 seconds'), new RequestBudget(25), $this->clock, $limiter ?? Runtime::limiter());
@@ -72,7 +72,7 @@ final class OperationReconciliation
             $result=$limiter?$limiter->run($attempt->binding,$read):$read();
             $result->requireAttempt($attempt);
             if ($this->clock->now() < $context->deadline) {
-                $facts = $result->result()->evidence();
+                $facts = $result->result()->evidence(); $scan = $facts->historyScan;
                 $nameservers = $facts->domain?->nameservers ?? $requestedNameservers;
                 $covered = $facts->domain?->owned === true && $facts->domain->expiry !== null
                     && ($facts->historyComplete || ($attempt->executionFacts && $attempt->providerReference !== null && count($facts->candidates) > 0));
@@ -103,10 +103,13 @@ final class OperationReconciliation
             &&($attempt->historyAcceptance?->covers($attempt,$this->clock->now())??false)&&($check->context?->exchanges()??0)>0;
         if (!$covered) {
             if (!$callCapBlocked) {
-                return $this->claims->locked($id,function($op,$domain)use($stamp,$watch,$readStarted,$historyRead,$attempt,$check):Operation {
+                return $this->claims->locked($id,function($op,$domain)use($stamp,$watch,$readStarted,$historyRead,$attempt,$check,$scan):Operation {
                     if(!$this->eligible($op)||self::stamp($op,$domain)!==$stamp){return $op;}
                     $policy=TransferPolling::finished($op->policy,$readStarted);
-                    if($historyRead){
+                    if($scan){$policy['history_scan']=$scan->saved();}
+                    // A scan that resolved more orders is progress, not a failed read; it continues on the next turn.
+                    if($historyRead&&$scan?->progressed){$check->continued=true;$policy['reconciliation']['reason']='original_attempt_unresolved';}
+                    elseif($historyRead){
                         $policy['reconciliation']['polls']=($policy['reconciliation']['polls']??0)+1;$check->counted=true;
                         $limit=$policy['reconciliation']['polls']>=self::POLL_LIMIT;
                         $policy['reconciliation']['reason']=$limit?'poll_limit_reached':'original_attempt_unresolved';
@@ -127,7 +130,7 @@ final class OperationReconciliation
                 return $op;
             });
         }
-        $completed = $this->claims->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($attempt, $stamp, $contract, $proof, $nameservers, $transfer, $transferConflict, $pendingAnomaly, $readStarted, $privacyBlocked, $check): Operation {
+        $completed = $this->claims->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($attempt, $stamp, $contract, $proof, $nameservers, $transfer, $transferConflict, $pendingAnomaly, $readStarted, $privacyBlocked, $check, $scan): Operation {
             if (!$this->eligible($op) || self::stamp($op, $domain) !== $stamp) { return $op; }
             try {
                 $binding = $this->authority($op, $domain, $all, $funding, $server, $account);
@@ -138,6 +141,7 @@ final class OperationReconciliation
                 return $op;
             }
             $policy = TransferPolling::finished($op->policy,$readStarted); $policy['reconciliation']['polls'] = ($policy['reconciliation']['polls'] ?? 0) + 1; $check->counted = true;
+            if ($scan) { $policy['history_scan'] = $scan->saved(); }
             $policy['reconciliation']['staff_alert']=true;
             if(in_array($op->safe_code,['enom_test_reconciliation_call_cap','enom_test_transfer_reconciliation_call_cap','enom_test_reconciliation_send_guard'],true)){$op->safe_code='reconciliation_required';}
             if ($op->action === 'transfer') {

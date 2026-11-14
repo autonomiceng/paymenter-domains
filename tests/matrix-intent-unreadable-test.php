@@ -21,8 +21,11 @@ foreach(['{"sell":','"invalid"',OfferState::json(['sell'=>[]]),OfferState::json(
     same('7.80',$matrix['rows'][0]['prices']['register']['price'],'Healthy published retail stays exact');
     same('6.0000',$matrix['rows'][0]['prices']['register']['cost'],'Healthy normalized cost stays exact');
     same([$broken->id],array_column($matrix['skipped'],'id'),'Only unreadable intent is left out');
-    // Edit prices reads the same saved intent before it writes, so this cause must not send staff there.
-    same(['unreadable','unreadable'],[$matrix['skipped'][0]['cause'],$matrix['warnings'][0]['cause']],'Unreadable intent has its own cause, not custom pricing');
+    $html=view('domains::admin.sell-note',['warning'=>$matrix['warnings'][0]])->render();
+    $dom=new DOMDocument;@$dom->loadHTML($html);$xpath=new DOMXPath($dom);
+    same(".invalid on Synthetic has prices left out: its custom pricing can't be read. Open .invalid and use Edit prices.",
+        $xpath->evaluate('normalize-space(//*[@data-price-omission])'),'Existing named warning and repair wording are preserved');
+    expect(str_contains($list->csv(),"Left out: custom pricing can't be read"),'CSV discloses the omitted price');
     same($before,StaffCommands::stamp($binding->serverId),'Reading leaves intent and publication unchanged');
     $refused=false;try{$commands->publish($broken->id);}catch(Throwable){$refused=true;}
     expect($refused,'Unreadable intent still refuses publication');

@@ -16,7 +16,7 @@ $page=DsState::owner($base,$d,true);$html=view('domains::partials.owner-manageme
 $check(str_contains($html,'Off')&&str_contains($html,'DS changes are not offered'),'Customer DS has the Off reason');
 $check(!str_contains($html,'domains-missing')&&!str_contains($html,'<form')&&!str_contains($html,'Registry'),'Off has no missing mark, editor or staff reason');
 $check(str_contains($html,'aria-disabled="true"'),'Blocked DS action remains visible');
-$check(str_starts_with(DsState::staff($d)['sub'],$d->tld?str_replace('this TLD','.'.$d->tld,DsState::STAFF):DsState::STAFF),'Staff sees why DS changes are off');
+$check(str_contains(DsState::staff($d)['sub'],'Registry DS rules for this TLD have not been checked'),'Staff sees missing-registry-facts next step');
 foreach(['registration_pending','transfer_pending','expired','closed'] as $status){$d->status=$status;$check(!isset(DsState::owner($base,$d,true)->management['ds']),'No DS Off row on '.$status);
  $sub=DsState::staff($d)['sub']??'';$check(!str_contains($sub,'Use Sync now'),'Inactive domain never offers Sync now: '.$status);
  if(str_ends_with($status,'pending')){$check(str_contains($sub,'after registration or transfer finishes'),'Pending acquisition explains when records can be read');}

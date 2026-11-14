@@ -90,7 +90,7 @@ class MonitoringSettings extends ResourceSettingsPage
             SettingsRow::setting('Name taken',Value::plain(Plain::On,'The customer gets account credit on the next check. The same goes for premium names and names the registrar refuses.'),$system),
             SettingsRow::setting('Registrar balance short',Value::fact(Fact::waits([FundsWaits::WAIT_DAYS*86400]),'Then the customer gets account credit.'),$system),
             // General on purpose (Ilya, Nov 14, 2026): today only a contact step feeds it (ContactStepRetries::candidate).
-            SettingsRow::setting('Held by our checks',Value::fact(Fact::waits(ContactStepRetries::WAITS),'Orders our own checks stopped before they reached the registrar, such as when the contact details couldn\'t be set up. We try '.$tries.' more times, then the order waits for staff to release it, or cancel and refund it.'),$system),
+            SettingsRow::setting('Held by our checks',Value::fact(Fact::waits(ContactStepRetries::WAITS),'Orders our own checks stopped before reaching the registrar: today, a contact that couldn\'t be set up. '.$tries.' retries, then the order waits for staff to release it or cancel and refund.'),$system),
             SettingsRow::setting('Orders turned on',Value::plain(Plain::On,'Held orders go back to the queue when Orders turn on.'),$system),
         ],'What happens to a paid order without a staff step.','automatic-actions');
     }

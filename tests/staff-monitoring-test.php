@@ -85,6 +85,8 @@ $untemplated->setRelation('points',new \Paymenter\Extensions\Servers\Domains\Mod
 $records=WatchFacts::for($untemplated,['keys'=>[],'summary'=>null])['Checks']['DNS records'];
 same('A @ → 192.0.2.10',$records['value'],'Saved answers fill DNS records without a template');
 same([gmdate('c',$minute+17)],$times($records['sub']),'DNS records keeps the saved answer time');
+$recordsText=trim(preg_replace('/\s+/',' ',html_entity_decode(strip_tags((string)$records['sub']),ENT_QUOTES|ENT_HTML5)));
+expect(str_starts_with($recordsText,'Historical answers. Checked ')&&str_ends_with($recordsText,'. Choose a DNS template to compare these records.'),'DNS records says Checked and how to compare: '.$recordsText);
 DB::table('domains_watch_names')->where('id',$id)->update(['ns_profile_id'=>$template]);$saved($lastAt);
 
 $nativeSuccessful=true;echo "Staff monitoring list and details passed\n";

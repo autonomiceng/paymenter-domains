@@ -74,7 +74,7 @@ class ListWatches extends RecordListPage
     {
         $staff=Reader::Staff;
         return [
-            Column::domain('canonical_name','Domain')->whole()->searchable()->sortable(),
+            Column::domain('canonical_name','Domain')->searchable()->sortable(),
             Column::text('customer','Customer',fn(WatchName $w)=>$this->watchRow($w)['customer']['label'])->person(),
             Column::value('status','Status',function(WatchName $w)use($staff){$status=$this->watchRow($w)['status'];return Value::state(WatchRows::state($status['label']),$staff,null,'watch-'.$w->id);}),
             Column::note('note','Note',fn(WatchName $w)=>$this->note($w)),

@@ -125,8 +125,8 @@ final readonly class OwnedDomains
     /** Who gets the auth code email. */
     public static function authCodeRecipient(Domain $d): string
     { return $d->registrar_key==='namesilo'?'admin contact email':'registrant email'; }
-    /** Registries block transfers out for 60 days after a registration or a transfer in. The line under Transfer lock, or
-     * Auth code without it, until then; null once the window passed or when we did not register or transfer the domain ourselves. */
+    /** Registries block transfers out for 60 days after a registration or a transfer in. The line under Transfer lock and
+     * Auth code until then; null once the window passed or when we did not register or transfer the domain ourselves. */
     public static function transferOutFrom(?Operation $op, \DateTimeImmutable $now): ?string
     {
         if (!$op || $op->state!=='succeeded' || !in_array($op->action,['register','transfer'],true) || !$op->completed_at) { return null; }
@@ -250,7 +250,7 @@ final readonly class OwnedDomains
                     $management['nameservers']['current']=self::storedNameservers($d); }
                 if (isset($management['contacts'])) { $management['contacts']+=self::contactForm($d,$contacts)+['digest'=>self::contactsFormDigest($d,$contactOperations)]; }
                 if (isset($management['auth_code_email'])) { $management['auth_code_email']['recipient']=self::authCodeRecipient($d); $management['auth_code_email']['sender']=self::authCodeSender($d); }
-                if ($from=self::transferOutFrom($op,$this->clock->now())) { foreach (['lock','auth_code_email'] as $k) { if (isset($management[$k])) { $management[$k]['transferFrom']=$from; break; } } } // Said once, on the first of the two rows.
+                if ($from=self::transferOutFrom($op,$this->clock->now())) { foreach (['lock','auth_code_email'] as $k) { if (isset($management[$k])) { $management[$k]['transferFrom']=$from; } } }
                 // Lock and privacy as last read from the registrar (a confirmed change first, then the sync); null until read.
                 foreach (['lock'=>'locked','privacy'=>'privacy'] as $cap=>$fact) { if (isset($management[$cap])) { $management[$cap]['state']=self::storedFlag($d,$cap,$fact); } }
             }

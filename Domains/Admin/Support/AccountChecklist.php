@@ -366,14 +366,13 @@ final class AccountChecklist
                 ['Redemption','Off','Restoration is separate. Review the restoration options on the domain.'],
             ];
         } catch (\Throwable) {
-            // Price update times come from the price feed on the TLD page and in the price rows; this row names only the next terms read.
-            $due=null;
+            $refresh=[];
             try{if($binding&&Schema::hasTable('domains_observation_queues')){
                 $queue=DB::table('domains_observation_queues')->where('server_id',$binding->serverId)->where('account_fingerprint',$binding->fingerprint)->first();
-                $due=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($queue?->offer_work)['facts'][$ending]['due_at']??null;
+                $work=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($queue?->offer_work);
+                $refresh=['succeeded_at'=>$queue?->offer_feed_succeeded_at,'due_at'=>$work['facts'][$ending]['due_at']??$work['feed_due']??null];
             }}catch(\Throwable){/* Saved refresh metadata is also missing; never invent a next check. */}
-            return [['Supported terms','Missing',"We haven't read the registrar's terms for .".$ending.', so terms longer than 1 year stay off. '
-                .($due?'Next terms check '.\Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at((int)$due).'. ':'').'Sync prices tries again now.']];
+            return [['Supported terms','Missing','Current registrar terms missing. '.TldFacts::refreshText($refresh).' A supported registrar terms read fills this fact. Longer terms stay off.']];
         }
     }
     public static function termYears(array $years): string

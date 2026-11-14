@@ -157,7 +157,7 @@ final class DomainBilling
             || ($manual ? RenewalStop::blocked($l) : RenewalStop::stopped($l)) || !($d->price_mode==='standard'||($d->price_mode==='complimentary'&&ComplimentaryAccounts::authorization((int)$d->user_id)))) { throw new RuntimeIneligible(RuntimeReason::LifecycleNotReady); }
         $anchor = HoldingAnchor::resolve($l); $prior = $anchor->operation;
         if ($prior) { RenewalAuthority::requireCostAnchor($prior); }
-        if ($l['operations']->contains(fn ($op) => $op->id !== $prior?->id && RenewalAuthority::blocksRenewal($op, $l))) {
+        if ($l['operations']->contains(fn ($op) => $op->id !== $prior?->id && !HoldingAnchor::resolved($op, $l))) {
             throw new \DomainException('Confirmed renewal anchor or prior outcome requires review.');
         }
     }

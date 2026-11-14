@@ -29,7 +29,6 @@ final class Column
     private ?\Closure $act = null;
     private bool $tag = true;
     private bool $fill = false;
-    private bool $whole = false;
     private function __construct(public readonly string $name, public readonly string $label, public readonly string $kind, public bool $searchable = false, public bool $sortable = false) {}
     /** Plain text that stays complete: the row's own field, or what $text returns for the row. @param ?\Closure(array|Model):?string $text */
     public static function text(string $name, string $label, ?\Closure $text = null): self { $c = new self($name, $label, 'text'); $c->text = $text; return $c; }
@@ -37,8 +36,6 @@ final class Column
     public static function note(string $name, string $label, \Closure $text): self { $c = new self($name, $label, 'note'); $c->text = $text; return $c; }
     /** A domain name: one line up to the cap, then cut in the middle so the TLD stays (DomainName::cell). A demo record shows its Demo tag. */
     public static function domain(string $name, string $label, bool $demoTag = true): self { $c = new self($name, $label, 'domain'); $c->tag = $demoTag; return $c; }
-    /** On a phone the domain name shows in full, wrapping inside the same width, instead of being cut in the middle. */
-    public function whole(): self { $this->whole = true; return $this; }
     /** A value from the row, drawn by the Value piece; null leaves the cell empty. The cell's state is the value's word,
      * so a reader or a test reads the word the mark stands beside. @param \Closure(array|Model):?Value $value */
     public static function value(string $name, string $label, \Closure $value): self { $c = new self($name, $label, 'value'); $c->value = $value; return $c; }
@@ -76,7 +73,6 @@ final class Column
     private function nameCell(TextColumn $column): TextColumn
     {
         $name = OneLine::apply($column->fontFamily(FontFamily::Mono)->formatStateUsing(static fn (?string $state): ?HtmlString => $state === null ? null : DomainName::cell($state)), OneLine::NAME);
-        if ($this->whole) { $name->extraAttributes(['class' => 'domains-name-whole'], merge: true); }
         return $this->tag ? DemoTag::apply($name) : $name;
     }
     /** A note shows one clause and may be cut; its full text is the cell's title, so a mouse hover reads it as focus does. */

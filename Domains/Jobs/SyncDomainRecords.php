@@ -82,7 +82,7 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
                 };
                 $before=self::recordFacts($d);
                 $result=$observer->run($this->domain,$this->generation,$this->fingerprint,readRecords:true,current:$current);
-                if ($result==='records_disabled') { $this->notice('Records not read','Record checks are paused or not set up for this registrar account. Check the DNS, nameservers and contacts row on the registrar account page, then use Sync now again.'); return; }
+                if ($result==='records_disabled') { $this->notice('Records not read','Record checks are paused or not set up for this registrar account. Ask your site admin to check Processing and record-read setup, then press Sync now again.'); return; }
                 $failed=ObservationRecords::held($d->refresh())||in_array($result,ReadFailure::CODES,true)||$result==='read_deferred';
                 if($result==='refreshed'){HoldingReadRetry::completedManually($d,claim:$claim);}
                 $retry=HoldingReadRetry::status($d);

@@ -40,7 +40,6 @@ final class WatchRows
         $word = $sub !== null && Fact::isWord($sub) ? (State::tryFrom(strtolower(str_replace(' ', '_', $sub))) ?? State::NeedsReview) : null;
         if ($word !== null) { $sub = null; }
         $shown = match (true) {
-            ($fact['state'] ?? null) instanceof State => self::timed($fact['state'], $fact['sub'] ?? null, $sub),
             $value === null => self::notYet($fact['cause'] ?? null),
             ($fact['at'] ?? null) !== null && is_string($value) => Value::fact(Fact::date((int) $fact['at'], $staff), $problem ? null : $sub),
             is_array($value) => self::fact($value, $problem ? null : $sub),
