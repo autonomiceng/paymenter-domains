@@ -36,7 +36,11 @@ foreach (['auth_code_email', 'nameservers'] as $action) {
         DB::transaction(static fn () => RenewalFunding::requireCurrent($op, HoldingLocks::take($d)));
         // The exception is renewal-specific: lock changes and another email still wait for this peer.
         commerceReject(fn () => $management->request($user, $d->id, 'lock', ['locked' => false], hash('sha256', 'lock-'.$action), $driver));
-        commerceReject(fn () => $management->request($user, $d->id, 'auth_code_email', [], hash('sha256', 'email-'.$action), $driver));
+        if ($action === 'auth_code_email') {
+            same($peer->id, $management->request($user, $d->id, 'auth_code_email', [], hash('sha256', 'email-'.$action), $driver)->id, 'Repeat email returns the original unresolved request');
+        } else {
+            commerceReject(fn () => $management->request($user, $d->id, 'auth_code_email', [], hash('sha256', 'email-'.$action), $driver));
+        }
         [$engine, $writer, $completion] = $compose($b); $writes = $state->writes;
         same('pending', $engine->run($op->id, $writer)->state, 'Paid renewal dispatches beside unconfirmed '.$action);
         same($writes + 1, $state->writes, 'Renewal sends once');
