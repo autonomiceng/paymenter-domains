@@ -24,7 +24,7 @@ expect($action->isVisible(),'Request answer action is available for NameSilo');
 $notice=\Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::notice($op);
 expect(str_contains($notice['body']??'','Use '.$action->getLabel().'.'),'Request notice and account action use the same label');
 expect(str_contains($action->getLabel(),'NameSilo'),'Request action names the request registrar');
-$fields=[];$walk=function(array $components)use(&$walk,&$fields):void{foreach($components as $c){if($c instanceof \Filament\Forms\Components\Field){$fields[$c->getName()]=$c;}foreach($c->getChildSchemas(true) as $child){$walk($child->getComponents(withHidden:true));}}};
+$fields=[];$walk=function(array $components)use(&$walk,&$fields):void{foreach($components as $c){if($c instanceof \Filament\Forms\Components\Field){$fields[$c->getName()]=$c;}if($c instanceof \Filament\Schemas\Components\Component&&is_array($kids=$c->getDefaultChildComponents())){$walk($kids);}}};
 $walk($action->getSchema(\Filament\Schemas\Schema::make())->getComponents(withHidden:true));
 expect(isset($fields['confirmed'],$fields['case_reference'],$fields['evidence'],$fields['charge'],$fields['registrar_refund'])&&!isset($fields['final_confirmed']),'One confirmation covers the transfer answer and its final amounts');
 foreach(['evidence','case','confirmation','finality','status','pending','unknown','reference','stale','permission','amount','refund','not_processed'] as $fault){
@@ -50,9 +50,9 @@ $foreign=$rejected('foreign');$bad=$answer($foreign);$bad['attempt_hash']=EnomAn
 commerceReject(fn()=>$settings->run($review($foreign),$bad,$clock->now()));
 $before=App\Models\Credit::where('user_id',$user->id)->sum('amount');
 // Through the staff dialog: its one confirmation also states the result and amounts are final, as the writer requires.
-$form=array_diff_key($answer($op),array_flip(['operation_id','attempt_hash','final_confirmed']));
-Livewire\Livewire::actingAs($staff)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation::class,['record'=>$op->id])
-    ->assertActionVisible('enom_answer')->callAction('enom_answer',$form)->assertHasNoActionErrors();$op->refresh();
+Illuminate\Support\Facades\Auth::setUser($staff->fresh());$stamp=Review::stamp($op->server_id,null);
+$form=[...array_diff_key($answer($op),['final_confirmed'=>true]),'review_key'=>Review::ticket($staff->id,$op->server_id,null,'enom_answer',$stamp)];
+\Paymenter\Extensions\Servers\Domains\Admin\Support\EnomAnswerAction::make($op->fresh(),$stamp)->data($form)->call();$op->refresh();
 same(['rejected','transfer_rejected','cancelled'],[$op->state,$op->domain->status,$op->domain->service->status],'Audited finality closes the native transfer');
 same($attempt,$op->attempt,'Sent attempt remains byte-for-byte intact');
 same(['amount'=>'5.95','currency'=>'USD'],$op->cost['actual'],'Only the net failed fee is absorbed');
