@@ -72,7 +72,7 @@
             <p id="domains-price-empty" role="status" class="domains-panel__b" hidden>No TLDs match your filter.</p>
         </section>
         @include('domains::partials.price-filter')
-        <p class="domains-small domains-muted domains-fine">{{ \Paymenter\Extensions\Servers\Domains\Presentation\Fact::IN_USD }} Prices plus tax where applicable.{{ $firstYearDiffers ? ' '.\Paymenter\Extensions\Servers\Domains\Presentation\FirstYearPrice::LIST : '' }}@if ($longerTerms) Longer terms are priced per term; search for a name to see each total.@endif</p>
+        <p class="domains-small domains-muted domains-fine">All amounts in USD. Prices plus tax where applicable.{{ $firstYearDiffers ? ' '.\Paymenter\Extensions\Servers\Domains\Presentation\FirstYearPrice::LIST : '' }}@if ($longerTerms) Longer terms are priced per term; search for a name to see each total.@endif</p>
     @endif
 </div>
 </div>

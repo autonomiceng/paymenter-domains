@@ -48,8 +48,9 @@ $ttls=fn($dom,$rows)=>array_map(fn($row)=>$text($row->getElementsByTagName('td')
 same(['300','3600','7207'],$ttls($dom,'[@data-record]'),'Saved editable rows show the TTL the registrar read returned');
 same(['Registrar default','Registrar default'],$ttls($dom,'[not(@data-record)][not(@data-fixed-records)]'),'New rows say they get the registrar default');
 same([['A','300'],['TXT','3600'],['CNAME','7207']],array_map(fn($row)=>[$row->getElementsByTagName('td')->item(4)->getAttribute('data-saved-type'),$row->getElementsByTagName('td')->item(4)->getAttribute('data-saved-ttl')],iterator_to_array($dom->query('//li[@id="dns"]//table[contains(@class,"domains-records")]/tbody/tr[@data-record]'))),'Each saved row names the type its TTL is kept for, so a type change can show the default');
-$access=[];foreach($dom->query('//li[@id="dns"]//table[contains(@class,"domains-dns-inventory")]/tbody/tr') as $row){$access[$text($row->getElementsByTagName('td')->item(1))]=$text($row->getElementsByTagName('td')->item(4));}
-same(['A'=>'Edit above','TXT'=>'Edit above','SRV'=>'Read-only','CNAME'=>'Edit above','CAA'=>'Read-only'],$access,'The records table marks only standard rows as editable');
+// Only read-only rows are marked (no Access column); the editable ones are the form above.
+$access=[];foreach($dom->query('//li[@id="dns"]//table[contains(@class,"domains-dns-inventory")]/tbody/tr') as $row){$access[$text($row->getElementsByTagName('td')->item(1))]=$row->hasAttribute('data-read-only');}
+same(['A'=>false,'TXT'=>false,'SRV'=>true,'CNAME'=>false,'CAA'=>true],$access,'The records table marks only standard rows as editable');
 $notes=array_map($text,iterator_to_array($dom->query('//li[@id="dns"]//p[@class="domains-hint"]')));
 foreach(['SRV records can’t be changed here yet, because we can’t read their priority. Saving keeps them as they are. To change one, contact support.',
     'CAA records can’t be changed here yet. Saving keeps them as they are. To change one, contact support.',

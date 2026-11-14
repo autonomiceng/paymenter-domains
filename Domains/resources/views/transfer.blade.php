@@ -30,7 +30,7 @@
 <x-domains::customer.section id="domains-transfer-prices" title="Transfer prices">
 <div class="domains-tablewrap"><table class="domains-tbl domains-pricelist"><thead><tr><th scope="col">TLD</th><th scope="col" class="domains-end">Transfer (adds 1 year)</th></tr></thead><tbody>
 @foreach ($endings as $ending)<tr><th scope="row" class="domains-domain domains-mono">.{{ $ending['tld'] }}@if (($ending['testEnvironment'] ?? false) && !$testEnvironment){{ \Paymenter\Extensions\Servers\Domains\Support\DemoData::label(false, true) }}@endif</th><td class="domains-end domains-num">{{ $ending['transfer'] }}</td></tr>@endforeach
-</tbody></table></div><p class="domains-panel__b domains-small domains-muted">{{ \Paymenter\Extensions\Servers\Domains\Presentation\Fact::IN_USD }} Prices plus tax where applicable.</p>
+</tbody></table></div><p class="domains-panel__b domains-small domains-muted">All amounts in USD. Prices plus tax where applicable.</p>
 </x-domains::customer.section>
 </x-slot:rail>
 </x-domains::customer.split>

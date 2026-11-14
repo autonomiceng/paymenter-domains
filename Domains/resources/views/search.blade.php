@@ -53,7 +53,7 @@
                     @endforeach
                 </ul>
                 <p class="domains-small domains-muted domains-fine" style="margin-top:.75rem">
-                    {{ \Paymenter\Extensions\Servers\Domains\Presentation\Fact::IN_USD }}
+                    All amounts in USD.
                     @if ($guest)
                         Prices plus tax where applicable. You’ll sign in or create an account at checkout.
                     @else

@@ -19,13 +19,13 @@ expect(str_contains($html,$all),'An inventory without edit actions explains read
 // A CAA sibling is always read-only while the A record stays editable.
 $dom=storefrontDom(view('domains::partials.dns-inventory',['section'=>['inventory'=>$records,'types'=>['A','CAA'],'actions'=>['dns'=>'/domains/1/dns'],
     'caa'=>[['name'=>'@','value'=>'0 issue "example.test"','ttl'=>3600]]]])->render());
-same('Edit above',$dom->evaluate('normalize-space(//tr[td[@data-label="Type"]="A"]/td[@data-label="Access"])'),'The editable sibling keeps its control');
-same('Read-only',$dom->evaluate('normalize-space(//tr[td[@data-label="Type"]="CAA"]/td[@data-label="Access"])'),'CAA stays read-only even when configured as an editable type');
+same(0.0,$dom->evaluate('count(//tr[td[@data-label="Type"]="A"][@data-read-only])'),'The editable sibling keeps its control');
+same(1.0,$dom->evaluate('count(//tr[td[@data-label="Type"]="CAA"][@data-read-only])'),'CAA stays read-only even when configured as an editable type');
 expect(str_contains($dom->document->textContent,$note),'A mixed inventory explains its read-only row');
 // A type the page can't edit, here TXT, is read-only beside an editable A record when edit actions are present.
 $dom=storefrontDom(view('domains::partials.dns-inventory',['section'=>['inventory'=>[...$records,['name'=>'@','type'=>'TXT','address'=>'v=spf1 -all','ttl'=>300]],
     'types'=>['A'],'actions'=>['dns'=>'/domains/1/dns']]])->render());
-same(['Edit above','Read-only'],[$dom->evaluate('normalize-space(//tr[td[@data-label="Type"]="A"]/td[@data-label="Access"])'),$dom->evaluate('normalize-space(//tr[td[@data-label="Type"]="TXT"]/td[@data-label="Access"])')],
+same([0.0,1.0],[$dom->evaluate('count(//tr[td[@data-label="Type"]="A"][@data-read-only])'),$dom->evaluate('count(//tr[td[@data-label="Type"]="TXT"][@data-read-only])')],
     'Only the type the page cannot edit is read-only');
 expect(str_contains($dom->document->textContent,$note),'A mixed inventory with an unsupported type explains its read-only row');
 $nativeSuccessful=true;echo "DNS read-only note passed.\n";

@@ -26,12 +26,12 @@ same(1,$dom->query('//li[@id="nameservers"]')->length,'One initial Nameservers r
 same(1,$dom->query($nameservers)->length,'One Nameservers value');
 // A value not read yet says so with a state word, never Missing (DESIGN.md P-AVL-1), with its cause under it.
 same([Paymenter\Extensions\Servers\Domains\Presentation\State::NotReadYet->label()],array_map($text,iterator_to_array($dom->query($nameservers.'//span[contains(concat(" ",@class," ")," domains-panel-st ")]'))),'Initial Nameservers value is not read yet');
-same(['Fills in by itself after the first check'],array_map($text,iterator_to_array($dom->query($nameservers.'//div[@data-piece="sub"]'))),'Initial Nameservers names the pending first check');
+same(['Fills in by itself after the first check'],array_map($text,iterator_to_array($dom->query($nameservers.'//div[contains(concat(" ",@class," ")," domains-panel-sub ")]'))),'Initial Nameservers names the pending first check');
 $expires='//section[@id="renewal"]//dl[@class="domains-card"]/div[dt[starts-with(normalize-space(.),"Expires")]]';
 same(1,$dom->query($expires)->length,'One initial Renewal Expires row');
 same(1,$dom->query($expires.'/dd')->length,'One Expires value');
 same([Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead->label()],array_map($text,iterator_to_array($dom->query($expires.'/dd//span[contains(concat(" ",@class," ")," domains-panel-st ")]'))),'Initial expiry value could not be read');
-same(['Check at your registrar'],array_map($text,iterator_to_array($dom->query($expires.'/dd//div[@data-piece="sub"]'))),'Initial expiry names its registrar cause');
+same(['Check at your registrar'],array_map($text,iterator_to_array($dom->query($expires.'/dd//div[contains(concat(" ",@class," ")," domains-panel-sub ")]'))),'Initial expiry names its registrar cause');
 $beforeState=DB::table('domains_watch_work')->get()->toJson();$list->index($request($owner))->render();$controller->show($request($owner),'watch',$id)->render();same($beforeState,DB::table('domains_watch_work')->get()->toJson(),'GET never enrolls or queues public work');
 app('view')->getFinder()->addLocation($fixture.'/themes/default/views');HostingDomainRow::boot();Auth::setUser($owner);$v=view('services.show',['service'=>$service,'fields'=>[]]);app('view')->callComposer($v);$fields=$v->getData()['fields'];same(1,count($fields),'One compact hosting Domain row');assertDomainNameWraps((string)$fields[0]['text'],$watch->canonical_name,'Hosting Domain row','link');expect(str_contains((string)$fields[0]['text'],url('/domains/checks/watch/'.$id)),'Hosting row links owned watch detail');
 Auth::setUser($other);$v=view('services.show',['service'=>$service,'fields'=>[]]);app('view')->callComposer($v);same([],$v->getData()['fields'],'Hosting composer refuses foreign owner');
