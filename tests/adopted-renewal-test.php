@@ -40,6 +40,8 @@ foreach ([2027, 2028] as $year) {
     try { holdingRefused(fn () => DB::transaction(fn () => HoldingAnchor::resolve(HoldingLocks::take($domain))), 'Completed state cannot bypass prior revision chain'); }
     finally { DB::table('domains_operations')->where('id', $op->id)->update(['policy' => $sealed]); }
 }
+// Each Live renewal confirmed by its own order calibrates the bill clock after its completion, without delaying it.
+expect(\Paymenter\Extensions\Servers\Domains\Services\EnomBillZones::measured($binding) !== null, 'Live renewals measure the account bill zone');
 same(2, $state->writes, 'Exactly two synthetic renewal writes');
 same(0, $domain->operations()->whereIn('action', ['register', 'transfer'])->count(), 'No acquisition operation synthesized');
 echo "Live-bound adopted renewal invoices, two completed cycles and original provenance retention passed.\n";
