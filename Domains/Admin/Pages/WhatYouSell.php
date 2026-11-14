@@ -350,7 +350,8 @@ class WhatYouSell extends Page implements HasTable
     {
         if($this->focused()){return 'This TLD has no prices here yet. To load them, use Sync prices.';}
         if($this->emptyHeading()===self::LEFT_OUT){
-            $shared=SellTable::sharedCause($this->reads()->leftOutCauses((string)$this->show()));
+            $causes=$this->reads()->leftOutCauses((string)$this->show());$shared=SellTable::sharedCause($causes);
+            if($causes===['unreadable']){return "Their saved settings can't be read. Ask your site admin to restore them from a backup.";}
             return $shared===null?"Their pricing can't be read. Clear filters, then open each one and use Edit prices.":$shared.' Fix it in Default pricing at the top of this page.';
         }
         if($this->emptyHeading()===self::NOT_FOR_SALE){return 'Matching TLDs are not for sale. Turn off For sale to see them.';}
