@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, HistoryAcceptance};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\TestOrderHistory;
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\TestOrderHistory as EnomTestOrderHistory;
 /** Explicit, revocable account contract; future install/staff workflows supply validated acceptance. */
 final class HistoryAcceptances
 {
@@ -15,7 +16,7 @@ final class HistoryAcceptances
     public static function load(AccountBinding $binding, Action $action = Action::Register, ?Server $loaded = null): ?HistoryAcceptance
     {
         $setting = self::setting($binding, $action, $loaded);
-        if (!$setting) { return TestOrderHistory::acceptance($binding, $action); }
+        if (!$setting) { return TestOrderHistory::acceptance($binding, $action) ?? EnomTestOrderHistory::acceptance($binding, $action); }
         try {
             if (!$setting->encrypted) { throw new \DomainException; }
             $data = json_decode($setting->value, true, 16, JSON_THROW_ON_ERROR);
@@ -24,9 +25,9 @@ final class HistoryAcceptances
             return new HistoryAcceptance($binding, $data['timezone'], $data['lag'], $data['retention'], $data['vocabulary']);
         } catch (\Throwable) { throw new \DomainException('History acceptance is unavailable.'); }
     }
-    /** No saved setting: the values in use are TestOrderHistory's built-in TEST values. */
+    /** No saved setting: the values in use are the registrar's built-in TEST values. */
     public static function builtIn(AccountBinding $binding, Action $action): bool
-    { return self::setting($binding, $action, null) === null && TestOrderHistory::acceptance($binding, $action) !== null; }
+    { return self::setting($binding, $action, null) === null && (TestOrderHistory::acceptance($binding, $action) ?? EnomTestOrderHistory::acceptance($binding, $action)) !== null; }
     private static function setting(AccountBinding $binding, Action $action, ?Server $loaded): mixed
     {
         $key = self::KEY.match ($action) { Action::Renew => '_renewal', Action::Transfer => '_transfer', default => '' };
