@@ -46,7 +46,7 @@ if($free){ // Stopped reads never restart by themselves, so an unknown row names
 if($free){expect(!str_contains($html,'privacy_purchase'),'Free privacy offers no paid action');commerceReject(fn()=>$driver->validate('nameservers',['use_default'=>true,'nameservers'=>[]],$d->domain));}
 else {
     commerceReject(fn()=>$driver->validate('nameservers',['nameservers'=>[]],$d->domain));
-    expect(str_contains($html,'Use site default nameservers'),'Saved site nameservers have a fill action');
+    expect(str_contains($html,e('Use '.\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::nameservers())),'Saved site nameservers have a fill action');
     $reset=$management->request($user,$d->id,'nameservers',['nameservers'=>[],'use_default'=>true],hash('sha256','legacy-default-reset'),$driver);
     same(['nameservers'=>[],'use_default'=>true],$reset->payload,'Already-frozen legacy reset remains supported by the engine');
     $state->ns=['dns1.name-services.com','dns2.name-services.com'];$state->apply=false;Illuminate\Support\Facades\Cache::forget('domains-write-slot:'.$d->account_fingerprint);

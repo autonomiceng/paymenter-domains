@@ -12,20 +12,17 @@
     $showTerms = collect($rows)->contains(fn($row) => $termRange($row['terms']) !== '1 year');
     $firstYearDiffers = collect($rows)->contains(fn($row) => \Paymenter\Extensions\Servers\Domains\Presentation\FirstYearPrice::differs($row['register'] ?? null, $row['renew'] ?? null));
     $longerTerms = collect($rows)->contains(fn($row) => collect($row['terms'])->contains(fn($term) => $term > 1));
+    // Not for sale is a state with its hollow gray mark, never bare words (DESIGN.md P-AVL-6).
+    $notForSale = fn (?string $reason = null) => \Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Value::state(\Paymenter\Extensions\Servers\Domains\Presentation\State::NotForSale, \Paymenter\Extensions\Servers\Domains\Presentation\Reader::Customer, $reason);
+    // Every test TLD keeps its Test tag, on mixed and all-test pages alike (P-LAY-12).
+    // A price staff haven't set is Not set, with what to do (DESIGN.md glossary): not a failed read.
+    $askFirst = \Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Value::state(\Paymenter\Extensions\Servers\Domains\Presentation\State::NotSet, \Paymenter\Extensions\Servers\Domains\Presentation\Reader::Customer, \Paymenter\Extensions\Servers\Domains\Presentation\Missing::ASK_FIRST);
 @endphp
 <div class="container mt-14 mb-10">
 <div class="domains">
     @include('domains::partials.styles')
     @include('domains::partials.test-banner', ['test' => $testEnvironment])
-    <div>
-        @if (!$guest && \Paymenter\Extensions\Servers\Domains\Http\DomainList::reachable() && \Illuminate\Support\Facades\Route::has('domains.domains.index'))<a class="domains-back" href="{{ route('domains.domains.index') }}"><x-ri-arrow-left-s-line class="domains-i" aria-hidden="true" />Domains</a>@endif
-        <div class="domains-head">
-            <div>
-                <h1 class="domains-title">Domain prices</h1>
-                <p class="domains-lede">Every TLD we sell, with its register, renew and transfer price per year.</p>
-            </div>
-        </div>
-    </div>
+    @include('domains::partials.store-head', ['title' => 'Domain prices', 'lede' => 'Every TLD we sell, with its register, renew and transfer price per year.'])
 
     @if (!$rows)
         <div class="domains-notice domains-notice--warn" role="status"><x-ri-information-fill aria-hidden="true" /><div>Domain prices aren’t available right now. Please check back later.</div></div>
@@ -61,10 +58,10 @@
                     <tbody id="domains-price-rows">
                         @foreach ($rows as $row)
                             <tr data-tld="{{ $row['tld'] }}">
-                                <th scope="row" class="domains-domain domains-cell-wide">.{{ $row['tld'] }}@if ($row['testEnvironment'] ?? false) <span class="domains-badge domains-tone-muted">Test</span>@endif</th>
-                                <td class="domains-end domains-num" data-label="Register">{{ $row['register'] ?? 'Not offered' }}</td>
-                                <td class="domains-end domains-num" data-label="Renew">@if ($row['renew']){{ $row['renew'] }}@else @include('domains::partials.missing', ['cause' => \Paymenter\Extensions\Servers\Domains\Presentation\Missing::ASK_FIRST, 'stack' => true])@endif</td>
-                                <td class="domains-end domains-num" data-label="Transfer">@if ($row['transfer'] !== null){{ $row['transfer'] }}@elseif ($row['transfersOn'] ?? false)@include('domains::partials.missing', ['cause' => \Paymenter\Extensions\Servers\Domains\Presentation\Missing::ASK_FIRST, 'stack' => true])@else Transfers off @endif</td>
+                                <th scope="row" class="domains-domain domains-mono">.{{ $row['tld'] }}@if ($row['testEnvironment'] ?? false){{ \Paymenter\Extensions\Servers\Domains\Support\DemoData::label(false, true) }}@endif</th>
+                                <td class="domains-end domains-num" data-label="Register">@if (($row['register'] ?? null) !== null){{ $row['register'] }}@else<span data-not-for-sale>{{ $notForSale() }}</span>@endif</td>
+                                <td class="domains-end domains-num" data-label="Renew">@if ($row['renew']){{ $row['renew'] }}@else{{ $askFirst }}@endif</td>
+                                <td class="domains-end domains-num" data-label="Transfer">@if ($row['transfer'] !== null){{ $row['transfer'] }}@elseif ($row['transfersOn'] ?? false){{ $askFirst }}@else<span data-not-for-sale>{{ $notForSale('We don’t take transfers for this TLD.') }}</span>@endif</td>
                                 @if ($showTerms)<td class="domains-end" data-label="Register for">{{ $termRange($row['terms']) }}</td>@endif
                             </tr>
                         @endforeach
@@ -74,7 +71,7 @@
             <p id="domains-price-empty" role="status" class="domains-panel__b" hidden>No TLDs match your filter.</p>
         </section>
         @include('domains::partials.price-filter')
-        <p class="domains-small domains-muted">Prices plus tax where applicable.{{ $firstYearDiffers ? ' '.\Paymenter\Extensions\Servers\Domains\Presentation\FirstYearPrice::LIST : '' }}@if ($longerTerms) Longer terms are priced per term; search for a name to see each total.@endif</p>
+        <p class="domains-small domains-muted domains-fine">All amounts in USD. Prices plus tax where applicable.{{ $firstYearDiffers ? ' '.\Paymenter\Extensions\Servers\Domains\Presentation\FirstYearPrice::LIST : '' }}@if ($longerTerms) Longer terms are priced per term; search for a name to see each total.@endif</p>
     @endif
 </div>
 </div>

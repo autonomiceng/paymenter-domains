@@ -10,7 +10,7 @@ final class WriteHeld extends \DomainException
     public const UNSENT_REFUSALS = [...self::FINAL_REFUSALS, 'registrar_price_missing', 'registrar_price_increased', 'registrar_read_failed', 'registrar_balance_insufficient'];
     public function __construct(public readonly string $reason, public readonly ?\Paymenter\Extensions\Servers\Domains\Data\Money $cost = null)
     {
-        if (!in_array($reason, ['namesilo_account_guard', 'transfer_not_registered', 'write_disabled', 'write_acceptance_required', 'write_rate_limited', 'contact_profile_proof_required', 'nameservers_required', 'registry_details_unsupported', 'usd_balance_required','enom_test_transfer_usd_balance_required', 'enom_test_setup_required', ...self::UNSENT_REFUSALS], true)) {
+        if (!in_array($reason, ['namesilo_account_guard', 'transfer_not_registered', 'write_disabled', 'processing', 'write_acceptance_required', 'write_rate_limited', 'contact_profile_proof_required', 'nameservers_required', 'registry_details_unsupported', 'usd_balance_required','enom_test_transfer_usd_balance_required', 'enom_test_setup_required', ...self::UNSENT_REFUSALS], true)) {
             throw new \InvalidArgumentException('Invalid write hold.');
         }
         parent::__construct('Registrar write is held.');

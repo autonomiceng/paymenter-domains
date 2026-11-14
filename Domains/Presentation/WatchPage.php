@@ -3,30 +3,41 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Presentation;
 use Carbon\CarbonImmutable;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Value;
 use Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels;
 /** The hosting domain page: its one notice, the Expires and Nameservers rows and History, from the summary and open notices alone. */
 final class WatchPage
 {
-    /** The one notice at the top: text, tone and an optional link that ends the sentence, or null when nothing needs doing. */
+    /** The one notice: text, tone, an optional link that ends the sentence and its section when it is about one, or null when nothing needs doing. */
     public static function notice(DomainSummary $s, array $notices, array $portal): ?array
     {
         $kinds = $portal; $keys = $s->stateKeys;
         $expiry = $s->expiry ? DomainPage::date($s->expiry) : null;
         $days = $s->daysLeft;
         return match (true) {
-            in_array('watch.retired', $keys, true) => ['tone' => 'info', 'text' => 'Monitoring stopped.'],
-            in_array('watch.paused', $keys, true) => ['tone' => 'info', 'text' => 'Monitoring paused.'],
+            // Stopped and Paused are the watch's own state: the head says them once, in gray (DESIGN.md P-STA-3, P-NTC-5).
+            (bool) array_intersect(['watch.retired', 'watch.paused'], $keys) => null,
             in_array('watch.not_registered', $keys, true) => ['tone' => 'warn', 'text' => 'The registry has no record of '.$s->name.'. Check with your registrar.'],
             (bool) array_intersect(['watch.expired', 'watch.redemption'], $keys) || (bool) array_intersect(['expired', 'registry_expiry_reached'], $kinds)
                 => ['tone' => 'bad', 'text' => $s->name.' expired'.($expiry ? ' on '.$expiry : '').'. Renew it at your registrar.'],
             in_array('watch.ns_changed', $keys, true) || in_array('ns_changed', $kinds, true) => ['tone' => 'warn', 'text' => $s->name.($s->dnsPreviouslyMatched?' stopped using ':' does not use ').DnsSignalLabels::nameservers().($s->dnsPreviouslyMatched?self::movedOn($s, $notices).'. Change them back at your registrar, or':'. To use them, update nameservers at your registrar, or'),
-                'link' => ['label' => 'contact support', 'url' => $s->urls['support'] ?? null]],
+                'link' => ['label' => 'contact support', 'url' => $s->urls['support'] ?? null], 'section' => 'dns'],
             $expiry && (in_array('expiring', $kinds, true) || ($days !== null && $days > 0 && $days <= 30)) => ['tone' => 'warn', 'text' => 'Renew '.$s->name.' at your registrar before '.$expiry.'.'],
             (bool) array_intersect(['expiry_unavailable', 'dns_unavailable'], $kinds) => ['tone' => 'info', 'text' => 'We can’t read the public '.implode(' or ', array_values(array_filter([
                 in_array('expiry_unavailable', $kinds, true) ? 'registry' : null, in_array('dns_unavailable', $kinds, true) ? 'DNS' : null]))).' for '.$s->name.' right now. We’ll keep checking.'],
             default => null,
         };
     }
+    /** The head state while checks are off: Stopped or Paused (the watch's own state, gray, with what happens next), else null and the status pill shows. */
+    public static function offState(DomainSummary $s): ?Value
+    {
+        $keys = $s->stateKeys;
+        if (in_array('watch.retired', $keys, true)) { return Value::state(State::Stopped, Reader::Customer, self::STOPPED); }
+        if (in_array('watch.paused', $keys, true)) { return Value::state(State::Paused, Reader::Customer, self::PAUSED); }
+        return null;
+    }
+    public const STOPPED = 'We no longer check this domain.';
+    public const PAUSED = 'We check it again when monitoring resumes.';
     /** Expires: the date with its tone and one sub line, or Missing with its cause (when it shows, if the notice already says why). */
     public static function expires(DomainSummary $s, array $portal): array
     {

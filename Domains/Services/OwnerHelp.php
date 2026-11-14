@@ -43,6 +43,8 @@ final class OwnerHelp
     {
         $markdown??=(string)file_get_contents(self::path());
         if (!\Paymenter\Extensions\Servers\Domains\Presentation\PrivacyVisibility::SHOWN) { $markdown=preg_replace('~^## WHOIS privacy\R.*?(?=^## |\z)~ms','',$markdown); }
+        // Customers never see a registrar's name; the button's own label stands in for {nameservers}.
+        $markdown=str_replace('{nameservers}',\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::nameservers(),$markdown);
         $html=(string)Str::markdown($markdown,['html_input'=>'escape','allow_unsafe_links'=>false]);
         $ids=array_flip(self::ANCHORS);
         $html=preg_replace('~<h1>.*?</h1>\s*~s','',$html,1);

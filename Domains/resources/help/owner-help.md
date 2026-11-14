@@ -6,7 +6,7 @@ How each setting on a domain page works. Changes show in History once the regist
 
 Nameservers decide where your website and email are hosted. Your DNS provider or hosting company tells you which nameservers to use.
 
-- Enter 2 to 12 hostnames for Enom or 2 to 13 for NameSilo, one per line, such as ns1.example.com.
+- Enter 2 to 13 hostnames, one per line, such as ns1.example.com. Some domains allow 12.
 - **Use site default nameservers** fills in the saved site DNS default. Set up your domain with that DNS provider before saving. This does not enable DNS record editing here; that requires confirmed registrar DNS hosting.
 - Before saving, we show the current and new nameservers so you can check them.
 - Changes can take up to 48 hours to reach everyone.

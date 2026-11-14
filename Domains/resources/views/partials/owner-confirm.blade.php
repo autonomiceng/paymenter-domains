@@ -2,7 +2,7 @@
 @php($confirmId = 'confirm-'.$id)
 <dialog class="domains-confirm" id="{{ $confirmId }}" aria-labelledby="{{ $confirmId }}-title" aria-describedby="{{ $confirmId }}-risk" data-confirm-dialog @if ($open ?? false) open @endif>
 <h3 id="{{ $confirmId }}-title" class="domains-h3">{{ $title }}</h3>
-@if ($registrar ?? null)<p class="domains-hint">Registrar: {{ $registrar }}.</p>@endif
+{{-- Customers never see a registrar's name, so a caller's registrar is not shown here. --}}
 @if ($facts ?? [])
 <dl class="domains-confirm__facts">
 @foreach ($facts as $fact)
@@ -11,8 +11,9 @@
 </dl>
 @endif
 <p id="{{ $confirmId }}-risk">{{ $risk }}</p>
+{{-- Cancel, then the action, as in every edit dialog. --}}
 <div class="domains-buttons">
-<button type="submit" name="confirmed" value="1" class="domains-btn domains-btn--{{ $tone ?? 'danger' }}">{{ $button }}</button>
 @if ($open ?? false)<a class="domains-btn domains-btn--secondary" href="{{ $cancel }}">Cancel</a>@else<button type="button" class="domains-btn domains-btn--secondary" data-confirm-cancel autofocus>Cancel</button>@endif
+<button type="submit" name="confirmed" value="1" class="domains-btn domains-btn--{{ $tone ?? 'danger' }}">{{ $button }}</button>
 </div>
 </dialog>

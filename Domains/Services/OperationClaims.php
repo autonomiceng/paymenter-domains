@@ -324,7 +324,7 @@ final class OperationClaims
     {
         if($op->state!=='queued'||$op->safe_code!==null||!self::unsealed($op)){return false;}
         try{ExecutionWindow::start($op,$reason);}catch(\Throwable){return false;}
-        return $reason===ContactProfileHold::CODE&&ContactProfileHold::unsent($op,retry:true);
+        return in_array($reason,ContactProfileHold::HOLDS,true)&&ContactProfileHold::unsent($op,retry:true);
     }
     public static function accountGuardRetryable(Operation $op): bool
     {

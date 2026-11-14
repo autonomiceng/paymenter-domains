@@ -138,7 +138,11 @@ final class DomainNotices
             $cause=rtrim(preg_replace('/^Not sent: /','',(string)Labels::reason($op->safe_code,$op->funding_basis==='complimentary')),'.');
             $title=Labels::action($op->action).($op->state==='held'?' not sent'.($cause===''?'':': '.(preg_match('/\A(?:Enom|NameSilo)\b/',$cause)?$cause:lcfirst($cause))).'.':' not confirmed by the registrar.');
             try{$title=RequestFacts::readyMessage($op)??$title;}catch(\Throwable){}
-            return ['title'=>$title,'tone'=>'warning','action'=>['label'=>'Check request #'.$op->id,'url'=>Facts::url(fn()=>OperationResource::getUrl('view',['record'=>$op->id]))]];
+            // An order waiting only for Orders names the one fix, the registrar's Orders switch.
+            try{$orders=\Paymenter\Extensions\Servers\Domains\Services\ContactStepRetries::waitsForOrders($op);}catch(\Throwable){$orders=false;}
+            return ['title'=>$title,'tone'=>'warning','action'=>$orders
+                ?['label'=>'Open registrar','url'=>Facts::url(fn()=>RegistrarFacts::accountUrl((int)$op->server_id,'orders'))]
+                :['label'=>'Check request #'.$op->id,'url'=>Facts::url(fn()=>OperationResource::getUrl('view',['record'=>$op->id]))]];
         }
         return null;
     }

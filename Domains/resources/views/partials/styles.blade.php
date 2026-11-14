@@ -16,8 +16,11 @@
     --e-bad: color-mix(in srgb, hsl(var(--color-error)) 80%, black);
     --e-quiet: hsl(var(--color-muted));
     --e-mono: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
-    max-width: 1120px; margin-inline: auto; color: var(--e-fg); overflow-wrap: anywhere;
+    max-width: 72rem; margin-inline: auto; color: var(--e-fg); overflow-wrap: anywhere;
 }
+/* The host page sets the width and alignment: beside a signed-in sidebar that is the whole column, left aligned like the
+   dashboard; a guest page keeps the host's centred container. The wrapper never centres or caps itself. */
+.domains { max-width: none; margin-inline: 0; }
 .dark .domains {
     --e-ok: color-mix(in srgb, hsl(var(--color-success)) 80%, white);
     --e-info: color-mix(in srgb, hsl(var(--color-info)) 80%, white);
@@ -183,7 +186,6 @@
 .domains .domains-notice--bad { --tone: var(--e-bad); }
 .domains .domains-notice strong { font-weight: 700; }
 .domains .domains-notice ul { margin-top: .25rem; }
-.domains[data-domains-cart-notice] { max-width: none; margin-inline: 0; }
 .domains .domains-notice--cart { display: grid; grid-template-columns: 1.375rem minmax(0, 1fr); column-gap: .75rem; padding: .875rem 1.125rem .875rem .875rem;
     border-radius: .375rem; border-left: 4px solid var(--e-info); font-size: .9375rem; background: color-mix(in srgb, var(--e-info) 12%, transparent); }
 .dark .domains .domains-notice--cart { background: color-mix(in srgb, var(--e-info) 9%, transparent); }
@@ -359,6 +361,17 @@
 /* Price list */
 .domains .domains-pricelist tbody th { font-size: .9375rem; color: var(--e-fg); padding: .875rem 1rem; border-bottom: 1px solid var(--e-line); font-weight: 700; }
 .domains .domains-pricelist tbody tr:last-child th { border-bottom: 0; }
+/* Price columns take their content's width; the TLD column takes what is left, so no gap opens between two prices (DESIGN.md P-TBL-7). */
+@media (min-width: 720px) {
+    .domains .domains-pricelist thead th:not(:first-child), .domains .domains-pricelist td { width: 1%; white-space: nowrap; padding-left: 2rem; }
+    .domains .domains-pricelist td .domains-sub { display: block; white-space: normal; min-width: 12rem; }
+}
+/* Fine print reads as one measure, never the full sheet width. */
+.domains .domains-fine { max-width: 64ch; }
+.domains .domains-store-head { margin-bottom: 1.5rem; }
+.domains .domains-store-head .domains-head--page { margin-bottom: 0; }
+.domains .domains-store-head .domains-acquire-tabs { margin-top: 1.25rem; }
+@media (max-width: 640px) { .domains .domains-tap { display: inline-flex; align-items: center; min-height: 44px; } }
 @media (max-width: 719px) {
     .domains .domains-pricelist.domains-stackable tr { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .domains .domains-pricelist.domains-stackable tbody th { display: block; padding: 0; border: 0; grid-column: 1 / -1; }
@@ -565,6 +578,8 @@
 .domains .domains-help-toc { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: .5rem 1.25rem; margin-top: .5rem; }
 .domains .domains-prose h2 { margin-top: 1.75rem; scroll-margin-top: 5rem; }
 .domains .domains-prose h2:first-child { margin-top: 0; }
+.domains .domains-help-nav { padding-bottom: 1.25rem; border-bottom: 1px solid var(--e-line); }
+.domains .domains-help-nav + h2 { margin-top: 1.25rem; }
 .domains .domains-prose p, .domains .domains-prose ul { margin-top: .625rem; max-width: 42rem; }
 .domains .domains-prose ul { padding-left: 1.25rem; list-style: disc; }
 .domains .domains-prose li + li { margin-top: .25rem; }
@@ -583,6 +598,14 @@
 .domains h1.domains-mono { font-size: clamp(1.125rem, 5vw, 1.5rem); line-height: 1.5; font-weight: 600; overflow-wrap: anywhere; }
 .domains .domains-ph ~ .domains-notice, .domains .domains-head--page ~ .domains-notice { align-items: center; margin-bottom: 1.5rem; }
 .domains .domains-notice__tx { flex: 1; }
+/* A notice starts with the state mark of its tone, the same hexagon as every status. */
+.domains .domains-notice__mark { display: inline-flex; flex: none; margin-top: .1875rem; }
+.domains .domains-notice__mark::before { content: ""; display: block; }
+/* A notice about one section is a plain row at its top: the mark and one sentence, no box (DESIGN.md P-NTC-5). */
+.domains .domains-notice--sec { padding: .75rem 1.5rem; border: 0; border-top: 1px solid var(--e-line); border-radius: 0; font-size: inherit; }
+@media (max-width: 639px) { .domains .domains-notice--sec { padding-inline: 1rem; } }
+/* The head's hosting link sits under its status line. */
+.domains .domains-head-line .domains-ph__sub { margin: .25rem 0 0; }
 @media (max-width: 719px) {
     .domains .domains-ph ~ .domains-notice, .domains .domains-head--page ~ .domains-notice { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; }
     .domains .domains-ph ~ .domains-notice > a, .domains .domains-head--page ~ .domains-notice > a { grid-column: 2; justify-self: start; }
@@ -593,6 +616,10 @@
 .domains .domains-sheet > .domains-panel + .domains-panel { border-top: 1px solid var(--e-line); }
 .domains .domains-sheet .domains-panel__h { padding: 1.125rem 1.5rem .625rem; border-bottom: 0; }
 .domains .domains-sheet .domains-panel__b { padding: 0; }
+/* Prose or steps inside a sheet section line up with its heading and rows. */
+.domains .domains-sec-body { padding: .25rem 1.5rem 1.25rem; }
+.domains .domains-sec-body > * + * { margin-top: .875rem; }
+@media (max-width: 639px) { .domains .domains-sec-body { padding: .25rem 1rem 1rem; } }
 .domains .domains-rail { min-width: 0; }
 .domains .domains-rail > .domains-panel { background: none; border: 0; border-radius: 0; }
 .domains .domains-rail .domains-panel__h { display: flex; align-items: baseline; justify-content: space-between; gap: .75rem; padding: 0; margin-bottom: .75rem; border-bottom: 0; }
@@ -639,6 +666,7 @@
 /* Renewal and Settings labels: one size and weight, as in the mock. */
 .domains .domains-sheet .domains-card dt, .domains .domains-sheet .domains-row__l { font-size: inherit; font-weight: 400; }
 .domains .domains-ns-list { display: flex; flex-direction: column; gap: 2px; font-size: .8125rem; overflow-wrap: anywhere; }
+.domains .domains-ns-names { overflow-wrap: anywhere; }
 .domains .domains-sheet .domains-card dd { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 1rem; align-items: center; text-align: left; font-weight: 400; }
 .domains .domains-sheet .domains-card dd > * { grid-column: 1; }
 .domains .domains-sheet .domains-card dd > .domains-card__a { grid-column: 2; grid-row: 1 / span 3; margin-top: 0; }
@@ -653,6 +681,20 @@
 .domains .domains-edit { width: min(40rem, calc(100vw - 2rem)); }
 .domains .domains-edit:not(:modal) { max-width: none; }
 .domains .domains-edit__close { display: flex; justify-content: flex-end; margin-top: .75rem; }
+/* One button row in every edit dialog: Cancel then the primary on the right, a quieter third choice apart on the left (P-COH-1).
+   In an open dialog that scrolls (a long contact form on a phone) the row stays at the bottom of the view. */
+.domains .domains-edit .domains-edit__buttons { justify-content: flex-end; margin-top: 1.25rem; }
+.domains .domains-edit .domains-edit__aside { margin-right: auto; }
+.domains .domains-edit:modal .domains-edit__buttons { position: sticky; bottom: -1.5rem; z-index: 1; margin: 1.25rem -1.5rem -1.5rem; padding: .875rem 1.5rem; border-top: 1px solid var(--e-line); background: var(--e-panel); }
+/* A record grid gets the room its columns need on a wide screen; below 720px it stacks, one record per block. */
+.domains .domains-edit:has(.domains-record-form) { width: min(64rem, calc(100vw - 2rem)); }
+@media (max-width: 719px) {
+    .domains .domains-records { min-width: 0; }
+    .domains .domains-records.domains-stackable tr { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .domains .domains-records.domains-stackable td { padding: 0; }
+    .domains .domains-records.domains-stackable td[data-label]::before { display: block; margin-bottom: .125rem; }
+    .domains .domains-records .domains-input { min-width: 0; width: 100%; }
+}
 @media (max-width: 1100px) { .domains .domains-cols { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 639px) {
     .domains .domains-sheet .domains-panel__h { padding-inline: 1rem; }

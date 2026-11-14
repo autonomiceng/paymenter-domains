@@ -15,7 +15,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\{Clock,WriteReservation};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Money};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Operation,ProfileContactOperation};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
-use Paymenter\Extensions\Servers\Domains\Services\{DomainOperations,OperationClaims,ProfileContactOperations,ProfileContactSchema,Refunds,RegistrationPreflight,RegistrationProfiles,StaffOperationReview,StaffOperations,StaffOperationWrites,WriteAcceptance,WriteFeatures};
+use Paymenter\Extensions\Servers\Domains\Services\{ContactStepRetries,ReadDeferred,DomainOperations,OperationClaims,ProfileContactOperations,ProfileContactSchema,Refunds,RegistrationPreflight,RegistrationProfiles,StaffOperationReview,StaffOperations,StaffOperationWrites,WriteAcceptance,WriteFeatures};
 ProfileContactSchema::install();staffPanel();
 app()->instance(Clock::class,$clock);app()->instance(Refunds::class,new Refunds($clock));
 $all=[Staff::VIEW,'admin.domains.manage','admin.domains.fund','admin.invoices.update'];
@@ -32,11 +32,11 @@ $changed='This request changed. Reload the page and try again.';$original='This 
 
 // The order's own contact grant, as the installed runtime gives it: a local cap refusal stops before any send.
 $grants=new class($binding) implements WriteReservation {
-    public ?int $active=null;public bool $reserved=false;public bool $consumed=false;public bool $cap=false;
+    public ?int $active=null;public bool $reserved=false;public bool $consumed=false;public bool $cap=false;public ?Closure $fail=null;
     public function __construct(private AccountBinding $binding){}
     public function bindsTo(AccountBinding $b):bool{return $this->binding->matches($b);}
     public function run(string $feature,int $id,Closure $work):mixed{$this->active=$id;$this->reserved=$this->consumed=false;try{return $work();}finally{$this->active=null;}}
-    public function reserve(string $command,#[SensitiveParameter] array $parameters,?Money $cost=null):void{if($this->cap){throw new RuntimeException('Synthetic local cap');}$this->reserved=true;}
+    public function reserve(string $command,#[SensitiveParameter] array $parameters,?Money $cost=null):void{if($this->fail){($this->fail)();}if($this->cap){throw new RuntimeException('Synthetic local cap');}$this->reserved=true;}
     public function unconsumed(int $id):bool{return $this->active===$id&&$this->reserved&&!$this->consumed;}
 };
 $sent=(object)['contactAdd'=>0,'registerDomain'=>0,'readFails'=>false];
@@ -92,12 +92,38 @@ expect(str_contains($costFacts['cost_sub'],'cannot exceed this estimate'),'The e
 // A release cannot enable the contact-creation deployment capability; both page and locked writer must refuse it.
 $managementConfig=config('domains.namesilo_test.management',true);config(['domains.namesilo_test.management'=>false]);
 $blocked='Contact creation is off on this site; the site administrator must enable NameSilo contact creation before this order can retry.';
-$before=[$nativeMoney(),$op->fresh()->getRawOriginal(),$sent->contactAdd,$sent->registerDomain];
-expect(!StaffOperationWrites::canRelease($op,$clock->now()),'Contact creation off prevents offering a repeat hold');
-Livewire::actingAs($costStaff)->test(ViewOperation::class,['record'=>$op->id])->assertActionHidden('release')->assertSee($blocked);
-Auth::login($staff);$refused(fn()=>$run($op,'release'),'The writer refuses disabled contact creation',$blocked);
-same($before,[$nativeMoney(),$op->fresh()->getRawOriginal(),$sent->contactAdd,$sent->registerDomain],'Blocked contact retry changes no money or sends');
+foreach(['contact_profile_proof_required','write_rate_limited','processing'] as $reason){
+    DB::table('domains_operations')->where('id',$op->id)->update(['safe_code'=>$reason]);$op->refresh();
+    $before=[$nativeMoney(),$op->getRawOriginal(),$sent->contactAdd,$sent->registerDomain];
+    expect(!StaffOperationWrites::canRelease($op,$clock->now()),'Contact creation off prevents release for '.$reason);
+    Livewire::actingAs($costStaff)->test(ViewOperation::class,['record'=>$op->id])->assertActionHidden('release');
+    Auth::login($staff);$refused(fn()=>$run($op,'release'),'The writer refuses disabled contact creation',$blocked);
+    $retryClock=clone $clock;$retryClock->instant=$clock->now()->modify('+1 day');
+    expect(!ContactStepRetries::readmit($op->id,$retryClock),'Automatic contact release also waits for contact creation');
+    same($before,[$nativeMoney(),$op->fresh()->getRawOriginal(),$sent->contactAdd,$sent->registerDomain],'Blocked contact retry changes no money, history or sends');
+}
+DB::table('domains_operations')->where('id',$op->id)->update(['safe_code'=>'contact_profile_proof_required']);$op->refresh();
 config(['domains.namesilo_test.management'=>$managementConfig]);
+
+// Prior holdings may keep held orders, but their controls do not belong on the current domain.
+$heldRow=new ReflectionMethod(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,'heldOrderRow');
+foreach(['authority_generation'=>$op->authority_generation+1,'account_fingerprint'=>str_repeat('e',64)] as $field=>$other){
+    $domainRow=$op->domain->fresh();$originalValue=$domainRow->$field;
+    DB::table('domains_domains')->where('id',$domainRow->id)->update([$field=>$other]);
+    same(null,$heldRow->invoke(null,$domainRow->fresh()),'An order from a different holding offers no current held-order controls');
+    DB::table('domains_domains')->where('id',$domainRow->id)->update([$field=>$originalValue]);
+}
+
+// A confirmation keeps the state staff opened, even when another worker changes the same held order.
+$stale=$heldOrder('held-contact-stale-confirm-placeholder.com');
+$releaseAction=Filament\Actions\Testing\TestAction::make('release')->schemaComponent(true,'content');
+$stalePage=Livewire::actingAs($costStaff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$stale->domain_id])
+    ->mountAction($releaseAction);
+DB::table('domains_operations')->where('id',$stale->id)->update(['safe_code'=>'processing']);
+$before=[$nativeMoney(),$stale->fresh()->getRawOriginal(),$sent->contactAdd,$sent->registerDomain];
+$stalePage->callMountedAction();
+same($before,[$nativeMoney(),$stale->fresh()->getRawOriginal(),$sent->contactAdd,$sent->registerDomain],'A changed held order cannot be released from its earlier confirmation');
+Auth::login($costStaff);
 
 // Distinct hold causes must lead to a useful repair, with no blind retry for permanent or unknown failures.
 foreach([
@@ -123,15 +149,39 @@ foreach([
     }
 }
 
-// A paused account accepts release into the queue while its purchase and contact step remain unsent.
+// Orders off is the only wait for an unsent contact hold: the pages lead to the Orders switch, Release waits for Orders
+// while Cancel and refund stays, and the tick holds it as Orders off so it goes out once they are on, without a try.
 $paused=$heldOrder('held-contact-paused-release-placeholder.com');
 DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>false]);
 $before=[$nativeMoney(),$sent->contactAdd,$sent->registerDomain,$paused->attempt];
-$page=Livewire::actingAs($costStaff)->test(ViewOperation::class,['record'=>$paused->id]);
-$page->assertActionEnabled('release')->callAction('release')->assertHasNoActionErrors()->assertNotified('Hold released');
-same(['queued',null],[$paused->fresh()->state,$paused->fresh()->safe_code],'Orders off allows release into the queue');
-same($before,[$nativeMoney(),$sent->contactAdd,$sent->registerDomain,$paused->fresh()->attempt],'Orders off release sends nothing and preserves money and unsent proof');
-same(false,$account->fresh()->processing_enabled,'Release leaves Orders off');
+Livewire::actingAs($costStaff)->test(ViewOperation::class,['record'=>$paused->id])->assertActionDisabled('release')->assertActionEnabled('refund');
+Livewire::actingAs($costStaff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$paused->domain_id])
+    ->assertActionDisabled(Filament\Actions\Testing\TestAction::make('release')->schemaComponent(true,'content'))
+    ->assertActionEnabled(Filament\Actions\Testing\TestAction::make('refund')->schemaComponent(true,'content'));
+Auth::login($costStaff);
+$panel=Filament\Facades\Filament::getCurrentPanel();$panel->pages([Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class]);
+Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(fn()=>Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::registerRoutes($panel));
+app('router')->getRoutes()->refreshNameLookups();
+same('registrars',RequestFacts::notice($paused)['link'],'The request page leads to the Orders switch');
+same(Paymenter\Extensions\Servers\Domains\Admin\Support\RegistrarFacts::accountUrl((int)$paused->server_id,'orders'),
+    Paymenter\Extensions\Servers\Domains\Admin\Support\DomainNotices::notice($paused->domain->fresh())['action']['url']??null,'The domain notice opens the registrar Orders switch');
+expect(RequestFacts::reason($paused)!==Paymenter\Extensions\Servers\Domains\Admin\Support\Labels::operationReason($paused),'The saved contact cause is not shown while Orders are off');
+expect(!ContactStepRetries::readmit($paused->id,$clock),'The tick does not release while Orders are off');
+same(['held','processing',0],[$paused->fresh()->state,$paused->fresh()->safe_code,ContactStepRetries::tries($paused->fresh())],'The tick holds it as Orders off without spending a try');
+Auth::login($costStaff);
+same('Not charged yet',RequestFacts::for($paused->fresh())['cost'],'An unsent contact order held for Orders off has no missing registrar charge');
+DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>true]);
+expect(ContactStepRetries::readmit($paused->id,$clock),'It goes back by itself once Orders are on');
+same(['queued',null],[$paused->fresh()->state,$paused->fresh()->safe_code],'Orders on puts the order back in the queue');
+same($before,[$nativeMoney(),$sent->contactAdd,$sent->registerDomain,$paused->fresh()->attempt],'Nothing was sent and money and unsent proof are kept');
+same('Not charged yet',RequestFacts::for($paused->fresh())['cost'],'The unsent order back in the queue has no missing registrar charge');
+// Held again at its contact step: the domain history shows each hold the request History shows, in order.
+$grants->cap=true;$execute($paused->fresh());$grants->cap=false;
+same(['held','contact_profile_proof_required'],[$paused->fresh()->state,$paused->fresh()->safe_code],'The retried order holds again at its contact step');
+$requestRows=array_values(array_filter(Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::entries($paused->domain->fresh()),fn($r)=>is_array($r)&&($r['__request']??null)===$paused->id));
+// The first hold's time comes from the app clock, not this fixture's clock, so only the entries and actors are compared here.
+$entries=array_map(fn($r)=>[preg_replace('/-\d+(-\d+)?$/','',(string)$r['__key']),$r['by']],$requestRows);sort($entries);
+same([['engine_hold','System'],['first-hold','System'],['release','System']],$entries,'Domain history has both system holds and the automatic release by the system: '.json_encode($entries));
 DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>true]);
 Auth::login($costStaff);
 [$heading,$submit,$words]=RequestFacts::releaseConfirmation($op,$account,null,false);
@@ -268,4 +318,46 @@ catch(DomainException $error){same('This contact step has ended and cannot be re
 same(['held','contact_profile_proof_required'],[$op->fresh()->state,$op->fresh()->safe_code],'The ended contact step stays held');
 same($before,[$nativeMoney(),$sent->contactAdd,$sent->registerDomain,$op->fresh()->attempt,$row->fresh()->attempt],'An ended contact step changes no money or send evidence');
 echo "An ended contact step does not blame unchanged order details.\n";
+// A new paid order with saved nameservers, ready for its contact step.
+$order=static function(string $name)use($nsNew):Operation {
+    $op=$nsNew(placeholderComFixtureName($name));
+    $op->update(['payload'=>$op->payload+['nameservers'=>['ns1.provider.example','ns2.provider.example'],'privacy'=>false]]);return $op;
+};
+
+// Orders turned off while the contact step waited: the order holds for Orders and goes back by itself once they are on.
+$op=$order('held-contact-orders-off-placeholder.com');$before=[$sent->contactAdd,$sent->registerDomain];
+$grants->fail=static function()use($account):void {DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>false]);throw new DomainException('TEST NameSilo feature off.');};
+$paused=$execute($op);$grants->fail=null;$clock->instant=$clock->now()->modify('+60 seconds');Auth::login($staff);
+same(['held','processing'],[$paused->state,$paused->safe_code],'Orders off at the contact step holds for Orders, not for the contact');
+expect(OperationActions::relevant('refund',$paused->fresh()),'Cancel and refund stays available while Orders are off');
+expect(!ContactStepRetries::readmit($paused->id,$clock),'The order waits while Orders are off');
+DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>true]);
+expect(ContactStepRetries::readmit($paused->id,$clock),'The order goes back by itself once Orders are on');
+same(['queued',null],[$paused->fresh()->state,$paused->fresh()->safe_code],'Orders on puts the order back in the queue');
+$execute($paused->fresh());
+same([$before[0]+1,$before[1]+1],[$sent->contactAdd,$sent->registerDomain],'The resumed order sends once');
+echo "Orders off at the contact step resumes when Orders are on.\n";
+
+// A contact hold with nothing sent retries by itself a few spaced times, then stays for staff. It never cancels or refunds.
+$op=$heldOrder('held-contact-auto-retry-placeholder.com');$viaGateway($op,'receipt_held_contact_auto_retry');
+$money=[$nativeMoney(),$serviceStatus($op),MoneyReceiptGateway::$sends];$before=[$sent->contactAdd,$sent->registerDomain];
+expect(!ContactStepRetries::readmit($op->id,$clock),'The first automatic try waits');
+foreach(ContactStepRetries::WAITS as $i=>$wait){
+    $clock->instant=$clock->now()->modify('+'.$wait.' seconds');
+    expect(ContactStepRetries::readmit($op->id,$clock),'Automatic try '.($i+1).' starts');
+    same(['queued',null],[$op->fresh()->state,$op->fresh()->safe_code],'Automatic try '.($i+1).' queues the order');
+    $grants->cap=true;$held=$execute($op->fresh());$grants->cap=false;Auth::login($staff);
+    same(['held','contact_profile_proof_required'],[$held->state,$held->safe_code],'Automatic try '.($i+1).' holds again');
+}
+same($before,[$sent->contactAdd,$sent->registerDomain],'Automatic tries sent nothing');
+$clock->instant=$clock->now()->modify('+2 days');
+expect(!ContactStepRetries::readmit($op->id,$clock),'After the last try the hold stays for staff');
+same(['held','contact_profile_proof_required'],[$op->fresh()->state,$op->fresh()->safe_code],'The hold is kept');
+same($money,[$nativeMoney(),$serviceStatus($op),MoneyReceiptGateway::$sends],'No automatic cancel or refund');
+same(null,$op->fresh()->funding['refund_authorization']??null,'No refund was authorized');
+expect(OperationActions::relevant('refund',$op->fresh())&&StaffOperationWrites::canRelease($op->fresh(),$clock->now()),'Staff keep Release hold and Cancel and refund');
+Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$op->domain_id])
+    ->assertActionVisible(Filament\Actions\Testing\TestAction::make('release')->schemaComponent(true,'content'))
+    ->assertActionVisible(Filament\Actions\Testing\TestAction::make('refund')->schemaComponent(true,'content'));
+echo "Automatic contact retries stop at the limit and never refund.\n";
 $nativeSuccessful=true;

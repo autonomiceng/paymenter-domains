@@ -2,5 +2,6 @@
 <dialog id="edit-{{ $id }}" class="domains-confirm domains-edit" aria-labelledby="edit-{{ $id }}-title" @if ($open) open @endif>
 <h3 id="edit-{{ $id }}-title" class="domains-h3">{{ $title }}</h3>
 {{ $slot }}
-<div class="domains-edit__close">@if ($open)<a class="domains-btn domains-btn--ghost" href="{{ $cancel }}">Cancel</a>@else<button type="button" class="domains-btn domains-btn--ghost" data-dialog-close>Cancel</button>@endif</div>
+{{-- A form that ends in its own Cancel and primary (edit-buttons) passes buttons: true; any other dialog keeps this Cancel. --}}
+@unless ($buttons ?? false)<div class="domains-edit__close">@if ($open)<a class="domains-btn domains-btn--ghost" href="{{ $cancel }}">{{ $close ?? 'Cancel' }}</a>@else<button type="button" class="domains-btn domains-btn--ghost" data-dialog-close>{{ $close ?? 'Cancel' }}</button>@endif</div>@endunless
 </dialog>

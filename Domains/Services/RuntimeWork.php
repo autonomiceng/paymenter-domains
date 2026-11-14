@@ -86,6 +86,7 @@ final readonly class RuntimeWork
                 ->where(fn($q)=>$q->whereIn('state',['awaiting_payment','awaiting_code','queued','pending','uncertain','running'])
                     ->orWhere(fn($held)=>$held->where('state','held')->whereIn('safe_code',[...BalanceRetries::CODES,BalanceRetries::LEGACY_CODE]))
                     ->orWhere(fn($q)=>$q->where('action','register')->where('state','held')->where('safe_code','contact_details_required'))
+                    ->orWhere(fn($q)=>$q->whereIn('action',['register','transfer'])->where('state','held')->where('safe_code',ContactProfileHold::CODE))
                     ->orWhere(fn($q)=>$q->where('state','succeeded')->where('safe_code','registration_correction_required'))
                     ->orWhere(fn($q)=>$q->where('state','held')->where('safe_code','management_unconfirmed'))
                     ->orWhere(fn($q)=>$q->where('action','renew')->where('state','held')->where('safe_code','renewal_definitely_unsent'))

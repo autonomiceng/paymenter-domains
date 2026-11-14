@@ -122,7 +122,7 @@ foreach([null,[],['lines'=>[]]] as $missingChoices){
 }
 $result=storefrontData()['results'][0];$result['term']=1;$result['price']='$12.00';
 $html=view('domains::partials.result',['result'=>$result])->render();
-$x=storefrontDom($html);same('1 year · $12.00',$x->query('//select/option')->item(0)->textContent,'Years select shows the exact first term total');
+$x=storefrontDom($html);$first=$x->query('//select/option')->item(0);same(['1','$12.00'],[$first->getAttribute('value'),$first->getAttribute('data-total')],'Years select offers one year at the exact first term total');expect(str_ends_with(trim($first->textContent),'$12.00'),'Years select shows the exact first term total');
 expect(str_contains($html,'data-total="$30.00"'),'Search retains each exact total for selection');
 $x=storefrontDom($html);same('Years',trim($x->query('//label')->item(0)->textContent),'Search labels Years');
 expect(str_contains($html,'>Total<')&&str_contains($html,'>Annual renewal<')&&str_contains($html,'>Add to cart</button>'),'Search total and annual renewal are labeled beside the choice');

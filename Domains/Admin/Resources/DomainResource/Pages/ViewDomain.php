@@ -120,6 +120,17 @@ class ViewDomain extends RecordDetailPage
         // Import domain for a pending import sits in the page notice.
         return [$this->approveComplimentaryCost($d),self::complimentaryRenewal($d),$this->syncNow(),...AcquisitionActions::make($d),...AcquisitionPaymentReview::actions($d),$this->customerView($d)];
     }
+    /** A held order's Release hold and Cancel and refund, the same actions as its request page. They act on that request,
+     * so they sit on its own row under the Registration notice, which keeps its one link (P-NTC-5, P-ACT-9, P-ACT-11). */
+    private static function heldOrderRow(Domain $d): ?Row
+    {
+        $op=$d->operations()->whereIn('action',['register','transfer'])->where('authority_generation',$d->authority_generation)->where('account_fingerprint',$d->account_fingerprint)->where('state','held')->latest('id')->first();
+        if(!$op){return null;}
+        $op->setRelation('domain',$d);$stamp=\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::stamp($op,$d);
+        $actions=array_values(array_filter(OperationActions::make($op,$stamp),fn(Action $a)=>in_array($a->getName(),['release','refund'],true)&&$a->isVisible()));
+        if($actions===[]){return null;}
+        return Row::make('Held order',Value::fact(\Paymenter\Extensions\Servers\Domains\Presentation\Fact::entered('Request #'.$op->id)))->key('held_order')->actions(...$actions);
+    }
     private function approveComplimentaryCost(Domain $d):Action
     {
         $op=null;$message=null;
@@ -227,7 +238,8 @@ class ViewDomain extends RecordDetailPage
         foreach ($placed as $title=>$labels) {
             $rows=[];
             foreach (array_intersect($labels,array_keys($facts)) as $label) { $rows[]=$this->row($label,$facts[$label],$this->side($label,$facts[$label],$edits,$label===$slot?$review:null)); array_push($rows,...DomainRows::retry($facts[$label])); }
-            $sections[]=Section::make($title,[...(isset($notices[$title])?[$notices[$title]]:[]),...$rows]);
+            $held=$title==='Registration'?self::heldOrderRow($d):null;
+            $sections[]=Section::make($title,[...(isset($notices[$title])?[$notices[$title]]:[]),...($held?[$held]:[]),...$rows]);
         }
         $records=[$this->recordFamilies($d,$facts,$edits,$notices['Registrar records']??null)];
         $monitoring=Section::make('Monitoring',[...(isset($notices['Monitoring'])?[$notices['Monitoring']]:[]),

@@ -10,6 +10,8 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account,Operation};
 final class FundsWaits
 {
     public const RENEWAL_CLOSED = 'renewal_funds_expired';
+    /** Days a new order waits for registrar funds before its money returns as account credit. */
+    public const WAIT_DAYS = 3;
     public static function closedRenewal(Operation $op,\Paymenter\Extensions\Servers\Domains\Models\Domain $d): bool
     {
         return $op->action==='renew'&&$op->safe_code===self::RENEWAL_CLOSED&&OperationTerminalProof::safe($op,$d);
@@ -25,7 +27,7 @@ final class FundsWaits
         // Legacy holds have no first-hold timestamp. The attempt start is a conservative upper bound.
         $at=isset($op->policy['funds_wait_at'])?new \DateTimeImmutable($op->policy['funds_wait_at']):
             (in_array($op->safe_code,BalanceRetries::BALANCE_CODES,true)?($retry?new \DateTimeImmutable($retry->record['held_at']):($op->started_at??$op->updated_at)):null);
-        return $at!==null&&$at<=$now->modify('-3 days');
+        return $at!==null&&$at<=$now->modify('-'.self::WAIT_DAYS.' days');
     }
     /** Same unsent closure for a collection deadline and a cancelled receipt already in flight. */
     public static function closeRenewal(Operation $op,array $l,\DateTimeImmutable $now,?array $receipts=null): void

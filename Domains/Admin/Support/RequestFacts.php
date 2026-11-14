@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\{RequestStatus,State};
-use Paymenter\Extensions\Servers\Domains\Services\{BalanceRetries, ComplimentaryCosts, ContactProfileHold, EnomTestManagement, EnomTestRegistration, ManagementEvidence, ManagementProgress, OperationClaims, RegistrarCheck, RegistrationDns, RenewalCycles, RenewalReplacements, StaffOperationWrites, UnpaidAcquisitionProof, WriteHeld};
+use Paymenter\Extensions\Servers\Domains\Services\{BalanceRetries, ComplimentaryCosts, ContactProfileHold, ContactStepRetries, EnomTestManagement, EnomTestRegistration, ManagementEvidence, ManagementProgress, OperationClaims, RegistrarCheck, RegistrationDns, RenewalCycles, RenewalReplacements, StaffOperationWrites, UnpaidAcquisitionProof, WriteHeld};
 /** Request page facts and its one notice. A null fact value is Missing and its "_sub" key names the cause. */
 final class RequestFacts
 {
@@ -126,7 +126,7 @@ final class RequestFacts
                 // A request never sent has no cost to miss. A renewal's saved cap is a spending limit, not a cost.
                 $unsent=$actual===null&&($a===[]&&$op->started_at===null&&$op->provider_order_id===null&&!array_key_exists('dispatch_attempted_at',$p)
                     &&in_array($op->state,['awaiting_payment','awaiting_code','queued','held'],true)
-                    ||$op->state==='held'&&$op->safe_code===ContactProfileHold::CODE&&ContactProfileHold::unsent($op));
+                    ||($op->state==='queued'||$op->state==='held'&&in_array($op->safe_code,ContactProfileHold::HOLDS,true))&&ContactProfileHold::unsent($op));
                 if ($unsent) {
                     $actual='Not charged yet';
                     if ($op->action==='renew'&&($m=$usd($p['renewal']['cost_cap']['amount']??null,$p['renewal']['cost_cap']['currency']??null))) { $quote='Spending limit '.$m; }
@@ -262,6 +262,22 @@ final class RequestFacts
         if (ManagementEvidence::recoverable($op)) {
             return self::ordersOn($op,$read(),$accounts)?'Not sent. It will retry automatically.':'Not sent. '.self::ORDERS_OFF;
         }
+        // Nothing reached the registrar at the contact step: while Orders are off that is the only wait, whatever cause was saved.
+        if ($op->state==='held'&&in_array($op->safe_code,ContactProfileHold::HOLDS,true)&&($held=$read())!==null) {
+            $on=self::ordersOn($op,$held,$accounts);
+            if (ContactStepRetries::candidate($op)) {
+                $now=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now();
+                try { StaffOperationWrites::requireRelease($op,StaffOperationWrites::releaseFacts($op),$now); }
+                catch (\Throwable) {
+                    if($op->action==='transfer'&&(!($deadline=\Paymenter\Extensions\Servers\Domains\Services\TransferInputs::deadline($op,$now))||$now>=$deadline)){
+                        return 'Not sent. This hold can’t be released. Cancel and refund it.';
+                    }
+                    return null;
+                }
+            }
+            if (ContactStepRetries::waitsForOrders($op,$on)) { return self::ordersPaused($op); }
+            if ($on&&$op->safe_code==='processing'&&ContactStepRetries::candidate($op)) { return 'Not sent. It will retry automatically.'; }
+        }
         if (BalanceRetries::pending($op)) {
             $reason=OperationClaims::balanceAdmissionReason($op);
             if(self::heldByOrders($reason,$op,$read(),$accounts)){return 'Not sent. '.self::ORDERS_OFF;}
@@ -292,6 +308,12 @@ final class RequestFacts
         } catch (\Throwable) { return $stopped; }
         if (!$on) { return 'Ready to send. '.self::ORDERS_OFF; }
         return $op->state==='held' ? 'Ready to send. Release the hold.' : null;
+    }
+    /** A held order that goes out by itself once Orders are on, named by its registrar account. */
+    private static function ordersPaused(Operation $op): string
+    {
+        $name=trim((string)\App\Models\Server::whereKey($op->server_id)->value('name'));
+        return 'Not sent: Orders paused for '.($name!==''?$name:'this registrar account').'. This order goes out when Orders are turned on.';
     }
     /** When a timed retry runs next, in the viewer's time zone like every other time here. Nothing once it is due: the next tick takes it. */
     private static function nextTry(Operation $op): ?int
@@ -407,7 +429,8 @@ final class RequestFacts
             if ($approval) { $next=(OperationActions::relevant('release',$op)?'Release hold only retries the price check. ':'').'The '.($account?self::queueWords($op,$account):'request').' holds again while the registrar cost is above the usual. It goes ahead at this cost once the registrar cost is approved on the domain page.'; }
             if($recovery['blocked']!==null&&!BalanceRetries::pending($op)){$body=$recovery['blocked'];}
             elseif ($next!==null) {
-                $automatic=$op->safe_code==='processing'&&$account?->processing_enabled&&OperationClaims::ordersOffReturns($op);
+                // The title already says it retries by itself (readyMessage), so no staff step follows the optional release.
+                $automatic=$op->safe_code==='processing'&&$account?->processing_enabled&&(OperationClaims::ordersOffReturns($op)||ContactStepRetries::candidate($op));
                 $body=$body===null?$next.($automatic?'':' '.$recovery['body']):$next.' '.$body;
             }
             elseif(!BalanceRetries::pending($op)){$body??=$recovery['body'];}

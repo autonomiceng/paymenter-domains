@@ -24,7 +24,7 @@ foreach([false,true,false] as $enabled){
         $ports->readOffers($query,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
     $rows=$store->endings();same($enabled,$rows[0]['transfer']!==null,'Displayed transfer offer follows publication');
     $pricing=storefrontDom(view('domains::pricing',['rows'=>$rows,'guest'=>false,'testEnvironment'=>false])->render());
-    same($enabled?$rows[0]['transfer']:'Transfers off',trim($pricing->query('//td[@data-label="Transfer"]')->item(0)->textContent),'Price list is the offer source');
+    same($enabled?[$rows[0]['transfer'],0]:[null,1],[$enabled?trim($pricing->query('//td[@data-label="Transfer"]')->item(0)->textContent):null,$pricing->query('//td[@data-label="Transfer"]//*[@data-not-for-sale]')->length],'Price list is the offer source');
     foreach(['list'=>$controller->index($request)->render(),'search'=>$search->search($request)->render()] as $page=>$html){
         same($enabled?1:0,storefrontDom($html)->query('//a[@href="'.route('domains.domains.transfer').'"]')->length,'Transfer entry follows price list: '.$page);
     }

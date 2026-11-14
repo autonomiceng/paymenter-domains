@@ -50,7 +50,9 @@ final class DomainPage
         $notice = match (true) {
             // A nameserver step restores service, so it stays with its action and the renewal check is said beside it.
             $renewalCheck!==null && $nameservers!==null => [...$nameservers, 'text' => $nameservers['text'].' '.($renewalCheck['brief'] ?? $renewalCheck['body'])],
-            $renewalCheck!==null => ['tone'=>'info','text'=>$renewalCheck['body'],'action'=>$contact],
+            // The rows lose their Edit while changes wait, so the one notice says why (DESIGN.md P-ACT-8).
+            // Confirming the renewal does not reopen changes the account switched Off or an earlier request holds, so those cases say what does.
+            $renewalCheck!==null => ['tone'=>'info','text'=>$renewalCheck['body'].(!$d->changesUnavailable ? '' : ($d->changesRefused === DomainManagement::SWITCH_OFF ? ' '.self::SWITCH_OFF_AFTER : (is_int($d->changesRefused) ? ' '.self::EARLIER_AFTER : ' '.self::CHANGES_AFTER))),'action'=>$contact,'asks'=>$renewalCheck['asks']??false],
             $d->syncPaused => self::ours('Sync paused: the demo registrar is off. Nameservers show when it resumes.', $contact),
             $d->setupPending => self::ours('We’re confirming this domain. Changes and renewals start after that. If it expires soon, let us know.', $contact),
             $order === 'unpaid' => ['tone' => 'warn', 'text' => 'This order isn’t paid yet. Pay the invoice to start the '.$word.'.', 'action' => ['label' => 'Pay invoice', 'url' => $d->order['invoice'], 'button' => true]],
@@ -65,7 +67,8 @@ final class DomainPage
             (bool) $setup => ['tone' => 'warn', 'text' => 'Finish setup to start registration.', 'action' => ['label' => 'Finish setup', 'url' => $setup]],
             isset($d->actions['code']) && ($d->transfer['open'] ?? false) && !($d->transfer['received'] ?? false) => ['tone' => 'warn', 'text' => 'Enter the auth code from your current registrar.', 'action' => ['label' => 'Enter auth code', 'url' => $d->actions['code']]],
             ($d->transfer['notice']['tone'] ?? null) === 'warning' => ['tone' => 'warn', 'text' => $d->transfer['notice']['title'].' '.$d->transfer['notice']['body'], 'action' => $contact],
-            $order === 'paid' && isset($d->order['check']) => ['tone' => $d->order['check']['tone'] ?? 'warn', 'text' => $d->order['check']['title'].'. '.$d->order['check']['body'], 'action' => $contact],
+            // A pending check's title ("Registration pending") repeats the head's state, so the notice is its sentence alone.
+            $order === 'paid' && isset($d->order['check']) => ['tone' => $d->order['check']['tone'] ?? 'warn', 'text' => (str_ends_with($d->order['check']['title'], ' pending') ? '' : $d->order['check']['title'].'. ').$d->order['check']['body'], 'action' => $contact],
             $order === 'paid' && self::orderHeld($d->order) => self::ours('This '.$word.' is under review. We’ll check it and update you.', $contact),
             // A complimentary order has nothing paid, so it says what it is, as its receipt does.
             $order === 'paid' && in_array($d->order['next'] ?? null, [null, 'setup_optional'], true) => self::ours((($d->order['complimentary'] ?? false) ? 'Complimentary. ' : 'Paid. ').self::finishing($word).' '.self::NOTHING_TO_DO, $contact),
@@ -145,6 +148,10 @@ final class DomainPage
     public const NOT_READ_NOTE = 'Nameservers, contacts and DNS records show here once we’ve read them from the registrar.';
     /** A paid cycle has no next invoice yet, so its row names the invoice it shows. */
     public const PAID_LABEL = 'Renewal invoice';
+    /** Beside a renewal check while other changes wait on it. */
+    public const CHANGES_AFTER = 'Other changes open once it’s confirmed.';
+    public const EARLIER_AFTER = 'Other changes open once we finish checking an earlier request.';
+    public const SWITCH_OFF_AFTER = 'DNS, nameservers and contacts are Off. Contact us to turn them on.';
     public const INVOICE = ['paid' => 'Paid', 'review' => 'Under review', 'cancelled' => 'Invoice cancelled', 'closed' => 'Renewal did not finish'];
     /** What happens to the money once the registrar rejected the order, by OwnedDomain::$refundTo. */
     public const REFUND = ['original' => 'Any refund goes back to your original payment method.', 'credit' => 'Any refund goes to your account credit.',

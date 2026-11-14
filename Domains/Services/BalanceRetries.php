@@ -66,6 +66,8 @@ final class BalanceRetries
     public static function rateHeld(Operation $op,\DateTimeImmutable $now): void
     {
         if($op->safe_code!=='write_rate_limited'||!self::supported($op)||!isset($op->attempt['claim_key'])||BalanceRetry::from($op)!==null){return;}
+        // A contact step that sent nothing has no balance question; its bounded retries own it (ContactStepRetries).
+        if(ContactProfileHold::unsent($op,retry:true)){return;}
         $op->update(['policy'=>[...$op->policy,'balance_retry'=>BalanceRetry::held($op,$now,null)->admitted($op,$now)->record]]);
         if(self::candidate($op)){self::held($op,$now);}
     }
