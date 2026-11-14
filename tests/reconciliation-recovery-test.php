@@ -153,4 +153,43 @@ $reconcile->run($lag->id); $observation->fault = '';
 same(true, in_array(\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Orders, $observation->calls, true), 'The read reaches the order history');
 same(1, $lag->fresh()->policy['reconciliation']['polls'] ?? 0, 'A read covered by history during the read counts once');
 DB::transaction(fn () => HistoryAcceptances::revokeLocked($binding, \Paymenter\Extensions\Servers\Domains\Data\Action::Register));
+// A registration stuck before 30-day TEST history: five used reads, the saved 24-hour contract, and 49 orders on its receipt day.
+[$dense, $binding] = $prepare(placeholderComFixtureName('history-dense-placeholder.com'), 'null');
+HistoryAcceptances::save(new HistoryAcceptance($binding, 'America/Los_Angeles', 60, 86400, 'enom_registration_v1'));
+$dense->fresh()->update(['policy' => [...$dense->fresh()->policy, 'reconciliation' => [...($dense->fresh()->policy['reconciliation'] ?? []), 'polls' => 5]]]);
+$day = new class($wire, $observation) implements \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Transport {
+    public array $forms = []; public bool $placed = false;
+    public function __construct(private $domain, private $state) {}
+    public function send($env, \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand $command, array $parameters, string $uid, string $token, int $timeoutMs): string {
+        $history = [\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Orders, \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Order];
+        if (!in_array($command, $history, true) || ($parameters['OrderID'] ?? null) === '7049') { if (in_array($command, $history, true)) { $this->forms[] = $command; } return $this->domain->send($env, $command, $parameters, $uid, $token, $timeoutMs); }
+        $this->forms[] = $command; $at = fn (int $i) => (new DateTimeImmutable('2026-10-18 06:30:00', new DateTimeZone('America/Denver')))->modify('-'.(7 * $i).' minutes')->format('n/j/Y g:i:s A');
+        if ($command === \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Orders) {
+            $rows = array_map(fn ($i) => ['id' => (string)(7000 + $i), 'date' => $at($i)], range(0, 48));
+            if ($this->placed) { array_splice($rows, 4, 0, [['id' => '7049', 'date' => $this->state->billDate]]); }
+            return enomHistoryEnvelope(enomHistoryPage(array_slice($rows, $parameters['Start'] - 1, 25), $parameters['Start'], count($rows)));
+        }
+        $i = (int)$parameters['OrderID'] - 7000;
+        return str_replace('<ProductType>Renew</ProductType>', '<ProductType>Register</ProductType>', enomHistoryDetail($parameters['OrderID'], 'other-'.$i.'.example.com', $at($i), '10/18/2027 6:00:00 AM', '8.95', 1, $at($i)));
+    }
+};
+$denseRegistry = new \Paymenter\Extensions\Servers\Domains\Services\RegistrarRegistry;
+$denseRegistry->register('enom', ['token'], $verify, fn ($b, $c) => new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver(new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Client($b, 'account-enom', $c['token'], $day), ['com']));
+$denseReconcile = new \Paymenter\Extensions\Servers\Domains\Services\OperationReconciliation($claims, new \Paymenter\Extensions\Servers\Domains\Services\AccountBindings($denseRegistry), $clock);
+$observation->reference = '7049'; $before = $writer->calls;
+$clock->instant = $clock->now()->modify('+3 days'); config(['domains.enom_identity.environment' => 'test']);
+\Paymenter\Extensions\Servers\Domains\Registrars\Enom\TestOrderHistory::upgrade(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $binding->serverId)->sole());
+same(2592000, HistoryAcceptances::load($binding)->retentionSeconds, 'The saved TEST registration contract is raised to 30 days');
+$turns = [];
+foreach ([1, 2, 3] as $n) { $day->forms = []; \Illuminate\Support\Facades\Cache::flush(); $state = $denseReconcile->run($dense->id)->state; $turns[] = [$state, count($day->forms), $dense->fresh()->policy['reconciliation']['polls']]; }
+same([['uncertain', 19, 0], ['uncertain', 19, 0], ['uncertain', 17, 1]], $turns, 'The new contract resumes the exhausted reads once; after six domain reads, two turns of 17 orders continue uncounted, and the full no-match scan counts once');
+$scan = $dense->fresh()->policy['history_scan']['state'];
+same([49, 49, true, 2, 0], [$scan['in_window'], $scan['resolved'], $scan['complete'], $scan['refusal_totals']['read_budget'], count(array_filter($scan['orders'], fn ($o) => str_starts_with($o, 'c:')))], 'The saved scan holds the counts and the sanitized refusal totals');
+same(5, $dense->fresh()->policy['history_resumption']['prior_polls'], 'The resumption records the exhausted read count');
+same([null, $before], [$dense->fresh()->funding['refund'] ?? null, $writer->calls], 'No order found is not a refund and nothing is sent again');
+$day->placed = true; $day->forms = []; \Illuminate\Support\Facades\Cache::flush();
+same('succeeded', $denseReconcile->run($dense->id)->state, 'The order listed later completes the registration');
+same([3, 'accepted_history', $before], [count($day->forms), $dense->fresh()->attempt['reconciliation']['source'], $writer->calls], 'Both pages and only the new order are read; no Purchase is sent');
+config(['domains.enom_identity.environment' => null]); $observation->reference = '9001';
+DB::transaction(fn () => HistoryAcceptances::revokeLocked($binding, \Paymenter\Extensions\Servers\Domains\Data\Action::Register));
 echo "Double completion-persistence failure recovers only unique original provider charge without replay\n"; $nativeSuccessful = true;
