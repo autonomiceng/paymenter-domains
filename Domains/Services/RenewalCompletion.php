@@ -45,11 +45,11 @@ final readonly class RenewalCompletion
             } catch (\Throwable) { return null; }
         });
         if (!$capture) { return Operation::findOrFail($id); }
-        [$attempt, $stamp,$financialRead] = $capture; $proof = null; $covered = false; $late = false; $autoRenewConfirmed = false; $autoRenewUnconfirmed = $attempt->binding->registrarKey === 'namesilo'; $scan = null; $absence = null;
+        [$attempt, $stamp,$financialRead] = $capture; $proof = null; $covered = false; $late = false; $autoRenewConfirmed = false; $autoRenewUnconfirmed = $attempt->binding->registrarKey === 'namesilo'; $scan = null; $absence = null; $sample = null;
         try {
             $ctx = $check->context = new RequestContext($attempt->binding, RequestOrigin::Background, $deadline, new RequestBudget(25), $this->clock, Runtime::limiter());
             $result = $this->bindings->reader($attempt->binding->serverId)->reconcile($attempt, $ctx); $result->requireAttempt($attempt);
-            if ($sample = $result->result()->evidence()->billZoneSample) { EnomBillZones::record($attempt->binding, $sample); }
+            $sample = $result->result()->evidence()->billZoneSample;
             // A read that returned after the deadline is used up like a stalled read; its facts are too late to act on.
             $late = $this->clock->now() >= $ctx->deadline && $ctx->completedReads() > 0;
             if ($this->clock->now() < $ctx->deadline) {
@@ -68,6 +68,8 @@ final readonly class RenewalCompletion
         } catch (ReadDeferred) { $check->deferred = 'read_limit';
         } catch (EnomTestCallLimit $error) { $check->deferred = $error->reason === 'send_guard' ? 'send_guard' : 'send_limit';
         } catch (\Throwable) { $late = isset($ctx) && $this->clock->now() >= $ctx->deadline && $ctx->completedReads() > 0; }
+        // A bill zone sample is saved only after this turn's locked step: server settings are part of the holding stamp it compares.
+        try {
         if (!$financialRead && !$covered && !$autoRenewUnconfirmed && !$autoRenewConfirmed && !$scan && !$late) { return Operation::findOrFail($id); }
         return DB::transaction(function () use ($seed, $id, $stamp, $proof, $attempt, $covered, $autoRenewUnconfirmed, $autoRenewConfirmed,$financialRead,$check,$scan,$late,$absence) {
             $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id); $d = $l['domain'];
@@ -115,6 +117,7 @@ final readonly class RenewalCompletion
             ComplimentaryInvoices::complete($op);
             return $op;
         });
+        } finally { if ($sample) { EnomBillZones::record($attempt->binding, $sample); } }
     }
     /** Explicit bounded read-only recovery; original paid uncertainty and attempt remain unchanged. */
     public function resume(int $id, StaffOperationReview $review): Operation

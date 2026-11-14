@@ -8,7 +8,8 @@ use Paymenter\Extensions\Servers\Domains\Data\AccountBinding;
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 /** The measured Enom bill date clock of one account, in an encrypted server setting beside its history contract. Each sample is
  * the zone that put the BillDate of a normal reply's own order inside its send window. Measured only while every sample agrees;
- * one conflicting sample leaves the account unmeasured. Stores zone counts and hashed order IDs, never replies. */
+ * one conflicting sample leaves the account unmeasured. Stores the zones seen (count 1 each) and the hashed order ID that first
+ * showed each, never replies. */
 final class EnomBillZones
 {
     public const KEY = 'domains_enom_bill_zone', ZONES = ['America/Los_Angeles', 'America/Denver'];
@@ -19,7 +20,9 @@ final class EnomBillZones
         $zones = array_keys(array_filter($state['counts'] ?? []));
         return count($zones) === 1 ? $zones[0] : null;
     }
-    /** Called outside transactions after a read. A sample for an order already counted, or a malformed setting, changes nothing. */
+    /** Called outside transactions after a read. Only the first sample of each zone is written, so the setting changes at most
+     * twice per account: it is part of every holding stamp on the server. A sample for a zone already seen, or a malformed
+     * setting, changes nothing. */
     public static function record(AccountBinding $binding, array $sample): void
     {
         try {
@@ -31,7 +34,7 @@ final class EnomBillZones
                 $setting = $server->settings()->where('key', self::KEY)->lockForUpdate()->first();
                 $state = $setting ? self::state($binding, $setting) : ['counts'=>[], 'orders'=>[]];
                 $order = hash('sha256', $binding->fingerprint.':'.$sample['order']);
-                if ($state === null || in_array($order, $state['orders'], true)) { return; }
+                if ($state === null || in_array($order, $state['orders'], true) || ($state['counts'][$sample['zone']] ?? 0) > 0) { return; }
                 $state['counts'][$sample['zone']] = ($state['counts'][$sample['zone']] ?? 0) + 1;
                 $state['orders'] = array_slice([...$state['orders'], $order], -self::ORDERS);
                 $setting ??= $server->settings()->make(['key' => self::KEY]);
