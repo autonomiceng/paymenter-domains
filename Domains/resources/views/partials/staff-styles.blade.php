@@ -8,6 +8,9 @@
 .domains .domains-muted{color:var(--e-muted,var(--gray-400))}
 /* Domain price action: a plain item in the customer header's action row; a long last-change reason in its confirm wraps. */
 .domains-comp{display:contents}
+/* With it, the header row wraps whole: on a phone the native buttons move under it instead of stacking beside it. */
+.fi-header-actions-ctn:has(>.domains-comp){flex-wrap:wrap}
+.fi-header-actions-ctn:has(>.domains-comp)>.fi-ac{flex:0 1 auto}
 .domains-comp-last{overflow-wrap:anywhere}
 .domains-missing-mark{display:inline-block;width:14px;height:16px;flex:none;vertical-align:middle;color:inherit}
 .domains-missing{display:inline-flex;align-items:center;gap:.375rem;color:var(--panel-err,var(--danger-600));font-weight:600}
