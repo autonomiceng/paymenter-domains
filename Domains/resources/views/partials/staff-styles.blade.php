@@ -6,13 +6,9 @@
 .domains-title{display:inline-flex;flex-wrap:wrap;align-items:center;gap:.5rem;min-width:0}
 /* Not read and other calm words: the panel's muted gray, the same tone as a gray fact value. */
 .domains .domains-muted{color:var(--e-muted,var(--gray-400))}
-/* Domain price line under the customer title: the state and its button, then the last change on its own row.
-   The last change wraps to at most 2 lines and ends in "..."; the audit log has all of it. */
-.domains-comp{display:grid;gap:.25rem;margin-top:.375rem;min-width:0;font-size:.875rem;line-height:1.25rem}
-.domains-comp-line{display:flex;flex-wrap:wrap;align-items:center;gap:.375rem .75rem;min-width:0}
-.domains-comp-state{opacity:.75}
-.domains-comp-last{max-width:72ch;margin:0;opacity:.75;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden}
-@media (max-width:39.99rem){.domains-comp-last{min-height:2.5rem}}
+/* Domain price action: a plain item in the customer header's action row; a long last-change reason in its confirm wraps. */
+.domains-comp{display:contents}
+.domains-comp-last{overflow-wrap:anywhere}
 .domains-missing-mark{display:inline-block;width:14px;height:16px;flex:none;vertical-align:middle;color:inherit}
 .domains-missing{display:inline-flex;align-items:center;gap:.375rem;color:var(--panel-err,var(--danger-600));font-weight:600}
 .domains-missing--calm{color:var(--panel-fg-3,var(--gray-500));font-weight:500}

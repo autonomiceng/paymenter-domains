@@ -4,8 +4,10 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use App\Models\User;
 use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Actions\Concerns\InteractsWithActions;
 use Filament\Actions\Contracts\HasActions;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Concerns\InteractsWithSchemas;
@@ -22,58 +24,77 @@ use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels;
 use Paymenter\Extensions\Servers\Domains\Services\{ComplimentaryAccountChanged,ComplimentaryAccounts,HookRegistration};
-/** The domain price line under the native customer editor's title. Public heading hook only; all writes stay extension-owned. */
+/**
+ * Make domains complimentary / Make domain prices standard, in the native customer editor's header actions, through the
+ * public header actions hook only; all writes stay extension-owned. A page that lists actions() in its own header (for
+ * example inside a "..." menu) hosts them itself, and the hook then adds nothing.
+ */
 final class ComplimentaryAccountSetting extends Component implements HasActions,HasSchemas
 {
     use InteractsWithActions,InteractsWithSchemas;
     public const NAME='domains-complimentary-account';
     #[Locked] public int $customer;
-    /** The setting row the open confirm showed, so its submit only applies over what staff saw. */
-    #[Locked] public int $seen=0;
     public static function boot():void
     {
         if(!HookRegistration::claim(FilamentView::getFacadeRoot(),self::class)){return;}
         Livewire::component(self::NAME,self::class);
-        $scope=\App\Admin\Resources\UserResource\Pages\EditUser::class;
-        FilamentView::registerRenderHook(PanelsRenderHook::PAGE_HEADER_HEADING_AFTER,static function()use($scope):string {
+        // Scoped to the resource, so a page that replaces the native editor with a subclass still gets the actions.
+        FilamentView::registerRenderHook(PanelsRenderHook::PAGE_HEADER_ACTIONS_BEFORE,static function():string {
             $page=Livewire::current();
-            if(!$page instanceof $scope||!self::allowed()){return '';}
+            if(!$page instanceof \App\Admin\Resources\UserResource\Pages\EditUser||!self::allowed()||self::hostedBy($page)){return '';}
             $id=(int)$page->getRecord()->id;
             return Livewire::mount(self::NAME,['customer'=>$id],self::NAME.'-'.$id);
-        },scopes:[$scope]);
+        },scopes:[\App\Admin\Resources\UserResource::class]);
     }
     public static function allowed():bool {return Auth::user() instanceof User&&(bool)User::with('role')->find(Auth::id())?->hasPermission('admin.domains.fund');}
     /** Permission first, then the customer: staff without it learn nothing about who exists. */
-    private function ready():bool {return self::allowed()&&User::whereKey($this->customer)->exists();}
-    public function render():View
+    private static function ready(int $customer):bool {return self::allowed()&&User::whereKey($customer)->exists();}
+    /** Whether the page already lists these actions in its own header, directly or in a menu. */
+    private static function hostedBy(object $page):bool
     {
-        $allowed=$this->ready();$setting=$allowed?ComplimentaryAccounts::current($this->customer):null;
-        return view('domains::admin.complimentary-account',['allowed'=>$allowed,'on'=>(bool)($setting['enabled']??false),'last'=>$setting?self::lastChange($setting):null]);
+        if(!method_exists($page,'getCachedHeaderActions')){return false;}
+        foreach($page->getCachedHeaderActions() as $a){foreach($a instanceof ActionGroup?$a->getFlatActions():[$a] as $one){if(in_array($one->getName(),['turnOn','turnOff'],true)){return true;}}}
+        return false;
     }
-    public function turnOnAction():Action
+    public function render():View {return view('domains::admin.complimentary-account',['allowed'=>self::ready($this->customer)]);}
+    public function turnOnAction():Action {return self::actions(fn()=>$this->customer)[0];}
+    public function turnOffAction():Action {return self::actions(fn()=>$this->customer)[1];}
+    /**
+     * The two actions, one visible at a time, for any host: this component, or a customer page that lists them in its header.
+     * @param \Closure():int $customer the customer being edited
+     * @return array{Action,Action}
+     */
+    public static function actions(\Closure $customer):array
     {
-        return $this->change('turnOn',true)->label('Make complimentary')->modalHeading('Make domains complimentary?')
-            ->modalDescription(function():string {$name=User::find($this->customer)?->name;
-                return self::payer().' for new registrations, transfers and renewals'.($name?' for '.$name:'').'. Hosting is billed as usual.';})
-            ->modalSubmitActionLabel('Make complimentary');
+        return [
+            self::change('turnOn',true,$customer)->label('Make domains complimentary')->modalHeading('Make domains complimentary?')
+                ->modalDescription(function()use($customer):HtmlString {$name=User::find($customer())?->name;
+                    return self::withLast(self::payer().' for new registrations, transfers and renewals'.($name?' for '.$name:'').'. Hosting is billed as usual.',$customer());})
+                ->modalSubmitActionLabel('Make domains complimentary'),
+            self::change('turnOff',false,$customer)->label('Make domain prices standard')->modalHeading('Make domain prices standard?')
+                ->modalDescription(fn():HtmlString=>self::withLast('Orders and renewals from before now stay covered. New registrations, transfers and renewals use standard prices.',$customer()))
+                ->modalSubmitActionLabel('Make domain prices standard'),
+        ];
     }
-    public function turnOffAction():Action
+    private static function change(string $name,bool $enabled,\Closure $customer):Action
     {
-        return $this->change('turnOff',false)->label('Turn off')->modalHeading('Turn off complimentary domains?')
-            ->modalDescription('Orders and renewals from before now stay covered. New registrations, transfers and renewals use standard prices.')
-            ->modalSubmitActionLabel('Turn off');
-    }
-    private function change(string $name,bool $enabled):Action
-    {
-        return Action::make($name)->color('gray')->outlined()->size('sm')->modalWidth('md')->authorize(fn()=>self::allowed())
-            ->visible(fn()=>$this->ready()&&(bool)(ComplimentaryAccounts::current($this->customer)['enabled']??false)!==$enabled)
-            ->schema([TextInput::make('reason')->label('Reason')->required()->maxLength(500)->helperText(fn()=>ComplimentaryAccounts::nativeAuditAvailable()?'Shown on this page and in the audit log.':'Native audit logging is off. The reason is retained in Domains history on this page.')])
-            ->mountUsing(function(?Schema $schema):void {$this->seen=(int)(ComplimentaryAccounts::current($this->customer)['id']??0);$schema?->fill();})
-            ->action(function(array $data)use($enabled):void {
-                try{ComplimentaryAccounts::set($this->customer,Auth::user(),$enabled,$data['reason'],app(Clock::class),$this->seen);if(!ComplimentaryAccounts::nativeAuditAvailable()){Notification::make()->warning()->title('Domain pricing saved')->body('Native audit logging is off. The change and reason are retained in Domains history on this page.')->send();}}
+        return Action::make($name)->color('gray')->modalWidth('md')->authorize(fn()=>self::allowed())
+            ->visible(fn()=>self::ready($customer())&&(bool)(ComplimentaryAccounts::current($customer())['enabled']??false)!==$enabled)
+            ->schema([TextInput::make('reason')->label('Reason')->required()->maxLength(500)->helperText(fn()=>ComplimentaryAccounts::nativeAuditAvailable()?'Saved in the audit log.':'Native audit logging is off. The reason is kept in Domains history.'),
+                // The setting row this confirm showed, so its submit only applies over what staff saw.
+                Hidden::make('seen')])
+            ->mountUsing(function(?Schema $schema)use($customer):void {$schema?->fill(['seen'=>(int)(ComplimentaryAccounts::current($customer())['id']??0)]);})
+            ->action(function(array $data)use($enabled,$customer):void {
+                try{ComplimentaryAccounts::set($customer(),Auth::user(),$enabled,$data['reason'],app(Clock::class),(int)($data['seen']??0));if(!ComplimentaryAccounts::nativeAuditAvailable()){Notification::make()->warning()->title('Domain pricing saved')->body('Native audit logging is off. The change and reason are retained in Domains history.')->send();}}
                 catch(ComplimentaryAccountChanged $e){Notification::make()->danger()->title($e->getMessage())->body('Reload the customer and check the current setting.')->send();}
                 catch(\DomainException $e){Notification::make()->danger()->title($e->getMessage())->send();}
             });
+    }
+    /** The confirm's sentence, then the last change on its own line when there is one. */
+    private static function withLast(string $text,int $customer):HtmlString
+    {
+        $setting=ComplimentaryAccounts::current($customer);
+        return new HtmlString(e($text).($setting?'<br><span class="domains-comp-last">'.self::lastChange($setting)->toHtml().'</span>':''));
     }
     /** "Example Hosting pays", from the store's company name in settings; "We pay" when the store has none. */
     private static function payer():string
