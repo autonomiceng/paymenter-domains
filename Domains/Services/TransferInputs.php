@@ -23,6 +23,12 @@ final class TransferInputs
         try { $at = new \DateTimeImmutable($v); } catch (\Throwable) { return null; }
         return $at->format(DATE_ATOM) === $v && $at <= $now && $at >= $op->created_at ? $at->modify('+30 days') : null;
     }
+    /** The transfer can still go to the registrar: its payment date is verified and its 30 day deadline has not passed. */
+    public static function beforeDeadline(Operation $op, \DateTimeImmutable $now): bool
+    {
+        $deadline = self::deadline($op, $now);
+        return $deadline !== null && $now < $deadline;
+    }
     /** A staff hold freezes a saved code, but a missing one can still come in: release needs it. */
     public static function holdTakesCode(Operation $op): bool
     {

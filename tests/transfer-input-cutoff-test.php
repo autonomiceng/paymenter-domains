@@ -11,8 +11,11 @@ use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 $op=$new(placeholderComFixtureName('transfer-saved-code-placeholder.com'));$inputs->paymentAccepted($op->id);$inputs->submitCode($post($user,'replacement'),$op->id);
 $timeout=$new(placeholderComFixtureName('transfer-timeout-placeholder.com')); $inputs->paymentAccepted($timeout->id);
 $clock->instant=$now->modify('+30 days -1 second'); same(null,$inputs->expireMissingCode($timeout->id),'No early timeout');
+// The same deadline decides whether an unsent transfer may still go to the registrar.
+expect(TransferInputs::beforeDeadline($op->fresh(),$clock->now()),'A paid transfer can still be sent before its deadline');
 $inputs->submitCode($post($user,'last-second'),$op->id);
 $clock->instant=$now->modify('+30 days');
+expect(!TransferInputs::beforeDeadline($op->fresh(),$clock->now()),'A transfer at its deadline is not sent');
 commerceReject(fn()=>$inputs->submitCode($post($user,'too-late'),$timeout->id));
 commerceReject(fn()=>$inputs->submitCode($post($user,'too-late'),$op->id));
 same(null,$inputs->expireMissingCode($op->id),'Saved code prevents automatic credit');
