@@ -210,6 +210,6 @@ final class RegistrarCheck
     {
         $kind = match ($op->action) { 'transfer' => 'transfer', 'renew' => 'renewal', default => 'registration' };
         $said = 'We’re confirming this '.$kind.' with the registrar. It’s taking longer than usual. Contact support and we’ll check it.';
-        return ['title'=>ucfirst($kind).' pending','body'=>$said,'brief'=>$said,'tone'=>'info'];
+        return ['title'=>ucfirst($kind).' pending','body'=>$said,'brief'=>$said,'tone'=>'info','asks'=>true];
     }
 }

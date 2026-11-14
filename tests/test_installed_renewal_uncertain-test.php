@@ -45,6 +45,10 @@ expect(str_contains($notice,'renewal')&&preg_match('/(?<!\d)'.$deadline.'(?!\d)/
 expect(!str_contains($html,'Ask Enom')&&!str_contains($html,'You can record'),'Owner has no staff-only answer instructions');
 // At the existing staff boundary, only a real final answer can make this no-order attempt returnable.
 $clock->instant = $clock->now()->modify('+25 hours');
+$late=RegistrarCheck::forCustomer($result->fresh());
+same(true,$late['asks']??false,'A late renewal check requires a customer support step');
+$lateDomain=$owners->present($d->fresh());
+same(true,\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::notice($lateDomain,'/tickets/create')['asks']??false,'The renewal notice retains the customer step');
 expect(EnomAnswers::eligible($op->fresh(), $clock->now()), 'Unchanged lost renewal reaches the existing audited answer path');
 echo "Uncertain paid renewal retains money and exposes the existing registrar-answer action\n";
 $nativeSuccessful = true;
