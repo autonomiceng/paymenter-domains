@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{ManagementEvidence,Observatio
 final class DsState
 {
     public const CUSTOMER='DS changes are not offered for this TLD yet. Contact support if you need DNSSEC.';
-    public const STAFF='Registry DS rules for this TLD have not been checked. Review the accepted registry DS rules before turning on changes.';
+    public const STAFF='DS record changes are not supported for this TLD yet, so DNSSEC changes stay off.';
     public static function off(Domain $d): bool
     { return $d->registrar_key==='namesilo'&&(new DsRegistryPolicy)->snapshot($d->domain)===null; }
     public static function owner(OwnedDomain $page,Domain $d,bool $eligible=false): OwnedDomain
