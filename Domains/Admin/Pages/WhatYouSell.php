@@ -332,14 +332,14 @@ class WhatYouSell extends Page implements HasTable
     private function emptyHeading(): string
     {
         if(!$this->otherNarrowing()){
-            return $this->switchedOn('for_sale')&&$this->reads()->rows(null)->exists()?'No TLDs are for sale':'No prices yet';
+            return $this->switchedOn('for_sale')&&$this->reads()->rows(null)->exists()?'No TLDs are for sale.':'No prices yet.';
         }
         if($this->forSaleHides()){return self::NOT_FOR_SALE;}
         $only=$this->show()!==null&&!$this->hasTableSearch()&&!$this->switchedOn('country')&&!$this->switchedOn('no_cost');
-        return $only&&$this->reads()->leftOutExplains($this->show())?self::LEFT_OUT:'No TLDs match';
+        return $only&&$this->reads()->leftOutExplains($this->show())?self::LEFT_OUT:'No TLDs match.';
     }
     private const LEFT_OUT='No prices to show. Some TLDs are left out.';
-    private const NOT_FOR_SALE='No TLDs for sale match';
+    private const NOT_FOR_SALE='No TLDs for sale match.';
     /** For sale alone hides what the search finds, so turning it off, with the search kept, shows those TLDs. */
     private function forSaleHides(): bool
     {return $this->switchedOn('for_sale')&&$this->show()===null&&$this->getTableRecords()->isEmpty()&&$this->warningQuery()->exists();}
@@ -356,7 +356,7 @@ class WhatYouSell extends Page implements HasTable
         }
         if($this->emptyHeading()===self::NOT_FOR_SALE){return 'Matching TLDs are not for sale. Turn off For sale to see them.';}
         if($this->otherNarrowing()){return null;}
-        if($this->emptyHeading()==='No TLDs are for sale'){return 'Clear For sale to see every TLD.';}
+        if($this->emptyHeading()==='No TLDs are for sale.'){return 'Clear filters to see every TLD.';}
         return $this->readerNeedsAttention()?'Check the registrar account to read prices.':'The first read runs by itself. To get prices now, use Sync prices.';
     }
     /** A search or filter is why rows are gone, so the way back is to clear it, not to read prices again. */
@@ -408,6 +408,8 @@ class WhatYouSell extends Page implements HasTable
                 ->visible(fn()=>$this->emptyHeading()===self::NOT_FOR_SALE)->action(fn()=>$this->removeTableFilter('for_sale')),
                 Action::make('clear')->label(fn()=>$this->show()!==null||$this->switchedOn('country')||$this->switchedOn('no_cost')||$this->switchedOn('for_sale')?'Clear filters':'Clear search')->color('gray')
                 ->visible(fn()=>$this->narrowed()&&!$this->focused())->action(function():void {$this->removeTableFilters();$this->resetTableSearch();})])
+            // The heading and its next step read as one line (DESIGN.md P-TBL-10), so the empty state's Clear filters is the one clear button.
+            ->filtersRemoveAllAction(fn(Action $action)=>$action->hidden(fn()=>$this->getTableRecords()->isEmpty()))
             // Merged, so the panel skin's table class stays and this head matches every other table.
             ->extraAttributes(['class'=>'domains-sell-table'],merge:true)
             ->filters([
