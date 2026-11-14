@@ -49,7 +49,8 @@ final class ReconciliationEvidence
             beforeExpiry: in_array($op->action, ['renew', 'transfer'], true) && ($op->base_expires_at || ($a['transfer_admission']['base_expiry'] ?? null)) ? new DateEvidence($op->action === 'transfer' ? $a['transfer_admission']['base_expiry'] : $op->base_expires_at->format('Y-m-d'), ExpiryPrecision::Date, 'acquisition_base') : null, executionFacts: $execution, historyAcceptance: $execution && $ref !== null ? null : HistoryAcceptances::load($binding, $query->action, $server), transferReference: $op->action === 'transfer' ? ($a['evidence']['transferReference'] ?? null) : null,
             expectedPrivacy: $op->action === 'transfer' && is_bool($a['transfer_admission']['privacy'] ?? null) ? $a['transfer_admission']['privacy'] : null,
             supportedOrderDate: $binding->registrarKey==='namesilo'&&($answer['outcome']??null)==='accepted'
-                ?new DateEvidence($answer['processed_at'],ExpiryPrecision::Instant,'namesilo_support_order',(new \DateTimeImmutable($answer['processed_at']))->getTimezone()->getName()):null);
+                ?new DateEvidence($answer['processed_at'],ExpiryPrecision::Instant,'namesilo_support_order',(new \DateTimeImmutable($answer['processed_at']))->getTimezone()->getName()):null,
+            historyScan: \Paymenter\Extensions\Servers\Domains\Data\HistoryScan::load($op->policy['history_scan'] ?? null));
     }
     /** Exactly one charged original order AND owned full-term expiry; neither read alone is completion. */
     public static function completion(AttemptEvidence $attempt, Evidence $facts, \DateTimeImmutable $now): ?array

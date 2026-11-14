@@ -306,10 +306,10 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
             $charge = $this->orderCharge($attempt, $attempt->executionFacts, $context);
             $candidates = $charge->evidence()->candidates;
         }
-        $complete = false;
+        $complete = false; $scan = null;
         if ($attempt->replyLost() && $attempt->historyAcceptance?->covers($attempt, $context->now())) {
             $history = new History($this->client);
-            $facts = $history->inspect($attempt, $context); $candidates = $facts->candidates; $complete = $facts->historyComplete;
+            $facts = $history->inspect($attempt, $context); $candidates = $facts->candidates; $complete = $facts->historyComplete; $scan = $facts->historyScan;
         }
         $proofFacts = new Evidence(domain: $domain, candidates: $candidates, historyComplete: $complete,
             transfer: $transfer, transferReference: $attempt->transferReference);
@@ -341,7 +341,7 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
             }
         }
         return new ReconciliationResult($attempt, new DriverResult($this->binding(), Disposition::Unknown,
-            SendState::PossiblySent, ResultReason::Unresolved, new Evidence(domain: $domain, candidates: $candidates, historyComplete: $complete, transfer: $transfer, transferReference: $attempt->transferReference)));
+            SendState::PossiblySent, ResultReason::Unresolved, new Evidence(domain: $domain, candidates: $candidates, historyComplete: $complete, transfer: $transfer, transferReference: $attempt->transferReference, historyScan: $scan)));
     }
     private static function readNameservers(ProtocolResult $reply, \DateTimeImmutable $observedAt): ?NameserverEvidence
     {
