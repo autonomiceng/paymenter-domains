@@ -121,7 +121,7 @@ foreach($files as $file){
     foreach(['/partials\.missing\'\s*,\s*\[\s*\'cause\'\s*=>\s*null\s*,\s*\'fix\'\s*=>\s*null/','/(?:Missing|\$missing)::html\(\)/','/MissingEntry::apply\([^,()]*(?:\([^()]*\)[^,()]*)*\)/'] as $bare){
         same(0,preg_match($bare,$text),'Bare Missing in '.$name);
     }
-    $checked+=preg_match_all('/partials\.missing|Missing::html\(|MissingEntry::apply\(/',$text);
+    $checked+=preg_match_all('/partials\.missing|Missing::html\(|MissingEntry::apply\(|customer\.unread/',$text);
 }
 expect($checked>10,'Sweep found the Missing sites');
 $nativeSuccessful=true;echo "Missing next step checks passed.\n";

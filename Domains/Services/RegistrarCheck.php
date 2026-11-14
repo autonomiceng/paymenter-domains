@@ -195,12 +195,21 @@ final class RegistrarCheck
         if (($check['outcome'] ?? null) === 'not_checked' && is_string($op->attempt['dispatch_attempted_at'] ?? null)) {
             $check = ['outcome'=>'awaiting_answer','answer_after'=>(new \DateTimeImmutable($op->attempt['dispatch_attempted_at']))->modify('+24 hours')->getTimestamp()];
         }
+        // Once the usual wait is over, the line never names that past day as a deadline still to come.
+        if (($check['outcome'] ?? null) === 'awaiting_answer' && self::answerReady($check)) { return self::lateForCustomer($op); }
         if (($check['outcome'] ?? null) !== 'awaiting_answer') { return self::words($check, $op->state === 'succeeded'); }
         $kind = match ($op->action) { 'transfer' => 'transfer', 'renew' => 'renewal', default => 'registration' };
         $confirming = 'We’re confirming this '.$kind.' with the registrar.';
-        $after = 'Contact support if it’s still pending after '.(new \DateTimeImmutable('@'.(int)($check['answer_after']??0)))->setTimezone(new \DateTimeZone('America/Los_Angeles'))->format('M j, g:i A').' PT.';
+        // Customers read dates only (DESIGN.md P-TYP-9): the day the wait ends, in Pacific time like the rest of the site.
+        $after = 'Contact support if it’s still pending after '.(new \DateTimeImmutable('@'.(int)($check['answer_after']??0)))->setTimezone(new \DateTimeZone('America/Los_Angeles'))->format('M j').'.';
         // brief: the same facts beside a step the customer still has, without saying there is nothing to do.
         return ['title'=>ucfirst($kind).' pending','body'=>$confirming.' You don’t need to do anything. '.$after,'brief'=>$confirming.' '.$after,'tone'=>'info'];
     }
     public static function for(Operation $op): array { return self::words(self::status($op), $op->state === 'succeeded'); }
+    private static function lateForCustomer(Operation $op): array
+    {
+        $kind = match ($op->action) { 'transfer' => 'transfer', 'renew' => 'renewal', default => 'registration' };
+        $said = 'We’re confirming this '.$kind.' with the registrar. It’s taking longer than usual. Contact support and we’ll check it.';
+        return ['title'=>ucfirst($kind).' pending','body'=>$said,'brief'=>$said,'tone'=>'info','asks'=>true];
+    }
 }

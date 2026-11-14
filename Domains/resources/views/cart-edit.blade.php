@@ -7,9 +7,7 @@
 @include('domains::partials.form-key',['keys'=>['edit'=>$key],'action'=>'edit'])
 <label for="domain">Domain name</label><input id="domain" class="domains-input" name="domain" value="{{ $domain['name'] }}" maxlength="253" required>
 @php
-// Each term's line total, priced like the cart line itself (tax and coupon included); a complimentary account pays $0.00.
-$termTotal=function($plan)use($item){if(\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryAccounts::authorization((int)auth()->id())){return $item->price->format(0);}
-    $probe=$item;if($plan->id!==$item->plan_id){$probe=$item->replicate();$probe->plan_id=$plan->id;$probe->setRelation('plan',$plan);}$price=$probe->price;return $price->format($price->total*$item->quantity);};
+// Each term's line total, priced like the cart line itself (TermChoice::cartTotal).
 @endphp
 @php
 $choices=app(\Paymenter\Extensions\Servers\Domains\Services\Storefront::class)->checkoutPlanChoices($item->product);
@@ -25,7 +23,7 @@ $plans=$choices['plans'];$currentAvailable=$plans->contains('id',$item->plan_id)
 <label for="term">Years</label><select id="term" class="domains-input" name="term" required @disabled($choices['failed']||$plans->isEmpty())>
 {{-- Ask for a replacement only when a healthy read offers one. --}}
 @if(!$currentAvailable&&$plans->isNotEmpty())<option value="" selected disabled>Current {{ $item->plan->billing_period }}-year term unavailable. Choose a year.</option>@endif
-@foreach($plans as $plan)<option value="{{ $plan->billing_period }}" @selected($plan->id===$item->plan_id)>{{ $plan->billing_period }} {{ (int)$plan->billing_period===1?'year':'years' }} · {{ $termTotal($plan) }}</option>@endforeach</select>
+@foreach($plans as $plan)<option value="{{ $plan->billing_period }}" @selected($plan->id===$item->plan_id)>{{ \Paymenter\Extensions\Servers\Domains\Presentation\TermChoice::label((int)$plan->billing_period, \Paymenter\Extensions\Servers\Domains\Presentation\TermChoice::cartTotal($item,$plan)) }}</option>@endforeach</select>
 <button class="domains-btn domains-btn--primary" type="submit" @disabled($choices['failed']||$plans->isEmpty())>Update domain</button></form>
 </div></div>
 @endcomponent

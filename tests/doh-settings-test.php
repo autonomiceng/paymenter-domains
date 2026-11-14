@@ -102,4 +102,8 @@ same($before, $calls, 'Missing settings check no network');
 putenv('SSLKEYLOGFILE=/synthetic-disabled');
 same([null, 'Turn off SSLKEYLOGFILE on the server to use a custom resolver.', true], $settings->configuration(), 'TLS logging has a visible native-only reason');
 putenv('SSLKEYLOGFILE');
+// Automatic actions show the scheduler's own timings, so the panel can't drift from the code.
+$auto=Livewire::actingAs($staff)->test(Page::class);
+foreach([\Paymenter\Extensions\Servers\Domains\Presentation\Fact::waits(\Paymenter\Extensions\Servers\Domains\Services\ContactStepRetries::WAITS)->text,
+    \Paymenter\Extensions\Servers\Domains\Presentation\Fact::waits([\Paymenter\Extensions\Servers\Domains\Services\FundsWaits::WAIT_DAYS*86400])->text] as $wait){$auto->assertSee($wait);}
 echo "Encrypted resolver settings, native binding, staff permissions, validation and bounded check states passed.\n"; $nativeSuccessful = true;

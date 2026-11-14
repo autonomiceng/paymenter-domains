@@ -39,11 +39,16 @@ $cataloguePorts=$ports;require __DIR__.'/Support/owner-pages.php';
 $owner=\App\Models\User::findOrFail($d->user_id);\Illuminate\Support\Facades\Auth::setUser($owner);
 $request=\Illuminate\Http\Request::create('/domains/'.$d->id,'GET');$request->setUserResolver(fn()=>$owner);$request->setLaravelSession(app('request')->session());
 $html=(new \Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController($owners))->show($request,$d->id)->render();
-$deadline=(new DateTimeImmutable($attempt['dispatch_attempted_at']))->modify('+24 hours')->setTimezone(new DateTimeZone('America/Los_Angeles'))->format('M j, g:i A').' PT';
-expect(str_contains($html,'We’re confirming this renewal with the registrar.')&&str_contains($html,$deadline),'Actual uncertain paid renewal page shows the original dispatch deadline');
+$deadline=(new DateTimeImmutable($attempt['dispatch_attempted_at']))->modify('+24 hours')->setTimezone(new DateTimeZone('America/Los_Angeles'))->format('j'); // The deadline day, whatever the date format.
+$notice=storefrontDom($html)->query('//*[@role="status" and contains(@class,"domains-notice")]')->item(0)?->textContent??'';
+expect(str_contains($notice,'renewal')&&preg_match('/(?<!\d)'.$deadline.'(?!\d)/',$notice),'Actual uncertain paid renewal page shows the original dispatch deadline');
 expect(!str_contains($html,'Ask Enom')&&!str_contains($html,'You can record'),'Owner has no staff-only answer instructions');
 // At the existing staff boundary, only a real final answer can make this no-order attempt returnable.
 $clock->instant = $clock->now()->modify('+25 hours');
+$late=RegistrarCheck::forCustomer($result->fresh());
+same(true,$late['asks']??false,'A late renewal check requires a customer support step');
+$lateDomain=$owners->present($d->fresh());
+same(true,\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::notice($lateDomain,'/tickets/create')['asks']??false,'The renewal notice retains the customer step');
 expect(EnomAnswers::eligible($op->fresh(), $clock->now()), 'Unchanged lost renewal reaches the existing audited answer path');
 echo "Uncertain paid renewal retains money and exposes the existing registrar-answer action\n";
 $nativeSuccessful = true;

@@ -73,7 +73,12 @@ $off=$page([],[],[],[],true,[...$on,'account'=>['enabled'=>false,'revision'=>3]]
 same(['Monitoring alerts','Off for all domains',['Notification settings']],$li($off,'alerts'),'Off for all domains links its settings');same(0,storefrontDom($off)->query('//form[@method="POST"]')->length,'No toggle while alerts are off for all domains');
 same(['Monitoring alerts','Off',['Turn on']],$li($page([],[],[],[],true,['account'=>['enabled'=>false,'revision'=>1],'target'=>['enabled'=>false,'revision'=>1]]),'alerts'),'Unconfigured notices offer explicit opt-in');
 same(null,$li($page([],[],[],[],false),'alerts')[0],'No alerts row when the domain cannot be edited');
-same([null,['Monitoring paused.']],[$li($page(['watch.paused']),'alerts')[0],$notice($page(['watch.paused']))],'Paused monitoring: one notice, no alerts row');
+// Paused or stopped monitoring is the watch's own state: the head says it with what happens next, with no notice (DESIGN.md P-NTC-5).
+$paused=$page(['watch.paused']);$head=static fn(string $html)=>$norm(storefrontDom($html)->query('//*[@data-piece="head-line"]')->item(0));
+same([null,[],Paymenter\Extensions\Servers\Domains\Presentation\State::Paused->label().' '.Paymenter\Extensions\Servers\Domains\Presentation\WatchPage::PAUSED],[$li($paused,'alerts')[0],$notice($paused),$head($paused)],'Paused monitoring: the head says so, no notice, no alerts row');
+$stopped=$page(['watch.retired'],[],[],['urls'=>['support'=>'/tickets/create']]);
+same([[],Paymenter\Extensions\Servers\Domains\Presentation\State::Stopped->label().' '.Paymenter\Extensions\Servers\Domains\Presentation\WatchPage::STOPPED.' Contact support'],[$notice($stopped),$head($stopped)],'Stopped monitoring: the head says so with its next step');
+same('/tickets/create',storefrontDom($stopped)->query('//*[@data-piece="head-line"]//a/@href')->item(0)?->value,'Stopped monitoring links to support');
 $ns=$page(['watch.ns_changed'],$row('ns_changed'),['ns_changed'],['urls'=>['support'=>'/tickets/create']]);
 same(['example.com stopped using Example Hosting nameservers on Jan 15, 2027. Change them back at your registrar, or contact support.'],$notice($ns),'Nameserver change: one notice with its fix');
 same('/tickets/create',storefrontDom($ns)->query('//div[contains(@class,"domains-notice")]//a/@href')->item(0)?->value,'Contact support is the link');
@@ -83,14 +88,16 @@ $expired=$page(['watch.expired'],$row('expired'),['registry_expiry_reached'],['e
 $soon=$page([],$row('expiring'),[],['expiry'=>'2026-11-01','daysLeft'=>9]);
 same([['Renew example.com at your registrar before Nov 1, 2026.'],'Nov 1, 2026 In 9 days'],[$notice($soon),$card($soon,'Expires')],'Expiring: one notice and the days left');
 $blind=$page([],[],['expiry_unavailable','dns_unavailable'],['expiry'=>null,'nameservers'=>null,'freshness'=>['delegation'=>['checkedAt'=>1790000000,'stale'=>true]]]);
-same([['We can’t read the public registry or DNS for example.com right now. We’ll keep checking.'],'Missing Fills in by itself after the next check',['Nameservers','Missing Fills in by itself after the next check',[]]],[$notice($blind),$card($blind,'Expires'),$li($blind,'nameservers')],'Can’t read: the notice says why, each Missing says when');
-same('Missing Check at your registrar',$card($page([],[],[],['expiry'=>null]),'Expires'),'Unknown expiry carries its cause');
+$notYet=Paymenter\Extensions\Servers\Domains\Presentation\State::NotReadYet->label();$couldnt=Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead->label();
+same([['We can’t read the public registry or DNS for example.com right now. We’ll keep checking.'],$notYet.' Fills in by itself after the next check',['Nameservers',$notYet.' Fills in by itself after the next check',[]]],[$notice($blind),$card($blind,'Expires'),$li($blind,'nameservers')],'Can’t read: the notice says why, each unread value says when');
+same(0,storefrontDom($blind)->query('//*[contains(concat(" ",@class," ")," domains-missing ")]')->length,'Unread values never show the Missing chip');
+same($couldnt.' Check at your registrar',$card($page([],[],[],['expiry'=>null]),'Expires'),'Unknown expiry carries its cause');
 same(['Nameservers','ns1.example.net ns2.example.net Checking again',[]],$li($page(['watch.ns_pending'],[],[],['nameservers'=>['nameservers'=>['ns1.example.net','ns2.example.net'],'at'=>'2027-01-10T08:00:00Z']]),'nameservers'),'Unconfirmed change says it is checking again');
 $moves=$page([],[...$row('ns_changed'),...$row('ns_restored','January 20, 2027')]);
 same([],$notice($moves),'Restored nameservers keep history without a stale warning');
 same([],$notice($page([],$row('expired'),[],['expiry'=>'2027-06-01','daysLeft'=>200])),'Corrected expiry ignores an old open notice');
 same(['example.com stopped using Example Hosting nameservers on Jan 15, 2027. Change them back at your registrar, or contact support.'],$notice($page(['watch.ns_changed'],[...$row('ns_restored'),...$row('ns_changed')],['ns_changed'],['urls'=>['support'=>'/tickets/create']])),'A later confirmed outage is not hidden by an older restoration');
-same(['Nameservers changed Jan 15, 2027','Nameservers back to Example Hosting Jan 20, 2027'],array_map($norm,iterator_to_array(storefrontDom($moves)->query('//section[@id="history"]//tbody/tr'))),'History lists nameserver changes with dates');
+same(['Nameservers changed Jan 15, 2027','Nameservers back to Example Hosting Jan 20, 2027'],array_map($norm,iterator_to_array(storefrontDom($moves)->query('//section[@id="history"]//dl/div'))),'History lists nameserver changes with dates');
 same(null,storefrontDom($page([],[],[],['urls'=>[]]))->query('//aside//a[contains(@class,"domains-btn")]')->item(0),'No transfer offer, no button');
 $owned=new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain($data['name'],'Active','ok','2027-01-15','On','$14.00',['show'=>'/domains/1'],[],['contacts'=>false,'required'=>false],[],[],true);
 same(1,substr_count($text(view('domains::show',['domain'=>$owned,'summary'=>$state(['domain.active','watch.ns_changed'],'managed'),'keys'=>[]])->render()),'stopped using Example Hosting nameservers'),'Domain detail page states a nameserver change once');
@@ -117,9 +124,9 @@ foreach (['ns_changed','ns_restored','expired'] as $kind) {
 }
 $historyOnly=$controller->show($request($owner),'watch',$id)->render();
 same([],$notice($historyOnly),'Controller ignores stale open notices when current facts need no action');
-same(2,storefrontDom($historyOnly)->query('//section[@id="history"]//tbody/tr')->length,'Controller retains both historical DNS events');
+same(2,storefrontDom($historyOnly)->query('//section[@id="history"]//dl/div')->length,'Controller retains both historical DNS events');
 DB::table('domains_watch_names')->where('id',$id)->update(['state'=>'paused']);
 $inactive=$controller->show($request($owner),'watch',$id)->render();
-same(['Monitoring paused.'],$notice($inactive),'Inactive target never promotes old open warnings');
-same(2,storefrontDom($inactive)->query('//section[@id="history"]//tbody/tr')->length,'Inactive target keeps history');
+same([[],true],[$notice($inactive),str_contains($head($inactive),Paymenter\Extensions\Servers\Domains\Presentation\WatchPage::PAUSED)],'Inactive target never promotes old open warnings; the head says it is paused');
+same(2,storefrontDom($inactive)->query('//section[@id="history"]//dl/div')->length,'Inactive target keeps history');
 $nativeSuccessful=true;echo "Owner-safe preference detail, CSRF/session key, stale revision, escaping and query-free Blade passed.\n";

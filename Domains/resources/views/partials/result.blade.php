@@ -35,9 +35,9 @@
                 <div><dt>@if ($state==='available' && count($result['terms']??[])>1)<label for="domains-term-{{ $result['domain'] }}">Years</label>@else Years @endif</dt><dd>
                 @if ($state === 'available' && count($result['terms'] ?? []) > 1)
                     <select class="domains-input domains-term-select" id="domains-term-{{ $result['domain'] }}" name="term">
-                        @foreach ($result['terms'] as $years => $total)<option value="{{ $years }}" data-total="{{ $total }}" @selected($years === $result['term'])>{{ $years }} {{ $years === 1 ? 'year' : 'years' }} · {{ $total }}</option>@endforeach
+                        @foreach ($result['terms'] as $years => $total)<option value="{{ $years }}" data-total="{{ $total }}" @selected($years === $result['term'])>{{ \Paymenter\Extensions\Servers\Domains\Presentation\TermChoice::label($years, $total) }}</option>@endforeach
                     </select>
-                @else<input type="hidden" name="term" value="{{ $result['term'] }}">{{ $result['term'] }} {{ $result['term']===1 ? 'year' : 'years' }}@endif
+                @else<input type="hidden" name="term" value="{{ $result['term'] }}">{{ \Paymenter\Extensions\Servers\Domains\Presentation\TermChoice::years((int) $result['term']) }}@endif
                 </dd></div>
                 <div><dt>Total</dt><dd class="domains-result__price"><strong>{{ $result['price'] }}</strong></dd></div>
                 @php $firstYear = $state === 'available' ? \Paymenter\Extensions\Servers\Domains\Presentation\FirstYearPrice::note($result['terms'][1] ?? null, $result['renew'] ?? null) : null; @endphp

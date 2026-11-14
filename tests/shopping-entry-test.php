@@ -16,7 +16,7 @@ expect(in_array('web',$route->gatherMiddleware(),true)&&!in_array('auth',$route-
 $visit=webVisit(...);
 $path=static fn(string $url):string=>(string)parse_url($url,PHP_URL_PATH);
 $back=static function(string $html)use($path):array {
-    $links=[];foreach(storefrontDom($html)->query('//a[contains(concat(" ",normalize-space(@class)," ")," domains-back ")]') as $link){$links[]=[$path($link->getAttribute('href')),trim($link->textContent)];}
+    $links=[];foreach(storefrontDom($html)->query('//nav[@aria-label="Breadcrumb"]//a') as $link){$links[]=[$path($link->getAttribute('href')),trim($link->textContent)];}
     return $links;
 };
 $list=[$path(route('domains.domains.index')),'Domains'];
@@ -24,7 +24,7 @@ $response=$visit(null,'/domains/transfer');
 same(200,$response->getStatusCode(),'Guest reaches the real transfer page without a login redirect');
 $transfer=storefrontDom($response->getContent());
 same(1,$transfer->query('//nav[@aria-label="Get a domain"]//a[@aria-current="true" and normalize-space()="Transfer"]')->length,'Transfer tab is current');
-same([],$back($response->getContent()),'Guest transfer has no back link: the Register tab is the way to registration');
+same([],$back($response->getContent()),'Guest transfer has no breadcrumb: the Register tab is the way to registration');
 // A site that asks for verified email keeps the domain list from customers who have not verified yet.
 config(['settings.mail_must_verify'=>true]);
 $user->forceFill(['email_verified_at'=>now()])->save();$unverified=commerceUser();$unverified->forceFill(['email_verified_at'=>null])->save();

@@ -19,10 +19,16 @@ final class DomainHistory
             if(is_array($op)){continue;}
             try { $history=$op->policy['staff_actions']??[]; } catch (\Throwable) { continue; }
             if (!is_array($history)||!array_is_list($history)||count($history)>100) { continue; }
+            // An order's first system hold is saved apart from staff_actions (StaffOperationReview::noteReturn).
+            $first=$op->policy['first_hold']??null;
+            if (is_array($first)&&($at=self::at($first['at']??null))!==null) {
+                $rows[]=['__key'=>'first-hold-'.$op->id,'__request'=>$op->id,'__order'=>0,'time'=>$at,'event'=>'Put on hold','sub'=>'Request #'.$op->id.' '.Labels::action($op->action),'status'=>null,'by'=>'System'];
+            }
             foreach ($history as $i=>$action) {
-                if (!is_array($action)||!in_array($action['action']??null,['hold','release','resume_observation'],true)||($action['phase']??null)!=='completed') { continue; }
-                $rows[]=['__key'=>$action['action'].'-'.$op->id.'-'.$i,'__request'=>$op->id,'__order'=>$i+1,'time'=>self::at($action['at']??null),'event'=>match($action['action']){'hold'=>'Put on hold','release'=>'Hold released','resume_observation'=>'Sync resumed'},
-                    'sub'=>'Request #'.$op->id.' '.Labels::action($op->action),'status'=>null,'by'=>is_string($action['actor_name']??null)&&$action['actor_name']!==''?$action['actor_name']:'Staff'];
+                // engine_hold: the system put the request back on hold, the same row the request History shows (StaffReviewHistory).
+                if (!is_array($action)||!in_array($action['action']??null,['hold','release','resume_observation','engine_hold'],true)||($action['phase']??null)!=='completed') { continue; }
+                $rows[]=['__key'=>$action['action'].'-'.$op->id.'-'.$i,'__request'=>$op->id,'__order'=>$i+1,'time'=>self::at($action['at']??null),'event'=>match($action['action']){'hold'=>'Put on hold','release'=>'Hold released','resume_observation'=>'Sync resumed','engine_hold'=>'Back on hold'},
+                    'sub'=>'Request #'.$op->id.' '.Labels::action($op->action),'status'=>null,'by'=>$action['action']==='engine_hold'?'System':(is_string($action['actor_name']??null)&&$action['actor_name']!==''?$action['actor_name']:'Staff')];
             }
         }
         $holdings=[]; $audits=[];

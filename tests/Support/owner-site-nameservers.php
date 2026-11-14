@@ -18,7 +18,8 @@ $registrar=$free?'NameSilo':'Enom';
 $readAt=$clock->now()->format(DATE_ATOM);
 \Paymenter\Extensions\Servers\Domains\Models\Domain::withoutEvents(static fn()=>$d->fresh()->update(['observation'=>[...($d->fresh()->observation??[]),'records'=>['identity'=>\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::identity($d->fresh()),'at'=>$readAt,'last_complete_at'=>$readAt,'sequence'=>0,'families'=>[]]]]));
 $editor=storefrontDom((new \Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController($owners))->show($r,$d->id)->render());
-same(1,$editor->query('//dialog[@id="edit-nameservers"]/form/p[normalize-space()="Registrar: '.$registrar.'."]')->length,'Editor identifies the bound registrar once');
+// Customers never see which registrar holds the domain (glossary rule), in the editor or its confirmation.
+expect(!str_contains($editor->query('//dialog[@id="edit-nameservers"]')->item(0)->textContent,$registrar),'Editor names no registrar');
 same(0,$editor->query('//input[@name="use_default"]|//button[@name="use_default"]')->length,'Customer UI has no registrar-reset field');
 $before=$d->operations()->count();
 $filled=$controller->manage($post('nameservers',['fill_site_default'=>'1','confirmed'=>'0']),$d->id,'nameservers');
@@ -28,7 +29,7 @@ $confirm=storefrontDom($filled->getContent());
 $shown=$confirm->query('//textarea[@name="nameservers"]')->item(0)->textContent;
 same(implode("\n",$siteServers),$shown,'Confirmation retains the explicit nameservers filled without script');
 same($siteServers,array_map(fn($n)=>$n->textContent,iterator_to_array($confirm->query('//dialog[@id="confirm-nameservers"]//div[dt="New"]//span'))),'Confirmation names the exact replacement hosts');
-same(1,$confirm->query('//dialog[@id="confirm-nameservers"]/p[normalize-space()="Registrar: '.$registrar.'."]')->length,'Confirmation identifies the bound registrar once');
+expect(!str_contains($confirm->query('//dialog[@id="confirm-nameservers"]')->item(0)->textContent,$registrar),'Confirmation names no registrar');
 // Changing the saved profile while confirmation is open cannot change the submitted list.
 $siteProfile->nameservers=['ns1.changed.example.org','ns2.changed.example.org'];$siteProfile->saveQuietly();
 $wireState=$free?$ms:$state;

@@ -12,7 +12,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Head,Row,SettingsR
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\{ResourceSettingsPage,Section};
 use Paymenter\Extensions\Servers\Domains\Dns\DohEndpoint;
 use Paymenter\Extensions\Servers\Domains\Presentation\{Fact,Plain,Reader,RecordFamilies,State};
-use Paymenter\Extensions\Servers\Domains\Services\{DnsResolverSettings,SiteDnsDefault,StaffWatchWrites,WatchProducts,WatchWork};
+use Paymenter\Extensions\Servers\Domains\Services\{ContactStepRetries,DnsResolverSettings,FundsWaits,SiteDnsDefault,StaffWatchWrites,WatchProducts,WatchWork};
 /** Domains > Monitoring settings, a Settings page: which hosting products are monitored (Ilya, decision 2) and the DNS
  * resolver monitoring checks use. Settings live in native encrypted settings.
  * The default nameservers are shown here and changed in Domains > DNS templates. */
@@ -81,6 +81,19 @@ class MonitoringSettings extends ResourceSettingsPage
                     $notice=Notification::make()->title($result['message']);($result['ok']?$notice->success():$notice->warning())->send();
                 })];
     }
+    /** What the system does with a paid order on its own (Ilya, Nov 13, 2026). Read-only: each timing is the constant the
+     * scheduler uses, so the page can't drift from the code. */
+    private function automaticActions(): Section
+    {
+        $system='Set by the system.';$tries=count(ContactStepRetries::WAITS);
+        return Section::make('Automatic actions',[
+            SettingsRow::setting('Name taken',Value::plain(Plain::On,'The customer gets account credit on the next check. The same goes for premium names and names the registrar refuses.'),$system),
+            SettingsRow::setting('Registrar balance short',Value::fact(Fact::waits([FundsWaits::WAIT_DAYS*86400]),'Then the customer gets account credit.'),$system),
+            SettingsRow::setting('Our own refusals',Value::fact(Fact::waits(ContactStepRetries::WAITS),$tries.' retries, then the order waits for staff to release it or cancel and refund.'),$system)
+                ->help('Only when nothing reached the registrar.'),
+            SettingsRow::setting('Orders paused',Value::plain(Plain::On,'Held orders go back to the queue when Orders turn on.'),$system),
+        ],'What happens to a paid order without a staff step.','automatic-actions');
+    }
     protected function head(): Head { return Head::make('Domains', Reader::Staff); }
     protected function actions(): array { return $this->getHeaderActionsList(); }
     protected function sections(): array
@@ -106,6 +119,7 @@ class MonitoringSettings extends ResourceSettingsPage
                 SettingsRow::setting('Public DNS checks',Value::plain(Plain::Default,'Nameservers at least every 6 hours, records daily. Failed checks retry while monitoring and its background worker are on. Paused checks wait; resume monitoring first.'),$system),
                 SettingsRow::setting('Registrar read failure emails',Value::plain(Plain::None,'Shown on the domain page, beside Resume sync. There is no email alert for them.'),$system),
             ]),
+            $this->automaticActions(),
             Section::make('DNS resolver',[
                 ...($forced?[Row::notice('resolver-forced',Value::state(State::NotSupported,$staff,$reason))]:[]),
                 $resolver,

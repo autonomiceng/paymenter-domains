@@ -3,10 +3,11 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Services\{ComplimentaryCosts,ContactProfileHold};
+use Paymenter\Extensions\Servers\Domains\Services\{ComplimentaryCosts,ContactProfileHold,ContactStepRetries};
 /** Local recovery guidance shared by the notice and its release button. No registrar reads or write authority. */
 final class RequestHoldReasons
 {
+    public const ORDERS_FIRST='Turn Orders on for this registrar first.';
     private const REASONS=[
         'staff'=>['staff_review_required'],
         'retry'=>['pre_send_interrupted','renewal_term_refused','registry_details_unsupported'],
@@ -67,6 +68,10 @@ final class RequestHoldReasons
             if($blocked===null&&ContactProfileHold::unsent($op,retry:true)){
                 [$owner,$step,$link,$label]=['Staff','release the hold to retry this order with its saved contact details',null,null];
             }
+        }
+        // Release would only hold again while Orders are off; the order goes out by itself once they are on (ContactStepRetries).
+        if($blocked===null&&$account!==null&&$op->state==='held'&&ContactStepRetries::waitsForOrders($op,(bool)$account->processing_enabled)){
+            $kind='orders';[$owner,$step,$link,$label]=self::FIXES['orders'];$blocked=self::ORDERS_FIRST;
         }
         if($kind==='orders'&&$account?->processing_enabled){
             [$owner,$step,$link,$label]=['Staff','release the hold to retry the saved order',null,null];
