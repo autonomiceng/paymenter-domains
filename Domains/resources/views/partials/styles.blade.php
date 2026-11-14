@@ -271,8 +271,9 @@
     .domains .domains-dns-inventory td { min-width: 0; overflow-wrap: anywhere; }
     .domains .domains-dns-inventory td[data-label] { display: grid; grid-template-columns: 4rem minmax(0, 1fr); gap: .75rem; text-align: right; }
     .domains .domains-dns-inventory td[data-label]::before { grid-column: 1; text-align: left; }
-    .domains .domains-dns-inventory td[data-label="Host"] { display: block; text-align: left; font-weight: 600; }
-    .domains .domains-dns-inventory td[data-label="Host"]::before { content: none; }
+    /* The host keeps its label like Type and Value: a bare "*" or "@" alone says nothing on a phone. */
+    .domains .domains-dns-inventory td[data-label="Host"] { font-weight: 600; }
+    .domains .domains-dns-inventory td[data-label="Host"]::before { font-weight: 400; }
     .domains .domains-dns-inventory tr { grid-template-columns: minmax(0, 1fr); background: var(--e-panel); }
     .domains .domains-head-actions { flex-wrap: nowrap; gap: .5rem; }
     .domains .domains-head-actions .domains-btn { min-width: 0; padding-inline: .625rem; font-size: .8125rem; }
@@ -556,6 +557,8 @@
 .domains .domains-edit--behind { visibility: hidden; }
 .domains .domains-edit--behind [data-confirm-dialog] { visibility: visible; }
 .domains .domains-badge { white-space:normal; }
+/* A record's Delete stays one word in the narrow last column. */
+.domains button[data-delete-record] { white-space: nowrap; overflow-wrap: normal; }
 .domains .domains-missing { display:inline-flex; align-items:center; gap:.375rem; color: var(--e-bad); font-weight:600; }
 .domains .domains-missing--calm { color:var(--e-muted); font-weight:500; }
 .domains .domains-missing__cause { margin-inline-start:.5rem; color:var(--e-muted); }
