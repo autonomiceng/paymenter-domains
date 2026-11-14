@@ -21,7 +21,7 @@ final class TermChoice
 
     public static function label(int $years, ?string $total = null): string
     {
-        return self::years($years).($total !== null && $total !== '' ? ' · '.$total : '');
+        return self::years($years).($total !== null && $total !== '' ? ' for '.$total : '');
     }
 
     /** A cart line's total on another term, priced like the line itself (tax and coupon included); complimentary pays $0.00. */
