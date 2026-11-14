@@ -39,7 +39,8 @@ final readonly class RenewalCompletion
                     // Enom can still read the domain before staff ask for a case; NameSilo waits for its answer.
                     if ($attempt->binding->registrarKey !== 'enom') { return null; }
                 }
-                if (($op->policy['renewal_polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT) { return null; }
+                // One Enom read a day after the send still runs after the read limit, once per attempt, to check that Enom has no order.
+                if (($op->policy['renewal_polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT && !EnomAbsence::claimRead($op, $attempt, $this->clock->now())) { return null; }
                 $read=$financial?CapturedChargeReview::reserve($op,$this->clock):null;
                 // A new read starts: earlier no-order evidence goes now, so nobody can use it while this read runs or after it fails.
                 EnomAbsence::clear($op);

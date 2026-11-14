@@ -45,7 +45,9 @@ final class OperationReconciliation
                 if (($op->policy['reconciliation']['polls'] ?? 0) >= self::POLL_LIMIT && !TransferPolling::expected($op) && !$manual && !($watch&&TransferPolling::expired($op,$now))) {
                     // The order history could not confirm a lost reply within the read limit, so only the registrar's answer can settle it.
                     if ($op->action !== 'transfer' && $attempt->replyLost()) { self::askRegistrar($check, $op, $attempt); }
-                    return null;
+                    // One Enom read a day after the send still runs, once per attempt, to check that Enom has no order.
+                    if (!EnomAbsence::claimRead($op, $attempt, $this->clock->now())) { return null; }
+                    $op->refresh();
                 }
                 if($watch){TransferPolling::reserve($op,$now);$op->refresh();}
                 // A new read starts: earlier no-order evidence goes now, so nobody can use it while this read runs or after it fails.

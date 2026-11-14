@@ -127,6 +127,19 @@ $read($op, '+25 hours'); expect(isset($op->fresh()->policy['enom_absence']), 'Ev
 $observation->fault = '';
 $read($op, '+26 hours');
 $refused($op, 'A later read found the domain in our account');
+// The normal read limit runs out hours before a day has passed. One more scheduled read still runs a day after the send,
+// saves the evidence, and never runs again for this attempt.
+$late = static function (callable $run, callable $calls, string $why) use ($clock, $history): void {
+    $reads = static function (string $after) use ($run, $calls, $clock, $history): int { $clock->instant = $history->sent->modify($after); Cache::flush(); $calls(true); $run(); return $calls(false); };
+    $hour = 0; while ($reads('+'.(++$hour).' hours') > 0) { expect($hour < 20, $why.': the normal read limit ends'); }
+    same(0, $reads('+23 hours'), $why.': no read before the day mark once the limit is reached');
+    expect($reads('+25 hours') > 0, $why.': one read runs a day after the send');
+    same([0, 0], [$reads('+26 hours'), $reads('+48 hours')], $why.': that read never runs again for this attempt');
+};
+[$op] = $register('absence-late-read-placeholder.com');
+$late(fn () => same('uncertain', $scheduled->run($op->id)->state, 'A scheduled read leaves the lost reply open'),
+    function (bool $reset) use ($observation): int { $n = count($observation->calls); if ($reset) { $observation->calls = []; } return $n; }, 'Registration');
+$allowed($op, 'Registration: the one late read recorded the evidence');
 same($before, $writer->calls, 'No registration is sent again');
 DB::transaction(fn () => HistoryAcceptances::revokeLocked($binding, Action::Register));
 
@@ -165,5 +178,9 @@ $history->match = true;
 $renewRead($op, '+26 hours');
 expect(in_array(true, array_map(fn ($o) => str_starts_with($o, 'c:'), $op->fresh()->policy['history_scan']['state']['orders']), true), 'The later read found an order for this renewal');
 $refused($op, 'Renewal: a later read found a matching order');
-same($writes + 4, $state->writes, 'Only the four original Extends were sent');
+[$op] = $renew('absence-renew-late-read-placeholder.com', '2027-10-18');
+$late(fn () => same('uncertain', $completion->run($op->id)->state, 'A scheduled renewal read leaves the lost reply open'),
+    function (bool $reset) use ($state): int { $n = count($state->calls); if ($reset) { $state->calls = []; } return $n; }, 'Renewal');
+$allowed($op, 'Renewal: the one late read recorded the evidence');
+same($writes + 5, $state->writes, 'Only the five original Extends were sent');
 echo "A lost Enom reply is refundable without a case number only when the scheduled read proves Enom has no order and the domain is unchanged.\n"; $nativeSuccessful = true;

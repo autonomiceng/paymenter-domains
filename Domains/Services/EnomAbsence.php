@@ -21,6 +21,21 @@ final class EnomAbsence
         return ['scan_key'=>$scan->key, 'read_at'=>$started->format(DATE_ATOM), 'domain'=>$domain,
             'listed'=>(int)($scan->state['listed'] ?? 0), 'resolved'=>(int)($scan->state['resolved'] ?? 0)];
     }
+    /** The normal read limit can run out before a day has passed since the send. Then one more scheduled read runs at least a
+     * day after the send, once per attempt, so the no-order check needs no staff restart. Called under the check's lock in
+     * place of the read limit's stop; true claims that one read. Reads only. */
+    public static function claimRead(Operation $op, AttemptEvidence $attempt, \DateTimeImmutable $now): bool
+    {
+        $policy = $op->policy ?? []; $identity = RegistrarAnswers::identity($op); $claimed = $policy['enom_absence_read']['identity'] ?? null;
+        if ($attempt->binding->registrarKey !== 'enom' || !in_array($attempt->query->action, [Action::Register, Action::Renew], true)
+            || !$attempt->replyLost() || $attempt->executionFacts !== null || isset($op->attempt['reconciliation'])
+            || (is_string($claimed) && hash_equals($claimed, $identity))
+            || $now->getTimestamp() < $attempt->windowEnd->getTimestamp() + self::MARGIN
+            || !($attempt->historyAcceptance?->covers($attempt, $now) ?? false)) { return false; }
+        $policy['enom_absence_read'] = ['identity'=>$identity, 'at'=>$now->format(DATE_ATOM)];
+        $op->update(['policy'=>$policy]);
+        return true;
+    }
     /** Called under the check's lock just before a new registrar read. Older evidence never outlives a newer read: the read
      * either saves its own evidence or leaves none, so a failed or unfinished read cannot fall back to an earlier one. */
     public static function clear(Operation $op): bool
