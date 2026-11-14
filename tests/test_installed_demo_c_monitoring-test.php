@@ -64,6 +64,16 @@ expect($confirmedStale->sub===$stale->sub&&$confirmedFresh->sub===$fresh->sub,'A
 // The registrar side says None only after a complete DNS read.
 $registrar=static fn(?string $state)=>MonitoringEvidence::rows(['registrar'=>[],'registrar_at'=>'2026-11-05T09:00:00+00:00','registrar_read'=>$state])['Registrar records'];
 same([Paymenter\Extensions\Servers\Domains\Presentation\Plain::None->label(),Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead,Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead],[$registrar('complete')->word,$registrar('partial')->state,$registrar('unknown')->state],'Registrar records say None only after a complete DNS read');
+// A first registrar read that failed has no records and no record time: the row is Couldn't read at the failure time, not Not read yet.
+$first=clone $d;$first->observation=['record_failure'=>['identity'=>ObservationRecords::identity($d),'code'=>'domain_not_in_account','at'=>'2026-11-05T10:00:00+00:00']];
+$failedFirst=MonitoringEvidence::rows(MonitoringEvidence::read($first))['Registrar records'];
+same(Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead,$failedFirst->state,'A failed first registrar read is Couldn\'t read');
+same(strtotime('2026-11-05T10:00:00Z'),strtotime((string)$failedFirst->subAt?->datetime),'A failed first registrar read names when it was tried');
+// Addresses from a registrar read that did not finish stay listed, with the same unfinished words and time as an empty one.
+$listed=static fn(?string $state)=>MonitoringEvidence::rows(['registrar'=>['A @ → 192.0.2.20'],'registrar_at'=>'2026-11-05T09:00:00+00:00','registrar_read'=>$state])['Registrar records'];
+foreach(['partial','unknown'] as $state){$unfinished=$listed($state);
+    expect($unfinished->fact==$listed('complete')->fact&&$unfinished->sub===$registrar($state)->sub&&$unfinished->sub!==$listed('complete')->sub,'Registrar addresses from an unfinished read keep the unfinished reading: '.$state);
+    same(strtotime('2026-11-05T09:00:00Z'),strtotime((string)$unfinished->subAt?->datetime),'Unfinished registrar addresses keep the read time: '.$state);}
 // A stored public observation can exist without a selected template.
 DB::table('domains_watch_names')->where('id',$watch->id)->update(['ns_profile_id'=>null,'expected_dns'=>null]);$watch->unsetRelation('delegation');
 DB::transaction(fn()=>WatchDnsObservation::create(['watch_id'=>$watch->id,'user_id'=>$owner->id,'watch_revision'=>$watch->revision,'psl_revision'=>$watch->psl_revision,'mixed'=>false,'profile_id'=>$profile->id,'profile_revision'=>$profile->revision,'check_kind'=>'delegation','started_at'=>$at->getTimestamp()-30,'completed_at'=>$at->getTimestamp()-29,'result'=>'complete','partial'=>false,'valid_until'=>$at->getTimestamp()+60,'dns'=>'platform','facts'=>['version'=>1,'queries'=>[['name'=>'example.com','type'=>'NS','state'=>'rrset','records'=>[['value'=>'ns1.platform.test']]]]],'digest'=>str_repeat('d',64),'source_digest'=>str_repeat('e',64)]));
