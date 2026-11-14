@@ -33,10 +33,6 @@ final readonly class OwnedDomains
     {
         return self::acquisition($domain->operations()->whereIn('action',['register','transfer'])->where('authority_generation',$domain->authority_generation)->where('account_fingerprint',$domain->account_fingerprint)->orderByDesc('id')->limit(1)->get(),$domain);
     }
-    /** A change the registrar hasn't confirmed is a registrar wait, so it reads as open work (the page says Checking, DESIGN.md P-STA-9),
-     * not Under review. A held request keeps Under review: staff must decide it. Null for every other state. */
-    private static function waitWord(?string $state): ?string
-    { return $state === 'uncertain' ? RequestStatus::SET['in_progress'][0] : null; }
     public static function acquisition($operations, Domain $d): ?Operation
     { return $operations->filter(fn($op)=>in_array($op->action,['register','transfer'],true)&&$op->authority_generation===$d->authority_generation&&$op->account_fingerprint===$d->account_fingerprint)->sortByDesc('id')->first(); }
     /** Where a pending order stands for its owner: unpaid with the invoice link, paid, cancelled ('credit' once the money is credited), or failed. Empty otherwise. Paid says what's still the owner's in next: setup_required, awaiting_code, or null for nothing.
@@ -209,7 +205,7 @@ final readonly class OwnedDomains
                 if ($entry->action==='renew') {
                     // A paid renewal is a change to the domain; an unpaid invoice is not one yet.
                     $key=RequestStatus::key(RequestStatus::readsAs($entry->state,$entry->safe_code));
-                    if ($key!=='awaiting_payment') { $progress[]=['label'=>'Renewal','state'=>self::waitWord($entry->state)??RequestStatus::SET[$key][0],'date'=>$entry->updated_at?->toIso8601String(),'note'=>null]; }
+                    if ($key!=='awaiting_payment') { $progress[]=['label'=>'Renewal','state'=>RequestStatus::SET[$key][0],'date'=>$entry->updated_at?->toIso8601String(),'note'=>null]; }
                     continue;
                 }
                 $key=ManagementProgress::statusKey($entry,$d);
@@ -218,7 +214,7 @@ final readonly class OwnedDomains
                 $locked=$entry->policy['management']['input']['locked']??null;
                 if ($entry->action==='lock' && is_bool($locked)) { $label.=$locked?' On':' Off'; }
                 // The same word staff read on the domain's Activity rail.
-                $word=self::waitWord($entry->state)??RequestStatus::SET[$key][0];
+                $word=RequestStatus::SET[$key][0];
                 $progress[]=['label'=>$label,'state'=>$word,'date'=>$entry->updated_at?->toIso8601String(),'note'=>$word==='Failed'?self::failure($entry):null,
                     'noteComplete'=>$entry->action==='nameservers' && $entry->safe_code==='management_provider_refused',
                     'by'=>(int)$entry->authorized_by!==(int)$d->user_id?'Staff':null,'setting'=>ManagementProgress::setting($entry->action)];

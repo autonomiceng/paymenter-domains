@@ -18,8 +18,10 @@ use Paymenter\Extensions\Servers\Domains\Services\DomainSummaryStrings;
         $html = $render($rows, $test); $dom = storefrontDom($html);
         same($test ? 1 : 0, $dom->query('//*[@class="domains-testbar"]')->length, 'D7 pricing banner presence: '.json_encode($test));
         if ($test) { expect(str_contains($html, $test === true ? $all : $some), 'D7 exact pricing banner: '.json_encode($test)); }
-        // A page that is all test says so once in the banner; only a mixed list tags its test rows (DESIGN.md P-WRD-3).
-        same($test === 'some' ? 1 : 0, $dom->query('//tbody/tr/th/span[contains(concat(" ",@class," ")," domains-demo-tag--test ")]')->length, 'D7 pricing test tags match rows');
+        // Every test row keeps its Test tag, on mixed and all-test pages alike.
+        same($test === true ? 3 : ($test === 'some' ? 1 : 0), $dom->query('//tbody/tr/th/span[contains(concat(" ",@class," ")," domains-demo-tag--test ")]')->length, 'D7 pricing test tags match rows');
+        $transfer = storefrontDom(view('domains::transfer', [...$data, 'endings' => $rows, 'results' => [], 'testEnvironment' => $test])->render());
+        same($test === true ? 3 : ($test === 'some' ? 1 : 0), $transfer->query('//tbody/tr/th/span[contains(concat(" ",@class," ")," domains-demo-tag--test ")]')->length, 'D7 transfer price test tags match rows');
         same(4, $dom->query('//thead/tr/th')->length, 'D7 annual pricing has four columns');
         same(0, $dom->query('//td[@data-label="Register for"]')->length, 'D7 annual term cells hidden');
         same(3, $dom->query('//td[@data-label="Renew"]')->length, 'D7 mobile renew labels match the column');

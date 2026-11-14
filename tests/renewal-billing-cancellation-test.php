@@ -39,7 +39,7 @@ $before=$ledger();
 [$dto,$summary,$note,$page]=$views();
 same(['review','Next invoice: Under review'],[$dto->renewNow['status']??null,$note],'A sent renewal with a cancelled invoice stays under review on page and list');
 $confirming='We’re confirming this renewal with the registrar.';
-expect(str_contains($page,$confirming)&&str_contains($page,Paymenter\Extensions\Servers\Domains\Presentation\State::Checking->label())&&!str_contains($page,'Under review')&&!str_contains($page,'Invoice cancelled'),'The page keeps the registrar check (Checking, DESIGN.md P-STA-9), not a cancelled invoice');
+expect(str_contains($page,$confirming)&&str_contains($page,'Under review')&&!str_contains($page,'Invoice cancelled'),'The page keeps the registrar check, not a cancelled invoice');
 // A nameserver step stays on the page, with its action, beside the renewal check.
 $copy=static fn(object $from,array $change)=>new ($from::class)(...array_replace(get_object_vars($from),$change));
 foreach(['correction'=>[$copy($dto,['dnsCorrection'=>true]),$summary,'The registered nameservers do not match the registration settings.'],
@@ -49,7 +49,7 @@ foreach(['correction'=>[$copy($dto,['dnsCorrection'=>true]),$summary,'The regist
     $action=isset($shown->management['nameservers'])?'Change nameservers':'Contact support';
     same($action,$notice['action']['label']??null,'Nameserver '.$case.' keeps its step');
     $html=view('domains::show',['domain'=>$shown,'summary'=>$listed])->render();
-    $next=DomainPage::nextInvoice($shown,$listed,'/support');same([DomainPage::INVOICE['checking'],null],[$next['value']??null,$next['note']??null],'Nameserver '.$case.': the renewal row reads Checking and leaves the sentence to the notice, so it never says no action is needed');
+    same('Renewal being checked.',DomainPage::nextInvoice($shown,$listed,'/support')['note']??null,'Nameserver '.$case.': the renewal row does not say no action is needed');
     expect(preg_match('~<span class="domains-notice__tx">'.preg_quote(e($step),'~').'[^<]*'.preg_quote(e($confirming),'~').'[^<]*</span>\s*<a [^>]*>'.$action.'</a>~u',$html)===1,'Rendered nameserver '.$case.' notice keeps the check and its action');
 }
 same($before,$ledger(),'Page, list and notices are read-only');

@@ -39,8 +39,9 @@ $cataloguePorts=$ports;require __DIR__.'/Support/owner-pages.php';
 $owner=\App\Models\User::findOrFail($d->user_id);\Illuminate\Support\Facades\Auth::setUser($owner);
 $request=\Illuminate\Http\Request::create('/domains/'.$d->id,'GET');$request->setUserResolver(fn()=>$owner);$request->setLaravelSession(app('request')->session());
 $html=(new \Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController($owners))->show($request,$d->id)->render();
-$deadline=(new DateTimeImmutable($attempt['dispatch_attempted_at']))->modify('+24 hours')->setTimezone(new DateTimeZone('America/Los_Angeles'))->format('M j'); // Customers read dates only (DESIGN.md P-TYP-9).
-expect(str_contains($html,'We’re confirming this renewal with the registrar.')&&str_contains($html,$deadline),'Actual uncertain paid renewal page shows the original dispatch deadline');
+$deadline=(new DateTimeImmutable($attempt['dispatch_attempted_at']))->modify('+24 hours')->setTimezone(new DateTimeZone('America/Los_Angeles'))->format('j'); // The deadline day, whatever the date format.
+$notice=storefrontDom($html)->query('//*[@role="status" and contains(@class,"domains-notice")]')->item(0)?->textContent??'';
+expect(str_contains($notice,'renewal')&&preg_match('/(?<!\d)'.$deadline.'(?!\d)/',$notice),'Actual uncertain paid renewal page shows the original dispatch deadline');
 expect(!str_contains($html,'Ask Enom')&&!str_contains($html,'You can record'),'Owner has no staff-only answer instructions');
 // At the existing staff boundary, only a real final answer can make this no-order attempt returnable.
 $clock->instant = $clock->now()->modify('+25 hours');

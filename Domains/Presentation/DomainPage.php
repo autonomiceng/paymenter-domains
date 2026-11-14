@@ -149,7 +149,7 @@ final class DomainPage
     public const PAID_LABEL = 'Renewal invoice';
     /** Beside a renewal check while other changes wait on it. */
     public const CHANGES_AFTER = 'Other changes open once it’s confirmed.';
-    public const INVOICE = ['paid' => 'Paid', 'checking' => 'Checking', 'review' => 'Under review', 'cancelled' => 'Invoice cancelled', 'closed' => 'Renewal did not finish'];
+    public const INVOICE = ['paid' => 'Paid', 'review' => 'Under review', 'cancelled' => 'Invoice cancelled', 'closed' => 'Renewal did not finish'];
     /** What happens to the money once the registrar rejected the order, by OwnedDomain::$refundTo. */
     public const REFUND = ['original' => 'Any refund goes back to your original payment method.', 'credit' => 'Any refund goes to your account credit.',
         'split' => 'Any refund goes back to your original payment method where it can, and to your account credit otherwise.',
@@ -172,8 +172,6 @@ final class DomainPage
             $state === 'cancelled' => ['missing' => true, 'cause' => self::INVOICE['cancelled'], 'fix' => $contact],
             // The row says there is nothing to do unless the page notice already says so,
             // or the status or notice gives the customer a step (an expired domain: contact support).
-            // Waiting on the registrar reads Checking (DESIGN.md P-STA-9), and the page notice gives the sentence once (P-NTC-5).
-            $state !== null && ($d->renewNow['check'] ?? $d->renewalInvoice['check'] ?? null) !== null => ['value' => self::INVOICE['checking'], 'tone' => 'info'],
             $state !== null => ['value' => self::INVOICE['review'], 'tone' => 'info', 'note' => 'Renewal being checked.'.(self::reassure($d, self::notice($d, $support, $s)) ? ' '.Missing::NO_ACTION : '')],
             // An expired domain keeps a renewal invoice that was never issued, so the page never says it issues on a passed date.
             $s !== null && ($s->renewalInvoiceMissing || $s->renewalInvoiceOverdue) => ['missing' => true, 'notIssued' => true, 'cause' => 'Not issued yet'.($s->renewalIssueAt ? '. Expected '.self::date($s->renewalIssueAt).'.' : ''), 'fix' => $contact],
