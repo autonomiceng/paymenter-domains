@@ -27,10 +27,19 @@ same([$line,'Proforma #'.$invoice->id],[$facts['Next invoice']['value'],$facts['
 Livewire\Livewire::actingAs($actor)->test(ViewDomain::class,['record'=>$d->id])->assertSee($line)->assertDontSee($planned);
 $policy=$d->renewal_policy??[];$d->update(['renewal_policy'=>[...$policy,'owner_auto_renew'=>false]]);
 same($line,DomainFacts::for($d->fresh())['Next invoice']['value'],'Turning off future renewals does not hide an already-issued invoice');
-// Closing this synthetic invoice restores the ordinary future schedule after renewals resume.
+// Payment owns this cycle until the registrar confirms a later expiry.
 DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'paid']);$d->update(['renewal_policy'=>$policy]);
-same($planned,DomainFacts::for($d->fresh())['Next invoice']['value'],'A closed invoice no longer replaces the schedule');
+foreach(['queued','succeeded'] as $state){
+    $renewal->update(['state'=>$state]);
+    expect(!array_key_exists('Next invoice',DomainFacts::for($d->fresh())),'A paid '.$state.' renewal cannot forecast another invoice for the same cycle');
+}
+$expiry=$d->provider_expires_at;
+$nextExpiry=$expiry->copy()->addYearNoOverflow();
+$renewal->update(['confirmed_expires_at'=>$nextExpiry]);$d->update(['provider_expires_at'=>$nextExpiry]);
+$nextInvoice=DomainFacts::for($d->fresh())['Next invoice']['value'];
+same($nextExpiry->copy()->subDays(21)->format('Y-m-d'),gmdate('Y-m-d',strtotime($nextInvoice.' UTC')),'A confirmed later expiry forecasts the next cycle invoice');
 // Reopening native debt does not restore the closed operation's renewal authority.
+$d->update(['provider_expires_at'=>$expiry]);
 $renewal->update(['state'=>'rejected','safe_code'=>'renewal_cancelled_unpaid']);
 $invoice->update(['status'=>'cancelled']);$invoice->update(['status'=>'pending']);
 $facts=DomainFacts::for($d->fresh());
