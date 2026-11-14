@@ -34,6 +34,7 @@ final class OperationReconciliation
             try {
                 $binding = $this->authority($op, $domain, $all, $funding, $server, $account);
                 $attempt = ReconciliationEvidence::attempt($op, $domain, $binding);
+                if (HistoryResumption::apply($op, $attempt, $this->clock->now())) { $op->refresh(); }
                 if (RegistrarCheck::lostReply($op, $attempt, $this->clock->now())) {
                     // NameSilo's order history does not list the order yet. Wait for it; nobody needs to ask NameSilo.
                     if (RegistrarCheck::historyPending($attempt, $this->clock->now())) { $check->deferred = 'scheduled'; return null; }
