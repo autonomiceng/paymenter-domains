@@ -30,7 +30,7 @@ final class RenewalFunding
             || !in_array($d->status, ['active', 'expired', 'grace'], true)
             || (!$sent && ($s->status !== 'active' || RenewalStop::blocksRenewal($l)))
             || ($d->renewal_policy['billing_anchor']['expiry'] ?? null) !== $d->provider_expires_at?->format('Y-m-d')
-            || $l['operations']->contains(fn ($other) => $other->id !== $op->id && !HoldingAnchor::resolved($other, $l))
+            || $l['operations']->contains(fn ($other) => $other->id !== $op->id && RenewalAuthority::blocksRenewal($other, $l))
             || array_key_exists('refund', $op->funding ?? [])) { throw new \DomainException('Renewal obligation authority changed.'); }
         foreach ($l['operations'] as $other) {
             if ($other->safe_code === 'renewal_cancelled_unpaid' && ($l['invoices']->firstWhere('id', $other->invoice_id)?->status !== 'cancelled'

@@ -74,7 +74,7 @@ $w=WatchName::findOrFail($id);
 \Illuminate\Support\Facades\DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Models\WatchDnsObservation::create(['watch_id'=>$id,'user_id'=>$uid,'watch_revision'=>$w->revision,'profile_id'=>$profile->id,'profile_revision'=>$profile->revision,'psl_revision'=>$w->psl_revision,'mixed'=>false,'check_kind'=>'points','started_at'=>$publicAt,'completed_at'=>$publicAt+1,'result'=>'complete','partial'=>false,'valid_until'=>$publicAt+300,'facts'=>['version'=>1,'queries'=>[]],'digest'=>str_repeat('b',64),'source_digest'=>str_repeat('c',64)]));
 $saved=$detail();$row=$publicRow($saved)->item(0);
 same(1,$publicRow($saved)->length,'A paused name with an empty saved answer keeps its Public DNS row');
-same(\Paymenter\Extensions\Servers\Domains\Presentation\State::NotReadYet->label(),trim($row===null?'':$saved->query('.//*[@data-piece="value"]/*[1]',$row)->item(0)?->textContent??''),'An empty answer is not shown as a confirmed empty record list');
+same(\Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead->label(),trim($row===null?'':$saved->query('.//*[@data-piece="value"]/*[1]',$row)->item(0)?->textContent??''),'A saved inconclusive public read is shown as a failed read, not a confirmed empty record list');
 same([[gmdate('c',$publicAt),true]],$row===null?[]:$times($saved,$row),'The Public DNS row keeps its own earlier time, not the later registry check');
 expect(in_array([$registryAt,true],$times($saved),true),'The later registry check still shows on the page');
 expect($failures===[],implode('; ',$failures));$nativeSuccessful=true;echo "Watch missing facts respect stopped, paused and queued work.\n";
