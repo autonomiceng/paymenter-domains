@@ -23,7 +23,7 @@ final class OrderCharge
             $attempt->executionFacts !== null && $attempt->providerReference !== null && $id === $attempt->providerReference);
     }
     /** Validate an observed order on its own facts before comparing it with a lost attempt. */
-    public static function fromHistory(AccountBinding $binding, ProtocolResult $order): ?OrderEvidence
+    public static function fromHistory(AccountBinding $binding, ProtocolResult $order, ?string $zone = null): ?OrderEvidence
     {
         $item = $order->value('order.orderdetail');
         if (!is_array($item) || array_is_list($item) || !is_string($item['description'] ?? null)
@@ -33,9 +33,9 @@ final class OrderCharge
         if (!in_array($action, [Action::Register, Action::Renew, Action::Transfer], true)) { return null; }
         try { $query = new Query(strtolower($item['description']), $action, (int)$item['quantity']); }
         catch (\InvalidArgumentException) { return null; }
-        return self::normalize($binding, $query, $order, false);
+        return self::normalize($binding, $query, $order, false, $zone);
     }
-    private static function normalize(AccountBinding $binding, Query $query, ProtocolResult $order, bool $captured): ?OrderEvidence
+    private static function normalize(AccountBinding $binding, Query $query, ProtocolResult $order, bool $captured, ?string $zone = null): ?OrderEvidence
     {
         $header = $order->value('order');
         $id = is_array($header) ? ($header['orderid'] ?? null) : null;
@@ -58,7 +58,7 @@ final class OrderCharge
             if (array_key_exists('currency', $row) && (!is_string($row['currency']) || strtoupper($row['currency']) !== 'USD')) { return null; }
         }
         $processed = self::date($header['billdate'] ?? null, 'enom_order_bill_date',
-            $captured, self::billZone($binding->environment));
+            $captured, $zone ?? self::billZone($binding->environment));
         return new OrderEvidence($binding, $query, new Money($amount, 'USD'), $id, $processed, Expiry::read($order));
     }
     /** Order amounts may carry one leading dollar sign; quote parsing stays strict. */
@@ -86,6 +86,10 @@ final class OrderCharge
      * Live is not measured and keeps Pacific. */
     private static function billZone(Environment $environment): string
     { return $environment === Environment::Test ? 'America/Denver' : 'America/Los_Angeles'; }
+    /** Zones a history match may read a bill date in. The Live clock is unverified (Pacific or Mountain, Nov 14 2026 sample),
+     * so a Live order may match under either; History still requires exactly one matching order. */
+    public static function billZones(Environment $environment): array
+    { return $environment === Environment::Test ? ['America/Denver'] : ['America/Los_Angeles', 'America/Denver']; }
     private static function date(mixed $value, string $source, bool $captured, string $zone): ?DateEvidence
     {
         if (!is_string($value)) { return null; }

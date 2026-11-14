@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom;
-use Paymenter\Extensions\Servers\Domains\Data\{AttemptEvidence, Evidence, ExpiryPrecision, HistoryScan, RequestContext};
+use Paymenter\Extensions\Servers\Domains\Data\{AttemptEvidence, CanonicalName, Evidence, ExpiryPrecision, HistoryScan, RequestContext};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ReadCommand, ProtocolResult};
 /** Accepted, counted Enom history only. No partial scan can establish uniqueness. A dense day continues on later scheduled
  * reads: each read lists every page again, keeps validated order outcomes bound to their listed IDs and dates, and reads
@@ -61,7 +61,8 @@ final class History
         // A saved outcome counts only for the same listed order and receipt date; a candidate is read again before it is used.
         $orders = []; $pending = []; $stale = []; $complete = true;
         foreach ($rows as $row) {
-            if ($row['statusdesc'] !== 'Order complete' || $row['orderprocessflag'] !== 'True') { $complete = false; $refuse('order_open'); continue; }
+            // An unfinished or canceled order is read every time: it blocks unless its detail names only other domains.
+            if ($row['statusdesc'] !== 'Order complete' || $row['orderprocessflag'] !== 'True') { $row['open'] = true; $pending[] = $row; continue; }
             $id = $row['orderid']; $signature = substr(hash('sha256', $row['orderdate']), 0, 12); $row['signature'] = $signature;
             if (($known[$id][1] ?? null) === $signature) { $orders[$id] = $known[$id]; if ($known[$id][0] === 'c') { $stale[] = $row; } }
             else { $pending[] = $row; }
@@ -69,7 +70,9 @@ final class History
         $candidates = []; $read = 0; $added = 0;
         foreach ($pending as $row) {
             if ($read >= self::DETAILS || $context->budget->remaining() <= count($stale)) { $complete = false; $refuse($read >= self::DETAILS ? 'detail_ceiling' : 'read_budget'); break; }
-            $read++; [$outcome, $candidate] = $this->detail($attempt, $context, $row);
+            $read++;
+            if ($row['open'] ?? false) { if (!$this->otherDomain($attempt, $context, $row['orderid'])) { $complete = false; $refuse('order_open'); } continue; }
+            [$outcome, $candidate] = $this->detail($attempt, $context, $row);
             if (!in_array($outcome, ['n', 'c'], true)) { $complete = false; $refuse($outcome); continue; }
             $orders[$row['orderid']] = [$outcome, $row['signature']]; $added++;
             if ($candidate) { $candidates[] = $candidate; }
@@ -95,12 +98,30 @@ final class History
         if (!self::supported($order) || $order->value('order.orderid') !== $id) { return ['detail_unsupported', null]; }
         if ($order->value('order.orderdate') !== null && self::localClock($order->value('order.orderdate')) != self::localClock($row['orderdate'])) { return ['order_date_changed', null]; }
         if (OrderCharge::unrelated($attempt, $order)) { return ['n', null]; }
-        $candidate = OrderCharge::fromHistory($attempt->binding, $order);
-        if (!$candidate || $candidate->processedAt?->precision !== ExpiryPrecision::Instant) { return ['order_unreadable', null]; }
-        $processed = new \DateTimeImmutable($candidate->processedAt->value);
-        // A validated different action/term or bill time cannot be this original send.
-        if (!$candidate->query->matches($attempt->query) || $processed < $attempt->windowStart || $processed > $attempt->windowEnd) { return ['n', null]; }
-        return ['c', $candidate];
+        // Every bill zone reading must be a valid instant (named-zone DST; ambiguous or missing local times refuse). A validated
+        // different action/term, or a bill time outside the send window in every reading, cannot be this original send.
+        $candidate = null;
+        foreach (OrderCharge::billZones($attempt->binding->environment) as $zone) {
+            $reading = OrderCharge::fromHistory($attempt->binding, $order, $zone);
+            if (!$reading || $reading->processedAt?->precision !== ExpiryPrecision::Instant) { return ['order_unreadable', null]; }
+            $processed = new \DateTimeImmutable($reading->processedAt->value);
+            if (!$reading->query->matches($attempt->query) || $processed < $attempt->windowStart || $processed > $attempt->windowEnd) { continue; }
+            if ($candidate) { return ['order_unreadable', null]; }
+            $candidate = $reading;
+        }
+        return $candidate ? ['c', $candidate] : ['n', null];
+    }
+    /** True only when the exact order's detail positively names a different canonical domain on every item. */
+    private function otherDomain(AttemptEvidence $attempt, RequestContext $context, string $id): bool
+    {
+        $order = $this->client->read(ReadCommand::Order, ['OrderID'=>$id], $context);
+        $items = $order->value('order.orderdetail');
+        if ($order->status !== 'success' || $order->value('order.orderid') !== $id || !is_array($items) || !$items) { return false; }
+        foreach (array_is_list($items) ? $items : [$items] as $item) {
+            try { if (!is_array($item) || !is_string($item['description'] ?? null) || CanonicalName::normalize($item['description']) === $attempt->query->name) { return false; } }
+            catch (\InvalidArgumentException|\TypeError) { return false; }
+        }
+        return true;
     }
     /** Saved outcomes keyed by order ID; anything malformed starts the scan again. */
     private static function outcomes(mixed $saved): array
@@ -121,7 +142,8 @@ final class History
         }
         return $counts;
     }
-    /** Fixed 25-record pages, stable total, contiguous positions, and an explicit terminal page. */
+    /** Fixed 25-record pages, stable total, contiguous positions, and an explicit terminal page. Live returns a counted single page
+     * with no pagination fields at all (Nov 14 2026 sample); that is accepted only for Start=1 with every listed row present. */
     private static function page(ProtocolResult $reply, int $start, \DateTimeImmutable $begin, \DateTimeImmutable $end): ?array
     {
         $list = $reply->value('orderlist');
@@ -131,22 +153,24 @@ final class History
             || array_diff(array_keys($list), $fields)) { return null; }
         $from = self::localClock($list['begindate'] ?? null); $until = self::localClock($list['enddate'] ?? null);
         if (!$from || !$until || $from > $begin || $until < $end) { return null; }
-        foreach (['recordcount', 'showstart', 'showend'] as $key) {
+        $paging = array_intersect_key($list, array_flip(array_slice($fields, 3, 7)));
+        foreach ($paging ? ['recordcount', 'showstart', 'showend'] : ['recordcount'] as $key) {
             if (!is_string($list[$key] ?? null) || !preg_match('/^(?:0|[1-9][0-9]{0,3})$/D', $list[$key])) { return null; }
-        }
-        foreach (['showpreviousandnext', 'showpreviouslink', 'shownextlink'] as $key) {
-            if (!in_array($list[$key] ?? null, ['Yes', 'No'], true)) { return null; }
         }
         $count = (int)$list['recordcount']; $rows = $list['orderdetail'] ?? [];
         if (!is_array($rows)) { return null; }
         $rows = array_is_list($rows) ? $rows : [$rows];
+        if (!$paging && ($start !== 1 || $count > 25 || count($rows) !== $count)) { return null; }
+        foreach ($paging ? ['showpreviousandnext', 'showpreviouslink', 'shownextlink'] : [] as $key) {
+            if (!in_array($list[$key] ?? null, ['Yes', 'No'], true)) { return null; }
+        }
         $size = $count === 0 ? 0 : min(25, $count - $start + 1);
         $last = $size ? $start + $size - 1 : 0;
-        if ($size < 0 || count($rows) !== $size || ($count === 0 && $start !== 1)
-            || (int)$list['showstart'] !== ($size ? $start : 0) || (int)$list['showend'] !== $last
+        if ($size < 0 || count($rows) !== $size || ($count === 0 && $start !== 1)) { return null; }
+        if ($paging && ((int)$list['showstart'] !== ($size ? $start : 0) || (int)$list['showend'] !== $last
             || $list['showpreviouslink'] !== ($start > 1 ? 'Yes' : 'No')
             || $list['shownextlink'] !== ($last < $count ? 'Yes' : 'No')
-            || ($count > 25 && $list['showpreviousandnext'] !== 'Yes')) { return null; }
+            || ($count > 25 && $list['showpreviousandnext'] !== 'Yes'))) { return null; }
         foreach (['previousstartposition'=>$start > 1 ? max(1, $start - 25) : null, 'nextstartposition'=>$last < $count ? $last + 1 : null] as $key=>$expected) {
             if ($expected === null) { if (isset($list[$key]) && $list[$key] !== '') { return null; } }
             elseif (($list[$key] ?? null) !== (string)$expected) { return null; }
