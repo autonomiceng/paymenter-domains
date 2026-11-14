@@ -24,7 +24,7 @@ class ViewWatch extends RecordDetailPage
             $rows = array_map(function (string $label) use ($rows, $check): Row {
                 if ($label === 'Expected nameservers' && $rows[$label]['value'] === null) {
                     return Row::make($label, Value::state(State::NotSet, Reader::Staff))
-                        ->actions(WatchActions::changeTemplate($this->getRecord(), $this->revision)->name('changeExpectedNameservers')->label('Change')->link());
+                        ->actions(WatchActions::changeTemplate($this->getRecord(), $this->revision, expected: true)->name('changeExpectedNameservers')->label('Change')->link());
                 }
                 return WatchRows::row($label, $rows[$label], $check);
             }, array_keys($rows));
