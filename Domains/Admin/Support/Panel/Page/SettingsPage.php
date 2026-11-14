@@ -7,6 +7,5 @@ use Filament\Pages\Page;
 abstract class SettingsPage extends Page implements PageType
 {
     use Concerns\SettingsType;
-    protected const WIDE = false;
     protected const PAGE_CLASSES = ['domains-page-settings'];
 }

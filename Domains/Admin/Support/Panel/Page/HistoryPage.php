@@ -8,6 +8,5 @@ use Filament\Tables\Contracts\HasTable;
 abstract class HistoryPage extends Page implements PageType, HasTable
 {
     use Concerns\HistoryType;
-    protected const WIDE = false;
     protected const PAGE_CLASSES = ['domains-page-history'];
 }

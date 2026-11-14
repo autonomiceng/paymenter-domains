@@ -31,6 +31,7 @@ class WhatYouSell extends Page implements HasTable
 {
     use InteractsWithTable {handleTableFilterUpdates as private filamentFilterUpdates;}
     private const KEEP='keep';
+    protected \Filament\Support\Enums\Width|string|null $maxContentWidth = Sheet::WIDTH;
     /** One save reviews at most this many TLDs. */
     private const MOST=25;
     /** The account choice that reads every account. Saves belong to one account, so this view is read-only. */
@@ -242,7 +243,7 @@ class WhatYouSell extends Page implements HasTable
                     Radio::make('sell_new')->label('Sell new TLDs')->required()->inline()->options(['yes'=>'Yes','no'=>'No'])
                         ->hintAction(HelpHint::make("For every TLD you have not set yourself, including ones the registrar adds later. Yes: they sell, unless the row is set to Don't sell. No: only rows set to Sell are sold. To change rows, tick them and use Edit selected.")),
                     // Staff without Costs don't see the limit; their save keeps the saved one.
-                    TextInput::make('max_cost')->label('Cost limit')->numeric()->minValue(0)->prefix('USD')->visible(fn()=>$this->canSeeCosts())
+                    TextInput::make('max_cost')->label('Cost limit')->numeric()->minValue(0)->prefix('$')->visible(fn()=>$this->canSeeCosts())
                         ->hintAction(HelpHint::make('Skips a TLD when its register or renew cost, whichever is higher, is above this. Premium is per name, not per TLD: those names are checked at checkout.')),
                     TextInput::make('years')->label('Longest term')->integer()->required()->minValue(1)->maxValue(10)->suffix('years'),
                     Toggle::make('transfers')->label('Transfers'),
@@ -262,8 +263,9 @@ class WhatYouSell extends Page implements HasTable
     /** All accounts has no one rule to sum, so it says why the buttons are off. One account needs no head line: the table shows what is for sale. */
     public function getSubheading(): Htmlable|string|null
     {
-        if($this->account===self::ALL){return $this->mayEdit()||$this->canSync()?'Choose one account to sync or edit.':null;}
-        return null;
+        // The one place the page names its currency; every amount below reads "$10.99".
+        $choose=$this->account===self::ALL&&($this->mayEdit()||$this->canSync())?'Choose one account to sync or edit. ':'';
+        return $choose.Fact::IN_USD;
     }
     /** The saved read the panel and the left-out warning show. Empty for staff without costs. */
     public function savedPrices(): array {return $this->reads()->saved();}

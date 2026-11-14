@@ -15,3 +15,5 @@ Route::middleware('web')->group(function (): void {
     Route::post('/domains/check', [Storefront::class, 'check'])->name('domains.domains.check')->block(10, 10);
     Route::post('/domains/order', [Storefront::class, 'order'])->name('domains.domains.order')->block(10, 10);
 });
+// Old staff page addresses redirect to the pages that now carry their names.
+\Paymenter\Extensions\Servers\Domains\Http\Controllers\MovedStaffPageController::routes((string) (rescue(static fn () => \Filament\Facades\Filament::getPanel('admin')->getPath(), null, false) ?: 'admin'));

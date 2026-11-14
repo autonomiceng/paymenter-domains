@@ -15,7 +15,6 @@ abstract class RecordDetailPage extends Page implements PageType
     use Concerns\DetailType;
     use Concerns\ForRecord;
     use HasRelationManagers;
-    protected const WIDE = false;
     protected const PAGE_CLASSES = ['domains-page-detail', 'fi-resource-view-record-page'];
     private ?Component $overview = null;
     /** The sheet alone, or the sheet as the Overview tab beside the relation managers this reader can see. */

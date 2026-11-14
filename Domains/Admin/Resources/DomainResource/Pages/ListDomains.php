@@ -49,14 +49,14 @@ class ListDomains extends RecordListPage
             Column::text('customer', 'Customer', fn (Domain $d): ?string => $d->user ? (trim($d->user->first_name.' '.$d->user->last_name) ?: $d->user->email) : null)
                 ->person()->searchable(fn (Builder $query, string $search): Builder => self::customerSearch($query, $search)),
             Column::value('status', 'Status', fn (Domain $d): Value => Value::state($this->state($d), Reader::Staff, null, 'domain-'.$d->id)),
-            // The step comes first, so a cut note still shows it. A step that names a request opens it.
-            Column::note('note', 'Note', fn (Domain $d): ?string => $this->note($d)['text'])->link(fn (Domain $d): ?string => DomainFacts::requestUrl($this->status($d))),
             Column::value('provider_expires_at', 'Expires', fn (Domain $d): ?Value => $this->expires($d))
                 ->sortable(fn (Builder $query, string $direction): Builder => $query->orderBy('provider_expires_at', $direction)),
             Column::value('auto_renew', 'Auto-renew', fn (Domain $d): ?Value => $this->renewal($d)),
             Column::value('server_id', 'Registrar', fn (Domain $d): Value => $d->server
                 ? Value::fact(Fact::names([$d->server->name.' #'.$d->server_id]), self::REGISTRARS[$d->registrar_key] ?? null)
                 : Value::state(State::NotConnected, Reader::Staff, DomainFacts::NO_ACCOUNT))->optional(),
+            // Last, in the room left. The step comes first, so a cut note still shows it. A step that names a request opens it.
+            Column::note('note', 'Note', fn (Domain $d): ?string => $this->note($d)['text'])->names(fn (Domain $d): ?int => $this->status($d)['request'] ?? null)->link(fn (Domain $d): ?string => DomainFacts::requestUrl($this->status($d))),
         ];
     }
     protected function filters(): array
@@ -103,22 +103,23 @@ class ListDomains extends RecordListPage
         return State::tryFrom((string) $status['key']) ?? State::UnderReview;
     }
     private function note(Domain $d): array { $row = $this->row($d); return DomainFacts::note($this->status($d), $row['sync'], $row['noAccount'], $d); }
-    /** A registered domain without a saved expiry says why: it fills in by itself, or the read failed. */
+    /** A registered domain without a saved expiry reads Not read yet or Couldn't read, on one line: why is on the domain page. */
     private function expires(Domain $d): ?Value
     {
         if (($day = Fact::day($d->provider_expires_at)) !== null) { return Value::fact($day); }
         if (!DomainFacts::registered($d)) { return null; }
         $cause = DomainFacts::unread($d, $this->row($d)['sync']);
-        return Value::state(Missing::needsNothing($cause) ? State::NotReadYet : State::CouldntRead, Reader::Staff, $cause);
+        return Value::state(Missing::needsNothing($cause) ? State::NotReadYet : State::CouldntRead, Reader::Staff);
     }
     /** Renewal applies until the domain has ended, so pending and under-review rows show it too. A pending import bills nothing until import. */
     private function renewal(Domain $d): ?Value
     {
         if (DomainFacts::ended($d)) { return null; }
         $row = $this->row($d);
-        if ($row['off'] === null) { return Value::state(State::CouldntRead, Reader::Staff, DomainFacts::UNREADABLE_RENEWAL); }
+        if ($row['off'] === null) { return Value::state(State::CouldntRead, Reader::Staff); }
         if (!$d->adoptionPending() && !$row['off'] && !$row['accountOff']) { return Value::plain(Plain::On); }
-        return Value::plain(Plain::Off, $d->adoptionPending() ? 'Until import' : (!$row['off'] ? 'Account renewals off' : null));
+        // Why it is off (the account's switch, or a pending import) is on the domain page.
+        return Value::plain(Plain::Off);
     }
     /** 'off': true when automatic renewal is off, null when its saved data cannot be read. 'accountOff': the account's Renewals
      * switch is off. 'sync': DomainFacts::sync(). 'noAccount': no registrar account matches. */

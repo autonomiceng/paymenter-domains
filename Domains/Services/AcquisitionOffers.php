@@ -261,7 +261,7 @@ final class AcquisitionOffers
         if ($prices->count() !== 1) { return 'Expected one USD price; found '.$prices->count().'.'; }
         try {
             $usd = $prices->sole(); $amount = RetailLine::decimal($usd->price); $setup = RetailLine::decimal($usd->setup_fee);
-            return $amount === $retail && $setup === '0.00' ? null : 'USD '.$amount.'; setup '.$setup.'.';
+            return $amount === $retail && $setup === '0.00' ? null : '$'.$amount.'; setup $'.$setup.'.';
         } catch (\DomainException) { return 'Invalid native USD amount or setup fee.'; }
     }
 

@@ -113,7 +113,7 @@ same(null,$plain->rows('com')->first()->register_cost,'SQL presentation rows omi
 // A table reads rights once per build: one built after the revoke shows no cost cell or saved price.
 $fresh=new SellTable([$binding->serverId=>$binding],1,true,static fn()=>$page,false,$source);
 same(null,$fresh->cell($page[0],'register','price')['text'],'A table built after revocation reads rights afresh');same([],$fresh->saved()['rows'],'Saved prices need the current costs permission');
-\Livewire\Livewire::actingAs($actor)->test(OfferStaffPage::class)->filterTable('for_sale',false)->assertDontSee('USD 6.00')->assertActionHidden('csv');
+\Livewire\Livewire::actingAs($actor)->test(OfferStaffPage::class)->filterTable('for_sale',false)->assertDontSee('$6.00')->assertActionHidden('csv');
 try{$list->csv();expect(false,'CSV requires current costs permission');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(403,$e->getStatusCode(),'CSV permission is fresh');}
 echo 'Staff page queries: '.$count."\n";
 $nativeSuccessful=true;echo "Offer staff reads: ok\n";

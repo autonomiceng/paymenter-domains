@@ -113,9 +113,9 @@ staffRowsStandard($list,['checked','domains'],['balance','due']);
 // One line per account: the reason, a missing balance's cause and a low balance go in Note, each with its step.
 // Neither fixture account sells a TLD under the installed rules, so each leads with Not for sale and its fix.
 $rows=$list->instance()->getTableRecords()->keyBy('id');$cell=fn(string $column,int $id)=>$list->instance()->getTable()->getColumn($column)->record($rows[$id]);
-same('No TLDs are for sale. Check registrar account for .com. Open the TLD to see what it needs. Low balance. Add funds.',$cell('note',$enom->server_id)->getState(),'Low balance says to add funds');
+same('Low balance. Add funds. No TLDs are for sale. Check registrar account for .com. Open the TLD to see what it needs.',$cell('note',$enom->server_id)->getState(),'Low balance leads the note and says to add funds');
 same('warn',$cell('note',$enom->server_id)->getExtraAttributes()['data-domains-tone']??null,'Low balance is a job');
-same('No TLDs are for sale. Choose what you sell, or turn Orders off. Not checked yet. Use Check balance.',$cell('note',$silo->server_id)->getState(),'A Missing balance has its step in Note');
+same('Not checked yet. Use Check balance. No TLDs are for sale. Choose what you sell, or turn Orders off.',$cell('note',$silo->server_id)->getState(),'A Missing balance leads Note with its step');
 same('Off in Paymenter.',$cell('note',$off->id)->getState(),'The status reason is in Note');
 same([null,null],[$cell('note',$empty->id)->getState(),$cell('note',$empty->id)->getExtraAttributes()['data-domains-tone']??null],'Nothing to say, no Note');
 same(['Enom','1','NameSilo','0'],[$cell('registrar',$enom->server_id)->getState(),(string)$cell('domains',$enom->server_id)->getState(),$cell('registrar',$silo->server_id)->getState(),(string)$cell('domains',$silo->server_id)->getState()],'Registrar and domain count have columns');
@@ -124,8 +124,8 @@ expect(str_contains((string)$cell('checked',$enom->server_id)->formatState($cell
 // This keeps filters independent and tests every real request without remounting an unchanged list.
 // No accounts yet says how to add one; a search that hides every account says so.
 (clone $list)->searchTable('no-such-account')->assertSee('No accounts match')->assertSee('Clear the search or filters to see all rows.')->assertDontSee('Add one to start selling domains.');
-foreach(['Account','Registrar','Mode','Status','Note','Balance','Due in 30 days','Enom test account','Test','Not for sale','$7.99','Low balance','$8.00',
-    'Not read yet','Not checked yet','Add funds','Not connected','Connect','Off in Paymenter','Demo NameSilo','Demo'] as $needle){$list->assertSee($needle);}
+foreach(['Account','Registrar','Mode','Status','Note','Balance','Due in 30 days','Enom test account','Test','Not for sale','$7.99','$8.00',
+    'Not read yet','Add funds','Not connected','Connect','Off in Paymenter','Demo NameSilo','Demo'] as $needle){$list->assertSee($needle);}
 $html=$list->html();
 foreach(['https://ote.namesilo.com/cart/add-funds','https://cp.enom.com/','noopener noreferrer',RegistrarAccount::getUrl(['account'=>$enom->server_id]),RegistrarAccount::getUrl(['account'=>$silo->server_id])] as $needle){
     expect(str_contains($html,$needle),'List links: '.$needle);}

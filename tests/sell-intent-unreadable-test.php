@@ -36,7 +36,7 @@ foreach(['{"sell":','"invalid"',OfferState::json(['sell'=>[]]),OfferState::json(
         $xpath->evaluate('normalize-space(//*[@data-price-omission])'),'Page retains the named warning and existing repair wording');
     $records=collect($page->instance()->getTableRecords()->items());
     $column=$page->instance()->getTable()->getColumn('register_price');
-    same('7.80',$column->record($records->firstWhere('tld','com'))->getState(),'Healthy TLD keeps its exact displayed price');
+    same('$7.80',$column->record($records->firstWhere('tld','com'))->getState(),'Healthy TLD keeps its exact displayed price');
     same('Left out',$column->record($records->firstWhere('tld','invalid'))->getState(),'Unreadable TLD displays an explicit omission');
     same($before,StaffCommands::stamp($binding->serverId),'Opening the page changes no saved intent or publication');
     try{$page->callTableBulkAction('edit',[$broken->id],['choice'=>'sell','longest'=>'keep','transfer'=>'keep'])->assertHasNoTableBulkActionErrors()->assertNotified("Couldn't save");}

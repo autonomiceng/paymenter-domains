@@ -29,8 +29,17 @@ foreach($menu as $c){same('Domains',$c::getNavigationGroup(),'One Domains group:
 // Resource breadcrumbs read like the menu, not Filament's title-cased plural label.
 foreach(array_filter($all,fn($c)=>is_subclass_of($c,\Filament\Resources\Resource::class)) as $c){same($c::getNavigationLabel(),$c::getBreadcrumb(),'Sentence-case breadcrumb: '.$c);}
 same(count($menu),count(array_unique(array_map(fn($c)=>$c::getNavigationIcon(),$menu))),'Each staff page has its own icon');
-same(['domains','registrar-requests','domain-tlds','registrar-setup','domain-watch','dns-routing-profiles','public-suffix-list','dns-resolver'],
-    [DomainResource::getSlug(),OperationResource::getSlug(),TldResource::getSlug(),RegistrarSetup::getSlug(),WatchResource::getSlug(),RoutingProfileResource::getSlug(),PublicSuffixList::getSlug(),DnsResolver::getSlug()],'Slugs kept');
+// Each address names its page; the old addresses redirect for good, with the rest of the path and the query kept.
+same(['domains','registrar-requests','tlds','registrars','monitored-domains','dns-templates','import-pending','public-suffix-list','dns-resolver'],
+    [DomainResource::getSlug(),OperationResource::getSlug(),TldResource::getSlug(),RegistrarSetup::getSlug(),WatchResource::getSlug(),RoutingProfileResource::getSlug(),PendingAdoptionResource::getSlug(),PublicSuffixList::getSlug(),DnsResolver::getSlug()],'Slugs name their pages');
+// The kernel swaps in each request; put the page request back so later URLs keep the site's host.
+$moved=static function(string $old):array{$page=app('request');$r=app()->handle(Illuminate\Http\Request::create(url($old)));app()->instance('request',$page);app('url')->setRequest($page);return [$r->getStatusCode(),parse_url((string)$r->headers->get('Location'),PHP_URL_PATH).(($q=parse_url((string)$r->headers->get('Location'),PHP_URL_QUERY))?'?'.$q:'')];};
+foreach(['/admin/dns-routing-profiles'=>'/admin/dns-templates','/admin/dns-routing-profiles/4?tab=x'=>'/admin/dns-templates/4?tab=x','/admin/domain-tlds/7/history'=>'/admin/tlds/7/history',
+    '/admin/domain-watch/settings'=>'/admin/monitored-domains/monitoring-settings','/admin/domain-watch/dns-setup'=>'/admin/monitored-domains/dns-monitoring-setup','/admin/domain-watch/dns-failures'=>'/admin/monitored-domains/affected-dns-checks',
+    '/admin/domain-watch/12/history'=>'/admin/monitored-domains/12/history','/admin/registrar-setup'=>'/admin/registrars','/admin/adoption-pending/3'=>'/admin/import-pending/3','/admin/domains/9/adoption'=>'/admin/domains/9/import-preview',
+    '/admin/domains/adopt?q=1'=>'/admin/domains/import?q=1','/admin/tlds/price-list'=>'/admin/what-you-sell'] as $old=>$new){
+    same([301,$new],$moved($old),'Old address redirects: '.$old);
+}
 
 Auth::setUser(staffUser([Staff::VIEW,Staff::COSTS]));
 same(2,count(\Paymenter\Extensions\Servers\Domains\Admin\Support\StaffTabs::tlds('All TLDs')),'Pricing has two views');
@@ -39,7 +48,7 @@ app()->forgetInstance(WatchWork::class);
 
 // Resolver bookmarks redirect; monitoring-only sites retain suffix review without a registrar.
 $viewer=staffUser([Staff::VIEW,Writes::VIEW]);$manager=staffUser([Staff::VIEW,Writes::VIEW,Writes::MANAGE]);Auth::setUser($manager);
-same(true,str_ends_with(WatchResource::getUrl('settings'),'/domain-watch/settings'),'Settings tab URL');
+same(true,str_ends_with(WatchResource::getUrl('settings'),'/monitored-domains/monitoring-settings'),'Settings tab URL');
 Livewire::actingAs($manager)->test(DnsResolver::class)->assertRedirect(WatchResource::getUrl('settings'));
 Livewire::actingAs($manager)->test(PublicSuffixList::class)->assertSuccessful()->assertNoRedirect();
 Livewire::actingAs(staffUser([Staff::VIEW]))->test(MonitoringSettings::class)->assertForbidden();
@@ -48,7 +57,7 @@ Livewire::actingAs(staffUser([Staff::VIEW]))->test(MonitoringSettings::class)->a
 // page a URL opens marks its own tab, so a reload or a bookmark lands on the same tab.
 $tabs=fn($page)=>array_map(fn(NavigationItem $i)=>[$i->getUrl(),$i->isActive()],$page->instance()->getSubNavigation());
 $area=[DomainResource::getUrl('index'),WatchResource::getUrl('index'),RoutingProfileResource::getUrl('index'),WatchResource::getUrl('settings')];
-same(['/admin/domains','/admin/domain-watch','/admin/dns-routing-profiles','/admin/domain-watch/settings'],array_map(fn($u)=>parse_url($u,PHP_URL_PATH),$area),'Tab URLs are the old page URLs');
+same(['/admin/domains','/admin/monitored-domains','/admin/dns-templates','/admin/monitored-domains/monitoring-settings'],array_map(fn($u)=>parse_url($u,PHP_URL_PATH),$area),'Tab URLs name their tabs');
 $open=['index'=>\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ListDomains::class,'watch'=>ListWatches::class,'templates'=>RoutingProfileResource\Pages\ListConfiguration::class,'settings'=>MonitoringSettings::class];
 foreach(array_values($open) as $n=>$page){
     $test=Livewire::actingAs($manager)->test($page)->assertSuccessful();

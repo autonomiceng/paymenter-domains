@@ -1,4 +1,4 @@
-{{-- MIT, Copyright (c) 2026 Autonomic Engineering. The Renewal section: expiry, renewal setting, Auto Pay, price, next invoice, auth code and Renew now. --}}
+{{-- MIT, Copyright (c) 2026 Autonomic Engineering. The Renewal section: expiry, Auto-renew, Auto Pay, price, next invoice, auth code and Renew now. --}}
 @php
     $page = \Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::class;
     $expires = $page::expires($domain, $summary ?? null, $support);
@@ -14,6 +14,7 @@
     // Renew now needs a registrar expiry date, so the Expires row is always there to hold it.
     $renewable = isset($domain->renewNow['url']) && !$domain->renewalInvoice;
     $renewalOn = $domain->autoRenew ? $domain->autoRenew['enabled'] : $domain->renewal !== 'Off';
+    $complimentary = $domain->renewalPrice === \Paymenter\Extensions\Servers\Domains\Services\ComplimentaryAccounts::LABEL;
     // A row's "?" next to its label.
     $help = static fn (string $id, string $label, ?string $text = null) => new \Illuminate\Support\HtmlString(view('domains::partials.help', array_filter(['id' => $id, 'label' => $label, 'helpText' => $text]))->render());
 @endphp
@@ -23,10 +24,15 @@
 <x-domains::customer.row label="Expires">@if ($expires['missing'])<x-domains::customer.unread :cause="$expires['cause']" :fix="$expires['fix']" />@elseif (isset($expires['value']))<span class="domains-card__v">{{ $expires['value'] }}</span>@if (($expires['support'] ?? true) && ($expires['note'] || \Paymenter\Extensions\Servers\Domains\Presentation\Missing::supportUrl())) <span class="domains-sub">{{ $expires['note'] }} @include('domains::partials.contact-support')</span>@endif@else<span class="domains-date domains-card__v{{ $expires['tone'] ? ' domains-tone-text-'.$expires['tone'] : '' }}">@include('domains::partials.date', ['date' => $domain->expiry, 'fallback' => 'None'])</span>@if ($expires['note']) <span class="domains-sub">{{ $expires['note'] }}</span>@endif @endif@if ($renewable)<span class="domains-row__a domains-card__a"><a class="domains-btn {{ $renewSoon ? 'domains-btn--primary' : 'domains-btn--secondary' }} domains-btn--sm" data-dialog-open href="{{ $show }}?edit=renew#edit-renew">Renew now</a></span>@endif</x-domains::customer.row>
 @endif
 @if ($renewalRows)
-<x-domains::customer.row label="Auto-renew" :setting="true" :help="$help('auto-renew', 'Auto-renew')">{{ \Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Value::plain($renewalOn ? \Paymenter\Extensions\Servers\Domains\Presentation\Plain::On : \Paymenter\Extensions\Servers\Domains\Presentation\Plain::Off, \Paymenter\Extensions\Servers\Domains\Presentation\RenewalPayment::line($renewalOn, $domain->renewalPrice, $domain->autoPay, $domain->autoPayMethod, $domain->renewalSchedule, $domain->renewalPrice === \Paymenter\Extensions\Servers\Domains\Services\ComplimentaryAccounts::LABEL)) }}
-<span class="domains-row__a domains-card__a">@if ($domain->autoRenew)<button type="submit" form="form-auto-renew" class="domains-btn domains-btn--secondary domains-btn--sm">{{ $domain->autoRenew['enabled'] ? 'Turn off' : 'Turn on' }}</button>@elseif ($domain->renewal === 'Off' && $support)<a class="domains-a" href="{{ $support }}">Contact support</a>@endif
-@if (isset($domain->actions['autoPay']) && $renewalOn && $domain->renewalPrice !== \Paymenter\Extensions\Servers\Domains\Services\ComplimentaryAccounts::LABEL)<a class="domains-a" href="{{ $domain->actions['autoPay'] }}">Manage Auto Pay</a>@endif</span>
+<x-domains::customer.row label="Auto-renew" :setting="true" :help="$help('auto-renew', 'Auto-renew')">{{ \Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Value::plain($renewalOn ? \Paymenter\Extensions\Servers\Domains\Presentation\Plain::On : \Paymenter\Extensions\Servers\Domains\Presentation\Plain::Off, \Paymenter\Extensions\Servers\Domains\Presentation\RenewalPayment::ownerLine($renewalOn, $complimentary)) }}
+<span class="domains-row__a domains-card__a">@if ($domain->autoRenew)<button type="submit" form="form-auto-renew" class="domains-btn domains-btn--secondary domains-btn--sm">{{ $domain->autoRenew['enabled'] ? 'Turn off' : 'Turn on' }}</button>@elseif ($domain->renewal === 'Off' && $support)<a class="domains-a" href="{{ $support }}">Contact support</a>@endif</span>
 </x-domains::customer.row>
+{{-- Auto Pay is the account setting that pays renewal invoices; it has nothing to pay while Auto-renew is off or the domain is complimentary. Status and one link, never a second switch. --}}
+@if (isset($domain->actions['autoPay']) && $renewalOn && !$complimentary)
+<x-domains::customer.row label="Auto Pay"><span class="domains-card__v">{{ \Paymenter\Extensions\Servers\Domains\Presentation\RenewalPayment::autoPayState($domain->autoPay, $domain->autoPayMethod) }}</span>
+<span class="domains-row__a domains-card__a"><a class="domains-a" href="{{ $domain->actions['autoPay'] }}">{{ \Paymenter\Extensions\Servers\Domains\Presentation\RenewalPayment::autoPayLink($domain->autoPay, $domain->autoPayAccount) }}</a></span>
+</x-domains::customer.row>
+@endif
 @endif
 @if ($domain->renewalPrice && !($domain->renewNow['late'] ?? false) && $domain->renewal === 'On' && !$domain->setupPending)
 <x-domains::customer.row label="Renewal price"><span class="domains-card__v">{{ $domain->renewalPrice }}{{ $domain->renewalPrice === \Paymenter\Extensions\Servers\Domains\Services\ComplimentaryAccounts::LABEL ? '' : '/yr' }}</span></x-domains::customer.row>

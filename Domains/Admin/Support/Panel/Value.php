@@ -54,6 +54,9 @@ final class Value implements Htmlable
     /** The Demo tag that belongs after the first line, beside the name it marks. */
     public function tagged(?\Illuminate\Support\HtmlString $tag): self
     { return $tag === null ? $this : new self($this->kind, $this->word, $this->tone, $this->fact, $this->sub, $this->reader, $this->record, $this->extra, $this->state, $this->subAt, $tag, $this->then); }
+    /** The first line only, for a list cell (P-TBL-7) whose reason repeats on every row and is on the record's page. */
+    public function line(): self
+    { return new self($this->kind, $this->word, $this->tone, $this->fact, null, $this->reader, $this->record, [], $this->state, null, $this->tag, null); }
     /** One more sentence at the end of the line under the value, such as who sets a setting. */
     public function then(string $sentence): self
     {

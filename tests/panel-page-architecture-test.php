@@ -11,7 +11,6 @@ const PAGES_BEFORE_TYPES = [
     'Pages\PanelKit', 'Pages\WhatYouSell',
     'Resources\DomainResource\Pages\AdoptDomain',
     'Resources\PendingAdoptionResource\Pages\ListPending',
-    'Resources\TldResource\Pages\PriceList',
 ];
 $admin = dirname(__DIR__).'/Domains/Admin';
 $prefix = 'Paymenter\\Extensions\\Servers\\Domains\\Admin\\';

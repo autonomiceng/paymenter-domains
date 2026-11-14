@@ -8,6 +8,5 @@ use Filament\Tables\Contracts\HasTable;
 abstract class QueryListPage extends Page implements PageType, HasTable
 {
     use Concerns\RecordListType;
-    protected const WIDE = true;
     protected const PAGE_CLASSES = ['domains-page-list', 'fi-resource-list-records-page'];
 }

@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Admin\Resources;
 use Filament\Resources\Resource;
 use Illuminate\Database\Eloquent\{Builder,Model};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,TldFacts};
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\{ListTlds,PriceList,ViewTld};
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\{ListTlds,ViewTld};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Tld};
 class TldResource extends Resource
 {
@@ -19,7 +19,7 @@ class TldResource extends Resource
     protected static ?string $modelLabel='TLD';
     protected static ?string $pluralModelLabel='TLDs';
     protected static ?string $breadcrumb='TLDs & pricing';
-    protected static ?string $slug='domain-tlds';
+    protected static ?string $slug='tlds';
     public static function canViewAny(): bool {return Staff::can();}
     public static function canView(Model $record): bool {return Staff::can();}
     public static function canCreate(): bool {return false;}
@@ -39,5 +39,5 @@ class TldResource extends Resource
         return $out;
     }
     public static function getPages(): array
-    {return ['index'=>ListTlds::route('/'),'price-list'=>PriceList::route('/price-list'),'view'=>ViewTld::route('/{record}'),'history'=>TldResource\Pages\TldHistory::route('/{record}/history')];}
+    {return ['index'=>ListTlds::route('/'),'view'=>ViewTld::route('/{record}'),'history'=>TldResource\Pages\TldHistory::route('/{record}/history')];}
 }

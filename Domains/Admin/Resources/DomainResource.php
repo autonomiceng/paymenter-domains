@@ -47,5 +47,5 @@ class DomainResource extends Resource
     /** The domain statuses, in DomainStatus order. */
     public static function statusOptions(): array { return array_map(fn(array $s)=>$s[0],DomainStatus::SET); }
     public static function getRelations(): array { return [RequestsRelationManager::class]; }
-    public static function getPages(): array { return ['index'=>ListDomains::route('/'),'adopt'=>AdoptDomain::route('/adopt'),'view'=>ViewDomain::route('/{record}'),'adoption'=>AdoptionPreview::route('/{record}/adoption')]; }
+    public static function getPages(): array { return ['index'=>ListDomains::route('/'),'adopt'=>AdoptDomain::route('/import'),'view'=>ViewDomain::route('/{record}'),'adoption'=>AdoptionPreview::route('/{record}/import-preview')]; }
 }

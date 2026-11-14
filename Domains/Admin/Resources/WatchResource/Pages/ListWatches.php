@@ -77,7 +77,7 @@ class ListWatches extends RecordListPage
             Column::domain('canonical_name','Domain')->searchable()->sortable(),
             Column::text('customer','Customer',fn(WatchName $w)=>$this->watchRow($w)['customer']['label'])->person(),
             Column::value('status','Status',function(WatchName $w)use($staff){$status=$this->watchRow($w)['status'];return Value::state(WatchRows::state($status['label']),$staff,null,'watch-'.$w->id);}),
-            Column::text('note','Note',fn(WatchName $w)=>$this->note($w)),
+            Column::note('note','Note',fn(WatchName $w)=>$this->note($w)),
             Column::value('registration','Registrar',fn(WatchName $w)=>$this->fact($w,['value'=>WatchFindings::who($w->registration),'cause'=>WatchFacts::missingCause($w,'expiry')]))->optional(),
             Column::value('delegation.dns','Nameservers',fn(WatchName $w)=>$this->fact($w,['value'=>WatchFindings::who($w->delegation?->dns),'cause'=>WatchFacts::missingCause($w,'delegation')]))->optional(),
             Column::value('last_check','Last check',fn(WatchName $w)=>$this->fact($w,[...$this->lastCheck($w),'sub'=>null])),
@@ -98,12 +98,13 @@ class ListWatches extends RecordListPage
     protected function defaultSort(): ?array{return ['canonical_name','asc'];}
     protected function searchLabel(): ?string{return 'Search domain';}
     protected function emptyLine(): array{return ['No monitored domains','Turn on monitoring on a hosting product.','No monitored domains match'];}
-    /** A value not saved yet reads Not read yet with its cause. While monitoring is paused or stopped no check is expected:
-     * Status says so once and these cells stay empty. */
+    /** A value not saved yet reads Not read yet, on one line: its cause repeats on every row and is on the domain's page.
+     * While monitoring is paused or stopped no check is expected: Status says so once and these cells stay empty. */
     private function fact(WatchName $w,array $fact): ?Value
     {
         if($w->state!=='active'&&Missing::is($fact['value']??null)){return null;}
-        return WatchRows::value(['value'=>Missing::is($fact['value']??null)?null:$fact['value'],'sub'=>$fact['sub']??null,'tone'=>$fact['tone']??null,'cause'=>$fact['cause']??null,'at'=>$fact['at']??null,'url'=>null,'check'=>false]);
+        $value=WatchRows::value(['value'=>Missing::is($fact['value']??null)?null:$fact['value'],'sub'=>$fact['sub']??null,'tone'=>$fact['tone']??null,'cause'=>$fact['cause']??null,'at'=>$fact['at']??null,'url'=>null,'check'=>false]);
+        return $value->state===\Paymenter\Extensions\Servers\Domains\Presentation\State::NotReadYet?$value->line():$value;
     }
     /** Last check and Expires, each without its sub-line: those go in Note. */
     private function lastCheck(WatchName $w): array{return WatchFacts::lastCheck($w,$this->watchRow($w)['summary']);}

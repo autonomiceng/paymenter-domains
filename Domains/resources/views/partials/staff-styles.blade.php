@@ -19,9 +19,11 @@
 .domains-missing__cause{margin-inline-start:.5rem;color:var(--panel-fg-2,var(--gray-500))}
 .domains-note{min-width:14rem;max-width:24rem;overflow-wrap:anywhere}
 .domains-narrow{max-width:12rem}
-/* P-TBL-7: columns size to content. Structured values stay whole on one line, people's names wrap, and only a linked
+/* P-TBL-7: columns size to content. Values and people's names stay whole on one line, and only a linked
    name or note shortens with "..." (the record it opens shows it in full). */
 .domains-line{display:block;white-space:nowrap}
+/* A person's name stays on one line and stops at about 24 characters with '...'; the cell's title holds the full name. */
+.fi-ta-text-item.domains-person,.domains-person>.fi-ta-text-item{max-width:24ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .domains-cut{display:block;white-space:normal;overflow-wrap:break-word}
 .domains-name-cell{display:block;white-space:nowrap}
 .domains-list-note{white-space:normal}
@@ -29,15 +31,25 @@ a :is(.domains-name-cell,.domains-list-note),a :is(.domains-name-cell,.domains-l
 /* Filament draws each table text item as a line-clamp -webkit-box, which paints no "...". Ours are plain blocks. */
 .fi-ta-text-item:is(.domains-cut,.domains-line,.domains-name-cell):not(.fi-bulleted li.fi-ta-text-item),:is(.domains-cut,.domains-line,.domains-name-cell)>.fi-ta-text-item:not(.fi-bulleted li.fi-ta-text-item){display:block}
 [data-domains-table] .fi-ta-table{table-layout:auto;width:100%}
+/* P-TBL-7: a staff row is one line, 44px: 20px of text, 12px above and 11px below, and the 1px line between rows. */
+[data-domains-table] .fi-ta-row>td .fi-ta-text{padding-block:12px 11px}
+[data-domains-table] .fi-ta-row>td :is(.fi-ta-text,.fi-ta-text-item,.domains-panel-val){line-height:20px}
 [data-domains-table] .fi-ta-header-cell{white-space:nowrap}
 /* P-TBL-7: a linked name or note keeps its full width while the row has room, and shortens with '...' only when it has none. */
-[data-domains-table] td:has(a .domains-name-cell)>*,[data-domains-table] td:has(a .domains-list-note)>*{display:grid;grid-template-columns:minmax(0,max-content)}
+[data-domains-table] td:has(a .domains-list-note)>*{display:grid;grid-template-columns:minmax(0,max-content)}
 /* P-TBL-12: narrower than the default columns, the table scrolls inside its surface. The identity column stays put, and
    once the rows have scrolled under it, it casts an edge shadow. Browsers without scroll timelines skip the shadow. */
 [data-domains-table] .fi-ta-content-ctn{overflow-x:auto}
 @media(max-width:1279px){[data-domains-table] .fi-ta-table{width:max-content;min-width:100%}}
-/* The fixed name column never takes most of a narrow screen: past the cap a very long name shortens with '...', and its link opens it in full. */
-@media(max-width:1279px){[data-domains-table] td:has(a .domains-name-cell)>*{max-width:min(20rem,45vw)}}
+/* P-TBL-7: every column but Note sizes to its content on one line. Note is the last column and takes only the room left:
+   it shortens with '...' and the reveal shows it in full. A domain name caps itself (DomainName::cell). */
+@media(min-width:1280px){[data-domains-table] td.domains-note-cell{width:100%;min-width:8rem}}
+@media(max-width:1279px){[data-domains-table] td.domains-note-cell>*{max-width:24rem}}
+[data-domains-table] .domains-list-note,[data-domains-table] .domains-list-note>.fi-ta-text-item{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+{{-- The shared admin CSS gives a clamped note margin instead of padding; a one-line note keeps the cell padding, so the row stays 44px. --}}
+[data-domains-table] .fi-ta-cell .domains-list-note{margin-block:0}
+td.domains-history-detail{min-width:20rem}
+[data-domains-table] .domains-note{min-width:0;max-width:none}
 [data-domains-table] :is(.fi-ta-row>td,.fi-ta-table>thead>tr>th):first-child{position:sticky;inset-inline-start:0;z-index:1;background:var(--panel-card,#111B36)}
 [data-domains-table] :is(.fi-ta-row>td,.fi-ta-table>thead>tr>th):first-child:has(input[type=checkbox])+:is(td,th){position:sticky;inset-inline-start:44px;z-index:1;background:var(--panel-card,#111B36)}
 @keyframes domains-edge{from{box-shadow:none}to{box-shadow:8px 0 8px -8px rgb(0 0 0/.6)}}
@@ -133,3 +145,4 @@ a :is(.domains-name-cell,.domains-list-note),a :is(.domains-name-cell,.domains-l
 :where(.domains-panel-step-a){display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin-top:4px}:where(.domains-panel-step-a:empty){display:none}
 :where(.domains-panel-partial){display:block;min-width:0;overflow-wrap:anywhere}
 </style>
+@include('domains::partials.domain-name-styles')

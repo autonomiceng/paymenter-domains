@@ -20,7 +20,7 @@ $discovery=new \Paymenter\Extensions\Servers\Domains\Services\WatchDiscoveryWork
 foreach([[false,$discovery],[true,new \Paymenter\Extensions\Servers\Domains\Services\WatchDiscoveryWork()]] as [$enabled,$producer]){
     app()->instance(\Paymenter\Extensions\Servers\Domains\Services\WatchWork::class,new \Paymenter\Extensions\Servers\Domains\Services\WatchWork($monitoringReader,$producer,$enabled));
     same(true,RoutingProfileResource::canViewAny(),'Registration DNS templates stay available without monitoring');
-    expect(str_contains(RoutingProfileResource::getUrl(),'dns-routing-profiles'),'Registration DNS template route stays available');
+    expect(str_contains(RoutingProfileResource::getUrl(),'/dns-templates'),'The DNS templates page lives at /dns-templates');
     expect(in_array(WatchResource::getUrl('index'),array_map(fn($tab)=>$tab->getUrl(),\Paymenter\Extensions\Servers\Domains\Admin\Support\StaffTabs::domains('All domains')),true),'Monitoring status remains reachable from the Domains tabs');
 }
 app()->instance(\Paymenter\Extensions\Servers\Domains\Services\WatchWork::class,new \Paymenter\Extensions\Servers\Domains\Services\WatchWork($monitoringReader,$discovery,true));

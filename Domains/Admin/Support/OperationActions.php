@@ -181,7 +181,7 @@ final class OperationActions
     /** Cancel and refund names the amount and where it goes before staff confirm. A new order and its service end first. */
     public static function refundWords(Operation $op): string
     {
-        $amount=is_numeric($op->amount)&&(float)$op->amount>0?($op->currency?:'USD').' '.number_format((float)$op->amount,2,'.',''):'the payment';
+        $amount=is_numeric($op->amount)&&(float)$op->amount>0?(\Paymenter\Extensions\Servers\Domains\Presentation\Fact::money(number_format((float)$op->amount,2,'.',''),$op->currency?:'USD')?->text??'the payment'):'the payment';
         if(in_array($op->action,['register','transfer'],true)){
             $registrar=PaidUncertainty::registrar($op);
             return "Cancels this order and its service, then refunds {$amount} to the original payment. If that payment can't be refunded, {$amount} goes to the customer's account credit. Nothing was sent to {$registrar}, so there is no registrar cost.";

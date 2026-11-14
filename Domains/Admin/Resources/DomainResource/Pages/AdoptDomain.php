@@ -23,6 +23,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{AdoptionCommit, AdoptionReade
 class AdoptDomain extends Page
 {
     protected static string $resource = DomainResource::class;
+    protected \Filament\Support\Enums\Width|string|null $maxContentWidth = Sheet::WIDTH;
     #[\Livewire\Attributes\Locked] public array $target = [];
     #[\Livewire\Attributes\Locked] public array $review = [];
     #[\Livewire\Attributes\Locked] public string $reason = '';
@@ -31,8 +32,9 @@ class AdoptDomain extends Page
     #[\Livewire\Attributes\Locked] public ?string $refusal = null;
     public function mount(): void { self::permission(); }
     private static function permission(): void { abort_unless(Staff::can(Staff::ADOPT_PREVIEW), 403); }
-    public function getTitle(): string { return 'Import a domain'; }
-    public function getBreadcrumb(): string { return 'Import domain'; }
+    // One name from the Domains list button to the crumb and the title.
+    public function getTitle(): string { return 'Import domain'; }
+    public function getBreadcrumb(): string { return $this->getTitle(); }
     protected function getHeaderActions(): array { return []; }
     public function chooseAction(): Action
     {
@@ -109,7 +111,7 @@ class AdoptDomain extends Page
             ->modalDescription(function (): string {
                 $facts = $this->review['details'] ?? [];
                 return 'Customer #'.$this->target['customer'].', Service #'.$this->target['service'].', Account #'.$this->target['account']
-                    .'. Expiry: '.self::when($facts['expiry'] ?? null, text: true).'. Annual charge: '.($facts['annual_charge'] ?? 'Unconfirmed').' USD including tax. '
+                    .'. Expiry: '.self::when($facts['expiry'] ?? null, text: true).'. Annual charge: '.(($charge = Fact::money($facts['annual_charge'] ?? null)?->text) === null ? 'Unconfirmed' : $charge.' including tax').'. '
                     .Review::renewalNotice($facts).' '
                     .'Nothing is charged now. Reason: '.$this->reason;
             })
@@ -186,7 +188,7 @@ class AdoptDomain extends Page
             $details = $this->review['details'] ?? []; $a = $this->previewId ? Adoption::whereKey($this->previewId)->where('actor_id', Auth::id())->first() : null;
             $facts = ['Result' => ($this->review['code'] ?? '') === 'ready' ? (($details['test_only'] ?? false) ? 'Test only. No real domain is imported.' : 'Checks passed') : $this->review['message'],
                 'Expiry' => self::when($details['expiry'] ?? null), 'Renewal due' => ($details['do_not_renew'] ?? false) ? 'No renewal' : self::when($details['renewal_due'] ?? null),
-                'Annual charge' => isset($details['annual_charge']) ? $details['annual_charge'].' USD (including tax)' : 'Unconfirmed',
+                'Annual charge' => ($charge = Fact::money($details['annual_charge'] ?? null)?->text) === null ? 'Unconfirmed' : $charge.' (including tax)',
                 'Price review' => Review::priceNotice($details['price_notice'] ?? null),
                 'Past invoices' => array_map(fn ($i) => 'Invoice #'.$i['invoice_id'].' ('.ucfirst($i['status']).')', $details['history'] ?? []) ?: ['No verified past invoices.'],
                 'Renewal' => Review::renewalNotice($details),

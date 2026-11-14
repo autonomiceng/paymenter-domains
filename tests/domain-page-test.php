@@ -6,7 +6,7 @@ require_once __DIR__.'/Support/reserved-fixtures.php';
 require dirname(__DIR__).'/Domains/routes/web.php';require dirname(__DIR__).'/Domains/routes/owned.php';
 use Carbon\CarbonImmutable;
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerActionController;
-use Paymenter\Extensions\Servers\Domains\Presentation\{DomainPage, DomainSummary, OwnedDomain};
+use Paymenter\Extensions\Servers\Domains\Presentation\{DomainPage, DomainSummary, OwnedDomain, RenewalPayment};
 use Paymenter\Extensions\Servers\Domains\Services\{DomainSummaryStrings, OwnerHelp};
 
 config(['settings.company_name'=>'Example Hosting']);
@@ -267,6 +267,16 @@ $autoPay=static fn(DOMXPath $dom)=>$dom->query('//section[@id="renewal"]//a[@hre
 same(1,$autoPay(storefrontDom($render($on,$summary($on)))),'Renewal links to the service payment controls');
 $on=$domain(['renewal'=>'On','autoPay'=>true]);
 same(0,$autoPay(storefrontDom($render($on,$summary($on)))),'No payment link without its URL');
+// An unlinked domain follows the account switch: Manage while Auto Pay is on for the account, Turn on while it is off.
+$link=static fn(DOMXPath $dom)=>trim((string)$dom->query('//section[@id="renewal"]//a[@href="/account/payment-methods"]')->item(0)?->textContent);
+$unlinked=static fn(bool $account)=>$domain(['renewal'=>'On','autoPay'=>false,'autoPayAccount'=>$account,'actions'=>['show'=>'/domains/1','autoPay'=>'/account/payment-methods']]);
+$accountOn=$unlinked(true);$accountOff=$unlinked(false);
+same(RenewalPayment::autoPayLink(true),$link(storefrontDom($render($accountOn,$summary($accountOn)))),'Account On: an unlinked domain offers to manage Auto Pay');
+same(RenewalPayment::autoPayLink(false),$link(storefrontDom($render($accountOff,$summary($accountOff)))),'Account Off: an unlinked domain offers to turn it on');
+same(false,RenewalPayment::autoPayLink(true)===RenewalPayment::autoPayLink(false),'The two link actions differ');
+// Auto Pay has nothing to pay while Auto-renew is off, so the row and its link leave.
+$off=$domain(['renewal'=>'Off','renewalOff'=>'owner','autoRenew'=>['url'=>'/domains/1/auto-renew','enabled'=>false],'actions'=>['show'=>'/domains/1','autoPay'=>'/services/1#auto-pay']]);
+same(0,$autoPay(storefrontDom($render($off,$summary($off)))),'No Auto Pay link while Auto-renew is off');
 $d=$domain();same('Issues Feb 1, 2027. Due Feb 8, 2027.',$card(storefrontDom($render($d,$summary($d,['renewalDueAt'=>'2027-02-08','renewalIssueAt'=>'2027-02-01']))),'Next invoice'),'Planned invoice says when it is issued and when it is due');
 $d=$domain(['renewalDue'=>'2027-02-01','renewNow'=>['invoice'=>'/invoices/9']]);$dom=storefrontDom($render($d,$summary($d)));
 same('Due Feb 1, 2027 Pay invoice',$card($dom,'Next invoice'),'Due invoice');

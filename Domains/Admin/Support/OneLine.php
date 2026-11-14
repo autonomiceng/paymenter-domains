@@ -9,11 +9,12 @@ final class OneLine
 {
     /** A linked domain name may shorten when structured columns use the available room. */
     public const NAME=['domains-name-cell',30];
-    /** A person or account wraps and keeps its complete value. */
-    public const SHORT=['domains-cut',0];
+    /** A person or account: one line up to about 24 characters, then cut at the end with '...' so a long name can't widen
+     * the table. The cell's title and its text keep the full name for hover, screen readers, copy and search. */
+    public const PERSON=['domains-line domains-person',24];
     /** Ordinary text stays complete. */
     public const LINE=['domains-line',44];
-    /** A linked note shares the remaining room with the name; unlinked notes wrap. */
+    /** A note is the last column: it takes the room left and shortens with '...'; the reveal shows it in full. */
     public const NOTE=['domains-line domains-list-note',0,'domains-note-cell'];
     /** @param array{0:string,1:int,2?:string} $kind The item class, the length that always fits, and an optional cell class. */
     public static function apply(TextColumn $column, array $kind=self::LINE): TextColumn

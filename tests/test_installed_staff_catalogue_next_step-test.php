@@ -99,7 +99,7 @@ DB::table('domains_prices')->where('server_id',$binding->serverId)->where('tld',
 $intent=OfferState::decode($original['catalogue_intent']);$intent['transfers']=false;DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_intent'=>OfferState::json($intent)]);
 [$table,$row]=nextTable();$status=$table->status($row);
 same('Set a positive registration price in Edit prices on .com.',$status['next'],'A saved zero price names the staff choice and its page');same('tld',$status['open'],'The staff price choice links to the TLD page');
-same('0.00',$table->cell($row,'register','price')['text'],'Saved prices remain visible while staff correct them');
+same('$0.00',$table->cell($row,'register','price')['text'],'Saved prices remain visible while staff correct them');
 
 } catch (Throwable $error) {$failures[]='Case 4: '.$error->getMessage();}
 try {

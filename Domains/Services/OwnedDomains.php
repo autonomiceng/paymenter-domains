@@ -327,12 +327,13 @@ final readonly class OwnedDomains
         $schedule=$renewal==='On' && $d->status==='active' && $state->calendar && !isset($renewNow['invoice']) && !isset($renewNow['status'])
             && $state->calendar['issue'] >= $this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d') ? $state->calendar : [];
         $test=Account::where('server_id',$d->server_id)->value('environment')==='test';
-        if ($service) { $actions['autoPay']=route('services.show',$service->id).'#auto-pay'; }
+        // Auto Pay is one account setting on the native Payment methods page.
+        if ($service) { $actions['autoPay']=route('account.payment-methods'); }
         try { $dnsCorrection=RegistrationDns::pending($op,$d); } catch (\Throwable) { $dnsCorrection=false; }
         if($d->price_mode==='complimentary'){$price=ComplimentaryAccounts::LABEL;}
         $page=new OwnedDomain($d->domain,$pill['label'],$pill['tone'],$d->provider_expires_at?->format('Y-m-d'),$renewal,$price,
             $actions,$progress,$setup,$transfer,$management,$test,$unavailable,$renewalDue, changesRefused:$unavailable?$refused:null, adopted:$adopted, plannedRenewalDue:$plannedDue, history:$history, renewalInvoice:$renewalInvoice, originalDoNotRenew:$adopted && RenewalStop::adopted($renewalState),
-            renewalSchedule:$schedule, autoPayMethod:$policy!==null&&RenewalAutoPay::ready($service)?$service->billingAgreement->name:null, order:$order, autoPay:$policy!==null&&RenewalAutoPay::ready($service), renewNow:$policy===null?[]:$renewNow,
+            renewalSchedule:$schedule, autoPayMethod:$policy!==null&&RenewalAutoPay::ready($service)?$service->billingAgreement->name:null, order:$order, autoPay:$policy!==null&&RenewalAutoPay::ready($service), autoPayAccount:$policy!==null&&$service!==null&&RenewalAutoPay::account($service->user), renewNow:$policy===null?[]:$renewNow,
             renewalOff:$renewal==='Off'?RenewalStop::offReason($renewalState):null,
             autoRenew:$forms&&OwnerAutoRenew::available($renewalState)?['url'=>route('domains.domains.auto-renew',$d->id),'enabled'=>!RenewalStop::ownerOff($renewalState)]:[],
             dnsCorrection:$dnsCorrection, statusReason:$pill['reason'], refundTo:self::refundTo($d,$op,$order), rejectedAcquisition:$op?->state==='rejected'&&in_array($d->status,['registration_rejected','transfer_rejected'],true)?$op->action:null, earlyRenewal:$earlyRenewal, demo:DemoData::is($d), syncPaused:DemoData::syncPaused($d), owner:self::owner($contacts??[]),

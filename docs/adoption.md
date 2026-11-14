@@ -23,7 +23,8 @@ on in the site configuration.
    (`admin.domains.view`), Preview domain import (`admin.domains.adopt.preview`),
    Import domains (`admin.domains.adopt`), Manage domain operations
    (`admin.domains.manage`), and the service update permission
-   (`admin.services.update`).
+   (`admin.services.update`). If the import links invoice history, the staff role
+   also needs `admin.invoices.view`.
 
 Staff can check a domain while importing is off. To import, they preview the result and
 confirm it.

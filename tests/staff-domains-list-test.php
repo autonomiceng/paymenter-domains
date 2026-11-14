@@ -22,6 +22,12 @@ $list=function(?callable $queries=null)use($viewer){
 $owner=App\Models\User::create(['first_name'=>'Ada','last_name'=>'Lovelace','email'=>'ada@example.test','password'=>'synthetic-password']);DB::table('domains_domains')->where('id',$active->id)->update(['user_id'=>$owner->id]);same(true,isset($list()[0]['customer']),'Customer column');
 Livewire::actingAs($viewer)->test(ListDomains::class)->assertSee('Search domain or customer')->searchTable($owner->first_name.' '.$owner->last_name)->assertCanSeeTableRecords([$active]);
 Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable('nobody-by-this-name')->assertCountTableRecords(0);
+// A long customer name can't widen the table: one line, cut at the end past about 24 characters, with the full name kept
+// in the cell's text (screen readers, copy, search) and in its title (hover).
+$long=str_repeat('Longname ',5).'Owner';DB::table('users')->where('id',$owner->id)->update(['first_name'=>$long,'last_name'=>'']);
+$dom=Dom\HTMLDocument::createFromString('<!doctype html><meta charset="utf-8">'.Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($active->domain)->html(),LIBXML_NOERROR);
+$cell=$dom->querySelector('[title="'.$long.'"]');
+expect($cell!==null&&trim($cell->textContent)===$long,'A long customer name keeps its full text (screen readers, copy) and its title (hover)');
 // Duplicate staff account names remain distinguishable in filters and rows.
 App\Models\Server::whereIn('id',[$held->server_id,$active->server_id])->update(['name'=>'Shared account']);
 $accountsPage=Livewire::actingAs($viewer)->test(ListDomains::class);
@@ -46,7 +52,7 @@ foreach ($cases as $case=>[$status,$action,$state,$code]) {
     same(DomainFacts::for($held->fresh())['Renewal']['value']??'Missing',$cell->getState(),'Auto-renew cell matches the domain page: '.$case);
     expect(in_array($cell->getState(),['On','Off','Missing'],true),'Auto-renew cell is not blank: '.$case);
 }
-// A pending import never bills renewals: the list says Off, Until import, like the domain page. By status or by provenance alone.
+// A pending import never bills renewals: the list says Off on one line, and the domain page says Off, Until import. By status or by provenance alone.
 $saved=(array)DB::table('domains_domains')->where('id',$held->id)->first(['status','provenance','provider_expires_at']);
 foreach (['status'=>['status'=>'adoption_pending'],'provenance'=>['provenance'=>'adoption_pending']] as $case=>$pending) {
     DB::table('domains_domains')->where('id',$held->id)->update([...$pending,'provider_expires_at'=>today()->addDays(200)->format('Y-m-d')]);
@@ -55,7 +61,7 @@ foreach (['status'=>['status'=>'adoption_pending'],'provenance'=>['provenance'=>
     // Customers and staff see one name for the setting.
     same('Auto-renew',$columns['auto_renew']->getLabel(),'List column says Auto-renew, as the domain page row');
     $text=trim(preg_replace('/\s+/',' ',html_entity_decode(strip_tags((string)$cell->formatState($cell->getState())))));
-    same([$page['value'],$page['sub']],[$cell->getState(),trim(substr($text,strlen((string)$cell->getState())))?:null],'List matches the domain page: pending '.$case);
+    same([$page['value'],null],[$cell->getState(),trim(substr($text,strlen((string)$cell->getState())))?:null],'List says Off, as the domain page: pending '.$case);
     DB::table('domains_domains')->where('id',$held->id)->update($saved);
 }
 DB::table('domains_domains')->where('id',$held->id)->update(['status'=>'cancelled']);
@@ -63,7 +69,7 @@ DB::table('domains_domains')->where('id',$held->id)->update(['status'=>'cancelle
 DB::table('domains_domains')->where('id',$held->id)->update($saved);
 DB::table('domains_domains')->where('id',$held->id)->update(['renewal_policy'=>'not-readable']);
 [$columns,$records]=$list();$cell=$columns['auto_renew']->record($records[$held->id]);
-same(\Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead->label(),$cell->getState(),'Unreadable renewal settings read Couldn\'t read');expect(str_contains(html_entity_decode(strip_tags((string)$cell->formatState($cell->getState()))),DomainFacts::UNREADABLE_RENEWAL),'Unreadable renewal settings say the cause');
+same(\Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead->label(),$cell->getState(),'Unreadable renewal settings read Couldn\'t read');same($cell->getState(),trim(html_entity_decode(strip_tags((string)$cell->formatState($cell->getState())))),'Unreadable renewal settings read one line; why is on the domain page');
 DB::table('domains_domains')->where('id',$held->id)->update(['renewal_policy'=>Domain::find($active->id)->getRawOriginal('renewal_policy')]);
 
 // One demo-paused definition: the list, the page and the customer view agree, and the list row says why sync stops.
@@ -109,4 +115,10 @@ foreach($missing as $i=>$id){$row=$records[$id];
     same($i%3===0?'failed':null,DomainFacts::sync($row),'Direct callers still lazily read the identity and stopped state');
     same(DomainFacts::NO_ACCOUNT.($i%3===0?' Sync stopped. Ask staff who can resume sync.':''),$columns['note']->record($row)->getState(),'Missing accounts never falsely pause demo sync');
 }
+// A long name cuts in the middle and keeps its TLD; hover and screen readers get the full name, and copy reads it once.
+$full='shop-test-fc9d1234567b02d.com';$doc=new DOMDocument();$doc->loadHTML('<?xml encoding="utf-8"?>'.Paymenter\Extensions\Servers\Domains\Presentation\DomainName::cell($full)->toHtml());$x=new DOMXPath($doc);
+$shown=array_map(fn($n)=>$n->textContent,iterator_to_array($x->query('//*[@title]/*[@aria-hidden="true"]')));$read=$x->query('//*[@title]/*[not(@aria-hidden)]');
+same([$full,$full,1,$full],[$x->query('//*[@title]')->item(0)?->getAttribute('title'),implode('',$shown),$read->length,$read->item(0)?->textContent],'Hover, the visible parts and screen readers (once) all read the full name');
+expect(count($shown)===2&&$shown[0]!==''&&str_ends_with($shown[1],'.com'),'A cut name is cut in its head and keeps its TLD');
+expect(str_contains(Livewire::actingAs($viewer)->test(ListDomains::class)->html(),'title="'.e($active->domain).'"'),'The Domain column draws the shared name cell');
 echo "Staff Domains list: Auto-renew on every state, one demo-paused definition and a fixed query count passed.\n";$nativeSuccessful=true;

@@ -14,13 +14,13 @@ class PendingAdoptionResource extends WatchReadResource
     protected static ?string $navigationLabel='Import pending';
     protected static ?string $pluralModelLabel='Import pending';
     protected static ?string $breadcrumb='Import pending';
-    protected static ?string $slug='adoption-pending';
+    protected static ?string $slug='import-pending';
     public static function canViewAny(): bool{return Staff::can(Staff::ADOPT);}
     /** Imports waiting for review are Under review on the Domains list; old links land on that filter. */
     public static function shouldRegisterNavigation(): bool{return false;}
     public static function redirectUrl(): string{return DomainResource::getUrl('index',['filters'=>['status'=>['values'=>['under_review']]]]);}
     public static function getEloquentQuery(): Builder{return parent::getEloquentQuery()->where(fn($query)=>$query->where('provenance','adoption_pending')->orWhere('status','adoption_pending'));}
     public static function table(Table $table): Table
-    {return $table->columns([OneLine::apply(TextColumn::make('domain')->label('Domain')->searchable(),OneLine::NAME),TextColumn::make('user_id')->label('Customer ID'),TextColumn::make('service_id')->label('Service ID'),TextColumn::make('setup')->label('Registration')->state('Registration setup pending')->badge()])->filters([Filter::make('customer')->schema([TextInput::make('id')->label('Customer ID')->numeric()])->query(fn(Builder $query,array $data)=>ctype_digit((string)($data['id']??''))?$query->where('user_id',(int)$data['id']):$query)])->recordUrl(fn($record)=>static::getUrl('view',['record'=>$record]))->paginated([25,50,100])->defaultPaginationPageOption(25)->searchPlaceholder('Search domain')->emptyStateHeading('No registrations pending adoption');}
+    {return $table->columns([OneLine::apply(TextColumn::make('domain')->label('Domain')->searchable()->formatStateUsing(fn(?string $state)=>$state===null?null:\Paymenter\Extensions\Servers\Domains\Presentation\DomainName::cell($state)),OneLine::NAME),TextColumn::make('user_id')->label('Customer ID'),TextColumn::make('service_id')->label('Service ID'),TextColumn::make('setup')->label('Registration')->state('Registration setup pending')->badge()])->filters([Filter::make('customer')->schema([TextInput::make('id')->label('Customer ID')->numeric()])->query(fn(Builder $query,array $data)=>ctype_digit((string)($data['id']??''))?$query->where('user_id',(int)$data['id']):$query)])->recordUrl(fn($record)=>static::getUrl('view',['record'=>$record]))->paginated([25,50,100])->defaultPaginationPageOption(25)->searchPlaceholder('Search domain')->emptyStateHeading('No registrations pending adoption');}
     public static function getPages(): array{return ['index'=>ListPending::route('/'),'view'=>ViewPending::route('/{record}')];}
 }

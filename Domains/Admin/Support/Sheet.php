@@ -14,8 +14,8 @@ use Paymenter\Extensions\Servers\Domains\Presentation\{Missing, StaffTime};
  * It emits plain Filament plus domains-* class names, and data-piece on each piece's root so a walk can crop it. A skin draws the sheet from those; without one it stays stacked Filament sections. */
 final class Sheet
 {
-    /** Detail pages stop here. Tables keep the full width. */
-    public const WIDTH=Width::SixExtraLarge;
+    /** One width for every staff page, lists and details alike: the page fills the area beside the nav, so a detail page never leaves space a list page uses. */
+    public const WIDTH=Width::Full;
     /** A rail stops at this many steps. A tab holds the rest. */
     public const RAIL_STEPS=7;
     /** @param list<Component> $sheet @param list<Component> $rail The rail drops under the sheet on narrow screens. */

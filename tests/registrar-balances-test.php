@@ -333,7 +333,7 @@ $secondStaff=staffUser([Staff::VIEW]);$customer=commerceUser();
 $d->update(['billing_managed'=>true,'provider_expires_at'=>'2026-11-01']);
 $refreshForecastCost();
 $clock->instant=$clock->now()->modify('+1 day');$balances->daily($a);
-$assertAlerts=static fn()=>staffAlerts('Low balance',$serverName.' balance is below renewals due in 30 days.',route('filament.admin.pages.registrar-setup'),[$staff,$secondStaff]);
+$assertAlerts=static fn()=>staffAlerts('Low balance',$serverName.' balance is below renewals due in 30 days.',route('filament.admin.pages.registrars'),[$staff,$secondStaff]);
 $transactions=0;
 \Illuminate\Support\Facades\Event::listen(\Illuminate\Database\Events\TransactionBeginning::class,static function()use(&$transactions):void {$transactions++;});
 $assertAlerts();$forecastBefore=$forecastQueries;$transactionsBefore=$transactions;$balances->daily($a);$assertAlerts();

@@ -41,6 +41,11 @@ DB::table('domains_operations')->where('id',$op->id)->update(['action'=>$saved->
 DB::table('domains_operations')->where('id',$op->id)->update(['state'=>'awaiting_payment','safe_code'=>null]);
 DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>false]);
 same('Paid. Not sent. Orders are off for this account.',RequestFacts::status($op->fresh())['reason'],'A paid request waiting on Orders says so');
+// The rendered list note is one clause, and a paid request that can't go out keeps what blocks it there.
+$cell=Livewire::actingAs($staff)->test(ListOperations::class)->instance()->getTable()->getColumn('note')->record($op->fresh());
+$shown=trim(html_entity_decode(strip_tags((string)$cell->formatState($cell->getState()))));
+expect(str_starts_with($shown,'Paid')&&str_contains($shown,'Orders off'),'The list says the paid request is blocked by Orders off: '.$shown);
+same($cell->getState(),$cell->getExtraAttributes()['title']??null,'A mouse hover on the note reads its full text');
 // List projections use one prefetched invoice batch for both status and reason.
 $page=Livewire::actingAs($staff)->test(ListOperations::class)->instance();
 $records=$page->getTableRecords();
