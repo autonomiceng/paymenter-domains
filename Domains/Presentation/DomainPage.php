@@ -51,8 +51,8 @@ final class DomainPage
             // A nameserver step restores service, so it stays with its action and the renewal check is said beside it.
             $renewalCheck!==null && $nameservers!==null => [...$nameservers, 'text' => $nameservers['text'].' '.($renewalCheck['brief'] ?? $renewalCheck['body'])],
             // The rows lose their Edit while changes wait, so the one notice says why (DESIGN.md P-ACT-8).
-            // Confirming the renewal does not reopen changes the account switched Off, so that case says how to turn them on.
-            $renewalCheck!==null => ['tone'=>'info','text'=>$renewalCheck['body'].(!$d->changesUnavailable ? '' : ($d->changesRefused === DomainManagement::SWITCH_OFF ? ' '.self::SWITCH_OFF_AFTER : ' '.self::CHANGES_AFTER)),'action'=>$contact,'asks'=>$renewalCheck['asks']??false],
+            // Confirming the renewal does not reopen changes the account switched Off or an earlier request holds, so those cases say what does.
+            $renewalCheck!==null => ['tone'=>'info','text'=>$renewalCheck['body'].(!$d->changesUnavailable ? '' : ($d->changesRefused === DomainManagement::SWITCH_OFF ? ' '.self::SWITCH_OFF_AFTER : (is_int($d->changesRefused) ? ' '.self::EARLIER_AFTER : ' '.self::CHANGES_AFTER))),'action'=>$contact,'asks'=>$renewalCheck['asks']??false],
             $d->syncPaused => self::ours('Sync paused: the demo registrar is off. Nameservers show when it resumes.', $contact),
             $d->setupPending => self::ours('We’re confirming this domain. Changes and renewals start after that. If it expires soon, let us know.', $contact),
             $order === 'unpaid' => ['tone' => 'warn', 'text' => 'This order isn’t paid yet. Pay the invoice to start the '.$word.'.', 'action' => ['label' => 'Pay invoice', 'url' => $d->order['invoice'], 'button' => true]],
@@ -150,6 +150,7 @@ final class DomainPage
     public const PAID_LABEL = 'Renewal invoice';
     /** Beside a renewal check while other changes wait on it. */
     public const CHANGES_AFTER = 'Other changes open once it’s confirmed.';
+    public const EARLIER_AFTER = 'Other changes open once we finish checking an earlier request.';
     public const SWITCH_OFF_AFTER = 'DNS, nameservers and contacts are Off. Contact us to turn them on.';
     public const INVOICE = ['paid' => 'Paid', 'review' => 'Under review', 'cancelled' => 'Invoice cancelled', 'closed' => 'Renewal did not finish'];
     /** What happens to the money once the registrar rejected the order, by OwnedDomain::$refundTo. */
