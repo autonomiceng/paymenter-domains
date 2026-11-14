@@ -3,13 +3,14 @@
     $state = \Paymenter\Extensions\Servers\Domains\Presentation\State::class;
     $paid = collect($domain->history)->first(fn ($step) => ($step['status'] ?? $step['state'] ?? null) === 'Paid');
     $contacts = (bool) $domain->setup['contacts'];
-    $optional = !$contacts && !$domain->setup['required'];
+    // Nameservers with a default are optional: registration starts without them.
+    $optional = !$contacts && (!$domain->setup['required'] || \Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::optionalSetup($domain));
     $kind = ($domain->order['kind'] ?? null) === 'transfer' ? 'Transfer' : 'Registration';
     // Where the order is: paid, this page's step, then the work it starts and the active domain.
     $order = [
         ...($paid || ($domain->order['state'] ?? null) === 'paid' ? [['label' => 'Paid', 'state' => $state::Paid, 'date' => $paid['date'] ?? null]] : []),
         ['label' => $contacts ? 'Your details' : 'Domain setup', 'state' => $optional ? null : $state::ActionRequired, 'reason' => $optional ? 'Optional.' : null],
-        ['label' => $kind, 'reason' => $contacts ? 'Starts when your details are saved.' : 'Starts when your setup is saved.'],
+        ['label' => $kind, 'reason' => $contacts ? 'Starts when your details are saved.' : ($optional ? null : 'Starts when your setup is saved.')],
         ['label' => 'Active'],
     ];
 @endphp

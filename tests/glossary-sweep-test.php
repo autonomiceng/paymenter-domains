@@ -133,13 +133,16 @@ expect(!str_contains($line(null),'unavailable'),'Cart line never says unavailabl
 $none(file_get_contents(dirname(__DIR__).'/Domains/resources/views/cart-edit.blade.php'),['ending'],'Cart edit');
 
 // Setup and auth code pages.
-$owned=static fn(array $setup,array $transfer)=>new OwnedDomain('example.com','In progress','info',null,'',null,['show'=>'/domains/1','setupSave'=>'/domains/1/setup','codeSave'=>'/domains/1/code','contactsSave'=>'/domains/1/contacts'],[],
+$owned=static fn(array $setup,array $transfer,array $actions=[])=>new OwnedDomain('example.com','In progress','info',null,'',null,['show'=>'/domains/1','setupSave'=>'/domains/1/setup','codeSave'=>'/domains/1/code','contactsSave'=>'/domains/1/contacts',...$actions],[],
     ['contacts'=>false,'required'=>true,'nameservers'=>true,'privacy'=>true,'defaults'=>true,'maxNameservers'=>12,...$setup],$transfer,[],false);
 $setup=view('domains::setup',['domain'=>$owned([],[])])->render();$dom=storefrontDom($setup);
 same(['Finish setup'],array_map(fn($n)=>$n->textContent,iterator_to_array($dom->query('//h1'))),'Setup title');
 same(0,$dom->query('//input[@name="confirmed"]')->length,'No confirm checkbox: the button confirms');
 expect(!str_contains($plain($setup),'WHOIS privacy'),'Setup hides privacy even when the registrar supports it');
 same(0,$dom->query('//input[@name="privacy"]')->length,'Setup has no privacy input');
+// Nameservers with a default are optional, so the order step asks for no action.
+$order=storefrontDom(view('domains::setup',['domain'=>$owned([],[],['setup'=>'/domains/1/setup'])])->render())->query('//*[@id="order"]')->item(0);
+expect($order!==null&&!str_contains($order->textContent,\Paymenter\Extensions\Servers\Domains\Presentation\State::ActionRequired->label()),'Optional setup is not Action required in the order');
 $held=$plain(view('domains::setup',['domain'=>$owned(['required'=>false],[])])->render());
 expect(str_contains($held,'Under review Your order is on hold. Contact support and we’ll sort it out.'),'Held setup: pill and one line, no reason line');
 config(['settings.tickets_disabled'=>true]);
