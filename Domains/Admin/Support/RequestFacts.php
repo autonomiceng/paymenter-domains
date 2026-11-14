@@ -276,7 +276,7 @@ final class RequestFacts
                 }
             }
             if (ContactStepRetries::waitsForOrders($op,$on)) { return self::ordersPaused($op); }
-            if ($on&&$op->safe_code==='processing'&&ContactStepRetries::candidate($op)) { return 'Not sent. It retries by itself, or Release hold sends it now.'; }
+            if ($on&&$op->safe_code==='processing'&&ContactStepRetries::candidate($op)) { return 'Not sent. It retries by itself, so Release hold is optional.'; }
         }
         if (BalanceRetries::pending($op)) {
             $reason=OperationClaims::balanceAdmissionReason($op);
