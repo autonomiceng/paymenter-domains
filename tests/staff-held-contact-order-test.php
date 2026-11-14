@@ -314,5 +314,7 @@ same(['held','contact_profile_proof_required'],[$op->fresh()->state,$op->fresh()
 same($money,[$nativeMoney(),$serviceStatus($op),MoneyReceiptGateway::$sends],'No automatic cancel or refund');
 same(null,$op->fresh()->funding['refund_authorization']??null,'No refund was authorized');
 expect(OperationActions::relevant('refund',$op->fresh())&&StaffOperationWrites::canRelease($op->fresh(),$clock->now()),'Staff keep Release hold and Cancel and refund');
+Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$op->domain_id])
+    ->assertActionVisible('release')->assertActionVisible('refund');
 echo "Automatic contact retries stop at the limit and never refund.\n";
 $nativeSuccessful=true;
