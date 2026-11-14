@@ -100,7 +100,7 @@ foreach([null,$profile->id] as $profileId){
     $candidate=$watch->fresh();$candidate->ns_profile_id=$profileId;$candidate->setRelation('points',$public);
     $facts=WatchFacts::for($candidate,['summary'=>null,'keys'=>[]]);
     $record=$facts['Checks']['DNS records']??['value'=>null,'sub'=>null];
-    if(!str_contains((string)($record['sub']??''),'Historical answers.')){$dnsFailures[]='Expired DNS answers need a historical label';}
+    if(!str_contains((string)($record['sub']??''),'Not current.')){$dnsFailures[]='Expired DNS answers need a not current label';}
     if($profileId!==null&&str_contains((string)($record['sub']??''),'Choose a DNS template')){$dnsFailures[]='An existing template must not be described as missing';}
 }
 // A linked watch without its own points read must not adopt a managed read as its Latest check.

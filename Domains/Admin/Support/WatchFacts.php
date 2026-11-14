@@ -54,7 +54,7 @@ final class WatchFacts
         if($w->points && $s?->website===null && $s?->email===null && $e['public']){
             $at=$e['public_at'];
             $checks['DNS records']=self::fact(implode('; ',$e['public']),
-                new \Illuminate\Support\HtmlString(($e['public_stale']?'Historical answers. ':'').($at&&($when=$checked($at,true))!==null?$when.'. ':'').
+                new \Illuminate\Support\HtmlString(($e['public_stale']?'Not current. ':'').($at&&($when=$checked($at,true))!==null?$when.'. ':'').
                 ($profile?'DNS template comparison is unavailable for these saved records.':'Choose a DNS template to compare these records.')));
         }
         // Registrar records exist only for a domain we register. The Domain section says their state once.
@@ -67,7 +67,9 @@ final class WatchFacts
         // Saved answers only. Registrar records with no values are already Unknown in the Domain section.
         $evidence=[];foreach(['public'=>'Public DNS','registrar'=>'Registrar records'] as $key=>$label){
             if(!$e[$key]&&($key==='registrar'||(!$active&&$e['public_at']===null))){continue;}
-            $at=$e[$key.'_at'];$sub=$at?rtrim(($key==='public'&&$e['public_stale']?'Historical answers. ':'').($checked($at,$key==='public')??'')):'No saved observation.';
+            // A check that saved no answers says so, so Not read yet beside its Checked time reads as one fact.
+            $at=$e[$key.'_at'];$time=$at?$checked($at,$key==='public'):null;
+            $sub=$at?rtrim(($e[$key]?($key==='public'&&$e['public_stale']?'Not current. ':''):($time===null?'':'No answers were saved. ')).$time):'No saved observation.';
             $evidence[$label]=self::fact($e[$key]?implode('; ',$e[$key]):'Unknown',$at?($sub===''?null:new \Illuminate\Support\HtmlString($sub)):$sub);}
         return array_filter(['Domain'=>$shown($domain),'Checks'=>$shown($checks),'Evidence'=>$evidence]);
     }

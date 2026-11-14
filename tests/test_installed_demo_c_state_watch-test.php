@@ -25,7 +25,7 @@ same('A @ → 192.0.2.10',$records['value'],'Saved public answers for this name 
 $recordsDom=storefrontDom('<div id="records-sub">'.$records['sub'].'</div>');
 same([gmdate('c',1700000000)],array_map(fn($n)=>$n->getAttribute('datetime'),iterator_to_array($recordsDom->query('//*[@id="records-sub"]//time'))),'DNS records shows the saved answer time');
 $recordsText=trim(preg_replace('/\s+/',' ',$recordsDom->query('//*[@id="records-sub"]')->item(0)->textContent));
-same('Historical answers. Checked Nov 14, 2023, 10:13 PM UTC. DNS template comparison is unavailable for these saved records.',$recordsText,'DNS records says Checked before the time and why there is no comparison: '.$recordsText);
+same('Not current. Checked Nov 14, 2023, 10:13 PM UTC. DNS template comparison is unavailable for these saved records.',$recordsText,'DNS records says Checked before the time and why there is no comparison: '.$recordsText);
 $offsetMoment=storefrontDom(view('domains::partials.moment',['at'=>'2026-11-04T01:00:00-08:00'])->render())->query('//time')->item(0);
 same(['Nov 4, 2026, 9:00 AM UTC','2026-11-04T01:00:00-08:00'],[$offsetMoment?->textContent,$offsetMoment?->getAttribute('datetime')],'Server time text before the page script is named UTC, whatever offset was saved');
 
