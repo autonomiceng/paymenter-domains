@@ -70,7 +70,7 @@ final class MonitoringEvidence
             if (($when = $time($at)) === null) { return $answers === [] ? Value::state(State::NotReadYet, Reader::Staff) : Value::fact(Fact::lines($answers)); }
             $label = $unfinished ? $failed : ($stale ? 'Not current. Last checked' : $checked);
             if ($answers !== []) { return Value::fact(Fact::lines($answers), $label, $when); }
-            return $confirmed ? Value::plainAt(Plain::None, $label, $when) : Value::state(State::CouldntRead, Reader::Staff, $failed, null, $when);
+            return $confirmed ? Value::plainAt(Plain::None, $label, $when) : Value::state(State::CouldntRead, Reader::Staff, $stale ? 'Not current. '.$failed : $failed, null, $when);
         };
         $refresh = ($at = $time($evidence['at'] ?? null)) === null ? Value::state(State::NotReadYet, Reader::Staff) : Value::fact(Fact::entered($evidence['state']), 'Read', $at);
         return [...($withRecords ? [] : ['Registrar refresh' => $refresh]),

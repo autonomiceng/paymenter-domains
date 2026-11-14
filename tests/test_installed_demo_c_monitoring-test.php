@@ -55,6 +55,7 @@ foreach([$at->getTimestamp()+60,$at->getTimestamp()-1] as $until){
     $read=MonitoringEvidence::read($d,$noAnswer('unknown','resolver_failed',$until));$failed=$Value($read);
     expect($read['public_stale']&&$failed->state===Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead&&$failed->word!==Paymenter\Extensions\Servers\Domains\Presentation\Plain::None->label(),'A failed resolver read is Couldn\'t read, never None');
     expect($failed->subAt?->datetime===$tried,'A failed resolver read keeps when it was tried');
+    expect($failed->sub!==$Value([...$read,'public_stale'=>false])->sub,'An outdated failed public read remains explicitly historical');
 }
 // A confirmed negative reply is None; once expired it keeps the stale reading, like saved answers.
 $confirmedFresh=$Value(['public_read'=>'negative','public'=>[],'public_at'=>$at->getTimestamp()-60,'public_stale'=>false]);
