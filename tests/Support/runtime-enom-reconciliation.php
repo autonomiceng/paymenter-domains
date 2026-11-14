@@ -12,8 +12,8 @@ require_once __DIR__.'/staff-panel.php';
 // These shapes repeat the existing synthetic history/holding fixtures. They do
 // not establish a provider history contract or enable acceptance in a real app.
 (static function()use($clock,$binding,$verify,$auth,$new,$worker,$reply,$factory,$account,$sellers,$tlds):void {
-    same(null,HistoryAcceptances::load($binding),'Installed registration history acceptance defaults closed');
-    same(null,HistoryAcceptances::load($binding,Action::Renew),'Renewal history stays independently closed');
+    // A TEST deployment carries the built-in 30-day Enom history contract for registrations and renewals.
+    same([true,true],[HistoryAcceptances::builtIn($binding,Action::Register),HistoryAcceptances::builtIn($binding,Action::Renew)],'Installed TEST registration and renewal history use the built-in contract');
     same(null,HistoryAcceptances::load($binding,Action::Transfer),'Transfer history stays independently closed');
     $s=(object)['name'=>'','bill'=>'','fault'=>'unique','calls'=>[],'drift'=>null];
     $wire=new class($s) implements Transport {
@@ -57,11 +57,13 @@ require_once __DIR__.'/staff-panel.php';
         same(1,count(array_filter($GLOBALS['enomWire']['forms'],static fn($form)=>($form['Command']??null)==='Purchase')),$why.' never resends Purchase');
     };
     $op=$prepare(placeholderComFixtureName('history-uncertain-placeholder.com'));$before=$money();$rebuild()->run($op->id);
-    // A lost reply reads the domain facts once; without accepted history the order history stays closed and nothing settles.
-    same(['GetDomainInfo','GetRenew','GetRegLock','GetWPPSInfo','GetDomainInfo','GetDomainExp'],$s->calls,'Missing original OrderID without accepted history reads domain facts only, never the order history');$unresolved($op,'Closed history gate');
+    // A lost reply reads the domain facts once; until the built-in contract's 60-second delay passes the order history stays closed.
+    same(['GetDomainInfo','GetRenew','GetRegLock','GetWPPSInfo','GetDomainInfo','GetDomainExp'],$s->calls,'Missing original OrderID inside the history delay reads domain facts only, never the order history');$unresolved($op,'Closed history gate');
     // Test-only acceptance of the synthetic profile, never a provider acceptance claim.
     HistoryAcceptances::save(new HistoryAcceptance($binding,'America/Los_Angeles',0,86400,'enom_registration_v1'));
     foreach(['none','unrelated','ambiguous','duplicate'] as $fault){
+        // Each fault starts its own scan: a completed Enom order never changes, so saved outcomes would carry across faults.
+        $op->refresh();$op->update(['policy'=>array_diff_key($op->policy,['history_scan'=>true])]);
         $polls=$op->fresh()->policy['reconciliation']['polls'];
         $s->fault=$fault;$s->calls=[];Cache::flush();$rebuild()->run($op->id);$unresolved($op,$fault);
         expect(in_array('GetOrderList',$s->calls,true),'Missing OrderID requires history reads');same($before,$money(),'Unresolved history changes no native money');
@@ -76,8 +78,15 @@ require_once __DIR__.'/staff-panel.php';
         $auth->setProcessing($binding->serverId,false);
     }
     // Staff can restart exhausted read polling with read permissions alone.
+    // The covering history contract resumes exhausted reads once per contract revision; that read finds no order here.
+    $op->refresh();$op->update(['policy'=>[...array_diff_key($op->policy,['history_scan'=>true]),'reconciliation'=>[...$op->policy['reconciliation'],'polls'=>5]]]);
+    $s->fault='none';$s->calls=[];Cache::flush();$rebuild()->run($op->id);
+    same(5,$op->fresh()->policy['history_resumption']['prior_polls']??null,'Exhausted reads resume once for the covering contract');
+    expect(in_array('GetOrderList',$s->calls,true),'The resumed read reads the order history');$unresolved($op,'Resumed read');
+    // The next minute: the resumed read used this minute's account read budget.
+    $clock->at=$clock->at->modify('+61 seconds');Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
     $op->refresh();$op->update(['policy'=>[...$op->policy,'reconciliation'=>[...$op->policy['reconciliation'],'polls'=>5]]]);
-    $s->fault='unique';$s->calls=[];$rebuild()->run($op->id);same([],$s->calls,'Exhausted polling makes no provider reads');
+    $s->fault='unique';$s->calls=[];Cache::flush();$rebuild()->run($op->id);same([],$s->calls,'Exhausted polling makes no provider reads');
     $staff=staffUser(['admin.domains.view','admin.domains.operations.resume_reads','admin.domains.operations.recheck']);
     $review=static function(string $action)use($staff,$op,$clock):string{return StaffOperationReview::ticket($staff->id,$op->domain_id,$op->id,$action,StaffOperationReview::stamp($op->fresh(),$op->domain()->firstOrFail()),$clock);};
     app()->instance(OperationReconciliation::class,$rebuild());$staffWork=new StaffOperations($clock);
@@ -108,8 +117,8 @@ require_once __DIR__.'/staff-panel.php';
     expect(in_array('GetOrderDetail',$s->calls,true),'Funding drift occurs after charge read');$unresolved($drift,'Funding changed during read');
     DB::table('invoices')->where('id',$drift->invoice_id)->update(['status'=>'paid']);Cache::flush();$rebuild()->run($drift->id);
     same('succeeded',$drift->fresh()->state,'Restored funding permits read-only unique completion');same($before,$money(),'No native money mutation after funding restoration');
-    same(1,count(array_filter($GLOBALS['enomWire']['forms'],static fn($form)=>($form['Command']??null)==='Purchase')),'Funding recovery never repeats monetary send');same(null,HistoryAcceptances::load($binding),'Synthetic history acceptance removed');
+    same(1,count(array_filter($GLOBALS['enomWire']['forms'],static fn($form)=>($form['Command']??null)==='Purchase')),'Funding recovery never repeats monetary send');same(true,HistoryAcceptances::builtIn($binding,Action::Register),'Synthetic history acceptance removed; the built-in TEST contract applies again');
     expect(!$account->fresh()->processing_enabled,'All read-only recovery leaves processing off');
     app()->forgetInstance(OperationReconciliation::class);
-    echo "Installed Enom reconciliation: closed history, no charge, ambiguity, duplicate charge, staff reads, captured ID, restart and funding drift passed.\n";
+    echo "Installed Enom reconciliation: built-in TEST history, one resumption, no charge, ambiguity, duplicate charge, staff reads, captured ID, restart and funding drift passed.\n";
 })();
