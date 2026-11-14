@@ -112,7 +112,7 @@ class AdoptDomain extends Page
                 $facts = $this->review['details'] ?? [];
                 return 'Customer #'.$this->target['customer'].', Service #'.$this->target['service'].', Account #'.$this->target['account']
                     .'. Expiry: '.self::when($facts['expiry'] ?? null, text: true).'. Annual charge: '.(($charge = Fact::money($facts['annual_charge'] ?? null)?->text) === null ? 'Unconfirmed' : $charge.' including tax').'. '
-                    .Review::renewalNotice($facts).' '
+                    .Fact::IN_USD.' '.Review::renewalNotice($facts).' '
                     .'Nothing is charged now. Reason: '.$this->reason;
             })
             ->schema([Toggle::make('verified')->label('I checked the details above.')->required()->accepted()])
@@ -195,7 +195,7 @@ class AdoptDomain extends Page
                 'Reason' => $this->reason, 'Valid until' => $a?->valid_until ? Sheet::moment($a->valid_until->getTimestamp()) : 'Expired. Check again.'];
             $entries = []; foreach ($facts as $label => $value) { $entries[] = TextEntry::make('review_'.count($entries))->label($label)->state($value)->listWithLineBreaks(); }
             if ($why = $this->unavailable()) { $entries[] = TextEntry::make('unavailable')->label("Why you can't confirm")->hiddenLabel()->state($why)->columnSpanFull(); }
-            $sections[] = Section::make('3. Review the details')->columns(2)->schema([...$entries, Actions::make([$this->confirmAction()])->columnSpanFull()]);
+            $sections[] = Section::make('3. Review the details')->description(Fact::IN_USD)->columns(2)->schema([...$entries, Actions::make([$this->confirmAction()])->columnSpanFull()]);
         }
         if ($this->adoptedId !== null) {
             $d = Domain::findOrFail($this->adoptedId); $a = Adoption::findOrFail($d->adoption_id);
