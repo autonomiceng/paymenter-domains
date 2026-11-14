@@ -34,20 +34,24 @@ final class ContactStepRetries
         return $last;
     }
     public static function exhausted(Operation $op): bool { return self::tries($op)>=count(self::WAITS); }
+    /** Orders off waits only for Orders; other causes wait for their next spaced try. Checked before and under the locks. */
+    private static function due(Operation $op,\DateTimeImmutable $now): bool
+    {
+        if($op->safe_code==='processing'){return true;}
+        $tries=self::tries($op);$since=self::lastTry($op)??$op->started_at;
+        return $tries<count(self::WAITS)&&$since!==null&&$since->getTimestamp()+self::WAITS[$tries]<=$now->getTimestamp();
+    }
     public static function readmit(int $id,Clock $clock): bool
     {
         OperationClaims::outside();$seed=Operation::find($id);
-        if(!$seed||!self::candidate($seed)){return false;}
+        if(!$seed||!self::candidate($seed)||!self::due($seed,$clock->now())
+            ||!\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$seed->server_id)->value('processing_enabled')){return false;}
         return DB::transaction(static function()use($seed,$clock):bool {
             $l=HoldingLocks::take($seed->domain);$op=$l['operations']->firstWhere('id',$seed->id);$now=$clock->now();
             if(!$op||!self::candidate($op)||!$l['account']?->processing_enabled){return false;}
             $history=$op->policy['staff_actions']??[];
             if(!is_array($history)||!array_is_list($history)||count($history)>=99){return false;}
-            if($op->safe_code!=='processing'){
-                $tries=self::tries($op);
-                $since=self::lastTry($op)??$op->started_at;
-                if($tries>=count(self::WAITS)||$since===null||$since->getTimestamp()+self::WAITS[$tries]>$now->getTimestamp()){return false;}
-            }
+            if(!self::due($op,$now)){return false;}
             try{$op->setRelation('domain',$l['domain']);StaffOperationWrites::requireRelease($op,$l,$now);}catch(\Throwable){return false;}
             $history[]=['action'=>'release','phase'=>'completed','operation_key'=>$op->operation_key,'generation'=>$op->authority_generation,
                 'actor_id'=>null,'actor_name'=>'System','automatic'=>true,'reason'=>'Nothing was sent, so it retried by itself.',
