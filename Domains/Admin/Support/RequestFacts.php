@@ -419,7 +419,8 @@ final class RequestFacts
             if ($approval) { $next=(OperationActions::relevant('release',$op)?'Release hold only retries the price check. ':'').'The '.($account?self::queueWords($op,$account):'request').' holds again while the registrar cost is above the usual. It goes ahead at this cost once the registrar cost is approved on the domain page.'; }
             if($recovery['blocked']!==null&&!BalanceRetries::pending($op)){$body=$recovery['blocked'];}
             elseif ($next!==null) {
-                $automatic=$op->safe_code==='processing'&&$account?->processing_enabled&&OperationClaims::ordersOffReturns($op);
+                // The title already says it retries by itself (readyMessage), so no staff step follows the optional release.
+                $automatic=$op->safe_code==='processing'&&$account?->processing_enabled&&(OperationClaims::ordersOffReturns($op)||ContactStepRetries::candidate($op));
                 $body=$body===null?$next.($automatic?'':' '.$recovery['body']):$next.' '.$body;
             }
             elseif(!BalanceRetries::pending($op)){$body??=$recovery['body'];}
