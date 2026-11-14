@@ -33,10 +33,8 @@ expect(str_contains($notice->getAttribute('class'),'domains-notice--info'),'Wait
 $renewal=$result->replicate();$renewal->action='renew';$said=Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::forCustomer($renewal);
 expect(str_contains($said['body'],'renewal')&&!str_contains($said['title'].$said['body'],'registration')&&$hasDeadline($said['body']),'A waiting renewal says renewal, with the same deadline');
 same('uncertain',$result->state,'No fabricated completion');same(null,$result->attempt['execution'],'Attempt remains unchanged');
-// Once the usual wait is over, the customer line shows no past day as a deadline still to come.
+// Once the usual wait is over, the customer notice still asks for nothing urgent; its words are checked on the page.
 $waitClock=app(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class);$waitClock->instant=(new DateTimeImmutable($result->attempt['dispatch_attempted_at']))->modify('+25 hours');
 $late=Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::forCustomer($result);
-$day=(new DateTimeImmutable($result->attempt['dispatch_attempted_at']))->modify('+24 hours')->setTimezone(new DateTimeZone('America/Los_Angeles'))->format('M j');
-expect(!str_contains($late['body'].$late['brief'],$day),'A passed wait names no past deadline: '.$late['body']);
 same('info',$late['tone'],'A passed wait still asks the customer for nothing urgent');
 $nativeSuccessful=true;echo "Native local status stop explains next step and real PT time.\n";

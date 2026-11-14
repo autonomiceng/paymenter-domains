@@ -153,9 +153,9 @@ same('Not charged yet',RequestFacts::for($paused->fresh())['cost'],'The unsent o
 $grants->cap=true;$execute($paused->fresh());$grants->cap=false;
 same(['held','contact_profile_proof_required'],[$paused->fresh()->state,$paused->fresh()->safe_code],'The retried order holds again at its contact step');
 $requestRows=array_values(array_filter(Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::entries($paused->domain->fresh()),fn($r)=>is_array($r)&&($r['__request']??null)===$paused->id));
-// The first hold's time comes from the app clock, not this fixture's clock, so only the events are compared here.
-$events=array_map(fn($r)=>$r['event'].' by '.$r['by'],$requestRows);sort($events);
-same(['Back on hold by System','Hold released by System','Put on hold by System'],$events,'Domain history has both system holds and the automatic release: '.json_encode($events));
+// The first hold's time comes from the app clock, not this fixture's clock, so only the entries and actors are compared here.
+$entries=array_map(fn($r)=>[preg_replace('/-\d+(-\d+)?$/','',(string)$r['__key']),$r['by']],$requestRows);sort($entries);
+same([['engine_hold','System'],['first-hold','System'],['release','System']],$entries,'Domain history has both system holds and the automatic release by the system: '.json_encode($entries));
 DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>true]);
 Auth::login($costStaff);
 [$heading,$submit,$words]=RequestFacts::releaseConfirmation($op,$account,null,false);
