@@ -218,7 +218,7 @@ commerceReject(fn()=>$limitRenew->fresh()->update(['policy'=>array_diff_key($lim
 $clock->instant=$clock->now()->modify('+25 hours');
 DB::table('domains_accounts')->where('server_id',$lost->server_id)->update(['processing_enabled'=>false]);
 $staff->role->update(['permissions'=>[...$all,Staff::POLICY,'admin.domains.settings.enom_answer']]);
-Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$lost->id])->assertActionHidden('enom_answer')->assertSee('Registrar check pending');
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$lost->id])->assertActionHidden('enom_answer')->assertDontSee(\Paymenter\Extensions\Servers\Domains\Admin\Support\SupportDetails::LABEL)->assertSee('Registrar check pending');
 // The writer repeats the page rule: no Enom answer before one read of this attempt.
 $unread=static function($op,string $why)use($staff,$clock):void{
     $r=new StaffSettingsReview($staff->id,$op->server_id,null,'enom_answer',StaffSettingsReview::ticket($staff->id,$op->server_id,null,'enom_answer',StaffSettingsReview::stamp($op->server_id,null)),'Record final synthetic Enom answer');
@@ -294,7 +294,9 @@ same($before,[$lostRenew->fresh()->attempt,$lostRenew->fresh()->funding,$lostDom
 // When the answer leads, Check status stays on the page: staff can read again before answering.
 same('enom_answer',RequestFacts::notice($lostRenew->fresh())['primary']??null,'An unconfirmed renewal past the answer wait leads with the answer');
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$lostRenew->id])->assertActionVisible('recheck')->assertActionVisible('enom_answer')
-    ->assertSee(\Paymenter\Extensions\Servers\Domains\Admin\Support\EnomAnswerAction::LABEL)->assertSee('Check status');
+    ->assertSee(\Paymenter\Extensions\Servers\Domains\Admin\Support\EnomAnswerAction::LABEL)->assertSee('Check status')
+    // Whoever can record the answer can copy the request's facts for the support ticket; nothing else on the page offers them.
+    ->assertSee(\Paymenter\Extensions\Servers\Domains\Admin\Support\SupportDetails::LABEL)->assertSee('Our reference: Request #'.$lostRenew->id);
 // Unreadable saved attempt data renders the request page without an answer form or a send.
 $storedAttempt=$lostRenew->fresh()->getRawOriginal('attempt');$writes=$state->writes;
 DB::table('domains_operations')->where('id',$lostRenew->id)->update(['attempt'=>'d29-explicit-unreadable-fixture']);
