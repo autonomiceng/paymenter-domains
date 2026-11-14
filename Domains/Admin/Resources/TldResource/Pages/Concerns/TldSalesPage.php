@@ -43,7 +43,9 @@ trait TldSalesPage
     private function tldActions(): array
     {
         $actions=$this->settings();$fix=$this->headFix();
-        $seller=$fix==='seller'?$actions['seller']->label($this->sales()['reason']==='No registrar selected'?'Choose registrar':'Change registrar')->color('primary'):null;
+        // The dialog keeps the button's verb.
+        $verb=$this->sales()['reason']==='No registrar selected'?'Choose registrar':'Change registrar';
+        $seller=$fix==='seller'?$actions['seller']->label($verb)->modalHeading($verb)->color('primary'):null;
         // Every sales action is always registered; visibility picks the one that shows.
         return array_values(array_filter([$this->startSellingAction()->color($fix===null?'primary':'gray'),$seller,$actions['override']->color($fix==='override'?'primary':'gray'),
             ActionGroup::make(array_values(array_filter([$seller?null:$actions['seller'],$this->stopSellingAction()])))->label('More')->button()->color('gray')]));
@@ -73,7 +75,8 @@ trait TldSalesPage
     protected function head(): Head
     {
         $t=$this->getRecord();$s=$this->sales();$reason=(string)$s['reason'];$a=$this->account();
-        $head=Head::make('.'.$t->tld.($a!==null?' on '.$a:''),Reader::Staff)->tag((bool)($this->snap()['demo']??false),false)
+        // With no registrar for new orders, naming this row's account would read as the registrar.
+        $head=Head::make('.'.$t->tld.($a!==null&&($this->snap()['seller']??null)!==null?' on '.$a:''),Reader::Staff)->tag((bool)($this->snap()['demo']??false),false)
             ->state($s['label']==='For sale'?State::ForSale:State::NotForSale,'tld-'.$t->id);
         if($s['label']==='For sale'||$this->staffStop()){return $head;}
         $url=match(true){
