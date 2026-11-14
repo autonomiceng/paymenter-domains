@@ -28,6 +28,8 @@
 .domains-list-note{white-space:normal}
 a :is(.domains-name-cell,.domains-list-note),a :is(.domains-name-cell,.domains-list-note)>.fi-ta-text-item{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* Filament draws each table text item as a line-clamp -webkit-box, which paints no "...". Ours are plain blocks. */
+/* Column::whole(): on a phone the name keeps its width cap but wraps there instead of being cut. */
+@media(max-width:39.99rem){a .domains-name-whole,a .domains-name-whole>.fi-ta-text-item,.domains-name-whole,.domains-name-whole>.fi-ta-text-item{white-space:normal;overflow:visible;text-overflow:clip}.domains-name-whole .domains-dn{display:inline-block;white-space:normal;overflow-wrap:break-word}.domains-name-whole .domains-dn-head{overflow:visible}}
 .fi-ta-text-item:is(.domains-cut,.domains-line,.domains-name-cell):not(.fi-bulleted li.fi-ta-text-item),:is(.domains-cut,.domains-line,.domains-name-cell)>.fi-ta-text-item:not(.fi-bulleted li.fi-ta-text-item){display:block}
 [data-domains-table] .fi-ta-table{table-layout:auto;width:100%}
 /* P-TBL-7: a staff row is one line, 44px: 20px of text, 12px above and 11px below, and the 1px line between rows. */
