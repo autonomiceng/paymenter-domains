@@ -315,6 +315,7 @@ same($money,[$nativeMoney(),$serviceStatus($op),MoneyReceiptGateway::$sends],'No
 same(null,$op->fresh()->funding['refund_authorization']??null,'No refund was authorized');
 expect(OperationActions::relevant('refund',$op->fresh())&&StaffOperationWrites::canRelease($op->fresh(),$clock->now()),'Staff keep Release hold and Cancel and refund');
 Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$op->domain_id])
-    ->assertActionVisible('release')->assertActionVisible('refund');
+    ->assertActionVisible(Filament\Actions\Testing\TestAction::make('release')->schemaComponent(true,'content'))
+    ->assertActionVisible(Filament\Actions\Testing\TestAction::make('refund')->schemaComponent(true,'content'));
 echo "Automatic contact retries stop at the limit and never refund.\n";
 $nativeSuccessful=true;
