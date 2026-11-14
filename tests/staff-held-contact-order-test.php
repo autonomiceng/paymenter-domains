@@ -123,15 +123,29 @@ foreach([
     }
 }
 
-// A paused account accepts release into the queue while its purchase and contact step remain unsent.
+// Orders off is the only wait for an unsent contact hold: the pages lead to the Orders switch, Release waits for Orders
+// while Cancel and refund stays, and the tick holds it as Orders off so it goes out once they are on, without a try.
 $paused=$heldOrder('held-contact-paused-release-placeholder.com');
 DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>false]);
 $before=[$nativeMoney(),$sent->contactAdd,$sent->registerDomain,$paused->attempt];
-$page=Livewire::actingAs($costStaff)->test(ViewOperation::class,['record'=>$paused->id]);
-$page->assertActionEnabled('release')->callAction('release')->assertHasNoActionErrors()->assertNotified('Hold released');
-same(['queued',null],[$paused->fresh()->state,$paused->fresh()->safe_code],'Orders off allows release into the queue');
-same($before,[$nativeMoney(),$sent->contactAdd,$sent->registerDomain,$paused->fresh()->attempt],'Orders off release sends nothing and preserves money and unsent proof');
-same(false,$account->fresh()->processing_enabled,'Release leaves Orders off');
+Livewire::actingAs($costStaff)->test(ViewOperation::class,['record'=>$paused->id])->assertActionDisabled('release')->assertActionEnabled('refund');
+Livewire::actingAs($costStaff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$paused->domain_id])
+    ->assertActionDisabled(Filament\Actions\Testing\TestAction::make('release')->schemaComponent(true,'content'))
+    ->assertActionEnabled(Filament\Actions\Testing\TestAction::make('refund')->schemaComponent(true,'content'));
+Auth::login($costStaff);
+$panel=Filament\Facades\Filament::getCurrentPanel();$panel->pages([Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class]);
+Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(fn()=>Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::registerRoutes($panel));
+app('router')->getRoutes()->refreshNameLookups();
+same('registrars',RequestFacts::notice($paused)['link'],'The request page leads to the Orders switch');
+same(Paymenter\Extensions\Servers\Domains\Admin\Support\RegistrarFacts::accountUrl((int)$paused->server_id,'orders'),
+    Paymenter\Extensions\Servers\Domains\Admin\Support\DomainNotices::notice($paused->domain->fresh())['action']['url']??null,'The domain notice opens the registrar Orders switch');
+expect(RequestFacts::reason($paused)!==Paymenter\Extensions\Servers\Domains\Admin\Support\Labels::operationReason($paused),'The saved contact cause is not shown while Orders are off');
+expect(!ContactStepRetries::readmit($paused->id,$clock),'The tick does not release while Orders are off');
+same(['held','processing',0],[$paused->fresh()->state,$paused->fresh()->safe_code,ContactStepRetries::tries($paused->fresh())],'The tick holds it as Orders off without spending a try');
+DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>true]);
+expect(ContactStepRetries::readmit($paused->id,$clock),'It goes back by itself once Orders are on');
+same(['queued',null],[$paused->fresh()->state,$paused->fresh()->safe_code],'Orders on puts the order back in the queue');
+same($before,[$nativeMoney(),$sent->contactAdd,$sent->registerDomain,$paused->fresh()->attempt],'Nothing was sent and money and unsent proof are kept');
 DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>true]);
 Auth::login($costStaff);
 [$heading,$submit,$words]=RequestFacts::releaseConfirmation($op,$account,null,false);

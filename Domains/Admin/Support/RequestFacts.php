@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\{RequestStatus,State};
-use Paymenter\Extensions\Servers\Domains\Services\{BalanceRetries, ComplimentaryCosts, ContactProfileHold, EnomTestManagement, EnomTestRegistration, ManagementEvidence, ManagementProgress, OperationClaims, RegistrarCheck, RegistrationDns, RenewalCycles, RenewalReplacements, StaffOperationWrites, UnpaidAcquisitionProof, WriteHeld};
+use Paymenter\Extensions\Servers\Domains\Services\{BalanceRetries, ComplimentaryCosts, ContactProfileHold, ContactStepRetries, EnomTestManagement, EnomTestRegistration, ManagementEvidence, ManagementProgress, OperationClaims, RegistrarCheck, RegistrationDns, RenewalCycles, RenewalReplacements, StaffOperationWrites, UnpaidAcquisitionProof, WriteHeld};
 /** Request page facts and its one notice. A null fact value is Missing and its "_sub" key names the cause. */
 final class RequestFacts
 {
@@ -262,6 +262,12 @@ final class RequestFacts
         if (ManagementEvidence::recoverable($op)) {
             return self::ordersOn($op,$read(),$accounts)?'Not sent. It will retry automatically.':'Not sent. '.self::ORDERS_OFF;
         }
+        // Nothing reached the registrar at the contact step: while Orders are off that is the only wait, whatever cause was saved.
+        if ($op->state==='held'&&in_array($op->safe_code,ContactProfileHold::HOLDS,true)&&($held=$read())!==null) {
+            $on=self::ordersOn($op,$held,$accounts);
+            if (ContactStepRetries::waitsForOrders($op,$on)) { return self::ordersPaused($op); }
+            if ($on&&$op->safe_code==='processing'&&ContactStepRetries::candidate($op)) { return 'Not sent. It will retry automatically.'; }
+        }
         if (BalanceRetries::pending($op)) {
             $reason=OperationClaims::balanceAdmissionReason($op);
             if(self::heldByOrders($reason,$op,$read(),$accounts)){return 'Not sent. '.self::ORDERS_OFF;}
@@ -292,6 +298,12 @@ final class RequestFacts
         } catch (\Throwable) { return $stopped; }
         if (!$on) { return 'Ready to send. '.self::ORDERS_OFF; }
         return $op->state==='held' ? 'Ready to send. Release the hold.' : null;
+    }
+    /** A held order that goes out by itself once Orders are on, named by its registrar account. */
+    private static function ordersPaused(Operation $op): string
+    {
+        $name=trim((string)\App\Models\Server::whereKey($op->server_id)->value('name'));
+        return 'Not sent: Orders paused for '.($name!==''?$name:'this registrar account').'. This order goes out when Orders are turned on.';
     }
     /** When a timed retry runs next, in the viewer's time zone like every other time here. Nothing once it is due: the next tick takes it. */
     private static function nextTry(Operation $op): ?int

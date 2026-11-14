@@ -41,10 +41,30 @@ final class ContactStepRetries
         $tries=self::tries($op);$since=self::lastTry($op)??$op->started_at;
         return $tries<count(self::WAITS)&&$since!==null&&$since->getTimestamp()+self::WAITS[$tries]<=$now->getTimestamp();
     }
+    /** Orders off is the only thing this order waits for: nothing was sent, the contact step can run again, and Orders are
+     * off for its account. Pages say Orders paused for it, and the tick holds it as Orders off. $ordersOn: a page's own read. */
+    public static function waitsForOrders(Operation $op,?bool $ordersOn=null): bool
+    {
+        return self::candidate($op)&&ContactProfileHold::releaseBlocked($op)===null
+            &&!($ordersOn??(bool)\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->value('processing_enabled'));
+    }
+    /** An older hold saved another cause while Orders were off. It becomes the Orders off hold, which goes back to the
+     * queue when Orders are on, without spending a try. */
+    private static function holdForOrders(int $id): void
+    {
+        DB::transaction(static function()use($id):void {
+            $seed=Operation::find($id);if(!$seed){return;}
+            $l=HoldingLocks::take($seed->domain);$op=$l['operations']->firstWhere('id',$id);
+            if(!$op||$op->safe_code==='processing'||!self::waitsForOrders($op,(bool)$l['account']?->processing_enabled)){return;}
+            $op->update(['safe_code'=>'processing']);
+        });
+    }
     public static function readmit(int $id,Clock $clock): bool
     {
         OperationClaims::outside();$seed=Operation::find($id);
-        if(!$seed||!self::candidate($seed)||!self::due($seed,$clock->now())
+        if(!$seed||!self::candidate($seed)){return false;}
+        if(self::waitsForOrders($seed)){if($seed->safe_code!=='processing'){self::holdForOrders($id);}return false;}
+        if(!self::due($seed,$clock->now())
             ||!\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$seed->server_id)->value('processing_enabled')){return false;}
         return DB::transaction(static function()use($seed,$clock):bool {
             $l=HoldingLocks::take($seed->domain);$op=$l['operations']->firstWhere('id',$seed->id);$now=$clock->now();
