@@ -16,6 +16,7 @@
   ],
   "explicit": {
     "tests/Support/staff-tld-filter-lookalikes.php": ["tests/staff-tld-page-test.php"],
+    "tests/Support/enom-renewal-*-cases.php": ["tests/test_installed_package_enom_renewal.py"],
     "Domains/database/migrations/*": [
       "tests/test_installed_package_fresh.py",
       "tests/test_installed_package_upgrade.py",
