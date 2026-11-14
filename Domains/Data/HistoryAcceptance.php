@@ -15,6 +15,9 @@ final readonly class HistoryAcceptance
             throw new \InvalidArgumentException('History contract is unavailable.');
         }
     }
+    /** Enom refuses a BeginDate more than six months back (Live, Nov 14 2026). The scan starts up to 36 hours before the send,
+     * so Enom coverage stops at 175 days whatever the saved retention. */
+    public const ENOM_HORIZON = 15120000;
     public function covers(AttemptEvidence $attempt, \DateTimeImmutable $now): bool
     {
         $this->binding->requireMatch($attempt->binding);
@@ -22,7 +25,7 @@ final readonly class HistoryAcceptance
             && $this->vocabulary === $this->binding->registrarKey.match ($attempt->query->action) { Action::Renew => '_renewal_v1', Action::Transfer => '_transfer_v1', default => '_registration_v1' } && $attempt->windowEnd >= $attempt->windowStart
             && $attempt->windowEnd->getTimestamp() - $attempt->windowStart->getTimestamp() <= 300
             && $now->getTimestamp() >= $attempt->windowEnd->getTimestamp() + $this->lagSeconds
-            && $now->getTimestamp() - $attempt->windowStart->getTimestamp() < $this->retentionSeconds;
+            && $now->getTimestamp() - $attempt->windowStart->getTimestamp() < ($this->binding->registrarKey === 'enom' ? min($this->retentionSeconds, self::ENOM_HORIZON) : $this->retentionSeconds);
     }
     public function date(mixed $input): ?DateEvidence
     { return self::localDate($input, $this->timezone, 'accepted_order_history'); }
