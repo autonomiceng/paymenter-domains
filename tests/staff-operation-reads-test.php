@@ -297,6 +297,15 @@ Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$lostRenew->id]
     ->assertSee(\Paymenter\Extensions\Servers\Domains\Admin\Support\EnomAnswerAction::LABEL)->assertSee('Check status')
     // Whoever can record the answer can copy the request's facts for the support ticket; nothing else on the page offers them.
     ->assertSee(\Paymenter\Extensions\Servers\Domains\Admin\Support\SupportDetails::LABEL)->assertSee('Our reference: Request #'.$lostRenew->id);
+// The copied details survive any account name: a quote or an entity in it never cuts the text or becomes markup.
+$serverName=\App\Models\Server::whereKey($lostRenew->server_id)->value('name');
+\App\Models\Server::whereKey($lostRenew->server_id)->update(['name'=>'Enom "Primary" &amp; <b>main</b>']);
+$page=new DOMDocument();$quiet=libxml_use_internal_errors(true);
+$page->loadHTML('<?xml encoding="utf-8"?>'.Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$lostRenew->id])->html());libxml_clear_errors();libxml_use_internal_errors($quiet);
+$copied=array_map(fn(DOMElement $e)=>$e->getAttribute('data-copy'),iterator_to_array((new DOMXPath($page))->query('//*[@data-copy]')));
+same([\Paymenter\Extensions\Servers\Domains\Admin\Support\SupportDetails::text($lostRenew->fresh())],$copied,'The copy button carries the full details text unchanged');
+expect(str_contains($copied[0]??'','Account: Enom "Primary" &amp; <b>main</b>'),'The account name is copied as typed');
+\App\Models\Server::whereKey($lostRenew->server_id)->update(['name'=>$serverName]);
 // Unreadable saved attempt data renders the request page without an answer form or a send.
 $storedAttempt=$lostRenew->fresh()->getRawOriginal('attempt');$writes=$state->writes;
 DB::table('domains_operations')->where('id',$lostRenew->id)->update(['attempt'=>'d29-explicit-unreadable-fixture']);

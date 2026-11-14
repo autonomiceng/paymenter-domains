@@ -27,11 +27,12 @@ final class SupportDetails
             ...(is_string($order)&&$order!==''?['Order number: '.$order]:[])];
         return implode("\n",$lines);
     }
-    /** Copies in the browser. The text rides in a data attribute, so no request data enters the click script. */
+    /** Copies in the browser. The text rides in a data attribute, so no request data enters the click script.
+     * Filament prints extra attributes unescaped, so the text is escaped here and the browser reads it back unchanged. */
     public static function action(Operation $op): Action
     {
         return Sheet::button(Action::make('copy_support_details')->label(self::LABEL)
-            ->extraAttributes(['data-copy'=>self::text($op)])
+            ->extraAttributes(['data-copy'=>e(self::text($op))])
             ->alpineClickHandler("(navigator.clipboard?.writeText(\$el.dataset.copy) ?? Promise.reject()).then(() => new FilamentNotification().title('Details copied').success().send()).catch(() => new FilamentNotification().title('Could not copy details').body('Your browser blocked the clipboard.').danger().send())"));
     }
 }
