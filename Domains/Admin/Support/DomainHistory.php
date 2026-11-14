@@ -64,7 +64,7 @@ final class DomainHistory
     { return !Account::where('server_id',$domain->server_id)->value('processing_enabled'); }
     /** A request row's time: when it was sent while it waits on the registrar (the request page's Sent row), else when it was created. */
     public static function when(Operation $op): ?\DateTimeInterface
-    { return $op->started_at!==null&&in_array($op->state,['running','pending','uncertain'],true)?$op->started_at:$op->created_at; }
+    { return $op->started_at!==null&&in_array($op->state,['running','pending','uncertain'],true)?StaffReviewHistory::sentAt($op):$op->created_at; }
     /** @return array{time:?\DateTimeInterface,event:string,sub:?string,status:?array,by:string} */
     public static function row(Operation|array $entry, Domain $domain, bool $ordersOff): array
     {

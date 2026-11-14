@@ -334,8 +334,17 @@ expect(!ContactStepRetries::readmit($paused->id,$clock),'The order waits while O
 DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>true]);
 expect(ContactStepRetries::readmit($paused->id,$clock),'The order goes back by itself once Orders are on');
 same(['queued',null],[$paused->fresh()->state,$paused->fresh()->safe_code],'Orders on puts the order back in the queue');
-$execute($paused->fresh());
+$clock->instant=$clock->now()->modify('+30 seconds');$resent=$execute($paused->fresh());
 same([$before[0]+1,$before[1]+1],[$sent->contactAdd,$sent->registerDomain],'The resumed order sends once');
+// The retry keeps the first claim's start, so History and the Sent row take the time it was really sent.
+$sentAt=Paymenter\Extensions\Servers\Domains\Admin\Support\StaffReviewHistory::time(new DateTimeImmutable($resent->attempt['dispatch_attempted_at']));
+expect($sentAt!==Paymenter\Extensions\Servers\Domains\Admin\Support\StaffReviewHistory::time($resent->started_at),'The retried send is later than the first claim');
+$timeline=Paymenter\Extensions\Servers\Domains\Admin\Support\StaffReviewHistory::timeline($resent,Paymenter\Extensions\Servers\Domains\Admin\Support\StaffReviewHistory::rows($resent));
+$sentRows=array_values(array_filter($timeline,fn($r)=>$r['event']===Paymenter\Extensions\Servers\Domains\Admin\Support\StaffReviewHistory::SENT));
+same([$sentAt],array_column($sentRows,'time'),'History has one Sent to registrar entry at the retried send');
+$events=array_column($timeline,'event');
+expect(array_search(Paymenter\Extensions\Servers\Domains\Admin\Support\StaffReviewHistory::SENT,$events,true)>max(array_keys($events,'Hold released',true)),'The send comes after the release that queued it: '.json_encode($events));
+same($sentAt,Paymenter\Extensions\Servers\Domains\Admin\Support\StaffReviewHistory::time(Paymenter\Extensions\Servers\Domains\Admin\Support\StaffReviewHistory::sentAt($resent)),'The Sent to registrar row shows the retried send');
 echo "Orders off at the contact step resumes when Orders are on.\n";
 
 // A contact hold with nothing sent retries by itself a few spaced times, then stays for staff. It never cancels or refunds.

@@ -124,7 +124,7 @@ class ViewOperation extends RecordDetailPage
         // A renewal waiting out Enom's repeat refusal goes at a fixed time; the notice says why, this row says when.
         if (($goes=\Paymenter\Extensions\Servers\Domains\Services\RenewalRepeatWait::until($op))!==null) { $rows[]=Row::make('Goes to registrar',RequestRows::time($goes,RequestFacts::NO_TIME)); }
         // Sent to registrar is hidden while the request has not been sent. An unsure send is History's to say, once.
-        if (($op->started_at || in_array($op->state,['running','pending','uncertain','succeeded'],true)) && StaffReviewHistory::sendEvent($op)===StaffReviewHistory::SENT) { $rows[]=Row::make(StaffReviewHistory::SENT,RequestRows::time($op->started_at,RequestFacts::NO_TIME)); }
+        if (($op->started_at || in_array($op->state,['running','pending','uncertain','succeeded'],true)) && StaffReviewHistory::sendEvent($op)===StaffReviewHistory::SENT) { $rows[]=Row::make(StaffReviewHistory::SENT,RequestRows::time(StaffReviewHistory::sentAt($op),RequestFacts::NO_TIME)); }
         if (!($facts['unreadable']??false)) {
             $reply=$facts['registrar_reply']??$facts['send_failure']??null;
             if ($reply!==null||$answers||$check!==null||$copy!==null) {
