@@ -91,7 +91,7 @@ class MonitoringSettings extends ResourceSettingsPage
             SettingsRow::setting('Registrar balance short',Value::fact(Fact::waits([FundsWaits::WAIT_DAYS*86400]),'Then the customer gets account credit.'),$system),
             SettingsRow::setting('Our own refusals',Value::fact(Fact::waits(ContactStepRetries::WAITS),$tries.' retries, then the order waits for staff to release it or cancel and refund.'),$system)
                 ->help('Only when nothing reached the registrar.'),
-            SettingsRow::setting('Orders paused',Value::plain(Plain::On,'Held orders go back to the queue when Orders turn on.'),$system),
+            SettingsRow::setting('Orders turned on',Value::plain(Plain::On,'Held orders go back to the queue when Orders turn on.'),$system),
         ],'What happens to a paid order without a staff step.','automatic-actions');
     }
     protected function head(): Head { return Head::make('Domains', Reader::Staff); }

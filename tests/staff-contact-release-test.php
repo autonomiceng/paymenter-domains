@@ -114,7 +114,7 @@ activeCommerceCostObservations($clock->now(),$clock->now()->modify('+30 days'),$
 $held=static function(string $name)use($new):\Paymenter\Extensions\Servers\Domains\Models\Operation {$op=$new(placeholderComFixtureName($name),true,true);DB::table('domains_operations')->where('id',$op->id)->update(['state'=>'held','safe_code'=>'processing']);return $op->fresh();};
 \Paymenter\Extensions\Servers\Domains\Services\RuntimeSchema::install();$dispatch=app(\Paymenter\Extensions\Servers\Domains\Services\RuntimeDispatch::class);
 $ready=$held('staff-orders-ready-placeholder.com');\Illuminate\Support\Facades\Auth::setUser($staff);
-same('Not sent. It will retry automatically.',\Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::reason($ready),'Orders on: the reason is what happens next');
+same('Not sent. It retries by itself, or Release hold sends it now.',\Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::reason($ready),'Orders on: the reason is what happens next');
 $notice=\Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::notice($ready);
 expect(!isset($notice['link_label']),'Automatic readmission has no Orders switch');
 same('Release hold queues the test registration to send to Enom.',$notice['body']??null,'The optional release names the same paid request it queues');
