@@ -38,18 +38,20 @@ final class SettingsRow extends Row
     public function also(Action $action): self
     {
         if ($this->on === null || ($switch = $this->controls[0] ?? null) === null) { throw new \LogicException('Only a switch row takes a control after its switch.'); }
-        parent::actions($switch, $action);
-        // The switch keeps the row's actions key, so a request names it as before; the other control gets its own.
-        return $this->schema([Actions::make([$switch])->key(fn (): string => $this->getKey(false).'-actions'), Actions::make([$action])->key(fn (): string => $this->getKey(false).'-also')]);
+        return parent::actions($switch, $action);
     }
     /** The switch goes before the value; any other control stays in the action column. */
     protected function placed(array $shown): array
     {
         if ($this->on === null || ($switch = $this->controls[0] ?? null) === null) { return parent::placed($shown); }
-        $parts = $this->getChildSchema()->getComponents(withHidden: true);
+        // Both controls stay in the row's one actions component, so each request names it as before; only where
+        // each one is drawn changes. Reading the component's actions binds them to it first.
+        $group = $this->getChildSchema()->getComponents(withHidden: true)[0] ?? null;
+        $bound = $group instanceof Actions ? $group->getChildSchema()->getComponents() : [];
         $rest = array_values(array_filter($shown, static fn (Action $a): bool => $a !== $switch));
-        $inline = in_array($switch, $shown, true) ? $parts[0]->toHtml() : null;
-        $column = $rest === [] ? null : (count($parts) > 1 ? $parts[1] : $parts[0])->toHtml();
+        $draw = static fn (array $actions): string => '<div class="fi-sc-actions"><div class="fi-ac">'.implode('', array_map(static fn (Action $a): string => $a->toHtml(), $actions)).'</div></div>';
+        $inline = in_array($switch, $shown, true) && in_array($switch, $bound, true) ? $draw([$switch]) : null;
+        $column = $rest === [] ? null : $draw(array_values(array_filter($bound, static fn ($a): bool => in_array($a, $rest, true))));
         return [$inline, $column, count($rest)];
     }
     /** Who sets it is a fact, so it goes on the visible line under the value, never in the "?". A reader with the
