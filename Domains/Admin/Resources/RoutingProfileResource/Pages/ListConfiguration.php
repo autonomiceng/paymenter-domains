@@ -42,7 +42,7 @@ class ListConfiguration extends RecordListPage
     {
         $default=$this->defaultId?WatchProfile::find($this->defaultId):null;$staff=Reader::Staff;
         $canEdit=Staff::canEditDefaultDns();$refusal=SiteDnsDefault::refusal($canEdit);
-        $problem=$refusal??($default?null:($canEdit?SiteDnsDefault::MISSING:'Default nameservers are Missing. New domains have no nameservers to use. '.SiteDnsDefault::ASK));
+        $problem=$refusal??($default?null:($canEdit?SiteDnsDefault::MISSING:'Default nameservers are missing. New domains have no nameservers to use. '.SiteDnsDefault::ASK));
         $who='Set by staff in Domains > DNS templates.';
         // A default a registrar refuses still shows its nameservers and Edit, which is one of its two fixes.
         $names=SettingsRow::setting('Nameservers',$default?Value::fact(Fact::lines((array)$default->nameservers),$refusal?null:'New registrations get these. Transfers keep their own. Monitored domains without a template of their own are checked against them.'):Value::state(State::NotSet,$staff),$who);
@@ -62,7 +62,7 @@ class ListConfiguration extends RecordListPage
             Column::value('name','Template',fn(WatchProfile $p): Value=>Value::fact(Fact::names([$p->name]),$this->mark((int)$p->id))),
             // A retained template the editor would refuse reads Couldn't read, the same check as its detail page.
             Column::value('nameservers','Nameservers',fn(WatchProfile $p): Value=>($r=$p->readProfile())&&($lines=Fact::lines($r->nameservers))?Value::fact($lines):Value::state(State::CouldntRead,Reader::Staff)),
-            Column::value('enabled','Status',fn(WatchProfile $p): Value=>Value::state($p->enabled?State::Active:State::Paused,Reader::Staff,null,'template-'.$p->id)),
+            Column::value('enabled','Status',fn(WatchProfile $p): Value=>Value::state($p->enabled?State::Active:State::Paused,Reader::Staff,null,'template-'.$p->id))->fill(),
         ];
     }
     protected function emptyLine(): array{return ['No DNS templates','Add one with Add DNS template.','No DNS templates match'];}

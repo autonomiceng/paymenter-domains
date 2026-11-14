@@ -1,4 +1,4 @@
-{{-- MIT, Copyright (c) 2026 Autonomic Engineering. A setting row's switch (Panel\SettingsRow::toggle): the page's own action, drawn as a toggle. Blocked, it keeps focus and points to its reason. The word On or Off stays in the row's value. --}}
+{{-- MIT, Copyright (c) 2026 Autonomic Engineering. A setting row's switch (Panel\SettingsRow::toggle): the page's own action, drawn as a toggle. Blocked, it keeps focus and points to its reason. It sits right before the word On or Off in the row's value. --}}
 @php
     $click = $why === null && ! $action->isDisabled() ? $action->getLivewireClickHandler() : null;
     $colors = \Illuminate\Support\Arr::toCssClasses(\Filament\Support\get_component_color_classes(\Filament\Support\View\Components\ToggleComponent::class, $on ? 'primary' : 'gray'));

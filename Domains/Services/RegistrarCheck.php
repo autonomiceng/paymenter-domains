@@ -148,9 +148,10 @@ final class RegistrarCheck
         if (($check['outcome'] ?? null) === 'awaiting_answer') {
             $step = self::answerStep($check);
             if (!self::answerReady($check)) { return $step; }
-            // Once the answer can be entered the title names that step, so it matches the notice's main button.
+            // Once the answer can be entered the notice says why first, then the step its main button starts.
             $registrar = self::answerRegistrar($check);
-            return ['title'=>'Ask '.$registrar.' to check this attempt, then enter its answer.','body'=>self::found($check),'answer'=>true];
+            $last = isset($check['at']) ? 'Last checked '.self::at((int) $check['at']).'.' : null;
+            return ['title'=>$registrar.' didn’t confirm this order.','body'=>implode(' ',array_filter([$last,self::found($check),'Open a ticket with '.$registrar.' support, then record their answer.'])),'answer'=>true];
         }
         $words = self::words($check, $op->state === 'succeeded');
         return ['title' => $words['title'].'.', 'body' => ($check['outcome'] ?? null) === 'checked' && $op->state !== 'succeeded' ? self::checkedNext($check) : $words['body']];

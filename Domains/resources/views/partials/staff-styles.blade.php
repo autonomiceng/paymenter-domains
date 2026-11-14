@@ -6,13 +6,12 @@
 .domains-title{display:inline-flex;flex-wrap:wrap;align-items:center;gap:.5rem;min-width:0}
 /* Not read and other calm words: the panel's muted gray, the same tone as a gray fact value. */
 .domains .domains-muted{color:var(--e-muted,var(--gray-400))}
-/* Domain price line under the customer title: the state and its button, then the last change on its own row.
-   The last change wraps to at most 2 lines and ends in "..."; the audit log has all of it. */
-.domains-comp{display:grid;gap:.25rem;margin-top:.375rem;min-width:0;font-size:.875rem;line-height:1.25rem}
-.domains-comp-line{display:flex;flex-wrap:wrap;align-items:center;gap:.375rem .75rem;min-width:0}
-.domains-comp-state{opacity:.75}
-.domains-comp-last{max-width:72ch;margin:0;opacity:.75;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden}
-@media (max-width:39.99rem){.domains-comp-last{min-height:2.5rem}}
+/* Domain price action: a plain item in the customer header's action row; a long last-change reason in its confirm wraps. */
+.domains-comp{display:contents}
+/* With it, the header row wraps whole: on a phone the native buttons move under it instead of stacking beside it. */
+.fi-header-actions-ctn:has(>.domains-comp){flex-wrap:wrap}
+.fi-header-actions-ctn:has(>.domains-comp)>.fi-ac{flex:0 1 auto}
+.domains-comp-last{overflow-wrap:anywhere}
 .domains-missing-mark{display:inline-block;width:14px;height:16px;flex:none;vertical-align:middle;color:inherit}
 .domains-missing{display:inline-flex;align-items:center;gap:.375rem;color:var(--panel-err,var(--danger-600));font-weight:600}
 .domains-missing--calm{color:var(--panel-fg-3,var(--gray-500));font-weight:500}
@@ -134,10 +133,22 @@ td.domains-history-detail{min-width:20rem}
 :where(.domains-panel-row-v){min-width:0;overflow-wrap:anywhere}
 :where(.domains-panel-row-a,.domains-panel-row-a .fi-ac){display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:12px}
 :where(.domains-panel-row-a:empty){display:none}
+/* Two actions on a phone: their own line under the value, from the left. Real specificity, so a skin's end alignment can't put them back beside the value. */
+@media(max-width:39.99rem){.domains-panel-row[data-domains-actions]>.domains-panel-row-a,.domains-panel-row[data-domains-actions]>.domains-panel-row-a .fi-ac{grid-column:1/-1;justify-content:flex-start}}
 :where(.domains-panel-nw){white-space:nowrap}:where(.domains-panel-nw .domains-help){display:inline-flex;vertical-align:middle}
 :where(.domains-panel-blocked){cursor:not-allowed}
 @media(min-width:40rem){:where(.domains-panel-row){grid-template-columns:156px minmax(0,1fr) auto}:where(.domains-panel-row-k){grid-column:auto}}
 :where(.domains-panel-row[data-domains-row=notice]){grid-template-columns:minmax(0,1fr) auto}
+/* A setting's switch sits right before its On or Off, and the line under them starts at the switch (Ilya, Nov 14, 2026).
+   Real specificity: a skin that puts toggles in the action column must not pull it away from its word. */
+.domains-panel-row-v[data-domains-switch]{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;column-gap:10px;row-gap:2px}
+.domains-panel-row-v[data-domains-switch]>.domains-panel-inline{grid-row:1;grid-column:1;display:flex;align-items:center}
+.domains-panel-row-v[data-domains-switch]>.domains-panel-inline :is(.fi-sc-actions,.fi-ac){display:flex;margin:0;padding:0}
+.domains-panel-row-v[data-domains-switch]>.domains-panel-val{display:contents}
+.domains-panel-row-v[data-domains-switch]>.domains-panel-val>*{grid-column:2}
+.domains-panel-row-v[data-domains-switch]>.domains-panel-val>.domains-panel-sub{grid-column:1/-1;margin-top:0}
+/* Helper lines keep a readable measure on wide sheets. */
+.domains-panel-row-v .domains-panel-sub{max-width:80ch}
 :where(.domains-panel-trace){display:grid;gap:12px;margin:0;padding:0;list-style:none}
 :where(.domains-panel-step){display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px}
 :where(.domains-panel-step-d){font-size:.75rem;line-height:1.125rem;color:var(--panel-fg-2,inherit)}

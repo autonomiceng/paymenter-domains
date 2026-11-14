@@ -61,7 +61,7 @@ final class StaffReviewHistory
         try { $hold=$op->policy['first_hold']??null; } catch (\Throwable) { $hold=null; }
         // A staff Cancelled already says how this request ended.
         $ended=$op->completed_at&&in_array($op->state,['succeeded','rejected','disposed','cancelled'],true)&&!in_array($status['label'],array_column($rows,'event'),true);
-        $all=[$system($op->created_at,'Request created'),...($hold?[$system(new \DateTimeImmutable($hold['at']),'Put on hold',Labels::reason($hold['reason'],$op->funding_basis==='complimentary'))]:[]),...($op->started_at&&($sent=self::sendEvent($op))?[$system($op->started_at,$sent)]:[]),...$rows,...($ended?[$system($op->completed_at,$status['label'],$status['reason'])]:[])];
+        $all=[$system($op->created_at,'Request created'),...($hold?[$system(new \DateTimeImmutable($hold['at']),'Put on hold',Labels::reason($hold['reason'],$op->funding_basis==='complimentary'))]:[]),...(($at=self::sentAt($op))&&($sent=self::sendEvent($op))?[$system($at,$sent)]:[]),...$rows,...($ended?[$system($op->completed_at,$status['label'],$status['reason'])]:[])];
         $at=PHP_INT_MIN;
         $keyed=array_map(function(array $row)use(&$at){$at=$row['time']===null?$at:(int)strtotime($row['time']);return [$at,$row];},$all);
         usort($keyed,fn(array $a,array $b)=>$a[0]<=>$b[0]);
@@ -75,6 +75,13 @@ final class StaffReviewHistory
         $send=$a['transfer_terminal']['send_state']??$a['execution']['send_state']??$a['send_state']??null;
         if($send==='definitely_unsent'){return null;}
         return $send==='sent'||in_array($op->state,['pending','succeeded'],true)?self::SENT:RequestStatus::STATES['uncertain'][1];
+    }
+    /** When the request went to the registrar: its seal time. A retry keeps the first claim's started_at, so that time can be days before the send. */
+    public static function sentAt(Operation $op): ?\DateTimeImmutable
+    {
+        try { $at=$op->attempt['dispatch_attempted_at']??null; } catch (\Throwable) { $at=null; }
+        if (is_string($at)) { try { return new \DateTimeImmutable($at); } catch (\Throwable) {} }
+        return $op->started_at?\DateTimeImmutable::createFromInterface($op->started_at):null;
     }
     public static function time(?\DateTimeInterface $at): ?string
     { return $at?gmdate(DATE_ATOM,$at->getTimestamp()):null; }

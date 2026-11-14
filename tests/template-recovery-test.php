@@ -23,7 +23,11 @@ $check('Unreadable saved site default cannot be deleted',function()use($make,$ma
  $page->callAction('delete')->assertNotNotified('DNS template deleted');expect(WatchProfile::find($row->id)!==null,'Unreadable saved default is retained');siteDnsFixture(null);
 });
 $check('New domains Missing has one sentence boundary',function()use($manager,$profile):void{
- siteDnsFixture(null);$page=Livewire::actingAs($manager)->test(ListConfiguration::class);$page->assertSee('Default nameservers are Missing. New domains have no nameservers to use. '.SiteDnsDefault::ASK);expect(!str_contains(strip_tags($page->html()),'Missing..'),'Missing default never doubles punctuation');
+ siteDnsFixture(null);$page=Livewire::actingAs($manager)->test(ListConfiguration::class);// The wording is the screenshots' job; here the ask shows once, after exactly one sentence end, with no doubled stop.
+ $text=trim((string)preg_replace('/\s+/u',' ',html_entity_decode(strip_tags($page->html()),ENT_QUOTES)));
+ same(1,substr_count($text,SiteDnsDefault::ASK),'The missing default asks staff once');
+ expect(preg_match('/[^.!?\s]\. '.preg_quote(SiteDnsDefault::ASK,'/').'/u',$text)===1,'The ask follows exactly one sentence boundary');
+ expect(!preg_match('/\.\s*\./u',$text),'Missing default never doubles punctuation');
  siteDnsFixture($profile->id);$next=Livewire::actingAs($manager)->test(ListConfiguration::class);// the named default is in the card.
  same((int)$profile->id,$next->instance()->defaultId,'The card holds the selected default');
  $next->assertSee($profile->name)->assertSee('Default nameservers');

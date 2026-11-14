@@ -124,6 +124,8 @@ final class DomainNotices
             return ['title'=>'Imported without purchase records. Check open invoices.','tone'=>'warning'];
         }
         if (!DomainDecisions::ended($d)&&($hold=DomainDecisions::hold($d))!==null) {
+            // Before the registration is confirmed there is nothing at the registrar to read yet, so the records wait calmly beside Pending registration.
+            if (($waits=\Paymenter\Extensions\Servers\Domains\Services\ObservationWork::resumeBlocked($d))!==null) { return $withPayment(['title'=>$waits,'tone'=>'info','resume'=>true]); }
             $hasAction=preg_match('/(?:use Sync now|use Resume sync|ask staff|Manage this domain)/i',$hold['text']);
             return $withPayment(['title'=>$hold['text'],'body'=>$hold['stopped']&&!$hasAction?DomainDecisions::restart($d):null,'tone'=>'warning','resume'=>true]);
         }

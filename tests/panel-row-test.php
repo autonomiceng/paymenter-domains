@@ -101,8 +101,11 @@ $controls = iterator_to_array($blockedDom->query('//*[@aria-disabled="true"]'));
 $attrs = implode(' ', array_map(static fn (DOMElement $c): string => implode(' ', array_map(static fn (DOMAttr $a): string => $a->name.'='.$a->value, iterator_to_array($c->attributes))), $controls));
 same([2, 0.0, false, false], [count($controls), $blockedDom->evaluate('count(//*[@href] | //*[@*[name()="wire:click"]])'), str_contains($attrs, 'registrar.example'), str_contains($attrs, 'clipboard')], 'A blocked URL or Alpine action keeps its button but has no link or handler');
 // Blocked on its own: the reason is under the value and the control points to it.
-foreach ([['kit-blocked-dns', 'Host records', 'Records can\'t be edited while DNS hosting is off.'], ['kit-toggle-orders', 'Transfers', 'Transfers can\'t be turned on without a Live registrar account.']] as [$section, $label, $why]) {
-    $control = $q($row($section, $label), './/*[@class="domains-panel-row-a"]//button')->item(0);
+// Found by role and accessible name within its row, wherever the row draws it (a switch sits beside its word).
+foreach ([['kit-blocked-dns', 'Host records', 'Edit Host records', 'Records can\'t be edited while DNS hosting is off.'], ['kit-toggle-orders', 'Transfers', 'Transfers', 'Transfers can\'t be turned on without a Live registrar account.']] as [$section, $label, $name, $why]) {
+    $controls = $q($row($section, $label), './/*[(self::button or @role="button" or @role="switch") and @aria-label="'.$name.'"]');
+    same(1, $controls->length, 'One control named '.$name.' in its row');
+    $control = $controls->item(0);
     $reason = $byId((string) $control?->getAttribute('aria-describedby'));
     same(['true', false, true], [$control?->getAttribute('aria-disabled'), $control?->hasAttribute('wire:click'), str_starts_with(trim($reason?->textContent ?? ''), $why)], 'A blocked control points to its reason: '.$label);
 }

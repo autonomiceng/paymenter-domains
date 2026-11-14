@@ -1,17 +1,10 @@
-{{-- withRecords: the page already shows the registrar records and their last read, so their state and refresh rows are not repeated. --}}
+{{-- MIT, Copyright (c) 2026 Autonomic Engineering. What monitoring last saw, as sheet rows (MonitoringEvidence::rows): the
+     website addresses public DNS answered and the registrar holds, each with when it was checked. withRecords: the page
+     already shows the registrar records and their last read, and its section says the separation sentence. --}}
 @php $withRecords ??= false; @endphp
-<div class="domains">
-@php $anyEvidence = $evidence['public'] || $evidence['registrar'] || $evidence['public_at'] || $evidence['registrar_at']; @endphp
-@unless ($withRecords)<dl class="domains-card"><div><dt>Registrar records</dt><dd>{{ $evidence['state'] }}</dd></div></dl>@endunless
-<p class="domains-hint">{{ $evidence['separation'] }}</p>
-{{-- An empty table of Unknown says nothing: it shows once there is a public DNS or registrar answer. --}}
-@if ($anyEvidence)
-<h3 class="domains-h3">Evidence</h3>
-<div class="domains-tablewrap" role="region" aria-label="Public DNS and registrar evidence" tabindex="0"><table class="domains-tbl"><thead><tr><th>Source</th><th>Value</th><th>Checked</th></tr></thead><tbody>
-@foreach (['public'=>'Public DNS','registrar'=>'Registrar records'] as $source=>$label)<tr><td>{{ $label }}</td><td>{{ $evidence[$source]?implode('; ',$evidence[$source]):'Unknown' }}@if ($source==='public' && $evidence[$source] && ($evidence['public_stale']??false))<span class="domains-sub">Historical answers; waiting for a current check.</span>@endif</td><td>@if ($evidence[$source.'_at'])@include('domains::partials.moment',['at'=>is_int($evidence[$source.'_at'])?gmdate('c',$evidence[$source.'_at']):$evidence[$source.'_at']])@else Unknown @endif</td></tr>@endforeach
-</tbody></table></div>
-@else
-<p class="domains-hint">No public DNS or registrar answers yet.</p>
-@endif
-@unless ($withRecords)<h3 class="domains-h3">Latest checks</h3><dl class="domains-card"><div><dt>Registrar refresh</dt><dd>{{ $evidence['state'] }}<span class="domains-sub">@if ($evidence['at'])@include('domains::partials.moment',['at'=>$evidence['at']])@else No registrar read yet. @endif</span></dd></div></dl>@endunless
+<div class="domains-monitoring" data-piece="monitoring">
+@unless ($withRecords)<p class="domains-panel-sub">{{ $evidence['separation'] }}</p>@endunless
+@foreach (\Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence::rows($evidence, $withRecords) as $label => $value)
+@include('domains::components.panel.row', ['kind' => 'fact', 'id' => 'domains-panel-monitoring-'.\Illuminate\Support\Str::slug($label), 'label' => $label, 'value' => $value, 'help' => null, 'live' => null, 'result' => null, 'waits' => false, 'blocked' => null, 'fix' => null, 'why' => null, 'inline' => null, 'actions' => null, 'count' => 0])
+@endforeach
 </div>

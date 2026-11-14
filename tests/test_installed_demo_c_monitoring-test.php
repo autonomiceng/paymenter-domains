@@ -21,7 +21,10 @@ $d->update(['observation'=>['records'=>['identity'=>ObservationRecords::identity
 DB::table('domains_watch_names')->where('id',$watch->id)->update(['state'=>'linked','managed_domain_id'=>$d->id,'registration'=>'platform']);$watch->refresh();
 $public=DB::transaction(fn()=>WatchDnsObservation::create(['watch_id'=>$watch->id,'user_id'=>$owner->id,'watch_revision'=>$watch->revision,'profile_id'=>$profile->id,'profile_revision'=>$profile->revision,'psl_revision'=>$watch->psl_revision,'mixed'=>false,'check_kind'=>'points','started_at'=>$at->getTimestamp()-60,'completed_at'=>$at->getTimestamp()-59,'result'=>'complete','partial'=>false,'valid_until'=>$at->getTimestamp()+60,'facts'=>['version'=>1,'queries'=>[['name'=>'example.com','type'=>'A','records'=>[['value'=>'192.0.2.10']]]]],'digest'=>str_repeat('b',64),'source_digest'=>str_repeat('c',64)]));
 $e=MonitoringEvidence::read($d,$public,'example.com');$html=view('domains::admin.monitoring-evidence',['evidence'=>$e])->render();
-foreach(['192.0.2.10','192.0.2.20','Public DNS','Registrar records',e($e['separation']),'Registrar refresh','2026-11-05T09:00:00+00:00'] as $value){expect(str_contains($html,$value),'Evidence renders '.$value);}
+foreach(['192.0.2.10','192.0.2.20','Public DNS','Registrar records',e($e['separation']),'Registrar refresh'] as $value){expect(str_contains($html,$value),'Evidence renders '.$value);}
+// Times are instants, so compare the moments the page names, not how one is written.
+$instants=static fn(string $html):array=>array_map('strtotime',preg_match_all('/<time datetime="([^"]+)"/',$html,$m)?$m[1]:[]);
+expect(in_array(strtotime('2026-11-05T09:00:00Z'),$instants($html),true),'Evidence names the registrar read instant');
 same('Partial',$e['state'],'Independent incomplete registrar families stay Partial');
 $manager=staffUser([Staff::VIEW,Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites::VIEW,Paymenter\Extensions\Servers\Domains\Admin\Pages\PublicSuffixList::VIEW]);Auth::login($manager);
 $history=WatchFacts::history($watch);expect(in_array('Registrar read partial',array_column($history,'event'),true)&&in_array('Registrar read complete',array_column($history,'event'),true),'Monitoring history contains actual current and last-complete registrar reads');
@@ -42,8 +45,35 @@ foreach(['expired','revision','failed'] as $case){
 }
 $managed=new Paymenter\Extensions\Servers\Domains\Models\ManagedPublicObservation(['domain_id'=>$d->id,'user_id'=>$d->user_id,'generation'=>$d->authority_generation,'account_fingerprint'=>$d->account_fingerprint,'domain_revision'=>$d->confirmed_revision,'check_kind'=>'points','started_at'=>$at->getTimestamp()-60,'valid_until'=>$at->getTimestamp()-1,'result'=>'complete','facts'=>$public->facts]);
 expect(MonitoringEvidence::read($d,$managed)['public_stale']??false,'Expired managed public answers are historical');
-$historical=view('domains::admin.monitoring-evidence',['evidence'=>MonitoringEvidence::read($d,$managed)])->render();
-expect(str_contains($historical,'Historical answers'),'Saved expired IP answers have an explicit historical label');
+// Freshness is data: saved expired answers keep their address and check instant, but read differently from fresh ones.
+$Value=static fn(array $e)=>MonitoringEvidence::rows($e)['Public DNS'];
+$expired=MonitoringEvidence::read($d,$managed);$stale=$Value($expired);$fresh=$Value([...$expired,'public_stale'=>false]);$tried=gmdate('Y-m-d\\TH:i:s\\Z',$at->getTimestamp()-60);
+expect($expired['public_stale']&&$stale->fact?->items===['A @ → 192.0.2.10']&&$stale->subAt?->datetime===$tried&&$stale->sub!==$fresh->sub,'Saved expired IP answers keep their check time and do not read as current');
+// A failed resolver read saves a time and no answers. It never reads as None or as checked, fresh or expired.
+$noAnswer=static fn(string $state,?string $code,int $until)=>new Paymenter\Extensions\Servers\Domains\Models\ManagedPublicObservation(['domain_id'=>$d->id,'user_id'=>$d->user_id,'generation'=>$d->authority_generation,'account_fingerprint'=>$d->account_fingerprint,'domain_revision'=>$d->confirmed_revision,'check_kind'=>'points','started_at'=>$at->getTimestamp()-60,'valid_until'=>$until,'result'=>$state==='negative'?'complete':'unknown','facts'=>['version'=>1,'queries'=>[['name'=>'example.com','type'=>'A','state'=>$state,'records'=>[],'code'=>$code]]]]);
+foreach([$at->getTimestamp()+60,$at->getTimestamp()-1] as $until){
+    $read=MonitoringEvidence::read($d,$noAnswer('unknown','resolver_failed',$until));$failed=$Value($read);
+    expect($read['public_stale']&&$failed->state===Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead&&$failed->word!==Paymenter\Extensions\Servers\Domains\Presentation\Plain::None->label(),'A failed resolver read is Couldn\'t read, never None');
+    expect($failed->subAt?->datetime===$tried,'A failed resolver read keeps when it was tried');
+}
+// A confirmed negative reply is None; once expired it keeps the stale reading, like saved answers.
+$confirmedFresh=$Value(['public_read'=>'negative','public'=>[],'public_at'=>$at->getTimestamp()-60,'public_stale'=>false]);
+$confirmedStale=$Value(MonitoringEvidence::read($d,$noAnswer('negative',null,$at->getTimestamp()-1)));
+same([Paymenter\Extensions\Servers\Domains\Presentation\Plain::None->label(),Paymenter\Extensions\Servers\Domains\Presentation\Plain::None->label()],[$confirmedFresh->word,$confirmedStale->word],'A confirmed negative public read is None');
+expect($confirmedStale->sub===$stale->sub&&$confirmedFresh->sub===$fresh->sub,'An empty public result keeps the same fresh or stale reading as answers');
+// The registrar side says None only after a complete DNS read.
+$registrar=static fn(?string $state)=>MonitoringEvidence::rows(['registrar'=>[],'registrar_at'=>'2026-11-05T09:00:00+00:00','registrar_read'=>$state])['Registrar records'];
+same([Paymenter\Extensions\Servers\Domains\Presentation\Plain::None->label(),Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead,Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead],[$registrar('complete')->word,$registrar('partial')->state,$registrar('unknown')->state],'Registrar records say None only after a complete DNS read');
+// A first registrar read that failed has no records and no record time: the row is Couldn't read at the failure time, not Not read yet.
+$first=clone $d;$first->observation=['record_failure'=>['identity'=>ObservationRecords::identity($d),'code'=>'domain_not_in_account','at'=>'2026-11-05T10:00:00+00:00']];
+$failedFirst=MonitoringEvidence::rows(MonitoringEvidence::read($first))['Registrar records'];
+same(Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead,$failedFirst->state,'A failed first registrar read is Couldn\'t read');
+same(strtotime('2026-11-05T10:00:00Z'),strtotime((string)$failedFirst->subAt?->datetime),'A failed first registrar read names when it was tried');
+// Addresses from a registrar read that did not finish stay listed, with the same unfinished words and time as an empty one.
+$listed=static fn(?string $state)=>MonitoringEvidence::rows(['registrar'=>['A @ → 192.0.2.20'],'registrar_at'=>'2026-11-05T09:00:00+00:00','registrar_read'=>$state])['Registrar records'];
+foreach(['partial','unknown'] as $state){$unfinished=$listed($state);
+    expect($unfinished->fact==$listed('complete')->fact&&$unfinished->sub===$registrar($state)->sub&&$unfinished->sub!==$listed('complete')->sub,'Registrar addresses from an unfinished read keep the unfinished reading: '.$state);
+    same(strtotime('2026-11-05T09:00:00Z'),strtotime((string)$unfinished->subAt?->datetime),'Unfinished registrar addresses keep the read time: '.$state);}
 // A stored public observation can exist without a selected template.
 DB::table('domains_watch_names')->where('id',$watch->id)->update(['ns_profile_id'=>null,'expected_dns'=>null]);$watch->unsetRelation('delegation');
 DB::transaction(fn()=>WatchDnsObservation::create(['watch_id'=>$watch->id,'user_id'=>$owner->id,'watch_revision'=>$watch->revision,'psl_revision'=>$watch->psl_revision,'mixed'=>false,'profile_id'=>$profile->id,'profile_revision'=>$profile->revision,'check_kind'=>'delegation','started_at'=>$at->getTimestamp()-30,'completed_at'=>$at->getTimestamp()-29,'result'=>'complete','partial'=>false,'valid_until'=>$at->getTimestamp()+60,'dns'=>'platform','facts'=>['version'=>1,'queries'=>[['name'=>'example.com','type'=>'NS','state'=>'rrset','records'=>[['value'=>'ns1.platform.test']]]]],'digest'=>str_repeat('d',64),'source_digest'=>str_repeat('e',64)]));

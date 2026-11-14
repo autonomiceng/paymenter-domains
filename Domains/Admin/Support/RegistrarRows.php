@@ -49,8 +49,9 @@ final class RegistrarRows
             $label = trim(html_entity_decode(strip_tags($m[2]), ENT_QUOTES));
             $link = Sheet::link($name.'_'.substr(md5($label), 0, 6), $label, html_entity_decode($m[1], ENT_QUOTES));
             $html = str_replace($m[0], '', $html);
-            // The link was the line's last step; what is left still reads as sentences, with one full stop.
-            $html = (string) preg_replace(['/([.!?])\s*\.$/', '/\s+\.$/', '/\s*,\s*$/'], ['$1', '.', ''], trim($html));
+            // The link was the line's last step; what is left still reads as sentences, with one full stop, also inside a status mark's closing tags.
+            $end = '((?:\s*<\/[a-z]+>)*)$/i';
+            $html = (string) preg_replace(['/([.!?])\s*\.'.$end, '/\s+\.'.$end, '/\s*,\s*'.$end], ['$1$2', '.$1', '$1'], trim($html));
         }
         return [self::sentence($html !== null ? new \Illuminate\Support\HtmlString($html) : $cause), $link];
     }

@@ -1,16 +1,10 @@
-{{-- MIT, Copyright (c) 2026 Autonomic Engineering. Under the customer's title: the domain price setting and the one button that changes it, then its last change. --}}
+{{-- MIT, Copyright (c) 2026 Autonomic Engineering. In the customer editor's header actions: the one domain price action that applies, and its confirm. --}}
 <div class="domains-comp">
     @if ($allowed)
-    <div class="domains-comp-line">
-        @if ($on)
-            {{ \Paymenter\Extensions\Servers\Domains\Admin\Support\StatusMark::head('success', 'Complimentary domains', 'customer-'.$this->customer) }}
-        @else
-            <span class="domains-comp-state">Standard domain prices</span>
-        @endif
-        {{ $on ? $this->turnOffAction : $this->turnOnAction }}
-    </div>
-    {{-- Always present: on narrow screens it keeps two lines, so the header buttons below never move when history appears. --}}
-    <p class="domains-comp-last">{{ $last ?? 'No changes yet.' }}</p>
+    {{-- A directly printed action renders even when hidden, so print only the visible one. --}}
+    @foreach ([$this->turnOnAction, $this->turnOffAction] as $action)
+        @if ($action->isVisible()){{ $action }}@endif
+    @endforeach
     <x-filament-actions::modals />
     @endif
 </div>

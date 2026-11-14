@@ -331,12 +331,36 @@ $paused=$execute($op);$grants->fail=null;$clock->instant=$clock->now()->modify('
 same(['held','processing'],[$paused->state,$paused->safe_code],'Orders off at the contact step holds for Orders, not for the contact');
 expect(OperationActions::relevant('refund',$paused->fresh()),'Cancel and refund stays available while Orders are off');
 expect(!ContactStepRetries::readmit($paused->id,$clock),'The order waits while Orders are off');
-DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>true]);
+DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>true]);$releasedAt=$clock->now();
 expect(ContactStepRetries::readmit($paused->id,$clock),'The order goes back by itself once Orders are on');
 same(['queued',null],[$paused->fresh()->state,$paused->fresh()->safe_code],'Orders on puts the order back in the queue');
-$execute($paused->fresh());
+$clock->instant=$clock->now()->modify('+30 seconds');$resent=$execute($paused->fresh());
 same([$before[0]+1,$before[1]+1],[$sent->contactAdd,$sent->registerDomain],'The resumed order sends once');
+// The retry keeps the first claim's start, so History and the Sent row take the time it was really sent.
+$sentAt=Paymenter\Extensions\Servers\Domains\Admin\Support\StaffReviewHistory::time(new DateTimeImmutable($resent->attempt['dispatch_attempted_at']));
+expect($sentAt!==Paymenter\Extensions\Servers\Domains\Admin\Support\StaffReviewHistory::time($resent->started_at),'The retried send is later than the first claim');
+$timeline=Paymenter\Extensions\Servers\Domains\Admin\Support\StaffReviewHistory::timeline($resent,Paymenter\Extensions\Servers\Domains\Admin\Support\StaffReviewHistory::rows($resent));
+$sentRows=array_values(array_filter($timeline,fn($r)=>$r['event']===Paymenter\Extensions\Servers\Domains\Admin\Support\StaffReviewHistory::SENT));
+same([$sentAt],array_column($sentRows,'time'),'History has one Sent to registrar entry at the retried send');
+expect(new DateTimeImmutable($resent->attempt['dispatch_attempted_at'])>$releasedAt,'The send comes after the release that queued it');
+same($sentAt,Paymenter\Extensions\Servers\Domains\Admin\Support\StaffReviewHistory::time(Paymenter\Extensions\Servers\Domains\Admin\Support\StaffReviewHistory::sentAt($resent)),'The Sent to registrar row shows the retried send');
 echo "Orders off at the contact step resumes when Orders are on.\n";
+
+// Orders went off again just after the order went back to the queue, and stayed off past its send window. Once they
+// are on, its first try sends instead of holding again as Orders off.
+$op=$order('held-contact-orders-off-lapsed-placeholder.com');$before=[$sent->contactAdd,$sent->registerDomain];
+$grants->fail=static function()use($account):void {DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>false]);throw new DomainException('TEST NameSilo feature off.');};
+$paused=$execute($op);$grants->fail=null;$clock->instant=$clock->now()->modify('+60 seconds');Auth::login($staff);
+DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>true]);
+expect(ContactStepRetries::readmit($paused->id,$clock),'The order goes back to the queue once Orders are on');
+DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>false]);
+$clock->instant=$clock->now()->modify('+'.(Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation::EXECUTION_SECONDS+60).' seconds');
+DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>true]);
+$sentAfter=$execute($paused->fresh());Auth::login($staff);
+expect(!($sentAfter->state==='held'&&$sentAfter->safe_code==='processing'),'Orders on: the first try does not hold as Orders off again');
+same([$before[0]+1,$before[1]+1],[$sent->contactAdd,$sent->registerDomain],'Orders on: the first try sends once');
+same(0,ContactStepRetries::tries($sentAfter->fresh()),'Waiting for Orders spends no automatic try');
+echo "A queued contact retry whose window lapsed while Orders were off sends once they are on.\n";
 
 // A contact hold with nothing sent retries by itself a few spaced times, then stays for staff. It never cancels or refunds.
 $op=$heldOrder('held-contact-auto-retry-placeholder.com');$viaGateway($op,'receipt_held_contact_auto_retry');

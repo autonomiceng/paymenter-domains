@@ -243,7 +243,7 @@ class ViewDomain extends RecordDetailPage
         }
         $records=[$this->recordFamilies($d,$facts,$edits,$notices['Registrar records']??null)];
         $monitoring=Section::make('Monitoring',[...(isset($notices['Monitoring'])?[$notices['Monitoring']]:[]),
-            Partial::make('domains::admin.monitoring-evidence',['evidence'=>\Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence::read($d),'withRecords'=>true],'monitoring-evidence')]);
+            Partial::make('domains::admin.monitoring-evidence',['evidence'=>\Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence::read($d),'withRecords'=>true],'monitoring-evidence')],\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::EVIDENCE);
         return [...($d->status==='active'?[...$records,...$sections]:[...$sections,...$records]),$monitoring];
     }
     /** The rail: the newest history, with the History tab holding the rest. */

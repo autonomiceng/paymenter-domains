@@ -271,8 +271,9 @@
     .domains .domains-dns-inventory td { min-width: 0; overflow-wrap: anywhere; }
     .domains .domains-dns-inventory td[data-label] { display: grid; grid-template-columns: 4rem minmax(0, 1fr); gap: .75rem; text-align: right; }
     .domains .domains-dns-inventory td[data-label]::before { grid-column: 1; text-align: left; }
-    .domains .domains-dns-inventory td[data-label="Host"] { display: block; text-align: left; font-weight: 600; }
-    .domains .domains-dns-inventory td[data-label="Host"]::before { content: none; }
+    /* The host keeps its label like Type and Value: a bare "*" or "@" alone says nothing on a phone. */
+    .domains .domains-dns-inventory td[data-label="Host"] { font-weight: 600; }
+    .domains .domains-dns-inventory td[data-label="Host"]::before { font-weight: 400; }
     .domains .domains-dns-inventory tr { grid-template-columns: minmax(0, 1fr); background: var(--e-panel); }
     .domains .domains-head-actions { flex-wrap: nowrap; gap: .5rem; }
     .domains .domains-head-actions .domains-btn { min-width: 0; padding-inline: .625rem; font-size: .8125rem; }
@@ -389,6 +390,30 @@
     .domains .domains-result__action:has(select) form { flex-direction: column; }
     .domains .domains-result__action select { flex: 1; }
     .domains .domains-result__action:has(select) .domains-btn { width: 100%; }
+}
+/* Replace page (Change on a cart line): one column of the cart's width, compact rows under column heads. */
+.domains.domains--replace { max-width: 60rem; }
+.domains .domains-replace-search .domains-searchbar { max-width: none; }
+.domains .domains-results--replace .domains-result { grid-template-columns: minmax(0, 1fr) 10rem 11rem 10.5rem; padding: .75rem 1.25rem; }
+.domains .domains-results--replace .domains-result--head { padding-block: .625rem; font-size: .75rem; font-weight: 600; color: var(--e-muted); }
+.domains .domains-results--replace .domains-result--head > :nth-child(3) { text-align: right; }
+.domains .domains-results--replace .domains-result__name { font-family: var(--e-mono); font-size: .9375rem; font-weight: 400; letter-spacing: 0; }
+.domains .domains-results--replace .domains-result__name .domains-tld { color: inherit; }
+.domains .domains-results--replace .domains-result__price { white-space: nowrap; }
+.domains .domains-results--replace .domains-result__action form { flex-direction: row; }
+.domains .domains-replace-foot { margin: .75rem 0 0; text-align: right; }
+/* Cancel stays beside the title, even when a long name wraps it. */
+.domains.domains--replace .domains-head-main { flex-wrap: nowrap; align-items: baseline; }
+.domains.domains--replace .domains-head-main .domains-title { min-width: 0; overflow-wrap: break-word; }
+.domains.domains--replace .domains-head-actions { flex: none; white-space: nowrap; }
+@media (max-width: 639px) { .domains.domains--replace .domains-head-main .domains-title { font-size: 1.375rem; line-height: 1.875rem; } }
+@media (max-width: 959px) {
+    .domains .domains-results--replace .domains-result { grid-template-columns: minmax(0, 1fr) auto; gap: .25rem 1rem; padding: 1rem; }
+    .domains .domains-results--replace .domains-result--head { display: none; }
+    .domains .domains-results--replace .domains-result__name { grid-column: 1; grid-row: 1; font-size: .875rem; }
+    .domains .domains-results--replace .domains-result .domains-result__action { grid-column: 2; grid-row: 1 / span 3; width: auto; min-width: 0; }
+    /* The price column can get narrow here, so a long multi-year total wraps instead of running into the action. */
+    .domains .domains-results--replace .domains-result__price { white-space: normal; overflow-wrap: break-word; min-width: 0; }
 }
 @media (prefers-reduced-motion: reduce) { .domains * { transition: none !important; animation: none !important; } }
 /* Owner forms retain the approved management layout. */
@@ -532,6 +557,8 @@
 .domains .domains-edit--behind { visibility: hidden; }
 .domains .domains-edit--behind [data-confirm-dialog] { visibility: visible; }
 .domains .domains-badge { white-space:normal; }
+/* A record's Delete stays one word in the narrow last column. */
+.domains button[data-delete-record] { white-space: nowrap; overflow-wrap: normal; }
 .domains .domains-missing { display:inline-flex; align-items:center; gap:.375rem; color: var(--e-bad); font-weight:600; }
 .domains .domains-missing--calm { color:var(--e-muted); font-weight:500; }
 .domains .domains-missing__cause { margin-inline-start:.5rem; color:var(--e-muted); }

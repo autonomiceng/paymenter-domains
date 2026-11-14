@@ -121,14 +121,21 @@ class Row extends Component implements HasEmbeddedView
             }
         }
         $tip = $this->tip();
+        [$inline, $actions, $count] = $this->placed($shown);
         return view('domains::components.panel.row', [
             'kind' => $this->kind, 'id' => $this->anchor(), 'linked' => $this->linked, 'label' => $this->rowLabel, 'value' => $this->shownValue(),
             'help' => $tip === null ? null : HelpHint::make($tip, 'About '.$this->rowLabel)->toHtml(),
             'live' => $this->live, 'result' => $this->result, 'waits' => $this->waits(),
             'blocked' => $this->blocked, 'fix' => $this->fix?->toHtml(), 'why' => $this->blocked !== null ? $why : null,
-            'actions' => $shown === [] ? null : $this->getChildSchema()->toHtml(),
+            'inline' => $inline, 'actions' => $actions,
+            // Two actions don't fit beside a value on a phone, so the row says how many it shows and the styles stack them.
+            'count' => $count,
         ])->render();
     }
+    /** Where the shown actions go: [a control drawn before the value, the action column, how many sit in that column].
+     * Only a setting's switch goes before its value. @param list<Action> $shown @return array{?string, ?string, int} */
+    protected function placed(array $shown): array
+    { return [null, $shown === [] ? null : $this->getChildSchema()->toHtml(), count($shown)]; }
     private static function needsState(Value $value): Value
     {
         if ($value->kind !== 'state') { throw new \InvalidArgumentException('A live or result line is a state.'); }

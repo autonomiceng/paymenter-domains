@@ -50,10 +50,10 @@ same(0, $dom->query('//form')->length, 'No Register form for a name already in t
 same($calls, $reads->calls, 'In-cart state is decided before any registrar read');
 same('available', $check($second)->getData(true)['status'], 'Other names still check normally');
 
-// Change on Review opens search in replace mode: a notice with Cancel, and the mode survives a new search.
+// Change on Review opens search in replace mode: a head naming the line with Cancel, and the mode survives a new search.
 $html = $controller->search($request('/domains/register', ['name' => $first, 'replace' => (string) $line->id], 'GET'))->render();
 $dom = storefrontDom($html);
-same('Replacing '.$first.'.', trim($dom->query('//*[@data-domains-replacing]')->item(0)?->firstChild?->textContent ?? ''), 'Replace notice names the line');
+expect(str_contains($dom->query('//*[@data-domains-replacing]//h1')->item(0)?->textContent ?? '', $first), 'The head names the line being replaced');
 same(1, $dom->query('//*[@data-domains-replacing]//a[@href="'.route('cart').'"][normalize-space()="Cancel"]')->length, 'Cancel goes back to the cart');
 same(1, $dom->query('//form[@role="search"]//input[@type="hidden"][@name="replace"][@value="'.$line->id.'"]')->length, 'A new search stays in replace mode');
 same((string) $line->id, $dom->query('//*[@data-domains-results]')->item(0)?->getAttribute('data-replace'), 'Checks carry the line being replaced');
@@ -62,11 +62,15 @@ foreach (['999999', 'x', ''] as $bogus) {
     expect(!str_contains($html, 'data-domains-replacing') && !str_contains($html, 'name="replace"'), 'Unknown line is plain search: '.$bogus);
 }
 
-// In replace mode an available name offers "Use this name" with the line's term picked.
+// In replace mode an available name offers to take the line's place, on the line's term.
 $dom = storefrontDom($check($second, ['replace' => (string) $line->id])->getData(true)['html']);
-same(1, $dom->query('//form//button[normalize-space()="Use this name"]')->length, 'Replace mode says Use this name');
+same(1, $dom->query('//form//button[@aria-label="Use '.$second.' instead of '.$first.'"]')->length, 'Replace mode offers to use the name instead of the line');
 same(1, $dom->query('//form//input[@type="hidden"][@name="replace"][@value="'.$line->id.'"]')->length, 'The form names the line');
-same('3', $dom->query('//form//select[@name="term"]/option[@selected]')->item(0)?->getAttribute('value'), 'The line keeps its 3-year term');
+same('3', $dom->query('//form//input[@name="term"]')->item(0)?->getAttribute('value'), 'The line keeps its 3-year term');
+// The line's own name keeps it and goes back to the cart; nothing is ordered from that row.
+$dom = storefrontDom($check($first, ['replace' => (string) $line->id])->getData(true)['html']);
+same(1, $dom->query('//a[@href="'.route('cart').'"][@aria-label="Keep '.$first.'"]')->length, 'The current name keeps the line');
+same(0, $dom->query('//form')->length, 'No order form for the current name');
 // A replace page whose line left the cart (another tab) stays in replace mode, so the order is refused below.
 $dom = storefrontDom($check($second, ['replace' => '999999'])->getData(true)['html']);
 same(1, $dom->query('//form//input[@type="hidden"][@name="replace"][@value="999999"]')->length, 'A line that left the cart still replaces, never adds');
