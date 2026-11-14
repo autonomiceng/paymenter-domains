@@ -67,7 +67,7 @@ final class DefaultNameservers
     public static function card(?WatchProfile $default,?Action $edit,Action $choose): Group
     {
         $canEdit=Staff::canEditDefaultDns();$refusal=SiteDnsDefault::refusal($canEdit);
-        $problem=$refusal??($default?null:($canEdit?SiteDnsDefault::MISSING:'Default nameservers are Missing. New domains have no nameservers to use. '.SiteDnsDefault::ASK));
+        $problem=$refusal??($default?null:($canEdit?SiteDnsDefault::MISSING:'Default nameservers are missing. New domains have no nameservers to use. '.SiteDnsDefault::ASK));
         // A default a registrar refuses still shows its nameservers and Edit, which is one of its two fixes.
         $names=TextEntry::make('default_nameservers')->label('Nameservers')->state($default?$default->nameservers:Missing::LABEL)
             ->listWithLineBreaks()->fontFamily($default?FontFamily::Mono:null)->extraAttributes(['class'=>'domains-wrap'])
