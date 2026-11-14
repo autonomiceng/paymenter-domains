@@ -25,12 +25,12 @@ $other=$op->fresh();$other->action='register';expect(!$recovery::offered($other)
 DB::table('domains_accounts')->where('server_id',$server->id)->update(['environment'=>'live']);expect(!$recovery::offered($op->fresh()),'Live history values are not confirmed');DB::table('domains_accounts')->where('server_id',$server->id)->update(['environment'=>'test']);
 // Past the read window the hold stays and the page says what is left. Check status still reads what Enom shows for the domain.
 // After the domain read, the answer step is what is left; it replaces the too-old line.
-$sent=new DateTimeImmutable($op->fresh()->attempt['dispatch_attempted_at']);$now=$clock->at;$tooOld='Ask Enom to check this attempt, then enter its answer.';
-$clock->at=$sent->modify('+86399 seconds');$request()->assertActionVisible($recovery::NAME)->assertDontSee($tooOld);
-$clock->at=$sent->modify('+86400 seconds');$request()->assertActionHidden($recovery::NAME)->assertSee($tooOld)->assertSee('Check status');$clock->at=$now;
+$sent=new DateTimeImmutable($op->fresh()->attempt['dispatch_attempted_at']);$now=$clock->at;$answerStep=fn():bool=>(Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::notice($op->fresh())['primary']??null)==='enom_answer';
+$clock->at=$sent->modify('+86399 seconds');$request()->assertActionVisible($recovery::NAME);expect(!$answerStep(),'Inside the read window the notice offers the history read, not the support answer');
+$clock->at=$sent->modify('+86400 seconds');$request()->assertActionHidden($recovery::NAME)->assertSee('Check status');expect($answerStep(),'Past the read window the notice leads with the support answer');$clock->at=$now;
 $request()->assertSee('Enom’s reply was lost.')->assertActionVisible($recovery::NAME)->callAction($recovery::NAME);
 $request()->assertActionHidden($recovery::NAME);
-$clock->at=$sent->modify('+1 day');$request()->assertSee($tooOld);$clock->at=$now;
+$clock->at=$sent->modify('+1 day');expect($answerStep(),'After the history read the support answer is what is left');$clock->at=$now;
 foreach([[],['9002','9003'],['9002']] as $ids){
     $s->orders=$ids;Cache::flush();resetWire(['reply'=>$renewReply]);(new RuntimeWork($clock,new RuntimePorts))->operation($op->id);
     same(count($ids)===1?'succeeded':'uncertain',$op->fresh()->state,'Accepted history requires exactly one matching renewal charge');

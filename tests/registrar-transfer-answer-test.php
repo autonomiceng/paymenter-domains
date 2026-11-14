@@ -23,10 +23,10 @@ $action=\Paymenter\Extensions\Servers\Domains\Admin\Support\EnomAnswerAction::ma
 expect($action->isVisible(),'Request answer action is available for NameSilo');
 $notice=\Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::notice($op);
 expect(str_contains($notice['body']??'','Use '.$action->getLabel().'.'),'Request notice and account action use the same label');
-same('Enter NameSilo’s answer',$action->getLabel(),'Request action names the registrar and follows main’s answer wording');
-$fields=[];
-foreach($action->getSchema(\Filament\Schemas\Schema::make())->getComponents(withHidden:true) as $field){$fields[$field->getName()]=$field;}
-foreach(['final_confirmed','case_reference','evidence','confirmed'] as $name){expect(str_contains($fields[$name]->getLabel(),'NameSilo'),'NameSilo support fields name the request registrar: '.$name);}
+expect(str_contains($action->getLabel(),'NameSilo'),'Request action names the request registrar');
+$fields=[];$walk=function(array $components)use(&$walk,&$fields):void{foreach($components as $c){if($c instanceof \Filament\Forms\Components\Field){$fields[$c->getName()]=$c;}foreach($c->getChildSchemas(true) as $child){$walk($child->getComponents(withHidden:true));}}};
+$walk($action->getSchema(\Filament\Schemas\Schema::make())->getComponents(withHidden:true));
+expect(isset($fields['confirmed'],$fields['case_reference'],$fields['evidence'],$fields['charge'],$fields['registrar_refund'])&&!isset($fields['final_confirmed']),'One confirmation covers the transfer answer and its final amounts');
 foreach(['evidence','case','confirmation','finality','status','pending','unknown','reference','stale','permission','amount','refund','not_processed'] as $fault){
     $input=$answer($op);
     if($fault==='evidence'){$input['evidence']='';}
@@ -49,7 +49,10 @@ foreach(['evidence','case','confirmation','finality','status','pending','unknown
 $foreign=$rejected('foreign');$bad=$answer($foreign);$bad['attempt_hash']=EnomAnswers::identity($op);
 commerceReject(fn()=>$settings->run($review($foreign),$bad,$clock->now()));
 $before=App\Models\Credit::where('user_id',$user->id)->sum('amount');
-$settings->run($review($op),$answer($op),$clock->now());$op->refresh();
+// Through the staff dialog: its one confirmation also states the result and amounts are final, as the writer requires.
+$form=array_diff_key($answer($op),array_flip(['operation_id','attempt_hash','final_confirmed']));
+Livewire\Livewire::actingAs($staff)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation::class,['record'=>$op->id])
+    ->assertActionVisible('enom_answer')->callAction('enom_answer',$form)->assertHasNoActionErrors();$op->refresh();
 same(['rejected','transfer_rejected','cancelled'],[$op->state,$op->domain->status,$op->domain->service->status],'Audited finality closes the native transfer');
 same($attempt,$op->attempt,'Sent attempt remains byte-for-byte intact');
 same(['amount'=>'5.95','currency'=>'USD'],$op->cost['actual'],'Only the net failed fee is absorbed');

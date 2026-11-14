@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages;
 use Filament\Actions\{Action, ActionGroup};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource, OperationResource};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts, EnomAnswerAction, Facts, HistoryRecovery, Labels, OperationActions, RegistrarFacts, RequestFacts, RequestRows, Sheet, Staff, StaffReviewHistory};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts, EnomAnswerAction, Facts, HistoryRecovery, Labels, OperationActions, RegistrarFacts, RequestFacts, RequestRows, Sheet, Staff, StaffReviewHistory, SupportDetails};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Head, Row, Value};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\{RecordDetailPage, Section};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
@@ -97,7 +97,10 @@ class ViewOperation extends RecordDetailPage
         $state=RequestRows::state($status=RequestFacts::status($op,true,$op->domain),$op);
         // Nothing else on the page says why this request has stopped moving.
         $answer=$this->getAction('enom_answer',false); $answers=(bool)$answer?->isVisible();
-        $notice=RequestFacts::notice($op,$facts)??($answers?['title'=>'Only '.($op->registrar_key==='namesilo'?'NameSilo':'Enom').' can confirm this result.','body'=>'Ask the registrar to check this attempt, then enter its answer.','tone'=>'warning']:null);
+        $who=$op->registrar_key==='namesilo'?'NameSilo':'Enom';
+        $notice=RequestFacts::notice($op,$facts)??($answers?['title'=>$who.' didn’t confirm this order.','body'=>'Open a ticket with '.$who.' support, then record their answer.','tone'=>'warning']:null);
+        // Support needs the request's facts for the ticket, so whoever can record the answer can copy them.
+        $copy=$answers?SupportDetails::action($op):null;
         // The notice's link moves to the row it names; the notice keeps the one action that retries, and the registrar's answer
         // sits on Registrar reply when the notice already has its action.
         $link=$notice===null?null:($notice['link']??null);
@@ -124,9 +127,11 @@ class ViewOperation extends RecordDetailPage
         if (($op->started_at || in_array($op->state,['running','pending','uncertain','succeeded'],true)) && StaffReviewHistory::sendEvent($op)===StaffReviewHistory::SENT) { $rows[]=Row::make(StaffReviewHistory::SENT,RequestRows::time($op->started_at,RequestFacts::NO_TIME)); }
         if (!($facts['unreadable']??false)) {
             $reply=$facts['registrar_reply']??$facts['send_failure']??null;
-            if ($reply!==null||$answers||$check!==null) {
+            if ($reply!==null||$answers||$check!==null||$copy!==null) {
                 $row=Row::make('Registrar reply',$reply === null ? Value::state(State::NotReadYet,Reader::Staff,'Waiting for the registrar\'s answer.') : RequestRows::text($reply));
-                $rows[]=$answers?$row->actions(Sheet::button($answer)):($check!==null?$row->actions($check):$row);
+                // The notice holds one action (P-NTC-5), so copying the ticket details sits here, on the registrar's reply.
+                $replyActs=array_values(array_filter([$answers?Sheet::button($answer):$check,$copy]));
+                $rows[]=$replyActs===[]?$row:$row->actions(...$replyActs);
             }
             if (array_key_exists('invoice',$facts)) { $rows[]=self::linked(Row::make('Invoice',RequestRows::invoice($facts['invoice'],$facts['invoice_state']??null,$facts['invoice_sub'])),'Open invoice',$invoiceUrl); }
             // A refund or dispute on this invoice means money we no longer hold, so staff must look.
