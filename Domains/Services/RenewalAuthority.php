@@ -48,7 +48,7 @@ final readonly class RenewalAuthority
                 catch (RenewalRefused $error) { throw $error; }
                 catch (\Throwable) { throw new RenewalRefused(RenewalCode::Prior); }
                 $prior = $anchor->operation;
-                if ($all->contains(fn ($op) => $op->id !== $prior?->id && !HoldingAnchor::resolved($op, $l) && !self::expected($op, $request))) {
+                if ($all->contains(fn ($op) => $op->id !== $prior?->id && self::blocksRenewal($op, $l) && !self::expected($op, $request))) {
                     throw new RenewalRefused(RenewalCode::Prior);
                 }
                 if ($prior) { self::requireCostAnchor($prior); }
@@ -92,6 +92,13 @@ final readonly class RenewalAuthority
             && RenewalCycles::registrarVirgin($op) && $op->provider_order_id === null
             && $op->confirmed_expires_at === null && $op->authority_generation === $r->generation
             && $op->base_expires_at?->format('Y-m-d') === $r->expiry && (int) $op->term === $r->years;
+    }
+    /** Nonfinancial changes may stay unknown while renewal proceeds; management still requires their outcome. */
+    public static function blocksRenewal(Operation $op, array $l): bool
+    {
+        if ($op->funding_basis === 'non_billable_management' && isset($op->policy['management'])
+            && in_array($op->action, ['auth_code_email', 'nameservers', 'lock', 'privacy_enable', 'privacy_disable', 'contacts', 'contact_profile'], true)) { return false; }
+        return !HoldingAnchor::resolved($op, $l);
     }
     public static function resolved(Operation $op, Domain $domain, \Paymenter\Extensions\Servers\Domains\Data\AccountBinding $binding): bool
     {
