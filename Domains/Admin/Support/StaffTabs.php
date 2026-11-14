@@ -16,7 +16,7 @@ final class StaffTabs
     public static function domains(string $active): array
     {
         $setup=fn()=>WatchResource::canViewAny() && \Illuminate\Support\Facades\Schema::hasTable('domains_domains') && \Illuminate\Support\Facades\Schema::hasTable('domains_accounts') && \Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::affected(time())->exists();
-        return self::items($active,['Domains'=>[DomainResource::canViewAny(),fn()=>DomainResource::getUrl('index')],
+        return self::items($active,['All domains'=>[DomainResource::canViewAny(),fn()=>DomainResource::getUrl('index')],
             'Monitored domains'=>[WatchResource::canViewAny(),fn()=>WatchResource::attentionCount()===null?WatchResource::getUrl('index'):WatchResource::attentionUrl(),fn()=>WatchResource::attentionCount()],
             'DNS monitoring setup'=>[$setup(),fn()=>WatchResource::getUrl('dns-setup')],
             'DNS templates'=>[RoutingProfileResource::canViewAny(),fn()=>RoutingProfileResource::getUrl('index')],
@@ -38,6 +38,6 @@ final class StaffTabs
             try { $item=NavigationItem::make($label)->url($url())->isActiveWhen(fn()=>$label===$active); } catch (\Throwable) { continue; }
             $items[]=$count===null?$item:$item->badge($count());
         }
-        return count($items)>1?$items:[];
+        return count($items)>1 && count(array_filter($items, static fn (NavigationItem $item): bool => $item->isActive())) === 1 ? $items : [];
     }
 }

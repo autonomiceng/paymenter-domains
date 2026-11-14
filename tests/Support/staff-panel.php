@@ -51,15 +51,6 @@ function staffRowsStandard(mixed $page, array $hidden=[], array $money=[]): void
     } else { expect(!$table->hasToggleableColumns(),$name.': 4 columns or fewer need no Columns button'); }
     expect(count($table->getRecordActions())<=2,$name.': at most 2 row actions');
     $records=$instance->getTableRecords(); expect(count($records)>0,$name.': rows to check');
-    foreach ($records as $record) {
-        foreach ($columns as $key=>$column) {
-            $column->record($record); $class=(string)($column->getExtraAttributes()['class']??'');
-            // The domain's approved phone summary is separate from ordinary inline descriptions.
-            $description=$column->getDescriptionBelow();
-            $phone=$key==='domain'&&$description instanceof Illuminate\Support\HtmlString&&str_starts_with($description->toHtml(),'<span class="domains-phone-note">');
-            if ((!$phone&&$description!==null)||$column->getDescriptionAbove()!==null) { expect(str_contains($class,'domains-line'),$name.': '.$key.' keeps its description on the same line'); }
-        }
-    }
     foreach ($money as $key) {
         $column=$table->getColumn($key); $class=(string)($column->getExtraAttributes()['class']??'');
         expect(str_contains($class,'domains-money')&&!str_contains($class,'domains-line')&&!str_contains($class,'domains-cut'),$name.': '.$key.' money is never cut');

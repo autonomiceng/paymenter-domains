@@ -18,7 +18,7 @@ class ListOperations extends RecordListPage
     /** Request-scoped reads of the Orders switches and this reader's grants, so the Status filter and every row's word agree. Protected, so never part of the Livewire snapshot. */
     protected ?array $read = null;
     public function getSubNavigation(): array { return StaffTabs::registrars('Registrar requests'); }
-    protected function head(): Head { Staff::requireView(); return Head::make('Registrar requests', Reader::Staff); }
+    protected function head(): Head { Staff::requireView(); return Head::make('Registrars', Reader::Staff); }
     public function getBreadcrumbs(): array { return []; }
     private function grants(): \Paymenter\Extensions\Servers\Domains\Admin\Support\StaffGrants { return $this->read['grants'] ??= Staff::requireView(); }
     /** Null means too many accounts to list; it is kept as the answer so the snapshot is read once. */

@@ -25,7 +25,7 @@ class ListDomains extends RecordListPage
     /** The list's Needs attention filter and the menu count name the same domains; opening the list refreshes the count. */
     public function mount(): void { parent::mount(); NavigationCount::forget('domains'); }
     public function getBreadcrumbs(): array { return []; }
-    public function getSubNavigation(): array { return StaffTabs::domains('Domains'); }
+    public function getSubNavigation(): array { return StaffTabs::domains('All domains'); }
     protected function head(): Head { return Head::make('Domains', Reader::Staff); }
     protected function actions(): array
     {
@@ -37,7 +37,7 @@ class ListDomains extends RecordListPage
     protected function notices(): array
     {
         return array_map(static fn (array $h): Section => Section::make('Paid orders on '.$h['name'], [Row::notice('paid-'.$h['server_id'],
-            Value::state(State::UnderReview, Reader::Staff, PaidUncertainty::line($h)),
+            Value::state($h['state'], Reader::Staff, PaidUncertainty::line($h)),
             $h['url'] ? Sheet::link('paid_request_'.$h['server_id'], $h['label'], $h['url']) : null)], null, 'paid-orders-'.$h['server_id']), PaidUncertainty::holds());
     }
     protected function query(): Builder { return parent::query()->with(['user:id,first_name,last_name,email', 'server:id,name', 'latestAcquisition']); }

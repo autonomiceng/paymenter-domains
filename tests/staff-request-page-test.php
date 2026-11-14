@@ -278,17 +278,14 @@ foreach (['on_hold'=>'Under review','in_progress'=>'Checking'] as $key=>$word) {
 }
 same([],$parity,'Every row the request Status filter keeps reads that status');
 ksort($seen); same(['off'=>['in_progress'],'on'=>['on_hold']],$seen,'The list reads the switches as they were when it started');
-// Glyph widths and the table width decide where a note is cut, so every nonempty note keeps its full text in a tooltip.
-$list=Livewire::actingAs(Auth::user())->test(ListOperations::class)->set('tableRecordsPerPage',100);$noteColumn=$list->instance()->getTable()->getColumns()['note'];$cell=null;
+// P-TBL-7: a note may shorten, so every nonempty note links to the record that shows it in full; an empty note is no link.
+$list=Livewire::actingAs(Auth::user())->test(ListOperations::class)->set('tableRecordsPerPage',100);$table=$list->instance()->getTable();$noteColumn=$table->getColumns()['note'];$cell=null;
 foreach ($list->instance()->getTableRecords() as $record) {
     $cell=$noteColumn->record($record);$text=trim(html_entity_decode(strip_tags((string)$cell->getState())));
-    if ($text==='') { same(null,$cell->getTooltip($cell->getState()),'An empty note has no tooltip');continue; }
-    // The table passes each item's state, as here.
-    expect(str_starts_with((string)$cell->getTooltip($cell->getState()),$text),'The note tooltip has the full note: '.$text);
+    if ($text==='') { expect($cell->isClickDisabled(),'An empty note is no link');continue; }
+    expect(!$cell->isClickDisabled()&&($cell->getUrl()??$table->getRecordUrl($record))!==null,'The note links to the record that shows it in full: '.$text);
 }
 expect($cell!==null,'The list has a note');
-// Twenty wide letters fill more of a tight column than many longer notes, so a short note keeps its tooltip too.
-$wide='WWWWWWWWWW MMMMMMMMMM';same($wide,$cell->getTooltip($wide),'A short wide note has its full text in the tooltip');
 // Many accounts with Orders off: the Status filter's statement stays the same size, however many there are.
 $orders->update(['processing_enabled'=>false]);
 $statement=static function(array $keys) use ($filter): array {

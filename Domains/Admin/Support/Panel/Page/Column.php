@@ -30,11 +30,11 @@ final class Column
     private ?\Closure $act = null;
     private bool $tag = true;
     private function __construct(public readonly string $name, public readonly string $label, public readonly string $kind, public bool $searchable = false, public bool $sortable = false) {}
-    /** Plain text on one line, cut with "..." and the full text on hover: the row's own field, or what $text returns for the row. @param ?\Closure(array|Model):?string $text */
+    /** Plain text that stays complete: the row's own field, or what $text returns for the row. @param ?\Closure(array|Model):?string $text */
     public static function text(string $name, string $label, ?\Closure $text = null): self { $c = new self($name, $label, 'text'); $c->text = $text; return $c; }
-    /** A note: the step a row needs, on one line that takes the rest of the row and is cut with "..." and the full text on hover and focus (P-TBL-7). */
+    /** A note: the step a row needs, that may shorten only when its linked record holds the full text (P-TBL-7). */
     public static function note(string $name, string $label, \Closure $text): self { $c = new self($name, $label, 'note'); $c->text = $text; return $c; }
-    /** A domain name: one line, cut with "..." and the full name on hover and focus. A demo record shows its Demo tag. */
+    /** A domain name: one line that may shorten; its record link holds the full name. A demo record shows its Demo tag. */
     public static function domain(string $name, string $label, bool $demoTag = true): self { $c = new self($name, $label, 'domain'); $c->tag = $demoTag; return $c; }
     /** A value from the row, drawn by the Value piece; null leaves the cell empty. The cell's state is the value's word,
      * so a reader or a test reads the word the mark stands beside. @param \Closure(array|Model):?Value $value */
@@ -45,19 +45,18 @@ final class Column
     /** @param ?\Closure(Builder,string):Builder $query orders a saved-record list by something that is not a plain field;
      * it gets the query and 'asc' or 'desc' */
     public function sortable(?\Closure $query = null): self { $this->sortable = true; $this->sortQuery = $query; return $this; }
-    /** The column shows from this width up; a narrower screen leaves it out. */
+    /** Retained for callers using the old responsive API. Staff columns now stay visible at every width. */
     public function from(string $width): self
     {
         if (!in_array($width, self::FROM, true)) { throw new \InvalidArgumentException('A column shows from sm, md, lg or xl.'); }
         if ($this->stack) { throw new \InvalidArgumentException('A column that stacks on phones already shows from sm.'); }
         $this->from = $width; return $this;
     }
-    /** P-TBL-12 on phones: below sm this value shows under the name in the first column and the column itself waits for
-     * sm, so a phone reads it once and the table doesn't scroll sideways for it. From sm it is a column as usual. */
+    /** Retained for callers using the old phone API. Staff tables now scroll with the same columns at every width. */
     public function stackOnPhone(): self
     {
         if ($this->from !== null) { throw new \InvalidArgumentException('A column that stacks on phones already shows from sm.'); }
-        $this->stack = true; $this->from = 'sm'; return $this;
+        return $this;
     }
     public function stacksOnPhone(): bool { return $this->stack; }
     /** The words this column adds under the name on a phone: a value's word, or the text. Built by the list type only. */
@@ -70,8 +69,8 @@ final class Column
     /** Where the cell opens, such as the request a note names; null opens the row's own link.
      * @param \Closure(array|Model):?string $link */
     public function link(\Closure $link): self { $this->link = $link; return $this; }
-    /** A text cell that holds a person's name: cut early, so the table fits its card. */
-    public function short(): self { $this->short = true; return $this; }
+    /** A text cell that holds a person's name: it wraps instead of shortening. */
+    public function short(): self { return $this; }
     /** A demo record shows its Demo tag after this plain text, as it does on a domain name. */
     /** The Demo tag beside the cell's first line when the record $of returns for the row is demo data, such as the account a TLD row belongs to. */
     public function demoOf(\Closure $of): self { $this->demoOf = $of; return $this; }
@@ -106,8 +105,9 @@ final class Column
         $column->sortable($this->sortable, $sort === null ? null : static fn (Builder $query, string $direction): Builder => $sort($query, $direction));
         if ($this->searchable) { $column->searchable(query: $find === null ? null : static fn (Builder $query, string $search) => $find($query, $search)); }
         if ($this->visibleWhen !== null) { $show = $this->visibleWhen; $column->visible(static fn (): bool => (bool) $show()); }
-        if ($this->from !== null) { $column->visibleFrom($this->from); }
         if ($this->link !== null) { $link = $this->link; $column->url(static fn (array|Model $record): ?string => $link($record)); }
+        // An empty cell is not a link: a link with no words gives a keyboard stop with no name.
+        $column->disabledClick(static fn (mixed $state): bool => blank($state));
         if ($this->end) { $column->alignEnd()->extraAttributes(['class' => 'domains-money domains-nowrap'], merge: true); }
         return match ($this->kind) {
             'domain' => $this->nameCell($column),

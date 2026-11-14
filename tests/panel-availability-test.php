@@ -8,7 +8,8 @@ use Paymenter\Extensions\Servers\Domains\Presentation\Codes\{InvoiceStatus, Reco
 $never = new Read(null); $good = new Read(100); $failed = new Read(100, 200); $recovered = new Read(300, 200);
 same(State::NotReadYet, Availability::value($never, false), 'Never read: nothing for anyone to do');
 same(State::Checking, Availability::value(new Read(null, null, true), false), 'Waiting on the registrar now');
-same(State::Checking, Availability::value(new Read(100, 200, true), true), 'Check now after a failure shows the read under way');
+same(null, Availability::value(new Read(100, 200, true), true), 'A refresh after a failure keeps the last value');
+same(State::Checking, Availability::value(new Read(100, 200, true), false), 'Checking replaces only a value we have never got');
 same(State::CouldntRead, Availability::value(new Read(null, 50), false), 'The only read failed');
 same(State::CouldntRead, Availability::value($failed, true), 'A failed read is red even with an older value');
 same(null, Availability::value($good, true), 'A good read shows its value');
@@ -47,4 +48,6 @@ same(State::AwaitingPayment, InvoiceStatus::state('pending', '2026-11-12', '2026
 same(State::Unpaid, InvoiceStatus::state('pending', '2026-11-10', '2026-11-12')->state, 'Past due is Unpaid');
 same(State::AwaitingPayment, InvoiceStatus::state('pending', null, '2026-11-12')->state, 'No due date is awaiting payment');
 same([State::NotRecognized, 'refunded'], [InvoiceStatus::state('refunded', null, '2026-11-12')->state, InvoiceStatus::state('refunded', null, '2026-11-12')->code?->text], 'A status Paymenter adds later');
+$terms = \Paymenter\Extensions\Servers\Domains\Presentation\RenewalPayment::line(true, 'USD 14.99', true, 'Visa 4242', ['issue'=>'2027-02-01','due'=>'2027-02-08']);
+foreach (['USD 14.99','Visa 4242'] as $fact) { expect(str_contains($terms,$fact),'Charge terms expose the amount and owned method'); }
 $nativeSuccessful = true; echo "Panel availability passed.\n";

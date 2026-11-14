@@ -16,7 +16,7 @@
     --e-bad: color-mix(in srgb, hsl(var(--color-error)) 80%, black);
     --e-quiet: hsl(var(--color-muted));
     --e-mono: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
-    max-width: 72rem; margin-inline: auto; color: var(--e-fg); overflow-wrap: anywhere;
+    max-width: 1120px; margin-inline: auto; color: var(--e-fg); overflow-wrap: anywhere;
 }
 .dark .domains {
     --e-ok: color-mix(in srgb, hsl(var(--color-success)) 80%, white);
@@ -176,7 +176,7 @@
 
 /* Notices */
 .domains .domains-notice { display: flex; align-items: flex-start; gap: .75rem; padding: .875rem 1rem; border-radius: .5rem; font-size: .875rem; line-height: 1.375rem;
-    border: 1px solid color-mix(in srgb, var(--tone, var(--e-info)) 35%, transparent); background: color-mix(in srgb, var(--tone, var(--e-info)) 8%, transparent); }
+    border: 1px solid var(--tone, var(--e-info)); background: transparent; }
 .domains .domains-notice > svg { width: 1.25rem; height: 1.25rem; flex: none; color: var(--tone, var(--e-info)); margin-top: .0625rem; }
 .domains .domains-notice--ok { --tone: var(--e-ok); }
 .domains .domains-notice--warn { --tone: var(--e-warn); }
@@ -587,7 +587,7 @@
     .domains .domains-ph ~ .domains-notice, .domains .domains-head--page ~ .domains-notice { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; }
     .domains .domains-ph ~ .domains-notice > a, .domains .domains-head--page ~ .domains-notice > a { grid-column: 2; justify-self: start; }
 }
-.domains .domains-cols { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 2.25rem; align-items: start; }
+.domains .domains-cols { display: grid; grid-template-columns: minmax(0, 1fr) 372px; gap: 2.25rem; align-items: start; }
 .domains .domains-sheet { --e-field: var(--e-bg); min-width: 0; background: var(--e-panel); border: 1px solid var(--e-line); border-radius: .5rem; }
 .domains .domains-sheet > .domains-panel { background: none; border: 0; border-radius: 0; }
 .domains .domains-sheet > .domains-panel + .domains-panel { border-top: 1px solid var(--e-line); }

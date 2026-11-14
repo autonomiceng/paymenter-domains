@@ -23,7 +23,12 @@ trait RendersType
      * the bounded time the page itself decides. Null for no refresh. @return ?array{0:string,1:int,2?:bool} */
     protected function poll(): ?array { return null; }
 
-    final public function getTitle(): string|Htmlable { return $this->head()->title; }
+    final public function getTitle(): string|Htmlable
+    {
+        $title = $this->head()->title;
+        $active = array_values(array_filter($this->getSubNavigation(), static fn ($item): bool => $item->isActive()));
+        return count($active) === 1 ? $active[0]->getLabel().' - '.$title : $title;
+    }
     final public function getHeading(): string|Htmlable|null { return $this->head()->heading(); }
     final public function getSubheading(): string|Htmlable|null { return $this->head()->line(); }
     final protected function getHeaderActions(): array

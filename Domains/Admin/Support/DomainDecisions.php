@@ -80,8 +80,7 @@ final class DomainDecisions
         if ($registered) {
             $expiry=$d->provider_expires_at?->format('Y-m-d');
             if ($pending) { $expiry??=is_string($policy['conversion_source_expiry']??null)?$policy['conversion_source_expiry']:null; }
-            $f['Expires']=Facts::row($expiry?gmdate('M j, Y',strtotime($expiry.' 00:00:00 UTC')):null,sub:$expiry?null:self::unread($d,$sync),
-                help:$pending&&$expiry?'From the old record. Not synced yet.':null);
+            $f['Expires']=Facts::row($expiry?gmdate('M j, Y',strtotime($expiry.' 00:00:00 UTC')):null,sub:$pending&&$expiry?'From the old record. Not synced yet.':($expiry?null:self::unread($d,$sync)));
         }
         $registrar=['enom'=>'Enom','namesilo'=>'NameSilo'][$d->registrar_key]??null;
         $f['Registrar']=$account&&$registrar ? Facts::row(\App\Models\Server::whereKey($d->server_id)->value('name')??$registrar,
@@ -133,7 +132,7 @@ final class DomainDecisions
             $privacy=OwnedDomains::storedFlag($d,'privacy','privacy');
             if ($d->registrar_key!=='enom'||$privacy===true) { $f['WHOIS privacy']=Facts::row(Facts::flag($privacy),sub:$privacy!==null?null:$unread); }
             $renews=$facts['auto_renew']??null;
-            $f['Registrar auto-renew']=Facts::row(Facts::flag($renews),sub:match($renews) {null=>$unread,false=>self::registrarRenewOff(),default=>null},help:$renews?self::help()['Registrar auto-renew']:null);
+            $f['Registrar auto-renew']=Facts::row(Facts::flag($renews),sub:match($renews) {null=>$unread,false=>self::registrarRenewOff(),default=>self::help()['Registrar auto-renew']});
         }
         $job=!Schema::hasTable('domains_observation_work')||($id=ObservationWork::currentId($d))===null?null:DB::table('domains_observation_work')->find($id);
         // An ended domain won't sync again, so it keeps its last read and shows no row without one.
@@ -169,6 +168,20 @@ final class DomainDecisions
                 self::accountRenewalsOff($d)=>self::ACCOUNT_RENEWALS_OFF,default=>null};
             $f['Renewal']=$renewal===null?Facts::row(null,sub:self::UNREADABLE_RENEWAL,help:self::help()['Renewal']):Facts::row($off?'Off':'On',sub:$off,help:self::help()['Renewal']);
             $f['Renewal price']=self::price($d,$service,$observation);
+            if ($renewal !== null) {
+                $calendar = [];
+                if ($d->provider_expires_at !== null && !$renewalInvoice) {
+                    $server = \App\Models\Server::with('settings')->find($d->server_id);
+                    $timing = BillingCalendar::timing($server?->settings ?? collect());
+                    $dates = BillingCalendar::dates($d->provider_expires_at, $timing['issue'], $timing['due']);
+                    if ($dates['issue'] >= gmdate('Y-m-d')) { $calendar = $dates; }
+                }
+                $autoPay = \Paymenter\Extensions\Servers\Domains\Services\RenewalAutoPay::ready($service);
+                $amount = $f['Renewal price']['value'] === null ? null : preg_replace('~ / year$~', '', $f['Renewal price']['value']);
+                // Off: the line gives the reason. On: it says how the renewal is paid.
+                $f['Renewal']['sub'] = $off ?: \Paymenter\Extensions\Servers\Domains\Presentation\RenewalPayment::line(true, $amount, $autoPay, $autoPay ? $service->billingAgreement->name : null, $calendar, $d->price_mode === 'complimentary');
+                $f['Renewal']['help'] = null;
+            }
             $expired=$d->provider_expires_at&&$d->provider_expires_at->format('Y-m-d')<=gmdate('Y-m-d');
             // An issued renewal is due even when future automatic renewals have been stopped.
             if ($renewalInvoice) { $f['Next invoice']=Facts::row($renewalInvoice->due_at?'Due '.gmdate('M j, Y',strtotime(substr($renewalInvoice->due_at,0,10).' 00:00:00 UTC')):'Due'); }
@@ -463,7 +476,7 @@ final class DomainDecisions
         $text=$stopped?StaffDomainStatus::sentence($row['outcome']).($request===null?'':' Check request #'.$request.'.'):$row['text'];
         // A stopped change failed, or needs a check when the registrar never confirmed it; it never reads as done.
         $tone=$row['tone']??null; if ($stopped&&!in_array($tone,['danger','warning'],true)) { $tone=$row['outcome']===RequestStatus::UNCONFIRMED?'warning':'danger'; }
-        return ['text'=>$text,'request'=>$request,'waiting'=>(bool)($row['pending']??false),'tone'=>$tone];
+        return ['text'=>$text,'request'=>$request,'waiting'=>(bool)($row['pending']??false),'tone'=>$tone,...(($row['slow']??false)?['delayed'=>true]:[])];
     }
     /** A count above the glue detail: "1 of 2 differs." */
     public static function differs(int $count, int $of): string

@@ -53,4 +53,7 @@ same(null,DomainResource::getNavigationBadge(),'A failed count is hidden');
 same(null,DomainResource::getNavigationBadge(),'A repeat failed count is hidden');
 Log::shouldHaveReceived('warning')->once();
 Carbon::setTestNow();
+// Counts cap visually without changing the actionable query or permission checks.
+same('99+', \Paymenter\Extensions\Servers\Domains\Admin\Support\NavigationCount::read('cap-fixture',fn()=>124),'Large count is capped');
+same(null, \Paymenter\Extensions\Servers\Domains\Admin\Support\NavigationCount::read('zero-fixture',fn()=>0),'Zero has no count');
 $nativeSuccessful=true;echo "Menu counts match their page filters.\n";

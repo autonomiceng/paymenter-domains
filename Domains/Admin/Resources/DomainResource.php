@@ -42,10 +42,10 @@ class DomainResource extends Resource
         return NavigationCount::read('domains',fn()=>DomainQueries::openAlertCount(Domain::query()));
     }
     public static function getNavigationBadgeUrl(): string { return static::getUrl('index',['filters'=>['alerts'=>['isActive'=>true]]]); }
-    public static function getNavigationBadgeTooltip(): ?string { return 'Domains needing staff action across all registrar accounts'; }
+    public static function getNavigationBadgeTooltip(): ?string { return 'Domains, '.(static::getNavigationBadge() ?? '0').' need staff action'; }
     public static function getNavigationBadgeColor(): string { return 'warning'; }
     /** The domain statuses, in DomainStatus order. */
-    public static function statusOptions(): array { return [...array_map(fn(array $s)=>$s[0],DomainStatus::SET),'on_hold'=>'On hold']; }
+    public static function statusOptions(): array { return array_map(fn(array $s)=>$s[0],DomainStatus::SET); }
     public static function getRelations(): array { return [RequestsRelationManager::class]; }
     public static function getPages(): array { return ['index'=>ListDomains::route('/'),'adopt'=>AdoptDomain::route('/adopt'),'view'=>ViewDomain::route('/{record}'),'adoption'=>AdoptionPreview::route('/{record}/adoption')]; }
 }

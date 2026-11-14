@@ -61,7 +61,11 @@ foreach ($cases as $case=>[$domain,$acquisition,$label,$reason]) {
     // Tabs name the statuses present; the tab for this status keeps the row, any other tab drops it.
     // A stopped registration reads Pending registration, the same word as the tab that holds it (approved mock).
     $tab=$label;
-    same(['All '.($hidden?0:1),$tab.' 1'],array_map(fn($tab)=>preg_replace('/\s+/',' ',$tab),$text($list,'domains-tab')),'Tabs are the statuses present with counts: '.$case);
+    $tabs=array_map(fn($t)=>trim(preg_replace('/\s+/',' ',$t)),$text($list,'domains-tab'));
+    same([$hidden?0:1,1],array_map(fn($t)=>(int)preg_replace('/^.*\s(\d+)$/','$1',$t),$tabs),'Tab counts match the rows: '.$case);
+    same($tab.' 1',$tabs[1]??null,'The second tab is this status with its count: '.$case);
+    parse_str((string)parse_url($list->query('//a[contains(@class,"domains-tab")]/@href')->item(0)?->value??'',PHP_URL_QUERY),$first);
+    same('',(string)($first['status']??''),'The first tab is unfiltered: '.$case);
     parse_str((string)parse_url($list->query('//a[contains(@class,"domains-tab")]/@href')->item(1)?->value??'',PHP_URL_QUERY),$query);
     $key=(string)($query['status']??''); $keys[$tab]=$key;
     same(1,$controller->index($request(['status'=>$key]))->getData()['domains']->total(),'Status tab keeps the row: '.$case);

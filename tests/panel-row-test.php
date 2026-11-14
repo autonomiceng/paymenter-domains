@@ -44,7 +44,7 @@ foreach ([[Reader::Staff, ['warn', 'off'], '2026-11-12T17:12:00+00:00', 2.0], [R
 // A history event with no state of its own (a note, a request) draws no mark and no word; a monitoring change keeps its state.
 $rail = storefrontDom(\Paymenter\Extensions\Servers\Domains\Admin\Support\WatchRows::trace([['event' => 'Note', 'note' => null, 'time' => null, 'by' => 'Staff #4'],
     ['event' => 'Check requested', 'note' => null, 'time' => null, 'by' => 'Staff #4'], ['event' => 'Monitoring paused', 'note' => null, 'time' => null, 'by' => 'Staff #4']])->toEmbeddedHtml());
-same([['', ''], ['', ''], ['off', 'Paused']], array_map(static fn (DOMNode $li): array => [(string) $li->attributes->getNamedItem('data-domains-tone')?->nodeValue, trim($rail->evaluate('string(*[@class="domains-panel-step-w"])', $li))], iterator_to_array($rail->query('//li'))), 'Only events with a state of their own carry a mark and word');
+same(['', '', \Paymenter\Extensions\Servers\Domains\Presentation\State::Paused->label()], array_map(static fn (DOMNode $li): string => trim($rail->evaluate('string(*[@class="domains-panel-step-w"])', $li)), iterator_to_array($rail->query('//li'))), 'Neutral events do not invent a lifecycle state');
 
 // The kit, as staff who can change policy read it.
 $writer = staffUser([Staff::VIEW, Staff::POLICY]);

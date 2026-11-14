@@ -20,6 +20,7 @@ final class DomainQueries
     public static function status(Builder $q, array $keys, ?array $ordersOff=null): Builder
     {
         if (!$keys) { return $q; }
+        if (in_array('under_review', $keys, true)) { $keys[] = 'on_hold'; }
         return self::rows($q,fn(array $status)=>in_array($status['key'],$keys,true),$ordersOff);
     }
     /** Rows whose visible Note asks staff to act, including a stopped sync or a missing account without an alert row.

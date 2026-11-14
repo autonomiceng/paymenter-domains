@@ -18,7 +18,7 @@ final class NavigationCount
             $n=Cache::remember($key,60,static function()use($count,$item):int {
                 try{return (int)$count();}catch(\Throwable){self::failed($item);return 0;}
             });
-            return $n>0?(string)$n:null;
+            return $n>0?($n>99?'99+':(string)$n):null;
         }catch(\Throwable){self::failed($item);return null;}
     }
     private static function failed(string $item): void

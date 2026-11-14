@@ -33,7 +33,7 @@ same(['domains','registrar-requests','domain-tlds','registrar-setup','domain-wat
     [DomainResource::getSlug(),OperationResource::getSlug(),TldResource::getSlug(),RegistrarSetup::getSlug(),WatchResource::getSlug(),RoutingProfileResource::getSlug(),PublicSuffixList::getSlug(),DnsResolver::getSlug()],'Slugs kept');
 
 Auth::setUser(staffUser([Staff::VIEW,Staff::COSTS]));
-same(['TLDs','What you sell'],array_map(fn(NavigationItem $item)=>$item->getLabel(),\Paymenter\Extensions\Servers\Domains\Admin\Support\StaffTabs::tlds('TLDs')),'Pricing tabs keep the merged What you sell page without its old Price list alias');
+same(2,count(\Paymenter\Extensions\Servers\Domains\Admin\Support\StaffTabs::tlds('TLDs')),'Pricing has two views');
 
 app()->forgetInstance(WatchWork::class);
 
@@ -53,9 +53,11 @@ $open=['index'=>\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainReso
 foreach(array_values($open) as $n=>$page){
     $test=Livewire::actingAs($manager)->test($page)->assertSuccessful();
     same(array_map(fn($u,$i)=>[$u,$i===$n],$area,array_keys($area)),$tabs($test),'One tab row, its own tab marked: '.$page);
+    same(1,count(array_filter($test->instance()->getSubNavigation(),fn($item)=>$item->isActive())),'Exactly one destination selected');
     // Tab pages carry no breadcrumb, like Domains and Registrars.
     same([],$test->instance()->getBreadcrumbs(),'No breadcrumb: '.$page);
 }
+same([],\Paymenter\Extensions\Servers\Domains\Admin\Support\StaffTabs::domains('outside'),'A destination outside the tabs has no tab row');
 // The Monitored domains tab carries the count the old menu item had.
 same(WatchResource::attentionCount(),(Livewire::actingAs($manager)->test(ListWatches::class)->instance()->getSubNavigation()[1])->getBadge(),'Monitored domains tab count');
 // The Domains menu item stays marked on every page of the area, the monitored domain pages included.

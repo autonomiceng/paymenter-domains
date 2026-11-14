@@ -23,6 +23,9 @@ same($heldOp->account_fingerprint,$longOp->account_fingerprint,'Both requests si
 $oldest=now()->subHours(223)->startOfMinute();
 DB::table('domains_operations')->where('id',$heldOp->id)->update(['state'=>'uncertain','safe_code'=>null,'funding_basis'=>'paid_invoice','started_at'=>$oldest]);
 DB::table('domains_operations')->where('id',$longOp->id)->update(['state'=>'uncertain','safe_code'=>null,'funding_basis'=>'paid_invoice','started_at'=>now()->subHours(152)]);
+same(\Paymenter\Extensions\Servers\Domains\Presentation\State::Delayed, PaidUncertainty::waitState($heldOp->fresh()), 'An overdue transfer asks staff to check it');
+$recent = $heldOp->fresh();$recent->started_at = now();
+same(\Paymenter\Extensions\Servers\Domains\Presentation\State::Checking, PaidUncertainty::waitState($recent), 'A transfer inside its normal window waits on the registrar');
 $line=fn(Operation $op)=>(string)PaidUncertainty::holdSummary($op->fresh());
 same(['',''],[$line($heldOp),$line($longOp)],'While WHOIS privacy is not sold the request has no hold line');
 // The Registrars list shows the held account's step in amber, not a clear row.

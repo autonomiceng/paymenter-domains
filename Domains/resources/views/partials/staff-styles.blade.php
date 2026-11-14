@@ -19,15 +19,21 @@
 .domains-missing__cause{margin-inline-start:.5rem;color:var(--panel-fg-2,var(--gray-500))}
 .domains-note{min-width:14rem;max-width:24rem;overflow-wrap:anywhere}
 .domains-narrow{max-width:12rem}
-/* Staff rows are one line: long text ends in "..." and its tooltip has all of it. Keyboard focus shows it in an overlay. */
-.domains-cut,.domains-cut>*,.domains-line,.domains-line>*,.domains-name-cell,.domains-name-cell>*{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-/* Filament lays every table text item out as a line-clamp -webkit-box, where the browser paints no "...". One-line cells and their text items are plain blocks; the text item rule beats Filament's in any order. */
-.domains-cut,.domains-line,.domains-name-cell{display:block}
-.domains-cut{max-width:120px}
-.fi-ta-text-item:is(.domains-cut,.domains-line,.domains-name-cell):not(.fi-bulleted li.fi-ta-text-item),:is(.domains-cut,.domains-line,.domains-name-cell)>.fi-ta-text-item:not(.fi-bulleted li.fi-ta-text-item){display:block}
-.domains-line,.domains-name-cell{max-width:24rem}
-/* The approved staff table's columns, padding included: a domain name 326px and a customer 120px (above). A list Note takes the rest of the row, and 160px when the table scrolls inside its card. Notes lead with their step; the tooltip has the rest. */
-.domains-name-cell{max-width:326px}.domains-line.domains-list-note{max-width:none;width:160px;min-width:100%}.domains-note-cell{width:100%}
+/* Structured values and customers stay complete. Only linked names and notes can shorten. */
+.domains-line,.domains-cut{display:block;max-width:none;white-space:nowrap;overflow:visible}
+.domains-cut{white-space:normal}
+.domains-name-cell{display:block;max-width:326px;white-space:nowrap}
+a .domains-name-cell,a .domains-list-note{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.domains-list-note{max-width:24rem;white-space:normal}
+[data-domains-table] .fi-ta-table{table-layout:auto;width:100%}
+[data-domains-table] .fi-ta-header-cell{white-space:nowrap}
+[data-domains-table] .fi-ta-cell-customer .domains-line{white-space:normal;min-width:8ch}
+[data-domains-table] .fi-ta-content-ctn{overflow-x:auto}
+@media(max-width:1279px){
+ [data-domains-table] .fi-ta-table{width:max-content;min-width:100%}
+ [data-domains-table] .fi-ta-row>td:first-child,[data-domains-table] .fi-ta-table>thead>tr>th:first-child{position:sticky;inset-inline-start:0;z-index:1;background:var(--panel-card,#111B36)}
+ [data-domains-table] .fi-ta-row>td:first-child:has(input[type=checkbox])+td{position:sticky;inset-inline-start:44px;z-index:1;background:var(--panel-card,#111B36)}
+}
 /* Keyboard focus on a cut text, or on the row link around it, shows the whole text over the page (staff-reveal), so no cell or row changes size. */
 .domains-reveal{position:fixed;z-index:60;max-width:min(24rem,calc(100vw - 16px));max-height:calc(100vh - 16px);max-height:calc(100dvh - 16px);overflow-y:auto;overscroll-behavior:contain;padding:6px 10px;border:1px solid var(--panel-line,color-mix(in srgb,currentColor 20%,transparent));border-radius:6px;background:var(--panel-card-2,#fff);color:var(--panel-fg,#111827);box-shadow:0 4px 12px rgb(0 0 0/.2);font-size:.875rem;line-height:1.25rem;white-space:pre-line;overflow-wrap:anywhere;pointer-events:none}
 .dark .domains-reveal{background:var(--panel-card-2,#18181b);color:var(--panel-fg,#fff)}
@@ -115,9 +121,4 @@
 :where(.domains-panel-step-w){font-weight:500;white-space:nowrap}
 :where(.domains-panel-step-a){display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin-top:4px}:where(.domains-panel-step-a:empty){display:none}
 :where(.domains-panel-partial){display:block;min-width:0;overflow-wrap:anywhere}
-.domains-phone-note { display:none; }
-@media(max-width:639px) {
- .domains-phone-note { display:block; max-width:calc(100vw - 110px); white-space:normal; overflow-wrap:anywhere; line-height:1.5; }
- .domains-name-cell:has(.domains-phone-note) .fi-ta-text-item { max-width:calc(100vw - 110px); }
-}
 </style>

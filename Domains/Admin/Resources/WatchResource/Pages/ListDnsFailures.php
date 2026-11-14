@@ -12,6 +12,8 @@ use Paymenter\Extensions\Servers\Domains\Services\{ManagedDnsSetup,ManagedPublic
 /** Domains > Affected DNS checks, beside DNS monitoring setup: managed domains whose DNS checks keep failing. */
 class ListDnsFailures extends ListManagedDns
 {
+    public function getSubNavigation(): array{return [];}
+    public function getBreadcrumbs(): array{return [WatchResource::getUrl('index')=>'Domains','Affected DNS checks'];}
     protected function head(): Head{return Head::make('Affected DNS checks',Reader::Staff);}
     protected function actions(): array
     {return [Action::make('watches')->label('External domain checks')->color('gray')->url(WatchResource::getUrl('index',['filters'=>['status'=>['value'=>'problem']]]))];}

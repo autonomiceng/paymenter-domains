@@ -8,7 +8,7 @@
     $row=\Paymenter\Extensions\Servers\Domains\Presentation\DomainListRow::class; $values=\Paymenter\Extensions\Servers\Domains\Presentation\CustomerValues::class;
     $value=\Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Value::class; $fact=\Paymenter\Extensions\Servers\Domains\Presentation\Fact::class; $plain=\Paymenter\Extensions\Servers\Domains\Presentation\Plain::class;
     $noMatch='No domains match '.($search!==''?'"'.$search.'"':'this filter').'.';
-    $tabs=[['All',$filterCounts['']??0,$url(['status'=>null,'page'=>null]),$filter==='']];
+    $tabs=[['All domains',$filterCounts['']??0,$url(['status'=>null,'page'=>null]),$filter==='']];
     foreach (\Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus::SET as $key => [$label]) {
         if (($filterCounts[$key]??0)>0 || $filter === $key) { $tabs[]=[$label,$filterCounts[$key]??0,$url(['status'=>$key,'page'=>null]),$filter===$key]; }
     }
@@ -28,7 +28,7 @@
 <label for="domains-q" class="domains-sr">Search your domains</label><input id="domains-q" class="domains-input" type="search" name="q" value="{{ $search }}" placeholder="Search domains" maxlength="253" autocomplete="off"></form></x-slot:toolbar>
 @if ($domains->isEmpty() && ($filterCounts['']??0) === 0 && $search === '' && $filter === '')<x-domains::customer.list-empty text="Only cancelled domains here."><a class="domains-a" href="{{ $url(['status'=>'cancelled','page'=>null]) }}">Show cancelled domains</a></x-domains::customer.list-empty>
 @elseif ($domains->isEmpty())<x-domains::customer.list-empty :text="$noMatch"><a class="domains-a" href="{{ route('domains.domains.index') }}">Show all domains</a></x-domains::customer.list-empty>@else
-<div class="domains-tablewrap"><table class="domains-tbl domains-stackable domains-list"><thead><tr><th scope="col" aria-sort="{{ $order('name') }}"><a href="{{ $sorted('name') }}">Domain</a></th><th scope="col">Status</th><th scope="col" aria-sort="{{ $order('expiry') }}"><a href="{{ $sorted('expiry') }}">Expires</a></th><th scope="col">Renewal invoices</th></tr></thead><tbody>
+<div class="domains-tablewrap"><table class="domains-tbl domains-stackable domains-list"><thead><tr><th scope="col" aria-sort="{{ $order('name') }}"><a href="{{ $sorted('name') }}">Domain</a></th><th scope="col">Status</th><th scope="col" aria-sort="{{ $order('expiry') }}"><a href="{{ $sorted('expiry') }}">Expires</a></th><th scope="col">Auto-renew</th></tr></thead><tbody>
 @foreach ($domains as $domain)
 @php
     $hosting=$row::hosting($domain); $expires=$row::expires($domain); $renewal=$row::renewal($domain);
@@ -49,7 +49,7 @@
 <tr class="domains-linkrow"><td class="domains-name-cell"><a class="domains-domain domains-row-link domains-wrap" href="{{ $domain->urls['detail'] }}">{{ $domain->name }}</a>{{ \Paymenter\Extensions\Servers\Domains\Support\DemoData::label($domain->demo, $domain->testEnvironment) }}@if ($hosting) <span class="domains-cell-sub">{{ $hosting }}</span>@endif</td>
 <td class="domains-cell-wide" data-label="Status">{{ $status }}</td>
 <td class="domains-cell-wide" data-label="Expires">@if ($expiresValue){{ $expiresValue }}@elseif (isset($expires['value']))<span class="domains-cell-main">{{ $expires['value'] }}</span>@endif @if (is_array($fix) && ($fix['url'] ?? null)) <a class="{{ ($fix['button'] ?? false) ? 'domains-btn domains-btn--primary domains-btn--sm' : 'domains-a' }}" href="{{ $fix['url'] }}">{{ $fix['label'] }}</a>@elseif (is_array($fix) && ($fix['label'] ?? null)) <span class="domains-cell-sub">{{ $fix['label'] }}</span>@endif</td>
-<td class="domains-cell-wide" data-label="Renewal invoices">@if ($renewal['value'] !== ''){{ $value::plain($renewal['value'] === 'Off' ? $plain::Off : $plain::On, $invoice === null && $renewal['note'] && !($renewal['at'] ?? null) ? $renewal['note'] : null) }}@endif
+<td class="domains-cell-wide" data-label="Auto-renew">@if ($renewal['value'] !== ''){{ $value::plain($renewal['value'] === 'Off' ? $plain::Off : $plain::On, $invoice === null && $renewal['note'] && !($renewal['at'] ?? null) ? $renewal['note'] : null) }}@endif
 @if ($invoice) <span class="domains-cell-sub">Next invoice:</span>{{ $invoice }}@if ($renewal['invoiceMissing'] && ($renewal['invoiceFix']['url'] ?? null)) <a class="domains-a" href="{{ $renewal['invoiceFix']['url'] }}">{{ $renewal['invoiceFix']['label'] }}</a>@endif
 @elseif ($renewal['at'] ?? null) <span class="domains-cell-sub">{{ $renewal['note'] }} @include('domains::partials.moment', ['at' => $renewal['at']]).</span>@endif</td></tr>
 @endforeach

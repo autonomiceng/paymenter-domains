@@ -51,7 +51,7 @@ class ViewConfiguration extends RecordDetailPage
         return [Section::make('Records',$records),Section::make('Used by',[
             Row::make('New domains use',$default===null?Value::state(State::NotSet,$staff):Value::fact(Fact::attr($default,'name')??Fact::count((int)$default->id))),
             Row::make('Monitored domains',Value::fact(Fact::count((int)$usage['checked']),WatchFacts::usageNote($usage))),
-            Row::make('Monitoring',Value::state($r->enabled?State::Active:State::Paused,$staff,DnsTemplateUsage::refusal((int)$r->id)??($profile===null?WatchFacts::TEMPLATE_UNAVAILABLE:'Monitoring checks domains against this template.')))
+            Row::make('Monitoring',Value::plain($r->enabled?Plain::On:Plain::Off, DnsTemplateUsage::refusal((int)$r->id) || $profile===null ? null : 'Monitoring checks domains against this template.'))
                 ->actions($this->enableAction(),$this->disableAction()),
         ])];
     }

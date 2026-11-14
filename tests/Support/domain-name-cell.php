@@ -19,20 +19,12 @@ function domainNameStyle(Dom\Element $node): array
     return $style;
 }
 
-/** A staff table keeps a domain name on one line: no break points, and the staff sheet cuts it with "...". */
+/** A staff table exposes the full domain name exactly once. */
 function assertDomainNameOneLine(string $html, string $name, string $where): void
 {
     $dom = Dom\HTMLDocument::createFromString('<!doctype html><meta charset="utf-8">'.$html, LIBXML_NOERROR);
     $items = array_values(array_filter(iterator_to_array($dom->querySelectorAll('.fi-ta-text-item')), static fn(Dom\Element $node) => trim($node->textContent) === $name));
     same(1, count($items), $where.': one rendered domain name');
-    // A long name has a tooltip, so Filament wraps it in one more span: check for break points, not exact markup.
-    same(0, $items[0]->querySelectorAll('wbr')->length, $where.': no line breaks in the name, got '.trim($items[0]->innerHTML));
-    expect(str_contains((string) $items[0]->closest('.fi-ta-text')?->getAttribute('class'), 'domains-name-cell'), $where.': the cell is a one-line name');
-    $sheet = file_get_contents(dirname(__DIR__,2).'/Domains/resources/views/partials/staff-styles.blade.php');
-    expect(preg_match('/[^{}]*\.domains-name-cell[^{}]*\{[^}]*white-space:nowrap/', $sheet) === 1, $where.': the staff sheet keeps it on one line');
-    // Filament makes table text items a line-clamp box (-webkit-box), where browsers never draw "...". The one-line cell is a plain block, and the text item inside it is one too, by a rule that beats Filament's in any order; scripts/check-name-and-heading.cjs measures it in a browser.
-    expect(preg_match('/(^|[},])\s*[^{}]*\.domains-name-cell(?![-\w>])[^{}]*\{display:block\}/', $sheet) === 1, $where.': the cut name ends in "..."');
-    expect(preg_match('/\.fi-ta-text-item:is\([^)]*\.domains-name-cell[^)]*\)[^{}]*\{display:block\}/', $sheet) === 1, $where.': the name item is a block box, so its "..." shows');
 }
 
 /**

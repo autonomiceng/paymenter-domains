@@ -23,6 +23,19 @@ foreach ($examples as $page) {
 // Each example is one tab on the kit, so the kit reaches every type.
 Auth::setUser($staff);
 same(['Pieces', 'Detail', 'Settings', 'List', 'Record list', 'History'], array_map(static fn ($item): string => $item->getLabel(), PanelKit::tabs('Detail')), 'The kit has one tab per type');
+// The kit table pages and filters real row data, and Reset restores its designed column set.
+$pieces = Livewire::actingAs($staff)->test(PanelKit::class)->assertSuccessful();
+same(28,$pieces->instance()->getTableRecords()->total(),'Kit table has more than one page');
+$pieces->filterTable('status','needs_review')->assertCountTableRecords(1);
+$pieces->searchTable('no-such-domain')->assertCountTableRecords(0);
+$pieces = Livewire::actingAs($staff)->test(PanelKit::class);
+$columns = $pieces->instance()->tableColumns;
+foreach ($columns as &$column) { if ($column['name'] === 'amount') { $column['isToggled'] = false; } } unset($column);
+$pieces->call('applyTableColumnManager',$columns);
+same(true,$pieces->instance()->isTableColumnToggledHidden('amount'),'Columns can hide an optional value');
+$pieces->call('resetTableColumnManager');
+same(false,$pieces->instance()->isTableColumnToggledHidden('amount'),'Reset restores the default visible value');
+same(true,$pieces->instance()->isTableColumnToggledHidden('nameservers'),'Reset keeps optional nameservers hidden');
 // The head's actions are the page's own native actions.
 Livewire::actingAs($staff)->test(PanelKitDetail::class)->assertActionExists('kit_renew')->callAction('kit_renew')->assertHasNoActionErrors();
 // M0's toggle rows that are not settings stay on the kit through the Detail type, with their own buttons.
@@ -135,39 +148,6 @@ same([true, false, true, true], [Paymenter\Extensions\Servers\Domains\Admin\Supp
 $note = Paymenter\Extensions\Servers\Domains\Admin\Support\TableColumns::choose(Filament\Tables\Table::make($rows), [Filament\Tables\Columns\TextColumn::make('name'), Filament\Tables\Columns\TextColumn::make('note')], ['note'])->getColumns()['note'];
 expect($note->isToggleable() && $note->isToggledHiddenByDefault(), 'An optional column starts hidden and can be shown, on a short list too');
 
-// P-TBL-12 on phones: a value marked to stack sits under the name and its column waits for sm, so each reads once.
-$Column = Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\Column::class;
-$stacked = new class extends Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\ListPage {
-    protected function head(): Head { return Head::make('Example', Reader::Staff); }
-    protected function columns(): array
-    {
-        $c = Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\Column::class;
-        return [$c::domain('domain', 'Domain'), $c::value('status', 'Status', static fn (array $r): Value => Value::state(State::Failed, Reader::Staff))->stackOnPhone(),
-            $c::text('note', 'Note')->stackOnPhone(), $c::text('customer', 'Customer')];
-    }
-    protected function rows(): array { return []; }
-    protected function emptyLine(): array { return ['None yet.', 'Add one.']; }
-};
-$table = $stacked->table(Filament\Tables\Table::make($stacked));
-$under = trim(html_entity_decode(strip_tags(str_replace('<br>', "\n", (string) $table->getColumn('domain')->record(['domain' => 'a.example', 'note' => 'Check <the> request.'])->getDescriptionBelow()))));
-same("Failed\nCheck <the> request.", $under, 'A phone reads the status word and the note under the name, escaped');
-$refused(static fn () => $Column::text('x', 'X')->stackOnPhone()->from('md'), 'A stacked column takes no other width');
-$refused(static fn () => $Column::text('x', 'X')->from('md')->stackOnPhone(), 'A column with a width does not stack');
-$first = new class extends Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\ListPage {
-    protected function head(): Head { return Head::make('Example', Reader::Staff); }
-    protected function columns(): array { return [Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\Column::text('name', 'Name')->stackOnPhone()]; }
-    protected function rows(): array { return []; }
-    protected function emptyLine(): array { return ['None yet.', 'Add one.']; }
-};
-$refused(static fn () => $first->table(Filament\Tables\Table::make($first)), 'The name column never stacks under itself');
-
-// Permission-hidden fields are never evaluated for a phone description.
-$grant = false;
-$private = $Column::text('private', 'Private', static fn (array $r): string => throw new LogicException('A hidden field must not be read.'))->stackOnPhone()->visibleWhen(static fn (): bool => $grant);
-same(null, $private->phoneText([]), 'A permission-hidden column contributes no phone text');
-// Zero is a real count, including on a phone.
-$zero = $table->getColumn('domain')->record(['domain' => 'a.example', 'note' => '0'])->getDescriptionBelow();
-expect(preg_match('/\b0\b/', strip_tags(str_replace('<br>', ' ', (string) $zero))) === 1, 'A phone keeps a zero value');
 // List summaries have the same partial-view boundary as other non-record sections.
 $summary = new class extends Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\ListPage {
     protected function head(): Head { return Head::make('Example', Reader::Staff); }

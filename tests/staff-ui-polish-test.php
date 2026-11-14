@@ -23,7 +23,7 @@ $page=Livewire::actingAs($viewer)->test(ListDomains::class)->assertSuccessful();
 $queries=DB::getQueryLog();DB::disableQueryLog();
 $opQueries=array_filter($queries,fn($q)=>str_contains($q['query'],'from "domains_operations"'));
 // each notice status filter also reads encrypted automatic-transfer evidence.
-same(7,count($opQueries),'Three domain-page batch queries and four queries for the account hold notice');
+same(8,count($opQueries),'Three domain-page batch queries and five queries for the account hold notice, one for its Delayed state');
 $userReads=array_filter($queries,fn($q)=>str_contains($q['query'],'from "users"')&&str_contains($q['query'],'"email"'));
 same(1,count($userReads),'Customer descriptions use one eager query');
 $customer=trim($viewer->first_name.' '.$viewer->last_name)?:$viewer->email;

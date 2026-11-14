@@ -85,3 +85,26 @@
     queue();
 })();
 </script>
+
+{{-- Remember only column names and visibility, never record data or a user's server profile. --}}
+<script data-domains-columns data-navigate-once>
+// A host's row-selection handler must not take browser gestures away from real record links.
+window.addEventListener('click', event => {
+    if ((event.ctrlKey || event.metaKey || event.shiftKey) && event.target.closest('[data-domains-table] a[href]')) event.stopPropagation();
+}, true);
+window.domainsColumns = async (element, wire) => {
+    // The component class key is stable across record URLs and page reloads.
+    const tableKey = 'domains.columns.' + element.dataset.domainsColumnsKey;
+    const choices = columns => Object.fromEntries(columns.filter(c => c.isToggleable).map(c => [c.name, !!c.isToggled]));
+    let saved;
+    try { saved = JSON.parse(localStorage.getItem(tableKey) || 'null'); } catch (_) {}
+    const columns = wire.$get('tableColumns');
+    if (saved && typeof saved === 'object' && !Array.isArray(saved)) {
+        const restored = columns.map(c => ({ ...c, isToggled: c.isToggleable && typeof saved[c.name] === 'boolean' ? saved[c.name] : c.isToggled }));
+        if (JSON.stringify(choices(restored)) !== JSON.stringify(choices(columns))) await wire.applyTableColumnManager(restored);
+    }
+    wire.$watch('tableColumns', columns => {
+        try { localStorage.setItem(tableKey, JSON.stringify(choices(columns))); } catch (_) {}
+    });
+};
+</script>
