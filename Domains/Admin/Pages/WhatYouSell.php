@@ -379,7 +379,7 @@ class WhatYouSell extends Page implements HasTable
     /** Bulk edit's fields. With one TLD they say what that TLD has now, since this is also how a single row is edited. */
     private function editFields(OfferRow|null $one): array
     {
-        $rule=$one===null?null:$this->reads()->rule((int)$one->server_id);$longest=$one?->longest??$rule['years']??null;$transfer=$one?->transfer??$rule['transfers']??null;
+        $rule=$one===null?null:$this->reads()->rule((int)$one->server_id);$longest=($one?->longest?:null)??$rule['years']??null; // A saved null reads back as 0: no own term, so the default applies.$transfer=$one?->transfer??$rule['transfers']??null;
         $tld=$one===null?null:\Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$one->server_id)->where('tld',$one->tld)->first();
         if($tld!==null){
             try{$transfer=\Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::savedTransfers($tld,$rule);}

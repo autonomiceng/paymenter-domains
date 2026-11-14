@@ -372,7 +372,7 @@ final class AccountChecklist
                 $work=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($queue?->offer_work);
                 $refresh=['succeeded_at'=>$queue?->offer_feed_succeeded_at,'due_at'=>$work['facts'][$ending]['due_at']??$work['feed_due']??null];
             }}catch(\Throwable){/* Saved refresh metadata is also missing; never invent a next check. */}
-            return [['Supported terms','Missing','Current registrar terms missing. '.TldFacts::refreshText($refresh).' A supported registrar terms read fills this fact. Longer terms stay off.']];
+            return [['Supported terms','Missing',"We haven't read the registrar's terms for .".$ending.', so terms longer than 1 year stay off. '.TldFacts::refreshText($refresh,false).' Sync prices tries again now.']];
         }
     }
     public static function termYears(array $years): string
