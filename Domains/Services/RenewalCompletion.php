@@ -39,14 +39,18 @@ final readonly class RenewalCompletion
                     // Enom can still read the domain before staff ask for a case; NameSilo waits for its answer.
                     if ($attempt->binding->registrarKey !== 'enom') { return null; }
                 }
-                if (($op->policy['renewal_polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT) { return null; }
+                // One Enom read a day after the send still runs after the read limit, once per attempt, to check that Enom has no order.
+                if (($op->policy['renewal_polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT && !EnomAbsence::claimRead($op, $attempt, $this->clock->now())) { return null; }
                 $read=$financial?CapturedChargeReview::reserve($op,$this->clock):null;
+                // A new read starts: earlier no-order evidence goes now, so nobody can use it while this read runs or after it fails.
+                EnomAbsence::clear($op);
                 return [$attempt, HoldingLocks::take($l['domain'])['stamp'],$read];
             } catch (\Throwable) { return null; }
         });
         if (!$capture) { return Operation::findOrFail($id); }
         [$attempt, $stamp,$financialRead] = $capture; $proof = null; $covered = false; $late = false; $autoRenewConfirmed = false; $autoRenewUnconfirmed = $attempt->binding->registrarKey === 'namesilo'; $scan = null; $absence = null; $sample = null;
         try {
+            $started = $this->clock->now();
             $ctx = $check->context = new RequestContext($attempt->binding, RequestOrigin::Background, $deadline, new RequestBudget(25), $this->clock, Runtime::limiter());
             $result = $this->bindings->reader($attempt->binding->serverId)->reconcile($attempt, $ctx); $result->requireAttempt($attempt);
             $sample = $result->result()->evidence()->billZoneSample;
@@ -62,7 +66,7 @@ final readonly class RenewalCompletion
                         || $facts->domain->providerAutoRenew !== false);
                 $autoRenewConfirmed = $attempt->binding->registrarKey === 'namesilo' && !$autoRenewUnconfirmed;
                 $proof = $autoRenewUnconfirmed ? null : ReconciliationEvidence::completion($attempt, $facts, $this->clock->now());
-                $absence = EnomAbsence::observe($attempt, $facts, $this->clock->now());
+                $absence = EnomAbsence::observe($attempt, $facts, $started, $this->clock->now());
                 $check->observe($attempt,$facts,$proof!==null);
             }
         } catch (ReadDeferred) { $check->deferred = 'read_limit';
