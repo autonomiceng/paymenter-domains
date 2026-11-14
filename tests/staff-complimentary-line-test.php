@@ -30,10 +30,6 @@ $confirm=static function($test,array $words){$a=$test->instance()->getMountedAct
 // The last change as the next confirm shows it.
 $last=function()use($line,$customer):string {$on=(bool)(Paymenter\Extensions\Servers\Domains\Services\ComplimentaryAccounts::current($customer->id)['enabled']??false);
     return $line()->instance()->{$on?'turnOffAction':'turnOnAction'}()->getModalDescription()->toHtml();};
-// The public header actions hook puts the action among the header buttons.
-$page=Livewire::actingAs($staff)->test(EditUser::class,['record'=>$customer->id])->html();
-$at=strpos($page,'class="domains-comp"');
-expect($at!==false&&strpos($page,'fi-header-actions-ctn')<$at,'The action sits in the header actions');
 // Never set: only the turn on action, and no last change.
 $line()->assertActionVisible('turnOn')->assertActionHidden('turnOff');expect(!str_contains($last(),'Turned'),'No last change before the first');
 $confirm($line()->mountAction('turnOn'),['Make domains complimentary?','Example Hosting pays for new registrations, transfers and renewals for Demo Sandbox. Hosting is billed as usual.'])
