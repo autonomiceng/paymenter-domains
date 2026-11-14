@@ -69,15 +69,21 @@ final class ContactStepRetries
         return DB::transaction(static function()use($seed,$clock):bool {
             $l=HoldingLocks::take($seed->domain);$op=$l['operations']->firstWhere('id',$seed->id);$now=$clock->now();
             if(!$op||!self::candidate($op)||!$l['account']?->processing_enabled){return false;}
-            $history=$op->policy['staff_actions']??[];
-            if(!is_array($history)||!array_is_list($history)||count($history)>=99){return false;}
-            if(!self::due($op,$now)){return false;}
+            $policy=self::released($op,(string)$op->safe_code,$now);
+            if($policy===null||!self::due($op,$now)){return false;}
             try{$op->setRelation('domain',$l['domain']);StaffOperationWrites::requireRelease($op,$l,$now);}catch(\Throwable){return false;}
-            $history[]=['action'=>'release','phase'=>'completed','operation_key'=>$op->operation_key,'generation'=>$op->authority_generation,
-                'actor_id'=>null,'actor_name'=>'System','automatic'=>true,'reason'=>'Nothing was sent, so it retried by itself.',
-                'at'=>$now->format(DATE_ATOM),'before'=>['state'=>'held','reason'=>$op->safe_code],'after'=>['state'=>'queued','reason'=>null]];
-            $op->update(['state'=>'queued','safe_code'=>null,'lease_expires_at'=>null,'policy'=>[...($op->policy??[]),'staff_actions'=>$history]]);
+            $op->update(['state'=>'queued','safe_code'=>null,'lease_expires_at'=>null,'policy'=>$policy]);
             return true;
         });
+    }
+    /** The policy with the automatic release from $from recorded at $now, which opens the order's send window. Null when History is full. */
+    public static function released(Operation $op,string $from,\DateTimeImmutable $now): ?array
+    {
+        $history=$op->policy['staff_actions']??[];
+        if(!is_array($history)||!array_is_list($history)||count($history)>=99){return null;}
+        $history[]=['action'=>'release','phase'=>'completed','operation_key'=>$op->operation_key,'generation'=>$op->authority_generation,
+            'actor_id'=>null,'actor_name'=>'System','automatic'=>true,'reason'=>'Nothing was sent, so it retried by itself.',
+            'at'=>$now->format(DATE_ATOM),'before'=>['state'=>'held','reason'=>$from],'after'=>['state'=>'queued','reason'=>null]];
+        return [...($op->policy??[]),'staff_actions'=>$history];
     }
 }

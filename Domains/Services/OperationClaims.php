@@ -132,7 +132,12 @@ final class OperationClaims
             try{$window=ExecutionWindow::start($op,$windowReason);}
             catch(\Throwable){$op->update(['state'=>'held','safe_code'=>'claim_authority_invalid']);return null;}
             if(($claimRetry||$balanceRetry)&&(!$window||$window>$now||$now->modify('+'.ExecuteOperation::REQUEST_SECONDS.' seconds')>$window->setTimezone(new \DateTimeZone('UTC'))->modify('+'.ExecuteOperation::EXECUTION_SECONDS.' seconds'))){
-                $op->update(['state'=>'held','safe_code'=>$window&&$op->started_at&&$window>$op->started_at?$windowReason:'write_rate_limited']);BalanceRetries::rateHeld($op,$now);return null;
+                // Orders off waits only for Orders, and validate() just proved they are on. A window that lapsed while they were off
+                // again opens anew here, as the tick's release would, without spending a try.
+                $renewed=$contactRetry&&$windowReason==='processing'&&$window&&$window<=$now&&ContactProfileHold::releaseBlocked($op)===null
+                    ?ContactStepRetries::released($op,'processing',$now):null;
+                if($renewed===null){$op->update(['state'=>'held','safe_code'=>$window&&$op->started_at&&$window>$op->started_at?$windowReason:'write_rate_limited']);BalanceRetries::rateHeld($op,$now);return null;}
+                $op->policy=$renewed;$window=ExecutionWindow::start($op,$windowReason);
             }
             if(($claimRetry||$balanceRetry)&&isset($op->attempt['claim_key'])&&($op->request_fingerprint!==$digest||($op->funding['claim']??null)!==$paid)){$op->update(['state'=>'held','safe_code'=>'claim_authority_invalid']);return null;}
             $attempt=$claimRetry?$op->attempt:($testCallRetry
