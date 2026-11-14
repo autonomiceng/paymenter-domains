@@ -61,6 +61,9 @@ $confirmedFresh=$Value(['public_read'=>'negative','public'=>[],'public_at'=>$at-
 $confirmedStale=$Value(MonitoringEvidence::read($d,$noAnswer('negative',null,$at->getTimestamp()-1)));
 same([Paymenter\Extensions\Servers\Domains\Presentation\Plain::None->label(),Paymenter\Extensions\Servers\Domains\Presentation\Plain::None->label()],[$confirmedFresh->word,$confirmedStale->word],'A confirmed negative public read is None');
 expect($confirmedStale->sub===$stale->sub&&$confirmedFresh->sub===$fresh->sub,'An empty public result keeps the same fresh or stale reading as answers');
+// A None row's time line has the answer rows' shape: the same label, then the time, with no comma or stop around it.
+$timeLine=static fn($v):string=>preg_match('~<div class="domains-panel-sub"[^>]*>(.*?)</div>~s',$v->toHtml(),$m)?trim((string)preg_replace('~<span[^>]*data-domains-fact="date".*?</span>~s','{time}',$m[1])):'';
+same($timeLine($fresh),$timeLine($confirmedFresh),'A None row reads its check time like an answer row');
 // The registrar side says None only after a complete DNS read.
 $registrar=static fn(?string $state)=>MonitoringEvidence::rows(['registrar'=>[],'registrar_at'=>'2026-11-05T09:00:00+00:00','registrar_read'=>$state])['Registrar records'];
 same([Paymenter\Extensions\Servers\Domains\Presentation\Plain::None->label(),Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead,Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead],[$registrar('complete')->word,$registrar('partial')->state,$registrar('unknown')->state],'Registrar records say None only after a complete DNS read');
