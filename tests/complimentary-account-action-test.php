@@ -30,10 +30,14 @@ foreach([['reason'=>'','error'=>'required'],['reason'=>'   ','error'=>'required'
     $line($staff,$user->id)->callAction('turnOn',['reason'=>$c['reason']])->assertHasActionErrors(['reason'=>$c['error']]);
 }
 $line($staff,$user->id)->assertActionVisible('turnOn')->assertActionHidden('turnOff');
+// Only the action that applies is in the header markup: Filament renders a hidden action's button when it is printed directly.
+$offered=static fn($test):array=>preg_match_all("/mountAction\\((?:'|&#0?39;)(turnOn|turnOff)\\b/",$test->html(),$m)?array_values(array_unique($m[1])):[];
+same(['turnOn'],$offered($line($staff,$user->id)),'Standard prices offer only the turn on button');
 ComplimentaryAccounts::set($user->id,$staff,false,'Invalid toggle',app(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class),0);
 same($before,$rows(),'Invalid actions add no audit entries');
 $reason=str_repeat('界',500);
 $line($staff,$user->id)->callAction('turnOn',['reason'=>$reason])->assertHasNoActionErrors()->assertActionVisible('turnOff');
+same(['turnOff'],$offered($line($staff,$user->id)),'Complimentary domains offer only the turn off button');
 same($reason,ComplimentaryAccounts::current($user->id)['reason'],'500 Unicode characters retain the whole audit reason');
 $line($staff,$user->id)->callAction('turnOff',['reason'=>'Reset Unicode case'])->assertHasNoActionErrors();
 $before=$rows();
