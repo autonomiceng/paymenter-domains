@@ -48,6 +48,13 @@ class RegistrarAnswers
         try{$d=$op->domain()->firstOrFail();return self::readFirst($op,ReconciliationEvidence::attempt($op,$d,AccountBindings::binding(Account::where('server_id',$op->server_id)->sole())),$now);}
         catch(\Throwable){return false;}
     }
+    /** The scheduled read's no-order evidence for the staff form, under the same rule the writer repeats under its locks. */
+    public static function absence(Operation $op,\DateTimeImmutable $now): ?array
+    {
+        if($op->registrar_key!=='enom'||!in_array($op->action,['register','renew'],true)||!self::eligible($op,$now)){return null;}
+        try{$d=$op->domain()->firstOrFail();return EnomAbsence::holds($op,ReconciliationEvidence::attempt($op,$d,AccountBindings::binding(Account::where('server_id',$op->server_id)->sole())),$now);}
+        catch(\Throwable){return null;}
+    }
     public static function record(StaffSettingsReview $review,array $input,\DateTimeImmutable $now): void
     {
         // Actor, account and invoice locks follow the same order as all other financial writers.
