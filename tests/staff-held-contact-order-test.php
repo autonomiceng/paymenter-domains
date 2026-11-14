@@ -142,10 +142,20 @@ same(Paymenter\Extensions\Servers\Domains\Admin\Support\RegistrarFacts::accountU
 expect(RequestFacts::reason($paused)!==Paymenter\Extensions\Servers\Domains\Admin\Support\Labels::operationReason($paused),'The saved contact cause is not shown while Orders are off');
 expect(!ContactStepRetries::readmit($paused->id,$clock),'The tick does not release while Orders are off');
 same(['held','processing',0],[$paused->fresh()->state,$paused->fresh()->safe_code,ContactStepRetries::tries($paused->fresh())],'The tick holds it as Orders off without spending a try');
+Auth::login($costStaff);
+same('Not charged yet',RequestFacts::for($paused->fresh())['cost'],'An unsent contact order held for Orders off has no missing registrar charge');
 DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>true]);
 expect(ContactStepRetries::readmit($paused->id,$clock),'It goes back by itself once Orders are on');
 same(['queued',null],[$paused->fresh()->state,$paused->fresh()->safe_code],'Orders on puts the order back in the queue');
 same($before,[$nativeMoney(),$sent->contactAdd,$sent->registerDomain,$paused->fresh()->attempt],'Nothing was sent and money and unsent proof are kept');
+same('Not charged yet',RequestFacts::for($paused->fresh())['cost'],'The unsent order back in the queue has no missing registrar charge');
+// Held again at its contact step: the domain history shows each hold the request History shows, in order.
+$grants->cap=true;$execute($paused->fresh());$grants->cap=false;
+same(['held','contact_profile_proof_required'],[$paused->fresh()->state,$paused->fresh()->safe_code],'The retried order holds again at its contact step');
+$requestRows=array_values(array_filter(Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::entries($paused->domain->fresh()),fn($r)=>is_array($r)&&($r['__request']??null)===$paused->id));
+// The first hold's time comes from the app clock, not this fixture's clock, so only the events are compared here.
+$events=array_map(fn($r)=>$r['event'].' by '.$r['by'],$requestRows);sort($events);
+same(['Back on hold by System','Hold released by System','Put on hold by System'],$events,'Domain history has both system holds and the automatic release: '.json_encode($events));
 DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>true]);
 Auth::login($costStaff);
 [$heading,$submit,$words]=RequestFacts::releaseConfirmation($op,$account,null,false);
