@@ -37,8 +37,8 @@ final class RenewalReplacements
     }
     public static function reviewed(Operation $op,Domain $d): bool
     {
-        $p=$op->policy['renewal_replacement']??null;
-        try { RefundProof::requireUnsent($op,$d); }
+        // An unreadable policy or refund proof is never a reviewed replacement.
+        try { $p=$op->policy['renewal_replacement']??null; RefundProof::requireUnsent($op,$d); }
         catch(\Throwable){return false;}
         return $op->action==='renew'&&$op->state==='rejected'&&$op->safe_code==='refund_approved'&&is_array($p)
             &&array_keys($p)===['actor_id','operation_key','generation','expiry','refund_hash','at']&&($p['actor_id']===null||is_int($p['actor_id'])&&$p['actor_id']>0)
