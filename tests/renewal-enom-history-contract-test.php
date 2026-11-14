@@ -75,11 +75,12 @@ same('uncertain',$engine->run($stuck->id,$writer)->state,'The second renewal rep
 $sent=new DateTimeImmutable($stuck->fresh()->attempt['dispatch_attempted_at']); $state->expiry='2028-10-18';
 $stuck->fresh()->update(['policy'=>[...$stuck->fresh()->policy,'renewal_polls'=>5]]);
 $dense=new class($transport,$state,$sent) implements Transport {
-    public array $forms=[]; public string $fault='';
+    public array $forms=[]; public string $fault=''; public ?Closure $during=null;
     public function __construct(private Transport $domain, private object $state, public DateTimeImmutable $sent) {}
     public function send($env, ReadCommand $command, array $parameters, string $uid, string $token, int $timeoutMs): string {
         if (!in_array($command,[ReadCommand::Orders,ReadCommand::Order],true)) { return $this->domain->send($env,$command,$parameters,$uid,$token,$timeoutMs); }
-        $this->forms[]=$command; $at=fn($i)=>$this->sent->modify($i===0?'+1 second':'-'.(10*$i).' minutes')->setTimezone(new DateTimeZone('America/Denver'))->format('n/j/Y g:i:s A');
+        $this->forms[]=$command; if ($this->during) { $hook=$this->during; $this->during=null; $hook(); }
+        $at=fn($i)=>$this->sent->modify($i===0?'+1 second':'-'.(10*$i).' minutes')->setTimezone(new DateTimeZone('America/Denver'))->format('n/j/Y g:i:s A');
         if ($command===ReadCommand::Orders) {
             $rows=array_map(fn($i)=>['id'=>(string)(7001+$i),'date'=>$at($i)],range(0,29));
             return enomHistoryEnvelope(enomHistoryPage(array_slice($rows,$parameters['Start']-1,25),$parameters['Start'],count($rows)));
@@ -128,5 +129,22 @@ $op=$stall->fresh();
 same(['uncertain',5,'poll_limit_reached',false],[$op->state,$op->policy['history_resumption']['prior_polls'],$op->policy['renewal_execution']['reason'],isset($op->attempt['reconciliation'])],'The resumption revision is used up without completing the renewal');
 same(7,$op->policy['history_scan']['state']['refusal_totals']['detail_unsupported'] ?? null,'Every read of the unsupported order is recorded');
 same([$writes,$money,null],[$state->writes,$nativeMoney(),$op->funding['refund'] ?? null],'No Extend, refund or money change while the scan is stalled');
+// A history read that returns past the 250-second deadline is used up once, like a stalled read; its facts are not acted on.
+config(['domains.enom_identity.environment'=>null]);
+[$late,,$b4]=$makeRenewal(placeholderComFixtureName('renew-history-late-placeholder.com'));
+[$engine,$writer]=$compose($b4); $state->lost=true;
+same('uncertain',$engine->run($late->id,$writer)->state,'The fourth renewal reply is lost');
+$writes=$state->writes; $money=$nativeMoney(); $dense->sent=new DateTimeImmutable($late->fresh()->attempt['dispatch_attempted_at']); $dense->fault=''; $state->expiry='2028-10-18';
+config(['domains.enom_identity.environment'=>'test']); $clock->instant=$dense->sent->modify('+2 days');
+\Paymenter\Extensions\Servers\Domains\Registrars\Enom\TestOrderHistory::upgrade(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$b4->serverId)->sole());
+$dense->forms=[]; Cache::flush(); $dense->during=function () use ($clock) { $clock->instant=$clock->now()->modify('+300 seconds'); };
+$op=$recover->run($late->id)->fresh();
+same(['uncertain',1,false],[$op->state,$op->policy['renewal_polls'] ?? 0,isset($op->attempt['reconciliation'])],'A read past its deadline counts once toward the read limit and completes nothing');
+expect(count($dense->forms)>0,'The late turn did read history');
+$turns=[];
+foreach (range(1,2) as $n) { $dense->forms=[]; Cache::flush(); $clock->instant=$clock->now()->modify('+120 seconds'); $op=$recover->run($late->id)->fresh(); $turns[]=[$op->state,$op->policy['renewal_polls'] ?? 0]; }
+// The progressing turn adds nothing for the late read; the completing turn counts once as every completing read does.
+same([['uncertain',1],['succeeded',2]],$turns,'The late read is counted only once and later on-time turns finish from history');
+same([$writes,$money],[$state->writes,$nativeMoney()],'No Extend or money change from the late read');
 config(['domains.enom_identity.environment'=>null]);
 $nativeSuccessful=true; echo "Captured Enom history recovers a lost paid renewal without replay or money changes.\n";

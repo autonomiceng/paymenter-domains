@@ -29,11 +29,16 @@ $liveHistory = new History(new Client($live, 'offline-live', 'token', $liveWire)
 // The renewal was sent 17:13-17:18 UTC on Jul 4: 10:13 AM Pacific, 11:13 AM Mountain.
 $liveStart = new DateTimeImmutable('2026-07-04T17:13:00Z'); $liveNow = new DateTimeImmutable('2026-07-05T00:00:00Z');
 $liveClock = new class($liveNow) implements Clock { public function __construct(public DateTimeImmutable $n) {} public function now(): DateTimeImmutable { return $this->n; } };
-$liveAttempt = fn (DateTimeImmutable $at, ?AccountBinding $b = null) => new AttemptEvidence($b ?? $live, new Query('live-renew-placeholder.com', Action::Renew, 1), 'renew:live:g1:2026-09-07', 1,
-    ExecutionRecord::RecordedNull, SendState::PossiblySent, $at, $at->modify('+300 seconds'), new DateEvidence('2026-09-07', ExpiryPrecision::Date, 'acquisition_base'),
-    new Money('8.95', 'USD'), DispatchSeal::Sealed, historyAcceptance: new HistoryAcceptance($b ?? $live, 'America/Los_Angeles', 60, 2592000, 'enom_renewal_v1'));
-$liveRead = function (?DateTimeImmutable $at = null) use ($liveHistory, $liveAttempt, $liveStart, $live, $liveClock): Evidence {
-    return $liveHistory->inspect($liveAttempt($at ?? $liveStart), new RequestContext($live, RequestOrigin::Background, $liveClock->now()->modify('+250 seconds'), new RequestBudget(25), $liveClock));
+/** $zone: the account's measured bill zone, passed only when set. */
+$liveAttempt = function (DateTimeImmutable $at, ?AccountBinding $b = null, ?string $zone = null) use ($live): AttemptEvidence {
+    $args = [$b ?? $live, new Query('live-renew-placeholder.com', Action::Renew, 1), 'renew:live:g1:2026-09-07', 1,
+        ExecutionRecord::RecordedNull, SendState::PossiblySent, $at, $at->modify('+300 seconds'), new DateEvidence('2026-09-07', ExpiryPrecision::Date, 'acquisition_base'),
+        new Money('8.95', 'USD'), DispatchSeal::Sealed];
+    $named = ['historyAcceptance'=>new HistoryAcceptance($b ?? $live, 'America/Los_Angeles', 60, 2592000, 'enom_renewal_v1')] + ($zone === null ? [] : ['billZone'=>$zone]);
+    return new AttemptEvidence(...$args, ...$named);
+};
+$liveRead = function (?DateTimeImmutable $at = null, ?string $zone = null) use ($liveHistory, $liveAttempt, $liveStart, $live, $liveClock): Evidence {
+    return $liveHistory->inspect($liveAttempt($at ?? $liveStart, null, $zone), new RequestContext($live, RequestOrigin::Background, $liveClock->now()->modify('+250 seconds'), new RequestBudget(25), $liveClock));
 };
 $liveDone = fn (Evidence $f) => ReconciliationEvidence::completion($liveAttempt($liveStart), new Evidence(domain: new DomainSnapshot($live, 'live-renew-placeholder.com', true,
     $f->candidates[0]->afterExpiry ?? null, false, providerReference: '77'), candidates: $f->candidates, historyComplete: $f->historyComplete), $liveClock->now());

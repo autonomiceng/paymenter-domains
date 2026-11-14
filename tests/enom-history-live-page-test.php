@@ -18,4 +18,9 @@ foreach (['partial', 'contradictory'] as $shape) {
 }
 $liveWire->paging = 'absent'; $liveWire->rows = array_map(fn ($i) => ['id'=>(string)(6000 + $i), 'date'=>'7/4/2026 9:00:00 AM'], range(0, 25));
 same(['list_invalid'=>1], $liveRead()->historyScan->state['refusals'], 'More than one page without pagination fields is refused');
+// Only fewer than 25 orders: a full page without pagination fields cannot show there is no second page. Orders outside the scanned days.
+foreach ([24=>[true, []], 25=>[false, ['list_invalid'=>1]]] as $rows=>$expected) {
+    $liveWire->rows = array_map(fn ($i) => ['id'=>(string)(6100 + $i), 'date'=>'6/8/2026 9:00:00 AM'], range(1, $rows)); $facts = $liveRead();
+    same($expected, [$facts->historyComplete, $facts->historyScan->state['refusals']], $rows.' orders on a page without pagination fields');
+}
 echo "Enom Live counted single pages are read; partial, contradictory and multi-page metadata stay strict\n";
