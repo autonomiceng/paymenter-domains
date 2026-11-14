@@ -27,9 +27,10 @@ final class DomainDecisions
             'Registrar auto-renew'=>"The registrar's own auto-renew. Keep it off: ".($company !== '' ? $company.' renews' : 'we renew').' after the customer pays.',
             'Renewal'=>($company !== '' ? $company.' sends' : 'We send').' a renewal invoice before this domain expires. Auto Pay is a separate setting.'];
     }
-    /** Why the registrar's own auto-renew reads Off. */
-    private static function registrarRenewOff(): string
+    /** Why the registrar's own auto-renew reads Off. With the account's renewals off nobody renews it, so it says that. */
+    private static function registrarRenewOff(Domain $d): string
     {
+        if (self::accountRenewalsOff($d)) { return self::REGISTRAR_RENEW_HELD; }
         $company = \Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company();
         return 'Off on purpose. '.($company !== '' ? $company.' renews' : 'We renew').' the domain after the invoice is paid, so you are never charged by the registrar directly.';
     }
@@ -132,7 +133,7 @@ final class DomainDecisions
             $privacy=OwnedDomains::storedFlag($d,'privacy','privacy');
             if ($d->registrar_key!=='enom'||$privacy===true) { $f['WHOIS privacy']=Facts::row(Facts::flag($privacy),sub:$privacy!==null?null:$unread); }
             $renews=$facts['auto_renew']??null;
-            $f['Registrar auto-renew']=Facts::row(Facts::flag($renews),sub:match($renews) {null=>$unread,false=>self::registrarRenewOff(),default=>self::help()['Registrar auto-renew']});
+            $f['Registrar auto-renew']=Facts::row(Facts::flag($renews),sub:match($renews) {null=>$unread,false=>self::registrarRenewOff($d),default=>self::help()['Registrar auto-renew']});
         }
         $job=!Schema::hasTable('domains_observation_work')||($id=ObservationWork::currentId($d))===null?null:DB::table('domains_observation_work')->find($id);
         // An ended domain won't sync again, so it keeps its last read and shows no row without one.
@@ -208,6 +209,7 @@ final class DomainDecisions
         }
         return self::alerts($d,$f,$notice);
     }
+    public const REGISTRAR_RENEW_HELD="The registrar's auto-renew stays off while renewals are off for this registrar account. No renewal invoice goes out.";
     public const ACCOUNT_RENEWALS_OFF='Renewals are off for this registrar account. No renewal invoice goes out.';
     /** The account's Renewals switch is off for a billed domain: the same rule as the account's Managed domains waiting row. */
     public static function accountRenewalsOff(Domain $d, ?Account $account=null): bool

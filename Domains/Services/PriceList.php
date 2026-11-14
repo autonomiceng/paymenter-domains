@@ -50,7 +50,7 @@ class PriceList
     {
         $out=[$row['tld'],$row['account'],(string)$row['years'],$row['pricing'],$row['currency']];
         if(isset($row['cause'])){
-            $status=match($row['cause']){'card_fee'=>"Left out: card fee can't be read",'default_rule'=>"Left out: default pricing can't be read",'custom_rule'=>"Left out: custom pricing can't be read"};
+            $status=match($row['cause']){'card_fee'=>"Left out: card fee can't be read",'default_rule'=>"Left out: default pricing can't be read",'custom_rule'=>"Left out: custom pricing can't be read",'unreadable'=>"Left out: saved settings can't be read"};
             foreach(self::ACTIONS as $label){$out=[...$out,'Left out','Left out','Left out',$status];}
             return [...$out,'Left out','Left out'];
         }

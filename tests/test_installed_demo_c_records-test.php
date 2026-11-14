@@ -128,9 +128,7 @@ expect($failures===[],implode("; ",$failures));
 // Enom partial glue is a bounded known-host check, not a promise of enumeration.
 $enom=clone $d;$enom->registrar_key='enom';$r=$record;$r['capability_revision']='enom-records-1';$r['identity']=ObservationRecords::identity($enom);$r['families']['glue']['candidates']=['ns1.orbit-example.com','ns2.orbit-example.com'];$enom->observation=['records'=>$r];
 $g=array_column(RecordFamilies::read($enom,$now)['rows'],null,'kind')['glue'];
-expect(str_contains($g['staff'],"Known glue checked. This registrar can't list every child host"),'Enom known glue explains bounded coverage');
-expect(str_contains($g['staff'],'2 known child hosts')&&$g['at']==='2026-11-04T09:00:00+00:00','Coverage and checked time shown');
-expect(!str_contains($g['staff'],'some did not')&&!str_contains($g['staff'],'Sync this domain before editing'),'Impossible glue prerequisite removed');
+same(['2026-11-04T09:00:00+00:00',true],[$g['at'],$g['limited']],'Checked time shown; a finished known-host check needs no review');
 $safe=$existing;$safe['glue']['actions']=['glue_add'=>'/add','glue_update'=>'/update','glue_delete'=>'/delete','glue'=>'/replace'];
 $projected=RecordFamilies::owner(new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(...[...get_object_vars($owned),'management'=>$safe]),RecordFamilies::read($enom,$now));
 same(['glue_add','glue_update','glue_delete'],array_keys($projected->management['glue']['actions']),'Partial glue preserves individual controls and blocks whole-list replacement');

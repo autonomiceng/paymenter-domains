@@ -30,7 +30,7 @@ class ViewTld extends RecordDetailPage
         $choose=$this->settings()['seller']->isVisible()?($this->headFix()==='seller'?self::CHOOSE_SELLER_HEAD:self::CHOOSE_SELLER):'Ask staff who can change the registrar.';
         $sales=[...($reason===null?[]:[Row::notice('sales',Value::state(State::NotForSale,$staff,$reason))]),
             Row::make('Registrar for new orders',$seller?Value::fact(Fact::entered((string)\App\Models\Server::whereKey($sellerId)->value('name'))??Fact::count((int)$sellerId),'Existing domains stay with their registrar.'):Value::state(State::NotSet,$staff,$choose)),
-            Row::make('Terms',$snapshot['unreadable']?Value::state(State::CouldntRead,$staff,'Saved TLD terms unreadable. Use Edit prices to repair them.'):Value::fact(Fact::entered(TldFacts::terms($t))))];
+            Row::make('Terms',$snapshot['unreadable']?Value::state(State::CouldntRead,$staff,"Saved settings can't be read."):Value::fact(Fact::entered(TldFacts::terms($t))))];
         $refresh=$snapshot['refresh']??[];
         $next=isset($refresh['due_at'])?'Next update '.StaffTime::at((int)$refresh['due_at']).'.':'No update scheduled. Check Site setup on the Registrar account page, and the background worker.';
         $sync=[Row::make('Last updated',isset($refresh['succeeded_at'])?Value::fact(Fact::date((int)$refresh['succeeded_at'],$staff),$next):Value::state(State::NotReadYet,$staff,$next))
