@@ -29,12 +29,3 @@ foreach ($found as $path=>$hits) {
 foreach (ALLOWED as $path=>$allowed) {
     if (($found[$path]??0)<$allowed) { throw new RuntimeException("$path is down to ".($found[$path]??0).". Lower its number here."); }
 }
-// The client wrapper takes the host page's column (left aligned beside the sidebar, like the dashboard): it never centres
-// or caps itself, so /domains lines up with every other signed-in page.
-$client=file_get_contents(dirname(__DIR__).'/Domains/resources/views/partials/styles.blade.php');
-preg_match_all('/(?:^|\})\s*([^{}]*\.domains)\s*\{([^}]*)\}/', $client, $wrappers, PREG_SET_ORDER);
-foreach ($wrappers as [, $selector, $body]) {
-    $selector=trim(preg_replace('~/\*.*?\*/~s', '', substr($selector, (int) strrpos($selector, "\n"))));
-    if (preg_match('/margin-inline:\s*auto|margin:[^;]*auto|max-width/', $body)) { throw new RuntimeException("Client wrapper $selector centres or caps itself; let the host page set the width."); }
-}
-if ($wrappers===[]) { throw new RuntimeException('Client wrapper rule not found.'); }

@@ -16,10 +16,11 @@
     --e-bad: color-mix(in srgb, hsl(var(--color-error)) 80%, black);
     --e-quiet: hsl(var(--color-muted));
     --e-mono: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
-    color: var(--e-fg); overflow-wrap: anywhere;
+    max-width: 72rem; margin-inline: auto; color: var(--e-fg); overflow-wrap: anywhere;
 }
 /* The host page sets the width and alignment: beside a signed-in sidebar that is the whole column, left aligned like the
    dashboard; a guest page keeps the host's centred container. The wrapper never centres or caps itself. */
+.domains { max-width: none; margin-inline: 0; }
 .dark .domains {
     --e-ok: color-mix(in srgb, hsl(var(--color-success)) 80%, white);
     --e-info: color-mix(in srgb, hsl(var(--color-info)) 80%, white);
