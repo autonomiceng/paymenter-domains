@@ -97,7 +97,8 @@ final readonly class RenewalAuthority
     public static function blocksRenewal(Operation $op, array $l): bool
     {
         if ($op->funding_basis === 'non_billable_management' && isset($op->policy['management'])
-            && in_array($op->action, ['auth_code_email', 'nameservers', 'lock', 'privacy_enable', 'privacy_disable', 'contacts', 'contact_profile'], true)) { return false; }
+            && in_array($op->action, ['auth_code_email', 'nameservers', 'lock', 'privacy_enable', 'privacy_disable', 'contacts', 'contact_profile',
+                'dns', 'srv', 'ds_add', 'ds_delete', 'glue_add', 'glue_update', 'glue_delete'], true)) { return false; }
         return !HoldingAnchor::resolved($op, $l);
     }
     public static function resolved(Operation $op, Domain $domain, \Paymenter\Extensions\Servers\Domains\Data\AccountBinding $binding): bool
