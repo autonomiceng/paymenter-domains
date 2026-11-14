@@ -53,4 +53,32 @@ foreach(['pending','paid','cancelled'] as $status){
 DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'pending']);
 DB::table('domains_operations')->where('id',$renewal->id)->update(['state'=>'held']);
 same([],$owners->present($d->fresh())->renewalSchedule,'Invoice under review never falls back to projected dates');
+// Staff must not forecast another payment for an early invoice already paid in this cycle.
+Illuminate\Support\Facades\Auth::setUser(staffUser([Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::VIEW]));
+$staffRenewal=static fn()=>Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::for($d->fresh())['Renewal']['sub'];
+$issue=Paymenter\Extensions\Servers\Domains\Presentation\Fact::day($expected['issue'])->text;
+expect(!str_contains($staffRenewal(),$issue),'An issued pending invoice replaces the staff payment forecast');
+DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'paid']);
+foreach(['queued','succeeded'] as $state){
+    $renewal->update(['state'=>$state]);
+    expect(!str_contains($staffRenewal(),$issue),'A paid '.$state.' renewal cannot forecast another payment for this cycle');
+}
+// A cancelled unpaid cycle may be replaced, and a paid older cycle does not settle this one.
+DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'cancelled']);
+$renewal->update(['state'=>'rejected','safe_code'=>'renewal_cancelled_unpaid']);
+expect(str_contains($staffRenewal(),$issue),'A cancelled unpaid renewal retains the future payment forecast');
+DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'paid']);
+DB::table('domains_operations')->where('id',$renewal->id)->update(['base_expires_at'=>$d->provider_expires_at->subYear()]);
+expect(str_contains($staffRenewal(),$issue),'A paid older cycle cannot hide this cycle payment forecast');
+// Fully returned funding with replacement authority no longer pays for the current cycle.
+DB::table('domains_operations')->where('id',$renewal->id)->update(['base_expires_at'=>$d->provider_expires_at]);
+$renewal->refresh()->update(['state'=>'held','safe_code'=>'renewal_funding_or_authority']);
+DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'pending']);
+App\Helpers\ExtensionHelper::addPayment($invoice->fresh(),null,$renewal->amount);
+$refundStaff=staffUser(['admin.domains.manage','admin.invoices.update']);
+(new Paymenter\Extensions\Servers\Domains\Services\Refunds($clock))->refundHeld($refundStaff,$renewal->id,'service_cancelled');
+Paymenter\Extensions\Servers\Domains\Services\RenewalReplacements::recoverDomain($d->fresh(),$clock);
+same('paid',$invoice->fresh()->status,'A refunded invoice retains its native paid status');
+expect(Paymenter\Extensions\Servers\Domains\Services\RenewalReplacements::reviewed($renewal->fresh(),$d->fresh()),'Returned funding releases this cycle for replacement');
+expect(str_contains($staffRenewal(),$issue),'A refunded renewal authorized for replacement retains the future payment forecast');
 $nativeSuccessful=true;echo "Owner renewal schedule passed.\n";
