@@ -89,10 +89,8 @@ foreach ($found[1] as $raw) { $snapshot=json_decode(html_entity_decode($raw,ENT_
 expect($tabSnapshot!==null,'The page renders with its History tab mounted');$pageSnapshot=$page->snapshot;
 $orders(false);
 app('livewire')->flushState();
-[,$pageEffects]=app('livewire')->update($pageSnapshot,[],[['path'=>'','method'=>'pollManagement','params'=>[]]]);
+[$pageSnapshot,$pageEffects]=app('livewire')->update($pageSnapshot,[],[['path'=>'','method'=>'pollManagement','params'=>[]]]);
 [$tabSnapshot,$tabEffects]=app('livewire')->update($tabSnapshot,[],[]);
-// The poll runs with the History tab open; the status notice lives on the Overview tab, so it is read there.
-expect(($pageEffects['html']??'')!==''&&str_contains(panelNoticesText(Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$released->domain_id])->html()),$reason),'After the poll the status notice says the Orders-off reason');
 $polledRow=$rowOf($rowsIn($tabEffects['html']??''),$released->id);same(1,count($polledRow),'The mounted History tab lists the released request once');
 expect(str_contains($polledRow[0],'Under review')&&!str_contains($polledRow[0],$reason),'The mounted History tab follows the new head: '.$polledRow[0]);
 // A later History-only request, such as a search or a page change, keeps the head the poll passed.
@@ -100,6 +98,10 @@ app('livewire')->flushState();
 [,$tabEffects]=app('livewire')->update($tabSnapshot,[],[['path'=>'','method'=>'$refresh','params'=>[]]]);
 $laterRow=$rowOf($rowsIn($tabEffects['html']??''),$released->id);
 expect(count($laterRow)===1&&!str_contains($laterRow[0],$reason),'A History-only request keeps the current head: '.($laterRow[0]??'missing'));
+// The poll ran with the History tab open; the status notice lives on the Overview tab, so the polled page opens it.
+app('livewire')->flushState();
+[,$overviewEffects]=app('livewire')->update($pageSnapshot,['activeRelationManager'=>null],[]);
+expect(($pageEffects['html']??'')!==''&&str_contains(panelNoticesText($overviewEffects['html']??''),$reason),'After the poll the status notice says the Orders-off reason');
 // With Orders off in the head, a Registrar alert keeps its whole cause and the row drops only the paused words.
 \Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::record($released->domain->fresh(),'renewal_funds',time());
 $cause=DomainFacts::alertCause('renewal_funds');
