@@ -268,19 +268,11 @@ catch(DomainException $error){same('This contact step has ended and cannot be re
 same(['held','contact_profile_proof_required'],[$op->fresh()->state,$op->fresh()->safe_code],'The ended contact step stays held');
 same($before,[$nativeMoney(),$sent->contactAdd,$sent->registerDomain,$op->fresh()->attempt,$row->fresh()->attempt],'An ended contact step changes no money or send evidence');
 echo "An ended contact step does not blame unchanged order details.\n";
-// A local refusal before the contact step sent anything keeps its real cause: a read limit defers and runs again by itself.
+// A new paid order with saved nameservers, ready for its contact step.
 $order=static function(string $name)use($nsNew):Operation {
     $op=$nsNew(placeholderComFixtureName($name));
     $op->update(['payload'=>$op->payload+['nameservers'=>['ns1.provider.example','ns2.provider.example'],'privacy'=>false]]);return $op;
 };
-$op=$order('held-contact-deferred-placeholder.com');$before=[$sent->contactAdd,$sent->registerDomain];
-$grants->fail=static fn()=>throw new ReadDeferred('Synthetic read limit');$deferred=$execute($op);$grants->fail=null;
-same(['queued','write_rate_limited'],[$deferred->state,$deferred->safe_code],'A read limit at the contact step defers instead of holding for staff');
-same('ready',ProfileContactOperation::where('operation_id',$op->id)->sole()->state,'The deferred contact step never sent');
-same($before,[$sent->contactAdd,$sent->registerDomain],'A deferred contact step sends nothing');
-$clock->instant=$clock->now()->modify('+5 seconds');$execute($deferred->fresh());
-same([$before[0]+1,$before[1]+1],[$sent->contactAdd,$sent->registerDomain],'The deferred order sends once on its next run');
-echo "A read limit at the contact step defers and retries.\n";
 
 // Orders turned off while the contact step waited: the order holds for Orders and goes back by itself once they are on.
 $op=$order('held-contact-orders-off-placeholder.com');$before=[$sent->contactAdd,$sent->registerDomain];

@@ -61,8 +61,9 @@ final class ProfileContactOperations
         if($e instanceof WriteHeld){return $e;}
         if($worker!==null||ProfileOperation::whereKey($row->id)->value('state')!=='ready'){return new WriteHeld('contact_profile_proof_required');}
         if(!\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$this->binding->serverId)->value('processing_enabled')){return new WriteHeld('processing');}
-        if($e instanceof ReadDeferred||$e instanceof LiveReservationLimit){return $e;}
-        if($e instanceof \RuntimeException&&in_array($e->getMessage(),['Registrar request deadline reached.','Registrar request budget exhausted.'],true)){return new ReadDeferred('Contact step deferred.');}
+        // Local limits hold as rate limited, outside the quick requeue, so ContactStepRetries paces and bounds every retry.
+        if($e instanceof ReadDeferred||$e instanceof LiveReservationLimit
+            ||$e instanceof \RuntimeException&&in_array($e->getMessage(),['Registrar request deadline reached.','Registrar request budget exhausted.'],true)){return new WriteHeld('write_rate_limited');}
         return new WriteHeld('contact_profile_proof_required');
     }
     private function create(ProfileOperation $row,Operation $op,RequestContext $ctx,array $parameters,?string &$worker): void
