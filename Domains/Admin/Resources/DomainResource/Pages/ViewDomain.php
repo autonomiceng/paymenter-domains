@@ -387,8 +387,7 @@ class ViewDomain extends RecordDetailPage
     {
         if ($fact===null) {
             $row=Row::make($family['label'],DomainRows::family($family))->key('fact_'.md5($family['label']));
-            if ($progress!==null&&($text=RegistrarRows::sentence($progress['text']??null))!==null) { ($progress['waiting']??false)?$row->running(Value::state(State::Checking,Reader::Staff,$text)):$row->result(Value::state(State::Completed,Reader::Staff,$text)); }
-            return $row;
+            return $progress===null?$row:DomainRows::progress($row,$progress);
         }
         if ($family['label']==='DS records'&&is_string($fact['value'])&&$fact['value']!==\Paymenter\Extensions\Servers\Domains\Presentation\Missing::NOT_READ) { $fact['value']='DNSSEC: '.$fact['value']; }
         $row=$this->row($family['label'],$family['state']==='complete'?[...$fact,'read'=>'complete']:$fact,$side);

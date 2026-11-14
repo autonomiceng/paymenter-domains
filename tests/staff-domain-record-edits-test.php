@@ -10,6 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainEditActions,DomainFacts,Staff};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Presentation\State;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainManagement,DomainObservation,ManagementForms,ManagementProgress,ObservationSchema,OwnedDomains,OwnerPorts};
 use Paymenter\Extensions\Servers\Domains\Services\{StaffOperationReview,StaffOperations};
 $view()->assertSee('Email auth code');
@@ -50,6 +51,13 @@ try {
     expect(str_contains($row($html,'DNS records'),$waiting['text'])&&str_contains($row($html,'SRV records'),$waiting['text']),'A waiting SRV change shows on both record rows');
     expect(!isset(DomainEditActions::for($d->fresh())['rows']['DNS records']),'A waiting SRV change holds DNS and SRV edits');
 } finally { DB::table('domains_operations')->where('id',$op->id)->update(['state'=>'succeeded']); }
+// A stopped SRV change reads as failed, never as done.
+$sealed=DB::table('domains_operations')->where('id',$op->id)->value('attempt');
+DB::table('domains_operations')->where('id',$op->id)->update(['state'=>'rejected','attempt'=>\Illuminate\Support\Facades\Crypt::encryptString(json_encode([...$op->fresh()->attempt,'management_terminal'=>['actor_id'=>$actor->id]]))]);
+try {
+    $srvRow=$row($view()->html(),'SRV records');
+    expect(str_contains($srvRow,State::Failed->label())&&!str_contains($srvRow,State::Completed->label()),'A stopped SRV change reads Failed, not Completed: '.$srvRow);
+} finally { DB::table('domains_operations')->where('id',$op->id)->update(['state'=>'succeeded','attempt'=>$sealed]); }
 same(['Edit','Edit SRV'],array_map(fn($action)=>$action->getLabel(),DomainEditActions::for($d->fresh())['rows']['DNS records']),'Both record edits return after the change finishes');
 
 echo "Staff native DNS and SRV record edits passed.\n";$nativeSuccessful=true;

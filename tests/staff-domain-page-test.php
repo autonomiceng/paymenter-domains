@@ -56,9 +56,9 @@ same(['1 of 2 differs.','2 of 3 differ.','1 of 1 differs.'],[DomainFacts::differ
 same('Saved.',DomainFacts::withProgress($rows,['contacts'=>['pending'=>false,'text'=>'Saved.','settled'=>false]])['Contacts']['progress']['text'],'A fresh result still shows');
 // Staff read the request's own line and where to look, not the sentence written for the customer.
 $stopped=['id'=>60,'pending'=>false,'text'=>'The contacts change failed. Try again. If it keeps happening, contact support.','outcome'=>'Not sent. Nothing changed at the registrar.','settled'=>false];
-same(['text'=>'Not sent. Nothing changed at the registrar. Check request #60.','request'=>60,'waiting'=>false,'tone'=>null],DomainFacts::withProgress($rows,['contacts'=>$stopped],60)['Contacts']['progress'],'A stopped change names the request the head names');
-same(['text'=>'Not sent. Nothing changed at the registrar.','request'=>null,'waiting'=>false,'tone'=>null],DomainFacts::withProgress($rows,['contacts'=>$stopped],61)['Contacts']['progress'],'A row names no request the head does not name');
-same(['text'=>'Not sent. Nothing changed at the registrar.','request'=>null,'waiting'=>false,'tone'=>null],DomainFacts::withProgress($rows,['contacts'=>$stopped])['Contacts']['progress'],'With no request in the head, a row names none');
+same(['text'=>'Not sent. Nothing changed at the registrar. Check request #60.','request'=>60,'waiting'=>false,'tone'=>'danger'],DomainFacts::withProgress($rows,['contacts'=>$stopped],60)['Contacts']['progress'],'A stopped change names the request the head names');
+same(['text'=>'Not sent. Nothing changed at the registrar.','request'=>null,'waiting'=>false,'tone'=>'danger'],DomainFacts::withProgress($rows,['contacts'=>$stopped],61)['Contacts']['progress'],'A row names no request the head does not name');
+same(['text'=>'Not sent. Nothing changed at the registrar.','request'=>null,'waiting'=>false,'tone'=>'danger'],DomainFacts::withProgress($rows,['contacts'=>$stopped])['Contacts']['progress'],'With no request in the head, a row names none');
 expect(!isset(DomainFacts::withProgress($rows,['contacts'=>['pending'=>false,'text'=>'Replaced by your latest choice.','replaced'=>true]])['Contacts']['progress']),'A replaced change says nothing to staff');
 // A Missing row never points at a blocked button: it says what comes first, and the blocked button keeps its real label.
 $noContacts=['Contacts'=>['value'=>null,'sub'=>DomainFacts::ADD_CONTACTS]];
