@@ -60,8 +60,8 @@ class ListConfiguration extends RecordListPage
         // Saved references that cannot be used are marked too, matching the guard that keeps them.
         return [
             Column::value('name','Template',fn(WatchProfile $p): Value=>Value::fact(Fact::names([$p->name]),$this->mark((int)$p->id))),
-            // A retained template with no readable nameservers reads Couldn't read, like its detail page.
-            Column::value('nameservers','Nameservers',fn(WatchProfile $p): Value=>($lines=Fact::lines((array)$p->nameservers))?Value::fact($lines):Value::state(State::CouldntRead,Reader::Staff)),
+            // A retained template the editor would refuse reads Couldn't read, the same check as its detail page.
+            Column::value('nameservers','Nameservers',fn(WatchProfile $p): Value=>($r=$p->readProfile())&&($lines=Fact::lines($r->nameservers))?Value::fact($lines):Value::state(State::CouldntRead,Reader::Staff)),
             Column::value('enabled','Status',fn(WatchProfile $p): Value=>Value::state($p->enabled?State::Active:State::Paused,Reader::Staff,null,'template-'.$p->id)),
         ];
     }

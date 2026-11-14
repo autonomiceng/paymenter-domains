@@ -100,6 +100,10 @@ expect($profile->fresh()->enabled && $profile->fresh()->readProfile()===null,'Re
 same(1,ManagedDnsSetup::affected($now)->count(),'Unreadable template returns to setup count');
 Livewire::actingAs($viewer)->test(ListManagedDns::class)->assertCanSeeTableRecords([$d]);
 Livewire::actingAs($viewer)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource\Pages\ListConfiguration::class)->assertCanSeeTableRecords([$profile])->assertSee("Couldn't read");
+// Stored hosts the editor refuses, or entries that are not hosts at all, read Couldn't read like the template's own page.
+foreach(['["bad host"]','[["ns1.nested.example"]]','[null]'] as $stored){DB::table('domains_watch_profiles')->where('id',$profile->id)->update(['nameservers'=>$stored]);
+    Livewire::actingAs($viewer)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource\Pages\ListConfiguration::class)->assertCanSeeTableRecords([$profile])->assertSee("Couldn't read")->assertDontSee('bad host');}
+DB::table('domains_watch_profiles')->where('id',$profile->id)->update(['nameservers'=>'null']);
 Livewire::actingAs($templateEditor)->test(ListWatches::class)->assertSee('DNS monitoring is not set up for 1 domain. Set the default nameservers in Domains > DNS templates.');
 $unreadableSummary=(new \Paymenter\Extensions\Servers\Domains\Services\DomainSummaries())->one($owner,'managed',$id,$now);
 expect(in_array('domain.dns.not_configured',$unreadableSummary->stateKeys,true),'Customer sees unreadable template as not configured');
