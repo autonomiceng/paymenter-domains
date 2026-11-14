@@ -99,6 +99,17 @@ Auth::login($staff);$refused(fn()=>$run($op,'release'),'The writer refuses disab
 same($before,[$nativeMoney(),$op->fresh()->getRawOriginal(),$sent->contactAdd,$sent->registerDomain],'Blocked contact retry changes no money or sends');
 config(['domains.namesilo_test.management'=>$managementConfig]);
 
+// A confirmation keeps the state staff opened, even when another worker changes the same held order.
+$stale=$heldOrder('held-contact-stale-confirm-placeholder.com');
+$releaseAction=Filament\Actions\Testing\TestAction::make('release')->schemaComponent(true,'content');
+$stalePage=Livewire::actingAs($costStaff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$stale->domain_id])
+    ->mountAction($releaseAction);
+DB::table('domains_operations')->where('id',$stale->id)->update(['safe_code'=>'processing']);
+$before=[$nativeMoney(),$stale->fresh()->getRawOriginal(),$sent->contactAdd,$sent->registerDomain];
+$stalePage->callMountedAction();
+same($before,[$nativeMoney(),$stale->fresh()->getRawOriginal(),$sent->contactAdd,$sent->registerDomain],'A changed held order cannot be released from its earlier confirmation');
+Auth::login($costStaff);
+
 // Distinct hold causes must lead to a useful repair, with no blind retry for permanent or unknown failures.
 foreach([
     'configuration_unavailable'=>['Staff','registrars'],

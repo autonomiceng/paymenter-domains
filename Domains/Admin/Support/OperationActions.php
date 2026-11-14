@@ -47,15 +47,18 @@ final class OperationActions
                 [$heading,$submit,$description]=RequestFacts::releaseConfirmation($op,$account,$sends,$contactRecovery);
                 $action->requiresConfirmation()->modalHeading($heading)->modalSubmitActionLabel($submit)->modalWidth('lg')->modalDescription($description);
             }
-            if(in_array($name,self::REASON,true)){
-                $action->schema([Hidden::make('review_key')->default($ticket),
-                    Textarea::make('reason')->label('Reason')->required()->minLength(5)->maxLength(500)->rows(3)
-                        ->rules(['regex:'.StaffReason::SINGLE_LINE])->validationMessages(['regex'=>'Use one line.'])]);
+            if(in_array($name,[...self::REASON,'release'],true)){
+                $fields=[Hidden::make('review_key')->default($ticket)];
+                if(in_array($name,self::REASON,true)){
+                    $fields[]=Textarea::make('reason')->label('Reason')->required()->minLength(5)->maxLength(500)->rows(3)
+                        ->rules(['regex:'.StaffReason::SINGLE_LINE])->validationMessages(['regex'=>'Use one line.']);
+                }
+                $action->schema($fields);
             }
             $out[]=$action->action(function(array $data)use($op,$name,$label,$ticket,$contactRecovery,$sends,$complimentaryClosure){
                 try { $actor=Auth::user(); if(!$actor instanceof \App\Models\User){throw new \DomainException('Staff required.');}
                     $reason=in_array($name,self::REASON,true)?trim((string)($data['reason']??'')):$label;
-                    app(StaffOperations::class)->run($actor,(int)$op->domain_id,(int)$op->id,$name,(string)($data['review_key']??$ticket()),$reason);
+                    app(StaffOperations::class)->run($actor,(int)$op->domain_id,(int)$op->id,$name,(string)($data['review_key']??($name==='release'?'':$ticket())),$reason);
                     $check=$name!=='recheck'?null:(in_array($op->action,['register','transfer','renew'],true)?\Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::for($op->fresh()):ManagementCheck::words($op->fresh()));
                     $notification=Notification::make();
                     $check&&$check['title']!=='Registrar checked'?$notification->warning():$notification->success();
