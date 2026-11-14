@@ -67,8 +67,11 @@ class RegistrarAnswers
             if(!self::readFirst($op,$attempt,$now)){throw new \DomainException('Use Check status to read this attempt first, then record the registrar’s answer.');}
             $outcome=$input['outcome']??null;$reference=trim((string)($input['order_reference']??''));
             if ($attempt->executionFacts?->capturedUnknown() && ($outcome !== 'accepted' || $reference !== $attempt->providerReference)) { throw new \DomainException('Use the exact saved registrar order number and its accepted outcome.'); }
-            $case=ManagementPayload::text($input['case_reference']??null,128);$evidence=ManagementPayload::text($input['evidence']??null,2000);
             $transfer=$op->action==='transfer';
+            // Enom has no order and the domain is unchanged, as the scheduled read recorded: no Enom case number is needed.
+            $absence=$outcome==='not_processed'&&!$transfer?EnomAbsence::holds($op,$attempt,$now):null;
+            $case=$absence!==null&&trim((string)($input['case_reference']??''))===''?null:ManagementPayload::text($input['case_reference']??null,128);
+            $evidence=ManagementPayload::text($input['evidence']??null,2000);
             if(($input['confirmed']??false)!==true||!in_array($outcome,$transfer?['transfer_rejected']:['accepted','not_processed'],true)
                 ||($outcome!=='not_processed'?!preg_match('/^[1-9][0-9]{0,19}$/D',$reference):$reference!=='')){
                 throw new \DomainException('Record the registrar’s final answer for this account and attempt.');}
@@ -77,7 +80,7 @@ class RegistrarAnswers
             if($op->provider_order_id!==null&&$reference!==$op->provider_order_id){throw new \DomainException('Registrar order number differs from the saved result.');}
             $answer=['identity'=>self::identity($op),'operation_key'=>$op->operation_key,'fingerprint'=>$op->account_fingerprint,
                 'generation'=>$op->authority_generation,'actor_id'=>$review->actorId,'at'=>$now->format(DATE_ATOM),
-                'outcome'=>$outcome,'order_reference'=>$reference?:null,'case_reference'=>$case,'evidence'=>$evidence];
+                'outcome'=>$outcome,'order_reference'=>$reference?:null,'case_reference'=>$case,'evidence'=>$evidence,...($absence!==null?['absence'=>$absence]:[])];
             if($op->registrar_key==='namesilo'){
                 $answer['account']=['registrar'=>$op->registrar_key,'server_id'=>$op->server_id,'domain_id'=>$op->domain_id,'service_id'=>$op->service_id];
                 if($outcome==='accepted'){

@@ -45,7 +45,7 @@ final readonly class RenewalCompletion
             } catch (\Throwable) { return null; }
         });
         if (!$capture) { return Operation::findOrFail($id); }
-        [$attempt, $stamp,$financialRead] = $capture; $proof = null; $covered = false; $autoRenewConfirmed = false; $autoRenewUnconfirmed = $attempt->binding->registrarKey === 'namesilo'; $scan = null;
+        [$attempt, $stamp,$financialRead] = $capture; $proof = null; $covered = false; $autoRenewConfirmed = false; $autoRenewUnconfirmed = $attempt->binding->registrarKey === 'namesilo'; $scan = null; $absence = null;
         try {
             $ctx = $check->context = new RequestContext($attempt->binding, RequestOrigin::Background, $deadline, new RequestBudget(25), $this->clock, Runtime::limiter());
             $result = $this->bindings->reader($attempt->binding->serverId)->reconcile($attempt, $ctx); $result->requireAttempt($attempt);
@@ -59,13 +59,14 @@ final readonly class RenewalCompletion
                         || $facts->domain->providerAutoRenew !== false);
                 $autoRenewConfirmed = $attempt->binding->registrarKey === 'namesilo' && !$autoRenewUnconfirmed;
                 $proof = $autoRenewUnconfirmed ? null : ReconciliationEvidence::completion($attempt, $facts, $this->clock->now());
+                $absence = EnomAbsence::observe($attempt, $facts, $this->clock->now());
                 $check->observe($attempt,$facts,$proof!==null);
             }
         } catch (ReadDeferred) { $check->deferred = 'read_limit';
         } catch (EnomTestCallLimit $error) { $check->deferred = $error->reason === 'send_guard' ? 'send_guard' : 'send_limit';
         } catch (\Throwable) {}
         if (!$financialRead && !$covered && !$autoRenewUnconfirmed && !$autoRenewConfirmed && !$scan) { return Operation::findOrFail($id); }
-        return DB::transaction(function () use ($seed, $id, $stamp, $proof, $attempt, $covered, $autoRenewUnconfirmed, $autoRenewConfirmed,$financialRead,$check,$scan) {
+        return DB::transaction(function () use ($seed, $id, $stamp, $proof, $attempt, $covered, $autoRenewUnconfirmed, $autoRenewConfirmed,$financialRead,$check,$scan,$absence) {
             $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id); $d = $l['domain'];
             if (!$op || !$this->eligible($op) || $l['stamp'] !== $stamp || ($proof && $proof['provider_domain_id'] !== $d->provider_domain_id)) { return $op; }
             try { $this->bindings->requireReadableLocked($l['server'], $l['account']); RenewalFunding::requireCurrent($op, $l, true); }
@@ -76,7 +77,7 @@ final readonly class RenewalCompletion
             $stalled = !$covered && $scan !== null && !$scan->progressed && $check->deferred === null;
             $policy = $op->policy; $policy['renewal_polls'] = ($policy['renewal_polls'] ?? 0) + ($covered || $stalled ? 1 : 0); $check->counted = $covered || $stalled;
             // Saved scan progress; a scan that resolved more orders continues on the next turn.
-            if ($scan) { $policy['history_scan'] = $scan->saved(); $check->continued = !$covered && $scan->progressed; }
+            if ($scan) { $policy['history_scan'] = $scan->saved(); $policy = EnomAbsence::apply($policy, $op, $absence); $check->continued = !$covered && $scan->progressed; }
             if (!$proof) {
                 $policy['renewal_execution']['reason'] = $autoRenewUnconfirmed ? 'provider_auto_renew_unconfirmed'
                     : ($policy['renewal_polls'] >= OperationReconciliation::POLL_LIMIT ? 'poll_limit_reached' : 'original_attempt_unresolved');

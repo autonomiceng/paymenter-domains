@@ -61,7 +61,7 @@ final class OperationReconciliation
         });
         if (!$capture) { return Operation::findOrFail($id); }
         [$attempt, $stamp, $contract, $requestedNameservers, $watch, $light] = $capture; $proof = null; $nameservers = null; $covered = false; $transferConflict = false; $transfer = \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Unknown;
-        $callCapBlocked = false; $pendingAnomaly = false; $privacyBlocked = false; $scan = null;
+        $callCapBlocked = false; $pendingAnomaly = false; $privacyBlocked = false; $scan = null; $absence = null;
         $limiter=$watch?new TransferReadBudget($this->clock,Runtime::limiter()):null;
         try {
             $context = $check->context = new RequestContext($attempt->binding, RequestOrigin::Background, $this->clock->now()->modify('+250 seconds'), new RequestBudget(25), $this->clock, $limiter ?? Runtime::limiter());
@@ -87,6 +87,7 @@ final class OperationReconciliation
                 // One Enom charge can be a failed fee. It proves neither finality nor a settled refund.
                 if ($attempt->query->action->value === 'transfer' && $transfer !== \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Unknown) { $covered = true; }
                 $proof = ReconciliationEvidence::completion($attempt, $facts, $this->clock->now());
+                $absence = EnomAbsence::observe($attempt, $facts, $this->clock->now());
                 $check->observe($attempt,$facts,$proof!==null);
             }
         } catch (ReadDeferred) {
@@ -104,10 +105,10 @@ final class OperationReconciliation
             &&($attempt->historyAcceptance?->covers($attempt,$this->clock->now())??false)&&($check->context?->exchanges()??0)>0;
         if (!$covered) {
             if (!$callCapBlocked) {
-                return $this->claims->locked($id,function($op,$domain)use($stamp,$watch,$readStarted,$historyRead,$attempt,$check,$scan):Operation {
+                return $this->claims->locked($id,function($op,$domain)use($stamp,$watch,$readStarted,$historyRead,$attempt,$check,$scan,$absence):Operation {
                     if(!$this->eligible($op)||self::stamp($op,$domain)!==$stamp){return $op;}
                     $policy=TransferPolling::finished($op->policy,$readStarted);
-                    if($scan){$policy['history_scan']=$scan->saved();}
+                    if($scan){$policy['history_scan']=$scan->saved();$policy=EnomAbsence::apply($policy,$op,$absence);}
                     // A scan that resolved more orders is progress, not a failed read; it continues on the next turn.
                     if($historyRead&&$scan?->progressed){$check->continued=true;$policy['reconciliation']['reason']='original_attempt_unresolved';}
                     elseif($historyRead){
@@ -131,7 +132,7 @@ final class OperationReconciliation
                 return $op;
             });
         }
-        $completed = $this->claims->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($attempt, $stamp, $contract, $proof, $nameservers, $transfer, $transferConflict, $pendingAnomaly, $readStarted, $privacyBlocked, $check, $scan): Operation {
+        $completed = $this->claims->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($attempt, $stamp, $contract, $proof, $nameservers, $transfer, $transferConflict, $pendingAnomaly, $readStarted, $privacyBlocked, $check, $scan, $absence): Operation {
             if (!$this->eligible($op) || self::stamp($op, $domain) !== $stamp) { return $op; }
             try {
                 $binding = $this->authority($op, $domain, $all, $funding, $server, $account);
@@ -142,7 +143,7 @@ final class OperationReconciliation
                 return $op;
             }
             $policy = TransferPolling::finished($op->policy,$readStarted); $policy['reconciliation']['polls'] = ($policy['reconciliation']['polls'] ?? 0) + 1; $check->counted = true;
-            if ($scan) { $policy['history_scan'] = $scan->saved(); }
+            if ($scan) { $policy['history_scan'] = $scan->saved(); $policy = EnomAbsence::apply($policy, $op, $absence); }
             $policy['reconciliation']['staff_alert']=true;
             if(in_array($op->safe_code,['enom_test_reconciliation_call_cap','enom_test_transfer_reconciliation_call_cap','enom_test_reconciliation_send_guard'],true)){$op->safe_code='reconciliation_required';}
             if ($op->action === 'transfer') {
