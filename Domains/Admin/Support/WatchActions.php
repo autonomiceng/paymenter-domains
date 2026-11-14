@@ -77,11 +77,18 @@ final class WatchActions
         $main=[self::action('watch',$id,$revision,'read','Check now')->visible($can('active')),self::action('watch',$id,$revision,'pause','Pause monitoring')->color('gray')->visible($can('active')),
             // Resume is hidden once staff intent is resumed and only the suspended hosting service keeps the watch paused.
             self::action('watch',$id,$revision,'resume','Resume monitoring')->color('gray')->visible(fn()=>$can('paused')() && WatchDiscovery::canResume($w))];
-        $more=[self::action('watch',$id,$revision,'profile','Change DNS template',[
-                Select::make('profile')->label('DNS template')->options(fn()=>self::templates())->default($w->ns_profile_id)->required(),
-                Select::make('expected_dns')->label('Expected nameservers')->options(['platform'=>WatchFindings::company(),'external'=>'Other'])->default($w->expected_dns)])->modalDescription('Future checks compare against this DNS template.')->modalSubmitActionLabel('Save'),
+        $more=[self::changeTemplate($w,$revision),
             self::action('watch',$id,$revision,'note','Add note',[Textarea::make('note')->label('Note')->required()->minLength(5)->maxLength(500)->rows(3)->rules(['regex:'.StaffReason::SINGLE_LINE])])->modalSubmitActionLabel('Add note')];
         return [...$main,ActionGroup::make($more)->label('More')->button()->color('gray')];
+    }
+    /** The same form is available beside the expected nameservers setting. */
+    public static function changeTemplate(WatchName $w,int $revision): Action
+    {
+        return self::action('watch',(int)$w->id,$revision,'profile','Change DNS template',[
+            Select::make('profile')->label('DNS template')->options(fn()=>self::templates())->default($w->ns_profile_id)->required(),
+            Select::make('expected_dns')->label('Expected nameservers')->options(['platform'=>WatchFindings::company(),'external'=>'Other'])->default($w->expected_dns)])
+            ->modalDescription('Future checks compare against this DNS template.')->modalSubmitActionLabel('Save')
+            ->visible(fn()=>in_array($w->state,['active','paused'],true) && Staff::can(Writes::VIEW) && Staff::can(Writes::MANAGE));
     }
     /** "Check now" for Missing check-time hints; hidden unless the domain is monitored. */
     public static function check(WatchName $w,int $revision): Action

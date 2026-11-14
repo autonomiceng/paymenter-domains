@@ -31,7 +31,7 @@ foreach ([false,true] as $paid) {
     $calls=count($state->calls);$view=$controller->code($r,$receipt->domain_id);$dto=$view->getData()['domain'];
     same([true,true,$paid],[$dto->transfer['received'],$dto->transfer['open'],$dto->transfer['paid']],'Saved code receipt uses the actual open transfer payment state');
     $dom=storefrontDom($view->render());
-    same([$paid?'Auth code saved.':'Auth code saved. The transfer starts after the invoice is paid.'],array_map(fn($n)=>trim($n->textContent),iterator_to_array($dom->query('//p[@role="status"]'))),'Unpaid receipt explains payment; paid receipt stays neutral');
+    same([$paid?'Auth code saved.':'Auth code saved. The transfer starts after the invoice is paid.'],array_map(fn($n)=>trim($n->textContent),iterator_to_array($dom->query('//*[@data-piece="notice"][@role="status"]'))),'Unpaid receipt explains payment; paid receipt stays neutral');
     same($calls,count($state->calls),'Rendering the saved-code payment state dispatches no provider work');
 }
 $closed=$newTransfer('committed-payment-closed-placeholder.com',0,false,true);
@@ -40,7 +40,7 @@ $r=Request::create('/domains/'.$closed->domain_id.'/code','GET');$r->setUserReso
 $calls=count($state->calls);$view=$controller->code($r,$closed->domain_id);$dto=$view->getData()['domain'];
 same([true,false,false],[$dto->transfer['received'],$dto->transfer['paid'],$dto->transfer['open']],'Held unpaid transfer has a saved code and closed editor');
 $dom=storefrontDom($view->render());
-same(['Auth code saved.'],array_map(fn($n)=>trim($n->textContent),iterator_to_array($dom->query('//p[@role="status"]'))),'Closed unpaid receipt makes no payment-only start promise');
+same(['Auth code saved.'],array_map(fn($n)=>trim($n->textContent),iterator_to_array($dom->query('//*[@data-piece="notice"][@role="status"]'))),'Closed unpaid receipt makes no payment-only start promise');
 same($calls,count($state->calls),'Closed saved-code receipt dispatches no provider work');
 foreach([0,1]as$i){
     $user->properties()->where('key','phone')->update(['value'=>'']);$user->unsetRelation('properties');

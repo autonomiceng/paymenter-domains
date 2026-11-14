@@ -41,7 +41,7 @@ $details=[];
 foreach ([$released, $unreleased] as $d) {
     $html=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$d->id])->assertSuccessful()->html();
     // The page names the request the alert points to, as in the approved domain mock.
-    $details[]=str_contains(html_entity_decode(strip_tags($html),ENT_QUOTES),str_replace('Check the request','Check request #'.$d->operations()->sole()->id,$cause));
+    $details[]=str_contains(preg_replace('/\s+/',' ',html_entity_decode(strip_tags($html),ENT_QUOTES)),rtrim(str_replace('Check the request','Check request #'.$d->operations()->sole()->id,$cause),'.'));
 }
 $actual=[$badge,$filtered,$details];
 same(['2',[$released->id,$unreleased->id],[false,true]],$actual,

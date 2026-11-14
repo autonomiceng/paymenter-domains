@@ -17,9 +17,9 @@ final class DomainDecisions
     public const SECTIONS=['Registration'=>['Expires','Registrar','In registrar account','Transfer lock','WHOIS privacy','Email auth code','Registrar auto-renew','Last sync','Open alerts'],
         'Renewal'=>['Renewal','Renewal price','Next invoice','Open invoice'],
         'Contacts and DNS'=>['Contacts','Nameservers','Glue records','DNS records'],
-        'Billing'=>['Customer','Service']];
+        'Billing'=>['Customer','Service','Invoice to check']];
     /** Rows that open another page, and what their link says. */
-    public const LINKS=['Registrar'=>'Open registrar','Open invoice'=>'Open invoice','Customer'=>'Open customer','Service'=>'Open service'];
+    public const LINKS=['Registrar'=>'Open registrar','Open invoice'=>'Open invoice','Customer'=>'Open customer','Service'=>'Open service','Invoice to check'=>'Open invoice'];
     public static function help(): array
     {
         $company = \Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company();

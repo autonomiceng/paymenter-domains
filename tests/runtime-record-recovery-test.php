@@ -16,7 +16,7 @@ $registrarLines=$neutral->query('//dialog[@id="edit-nameservers"]/form/p[normali
 same(0,$registrarLines->length,'While the first read is pending the nameserver editor is closed, so nothing names the registrar');
 $visible=strip_tags(preg_replace('~<(style|script)\b[^>]*>.*?</\1>~si','',$neutral->document->saveHTML()));
 // The auth code row and its confirm name who sends the code, because no mail from us follows.
-same(2,substr_count($visible,'Enom emails it to the registrant email'),'The auth code row and confirm name the sender');$visible=str_replace('Enom emails it to the registrant email','',$visible);
+same([1,1],[substr_count($visible,'Goes to your registrant email'),substr_count($visible,'Enom emails it to the registrant email')],'The auth code row names the recipient and its confirm names the sender');$visible=str_replace(['Goes to your registrant email','Enom emails it to the registrant email'],'',$visible);
 foreach(['enom','namesilo']as$name){expect(!str_contains(strtolower($visible),$name),'Customer copy stays registrar-neutral');}
 // A failed ordinary read while processing is off stops scheduled work without a record hold.
 $bindings->setProcessing($d->server_id,false);$observation->fault='info_missing';$dueRecords();$runtimePorts->initialManagedRecordObservations();

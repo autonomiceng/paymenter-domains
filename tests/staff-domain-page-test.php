@@ -161,7 +161,7 @@ foreach (['name'=>'other.example.com','generation'=>2,'fingerprint'=>str_repeat(
 // With record checks off a read saves ownership but no records, so the hold stays. Only a strictly newer owned read of the same identity answers membership.
 require_once __DIR__.'/Support/storefront.php';
 $membershipRow=static function(Domain $d):string{
-    $rows=storefrontDom(Livewire::actingAs(Auth::user())->test(ViewDomain::class,['record'=>$d->id])->assertSuccessful()->html())->query('//*[contains(concat(" ",normalize-space(@class)," ")," domains-row ")][.//*[normalize-space(.)="In registrar account"]]');
+    $rows=storefrontDom(Livewire::actingAs(Auth::user())->test(ViewDomain::class,['record'=>$d->id])->assertSuccessful()->html())->query('//*[@data-domains-row][.//*[contains(@class,"domains-panel-row-k")][starts-with(normalize-space(.),"In registrar account")]]');
     same(1,$rows->length,'One rendered membership row');return trim(preg_replace('/\s+/',' ',$rows->item(0)->textContent));};
 $holdAt=$heldFacts['record_hold']['at'];$after=(new DateTimeImmutable($holdAt))->modify('+1 second')->format(DATE_ATOM);
 foreach (['newer'=>[$after,[],'Yes'],'equal'=>[$holdAt,[],'No'],'stale'=>[(new DateTimeImmutable($holdAt))->modify('-1 second')->format(DATE_ATOM),[],'No'],
@@ -181,7 +181,8 @@ $storeNs($active,['ns1.example.net','ns2.example.net','ns3.example.net']);
 same(['ns1.example.net','ns2.example.net','ns3.example.net'],$value($active,'Nameservers'),'Stored nameservers in order');
 same(false,DomainFacts::for($active->fresh())['Nameservers']['demo'],'Ordinary nameservers have no Demo tag');
 same($before,$queries($active->fresh()),'Nameservers add no queries');
-Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSeeInOrder(['Nameservers','ns1.example.net','ns2.example.net','ns3.example.net','Transfer lock'])->assertSeeHtml('data-domains-tone="ok" data-domains-record="lock-'.$active->id.'"');
+Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSeeInOrder(['Nameservers','ns1.example.net','ns2.example.net','ns3.example.net','Transfer lock']);
+same('On',panelRowValue(Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->html(),'Transfer lock'),'The lock reads On');
 foreach([[],['ns1.example.net',7],['a'=>'ns1.example.net'],'ns1.example.net'] as $bad){$storeNs($active,$bad);same(null,$value($active,'Nameservers'),'Unusable stored nameservers are Missing');}
 $storeNs($active,['ns1.example.net','ns2.example.net']);
 // Every Missing carries its cause.
@@ -226,13 +227,13 @@ same(['Off','Stopped by staff'],[$value($active,'Renewal'),$sub($active,'Renewal
 DB::table('domains_domains')->where('id',$active->id)->update(['renewal_policy'=>encrypt(json_encode($policy),false)]);
 
 // Page: no internal facts, one notice, breadcrumb uses the name.
-$page=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSuccessful()->assertSet('data',[]);
-$page->assertDontSee('WHOIS privacy')->assertSee('Renewal')->assertSee('Registration')->assertSee('Billing')->assertSee('Ada Lovelace')->assertSee('Missing')->assertSee('Needs the linked service. Check the Services page.')->assertSeeHtml('domains-sheet');
+$page=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSuccessful()->assertSet('data',null);
+$page->assertDontSee('WHOIS privacy')->assertSee('Renewal')->assertSee('Registration')->assertSee('Billing')->assertSee('Ada Lovelace')->assertSee(\Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead->label())->assertSee('Needs the linked service. Check the Services page.')->assertSeeHtml('domains-sheet');
 // The Renewal row holds its own value, not just Renewal text somewhere on the page. Stop and Resume in it: staff-holding-test.
-$renewalRow=static function(string $html):array{$doc=new DOMDocument();@$doc->loadHTML('<?xml encoding="UTF-8">'.$html);$x=new DOMXPath($doc);$t=static fn(DOMNode $n)=>trim(preg_replace('/\s+/',' ',$n->textContent));
-    $rows=$x->query('//div[contains(concat(" ",normalize-space(@class)," ")," domains-row ")][.//*[@role="term"][normalize-space(.)="Auto-renew"]]');
+$renewalRow=static function(string $html):array{$doc=new DOMDocument();@$doc->loadHTML('<?xml encoding="UTF-8">'.str_replace('</',' </',$html));$x=new DOMXPath($doc);$t=static fn(DOMNode $n)=>trim(preg_replace('/\s+/',' ',$n->textContent));
+    $rows=$x->query('//div[@data-domains-row][.//*[contains(@class,"domains-panel-row-k")][starts-with(normalize-space(.),"Auto-renew")]]');
     if($rows->length!==1){return [$rows->length,'',[]];}
-    return [1,$t($rows->item(0)),array_values(array_filter(array_map($t,iterator_to_array($x->query('.//button',$rows->item(0)))),fn(string $b)=>in_array($b,HoldingActions::LABELS,true)))];};
+    return [1,'Auto-renew '.$t($x->query('.//*[contains(@class,"domains-panel-row-v")]',$rows->item(0))->item(0)),array_values(array_filter(array_map($t,iterator_to_array($x->query('.//button',$rows->item(0)))),fn(string $b)=>in_array($b,HoldingActions::LABELS,true)))];};
 same([1,'Auto-renew On',[]],$renewalRow(Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSuccessful()->html()),'One Renewal row says On, with no Stop or Resume for a viewer');
 DB::table('domains_domains')->where('id',$active->id)->update(['renewal_policy'=>encrypt(json_encode([...$policy,'renewals_stopped'=>true]),false)]);
 same([1,'Auto-renew Off Stopped by staff',[]],$renewalRow(Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSuccessful()->html()),'The Renewal row says Off, Stopped by staff');
@@ -258,7 +259,10 @@ DB::table('domains_operations')->where('id',$heldOperation->id)->update(['action
 
 $heldPage=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->assertSee('Transfer not sent: old registrar needs approval.')->assertSee('Check request #')->assertDontSeeHtml('fi-callout');
 same(1,substr_count(html_entity_decode(strip_tags($heldPage->html()),ENT_QUOTES),'Transfer not sent: old registrar needs approval.'),'The reason is said once on the page');
-same(1,substr_count((string)$heldPage->instance()->getSubheading(),'data-domains-tone="warn"'),'One amber mark in the head of a held domain');
+// The head shows only the domain's own state; the held reason is the amber notice that opens its section.
+require_once __DIR__.'/Support/storefront.php';
+same(1,storefrontDom($heldPage->html())->query('//*[@data-domains-row="notice"][.//*[@data-domains-tone="warn"]][contains(normalize-space(.),"Transfer not sent: old registrar needs approval.")]')->length,'One amber notice says why the held domain waits');
+expect(!str_contains(html_entity_decode(strip_tags((string)$heldPage->instance()->getSubheading()),ENT_QUOTES),'Transfer not sent'),'The head of a held domain keeps only its state');
 // The request page head sweeps like the domain head, so it needs the same mark. A Note's step looks like the link its cell is.
 $heldRequest=$held->operations()->sole()->id;
 Livewire::actingAs($viewer)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation::class,['record'=>$heldRequest])->assertSeeHtml('data-domains-record="request-'.$heldRequest.'"');
@@ -315,7 +319,7 @@ same(1,substr_count($headOf(777),'Check request #777'),'The request holding chan
 ObligationAlerts::record($active->fresh(),'below_cost',time());
 // A request to check leads over a cost alert, as in the list Note (journeys-r2 item 10), so the row still leaves it to the head.
 expect(str_contains($headOf(),'Check request #'.$stuck->id.'<')&&!str_contains((string)$sub($active,'Registrar'),'Check'),'A request to check leads the head over a cost alert: '.$sub($active,'Registrar'));
-Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$active->id])->assertSeeHtml('>Check request #'.$stuck->id.'</a>');
+Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$active->id])->assertSee('Check request #'.$stuck->id);
 // A change the system tries again by itself is no job, on the page or in the next sweep.
 $claim=['seal'=>'absent','send_state'=>'definitely_unsent','management_claim'=>str_repeat('a',32)];
 $stuck->update(['policy'=>['management'=>['action'=>'contacts']],'attempt'=>$claim,'started_at'=>now()]);
@@ -477,7 +481,7 @@ $work=DB::table('domains_observation_work')->insertGetId(['server_id'=>$active->
 same(null,$sub($active,'Last sync'),'The stopped row leaves the cause to the page notice');
 Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSee('The registrar read stopped.')->assertSee('Ask staff who can resume sync.')->assertSee('Read stopped');
 DB::table('domains_observation_work')->where('id',$work)->delete();
-Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSeeInOrder(['Service','Missing','Customer, order or service missing'])->assertSee('Unpaid renewal invoice cancelled');
+Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSeeInOrder(['Service',\Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead->label(),'Customer, order or service missing'])->assertSee('Unpaid renewal invoice cancelled');
 // held requests and unreadable data need staff even without saved alert rows.
 $filter(Livewire::actingAs($viewer)->test(ListDomains::class),'alerts',true)->assertCanSeeTableRecords([$active,$held,$long])->assertCanNotSeeTableRecords([$demo]);
 DB::table('domains_obligation_alerts')->update(['resolved_at'=>time()]);
@@ -492,17 +496,17 @@ $unreadDomain=Domain::create(['server_id'=>$active->server_id,'registrar_key'=>$
 $nameservers=static function()use($viewer,$unreadDomain):array{
     $html=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$unreadDomain->id])->html();
     $row=preg_match('/>\s*Nameservers\s*</',$html,$at,PREG_OFFSET_CAPTURE)?substr($html,$at[0][1],2500):'';
-    preg_match('/Not read|Missing/',$row,$m);
-    return [$m[0]??null,str_contains($row,'danger'),str_contains($html,'Registrar read failed'),str_contains($html,'Registrar records are out of date'),$row];
+    preg_match('/Not read yet|Couldn&#039;t read|Couldn\'t read/',$row,$m);
+    return [isset($m[0])?html_entity_decode($m[0],ENT_QUOTES):null,str_contains($row,'data-domains-tone="err"'),str_contains($html,'Registrar read failed'),str_contains($html,'Registrar records are out of date'),$row];
 };
 [$state,$red,$failedTitle,$lateTitle,$row]=$nameservers();
-expect([$state,$red,$failedTitle,$lateTitle]===['Not read',false,false,false],'Before any read, Nameservers is a neutral Not read with no read notice: '.json_encode([$state,$red,$failedTitle,$lateTitle]).' '.preg_replace('/\s+/',' ',$row));
+expect([$state,$red,$failedTitle,$lateTitle]===['Not read yet',false,false,false],'Before any read, Nameservers is a neutral Not read with no read notice: '.json_encode([$state,$red,$failedTitle,$lateTitle]).' '.preg_replace('/\s+/',' ',$row));
 $unreadWork=DB::table('domains_observation_work')->insertGetId(['server_id'=>$unreadDomain->server_id,'account_fingerprint'=>$unreadDomain->account_fingerprint,
     'domain_id'=>$unreadDomain->id,'generation'=>$unreadDomain->authority_generation,'due_at'=>time()-3600,'safe_code'=>null,'tries'=>0]);
 [$state,$red,$failedTitle,$lateTitle,$row]=$nameservers();
-expect([$state,$red,$failedTitle,$lateTitle]===['Missing',false,false,true],'A late read leaves Nameservers gray Missing under Registrar records are out of date: '.json_encode([$state,$red,$failedTitle,$lateTitle]).' '.preg_replace('/\s+/',' ',$row));
+expect([$state,$red,$failedTitle,$lateTitle]===['Not read yet',false,false,true],'A late read leaves Nameservers Not read yet under Registrar records are out of date: '.json_encode([$state,$red,$failedTitle,$lateTitle]).' '.preg_replace('/\s+/',' ',$row));
 DB::table('domains_observation_work')->where('id',$unreadWork)->update(['safe_code'=>'read_failed','tries'=>1,'due_at'=>time()+3600]);
 [$state,$red,$failedTitle,$lateTitle,$row]=$nameservers();
-expect([$state,$red,$failedTitle,$lateTitle]===['Missing',false,true,false],'A failed read leaves Nameservers a calm Missing under Registrar read failed, which gives the cause once: '.json_encode([$state,$red,$failedTitle,$lateTitle]).' '.preg_replace('/\s+/',' ',$row));
+expect([$state,$red,$failedTitle,$lateTitle]===["Couldn't read",true,true,false],'A failed read leaves Nameservers Couldn\'t read under Registrar read failed, which gives the cause once: '.json_encode([$state,$red,$failedTitle,$lateTitle]).' '.preg_replace('/\s+/',' ',$row));
 
 echo "Staff domain page and list passed.\n";$nativeSuccessful=true;

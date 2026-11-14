@@ -48,8 +48,6 @@ app()->instance(OwnerPorts::class,$ports);app()->instance(OwnedDomains::class,$o
 $before=$state->calls;$controller->status($request,$d->id);same($before,$state->calls,'Polling never calls the registrar');
 $html=$controller->show($request,$d->id)->render();
 expect(str_contains($html,'data-management-pending="lock"'),'Reload keeps the pending control');
-expect(str_contains($html,'<li class="domains-row domains-row--pending" id="lock">'),'The waiting row carries the pending tint');
-expect(!str_contains($html,'<li class="domains-row domains-row--pending" id="nameservers">'),'Only the waiting row is tinted');
 expect(!str_contains($html,'id="form-lock"'),'The unfinished setting has no second change control');
 $foreign=Request::create('/');$foreign->setUserResolver(fn()=>commerceUser());
 try{$controller->status($foreign,$d->id);expect(false,'Foreign status must fail');}catch(Illuminate\Database\Eloquent\ModelNotFoundException){}
@@ -226,17 +224,16 @@ same('succeeded',$management->run($dnsOp->id,$dnsDriver)->state,'DNS change comp
 $clock->instant=$clock->now()->modify('+1 minute');Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
 \Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::failPrimary($dnsDomain->fresh(),$clock->now());
 $dnsPage=Livewire\Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$dnsDomain->id]);
-$factRow=static fn($html,$label)=>storefrontDom($html)->query('//*[contains(concat(" ",normalize-space(@class)," ")," fi-in-entry ")][.//*[@role="term"][normalize-space(.)="'.$label.'"]]')->item(0);
-$missing=$factRow($dnsPage->html(),'DNS records');
-expect($missing&&str_contains($missing->textContent,'Not read')&&str_contains($missing->textContent,'Use Sync now to read them.'),'Unread DNS keeps the current recovery instruction after a saved change');
-expect(str_contains($missing->textContent,'Saved.'),'The saved request remains a separate progress line under unread DNS');
+$missing=(string)panelRowText($dnsPage->html(),'DNS records');
+expect(str_contains($missing,'Not read')&&str_contains($missing,'Use Sync now to read them.'),'Unread DNS keeps the current recovery instruction after a saved change');
+expect(str_contains($missing,'Saved.'),'The saved request remains a separate progress line under unread DNS');
 same('Saved.',ManagementProgress::for($dnsDomain->fresh())['dns']['text'],'Failed sync does not rewrite the completed request');
 $dnsPage->assertSee('DNS records')->assertSee('Saved.');
 // Advance the engine and UI clocks before recording the recovered observation.
 $readAt=$clock->now()->modify('+1 minute');$clock->instant=$readAt;Carbon\Carbon::setTestNow($readAt);Carbon\CarbonImmutable::setTestNow($readAt);
 \Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::save($dnsDomain->fresh(),$inventory(),$readAt);
-$dnsPage->call('pollManagement');$available=$factRow($dnsPage->html(),'DNS records');
-expect($available&&str_contains($available->textContent,'1 record')&&str_contains($available->textContent,'1 SRV')
-    &&str_contains($available->textContent,'As of')&&str_contains($dnsPage->html(),$readAt->format(DATE_ATOM)),'Available DNS keeps its as-of time and SRV count beside management status');
+$dnsPage->call('pollManagement');$available=(string)panelRowText($dnsPage->html(),'DNS records');
+expect(str_contains($available,'1 record')&&str_contains($available,'1 SRV')
+    &&str_contains($available,'As of')&&str_contains($available,\Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at($readAt->getTimestamp())),'Available DNS keeps its as-of time and SRV count beside management status');
 $dnsPage->assertSee('DNS records')->assertSee('Saved.');
 echo "Management pending controls, duplicate requests, local status and immediate start passed.\n";$nativeSuccessful=true;

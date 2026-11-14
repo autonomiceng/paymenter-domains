@@ -90,7 +90,7 @@ final class WatchRows
     /** @param list<string> $names */
     private static function fact(array $names, ?string $sub): Value
     {
-        $fact = Fact::names(array_map('strval', $names));
+        $fact = Fact::lines(array_map('strval', $names));
         return $fact === null ? Value::state(State::NotReadYet, Reader::Staff, $sub) : Value::fact($fact, $sub);
     }
     /** Plain text for the line under a value: times keep their staff zone wording. */

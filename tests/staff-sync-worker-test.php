@@ -64,7 +64,7 @@ $history=Livewire\Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers
 foreach ([$rail,$history] as $i=>$html) {
     $dom=new DOMDocument;@$dom->loadHTML($html);$xpath=new DOMXPath($dom);
     foreach (['Sync requested','Domain synced'] as $event) {
-        $selector=$i===0?'//*[contains(concat(" ",normalize-space(@class)," ")," domains-trace-item ")]':'//tbody/tr';
+        $selector=$i===0?'//*[@data-piece="trace"]/li':'//tbody/tr';
         $rows=$xpath->query($selector.'[contains(.,"'.$event.'")]');
         same(1,$rows->length,'Each history surface shows the sync event once');
         expect(str_contains($rows->item(0)->textContent,'Alex Admin'),'The sync history row keeps the recorded staff name');

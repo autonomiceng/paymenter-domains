@@ -100,7 +100,7 @@ final class DomainNotices
         $payment=self::paymentNotice($d);
         $withPayment=static fn(array $notice):array=>$payment===null?$notice:[...$notice,
             'body'=>trim(($notice['body']??'').' '.implode(' ',array_filter([$payment['title'],$payment['body']??null]))),
-            'tone'=>$payment['tone']==='danger'?'danger':$notice['tone'],'link'=>$payment['action']??null];
+            'tone'=>$payment['tone']==='danger'?'danger':$notice['tone'],'link'=>$payment['action']??null,'invoice'=>$payment['invoice']??null];
         if (!DomainDecisions::ended($d)&&$read['read_code']==='domain_not_in_account') {
             $name=\App\Models\Server::whereKey($d->server_id)->value('name');
             return $withPayment(['title'=>'Domain is not in the registrar account.','tone'=>'warning',
@@ -149,12 +149,12 @@ final class DomainNotices
             $invoice=DB::table('domains_obligation_alerts as a')->join('domains_operations as o','o.id','=','a.operation_id')->where('a.domain_id',$d->id)
                 ->where('a.code','acquisition_late_money')->whereNull('a.resolved_at')->orderByDesc('a.id')->value('o.invoice_id');
             return ['title'=>'Payment activity after the order closed.','body'=>'Check the invoice and payments before contacting the customer.','tone'=>'warning',
-                'action'=>self::invoiceAction($invoice)];
+                'action'=>self::invoiceAction($invoice),'invoice'=>$invoice?(int)$invoice:null];
         }
         try {
             if (RenewalReplacements::activity($d)) {
                 $invoice=$d->operations()->where('action','renew')->get()->first(fn(Operation $op)=>array_key_exists('renewal_replacement',$op->policy??[]))?->invoice_id;
-                return ['title'=>'Payment received after credit. Check the invoice.','tone'=>'warning','action'=>self::invoiceAction($invoice)];
+                return ['title'=>'Payment received after credit. Check the invoice.','tone'=>'warning','action'=>self::invoiceAction($invoice),'invoice'=>$invoice?(int)$invoice:null];
             }
         } catch (\Throwable) { return ['title'=>DomainDecisions::UNREADABLE,'tone'=>'danger']; }
         return null;

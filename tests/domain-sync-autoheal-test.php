@@ -28,7 +28,7 @@ same(null,DomainFacts::notice($d->fresh()),'Automatic retry needs no staff warni
 expect(!HoldingObservationWork::stopped($d->fresh()),'Retryable settings do not stop the job');
 $page=Livewire\Livewire::actingAs($actor)->test(ViewDomain::class,['record'=>$d->id]);
 $page->assertSee('Sync will retry automatically')->assertActionEnabled('sync_now');
-expect(str_contains($page->instance()->getSubheading()->toHtml(),'Sync will retry automatically'),'Retry progress sits with the status and Sync now button');
+expect(str_contains(panelNoticesText($page->html()),'Sync will retry automatically'),'Retry progress is a notice beside the Sync now button');
 $page->assertActionHidden('resume_observation');
 expect(str_contains($page->html(),'wire:poll.2s.keep-alive="pollManagement"'),'The page follows the automatic retry');
 $state->calls=[];same('idle',$worker->turn($queue,$guard),'The backoff prevents immediate repeat reads');same([],$state->calls,'No reads before due');

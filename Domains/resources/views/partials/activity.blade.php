@@ -1,17 +1,27 @@
-{{-- History as a trace: newest work first, the mark and the word say how each step ended. --}}
+{{-- History as a trace: newest work first, the mark and the word are the step's State for customers (customer.trace). --}}
 @php
-    $tone = \Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::stepTone(...);
-    $steps = [...array_map(fn ($row) => [...$row, 'moment' => true], $domain->progress), ...$domain->history];
+    $values = \Paymenter\Extensions\Servers\Domains\Presentation\CustomerValues::class;
+    $rows = [...array_map(fn ($row) => [...$row, 'moment' => true], $domain->progress), ...$domain->history];
     $all = request()->query('history') === 'all';
+    $steps = array_map(function ($step) use ($values) {
+        $word = $step['state'] ?? $step['status'];
+        $note = $step['note'] ?? null;
+        // A failed change the customer cannot finish alone says how to get it done.
+        if ($note !== null && $word === 'Failed' && !($step['noteComplete'] ?? false)) {
+            $help = ($step['retry'] ?? false)
+                ? ' Try again. '.view('domains::partials.contact-support', ['before' => 'Still stuck? '])->render()
+                : ' '.view('domains::partials.contact-support', ['after' => ' to make this change.'])->render();
+            $note = new \Illuminate\Support\HtmlString(e($note).$help);
+        }
+        return [
+            'label' => ($step['url'] ?? null) ? 'Invoice #'.$step['number'] : ($step['label'] === 'WHOIS privacy' && !\Paymenter\Extensions\Servers\Domains\Presentation\PrivacyVisibility::SHOWN ? 'Domain change' : $step['label']),
+            'url' => $step['url'] ?? null, 'state' => $values::step($word), 'word' => $word, 'by' => $step['by'] ?? null,
+            'reason' => $note, 'date' => $step['date'] ?? null, 'moment' => $step['moment'] ?? false,
+        ];
+    }, $rows);
+    $empty = in_array($domain->order['kind'] ?? null, ['registration', 'transfer'], true) && ($domain->order['state'] ?? null) === 'paid' ? ucfirst($domain->order['kind']).' is in progress.' : 'No changes yet.';
 @endphp
-<section class="domains-panel" id="history" aria-labelledby="heading-history"><div class="domains-panel__h"><h2 id="heading-history" class="domains-h2">History</h2>@if (count($steps) > 5 && !$all)<a class="domains-a" href="{{ $domain->actions['show'] }}?history=all#history">View all {{ count($steps) }}</a>@endif</div>
-@if (!$steps)<div class="domains-panel__b"><p class="domains-muted">{{ in_array($domain->order['kind'] ?? null, ['registration', 'transfer'], true) && ($domain->order['state'] ?? null) === 'paid' ? ucfirst($domain->order['kind']).' is in progress.' : 'No changes yet.' }}</p></div>@else
-<ol class="domains-trace">@foreach ($all ? $steps : array_slice($steps, 0, 5) as $step)
-@php($word = $step['state'] ?? $step['status'])
-<li><span class="domains-status domains-tone-{{ $tone($word) }}" aria-hidden="true"></span><div>@if ($step['url'] ?? null)<a class="domains-a" href="{{ $step['url'] }}">Invoice #{{ $step['number'] }}</a>@else<b>{{ $step['label'] === 'WHOIS privacy' && !\Paymenter\Extensions\Servers\Domains\Presentation\PrivacyVisibility::SHOWN ? 'Domain change' : $step['label'] }}</b>@endif
-@if ($step['by'] ?? null)<span class="domains-sub">By {{ $step['by'] }}</span>@endif
-@if ($step['note'] ?? null)<span class="domains-sub">{{ $step['note'] }}@if ($word === 'Failed' && !($step['noteComplete'] ?? false))@if ($step['retry'] ?? false) Try again. @include('domains::partials.contact-support', ['before' => 'Still stuck? '])@else @include('domains::partials.contact-support', ['after' => ' to make this change.'])@endif @endif</span>@endif
-@if ($step['date'] ?? null)<span class="domains-sub">@if ($step['moment'] ?? false)@include('domains::partials.moment', ['at' => $step['date']])@else @include('domains::partials.date', ['date' => $step['date']])@endif</span>@endif</div><span class="domains-tone-{{ $tone($word) }}">{{ $word }}</span></li>
-@endforeach</ol>
-@endif
-</section>
+<x-domains::customer.section id="history" title="History">
+<x-slot:link>@if (count($steps) > 5 && !$all)<a class="domains-a" href="{{ $domain->actions['show'] }}?history=all#history">View all {{ count($steps) }}</a>@endif</x-slot:link>
+@if (!$steps)<x-domains::customer.list-empty :text="$empty" />@else<x-domains::customer.trace :steps="$all ? $steps : array_slice($steps, 0, 5)" />@endif
+</x-domains::customer.section>

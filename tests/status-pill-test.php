@@ -41,9 +41,9 @@ $cases=[
     'expired-and-moved'=>[['domain.expired','watch.ns_changed'],[],'expired','Expired',DomainStatus::LATE],
     'cancelled'=>[['domain.cancelled'],[],'cancelled','Cancelled',null],
 ];
-$pills=static fn($dom,$context=null)=>array_map(fn($n)=>trim($n->textContent),iterator_to_array($dom->query('.//*[contains(concat(" ",normalize-space(@class)," ")," domains-badge ")]',$context??$dom->document->documentElement)));
-$reasons=static fn($dom,$context=null)=>array_map(fn($n)=>trim($n->textContent),iterator_to_array($dom->query('.//*[contains(concat(" ",normalize-space(@class)," ")," domains-pill-reason ")]',$context??$dom->document->documentElement)));
-$tones=static fn($dom)=>array_map(fn($n)=>preg_replace('/.*domains-tone-(\w+).*/','$1',$n->getAttribute('class')),iterator_to_array($dom->query('//*[contains(concat(" ",normalize-space(@class)," ")," domains-badge ")]')));
+// A status is a pill on the service card, and a State value in the list's Status cell and the detail head line.
+$pills=static fn($dom,$context=null)=>array_map(fn($n)=>trim($n->textContent),iterator_to_array($dom->query('.//*[contains(concat(" ",normalize-space(@class)," ")," domains-badge ")] | .//td[@data-label="Status"]//*[@data-domains-tone] | .//*[@data-piece="head-line"]//*[@data-domains-tone]',$context??$dom->document->documentElement)));
+$reasons=static fn($dom,$context=null)=>array_map(fn($n)=>trim($n->textContent),iterator_to_array($dom->query('.//*[contains(concat(" ",normalize-space(@class)," ")," domains-pill-reason ")] | .//td[@data-label="Status"]//*[contains(@class,"domains-panel-sub")]',$context??$dom->document->documentElement)));
 $rows=[];
 foreach ($cases as $state=>[$states,$extra,$resolved,$expected,$reason]) {
     $s=$summary($state.'.example',$states,[...$extra,'statusState'=>$resolved]); $rows[]=$s;
@@ -54,8 +54,8 @@ foreach ($cases as $state=>[$states,$extra,$resolved,$expected,$reason]) {
     $owned=new OwnedDomain($state.'.example',$pill['label'],$pill['tone'],$s->expiry,$s->renewalOff?'Off':'On','$14.00',['show'=>'/domains/1'],[],['contacts'=>false,'required'=>false],[],[],true,statusReason:$pill['reason']);
     $detail=storefrontDom(view('domains::show',['domain'=>$owned,'summary'=>$s])->render());
     same([$expected],$pills($detail),'Detail page shows exactly one status pill: '.$state);
-    same([$pill['tone']],$tones($detail),'Detail pill keeps its tone: '.$state);
-    same(1,$detail->query('//div[@class="domains-ph"]/span[@class="domains-pill"]/span[contains(concat(" ",@class," ")," domains-status ")]')->length,'The pill sits in the detail header: '.$state);
+    same([\Paymenter\Extensions\Servers\Domains\Presentation\CustomerValues::labelled($expected)?->tone?->value],array_map(fn($n)=>$n->value,iterator_to_array($detail->query('//*[@data-piece="head-line"]//@data-domains-tone'))),'Detail state keeps its customer tone: '.$state);
+    same(1,$detail->query('//*[@data-piece="head"]/*[@data-piece="head-line"]//*[@data-domains-tone]')->length,'The state sits in the detail head: '.$state);
     $card=storefrontDom(view('domains::service',['domain'=>$owned])->render());
     same([[$expected],$reason===null?[]:[$reason]],[$pills($card),$reasons($card)],'Service card shows the same pill and reason: '.$state);
 }

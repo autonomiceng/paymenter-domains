@@ -3,25 +3,27 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages;
 use Filament\Actions\Action;
-use Filament\Infolists\Components\TextEntry;
-use Filament\Resources\Pages\ViewRecord;
-use Filament\Schemas\Components\{Callout, Flex, Html, Section, Text};
 use Filament\Schemas\Schema;
-use Filament\Support\Enums\{FontFamily, Width};
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource,WatchResource};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{AcquisitionActions, AcquisitionPaymentReview, DomainEditActions, DomainFacts, DomainHistory, HelpHint, HoldingActions, MissingEntry, NoticeReview, OperationActions, RegistrarFacts, Sheet, Staff, StatusMark};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{AcquisitionActions, AcquisitionPaymentReview, DomainEditActions, DomainFacts, DomainHistory, DomainRows, HoldingActions, NoticeReview, OperationActions, RegistrarRows, Sheet, Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Head, Partial, Row, Value};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\{RecordDetailPage, Section};
+use Paymenter\Extensions\Servers\Domains\Presentation\{Reader, StaffTime, State};
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
-use Paymenter\Extensions\Servers\Domains\Presentation\DomainName;
 use Paymenter\Extensions\Servers\Domains\Services\{ManagedDnsSetup,OwnedDomains,StaffWatchWrites};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
-class ViewDomain extends ViewRecord
+/** One domain: its own state in the head, then its sections as rows, with Activity beside them and History as a tab.
+ * Each notice sits first in the section it concerns, one per section. The page follows a change at its own cadence. */
+class ViewDomain extends RecordDetailPage
 {
-    public function getHeader(): ?\Illuminate\Contracts\View\View { return view('domains::staff.domain-header'); }
-    public function pollManagement(): void { Staff::requireView(); $this->getRecord()->refresh(); $this->edits=$this->facts=$this->domainStatus=$this->families=$this->head=null; $this->notice=false; }
+    /** The page reads stored progress every 2 seconds, or 10 for a slow change, kept alive for a bounded time (managementPoll), then stops. */
+    protected function poll(): ?array { $poll=$this->managementPoll(); return $poll['every']===null?null:['pollManagement',$poll['every']==='2s'?2:10,true]; }
+    public function pollManagement(): void { Staff::requireView(); $this->getRecord()->refresh(); $this->edits=$this->facts=$this->domainStatus=$this->families=$this->head=null; $this->notice=false;
+        // The sheet was built before the poll ran; rebuild it from the fresh facts.
+        $this->cacheSchema('content'); }
     #[\Livewire\Attributes\Locked]
     public ?int $resumeStarted=null;
     public function syncPending(): bool
@@ -62,7 +64,6 @@ class ViewDomain extends ViewRecord
     }
 
     protected static string $resource = DomainResource::class;
-    protected Width|string|null $maxContentWidth = Sheet::WIDTH;
     /** Rows that keep their button, blocked, while changes are on hold. */
     private const BLOCKED = ['Transfer lock','Email auth code','Contacts','Nameservers','DNS records'];
     /** The section that says why, when the head doesn't. */
@@ -76,23 +77,17 @@ class ViewDomain extends ViewRecord
     private array|false|null $notice = false;
     #[\Livewire\Attributes\Locked]
     public string $complimentaryCostStamp='';
-    public function getTitle(): string { Staff::requireView(); return (string)$this->getRecord()->domain; }
-    public function getHeading(): HtmlString
+    /** The domain's own state, with its tag. What the state is waiting for opens its section, as a notice. */
+    protected function head(): Head
     {
-        $d=$this->getRecord(); $test=DomainFacts::test($d);
-        return new HtmlString('<span class="domains-wrap">'.DomainName::html($this->getTitle())->toHtml().'</span>'.($test||DemoData::is($d)?DemoData::tag(inline:true,test:$test)->toHtml():''));
+        Staff::requireView(); $d=$this->getRecord();
+        return Head::make((string)$d->domain,Reader::Staff)->domain()->tag(DemoData::is($d),DomainFacts::test($d))
+            ->state(State::tryFrom((string)($this->status()['key']??''))??State::UnderReview,'domain-'.$d->id);
     }
-    public function getSubheading(): string|Htmlable|null
-    {
-        $d=$this->getRecord(); $head=$this->head();
-        $line=StatusMark::line($head['tone'],$this->status()['label'],'domain-'.$d->id,$head['step'])->toHtml();
-        $progress=$this->syncPending()?'Sync in progress; this page updates when the read finishes.':($this->syncRetryAt()!==null?'Sync will retry automatically.':null);
-        return new HtmlString($line.($progress===null?'':' <span role="status" class="domains-hint">'.e($progress).'</span>'));
-    }
-    private function head(): array { return $this->head??=DomainFacts::head($this->getRecord(),$this->status(),$this->facts(),$this->edits()['request'],$this->notice()); }
+    private function headLine(): array { return $this->head??=DomainFacts::head($this->getRecord(),$this->status(),$this->facts(),$this->edits()['request'],$this->notice()); }
     /** The head's step as plain text, so rows and Activity can leave out what it already says. */
     private function said(): ?string
-    { $step=$this->head()['step']; return $step===null?null:html_entity_decode(strip_tags($step instanceof Htmlable?$step->toHtml():$step),ENT_QUOTES|ENT_HTML5); }
+    { $step=$this->headLine()['step']; return $step===null?null:html_entity_decode(strip_tags($step instanceof Htmlable?$step->toHtml():$step),ENT_QUOTES|ENT_HTML5); }
     /** History gets the request the head names and the head's words, so it leaves out the reason the head already says (DomainHistory::repeatsHead). */
     public function getRelationManagers(): array
     {
@@ -117,12 +112,9 @@ class ViewDomain extends ViewRecord
         // A new change starts a new follow window.
         $this->followStarted=null;
         $this->pollManagement();
-        $this->cacheSchema('infolist');
     }
     public function getBreadcrumbs(): array { return [$this->getResourceUrl()=>'Domains',$this->getTitle()]; }
-    public function hasCombinedRelationManagerTabsWithContent(): bool { return true; }
-    public function getContentTabLabel(): ?string { return 'Overview'; }
-    protected function getHeaderActions(): array
+    protected function actions(): array
     {
         $d=$this->getRecord();
         // Import domain for a pending import sits in the page notice.
@@ -196,9 +188,9 @@ class ViewDomain extends ViewRecord
     { return Sheet::button(OperationActions::scheduledReads($this->getRecord())[0]??Action::make('resume_observation')->hidden()); }
     public function notice_reviewAction(): Action
     { return Sheet::button(NoticeReview::action($this->getRecord())); }
-    // ViewRecord otherwise fills public form data with the entire model's attributes.
-    protected function fillForm(): void { $this->data=[]; }
-    public function infolist(Schema $schema): Schema
+    /** The sheet. An active domain leads with its registrar records, as in the approved mock; other states lead with
+     * registration and billing. Monitoring keeps the public DNS evidence. */
+    protected function sections(): array
     {
         $this->cacheHoldingActions();
         $d=$this->getRecord(); $facts=DomainFacts::besideHead($this->facts(),$this->said()); $edits=$this->edits();
@@ -213,60 +205,105 @@ class ViewDomain extends ViewRecord
         // WHOIS privacy stays stored and read, but the page does not show it (PrivacyVisibility).
         if (!\Paymenter\Extensions\Servers\Domains\Presentation\PrivacyVisibility::SHOWN) { unset($facts['WHOIS privacy']); }
         // Reminder issues sit on Renewal, then on Open alerts, which they open when neither row exists.
-        $review=$this->getAction('notice_review',false); $button=$review?->isVisible()?$review->toHtml():null;
-        if ($button&&!isset($facts['Renewal'])) { $facts['Open alerts']??=['value'=>['A reminder needs a check.'],'sub'=>null,'url'=>null,'tone'=>'warning','help'=>null,'demo'=>false]; }
+        $review=$this->getAction('notice_review',false); $review=$review?->isVisible()?$review:null;
+        if ($review&&!isset($facts['Renewal'])) { $facts['Open alerts']??=['value'=>['A reminder needs a check.'],'sub'=>null,'url'=>null,'tone'=>'warning','help'=>null,'demo'=>false]; }
         $slot=isset($facts['Renewal'])?'Renewal':'Open alerts';
+        // Late money's invoice is a second next step beside a read problem. A notice keeps one link, so the invoice gets its own row.
+        $paid=$this->notice()['invoice']??null;
+        if ($paid&&isset($this->notice()['link'])&&($url=\Paymenter\Extensions\Servers\Domains\Admin\Support\Facts::invoiceUrl((int)$paid))) { $facts['Invoice to check']=\Paymenter\Extensions\Servers\Domains\Admin\Support\Facts::row(\Paymenter\Extensions\Servers\Domains\Admin\Support\Facts::invoiceName((int)$paid),url:$url); }
         $placed=array_filter(DomainFacts::SECTIONS,fn(array $labels)=>array_intersect($labels,array_keys($facts))!==[]);
         // Contacts and DNS rows sit on their registrar record rows, with their edit buttons, as in the approved mock.
         $recordsHeld=isset($placed[self::HELD_SECTION]);unset($placed[self::HELD_SECTION]);
-        // The rows that stay blocked are said once, at the head of their section. A request's head line names it, so only a page with no such section and no request needs the note elsewhere.
-        $held=$recordsHeld?null:($edits['request']===null?array_key_first($placed):null);
+        // The rows that stay blocked are said once, in the notice of their section. A request's notice names it, so only a page with no such section and no request needs it elsewhere.
+        $heldIn=$recordsHeld?'Registrar records':($edits['request']===null?array_key_first($placed):null);
+        $items=$this->noticeItems($d,$late,$heldIn);
+        // The status notice opens Registration, or the first section when there is none.
+        $statusIn=isset($placed['Registration'])?'Registration':(array_key_first($placed)??'Registrar records');
+        $items[$statusIn]=[...$this->statusItems(),...($items[$statusIn]??[])];
+        $notices=[];
+        foreach ($items as $title=>$list) { if (($row=DomainRows::notice(strtolower((string)preg_replace('/[^A-Za-z]+/','-',$title)),$list,'domain-'.$d->id.'-'.md5($title)))!==null) { $notices[$title]=$row; } }
+        $this->heldNotice=$heldIn!==null?($notices[$heldIn]??null):null;
         $sections=[];
         foreach ($placed as $title=>$labels) {
             $rows=[];
-            foreach (array_intersect($labels,array_keys($facts)) as $label) {
-                $rows[]=$this->row($label,$facts[$label],$this->side($label,$facts[$label],$edits,$label===$slot?$button:null));
-            }
-            $sections[]=Sheet::section($title,$rows,$title===$held?$edits['note']:null);
+            foreach (array_intersect($labels,array_keys($facts)) as $label) { $rows[]=$this->row($label,$facts[$label],$this->side($label,$facts[$label],$edits,$label===$slot?$review:null)); array_push($rows,...DomainRows::retry($facts[$label])); }
+            $sections[]=Section::make($title,[...(isset($notices[$title])?[$notices[$title]]:[]),...$rows]);
         }
-        // Like the approved mock, an active domain leads with its registrar records. Other states lead with registration and billing.
-        $note=$recordsHeld?$edits['note']:null;
-        $records=[$this->recordFamilies($d,$facts,$edits,$late?null:$note)];
-        // The registrar records section above already shows each family's state and the last read, so Monitoring keeps only the public DNS evidence,
-        // with the DNS setup step when monitoring can't compare this domain yet.
-        $monitoring=Sheet::section('Monitoring',[...$this->dnsSetup($d),\Filament\Schemas\Components\Html::make(fn()=>view('domains::admin.monitoring-evidence',['evidence'=>\Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence::read($d),'withRecords'=>true]))]);
-        $sheet=$d->status==='active'?[...$records,...$sections]:[...$sections,...$records];
-        $summary=$late?[$this->lateRecords($note)]:[];
-        return $schema->components([Sheet::split([...$this->notices($d),...$summary,...$sheet,$monitoring],[$this->activity($d)])]);
+        $records=[$this->recordFamilies($d,$facts,$edits,$notices['Registrar records']??null)];
+        $monitoring=Section::make('Monitoring',[...(isset($notices['Monitoring'])?[$notices['Monitoring']]:[]),
+            Partial::make('domains::admin.monitoring-evidence',['evidence'=>\Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence::read($d),'withRecords'=>true],'monitoring-evidence')]);
+        return [...($d->status==='active'?[...$records,...$sections]:[...$sections,...$records]),$monitoring];
     }
-    /** @return list<Callout> */
-    private function notices(Domain $d): array
+    /** The rail: the newest history, with the History tab holding the rest. */
+    protected function rail(): array
     {
-        $out=[];
+        $d=$this->getRecord(); $entries=DomainHistory::entries($d);
+        if ($entries===[]) { return [Section::make('Activity',[Row::make('History',Value::state(State::NotSet,Reader::Staff,'No history yet.'))])]; }
+        $url=DomainResource::getUrl('view',['record'=>$d->id,'relation'=>'0']);
+        return [Section::make('Activity',[DomainHistory::trace($d,array_slice($entries,0,Sheet::RAIL_STEPS),DomainFacts::headRequest($d,$this->status(),$this->edits()['request'],$this->notice()),$this->said())])
+            ->link(Sheet::link('view_history','View all '.count($entries),$url))];
+    }
+    /** The notice that says why changes are held, so the rows it blocks point to it. */
+    private ?Row $heldNotice=null;
+    /** What the domain's state waits for, which the head line used to say: the notice's cause and links, else the hold,
+     * else the status step. A change the page stopped following says so here too.
+     * @return list<array{0:State,1:mixed,2:?Action}> */
+    private function statusItems(): array
+    {
+        $d=$this->getRecord(); $status=$this->status(); $notice=$this->notice(); $held=$this->edits()['request'];
+        $word=State::tryFrom((string)($status['key']??''))??State::UnderReview;
+        $items=[];
+        if ($notice!==null) {
+            $request=DomainFacts::headRequest($d,$status,$held,$notice);
+            if (($notice['resume']??false)&&$request) { $notice['action']=['label'=>'Check request #'.$request,'url'=>\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainNotices::requestUrl(['request'=>$request])]; }
+            $links=array_values(array_filter([$notice['action']??null,$notice['link']??null],fn(?array $l)=>$l!==null&&($l['url']??null)!==null));
+            $state=match($notice['tone']??null){'danger'=>($notice['title']??null)===DomainFacts::UNREADABLE?State::CouldntRead:State::Failed,'warning'=>$word->tone(Reader::Staff)===\Paymenter\Extensions\Servers\Domains\Presentation\Tone::Attention?$word:State::NeedsReview,default=>$word};
+            $items[]=[$state,implode(' ',array_filter([$notice['title']??null,$notice['body']??null])),isset($links[0])?Sheet::link('notice_link',$links[0]['label'],$links[0]['url']):null];
+            // A second link (late money's invoice) is the Invoice to check row in Billing (sheet()).
+        } elseif ($held!==null) {
+            $url=\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainNotices::requestUrl(['request'=>$held]);
+            $items[]=[State::UnderReview,'Changes are on hold until request #'.$held.' is checked.',$url?Sheet::link('held_request','Check request #'.$held,$url):null];
+        } else {
+            $step=$this->headLine()['step'];
+            if ($step!==null) { [$line,$link]=RegistrarRows::line($step,'status_link'); if ($line!==null) { $items[]=[$word,$line,$link]; } }
+        }
+        if ($this->managementPoll()['stopped']) { $items[]=[State::Checking,'A change is still waiting. Reload this page to check it again.',null]; }
+        return $items;
+    }
+    /** Each notice in the section it concerns: costs in Renewal, the records read and the hold in Registrar records,
+     * DNS setup in Monitoring. @return array<string,list<array{0:State,1:mixed,2:?Action}>> */
+    private function noticeItems(Domain $d, bool $late, ?string $heldIn): array
+    {
+        $out=[]; $edits=$this->edits();
         if(Staff::can('admin.domains.fund')||Staff::can(Staff::COSTS)){foreach($d->operations()->where('state','held')->get() as $op){
             try{if($message=\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::message($op,Staff::can(Staff::COSTS)&&Staff::can('admin.domains.fund')&&Staff::can('admin.domains.manage'))){
                 if(!Staff::can(Staff::COSTS)){$message='Registrar cost approval is needed. Ask staff with access to domain costs to review it.';}
-                $out[]=Callout::make($message)->status('danger')->columnSpanFull();
+                $out['Renewal'][]=[State::ActionRequired,$message,null];
             }}
-            catch(\Throwable){$out[]=Callout::make('Registrar cost details are unavailable.')->status('warning')->columnSpanFull();}
+            catch(\Throwable){$out['Renewal'][]=[State::CouldntRead,'Registrar cost details are unavailable.',null];}
         }}
         $sync=\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::result($d);
         $recordsHeld=false;
         if(($sync['title']??null)==="Couldn't read all records"){
             try{$recordsHeld=\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::held($d);}catch(\Throwable){}
         }
-        if($sync!==null&&!in_array($sync['title'],['Domain synced','Sync retry scheduled'],true)
-            &&!$recordsHeld){
-            $out[]=Callout::make($sync['title'])->description($sync['body'])->status('warning')->columnSpanFull();
+        // The late-read summary already says the read's cause and step, so a failed sync result is not said twice.
+        if ($late) { $out['Registrar records'][]=$this->lateRecords($heldIn==='Registrar records'?$edits['note']:null); }
+        elseif($sync!==null&&!in_array($sync['title'],['Domain synced','Sync retry scheduled'],true)&&!$recordsHeld){
+            $out['Registrar records'][]=[State::NeedsReview,trim($sync['title'].'. '.RegistrarRows::sentence($sync['body']??null)),null];
+        }
+        $progress=$this->syncPending()?'Sync in progress; this page updates when the read finishes.':($this->syncRetryAt()!==null?'Sync will retry automatically.':null);
+        if ($progress!==null) { $out['Registrar records'][]=[$this->syncPending()?State::Checking:State::Queued,$progress,null]; }
+        if ($heldIn!==null&&!($late&&$heldIn==='Registrar records')&&$edits['note']!==null) {
+            // A plain note is text: the notice escapes it once when it draws it.
+            [$line,$link]=RegistrarRows::line($edits['note'],'held');
+            $out[$heldIn][]=[State::UnderReview,$line,$link];
+        }
+        if(\Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::affected(time())->whereKey($d->id)->exists()){
+            $out['Monitoring'][]=[State::NotSet,'Set the default nameservers in Domains > DNS templates to start DNS monitoring.',
+                Staff::can(StaffWatchWrites::VIEW)&&Staff::canEditDefaultDns()?Sheet::link('dns_templates',\Paymenter\Extensions\Servers\Domains\Admin\Support\DefaultNameservers::TITLE,\Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource::getUrl()):null];
         }
         return $out;
-    }
-    /** @return list<Callout> The DNS setup step, inside Monitoring: it starts DNS monitoring and changes nothing at the registrar. */
-    private function dnsSetup(Domain $d): array
-    {
-        if(!\Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::affected(time())->whereKey($d->id)->exists()){return [];}
-        return [Callout::make('Set the default nameservers in Domains > DNS templates to start DNS monitoring.')->status('info')->columnSpanFull()
-            ->footer(Staff::can(\Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites::VIEW) && Staff::canEditDefaultDns()?new HtmlString('<a class="fi-link domains-link" href="'.e(\Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource::getUrl()).'">'.\Paymenter\Extensions\Servers\Domains\Admin\Support\DefaultNameservers::TITLE.'</a>'):null)];
     }
     /** Facts that come from the registrar read. */
     private const READ_FACTS=['Contacts','Nameservers','Glue records','DNS records','In registrar account','Transfer lock','WHOIS privacy','Email auth code','Registrar auto-renew'];
@@ -287,28 +324,26 @@ class ViewDomain extends ViewRecord
         if (DomainFacts::ended($d)||($s['not_at_registrar']??null)!==null||($s['cancelled_without_records']??false)) { return false; }
         return (bool)(($s['read_overdue']??false)||($s['read_code']??null)||($s['failed_family']??null));
     }
-    /** One summary of the registrar records exception, first on the page. The Registrar records section keeps the read times and causes. */
-    private function lateRecords(string|Htmlable|null $note): Callout
+    /** One summary of the registrar records exception, first in Registrar records: the cause and the next step, then the
+     * read history in one sentence. @return array{0:State,1:string,2:null} */
+    private function lateRecords(string|Htmlable|null $note): array
     {
         $s=$this->familyState(); $d=$this->getRecord();
         $last=$s['last_complete_at']??null;
-        $at=static fn($when)=>trim(view('domains::partials.moment',['at'=>is_int($when)?gmdate(DATE_ATOM,$when):$when])->render());
-        // recordsLate() only lets a late or failing read through. One notice: the cause and the next step first, then the
-        // read history in one quiet line. The records section below keeps only its rows.
-        $text=e(trim((string)($s['read_cause']??'The registrar read failed.')));
+        $at=static fn($when)=>StaffTime::at(is_int($when)?$when:(int)strtotime((string)$when));
+        $text=trim((string)($s['read_cause']??'The registrar read failed.'));
         if (DomainFacts::syncNow($d)) { $text.=' Use Sync now to read it again.'; }
         if ($note!==null) {
             $plain=trim(html_entity_decode(strip_tags((string)($note instanceof Htmlable?$note->toHtml():$note)),ENT_QUOTES|ENT_HTML5));
             // The general hold has no cause of its own here: the read is the cause.
-            $text.=' '.($plain===DomainEditActions::HELD?'Changes stay paused until a read succeeds.':e($plain));
+            $text.=' '.($plain===DomainEditActions::HELD?'Changes stay paused until a read succeeds.':$plain);
         }
         $history=$last?'Last complete read: '.$at($last).'.':'No complete read yet.';
         $attempts=(int)($s['read_attempts']??0);
         if ($attempts>=1) { $history.=' '.(($s['read_stopped']??false)?'Stopped after ':'').$attempts.' '.($attempts===1?'attempt':'attempts').'.'.(($s['read_failed_at']??null)?' Last failure: '.$at($s['read_failed_at']).'.':''); }
-        $text.='<span class="domains-sub">'.$history.'</span>';
         // A read that is only overdue has not failed: its records are out of date.
         $failed=($s['read_code']??null)||($s['read_stopped']??false)||($s['failed_family']??null);
-        return Callout::make($failed?'Registrar read failed':'Registrar records are out of date')->description(new HtmlString($text))->status('warning')->columnSpanFull();
+        return [$failed?State::Failed:State::OutOfDate,($failed?'Registrar read failed. ':'Registrar records are out of date. ').$text.' '.$history,null];
     }
     /** A domain monitoring can't compare says so on its DNS row, beside the way to fix it. */
     private static function withDnsSetup(Domain $d, array $facts): array
@@ -319,127 +354,86 @@ class ViewDomain extends ViewRecord
         $facts[$row]['setup']=true;
         return $facts;
     }
-    /** One row per registrar record family. A family's saved values, its DNSSEC state and its edit buttons sit on the same row. */
-    private function recordFamilies(Domain $d, array $facts, array $edits, string|Htmlable|null $note): Section
+    /** One row per registrar record family, between the shared records head and tail. A family's saved values, its
+     * DNSSEC state and its edit buttons sit on the same row. */
+    private function recordFamilies(Domain $d, array $facts, array $edits, ?Row $notice): Section
     {
         $state=$this->familyState();
         $resume=$this->getAction('resume_observation',false);
-        $view=fn(string $part)=>Html::make(view('domains::partials.record-families',['recordFamilies'=>$state,'staff'=>true,'part'=>$part,'readScheduling'=>!DomainFacts::ended($d),'summarised'=>$this->recordsLate($d)]));
+        $view=fn(string $part)=>Partial::make('domains::partials.record-families',['recordFamilies'=>$state,'staff'=>true,'part'=>$part,'readScheduling'=>!DomainFacts::ended($d),'summarised'=>$this->recordsLate($d)],'record-families-'.$part);
         $own=array_intersect_key($facts,array_flip(DomainFacts::SECTIONS[self::HELD_SECTION]));$own['DS records']=\Paymenter\Extensions\Servers\Domains\Presentation\DsState::staff($d);
         // Under the late-read notice, Sync now is said once, there.
         if ($this->calmMissing && is_string($own['DS records']['sub']??null)) { $own['DS records']['sub']=trim(str_replace('Use Sync now to read them.','',$own['DS records']['sub']))?:null; }
-        $rows=[$view('head')];$shown=[];
+        $rows=[...($notice?[$notice]:[]),$view('head')];$shown=[];
         // SRV has no row of its own in the facts, so its change line comes straight from the stored progress.
         $srv=DomainFacts::progress($this->managementProgress(),'srv',DomainFacts::headRequest($d,$this->status(),$edits['request'],$this->notice()));
         foreach (($state['cancelled_without_records']??false)||($state['not_at_registrar']??null)!==null?[]:$state['rows'] as $family) {
             $label=$family['label'];$fact=$own[$label]??null;$shown[]=$label;
-            $rows[]=$this->familyRow($family,$fact,$fact!==null&&$label!=='DS records'?$this->side($label,$fact,$edits,null):[],$state['at']??null,$family['kind']==='srv'?$srv:null);
+            $rows[]=$this->familyRow($family,$fact,$fact!==null&&$label!=='DS records'?$this->side($label,$fact,$edits,null):[],$family['kind']==='srv'?$srv:null);
         }
         // Nothing is at the registrar yet: the head says so once, with no row per record.
-        foreach (($state['not_at_registrar']??null)!==null?[]:array_diff_key($own,array_flip($shown)) as $label=>$fact) { $rows[]=$this->row($label,$fact,$label==='DS records'?[]:$this->side($label,$fact,$edits,null)); }
+        foreach (($state['not_at_registrar']??null)!==null?[]:array_diff_key($own,array_flip($shown)) as $label=>$fact) { $rows[]=$this->row($label,$fact,$label==='DS records'?[]:$this->side($label,$fact,$edits,null)); array_push($rows,...DomainRows::retry($fact)); }
         $rows[]=$view('tail');
-        return Sheet::section('Registrar records',$rows,$note,after:!DomainFacts::syncNow($d)&&$state['resume']&&$resume?->isVisible()?[$resume]:[]);
+        $section=Section::make('Registrar records',$rows);
+        return !DomainFacts::syncNow($d)&&$state['resume']&&$resume?->isVisible()?$section->link($resume):$section;
     }
     /** One registrar records read per render, shared by the records section and the Last sync row. */
     private ?array $families=null;
     private function familyState(): array
     { return $this->families??=\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::read($this->getRecord(),app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()); }
-    /** The family's read state above the row's own value, which keeps its red Missing, Failed or Under review tone and demo tag.
-     * A family with no read and a Missing value says Missing once. Families with no own fact (Domain settings, SRV) show the read state, and SRV its change line. */
-    private function familyRow(array $family, ?array $fact, array|Html $side, mixed $readAt = null, ?array $progress = null): Flex
+    /** A family row: the saved value with the family's read state under it when the read is not complete, or the read
+     * state alone for families with no saved value (Domain settings, SRV), with SRV's change line. */
+    private function familyRow(array $family, ?array $fact, array $side, ?array $progress = null): Row
     {
-        $status=new HtmlString('<div class="domains">'.view('domains::partials.record-family-status',['family'=>$family,'staff'=>true,'readAt'=>$readAt,'calm'=>$this->calmMissing])->render().'</div>');
         if ($fact===null) {
-            $entry=TextEntry::make('family_'.$family['kind'])->label($family['label'])->state($status);
-            if ($progress!==null) { $entry->belowContent(self::below(['value'=>null,'sub'=>null,'progress'=>$progress])); }
-            return Sheet::row($entry,$side,pending:$progress['waiting']??false,key:'fact_'.md5($family['label']));
+            $row=Row::make($family['label'],DomainRows::family($family))->key('fact_'.md5($family['label']));
+            if ($progress!==null&&($text=RegistrarRows::sentence($progress['text']??null))!==null) { ($progress['waiting']??false)?$row->running(Value::state(State::Checking,Reader::Staff,$text)):$row->result(Value::state(State::Completed,Reader::Staff,$text)); }
+            return $row;
         }
-        $entry=$this->entry($family['label'],$fact);
-        if ($family['label']==='DS records'&&$fact['value']!==null) { $entry->prefix('DNSSEC: '); }
-        if (!($family['state']==='unknown'&&in_array($fact['value'],[null,\Paymenter\Extensions\Servers\Domains\Presentation\Missing::NOT_READ],true))) { $entry->aboveContent($status); }
-        return Sheet::row($entry,$side,pending:$fact['progress']['waiting']??false,key:'fact_'.md5($family['label']));
+        if ($family['label']==='DS records'&&is_string($fact['value'])&&$fact['value']!==\Paymenter\Extensions\Servers\Domains\Presentation\Missing::NOT_READ) { $fact['value']='DNSSEC: '.$fact['value']; }
+        $row=$this->row($family['label'],$family['state']==='complete'?[...$fact,'read'=>'complete']:$fact,$side);
+        if (!in_array($family['state'],['complete','unknown'],true)&&!isset($fact['progress'])&&!in_array($fact['tone']??null,['danger','warning'],true)) { $row->result(DomainRows::family($family)); }
+        return $row;
     }
-    /** The rail: the newest history, with the tab holding the rest. */
-    private function activity(Domain $d): Section
-    {
-        $entries=DomainHistory::entries($d);
-        $url=DomainResource::getUrl('view',['record'=>$d->id,'relation'=>'0']);
-        return Sheet::section('Activity',[$entries===[]?Text::make('No history yet'):Sheet::trace(DomainHistory::steps($d,array_slice($entries,0,Sheet::RAIL_STEPS),DomainFacts::headRequest($d,$this->status(),$this->edits()['request'],$this->notice()),$this->said()))],
-            after:$entries===[]?[]:[Sheet::link('view_history','View all '.count($entries),$url)]);
-    }
-    /** A row's action column: its edits or its link. Renewal and Last sync draw the page's own actions. */
-    private function side(string $label, array $fact, array $edits, ?string $review): array|Html
+    /** A row's actions: its edits or its link. Renewal and Last sync draw the page's own actions. @return list<Action> */
+    private function side(string $label, array $fact, array $edits, ?Action $review): array
     {
         if ($label==='Renewal') {
             // On a row that says Off, Stop shows only when the row says what it still stops.
             $buttons=array_filter(['stop','resume'],fn(string $name)=>(($this->cachedActions[$name]??null)?->isVisible()??false)&&($name!=='stop'||$fact['value']!=='Off'||str_contains((string)$fact['sub'],'blocks both')));
-            $html=[...array_map(fn(string $name)=>$this->cachedActions[$name]->toHtml(),$buttons),...($review?[$review]:[])];
-            return $html?Html::make(Sheet::buttons($html)):[];
+            return [...array_map(fn(string $name)=>$this->cachedActions[$name],array_values($buttons)),...($review?[$review]:[])];
         }
-        if ($label==='Open alerts') { return $review?Html::make(Sheet::buttons([$review])):[]; }
+        if ($label==='Open alerts') { return $review?[$review]:[]; }
         // One Resume sync per page: the Registrar records head draws it when the records show the stop.
-        if ($label==='Last sync') { if (DomainFacts::syncNow($this->getRecord())) { return []; } $resume=$this->getAction('resume_observation',false); return $resume?->isVisible()&&!($this->familyState()['resume']??false)?Html::make(Sheet::buttons([$resume->toHtml()])):[]; }
+        if ($label==='Last sync') { if (DomainFacts::syncNow($this->getRecord())) { return []; } $resume=$this->getAction('resume_observation',false); return $resume?->isVisible()&&!($this->familyState()['resume']??false)?[$resume]:[]; }
         $side=array_map(fn(Action $action)=>in_array($action->getLabel(),['Edit','Change'],true)?Sheet::edit($action,$label):Sheet::button($action),$edits['rows'][$label]??[]);
-        if ($side===[]&&$edits['held']&&in_array($label,self::BLOCKED,true)) { $side[]=Sheet::blocked('held_'.md5($label),self::blockedLabel($label,$fact),$label,$edits['held']); }
+        if ($side===[]&&$edits['held']&&in_array($label,self::BLOCKED,true)) { $side[]=Sheet::button(Action::make('held_'.md5($label))->label(self::blockedLabel($label,$fact))); $this->blocked[$label]=true; }
         if (($fact['setup']??false)&&Staff::can(StaffWatchWrites::VIEW)) { $side[]=Sheet::link('dns_setup','Choose DNS template',WatchResource::getUrl('dns-setup')); }
         if ($fact['url']&&isset(DomainFacts::LINKS[$label])) { $side[]=Sheet::link('open_'.md5($label),DomainFacts::LINKS[$label],$fact['url']); }
         return $side;
     }
+    /** Rows whose button stays, blocked, while changes are held. */
+    private array $blocked=[];
     /** A blocked button keeps the label the real one would have. */
     public static function blockedLabel(string $label, array $fact): string
     { return match ($label) { 'Transfer lock'=>DomainEditActions::lockLabel(['On'=>true,'Off'=>false][$fact['value']]??null),'Nameservers'=>'Change','Email auth code'=>'Email code',default=>'Edit' }; }
-    /** The row's words, after when it was read when the row has a read time. */
-    private static function below(array $fact): string|HtmlString|null
-    {
-        $words=self::words($fact);
-        if ($words!==null&&isset($fact['request'])) { $words=DomainFacts::linkRequest($words,$fact['request']); }
-        if (isset($fact['progress'])) {
-            $text=$fact['progress']['text'];
-            if (($fact['progress']['tone']??null)==='warning') { $text=RegistrarFacts::tone($text,'warning'); }
-            $line=$fact['progress']['request']===null?$text:DomainFacts::linkRequest($text,$fact['progress']['request']);
-            $html=fn(string|HtmlString $text)=>$text instanceof HtmlString?$text->toHtml():e($text);
-            $words=$words===null?$line:new HtmlString($html($words).'<br>'.$html($line));
-        }
-        if (isset($fact['retry'])) {
-            $retry=Sheet::moment($fact['retry'],'Next automatic retry:')->toHtml().'.';
-            $words=new HtmlString($words===null?$retry:($words instanceof HtmlString?$words->toHtml():e($words)).' '.$retry);
-        }
-        if (!isset($fact['asOf'])) { return $words; }
-        $read=Sheet::moment($fact['asOf'],'As of')->toHtml();
-        return new HtmlString($words===null?$read:$read.'. '.($words instanceof HtmlString?$words->toHtml():e($words)));
-    }
-    /** An open alert's cause takes the tone and its value stays plain, so the row says what to do, not that the value is wrong. Words that were on the row before the alert stay plain too. */
-    private static function words(array $fact): string|HtmlString|null
-    {
-        if ($fact['value']===null||$fact['sub']===null||!in_array($fact['tone'],['danger','warning'],true)) { return $fact['sub']; }
-        $plain=$fact['plain']??null; if ($plain===null) { return RegistrarFacts::tone($fact['sub'],$fact['tone']); }
-        return new HtmlString(e($plain).' '.RegistrarFacts::tone(substr($fact['sub'],strlen($plain)+1),$fact['tone'])->toHtml());
-    }
-    private function row(string $label, array $fact, array|Html $side): Flex
-    {
-        return Sheet::row($this->entry($label,$fact),$side,pending:$fact['progress']['waiting']??false,key:'fact_'.md5($label));
-    }
     /** Row keys whose words differ on the page: renewal reads as the customer's Auto-renew. */
     private const SHOWN=['Renewal'=>'Auto-renew'];
-    /** A fact's value with its words, tone, red Missing and demo tag. */
-    private function entry(string $label, array $fact): TextEntry
+    private function row(string $label, array $fact, array $side): Row
     {
         $waiting=$fact['progress']['waiting']??false;
-        if ($label==='Transfer lock'&&in_array($fact['value'],['On','Off'],true)) { $fact=self::lockMark($fact,$waiting); }
-        $entry=TextEntry::make('value_'.md5($label))->label(self::SHOWN[$label]??$label)->state($fact['value'])
-            ->belowContent(self::below($fact));
-        if (is_array($fact['value'])) { $entry->listWithLineBreaks(); }
-        if ($label==='Nameservers'&&!in_array($fact['value'],[null,\Paymenter\Extensions\Servers\Domains\Presentation\Missing::NOT_READ],true)) { $entry->fontFamily(FontFamily::Mono); }
-        if ($label==='Service'&&$fact['value']!==null) { $entry->formatStateUsing(fn()=>new HtmlString('<span class="font-mono domains-mono">'.DomainName::html($this->getTitle())->toHtml().'</span> registration')); }
-        if (isset($fact['at'])) { $entry->formatStateUsing(fn()=>Sheet::moment($fact['at'])); }
-        if ($fact['help']) { $entry->hintAction(HelpHint::make($fact['help'])); }
-        if ($fact['demo']) { $entry->suffix(DemoData::tag(inline:true)); }
-        $entry=MissingEntry::apply($entry,cause:$fact['value']===null?$fact['sub']:null,color:$fact['value']!==null&&($fact['alert']??false)?null:$fact['tone'],
-            calm:$this->calmMissing&&in_array($label,self::CALM_FACTS,true));
-        // A timed retry follows the words in the viewer's time zone, under a red Missing too.
-        if (isset($fact['retry'])) { $entry->belowContent(self::below($fact)); }
-        if (isset($fact['mark'])) { $entry=Sheet::state($entry,$fact['mark'],'lock-'.$this->getRecord()->id); }
-        return $entry;
+        if ($label==='Transfer lock'&&$waiting) { $fact['sub']=RegistrarRows::sentence('Was '.strtolower((string)$fact['value']).'.'); }
+        if ($label==='Service'&&$fact['value']!==null) { $fact['value']=$this->getRecord()->domain.' registration'; }
+        // Under the read notice a row keeps its word and its own step: Not read yet while the read is late, Couldn't read once it failed.
+        if ($this->calmMissing&&in_array($label,self::CALM_FACTS,true)&&$fact['value']===null) {
+            $s=$this->familyState(); $failed=($s['read_code']??null)||($s['read_stopped']??false)||($s['failed_family']??null);
+            $fact=[...$fact,'sub'=>$fact['sub']??null,'value'=>$failed?null:\Paymenter\Extensions\Servers\Domains\Presentation\Missing::NOT_READ,'tone'=>null];
+        }
+        $row=DomainRows::row($label,$fact,$side,self::SHOWN[$label]??null);
+        if (($this->blocked[$label]??false)) {
+            if ($this->heldNotice!==null) { $row->blockedBy($this->heldNotice); } else { $row->blocked((string)$this->edits()['held']); }
+        }
+        return $row;
     }
     /** The lock reads as a mark: On, a hollow Off, or the change on its way with what it was. */
     public static function lockMark(array $fact, bool $waiting): array

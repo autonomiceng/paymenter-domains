@@ -34,14 +34,14 @@ $pendingWork=DB::table('domains_observation_work')->insertGetId(['server_id'=>$p
     'domain_id'=>$pending->id,'generation'=>$pending->authority_generation,'due_at'=>time()+60,'safe_code'=>'read_failed','tries'=>4]);
 $metadataViewer=staffUser([Staff::VIEW,Staff::METADATA]);
 $pendingPage=Livewire::actingAs($metadataViewer)->test(ViewDomain::class,['record'=>$pending->id]);
-// The rendered head: its mark's tone and the request link in its step.
+// The status notice: its word's tone and the request link it carries.
 $head=static function(string $html)use($request):array{
-    $dom=new DOMDocument;@$dom->loadHTML('<?xml encoding="utf-8" ?>'.$html);$x=new DOMXPath($dom);
-    $line=$x->query('//*[contains(concat(" ",normalize-space(@class)," ")," domains-head-line ")]');same(1,$line->length,'One head line');
-    $links=$x->query('.//*[contains(concat(" ",normalize-space(@class)," ")," domains-head-step ")]//a[normalize-space(.)="Check request #'.$request->id.'"]/@href',$line->item(0));
-    return [$x->query('.//*[contains(concat(" ",normalize-space(@class)," ")," domains-head-state ")]/@data-domains-tone',$line->item(0))->item(0)?->value,$links->length===1?$links->item(0)->value:null];
+    $dom=new DOMDocument;@$dom->loadHTML('<?xml encoding="utf-8" ?>'.$html);$x=new DOMXPath($dom);$check='Check request #'.$request->id;
+    $notice=$x->query('//div[@data-domains-row="notice"][.//a[normalize-space(.)="'.$check.'"]]');same(1,$notice->length,'One notice names the request');
+    $links=$x->query('.//a[normalize-space(.)="'.$check.'"]/@href',$notice->item(0));
+    return [$x->query('.//*[@data-domains-tone]/@data-domains-tone',$notice->item(0))->item(0)?->value,$links->length===1?$links->item(0)->value:null];
 };
-same(['warn',\Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource::getUrl('view',['record'=>$request->id])],$head($pendingPage->html()),'A readable unconfirmed registration keeps the amber head and its request link');
+same(['warn',\Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource::getUrl('view',['record'=>$request->id])],$head($pendingPage->html()),'A readable unconfirmed registration keeps the amber notice and its request link');
 $pendingPage->assertSee('Registration not confirmed by the registrar.')->assertSee('Check request #'.$request->id)
     ->assertSee('Error 545 - Name server does not exist')->assertDontSee('No read queued')->assertDontSee('Registrar reads keep failing')
     ->assertDontSee('The registrar read failed.')->assertActionHidden('resume_observation');
@@ -55,7 +55,7 @@ foreach(['policy'=>'enom_test_reconciliation_call_cap','attempt'=>'reconciliatio
     $unreadablePage=Livewire::actingAs($metadataViewer)->test(ViewDomain::class,['record'=>$pending->id])->assertSuccessful()
         ->assertSee('Registration not confirmed by the registrar.')->assertSee(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::UNREADABLE)
         ->assertSee('Check request #'.$request->id)->assertDontSee('Error 545 - Name server does not exist');
-    same(['err',\Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource::getUrl('view',['record'=>$request->id])],$head($unreadablePage->html()),'Unreadable request data turns the head red and keeps its request link: '.$column);
+    same(['err',\Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource::getUrl('view',['record'=>$request->id])],$head($unreadablePage->html()),'Unreadable request data turns the notice red and keeps its request link: '.$column);
     if($column==='policy'){Livewire::actingAs($metadataViewer)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation::class,['record'=>$request->id])
         ->assertSuccessful()->assertSee(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::UNREADABLE);}
     DB::table('domains_operations')->where('id',$request->id)->update([$column=>$rawRequest->$column,'safe_code'=>$rawRequest->safe_code]);

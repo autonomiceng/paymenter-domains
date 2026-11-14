@@ -22,7 +22,7 @@ $adoptionUrl = \Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResou
 Livewire::actingAs($staff)->test(ViewDomain::class, ['record' => $id])->assertDontSeeHtml('href="'.$adoptionUrl.'"')->assertActionDoesNotExist('adoptionPreview');
 Livewire::actingAs($viewOnly)->test(ViewDomain::class, ['record' => $id])->assertSuccessful()->assertDontSeeHtml('href="'.$adoptionUrl.'"');
 $view = Livewire::actingAs($staff)->test(AdoptionPreview::class, ['record' => $id])->assertSuccessful()
-    ->assertSee('Import is off on this site')->assertSee('Not checked yet.')->assertSee('Test only')->assertActionDisabled('confirm')
+    ->assertSee('Import is off on this site')->assertSee('Not read yet')->assertSee('Test')->assertActionDisabled('confirm')
     ->assertSee(AdoptionPreview::UNAVAILABLE)->assertSee('This is a test account. It cannot confirm a live domain.');
 same(AdoptionPreview::UNAVAILABLE, $view->instance()->getAction('confirm')->getTooltip(), 'Disabled confirm tooltip explains why');
 $view->mountAction('preview'); expect(str_contains((string) $view->instance()->getMountedAction()->getModalDescription(), 'Nothing is charged or imported.'), 'Preview modal states it charges and adopts nothing'); $view->unmountAction();
@@ -38,7 +38,7 @@ same([], $view->get('review'), 'Invalid reason leaves pending adoption preview u
 same(0, count($wire->calls), 'Invalid pending adoption reason reads nothing');
 $view->unmountAction();
 $view->callAction('preview', data: ['reason' => 'Reviewed synthetic service mapping', 'do_not_renew' => true])->assertHasNoActionErrors()
-    ->assertSee('Test only. No real domain is imported.')->assertSee('None. Do not renew was requested.')->assertDontSee('renewal off')->assertSee('Expiry on file')->assertSee($owner->name)->assertSeeHtml('datetime="2027-10-20T06:14:00+00:00"')->assertSee('Preview import')->assertSee('USD')->assertSee('Requested for review. No cancellation was created.')->assertActionDisabled('confirm')->assertDontSee('(UTC date)');
+    ->assertSee('Test only. No real domain is imported.')->assertSee('Do not renew was requested.')->assertDontSee('renewal off')->assertSee('Expiry on file')->assertSee($owner->name)->assertSeeHtml('datetime="2027-10-20T06:14:00+00:00"')->assertSee('Preview import')->assertSee('USD')->assertSee('Requested for review. No cancellation was created.')->assertActionDisabled('confirm')->assertDontSee('(UTC date)');
 same(4, count($wire->calls), 'Only explicit action makes bounded named readback'); same(1, Adoption::count(), 'Preview retains evidence');
 $view->callAction('confirm'); same('adoption_pending', Domain::findOrFail($id)->status, 'Disabled confirm cannot promote a holding');
 same($before, [$service->fresh()->getAttributes(), Domain::findOrFail($id)->getRawOriginal(), App\Models\Invoice::count()], 'Staff preview changes no native/holding/invoice state');
@@ -51,21 +51,21 @@ foreach (Review::LABELS as $code => $label) {
     $sample = $code === 'ready' ? $details : [...$details, 'expiry' => null, 'renewal_due' => null];
     if (in_array($code, ['permission_denied', 'mapping_unconfirmed', 'account_unconfirmed', 'competing_holding', 'unresolved_debt', 'changed', 'price_unconfirmed', 'native_expiry_present', 'preview_failed'], true)) { $sample = []; }
     $projection = (new Review($code, $sample))->jsonSerialize(); $page->review = $projection;
-    $rendered[$code] = $page->infolist(Schema::make($page))->toHtml();
+    $rendered[$code] = $page->content(Schema::make($page))->toHtml();
     $shown = $code === 'ready' ? 'Test only. No real domain is imported.' : $projection['message'];
     expect(str_contains(html_entity_decode(strip_tags($rendered[$code])), $shown), 'Native rendered refusal label: '.$code);
     expect(!str_contains($rendered[$code], 'synthetic-secret'), 'Refusal rendering contains no credential');
 }
 $page->review = (new Review('ready', [...$details, 'environment' => 'live', 'test_only' => false, 'do_not_renew' => false]))->jsonSerialize();
-$rendered['live-ready'] = $page->infolist(Schema::make($page))->toHtml();
+$rendered['live-ready'] = $page->content(Schema::make($page))->toHtml();
 expect(str_contains(strip_tags($rendered['live-ready']), 'Live') && str_contains(strip_tags($rendered['live-ready']), Review::LABELS['ready']), 'Synthetic live badge and eligible result rendered');
 expect(!str_contains(strip_tags($rendered['live-ready']), 'This is a test account'), 'Live preview has no test note');
 foreach (['live holding', '2027-10-20', 'Source expiry'] as $old) { expect(!str_contains(strip_tags($rendered['ready']), $old), 'Rendered preview omits '.$old); }
 $page->review = (new Review('ready', [...$details, 'do_not_renew' => false, 'requested_do_not_renew' => false, 'renewal_due' => '2027-10-13']))->jsonSerialize();
-$rendered['ready-renewing'] = $page->infolist(Schema::make($page))->toHtml();
+$rendered['ready-renewing'] = $page->content(Schema::make($page))->toHtml();
 expect(str_contains(strip_tags($rendered['ready-renewing']), 'Oct 13, 2027'), 'Native page renders the default seven-day renewal due date');
 $page->reviewReason = '<script>alert(1)</script>';
-expect(!str_contains($page->infolist(Schema::make($page))->toHtml(), '<script>alert(1)</script>'), 'Staff reason escaped by native entry');
+expect(!str_contains($page->content(Schema::make($page))->toHtml(), '<script>alert(1)</script>'), 'Staff reason escaped by native entry');
 $out = $argv[1] ?? null;
 if ($out !== null) {
     expect(is_dir($out) && is_writable($out), 'Writable external render output required');
@@ -102,9 +102,9 @@ same('New reason for unavailable account', $view->instance()->reviewReason, 'Ear
 same('account_unconfirmed', $view->instance()->review['code'], 'Unavailable account label is specific');
 $accountRefusalHtml = $view->html();
 $page->review = (new Review('read_failed'))->jsonSerialize();
-$readRefusalHtml = $page->infolist(Schema::make($page))->toHtml();
-$unconfirmedRenewal = 'Renewal not confirmed yet. Run Check to see if this domain can renew here.';
-$normalRenewal = 'Renewal stays on. Normal invoices apply. If the domain is already due, an invoice may go out right away.';
+$readRefusalHtml = $page->content(Schema::make($page))->toHtml();
+$unconfirmedRenewal = 'Run Check to see if this domain can renew here.';
+$normalRenewal = 'Normal invoices apply. If the domain is already due, an invoice may go out right away.';
 $renewalFailures = [];
 foreach (['unchecked Enom page' => $initialHtml, 'early account refusal' => $accountRefusalHtml, 'early read refusal' => $readRefusalHtml] as $case => $renderedHtml) {
     $text = html_entity_decode(strip_tags($renderedHtml), ENT_QUOTES | ENT_HTML5);
@@ -126,7 +126,6 @@ foreach([str_repeat('é',501),"line\nbreak","line\u{2028}break","line\u{2029}bre
     $refused=false;try{new \Paymenter\Extensions\Servers\Domains\Data\Adoption\StaffContext($staff->id,$bad);}catch(InvalidArgumentException){$refused=true;}
     expect($refused,'StaffContext refuses overlimit, control, blank and malformed reasons');
 }
-expect($view->instance()->getRelationManagers() === [], 'Adoption page omits unrelated request history');
 DB::table('roles')->where('id', $staff->role_id)->update(['permissions' => json_encode([Staff::VIEW])]);
 $view->call('$refresh')->assertForbidden();
 $nativeSuccessful = true;

@@ -74,4 +74,12 @@ $d->observation=['record_failure'=>['identity'=>ObservationRecords::identity($d)
 $facts=RecordFamilies::read($d,$now);$failed=RecordFamilies::owner($page,$facts);
 expect((DomainPage::notice($failed)['text']??null)!==($note['text']??null),'A real registrar failure cannot promise the initial pending state');
 $families($facts,'Failed read with queued work',false);
+// Customers read State words for a partial or unsupported family, never the raw read status.
+$State=Paymenter\Extensions\Servers\Domains\Presentation\State::class;
+$base=[...$facts['rows'][0],'read_checking'=>false,'initial_read_pending'=>false,'read_failed'=>false];
+foreach([[['state'=>'unsupported','value'=>'Unsupported'],$State::NotSupported],[['state'=>'partial','value'=>'Partial'],$State::NotReadYet],
+    [['state'=>'partial','value'=>'Partial','read_failed'=>true],$State::CouldntRead],[['state'=>'partial','value'=>'Partial','read_checking'=>true],$State::Checking]] as [$over,$want]){
+    $family=[...$base,...$over];
+    same($want->label(),trim(storefrontDom(view('domains::partials.record-family-status',compact('family'))->render())->query('//*[@data-record-family]//*[@data-domains-tone]')->item(0)?->textContent??''),'A customer '.$over['state'].' family reads '.$want->label());
+}
 $nativeSuccessful=true;echo "Initial registrar read and confirmed nameserver mismatch passed.\n";

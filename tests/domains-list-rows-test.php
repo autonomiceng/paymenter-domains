@@ -27,7 +27,7 @@ $withoutQuote=static function()use($render):array{
 $far=Request::create('/domains','GET',['page'=>9]);$far->setUserResolver(fn()=>$user);$far->setLaravelSession($session);
 expect(!str_contains($controller->index($far)->render(),'Only cancelled domains here.'),'Out-of-range page keeps the plain empty message');
 
-// Auto-renew applies to every domain state (status-model.md 3, rules 1 and 4), so pending and under-review rows show it.
+// Renewal invoices apply to every domain state (status-model.md 3, rules 1 and 4), so pending and under-review rows show it.
 $cases=['registration pending'=>['registration_pending','register','queued',null],'transfer pending'=>['transfer_pending','transfer','queued',null],
     'awaiting payment'=>['registration_pending','register','awaiting_payment',null],'held request'=>['transfer_pending','transfer','held','transfer_needs_action'],
     'uncertain request'=>['transfer_pending','transfer','uncertain',null],'under review'=>['needs_review','transfer','held','transfer_needs_action']];
@@ -35,7 +35,7 @@ foreach ($cases as $case=>[$status,$action,$state,$code]) {
     DB::table('domains_domains')->where('id',$d->id)->update(['status'=>$status,'provider_expires_at'=>null,'renewal_policy'=>null]);
     DB::table('domains_operations')->where('id',$op->id)->update(['action'=>$action,'state'=>$state,'safe_code'=>$code]);
     [$list]=$render();$row=$list->query('//tbody/tr')->item(0);
-    same('On',$norm($list->query('td[@data-label="Auto-renew"]/*[contains(@class,"domains-cell-main")]',$row)->item(0)),'Renewal cell: '.$case);
+    same('On',$norm($list->query('td[@data-label="Renewal invoices"]/*[@data-piece="value"][1]/*[1]',$row)->item(0)),'Renewal cell: '.$case);
 }
 
 // The list query count does not grow with rows on the page, whatever state the extra rows are in.
