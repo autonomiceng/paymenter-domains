@@ -102,6 +102,19 @@ final class Fact
         $text = implode(', ', array_filter([$part(array_map('intval', $before), 'before'), $part(array_map('intval', $after), 'after')]));
         return $text === '' ? null : new self('text', $text);
     }
+    /** Waits in seconds, as a schedule reads: "15 min, 4 h and 12 h", "3 days". Null for no waits. @param list<int> $seconds */
+    public static function waits(array $seconds): ?self
+    {
+        $one = static function (int $s): string {
+            foreach ([[86400, ' day', ' days'], [3600, ' h', ' h'], [60, ' min', ' min'], [1, ' s', ' s']] as [$unit, $single, $plural]) {
+                if ($s % $unit === 0) { $n = intdiv($s, $unit); return $n.($n === 1 ? $single : $plural); }
+            }
+            return $s.' s';
+        };
+        $items = array_map($one, array_map('intval', $seconds));
+        if ($items === []) { return null; }
+        return new self('text', count($items) > 1 ? implode(', ', array_slice($items, 0, -1)).' and '.end($items) : $items[0]);
+    }
     /** True when $text is a State or Plain word, so computed text can't pass for one. */
     public static function isWord(string $text): bool
     {
