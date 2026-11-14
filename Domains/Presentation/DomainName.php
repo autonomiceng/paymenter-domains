@@ -14,7 +14,7 @@ final class DomainName
     /** Characters kept before the TLD when a long name is cut in the middle. */
     private const TAIL = 5;
     /** A table cell name: one line, its content width up to the cap in partials/domain-name-styles, then cut in the middle
-     * so the TLD always shows ("beco-test-fc9d…7b02d.com"). Hover (title) and screen readers get the full name; copy picks
+     * so the TLD always shows ("example-test-fc9d…7b02d.com"). Hover (title) and screen readers get the full name; copy picks
      * up the full name from the two visible parts. A phone opens the row's detail page for it. Needs domain-name-styles. */
     public static function cell(string $name): HtmlString
     {
