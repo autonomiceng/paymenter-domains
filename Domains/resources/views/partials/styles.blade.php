@@ -401,10 +401,15 @@
 .domains .domains-results--replace .domains-result__price { white-space: nowrap; }
 .domains .domains-results--replace .domains-result__action form { flex-direction: row; }
 .domains .domains-replace-foot { margin: .75rem 0 0; text-align: right; }
+/* Cancel stays beside the title, even when a long name wraps it. */
+.domains.domains--replace .domains-head-main { flex-wrap: nowrap; align-items: baseline; }
+.domains.domains--replace .domains-head-main .domains-title { min-width: 0; overflow-wrap: break-word; }
+.domains.domains--replace .domains-head-actions { flex: none; white-space: nowrap; }
+@media (max-width: 639px) { .domains.domains--replace .domains-head-main .domains-title { font-size: 1.375rem; line-height: 1.875rem; } }
 @media (max-width: 959px) {
     .domains .domains-results--replace .domains-result { grid-template-columns: minmax(0, 1fr) auto; gap: .25rem 1rem; padding: 1rem; }
     .domains .domains-results--replace .domains-result--head { display: none; }
-    .domains .domains-results--replace .domains-result__name { grid-column: 1; grid-row: 1; }
+    .domains .domains-results--replace .domains-result__name { grid-column: 1; grid-row: 1; font-size: .875rem; }
     .domains .domains-results--replace .domains-result .domains-result__action { grid-column: 2; grid-row: 1 / span 3; width: auto; min-width: 0; }
 }
 @media (prefers-reduced-motion: reduce) { .domains * { transition: none !important; animation: none !important; } }
