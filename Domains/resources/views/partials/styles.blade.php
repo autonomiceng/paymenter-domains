@@ -597,6 +597,14 @@
 .domains h1.domains-mono { font-size: clamp(1.125rem, 5vw, 1.5rem); line-height: 1.5; font-weight: 600; overflow-wrap: anywhere; }
 .domains .domains-ph ~ .domains-notice, .domains .domains-head--page ~ .domains-notice { align-items: center; margin-bottom: 1.5rem; }
 .domains .domains-notice__tx { flex: 1; }
+/* A notice starts with the state mark of its tone, the same hexagon as every status. */
+.domains .domains-notice__mark { display: inline-flex; flex: none; margin-top: .1875rem; }
+.domains .domains-notice__mark::before { content: ""; display: block; }
+/* A notice about one section is a plain row at its top: the mark and one sentence, no box (DESIGN.md P-NTC-5). */
+.domains .domains-notice--sec { padding: .75rem 1.5rem; border: 0; border-top: 1px solid var(--e-line); border-radius: 0; font-size: inherit; }
+@media (max-width: 639px) { .domains .domains-notice--sec { padding-inline: 1rem; } }
+/* The head's hosting link sits under its status line. */
+.domains .domains-head-line .domains-ph__sub { margin: .25rem 0 0; }
 @media (max-width: 719px) {
     .domains .domains-ph ~ .domains-notice, .domains .domains-head--page ~ .domains-notice { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; }
     .domains .domains-ph ~ .domains-notice > a, .domains .domains-head--page ~ .domains-notice > a { grid-column: 2; justify-self: start; }

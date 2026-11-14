@@ -77,6 +77,8 @@ same([null,['Monitoring paused.']],[$li($page(['watch.paused']),'alerts')[0],$no
 $ns=$page(['watch.ns_changed'],$row('ns_changed'),['ns_changed'],['urls'=>['support'=>'/tickets/create']]);
 same(['example.com stopped using Example Hosting nameservers on Jan 15, 2027. Change them back at your registrar, or contact support.'],$notice($ns),'Nameserver change: one notice with its fix');
 same('/tickets/create',storefrontDom($ns)->query('//div[contains(@class,"domains-notice")]//a/@href')->item(0)?->value,'Contact support is the link');
+// A nameserver notice is about DNS: it is the first row of the DNS section, not a box over the page. Other notices stay under the head.
+same(1,storefrontDom($ns)->query('//section[@id="dns"]/div[contains(@class,"domains-notice")]')->length,'Nameserver notice sits in the DNS section');same(0,storefrontDom($page(['watch.paused']))->query('//section//div[contains(@class,"domains-notice")]')->length,'Paused notice stays under the head');
 same(1,substr_count($text($ns),'stopped using Example Hosting nameservers'),'Nameserver change stated once');expect(str_contains($ns,'>Action required<'),'Header keeps the status pill');same(0,storefrontDom($ns)->query('//*[contains(@class,"domains-pill-reason")]')->length,'The notice gives the reason, not the pill');
 same(['example.com stopped using Example Hosting nameservers on Jan 15, 2027. Change them back at your registrar, or contact support.'],$notice($page(['watch.ns_changed'],[],['ns_changed'],['urls'=>[]])),'Portal fallback states the change once, without a link when support is unknown');
 $expired=$page(['watch.expired'],$row('expired'),['registry_expiry_reached'],['expiry'=>'2026-10-01','daysLeft'=>-22]);same(['example.com expired on Oct 1, 2026. Renew it at your registrar.'],$notice($expired),'Expired: one notice');same(1,substr_count($text($expired),'at your registrar'),'Expired: the fix is said once');
@@ -90,7 +92,7 @@ $moves=$page([],[...$row('ns_changed'),...$row('ns_restored','January 20, 2027')
 same([],$notice($moves),'Restored nameservers keep history without a stale warning');
 same([],$notice($page([],$row('expired'),[],['expiry'=>'2027-06-01','daysLeft'=>200])),'Corrected expiry ignores an old open notice');
 same(['example.com stopped using Example Hosting nameservers on Jan 15, 2027. Change them back at your registrar, or contact support.'],$notice($page(['watch.ns_changed'],[...$row('ns_restored'),...$row('ns_changed')],['ns_changed'],['urls'=>['support'=>'/tickets/create']])),'A later confirmed outage is not hidden by an older restoration');
-same(['Nameservers changed Jan 15, 2027','Nameservers back to Example Hosting Jan 20, 2027'],array_map($norm,iterator_to_array(storefrontDom($moves)->query('//section[@id="history"]//tbody/tr'))),'History lists nameserver changes with dates');
+same(['Nameservers changed Jan 15, 2027','Nameservers back to Example Hosting Jan 20, 2027'],array_map($norm,iterator_to_array(storefrontDom($moves)->query('//section[@id="history"]//dl/div'))),'History lists nameserver changes with dates');
 same(null,storefrontDom($page([],[],[],['urls'=>[]]))->query('//aside//a[contains(@class,"domains-btn")]')->item(0),'No transfer offer, no button');
 $owned=new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain($data['name'],'Active','ok','2027-01-15','On','$14.00',['show'=>'/domains/1'],[],['contacts'=>false,'required'=>false],[],[],true);
 same(1,substr_count($text(view('domains::show',['domain'=>$owned,'summary'=>$state(['domain.active','watch.ns_changed'],'managed'),'keys'=>[]])->render()),'stopped using Example Hosting nameservers'),'Domain detail page states a nameserver change once');
@@ -117,9 +119,9 @@ foreach (['ns_changed','ns_restored','expired'] as $kind) {
 }
 $historyOnly=$controller->show($request($owner),'watch',$id)->render();
 same([],$notice($historyOnly),'Controller ignores stale open notices when current facts need no action');
-same(2,storefrontDom($historyOnly)->query('//section[@id="history"]//tbody/tr')->length,'Controller retains both historical DNS events');
+same(2,storefrontDom($historyOnly)->query('//section[@id="history"]//dl/div')->length,'Controller retains both historical DNS events');
 DB::table('domains_watch_names')->where('id',$id)->update(['state'=>'paused']);
 $inactive=$controller->show($request($owner),'watch',$id)->render();
 same(['Monitoring paused.'],$notice($inactive),'Inactive target never promotes old open warnings');
-same(2,storefrontDom($inactive)->query('//section[@id="history"]//tbody/tr')->length,'Inactive target keeps history');
+same(2,storefrontDom($inactive)->query('//section[@id="history"]//dl/div')->length,'Inactive target keeps history');
 $nativeSuccessful=true;echo "Owner-safe preference detail, CSRF/session key, stale revision, escaping and query-free Blade passed.\n";
