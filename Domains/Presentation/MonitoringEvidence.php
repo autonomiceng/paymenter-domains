@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Presentation;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,ManagedPublicObservation,PublicDnsObservation,WatchName};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Value;
 /** Read-only evidence: public answers never certify registrar mutations or billing. */
 final class MonitoringEvidence
 {
@@ -43,6 +44,26 @@ final class MonitoringEvidence
         try{$fresh=(new \Paymenter\Extensions\Servers\Domains\Services\PublicSignalsProjection)->read($target,$now);}
         catch(\Illuminate\Contracts\Encryption\DecryptException){return true;}
         return !collect(['website','email'])->contains(fn($axis)=>!($fresh[$axis]['stale']??true)&&($fresh[$axis]['checked_at']??null)===$public->started_at);
+    }
+    /** The Monitoring rows, label => value: what public DNS answered and what the registrar holds, each with when it was
+     * checked. A source checked with no answer says None; one never checked says Not read yet, once. $withRecords: the
+     * page already shows the registrar records and their last read, so the refresh row is left out.
+     * @return array<string,Value> */
+    public static function rows(array $evidence, bool $withRecords = false): array
+    {
+        $time = static function ($at): ?Fact {
+            $t = is_int($at) ? $at : (is_string($at) && $at !== '' ? strtotime($at) : false);
+            return $t === false ? null : Fact::date($t, Reader::Staff);
+        };
+        $seen = static function (array $answers, $at, string $checked, bool $stale = false) use ($time): Value {
+            $when = $time($at);
+            if ($answers !== []) { return $when === null ? Value::fact(Fact::lines($answers)) : Value::fact(Fact::lines($answers), $stale ? 'Not current. Last checked' : $checked, $when); }
+            return $when === null ? Value::state(State::NotReadYet, Reader::Staff) : Value::plain(Plain::None, $checked, $when);
+        };
+        $refresh = ($at = $time($evidence['at'] ?? null)) === null ? Value::state(State::NotReadYet, Reader::Staff) : Value::fact(Fact::entered($evidence['state']), 'Read', $at);
+        return [...($withRecords ? [] : ['Registrar refresh' => $refresh]),
+            'Public DNS' => $seen($evidence['public'] ?? [], $evidence['public_at'] ?? null, 'Checked', (bool) ($evidence['public_stale'] ?? false)),
+            'Registrar records' => $seen($evidence['registrar'] ?? [], $evidence['registrar_at'] ?? null, 'Read')];
     }
     /** Only timestamps actually retained by the registrar inventory are represented as read events. */
     public static function history(WatchName $w): array

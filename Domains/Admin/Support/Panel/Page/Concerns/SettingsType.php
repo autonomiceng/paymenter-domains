@@ -21,6 +21,7 @@ trait SettingsType
                 if (!$row instanceof SettingsRow && !($row instanceof Row && Section::isNotice($row))) { throw new \InvalidArgumentException('A settings page holds settings rows and notices only.'); }
             }
         }
-        return $schema->components([Sheet::split(array_map(static fn (Section $s) => $s->toSchema(), $sections), [], 'sheet')]);
+        // No rail, so the sheet takes the full width, as the other tabs and lists do, with no empty rail space beside it.
+        return $schema->components([Sheet::single(array_map(static fn (Section $s) => $s->toSchema(), $sections), 'sheet')]);
     }
 }

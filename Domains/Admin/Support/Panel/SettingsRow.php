@@ -3,11 +3,12 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support\Panel;
 use Filament\Actions\Action;
+use Filament\Schemas\Components\Actions;
 use Paymenter\Extensions\Servers\Domains\Presentation\Plain;
 /** A setting: the same row as Row, for values someone chooses. It always knows who sets it, so a reader with no
  * control here (no permission, or someone else's setting) sees the value with who sets it on the line under it.
- * A switch is the page's own native action drawn as a toggle; the row's value says On or Off from the same bool, so
- * the word and the switch can't disagree. */
+ * A switch is the page's own native action drawn as a toggle, right before the On or Off it sets (Ilya, Nov 14, 2026),
+ * so the word and the switch read together and can't disagree. A second control stays in the action column. */
 final class SettingsRow extends Row
 {
     protected string $kind = 'setting';
@@ -38,7 +39,18 @@ final class SettingsRow extends Row
     {
         if ($this->on === null || ($switch = $this->controls[0] ?? null) === null) { throw new \LogicException('Only a switch row takes a control after its switch.'); }
         parent::actions($switch, $action);
-        return $this;
+        // The switch keeps the row's actions key, so a request names it as before; the other control gets its own.
+        return $this->schema([Actions::make([$switch])->key(fn (): string => $this->getKey(false).'-actions'), Actions::make([$action])->key(fn (): string => $this->getKey(false).'-also')]);
+    }
+    /** The switch goes before the value; any other control stays in the action column. */
+    protected function placed(array $shown): array
+    {
+        if ($this->on === null || ($switch = $this->controls[0] ?? null) === null) { return parent::placed($shown); }
+        $parts = $this->getChildSchema()->getComponents(withHidden: true);
+        $rest = array_values(array_filter($shown, static fn (Action $a): bool => $a !== $switch));
+        $inline = in_array($switch, $shown, true) ? $parts[0]->toHtml() : null;
+        $column = $rest === [] ? null : (count($parts) > 1 ? $parts[1] : $parts[0])->toHtml();
+        return [$inline, $column, count($rest)];
     }
     /** Who sets it is a fact, so it goes on the visible line under the value, never in the "?". A reader with the
      * control sets it, so they get no such line. */

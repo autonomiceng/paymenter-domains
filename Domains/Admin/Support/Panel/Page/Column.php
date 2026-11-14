@@ -28,6 +28,7 @@ final class Column
     private ?\Closure $visibleWhen = null;
     private ?\Closure $act = null;
     private bool $tag = true;
+    private bool $fill = false;
     private function __construct(public readonly string $name, public readonly string $label, public readonly string $kind, public bool $searchable = false, public bool $sortable = false) {}
     /** Plain text that stays complete: the row's own field, or what $text returns for the row. @param ?\Closure(array|Model):?string $text */
     public static function text(string $name, string $label, ?\Closure $text = null): self { $c = new self($name, $label, 'text'); $c->text = $text; return $c; }
@@ -63,6 +64,10 @@ final class Column
     /** A note that says what staff must do, marked amber on the rows where $act returns true. */
     public function actWhen(\Closure $act): self { $this->act = $act; return $this; }
     public function optional(): self { $this->optional = true; return $this; }
+    /** This column takes the table's spare width and the others size to their content (P-TBL-7), so a list with few
+     * columns doesn't spread them across a wide page. */
+    public function fill(): self { $this->fill = true; return $this; }
+    public function fills(): bool { return $this->fill; }
     public function isOptional(): bool { return $this->optional; }
     public function isNote(): bool { return $this->kind === 'note'; }
     private function nameCell(TextColumn $column): TextColumn

@@ -140,6 +140,16 @@ td.domains-history-detail{min-width:20rem}
 :where(.domains-panel-blocked){cursor:not-allowed}
 @media(min-width:40rem){:where(.domains-panel-row){grid-template-columns:156px minmax(0,1fr) auto}:where(.domains-panel-row-k){grid-column:auto}}
 :where(.domains-panel-row[data-domains-row=notice]){grid-template-columns:minmax(0,1fr) auto}
+/* A setting's switch sits right before its On or Off, and the line under them starts at the switch (Ilya, Nov 14, 2026).
+   Real specificity: a skin that puts toggles in the action column must not pull it away from its word. */
+.domains-panel-row-v[data-domains-switch]{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;column-gap:10px;row-gap:2px}
+.domains-panel-row-v[data-domains-switch]>.domains-panel-inline{grid-row:1;grid-column:1;display:flex;align-items:center}
+.domains-panel-row-v[data-domains-switch]>.domains-panel-inline :is(.fi-sc-actions,.fi-ac){display:flex;margin:0;padding:0}
+.domains-panel-row-v[data-domains-switch]>.domains-panel-val{display:contents}
+.domains-panel-row-v[data-domains-switch]>.domains-panel-val>*{grid-column:2}
+.domains-panel-row-v[data-domains-switch]>.domains-panel-val>.domains-panel-sub{grid-column:1/-1;margin-top:0}
+/* Helper lines keep a readable measure on wide sheets. */
+.domains-panel-row-v .domains-panel-sub{max-width:80ch}
 :where(.domains-panel-trace){display:grid;gap:12px;margin:0;padding:0;list-style:none}
 :where(.domains-panel-step){display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px}
 :where(.domains-panel-step-d){font-size:.75rem;line-height:1.125rem;color:var(--panel-fg-2,inherit)}

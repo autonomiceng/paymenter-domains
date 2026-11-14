@@ -73,6 +73,9 @@ final class Fact
         $name = strtolower(rtrim(trim((string) $name), '.'));
         return strlen($name) <= 253 && preg_match('/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9-]{2,63}$/D', $name) === 1 ? new self('host', $name) : null;
     }
+    /** An IP address, in mono like a host name. Null for anything that isn't one. */
+    public static function ip(?string $ip): ?self
+    { return $ip !== null && filter_var($ip, FILTER_VALIDATE_IP) !== false ? new self('host', $ip) : null; }
     /** A provider's own code, in mono, so staff can report it. Null for anything that doesn't look like a code, so provider text never echoes.
      * A code is opaque, so it may be spelled like one of our words ("failed"); it shows as the code under Not recognized, never as the word. */
     public static function code(?string $code): ?self

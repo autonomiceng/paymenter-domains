@@ -74,6 +74,10 @@ trait BuildsList
         $bulk = array_values($this->bulkActions());
         foreach ($bulk as $action) { if (!$action instanceof BulkAction) { throw new \InvalidArgumentException('A bulk action is a native Filament bulk action.'); } }
         $built = array_map(static fn (Column $c) => $c->toColumn(), $columns);
+        // With a column that takes the spare width, the others shrink to their content and keep it on one line.
+        if (array_filter($columns, static fn (Column $c): bool => $c->fills()) !== []) {
+            foreach ($columns as $i => $c) { if (!$c->fills()) { $built[$i]->width('1%')->extraAttributes(['class' => 'domains-nowrap'], merge: true); } }
+        }
         $hidden = array_values(array_map(static fn (Column $c): string => $c->name, array_filter($columns, static fn (Column $c): bool => $c->isOptional())));
         $table = TableColumns::choose(EmptyTable::apply($table, $empty, $next, $noMatch), $built, $hidden)
             ->filters(array_map(static fn (Filter $f) => $f->toFilter(), $filters))
