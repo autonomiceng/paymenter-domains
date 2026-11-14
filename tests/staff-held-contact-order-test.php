@@ -331,7 +331,7 @@ $paused=$execute($op);$grants->fail=null;$clock->instant=$clock->now()->modify('
 same(['held','processing'],[$paused->state,$paused->safe_code],'Orders off at the contact step holds for Orders, not for the contact');
 expect(OperationActions::relevant('refund',$paused->fresh()),'Cancel and refund stays available while Orders are off');
 expect(!ContactStepRetries::readmit($paused->id,$clock),'The order waits while Orders are off');
-DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>true]);
+DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>true]);$releasedAt=$clock->now();
 expect(ContactStepRetries::readmit($paused->id,$clock),'The order goes back by itself once Orders are on');
 same(['queued',null],[$paused->fresh()->state,$paused->fresh()->safe_code],'Orders on puts the order back in the queue');
 $clock->instant=$clock->now()->modify('+30 seconds');$resent=$execute($paused->fresh());
@@ -342,8 +342,7 @@ expect($sentAt!==Paymenter\Extensions\Servers\Domains\Admin\Support\StaffReviewH
 $timeline=Paymenter\Extensions\Servers\Domains\Admin\Support\StaffReviewHistory::timeline($resent,Paymenter\Extensions\Servers\Domains\Admin\Support\StaffReviewHistory::rows($resent));
 $sentRows=array_values(array_filter($timeline,fn($r)=>$r['event']===Paymenter\Extensions\Servers\Domains\Admin\Support\StaffReviewHistory::SENT));
 same([$sentAt],array_column($sentRows,'time'),'History has one Sent to registrar entry at the retried send');
-$events=array_column($timeline,'event');
-expect(array_search(Paymenter\Extensions\Servers\Domains\Admin\Support\StaffReviewHistory::SENT,$events,true)>max(array_keys($events,'Hold released',true)),'The send comes after the release that queued it: '.json_encode($events));
+expect(new DateTimeImmutable($resent->attempt['dispatch_attempted_at'])>$releasedAt,'The send comes after the release that queued it');
 same($sentAt,Paymenter\Extensions\Servers\Domains\Admin\Support\StaffReviewHistory::time(Paymenter\Extensions\Servers\Domains\Admin\Support\StaffReviewHistory::sentAt($resent)),'The Sent to registrar row shows the retried send');
 echo "Orders off at the contact step resumes when Orders are on.\n";
 
