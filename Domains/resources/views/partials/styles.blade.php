@@ -411,6 +411,8 @@
     .domains .domains-results--replace .domains-result--head { display: none; }
     .domains .domains-results--replace .domains-result__name { grid-column: 1; grid-row: 1; font-size: .875rem; }
     .domains .domains-results--replace .domains-result .domains-result__action { grid-column: 2; grid-row: 1 / span 3; width: auto; min-width: 0; }
+    /* The price column can get narrow here, so a long multi-year total wraps instead of running into the action. */
+    .domains .domains-results--replace .domains-result__price { white-space: normal; overflow-wrap: break-word; min-width: 0; }
 }
 @media (prefers-reduced-motion: reduce) { .domains * { transition: none !important; animation: none !important; } }
 /* Owner forms retain the approved management layout. */
