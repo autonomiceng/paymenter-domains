@@ -41,6 +41,9 @@ foreach ([[Reader::Staff, ['warn', 'off'], '2026-11-12T17:12:00+00:00', 2.0], [R
     same([$datetime, $converted], [$dom->evaluate('string((//time)[1]/@datetime)'), $dom->evaluate('count(//time[@data-domains-time])')], 'Step time for '.$reader->name.'; staff times convert in the browser');
     same([true, false], [str_contains($dom->evaluate('string((//li)[1])'), 'the customer'), str_contains($dom->evaluate('string((//li)[2])'), 'the customer')], 'Only the step given a who names it');
 }
+// A step whose label is its state's word says it once: the mark and tone stay, the repeated word goes.
+$done = storefrontDom(Trace::make(Reader::Staff)->step('Completed', State::Completed, $at)->step('Sent to registrar', State::Completed, $at - 60)->toEmbeddedHtml());
+same([['ok', ''], ['ok', 'Completed']], array_map(static fn (DOMNode $li): array => [$li->getAttribute('data-domains-tone'), trim($done->evaluate('string(*[@class="domains-panel-step-w"])', $li))], iterator_to_array($done->query('//li'))), 'A repeated state word is shown once');
 // A history event with no state of its own (a note, a request) draws no mark and no word; a monitoring change keeps its state.
 $rail = storefrontDom(\Paymenter\Extensions\Servers\Domains\Admin\Support\WatchRows::trace([['event' => 'Note', 'note' => null, 'time' => null, 'by' => 'Staff #4'],
     ['event' => 'Check requested', 'note' => null, 'time' => null, 'by' => 'Staff #4'], ['event' => 'Monitoring paused', 'note' => null, 'time' => null, 'by' => 'Staff #4']])->toEmbeddedHtml());
