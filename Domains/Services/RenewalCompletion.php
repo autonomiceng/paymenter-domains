@@ -71,7 +71,10 @@ final readonly class RenewalCompletion
             try { $this->bindings->requireReadableLocked($l['server'], $l['account']); RenewalFunding::requireCurrent($op, $l, true); }
             catch (\Throwable) { return $op; }
             if($financialRead){CapturedChargeReview::retain($op,$financialRead,$proof,$this->clock);return $op;}
-            $policy = $op->policy; $policy['renewal_polls'] = ($policy['renewal_polls'] ?? 0) + ($covered ? 1 : 0); $check->counted = $covered;
+            // A finished history read that resolved no more orders counts like a covered read; a progressing scan does not.
+            // Admission and call-cap deferrals throw before any scan exists.
+            $stalled = !$covered && $scan !== null && !$scan->progressed && $check->deferred === null;
+            $policy = $op->policy; $policy['renewal_polls'] = ($policy['renewal_polls'] ?? 0) + ($covered || $stalled ? 1 : 0); $check->counted = $covered || $stalled;
             // Saved scan progress; a scan that resolved more orders continues on the next turn.
             if ($scan) { $policy['history_scan'] = $scan->saved(); $check->continued = !$covered && $scan->progressed; }
             if (!$proof) {
