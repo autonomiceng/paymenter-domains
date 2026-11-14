@@ -180,12 +180,15 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         return $this->neutral($reply, new Evidence(domain: $snapshot));
     }
     public function expiry(string $name, #[\SensitiveParameter] RequestContext $context): ReadResult
+    { return $this->expiryRead($name, $context)[0]; }
+    /** The expiry read, plus the expiry its own domain info read reported. */
+    private function expiryRead(string $name, #[\SensitiveParameter] RequestContext $context): array
     {
         [, $parts, $domain] = $this->identity($name, $context);
-        if ($domain?->owned !== true) { return $this->result(null); }
+        if ($domain?->owned !== true) { return [$this->result(null), $domain?->expiry]; }
         $reply = $this->read(ReadCommand::Expiry, $parts, $context);
         $expiry = Expiry::read($reply);
-        return $this->result($expiry === null ? null : ['name' => $name, 'owned' => true, 'provider_reference' => $domain->providerReference, 'expiry' => $expiry]);
+        return [$this->result($expiry === null ? null : ['name' => $name, 'owned' => true, 'provider_reference' => $domain->providerReference, 'expiry' => $expiry]), $domain->expiry];
     }
     public function renewalInfo(string $name, #[\SensitiveParameter] RequestContext $context): ReadResult
     {
@@ -302,8 +305,11 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         if ($domain === null && $identity[0]->code === 'domain_not_in_account' && in_array($attempt->query->action, [Action::Register, Action::Renew], true)) {
             $domain = new DomainSnapshot($this->binding(), $attempt->query->name, false);
         }
+        $expiryReads = [];
         if ($domain?->owned === true) {
-            $expiry = $this->expiry($attempt->query->name, $context)->facts();
+            [$expiryResult, $infoAgain] = $this->expiryRead($attempt->query->name, $context); $expiry = $expiryResult->facts();
+            // Keep every expiry seen, so a disagreement between these reads is never hidden by the last one.
+            $expiryReads = array_map(static fn ($e) => $e ? substr($e->value, 0, 10) : null, [$domain->expiry, $infoAgain, $expiry['expiry'] ?? null]);
             $domain = new DomainSnapshot($this->binding(), $attempt->query->name, true,
                 ($expiry['provider_reference'] ?? null) === $domain->providerReference ? ($expiry['expiry'] ?? null) : null,
                 $domain->providerAutoRenew, $domain->privacy, $domain->locked, $domain->providerReference,
@@ -350,7 +356,7 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
             }
         }
         return new ReconciliationResult($attempt, new DriverResult($this->binding(), Disposition::Unknown,
-            SendState::PossiblySent, ResultReason::Unresolved, new Evidence(domain: $domain, candidates: $candidates, historyComplete: $complete, transfer: $transfer, transferReference: $attempt->transferReference, historyScan: $scan)));
+            SendState::PossiblySent, ResultReason::Unresolved, new Evidence(domain: $domain, candidates: $candidates, historyComplete: $complete, transfer: $transfer, transferReference: $attempt->transferReference, historyScan: $scan, expiryReads: $expiryReads)));
     }
     private static function readNameservers(ProtocolResult $reply, \DateTimeImmutable $observedAt): ?NameserverEvidence
     {

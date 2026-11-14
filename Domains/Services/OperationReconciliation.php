@@ -48,6 +48,8 @@ final class OperationReconciliation
                     return null;
                 }
                 if($watch){TransferPolling::reserve($op,$now);$op->refresh();}
+                // A new read starts: earlier no-order evidence goes now, so nobody can use it while this read runs or after it fails.
+                if(EnomAbsence::clear($op)){$op->refresh();}
                 $requestedNameservers = null;
                 if ($op->action === 'transfer' && $op->registrar_key === 'namesilo' && ($op->payload['nameservers'] ?? [])) {
                     try { $requestedNameservers = NameserverEvidence::requested($op->payload['nameservers'], 'transfer_request', new \DateTimeImmutable($op->attempt['dispatch_attempted_at'])); }
@@ -64,6 +66,7 @@ final class OperationReconciliation
         $callCapBlocked = false; $pendingAnomaly = false; $privacyBlocked = false; $scan = null; $absence = null;
         $limiter=$watch?new TransferReadBudget($this->clock,Runtime::limiter()):null;
         try {
+            $started = $this->clock->now();
             $context = $check->context = new RequestContext($attempt->binding, RequestOrigin::Background, $this->clock->now()->modify('+250 seconds'), new RequestBudget(25), $this->clock, $limiter ?? Runtime::limiter());
             $read=function()use($attempt,$context,$light){
                 $reader=$this->bindings->reader($attempt->binding->serverId);
@@ -87,7 +90,7 @@ final class OperationReconciliation
                 // One Enom charge can be a failed fee. It proves neither finality nor a settled refund.
                 if ($attempt->query->action->value === 'transfer' && $transfer !== \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Unknown) { $covered = true; }
                 $proof = ReconciliationEvidence::completion($attempt, $facts, $this->clock->now());
-                $absence = EnomAbsence::observe($attempt, $facts, $this->clock->now());
+                $absence = EnomAbsence::observe($attempt, $facts, $started, $this->clock->now());
                 $check->observe($attempt,$facts,$proof!==null);
             }
         } catch (ReadDeferred) {
