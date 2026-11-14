@@ -99,6 +99,15 @@ Auth::login($staff);$refused(fn()=>$run($op,'release'),'The writer refuses disab
 same($before,[$nativeMoney(),$op->fresh()->getRawOriginal(),$sent->contactAdd,$sent->registerDomain],'Blocked contact retry changes no money or sends');
 config(['domains.namesilo_test.management'=>$managementConfig]);
 
+// Prior holdings may keep held orders, but their controls do not belong on the current domain.
+$heldRow=new ReflectionMethod(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,'heldOrderRow');
+foreach(['authority_generation'=>$op->authority_generation+1,'account_fingerprint'=>str_repeat('e',64)] as $field=>$other){
+    $domainRow=$op->domain->fresh();$originalValue=$domainRow->$field;
+    DB::table('domains_domains')->where('id',$domainRow->id)->update([$field=>$other]);
+    same(null,$heldRow->invoke(null,$domainRow->fresh()),'An order from a different holding offers no current held-order controls');
+    DB::table('domains_domains')->where('id',$domainRow->id)->update([$field=>$originalValue]);
+}
+
 // A confirmation keeps the state staff opened, even when another worker changes the same held order.
 $stale=$heldOrder('held-contact-stale-confirm-placeholder.com');
 $releaseAction=Filament\Actions\Testing\TestAction::make('release')->schemaComponent(true,'content');

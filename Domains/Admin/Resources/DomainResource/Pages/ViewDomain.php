@@ -124,7 +124,7 @@ class ViewDomain extends RecordDetailPage
      * so they sit on its own row under the Registration notice, which keeps its one link (P-NTC-5, P-ACT-9, P-ACT-11). */
     private static function heldOrderRow(Domain $d): ?Row
     {
-        $op=$d->operations()->whereIn('action',['register','transfer'])->where('state','held')->latest('id')->first();
+        $op=$d->operations()->whereIn('action',['register','transfer'])->where('authority_generation',$d->authority_generation)->where('account_fingerprint',$d->account_fingerprint)->where('state','held')->latest('id')->first();
         if(!$op){return null;}
         $op->setRelation('domain',$d);$stamp=\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::stamp($op,$d);
         $actions=array_values(array_filter(OperationActions::make($op,$stamp),fn(Action $a)=>in_array($a->getName(),['release','refund'],true)&&$a->isVisible()));
