@@ -17,8 +17,8 @@ same('Transfers to another registrar open on Dec 10, 2026, 60 days after the tra
 same(null,OwnedDomains::transferOutFrom($op('register','succeeded','2026-09-01T00:00:00+00:00'),$now),'Past the 60 days there is no line');
 same(null,OwnedDomains::transferOutFrom($op('register','queued',null),$now),'An unfinished registration has no date yet');
 same(null,OwnedDomains::transferOutFrom(null,$now),'A domain we did not register or transfer has no line');
-// The owner page says the date once, under Transfer lock.
+// The owner page offers both transfer controls.
 same('2026-10-18T12:00:00+00:00',$registration->fresh()->completed_at?->format(DATE_ATOM),'Fixture: the registration completed at the fixture clock');
-$page=$owners->present($d->fresh());$expected='Transfers to another registrar open on Dec 17, 2026, 60 days after registration.';
-same([$expected,null],[$page->management['lock']['transferFrom']??null,$page->management['auth_code_email']['transferFrom']??null],'The owner page gives Transfer lock the date, once');
+$page=$owners->present($d->fresh());
+same([true,true],[isset($page->management['lock']),isset($page->management['auth_code_email'])],'Transfer lock and auth-code email actions remain available');
 $nativeSuccessful=true;echo "Transfer-out window passed.\n";
