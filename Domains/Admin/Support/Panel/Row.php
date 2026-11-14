@@ -127,6 +127,8 @@ class Row extends Component implements HasEmbeddedView
             'live' => $this->live, 'result' => $this->result, 'waits' => $this->waits(),
             'blocked' => $this->blocked, 'fix' => $this->fix?->toHtml(), 'why' => $this->blocked !== null ? $why : null,
             'actions' => $shown === [] ? null : $this->getChildSchema()->toHtml(),
+            // Two actions don't fit beside a value on a phone, so the row says how many it shows and the styles stack them.
+            'count' => count($shown),
         ])->render();
     }
     private static function needsState(Value $value): Value

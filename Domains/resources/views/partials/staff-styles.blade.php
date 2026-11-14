@@ -134,6 +134,7 @@ td.domains-history-detail{min-width:20rem}
 :where(.domains-panel-row-v){min-width:0;overflow-wrap:anywhere}
 :where(.domains-panel-row-a,.domains-panel-row-a .fi-ac){display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:12px}
 :where(.domains-panel-row-a:empty){display:none}
+@media(max-width:39.99rem){:where(.domains-panel-row[data-domains-actions]>.domains-panel-row-a,.domains-panel-row[data-domains-actions]>.domains-panel-row-a .fi-ac){grid-column:1/-1;justify-content:flex-start}}
 :where(.domains-panel-nw){white-space:nowrap}:where(.domains-panel-nw .domains-help){display:inline-flex;vertical-align:middle}
 :where(.domains-panel-blocked){cursor:not-allowed}
 @media(min-width:40rem){:where(.domains-panel-row){grid-template-columns:156px minmax(0,1fr) auto}:where(.domains-panel-row-k){grid-column:auto}}

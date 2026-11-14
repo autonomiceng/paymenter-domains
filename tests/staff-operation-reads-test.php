@@ -305,6 +305,8 @@ $page->loadHTML('<?xml encoding="utf-8"?>'.Livewire::actingAs($staff)->test(View
 $copied=array_map(fn(DOMElement $e)=>$e->getAttribute('data-copy'),iterator_to_array((new DOMXPath($page))->query('//*[@data-copy]')));
 same([\Paymenter\Extensions\Servers\Domains\Admin\Support\SupportDetails::text($lostRenew->fresh())],$copied,'The copy button carries the full details text unchanged');
 expect(str_contains($copied[0]??'','Account: Enom "Primary" &amp; <b>main</b>'),'The account name is copied as typed');
+same(1.0,(new DOMXPath($page))->evaluate('count(//div[@data-domains-row][@data-domains-actions="2"][.//*[@data-copy]])'),'The two-action Registrar reply row is marked so phones stack its buttons under the value');
+same(0.0,(new DOMXPath($page))->evaluate('count(//div[@data-domains-row="notice"][@data-domains-actions])'),'A one-action notice is not marked');
 \App\Models\Server::whereKey($lostRenew->server_id)->update(['name'=>$serverName]);
 // Unreadable saved attempt data renders the request page without an answer form or a send.
 $storedAttempt=$lostRenew->fresh()->getRawOriginal('attempt');$writes=$state->writes;
