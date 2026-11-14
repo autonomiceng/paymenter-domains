@@ -30,7 +30,8 @@ $check=static function(bool $ok,string $message)use(&$failures):void{if(!$ok){$f
 $dom=storefrontDom($customer);
 $values=array_map(static fn($cell)=>trim($cell->textContent),iterator_to_array($dom->query('//tbody/tr/td[3]')));
 $check($values===['192.0.2.10','hosting.example.com','0 issue "ca.example"'],'DNS inventory retains ordinary and CAA values');
-$check($dom->query('//tbody/tr/td[5][normalize-space(.)="Read-only"]')->length===3,'Records without edit actions remain read-only');
+$check($dom->query('//tbody/tr[@data-read-only]')->length===3,'Records without edit actions retain their read-only state');
+$check($dom->query('//tbody/tr//input | //tbody/tr//button | //tbody/tr//a[@href] | //tbody/tr//select | //tbody/tr//textarea')->length===0,'Records without edit actions expose no edit controls');
 $dom=storefrontDom($staff);
 foreach(['contacts'=>'Partial','nameservers'=>'Complete','glue'=>'Unsupported','dns'=>'Not read'] as $kind=>$value){
     $check($dom->query('//*[@data-record-family="'.$kind.'"][normalize-space(.)="'.$value.'"]')->length===1,'Staff record family reports '.$kind.' as '.$value);
