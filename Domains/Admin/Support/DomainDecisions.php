@@ -461,7 +461,9 @@ final class DomainDecisions
         if ($row===null||($row['settled']??false)||($row['replaced']??false)) { return null; }
         $stopped=isset($row['outcome']); $request=$stopped&&$row['id']===$named?$row['id']:null;
         $text=$stopped?StaffDomainStatus::sentence($row['outcome']).($request===null?'':' Check request #'.$request.'.'):$row['text'];
-        return ['text'=>$text,'request'=>$request,'waiting'=>(bool)($row['pending']??false),'tone'=>$row['tone']??null];
+        // A stopped change failed, or needs a check when the registrar never confirmed it; it never reads as done.
+        $tone=$row['tone']??null; if ($stopped&&!in_array($tone,['danger','warning'],true)) { $tone=$row['outcome']===RequestStatus::UNCONFIRMED?'warning':'danger'; }
+        return ['text'=>$text,'request'=>$request,'waiting'=>(bool)($row['pending']??false),'tone'=>$tone];
     }
     /** A count above the glue detail: "1 of 2 differs." */
     public static function differs(int $count, int $of): string

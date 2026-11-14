@@ -82,11 +82,12 @@ final class WatchActions
         return [...$main,ActionGroup::make($more)->label('More')->button()->color('gray')];
     }
     /** The same form is available beside the expected nameservers setting. */
-    public static function changeTemplate(WatchName $w,int $revision): Action
+    /** $expected: opened from the Expected nameservers row, so saving needs that choice. */
+    public static function changeTemplate(WatchName $w,int $revision,bool $expected=false): Action
     {
         return self::action('watch',(int)$w->id,$revision,'profile','Change DNS template',[
             Select::make('profile')->label('DNS template')->options(fn()=>self::templates())->default($w->ns_profile_id)->required(),
-            Select::make('expected_dns')->label('Expected nameservers')->options(['platform'=>WatchFindings::company(),'external'=>'Other'])->default($w->expected_dns)])
+            Select::make('expected_dns')->label('Expected nameservers')->options(['platform'=>WatchFindings::company(),'external'=>'Other'])->default($w->expected_dns)->required($expected)])
             ->modalDescription('Future checks compare against this DNS template.')->modalSubmitActionLabel('Save')
             ->visible(fn()=>in_array($w->state,['active','paused'],true) && Staff::can(Writes::VIEW) && Staff::can(Writes::MANAGE));
     }

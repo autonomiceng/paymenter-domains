@@ -19,15 +19,19 @@ final class DomainRows
         $row = Row::make($shown ?? $label, self::value($fact, $alert ? null : $sub))->key('fact_'.md5($label));
         if ($alert) { $row->result(Value::state($fact['tone'] === 'danger' ? State::Failed : State::NeedsReview, Reader::Staff, $sub)); }
         $progress = $fact['progress'] ?? null;
-        if (is_array($progress) && ($text = RegistrarRows::sentence($progress['text'] ?? null)) !== null) {
-            if ($progress['waiting'] ?? false) { $row->running(Value::state(($progress['tone'] ?? null) === 'warning' ? State::NeedsReview : State::Checking, Reader::Staff, $text)); }
-            elseif (!$alert) { $row->result(Value::state(match ($progress['tone'] ?? null) { 'danger' => State::Failed, 'warning' => State::NeedsReview, default => State::Completed }, Reader::Staff, $text)); }
-        }
+        if (is_array($progress)) { self::progress($row, $progress, $alert); }
         $actions = array_values(array_filter([...$actions, $link]));
         $actions = array_slice($actions, 0, Row::MAX_ACTIONS);
         if ($actions !== []) { $row->actions(...$actions); }
         if (!empty($fact['help'])) { $row->help((string) $fact['help']); }
         return $row;
+    }
+    /** A change line on $row: waiting, or its result by tone. A row with an open alert keeps the alert as its result. */
+    public static function progress(Row $row, array $progress, bool $alert = false): Row
+    {
+        if (($text = RegistrarRows::sentence($progress['text'] ?? null)) === null) { return $row; }
+        if ($progress['waiting'] ?? false) { return $row->running(Value::state(($progress['tone'] ?? null) === 'warning' ? State::NeedsReview : State::Checking, Reader::Staff, $text)); }
+        return $alert ? $row : $row->result(Value::state(match ($progress['tone'] ?? null) { 'danger' => State::Failed, 'warning' => State::NeedsReview, default => State::Completed }, Reader::Staff, $text));
     }
     /** A fact's value. $sub is the sentence under it. */
     public static function value(array $fact, ?string $sub): Value
