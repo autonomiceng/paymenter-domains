@@ -390,6 +390,23 @@
     .domains .domains-result__action select { flex: 1; }
     .domains .domains-result__action:has(select) .domains-btn { width: 100%; }
 }
+/* Replace page (Change on a cart line): one column of the cart's width, compact rows under column heads. */
+.domains.domains--replace { max-width: 60rem; }
+.domains .domains-replace-search .domains-searchbar { max-width: none; }
+.domains .domains-results--replace .domains-result { grid-template-columns: minmax(0, 1fr) 10rem 11rem 10.5rem; padding: .75rem 1.25rem; }
+.domains .domains-results--replace .domains-result--head { padding-block: .625rem; font-size: .75rem; font-weight: 600; color: var(--e-muted); }
+.domains .domains-results--replace .domains-result--head > :nth-child(3) { text-align: right; }
+.domains .domains-results--replace .domains-result__name { font-family: var(--e-mono); font-size: .9375rem; font-weight: 400; letter-spacing: 0; }
+.domains .domains-results--replace .domains-result__name .domains-tld { color: inherit; }
+.domains .domains-results--replace .domains-result__price { white-space: nowrap; }
+.domains .domains-results--replace .domains-result__action form { flex-direction: row; }
+.domains .domains-replace-foot { margin: .75rem 0 0; text-align: right; }
+@media (max-width: 959px) {
+    .domains .domains-results--replace .domains-result { grid-template-columns: minmax(0, 1fr) auto; gap: .25rem 1rem; padding: 1rem; }
+    .domains .domains-results--replace .domains-result--head { display: none; }
+    .domains .domains-results--replace .domains-result__name { grid-column: 1; grid-row: 1; }
+    .domains .domains-results--replace .domains-result .domains-result__action { grid-column: 2; grid-row: 1 / span 3; width: auto; min-width: 0; }
+}
 @media (prefers-reduced-motion: reduce) { .domains * { transition: none !important; animation: none !important; } }
 /* Owner forms retain the approved management layout. */
 .domains .domains-owner-form { display: grid; gap: .75rem; max-width: 38rem; margin-top: 1rem; }

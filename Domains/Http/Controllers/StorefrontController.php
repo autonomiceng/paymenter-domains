@@ -78,7 +78,12 @@ final class StorefrontController extends Controller
         if ($this->lines()->contains($name)) {
             try { $ending = PolicyEndings::parse($name)['tld']; } catch (\Throwable) { $ending = substr((string) strstr($name, '.'), 1); }
             $result = ['domain' => $name, 'sld' => substr($name, 0, -strlen($ending) - 1), 'tld' => $ending, 'status' => 'in_cart'];
-            return response()->json(['status' => 'in_cart', 'html' => view('domains::partials.result', ['result' => $result, 'first' => false])->render()]);
+            // On the replace page the line's own name shows what it costs now, so it reads beside the other names.
+            if (($replace['name'] ?? null) === $name && $replace['action'] !== null && $replace['term'] !== null) {
+                try { $result += ['price' => $this->storefront->offer($ending, $replace['action'], $replace['term'])['price'], 'term' => $replace['term']]; }
+                catch (\Throwable) { /* No price is shown when the offer cannot be read. */ }
+            }
+            return response()->json(['status' => 'in_cart', 'html' => view('domains::partials.result', ['result' => $result, 'first' => false, 'replace' => $replace])->render()]);
         }
         try { $result = $this->storefront->check($input, $request->input('mode') === 'transfer'); }
         catch (\InvalidArgumentException) { return response()->json(['status' => 'invalid', 'message' => 'Enter a valid domain name.'], 422); }
