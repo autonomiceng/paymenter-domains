@@ -278,6 +278,57 @@ foreach(['6.01','6.00'] as $quoteCost){
 same($before+1,$writer->calls,'The same paid request sends once after its quote falls inside the frozen ceiling');
 $lowEngine->execute($priceHeld->id);same($before+1,$writer->calls,'Repeated execution never buys twice');
 $open($priceHeld)->assertActionHidden('release');
+// The operations scheduler retries a paid price hold through Release, without another customer payment.
+config(['domains.enom_writes.registration'=>true]);$automatic=$new(placeholderComFixtureName('automatic-price-placeholder.com'));
+config(['domains.enom_writes.registration'=>false]);$query=OperationClaims::query($automatic,$automatic->domain);$quoteCost='6.01';
+$automatic=$lowEngine->execute($automatic->id);$priceProof=clone $automatic;$before=$writer->calls;
+$priceMoney=static function()use($automatic):array {
+    $rows=[];
+    foreach(['invoices','invoice_items','invoice_transactions'] as $table){
+        $rows[$table]=DB::table($table)->where($table==='invoices'?'id':'invoice_id',$automatic->invoice_id)->orderBy('id')->get()->toJson();
+        $rows[$table.'_count']=DB::table($table)->count();
+    }
+    return $rows;
+};$money=$priceMoney();
+$original=[$automatic->attempt['claim_key'],$automatic->funding['claim'],$automatic->cost,$automatic->amount];
+$runtime=new \Paymenter\Extensions\Servers\Domains\Services\RuntimeWork($clock,new \Paymenter\Extensions\Servers\Domains\Services\RuntimePorts);
+$scheduled=static function(int $seconds)use($clock,$runtime):void {
+    $clock->instant=$clock->now()->modify('+'.$seconds.' seconds');Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
+    config(['domains.enom_writes.registration'=>true]);Illuminate\Support\Facades\Queue::fake();$runtime->tickOperations();
+};
+$scheduled(899);same('held',$automatic->fresh()->state,'Price recovery waits before its first automatic retry');
+$scheduled(61);
+Illuminate\Support\Facades\Queue::assertPushed(\Paymenter\Extensions\Servers\Domains\Jobs\RunOperation::class,fn($job)=>$job->operationId===$automatic->id);
+same('queued',$automatic->fresh()->state,'The scheduler automatically releases the unsent paid price hold');
+config(['domains.enom_writes.registration'=>false]);$automatic=$lowEngine->execute($automatic->id);
+same(['held','registrar_price_increased'],[$automatic->state,$automatic->safe_code],'A still higher quote returns to its price hold');
+same($before,$writer->calls,'An automatic retry never sends at the higher quote');
+same($original,[$automatic->attempt['claim_key'],$automatic->funding['claim'],$automatic->cost,$automatic->amount],'Automatic recovery retains the original frozen purchase proof');
+$quoteCost='6.00';DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>false]);
+$scheduled(3600);same('held',$automatic->fresh()->state,'Orders off prevents automatic price release');
+DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>true]);
+DB::table('invoice_transactions')->where('invoice_id',$automatic->invoice_id)->update(['status'=>'pending']);$scheduled(61);
+same('held',$automatic->fresh()->state,'Automatic release requires current settled funding, beyond a paid invoice status');
+DB::table('invoice_transactions')->where('invoice_id',$automatic->invoice_id)->update(['status'=>'succeeded']);$scheduled(61);
+same('queued',$automatic->fresh()->state,'Restored processing and funding release the due price hold');
+config(['domains.enom_writes.registration'=>false]);$automatic=$lowEngine->execute($automatic->id);
+same($before+1,$writer->calls,'The automatic retry sends once after the price falls inside the original ceiling');
+$lowEngine->execute($automatic->id);$scheduled(21600);config(['domains.enom_writes.registration'=>false]);$lowEngine->execute($automatic->id);
+same($before+1,$writer->calls,'Repeated scheduler and worker execution never double-send');
+same($money,$priceMoney(),'Automatic price retries retain invoice and payment rows without additional customer charges');
+same($original[0],$automatic->fresh()->attempt['claim_key'],'Successful readmission retains its original claim');
+// Retained negative proof, paid funding and the original hold reason are mandatory.
+foreach(['possibly_sent','sealed','execution','complimentary','staff_hold'] as $fault){
+    $unsafe=clone $priceProof;$unsafe->state='held';$unsafe->safe_code='registrar_price_increased';
+    if($fault==='possibly_sent'){$a=$unsafe->attempt;$a['send_state']='possibly_sent';$unsafe->attempt=$a;}
+    if($fault==='sealed'){$a=$unsafe->attempt;$a['seal']='sealed';$unsafe->attempt=$a;}
+    if($fault==='execution'){$a=$unsafe->attempt;$a['execution']=null;$unsafe->attempt=$a;}
+    if($fault==='complimentary'){$unsafe->funding_basis='complimentary';}
+    if($fault==='staff_hold'){$unsafe->safe_code='staff_review_required';}
+    expect(!\Paymenter\Extensions\Servers\Domains\Services\PriceHoldRetries::candidate($unsafe),'Automatic price recovery excludes '.$fault);
+}
+// The clock advanced; retain fresh catalogue rows for the following independent checkout.
+DB::table('domains_prices')->where('server_id',$binding->serverId)->update(['observed_at'=>$clock->now()->format('Y-m-d H:i:s'),'fresh_until'=>$clock->now()->modify('+1 day')->format('Y-m-d H:i:s')]);
 config(['domains.enom_writes.registration'=>true]);$legacy=$new(placeholderComFixtureName('retry-preclaim-refund-placeholder.com'));
 config(['domains.enom_writes.registration'=>false]);$legacy->update(['state'=>'held','safe_code'=>'usd_balance_required']);
 same(false,$claims->readmitBalance((int)$legacy->id),'Stored pre-claim check gets the normal backoff');
