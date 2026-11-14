@@ -49,6 +49,7 @@ final readonly class RenewalCompletion
         try {
             $ctx = $check->context = new RequestContext($attempt->binding, RequestOrigin::Background, $deadline, new RequestBudget(25), $this->clock, Runtime::limiter());
             $result = $this->bindings->reader($attempt->binding->serverId)->reconcile($attempt, $ctx); $result->requireAttempt($attempt);
+            if ($sample = $result->result()->evidence()->billZoneSample) { EnomBillZones::record($attempt->binding, $sample); }
             // A read that returned after the deadline is used up like a stalled read; its facts are too late to act on.
             $late = $this->clock->now() >= $ctx->deadline && $ctx->completedReads() > 0;
             if ($this->clock->now() < $ctx->deadline) {

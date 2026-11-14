@@ -72,6 +72,7 @@ final class OperationReconciliation
             };
             $result=$limiter?$limiter->run($attempt->binding,$read):$read();
             $result->requireAttempt($attempt);
+            if ($sample = $result->result()->evidence()->billZoneSample) { EnomBillZones::record($attempt->binding, $sample); }
             if ($this->clock->now() < $context->deadline) {
                 $facts = $result->result()->evidence(); $scan = $facts->historyScan;
                 $nameservers = $facts->domain?->nameservers ?? $requestedNameservers;

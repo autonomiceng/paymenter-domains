@@ -14,7 +14,7 @@ final readonly class AttemptEvidence
         public ?DateEvidence $beforeExpiry = null, public ?Money $expectedCharge = null, public DispatchSeal $seal = DispatchSeal::Unknown,
         public ?string $providerReference = null, public ?DateEvidence $expectedExpiry = null, public ?PersistedExecution $executionFacts = null,
         public ?HistoryAcceptance $historyAcceptance = null, public ?string $transferReference = null, public ?bool $expectedPrivacy = null, public ?DateEvidence $supportedOrderDate = null,
-        public ?HistoryScan $historyScan = null)
+        public ?HistoryScan $historyScan = null, public ?string $billZone = null)
     {
         if (!preg_match('/^[A-Za-z0-9_.:-]{1,128}$/D', $operationKey) || $authorityGeneration < 1 || $windowEnd < $windowStart
             || ($providerReference !== null && !preg_match('/^[A-Za-z0-9_.:-]{1,128}$/D', $providerReference))

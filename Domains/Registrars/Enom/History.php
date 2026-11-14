@@ -13,7 +13,7 @@ final class History
     private const DETAILS = 20, ORDERS = 250;
     /** Sanitized reasons a read could not finish the scan, saved with counts so a stuck scan can be diagnosed. */
     private const REFUSALS = ['read_budget', 'list_invalid', 'list_changed', 'list_too_large', 'list_duplicate', 'order_open', 'detail_ceiling',
-        'detail_unavailable', 'detail_unsupported', 'order_date_changed', 'order_unreadable', 'multiple_matches'];
+        'detail_unavailable', 'detail_unsupported', 'order_date_changed', 'order_unreadable', 'multiple_matches', 'other_zone_candidate'];
     public function __construct(private readonly Client $client) {}
     public function inspect(AttemptEvidence $attempt, RequestContext $context): Evidence
     {
@@ -99,17 +99,20 @@ final class History
         if ($order->value('order.orderdate') !== null && self::localClock($order->value('order.orderdate')) != self::localClock($row['orderdate'])) { return ['order_date_changed', null]; }
         if (OrderCharge::unrelated($attempt, $order)) { return ['n', null]; }
         // Every bill zone reading must be a valid instant (named-zone DST; ambiguous or missing local times refuse). A validated
-        // different action/term, or a bill time outside the send window in every reading, cannot be this original send.
-        $candidate = null;
-        foreach (OrderCharge::billZones($attempt->binding->environment) as $zone) {
+        // different action/term, or a bill time outside the send window in every reading, cannot be this original send. An order
+        // that fits only in an unmeasured zone is neither: it keeps the scan unresolved and is never saved.
+        [$match, $watch] = OrderCharge::billZones($attempt->binding->environment, $attempt->billZone);
+        $candidate = null; $other = false;
+        foreach ([...$match, ...$watch] as $zone) {
             $reading = OrderCharge::fromHistory($attempt->binding, $order, $zone);
             if (!$reading || $reading->processedAt?->precision !== ExpiryPrecision::Instant) { return ['order_unreadable', null]; }
             $processed = new \DateTimeImmutable($reading->processedAt->value);
             if (!$reading->query->matches($attempt->query) || $processed < $attempt->windowStart || $processed > $attempt->windowEnd) { continue; }
+            if (!in_array($zone, $match, true)) { $other = true; continue; }
             if ($candidate) { return ['order_unreadable', null]; }
             $candidate = $reading;
         }
-        return $candidate ? ['c', $candidate] : ['n', null];
+        return $candidate ? ['c', $candidate] : [$other ? 'other_zone_candidate' : 'n', null];
     }
     /** True only when the exact order's detail positively names a different canonical domain on every item. */
     private function otherDomain(AttemptEvidence $attempt, RequestContext $context, string $id): bool

@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom;
 
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AttemptEvidence, DateEvidence, Environment, Money, OrderEvidence, PersistedExecution, CanonicalName, HistoryAcceptance, ExpiryPrecision, Query};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AttemptEvidence, DateEvidence, Environment, ExecutionRecord, Money, OrderEvidence, PersistedExecution, CanonicalName, HistoryAcceptance, ExpiryPrecision, Query};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ProtocolResult;
 
 /** Single exact item only. A quote, acknowledgement or order ID alone never proves a charge. */
@@ -86,10 +86,29 @@ final class OrderCharge
      * Live is not measured and keeps Pacific. */
     private static function billZone(Environment $environment): string
     { return $environment === Environment::Test ? 'America/Denver' : 'America/Los_Angeles'; }
-    /** Zones a history match may read a bill date in. The Live clock is unverified (Pacific or Mountain, Nov 14 2026 sample),
-     * so a Live order may match under either; History still requires exactly one matching order. */
-    public static function billZones(Environment $environment): array
-    { return $environment === Environment::Test ? ['America/Denver'] : ['America/Los_Angeles', 'America/Denver']; }
+    /** [zones a history order may match in, zones that only flag a candidate]. TEST is Mountain. Live matches only in its
+     * measured zone; until measured it matches as configured Pacific, and an order that fits only as Mountain is a candidate
+     * that keeps the attempt unresolved, never a match or an absence. */
+    public static function billZones(Environment $environment, ?string $measured): array
+    {
+        if ($environment === Environment::Test) { return [['America/Denver'], []]; }
+        return in_array($measured, ['America/Los_Angeles', 'America/Denver'], true) ? [[$measured], []] : [['America/Los_Angeles'], ['America/Denver']];
+    }
+    /** Calibration from a normal Live reply's own order: the one named zone that puts its BillDate inside the send window. Any
+     * invalid or ambiguous reading, or both or neither zone fitting, is no sample. */
+    public static function billZoneSample(AttemptEvidence $attempt, ProtocolResult $order): ?array
+    {
+        if ($attempt->binding->environment !== Environment::Live || $attempt->execution !== ExecutionRecord::Recorded || !$attempt->executionFacts
+            || $attempt->executionFacts->capturedUnknown() || $attempt->providerReference === null || !self::read($attempt, $attempt->executionFacts, $order)) { return null; }
+        $fits = [];
+        foreach (['America/Los_Angeles', 'America/Denver'] as $zone) {
+            $date = self::date($order->value('order.billdate'), 'enom_order_bill_date', false, $zone);
+            if (!$date || $date->precision !== ExpiryPrecision::Instant) { return null; }
+            $at = new \DateTimeImmutable($date->value);
+            if ($at >= $attempt->windowStart && $at <= $attempt->windowEnd) { $fits[] = $zone; }
+        }
+        return count($fits) === 1 ? ['zone'=>$fits[0], 'order'=>$attempt->providerReference] : null;
+    }
     private static function date(mixed $value, string $source, bool $captured, string $zone): ?DateEvidence
     {
         if (!is_string($value)) { return null; }

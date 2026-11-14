@@ -269,7 +269,7 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         $difference = $expected && ($expected->currency !== 'USD' || rtrim(rtrim($expected->amount, '0'), '.') !== rtrim(rtrim($candidate->charge->amount, '0'), '.'));
         return new DriverResult($this->binding(), $difference ? Disposition::AcceptedWithDiscrepancy : Disposition::Accepted,
             SendState::Sent, $difference ? ResultReason::Fallback : ResultReason::Acknowledged,
-            new Evidence(charge: $candidate->charge, candidates: [$candidate]), $difference ? [Discrepancy::Charge] : []);
+            new Evidence(charge: $candidate->charge, candidates: [$candidate], billZoneSample: OrderCharge::billZoneSample($attempt, $order)), $difference ? [Discrepancy::Charge] : []);
     }
     public function reconcile(AttemptEvidence $attempt, #[\SensitiveParameter] RequestContext $context): ReconciliationResult
     { return $this->reconcileAttempt($attempt,$context,false); }
@@ -301,10 +301,11 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
                 active: $domain->active, nameservers: $domain->nameservers);
         }
         $transfer ??= $this->transferStatus($attempt,$context);
-        $candidates = [];
+        $candidates = []; $sample = null;
         if ($attempt->executionFacts && $attempt->providerReference) {
+            // The normal reply's own order detail, already read for its charge, also calibrates the Live bill clock.
             $charge = $this->orderCharge($attempt, $attempt->executionFacts, $context);
-            $candidates = $charge->evidence()->candidates;
+            $candidates = $charge->evidence()->candidates; $sample = $charge->evidence()->billZoneSample;
         }
         $complete = false; $scan = null;
         if ($attempt->replyLost() && $attempt->historyAcceptance?->covers($attempt, $context->now())) {
@@ -341,7 +342,7 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
             }
         }
         return new ReconciliationResult($attempt, new DriverResult($this->binding(), Disposition::Unknown,
-            SendState::PossiblySent, ResultReason::Unresolved, new Evidence(domain: $domain, candidates: $candidates, historyComplete: $complete, transfer: $transfer, transferReference: $attempt->transferReference, historyScan: $scan)));
+            SendState::PossiblySent, ResultReason::Unresolved, new Evidence(domain: $domain, candidates: $candidates, historyComplete: $complete, transfer: $transfer, transferReference: $attempt->transferReference, historyScan: $scan, billZoneSample: $sample)));
     }
     private static function readNameservers(ProtocolResult $reply, \DateTimeImmutable $observedAt): ?NameserverEvidence
     {

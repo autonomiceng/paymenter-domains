@@ -50,7 +50,8 @@ final class ReconciliationEvidence
             expectedPrivacy: $op->action === 'transfer' && is_bool($a['transfer_admission']['privacy'] ?? null) ? $a['transfer_admission']['privacy'] : null,
             supportedOrderDate: $binding->registrarKey==='namesilo'&&($answer['outcome']??null)==='accepted'
                 ?new DateEvidence($answer['processed_at'],ExpiryPrecision::Instant,'namesilo_support_order',(new \DateTimeImmutable($answer['processed_at']))->getTimezone()->getName()):null,
-            historyScan: \Paymenter\Extensions\Servers\Domains\Data\HistoryScan::load($op->policy['history_scan'] ?? null));
+            historyScan: \Paymenter\Extensions\Servers\Domains\Data\HistoryScan::load($op->policy['history_scan'] ?? null),
+            billZone: $binding->registrarKey === 'enom' ? EnomBillZones::measured($binding, $server) : null);
     }
     /** Exactly one charged original order AND owned full-term expiry; neither read alone is completion. */
     public static function completion(AttemptEvidence $attempt, Evidence $facts, \DateTimeImmutable $now): ?array
