@@ -147,8 +147,10 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
     }
 
     public function readDomain(string $name, #[\SensitiveParameter] RequestContext $context): DriverResult
+    { return $this->domainFrom($name, $this->identity($name, $context), $context); }
+    private function domainFrom(string $name, array $identity, #[\SensitiveParameter] RequestContext $context): DriverResult
     {
-        [$reply, $parts, $domain] = $this->identity($name, $context);
+        [$reply, $parts, $domain] = $identity;
         if ($domain?->owned !== true) { return $this->neutral($reply, new Evidence(domain: $domain)); }
         $renew = $this->read(ReadCommand::Renewal, $parts, $context);
         if ($renew->status !== 'success') { return $this->neutral($renew, new Evidence(domain: $domain)); }
@@ -166,8 +168,10 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         return $this->neutral($reply, new Evidence(domain: $snapshot));
     }
     public function readRenewalDomain(string $name, #[\SensitiveParameter] RequestContext $context): DriverResult
+    { return $this->renewalDomainFrom($name, $this->identity($name, $context), $context); }
+    private function renewalDomainFrom(string $name, array $identity, #[\SensitiveParameter] RequestContext $context): DriverResult
     {
-        [$reply, $parts, $domain] = $this->identity($name, $context);
+        [$reply, $parts, $domain] = $identity;
         if ($domain?->owned !== true) { return $this->neutral($reply, new Evidence(domain: $domain)); }
         $renew = $this->read(ReadCommand::Renewal, $parts, $context);
         if ($renew->status !== 'success') { return $this->neutral($renew, new Evidence(domain: $domain)); }
@@ -290,9 +294,14 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
             return new ReconciliationResult($attempt,new DriverResult($this->binding(),Disposition::Unknown,SendState::PossiblySent,
                 ResultReason::Unresolved,new Evidence(transfer:$transfer,transferReference:$attempt->transferReference)));
         }
+        $identity = $this->identity($attempt->query->name, $context);
         $domain = ($attempt->query->action === Action::Renew
-            ? $this->readRenewalDomain($attempt->query->name, $context)
-            : $this->readDomain($attempt->query->name, $context))->evidence()->domain;
+            ? $this->renewalDomainFrom($attempt->query->name, $identity, $context)
+            : $this->domainFrom($attempt->query->name, $identity, $context))->evidence()->domain;
+        // Enom's exact not-found reply: the domain is not in this account. Recorded for a lost Register or Renew only.
+        if ($domain === null && $identity[0]->code === 'domain_not_in_account' && in_array($attempt->query->action, [Action::Register, Action::Renew], true)) {
+            $domain = new DomainSnapshot($this->binding(), $attempt->query->name, false);
+        }
         if ($domain?->owned === true) {
             $expiry = $this->expiry($attempt->query->name, $context)->facts();
             $domain = new DomainSnapshot($this->binding(), $attempt->query->name, true,
