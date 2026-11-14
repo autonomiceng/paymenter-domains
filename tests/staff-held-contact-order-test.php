@@ -92,11 +92,17 @@ expect(str_contains($costFacts['cost_sub'],'cannot exceed this estimate'),'The e
 // A release cannot enable the contact-creation deployment capability; both page and locked writer must refuse it.
 $managementConfig=config('domains.namesilo_test.management',true);config(['domains.namesilo_test.management'=>false]);
 $blocked='Contact creation is off on this site; the site administrator must enable NameSilo contact creation before this order can retry.';
-$before=[$nativeMoney(),$op->fresh()->getRawOriginal(),$sent->contactAdd,$sent->registerDomain];
-expect(!StaffOperationWrites::canRelease($op,$clock->now()),'Contact creation off prevents offering a repeat hold');
-Livewire::actingAs($costStaff)->test(ViewOperation::class,['record'=>$op->id])->assertActionHidden('release')->assertSee($blocked);
-Auth::login($staff);$refused(fn()=>$run($op,'release'),'The writer refuses disabled contact creation',$blocked);
-same($before,[$nativeMoney(),$op->fresh()->getRawOriginal(),$sent->contactAdd,$sent->registerDomain],'Blocked contact retry changes no money or sends');
+foreach(['contact_profile_proof_required','write_rate_limited','processing'] as $reason){
+    DB::table('domains_operations')->where('id',$op->id)->update(['safe_code'=>$reason]);$op->refresh();
+    $before=[$nativeMoney(),$op->getRawOriginal(),$sent->contactAdd,$sent->registerDomain];
+    expect(!StaffOperationWrites::canRelease($op,$clock->now()),'Contact creation off prevents release for '.$reason);
+    Livewire::actingAs($costStaff)->test(ViewOperation::class,['record'=>$op->id])->assertActionHidden('release');
+    Auth::login($staff);$refused(fn()=>$run($op,'release'),'The writer refuses disabled contact creation',$blocked);
+    $retryClock=clone $clock;$retryClock->instant=$clock->now()->modify('+1 day');
+    expect(!ContactStepRetries::readmit($op->id,$retryClock),'Automatic contact release also waits for contact creation');
+    same($before,[$nativeMoney(),$op->fresh()->getRawOriginal(),$sent->contactAdd,$sent->registerDomain],'Blocked contact retry changes no money, history or sends');
+}
+DB::table('domains_operations')->where('id',$op->id)->update(['safe_code'=>'contact_profile_proof_required']);$op->refresh();
 config(['domains.namesilo_test.management'=>$managementConfig]);
 
 // Prior holdings may keep held orders, but their controls do not belong on the current domain.
