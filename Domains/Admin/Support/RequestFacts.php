@@ -265,6 +265,16 @@ final class RequestFacts
         // Nothing reached the registrar at the contact step: while Orders are off that is the only wait, whatever cause was saved.
         if ($op->state==='held'&&in_array($op->safe_code,ContactProfileHold::HOLDS,true)&&($held=$read())!==null) {
             $on=self::ordersOn($op,$held,$accounts);
+            if (ContactStepRetries::candidate($op)) {
+                $now=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now();
+                try { StaffOperationWrites::requireRelease($op,StaffOperationWrites::releaseFacts($op),$now); }
+                catch (\Throwable) {
+                    if($op->action==='transfer'&&(!($deadline=\Paymenter\Extensions\Servers\Domains\Services\TransferInputs::deadline($op,$now))||$now>=$deadline)){
+                        return 'Not sent. This hold can’t be released. Cancel and refund it.';
+                    }
+                    return null;
+                }
+            }
             if (ContactStepRetries::waitsForOrders($op,$on)) { return self::ordersPaused($op); }
             if ($on&&$op->safe_code==='processing'&&ContactStepRetries::candidate($op)) { return 'Not sent. It will retry automatically.'; }
         }
