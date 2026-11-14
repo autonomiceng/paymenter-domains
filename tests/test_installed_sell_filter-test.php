@@ -41,4 +41,16 @@ foreach(['own'=>false,'default'=>true] as $filter=>$defaults){
     $page->assertSee('Prices left out for .com')->assertSee('It is not shown on this page. Open it to fix the pricing.');
     $page->searchTable('net')->assertDontSee('Prices left out');
 }
+// Mixed omissions need different recovery: unreadable settings cannot be repaired by the pricing action.
+$invalid=$codec::decode($sibling->catalogue_intent);$invalid['pricing_rule']=['mode'=>'bogus','round_up'=>'none','markup'=>'0','fixed'=>[]];
+DB::table('domains_tlds')->where('id',$sibling->id)->update(['catalogue_intent'=>$codec::json($invalid),'use_default_rule'=>false]);
+DB::table('domains_tlds')->where('id',$tlds[0]->id)->update(['catalogue_intent'=>'{"sell":','use_default_rule'=>false]);
+$page=Livewire::actingAs($actor)->test(EmptyFilterSellPage::class,['account'=>$binding->serverId])->filterTable('for_sale',false)->filterTable('show','own')->assertCountTableRecords(0);
+$table=new \Paymenter\Extensions\Servers\Domains\Admin\Support\SellTable([$binding->serverId=>$binding],1,true,fn()=>[],catalogue:$GLOBALS['emptyFilterSource']);
+same(['unreadable','custom_rule'],array_values(array_unique($table->leftOutCauses('own'))),'The empty own-pricing filter retains both recovery causes');
+$grants=\Paymenter\Extensions\Servers\Domains\Admin\Support\StaffGrants::current();
+$unreadable=\Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::accounts($tlds[0]->fresh(),$grants)[0];
+$custom=\Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::accounts($sibling->fresh(),$grants)[0];
+same(null,$unreadable['fix'],'Unreadable settings offer no pricing action that cannot decode them');
+expect($custom['fix']!==null,'An invalid custom rule retains its pricing repair action');
 $nativeSuccessful=true;echo "Empty price filters explain omissions without pointing at a missing callout.\n";
