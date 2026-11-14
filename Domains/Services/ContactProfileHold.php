@@ -9,6 +9,8 @@ use Paymenter\Extensions\Servers\Domains\Models\{Operation,ProfileContactOperati
 final class ContactProfileHold
 {
     public const CODE='contact_profile_proof_required';
+    /** Holds an order can reach at its contact step with nothing sent: the contact hold, or the real local cause. */
+    public const HOLDS=[self::CODE,'processing','write_rate_limited'];
     public const RETRY_BLOCKED='The contact step cannot be retried with these order details. Cancel and refund this order.';
     public const RETRY_ENDED='This contact step has ended and cannot be retried. Cancel and refund this order.';
     /** A saved step cannot be reopened or send different details. The offer and writer give the same cause. */

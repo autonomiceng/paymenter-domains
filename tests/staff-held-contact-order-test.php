@@ -15,7 +15,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\{Clock,WriteReservation};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Money};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Operation,ProfileContactOperation};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
-use Paymenter\Extensions\Servers\Domains\Services\{DomainOperations,OperationClaims,ProfileContactOperations,ProfileContactSchema,Refunds,RegistrationPreflight,RegistrationProfiles,StaffOperationReview,StaffOperations,StaffOperationWrites,WriteAcceptance,WriteFeatures};
+use Paymenter\Extensions\Servers\Domains\Services\{ContactStepRetries,ReadDeferred,DomainOperations,OperationClaims,ProfileContactOperations,ProfileContactSchema,Refunds,RegistrationPreflight,RegistrationProfiles,StaffOperationReview,StaffOperations,StaffOperationWrites,WriteAcceptance,WriteFeatures};
 ProfileContactSchema::install();staffPanel();
 app()->instance(Clock::class,$clock);app()->instance(Refunds::class,new Refunds($clock));
 $all=[Staff::VIEW,'admin.domains.manage','admin.domains.fund','admin.invoices.update'];
@@ -32,11 +32,11 @@ $changed='This request changed. Reload the page and try again.';$original='This 
 
 // The order's own contact grant, as the installed runtime gives it: a local cap refusal stops before any send.
 $grants=new class($binding) implements WriteReservation {
-    public ?int $active=null;public bool $reserved=false;public bool $consumed=false;public bool $cap=false;
+    public ?int $active=null;public bool $reserved=false;public bool $consumed=false;public bool $cap=false;public ?Closure $fail=null;
     public function __construct(private AccountBinding $binding){}
     public function bindsTo(AccountBinding $b):bool{return $this->binding->matches($b);}
     public function run(string $feature,int $id,Closure $work):mixed{$this->active=$id;$this->reserved=$this->consumed=false;try{return $work();}finally{$this->active=null;}}
-    public function reserve(string $command,#[SensitiveParameter] array $parameters,?Money $cost=null):void{if($this->cap){throw new RuntimeException('Synthetic local cap');}$this->reserved=true;}
+    public function reserve(string $command,#[SensitiveParameter] array $parameters,?Money $cost=null):void{if($this->fail){($this->fail)();}if($this->cap){throw new RuntimeException('Synthetic local cap');}$this->reserved=true;}
     public function unconsumed(int $id):bool{return $this->active===$id&&$this->reserved&&!$this->consumed;}
 };
 $sent=(object)['contactAdd'=>0,'registerDomain'=>0,'readFails'=>false];
@@ -268,4 +268,51 @@ catch(DomainException $error){same('This contact step has ended and cannot be re
 same(['held','contact_profile_proof_required'],[$op->fresh()->state,$op->fresh()->safe_code],'The ended contact step stays held');
 same($before,[$nativeMoney(),$sent->contactAdd,$sent->registerDomain,$op->fresh()->attempt,$row->fresh()->attempt],'An ended contact step changes no money or send evidence');
 echo "An ended contact step does not blame unchanged order details.\n";
+// A local refusal before the contact step sent anything keeps its real cause: a read limit defers and runs again by itself.
+$order=static function(string $name)use($nsNew):Operation {
+    $op=$nsNew(placeholderComFixtureName($name));
+    $op->update(['payload'=>$op->payload+['nameservers'=>['ns1.provider.example','ns2.provider.example'],'privacy'=>false]]);return $op;
+};
+$op=$order('held-contact-deferred-placeholder.com');$before=[$sent->contactAdd,$sent->registerDomain];
+$grants->fail=static fn()=>throw new ReadDeferred('Synthetic read limit');$deferred=$execute($op);$grants->fail=null;
+same(['queued','write_rate_limited'],[$deferred->state,$deferred->safe_code],'A read limit at the contact step defers instead of holding for staff');
+same('ready',ProfileContactOperation::where('operation_id',$op->id)->sole()->state,'The deferred contact step never sent');
+same($before,[$sent->contactAdd,$sent->registerDomain],'A deferred contact step sends nothing');
+$clock->instant=$clock->now()->modify('+5 seconds');$execute($deferred->fresh());
+same([$before[0]+1,$before[1]+1],[$sent->contactAdd,$sent->registerDomain],'The deferred order sends once on its next run');
+echo "A read limit at the contact step defers and retries.\n";
+
+// Orders turned off while the contact step waited: the order holds for Orders and goes back by itself once they are on.
+$op=$order('held-contact-orders-off-placeholder.com');$before=[$sent->contactAdd,$sent->registerDomain];
+$grants->fail=static function()use($account):void {DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>false]);throw new DomainException('TEST NameSilo feature off.');};
+$paused=$execute($op);$grants->fail=null;$clock->instant=$clock->now()->modify('+60 seconds');Auth::login($staff);
+same(['held','processing'],[$paused->state,$paused->safe_code],'Orders off at the contact step holds for Orders, not for the contact');
+expect(OperationActions::relevant('refund',$paused->fresh()),'Cancel and refund stays available while Orders are off');
+expect(!ContactStepRetries::readmit($paused->id,$clock),'The order waits while Orders are off');
+DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>true]);
+expect(ContactStepRetries::readmit($paused->id,$clock),'The order goes back by itself once Orders are on');
+same(['queued',null],[$paused->fresh()->state,$paused->fresh()->safe_code],'Orders on puts the order back in the queue');
+$execute($paused->fresh());
+same([$before[0]+1,$before[1]+1],[$sent->contactAdd,$sent->registerDomain],'The resumed order sends once');
+echo "Orders off at the contact step resumes when Orders are on.\n";
+
+// A contact hold with nothing sent retries by itself a few spaced times, then stays for staff. It never cancels or refunds.
+$op=$heldOrder('held-contact-auto-retry-placeholder.com');$viaGateway($op,'receipt_held_contact_auto_retry');
+$money=[$nativeMoney(),$serviceStatus($op),MoneyReceiptGateway::$sends];$before=[$sent->contactAdd,$sent->registerDomain];
+expect(!ContactStepRetries::readmit($op->id,$clock),'The first automatic try waits');
+foreach(ContactStepRetries::WAITS as $i=>$wait){
+    $clock->instant=$clock->now()->modify('+'.$wait.' seconds');
+    expect(ContactStepRetries::readmit($op->id,$clock),'Automatic try '.($i+1).' starts');
+    same(['queued',null],[$op->fresh()->state,$op->fresh()->safe_code],'Automatic try '.($i+1).' queues the order');
+    $grants->cap=true;$held=$execute($op->fresh());$grants->cap=false;Auth::login($staff);
+    same(['held','contact_profile_proof_required'],[$held->state,$held->safe_code],'Automatic try '.($i+1).' holds again');
+}
+same($before,[$sent->contactAdd,$sent->registerDomain],'Automatic tries sent nothing');
+$clock->instant=$clock->now()->modify('+2 days');
+expect(!ContactStepRetries::readmit($op->id,$clock),'After the last try the hold stays for staff');
+same(['held','contact_profile_proof_required'],[$op->fresh()->state,$op->fresh()->safe_code],'The hold is kept');
+same($money,[$nativeMoney(),$serviceStatus($op),MoneyReceiptGateway::$sends],'No automatic cancel or refund');
+same(null,$op->fresh()->funding['refund_authorization']??null,'No refund was authorized');
+expect(OperationActions::relevant('refund',$op->fresh())&&StaffOperationWrites::canRelease($op->fresh(),$clock->now()),'Staff keep Release hold and Cancel and refund');
+echo "Automatic contact retries stop at the limit and never refund.\n";
 $nativeSuccessful=true;

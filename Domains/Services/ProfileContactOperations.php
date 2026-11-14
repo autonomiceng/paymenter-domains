@@ -44,16 +44,26 @@ final class ProfileContactOperations
                     $current=$row->fresh();
                     if(!in_array($current->state,['created','verified'],true)){throw new WriteHeld('contact_profile_proof_required');}
                     return $this->readback($current,$op,$ctx,$contact,$parameters);
-                }catch(\Throwable){
+                }catch(\Throwable $e){
                     $this->change($row,function($r)use($worker):array {
                         if($worker===null||$r->state!=='sealed'||($r->attempt['worker_key']??null)!==$worker){return [];}
                         $unsent=$this->reservation->unconsumed((int)$r->id);
                         return ['state'=>$unsent?'unsent':'uncertain','attempt'=>[...$r->attempt,'execution'=>$unsent?'definitely_unsent':'unknown']];
                     });
-                    throw new WriteHeld('contact_profile_proof_required');
+                    throw $this->cause($e,$row,$worker);
                 }
             });
-        }catch(\Throwable){throw new WriteHeld('contact_profile_proof_required');}
+        }catch(\Throwable $e){throw $this->cause($e,$row,$worker);}
+    }
+    /** A refusal before the contact step sealed sent nothing, so it keeps its own hold and retry path instead of the contact hold. */
+    private function cause(\Throwable $e,ProfileOperation $row,?string $worker): \Throwable
+    {
+        if($e instanceof WriteHeld){return $e;}
+        if($worker!==null||ProfileOperation::whereKey($row->id)->value('state')!=='ready'){return new WriteHeld('contact_profile_proof_required');}
+        if(!\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$this->binding->serverId)->value('processing_enabled')){return new WriteHeld('processing');}
+        if($e instanceof ReadDeferred||$e instanceof LiveReservationLimit){return $e;}
+        if($e instanceof \RuntimeException&&in_array($e->getMessage(),['Registrar request deadline reached.','Registrar request budget exhausted.'],true)){return new ReadDeferred('Contact step deferred.');}
+        return new WriteHeld('contact_profile_proof_required');
     }
     private function create(ProfileOperation $row,Operation $op,RequestContext $ctx,array $parameters,?string &$worker): void
     {

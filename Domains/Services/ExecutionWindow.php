@@ -16,7 +16,7 @@ final class ExecutionWindow
         $system=BalanceRetry::from($op);$balance=$system!==null;
         foreach(self::releases($op) as [$at,$from]){
             if(in_array($from,BalanceRetries::RELEASE_CODES,true)){$balance=true;}
-            if($at>$start&&(($op->registrar_key==='namesilo'&&in_array($from,['namesilo_account_guard',ContactProfileHold::CODE],true))
+            if($at>$start&&(($op->registrar_key==='namesilo'&&in_array($from,['namesilo_account_guard',...ContactProfileHold::HOLDS],true))
                 ||$from==='registrar_price_increased'||($balance&&in_array($from,self::BALANCE_HOLDS,true)))){$start=$at;$reason=$from;}
         }
         if($system?->window&&($start===null||$system->window>$start)){$start=$system->window;$reason=($op->policy['read_retries']??0)>0?'registrar_read_failed':'registrar_balance_insufficient';}

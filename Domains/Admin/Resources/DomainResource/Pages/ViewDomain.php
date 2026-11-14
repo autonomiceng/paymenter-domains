@@ -118,7 +118,15 @@ class ViewDomain extends RecordDetailPage
     {
         $d=$this->getRecord();
         // Import domain for a pending import sits in the page notice.
-        return [$this->approveComplimentaryCost($d),self::complimentaryRenewal($d),$this->syncNow(),...AcquisitionActions::make($d),...AcquisitionPaymentReview::actions($d),$this->customerView($d)];
+        return [$this->approveComplimentaryCost($d),self::complimentaryRenewal($d),$this->syncNow(),...self::heldOrderActions($d),...AcquisitionActions::make($d),...AcquisitionPaymentReview::actions($d),$this->customerView($d)];
+    }
+    /** A held order's Release hold and Cancel and refund, the same actions as its request page, so staff act where the hold is shown. */
+    private static function heldOrderActions(Domain $d): array
+    {
+        $op=$d->operations()->whereIn('action',['register','transfer'])->where('state','held')->latest('id')->first();
+        if(!$op){return [];}
+        $op->setRelation('domain',$d);$stamp=\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::stamp($op,$d);
+        return array_values(array_filter(OperationActions::make($op,$stamp),fn(Action $a)=>in_array($a->getName(),['release','refund'],true)));
     }
     private function approveComplimentaryCost(Domain $d):Action
     {

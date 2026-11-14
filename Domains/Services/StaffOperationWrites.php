@@ -63,7 +63,7 @@ final class StaffOperationWrites
             'registrar_price_missing','registrar_price_increased','registrar_read_failed','registrar_balance_insufficient'];
         $retry=false;$balanceRetry=OperationClaims::balanceRefusalRetryable($op);
         // A paid NameSilo order held at its contact step, with nothing sent, goes back once as the same claim.
-        $contactRetry=$op->safe_code===ContactProfileHold::CODE&&ContactProfileHold::unsent($op,retry:true);
+        $contactRetry=in_array($op->safe_code,ContactProfileHold::HOLDS,true)&&ContactProfileHold::unsent($op,retry:true);
         // The retained contact step cannot be reopened or send different details; cancellation still uses its unsent proof.
         if($op->safe_code===ContactProfileHold::CODE&&($blocked=ContactProfileHold::releaseBlocked($op))!==null){
             throw new \DomainException($blocked);

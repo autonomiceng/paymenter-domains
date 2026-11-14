@@ -23,6 +23,7 @@ final readonly class RuntimeDispatch
         $balance=BalanceRetries::pending($op);
         if(!$this->current($op)){if($balance){app(OperationClaims::class)->readmitBalance($id);}return;}
         if(OperationClaims::ordersOffHold($op)){app(OperationClaims::class)->readmitOrdersOff($id);$op=$op->fresh();}
+        if(ContactStepRetries::candidate($op)){ContactStepRetries::readmit($id,$this->clock);$op=$op->fresh();}
         if($op->state==='held'&&!ManagementEvidence::recoverable($op)&&!RenewalRetries::candidate($op)&&!TransferPolling::applies($op)&&(!$balance||!Account::where('server_id',$op->server_id)->value('processing_enabled'))){return;}
         $now=$this->clock->now()->getTimestamp();
         if(!TransferPolling::due($op,$now)){return;}
