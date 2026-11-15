@@ -424,12 +424,14 @@ InvariantReceiptGateway::$ledger = [];
 echo 'PROJECTION_SUMMARY '.json_encode(['checks'=>$projectionChecks, 'failures'=>count($projectionFailures), 'cases'=>$cases, 'steps'=>$steps], JSON_THROW_ON_ERROR)."\n";
 echo 'INVARIANT_SUMMARY '.json_encode(['cases'=>$cases, 'steps'=>$steps, 'checks'=>$checks,
     'failures'=>count($failures), 'coverage'=>$coverage], JSON_THROW_ON_ERROR)."\n";
-// Known caller violations must match exactly until their fixes remove the corresponding entries.
+// Step 5 owns deficits created by external losses after a completed credit, including
+// later observations of that same deficit without any new payout. Match them exactly.
 // Entry is [scenario (mode:seed), one-based action step, violation kind, total payout in minor units].
 $callerBaseline = [
     ['late:3', 3, 'external_deficit', 200],
     ['late:5', 3, 'external_deficit', 100],
     ['late:401', 5, 'external_deficit', 505],
+    ['late:401', 6, 'returned_exceeds_paid_less_lost', 505],
     ['late:701', 5, 'external_deficit', 175],
     ['late:1009', 4, 'external_deficit', 170],
     ['late:1601', 5, 'external_deficit', 538],
