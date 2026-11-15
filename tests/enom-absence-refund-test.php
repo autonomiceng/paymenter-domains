@@ -13,7 +13,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, EnomAnswers,
 // $match lists the renewal fixture's own order for this renewal instead, $late runs once when the order list is read, and
 // $fail makes every order list request fail before Enom replies. $orders is how many orders the day lists.
 $history = new class implements Transport {
-    public ?Transport $domain = null; public ?DateTimeImmutable $sent = null; public string $fault = ''; public array $forms = []; public bool $match = false; public $late = null; public bool $fail = false; public int $orders = 3; public ?ReadCommand $failedCommand = null; public $detailTick = null; public ?string $blockedName = null;
+    public ?Transport $domain = null; public ?DateTimeImmutable $sent = null; public string $fault = ''; public array $forms = []; public bool $match = false; public $late = null; public bool $fail = false; public int $orders = 3; public ?ReadCommand $failedCommand = null; public $detailTick = null; public ?string $blockedName = null; public bool $open = false;
     public function send($env, ReadCommand $command, array $parameters, string $uid, string $token, int $timeoutMs): string {
         if ($command === $this->failedCommand) { throw new RuntimeException('Connection reset before a flag reply'); }
         if ($this->match || !in_array($command, [ReadCommand::Orders, ReadCommand::Order], true)) { return $this->domain->send($env, $command, $parameters, $uid, $token, $timeoutMs); }
@@ -23,9 +23,9 @@ $history = new class implements Transport {
             if ($this->late) { $hook = $this->late; $this->late = null; $hook(); }
             $rows = array_map(fn ($i) => ['id' => (string)(8001 + $i), 'date' => $at($i)], range(0, $this->orders - 1));
             $page = enomHistoryPage(array_slice($rows, $parameters['Start'] - 1, 25), $parameters['Start'], count($rows));
-            return enomHistoryEnvelope($this->blockedName === null ? $page : str_replace('<StatusDesc>Order complete', '<StatusDesc>Order canceled', $page));
+            return enomHistoryEnvelope($this->blockedName === null && !$this->open ? $page : str_replace('<StatusDesc>Order complete', '<StatusDesc>Order canceled', $page));
         }
-        if ($this->detailTick) { ($this->detailTick)($timeoutMs); }
+        if ($this->detailTick) { ($this->detailTick)($timeoutMs, $parameters['OrderID']); }
         $i = (int)$parameters['OrderID'] - 8001;
         $name = $i === $this->orders - 1 && $this->blockedName !== null ? $this->blockedName : 'other-'.$i.'-placeholder.com';
         $body = enomHistoryDetail($parameters['OrderID'], $name, $at($i), '2028-10-18', '8.95', 1, $at($i));
@@ -179,6 +179,26 @@ $allowed($op, 'Registration: the late read after a deferral recorded the evidenc
 [$op] = $register('absence-late-failed-placeholder.com');
 $failed(fn () => same('uncertain', $scheduled->run($op->id)->state, 'A scheduled read leaves the lost reply open'), $registrationCalls,
     fn () => isset($op->fresh()->policy['enom_absence']), 'Registration');
+// A completed scan cannot lend stale open exclusions to a fresh interrupted scan's refund evidence.
+[$op] = $register('absence-interrupted-revalidation-placeholder.com');
+$history->orders = 12; $history->open = true;
+$read($op, '+2 hours');
+same([true, false], [$op->fresh()->policy['history_scan']['state']['complete'], isset($op->fresh()->policy['enom_absence'])],
+    'The earlier complete scan predates the no-order margin');
+$history->detailTick = static function (int $ms) use ($clock): void { $clock->instant = $clock->instant->modify('+'.min(24000, $ms).' milliseconds'); };
+$read($op, '+25 hours');
+same(false, $op->fresh()->policy['history_scan']['state']['complete'], 'Fresh open-order revalidation reaches the deadline before the final details');
+$history->detailTick = null;
+$history->late = static function () use ($clock): void { $clock->instant = $clock->instant->modify('+300 seconds'); };
+$read($op, '+26 hours'); // A list-level interruption must also preserve the outstanding rechecks.
+$history->blockedName = $op->domain->domain; // Detail changes; the listed ID, date, status and process flag do not.
+$requested = [];
+$history->detailTick = static function (int $ms, string $id) use (&$requested): void { $requested[] = $id; };
+$read($op, '+27 hours');
+$refused($op, 'Interrupted open-order revalidation with a now-related detail');
+same(false, $op->fresh()->policy['history_scan']['state']['complete'], 'The related unfinished order prevents complete no-order history');
+expect(in_array('8011', $requested, true) && in_array('8012', $requested, true), 'Both deadline-interrupted and unreached exclusions are read again');
+$history->orders = 3; $history->open = false; $history->blockedName = null; $history->detailTick = null;
 // Revalidation of the same unrelated open orders is not new progress: a blocked read must count toward escalation.
 [$op] = $register('absence-blocked-progress-placeholder.com');
 $history->blockedName = $op->domain->domain;

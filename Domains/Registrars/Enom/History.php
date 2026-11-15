@@ -25,14 +25,20 @@ final class History
         $end = $attempt->windowEnd->setTimezone($utc)->modify('+14 hours')->setTime(0, 0)->modify('+1 day');
         $parameters = ['BeginDate'=>$begin->format('m/d/Y'), 'EndDate'=>$end->format('m/d/Y')];
         $key = HistoryScan::key($attempt); $saved = $attempt->historyScan?->key === $key ? $attempt->historyScan->state : [];
+        $priorRefusals = self::counts($saved['refusals'] ?? null);
+        $continueOpen = ($saved['complete'] ?? null) === false && $priorRefusals
+            && !array_diff(array_keys($priorRefusals), ['detail_ceiling', 'read_budget']);
+        $checked = $continueOpen ? self::outcomes($saved['open_checked'] ?? null) : [];
         $known = self::outcomes($saved['orders'] ?? null); $refusals = [];
         $refuse = function (string $category) use (&$refusals): void { $refusals[$category] = ($refusals[$category] ?? 0) + 1; };
-        $result = function (bool $complete, array $orders, array $candidates, int $listed, int $window, bool $progressed) use (&$refusals, $saved, $key): Evidence {
+        $result = function (bool $complete, array $orders, array $candidates, int $listed, int $window, bool $progressed) use (&$refusals, &$checked, $saved, $key): Evidence {
             $totals = self::counts($saved['refusal_totals'] ?? null);
             foreach ($refusals as $category=>$count) { $totals[$category] = min(1000000, ($totals[$category] ?? 0) + $count); }
             $encoded = [];
             foreach ($orders as $id=>[$outcome, $signature]) { $encoded[(string)$id] = $outcome.':'.$signature; }
-            $state = ['orders'=>$encoded, 'listed'=>$listed, 'in_window'=>$window, 'resolved'=>count($orders), 'complete'=>$complete,
+            $validatedOpen = [];
+            foreach ($checked as $id=>[$outcome, $signature]) { $validatedOpen[(string)$id] = $outcome.':'.$signature; }
+            $state = ['orders'=>$encoded, 'open_checked'=>$validatedOpen, 'listed'=>$listed, 'in_window'=>$window, 'resolved'=>count($orders), 'complete'=>$complete,
                 'reads'=>min(1000000, (int)($saved['reads'] ?? 0) + 1), 'refusals'=>$refusals, 'refusal_totals'=>$totals];
             return new Evidence(candidates: $candidates, historyComplete: $complete, historyScan: new HistoryScan($key, $state, $progressed && !$complete));
         };
@@ -62,19 +68,21 @@ final class History
         // A saved outcome counts only for the same listed order and receipt date; a candidate is read again before it is used.
         $orders = []; $pending = []; $rechecks = []; $stale = []; $complete = true;
         $listing = hash('sha256', json_encode($rows, JSON_THROW_ON_ERROR));
-        $priorRefusals = self::counts($saved['refusals'] ?? null);
-        $continueOpen = ($saved['complete'] ?? null) === false && $priorRefusals
-            && !array_diff(array_keys($priorRefusals), ['detail_ceiling', 'read_budget']);
+        $priorChecked = $checked; $checked = [];
         foreach ($rows as $row) {
             $row['open'] = $row['statusdesc'] !== 'Order complete' || $row['orderprocessflag'] !== 'True';
             $id = $row['orderid']; $signature = substr(hash('sha256', $row['orderdate'].($row['open'] ? $listing : '')), 0, 12); $row['signature'] = $signature;
             // Open exclusions continue only an unchanged listing stopped by capacity. A finished or blocked scan re-reads them.
-            if ($row['open'] && (!$continueOpen || ($known[$id][0] ?? null) !== 'n')) {
+            if ($row['open'] && (!$continueOpen || ($known[$id][0] ?? null) !== 'n' || ($priorChecked[$id] ?? null) !== ['n', $signature])) {
                 if (($known[$id] ?? null) === ['n', $signature]) { $orders[$id] = $known[$id]; $rechecks[] = $row; }
                 else { $pending[] = $row; }
                 continue;
             }
-            if (($known[$id][1] ?? null) === $signature) { $orders[$id] = $known[$id]; if ($known[$id][0] === 'c') { $stale[] = $row; } }
+            if (($known[$id][1] ?? null) === $signature) {
+                $orders[$id] = $known[$id];
+                if ($row['open']) { $checked[$id] = $known[$id]; }
+                if ($known[$id][0] === 'c') { $stale[] = $row; }
+            }
             else { $pending[] = $row; }
         }
         // Resolve new or changed orders before revalidation; retain prior outcomes if capacity interrupts the rechecks.
@@ -95,6 +103,7 @@ final class History
             $validated = [$outcome, $row['signature']];
             if (($known[$row['orderid']] ?? null) !== $validated) { $added++; }
             $orders[$row['orderid']] = $validated;
+            if ($row['open']) { $checked[$row['orderid']] = $validated; }
             if ($candidate) { $candidates[] = $candidate; }
         }
         if ($complete && $context->budget->remaining() < count($stale)) { $complete = false; $refuse('read_budget'); }

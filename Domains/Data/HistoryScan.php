@@ -17,7 +17,7 @@ final readonly class HistoryScan
     }
     /** Contract revision: a different accepted contract or scanner version starts a new scan and allows one resumption. */
     public static function revision(HistoryAcceptance $acceptance): string
-    { return hash('sha256', self::VERSION.json_encode($acceptance, JSON_THROW_ON_ERROR)); }
+    { return hash('sha256', self::VERSION.($acceptance->binding->registrarKey === 'enom' ? ':open_validation_v2' : '').json_encode($acceptance, JSON_THROW_ON_ERROR)); }
     /** Binds saved progress to this exact attempt, account, window, action and term, contract revision and measured bill zone. */
     public static function key(AttemptEvidence $attempt): ?string
     {
