@@ -77,7 +77,7 @@
 @endcomponent
 @endif
 @elseif ($section['off'] ?? false)
-<span class="domains-row__v">{{ $value::plain($plain::Off, $section['reason']) }} @if (isset($section['family']))@include('domains::partials.record-family-status',['family'=>$section['family']])@endif</span>
+<span class="domains-row__v">{{ $value::plain($plain::Off, $section['reason']) }} @if (isset($section['family']) && !$familyLabel)@include('domains::partials.record-family-status',['family'=>$section['family']])@endif</span>
 <span class="domains-row__a"><button class="domains-btn domains-btn--secondary" type="button" aria-disabled="true" disabled>Add DS record</button></span>
 @elseif ($section['unavailable'] ?? false)
 @php($total = isset($section['inventory']) ? count($section['inventory']) : ($records === null ? null : count($records) + count($section['fixed'] ?? [])))
