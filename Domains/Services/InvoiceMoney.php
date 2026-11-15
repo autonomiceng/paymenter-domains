@@ -45,7 +45,7 @@ final class InvoiceMoney
     public static function record(iterable $rows, iterable $peers, array $ledger, bool $ownerHold = false): array
     {
         $rows = [...$rows]; $peers = [...$peers];
-        $receipts = []; $negative = []; $pending = false; $used = []; $allocations = []; $refunds = []; $recoveries = []; $U = 0;
+        $receipts = []; $negative = []; $pending = false; $used = []; $allocations = []; $refunds = []; $U = 0;
         foreach ($rows as $row) {
             if ($row['status'] === 'processing') { $pending = true; }
             if ($row['status'] !== 'succeeded') { continue; }
@@ -69,7 +69,7 @@ final class InvoiceMoney
             $entries[$key] = $entry;
         }
         foreach ($peers as $peer) {
-            $funding = $peer['funding'] ?? [];
+            $funding = $peer['funding'] ?? []; $recoveries = [];
             foreach ([...(isset($funding['refund']) ? [$funding['refund']] : []), ...($funding['late_credits'] ?? [])] as $plan) {
                 if (ReceiptReturns::amount($plan) === null) { throw new \DomainException('Retained return plan needs review.'); }
                 $split = [];

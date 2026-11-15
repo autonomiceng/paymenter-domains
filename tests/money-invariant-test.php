@@ -295,6 +295,10 @@ $recovery = [['funding'=>['refund'=>['to'=>'account_credit','amount'=>'3.00','pa
     'dispute_holds'=>[['payment_id'=>10,'dispute_id'=>'synthetic_dispute','removed_minor'=>100]]]]];
 $r = $assertMoney($base, $recovery, [$observation('stripe:dispute:synthetic_dispute','lost',300)], false, 0, 0, true);
 same(100, $r['receipts'][10]['recovered'], 'Removed credit restores only its exact receipt');
+$sharedRecovery = ['funding'=>['refund'=>['to'=>'account_credit','amount'=>'1.50','payments'=>[['id'=>10,'amount_minor'=>150]]],
+    'dispute_holds'=>[['payment_id'=>10,'dispute_id'=>'synthetic_dispute','removed_minor'=>50]]]];
+$r = $assertMoney($base, [$sharedRecovery, $sharedRecovery], [$observation('stripe:dispute:synthetic_dispute','lost',300)], false, 0, 0, true);
+same(100, $r['receipts'][10]['recovered'], 'Different operations can each recover their own credited share of one dispute');
 $legacy = [['funding'=>['refund'=>['to'=>'account_credit','amount'=>'1.00','payments'=>[['id'=>10,'amount_minor'=>300],['id'=>20,'amount_minor'=>200]]]]]];
 $r = $assertMoney([...$base, $nativeRow(30, -100, 'unrelated')], $legacy, [], false, 300, 300, false);
 same(100, $r['U'], 'Ambiguous old credit stays unattributed'); same(100, $r['F'], 'Unmatched native negative is an invoice deficit');
