@@ -47,8 +47,13 @@ final class RefundPayment
             // Incremental returns do not grant replacement authority or resolve an unseen Auto Pay attempt.
             $net=$l['transactions']->where('invoice_id',$op->invoice_id)->where('status',InvoiceTransactionStatus::Succeeded)->sum(fn($row)=>PricingRule::minor($row->amount));
             if(!RenewalCycles::closedEarly($op)&&$net+ReceiptReturns::completedMinor($op,$l)!==PricingRule::minor($op->amount)){return false;}
-            return ReceiptReturns::outstanding($op) === 0 && self::lateUncredited($op, $l) === []
-                && !$l['transactions']->where('invoice_id', $op->invoice_id)->contains('status', InvoiceTransactionStatus::Processing);
+            if (!($l['advisory'] ?? false)) { return InvoiceMoney::settled(InvoiceMoney::load($l, (int)$op->invoice_id)); }
+            // Owner choices use retained evidence without gateway I/O. Billing rechecks the current ledger under locks.
+            $rows = $l['transactions']->where('invoice_id', $op->invoice_id)->map(fn($row)=>[
+                'id'=>(int)$row->id, 'amount'=>(string)$row->amount, 'status'=>$row->status->value,
+                'gateway_id'=>(int)$row->gateway_id, 'transaction_id'=>$row->transaction_id]);
+            $peers = Operation::where('invoice_id', $op->invoice_id)->orderBy('id')->get()->map(fn($peer)=>['funding'=>$peer->funding ?? []]);
+            return InvoiceMoney::settled(InvoiceMoney::record($rows, $peers, []));
         } catch (\Throwable) { return false; }
     }
     /** A closed new order shares its invoice's payments with other orders, maybe on another account, so it reads what any of them credited.
