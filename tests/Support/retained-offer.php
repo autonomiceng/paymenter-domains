@@ -43,11 +43,14 @@ function retainedOfferObligations(): string
 }
 
 /** Test-only exact database snapshot, independent of retired upgrade comparison policy. */
-function retainedOfferSnapshot(): string
+function retainedOfferSnapshot(bool $includeVerification=true): string
 {
     $tables=Illuminate\Support\Facades\Schema::getTableListing();sort($tables);$rows=[];
     foreach($tables as $table){
-        $values=Illuminate\Support\Facades\DB::table($table)->get()->map(static fn($row)=>(array)$row)->all();
+        $query=DB::table($table);
+        // Only successful upgrades may replace this derived record; refusals still compare every byte.
+        if(!$includeVerification && $table==='settings'){$query->whereNot(static fn($q)=>$q->whereNull('settingable_type')->whereNull('settingable_id')->where('key',Paymenter\Extensions\Servers\Domains\Services\Installation::VERIFIED_KEY));}
+        $values=$query->get()->map(static fn($row)=>(array)$row)->all();
         usort($values,static fn($a,$b)=>json_encode($a)<=>json_encode($b));$rows[$table]=$values;
     }
     return serialize($rows);
