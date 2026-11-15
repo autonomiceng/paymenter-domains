@@ -100,9 +100,9 @@ final class RegistrarFacts
         return ['open'=>array_sum($statuses),'staff'=>array_intersect_key($statuses,array_flip(OperationResource::NEEDS_STAFF)),'statuses'=>$statuses];
     }
     /** The Registrar requests list for this account with these statuses ticked in its Status filter. Null without access. */
-    public static function requestsUrl(int $server,array $statuses): ?string
+    public static function requestsUrl(int $server,array $statuses,bool $paid=false,bool $paidUncertainty=false): ?string
     {
-        try { return OperationResource::getUrl('index',['filters'=>['server_id'=>['values'=>[(string)$server]],'status'=>['values'=>array_values($statuses)]]]); }
+        try { return OperationResource::getUrl('index',['filters'=>['server_id'=>['values'=>[(string)$server]],'status'=>['values'=>array_values($statuses)],...($paid?['paid'=>['isActive'=>true]]:[]),...($paidUncertainty?['paid_uncertainty'=>['isActive'=>true]]:[])]]); }
         catch (\Throwable) { return null; }
     }
     /** Add funds and balance checks apply once the account is set up and its server is on. */

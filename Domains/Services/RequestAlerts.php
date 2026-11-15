@@ -15,7 +15,8 @@ final class RequestAlerts
     public static function changed(Operation $op): void
     {
         try{
-            if(!$op->wasChanged(['state','attempt'])||!isset($op->policy['management'])){return;}
+            // Staff who mark a change as failed already know; History says who and why.
+            if(!$op->wasChanged(['state','attempt'])||!isset($op->policy['management'])||ManagementEvidence::staffFailed($op)){return;}
             $status=RequestStatus::key(RequestStatus::readsAs($op->state,$op->safe_code));
             if(!isset(self::WORDS[$status])){return;}
             // Automatic checks and retries are still working on these, so staff have nothing to do yet.

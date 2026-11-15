@@ -41,8 +41,8 @@ same(null,Labels::reason('refreshed'),'Internal codes have no reason line');
 same(['Transfer lock','Auth code email','DNS records','Other'],[Labels::action('lock'),Labels::action('auth_code_email'),Labels::action('dns'),Labels::action('future')],'Type names');
 same(['Auto Pay: charged','Auto Pay skipped: no saved payment method','Auto Pay: result missing. Check your payment gateway for this charge before taking payment again.'],
     [Labels::autoPay(['status'=>'charged']),Labels::autoPay(['status'=>'skipped','reason'=>'no_agreement']),Labels::autoPay(null)],'Auto Pay lines');
-same(['recheck'=>'Check status','resume_reads'=>'Check status','resume_observation'=>'Resume sync','hold'=>'Put on hold','release'=>'Release hold',
-    'disposition'=>'Close request','approve_charge'=>'Approve captured charge','refund'=>'Cancel and refund','credit'=>'Retry refund','replacement'=>'Reissue renewal invoice'],StaffOperationReview::ACTIONS,'Action names');
+same(['recheck','resume_reads','resume_observation','hold','release','disposition','mark_failed','approve_charge','refund','credit','replacement'],
+    array_keys(StaffOperationReview::ACTIONS),'Staff request actions');
 
 // List: Request, Status, Domain, Type, Note, Created, Registrar account; Status, Type and Registrar account filters. One-line rows.
 DB::table('domains_operations')->where('id',$heldOp->id)->update(['created_at'=>'2026-10-20 15:05:00']);
@@ -332,7 +332,7 @@ $holds=static function(): array {
     return [array_map(fn(string $line)=>trim(html_entity_decode(strip_tags($line))),explode('<br>',$html)),$reads];
 };
 $name=static fn(int $server)=>\App\Models\Server::whereKey($server)->value('name');
-DB::table('domains_operations')->whereIn('id',[$heldOp->id,$longOp->id])->update(['state'=>'uncertain','safe_code'=>null]);
+DB::table('domains_operations')->whereIn('id',[$heldOp->id,$longOp->id])->update(['state'=>'uncertain','safe_code'=>null,'funding_basis'=>'paid_invoice']);
 [$lines,$oneAccount]=$holds();
 same(['Check 2 requests Paid orders on '.$name($heldOp->server_id).' have no registrar result yet.'],$lines,'One held account');
 DB::table('domains_operations')->where('id',$doneOp->id)->update(['state'=>'uncertain','safe_code'=>null]);
@@ -342,7 +342,7 @@ same(['Check 2 requests Paid orders on '.$name($heldOp->server_id).' have no reg
 same($oneAccount,$twoAccounts,'Held accounts are read together, not one by one');
 // The Domains list shows both held accounts, each with the link to its requests.
 $domains=Livewire::actingAs(Auth::user())->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ListDomains::class)->assertSuccessful();
-foreach ([RegistrarFacts::requestsUrl((int)$heldOp->server_id,['under_review']),Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::requestUrl(['request'=>$doneOp->id])] as $url) {
+foreach ([RegistrarFacts::requestsUrl((int)$heldOp->server_id,[],paidUncertainty:true),Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::requestUrl(['request'=>$doneOp->id])] as $url) {
     expect(is_string($url)&&str_contains($domains->html(),'href="'.e($url).'"'),'Each held account links to its requests on the Domains list');
 }
 foreach ($saved as $row) { DB::table('domains_operations')->where('id',$row->id)->update(['state'=>$row->state,'safe_code'=>$row->safe_code]); }

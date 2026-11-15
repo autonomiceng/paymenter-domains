@@ -37,7 +37,7 @@ final class PaidUncertainty
     }
     /** The account-wide hold, said where staff look first: the Domains list and the registrar account page. Only a hold staff must clear shows:
      * a request still with the registrar clears by itself. One line per account: the job first, as on a held domain's head, then what it holds.
-     * The count is the account's Under review requests, the rows its link opens. Null with none.
+     * The count is the account's paid Under review requests, the rows its link opens. Null with none.
      * A fixed number of reads, however many accounts are held: the held accounts, their Under review counts, then their names. */
     public static function accounts(?int $server=null): ?\Illuminate\Support\HtmlString
     {
@@ -68,11 +68,11 @@ final class PaidUncertainty
     {
         Staff::requireView();
         $off=OperationQueries::ordersOffAccounts();
-        $held=OperationQueries::status(AccountSpendingHolds::query(Operation::query()),['under_review'],$off)->when($server!==null,fn($q)=>$q->where('server_id',$server))
+        $held=OperationQueries::status(OperationQueries::paidUncertainty(AccountSpendingHolds::query(Operation::query())),['under_review'],$off)->when($server!==null,fn($q)=>$q->where('server_id',$server))
             ->selectRaw('server_id, min(id) as first')->groupBy('server_id')->orderBy('server_id')->limit(100)->pluck('first','server_id');
         if ($held->isEmpty()) { return []; }
         $ids=$held->keys()->map(fn($id)=>(int)$id)->all();
-        $reviews=OperationQueries::status(OperationResource::getEloquentQuery()->whereIn('domains_operations.server_id',$ids),['under_review'],$off)->toBase()
+        $reviews=OperationQueries::status(OperationQueries::paidUncertainty(OperationResource::getEloquentQuery()->whereIn('domains_operations.server_id',$ids)),['under_review'],$off)->toBase()
             ->selectRaw('domains_operations.server_id as server_id, count(*) as total, min(domains_operations.id) as first')->groupBy('domains_operations.server_id')->get()->keyBy('server_id');
         $names=\App\Models\Server::whereIn('id',$ids)->pluck('name','id');
         // The oldest held request per account decides Delayed: one bounded read of the rows already found.
@@ -84,7 +84,7 @@ final class PaidUncertainty
             $count=max(1,(int)($review->total??0)); $first=$count===1?((int)($review->first??0) ?: (int)$oldest):0;
             [$label,$url,$until]=$count===1
                 ? ['Check request #'.$first,DomainFacts::requestUrl(['request'=>$first]),'it is checked']
-                : ['Check '.$count.' requests',RegistrarFacts::requestsUrl((int)$id,['under_review']),'they are checked'];
+                : ['Check '.$count.' requests',RegistrarFacts::requestsUrl((int)$id,[],paidUncertainty:true),'they are checked'];
             $out[]=['server_id'=>(int)$id,'label'=>$label,'url'=>$url,'until'=>$until,'name'=>(string)($names->get($id) ?: 'this registrar account'),'count'=>$count,'state'=>($op=$firstOps->get($id)) !== null && self::waitState($op) === State::Delayed ? State::Delayed : State::Checking];
         }
         return $out;

@@ -11,7 +11,7 @@ final class StaffOperationReview
 {
     /** Check status covers both a fresh read (recheck) and restarting reads after the read limit (resume_reads). */
     public const ACTIONS=['recheck'=>'Check status','resume_reads'=>'Check status','resume_observation'=>'Resume sync',
-        'hold'=>'Put on hold','release'=>'Release hold','disposition'=>'Close request',
+        'hold'=>'Put on hold','release'=>'Release hold','disposition'=>'Close request','mark_failed'=>'Mark as failed',
         'approve_charge'=>'Approve captured charge','refund'=>'Cancel and refund','credit'=>'Retry refund','replacement'=>'Reissue renewal invoice'];
     public const CHANGED='This request changed. Reload the page and try again.';
     private array $before=[];

@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\RenewalCode;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
+use Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus;
 /** Safe durable staff inbox; expiry/account/generation/obligation distinguish once-only alerts. */
 final class ObligationAlerts
 {
@@ -85,7 +86,9 @@ final class ObligationAlerts
             if($op->action==='renew'&&isset($p['price'])){
                 // Retained retail is informational; RenewalReminders checks current cost independently.
                 $code=$p['price']['staff_alert']??null;
-                if($code!=='retained_renewal'&&($code!==null||($p['price']['retained']??false))){
+                // Completed losses still matter; other finished requests incurred no renewal margin.
+                $closed=$op->state!=='succeeded'&&in_array($op->state,RequestStatus::FINISHED,true);
+                if(($code!=='below_cost'||!$closed)&&$code!=='retained_renewal'&&($code!==null||($p['price']['retained']??false))){
                     $keys[]=self::record($d,$code==='below_cost'?'below_cost':'unknown_cost',$now,(int)$op->id);
                 }
             }
@@ -140,11 +143,11 @@ final class ObligationAlerts
         try{return $alert->code==='unknown_cost'&&($op->policy['price']['staff_alert']??null)==='retained_renewal'||in_array($alert->code,self::REVIEW,true)&&($op->state==='succeeded'&&!self::flagged($op,$operations,$d)||ManagementEvidence::recoverable($op));}
         catch(\Throwable){return false;}
     }
-    /** A request that succeeds closes its own alert now: a paused sync runs no inspection, and the Open alerts filter reads the row.
+    /** A request that succeeds, or that staff mark as failed, closes its own alert now: a paused sync runs no inspection, and the Open alerts filter reads the row.
      * Runs inside the writer's save, so it reads its own Domain and leaves the writer's loaded relation alone. */
     public static function settle(Operation $op):void
     {
-        if($op->state!=='succeeded'||!$op->wasChanged('state')||!Schema::hasTable('domains_obligation_alerts')){return;}
+        if(($op->state!=='succeeded'&&!ManagementEvidence::staffFailed($op))||!$op->wasChanged('state')||!Schema::hasTable('domains_obligation_alerts')){return;}
         $open=DB::table('domains_obligation_alerts')->where('operation_id',$op->id)->whereIn('code',self::REVIEW)->whereNull('resolved_at');
         if(!$open->exists()||!($d=Domain::find($op->domain_id))||self::flagged($op,$d->operations()->get(),$d)){return;}
         $open->update(['resolved_at'=>app(Clock::class)->now()->getTimestamp()]);

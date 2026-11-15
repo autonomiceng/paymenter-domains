@@ -7,6 +7,13 @@ use Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus;
 final class ManagementEvidence
 {
     private static ?array $unsent=null;
+    /** Staff marked an unconfirmed free change as failed. */
+    public const STAFF_FAILED='management_staff_failed';
+    public static function staffFailed(Operation $op): bool
+    {
+        return $op->state==='rejected'&&$op->safe_code===self::STAFF_FAILED&&$op->funding_basis==='non_billable_management'&&$op->invoice_id===null
+            &&$op->completed_at!==null&&($op->attempt['seal']??null)==='sealed'&&isset($op->attempt['management_staff_outcome']);
+    }
     /** Only the current worker's exact, armed, unconsumed transport grant proves no send. */
     public static function retainUnsent(Operation $op,\Paymenter\Extensions\Servers\Domains\Contracts\ManagementProtocol $driver): void
     {
@@ -22,7 +29,7 @@ final class ManagementEvidence
         $p=$op->policy['management']??null;$r=ManagementReadRecovery::latest($op);
         if(!$p||$op->domain_id!==$d->id||$op->service_id!==$d->service_id||$op->server_id!==$d->server_id||$op->registrar_key!==$d->registrar_key
             ||$op->account_fingerprint!==$d->account_fingerprint||$op->authority_generation!==$d->authority_generation){return false;}
-        if(self::idle($op)){return true;}
+        if(self::idle($op)||self::staffFailed($op)){return true;}
         if($op->state==='rejected'&&$op->funding_basis==='non_billable_management'&&$op->completed_at!==null&&($op->attempt['seal']??null)==='sealed'&&($op->attempt['management_refusal']??null)===['operation_key'=>$op->operation_key,'generation'=>$op->authority_generation,'action'=>$op->action]){return true;}
         if($op->state==='rejected'&&isset($op->funding['refund'])){try{RefundProof::requireUnsent($op,$d);return true;}catch(\Throwable){return false;}}
         return $op->state==='succeeded'&&$op->completed_at!==null&&($op->attempt['seal']??null)==='sealed'
@@ -128,6 +135,7 @@ final class ManagementEvidence
         }elseif(array_key_exists($legacy,$old)){throw new \DomainException('Legacy management recovery count cannot reset.');}
         $before=$old['management_reads']??[];$after=$new['management_reads']??[];
         if(!is_array($before)||!array_is_list($before)||!is_array($after)||!array_is_list($after)||count($after)>20||count($after)<count($before)||array_slice($after,0,count($before))!==$before){throw new \DomainException('Management reads are append-only.');}
+        if(array_key_exists('management_staff_outcome',$old)&&($new['management_staff_outcome']??null)!==$old['management_staff_outcome']){throw new \DomainException('Staff outcome frozen.');}
         if(array_key_exists('management_terminal',$old)&&($new['management_terminal']??null)!==$old['management_terminal']){throw new \DomainException('Management retirement frozen.');}
         if(array_key_exists('management_claim',$old)&&($new['management_claim']??null)!==$old['management_claim']){throw new \DomainException('Management claim frozen.');}
         if(array_key_exists('management_ack',$old)&&($new['management_ack']??null)!==$old['management_ack']){throw new \DomainException('Management acknowledgement frozen.');}

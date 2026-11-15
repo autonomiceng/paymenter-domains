@@ -52,6 +52,16 @@ final class ObservationProjection
         return ['name'=>$d->domain, 'generation'=>$d->authority_generation, 'account_fingerprint'=>$d->account_fingerprint,
             'operation_key'=>$read['operation_key'], 'at'=>$read['at'], 'facts'=>$read['facts']];
     }
+    /** A confirmed renewal can settle saved expiry-only drift, never foreign or unrelated facts. */
+    public static function renewed(Domain $d, ?\DateTimeInterface $priorExpiry): bool
+    {
+        $p=$d->observation??[];$facts=$p['facts']??null;
+        if(!is_array($facts)||!self::matches($d,$facts)||($p['drift']??null)!==true
+            ||($facts['owned']??null)!==true||($facts['auto_renew']??null)!==false||!is_string($facts['expiry']??null)
+            ||$priorExpiry===null||$d->provider_expires_at===null||substr($facts['expiry'],0,10)===$priorExpiry->format('Y-m-d')
+            ||substr($facts['expiry'],0,10)!==$d->provider_expires_at->format('Y-m-d')){return false;}
+        $p['drift']=false;$d->update(['observation'=>$p]);return true;
+    }
     public static function save(Domain $d, ?DomainSnapshot $facts, TransferStatus $transfer, \DateTimeImmutable $now): void
     {
         $p=$d->observation??[];

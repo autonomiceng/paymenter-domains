@@ -14,11 +14,11 @@ final class OperationActions
 {
     /** Toast titles, named for the action. */
     public const DONE=['approve_charge'=>'Captured charge approved','recheck'=>'Request reviewed','resume_reads'=>'Status checks restarted','resume_observation'=>'Sync resumed','hold'=>'Request on hold',
-        'release'=>'Hold released','disposition'=>'Request closed','refund'=>'Request cancelled','credit'=>'Refund checked','replacement'=>'Renewal invoice reissued'];
+        'release'=>'Hold released','disposition'=>'Request closed','mark_failed'=>'Marked as failed','refund'=>'Request cancelled','credit'=>'Refund checked','replacement'=>'Renewal invoice reissued'];
     /** Money actions ask for a reason. Check status, Resume sync, Put on hold and Release hold run on click with the action name as the
      * recorded reason; every action still uses a one-use ticket bound to the page's review stamp, so a stale second click is refused.
      * Release hold asks first when it sends a purchase right away. */
-    private const REASON=['refund','credit','replacement','approve_charge'];
+    private const REASON=['refund','credit','replacement','approve_charge','mark_failed'];
     public static function make(Operation $op,string $stamp): array
     {
         $out=[];
@@ -142,6 +142,7 @@ final class OperationActions
                     &&!self::complimentaryCloseBlocked($op)&&($d->status!==($op->action==='register'?'registration_rejected':'transfer_rejected')||$d->service?->status!==\App\Models\Service::STATUS_CANCELLED))),
             'replacement'=>$op->action==='renew'&&$op->state==='rejected',
             'disposition'=>self::closable($op),
+            'mark_failed'=>StaffOperationWrites::failable($op),
             'resume_reads'=>in_array($op->action,['register','transfer','renew'],true)&&in_array($op->state,['running','pending','uncertain','held'],true)&&self::readLimit($op),
             'recheck'=>in_array($op->action,['register','transfer','renew'],true)
                 ?in_array($op->state,['running','pending','uncertain','held'],true)&&!self::readLimit($op)
@@ -208,6 +209,7 @@ final class OperationActions
         return match($action){
             'approve_charge'=>'Approves the charge already incurred at the registrar. Completes this renewal from its retained proof and keeps future spending paused.',
             'disposition'=>'Records the final result. Nothing is sent or credited.',
+            'mark_failed'=>'Records that this change did not happen and closes the request. Nothing is sent to the registrar. Regular status checks keep showing the domain’s current settings.',
             'refund'=>"Cancels this unsent request and returns the payment. Account credit is used only when the original payment cannot be refunded.",
             'credit'=>'Checks the payment return again using the same refund request.',
             'replacement'=>'Creates a new renewal invoice for this cycle.',

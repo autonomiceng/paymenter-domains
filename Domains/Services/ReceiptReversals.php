@@ -51,11 +51,11 @@ final class ReceiptReversals
         return $result;
     }
     /** Staff's existing Credit row, using current observations rather than an old inbox notice. */
-    public static function summary(Operation $op): ?string
+    public static function summary(Operation $op, ?array $rows=null): ?string
     {
         $invoice=$op->invoice_id?Invoice::find($op->invoice_id):null;if(!$invoice){return null;}
         $lines=[];$money=fn(int $minor)=>Storefront::money(PricingRule::decimal($minor));
-        foreach(self::forInvoice($invoice) as $r){
+        foreach($rows??self::forInvoice($invoice) as $r){
             $line=ucfirst($r['kind']).' '.$r['status'].': Domains credit '.$money($r['domains_credited_minor']);
             if($r['domains_unattributed_minor']>0){$line.='; invoice credit without a receipt split '.$money($r['domains_unattributed_minor']);}
             if($r['credited_minor']>0){$line.='; gateway credit '.$money($r['credited_minor']);}

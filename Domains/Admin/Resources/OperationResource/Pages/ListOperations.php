@@ -56,6 +56,8 @@ class ListOperations extends RecordListPage
         return [
             Filter::select('status', 'Status', $words)->multiple()->query(fn (Builder $q, array $data): Builder => OperationQueries::status($q,
                 in_array('under_review', $data['values'] ?? [], true) ? [...$data['values'], 'on_hold'] : ($data['values'] ?? []), $this->off())),
+            Filter::toggle('paid', 'Paid orders', fn (Builder $q): Builder => $q->where('funding_basis','paid_invoice')),
+            Filter::toggle('paid_uncertainty', 'No registrar result yet', fn (Builder $q): Builder => OperationQueries::status(OperationQueries::paidUncertainty($q), ['under_review'], $this->off())),
             Filter::select('action', 'Type', collect(Operation::query()->distinct()->pluck('action'))->mapWithKeys(fn ($a) => [$a => Labels::action($a)])->sort()->all())->multiple()
                 ->query(fn (Builder $q, array $data): Builder => filled($data['values'] ?? []) ? $q->whereIn('action', $data['values']) : $q),
             Filter::select('server_id', 'Registrar account', \App\Models\Server::whereIn('id', Operation::query()->distinct()->pluck('server_id'))->pluck('name', 'id')->all())->multiple()
