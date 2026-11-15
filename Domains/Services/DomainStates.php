@@ -67,6 +67,8 @@ final class DomainStates
             if ($in->unproven($d)) { return ['current' => ['status' => 'review']]; }
             return ['retained' => RenewalCycles::closedEarly($cycle) ? null : ['status' => $cycle->safe_code === 'renewal_cancelled_unpaid' ? 'cancelled' : 'review']];
         }
+        // A cancelled renewal whose payment return is recorded is settled: it reads as History does, never as under review.
+        if (($returned = RenewalCycles::lateNote($cycle)) !== null) { return ['current' => ['status' => 'returned', 'note' => $returned]]; }
         $l = $in->ledger($d, collect([$cycle]));
         try { $invoice = DomainBilling::existingInvoice($cycle, $l, allowCancelled: true); } catch (\Throwable) { return ['current' => $review]; }
         $due = $invoice->due_at?->format('Y-m-d');
