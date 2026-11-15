@@ -40,12 +40,12 @@ final class DomainHistory
                 $rows[]=['__key'=>$action['action'].'-'.$op->id.'-'.$i,'__request'=>$op->id,'__order'=>$i+1,'time'=>self::at($action['at']??null),'event'=>match($action['action']){'hold'=>'Put on hold','release'=>'Hold released','resume_observation'=>'Sync resumed','engine_hold'=>'Back on hold','refund'=>'Cancelled'},
                     'sub'=>'Request #'.$op->id.' '.Labels::action($op->action),'status'=>null,'by'=>$action['action']==='engine_hold'?'System':(is_string($action['actor_name']??null)&&$action['actor_name']!==''?$action['actor_name']:'Staff')];
             }
-            $refund=$op->funding['refund']??null;
+            try { $refund=$op->funding['refund']??null;
             $summary=\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::summary($op);
             if(is_array($refund)&&\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::settled($op)){
                 $rows[]=['__key'=>'refund-'.$op->id,'__request'=>$op->id,'__order'=>103,'time'=>self::at($refund['at']??null),
                     'event'=>$summary[0]??'Credit added','sub'=>'Request #'.$op->id.' '.Labels::action($op->action),'status'=>null,'by'=>'System'];
-            }
+            } } catch (\Throwable) { /* Unreadable payment evidence cannot hide the retained request history. */ }
         }
         $holdings=[]; $audits=[];
         try { $holdings=$domain->renewal_policy['staff_holdings']??[]; } catch (\Throwable) {}
