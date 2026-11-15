@@ -136,10 +136,10 @@ foreach(['provider_domain_id'=>'999','authority_generation'=>2] as $field=>$valu
     expect(!\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::absent($copy),'Absence for another '.$field.' does not apply');}
 $equal=$d->fresh();$o=$equal->observation;$o['facts']['at']=$o['record_failure']['at'];$equal->observation=$o;
 expect(\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::absent($equal),'Ownership facts from the same moment do not clear absence');
-// A generic failure is not absence, so the saved facts stay as they were.
+// A generic failure cannot erase the preceding definite absence.
 $observation->fault='transport';$clock->instant=$clock->now()->modify('+61 seconds');
 same('read_failed',$observer->run($d->id,readRecords:true),'Transport failure stays a read failure');
-expect(!\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::absent($d->fresh()),'A read failure is not absence');same('No',$membership(),'A read failure keeps the retained absence, matching the renewal fence');
+expect(\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::absent($d->fresh()),'A read failure retains the earlier definite absence');same('No',$membership(),'A read failure keeps the retained absence, matching the renewal fence');
 $observation->fault='absent';$clock->instant=$clock->now()->modify('+61 seconds');$observer->run($d->id,readRecords:true);same('No',$membership(),'Absence is current again');
 // A newer owned read with an incomplete record family clears absence and keeps the family diagnostic.
 $observation->fault='';$state->fault='GetDomainSRVHosts';$clock->instant=$clock->now()->modify('+61 seconds');

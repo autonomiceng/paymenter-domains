@@ -114,14 +114,14 @@ DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>'
 $observation->fault='owner';$clock->instant=$clock->now()->modify('+61 seconds');
 $page->callAction('sync_now')->assertNotified('Sync queued');
 Artisan::call('queue:work',['--stop-when-empty'=>true,'--sleep'=>0,'--tries'=>1]);
-$page->call('pollManagement')->assertSee('Domain is not in the registrar account.');
-same('domain_not_in_account',DB::table('domains_observation_work')->where('id',$work)->value('safe_code'),'Manual missing-account read stops idle scheduled work');
+$page->call('pollManagement')->assertActionVisible('check_departure')->assertActionHidden('sync_now');
+same('departure_registry',DB::table('domains_observation_work')->where('id',$work)->value('safe_code'),'Manual absence schedules registry evidence before the automatic recheck');
 // Manual and scheduled reads share one lease, so they never read the same holding at once.
 $observation->fault='';
 $scheduled=['safe_code'=>'refreshed','claim'=>str_repeat('a',32),'lease_until'=>$clock->now()->getTimestamp()+600];
 DB::table('domains_observation_work')->where('id',$work)->update($scheduled);
 $clock->instant=$clock->now()->modify('+61 seconds');$calls=count($observation->calls);
-$page->call('pollManagement')->assertSee('Sync in progress')->assertActionDisabled('sync_now');
+$page->call('pollManagement')->assertActionDisabled('check_departure');
 $refused=null;try{SyncDomainRecords::enqueue($actor->id,$d->fresh());}catch(DomainException $error){$refused=$error->getMessage();}
 same(SyncDomainRecords::RUNNING,$refused,'Admission refuses while a scheduled read holds the lease');
 same(0,DB::table('jobs')->count(),'A refused admission queues nothing');
