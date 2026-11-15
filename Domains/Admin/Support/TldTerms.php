@@ -31,6 +31,12 @@ final class TldTerms
         try{$facts=OfferState::facts($t->catalogue_facts);return $facts!==null&&$facts->fresh(app(Clock::class)->now());}
         catch(\Throwable){return false;}
     }
+    /** Saved terms that read but are past their date: out of date, not unreadable. */
+    public static function stale(Tld $t): bool
+    {
+        try{$facts=OfferState::facts($t->catalogue_facts);return $facts!==null&&!$facts->fresh(app(Clock::class)->now());}
+        catch(\Throwable){return false;}
+    }
     /** Full selected set, bounded reads. The filter and account summary share this exact predicate. */
     public static function summary(?int $server=null): array
     {

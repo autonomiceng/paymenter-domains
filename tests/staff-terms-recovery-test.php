@@ -40,6 +40,13 @@ $stale=OfferState::decode($facts);$stale['observedAt']=$now->modify('-2 days')->
 DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>OfferState::json($stale)]);
 same('Set to sell; checking registrar terms',TldFacts::salesState($t->fresh())['reason'],'Later stale terms do not revive a resolved failure');
 Livewire::actingAs($actor)->test(ListTlds::class)->assertSee('Set to sell; checking registrar terms')->assertDontSee(TldFacts::TERMS_FAILED);
+// Expired terms are out of date, not unreadable: beside another sale reason the notice names a different cause than missing terms.
+$termsNote=static function()use($actor,$t):string{$page=Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->instance();
+    foreach(['sales'=>['label'=>'Not for sale','tone'=>'gray','reason'=>'Prices not published','invalid'=>false,'kind'=>null],'snap'=>['selected'=>true]] as $key=>$value){(new ReflectionProperty($page,$key))->setValue($page,$value);}
+    return (string)(new ReflectionMethod($page,'saleReason'))->invoke($page);};
+$staleNote=$termsNote();DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>null]);$missingNote=$termsNote();
+expect($staleNote!==$missingNote&&str_starts_with($staleNote,'Prices not published. '),'Expired terms name another cause than missing terms: '.json_encode([$staleNote,$missingNote]));
+DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>OfferState::json($stale)]);
 Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->assertDontSee('Sync prices tries again now.')->assertSee('Set to sell; checking registrar terms');
 same(0,$reads->calls,'Staff guidance never resolves a registry reader');
 same([0,0],[$feedFactories,$feed->calls],'Staff list and detail guidance never resolve or read the catalogue feed');
