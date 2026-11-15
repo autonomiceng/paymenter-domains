@@ -37,9 +37,10 @@ final class RecordFamilies
             $currentRead=$status['at']!==null&&($d->observation['record_failure']['identity']??null)!==ObservationRecords::identity($d);}
         catch(\Illuminate\Contracts\Encryption\DecryptException){$readable=false;$empty=clone $d;$empty->observation=[];$status=ObservationProjection::recordStatus($empty,$now);$hold=null;$currentRead=false;}
         // A definite absence is the departure check's finding, said on its own rows. The records keep their last read, so DNS stays usable.
-        if($readable&&DepartureChecks::suspected($d)&&($d->observation['record_failure']['code']??null)==='domain_not_in_account'){
+        $absence=$readable&&DepartureChecks::suspected($d)&&($d->observation['record_failure']['code']??null)==='domain_not_in_account';
+        if($absence){
             $kept=clone $d;$p=$kept->observation;unset($p['record_failure']);$kept->observation=$p;$last=ObservationProjection::recordStatus($kept,$now);
-            $status=[...$status,'families'=>$last['families'],'settings'=>$last['settings']];$currentRead=$last['at']!==null;
+            $status=[...$status,'families'=>$last['families'],'settings'=>$last['settings'],'stale'=>$last['stale']];$currentRead=$last['at']!==null;
         }
         $cancelled=false;
         if($readable&&in_array($d->status,['cancelled','registration_rejected','transfer_rejected'],true)&&empty($d->observation['records'])&&$status['at']===null&&$d->provider_domain_id===null&&$d->provider_order_id===null&&$d->provider_expires_at===null){
@@ -63,7 +64,8 @@ final class RecordFamilies
         $initial=$readable&&!$cancelled&&$d->status==='active'&&$status['last_complete_at']===null&&!$hold&&!$status['read_code']&&!$status['read_stopped']&&!$status['records_paused']
             &&$status['next_read']!==null&&!$status['read_overdue'];
         // A failed, stopped or overdue read is a problem staff fix (Missing, red). A read that has not happened yet is neutral (Not read).
-        $failed=(bool)(($status['read_code']??null)||($status['read_stopped']??false)||($status['read_overdue']??false)||($status['failed_family']??null));
+        // While suspected, the read retry state belongs to the departure check; only a record family hold is a records failure.
+        $failed=(bool)((!$absence&&(($status['read_code']??null)||($status['read_stopped']??false)||($status['read_overdue']??false)))||($status['failed_family']??null));
         $rows=[];$caa=[];$caaAt=null;
         foreach(['settings'=>['nameservers'=>'Nameservers','contacts'=>'Contacts','flags'=>'Domain settings'],'families'=>['dns'=>'DNS records','srv'=>'SRV records','ds'=>'DS records','glue'=>'Glue records']] as $group=>$labels){
             foreach($labels as $kind=>$label){$f=$status[$group][$kind];$state=$f['expectation']==='unsupported'?'unsupported':$f['state'];
