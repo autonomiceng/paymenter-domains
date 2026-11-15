@@ -35,6 +35,7 @@ $holder=static function(string $suffix)use($prepare,$reconcile,$agreement,$clock
 };
 $read=static function(Domain $d,string $fault='')use($observer,$observation,$clock):void{
     $observation->name=$d->domain; $observation->fault=$fault;
+    $observation->during=$fault==='timeout'?static function()use($clock):void{$clock->instant=$clock->now()->modify('+251 seconds');}:null;
     $clock->instant=$clock->now()->modify('+61 seconds'); $observer->run($d->id,readRecords:false);
 };
 $failures=[];
@@ -57,7 +58,7 @@ $keys=ObligationAlerts::retained($locked,$clock->now()->getTimestamp());
 ObligationAlerts::finish($gone->fresh(),$keys,$clock->now()->getTimestamp());
 $check(1,$alerts($gone)->count(),'Successful reminder inspection retains current absence');
 // A later timeout or unclear read cannot clear an established negative proof.
-foreach(['transport','info_missing'] as $fault){
+foreach(['timeout','transport','info_missing'] as $fault){
     try{$read($gone,$fault);}catch(DomainException){}
     $check(true,$refused(fn()=>$billing->invoice($gone->id,$user)),'Unclear read cannot lift established absence: '.$fault);
 }
@@ -67,14 +68,14 @@ $check(0,$alerts($gone)->count(),'Positive read resolves absence review');
 
 // Failure before any negative proof is not absence; billing and payment-time authority stay usable.
 $timeout=$holder('timeout');
-try{$read($timeout,'transport');}catch(DomainException){}
+try{$read($timeout,'timeout');}catch(DomainException){}
 $invoice=$billing->invoice($timeout->id); $context=$auto->renewalAutoPayContext($invoice->id);
 expect(is_array($context),'Transport failure permits the ordinary Auto Pay context');
 same(true,DB::transaction(fn()=>$auto->renewalAutoPayStillAllowed($invoice->id,$context)),'Transport failure does not refuse collection');
 $read($timeout,'owner');
 $check(null,$auto->renewalAutoPayContext($invoice->id),'Absence withdraws an existing invoice collection context');
 $check(false,DB::transaction(fn()=>$auto->renewalAutoPayStillAllowed($invoice->id,$context)),'Payment-time recheck refuses a previously frozen context');
-$read($timeout); $check($context,$auto->renewalAutoPayContext($invoice->id),'Positive read restores the original unpaid obligation authority');
+$clock->instant=$clock->now()->modify('-61 seconds'); $read($timeout); $check($context,$auto->renewalAutoPayContext($invoice->id),'Positive read restores the original unpaid obligation authority');
 
 // Model the invoice writer just before issued(): a valid debt exists, but Auto Pay has not been scheduled.
 $schedule=$holder('schedule'); $issued=$billing->invoice($schedule->id,$user);
@@ -107,7 +108,7 @@ DB::table('domains_operations')->where('id',$op->id)->update(['funding'=>encrypt
 DB::transaction(function()use($schedule,$op,$issued,$auto):void{
     $l=HoldingLocks::take($schedule->fresh()); $auto->issued($op->fresh(),$issued->fresh(),$l,true);
 });
-$check('uncertain',$op->fresh()->funding['auto_pay']['status'],'A prior generation negative proof does not block scheduling');
+$check('uncertain',$op->fresh()->funding['auto_pay']['status'],'A different generation negative proof does not block scheduling');
 
 // A pending acquisition is not expected in the account and keeps its original payment and request state.
 [$pending]=$prepare(placeholderComFixtureName('transfer-fence-pending-placeholder.com')); $pendingDomain=$pending->domain()->firstOrFail();
