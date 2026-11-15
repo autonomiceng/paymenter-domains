@@ -195,7 +195,12 @@ final class DomainDecisions
             $fenced=RenewalOwnership::blocked($d);
             if ($fenced) { $f['Renewal']['sub']=ObligationAlerts::LABELS[RenewalOwnership::REVIEW]; $f['Renewal']['help']=null; }
             // An ownership fence pauses collection too; existing debt stays accessible in Open invoice.
-            if (!$fenced&&$renewalInvoice) { $f['Next invoice']=Facts::row($renewalInvoice->due_at?'Due '.gmdate('M j, Y',strtotime(substr($renewalInvoice->due_at,0,10).' 00:00:00 UTC')):'Due'); }
+            if ($fenced&&$renewalInvoice&&\Paymenter\Extensions\Servers\Domains\Services\DepartureChecks::suspected($d)) {
+                $open=\App\Models\Invoice::findOrFail($renewalInvoice->id);
+                $line=Facts::invoiceName((int)$open->id).', '.(string)$open->formattedTotal.($open->due_at?', due '.gmdate('M j, Y',strtotime(substr($open->due_at,0,10).' 00:00:00 UTC')):'');
+                $f['Next invoice']=Facts::row('Paused',sub:$line.'. '.\Paymenter\Extensions\Servers\Domains\Services\DepartureChecks::RENEWAL_WAITS);
+            }
+            elseif (!$fenced&&$renewalInvoice) { $f['Next invoice']=Facts::row($renewalInvoice->due_at?'Due '.gmdate('M j, Y',strtotime(substr($renewalInvoice->due_at,0,10).' 00:00:00 UTC')):'Due'); }
             elseif (!$fenced&&!$pending&&$d->status==='active'&&!$expired&&$renewal&&!$off&&!$settledRenewal) { $f['Next invoice']=self::nextInvoice($d); }
         }
         if ($invoice) { $f['Open invoice']=Facts::row(Facts::invoiceName((int)$invoice->id),sub:'Awaiting payment',url:Facts::invoiceUrl((int)$invoice->id)); }
