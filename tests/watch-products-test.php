@@ -31,7 +31,9 @@ $both=$hosting('Both');$saved($both,['domain'=>'shop.example.com','hostname'=>'b
 $hostname=$hosting('Hostname');$saved($hostname,['hostname'=>'site.example.net']);
 $none=$hosting('No domain');$saved($none,['plan'=>'basic']);
 $catalogue=$hosting('Sold domains');$saved($catalogue,['domain'=>'sold.example.com']);\App\Models\Setting::withoutEvents(fn()=>$catalogue->settings()->create(['key'=>'domains_catalogue','value'=>'1']));
-$registrar=$hosting('Domain server',\App\Models\Server::create(['name'=>'Registrar','extension'=>'Domains','type'=>'server','enabled'=>true])->id);
+// The registration product's order carries a domain, so only the Domains server exclusion keeps it unmapped. The order is
+// saved before the product moves to that server, which refuses a plain service.
+$registrar=$hosting('Domain server');$saved($registrar,['domain'=>'registration.example.com']);DB::table('products')->where('id',$registrar->id)->update(['server_id'=>\App\Models\Server::create(['name'=>'Registrar','extension'=>'Domains','type'=>'server','enabled'=>true])->id]);
 $fixed=$hosting('W9 ready');$saved($fixed,['hosting_ready'=>'yes','domain'=>'ready.example.com']);$stray($fixed,true);
 $fixedOff=$hosting('W9 off');$saved($fixedOff,['hosting_ready'=>'yes','domain'=>'off.example.com']);$stray($fixedOff,false);
 $work(1800000000)->tick();$work(1800000300)->tick();
@@ -74,6 +76,9 @@ expect(str_contains($switch()->html(),'aria-checked="false"'),'The product edit 
 $switch()->call('toggle');same(['domain',true],$state($both),'The switch turns monitoring back on');
 expect(WatchProducts::lines()['products'][array_search($both->id,array_column(WatchProducts::lines()['products'],'id'),true)]['on'],'Choose products shows what the switch saved');
 $switch($viewer)->call('toggle')->assertForbidden();same(['domain',true],$state($both),'View-only staff cannot use the switch');
+// A switch showing On while someone else turns the product off: the click asked for Off, so it is refused, not reversed.
+$stale=$switch();(new WatchMappings())->monitor($manager,[$both->id=>false]);$stale->call('toggle');same(['domain',false],$state($both),'A stale switch click does not reverse another change');
+$stale->call('toggle');same(['domain',true],$state($both),'After the refusal the switch shows the saved state and works');
 app()->forgetInstance(WatchWork::class);
 expect(!str_contains($page()->html(),'Choose products'),'No product section while monitoring is off');
 $nativeSuccessful=true;echo "Hosting product monitoring works.\n";
