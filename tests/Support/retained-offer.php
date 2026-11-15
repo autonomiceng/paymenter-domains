@@ -45,7 +45,7 @@ function retainedOfferObligations(): string
 /** Test-only exact database snapshot, independent of retired upgrade comparison policy. */
 function retainedOfferSnapshot(bool $includeVerification=true): string
 {
-    $tables=Illuminate\Support\Facades\Schema::getTableListing();sort($tables);$rows=[];
+    $tables=Illuminate\Support\Facades\Schema::getTableListing(null,false);sort($tables);$rows=[];
     foreach($tables as $table){
         $query=DB::table($table);
         // Only successful upgrades may replace this derived record; refusals still compare every byte.
