@@ -41,7 +41,11 @@ final readonly class OwnedDomains
     {
         if (!$op) { return []; }
         $kind=$op->action==='transfer'?'transfer':'registration';
-        if($op->state==='rejected'&&($return=ReceiptReturns::summary($op))){return ['state'=>'cancelled','kind'=>$kind,'return'=>$return[1],'returned'=>!ReceiptReturns::malformed($op)&&ReceiptReturns::outstanding($op)===0];}
+        if($op->state==='rejected'){
+            try{$return=ReceiptReturns::summary($op);$returned=$return&&!ReceiptReturns::malformed($op)&&ReceiptReturns::outstanding($op)===0;}
+            catch(\DomainException){$return=ReceiptReturns::REVIEW;$returned=false;}
+            if($return){return ['state'=>'cancelled','kind'=>$kind,'return'=>$return[1],'returned'=>$returned];}
+        }
         // Applying the credit closes the domain row too. The order still reads Cancelled, as its request does. Approval alone adds no money: the credit can fail and retry.
         if ($op->state==='rejected'&&($op->safe_code==='refund_approved'||isset($op->funding['refund'])&&in_array($op->safe_code,[...WriteHeld::FINAL_REFUSALS,TransferRejections::CODE],true))&&in_array($d->status,['registration_pending','transfer_pending',$kind.'_rejected'],true)) {
             $pending=($op->policy['held_order_refund']??false)===true&&$op->funding_basis==='paid_invoice'&&!isset($op->funding['refund']);
@@ -91,9 +95,10 @@ final readonly class OwnedDomains
         if (!$op || $op->state !== 'rejected' || !(in_array($d->status, ['registration_rejected', 'transfer_rejected'], true) || ($order['state'] ?? null) === 'failed')) { return null; }
         if (isset($op->funding['refund'])) {
             if (ReceiptReturns::malformed($op)) { return null; } // An unreadable return names no destination.
-            $refund=$op->funding['refund'];
+            try{$refund=ReceiptReturns::effective(ReceiptReturns::originalRefund($op))[0];}catch(\DomainException){return null;}
             return match ($refund['to']??null) { 'account_credit'=>'credited',
-                'original_payment'=>match (ReceiptReturns::bridge($refund)) { null=>null, 0=>'returned', default=>'split' },default=>null };
+                'original_payment'=>empty($refund['allocations'])?(ReceiptReturns::bridge($refund)>0?'credited':null)
+                    :match (ReceiptReturns::bridge($refund)) { null=>null, 0=>'returned', default=>'split' },default=>null };
         }
         return ReceiptReturns::destination(\App\Models\InvoiceTransaction::where('invoice_id', $op->invoice_id)->with('gateway')->get());
     }

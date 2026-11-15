@@ -66,8 +66,10 @@ final readonly class Reminders
         foreach($l['operations'] as $op){
             if(ReceiptReturns::malformed($op)){continue;} // An unreadable return sends no credit notice until staff review it.
             // A closed order can credit more than once, and each credit gets its own notice.
-            $credits=['refund:'.$op->id=>$op->funding['refund']??null];
-            foreach($op->funding['late_credits']??[] as $i=>$late){$credits['refund:'.$op->id.':'.$i]=$late;}
+            try{$effective=ReceiptReturns::effective($op);}catch(\DomainException){continue;}
+            $credits=[];
+            if(isset($op->funding['refund'])){$credits['refund:'.$op->id]=array_shift($effective);}
+            foreach($effective as $i=>$late){$credits['refund:'.$op->id.':'.$i]=$late;}
             foreach($credits as $identity=>$r){
             if(is_array($r)&&($r['to']??null)==='original_payment'&&($bridge=ReceiptReturns::bridge($r))>0){$r=[...$r,'to'=>'account_credit','amount'=>PricingRule::decimal($bridge)];}
             if($op->state!=='rejected'||!is_array($r)||($r['to']??null)!=='account_credit'||($r['currency']??null)!=='USD'

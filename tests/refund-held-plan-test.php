@@ -6,14 +6,17 @@ require __DIR__.'/Support/money-receipt.php';
 
 use App\Models\{Credit, Gateway, Invoice, InvoiceTransaction, Role};
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Services\{PricingRule, RefundCandidates, Refunds};
+use Paymenter\Extensions\Servers\Domains\Models\{Account,Operation};
+use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement,NativeIntentSchema,PricingRule,RefundCandidates,RefundPayment,Refunds};
 
 class HeldPlanGateway extends MoneyReceiptGateway
 {
     public static array $observations = [];
+    public static ?int $unreadableInvoice = null;
     public function receiptLedger(Invoice $invoice): array { return self::ledger($invoice, 'HeldPlan'); }
     public static function ledger(Invoice $invoice, string $extension): array
     {
+        if(self::$unreadableInvoice===$invoice->id){throw new RuntimeException('Synthetic unreadable held ledger');}
         return array_values(array_filter(self::$observations[$invoice->id] ?? [], static fn($o) =>
             InvoiceTransaction::where('invoice_id',$invoice->id)->where('transaction_id',$o['payment_intent_id'])
                 ->first()?->gateway?->extension === $extension));
@@ -100,6 +103,68 @@ $equal([$original->id,200],[$plan['allocations'][0]['transaction_id'],$plan['all
     'Card allocation has the correct receipt identity and amount');
 $refunds->creditRejected($op->id);
 $equal($before+$gross-200,$balance(),'Pending card retry cannot duplicate bridge credit');
+
+// Credit-only fallback retains held shares after a partial loss, rather than gross receipts.
+[$op,$invoice]=$held('held-plan-credit-only-placeholder.com');$gross=PricingRule::minor($op->amount);
+$first=$pay($invoice,$creditOnly,200,'synthetic_credit_first');
+$second=$pay($invoice,$creditOnly,$gross-200,'synthetic_credit_second');
+$observe($invoice,'synthetic_credit_first','lost',100);$before=$balance();$writes=$creditWrites;$sends=MoneyReceiptGateway::$sends;
+$equal(['amount'=>PricingRule::decimal($gross-100),'currency'=>'USD'],$refunds->refundHeld($staff,$op->id,'customer_cancelled'),'Credit-only fallback returns exactly held funds');
+$plan=$op->fresh()->funding['refund'];
+$equal('account_credit',$plan['to'],'Credit-only fallback destination is account credit');
+$equal(PricingRule::decimal($gross-100),$plan['amount'],'Credit-only plan amount equals held funds');
+$equal([['id'=>$first->id,'amount_minor'=>100],['id'=>$second->id,'amount_minor'=>$gross-200]],$plan['payments'],'Credit-only plan retains exact held receipt shares');
+$equal($before+$gross-100,$balance(),'Credit-only fallback credits exactly the held amount');
+$funding=$op->fresh()->getRawOriginal('funding');
+$refunds->creditRejected($op->id);$refunds->creditRejected($op->id);
+$equal($before+$gross-100,$balance(),'Credit-only retries never duplicate credit');
+$equal($writes+1,$creditWrites,'Credit-only fallback saves credit exactly once across retries');
+$equal($funding,$op->fresh()->getRawOriginal('funding'),'Credit-only retries retain the immutable plan');
+$equal($sends,MoneyReceiptGateway::$sends,'Credit-only fallback never sends a card return');
+
+// Approval survives an unreadable ledger, with no money or plan, for the ordinary retry.
+[$op,$invoice]=$held('held-plan-unreadable-placeholder.com');$gross=PricingRule::minor($op->amount);
+$pay($invoice,$creditOnly,$gross,'synthetic_unreadable');$before=$balance();$writes=$creditWrites;$sends=MoneyReceiptGateway::$sends;
+HeldPlanGateway::$unreadableInvoice=$invoice->id;
+foreach(['approve','retry'] as $attempt){
+    $refused=false;
+    try{if($attempt==='approve'){$refunds->refundHeld($staff,$op->id,'customer_cancelled');}else{$refunds->creditRejected($op->id);}}
+    catch(RuntimeException $e){if($e->getMessage()!=='Synthetic unreadable held ledger'){throw $e;}$refused=true;}
+    $check($refused,'Unreadable ledger refuses payout: '.$attempt);
+    $check(!isset($op->fresh()->funding['refund']),'Unreadable ledger saves no plan: '.$attempt);
+    $check(RefundCandidates::query(Operation::query())->whereKey($op->id)->exists(),'Unreadable ledger remains retryable: '.$attempt);
+}
+$equal($before,$balance(),'Unreadable ledger creates no credit');$equal($writes,$creditWrites,'Unreadable ledger never saves credit');
+$equal($sends,MoneyReceiptGateway::$sends,'Unreadable ledger sends no card return');
+HeldPlanGateway::$unreadableInvoice=null;
+$refunds->creditRejected($op->id);$refunds->creditRejected($op->id);
+$equal($before+$gross,$balance(),'Readable ledger recovers the pending credit once');
+
+// Closed-order coverage by ID can be partial; every pass must see current gateway facts.
+NativeIntentSchema::install();$retirement=new AcquisitionRetirement($clock);app()->instance(AcquisitionRetirement::class,$retirement);
+$op=$new('held-plan-closed-partial-placeholder.com',false);
+DB::table('invoices')->where('id',$op->invoice_id)->update(['status'=>'cancelled']);
+DB::table('services')->where('id',$op->service_id)->update(['status'=>'cancelled']);
+$retirement->retire($op->domain_id);$op->refresh();$invoice=Invoice::findOrFail($op->invoice_id);
+$receipt=$pay($invoice,$creditOnly,300,'synthetic_closed_credit');$account=Account::where('server_id',$op->server_id)->sole();
+$observe($invoice,'synthetic_closed_credit','lost',100);$before=$balance();
+$refunds->creditRetired($account);
+$equal($before+200,$balance(),'Closed cursor credits only the currently held share');
+$equal([$receipt->id=>200],RefundPayment::lateCredited($op->fresh()),'Coverage retains a partially credited payment ID and amount');
+$observe($invoice,'synthetic_closed_credit','won',100);
+$refunds->creditRetired($account);$refunds->creditRetired($account);
+$equal($before+300,$balance(),'Closed cursor processes remaining coverage on the same payment ID once');
+$equal([$receipt->id=>300],RefundPayment::lateCredited($op->fresh()),'Closed coverage now equals the full receipt');
+HeldPlanGateway::$observations[$invoice->id]=[['invoice_id'=>(int)$invoice->id,'user_id'=>(int)$invoice->user_id,'currency'=>'USD',
+    'payment_intent_id'=>'synthetic_closed_credit','allocation_key'=>'stripe:refund:synthetic_external','state'=>'refunded','amount_minor'=>100]];
+$refunds->creditRetired($account);
+$check(DB::table('domains_obligation_alerts')->where('operation_id',$op->id)->where('code','refund_repair')->whereNull('resolved_at')->exists(),'Later external refund is processed into overdraw repair despite full retained coverage');
+$equal($before+300,$balance(),'Later external refund creates no extra account credit');
+DB::table('domains_obligation_alerts')->where('operation_id',$op->id)->where('code','refund_repair')->update(['resolved_at'=>1]);
+$funding=$op->fresh()->funding;$funding['late_credits'][0]['amount']='unreadable';
+DB::table('domains_operations')->where('id',$op->id)->update(['funding'=>\Illuminate\Support\Facades\Crypt::encryptString(json_encode($funding,JSON_THROW_ON_ERROR))]);
+$refunds->creditRetired($account);
+$check(DB::table('domains_obligation_alerts')->where('operation_id',$op->id)->where('code','refund_repair')->whereNull('resolved_at')->exists(),'Malformed retained plan still reaches repair reporting');
 expect($failures === [], 'Held plan regressions: '.json_encode($failures, JSON_THROW_ON_ERROR));
 echo "Zero-held refunds and mixed receipt plan shares passed\n";
 $nativeSuccessful = true;

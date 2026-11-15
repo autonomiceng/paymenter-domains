@@ -3,11 +3,12 @@
 declare(strict_types=1);
 require __DIR__.'/Support/operation-fixture.php';
 require __DIR__.'/Support/money-receipt.php';
+require __DIR__.'/Support/reminder-mail.php';
 use App\Models\{Credit,Gateway,Invoice,InvoiceTransaction,Role,Service};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\OperationActions;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Services\{HoldingLocks,InvoiceMoney,NativePresenter,PricingRule,ReceiptReturns,ReceiptReversals,RefundPayment,Refunds};
+use Paymenter\Extensions\Servers\Domains\Services\{HoldingLocks,InvoiceMoney,NativePresenter,OwnedDomains,PricingRule,ReceiptReturns,ReceiptReversals,RefundPayment,Refunds,Reminders};
 
 class ReleaseGateway extends MoneyReceiptGateway
 {
@@ -61,6 +62,38 @@ $reserve=static function(Operation $op)use($refunds,$staff):array{
     return $op->fresh()->funding['refund']['allocations'][0];
 };
 $release=static function(Operation $op,array $a):void{DB::transaction(fn()=>ReceiptReturns::release($op,$a['key'],'receipt_changed'));};
+$notice=static function(Operation $op)use($clock):?array{
+    return DB::transaction(static function()use($op,$clock):?array{
+        $l=HoldingLocks::take($op->domain);$alerts=[];
+        return (new ReflectionMethod(Reminders::class,'refund'))->invokeArgs(null,[$l,$clock->now(),&$alerts]);
+    });
+};
+
+foreach(['full','split','bridge','invalid','zero'] as $mode){$case('released credit readers '.$mode,function()use($mode,$make,$reserve,$release,$refunds,$notice,$equal):void{
+    $op=$make('readers-'.$mode);$minor=PricingRule::minor($op->amount);
+    if(in_array($mode,['split','bridge'],true)){
+        DB::table('invoice_transactions')->where('invoice_id',$op->invoice_id)->update(['amount'=>PricingRule::decimal($minor-100)]);
+        InvoiceTransaction::create(['invoice_id'=>$op->invoice_id,'amount'=>'1.00','fee'=>'0.00','status'=>'succeeded',
+            'gateway_id'=>$mode==='split'?InvoiceTransaction::where('invoice_id',$op->invoice_id)->first()->gateway_id:null,
+            'transaction_id'=>'synthetic_reader_second_'.$op->id]);
+    }
+    $a=$reserve($op);$release($op,$a);$saved=$op->fresh();$d=$saved->domain;
+    if(in_array($mode,['invalid','zero'],true)){
+        // Historical damaged evidence must be readable without editing the immutable saved result.
+        $funding=$saved->funding;$funding['receipt_return_results'][$a['key']]['credit_minor']=$mode==='invalid'?$minor+1:0;
+        if($mode==='zero'){$funding['receipt_return_results'][$a['key']]['credit_id']=null;}
+        DB::table('domains_operations')->where('id',$op->id)->update(['funding'=>\Illuminate\Support\Facades\Crypt::encryptString(json_encode($funding,JSON_THROW_ON_ERROR))]);
+        $saved=$op->fresh();
+    }
+    $expected=in_array($mode,['invalid','zero'],true)?null:($mode==='split'?'split':'credited');
+    $equal($expected,OwnedDomains::refundTo($d,$saved,[]),'Refund destination follows released credit: '.$mode);
+    $planned=$notice($saved);
+    $equal(in_array($mode,['invalid','zero'],true)?null:'$'.PricingRule::decimal($mode==='split'?$minor-100:$minor),$planned['data']['amount']??null,'Credit notice includes actual released money: '.$mode);
+    if($mode==='invalid'){
+        $order=OwnedDomains::order($d,$saved,Invoice::findOrFail($op->invoice_id));
+        $equal(false,$order['returned']??null,'Invalid released credit keeps the customer order under review');
+    }
+});}
 
 $case('same key resend',function()use($make,$refunds,$staff,$equal,$balance):void{
     $op=$make('resend');$before=$balance();ReleaseGateway::$beforeSend=true;
