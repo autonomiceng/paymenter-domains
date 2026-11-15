@@ -97,7 +97,7 @@ trait TldSalesPage
         if($s['label']==='For sale'){return null;}
         if($this->staffStop()){return rtrim($reason,'.').'.';}
         if(($this->snap()['selected']??false)&&!\Paymenter\Extensions\Servers\Domains\Admin\Support\TldTerms::read($this->getRecord())&&!str_contains($reason,'registrar terms')){
-            return ($reason===''?'':rtrim($reason,'.').'. ').'Registrar terms have not been confirmed. Use Sync prices below.';
+            return ($reason===''?'':rtrim($reason,'.').'. ')."Registrar terms couldn't be read. Sync prices tries again now.";
         }
         return match($reason){
             'Cost missing','Cost out of date'=>$reason.'. Use Sync prices below.',
