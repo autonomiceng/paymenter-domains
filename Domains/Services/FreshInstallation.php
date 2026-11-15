@@ -25,7 +25,7 @@ final class FreshInstallation
             || array_filter($ran, static fn ($name) => str_contains(strtolower($name),'domains')) !== [];
     }
 
-    private static function manifest(): string
+    public static function manifest(): string
     {
         $root = dirname(__DIR__); $files = [];
         foreach (new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS)) as $file) {
@@ -106,7 +106,7 @@ final class FreshInstallation
             }
         });
         if (DB::table('extensions')->where('extension','Domains')->lockForUpdate()->exists()
-            || Setting::where('key','like','domains%')->where(static fn ($q) => $q->where('key','!=',UpgradeGate::KEY)
+            || Setting::where('key','like','domains%')->where(static fn ($q) => $q->whereNotIn('key',[UpgradeGate::KEY,...($new?[]:[Installation::VERIFIED_KEY])])
                 ->orWhereNotNull('settingable_type')->orWhereNotNull('settingable_id'))->exists()
             || $new && NotificationTemplate::where('key','like','domains%')->exists()) {
             throw new \DomainException('Retained Domains settings or identity refuse fresh initialization. Restore and verify installation history.');
