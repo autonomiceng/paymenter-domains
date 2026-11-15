@@ -24,20 +24,26 @@ final class Installation
     {
         // Invalidate first: a failed explicit check must not leave an older success usable.
         self::verificationRecord()->delete();
-        $version=FreshInstallation::manifest();
+        $version=self::verificationState();
         SchemaVerifier::batch(static function():void {foreach(self::SCHEMAS as $schema){$schema::verify();}});
         self::verificationRecord()->create(['key'=>self::VERIFIED_KEY,'settingable_type'=>null,'settingable_id'=>null,
             'type'=>'string','encrypted'=>false,'value'=>$version]);
     }
+    private static function verificationState(): string
+    {
+        $ran=app(Migrator::class)->getRepository()->getRan();sort($ran);
+        $files=glob(dirname(__DIR__).'/database/migrations/*.php');
+        if(array_diff(array_map(static fn($file)=>basename($file,'.php'),$files),$ran)){
+            throw new \RuntimeException('Retained Domains migration history is incomplete.');
+        }
+        return json_encode(['version'=>FreshInstallation::manifest(),'migrations'=>$ran,'schema'=>SchemaVerifier::fingerprint()],JSON_THROW_ON_ERROR);
+    }
     public function verifyForOrders(): void
     {
         $records=self::verificationRecord()->get();
-        if($records->count()===1 && $records->sole()->value===FreshInstallation::manifest()){
-            foreach(['domains_accounts','domains_domains','domains_operations','domains_tlds','domains_prices',
-                BusinessSettingsSchema::TABLE,'domains_staff_review_keys',AuditArchives::TABLE] as $table){
-                if(!Schema::hasTable($table)){$this->verify();return;}
-            }
-            return;
+        if($records->count()===1){
+            try{if($records->sole()->value===self::verificationState()){return;}}
+            catch(\RuntimeException){} // A failed metadata read or missing migration still takes the full refusal path.
         }
         $this->verify();
     }

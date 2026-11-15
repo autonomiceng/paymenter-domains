@@ -17,6 +17,31 @@ final class SchemaVerifier
         try { $verify(); } finally { self::$references = $previous; }
     }
 
+    /** Read current integrity metadata without building reference tables or reading customer rows. */
+    public static function fingerprint(): string
+    {
+        $connection=DB::connection();$prefix=$connection->getTablePrefix().'domains_';
+        if($connection->getDriverName()==='sqlite'){
+            $rows=$connection->select('SELECT type, name, tbl_name, sql FROM sqlite_master WHERE substr(tbl_name,1,?)=? ORDER BY type,name', [strlen($prefix),$prefix]);
+        }else{
+            // Exclude mutable statistics and AUTO_INCREMENT counters; retain full columns, keys and engines.
+            $sources=[
+                ['TABLES',"'table'","''",'JSON_ARRAY(ENGINE,TABLE_COLLATION,CREATE_OPTIONS)'],
+                ['COLUMNS',"'column'",'COLUMN_NAME','JSON_ARRAY(ORDINAL_POSITION,COLUMN_TYPE,IS_NULLABLE,COLUMN_DEFAULT,EXTRA,CHARACTER_SET_NAME,COLLATION_NAME,GENERATION_EXPRESSION)'],
+                ['STATISTICS',"'index'","CONCAT(INDEX_NAME,':',SEQ_IN_INDEX)",'JSON_ARRAY(NON_UNIQUE,COLUMN_NAME,COLLATION,SUB_PART,INDEX_TYPE,NULLABLE)'],
+                ['TABLE_CONSTRAINTS',"'constraint'",'CONSTRAINT_NAME','JSON_ARRAY(CONSTRAINT_TYPE)'],
+                ['KEY_COLUMN_USAGE',"'key'","CONCAT(CONSTRAINT_NAME,':',ORDINAL_POSITION)",'JSON_ARRAY(COLUMN_NAME,REFERENCED_TABLE_SCHEMA,REFERENCED_TABLE_NAME,REFERENCED_COLUMN_NAME)'],
+            ];
+            $sql=[];$bindings=[];
+            foreach($sources as [$source,$kind,$item,$shape]){
+                $sql[]="SELECT $kind AS kind,TABLE_NAME AS tbl,$item AS item,$shape AS shape FROM information_schema.$source WHERE TABLE_SCHEMA=? AND LEFT(TABLE_NAME,?)=?";
+                array_push($bindings,$connection->getDatabaseName(),strlen($prefix),$prefix);
+            }
+            $rows=$connection->select(implode(' UNION ALL ',$sql).' ORDER BY kind,tbl,item',$bindings);
+        }
+        return hash('sha256',json_encode($rows,JSON_THROW_ON_ERROR));
+    }
+
     public static function verify(string $table, \Closure $definition): void
     {
         // No longer than the retained logical name, so the connection prefix and

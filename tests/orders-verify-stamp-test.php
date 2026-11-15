@@ -7,10 +7,11 @@ use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Services\{FreshInstallation,Installation};
 $key='domains_schema_verified';
 $record=static fn()=>DB::table('settings')->whereNull('settingable_type')->whereNull('settingable_id')->where('key',$key);
-$version=(new ReflectionMethod(FreshInstallation::class,'manifest'))->invoke(null);
+$sourceVersion=FreshInstallation::manifest();
+$version=$record()->value('value');
 $failures=[];
 $check=static function(bool $ok,string $why)use(&$failures):void {if(!$ok){$failures[]=$why;echo "FAIL: $why\n";}};
-$check($record()->value('value')===$version,'Fresh installation records the verified source version');
+$check((json_decode((string)$version,true)['version']??$version)===$sourceVersion,'Fresh installation records the verified source version');
 $measure=static function(callable $run):int {
     DB::flushQueryLog();DB::enableQueryLog();
     try{$run();}finally{$queries=DB::getQueryLog();DB::disableQueryLog();}
@@ -22,6 +23,32 @@ $record()->delete();DB::table('settings')->insert(['key'=>$key,'value'=>$version
 $toggle(false);
 $check($measure(static fn()=>$toggle(true))===0,'Matching verification record skips reference rebuilds');
 $toggle(false);
+// A matching record must not bypass database guards against duplicate reservations or sends.
+$drift=static function(callable $break,callable $restore,string $label)use($toggle,$measure,$check,$account,$record,$version):void {
+    $break();$refused=false;
+    try{
+        $creates=$measure(static function()use($toggle,&$refused):void {
+            try{$toggle(true);}catch(RuntimeException $error){$refused=true;}
+        });
+        $check($refused&&$creates>0&&!$account->fresh()->processing_enabled,'Matching record runs full verify and refuses '.$label);
+    }finally{$restore();if($account->fresh()->processing_enabled){$toggle(false);}}
+    (new Installation)->verify();
+    $record()->update(['value'=>$version]);
+};
+foreach([['domains_domains',['reservation_name']],['domains_operations',['operation_key']],
+    ['domains_operations',['invoice_item_id','action','retry_number']],['domains_runtime_operations',['operation_id']]] as [$table,$columns]){
+    $name=$columns===['invoice_item_id','action','retry_number']?$table.'_debt_retry_u':$table.'_'.implode('_',$columns).'_unique';
+    $drift(static fn()=>Schema::table($table,static fn($t)=>$t->dropUnique($name)),
+        static fn()=>Schema::table($table,static fn($t)=>$t->unique($columns,$name)),'lost uniqueness on '.$table.'.'.implode(',',$columns));
+}
+$drift(static fn()=>Schema::table('domains_operations',static fn($t)=>$t->renameColumn('attempt','fixture_attempt')),
+    static fn()=>Schema::table('domains_operations',static fn($t)=>$t->renameColumn('fixture_attempt','attempt')),'a changed evidence column');
+$migration=DB::table('migrations')->where('migration','2026_10_18_000001_create_domains_foundation')->sole();
+DB::table('migrations')->where('id',$migration->id)->delete();$refused=false;
+try{
+    try{$toggle(true);}catch(RuntimeException $error){$refused=true;}
+    $check($refused&&!$account->fresh()->processing_enabled,'Matching record refuses unrecorded shipped migrations');
+}finally{DB::table('migrations')->insert((array)$migration);if($account->fresh()->processing_enabled){$toggle(false);}}
 foreach(['missing','stale'] as $case){
     $record()->delete();
     if($case==='stale'){DB::table('settings')->insert(['key'=>$key,'value'=>'older-package','type'=>'string','encrypted'=>false]);}
