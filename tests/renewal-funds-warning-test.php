@@ -53,7 +53,9 @@ foreach(['pending','other_hold','new_shortfall','unknown','unreadable','lost'] a
     if($case==='new_shortfall'){
         $d->refresh()->update(['renewal_policy'=>[...$d->renewal_policy,'automatic_spend_paused'=>false]]);
         $op->refresh()->update(['state'=>'queued','safe_code'=>null]);$state->balance='0.00';Cache::flush();
+        $clock->instant=$clock->now()->modify('+6 minutes');
         same('queued',$engine->run($op->id,$writer)->state,'New shortfall waits again');
+        same('registrar_balance_insufficient_or_unknown',$op->fresh()->safe_code,'Fresh admission proves the new funds hold');
         $check($open(),'New shortfall reopens the funds warning');
         same(1,$alert()->count(),'A new shortfall reuses the retained warning');
     }
