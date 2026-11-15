@@ -44,16 +44,21 @@ $hostOnly=$sell(['hostname'=>'hostonly.com']);$visit();same('watch',WatchSource:
 $sell(['domain'=>'cancelled.com'],'cancelled');$withDomain=$sell(['domain'=>'www.ordered.com','hostname'=>'box1.hosting.example.net']);$visit();$visit();
 same(['watch','active'],[WatchSource::where('service_id',$hostOnly->id)->value('state'),WatchName::where('canonical_name','hostonly.com')->value('state')],'The hostname-only order stays monitored after domain orders join the product');
 same(['watch','ordered.com'],[WatchSource::where('service_id',$withDomain->id)->value('state'),WatchSource::where('service_id',$withDomain->id)->value('registrable_name')],'The order with a domain is watched by its domain, not its hostname');
-// Public checks read the same field: the order with a domain gets expiry and DNS work on its hostname map product.
+// Public checks read the same field as discovery, whichever key the product's map holds.
 DB::table('domains_watch_profiles')->where('id',$profile->id)->update(['enabled'=>true]);
-$ordered=WatchName::where('canonical_name','ordered.com')->sole();DB::table('domains_watch_names')->where('id',$ordered->id)->update(['ns_profile_id'=>$profile->id,'profile_revision'=>$profile->fresh()->revision]);
+$mixedMap=fn()=>Paymenter\Extensions\Servers\Domains\Models\WatchProductMap::where('product_id',$mixed->id)->sole();$key=fn(string $k)=>DB::table('domains_watch_product_maps')->where('product_id',$mixed->id)->update(['property_key'=>$k]);
 $registry=new Paymenter\Extensions\Servers\Domains\Services\WatchRegistryChecks(true);$checks=new Paymenter\Extensions\Servers\Domains\Services\WatchDnsChecks(true);
-expect($registry->enroll((int)$ordered->id,(int)$owner->id,$clock->at)&&$registry->begin((int)$ordered->id,(int)$owner->id,$clock->at)!==null,'The order with a domain gets an expiry check');
-expect($checks->enroll((int)$ordered->id,(int)$owner->id,$clock->at)&&$checks->begin((int)$ordered->id,(int)$owner->id,'delegation',$clock->at)!==null,'The order with a domain gets DNS checks');
+$monitored=function(string $name)use($registry,$checks,$owner,$clock,$profile){
+    $id=(int)WatchName::where('canonical_name',$name)->value('id');DB::table('domains_watch_names')->where('id',$id)->update(['ns_profile_id'=>$profile->id,'profile_revision'=>$profile->fresh()->revision]);
+    return [$registry->enroll($id,(int)$owner->id,$clock->at)&&$registry->begin($id,(int)$owner->id,$clock->at)!==null,$checks->enroll($id,(int)$owner->id,$clock->at)&&$checks->begin($id,(int)$owner->id,'delegation',$clock->at)!==null];
+};
+$key('domain');same([true,true],$monitored('hostonly.com'),'A hostname-only order on a domain map gets expiry and DNS checks');
+$key('hostname');same([true,true],$monitored('ordered.com'),'An order with a domain on a hostname map gets expiry and DNS checks');
 // Managed first: a mixed order linking to a managed domain still proves its hosting product's DNS template.
-$mixedManaged=$managed('mixedmanaged.com');$linked=$sell(['domain'=>'www.mixedmanaged.com','hostname'=>'box2.hosting.example.net']);$visit();
+$mixedManaged=$managed('mixedmanaged.com');$linked=$sell(['domain'=>'www.mixedmanaged.com','hostname'=>'box2.hosting.example.net']);$visit();$key('hostname');
 same('managed_link',WatchSource::where('service_id',$linked->id)->value('state'),'A mixed order for a managed domain links to it');
-$mixedMap=Paymenter\Extensions\Servers\Domains\Models\WatchProductMap::where('product_id',$mixed->id)->sole();DB::table('domains_watch_product_maps')->where('id',$mixedMap->id)->update(['expected_ns_profile_id'=>$profile->id]);
-$proof=DB::transaction(fn()=>Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::proven(Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($mixedManaged->fresh(),additionalServices:[$linked->id]),null,null,WatchSource::where('service_id',$linked->id)->get(),[$mixedMap->id=>$mixedMap->fresh()]));
+DB::table('domains_watch_product_maps')->where('product_id',$mixed->id)->update(['expected_ns_profile_id'=>$profile->id]);
+$locks=['domain'=>$mixedManaged->fresh(),'services'=>collect([$linked->fresh()]),'orders'=>collect([App\Models\Order::find($linked->order_id)]),'products'=>collect([$mixed->fresh()]),'relatedProperties'=>$linked->properties()->get()];
+$proof=DB::transaction(fn()=>Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::proven($locks,null,null,WatchSource::where('service_id',$linked->id)->get(),[$mixedMap()->id=>$mixedMap()]));
 same([(int)$profile->id,'platform','hosting_product'],[(int)$proof[0]?->id,$proof[1],$proof[2]],'The managed domain inherits the hosting product template from a mixed order');
 $nativeSuccessful=true;echo "Hosting links to managed domains.\n";
