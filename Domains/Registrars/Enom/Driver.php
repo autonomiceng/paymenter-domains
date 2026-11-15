@@ -337,7 +337,8 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
             try {
                 // The general read wrapper neutralizes RuntimeException; optional enrichment must expose unexpected failures.
                 $reply = $this->client->read(ReadCommand::Nameservers, $this->parts($attempt->query->name), $context);
-            } catch (\Paymenter\Extensions\Servers\Domains\Services\ReadDeferred|\Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit) {
+            } catch (\Paymenter\Extensions\Servers\Domains\Data\RequestDeadlineReached
+                |\Paymenter\Extensions\Servers\Domains\Services\ReadDeferred|\Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit) {
                 // Expected local admission failures cannot discard proven completion.
             } catch (\DomainException $error) {
                 // RequestContext uses this exact base exception for a refused provider read.
