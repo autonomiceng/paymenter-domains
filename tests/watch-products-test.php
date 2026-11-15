@@ -20,7 +20,7 @@ $manager=staffUser([Staff::VIEW,Writes::VIEW,Writes::MANAGE]);$viewer=staffUser(
 $made=0;
 $hosting=function(string $name,?int $serverId=null)use($product,&$made){$copy=$product->replicate();$copy->name=$name;$copy->slug='product-'.++$made;$copy->server_id=$serverId??$product->server_id;$copy->hidden=false;$copy->save();return $copy;};
 $saved=function($on,array $values)use($service){$copy=$service->replicate();$copy->product_id=$on->id;$copy->save();foreach($values as $key=>$value){$copy->properties()->create(['key'=>$key,'value'=>$value]);}return $copy;};
-$stray=fn($on,bool $enabled)=>DB::table('domains_watch_product_maps')->insert([...WatchProductMap::find($map->id)->getRawOriginal(),'id'=>null,'product_id'=>$on->id,'property_key'=>'beco_hosting_ready','enabled'=>$enabled]);
+$stray=fn($on,bool $enabled)=>DB::table('domains_watch_product_maps')->insert([...WatchProductMap::find($map->id)->getRawOriginal(),'id'=>null,'product_id'=>$on->id,'property_key'=>'hosting_ready','enabled'=>$enabled]);
 $mapOf=fn($on)=>WatchProductMap::where('product_id',$on->id)->first();$state=fn($on)=>($m=$mapOf($on))?[$m->property_key,(bool)$m->enabled]:null;
 $failed=[];$check=function(bool $ok,string $message)use(&$failed){if(!$ok){$failed[]=$message;}};
 config(['queue.default'=>'database','queue.connections.database'=>['driver'=>'database','retry_after'=>180]]);
@@ -32,8 +32,8 @@ $hostname=$hosting('Hostname');$saved($hostname,['hostname'=>'site.example.net']
 $none=$hosting('No domain');$saved($none,['plan'=>'basic']);
 $catalogue=$hosting('Sold domains');$saved($catalogue,['domain'=>'sold.example.com']);\App\Models\Setting::withoutEvents(fn()=>$catalogue->settings()->create(['key'=>'domains_catalogue','value'=>'1']));
 $registrar=$hosting('Domain server',\App\Models\Server::create(['name'=>'Registrar','extension'=>'Domains','type'=>'server','enabled'=>true])->id);
-$fixed=$hosting('W9 ready');$saved($fixed,['beco_hosting_ready'=>'yes','domain'=>'ready.example.com']);$stray($fixed,true);
-$fixedOff=$hosting('W9 off');$saved($fixedOff,['beco_hosting_ready'=>'yes','domain'=>'off.example.com']);$stray($fixedOff,false);
+$fixed=$hosting('W9 ready');$saved($fixed,['hosting_ready'=>'yes','domain'=>'ready.example.com']);$stray($fixed,true);
+$fixedOff=$hosting('W9 off');$saved($fixedOff,['hosting_ready'=>'yes','domain'=>'off.example.com']);$stray($fixedOff,false);
 $work(1800000000)->tick();$work(1800000300)->tick();
 // 1. Listing: orders that carry a domain are in scope, with or without a server; domain registrations never are.
 $check($state($serverless)===['domain',true],'1: a hosting product with no server whose orders carry a domain is monitored');
