@@ -259,15 +259,13 @@ same(['original_payment',$sends+1],[$op->fresh()->funding['refund']['to'],MoneyR
 $order=\Paymenter\Extensions\Servers\Domains\Services\OwnedDomains::order($op->domain->fresh(),$op->fresh(),App\Models\Invoice::findOrFail($op->invoice_id));
 expect(!isset($order['refund_pending']),'A recorded return uses its existing customer presentation instead of the early-cancel step');
 $retained=$op->fresh()->funding;$auditBefore=$op->fresh()->policy['staff_actions'];$retryKey=$ticket($op->fresh(),'credit');
-$retry=$run($op->fresh(),'credit',$retryKey);
+$refused(fn()=>$run($op->fresh(),'credit',$retryKey),'A settled refund cannot be retried','This payment has already been returned.');
 same($retained['refund'],$op->fresh()->funding['refund'],'A retained-plan recheck preserves the confirmed refund evidence');
 same($retained['refund_authorization'],$op->fresh()->funding['refund_authorization'],'The original refund authority stays');
 same(['rejected','refund_approved',App\Models\Service::STATUS_CANCELLED],[$op->fresh()->state,$op->fresh()->safe_code,$serviceStatus($op)],'Rechecking a finished return keeps the order and service cancelled');
 $auditAfter=$op->fresh()->policy['staff_actions'];
-same($auditBefore,array_slice($auditAfter,0,count($auditBefore)),'The retained-plan recheck preserves prior staff history');
-same(count($auditBefore)+1,count($auditAfter),'A fresh retained-plan review writes one audit');
-same(['credit','completed',$staff->id,'Customer order reviewed by staff'],[end($auditAfter)['action'],end($auditAfter)['phase'],end($auditAfter)['actor_id'],end($auditAfter)['reason']],'The fresh review records its real action and actor');
-$refused(fn()=>$run($op->fresh(),'credit',$retryKey),'A repeated retained-plan review is refused',$changed);
+same($auditBefore,$auditAfter,'A refused settled-refund retry preserves staff history');
+$refused(fn()=>$run($op->fresh(),'credit',$retryKey),'A repeated settled-refund retry is refused','This payment has already been returned.');
 same($auditAfter,$op->fresh()->policy['staff_actions'],'The refused duplicate review writes no extra audit');
 same($sends+1,MoneyReceiptGateway::$sends,'Never a second refund');
 echo "A failed refund keeps the cancel and retries once.\n";
