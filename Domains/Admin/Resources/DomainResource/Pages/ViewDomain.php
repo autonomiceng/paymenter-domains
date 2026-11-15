@@ -264,7 +264,7 @@ class ViewDomain extends RecordDetailPage
         $recheck=($check['rechecked']??false)?Value::state(State::UnderReview,Reader::Staff,($read['code']??null)==='domain_not_in_account'?'Not in our registrar account.':'The latest read got no clear answer.')->when(strtotime($read['at'])):Value::state(State::Queued,Reader::Staff,'Look for the domain at the registrar. Automatic recheck scheduled',at:$fact::date((int)$check['at']+86400,Reader::Staff));
         $statuses=array_values(array_unique(array_map(fn($status)=>match(strtolower(str_replace(' ','',$status))){'ok'=>'No registry restriction reported.','clienttransferprohibited','servertransferprohibited'=>'Transfers prohibited.','pendingtransfer'=>'Transfer pending.',default=>'Registry status is not recognized.'},$registry['status']??[])));
         $registryValue=match($registry['result']??null){'facts'=>Value::fact($fact::entered('Lists '.($registry['registrar']??'an unreported registrar')),trim(implode(' ',$statuses).' Compare with '.ucfirst($d->registrar_key).'. Read'),isset($registry['at'])?$fact::date($registry['at'],Reader::Staff):null),'not_registered'=>Value::fact($fact::entered('Not registered')),default=>Value::state(State::CouldntRead,Reader::Staff,'The public registry got no clear answer.')};
-        return [Row::make('First read',$first),Row::make('Recheck',$recheck)->actions($this->getAction('check_departure')),Row::make('Public registry',$registryValue)];
+        return [Row::make('First read',$first),Row::make('Recheck',$recheck)->actions($this->cachedActions['check_departure']??$this->check_departureAction()),Row::make('Public registry',$registryValue)];
     }
     /** The rail: the newest history, with the History tab holding the rest. */
     protected function rail(): array
