@@ -312,7 +312,7 @@ final readonly class OwnedDomains
         $renewNow = $this->renewNow($d, $forms, $state);
         if ($adopted) {
             if (isset($renewNow['invoice'])) { $renewalInvoice = ['state' => 'pending', 'due' => $renewalDue]; }
-            elseif (isset($renewNow['status'])) { $renewalInvoice = ['state' => $renewNow['status'], ...array_intersect_key($renewNow, ['goes' => true,'check'=>true])]; }
+            elseif (isset($renewNow['status'])) { $renewalInvoice = ['state' => $renewNow['status'], ...array_intersect_key($renewNow, ['goes' => true,'check'=>true,'note'=>true])]; }
             elseif ($state->imported) { $renewalInvoice = ['state' => 'review']; }
             elseif ($renewal === 'On' && $state->calendar) { $plannedDue = $state->calendar['due']; }
         }

@@ -15,7 +15,7 @@ $history=DB::table('migrations')->where('migration','!=',$migration)->orderBy('i
 foreach(TemplateAssignmentIndex::COLUMNS as$table=>$columns){Schema::table($table,static fn(Blueprint $t)=>$t->dropIndex($columns));}
 DB::table('migrations')->where('migration',$migration)->delete();
 same([false,false,false],$indexed(),'The earlier install has no template assignment indexes');
-$installation->verify();
+// Apply the pending migration before verifying the complete current package.
 $installation->install();same([true,true,true],$indexed(),'The upgrade adds the indexes before final schema verification');
 require __DIR__.'/Support/installed-upgrade.php';
 $source=dirname($path);assertInstalledMigrationOrder($source,$migration);

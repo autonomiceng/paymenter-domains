@@ -14,11 +14,11 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account, SalesPolicy, Tld};
 final class AcquisitionOffers
 {
     public function __construct(private readonly CallerPorts $ports, private readonly AccountBindings $bindings,
-        private readonly NativeCatalogue $native) {}
+        private readonly NativeCatalogue $native, private readonly bool $issuedInvoice = false) {}
 
     /** A payment-only view; checkout and provider admission retain their processing gate. */
     public function forIssuedInvoice(): self
-    { return new self($this->ports->forIssuedInvoice(),$this->bindings,$this->native); }
+    { return new self($this->ports->forIssuedInvoice(),$this->bindings,$this->native,issuedInvoice:true); }
 
     public function selection(string $ending, string $action, int $term): SaleSelection
     { return $this->offers([[$ending, $action, $term]])[0]['selection']; }
@@ -184,7 +184,9 @@ final class AcquisitionOffers
             if (!$product || $product->stock !== null) { throw new \DomainException('Offer unavailable.'); }
             $plan = $product->plans()->where('billing_period', $s->term)->sole(); $this->native->mapping($product, $plan);
             $native = $plan->prices()->where('currency_code', 'USD')->sole();
-            if (RetailLine::decimal($native->price) !== $row['snapshot']->retail || RetailLine::decimal($native->setup_fee) !== '0.00') {
+            $amount = RetailLine::decimal($native->price);
+            // Issued invoices retain their amount across staff retail edits, including while native projection is paused.
+            if ((!$this->issuedInvoice && $amount !== $row['snapshot']->retail) || RetailLine::decimal($native->setup_fee) !== '0.00') {
                 throw new \DomainException('Native offer changed.');
             }
             $result[] = ['selection' => $s, 'product' => $product, 'plan' => $plan,

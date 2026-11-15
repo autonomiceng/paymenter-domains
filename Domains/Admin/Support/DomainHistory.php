@@ -6,7 +6,7 @@ use App\Models\User;
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation, WatchAudit};
 use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
-use Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview;
+use Paymenter\Extensions\Servers\Domains\Services\{ReceiptReturns,StaffOperationReview};
 /** One domain's history: registrar requests, staff holds, releases and renewal changes, and customer auto-renew changes, newest first. Read by the History tab and the Activity rail. */
 final class DomainHistory
 {
@@ -40,12 +40,20 @@ final class DomainHistory
                 $rows[]=['__key'=>$action['action'].'-'.$op->id.'-'.$i,'__request'=>$op->id,'__order'=>$i+1,'time'=>self::at($action['at']??null),'event'=>match($action['action']){'hold'=>'Put on hold','release'=>'Hold released','resume_observation'=>'Sync resumed','engine_hold'=>'Back on hold','refund'=>'Cancelled'},
                     'sub'=>'Request #'.$op->id.' '.Labels::action($op->action),'status'=>null,'by'=>$action['action']==='engine_hold'?'System':(is_string($action['actor_name']??null)&&$action['actor_name']!==''?$action['actor_name']:'Staff')];
             }
-            try { $refund=$op->funding['refund']??null;
-            $summary=\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::summary($op);
-            if(is_array($refund)&&\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::settled($op)){
-                $rows[]=['__key'=>'refund-'.$op->id,'__request'=>$op->id,'__order'=>103,'time'=>self::at($refund['at']??null),
-                    'event'=>$summary[0]??'Credit added','sub'=>'Request #'.$op->id.' '.Labels::action($op->action),'status'=>null,'by'=>'System'];
-            } } catch (\Throwable) { /* Unreadable payment evidence cannot hide the retained request history. */ }
+            try {
+                $refund=$op->funding['refund']??null;
+                if(is_array($refund)){
+                    // This historical event belongs to the original refund, independently of later receipt returns.
+                    $original=clone $op;
+                    $original->funding=['refund'=>$refund,'receipt_return_results'=>array_intersect_key(
+                        $op->funding['receipt_return_results']??[],array_flip(array_column($refund['allocations']??[],'key')))];
+                    if(ReceiptReturns::settled($original)){
+                        $summary=ReceiptReturns::summary($original);
+                        $rows[]=['__key'=>'refund-'.$op->id,'__request'=>$op->id,'__order'=>103,'time'=>self::at($refund['at']??null),
+                            'event'=>$summary[0]??'Credit added','sub'=>'Request #'.$op->id.' '.Labels::action($op->action),'status'=>null,'by'=>'System'];
+                    }
+                }
+            } catch (\Throwable) { /* Unreadable payment evidence cannot hide the retained request history. */ }
         }
         $holdings=[]; $audits=[];
         try { $holdings=$domain->renewal_policy['staff_holdings']??[]; } catch (\Throwable) {}

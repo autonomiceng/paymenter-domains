@@ -104,6 +104,7 @@ final class DomainPage
         'Prior operation unresolved.' => 'Changes open once an earlier change finishes. '.self::NOTHING_TO_DO,
         'Current records required.' => 'Changes open once we’ve read this domain’s records from the registrar. '.self::NOTHING_TO_DO,
         'Management lifecycle held.' => 'Changes are on hold for this domain right now.',
+        'Registrar processing is disabled.' => 'We’ve paused requests to the registrar for now. Changes open once we resume them. '.self::NOTHING_TO_DO,
     ];
     /** A notice for work that is ours: blue, with the way to reach us. */
     private static function ours(string $text, ?array $contact): array
@@ -152,7 +153,7 @@ final class DomainPage
     public const CHANGES_AFTER = 'Other changes open once it’s confirmed.';
     public const EARLIER_AFTER = 'Other changes open once we finish checking an earlier request.';
     public const SWITCH_OFF_AFTER = 'DNS, nameservers and contacts are Off. Contact us to turn them on.';
-    public const INVOICE = ['paid' => 'Paid', 'review' => 'Under review', 'cancelled' => 'Invoice cancelled', 'closed' => 'Renewal did not finish'];
+    public const INVOICE = ['paid' => 'Paid', 'review' => 'Under review', 'cancelled' => 'Invoice cancelled', 'closed' => 'Renewal did not finish', 'returned' => 'Renewal cancelled'];
     /** What happens to the money once the registrar rejected the order, by OwnedDomain::$refundTo. */
     public const REFUND = ['original' => 'Any refund goes back to your original payment method.', 'credit' => 'Any refund goes to your account credit.',
         'split' => 'Any refund goes back to your original payment method where it can, and to your account credit otherwise.',
@@ -172,6 +173,7 @@ final class DomainPage
                 ...(($d->renewNow['declined'] ?? false) ? ['note' => self::DECLINED] : []), 'action' => isset($d->renewNow['invoice']) ? ['label' => 'Pay invoice', 'url' => $d->renewNow['invoice']] : null],
             $state === 'paid' => ['label' => self::PAID_LABEL, 'value' => self::INVOICE['paid'], ...(($goes = $d->renewNow['goes'] ?? $d->renewalInvoice['goes'] ?? null) ? ['note' => RenewalRepeatWait::NOTHING.' '.RenewalRepeatWait::GOES, 'at' => $goes] : [])],
             $state === 'closed' => ['value' => self::INVOICE['closed'], 'action' => $contact],
+            $state === 'returned' => ['value' => self::INVOICE['returned'], 'note' => $d->renewNow['note'] ?? $d->renewalInvoice['note'] ?? null],
             $state === 'cancelled' => ['missing' => true, 'cause' => self::INVOICE['cancelled'], 'fix' => $contact],
             // The row says there is nothing to do unless the page notice already says so,
             // or the status or notice gives the customer a step (an expired domain: contact support).

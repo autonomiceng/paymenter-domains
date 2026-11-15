@@ -96,7 +96,7 @@ class StaffSettingsWrites
         if($r->action==='processing'){
             if(($data['confirmed']??false)!==true){throw new \DomainException('Explicit processing confirmation required.');}
             $enabled=($data['enabled']??false)===true;
-            if($enabled){app(Installation::class)->verify();} // Schema verification creates reference tables; keep DDL outside financial locks.
+            if($enabled){app(Installation::class)->verifyForOrders();} // Schema verification creates reference tables; keep DDL outside financial locks.
             $r->local(function()use($r,$enabled):void {
                 $live=Account::where('server_id',$r->serverId)->sole();
                 if($enabled&&$live->environment==='live'){

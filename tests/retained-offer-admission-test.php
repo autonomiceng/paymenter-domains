@@ -8,11 +8,11 @@ use Paymenter\Extensions\Servers\Domains\Domains;
 use Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade;
 
 // The native fixture loads the persisted result of the exact checked bridge.
-$before=retainedOfferSnapshot();$receipt=UpgradeGate::routeState();
+$before=retainedOfferSnapshot(includeVerification:false);$receipt=UpgradeGate::routeState();
 OfferUpgrade::requireCompatible();
 (new Domains)->upgraded('0.1.0');
 same($receipt,UpgradeGate::routeState(),'Bridge-converted upgrade preserves its active receipt');
-same($before,retainedOfferSnapshot(),'Bridge-converted upgrade preserves native and financial records');
+same($before,retainedOfferSnapshot(includeVerification:false),'Bridge-converted upgrade preserves native and financial records');
 $setting=Setting::whereNull('settingable_type')->whereNull('settingable_id')->where('key',UpgradeGate::KEY)->sole();
 $active=$setting->value;
 foreach(['legacy','paused'] as $mode){

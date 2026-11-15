@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
-use App\Models\Server;
+use App\Models\{Server,Setting};
 use Illuminate\Database\Migrations\Migrator;
 use Illuminate\Support\Facades\{Cache,DB,Schema};
 /** No destructive rollback or automatic adoption of retained history. */
@@ -17,7 +17,36 @@ final class Installation
             if(filter_var($value,FILTER_VALIDATE_BOOLEAN)){throw new \DomainException('Pause processing on every legacy Enom server before installing or enabling Domains.');}
         }
     }
-    public function verify(): void { SchemaVerifier::batch(static function():void {foreach(self::SCHEMAS as $schema){$schema::verify();}}); }
+    public const VERIFIED_KEY='domains_schema_verified';
+    private static function verificationRecord(): \Illuminate\Database\Eloquent\Builder
+    { return Setting::whereNull('settingable_type')->whereNull('settingable_id')->where('key',self::VERIFIED_KEY); }
+    public function verify(): void
+    {
+        // Invalidate first: a failed explicit check must not leave an older success usable.
+        self::verificationRecord()->delete();
+        $version=self::verificationState();
+        SchemaVerifier::batch(static function():void {foreach(self::SCHEMAS as $schema){$schema::verify();}});
+        self::verificationRecord()->create(['key'=>self::VERIFIED_KEY,'settingable_type'=>null,'settingable_id'=>null,
+            'type'=>'string','encrypted'=>false,'value'=>$version]);
+    }
+    private static function verificationState(): string
+    {
+        $ran=app(Migrator::class)->getRepository()->getRan();sort($ran);
+        $files=glob(dirname(__DIR__).'/database/migrations/*.php');
+        if(array_diff(array_map(static fn($file)=>basename($file,'.php'),$files),$ran)){
+            throw new \RuntimeException('Retained Domains migration history is incomplete.');
+        }
+        return json_encode(['version'=>FreshInstallation::manifest(),'migrations'=>$ran,'schema'=>SchemaVerifier::fingerprint()],JSON_THROW_ON_ERROR);
+    }
+    public function verifyForOrders(): void
+    {
+        $records=self::verificationRecord()->get();
+        if($records->count()===1){
+            try{if($records->sole()->value===self::verificationState()){return;}}
+            catch(\RuntimeException){} // A failed metadata read or missing migration still takes the full refusal path.
+        }
+        $this->verify();
+    }
     public function install(): void
     {
         OperationClaims::outside(); self::legacy();

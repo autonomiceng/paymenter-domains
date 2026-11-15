@@ -60,5 +60,13 @@ expect($openAlert(),'Cancelling the latest invoice restores the actionable warni
 Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$d->id])->assertSuccessful()
     ->assertSee('Unpaid renewal invoice cancelled')->assertDontSee('Awaiting payment: invoice #'.$replacement->id);
 
+// A paid renewal cancelled with its payment returned is settled: Next invoice reads the History row's state, not under review.
+[$returnedDomain,,$returnedOp]=$make(placeholderComFixtureName('renewal-invoice-returned-placeholder.com'));
+$returnedOp->refresh()->forceFill(['state'=>'rejected','safe_code'=>'refund_approved','funding'=>[...($returnedOp->funding??[]),'refund'=>['amount'=>'1.00','to'=>'original_payment','bridge_minor'=>0,
+    'payments'=>[['id'=>1,'amount_minor'=>100]],'allocations'=>[['key'=>'card','amount_minor'=>100]]],'receipt_return_results'=>['card'=>['state'=>'refunded']]]])->saveQuietly();
+$returnedDomain=$returnedDomain->fresh();$history=RenewalCycles::lateNote($returnedOp->fresh());
+expect($history!==null,'History reads the returned payment');
+same(['status'=>'returned','note'=>$history],Paymenter\Extensions\Servers\Domains\Services\DomainStates::cycle($returnedDomain,Paymenter\Extensions\Servers\Domains\Services\DomainStateInputs::one($returnedDomain),$clock->now())['current']??null,'Next invoice reads the same settled return as History');
+
 echo "Current renewal invoice replaces the cancelled-invoice warning without changing history.\n";
 $nativeSuccessful=true;

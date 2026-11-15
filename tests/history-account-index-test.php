@@ -18,7 +18,8 @@ DB::table('domains_watch_audit')->insert(['subject_type'=>'watch','subject_id'=>
 $before=DB::table('domains_watch_audit')->get()->toJson();
 foreach($indexes as $table=>$columns){Schema::table($table,fn($t)=>$t->dropIndex($columns));}
 DB::table('migrations')->where('migration',$migration)->delete();
-$install->verify();$install->install();
+// Apply the pending migration before verifying the complete current package.
+$install->install();
 foreach($indexes as $table=>$columns){expect(Schema::hasIndex($table,$columns),'Retained upgrade index: '.$table);}
 same($before,DB::table('domains_watch_audit')->get()->toJson(),'Index upgrade preserves retained evidence');
 $queries=[

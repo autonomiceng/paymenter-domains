@@ -33,7 +33,12 @@ function retained(): array
 {
     $tables=array_filter(Schema::getTableListing(null,false),fn($t)=>str_starts_with($t,'domains_')||in_array($t,['users','orders','services','invoices','invoice_items','invoice_transactions','credits','settings','email_templates','notification_templates'],true));
     $result=[];sort($tables);
-    foreach($tables as $table){$rows=DB::table($table)->get()->map(function($r)use($table){$row=(array)$r;if($table==='domains_accounts'){unset($row['updated_at']);}ksort($row);return $row;})->all();usort($rows,fn($a,$b)=>strcmp(json_encode($a),json_encode($b)));$result[$table]=$rows;}
+    foreach($tables as $table){
+        $query=DB::table($table);
+        // Verification is derived state replaced by every successful install or explicit check.
+        if($table==='settings'){$query->whereNot(static fn($q)=>$q->whereNull('settingable_type')->whereNull('settingable_id')->where('key',Installation::VERIFIED_KEY));}
+        $rows=$query->get()->map(function($r)use($table){$row=(array)$r;if($table==='domains_accounts'){unset($row['updated_at']);}ksort($row);return $row;})->all();usort($rows,fn($a,$b)=>strcmp(json_encode($a),json_encode($b)));$result[$table]=$rows;
+    }
     expect(isset($result['domains_accounts'],$result['domains_operations'],$result['users']),'Retained snapshot includes Domains and native tables');
     return $result;
 }
