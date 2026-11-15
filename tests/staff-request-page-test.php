@@ -342,7 +342,7 @@ same(['Check 2 requests Paid orders on '.$name($heldOp->server_id).' have no reg
 same($oneAccount,$twoAccounts,'Held accounts are read together, not one by one');
 // The Domains list shows both held accounts, each with the link to its requests.
 $domains=Livewire::actingAs(Auth::user())->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ListDomains::class)->assertSuccessful();
-foreach ([RegistrarFacts::requestsUrl((int)$heldOp->server_id,['under_review'],paid:true),Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::requestUrl(['request'=>$doneOp->id])] as $url) {
+foreach ([RegistrarFacts::requestsUrl((int)$heldOp->server_id,[],paidUncertainty:true),Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::requestUrl(['request'=>$doneOp->id])] as $url) {
     expect(is_string($url)&&str_contains($domains->html(),'href="'.e($url).'"'),'Each held account links to its requests on the Domains list');
 }
 foreach ($saved as $row) { DB::table('domains_operations')->where('id',$row->id)->update(['state'=>$row->state,'safe_code'=>$row->safe_code]); }
