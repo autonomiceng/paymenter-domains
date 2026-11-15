@@ -160,6 +160,7 @@ final readonly class Refunds
         Cache::forever($cursor, $ids->count() === 100 ? $ids->last() : 0);
         foreach (Operation::whereIn('id', $ids)->orderBy('id')->get() as $op) {
             try {
+                if (!ReceiptReturns::plans($op) && ReceiptReturns::malformed($op)) { throw new \DomainException('Retained return plan needs review.'); }
                 if ($this->creditClosed($op) !== null) { $credited[] = (int) $op->domain_id; continue; }
             }
             catch (\Throwable $e) { RefundRepairs::failed((int)$op->id, $this->clock->now()->getTimestamp()); logger()->warning('Domains late payment stays with staff.', ['operation_id' => (int) $op->id, 'exception_class' => $e::class]); }
