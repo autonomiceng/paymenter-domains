@@ -26,6 +26,16 @@ MoneyReceiptGateway::complete(App\Models\Invoice::findOrFail($op->invoice_id),$k
 $run($op->fresh(),'credit');
 same(true,ReceiptReturns::settled($op->fresh()),'The original payment return settled');
 same('Refunded',RequestFacts::for($op->fresh())['invoice_state'],'The staff request reports a full Cancel and refund return');
+$invoice=App\Models\Invoice::findOrFail($op->invoice_id);
+App\Models\InvoiceTransaction::create(['invoice_id'=>$invoice->id,'amount'=>'10.99','fee'=>'0.00','status'=>'succeeded','gateway_id'=>$gateway->id,'transaction_id'=>'synthetic-late-invoice']);
+MoneyReceiptGateway::automatic($invoice,'synthetic-late-invoice',1099);
+MoneyReceiptGateway::credit($invoice,'synthetic-late-invoice:excess');
+Illuminate\Support\Facades\DB::transaction(function()use($op,$clock):void {
+    $domain=$op->domain->fresh();$l=Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($domain,released:$domain->reservation_name===null);
+    expect(ReceiptReturns::adoptClosed($l['operations']->firstWhere('id',$op->id),$l,$clock->now()),'The later payment has its own retained return');
+});
+ReceiptReturns::resume($op->id,$clock->now());
+same(['credited','Refunded'],[array_values($op->fresh()->funding['receipt_return_results'])[1]['state'],RequestFacts::for($op->fresh())['invoice_state']],'A separate later credit preserves the full original payment refund');
 MoneyReceiptGateway::credit(App\Models\Invoice::findOrFail($op->invoice_id),$key);
 ReceiptReturns::resume($op->id,$clock->now());
 same('credited',$op->fresh()->funding['receipt_return_results'][$key]['state'],'A failed original payment refund becomes account credit');

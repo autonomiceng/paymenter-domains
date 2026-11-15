@@ -43,10 +43,7 @@ final class DomainHistory
             try {
                 $refund=$op->funding['refund']??null;
                 if(is_array($refund)){
-                    // This historical event belongs to the original refund, independently of later receipt returns.
-                    $original=clone $op;
-                    $original->funding=['refund'=>$refund,'receipt_return_results'=>array_intersect_key(
-                        $op->funding['receipt_return_results']??[],array_flip(array_column($refund['allocations']??[],'key')))];
+                    $original=ReceiptReturns::originalRefund($op);
                     if(ReceiptReturns::settled($original)){
                         $summary=ReceiptReturns::summary($original);
                         $rows[]=['__key'=>'refund-'.$op->id,'__request'=>$op->id,'__order'=>103,'time'=>self::at($refund['at']??null),

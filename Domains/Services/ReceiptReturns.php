@@ -92,6 +92,14 @@ final class ReceiptReturns
     {
         return array_values(array_filter(self::returns($op),fn($p)=>($p['to']??null)==='original_payment'));
     }
+    /** Isolate the original refund and its retained allocation results from later returns. */
+    public static function originalRefund(Operation $op): Operation
+    {
+        $original=clone $op;$refund=$op->funding['refund']??null;
+        $original->funding=['refund'=>$refund,'receipt_return_results'=>array_intersect_key(
+            $op->funding['receipt_return_results']??[],array_flip(array_column($refund['allocations']??[],'key')))];
+        return $original;
+    }
     /** Every retained return, the refund first and then each late credit. */
     private static function returns(Operation $op): array
     {
