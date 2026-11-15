@@ -25,7 +25,7 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
     public int $uniqueFor=self::UNIQUE_FOR;
     public int $tries=1;
     public bool $failOnTimeout=true;
-    public function __construct(public int $actor,public int $domain,public int $generation,public string $fingerprint) {}
+    public function __construct(public int $actor,public int $domain,public int $generation,public string $fingerprint,public bool $departure=false) {}
     public function uniqueId(): string { return 'domains-record-sync:'.$this->domain.':'.$this->generation.':'.$this->fingerprint; }
     private function pendingKey(): string { return $this->uniqueId().':pending'; }
     /** Bounded UI signal; no provider read or lock acquisition while rendering the page. */
@@ -47,7 +47,7 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
         }
         return $result;
     }
-    public static function enqueue(int $actor,Domain $d): bool
+    public static function enqueue(int $actor,Domain $d,bool $departure=false): bool
     {
         $connection=config('queue.connections.'.config('queue.default'),[]);
         // A reservation must outlive the read; sync queues would still block the staff page.
@@ -57,7 +57,7 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
         if ($d->status!=='active') { throw new \DomainException('Domain is no longer active. Reload this page.'); }
         // The worker also yields to a live lease; this refusal only explains it before queueing.
         if (HoldingObservationWork::leased($d,app(Clock::class)->now())) { throw new \DomainException(self::RUNNING); }
-        $job=new self($actor,(int)$d->id,$d->authority_generation,$d->account_fingerprint);
+        $job=new self($actor,(int)$d->id,$d->authority_generation,$d->account_fingerprint,$departure);
         $lock=app(UniqueLock::class);
         if (!$lock->acquire($job)) { return false; }
         // Dispatch directly after admission: PendingDispatch would try to acquire the same lock again.
@@ -102,7 +102,10 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
                 // After its lease expires, the scheduler may claim the work, so this read must not save its result.
                 if ($lost) { $this->notice('Sync stopped','The registrar read ran past its time limit. Press Sync now again.'); return; }
                 $this->notice("Couldn't sync domain",'Check the registrar account, then try Sync now again.');
-            } finally { HoldingObservationWork::releaseManual($work,$claim); }
+            } finally {
+                try{if($this->departure&&!$lost){app(\Paymenter\Extensions\Servers\Domains\Services\DepartureChecks::class)->registry($d->fresh());}}
+                finally{HoldingObservationWork::releaseManual($work,$claim);}
+            }
         } finally { Cache::forget($this->pendingKey()); }
     }
     public function failed(?\Throwable $error): void

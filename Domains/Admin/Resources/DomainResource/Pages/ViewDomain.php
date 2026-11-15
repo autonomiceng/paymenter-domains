@@ -13,7 +13,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Head, Partial, Row
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\{RecordDetailPage, Section};
 use Paymenter\Extensions\Servers\Domains\Presentation\{Reader, StaffTime, State};
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
-use Paymenter\Extensions\Servers\Domains\Services\{ManagedDnsSetup,OwnedDomains,StaffWatchWrites};
+use Paymenter\Extensions\Servers\Domains\Services\{DepartureChecks,ManagedDnsSetup,OwnedDomains,StaffWatchWrites};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 /** One domain: its own state in the head, then its sections as rows, with Activity beside them and History as a tab.
  * Each notice sits first in the section it concerns, one per section. The page follows a change at its own cadence. */
@@ -179,7 +179,7 @@ class ViewDomain extends RecordDetailPage
     private function syncNow(): Action
     {
         // Record reads use registrar calls; Sync now lets staff request them only when needed.
-        return Action::make('sync_now')->label('Sync now')->color('gray')->disabled(fn()=>\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::pending($this->getRecord()))->visible(fn()=>DomainFacts::syncNow($this->getRecord()))
+        return Action::make('sync_now')->label('Sync now')->color('gray')->disabled(fn()=>\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::pending($this->getRecord()))->visible(fn()=>DomainFacts::syncNow($this->getRecord())&&!DepartureChecks::suspected($this->getRecord()))
             ->action(function():void {
                 if (!Staff::can('admin.domains.manage')) { abort(403); }
                 try {
@@ -194,6 +194,12 @@ class ViewDomain extends RecordDetailPage
                 catch (\Throwable) { \Filament\Notifications\Notification::make()->warning()->title("Couldn't queue sync. Ask your site admin to check the queue worker, then try again.")->send(); }
             });
     }
+    public function check_departureAction(): Action
+    { return Sheet::button(Action::make('check_departure')->label('Check again')->visible(fn()=>Staff::can('admin.domains.manage')&&DepartureChecks::suspected($this->getRecord()))
+        ->disabled(fn()=>\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::pending($this->getRecord()))->action(function():void{
+            Staff::requireView();abort_unless(Staff::can('admin.domains.manage'),403);
+            \Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::enqueue((int)Auth::id(),$this->getRecord()->refresh(),true);
+        })); }
     /** Resume sync sits in the page notice and is mounted as a page action. */
     public function resume_observationAction(): Action
     { return Sheet::button(OperationActions::scheduledReads($this->getRecord())[0]??Action::make('resume_observation')->hidden()); }
@@ -204,6 +210,7 @@ class ViewDomain extends RecordDetailPage
     protected function sections(): array
     {
         $this->cacheHoldingActions();
+        if(DepartureChecks::suspected($this->getRecord())){return $this->departureSections();}
         $d=$this->getRecord(); $facts=DomainFacts::besideHead($this->facts(),$this->said()); $edits=$this->edits();
         $late=$this->recordsLate($d);
         // The notice above the sheet gives the cause and the next step once, so the rows it explains stay calm.
@@ -245,6 +252,23 @@ class ViewDomain extends RecordDetailPage
         $monitoring=Section::make('Monitoring',[...(isset($notices['Monitoring'])?[$notices['Monitoring']]:[]),
             Partial::make('domains::admin.monitoring-evidence',['evidence'=>\Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence::read($d),'withRecords'=>true],'monitoring-evidence')],\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::EVIDENCE);
         return [...($d->status==='active'?[...$records,...$sections]:[...$sections,...$records]),$monitoring];
+    }
+    private function departureSections(): array
+    {
+        $d=$this->getRecord();$facts=$this->facts();$check=$d->observation['departure_check']??[];$registry=$check['registry']??[];
+        $notice=DomainRows::notice('departure',[[State::UnderReview,'Not in our registrar account.',null]],'departure-'.$d->id);
+        $read=$d->observation['record_failure']??[];$recheck=Row::make('Recheck',Value::fact(\Paymenter\Extensions\Servers\Domains\Presentation\Fact::entered(($read['code']??'Not read yet').(isset($read['at'])?' '.StaffTime::at(strtotime($read['at'])):''))))->actions($this->getAction('check_departure'));
+        $sections=[Section::make('Departure check',[$notice,Row::make('First read',Value::fact(\Paymenter\Extensions\Servers\Domains\Presentation\Fact::entered(isset($check['at'])?StaffTime::at($check['at']):'Not read yet'))),$recheck,
+            Row::make('Public registry',Value::fact(\Paymenter\Extensions\Servers\Domains\Presentation\Fact::entered(($registry['registrar']??"Couldn't read").(($registry['status']??[])?'. '.implode(', ',$registry['status']):'')))),
+            ...array_map(fn($label)=>$this->row($label,$facts[$label],[]),array_intersect(['Registrar'],array_keys($facts)))],
+            'Next step: look for the domain at the registrar, then use Check again on the Recheck row.')];
+        $renew=DomainRows::notice('renewal',[[State::Paused,'Renewal paused while we check this domain.',null]],'departure-renewal-'.$d->id);
+        $sections[]=Section::make('Renewal',[$renew,...array_map(fn($label)=>$this->row($label,$label==='Renewal'?[...$facts[$label],'value'=>'Paused','sub'=>'Resumes if the domain is still ours.']:$facts[$label],$this->side($label,$facts[$label],$this->edits(),null)),array_intersect(['Expires','Renewal','Next invoice'],array_keys($facts)))]);
+        $pause=DomainRows::notice('registrar-pause',[[State::Paused,DepartureChecks::PAUSED,null]],'departure-registrar-'.$d->id);
+        $rows=[$pause];foreach(array_intersect(['Transfer lock','Email auth code','Contacts','Nameservers'],array_keys($facts)) as $label){$rows[]=$this->row($label,$facts[$label],[Sheet::button(Action::make('paused_'.md5($label))->label(self::blockedLabel($label,$facts[$label])))->disabled()->extraAttributes(['aria-describedby'=>'departure-registrar-'.$d->id])]);}
+        $sections[]=Section::make('Registrar records',$rows);
+        $sections[]=Section::make('DNS records',array_map(fn($label)=>$this->row($label,$facts[$label],$this->side($label,$facts[$label],$this->edits(),null)),array_intersect(['DNS records'],array_keys($facts))),DepartureChecks::dnsNote($d));
+        return $sections;
     }
     /** The rail: the newest history, with the History tab holding the rest. */
     protected function rail(): array

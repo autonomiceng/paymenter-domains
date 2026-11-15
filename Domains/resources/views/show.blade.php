@@ -23,7 +23,7 @@
 <x-domains::customer.split>
 {{-- Renewal leads the settings section, as in the approved customer layout. --}}
 @include('domains::partials.owner-renew')
-@if ($settings)
+@if ($settings && !$domain->departureSuspected)
 {{-- When reads are stopped, the page notice already says we can't read this domain and are on it. --}}
 @php
     $readHeld = \Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::readHeldSaid($notice);
@@ -45,6 +45,15 @@
 @if ($readAt)<p class="domains-hint">Checked @include('domains::partials.moment', ['at' => $readAt]).</p>@endif</x-slot:head>
 @unless ($allUnread)<ul class="domains-rows">@include('domains::partials.owner-management', ['caps' => $settings])</ul>@endunless
 </x-domains::customer.section>
+@endif
+@if ($domain->departureSuspected)
+<x-domains::customer.section id="registrar-records" title="Registrar records">
+<div id="departure-registrar-pause"><x-domains::customer.notice>Registrar changes paused while we check this domain.</x-domains::customer.notice></div>
+<ul class="domains-rows">@include('domains::partials.owner-management', ['caps' => array_values(array_intersect($settings, ['lock','auth_code_email','contacts','nameservers']))])</ul>
+</x-domains::customer.section>
+@if (array_intersect($settings, ['dns','srv']) || $domain->dnsNotice)
+<x-domains::customer.section id="dns-records" title="DNS records" :note="$domain->dnsNotice"><ul class="domains-rows">@include('domains::partials.owner-management', ['caps' => array_values(array_intersect($settings, ['dns','srv']))])</ul></x-domains::customer.section>
+@endif
 @endif
 <x-slot:rail>@unless ($domain->setupPending)@include('domains::partials.activity')@endunless</x-slot:rail>
 </x-domains::customer.split>

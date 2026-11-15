@@ -59,7 +59,9 @@ final class HoldingReadRetry
     }
     /** This identity's confirmed not-found read, unless a later read of the same identity proved ownership. Other read failures are never absence. */
     public static function absent(Domain $d): bool
-    { return self::absenceFailure($d)!==null&&!self::absenceSuperseded($d); }
+    { $proof=$d->observation['renewal_ownership']??null;
+        if(is_array($proof)&&($proof['identity']??null)===ObservationRecords::identity($d)){return ($proof['owned']??null)===false;}
+        return self::absenceFailure($d)!==null&&!self::absenceSuperseded($d); }
     private static function absenceFailure(Domain $d): ?array
     {
         $failure=$d->observation['record_failure']??null;

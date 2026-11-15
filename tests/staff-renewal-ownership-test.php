@@ -31,7 +31,7 @@ expect($absentMembership['value']!==null,'Definite absence has a known membershi
 $observation->domainId='457';
 same('refreshed',$read(),'A foreign provider reference still saves diagnostic facts');
 same(true,$d->fresh()->observation['facts']['owned'],'The foreign read contains a newer positive diagnostic');
-same(false,\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::absent($d->fresh()),'The newer generic facts supersede the not-found diagnostic');
+same(true,\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::absent($d->fresh()),'Foreign provider facts cannot clear the retained identity-scoped absence');
 same(true,RenewalOwnership::blocked($d->fresh()),'Identity-scoped absence still blocks renewal');
 same($absentMembership,DomainFacts::for($d->fresh())['In registrar account'],'Staff membership retains the same absence answer after foreign-provider recovery');
 same(true,DomainFacts::for($d->fresh())['Renewal']['alert']??false,'Foreign-provider recovery retains the billing review');

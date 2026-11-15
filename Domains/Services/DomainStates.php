@@ -17,6 +17,7 @@ final class DomainStates
     public static function managed(Domain $d, ?Operation $op, string $today, bool $renewalOff): array
     {
         if ($d->adoptionPending()) { return ['adoption_pending', null]; }
+        if (DepartureChecks::suspected($d)) { return ['departure_suspected', null]; }
         if ($op && self::current($op, $d) && in_array($d->status, ['registration_pending', 'transfer_pending', 'needs_review'], true)) {
             $register = $op->action === 'register';
             $state = match (true) {

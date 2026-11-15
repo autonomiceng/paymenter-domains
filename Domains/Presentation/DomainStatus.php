@@ -29,6 +29,7 @@ final class DomainStatus
         'awaiting_payment' => ['awaiting_payment', 'Invoice not paid'], 'awaiting_code' => ['action_required', 'Auth code needed'],
         'renewal_off_expiring' => ['action_required', 'Auto-renew off'], 'watch.ns_changed' => ['action_required', 'Nameservers changed'],
         'setup_required' => ['action_required', 'Finish setup'], 'watch.not_registered' => ['action_required', 'Not registered'],
+        'departure_suspected' => ['under_review', 'Not in our registrar account'],
         'needs_review' => ['under_review', null], 'adoption_pending' => ['under_review', 'Import not confirmed'],
         'held' => ['under_review', null], 'uncertain' => ['under_review', null], 'active_no_expiry' => ['under_review', 'Expiry missing'],
         'expires_today' => ['expires_today', null], 'expired' => ['expired', self::LATE], 'grace' => ['expired', self::LATE], 'watch.expired' => ['expired', 'Renew at your registrar'],

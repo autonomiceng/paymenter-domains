@@ -133,7 +133,7 @@ final class ObligationAlerts
      * Anything we can't read stays live. */
     public static function outdated(object $alert,?Operation $op,Collection $operations,Domain $d):bool
     {
-        if($alert->code===RenewalOwnership::REVIEW){try{return !RenewalOwnership::blocked($d);}catch(\Throwable){return false;}}
+        if($alert->code===RenewalOwnership::REVIEW){try{return !HoldingReadRetry::absent($d);}catch(\Throwable){return false;}}
         if($alert->code==='observation_review'){try{return !ObservationRecords::stopped($d);}catch(\Throwable){return false;}}
         if(!$op){return false;}
         // A refusal before sending (dispatch, balance or claim checks) records a review alert. Once the request is sent and inside the registrar's

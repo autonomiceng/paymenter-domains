@@ -49,7 +49,7 @@ final class RenewalOwnership
     public static function review(Domain $d, int $now): ?string
     {
         if (!Schema::hasTable('domains_obligation_alerts')) { return null; }
-        if (self::blocked($d)) { return ObligationAlerts::record($d,self::REVIEW,$now); }
+        if (HoldingReadRetry::absent($d)) { return ObligationAlerts::record($d,self::REVIEW,$now); }
         DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code',self::REVIEW)
             ->whereNull('resolved_at')->update(['resolved_at'=>$now]);
         return null;

@@ -11,6 +11,7 @@ final class RecordFamilies
     public const EVIDENCE='Public DNS can’t confirm a registrar change or renewal.';
     public static function owner(OwnedDomain $page,array $facts): OwnedDomain
     {
+        if($page->departureSuspected){return $page;}
         $management=$page->management;
         foreach($facts['rows'] as $family){$key=$family['kind'];
             $section=$management[$key]??['label'=>$family['label'],'actions'=>[],'url'=>null,'family_only'=>true];

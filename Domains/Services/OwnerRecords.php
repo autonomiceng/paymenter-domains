@@ -43,7 +43,7 @@ final class OwnerRecords
     /** NameSilo's last complete read, from a confirmed save or a complete stored list; provider IDs never leave the server. */
     public static function nameSilo(Domain $d, ?array $sections=null): ?array
     {
-        if (($d->observation['record_failure']['identity']??null)===ObservationRecords::identity($d)) { return null; }
+        if (!DepartureChecks::suspected($d)&&($d->observation['record_failure']['identity']??null)===ObservationRecords::identity($d)) { return null; }
         $facts=($sections??ObservationProjection::sections($d))['dns']['facts']??[];
         $inventory=$facts['sequence_preimage']??(isset($facts['records'])?['state'=>'complete','records'=>$facts['records']]:null);
         try { DnsSequence::records($inventory??[]); return $inventory; } catch (\Throwable) { return null; }
@@ -52,7 +52,7 @@ final class OwnerRecords
     {
         $facts=$sections??ObservationProjection::sections($d); $out=[]; $inventory=ObservationRecords::current($d);
         // Retained complete lists are historical after a wholly failed primary observation.
-        $primaryFailed=($d->observation['record_failure']['identity']??null)===ObservationRecords::identity($d);
+        $primaryFailed=!DepartureChecks::suspected($d)&&($d->observation['record_failure']['identity']??null)===ObservationRecords::identity($d);
         foreach (['dns','srv','ds'] as $kind) {
             try {
                 if ($kind==='dns' && $d->registrar_key==='namesilo') { $view=self::nameSilo($d,$facts); if ($view) { ['records'=>$out['dns'],'ttls'=>$out['dns_ttls'],'fixed'=>$out['dns_fixed'],'digest'=>$out['dns_digest']]=DnsForm::view($view); } continue; }

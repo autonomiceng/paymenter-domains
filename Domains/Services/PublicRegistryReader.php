@@ -59,9 +59,16 @@ final class PublicRegistryReader
             if ($expiry === null) { return $unknown; }
             $statuses = is_array($data['status'] ?? null) ? array_slice($data['status'], 0, 100) : [];
             $statuses = array_values(array_filter($statuses, static fn($s) => is_string($s) && preg_match('/\A[a-zA-Z -]{1,64}\z/D', $s)));
-            return ['result'=>'facts','reason'=>'facts','safe_code'=>null,'expiry'=>$expiry,'precision'=>$precision,'source'=>$endpoint,'status'=>$statuses];
+            return ['result'=>'facts','reason'=>'facts','safe_code'=>null,'expiry'=>$expiry,'precision'=>$precision,'source'=>$endpoint,'status'=>$statuses,'registrar'=>self::registrar($data)];
         } catch (RegistryDeferred) { return array_replace($unknown, ['reason'=>'deferred','safe_code'=>'budget_exhausted']); }
         catch (\Throwable) { return array_replace($unknown, ['reason'=>'endpoint_failed']); }
+    }
+    private static function registrar(array $data): ?string
+    {
+        foreach(array_slice($data['entities']??[],0,100) as $entity){
+            if(!is_array($entity)||!in_array('registrar',$entity['roles']??[],true)){continue;}
+            foreach($entity['vcardArray'][1]??[] as $field){if(($field[0]??null)==='fn'&&is_string($field[3]??null)&&strlen($field[3])<=255){return $field[3];}}
+        }return null;
     }
     private static function services(array $bootstrap): array
     {
