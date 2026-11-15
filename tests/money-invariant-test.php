@@ -63,14 +63,20 @@ $role = Role::create(['name'=>'Invariant refunds', 'permissions'=>['admin.domain
 $staff->update(['role_id'=>$role->id]);
 $refunds = new Refunds($clock);
 $balance = static fn(): int => PricingRule::minor((string) (Credit::where('user_id', $user->id)->where('currency_code', 'USD')->value('amount') ?? '0.00'));
-$projectionChecks = 0;
+$projectionChecks = 0; $projectionFailures = [];
+$assertProjection = static function($expected, $actual, string $message) use (&$projectionFailures): void {
+    if ($expected !== $actual) {
+        $projectionFailures[] = $message;
+        echo 'PROJECTION_FAIL '.json_encode(compact('expected','actual','message'), JSON_THROW_ON_ERROR)."\n";
+    }
+};
 $failures = []; $checks = 0; $steps = 0; $cases = 0; $coverage = [];
 
 // Each scenario has its own invoice. The oracle reads actual native payouts and the credit balance,
 // never Domains' available(), retained plan amounts, or a service's returned observation.
 $run = static function (int $seed, string $mode, array $actions) use (
     $new, $makeRenewal, $cycles, $clock, $now, $ports, $refunds, $staff, $balance, $receiptGateway, $creditGateway,
-    &$failures, &$checks, &$steps, &$cases, &$coverage, &$projectionChecks
+    &$failures, &$checks, &$steps, &$cases, &$coverage, &$projectionChecks, $assertProjection
 ): void {
     $cases++;
     MoneyReceiptGateway::$returns = []; MoneyReceiptGateway::$lost = false;
@@ -188,13 +194,13 @@ $run = static function (int $seed, string $mode, array $actions) use (
         $peers = \Paymenter\Extensions\Servers\Domains\Models\Operation::where('invoice_id', $invoice->id)->orderBy('id')->get()
             ->map(fn($peer)=>['funding'=>$peer->funding ?? []])->all();
         $money = InvoiceMoney::record($input, $peers, $ledger);
-        same($held-$reserved, $money['pool'], 'Projection pool mismatch '.json_encode(compact('seed','mode','trace','held','reserved','money','peers'), JSON_THROW_ON_ERROR));
-        same($open ? 0 : max(0, $held-$reserved), InvoiceMoney::held($money), 'Projection held matches independent oracle');
-        same($held-$reserved < 0, $money['overdrawn'], 'Projection preserves the signed deficit');
-        same($held-$reserved === 0 && !$reserved && !$pending && !$open, InvoiceMoney::settled($money), 'Settled uses pool and unresolved work');
+        $assertProjection($held-$reserved, $money['pool'], 'Projection pool mismatch '.json_encode(compact('seed','mode','trace','held','reserved','money','peers'), JSON_THROW_ON_ERROR));
+        $assertProjection($open ? 0 : max(0, $held-$reserved), InvoiceMoney::held($money), 'Projection held matches independent oracle');
+        $assertProjection($held-$reserved < 0, $money['overdrawn'], 'Projection preserves the signed deficit');
+        $assertProjection($held-$reserved === 0 && !$reserved && !$pending && !$open, InvoiceMoney::settled($money), 'Settled uses pool and unresolved work');
         $parts = array_map(fn($id)=>array_sum(InvoiceMoney::heldFor($money, $id)), array_keys($money['receipts']));
-        same(InvoiceMoney::held($money), array_sum($parts), 'Receipt shares cover exactly the held pool');
-        same($money, InvoiceMoney::record($input, $peers, $ledger), 'Pure record replay is idempotent');
+        $assertProjection(InvoiceMoney::held($money), array_sum($parts), 'Receipt shares cover exactly the held pool');
+        $assertProjection($money, InvoiceMoney::record($input, $peers, $ledger), 'Pure record replay is idempotent');
         $projectionChecks += 6;
         $previousOut = $out;
         // One retry must finish synchronous fake returns once funding and the dispute are resolved.
@@ -358,7 +364,7 @@ DB::transaction(static function() use ($probe): void {
     InvariantReceiptGateway::$ledger = [];
     expect($refused, 'Gateway currency mismatch throws before projecting money');
 });
-echo 'PROJECTION_SUMMARY '.json_encode(['checks'=>$projectionChecks, 'cases'=>$cases, 'steps'=>$steps], JSON_THROW_ON_ERROR)."\n";
+echo 'PROJECTION_SUMMARY '.json_encode(['checks'=>$projectionChecks, 'failures'=>count($projectionFailures), 'cases'=>$cases, 'steps'=>$steps], JSON_THROW_ON_ERROR)."\n";
 echo 'INVARIANT_SUMMARY '.json_encode(['cases'=>$cases, 'steps'=>$steps, 'checks'=>$checks,
     'failures'=>count($failures), 'coverage'=>$coverage], JSON_THROW_ON_ERROR)."\n";
 // Known caller violations must match exactly until their fixes remove the corresponding entries.
@@ -418,4 +424,5 @@ $missing = array_values(array_diff($expectedIdentities, $actualIdentities));
 echo 'INVARIANT_RATCHET '.json_encode(['baseline'=>count($callerBaseline), 'observed'=>count($callerIdentities),
     'unexpected'=>$unexpected, 'missing'=>$missing], JSON_THROW_ON_ERROR)."\n";
 expect($unexpected === [] && $missing === [], 'Caller violation baseline changed: '.json_encode(compact('unexpected','missing'), JSON_THROW_ON_ERROR));
+expect($projectionFailures === [], 'Projection checks failed: '.count($projectionFailures));
 $nativeSuccessful = true;
