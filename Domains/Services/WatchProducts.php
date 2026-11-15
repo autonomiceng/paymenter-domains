@@ -16,8 +16,9 @@ final class WatchProducts
     /** @return Builder<Product> Every product but a domain registration. */
     private static function hosting(): Builder
     {return Product::whereDoesntHave('server',fn($q)=>$q->where('extension','Domains'))->whereDoesntHave('settings',fn($q)=>$q->where('key','domains_catalogue'));}
-    private static function carries(string ...$keys): \Closure
-    {return fn($q)=>$q->whereHas('services',fn($s)=>$s->whereHas('properties',fn($p)=>$p->whereIn('key',$keys)->where('value','<>','')));}
+    /** Services that saved a value in one of these order fields. */
+    private static function saved(string ...$keys): \Closure { return fn($s)=>$s->whereHas('properties',fn($p)=>$p->whereIn('key',$keys)->where('value','<>','')); }
+    private static function carries(string ...$keys): \Closure { return fn($q)=>$q->whereHas('services',self::saved(...$keys)); }
     /** @return Builder<Product> Hosting products whose orders carry a domain. */
     public static function inScope(): Builder { return self::hosting()->where(self::carries(...self::KEYS)); }
     /** The next products the tick maps or corrects: in scope with no map yet, or a map on a field other than the convention. */
@@ -32,12 +33,12 @@ final class WatchProducts
     public static function adopt(Product $product): void { (new WatchMappings())->adopt((int)$product->id,self::key((int)$product->id)); }
     /** The convention field for this product's orders. */
     public static function key(int $product): string
-    {return Service::where('product_id',$product)->whereHas('properties',fn($p)=>$p->where('key','domain')->where('value','<>',''))->exists()||!Service::where('product_id',$product)->whereHas('properties',fn($p)=>$p->where('key','hostname')->where('value','<>',''))->exists()?'domain':'hostname';}
+    {$has=fn(string $key)=>Service::where('product_id',$product)->where(self::saved($key))->exists();return $has('domain')||!$has('hostname')?'domain':'hostname';}
     /** The Hosting products section: products to choose (name, hidden, on, active services) and the names of the rest. */
     public static function lines(): array
     {
         $off=WatchProductMap::where('enabled',false)->pluck('product_id')->flip();
-        $all=self::hosting()->select(['id','name','hidden'])->withExists(['services as carries'=>self::carries(...self::KEYS)])->orderBy('name')->orderBy('id')->get();
+        $all=self::hosting()->select(['id','name','hidden'])->withExists(['services as carries'=>self::saved(...self::KEYS)])->orderBy('name')->orderBy('id')->get();
         [$in,$out]=$all->partition(fn($p)=>$p->carries);
         return ['products'=>$in->map(fn($p)=>['id'=>(int)$p->id,'name'=>$p->name,'hidden'=>(bool)$p->hidden,'on'=>!$off->has($p->id)])->values()->all(),'unlisted'=>$out->pluck('name')->values()->all()];
     }
