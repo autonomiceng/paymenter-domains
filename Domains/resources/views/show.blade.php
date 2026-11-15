@@ -40,16 +40,12 @@
             && !($section['progress'] ?? null) && !($section['off'] ?? false);
     });
 @endphp
-<x-domains::customer.section id="settings" title="Settings">
+<x-domains::customer.section id="settings" :title="($recordFamilies ?? null) ? 'Registrar records' : 'Settings'">
 <x-slot:head>@if (($recordFamilies ?? null) && $recordFamilies['stale'] && !($recordFamilies['initial_read_pending'] ?? false) && !$readHeld && !$unreadRows)<p class="domains-hint">Registrar records are waiting for an update.@if ($recordFamilies['retained']) Last confirmed data is retained.@endif</p>@endif
 @if (($recordFamilies ?? null) && !$readHeld)@include('domains::partials.record-read-note', ['recordFamilies' => $recordFamilies])@endif
 @if ($readAt)<p class="domains-hint">Checked @include('domains::partials.moment', ['at' => $readAt]).</p>@endif</x-slot:head>
-@if ($domain->departureSuspected)<x-domains::customer.notice variant="section" id="departure-registrar-pause">Registrar changes paused while we check this domain.</x-domains::customer.notice>@endif
-@unless ($allUnread)<ul class="domains-rows">@include('domains::partials.owner-management', ['caps' => array_values(array_diff($settings, ['dns','srv','ds','glue']))])</ul>@endunless
+@unless ($allUnread)<ul class="domains-rows">@include('domains::partials.owner-management', ['caps' => $settings])</ul>@endunless
 </x-domains::customer.section>
-@endif
-@if (array_intersect($settings, ['dns','srv','ds','glue']) || $domain->dnsNotice)
-<x-domains::customer.section id="dns" title="DNS" :note="$domain->dnsNotice"><ul class="domains-rows">@include('domains::partials.owner-management', ['caps' => array_values(array_intersect($settings, ['dns','srv','ds','glue']))])</ul></x-domains::customer.section>
 @endif
 <x-slot:rail>@unless ($domain->setupPending)@include('domains::partials.activity')@endunless</x-slot:rail>
 </x-domains::customer.split>

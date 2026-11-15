@@ -68,13 +68,13 @@ same([Paymenter\Extensions\Servers\Domains\Presentation\Plain::None->label(),Pay
 // A first registrar read that failed has no records and no record time: the row is Couldn't read at the failure time, not Not read yet.
 $first=clone $d;$first->observation=['record_failure'=>['identity'=>ObservationRecords::identity($d),'code'=>'domain_not_in_account','at'=>'2026-11-05T10:00:00+00:00']];
 $failedFirst=MonitoringEvidence::rows(MonitoringEvidence::read($first))['Registrar records'];
-same(Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead,$failedFirst->state,'A failed first registrar read is Couldn\'t read');
-same(strtotime('2026-11-05T10:00:00Z'),strtotime((string)$failedFirst->subAt?->datetime),'A failed first registrar read names when it was tried');
+same(Paymenter\Extensions\Servers\Domains\Presentation\State::UnderReview,$failedFirst->state,'A definite first absence is under review');
+same(strtotime('2026-11-05T10:00:00Z'),$instants($failedFirst->toHtml())[0],'A failed first registrar read names when it was tried');
 // A later failed read keeps the old inventory, but its attempt time belongs to the later failure.
 $later=clone $d;$later->observation=[...$d->observation,'record_failure'=>$first->observation['record_failure']];
 $laterEvidence=MonitoringEvidence::read($later);$laterRow=MonitoringEvidence::rows($laterEvidence)['Registrar records'];
 same($e['registrar'],$laterEvidence['registrar'],'A failed refresh retains the saved registrar addresses');
-same(strtotime($first->observation['record_failure']['at']),strtotime((string)$laterRow->subAt?->datetime),'A failed refresh names the latest attempt, not the retained inventory time');
+same(strtotime($first->observation['record_failure']['at']),$instants($laterRow->toHtml())[0],'A failed refresh names the latest attempt, not the retained inventory time');
 // The linked watch distinguishes a failed registrar attempt from a complete read at the same instant.
 $d->observation=$later->observation;$d->saveQuietly();
 $attempt=WatchFacts::for($watch->fresh(),['summary'=>null,'keys'=>[]])['Evidence']['Registrar records'];

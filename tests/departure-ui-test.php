@@ -14,12 +14,12 @@ $dom=Dom\HTMLDocument::createFromString('<!doctype html><meta charset="utf-8">'.
 $word=$dom->querySelector('[data-domains-tone]');$reason=$dom->querySelector('[data-piece="sub"]');
 $check($word!==null&&trim($word->textContent)===State::Delayed->label(),'The delayed attention item exposes its state');
 $cause=DomainFacts::alertCause('departure_review',$record);
-$check($reason!==null&&str_contains($cause,trim($reason->textContent))&&str_contains($reason->textContent,Fact::day($record->provider_expires_at)->text),'The delayed item retains its next step and expiry data');
+$check($reason!==null&&str_contains($reason->textContent,explode('. ',$cause)[1])&&str_contains($reason->textContent,Fact::day($record->provider_expires_at)->text),'The delayed item retains its next step and expiry data');
 $check($table->getRecordUrl($record)===\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource::getUrl('view',['record'=>$record->id]),'The departure next step opens its domain');
 $check($table->getColumn('auto_renew')->record($record)->getState()===State::Paused->label(),'The list shows paused renewal authority');
 $dom=Dom\HTMLDocument::createFromString($customer,LIBXML_NOERROR);
 $controls=$dom->querySelectorAll('button[aria-disabled="true"][aria-describedby^="departure-"]');
-$check($controls->length>=6,'Paused renewal and registrar controls remain present');
+$check($controls->length>=7,'Paused renewal and registrar controls remain present');
 foreach($controls as $button){
     $check(!$button->hasAttribute('disabled')&&$button->getAttribute('tabindex')!=='-1','Paused controls remain keyboard focusable');
     $check($button->getAttribute('type')==='button','Paused controls cannot submit a form');

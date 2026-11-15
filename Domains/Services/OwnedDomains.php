@@ -303,7 +303,7 @@ final readonly class OwnedDomains
             foreach ($management as $key=>&$section) {
                 $wanted=array_keys($section['actions']);
                 $section['actions']=array_intersect_key($section['actions'],array_flip($allowed));
-                if (DepartureChecks::suspected($d)&&in_array($key,DepartureChecks::REGISTRAR,true)) { $section['departurePaused']=true;continue; }
+                if (DepartureChecks::suspected($d)&&($key==='ds'||in_array($key,DepartureChecks::REGISTRAR,true))) { $section['departurePaused']=true;continue; }
                 if ($section['actions'] || isset($progressBySetting[ManagementProgress::setting($key)])) { continue; }
                 $supported=$caps!==null&&collect($wanted)->contains(fn($action)=>$caps->get(DomainManagement::capability($action))->support===Support::Supported);
                 if ($busyLabel!==null && $supported) { $section['waiting']='Opens when the '.$busyLabel.' change finishes.'; } else { unset($management[$key]); }

@@ -240,10 +240,10 @@ class ViewDomain extends RecordDetailPage
         // The status notice opens Registration, or the first section when there is none.
         $statusIn=isset($placed['Registration'])?'Registration':(array_key_first($placed)??'Registrar records');
         $items[$statusIn]=[...($suspected?[]:$this->statusItems()),...($items[$statusIn]??[])];
-        if ($suspected) { $items['Registrar records']=[[State::UnderReview,DepartureChecks::PAUSED,null]]; $items['Renewal'][]=[State::UnderReview,'Renewal paused while we check this domain.',null]; }
+        if ($suspected) { unset($items['Registrar records']); $items['Registration'][]=[State::UnderReview,DepartureChecks::PAUSED,null]; $items['Renewal'][]=[State::UnderReview,'Renewal paused while we check this domain.',null]; }
         $notices=[];
         foreach ($items as $title=>$list) { if (($row=DomainRows::notice(strtolower((string)preg_replace('/[^A-Za-z]+/','-',$title)),$list,'domain-'.$d->id.'-'.md5($title)))!==null) { $notices[$title]=$row; } }
-        $this->heldNotice=$heldIn!==null?($notices[$heldIn]??null):null;
+        $this->heldNotice=$suspected?($notices['Registration']??null):($heldIn!==null?($notices[$heldIn]??null):null); $this->renewalNotice=$notices['Renewal']??null;
         $sections=[];
         foreach ($placed as $title=>$labels) {
             $rows=[];
@@ -254,17 +254,17 @@ class ViewDomain extends RecordDetailPage
         $records=[$this->recordFamilies($d,$facts,$edits,$notices['Registrar records']??null)];
         $monitoring=Section::make('Monitoring',[...(isset($notices['Monitoring'])?[$notices['Monitoring']]:[]),
             Partial::make('domains::admin.monitoring-evidence',['evidence'=>\Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence::read($d),'withRecords'=>true],'monitoring-evidence')],\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::EVIDENCE);
-        return [...($suspected?[$this->departureCheck()]:[]),...($d->status==='active'?[...$records,...$sections]:[...$sections,...$records]),$monitoring];
+        return [...($d->status==='active'?[...$records,...$sections]:[...$sections,...$records]),$monitoring];
     }
-    private function departureCheck(): Section
+    private function departureCheck(): array
     {
         $d=$this->getRecord();$check=$d->observation['departure_check']??[];$registry=$check['registry']??[];$read=$d->observation['record_failure']??[];
         $fact=\Paymenter\Extensions\Servers\Domains\Presentation\Fact::class;
         $first=Value::state(State::UnderReview,Reader::Staff,'Not in our registrar account. '.($d->server?->name??'Registrar').' #'.$d->server_id.'.')->when((int)$check['at']);
-        $recheck=($check['rechecked']??false)?Value::state(State::UnderReview,Reader::Staff,($read['code']??null)==='domain_not_in_account'?'Not in our registrar account.':'The latest read got no clear answer.')->when(strtotime($read['at'])):Value::state(State::Queued,Reader::Staff,'Automatic recheck scheduled',at:$fact::date((int)$check['at']+86400,Reader::Staff));
+        $recheck=($check['rechecked']??false)?Value::state(State::UnderReview,Reader::Staff,($read['code']??null)==='domain_not_in_account'?'Not in our registrar account.':'The latest read got no clear answer.')->when(strtotime($read['at'])):Value::state(State::Queued,Reader::Staff,'Look for the domain at the registrar. Automatic recheck scheduled',at:$fact::date((int)$check['at']+86400,Reader::Staff));
         $statuses=array_values(array_unique(array_map(fn($status)=>match(strtolower(str_replace(' ','',$status))){'ok'=>'No registry restriction reported.','clienttransferprohibited','servertransferprohibited'=>'Transfers prohibited.','pendingtransfer'=>'Transfer pending.',default=>'Registry status is not recognized.'},$registry['status']??[])));
         $registryValue=match($registry['result']??null){'facts'=>Value::fact($fact::entered('Lists '.($registry['registrar']??'an unreported registrar')),trim(implode(' ',$statuses).' Compare with '.ucfirst($d->registrar_key).'. Read'),isset($registry['at'])?$fact::date($registry['at'],Reader::Staff):null),'not_registered'=>Value::fact($fact::entered('Not registered')),default=>Value::state(State::CouldntRead,Reader::Staff,'The public registry got no clear answer.')};
-        return Section::make('Departure check',[Row::make('First read',$first),Row::make('Recheck',$recheck)->actions($this->getAction('check_departure')),Row::make('Public registry',$registryValue)],'Next step: look for the domain at the registrar, then use Check again on the Recheck row.');
+        return [Row::make('First read',$first),Row::make('Recheck',$recheck)->actions($this->getAction('check_departure')),Row::make('Public registry',$registryValue)];
     }
     /** The rail: the newest history, with the History tab holding the rest. */
     protected function rail(): array
@@ -277,6 +277,7 @@ class ViewDomain extends RecordDetailPage
     }
     /** The notice that says why changes are held, so the rows it blocks point to it. */
     private ?Row $heldNotice=null;
+    private ?Row $renewalNotice=null;
     /** What the domain's state waits for, which the head line used to say: the notice's cause and links, else the hold,
      * else the status step. A change the page stopped following says so here too.
      * @return list<array{0:State,1:mixed,2:?Action}> */
@@ -396,7 +397,7 @@ class ViewDomain extends RecordDetailPage
         $own=array_intersect_key($facts,array_flip(DomainFacts::SECTIONS[self::HELD_SECTION]));$own['DS records']=\Paymenter\Extensions\Servers\Domains\Presentation\DsState::staff($d);
         // Under the late-read notice, Sync now is said once, there.
         if ($this->calmMissing && is_string($own['DS records']['sub']??null)) { $own['DS records']['sub']=trim(str_replace('Use Sync now to read them.','',$own['DS records']['sub']))?:null; }
-        $rows=[...($notice?[$notice]:[]),$view('head')];$shown=[];
+        $rows=[...(DepartureChecks::suspected($d)?$this->departureCheck():[]),...($notice?[$notice]:[]),$view('head')];$shown=[];
         // SRV has no row of its own in the facts, so its change line comes straight from the stored progress.
         $srv=DomainFacts::progress($this->managementProgress(),'srv',DomainFacts::headRequest($d,$this->status(),$edits['request'],$this->notice()));
         foreach (($state['cancelled_without_records']??false)||($state['not_at_registrar']??null)!==null?[]:$state['rows'] as $family) {
@@ -462,6 +463,7 @@ class ViewDomain extends RecordDetailPage
             $fact=[...$fact,'sub'=>$fact['sub']??null,'value'=>$failed?null:\Paymenter\Extensions\Servers\Domains\Presentation\Missing::NOT_READ,'tone'=>null];
         }
         $row=DomainRows::row($label,$fact,$side,self::SHOWN[$label]??null);
+        if (DepartureChecks::suspected($this->getRecord())) { if (in_array($label,['Nameservers','Contacts'],true)) { return $row->blocked('Paused while we check this domain.'); } if ($label==='Renewal'&&$this->renewalNotice) { return $row->blockedBy($this->renewalNotice); } }
         if (($this->blocked[$label]??false)) {
             if ($this->heldNotice!==null) { $row->blockedBy($this->heldNotice); } else { $row->blocked((string)$this->edits()['held']); }
         }

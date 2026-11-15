@@ -64,7 +64,7 @@ $page->callAction('check_departure');
 Illuminate\Support\Facades\Queue::assertPushed(\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::class,function($job)use($observer){expect($job->departure,'Check again requests RDAP too');$job->handle($observer);return true;});
 same(false,HoldingReadRetry::absent($d->fresh()),'Staff Check again runs the registrar read');same(2,$wire,'Check again also refreshes RDAP');
 $clock->instant=$clock->now()->modify('+61 seconds');$observation->fault='absent';$observer->run($d->id,readRecords:true);
-foreach(['lock'=>['locked'=>false],'auth_code_email'=>[],'contacts'=>[],'nameservers'=>['nameservers'=>['ns1.example.com','ns2.example.com']]] as $action=>$input){
+foreach(['lock'=>['locked'=>false],'auth_code_email'=>[],'contacts'=>[],'ds_add'=>[],'ds_delete'=>[],'nameservers'=>['nameservers'=>['ns1.example.com','ns2.example.com']]] as $action=>$input){
     $count=\Paymenter\Extensions\Servers\Domains\Models\Operation::count();$refused=false;
     try{$management->request($user,$d->id,$action,$input,hash('sha256','suspected-'.$action),$driver);}catch(DomainException $error){same(DepartureChecks::PAUSED,$error->getMessage(),'Refusal names the departure pause');$refused=true;}
     expect($refused,'Suspected departure refuses '.$action);same($count,\Paymenter\Extensions\Servers\Domains\Models\Operation::count(),'Refusal writes no request');

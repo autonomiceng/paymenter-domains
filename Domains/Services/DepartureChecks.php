@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Domain;
 final class DepartureChecks
 {
     public const PAUSED='Registrar changes paused while we check this domain.';
-    public const REGISTRAR=['lock','auth_code_email','contacts','contact_profile','nameservers'];
+    public const REGISTRAR=['lock','auth_code_email','contacts','contact_profile','nameservers','ds_add','ds_delete'];
     public function __construct(private DnsReader $dns,private Clock $clock,private ?\Closure $factory=null) {}
     public static function suspected(Domain $d): bool
     { return !$d->adoptionPending()&&in_array($d->status,['active','grace','expired'],true)&&HoldingReadRetry::absent($d); }
