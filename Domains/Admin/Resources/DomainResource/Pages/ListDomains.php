@@ -102,7 +102,13 @@ class ListDomains extends RecordListPage
         // A hold for staff reads Under review, and the note says who held it.
         return State::tryFrom((string) $status['key']) ?? State::UnderReview;
     }
-    private function note(Domain $d): array { $row = $this->row($d); return DomainFacts::note($this->status($d), $row['sync'], $row['noAccount'], $d); }
+    private function note(Domain $d): array
+    {
+        $row = $this->row($d); $status = $this->status($d);
+        // The departure alert leads with Delayed after two days; repeating the domain reason would hide it in the short cell.
+        if (($status['alert'] ?? null) === 'departure_review') { $status['reason'] = null; }
+        return DomainFacts::note($status, $row['sync'], $row['noAccount'], $d);
+    }
     /** A registered domain without a saved expiry reads Not read yet or Couldn't read, on one line: why is on the domain page. */
     private function expires(Domain $d): ?Value
     {
