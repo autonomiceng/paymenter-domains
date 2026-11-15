@@ -5,6 +5,7 @@ class MoneyReceiptGateway extends \App\Classes\Extension\Gateway {
     public static array $returns=[];public static bool $lost=true;public static int $sends=0;public static ?\Closure $onAllocated=null;
     public static string $outcome='refunded';public static ?\Closure $onStatus=null;public static int $statusCalls=0;
     public function pay(\App\Models\Invoice $invoice,$total){return '';}
+    public function receiptLedger(\App\Models\Invoice $invoice):array { return []; }
     public function receiptReturnStatus(\App\Models\Invoice $invoice,string $receipt,string $key):?array {
         self::$statusCalls++;$result=self::$returns[$key==='excess'?$receipt.':excess':$key]??null;
         $next=self::$onStatus;self::$onStatus=null;$next?->__invoke();return $result;

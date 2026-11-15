@@ -28,36 +28,26 @@ final class ReceiptReturns
         return match(true){$capable===0=>'credit',$capable===$paid->count()=>'original',default=>'split'};
     }
     /** Caller holds the owner/invoice/operation locks. Commit the immutable plan before any gateway call. */
-    public static function reserve(Operation $op,array $l,array $payment,\DateTimeImmutable $now): bool
+    public static function reserve(Operation $op,array $l,array $payment,array $money,\DateTimeImmutable $now): bool
     {
-        $rows=$l['transactions']->where('invoice_id',$op->invoice_id)->where('status',InvoiceTransactionStatus::Succeeded)
-            ->filter(fn($r)=>PricingRule::minor($r->amount)>0)->sortBy('id');
-        if(!$rows->contains(fn($r)=>self::capable($r->gateway))){return false;}
-        $peers=Operation::where('invoice_id',$op->invoice_id)->orderBy('id')->lockForUpdate()->get();$used=0;
-        foreach($peers as $peer){
-            foreach([...(isset($peer->funding['refund'])?[$peer->funding['refund']]:[]),...($peer->funding['late_credits']??[])] as $return){$used+=PricingRule::minor($return['amount']);}
-        }
-        $left=PricingRule::minor($payment['amount']);$allocations=[];$payments=[];$bridge=0;
-        foreach($rows as $row){
-            $gross=PricingRule::minor($row->amount);$skip=min($gross,$used);$used-=$skip;
-            $minor=min($left,$gross-$skip);
-            if($minor<=0){continue;}
-            $payments[]=['id'=>(int)$row->id,'amount_minor'=>$minor];
-            if(!self::capable($row->gateway)){$bridge+=$minor;}
+        if(InvoiceMoney::held($money)===0){return true;}
+        if(!array_filter($payment['payments'],fn($p)=>InvoiceMoney::heldFor($money,$p['id'])['card']>0)){return false;}
+        $allocations=[];$bridge=0;
+        foreach($payment['payments'] as $p){
+            $row=$l['transactions']->firstWhere('id',$p['id']);$minor=$p['amount_minor'];
+            if(InvoiceMoney::heldFor($money,$p['id'])['card']===0){$bridge+=$minor;}
             else{
                 if(!is_string($row->transaction_id)||$row->transaction_id===''){throw new \DomainException('Original receipt identity is missing. Check the invoice payment.');}
                 $allocations[]=['transaction_id'=>(int)$row->id,'gateway_id'=>(int)$row->gateway_id,'receipt'=>$row->transaction_id,
                     'key'=>'domains:operation:'.$op->id.':refund:receipt:'.hash('sha256',$row->transaction_id),'amount_minor'=>$minor];
             }
-            $left-=$minor;if($left===0){break;}
         }
-        if($left!==0){throw new \DomainException('Unreturned receipt funds are missing. Review earlier returns.');}
         $credit=null;
         if($bridge>0){
             $credit=$l['credit']??new Credit(['user_id'=>$l['user']->id,'currency_code'=>'USD','amount'=>'0.00']);
             $credit->amount=PricingRule::decimal(PricingRule::minor((string)$credit->amount)+$bridge);$credit->save();
         }
-        $refund=[...$payment,'payments'=>$payments,'to'=>'original_payment','allocations'=>$allocations,
+        $refund=[...$payment,'to'=>'original_payment','allocations'=>$allocations,
             'bridge_minor'=>$bridge,'credit_id'=>$credit?->id,'at'=>$now->format(DATE_ATOM)];
         $funding=$op->funding??[];
         $funding['refund']=$refund;

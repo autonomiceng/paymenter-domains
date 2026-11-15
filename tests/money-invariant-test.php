@@ -18,11 +18,20 @@ class InvariantReceiptGateway extends MoneyReceiptGateway
         self::$requests[$key] = ['receipt'=>$receipt, 'amount'=>$minor];
         return parent::allocateReceiptReturn($invoice, $receipt, $key, $minor);
     }
-    public function receiptLedger(Invoice $invoice): array
+    public function receiptLedger(Invoice $invoice, string $extension = 'InvariantReceipt'): array
     {
         expect(DB::transactionLevel() > 0, 'Ledger reads require the caller transaction');
         if (self::$unreadable) { throw new RuntimeException('Synthetic unreadable ledger'); }
-        return self::$ledger;
+        $ledger = self::$ledger;
+        foreach (self::$observations as $receipt=>$observations) {
+            foreach ($observations as $o) {
+                if ($o['invoice_id'] === (int)$invoice->id && InvoiceTransaction::where('invoice_id',$invoice->id)
+                    ->where('transaction_id',$receipt)->first()?->gateway?->extension === $extension) {
+                    $ledger[] = [...$o, 'allocation_key'=>'stripe:dispute:'.$o['id'], 'state'=>$o['status']];
+                }
+            }
+        }
+        return $ledger;
     }
     public function receiptReversals(Invoice $invoice, string $receipt): array
     {
@@ -32,12 +41,19 @@ class InvariantReceiptGateway extends MoneyReceiptGateway
 class InvariantCreditGateway extends \App\Classes\Extension\Gateway
 {
     public function pay(Invoice $invoice, $total) { return ''; }
-    public function receiptLedger(Invoice $invoice): array { return InvariantReceiptGateway::$ledger; }
+    public function receiptLedger(Invoice $invoice): array { return (new InvariantReceiptGateway)->receiptLedger($invoice, 'InvariantCredit'); }
     public function receiptReversals(Invoice $invoice, string $receipt): array
     {
         return InvariantReceiptGateway::$observations[$receipt] ?? [];
     }
 }
+class InvariantLegacyGateway extends \App\Classes\Extension\Gateway
+{
+    public function pay(Invoice $invoice, $total) { return ''; }
+    public function allocateReceiptReturn(Invoice $invoice, string $receipt, string $key, int $minor): array { return []; }
+    public function receiptReturnStatus(Invoice $invoice, string $receipt, string $key): ?array { return null; }
+}
+class_alias(InvariantLegacyGateway::class, 'Paymenter\\Extensions\\Gateways\\InvariantLegacy\\InvariantLegacy');
 class_alias(InvariantReceiptGateway::class, 'Paymenter\\Extensions\\Gateways\\InvariantReceipt\\InvariantReceipt');
 class_alias(InvariantCreditGateway::class, 'Paymenter\\Extensions\\Gateways\\InvariantCredit\\InvariantCredit');
 $receiptGateway = Gateway::create(['extension'=>'InvariantReceipt', 'name'=>'Offline receipt', 'type'=>'gateway', 'enabled'=>true]);
@@ -165,9 +181,9 @@ $run = static function (int $seed, string $mode, array $actions) use (
             $ledger[] = [...$result, 'gateway_id'=>(int)$receiptGateway->id, 'payment_intent_id'=>$request['receipt'],
                 'allocation_key'=>$key, 'return_key'=>$result['key']];
         }
-        // A successful ordinary cancellation commits the requested full-line return before the first send.
-        // This uses the scenario's issued amount, including unsent work after a lost gateway reply.
-        if ($kind === 'refund' && $error !== DomainException::class) { $promised = $gross; }
+        // Plan coverage comes from the independent pre-payout balance and open-dispute facts,
+        // including unsent work after a lost gateway reply, capped at the issued line.
+        if ($kind === 'refund' && $error !== DomainException::class) { $promised = $open ? 0 : min($gross, max(0, $paid-$lost-$previousOut)); }
         $reserved = max($reserved, max(0, $promised-$out));
         $peers = \Paymenter\Extensions\Servers\Domains\Models\Operation::where('invoice_id', $invoice->id)->orderBy('id')->get()
             ->map(fn($peer)=>['funding'=>$peer->funding ?? []])->all();
@@ -321,7 +337,7 @@ foreach ([
 // Load uses the caller's HoldingLocks, reads owner holds and treats an old gateway as credit-only.
 $clock->instant = $now; activeCommerceFacts($now, $now->modify('+30 days'), $ports);
 $probe = $new('money-record-load-placeholder.com', false);
-$oldGateway = Gateway::create(['extension'=>'MoneyReceipt','name'=>'Legacy offline receipt','type'=>'gateway','enabled'=>true]);
+$oldGateway = Gateway::create(['extension'=>'InvariantLegacy','name'=>'Legacy offline receipt','type'=>'gateway','enabled'=>true]);
 InvoiceTransaction::create(['invoice_id'=>$probe->invoice_id,'amount'=>'1.00','fee'=>'0.00','status'=>'succeeded','gateway_id'=>$oldGateway->id,'transaction_id'=>'synthetic_legacy']);
 InvoiceTransaction::create(['invoice_id'=>$probe->invoice_id,'amount'=>'1.50','fee'=>'0.00','status'=>'succeeded','gateway_id'=>$receiptGateway->id,'transaction_id'=>'synthetic_readable']);
 DB::transaction(static function() use ($probe): void {
@@ -348,24 +364,16 @@ echo 'INVARIANT_SUMMARY '.json_encode(['cases'=>$cases, 'steps'=>$steps, 'checks
 // Known caller violations must match exactly until their fixes remove the corresponding entries.
 // Entry is [scenario (mode:seed), one-based action step, violation kind, total payout in minor units].
 $callerBaseline = [
-    ['ordinary:1', 3, 'returned_exceeds_paid_less_lost', 780],
-    ['ordinary:1', 3, 'new_return_exceeds_available', 780],
     ['late:3', 3, 'external_deficit', 200],
     ['late:3', 5, 'returned_exceeds_paid_less_lost', 400],
     ['late:3', 5, 'new_return_exceeds_available', 400],
     ['late:3', 8, 'returned_exceeds_paid_less_lost', 500],
     ['late:3', 8, 'new_return_exceeds_available', 500],
-    ['ordinary:4', 3, 'return_during_open_dispute', 780],
     ['late:5', 3, 'external_deficit', 100],
     ['late:5', 5, 'returned_exceeds_paid_less_lost', 400],
     ['late:5', 5, 'new_return_exceeds_available', 400],
     ['late:6', 4, 'returned_exceeds_paid_less_lost', 400],
     ['late:6', 4, 'new_return_exceeds_available', 400],
-    ['ordinary:101', 4, 'return_during_open_dispute', 780],
-    ['ordinary:101', 8, 'external_deficit', 780],
-    ['ordinary:101', 9, 'returned_exceeds_paid_less_lost', 780],
-    ['ordinary:211', 6, 'returned_exceeds_paid_less_lost', 780],
-    ['ordinary:211', 6, 'new_return_exceeds_available', 780],
     ['late:211', 5, 'returned_exceeds_paid_less_lost', 528],
     ['late:211', 5, 'new_return_exceeds_available', 528],
     ['late:307', 3, 'return_during_open_dispute', 528],
@@ -373,10 +381,7 @@ $callerBaseline = [
     ['late:401', 6, 'returned_exceeds_paid_less_lost', 505],
     ['late:401', 7, 'returned_exceeds_paid_less_lost', 816],
     ['late:401', 7, 'new_return_exceeds_available', 816],
-    ['ordinary:503', 4, 'return_during_open_dispute', 780],
     ['late:503', 3, 'return_during_open_dispute', 184],
-    ['ordinary:601', 4, 'returned_exceeds_paid_less_lost', 780],
-    ['ordinary:601', 4, 'new_return_exceeds_available', 780],
     ['late:701', 5, 'external_deficit', 175],
     ['late:701', 7, 'returned_exceeds_paid_less_lost', 654],
     ['late:701', 7, 'new_return_exceeds_available', 654],
@@ -385,13 +390,7 @@ $callerBaseline = [
     ['late:809', 5, 'returned_exceeds_paid_less_lost', 168],
     ['late:809', 6, 'returned_exceeds_paid_less_lost', 324],
     ['late:809', 6, 'new_return_exceeds_available', 324],
-    ['ordinary:907', 5, 'return_during_open_dispute', 390],
-    ['ordinary:907', 6, 'return_during_open_dispute', 780],
-    ['ordinary:907', 7, 'external_deficit', 780],
-    ['ordinary:907', 8, 'returned_exceeds_paid_less_lost', 780],
     ['late:907', 3, 'return_during_open_dispute', 297],
-    ['ordinary:1009', 4, 'returned_exceeds_paid_less_lost', 780],
-    ['ordinary:1009', 4, 'new_return_exceeds_available', 780],
     ['late:1009', 4, 'external_deficit', 170],
     ['late:1009', 6, 'returned_exceeds_paid_less_lost', 426],
     ['late:1009', 6, 'new_return_exceeds_available', 426],
@@ -401,11 +400,6 @@ $callerBaseline = [
     ['late:1103', 6, 'returned_exceeds_paid_less_lost', 700],
     ['late:1103', 6, 'new_return_exceeds_available', 700],
     ['late:1201', 3, 'return_during_open_dispute', 527],
-    ['ordinary:1301', 4, 'return_during_open_dispute', 780],
-    ['ordinary:1301', 7, 'external_deficit', 780],
-    ['ordinary:1301', 8, 'returned_exceeds_paid_less_lost', 780],
-    ['ordinary:1409', 6, 'returned_exceeds_paid_less_lost', 780],
-    ['ordinary:1409', 6, 'new_return_exceeds_available', 780],
     ['late:1409', 3, 'return_during_open_dispute', 198],
     ['late:1511', 3, 'return_during_open_dispute', 137],
     ['late:1511', 4, 'external_deficit', 137],

@@ -93,7 +93,16 @@ final readonly class Refunds
                 $review?->record($l);return null;
             }
             $payment = RefundPayment::requireCurrent($op, $l);
-            if (ReceiptReturns::reserve($op, $l, $payment, $this->clock->now())) { $review?->record($l); return null; }
+            $money = InvoiceMoney::load($l, (int)$op->invoice_id);
+            $left = min(PricingRule::minor($payment['amount']), InvoiceMoney::held($money));
+            if ($left === 0) { $review?->record($l); return null; }
+            $payment['amount'] = PricingRule::decimal($left); $payment['payments'] = [];
+            foreach ($money['receipts'] as $receiptId => $receipt) {
+                $minor = min($left, array_sum(InvoiceMoney::heldFor($money, $receiptId)));
+                if ($minor > 0) { $payment['payments'][] = ['id'=>$receiptId, 'amount_minor'=>$minor]; $left -= $minor; }
+                if ($left === 0) { break; }
+            }
+            if (ReceiptReturns::reserve($op, $l, $payment, $money, $this->clock->now())) { $review?->record($l); return null; }
             $credit = $l['credit'] ?? new Credit(['user_id' => $l['user']->id, 'currency_code' => 'USD', 'amount' => '0.00']);
             $credit->amount = PricingRule::decimal(PricingRule::minor((string) $credit->amount) + PricingRule::minor($payment['amount']));
             $credit->save();
