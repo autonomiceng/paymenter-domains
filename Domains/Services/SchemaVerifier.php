@@ -9,6 +9,14 @@ use Illuminate\Support\Facades\DB;
 
 final class SchemaVerifier
 {
+    /** Expected shapes only, for one verification run. Actual tables are always inspected again. */
+    private static ?array $references = null;
+    public static function batch(\Closure $verify): void
+    {
+        $previous = self::$references; self::$references = [];
+        try { $verify(); } finally { self::$references = $previous; }
+    }
+
     public static function verify(string $table, \Closure $definition): void
     {
         // No longer than the retained logical name, so the connection prefix and
@@ -18,12 +26,23 @@ final class SchemaVerifier
         $blueprint = new Blueprint($connection, $reference);
         $blueprint->create();
         $definition($blueprint);
+        $statements = $blueprint->toSql();
+        $key = hash('sha256', serialize([spl_object_id($connection), str_replace($reference, $table, $statements)]));
+        // Fresh-install recovery may add missing indexes and still needs its physical reference.
+        $reuse = self::$references !== null && !FreshInstallation::recovering();
+        if ($reuse && isset(self::$references[$key])) {
+            [$columns, $indexes] = self::$references[$key];
+            if (self::columns($table) !== $columns || self::indexes($table) !== $indexes || Schema::getForeignKeys($table) !== []) {
+                throw new \RuntimeException('Retained Domains schema mismatch: '.$table);
+            }
+            return;
+        }
         $created = false;
         try {
             // Like Schema::create, CREATE precedes the separate index statements.
             // Only a successful CREATE grants cleanup ownership; a concurrent
             // name collision must never drop the other invocation's reference.
-            foreach ($blueprint->toSql() as $statement) {
+            foreach ($statements as $statement) {
                 $connection->statement($statement);
                 $created = true;
             }
@@ -36,6 +55,7 @@ final class SchemaVerifier
                 || Schema::getForeignKeys($table) !== []) {
                 throw new \RuntimeException('Retained Domains schema mismatch: '.$table);
             }
+            if ($reuse) { self::$references[$key] = [self::columns($reference), self::indexes($reference)]; }
         } finally { if ($created) { Schema::dropIfExists($reference); } }
     }
 

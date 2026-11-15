@@ -22,7 +22,10 @@ use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, EnomLiveActi
  * what it controls; a link that came for a switch lands on it. A cause the head used to say opens the section it concerns. */
 class RegistrarAccount extends DetailPage
 {
-    use RegistrarPage { mount as private openAccount; }
+    use RegistrarPage { mount as private openAccount; afterActionCalled as private accountActionCalled; }
+    /** Read projections shared by the sheet and rail within this request; never in a Livewire snapshot. */
+    private ?array $checklist = null;
+    private ?array $balance = null;
     protected static ?string $slug = 'registrar-account';
     protected static bool $shouldRegisterNavigation = false;
     protected static ?SubNavigationPosition $subNavigationPosition = SubNavigationPosition::Top;
@@ -36,7 +39,12 @@ class RegistrarAccount extends DetailPage
         $switch = request()->query('switch');$this->switch = is_string($switch) && isset(RegistrarFacts::SWITCHES[$switch]) ? $switch : null;
     }
     /** Rebuild the page after a System checks action changed what it shows. */
-    private function resetContent(): void { unset($this->cachedSchemas['content']); }
+    private function resetContent(): void { $this->checklist = null; $this->balance = null; unset($this->cachedSchemas['content']); }
+    protected function afterActionCalled(Action $action): void
+    { $this->resetContent(); $this->accountActionCalled($action); }
+    private function checklist(Account $account): array
+    { return $this->checklist ??= array_column([...AccountChecklist::setup($account, $this->status()), ...AccountChecklist::renewals((int) $account->server_id)], null, 'label'); }
+    private function balance(Account $account): array { return $this->balance ??= RegistrarFacts::balance($account); }
     public function checkBalance(): void { BalanceCheck::run($this->account); }
     public function checkBalanceAction(): Action
     { return Sheet::button(Action::make('checkBalance')->label('Check balance')->visible(fn () => RegistrarFacts::connected($this->record(), $this->status()))->action(fn () => $this->checkBalance())); }
@@ -48,10 +56,9 @@ class RegistrarAccount extends DetailPage
             return [Section::make('Account', [...$this->notice('account'), RegistrarRows::row(['label' => 'Registrar', 'value' => null, 'tone' => null, 'cause' => 'Account not set up yet. Use Connect account.']),
                 Row::make('Domains', Value::fact(Fact::count(Domain::where('server_id', $s->id)->count())))], null, 'account')];
         }
-        $id = (int) $s->id;
-        $rows = array_column([...AccountChecklist::setup($a, $this->status()), ...AccountChecklist::renewals($id), self::whois($a)], null, 'label');
+        $rows = [...$this->checklist($a), 'WHOIS privacy' => self::whois($a)];
         $pick = fn (string ...$labels) => array_values(array_filter(array_map(fn (string $label) => $rows[$label] ?? null, $labels)));
-        $funds = RegistrarFacts::connected($a, $this->status()) ? RegistrarFacts::balance($a)['funds'] : null;
+        $funds = RegistrarFacts::connected($a, $this->status()) ? $this->balance($a)['funds'] : null;
         $usage = Section::make('Balance and usage', [...$this->notice('usage'), ...$this->rows($this->usageRows($s, $a))], RegistrarFacts::connected($a, $this->status()) ? \Paymenter\Extensions\Servers\Domains\Presentation\Fact::IN_USD : null, 'usage');
         return [
             Section::make('Account', [...$this->notice('account'), ...$this->rows([...$this->accountRows($a), ...$pick('API connection')])], null, 'account'),
@@ -67,7 +74,7 @@ class RegistrarAccount extends DetailPage
     {
         $checks = $this->checks();$a = $this->record();
         if ($a) {
-            $rows = array_column([...AccountChecklist::setup($a, $this->status()), ...AccountChecklist::renewals((int) $a->server_id)], null, 'label');
+            $rows = $this->checklist($a);
             $checks['failing'] = [...AccountChecklist::pausedChecks($rows), ...$checks['failing']];
         }
         $all = [...$checks['failing'], ...$checks['passing']];
@@ -179,7 +186,7 @@ class RegistrarAccount extends DetailPage
     {
         $rows = [];
         if (RegistrarFacts::connected($a, $this->status())) {
-            $b = RegistrarFacts::balance($a);
+            $b = $this->balance($a);
             // The fix for an unread balance is the Check balance button on this row.
             $checked = $b['value'] === null ? $b['cause'] : 'Checked '.\Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at((int) strtotime((string) $b['checked'])).'.';
             $rows[] = [...self::fact('Balance', $b['value'], $checked), 'state' => $b['low'] ? State::LowBalance : $b['missing'], 'buttons' => [$this->checkBalanceAction()]];

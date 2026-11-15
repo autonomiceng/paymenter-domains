@@ -58,6 +58,30 @@ namespace {
     } catch (QueryException) { /* expected */ }
     $after = Schema::getTableListing(); sort($after);
     same($before, $after, 'Owned table cleaned when an index statement fails');
+    // A repeated dependency can share its expected shape, but never a successful check of the actual table.
+    DB::flushQueryLog(); DB::enableQueryLog();
+    SchemaVerifier::batch(static function () use ($definition): void {
+        SchemaVerifier::verify('domains_reference_test', $definition);
+        SchemaVerifier::verify('domains_reference_test', $definition);
+    });
+    $creates = array_filter(DB::getQueryLog(), static fn (array $q): bool => str_starts_with(strtolower($q['query']), 'create table '));
+    DB::disableQueryLog(); same(1, count($creates), 'Repeated dependencies create one reference');
+    SchemaVerifier::batch(static function () use ($definition): void {
+        SchemaVerifier::verify('domains_reference_test', $definition);
+        Schema::table('domains_reference_test', static fn (Blueprint $t) => $t->dropUnique(['value']));
+        try { SchemaVerifier::verify('domains_reference_test', $definition); throw new \LogicException('Actual schema drift accepted'); }
+        catch (\RuntimeException $error) { expect(str_contains($error->getMessage(), 'schema mismatch'), 'A reused reference still refuses actual index loss'); }
+        Schema::table('domains_reference_test', static fn (Blueprint $t) => $t->unique('value'));
+        try {
+            SchemaVerifier::verify('domains_reference_test', static function (Blueprint $t): void { $t->id(); $t->string('value'); });
+            throw new \LogicException('Changed definition accepted');
+        } catch (\RuntimeException $error) { expect(str_contains($error->getMessage(), 'schema mismatch'), 'A different definition needs its own reference'); }
+    });
+    $before = Schema::getTableListing(); sort($before);
+    try { SchemaVerifier::batch(static fn () => throw new \RuntimeException('Synthetic callback failure')); } catch (\RuntimeException) {}
+    $start = count($builder->references); SchemaVerifier::verify('domains_reference_test', $definition);
+    expect(count($builder->references) > $start, 'A failed batch retains no reference cache');
+    $after = Schema::getTableListing(); sort($after); same($before, $after, 'Batched references leave no tables behind');
     echo "Reference collision preserves the other owner; independent names and partial-DDL cleanup passed.\n";
     $nativeSuccessful = true;
 }
