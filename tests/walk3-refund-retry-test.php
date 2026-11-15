@@ -14,5 +14,6 @@ same(0,ReceiptReturns::outstanding($op->fresh()),'The original payment return se
 $before=[MoneyReceiptGateway::$sends,App\Models\InvoiceTransaction::count(),App\Models\Credit::sum('amount')];
 commerceReject(fn()=>$run($op,'credit'));
 same($before,[MoneyReceiptGateway::$sends,App\Models\InvoiceTransaction::count(),App\Models\Credit::sum('amount')],'A settled return cannot move money again');
+Illuminate\Support\Facades\Auth::setUser($staff);
 same(false,OperationActions::relevant('credit',$op->fresh()),'A settled return offers no retry');
 $nativeSuccessful=true; echo "Settled refund retry passed.\n";
