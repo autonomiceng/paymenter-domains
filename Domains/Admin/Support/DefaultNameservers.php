@@ -13,7 +13,11 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource;
 use Paymenter\Extensions\Servers\Domains\Models\WatchProfile;
 use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
 use Paymenter\Extensions\Servers\Domains\Services\{ManagedDnsSetup,SiteDnsDefault};
-/** The default nameservers for new domains, shown and changed at the top of Domains > DNS templates, beside the templates they come from. */
+/** The default nameservers for new domains, shown and changed at the top of Domains > DNS templates, beside the templates they come from.
+ * Hosting-plan DNS zones are served by the hosting control panel (Plesk), provisioned by the hosting server
+ * extension and never seen by this extension. DNS templates only name those nameservers.
+ * Registrar DNS (Enom DNS, NameSilo DNSOwl) is used only while a domain points at the registrar's nameservers
+ * and stops when the domain transfers out. */
 final class DefaultNameservers
 {
     public const TITLE='Default nameservers';
