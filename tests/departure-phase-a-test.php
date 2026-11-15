@@ -51,12 +51,12 @@ same(false,HoldingReadRetry::absent($d->fresh()),'Staff Check again runs the reg
 $clock->instant=$clock->now()->modify('+61 seconds');$observation->fault='absent';$observer->run($d->id,readRecords:true);
 foreach(['lock'=>['locked'=>false],'auth_code_email'=>[],'contacts'=>[],'nameservers'=>['nameservers'=>['ns1.example.com','ns2.example.com']]] as $action=>$input){
     $count=\Paymenter\Extensions\Servers\Domains\Models\Operation::count();$refused=false;
-    try{$management->request($user,$d->id,$action,$input,hash('sha256','suspected-'.$action),$driver);}catch(DomainException){$refused=true;}
+    try{$management->request($user,$d->id,$action,$input,hash('sha256','suspected-'.$action),$driver);}catch(DomainException $error){same(DepartureChecks::PAUSED,$error->getMessage(),'Refusal names the departure pause');$refused=true;}
     expect($refused,'Suspected departure refuses '.$action);same($count,\Paymenter\Extensions\Servers\Domains\Models\Operation::count(),'Refusal writes no request');
 }
 $allowed=$management->available($user,$d->fresh(),$driver,['dns','lock','nameservers','contacts','auth_code_email']);
 same(['dns'],$allowed,'DNS stays available while registrar changes pause');
-$dnsOp=$management->request($user,$d->id,'dns',['records'=>[['name'=>'@','type'=>'A','address'=>'8.8.8.8']]],hash('sha256','suspected-dns'),$driver);
+$dnsOp=$management->request($user,$d->id,'dns',['records'=>[['name'=>'@','type'=>'A','address'=>'8.8.8.8']],'preimage_digest'=>\Paymenter\Extensions\Servers\Domains\Services\ManagementPayload::digest(\Paymenter\Extensions\Servers\Domains\Services\OwnerRecords::forDomain($d->fresh())['dns'],'dns')],hash('sha256','suspected-dns'),$driver);
 same('queued',$dnsOp->state,'DNS request is admitted while suspected');
 same($money,$nativeMoney(),'Departure checks make no money changes');same($originalBefore,$original->fresh()->getAttributes(),'Original purchase stays intact');
 $nativeSuccessful=true;echo "Departure state, automatic false-absence recovery, delayed alert, staff recheck and management guard passed.\n";
