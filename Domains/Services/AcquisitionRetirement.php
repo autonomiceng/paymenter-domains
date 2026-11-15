@@ -109,8 +109,8 @@ final readonly class AcquisitionRetirement
     /** Alert cleanup only. This never authorizes retirement, a send or a money return. Caller owns HoldingLocks. */
     private function retirementObsolete(array $l): bool
     {
-        $d=$l['domain'];$op=$l['operations']->first();
-        if($l['operations']->count()!==1||!$op||!in_array($op->action,['register','transfer'],true)||$op->funding_basis!=='paid_invoice'
+        $d=$l['domain'];$acquisitions=$l['operations']->whereIn('action',['register','transfer']);$op=$acquisitions->first();
+        if($acquisitions->count()!==1||!$op||$op->funding_basis!=='paid_invoice'
             ||array_diff(array_keys($op->funding??[]),['claim','seal'])
             ||isset($op->policy['native_acquisition_closure'])||isset($op->policy['unpaid_retirement'])){return false;}
         $billed=$l['items']->where('reference_type',$l['service']->getMorphClass())->where('reference_id',$l['service']->id)->pluck('invoice_id');
@@ -123,7 +123,7 @@ final readonly class AcquisitionRetirement
         if($op->state==='succeeded'){
             return in_array($d->status,['active','expired','grace'],true)&&RenewalAuthority::completed($op,$d,$binding);
         }
-        if($d->status!==($op->action==='transfer'?'transfer_pending':'registration_pending')
+        if($l['operations']->count()!==1||$d->status!==($op->action==='transfer'?'transfer_pending':'registration_pending')
             ||!in_array($op->state,['awaiting_payment','awaiting_code','queued','held','running','pending','uncertain'],true)
             ||$d->provider_domain_id!==null||$d->provider_order_id!==null||$d->provider_expires_at!==null
             ||$op->provider_order_id!==null||$op->confirmed_expires_at!==null){return false;}
@@ -132,7 +132,8 @@ final readonly class AcquisitionRetirement
         if(($op->funding['claim']??null)!==$paid||($op->funding['seal']??null)!==$paid
             ||($op->attempt['send_state']??null)!=='possibly_sent'||!preg_match('/^[a-f0-9]{32}$/D',$op->attempt['claim_key']??'')
             ||array_diff(array_keys($op->attempt),['claim_key','seal','send_state','capacity_deferrals','test_call_refusals','dispatch_attempted_at',
-                'authorized_cost','registration_admission','transfer_admission','execution','evidence','registration','corrections'])
+                'authorized_cost','registration_admission','transfer_admission','execution','evidence','charge','order_candidates','registration','corrections'])
+            ||($op->attempt['charge']??null)!==null||($op->attempt['order_candidates']??[])!==[]
             ||array_key_exists('dispatch_attempted_at',$op->policy??[])||array_diff(array_keys($op->cost??[]),['estimated','currency','unit'])){return false;}
         if(array_key_exists('execution',$op->attempt)&&(!in_array($op->attempt['execution']['send_state']??null,['sent','possibly_sent'],true)
             ||!in_array($op->attempt['execution']['disposition']??null,['accepted','accepted_with_discrepancy','unknown'],true))){return false;}

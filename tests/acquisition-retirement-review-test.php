@@ -73,6 +73,11 @@ foreach(['register','transfer'] as $action){
     $check(fn()=>same(0,$open($op),$action.' completed acquisition clears old review'));
     same($money,$nativeMoney(),'Completed review cleanup preserves money and jobs');
     same($domain->domain,$completed->domain->reservation_name,'Paid acquisition keeps its name');
+    $completed->domain->operations()->create(['service_id'=>$completed->service_id,'server_id'=>$completed->server_id,'registrar_key'=>$completed->registrar_key,
+        'account_fingerprint'=>$completed->account_fingerprint,'authority_generation'=>$completed->authority_generation,'operation_key'=>'synthetic-correction:'.$completed->id,
+        'action'=>'nameservers','term'=>1,'state'=>'queued','funding_basis'=>'non_billable_management','amount'=>'0.00','currency'=>'USD']);
+    $raise($op);$retirement->inspect($op->domain_id);
+    $check(fn()=>same(0,$open($op),$action.' completed acquisition remains valid with follow-up work'));
 
     foreach(['identity','mixed','processing','partial','send','money'] as $fault){
         $clock->instant=$now;
