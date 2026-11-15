@@ -13,7 +13,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, EnomAnswers,
 // $match lists the renewal fixture's own order for this renewal instead, $late runs once when the order list is read, and
 // $fail makes every order list request fail before Enom replies. $orders is how many orders the day lists.
 $history = new class implements Transport {
-    public ?Transport $domain = null; public ?DateTimeImmutable $sent = null; public string $fault = ''; public array $forms = []; public bool $match = false; public $late = null; public bool $fail = false; public int $orders = 3; public ?ReadCommand $failedCommand = null; public $detailTick = null;
+    public ?Transport $domain = null; public ?DateTimeImmutable $sent = null; public string $fault = ''; public array $forms = []; public bool $match = false; public $late = null; public bool $fail = false; public int $orders = 3; public ?ReadCommand $failedCommand = null; public $detailTick = null; public ?string $blockedName = null;
     public function send($env, ReadCommand $command, array $parameters, string $uid, string $token, int $timeoutMs): string {
         if ($command === $this->failedCommand) { throw new RuntimeException('Connection reset before a flag reply'); }
         if ($this->match || !in_array($command, [ReadCommand::Orders, ReadCommand::Order], true)) { return $this->domain->send($env, $command, $parameters, $uid, $token, $timeoutMs); }
@@ -22,11 +22,13 @@ $history = new class implements Transport {
         if ($command === ReadCommand::Orders) {
             if ($this->late) { $hook = $this->late; $this->late = null; $hook(); }
             $rows = array_map(fn ($i) => ['id' => (string)(8001 + $i), 'date' => $at($i)], range(0, $this->orders - 1));
-            return enomHistoryEnvelope(enomHistoryPage($rows, $parameters['Start'], count($rows)));
+            $page = enomHistoryPage(array_slice($rows, $parameters['Start'] - 1, 25), $parameters['Start'], count($rows));
+            return enomHistoryEnvelope($this->blockedName === null ? $page : str_replace('<StatusDesc>Order complete', '<StatusDesc>Order canceled', $page));
         }
         if ($this->detailTick) { ($this->detailTick)($timeoutMs); }
         $i = (int)$parameters['OrderID'] - 8001;
-        $body = enomHistoryDetail($parameters['OrderID'], 'other-'.$i.'-placeholder.com', $at($i), '2028-10-18', '8.95', 1, $at($i));
+        $name = $i === $this->orders - 1 && $this->blockedName !== null ? $this->blockedName : 'other-'.$i.'-placeholder.com';
+        $body = enomHistoryDetail($parameters['OrderID'], $name, $at($i), '2028-10-18', '8.95', 1, $at($i));
         return $i === 1 && $this->fault === 'unsupported' ? preg_replace('~<AdjustToAccount\s*/>~', '<AdjustToAccount>1.00</AdjustToAccount>', $body) : $body;
     }
 };
@@ -177,6 +179,14 @@ $allowed($op, 'Registration: the late read after a deferral recorded the evidenc
 [$op] = $register('absence-late-failed-placeholder.com');
 $failed(fn () => same('uncertain', $scheduled->run($op->id)->state, 'A scheduled read leaves the lost reply open'), $registrationCalls,
     fn () => isset($op->fresh()->policy['enom_absence']), 'Registration');
+// Revalidation of the same unrelated open orders is not new progress: a blocked read must count toward escalation.
+[$op] = $register('absence-blocked-progress-placeholder.com');
+$history->blockedName = $op->domain->domain;
+$read($op, '+1 hours');
+$read($op, '+2 hours');
+same([false, 1, false], [$op->fresh()->policy['history_scan']['state']['complete'], $op->fresh()->policy['reconciliation']['polls'] ?? 0,
+    isset($op->fresh()->policy['enom_absence'])], 'The second unchanged blocked turn spends one poll and authorizes no absence');
+$history->blockedName = null;
 // Validated detail progress survives the deadline; the reply that reaches it supplies no financial facts.
 $deadlineScan = static function ($op, callable $run, string $why) use ($clock, $history, $refused): void {
     $history->orders = 11;
@@ -276,6 +286,26 @@ $renewRead = static function ($op, string $after = '+25 hours') use ($completion
     same('uncertain', $completion->run($op->id)->state, 'A scheduled renewal read leaves the lost reply open');
 };
 $writes = $state->writes;
+// Repeated deadline progress must finish a dense history without spending the failed-read allowance.
+[$op, $binding] = $renew('absence-renew-slow-dense-placeholder.com', '2027-10-18');
+$op->update(['policy' => [...$op->policy, 'history_resumption' => ['revision' => HistoryScan::revision(HistoryAcceptances::load($binding, Action::Renew))]]]);
+$history->orders = 150;
+$history->detailTick = static function (int $ms) use ($clock): void { $clock->instant = $clock->instant->modify('+'.min(24000, $ms).' milliseconds'); };
+foreach (range(1, 15) as $turn) {
+    $clock->instant = $history->sent->modify('+'.(24 + $turn).' hours'); Cache::flush();
+    same('uncertain', $completion->run($op->id)->state, 'Slow history never completes or resends the renewal');
+    $saved = $op->fresh()->policy;
+    same(10 * $turn, $saved['history_scan']['state']['resolved'] ?? null, 'Each slow turn preserves ten more validated outcomes');
+    if ($turn < 15) {
+        same([0, false, false], [$saved['renewal_polls'] ?? 0, $saved['history_scan']['state']['complete'], isset($saved['enom_absence'])],
+            'Slow renewal progress never spends the failed-read allowance or authorizes absence');
+    } else {
+        same([true, true, null], [$saved['history_scan']['state']['complete'], isset($saved['enom_absence']), $op->fresh()->funding['refund_authorization'] ?? null],
+            'All fifteen slow turns finish the no-order scan without authorizing a refund');
+    }
+}
+$history->detailTick = null; $history->orders = 3;
+
 [$op] = $renew('absence-renew-deadline-placeholder.com', '2027-10-18');
 $deadlineScan($op, fn () => same('uncertain', $completion->run($op->id)->state, 'Deadline renewal stays unresolved'), 'Renewal');
 [$op, $binding] = $renew('absence-renew-unchanged-placeholder.com', '2027-10-18');
@@ -312,5 +342,5 @@ $failed(fn () => same('uncertain', $completion->run($op->id)->state, 'A schedule
 [$op] = $renew('absence-renew-late-partial-placeholder.com', '2027-10-18'); $history->orders = 23;
 $partial($op, fn () => same('uncertain', $completion->run($op->id)->state, 'A scheduled renewal read leaves the lost reply open'), $renewalCalls, 'Renewal');
 $allowed($op, 'Renewal: the late read that finished a partial scan recorded the evidence');
-same($writes + 9, $state->writes, 'Only the nine original Extends were sent');
+same($writes + 10, $state->writes, 'Only the ten original Extends were sent');
 echo "A lost Enom reply is refundable without a case number only when the scheduled read proves Enom has no order and the domain is unchanged.\n"; $nativeSuccessful = true;

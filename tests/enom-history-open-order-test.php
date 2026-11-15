@@ -48,4 +48,24 @@ expect(in_array(['OrderID'=>'6002'], array_column($liveWire->requests, 1), true)
 $blocked = $scanRead($changed);
 expect(in_array(['OrderID'=>'6001'], array_column($liveWire->requests, 1), true), 'An open order for this domain is never cached as an exclusion');
 same(null, $liveDone($blocked), 'A same-domain open order supplies no completion proof');
+// An unchanged dense listing with a same-domain cancellation at the end must stop claiming progress.
+$liveWire->rows[0]['status'] = 'Order canceled';
+$liveWire->details['6001'] = str_replace('live-renew-placeholder.com', 'other-live-placeholder.com', $liveWire->details['6001']);
+$liveWire->rows[21]['status'] = 'Order canceled';
+$liveWire->details['5002'] = str_replace(['<StatusDesc>Successful', '<OrderStatus>6'], ['<StatusDesc>Canceled', '<OrderStatus>7'], $liveWire->details['5002']);
+$cycle = null;
+foreach (range(1, 6) as $turn) {
+    $cycle = $scanRead($cycle);
+    same(false, $cycle->historyComplete, 'A same-domain canceled order keeps every dense turn incomplete');
+    same(null, $liveDone($cycle), 'A dense blocked turn authorizes no completion');
+    if ($turn >= 3) { same(false, $cycle->historyScan->progressed, 'An unchanged dense blocked scan stops claiming new progress after both batches'); }
+}
+// Refusal rows at the front cannot prevent discovery of a later match before revalidation.
+$liveWire->rows[21] = ['id'=>'5002', 'date'=>'7/4/2026 10:07:13 AM'];
+$liveWire->details['5002'] = $liveOrder('5002', 'live-renew-placeholder.com', '7/4/2026 10:15:03 AM', '7/4/2026 10:07:13 AM');
+$liveWire->rows[0]['status'] = 'Processing';
+$liveWire->details['6001'] = str_replace('other-live-placeholder.com', 'live-renew-placeholder.com', $liveWire->details['6001']);
+$blocked = $scanRead($scanRead());
+same('5002', $blocked->candidates[0]->providerReference ?? null, 'Continuation reaches the later match beside a persistent front refusal');
+same(false, $scanRead($blocked)->historyScan->progressed, 'Revalidating the unchanged blocked scan is no new progress');
 echo "Only an unfinished order that could be the attempt blocks its history scan\n";

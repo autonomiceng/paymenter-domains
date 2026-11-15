@@ -54,7 +54,7 @@ final readonly class RenewalCompletion
             $ctx = $check->context = new RequestContext($attempt->binding, RequestOrigin::Background, $deadline, new RequestBudget(25), $this->clock, Runtime::limiter());
             $result = $this->bindings->reader($attempt->binding->serverId)->reconcile($attempt, $ctx); $result->requireAttempt($attempt);
             $sample = $result->result()->evidence()->billZoneSample;
-            // A read that returned after the deadline is used up like a stalled read; its facts are too late to act on.
+            // A read that returned after the deadline supplies no financial facts; validated scan progress can still continue.
             $late = $this->clock->now() >= $ctx->deadline && $ctx->completedReads() > 0;
             // Scan progress is reusable after the deadline; financial conclusions still require an in-time read.
             $facts = $result->result()->evidence(); $scan = $facts->historyScan;
@@ -84,8 +84,8 @@ final readonly class RenewalCompletion
             catch (\Throwable) { return $op; }
             if($financialRead){CapturedChargeReview::retain($op,$financialRead,$proof,$this->clock);return $op;}
             // A finished history read that resolved no more orders counts like a covered read; a progressing scan does not.
-            // A read that returned past its deadline counts once too. Admission and call-cap deferrals throw before either.
-            $stalled = !$covered && (($scan !== null && !$scan->progressed) || $late) && $check->deferred === null;
+            // A deadline counts only without new validated progress. Admission and call-cap deferrals throw before either.
+            $stalled = !$covered && !($scan?->progressed ?? false) && ($scan !== null || $late) && $check->deferred === null;
             $policy = $op->policy; $policy['renewal_polls'] = ($policy['renewal_polls'] ?? 0) + ($covered || $stalled ? 1 : 0); $check->counted = $covered || $stalled;
             // Saved scan progress; a scan that resolved more orders continues on the next turn.
             if ($scan) { $policy['history_scan'] = $scan->saved(); $policy = EnomAbsence::apply($policy, $op, $absence); $check->continued = !$covered && $scan->progressed; }

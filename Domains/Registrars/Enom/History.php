@@ -60,7 +60,7 @@ final class History
         } while ($start !== null);
         if (count($ids) !== $total) { return $stop('list_changed'); }
         // A saved outcome counts only for the same listed order and receipt date; a candidate is read again before it is used.
-        $orders = []; $pending = []; $stale = []; $complete = true;
+        $orders = []; $pending = []; $rechecks = []; $stale = []; $complete = true;
         $listing = hash('sha256', json_encode($rows, JSON_THROW_ON_ERROR));
         $priorRefusals = self::counts($saved['refusals'] ?? null);
         $continueOpen = ($saved['complete'] ?? null) === false && $priorRefusals
@@ -69,20 +69,28 @@ final class History
             $row['open'] = $row['statusdesc'] !== 'Order complete' || $row['orderprocessflag'] !== 'True';
             $id = $row['orderid']; $signature = substr(hash('sha256', $row['orderdate'].($row['open'] ? $listing : '')), 0, 12); $row['signature'] = $signature;
             // Open exclusions continue only an unchanged listing stopped by capacity. A finished or blocked scan re-reads them.
-            if ($row['open'] && (!$continueOpen || ($known[$id][0] ?? null) !== 'n')) { $pending[] = $row; continue; }
+            if ($row['open'] && (!$continueOpen || ($known[$id][0] ?? null) !== 'n')) {
+                if (($known[$id] ?? null) === ['n', $signature]) { $orders[$id] = $known[$id]; $rechecks[] = $row; }
+                else { $pending[] = $row; }
+                continue;
+            }
             if (($known[$id][1] ?? null) === $signature) { $orders[$id] = $known[$id]; if ($known[$id][0] === 'c') { $stale[] = $row; } }
             else { $pending[] = $row; }
         }
+        // Resolve new or changed orders before revalidation; retain prior outcomes if capacity interrupts the rechecks.
+        $pending = [...$pending, ...$rechecks];
         $candidates = []; $read = 0; $added = 0;
         foreach ($pending as $row) {
             if ($read >= self::DETAILS || $context->budget->remaining() <= count($stale) || $context->now() >= $context->deadline) { $complete = false; $refuse($read >= self::DETAILS ? 'detail_ceiling' : 'read_budget'); break; }
-            $read++;
+            $read++; unset($orders[$row['orderid']]);
             if ($row['open'] ?? false) { $outcome = $this->otherDomain($attempt, $context, $row) ? 'n' : 'order_open'; $candidate = null; }
             else { [$outcome, $candidate] = $this->detail($attempt, $context, $row); }
             // Keep earlier validated outcomes, but never accept a reply that used up the deadline.
             if ($context->now() >= $context->deadline) { $complete = false; $refuse('read_budget'); break; }
             if (!in_array($outcome, ['n', 'c'], true)) { $complete = false; $refuse($outcome); continue; }
-            $orders[$row['orderid']] = [$outcome, $row['signature']]; $added++;
+            $validated = [$outcome, $row['signature']];
+            if (($known[$row['orderid']] ?? null) !== $validated) { $added++; }
+            $orders[$row['orderid']] = $validated;
             if ($candidate) { $candidates[] = $candidate; }
         }
         if ($complete && $context->budget->remaining() < count($stale)) { $complete = false; $refuse('read_budget'); }
