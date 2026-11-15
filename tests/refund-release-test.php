@@ -5,10 +5,11 @@ require __DIR__.'/Support/operation-fixture.php';
 require __DIR__.'/Support/money-receipt.php';
 require __DIR__.'/Support/reminder-mail.php';
 use App\Models\{Credit,Gateway,Invoice,InvoiceTransaction,Role,Service};
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\{DB,Mail};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\OperationActions;
+use Paymenter\Extensions\Servers\Domains\Mail\DomainNotice;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Services\{HoldingLocks,InvoiceMoney,NativePresenter,OwnedDomains,PricingRule,ReceiptReturns,ReceiptReversals,RefundPayment,Refunds,Reminders};
+use Paymenter\Extensions\Servers\Domains\Services\{HistoryRetention,HoldingLocks,InvoiceMoney,NativePresenter,OwnedDomains,PricingRule,ReceiptReturns,ReceiptReversals,RefundPayment,Refunds,ReminderSchedules,Reminders};
 
 class ReleaseGateway extends MoneyReceiptGateway
 {
@@ -88,12 +89,62 @@ foreach(['full','split','bridge','invalid','zero'] as $mode){$case('released cre
     $expected=in_array($mode,['invalid','zero'],true)?null:($mode==='split'?'split':'credited');
     $equal($expected,OwnedDomains::refundTo($d,$saved,[]),'Refund destination follows released credit: '.$mode);
     $planned=$notice($saved);
-    $equal(in_array($mode,['invalid','zero'],true)?null:'$'.PricingRule::decimal($mode==='split'?$minor-100:$minor),$planned['data']['amount']??null,'Credit notice includes actual released money: '.$mode);
+    $equal(in_array($mode,['invalid','zero'],true)?null:'$'.PricingRule::decimal(match($mode){'split'=>$minor-100,'bridge'=>100,default=>$minor}),$planned['data']['amount']??null,'Credit notice reports its separate committed credit: '.$mode);
     if($mode==='invalid'){
         $order=OwnedDomains::order($d,$saved,Invoice::findOrFail($op->invoice_id));
         $equal(false,$order['returned']??null,'Invalid released credit keeps the customer order under review');
     }
 });}
+
+$makeTen=static function(string $suffix)use($make,$tlds,$prices):Operation{
+    $tld=$tlds[0]->fresh();$saved=$tld->catalogue_intent;
+    $intent=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($saved);
+    try{
+        $rule=PricingRule::validate(['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed'=>['register'=>'10.00','renew'=>'10.00','transfer'=>'10.00']]);
+        $tld->update(['catalogue_intent'=>\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::json([...$intent,'pricing_rule'=>$rule])]);
+        activeFixtureRepublish($prices,$tld->fresh());return $make($suffix);
+    }finally{$tld->update(['catalogue_intent'=>$saved]);activeFixtureRepublish($prices,$tld->fresh());}
+};
+$mails=static fn(Operation $op)=>Mail::queued(DomainNotice::class)->filter(fn($mail)=>$mail->data['domain']===$op->domain->domain)->map(fn($mail)=>$mail->data['amount'])->values()->all();
+foreach(['delivered','retained'] as $mode){$case('release after bridge '.$mode,function()use($mode,$makeTen,$reserve,$observe,$refunds,$equal,$balance,$clock,$bindings,$mails):void{
+    $op=$makeTen('notice-'.$mode);$before=$balance();
+    DB::table('invoice_transactions')->where('invoice_id',$op->invoice_id)->update(['amount'=>'9.00']);
+    InvoiceTransaction::create(['invoice_id'=>$op->invoice_id,'amount'=>'1.00','fee'=>'0.00','status'=>'succeeded','transaction_id'=>'synthetic_bridge_'.$op->id]);
+    $a=$reserve($op);ReminderSchedules::enroll($op->server_id);$reminders=new Reminders($clock,$bindings);
+    $equal($before+100,$balance(),'Only the bridge is credited before release');
+    $equal(true,$reminders->remind($op->domain_id),'Bridge notice is delivered before release');
+    $equal(['$1.00'],$mails($op),'Bridge notice contains only its committed dollar');
+    if($mode==='retained'){
+        HistoryRetention::sweep('reminders',$clock->now()->modify('+14 months')->getTimestamp());
+        $equal(0,DB::table('domains_reminder_deliveries')->where('domain_id',$op->domain_id)->count(),'Bridge delivery leaves active history');
+        $equal(true,HistoryRetention::replayed('reminder',hash('sha256',$op->domain_id.':refund:'.$op->id)),'Retained bridge identity remains remembered');
+    }
+    $observe($op,'won',900);$refunds->creditRejected($op->id);
+    $equal(900,$op->fresh()->funding['receipt_return_results'][$a['key']]['credit_minor']??null,'Retry separately commits nine dollars of released credit');
+    $equal($before+1000,$balance(),'Both committed credits reach the account');
+    $equal(true,$reminders->remind($op->domain_id),'Later released credit receives a new notice');
+    $refunds->creditRejected($op->id);$refunds->creditRejected($op->id);
+    $equal(false,(new Reminders($clock,$bindings))->remind($op->domain_id),'Released credit notice stays deduplicated after retry and restart');
+    $equal(['$1.00','$9.00'],$mails($op),'Exactly one nine-dollar notice follows the bridge without repeating it');
+});}
+$case('sequential release notices',function()use($make,$reserve,$release,$refunds,$equal,$balance,$clock,$bindings,$mails):void{
+    $op=$make('sequential-notices');$minor=PricingRule::minor($op->amount);$before=$balance();
+    $row=InvoiceTransaction::where('invoice_id',$op->invoice_id)->sole();$row->update(['amount'=>'2.00']);
+    InvoiceTransaction::create(['invoice_id'=>$op->invoice_id,'amount'=>PricingRule::decimal($minor-200),'fee'=>'0.00','status'=>'succeeded',
+        'gateway_id'=>$row->gateway_id,'transaction_id'=>'synthetic_sequential_'.$op->id]);
+    $reserve($op);$allocations=$op->fresh()->funding['refund']['allocations'];
+    ReminderSchedules::enroll($op->server_id);$reminders=new Reminders($clock,$bindings);
+    $equal(false,$reminders->remind($op->domain_id),'An uncredited plan sends no credit notice');
+    foreach($allocations as $i=>$a){
+        $release($op,$a);
+        $equal(true,$reminders->remind($op->domain_id),'Each separately committed release is notified: '.$i);
+        $equal(false,$reminders->remind($op->domain_id),'Each release notice is sent once: '.$i);
+    }
+    $refunds->creditRejected($op->id);$refunds->creditRejected($op->id);
+    $equal(false,(new Reminders($clock,$bindings))->remind($op->domain_id),'Retries never repeat either sequential release');
+    $equal(['$2.00','$'.PricingRule::decimal($minor-200)],$mails($op),'Sequential notices contain each credited amount rather than the cumulative total');
+    $equal($before+$minor,$balance(),'Sequential release retries preserve the exact credited total');
+});
 
 $case('same key resend',function()use($make,$refunds,$staff,$equal,$balance):void{
     $op=$make('resend');$before=$balance();ReleaseGateway::$beforeSend=true;
