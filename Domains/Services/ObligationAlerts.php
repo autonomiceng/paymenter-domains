@@ -32,6 +32,7 @@ final class ObligationAlerts
         'invalid_invoice'=>'Renewal invoice needs a check: owner, line and due date.',
         'below_cost'=>'Below cost. Billing continues. Check the margin.',
         'observation_review'=>'Sync stopped. Use Resume sync.',
+        'holding_absent'=>'Domain not in registrar account. Renewal billing is paused pending review.',
         'operation_review'=>'Registrar request needs a check. Check the request.',
         'unknown_payment_time'=>'Transfer payment time missing. Check the payment before you send a deadline.',
         'delivery_uncertain'=>'Reminder not confirmed. Check its delivery before you resend.',
@@ -80,6 +81,7 @@ final class ObligationAlerts
     public static function retained(array $l,int $now):array
     {
         $d=$l['domain'];$keys=[];
+        if (($key=RenewalOwnership::review($d,$now))!==null) { $keys[]=$key; }
         foreach($l['operations'] as $op){
             if($op->account_fingerprint!==$d->account_fingerprint||$op->authority_generation!==$d->authority_generation){continue;}
             $p=$op->policy??[];
