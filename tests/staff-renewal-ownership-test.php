@@ -22,7 +22,8 @@ same(true,in_array(RenewalOwnership::REVIEW,$live(),true),'Current ownership abs
 $list=Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($d->domain)->assertCanSeeTableRecords([$d]);
 same(DomainResource::getUrl('view',['record'=>$d->id]),$list->instance()->getTable()->getRecordUrl($d->fresh()),'The registered alert opens its staff domain page');
 $fenced=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$d->id])->assertSuccessful();
-$fenced->assertDontSee('Next invoice')->assertDontSee('Paid by Auto Pay')->assertSee(ObligationAlerts::LABELS[RenewalOwnership::REVIEW]);
+$fenced->assertActionHidden('sync_now');
+expect(str_contains(panelRowText($fenced->html(),'Next invoice')??'','Paused'),'The invoice schedule stays visible as paused during departure review');
 same('On',DomainFacts::for($d->fresh())['Renewal']['value'],'The saved Auto-renew preference stays visible');
 
 // A positive read for a foreign provider reference cannot contradict the retained ownership fence.
@@ -39,12 +40,12 @@ $observation->domainId='456';
 same('refreshed',$read(),'Positive ownership restores the billing display');
 expect(DomainFacts::for($d->fresh())['In registrar account']['value']!==$absentMembership['value'],'Same-provider recovery restores membership');
 $restored=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$d->id])->assertSuccessful();
-$restored->assertSee('Next invoice')->assertSee('Paid by Auto Pay');
+expect(($schedule=panelRowText($restored->html(),'Next invoice'))!==null&&!str_contains($schedule,'Paused'),'Positive ownership restores the invoice schedule');
 // A stale saved row must not revive an alert whose current-state predicate has cleared.
 ObligationAlerts::record($d->fresh(),RenewalOwnership::REVIEW,$clock->now()->getTimestamp());
 same(false,in_array(RenewalOwnership::REVIEW,$live(),true),'Positive current ownership hides even an unresolved stale review');
 same(false,DomainFacts::for($d->fresh())['Renewal']['alert']??false,'The registered Renewal alert clears after positive ownership');
-Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$d->id])->assertDontSee(ObligationAlerts::LABELS[RenewalOwnership::REVIEW]);
+Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$d->id])->assertActionHidden('check_departure');
 same($money,$nativeMoney(),'Viewing the fence and recovery does not change existing debt or payments');
 same($policy,$d->fresh()->renewal_policy,'Viewing the fence and recovery does not change the saved renewal preference');
 echo "Staff renewal display follows ownership proof.\n";
