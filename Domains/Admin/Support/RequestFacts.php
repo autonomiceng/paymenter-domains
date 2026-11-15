@@ -457,7 +457,12 @@ final class RequestFacts
     private static function invoiceState(Operation $op): ?string
     {
         if(self::invoiceStatus($op)==='paid'&&($invoice=\App\Models\Invoice::find($op->invoice_id))){
-            try{$minor=0;foreach(\Paymenter\Extensions\Servers\Domains\Services\ReceiptReversals::forInvoice($invoice) as $row){
+            try{
+                $refund=$op->funding['refund']??null;
+                if(($refund['to']??null)==='original_payment'&&\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::settled($op)
+                    &&\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::amount($refund)>0
+                    &&\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::amount($refund)>=\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)$invoice->total)){return 'Refunded';}
+                $minor=0;foreach(\Paymenter\Extensions\Servers\Domains\Services\ReceiptReversals::forInvoice($invoice) as $row){
                 if(($row['kind']??null)==='refund'&&($row['status']??null)==='refunded'&&is_int($row['amount_minor']??null)&&$row['amount_minor']>0){$minor+=$row['amount_minor'];}
             }if($minor>0&&$minor>=\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)$invoice->total)){return 'Refunded';}}catch(\Throwable){}
         }
