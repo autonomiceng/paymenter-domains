@@ -153,7 +153,7 @@ final readonly class Refunds
      * @return list<int> Domains that got credit, for the caller's notice. */
     public function creditRetired(Account $account): array
     {
-        OperationClaims::outside(); $credited = []; $cursor = 'domains.closed-credit-cursor.'.$account->server_id;
+        OperationClaims::outside(); $credited = []; $inspect = []; $cursor = 'domains.closed-credit-cursor.'.$account->server_id;
         $ids = Operation::where('server_id', $account->server_id)->where('state', 'rejected')->where('safe_code', UnpaidAcquisitionProof::CODE)->where('id', '>', (int) Cache::get($cursor, 0))
             ->whereIn('invoice_id', InvoiceTransaction::select('invoice_id')->where('status', InvoiceTransactionStatus::Succeeded))
             ->selectRaw('min(id) as id')->groupBy('invoice_id')->orderBy('id')->limit(100)->pluck('id');
@@ -164,8 +164,10 @@ final readonly class Refunds
                 if ($this->creditClosed($op) !== null) { $credited[] = (int) $op->domain_id; continue; }
             }
             catch (\Throwable $e) { RefundRepairs::failed((int)$op->id, $this->clock->now()->getTimestamp()); logger()->warning('Domains late payment stays with staff.', ['operation_id' => (int) $op->id, 'exception_class' => $e::class]); }
-            app(AcquisitionRetirement::class)->inspect((int) $op->domain_id);
+            $inspect[(int)$op->domain_id] = true;
         }
+        // Inspect the final evidence once per domain after every invoice has had its independent money check.
+        foreach (array_keys($inspect) as $id) { app(AcquisitionRetirement::class)->inspect($id); }
         return $credited;
     }
     private function creditClosed(Operation $seen): ?array
