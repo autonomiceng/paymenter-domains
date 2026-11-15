@@ -213,7 +213,7 @@ foreach([0=>'Not sent. Orders are off for this account.',1=>'Not sent. It will r
 $unsentAccount->update(['processing_enabled'=>$ordersEnabled]);
 $sealed=(clone $unsent)->forceFill(['attempt'=>['seal'=>'sealed','send_state'=>'possibly_sent']]);
 same('Registrar has not confirmed the result',$line($sealed),'Only a change that may have gone out is unknown');
-same(null,Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::row((clone $sealed)->forceFill(['state'=>'succeeded','completed_at'=>now()]),$unsent->domain,true)['status'],'A completed request creation row leaves its result to the separate completion entry');
+same('Under review',Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::row((clone $sealed)->forceFill(['state'=>'succeeded','completed_at'=>now()]),$unsent->domain,true)['status']['label'],'A change the registrar has not read back reads Under review on the rail, as in customer History');
 same('Under review',RequestFacts::status((clone $sealed)->forceFill(['state'=>'succeeded','completed_at'=>now()])->setRelation('domain',$unsent->domain))['label'],'The request list and page read it the same');
 $failedUnsent=(clone $unsent)->forceFill(['state'=>'rejected']);
 same($title,$line($failedUnsent),'A failed change that never went out says so');

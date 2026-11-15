@@ -97,9 +97,13 @@ final class DomainHistory
             return ['time'=>self::when($entry),'event'=>'Request #'.$entry->id.' DNSSEC','sub'=>$ds['text'],'status'=>['label'=>$ds['state'],'tone'=>$ds['tone']],'by'=>self::requester($entry,$domain)];
         }
         if ($entry->state==='queued'&&$ordersOff&&$reason!==null) { $reason=StaffDomainStatus::sentence($reason).RequestFacts::ordersStep($reason); }
+        $status=RequestFacts::status($entry,$ordersOff,$domain);
+        // Keep an evidence warning when the separate terminal event does not express it.
+        if($entry->completed_at!==null&&in_array($entry->state,['succeeded','rejected','disposed','cancelled'],true)
+            &&$status['label']===Labels::requestStatus($entry)['label']){$status=null;}
         return ['time'=>self::when($entry),'event'=>'Request #'.$entry->id.' '.Labels::action($entry->action),
             'sub'=>$reason,
-            'status'=>$entry->completed_at!==null&&in_array($entry->state,['succeeded','rejected','disposed','cancelled'],true)?null:RequestFacts::status($entry,$ordersOff,$domain),'by'=>self::requester($entry,$domain)];
+            'status'=>$status,'by'=>self::requester($entry,$domain)];
     }
     /** The newest entries as Sheet::trace steps: the reason, then when and who.
      * $said is the page's status line, which names request $request: that request's reason is not said again. */
