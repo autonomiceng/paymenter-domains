@@ -243,6 +243,7 @@ class ViewDomain extends RecordDetailPage
         if ($suspected) { unset($items['Registrar records']); $items['Registration'][]=[State::UnderReview,DepartureChecks::PAUSED,null]; }
         $notices=[];
         foreach ($items as $title=>$list) { if (($row=DomainRows::notice(strtolower((string)preg_replace('/[^A-Za-z]+/','-',$title)),$list,'domain-'.$d->id.'-'.md5($title)))!==null) { $notices[$title]=$row; } }
+        if ($suspected && isset($notices['Registration'])) { $notices['Registration']->target(); }
         $this->heldNotice=$suspected?(isset($placed['Registration'])?($notices['Registration']??null):null):($heldIn!==null?($notices[$heldIn]??null):null);
         $sections=[];
         foreach ($placed as $title=>$labels) {
