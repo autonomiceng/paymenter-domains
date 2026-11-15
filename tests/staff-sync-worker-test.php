@@ -112,7 +112,7 @@ $work=DB::table('domains_observation_work')->where(['server_id'=>$d->server_id,'
     'domain_id'=>$d->id,'generation'=>$d->authority_generation,'phase'=>\Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::phase($d->fresh())])->sole()->id;
 DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>'refreshed','due_at'=>$clock->now()->getTimestamp()+86400]);
 $observation->fault='owner';$clock->instant=$clock->now()->modify('+61 seconds');
-$page->callAction('sync_now')->assertNotified('Sync queued');
+$page->call('pollManagement')->callAction('sync_now')->assertNotified('Sync queued');
 Artisan::call('queue:work',['--stop-when-empty'=>true,'--sleep'=>0,'--tries'=>1]);
 $page->call('pollManagement')->assertActionVisible('check_departure')->assertActionHidden('sync_now');
 same('departure_registry',DB::table('domains_observation_work')->where('id',$work)->value('safe_code'),'Manual absence schedules registry evidence before the automatic recheck');
@@ -184,7 +184,7 @@ same([null,0],[$row->claim,(int)$row->lease_until],'The expired manual read rele
 same(0,DB::table('failed_jobs')->count(),'Missing-account reads finish without failed queue jobs');
 // An ownership read can finish with drift. That is an outcome, not a successful record sync.
 $observation->fault='';$observation->expiryYears=2;$clock->instant=$clock->now()->modify('+61 seconds');
-$page->callAction('sync_now')->assertNotified('Sync queued');
+$page->call('pollManagement')->callAction('sync_now')->assertNotified('Sync queued');
 Artisan::call('queue:work',['--stop-when-empty'=>true,'--sleep'=>0,'--tries'=>1]);
 $page->call('pollManagement')->assertSee('Sync needs a check')->assertDontSee('Sync in progress')->assertActionEnabled('sync_now');
 same('Sync needs a check',SyncDomainRecords::result($d->fresh())['title'],'Unresolved registrar facts cannot claim Domain synced');

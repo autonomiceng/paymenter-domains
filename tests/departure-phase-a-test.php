@@ -38,6 +38,7 @@ same('delayed',DepartureChecks::attention($d->fresh(),$at->modify('+2 days')->ge
 same($d->provider_expires_at->format('Y-m-d'),DepartureChecks::attention($d->fresh(),$at->modify('+2 days')->getTimestamp())['expiry'],'Delayed alert retains expiry');
 $clock->instant=$clock->now()->modify('+61 seconds');$observation->fault='transport';$observer->run($d->id,readRecords:true);
 same(true,HoldingReadRetry::absent($d->fresh()),'Unknown read cannot clear definite absence');
+app()->instance(\Paymenter\Extensions\Servers\Domains\Services\OwnedDomains::class,$owners);
 $actor=staffUser([Staff::VIEW,'admin.domains.manage']);staffPanel();Auth::setUser($actor);
 $page=Livewire\Livewire::actingAs($actor)->test(ViewDomain::class,['record'=>$d->id]);
 $page->assertActionVisible('check_departure')->assertActionEnabled('check_departure');
