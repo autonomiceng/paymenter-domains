@@ -8,7 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Dns\{DnsAnswer,DnsContext,DnsQuery};
 use Paymenter\Extensions\Servers\Domains\Services\{DepartureChecks,HoldingObservationWork,HoldingReadRetry,PublicRegistryReader,RenewalOwnership};
 
 $healthy=$d->fresh()->observation;$money=$nativeMoney();$originalBefore=$original->fresh()->getAttributes();
-$failures=[];$check=static function(mixed $want,mixed $got,string $why)use(&$failures):void{if($want!==$got){$failures[]=$why;}};
+$failures=[];$check=static function(mixed $want,mixed $got,string $why)use(&$failures):void{if($want!==$got){$failures[]=$why.'; expected '.json_encode($want).', got '.json_encode($got);}};
 $registryCalls=0;
 $dns=new class implements DnsReader {
     public function read(DnsQuery $q,DnsContext $c):DnsAnswer { $c->reserve();return $q->type==='A'?DnsAnswer::rrset($q,[['host'=>$q->name,'type'=>'A','class'=>'IN','ttl'=>60,'ip'=>'8.8.8.8']]):DnsAnswer::negative($q); }
@@ -47,9 +47,11 @@ foreach(['grace','expired'] as $status){foreach([$status,'active'] as $admitted)
         $check(true,isset($fresh->observation['departure_check']['registry']),'Registry evidence is saved: '.$case);
         $check($at+86400,(int)$work->due_at,'Registrar recheck keeps its 24-hour due time: '.$case);
     }else{
-        $check('refreshed',$result,'Scheduled registrar recheck runs: '.$case);
+        // Primary ownership can recover while a separate record-inventory hold remains.
+        $check(false,in_array($result,['idle','read_deferred'],true),'Scheduled registrar recheck completes: '.$case);
         $check(true,count($observation->calls)>$beforeRegistrar,'Registrar is actually read: '.$case);
         $check($beforeRegistry,$registryCalls,'Registrar recheck does not repeat RDAP: '.$case);
+        $check(true,$fresh->observation['renewal_ownership']['owned']??null,'Recheck saves positive ownership: '.$case);
         $check(false,HoldingReadRetry::absent($fresh),'Positive recheck clears absence: '.$case);
         $check(false,isset($fresh->observation['departure_check']),'Positive recheck clears suspicion: '.$case);
         $check(0,DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code',RenewalOwnership::REVIEW)->whereNull('resolved_at')->count(),'Positive recheck resolves the alert: '.$case);
