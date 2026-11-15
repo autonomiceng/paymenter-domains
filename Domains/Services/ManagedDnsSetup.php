@@ -149,7 +149,7 @@ final class ManagedDnsSetup
         foreach($sources as $source){
             $s=$l['services']->firstWhere('id',$source->service_id);$m=$maps[$source->map_id]??null;
             $o=$l['orders']->firstWhere('id',$s?->order_id);$p=$l['products']->firstWhere('id',$s?->product_id);
-            $props=$l['relatedProperties']->where('model_id',$s?->id)->where('key',$m?->property_key);
+            $props=WatchProducts::field($l['relatedProperties']->where('model_id',$s?->id));
             if(!$s || !$o || !$p || !$m || !$m->enabled || !$m->expected_ns_profile_id || $p->server_id===null || !in_array($source->state,['watch','managed_link'],true)
                 || (int)$source->user_id!==(int)$d->user_id || ($source->state==='managed_link' && (int)$source->managed_domain_id!==(int)$d->id)
                 || (int)$s->user_id!==(int)$d->user_id || (int)$o->user_id!==(int)$d->user_id || $s->status!=='active'
