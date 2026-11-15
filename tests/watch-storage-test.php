@@ -22,7 +22,7 @@ $plan=$product->plans()->create(['name'=>'Monthly','type'=>'recurring','billing_
 $order=Order::create(['user_id'=>$owner->id,'currency_code'=>'USD']);
 $service=Service::create(['user_id'=>$owner->id,'order_id'=>$order->id,'product_id'=>$product->id,'plan_id'=>$plan->id,'status'=>'active','quantity'=>1,'price'=>'5.00','currency_code'=>'USD']);
 $writer=new WatchMappings;$denied=false;try{$writer->save($owner,$product->id,'domain',0,'Unauthorized');}catch(\Symfony\Component\HttpKernel\Exception\HttpException $e){$denied=$e->getStatusCode()===403;}expect($denied,'Watch permissions default deny');
-$map=$writer->save($staff,$product->id,'primary_domain',0,'Map primary hostname');
+$map=$writer->save($staff,$product->id,'hostname',0,'Map primary hostname');watchRefused(fn()=>$writer->save($staff,$product->id,'primary_domain',1,'Another field'),'Only the domain or hostname field');
 $mapRaw=DB::table('domains_watch_product_maps')->where('id',$map->id)->value('reason');
 expect(str_starts_with($mapRaw,'encrypted:v1:'),'New mapping ciphertext has a version');
 expect($mapRaw!=='Map primary hostname'&&!str_contains($mapRaw,'Map primary hostname'),'Mapping reason is encrypted at rest');
@@ -55,7 +55,8 @@ same(1,$map->fresh()->revision,'Invalid map edits roll back');same(1,WatchAudit:
 $map=$writer->save($staff,$product->id,'domain',1,'Correct property');same(2,$map->revision,'Edit advances revision');same(false,$map->enabled,'Edit remains disabled');
 watchRefused(fn()=>$map->fill(['enabled'=>true,'revision'=>3])->save(),'Enable is unavailable before its audited action');$map->refresh();
 $domainServer=Server::create(['name'=>'Domain catalogue','extension'=>'Domains','type'=>'server','enabled'=>true]);
-foreach ([null,$domainServer->id] as $i=>$serverId) {
+// A product with no server can be hosting (Ilya, Nov 15, 2026); a registration product never is.
+foreach ([$domainServer->id] as $i=>$serverId) {
     $invalidProduct=Product::create(['name'=>'Not hosting','slug'=>'non-hosting-'.$i,'category_id'=>$category->id,'server_id'=>$serverId,'hidden'=>true,'allow_quantity'=>'combined']);
     watchRefused(fn()=>$writer->save($staff,$invalidProduct->id,'domain',0,'Invalid product'),'Only hosting products can be mapped');
 }
