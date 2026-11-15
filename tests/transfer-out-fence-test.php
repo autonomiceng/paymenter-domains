@@ -41,7 +41,7 @@ $read=static function(Domain $d,string $fault='')use($observer,$observation,$clo
 $failures=[];
 $check=static function(mixed $expected,mixed $actual,string $why)use(&$failures):void{if($expected!==$actual){$failures[]=$why;}};
 $refused=static function(callable $call):bool{try{$call();return false;}catch(DomainException){return true;}};
-$alerts=static fn(Domain $d)=>DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code','holding_absent')->whereNull('resolved_at');
+$alerts=static fn(Domain $d)=>DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code','departure_review')->whereNull('resolved_at');
 
 // The adapter's explicit foreign account answer proves owned=false, without any live provider call.
 $gone=$holder('gone'); $read($gone,'owner');

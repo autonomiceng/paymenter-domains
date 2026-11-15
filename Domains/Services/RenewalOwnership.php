@@ -8,6 +8,8 @@ use Paymenter\Extensions\Servers\Domains\Models\Domain;
 /** Collection fence only. A missing holding is not proof to retire debt or release its name. */
 final class RenewalOwnership
 {
+    /** Shared holding review for billing protection and the later departure workflow. */
+    public const REVIEW='departure_review';
     public static function blocked(Domain $d): bool
     {
         if (!in_array($d->status, ['active', 'expired', 'grace'], true)) { return false; }
@@ -26,6 +28,19 @@ final class RenewalOwnership
             $owned=false; $at=$d->observation['renewal_ownership']['at']??$d->observation['record_failure']['at']??$at;
         }
         if ($owned===null||!in_array($d->status, ['active', 'expired', 'grace'], true)) { return; }
+        self::save($d,$owned,$at,$now);
+    }
+    /** Caller holds observation locks. Preserve legacy absence before record/failure writers replace its diagnostic. */
+    public static function retainAbsence(Domain $d, \DateTimeImmutable $now, bool $definite=false): void
+    {
+        if ($d->status!=='active'||(!$definite&&!self::blocked($d))) { return; }
+        $proof=$d->observation['renewal_ownership']??[];
+        $prior=($proof['identity']??null)===ObservationRecords::identity($d)?($proof['at']??null):($d->observation['record_failure']['at']??null);
+        $at=(!$definite&&is_string($prior))?$prior:$now->format(DATE_ATOM);
+        self::save($d,false,$at,$now);
+    }
+    private static function save(Domain $d, bool $owned, string $at, \DateTimeImmutable $now): void
+    {
         $d->update(['observation'=>[...($d->observation??[]), 'renewal_ownership'=>[
             'identity'=>ObservationRecords::identity($d), 'owned'=>$owned, 'at'=>$at]]]);
         self::review($d,$now->getTimestamp());
@@ -34,8 +49,8 @@ final class RenewalOwnership
     public static function review(Domain $d, int $now): ?string
     {
         if (!Schema::hasTable('domains_obligation_alerts')) { return null; }
-        if (self::blocked($d)) { return ObligationAlerts::record($d,'holding_absent',$now); }
-        DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code','holding_absent')
+        if (self::blocked($d)) { return ObligationAlerts::record($d,self::REVIEW,$now); }
+        DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code',self::REVIEW)
             ->whereNull('resolved_at')->update(['resolved_at'=>$now]);
         return null;
     }

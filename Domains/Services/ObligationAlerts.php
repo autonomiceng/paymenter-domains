@@ -32,7 +32,7 @@ final class ObligationAlerts
         'invalid_invoice'=>'Renewal invoice needs a check: owner, line and due date.',
         'below_cost'=>'Below cost. Billing continues. Check the margin.',
         'observation_review'=>'Sync stopped. Use Resume sync.',
-        'holding_absent'=>'Domain not in registrar account. Renewal billing is paused pending review.',
+        'departure_review'=>'Not in our registrar account. Renewal billing paused. Check the registrar.',
         'operation_review'=>'Registrar request needs a check. Check the request.',
         'unknown_payment_time'=>'Transfer payment time missing. Check the payment before you send a deadline.',
         'delivery_uncertain'=>'Reminder not confirmed. Check its delivery before you resend.',
@@ -99,7 +99,7 @@ final class ObligationAlerts
                 $keys[]=self::record($d,$op->action==='renew'&&$op->state==='held'?'held_obligation':'operation_review',$now,(int)$op->id);
             }
         }
-        if(Schema::hasTable('domains_observation_work')){
+        if(Schema::hasTable('domains_observation_work')&&!RenewalOwnership::blocked($d)){
             $follow=$d->observation['followup']??[];
             $phase=isset($follow['operation_key'])&&($follow['generation']??null)===$d->authority_generation?hash('sha256',$follow['operation_key']):'holding';
             if(DB::table('domains_observation_work')->where('domain_id',$d->id)->where('generation',$d->authority_generation)
