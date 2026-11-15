@@ -17,8 +17,9 @@ final class DomainPage
     /** The cause on each value while reads are stopped. The page notice carries the one fix, so the rows stay calm. */
     public const TEAM_CHECK = 'Our team needs to check this domain. '.Missing::NO_ACTION;
     public const NOTHING_TO_DO = 'There’s nothing you need to do.';
-    /** Why changes wait while registrar orders are off. The record note reads this so both say the same pause. */
-    public const PAUSED = 'We’ve paused requests to the registrar for now. Changes open once we resume them. '.self::NOTHING_TO_DO;
+    /** Why changes wait while registrar orders are off. A renewal check says the pause beside it, without its own no-action line. */
+    public const PAUSED_AFTER = 'We’ve paused requests to the registrar for now. Changes open once we resume them.';
+    public const PAUSED = self::PAUSED_AFTER.' '.self::NOTHING_TO_DO;
     /** How long a transfer takes, said wherever the customer waits for one. */
     public const TRANSFER_TIME = 'Most transfers finish within 5 to 7 days.';
     /** The work under way on a paid order, with the time frame for a transfer. */
@@ -53,8 +54,8 @@ final class DomainPage
             // A nameserver step restores service, so it stays with its action and the renewal check is said beside it.
             $renewalCheck!==null && $nameservers!==null => [...$nameservers, 'text' => $nameservers['text'].' '.($renewalCheck['brief'] ?? $renewalCheck['body'])],
             // The rows lose their Edit while changes wait, so the one notice says why (DESIGN.md P-ACT-8).
-            // Confirming the renewal does not reopen changes the account switched Off or an earlier request holds, so those cases say what does.
-            $renewalCheck!==null => ['tone'=>'info','text'=>$renewalCheck['body'].(!$d->changesUnavailable ? '' : ($d->changesRefused === DomainManagement::SWITCH_OFF ? ' '.self::SWITCH_OFF_AFTER : (is_int($d->changesRefused) ? ' '.self::EARLIER_AFTER : ' '.self::CHANGES_AFTER))),'action'=>$contact,'asks'=>$renewalCheck['asks']??false],
+            // Confirming the renewal does not reopen changes the account switched Off, an earlier request holds or Orders off pauses, so those cases say what does.
+            $renewalCheck!==null => ['tone'=>'info','text'=>$renewalCheck['body'].(!$d->changesUnavailable ? '' : ($d->changesRefused === DomainManagement::SWITCH_OFF ? ' '.self::SWITCH_OFF_AFTER : (is_int($d->changesRefused) ? ' '.self::EARLIER_AFTER : (($d->changesRefused === self::PROCESSING_OFF) ? ' '.self::PAUSED_AFTER : ' '.self::CHANGES_AFTER)))),'action'=>$contact,'asks'=>$renewalCheck['asks']??false],
             $d->syncPaused => self::ours('Sync paused: the demo registrar is off. Nameservers show when it resumes.', $contact),
             $d->setupPending => self::ours('We’re confirming this domain. Changes and renewals start after that. If it expires soon, let us know.', $contact),
             $order === 'unpaid' => ['tone' => 'warn', 'text' => 'This order isn’t paid yet. Pay the invoice to start the '.$word.'.', 'action' => ['label' => 'Pay invoice', 'url' => $d->order['invoice'], 'button' => true]],
@@ -106,8 +107,10 @@ final class DomainPage
         'Prior operation unresolved.' => 'Changes open once an earlier change finishes. '.self::NOTHING_TO_DO,
         'Current records required.' => 'Changes open once we’ve read this domain’s records from the registrar. '.self::NOTHING_TO_DO,
         'Management lifecycle held.' => 'Changes are on hold for this domain right now.',
-        'Registrar processing is disabled.' => self::PAUSED,
+        self::PROCESSING_OFF => self::PAUSED,
     ];
+    /** DomainManagement's refusal while registrar orders are off. */
+    private const PROCESSING_OFF = 'Registrar processing is disabled.';
     /** A notice for work that is ours: blue, with the way to reach us. */
     private static function ours(string $text, ?array $contact): array
     { return ['tone' => 'info', 'text' => $text, 'action' => $contact]; }
