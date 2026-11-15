@@ -23,14 +23,14 @@ $order=function(string $domain)use($owner,$plesk,$plan){
 };
 $sweep=function()use($work,$clock,$plesk){WatchProducts::adopt($plesk->fresh());$work->hint((int)$plesk->id);$work->tick($clock->at);expect(!$work->failed,'Discovery completes');};
 // The domain came first: the hosting order links to it.
-$managed('managed.hosting.example.com');$first=$order('www.managed.hosting.example.com');$sweep();
+$managed('managed.i6.example');$first=$order('www.managed.i6.example');$sweep();
 same('managed_link',WatchSource::where('service_id',$first->id)->value('state'),'Hosting for a domain Domains manages links to it');
-same(0,WatchName::where('canonical_name','managed.hosting.example.com')->count(),'No second watch for a managed domain');
+same(0,WatchName::where('canonical_name','managed.i6.example')->count(),'No second watch for a managed domain');
 // The hosting came first: its watch links once Domains manages the domain.
-$later=$order('later.hosting.example.com');$sweep();same('watch',WatchSource::where('service_id',$later->id)->value('state'),'Hosting for an outside domain is watched');
-$domain=$managed('later.hosting.example.com');$sweep();
+$later=$order('later.i6.example');$sweep();same('watch',WatchSource::where('service_id',$later->id)->value('state'),'Hosting for an outside domain is watched');
+$domain=$managed('later.i6.example');$sweep();
 same(['managed_link',(int)$domain->id],[WatchSource::where('service_id',$later->id)->value('state'),(int)WatchSource::where('service_id',$later->id)->value('managed_domain_id')],'The watch moves to the managed domain once Domains manages it');
-same([1,'linked'],[WatchName::where('canonical_name','later.hosting.example.com')->count(),WatchName::where('canonical_name','later.hosting.example.com')->value('state')],'The earlier watch is linked, not duplicated or left checking');
+same([1,'linked'],[WatchName::where('canonical_name','later.i6.example')->count(),WatchName::where('canonical_name','later.i6.example')->value('state')],'The earlier watch is linked, not duplicated or left checking');
 // Mixed orders on one product: each service reads its own domain, else its hostname. A later domain order, or an old
 // cancelled service with a domain, never moves the hostname-only services off their monitored domains.
 $mixed=$product->replicate();$mixed->name='Mixed hosting';$mixed->slug='mixed-hosting';$mixed->save();
@@ -40,10 +40,10 @@ $sell=function(array $values,string $status='active')use($owner,$mixed,$plan){
     foreach($values as $key=>$value){$s->properties()->create(['key'=>$key,'value'=>$value]);}return $s;
 };
 $visit=function()use($work,$clock,$mixed){WatchProducts::adopt($mixed->fresh());$work->hint((int)$mixed->id);$work->tick($clock->at);expect(!$work->failed,'Discovery completes');};
-$hostOnly=$sell(['hostname'=>'hostonly.hosting.example.com']);$visit();same('watch',WatchSource::where('service_id',$hostOnly->id)->value('state'),'A hostname-only order is watched');
-$sell(['domain'=>'cancelled.hosting.example.com'],'cancelled');$withDomain=$sell(['domain'=>'www.ordered.hosting.example.com','hostname'=>'box1.hosting.example.net']);$visit();$visit();
-same(['watch','active'],[WatchSource::where('service_id',$hostOnly->id)->value('state'),WatchName::where('canonical_name','hostonly.hosting.example.com')->value('state')],'The hostname-only order stays monitored after domain orders join the product');
-same(['watch','ordered.hosting.example.com'],[WatchSource::where('service_id',$withDomain->id)->value('state'),WatchSource::where('service_id',$withDomain->id)->value('registrable_name')],'The order with a domain is watched by its domain, not its hostname');
+$hostOnly=$sell(['hostname'=>'hostonly.i6.example']);$visit();same('watch',WatchSource::where('service_id',$hostOnly->id)->value('state'),'A hostname-only order is watched');
+$sell(['domain'=>'cancelled.i6.example'],'cancelled');$withDomain=$sell(['domain'=>'www.ordered.i6.example','hostname'=>'box1.hosting.example.net']);$visit();$visit();
+same(['watch','active'],[WatchSource::where('service_id',$hostOnly->id)->value('state'),WatchName::where('canonical_name','hostonly.i6.example')->value('state')],'The hostname-only order stays monitored after domain orders join the product');
+same(['watch','ordered.i6.example'],[WatchSource::where('service_id',$withDomain->id)->value('state'),WatchSource::where('service_id',$withDomain->id)->value('registrable_name')],'The order with a domain is watched by its domain, not its hostname');
 // Public checks read the same field as discovery, whichever key the product's map holds.
 DB::table('domains_watch_profiles')->where('id',$profile->id)->update(['enabled'=>true]);
 $mixedMap=fn()=>Paymenter\Extensions\Servers\Domains\Models\WatchProductMap::where('product_id',$mixed->id)->sole();$key=fn(string $k)=>DB::table('domains_watch_product_maps')->where('product_id',$mixed->id)->update(['property_key'=>$k]);
@@ -52,10 +52,10 @@ $monitored=function(string $name)use($registry,$checks,$owner,$clock,$profile){
     $id=(int)WatchName::where('canonical_name',$name)->value('id');DB::table('domains_watch_names')->where('id',$id)->update(['ns_profile_id'=>$profile->id,'profile_revision'=>$profile->fresh()->revision]);
     return [$registry->enroll($id,(int)$owner->id,$clock->at)&&$registry->begin($id,(int)$owner->id,$clock->at)!==null,$checks->enroll($id,(int)$owner->id,$clock->at)&&$checks->begin($id,(int)$owner->id,'delegation',$clock->at)!==null];
 };
-$key('domain');same([true,true],$monitored('hostonly.hosting.example.com'),'A hostname-only order on a domain map gets expiry and DNS checks');
-$key('hostname');same([true,true],$monitored('ordered.hosting.example.com'),'An order with a domain on a hostname map gets expiry and DNS checks');
+$key('domain');same([true,true],$monitored('hostonly.i6.example'),'A hostname-only order on a domain map gets expiry and DNS checks');
+$key('hostname');same([true,true],$monitored('ordered.i6.example'),'An order with a domain on a hostname map gets expiry and DNS checks');
 // Managed first: a mixed order linking to a managed domain still proves its hosting product's DNS template.
-$mixedManaged=$managed('mixedmanaged.hosting.example.com');$linked=$sell(['domain'=>'www.mixedmanaged.hosting.example.com','hostname'=>'box2.hosting.example.net']);$visit();$key('hostname');
+$mixedManaged=$managed('mixedmanaged.i6.example');$linked=$sell(['domain'=>'www.mixedmanaged.i6.example','hostname'=>'box2.hosting.example.net']);$visit();$key('hostname');
 same('managed_link',WatchSource::where('service_id',$linked->id)->value('state'),'A mixed order for a managed domain links to it');
 DB::table('domains_watch_product_maps')->where('product_id',$mixed->id)->update(['expected_ns_profile_id'=>$profile->id]);
 $locks=['domain'=>$mixedManaged->fresh(),'services'=>collect([$linked->fresh()]),'orders'=>collect([App\Models\Order::find($linked->order_id)]),'products'=>collect([$mixed->fresh()]),'relatedProperties'=>$linked->properties()->get()];
@@ -63,13 +63,13 @@ $proof=DB::transaction(fn()=>Paymenter\Extensions\Servers\Domains\Services\Manag
 same([(int)$profile->id,'platform','hosting_product'],[(int)$proof[0]?->id,$proof[1],$proof[2]],'The managed domain inherits the hosting product template from a mixed order');
 // An order with an invalid domain and a valid hostname is read by its domain, so public checks refuse it rather than
 // fall back to the hostname.
-$fallback=$sell(['hostname'=>'fallback.hosting.example.com']);$visit();same('watch',WatchSource::where('service_id',$fallback->id)->value('state'),'A hostname-only order is watched');
+$fallback=$sell(['hostname'=>'fallback.i6.example']);$visit();same('watch',WatchSource::where('service_id',$fallback->id)->value('state'),'A hostname-only order is watched');
 $fallback->properties()->create(['key'=>'domain','value'=>'not a domain']);
-same([false,false],$monitored('fallback.hosting.example.com'),'An invalid domain is not replaced by the hostname for expiry and DNS checks');
+same([false,false],$monitored('fallback.i6.example'),'An invalid domain is not replaced by the hostname for expiry and DNS checks');
 // Summaries see two domains behind a blank one, as the public checks do, so they don't accept a source those checks refuse.
-$twice=$sell(['domain'=>'']);$twice->properties()->create(['key'=>'domain','value'=>'twice.hosting.example.com']);$visit();
+$twice=$sell(['domain'=>'']);$twice->properties()->create(['key'=>'domain','value'=>'twice.i6.example']);$visit();
 $source=fn()=>WatchSource::where('service_id',$twice->id)->sole();$summary=fn()=>new Paymenter\Extensions\Servers\Domains\Services\DomainSummaryContext((int)$owner->id,[],[(int)$source()->watch_id]);
 same(['watch',true],[$source()->state,$summary()->validSource($source())],'A blank domain row beside one domain is a valid source');
-$twice->properties()->create(['key'=>'domain','value'=>'other.hosting.example.com']);
+$twice->properties()->create(['key'=>'domain','value'=>'other.i6.example']);
 same(false,$summary()->validSource($source()),'A second domain behind a blank row makes the source invalid in summaries');
 $nativeSuccessful=true;echo "Hosting links to managed domains.\n";
