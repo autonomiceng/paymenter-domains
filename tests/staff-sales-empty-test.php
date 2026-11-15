@@ -10,8 +10,10 @@ extract(commerceFixture(true,registrars:['enom']));staffSalesFixture();tldPanel(
 $actor=staffUser(array_keys(Staff::permissions()));Auth::setUser($actor);$t=$tlds[0];
 DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_intent'=>'{"sell":false}']);
 $page=Livewire::actingAs($actor)->test(WhatYouSell::class,['account'=>$t->server_id]);
-$page->assertCountTableRecords(0)->assertSee('No TLDs are for sale')->assertSee('Clear For sale to see every TLD.');
-$page->searchTable('missing')->assertSee('No TLDs match')->assertDontSee('Clear For sale to see every TLD.');
+$page->assertCountTableRecords(0)->assertSee('No TLDs are for sale')->assertActionVisible(Filament\Actions\Testing\TestAction::make('clear')->table());
+// One clear button: the empty state's own, not the filter bar's as well.
+same(true,$page->instance()->getTable()->getFiltersRemoveAllAction()->isHidden(),'An empty table hides the filter bar clear button');
+$page->searchTable('missing')->assertSee('No TLDs match');
 // A search that only For sale hides says so, and Turn off For sale shows the match with the search kept.
 $page->searchTable($t->tld)->assertCountTableRecords(0)->assertSee('No TLDs for sale match')->assertSee('Matching TLDs are not for sale. Turn off For sale to see them.')
     ->callAction(Filament\Actions\Testing\TestAction::make('show_not_for_sale')->table())->assertCountTableRecords(1)->assertSet('tableSearch',$t->tld);

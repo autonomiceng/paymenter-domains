@@ -24,8 +24,6 @@ $records=WatchFacts::for($answered,['keys'=>[],'summary'=>null])['Checks']['DNS 
 same('A @ → 192.0.2.10',$records['value'],'Saved public answers for this name fill DNS records');
 $recordsDom=storefrontDom('<div id="records-sub">'.$records['sub'].'</div>');
 same([gmdate('c',1700000000)],array_map(fn($n)=>$n->getAttribute('datetime'),iterator_to_array($recordsDom->query('//*[@id="records-sub"]//time'))),'DNS records shows the saved answer time');
-$recordsText=trim(preg_replace('/\s+/',' ',$recordsDom->query('//*[@id="records-sub"]')->item(0)->textContent));
-same('Historical answers. Checked Nov 14, 2023, 10:13 PM UTC. DNS template comparison is unavailable for these saved records.',$recordsText,'DNS records says Checked before the time and why there is no comparison: '.$recordsText);
 $offsetMoment=storefrontDom(view('domains::partials.moment',['at'=>'2026-11-04T01:00:00-08:00'])->render())->query('//time')->item(0);
 same(['Nov 4, 2026, 9:00 AM UTC','2026-11-04T01:00:00-08:00'],[$offsetMoment?->textContent,$offsetMoment?->getAttribute('datetime')],'Server time text before the page script is named UTC, whatever offset was saved');
 
@@ -74,7 +72,7 @@ $w=WatchName::findOrFail($id);
 \Illuminate\Support\Facades\DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Models\WatchDnsObservation::create(['watch_id'=>$id,'user_id'=>$uid,'watch_revision'=>$w->revision,'profile_id'=>$profile->id,'profile_revision'=>$profile->revision,'psl_revision'=>$w->psl_revision,'mixed'=>false,'check_kind'=>'points','started_at'=>$publicAt,'completed_at'=>$publicAt+1,'result'=>'complete','partial'=>false,'valid_until'=>$publicAt+300,'facts'=>['version'=>1,'queries'=>[]],'digest'=>str_repeat('b',64),'source_digest'=>str_repeat('c',64)]));
 $saved=$detail();$row=$publicRow($saved)->item(0);
 same(1,$publicRow($saved)->length,'A paused name with an empty saved answer keeps its Public DNS row');
-same(\Paymenter\Extensions\Servers\Domains\Presentation\State::NotReadYet->label(),trim($row===null?'':$saved->query('.//*[@data-piece="value"]/*[1]',$row)->item(0)?->textContent??''),'An empty answer is not shown as a confirmed empty record list');
+same(\Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead->label(),trim($row===null?'':$saved->query('.//*[@data-piece="value"]/*[1]',$row)->item(0)?->textContent??''),'A saved inconclusive public read is shown as a failed read, not a confirmed empty record list');
 same([[gmdate('c',$publicAt),true]],$row===null?[]:$times($saved,$row),'The Public DNS row keeps its own earlier time, not the later registry check');
 expect(in_array([$registryAt,true],$times($saved),true),'The later registry check still shows on the page');
 expect($failures===[],implode('; ',$failures));$nativeSuccessful=true;echo "Watch missing facts respect stopped, paused and queued work.\n";

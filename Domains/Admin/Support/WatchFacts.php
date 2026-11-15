@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{StaffWatchWrites as Writes,Wa
 /** Monitored domain, DNS template and hosting product facts for staff pages. A null value applies but is missing: the page shows Missing with the cause. */
 final class WatchFacts
 {
-    public const EVENTS=['staff_pause'=>'Monitoring paused','staff_resume'=>'Monitoring resumed','staff_profile'=>'DNS template changed','staff_retire'=>'Monitoring stopped','staff_read_requested'=>'Check requested','staff_note'=>'Note'];
+    public const EVENTS=['staff_pause'=>'Monitoring paused','staff_resume'=>'Monitoring resumed','staff_profile'=>'DNS template changed','staff_retire'=>'Monitoring stopped','staff_read_requested'=>'Check requested','staff_note'=>'Note','discovery_returned'=>'Domain found again','discovery_active'=>'Monitoring resumed','discovery_paused'=>'Monitoring paused','discovery_retired'=>'Monitoring stopped'];
     /** A resume saved while the hosting service is suspended leaves monitoring paused. */
     public const RESUME_SAVED='Monitoring will resume';
     public const DECRYPT="Can't read saved data. Ask your site admin.";
@@ -54,7 +54,7 @@ final class WatchFacts
         if($w->points && $s?->website===null && $s?->email===null && $e['public']){
             $at=$e['public_at'];
             $checks['DNS records']=self::fact(implode('; ',$e['public']),
-                new \Illuminate\Support\HtmlString(($e['public_stale']?'Historical answers. ':'').($at&&($when=$checked($at,true))!==null?$when.'. ':'').
+                new \Illuminate\Support\HtmlString(($e['public_stale']?'Not current. ':'').($at&&($when=$checked($at,true))!==null?$when.'. ':'').
                 ($profile?'DNS template comparison is unavailable for these saved records.':'Choose a DNS template to compare these records.')));
         }
         // Registrar records exist only for a domain we register. The Domain section says their state once.
@@ -67,8 +67,14 @@ final class WatchFacts
         // Saved answers only. Registrar records with no values are already Unknown in the Domain section.
         $evidence=[];foreach(['public'=>'Public DNS','registrar'=>'Registrar records'] as $key=>$label){
             if(!$e[$key]&&($key==='registrar'||(!$active&&$e['public_at']===null))){continue;}
-            $at=$e[$key.'_at'];$sub=$at?rtrim(($key==='public'&&$e['public_stale']?'Historical answers. ':'').($checked($at,$key==='public')??'')):'No saved observation.';
-            $evidence[$label]=self::fact($e[$key]?implode('; ',$e[$key]):'Unknown',$at?($sub===''?null:new \Illuminate\Support\HtmlString($sub)):$sub);}
+            // A check that saved no answers says so, so Not read yet beside its Checked time reads as one fact.
+            $at=$e[$key.'_at'];$time=$at?$checked($at,$key==='public'):null;
+            if($at&&$key==='registrar'&&$e['registrar_read']!=='complete'){
+                $time=Sheet::moment(is_int($at)?$at:(int)strtotime($at),'Last tried')->toHtml();
+            }
+            $sub=$at?rtrim(($key==='public'&&$e['public_stale']?'Not current. ':'').(!$e[$key]&&$time!==null?'No answers were saved. ':'').$time):'No saved observation.';
+            $evidence[$label]=[...self::fact($e[$key]?implode('; ',$e[$key]):'Unknown',$at?($sub===''?null:new \Illuminate\Support\HtmlString($sub)):$sub),
+                'state'=>$key==='public'&&!$e[$key]&&$e['public_read']==='unknown'?\Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead:null];}
         return array_filter(['Domain'=>$shown($domain),'Checks'=>$shown($checks),'Evidence'=>$evidence]);
     }
     /** A saved choice is never replaced automatically, including on a watch that returns after its template was turned off. */
@@ -140,10 +146,10 @@ final class WatchFacts
     public static function history(WatchName $w): ?array
     {
         self::gate();
-        try{$rows=WatchAudit::where('subject_type','watch')->where('subject_id',$w->id)->whereIn('event',array_keys(self::EVENTS))->orderByDesc('id')->limit(50)->get()->map(fn($a)=>['time'=>gmdate('c',$a->created_at->getTimestamp()),'event'=>$a->event==='staff_resume'&&($a->data['hosting']??null)==='suspended'?self::RESUME_SAVED:self::EVENTS[$a->event],'actor'=>(int)$a->actor_id,'note'=>$a->reason!==self::EVENTS[$a->event]?$a->reason:null])->all();}
+        try{$rows=WatchAudit::where('subject_type','watch')->where('subject_id',$w->id)->whereIn('event',array_keys(self::EVENTS))->orderByDesc('id')->limit(50)->get()->map(fn($a)=>['time'=>gmdate('c',$a->created_at->getTimestamp()),'event'=>$a->event==='staff_resume'&&($a->data['hosting']??null)==='suspended'?self::RESUME_SAVED:self::EVENTS[$a->event],'actor'=>(int)$a->actor_id,'note'=>str_starts_with($a->event,'discovery_')?null:($a->reason!==self::EVENTS[$a->event]?$a->reason:null)])->all();}
         catch(\Illuminate\Contracts\Encryption\DecryptException){return null;}
         $names=Staff::can('admin.users.view')?User::whereIn('id',array_column($rows,'actor'))->get(['id','first_name','last_name','email'])->mapWithKeys(fn($u)=>[$u->id=>trim($u->first_name.' '.$u->last_name)?:$u->email])->all():[];
-        $rows=[...array_map(fn($r)=>[...$r,'by'=>$names[$r['actor']]??'Staff #'.$r['actor']],$rows),...\Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence::history($w)];
+        $rows=[...array_map(fn($r)=>[...$r,'by'=>$r['actor']===0?'System':($names[$r['actor']]??'Staff #'.$r['actor'])],$rows),...\Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence::history($w)];
         usort($rows,fn($a,$b)=>strtotime($b['time'])<=>strtotime($a['time']));return $rows;
     }
     /** Domains checked against this template now. */

@@ -523,6 +523,8 @@
 @media (max-width: 52rem) { .domains .domains-scroll-hint { display: block; } }
 .domains .domains-records { min-width: 46rem; }
 .domains .domains-records td { padding: .375rem .5rem; vertical-align: top; }
+/* TTL and Delete are plain text beside inputs: keep each on one line and centred on the input row. */
+.domains .domains-records td[data-label="TTL"], .domains .domains-records td:last-child { white-space: nowrap; vertical-align: middle; }
 .domains .domains-records .domains-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .domains .domains-records .domains-input { min-width: 5.5rem; }
 .domains .domains-record-card { border: 1px solid var(--e-line); border-radius: .5rem; padding: .75rem 1rem; margin-block: .75rem; }

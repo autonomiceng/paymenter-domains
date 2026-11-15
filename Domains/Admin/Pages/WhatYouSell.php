@@ -332,14 +332,14 @@ class WhatYouSell extends Page implements HasTable
     private function emptyHeading(): string
     {
         if(!$this->otherNarrowing()){
-            return $this->switchedOn('for_sale')&&$this->reads()->rows(null)->exists()?'No TLDs are for sale':'No prices yet';
+            return $this->switchedOn('for_sale')&&$this->reads()->rows(null)->exists()?'No TLDs are for sale.':'No prices yet.';
         }
         if($this->forSaleHides()){return self::NOT_FOR_SALE;}
         $only=$this->show()!==null&&!$this->hasTableSearch()&&!$this->switchedOn('country')&&!$this->switchedOn('no_cost');
-        return $only&&$this->reads()->leftOutExplains($this->show())?self::LEFT_OUT:'No TLDs match';
+        return $only&&$this->reads()->leftOutExplains($this->show())?self::LEFT_OUT:'No TLDs match.';
     }
     private const LEFT_OUT='No prices to show. Some TLDs are left out.';
-    private const NOT_FOR_SALE='No TLDs for sale match';
+    private const NOT_FOR_SALE='No TLDs for sale match.';
     /** For sale alone hides what the search finds, so turning it off, with the search kept, shows those TLDs. */
     private function forSaleHides(): bool
     {return $this->switchedOn('for_sale')&&$this->show()===null&&$this->getTableRecords()->isEmpty()&&$this->warningQuery()->exists();}
@@ -350,12 +350,16 @@ class WhatYouSell extends Page implements HasTable
     {
         if($this->focused()){return 'This TLD has no prices here yet. To load them, use Sync prices.';}
         if($this->emptyHeading()===self::LEFT_OUT){
-            $shared=SellTable::sharedCause($this->reads()->leftOutCauses((string)$this->show()));
-            return $shared===null?"Their pricing can't be read. Clear filters, then open each one and use Edit prices.":$shared.' Fix it in Default pricing at the top of this page.';
+            $causes=$this->reads()->leftOutCauses((string)$this->show());
+            $restore=in_array('unreadable',$causes,true)?"Their saved settings can't be read. Ask your site admin to restore them from a backup.":'';
+            $repairable=array_values(array_diff($causes,['unreadable']));
+            if($restore!==''&&$repairable===[]){return $restore;}
+            $shared=SellTable::sharedCause($repairable);
+            return ($restore!==''?$restore.' ':'').($shared===null?($restore!==''?"For the other TLDs, clear filters, then open each one and use Edit prices.":"Their pricing can't be read. Clear filters, then open each one and use Edit prices."):$shared.' Fix it in Default pricing at the top of this page.');
         }
         if($this->emptyHeading()===self::NOT_FOR_SALE){return 'Matching TLDs are not for sale. Turn off For sale to see them.';}
         if($this->otherNarrowing()){return null;}
-        if($this->emptyHeading()==='No TLDs are for sale'){return 'Clear For sale to see every TLD.';}
+        if($this->emptyHeading()==='No TLDs are for sale.'){return 'Clear filters to see every TLD.';}
         return $this->readerNeedsAttention()?'Check the registrar account to read prices.':'The first read runs by itself. To get prices now, use Sync prices.';
     }
     /** A search or filter is why rows are gone, so the way back is to clear it, not to read prices again. */
@@ -378,7 +382,8 @@ class WhatYouSell extends Page implements HasTable
     /** Bulk edit's fields. With one TLD they say what that TLD has now, since this is also how a single row is edited. */
     private function editFields(OfferRow|null $one): array
     {
-        $rule=$one===null?null:$this->reads()->rule((int)$one->server_id);$longest=$one?->longest??$rule['years']??null;$transfer=$one?->transfer??$rule['transfers']??null;
+        $rule=$one===null?null:$this->reads()->rule((int)$one->server_id);$longest=($one?->longest?:null)??$rule['years']??null;$transfer=$one?->transfer??$rule['transfers']??null;
+        // A saved null term reads back as 0: no own term, so the default applies.
         $tld=$one===null?null:\Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$one->server_id)->where('tld',$one->tld)->first();
         if($tld!==null){
             try{$transfer=\Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::savedTransfers($tld,$rule);}
@@ -407,6 +412,8 @@ class WhatYouSell extends Page implements HasTable
                 ->visible(fn()=>$this->emptyHeading()===self::NOT_FOR_SALE)->action(fn()=>$this->removeTableFilter('for_sale')),
                 Action::make('clear')->label(fn()=>$this->show()!==null||$this->switchedOn('country')||$this->switchedOn('no_cost')||$this->switchedOn('for_sale')?'Clear filters':'Clear search')->color('gray')
                 ->visible(fn()=>$this->narrowed()&&!$this->focused())->action(function():void {$this->removeTableFilters();$this->resetTableSearch();})])
+            // The heading and its next step read as one line (DESIGN.md P-TBL-10), so the empty state's Clear filters is the one clear button.
+            ->filtersRemoveAllAction(fn(Action $action)=>$action->hidden(fn()=>$this->getTableRecords()->isEmpty()))
             // Merged, so the panel skin's table class stays and this head matches every other table.
             ->extraAttributes(['class'=>'domains-sell-table'],merge:true)
             ->filters([

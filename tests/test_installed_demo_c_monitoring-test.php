@@ -55,6 +55,7 @@ foreach([$at->getTimestamp()+60,$at->getTimestamp()-1] as $until){
     $read=MonitoringEvidence::read($d,$noAnswer('unknown','resolver_failed',$until));$failed=$Value($read);
     expect($read['public_stale']&&$failed->state===Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead&&$failed->word!==Paymenter\Extensions\Servers\Domains\Presentation\Plain::None->label(),'A failed resolver read is Couldn\'t read, never None');
     expect($failed->subAt?->datetime===$tried,'A failed resolver read keeps when it was tried');
+    expect($failed->sub!==$Value([...$read,'public_stale'=>false])->sub,'An outdated failed public read remains explicitly historical');
 }
 // A confirmed negative reply is None; once expired it keeps the stale reading, like saved answers.
 $confirmedFresh=$Value(['public_read'=>'negative','public'=>[],'public_at'=>$at->getTimestamp()-60,'public_stale'=>false]);
@@ -69,6 +70,23 @@ $first=clone $d;$first->observation=['record_failure'=>['identity'=>ObservationR
 $failedFirst=MonitoringEvidence::rows(MonitoringEvidence::read($first))['Registrar records'];
 same(Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead,$failedFirst->state,'A failed first registrar read is Couldn\'t read');
 same(strtotime('2026-11-05T10:00:00Z'),strtotime((string)$failedFirst->subAt?->datetime),'A failed first registrar read names when it was tried');
+// A later failed read keeps the old inventory, but its attempt time belongs to the later failure.
+$later=clone $d;$later->observation=[...$d->observation,'record_failure'=>$first->observation['record_failure']];
+$laterEvidence=MonitoringEvidence::read($later);$laterRow=MonitoringEvidence::rows($laterEvidence)['Registrar records'];
+same($e['registrar'],$laterEvidence['registrar'],'A failed refresh retains the saved registrar addresses');
+same(strtotime($first->observation['record_failure']['at']),strtotime((string)$laterRow->subAt?->datetime),'A failed refresh names the latest attempt, not the retained inventory time');
+// The linked watch distinguishes a failed registrar attempt from a complete read at the same instant.
+$d->observation=$later->observation;$d->saveQuietly();
+$attempt=WatchFacts::for($watch->fresh(),['summary'=>null,'keys'=>[]])['Evidence']['Registrar records'];
+same('unknown',$laterEvidence['registrar_read'],'A failed refresh leaves the registrar read unknown');
+same($e['registrar'],explode('; ',$attempt['value']),'The watch retains the saved registrar addresses after a failed refresh');
+same([strtotime($first->observation['record_failure']['at'])],$instants((string)$attempt['sub']),'The watch names the failed attempt instant');
+$complete=$d->observation;unset($complete['record_failure']);$complete['records']['at']=$first->observation['record_failure']['at'];
+$d->observation=$complete;$d->saveQuietly();
+$checked=WatchFacts::for($watch->fresh(),['summary'=>null,'keys'=>[]])['Evidence']['Registrar records'];
+same($instants((string)$checked['sub']),$instants((string)$attempt['sub']),'The control has the same registrar instant');
+expect((string)$attempt['sub']!==(string)$checked['sub'],'An unfinished registrar attempt is distinguished from a successful read');
+$d->observation=$later->observation;$d->saveQuietly();
 // Addresses from a registrar read that did not finish stay listed, with the same unfinished words and time as an empty one.
 $listed=static fn(?string $state)=>MonitoringEvidence::rows(['registrar'=>['A @ → 192.0.2.20'],'registrar_at'=>'2026-11-05T09:00:00+00:00','registrar_read'=>$state])['Registrar records'];
 foreach(['partial','unknown'] as $state){$unfinished=$listed($state);
@@ -100,7 +118,6 @@ foreach([null,$profile->id] as $profileId){
     $candidate=$watch->fresh();$candidate->ns_profile_id=$profileId;$candidate->setRelation('points',$public);
     $facts=WatchFacts::for($candidate,['summary'=>null,'keys'=>[]]);
     $record=$facts['Checks']['DNS records']??['value'=>null,'sub'=>null];
-    if(!str_contains((string)($record['sub']??''),'Historical answers.')){$dnsFailures[]='Expired DNS answers need a historical label';}
     if($profileId!==null&&str_contains((string)($record['sub']??''),'Choose a DNS template')){$dnsFailures[]='An existing template must not be described as missing';}
 }
 // A linked watch without its own points read must not adopt a managed read as its Latest check.

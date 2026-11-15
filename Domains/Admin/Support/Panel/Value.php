@@ -23,6 +23,10 @@ final class Value implements Htmlable
         if ($at !== null && $reason === null) { throw new \InvalidArgumentException('A time ends a sentence.'); }
         return new self('state', $state->label(), $state->tone($reader), null, $reason, $reader, $record, [], $state, $at);
     }
+    /** A state over a sentence that ends in a short label and its time, read like a fact's: "Couldn't read" over
+     * "The check got no clear answer. Last tried <time>", beside answer rows that read the same. */
+    public static function stateAt(State $state, Reader $reader, string $label, Fact $at): self
+    { return new self('state', $state->label(), $state->tone($reader), null, $label, $reader, null, [], $state, $at, null, null, true); }
     /** A provider code's state. An unmapped code keeps the code on the staff line. */
     public static function coded(Coded $coded, Reader $reader, ?string $reason = null, ?string $record = null): self
     { $value = self::state($coded->state, $reader, $reason, $record); return $coded->code === null ? $value : $value->detail($coded->code); }
