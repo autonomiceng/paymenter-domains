@@ -69,6 +69,9 @@ final class WatchFacts
             if(!$e[$key]&&($key==='registrar'||(!$active&&$e['public_at']===null))){continue;}
             // A check that saved no answers says so, so Not read yet beside its Checked time reads as one fact.
             $at=$e[$key.'_at'];$time=$at?$checked($at,$key==='public'):null;
+            if($at&&$key==='registrar'&&$e['registrar_read']!=='complete'){
+                $time=Sheet::moment(is_int($at)?$at:(int)strtotime($at),'Last tried')->toHtml();
+            }
             $sub=$at?rtrim(($key==='public'&&$e['public_stale']?'Not current. ':'').(!$e[$key]&&$time!==null?'No answers were saved. ':'').$time):'No saved observation.';
             $evidence[$label]=[...self::fact($e[$key]?implode('; ',$e[$key]):'Unknown',$at?($sub===''?null:new \Illuminate\Support\HtmlString($sub)):$sub),
                 'state'=>$key==='public'&&!$e[$key]&&$e['public_read']==='unknown'?\Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead:null];}

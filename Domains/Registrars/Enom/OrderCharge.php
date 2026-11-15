@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom;
 
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AttemptEvidence, DateEvidence, Environment, Money, OrderEvidence, PersistedExecution, CanonicalName, HistoryAcceptance, ExpiryPrecision, Query};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AttemptEvidence, DateEvidence, Environment, ExecutionRecord, Money, OrderEvidence, PersistedExecution, CanonicalName, HistoryAcceptance, ExpiryPrecision, Query};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ProtocolResult;
 
 /** Single exact item only. A quote, acknowledgement or order ID alone never proves a charge. */
@@ -23,7 +23,7 @@ final class OrderCharge
             $attempt->executionFacts !== null && $attempt->providerReference !== null && $id === $attempt->providerReference);
     }
     /** Validate an observed order on its own facts before comparing it with a lost attempt. */
-    public static function fromHistory(AccountBinding $binding, ProtocolResult $order): ?OrderEvidence
+    public static function fromHistory(AccountBinding $binding, ProtocolResult $order, ?string $zone = null): ?OrderEvidence
     {
         $item = $order->value('order.orderdetail');
         if (!is_array($item) || array_is_list($item) || !is_string($item['description'] ?? null)
@@ -33,9 +33,9 @@ final class OrderCharge
         if (!in_array($action, [Action::Register, Action::Renew, Action::Transfer], true)) { return null; }
         try { $query = new Query(strtolower($item['description']), $action, (int)$item['quantity']); }
         catch (\InvalidArgumentException) { return null; }
-        return self::normalize($binding, $query, $order, false);
+        return self::normalize($binding, $query, $order, false, $zone);
     }
-    private static function normalize(AccountBinding $binding, Query $query, ProtocolResult $order, bool $captured): ?OrderEvidence
+    private static function normalize(AccountBinding $binding, Query $query, ProtocolResult $order, bool $captured, ?string $zone = null): ?OrderEvidence
     {
         $header = $order->value('order');
         $id = is_array($header) ? ($header['orderid'] ?? null) : null;
@@ -58,7 +58,7 @@ final class OrderCharge
             if (array_key_exists('currency', $row) && (!is_string($row['currency']) || strtoupper($row['currency']) !== 'USD')) { return null; }
         }
         $processed = self::date($header['billdate'] ?? null, 'enom_order_bill_date',
-            $captured, self::billZone($binding->environment));
+            $captured, $zone ?? self::billZone($binding->environment));
         return new OrderEvidence($binding, $query, new Money($amount, 'USD'), $id, $processed, Expiry::read($order));
     }
     /** Order amounts may carry one leading dollar sign; quote parsing stays strict. */
@@ -86,6 +86,29 @@ final class OrderCharge
      * Live is not measured and keeps Pacific. */
     private static function billZone(Environment $environment): string
     { return $environment === Environment::Test ? 'America/Denver' : 'America/Los_Angeles'; }
+    /** [zones a history order may match in, zones that only flag a candidate]. TEST is Mountain. Live matches only in its
+     * measured zone; until measured it matches as configured Pacific, and an order that fits only as Mountain is a candidate
+     * that keeps the attempt unresolved, never a match or an absence. */
+    public static function billZones(Environment $environment, ?string $measured): array
+    {
+        if ($environment === Environment::Test) { return [['America/Denver'], []]; }
+        return in_array($measured, ['America/Los_Angeles', 'America/Denver'], true) ? [[$measured], []] : [['America/Los_Angeles'], ['America/Denver']];
+    }
+    /** Calibration from a normal Live reply's own order: the one named zone that puts its BillDate inside the send window. Any
+     * invalid or ambiguous reading, or both or neither zone fitting, is no sample. */
+    public static function billZoneSample(AttemptEvidence $attempt, ProtocolResult $order): ?array
+    {
+        if ($attempt->binding->environment !== Environment::Live || $attempt->execution !== ExecutionRecord::Recorded || !$attempt->executionFacts
+            || $attempt->executionFacts->capturedUnknown() || $attempt->providerReference === null || !self::read($attempt, $attempt->executionFacts, $order)) { return null; }
+        $fits = [];
+        foreach (['America/Los_Angeles', 'America/Denver'] as $zone) {
+            $date = self::date($order->value('order.billdate'), 'enom_order_bill_date', false, $zone);
+            if (!$date || $date->precision !== ExpiryPrecision::Instant) { return null; }
+            $at = new \DateTimeImmutable($date->value);
+            if ($at >= $attempt->windowStart && $at <= $attempt->windowEnd) { $fits[] = $zone; }
+        }
+        return count($fits) === 1 ? ['zone'=>$fits[0], 'order'=>$attempt->providerReference] : null;
+    }
     private static function date(mixed $value, string $source, bool $captured, string $zone): ?DateEvidence
     {
         if (!is_string($value)) { return null; }

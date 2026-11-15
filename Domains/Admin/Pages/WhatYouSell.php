@@ -350,9 +350,12 @@ class WhatYouSell extends Page implements HasTable
     {
         if($this->focused()){return 'This TLD has no prices here yet. To load them, use Sync prices.';}
         if($this->emptyHeading()===self::LEFT_OUT){
-            $causes=$this->reads()->leftOutCauses((string)$this->show());$shared=SellTable::sharedCause($causes);
-            if($causes===['unreadable']){return "Their saved settings can't be read. Ask your site admin to restore them from a backup.";}
-            return $shared===null?"Their pricing can't be read. Clear filters, then open each one and use Edit prices.":$shared.' Fix it in Default pricing at the top of this page.';
+            $causes=$this->reads()->leftOutCauses((string)$this->show());
+            $restore=in_array('unreadable',$causes,true)?"Their saved settings can't be read. Ask your site admin to restore them from a backup.":'';
+            $repairable=array_values(array_diff($causes,['unreadable']));
+            if($restore!==''&&$repairable===[]){return $restore;}
+            $shared=SellTable::sharedCause($repairable);
+            return ($restore!==''?$restore.' ':'').($shared===null?($restore!==''?"For the other TLDs, clear filters, then open each one and use Edit prices.":"Their pricing can't be read. Clear filters, then open each one and use Edit prices."):$shared.' Fix it in Default pricing at the top of this page.');
         }
         if($this->emptyHeading()===self::NOT_FOR_SALE){return 'Matching TLDs are not for sale. Turn off For sale to see them.';}
         if($this->otherNarrowing()){return null;}

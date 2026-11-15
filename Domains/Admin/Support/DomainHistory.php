@@ -22,7 +22,9 @@ final class DomainHistory
                     'sub'=>'Request #'.$op->id.' '.Labels::action($op->action),'status'=>null,'by'=>'System'];
             }
             if($op->completed_at!==null&&in_array($op->state,['succeeded','rejected','disposed','cancelled'],true)){
-                $rows[]=['__key'=>'ended-'.$op->id,'__request'=>$op->id,'__order'=>102,'time'=>$op->completed_at,'event'=>Labels::requestStatus($op)['label'],
+                $event=$op->state==='succeeded'&&in_array($op->action,['ds_add','ds_delete'],true)
+                    ?\Paymenter\Extensions\Servers\Domains\Presentation\DsState::event($op,$domain,true)['state']:Labels::requestStatus($op)['label'];
+                $rows[]=['__key'=>'ended-'.$op->id,'__request'=>$op->id,'__order'=>102,'time'=>$op->completed_at,'event'=>$event,
                     'sub'=>'Request #'.$op->id.' '.Labels::action($op->action),'status'=>null,'by'=>'System'];
             }
             try { $history=$op->policy['staff_actions']??[]; } catch (\Throwable) { continue; }

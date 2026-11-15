@@ -18,6 +18,7 @@
     "tests/Support/staff-tld-filter-lookalikes.php": ["tests/staff-tld-page-test.php"],
     "tests/Support/enom-renewal-*-cases.php": ["tests/test_installed_package_enom_renewal.py"],
     "tests/Support/enom-transfer-cases-fixture.php": ["tests/test_installed_package_enom_transfer.py"],
+    "tests/Support/runtime-enom-*.php": ["tests/test_installed_package_enom_exchange.py"],
     "Domains/database/migrations/*": [
       "tests/test_installed_package_fresh.py",
       "tests/test_installed_package_upgrade.py",
@@ -32,5 +33,5 @@
     "tests/native-database.php": ["tests/test_runner.py"],
     "scripts/php-test": ["tests/test_runner.py"]
   },
-  "no_tests": ["*.md", "LICENSE", "*.png", "*.svg"]
+  "no_tests": ["*.md", "LICENSE", "*.png", "*.svg", "tests/enom-answer-render.php"]
 }

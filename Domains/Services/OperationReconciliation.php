@@ -16,9 +16,15 @@ final class OperationReconciliation
         $op = Operation::findOrFail($id);
         if (!$this->eligible($op)) { return $op; }
         $check = new RegistrarCheck($this->clock);
-        return $check->finish($this->read($id, $check));
+        $completed = false; $op = $this->read($id, $check, $completed);
+        // A completed read uses up an open Enom late no-order read even when its own save did not run. That mark never breaks the turn.
+        if ($completed && EnomAbsence::open($op)) {
+            try { $this->claims->locked($id, static function ($op): Operation { EnomAbsence::useUp($op); return $op; }); $op->refresh(); }
+            catch (\Throwable $e) { logger()->warning('Late no-order read mark deferred.', ['exception_class'=>$e::class]); }
+        }
+        return $check->finish($op);
     }
-    private function read(int $id, RegistrarCheck $check): Operation
+    private function read(int $id, RegistrarCheck $check, bool &$completed): Operation
     {
         OperationClaims::outside();
         $capture = $this->claims->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($check): ?array {
@@ -34,6 +40,7 @@ final class OperationReconciliation
             try {
                 $binding = $this->authority($op, $domain, $all, $funding, $server, $account);
                 $attempt = ReconciliationEvidence::attempt($op, $domain, $binding);
+                if (HistoryResumption::apply($op, $attempt, $this->clock->now())) { $op->refresh(); }
                 if (RegistrarCheck::lostReply($op, $attempt, $this->clock->now())) {
                     // NameSilo's order history does not list the order yet. Wait for it; nobody needs to ask NameSilo.
                     if (RegistrarCheck::historyPending($attempt, $this->clock->now())) { $check->deferred = 'scheduled'; return null; }
@@ -44,9 +51,13 @@ final class OperationReconciliation
                 if (($op->policy['reconciliation']['polls'] ?? 0) >= self::POLL_LIMIT && !TransferPolling::expected($op) && !$manual && !($watch&&TransferPolling::expired($op,$now))) {
                     // The order history could not confirm a lost reply within the read limit, so only the registrar's answer can settle it.
                     if ($op->action !== 'transfer' && $attempt->replyLost()) { self::askRegistrar($check, $op, $attempt); }
-                    return null;
+                    // One Enom read a day after the send still runs to check that Enom has no order; a deferred or failed try runs again later.
+                    if (!EnomAbsence::claimRead($op, $attempt, $this->clock->now())) { return null; }
+                    $op->refresh();
                 }
                 if($watch){TransferPolling::reserve($op,$now);$op->refresh();}
+                // A new read starts: earlier no-order evidence goes now, so nobody can use it while this read runs or after it fails.
+                if(EnomAbsence::clear($op)){$op->refresh();}
                 $requestedNameservers = null;
                 if ($op->action === 'transfer' && $op->registrar_key === 'namesilo' && ($op->payload['nameservers'] ?? [])) {
                     try { $requestedNameservers = NameserverEvidence::requested($op->payload['nameservers'], 'transfer_request', new \DateTimeImmutable($op->attempt['dispatch_attempted_at'])); }
@@ -60,9 +71,10 @@ final class OperationReconciliation
         });
         if (!$capture) { return Operation::findOrFail($id); }
         [$attempt, $stamp, $contract, $requestedNameservers, $watch, $light] = $capture; $proof = null; $nameservers = null; $covered = false; $transferConflict = false; $transfer = \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Unknown;
-        $callCapBlocked = false; $pendingAnomaly = false; $privacyBlocked = false;
+        $callCapBlocked = false; $pendingAnomaly = false; $privacyBlocked = false; $scan = null; $absence = null;
         $limiter=$watch?new TransferReadBudget($this->clock,Runtime::limiter()):null;
         try {
+            $started = $this->clock->now();
             $context = $check->context = new RequestContext($attempt->binding, RequestOrigin::Background, $this->clock->now()->modify('+250 seconds'), new RequestBudget(25), $this->clock, $limiter ?? Runtime::limiter());
             $read=function()use($attempt,$context,$light){
                 $reader=$this->bindings->reader($attempt->binding->serverId);
@@ -71,8 +83,10 @@ final class OperationReconciliation
             };
             $result=$limiter?$limiter->run($attempt->binding,$read):$read();
             $result->requireAttempt($attempt);
+            if ($sample = $result->result()->evidence()->billZoneSample) { EnomBillZones::record($attempt->binding, $sample); }
+            // Scan progress is reusable after the deadline; financial conclusions still require an in-time read.
+            $facts = $result->result()->evidence(); $scan = $facts->historyScan;
             if ($this->clock->now() < $context->deadline) {
-                $facts = $result->result()->evidence();
                 $nameservers = $facts->domain?->nameservers ?? $requestedNameservers;
                 $covered = $facts->domain?->owned === true && $facts->domain->expiry !== null
                     && ($facts->historyComplete || ($attempt->executionFacts && $attempt->providerReference !== null && count($facts->candidates) > 0));
@@ -86,6 +100,8 @@ final class OperationReconciliation
                 // One Enom charge can be a failed fee. It proves neither finality nor a settled refund.
                 if ($attempt->query->action->value === 'transfer' && $transfer !== \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Unknown) { $covered = true; }
                 $proof = ReconciliationEvidence::completion($attempt, $facts, $this->clock->now());
+                $absence = EnomAbsence::observe($attempt, $facts, $started, $this->clock->now());
+                $completed = EnomAbsence::readCompleted($context, $facts);
                 $check->observe($attempt,$facts,$proof!==null);
             }
         } catch (ReadDeferred) {
@@ -103,10 +119,14 @@ final class OperationReconciliation
             &&($attempt->historyAcceptance?->covers($attempt,$this->clock->now())??false)&&($check->context?->exchanges()??0)>0;
         if (!$covered) {
             if (!$callCapBlocked) {
-                return $this->claims->locked($id,function($op,$domain)use($stamp,$watch,$readStarted,$historyRead,$attempt,$check):Operation {
+                return $this->claims->locked($id,function($op,$domain)use($stamp,$watch,$readStarted,$historyRead,$attempt,$check,$scan,$absence,$completed):Operation {
                     if(!$this->eligible($op)||self::stamp($op,$domain)!==$stamp){return $op;}
                     $policy=TransferPolling::finished($op->policy,$readStarted);
-                    if($historyRead){
+                    if($scan){$policy['history_scan']=$scan->saved();$policy=EnomAbsence::apply($policy,$op,$absence);}
+                    if($completed){$policy=EnomAbsence::completed($policy,$op);}
+                    // A scan that resolved more orders is progress, not a failed read; it continues on the next turn.
+                    if($historyRead&&$scan?->progressed){$check->continued=true;$policy['reconciliation']['reason']='original_attempt_unresolved';}
+                    elseif($historyRead){
                         $policy['reconciliation']['polls']=($policy['reconciliation']['polls']??0)+1;$check->counted=true;
                         $limit=$policy['reconciliation']['polls']>=self::POLL_LIMIT;
                         $policy['reconciliation']['reason']=$limit?'poll_limit_reached':'original_attempt_unresolved';
@@ -127,7 +147,7 @@ final class OperationReconciliation
                 return $op;
             });
         }
-        $completed = $this->claims->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($attempt, $stamp, $contract, $proof, $nameservers, $transfer, $transferConflict, $pendingAnomaly, $readStarted, $privacyBlocked, $check): Operation {
+        $operation = $this->claims->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($attempt, $stamp, $contract, $proof, $nameservers, $transfer, $transferConflict, $pendingAnomaly, $readStarted, $privacyBlocked, $check, $scan, $absence, $completed): Operation {
             if (!$this->eligible($op) || self::stamp($op, $domain) !== $stamp) { return $op; }
             try {
                 $binding = $this->authority($op, $domain, $all, $funding, $server, $account);
@@ -138,6 +158,8 @@ final class OperationReconciliation
                 return $op;
             }
             $policy = TransferPolling::finished($op->policy,$readStarted); $policy['reconciliation']['polls'] = ($policy['reconciliation']['polls'] ?? 0) + 1; $check->counted = true;
+            if ($scan) { $policy['history_scan'] = $scan->saved(); $policy = EnomAbsence::apply($policy, $op, $absence); }
+            if ($completed) { $policy = EnomAbsence::completed($policy, $op); }
             $policy['reconciliation']['staff_alert']=true;
             if(in_array($op->safe_code,['enom_test_reconciliation_call_cap','enom_test_transfer_reconciliation_call_cap','enom_test_reconciliation_send_guard'],true)){$op->safe_code='reconciliation_required';}
             if ($op->action === 'transfer') {
@@ -190,11 +212,11 @@ final class OperationReconciliation
             ComplimentaryInvoices::complete($op);
             return $op;
         });
-        if ($completed->action === 'transfer' && $completed->state === 'succeeded') {
-            try { (new TransferWatchEnrollment())->repair((int)$completed->domain_id,(int)$completed->domain->user_id,$this->clock->now()->getTimestamp()); }
+        if ($operation->action === 'transfer' && $operation->state === 'succeeded') {
+            try { (new TransferWatchEnrollment())->repair((int)$operation->domain_id,(int)$operation->domain->user_id,$this->clock->now()->getTimestamp()); }
             catch (\Throwable $e) { logger()->warning('Transfer watch repair deferred.',['exception_class'=>$e::class]); } // Runtime cursor retries.
         }
-        return $completed;
+        return $operation;
     }
     /** Internal audited resume seam; staff authorization/route belongs to36. No send authority. */
     public function resume(int $id, string $reason, ?StaffOperationReview $review = null): Operation

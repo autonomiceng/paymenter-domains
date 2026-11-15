@@ -75,6 +75,18 @@ $later=clone $d;$later->observation=[...$d->observation,'record_failure'=>$first
 $laterEvidence=MonitoringEvidence::read($later);$laterRow=MonitoringEvidence::rows($laterEvidence)['Registrar records'];
 same($e['registrar'],$laterEvidence['registrar'],'A failed refresh retains the saved registrar addresses');
 same(strtotime($first->observation['record_failure']['at']),strtotime((string)$laterRow->subAt?->datetime),'A failed refresh names the latest attempt, not the retained inventory time');
+// The linked watch distinguishes a failed registrar attempt from a complete read at the same instant.
+$d->observation=$later->observation;$d->saveQuietly();
+$attempt=WatchFacts::for($watch->fresh(),['summary'=>null,'keys'=>[]])['Evidence']['Registrar records'];
+same('unknown',$laterEvidence['registrar_read'],'A failed refresh leaves the registrar read unknown');
+same($e['registrar'],explode('; ',$attempt['value']),'The watch retains the saved registrar addresses after a failed refresh');
+same([strtotime($first->observation['record_failure']['at'])],$instants((string)$attempt['sub']),'The watch names the failed attempt instant');
+$complete=$d->observation;unset($complete['record_failure']);$complete['records']['at']=$first->observation['record_failure']['at'];
+$d->observation=$complete;$d->saveQuietly();
+$checked=WatchFacts::for($watch->fresh(),['summary'=>null,'keys'=>[]])['Evidence']['Registrar records'];
+same($instants((string)$checked['sub']),$instants((string)$attempt['sub']),'The control has the same registrar instant');
+expect((string)$attempt['sub']!==(string)$checked['sub'],'An unfinished registrar attempt is distinguished from a successful read');
+$d->observation=$later->observation;$d->saveQuietly();
 // Addresses from a registrar read that did not finish stay listed, with the same unfinished words and time as an empty one.
 $listed=static fn(?string $state)=>MonitoringEvidence::rows(['registrar'=>['A @ → 192.0.2.20'],'registrar_at'=>'2026-11-05T09:00:00+00:00','registrar_read'=>$state])['Registrar records'];
 foreach(['partial','unknown'] as $state){$unfinished=$listed($state);

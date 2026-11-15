@@ -82,9 +82,11 @@ final readonly class RuntimeWork
             $a=Account::where('server_id',$row->server_id)->first();
             if(!$a||$a->account_fingerprint!==$row->account_fingerprint){continue;}
             if(!$operationsOnly){$balanceAccounts[]=$a;}
+            $this->attempt('history_contract',fn()=>\Paymenter\Extensions\Servers\Domains\Registrars\Enom\TestOrderHistory::upgrade($a),(int)$a->server_id);
             $ops=Operation::where('server_id',$a->server_id)->where('account_fingerprint',$a->account_fingerprint)->where('id','>',$row->operation_cursor)
                 ->where(fn($q)=>$q->whereIn('state',['awaiting_payment','awaiting_code','queued','pending','uncertain','running'])
                     ->orWhere(fn($held)=>$held->where('state','held')->whereIn('safe_code',[...BalanceRetries::CODES,BalanceRetries::LEGACY_CODE]))
+                    ->orWhere(fn($q)=>$q->whereIn('action',['register','transfer'])->where('funding_basis','paid_invoice')->where('state','held')->where('safe_code','registrar_price_increased'))
                     ->orWhere(fn($q)=>$q->where('action','register')->where('state','held')->where('safe_code','contact_details_required'))
                     ->orWhere(fn($q)=>$q->whereIn('action',['register','transfer'])->where('state','held')->where('safe_code',ContactProfileHold::CODE))
                     ->orWhere(fn($q)=>$q->where('state','succeeded')->where('safe_code','registration_correction_required'))

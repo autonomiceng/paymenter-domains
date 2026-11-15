@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Filament\Actions\Action;
 use Filament\Forms\Components\{Checkbox,Hidden,Select,Textarea,TextInput};
 use Filament\Notifications\Notification;
-use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\{Section,Text};
 use Illuminate\Support\Facades\Auth;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
@@ -17,10 +17,21 @@ final class EnomAnswerAction
     /** Unreadable saved attempt data never offers the no-order answer. */
     private static function accepted(Operation $op): bool
     {return !Answers::readable($op)||Answers::capturedReference($op)!==null||isset($op->attempt['registration'])||isset($op->attempt['renewal']);}
+    /** The evidence line: what the scheduled read found and when. */
+    private static function absenceLine(Operation $op,?array $absence): string
+    {
+        if($absence===null){return '';}
+        $at=\Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at((new \DateTimeImmutable($absence['read_at']))->getTimestamp());
+        $domain=$op->action==='renew'?'its expiry is still '.(new \DateTimeImmutable($absence['domain']['expiry']))->format('M j, Y'):'the domain is not in our Enom account';
+        return 'Enom has no order and the domain is unchanged. Checked '.$at.': Enom’s order history has no order for this request, and '.$domain.'.';
+    }
     /** One request's answer. The stamp is the settings review the page opened on. Step 1 is what support said, step 2 the ticket. */
     public static function make(Operation $op,string $stamp): Action
     {
         $server=(int)$op->server_id;$id=$op->id;$registrar=$op->registrar_key==='namesilo'?'NameSilo':'Enom';$transfer=$op->action==='transfer';
+        // The scheduled read's proof that Enom has no order: the case number becomes optional for the no-order answer only.
+        $absence=static function()use($op):?array{static $read=false,$value=null;if(!$read){$read=true;$value=Answers::absence($op,app(Clock::class)->now());}return $value;};
+        $relaxed=static fn($get):bool=>$get('outcome')==='not_processed'&&$absence()!==null;
         return Action::make('enom_answer')->label(self::label($op))->modalHeading(self::label($op))->color('gray')
             ->visible(fn()=>Staff::can(Staff::POLICY)&&Staff::can(Review::permission('enom_answer'))&&Answers::ready($op,app(Clock::class)->now()))
             ->modalDescription('Record what '.$registrar.' support found for Request #'.$id.'. Saving sends nothing to '.$registrar.'.')
@@ -28,7 +39,8 @@ final class EnomAnswerAction
                 Hidden::make('review_key')->default(fn()=>Review::ticket((int)Auth::id(),$server,null,'enom_answer',$stamp)),
                 Hidden::make('operation_id')->default($id)->required(),
                 Hidden::make('attempt_hash')->default(fn()=>Answers::identity($op))->required(),
-                Section::make('1. What '.$registrar.' support said')->contained(false)->schema([
+                Section::make(fn()=>$absence()!==null?'1. The result':'1. What '.$registrar.' support said')->contained(false)->schema([
+                    Text::make(fn()=>self::absenceLine($op,$absence()))->key('absence')->visible(fn()=>$absence()!==null),
                     Select::make('outcome')->label('Result')->required()->live()->options($transfer
                         ?['transfer_rejected'=>'Rejected: the transfer will not complete']
                         :(self::accepted($op)
@@ -48,12 +60,13 @@ final class EnomAnswerAction
                         ->helperText('The settled refund, including zero. The customer gets their full payment back; we cover one failed fee.'),
                 ]),
                 Section::make('2. The support ticket')->contained(false)->schema([
-                    TextInput::make('case_reference')->label('Case number')->required()->maxLength(128),
-                    Textarea::make('evidence')->label('Their answer')->required()->maxLength(2000)->helperText('Paste the reply from support. Leave out passwords and keys.'),
+                    TextInput::make('case_reference')->label('Case number')->required(fn($get)=>!$relaxed($get))->maxLength(128)
+                        ->helperText(fn($get)=>$relaxed($get)?'Optional. The check above shows Enom has no order.':null),
+                    Textarea::make('evidence')->label(fn($get)=>$relaxed($get)?'What you checked':'Their answer')->required()->maxLength(2000)
+                        ->helperText(fn($get)=>$relaxed($get)?'Say what you checked. Leave out passwords and keys.':'Paste the reply from support. Leave out passwords and keys.'),
                     // One confirmation. On a transfer it also states the result and amounts are final, which the writer requires.
-                    Checkbox::make('confirmed')->label($transfer
-                        ?$registrar.' support confirmed this account and request, that the transfer cannot complete later, and that the charge and refund are final'
-                        :$registrar.' support checked this account and request, including whether an order or charge was made')->accepted()->required(),
+                    Checkbox::make('confirmed')->label(fn($get)=>$transfer?$registrar.' support confirmed this account and request, that the transfer cannot complete later, and that the charge and refund are final'
+                            :($relaxed($get)?'I checked that Enom has no order for this request and the domain is unchanged':$registrar.' support checked this account and request, including whether an order or charge was made'))->accepted()->required(),
                 ]),
             ])->action(function(array $data)use($server,$registrar,$transfer):void{
                 try{

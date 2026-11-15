@@ -20,6 +20,11 @@ $s->after=true;$s->bill=(new DateTimeImmutable($op->fresh()->attempt['dispatch_a
 // The held request offers the history read in one click, only where it can clear this hold.
 $request=fn()=>Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation::class,['record'=>$op->id]);
 $recovery=Paymenter\Extensions\Servers\Domains\Admin\Support\HistoryRecovery::class;$rights=$staff->role->permissions;
+// A TEST deployment already reads 30 days of order history through the built-in contract, so there is nothing to turn on.
+expect(Paymenter\Extensions\Servers\Domains\Services\HistoryAcceptances::builtIn(Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$server->id)->sole()),Paymenter\Extensions\Servers\Domains\Data\Action::Renew),'TEST deployment renewal history is built in');
+$request()->assertActionHidden($recovery::NAME);
+// The one-click action remains for a TEST account outside a TEST deployment, where no history is built in.
+$deployment=config('domains.enom_identity.environment');config(['domains.enom_identity.environment'=>null]);
 $staff->role->update(['permissions'=>array_values(array_diff($rights,['admin.domains.settings.history']))]);$request()->assertActionHidden($recovery::NAME);$staff->role->update(['permissions'=>$rights]);
 $other=$op->fresh();$other->action='register';expect(!$recovery::offered($other),'A registration read needs a captured order, so history cannot clear it');
 DB::table('domains_accounts')->where('server_id',$server->id)->update(['environment'=>'live']);expect(!$recovery::offered($op->fresh()),'Live history values are not confirmed');DB::table('domains_accounts')->where('server_id',$server->id)->update(['environment'=>'test']);
@@ -31,6 +36,8 @@ $clock->at=$sent->modify('+86400 seconds');$request()->assertActionHidden($recov
 $request()->assertSee('Enom’s reply was lost.')->assertActionVisible($recovery::NAME)->callAction($recovery::NAME);
 $request()->assertActionHidden($recovery::NAME);
 $clock->at=$sent->modify('+1 day');expect($answerStep(),'After the history read the support answer is what is left');$clock->at=$now;
+// Back in the TEST deployment, the saved values take precedence over the built-in contract.
+config(['domains.enom_identity.environment'=>$deployment]);
 foreach([[],['9002','9003'],['9002']] as $ids){
     $s->orders=$ids;Cache::flush();resetWire(['reply'=>$renewReply]);(new RuntimeWork($clock,new RuntimePorts))->operation($op->id);
     same(count($ids)===1?'succeeded':'uncertain',$op->fresh()->state,'Accepted history requires exactly one matching renewal charge');

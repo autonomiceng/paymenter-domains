@@ -158,7 +158,7 @@ final class TldFacts
             // Another account's refresh is not on this page yet. The page's own account shows it in Price sync.
             if($gap&&!$own&&!($fact['invalid_rule']??false)){$note=trim($note.' '.self::refreshText($fact['refresh']??[]));}
             $fix=null;
-            if($fact['invalid_rule']??false){
+            if(($fact['invalid_rule']??false)&&($fact['invalid_rule_kind']??null)!=='unreadable'){
                 try{$kind=$fact['invalid_rule_kind']??null;$label=match($kind){'default'=>'Edit default pricing','account_defaults'=>'Edit default for new TLDs',default=>'Edit prices'};
                     $url=match($kind){'default'=>\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::getUrl(),'account_defaults'=>\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::getUrl(['account'=>(int)$row->server_id]),default=>\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource::getUrl('view',['record'=>$row])};
                     $fix=['label'=>$label,'url'=>$url];}catch(\Throwable){}

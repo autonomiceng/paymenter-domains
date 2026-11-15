@@ -22,13 +22,13 @@ final class Client
     public function read(ReadCommand $command, #[\SensitiveParameter] array $parameters, #[\SensitiveParameter] RequestContext $context): ProtocolResult
     {
         $command->validate($parameters);
-        $result=$context->withinRead($this->binding, function (int $remaining) use ($command, $parameters): ProtocolResult {
+        $result=$context->withinRead($this->binding, function (int $remaining) use ($command, $parameters, $context): ProtocolResult {
         try {
             [$uid, $token, $transport] = self::$secrets[$this];
             $body = $transport->send($this->binding->environment, $command, $parameters, $uid, $token, min(25000, $remaining));
             return (new ResponseParser)->parse($command, $body);
         } catch (\Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit $error) { throw new \Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit($error->reason);
-        } catch (\Throwable) { return new ProtocolResult('unknown', 'transport'); }
+        } catch (\Throwable) { $context->exchangeFailed(); return new ProtocolResult('unknown', 'transport'); }
         });
         $context->requireReadSuccess($result->status==='success',$result->code==='domain_not_in_account'?new \RuntimeException('Domain is not in registrar account.'):null); return $result;
     }

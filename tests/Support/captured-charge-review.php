@@ -128,7 +128,10 @@ $rawProof=[$held->getRawOriginal('attempt'),$held->getRawOriginal('cost')];$work
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('resume_reads');(new \Paymenter\Extensions\Servers\Domains\Jobs\RunOperation($op->id))->handle($work);
 same('accepted_history',collect($op->fresh()->policy['captured_charge_observations'])->last()['proof']['source']??null,'The audited read finds the same order in history');
 DB::transaction(fn()=>HistoryAcceptances::revokeLocked($b,Action::Renew));
-Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertActionHidden('approve_charge');$accept($b);
+// A TEST deployment still accepts 30 days of history through its built-in contract; with no accepted history at all, approval is hidden.
+config(['domains.enom_identity.environment'=>null]);
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertActionHidden('approve_charge');
+config(['domains.enom_identity.environment'=>'test']);$accept($b);
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertActionVisible('approve_charge')
     ->callAction('approve_charge',['reason'=>'Approve the same charge found in order history'])->assertHasNoActionErrors()->assertNotified('Captured charge approved');
 $done=$op->fresh();same(['succeeded','2029-10-18'],[$done->state,$d->fresh()->provider_expires_at->format('Y-m-d')],'History approval completes only the proved expiry');

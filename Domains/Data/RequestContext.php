@@ -28,6 +28,10 @@ final class RequestContext
     private int $exchanges = 0;
     /** Physical exchanges entered, failed ones included. Reader construction, limiter and send refusals never count. */
     public function exchanges(): int { return $this->exchanges; }
+    private int $failedExchanges = 0;
+    /** Exchanges that got no registrar reply (transport failure or timeout). A registrar error reply is not one. */
+    public function failedExchanges(): int { return $this->failedExchanges; }
+    public function exchangeFailed(): void { $this->failedExchanges++; }
     /** Both real read clients use this scope once per physical request. */
     public function withinRead(AccountBinding $driver, \Closure $wire): mixed
     {
