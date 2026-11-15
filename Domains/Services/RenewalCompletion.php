@@ -39,7 +39,7 @@ final readonly class RenewalCompletion
                     // Enom can still read the domain before staff ask for a case; NameSilo waits for its answer.
                     if ($attempt->binding->registrarKey !== 'enom') { return null; }
                 }
-                // One Enom read a day after the send still runs after the read limit, once per attempt, to check that Enom has no order.
+                // One Enom read a day after the send still runs after the read limit to check that Enom has no order; a deferred or failed try runs again later.
                 if (($op->policy['renewal_polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT && !EnomAbsence::claimRead($op, $attempt, $this->clock->now())) { return null; }
                 $read=$financial?CapturedChargeReview::reserve($op,$this->clock):null;
                 // A new read starts: earlier no-order evidence goes now, so nobody can use it while this read runs or after it fails.
@@ -48,7 +48,7 @@ final readonly class RenewalCompletion
             } catch (\Throwable) { return null; }
         });
         if (!$capture) { return Operation::findOrFail($id); }
-        [$attempt, $stamp,$financialRead] = $capture; $proof = null; $covered = false; $late = false; $autoRenewConfirmed = false; $autoRenewUnconfirmed = $attempt->binding->registrarKey === 'namesilo'; $scan = null; $absence = null; $sample = null;
+        [$attempt, $stamp,$financialRead] = $capture; $proof = null; $covered = false; $late = false; $autoRenewConfirmed = false; $autoRenewUnconfirmed = $attempt->binding->registrarKey === 'namesilo'; $scan = null; $absence = null; $sample = null; $completed = false;
         try {
             $started = $this->clock->now();
             $ctx = $check->context = new RequestContext($attempt->binding, RequestOrigin::Background, $deadline, new RequestBudget(25), $this->clock, Runtime::limiter());
@@ -67,6 +67,7 @@ final readonly class RenewalCompletion
                 $autoRenewConfirmed = $attempt->binding->registrarKey === 'namesilo' && !$autoRenewUnconfirmed;
                 $proof = $autoRenewUnconfirmed ? null : ReconciliationEvidence::completion($attempt, $facts, $this->clock->now());
                 $absence = EnomAbsence::observe($attempt, $facts, $started, $this->clock->now());
+                $completed = EnomAbsence::readCompleted($ctx);
                 $check->observe($attempt,$facts,$proof!==null);
             }
         } catch (ReadDeferred) { $check->deferred = 'read_limit';
@@ -75,7 +76,7 @@ final readonly class RenewalCompletion
         // A bill zone sample is saved only after this turn's locked step: server settings are part of the holding stamp it compares.
         try {
         if (!$financialRead && !$covered && !$autoRenewUnconfirmed && !$autoRenewConfirmed && !$scan && !$late) { return Operation::findOrFail($id); }
-        return DB::transaction(function () use ($seed, $id, $stamp, $proof, $attempt, $covered, $autoRenewUnconfirmed, $autoRenewConfirmed,$financialRead,$check,$scan,$late,$absence) {
+        return DB::transaction(function () use ($seed, $id, $stamp, $proof, $attempt, $covered, $autoRenewUnconfirmed, $autoRenewConfirmed,$financialRead,$check,$scan,$late,$absence,$completed) {
             $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id); $d = $l['domain'];
             if (!$op || !$this->eligible($op) || $l['stamp'] !== $stamp || ($proof && $proof['provider_domain_id'] !== $d->provider_domain_id)) { return $op; }
             try { $this->bindings->requireReadableLocked($l['server'], $l['account']); RenewalFunding::requireCurrent($op, $l, true); }
@@ -87,6 +88,7 @@ final readonly class RenewalCompletion
             $policy = $op->policy; $policy['renewal_polls'] = ($policy['renewal_polls'] ?? 0) + ($covered || $stalled ? 1 : 0); $check->counted = $covered || $stalled;
             // Saved scan progress; a scan that resolved more orders continues on the next turn.
             if ($scan) { $policy['history_scan'] = $scan->saved(); $policy = EnomAbsence::apply($policy, $op, $absence); $check->continued = !$covered && $scan->progressed; }
+            if ($completed) { $policy = EnomAbsence::completed($policy, $op); }
             if (!$proof) {
                 $policy['renewal_execution']['reason'] = $autoRenewUnconfirmed ? 'provider_auto_renew_unconfirmed'
                     : ($policy['renewal_polls'] >= OperationReconciliation::POLL_LIMIT ? 'poll_limit_reached' : 'original_attempt_unresolved');
@@ -121,7 +123,14 @@ final readonly class RenewalCompletion
             ComplimentaryInvoices::complete($op);
             return $op;
         });
-        } finally { if ($sample) { EnomBillZones::record($attempt->binding, $sample); } }
+        } finally {
+            if ($sample) { EnomBillZones::record($attempt->binding, $sample); }
+            // A completed read uses up the late no-order read even when its own save did not run.
+            if ($completed) {
+                try { DB::transaction(function () use ($seed, $id): void { $op = HoldingLocks::take($seed)['operations']->firstWhere('id', $id); if ($op) { EnomAbsence::useUp($op); } }); }
+                catch (\Throwable $e) { logger()->warning('Late no-order read mark deferred.', ['exception_class'=>$e::class]); }
+            }
+        }
     }
     /** Explicit bounded read-only recovery; original paid uncertainty and attempt remain unchanged. */
     public function resume(int $id, StaffOperationReview $review): Operation

@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
-use Paymenter\Extensions\Servers\Domains\Data\{Action, AttemptEvidence, Evidence, HistoryScan};
+use Paymenter\Extensions\Servers\Domains\Data\{Action, AttemptEvidence, Evidence, HistoryScan, RequestContext};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 /** Evidence that Enom never processed a lost Register or Renew reply. The scheduled reconciliation records it from its own
  * complete order history scan and its own domain read; a staff request never creates it. It lets staff record the
@@ -21,20 +21,45 @@ final class EnomAbsence
         return ['scan_key'=>$scan->key, 'read_at'=>$started->format(DATE_ATOM), 'domain'=>$domain,
             'listed'=>(int)($scan->state['listed'] ?? 0), 'resolved'=>(int)($scan->state['resolved'] ?? 0)];
     }
+    /** Turns that may try the one late read. A local read-limit deferral or a failed read leaves it for a later turn. */
+    public const READ_TRIES = 3;
     /** The normal read limit can run out before a day has passed since the send. Then one more scheduled read runs at least a
-     * day after the send, once per attempt, so the no-order check needs no staff restart. Called under the check's lock in
-     * place of the read limit's stop; true claims that one read. Reads only. */
+     * day after the send, so the no-order check needs no staff restart. It is used up once it completes, and at most
+     * READ_TRIES turns try it. Called under the check's lock in place of the read limit's stop; true claims a try. Reads only. */
     public static function claimRead(Operation $op, AttemptEvidence $attempt, \DateTimeImmutable $now): bool
     {
-        $policy = $op->policy ?? []; $identity = RegistrarAnswers::identity($op); $claimed = $policy['enom_absence_read']['identity'] ?? null;
+        $policy = $op->policy ?? []; $claim = self::claim($op, $policy);
+        // A claim saved before tries were counted was used up when it was made.
+        $tries = $claim === null ? 0 : (is_int($claim['tries'] ?? null) ? $claim['tries'] : self::READ_TRIES);
         if ($attempt->binding->registrarKey !== 'enom' || !in_array($attempt->query->action, [Action::Register, Action::Renew], true)
             || !$attempt->replyLost() || $attempt->executionFacts !== null || isset($op->attempt['reconciliation'])
-            || (is_string($claimed) && hash_equals($claimed, $identity))
+            || ($claim['done'] ?? false) === true || $tries >= self::READ_TRIES
             || $now->getTimestamp() < $attempt->windowEnd->getTimestamp() + self::MARGIN
             || !($attempt->historyAcceptance?->covers($attempt, $now) ?? false)) { return false; }
-        $policy['enom_absence_read'] = ['identity'=>$identity, 'at'=>$now->format(DATE_ATOM)];
+        $policy['enom_absence_read'] = ['identity'=>RegistrarAnswers::identity($op), 'at'=>$now->format(DATE_ATOM), 'tries'=>$tries + 1, 'done'=>false];
         $op->update(['policy'=>$policy]);
         return true;
+    }
+    /** A read completed: it returned in time and every request in it got an Enom reply. This attempt's late read is used up.
+     * Called in the read's own locked save, so the evidence and the used-up mark are saved together. */
+    public static function completed(array $policy, Operation $op): array
+    {
+        if (self::claim($op, $policy) !== null) { $policy['enom_absence_read']['done'] = true; }
+        return $policy;
+    }
+    /** The same mark in its own write, under the check's lock, for a completed read whose save did not run. */
+    public static function useUp(Operation $op): void
+    {
+        $claim = self::claim($op, $op->policy ?? []);
+        if ($claim !== null && ($claim['done'] ?? false) !== true) { $op->update(['policy'=>self::completed($op->policy, $op)]); }
+    }
+    /** True when the read made at least one request and got an Enom reply to each. */
+    public static function readCompleted(RequestContext $context): bool
+    { return $context->exchanges() > 0 && $context->failedExchanges() === 0; }
+    private static function claim(Operation $op, array $policy): ?array
+    {
+        $claim = $policy['enom_absence_read'] ?? null;
+        return is_array($claim) && is_string($claim['identity'] ?? null) && hash_equals($claim['identity'], RegistrarAnswers::identity($op)) ? $claim : null;
     }
     /** Called under the check's lock just before a new registrar read. Older evidence never outlives a newer read: the read
      * either saves its own evidence or leaves none, so a failed or unfinished read cannot fall back to an earlier one. */

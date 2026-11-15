@@ -3,18 +3,20 @@
 declare(strict_types=1);
 require __DIR__.'/Support/renewal-execution.php';
 use Illuminate\Support\Facades\{Cache, DB};
-use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Data\{Action, HistoryAcceptance};
+use Paymenter\Extensions\Servers\Domains\Contracts\{Clock, ReadLimiter};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, HistoryAcceptance, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ReadCommand, Transport};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, EnomAnswers, HistoryAcceptances, OperationReconciliation, RegistrarRegistry, StaffSettingsReview as Review, StaffSettingsWrites};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, EnomAnswers, HistoryAcceptances, OperationReconciliation, ReadDeferred, RegistrarRegistry, Runtime, StaffSettingsReview as Review, StaffSettingsWrites};
 
 // Order history around the send: three orders for other domains, all complete. 'unsupported' leaves one detail unreadable,
-// $match lists the renewal fixture's own order for this renewal instead, and $late runs once when the order list is read.
+// $match lists the renewal fixture's own order for this renewal instead, $late runs once when the order list is read, and
+// $fail makes every order list request fail before Enom replies.
 $history = new class implements Transport {
-    public ?Transport $domain = null; public ?DateTimeImmutable $sent = null; public string $fault = ''; public array $forms = []; public bool $match = false; public $late = null;
+    public ?Transport $domain = null; public ?DateTimeImmutable $sent = null; public string $fault = ''; public array $forms = []; public bool $match = false; public $late = null; public bool $fail = false;
     public function send($env, ReadCommand $command, array $parameters, string $uid, string $token, int $timeoutMs): string {
         if ($this->match || !in_array($command, [ReadCommand::Orders, ReadCommand::Order], true)) { return $this->domain->send($env, $command, $parameters, $uid, $token, $timeoutMs); }
+        if ($this->fail && $command === ReadCommand::Orders) { throw new RuntimeException('Connection reset before a reply'); }
         $this->forms[] = $command; $at = fn (int $i) => $this->sent->modify('-'.(10 * ($i + 1)).' minutes')->setTimezone(new DateTimeZone('America/Denver'))->format('n/j/Y g:i:s A');
         if ($command === ReadCommand::Orders) {
             if ($this->late) { $hook = $this->late; $this->late = null; $hook(); }
@@ -58,7 +60,7 @@ $allowed = static function ($op, string $why) use ($settings, $review, $noOrder,
 $register = static function (string $name, string $domainFault = 'absent') use ($prepare, $observation, $history, $wire) {
     [$op, $binding] = $prepare(placeholderComFixtureName($name), 'null');
     HistoryAcceptances::save(new HistoryAcceptance($binding, 'America/Los_Angeles', 60, 2592000, 'enom_registration_v1'));
-    $history->domain = $wire; $history->sent = new DateTimeImmutable($op->attempt['dispatch_attempted_at']); $history->fault = ''; $history->match = false; $history->late = null;
+    $history->domain = $wire; $history->sent = new DateTimeImmutable($op->attempt['dispatch_attempted_at']); $history->fault = ''; $history->match = false; $history->late = null; $history->fail = false;
     $observation->fault = $domainFault; // 'absent': Enom's exact not-found reply; '': the domain is in our account.
     return [$op, $binding];
 };
@@ -140,6 +142,39 @@ $late = static function (callable $run, callable $calls, string $why) use ($cloc
 $late(fn () => same('uncertain', $scheduled->run($op->id)->state, 'A scheduled read leaves the lost reply open'),
     function (bool $reset) use ($observation): int { $n = count($observation->calls); if ($reset) { $observation->calls = []; } return $n; }, 'Registration');
 $allowed($op, 'Registration: the one late read recorded the evidence');
+// That late read is used up only once it completes. A local read-limit deferral or a failed read tries again on a later turn,
+// at most three turns, and a completed read never runs again.
+$deferAll = new class implements ReadLimiter {
+    public function acquire(AccountBinding $binding, RequestOrigin $origin): string { throw new ReadDeferred('Local read limit'); }
+    public function release(AccountBinding $binding, RequestOrigin $origin, string $token): void {}
+};
+$retried = static function (callable $run, callable $calls, callable $evidence, string $why) use ($clock, $history, $deferAll): void {
+    $reads = static function (string $after) use ($run, $calls, $clock, $history): int { $clock->instant = $history->sent->modify($after); Cache::flush(); $calls(true); $run(); return $calls(false); };
+    $hour = 0; while ($reads('+'.(++$hour).' hours') > 0) { expect($hour < 20, $why.': the normal read limit ends'); }
+    app()->instance(Runtime::class, new Runtime); app()->instance(ReadLimiter::class, $deferAll);
+    try { same(0, $reads('+25 hours'), $why.': the local read limit defers the late read before any request'); } finally { app()->offsetUnset(Runtime::class); }
+    same(false, $evidence(), $why.': a deferred read records nothing');
+    expect($reads('+26 hours') > 0, $why.': the deferred late read runs on a later turn');
+    same(true, $evidence(), $why.': the late read that completed recorded the evidence');
+    same([0, 0], [$reads('+27 hours'), $reads('+48 hours')], $why.': a completed late read never runs again');
+};
+$failed = static function (callable $run, callable $calls, callable $evidence, string $why) use ($clock, $history): void {
+    $reads = static function (string $after) use ($run, $calls, $clock, $history): int { $clock->instant = $history->sent->modify($after); Cache::flush(); $calls(true); $run(); return $calls(false); };
+    $hour = 0; while ($reads('+'.(++$hour).' hours') > 0) { expect($hour < 20, $why.': the normal read limit ends'); }
+    $history->fail = true;
+    foreach (['+25 hours', '+26 hours', '+27 hours'] as $try => $after) { expect($reads($after) > 0, $why.': failed late read try '.($try + 1).' runs'); }
+    same([0, 0], [$reads('+28 hours'), $reads('+48 hours')], $why.': three failed tries stop the late read');
+    $history->fail = false;
+    same(false, $evidence(), $why.': failed reads record nothing');
+};
+$registrationCalls = function (bool $reset) use ($observation): int { $n = count($observation->calls); if ($reset) { $observation->calls = []; } return $n; };
+[$op] = $register('absence-late-deferred-placeholder.com');
+$retried(fn () => same('uncertain', $scheduled->run($op->id)->state, 'A scheduled read leaves the lost reply open'), $registrationCalls,
+    fn () => isset($op->fresh()->policy['enom_absence']), 'Registration');
+$allowed($op, 'Registration: the late read after a deferral recorded the evidence');
+[$op] = $register('absence-late-failed-placeholder.com');
+$failed(fn () => same('uncertain', $scheduled->run($op->id)->state, 'A scheduled read leaves the lost reply open'), $registrationCalls,
+    fn () => isset($op->fresh()->policy['enom_absence']), 'Registration');
 same($before, $writer->calls, 'No registration is sent again');
 DB::transaction(fn () => HistoryAcceptances::revokeLocked($binding, Action::Register));
 
@@ -149,7 +184,7 @@ $renew = static function (string $name, string $after, ?string $info = null) use
     [$engine, $renewWriter] = $compose($binding); $state->lost = true;
     same('uncertain', $engine->run($op->id, $renewWriter)->state, 'The renewal reply is lost');
     HistoryAcceptances::save(new HistoryAcceptance($binding, 'America/Los_Angeles', 60, 2592000, 'enom_renewal_v1'));
-    $history->domain = $transport; $history->sent = new DateTimeImmutable($op->fresh()->attempt['dispatch_attempted_at']); $history->fault = ''; $history->match = false; $history->late = null;
+    $history->domain = $transport; $history->sent = new DateTimeImmutable($op->fresh()->attempt['dispatch_attempted_at']); $history->fault = ''; $history->match = false; $history->late = null; $history->fail = false;
     $state->after = $after; $state->lost = false; if ($info !== null) { $state->expiry = $info; } // $info: the expiry domain info reports.
     return [$op->fresh(), $binding];
 };
@@ -182,5 +217,13 @@ $refused($op, 'Renewal: a later read found a matching order');
 $late(fn () => same('uncertain', $completion->run($op->id)->state, 'A scheduled renewal read leaves the lost reply open'),
     function (bool $reset) use ($state): int { $n = count($state->calls); if ($reset) { $state->calls = []; } return $n; }, 'Renewal');
 $allowed($op, 'Renewal: the one late read recorded the evidence');
-same($writes + 5, $state->writes, 'Only the five original Extends were sent');
+$renewalCalls = function (bool $reset) use ($state): int { $n = count($state->calls); if ($reset) { $state->calls = []; } return $n; };
+[$op] = $renew('absence-renew-late-deferred-placeholder.com', '2027-10-18');
+$retried(fn () => same('uncertain', $completion->run($op->id)->state, 'A scheduled renewal read leaves the lost reply open'), $renewalCalls,
+    fn () => isset($op->fresh()->policy['enom_absence']), 'Renewal');
+$allowed($op, 'Renewal: the late read after a deferral recorded the evidence');
+[$op] = $renew('absence-renew-late-failed-placeholder.com', '2027-10-18');
+$failed(fn () => same('uncertain', $completion->run($op->id)->state, 'A scheduled renewal read leaves the lost reply open'), $renewalCalls,
+    fn () => isset($op->fresh()->policy['enom_absence']), 'Renewal');
+same($writes + 7, $state->writes, 'Only the seven original Extends were sent');
 echo "A lost Enom reply is refundable without a case number only when the scheduled read proves Enom has no order and the domain is unchanged.\n"; $nativeSuccessful = true;
