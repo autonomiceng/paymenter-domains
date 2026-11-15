@@ -31,7 +31,7 @@ $both=$hosting('Both');$saved($both,['domain'=>'shop.example.com','hostname'=>'b
 $hostname=$hosting('Hostname');$saved($hostname,['hostname'=>'site.example.net']);
 $none=$hosting('No domain');$saved($none,['plan'=>'basic']);
 $catalogue=$hosting('Sold domains');$saved($catalogue,['domain'=>'sold.example.com']);\App\Models\Setting::withoutEvents(fn()=>$catalogue->settings()->create(['key'=>'domains_catalogue','value'=>'1']));
-$registrar=$hosting('Domain server',\App\Models\Server::create(['name'=>'Registrar','extension'=>'Domains','type'=>'server','enabled'=>true])->id);$saved($registrar,['domain'=>'registered.example.com']);
+$registrar=$hosting('Domain server',\App\Models\Server::create(['name'=>'Registrar','extension'=>'Domains','type'=>'server','enabled'=>true])->id);
 $fixed=$hosting('W9 ready');$saved($fixed,['beco_hosting_ready'=>'yes','domain'=>'ready.example.com']);$stray($fixed,true);
 $fixedOff=$hosting('W9 off');$saved($fixedOff,['beco_hosting_ready'=>'yes','domain'=>'off.example.com']);$stray($fixedOff,false);
 $work(1800000000)->tick();$work(1800000300)->tick();
@@ -56,7 +56,7 @@ app()->instance(WatchWork::class,$work(1800000600));
 $page=fn($user=null)=>Livewire::actingAs($user??$manager)->test(MonitoringSettings::class)->assertSuccessful();
 $lines=WatchProducts::lines();$names=array_column($lines['products'],'name');
 expect(in_array('Serverless',$names,true)&&!array_intersect(['Sold domains','Domain server','No domain'],$names),'Only hosting products whose orders carry a domain are listed');
-expect(in_array('No domain',$lines['unlisted'],true)&&!in_array('Sold domains',$lines['unlisted'],true),'Hosting products with no domain are named as not listed; registrations are not');
+expect(in_array('No domain',$lines['unlisted'],true)&&!array_intersect(['Sold domains','Domain server'],$lines['unlisted']),'Hosting products with no domain are named as not listed; registrations are not');
 $html=$page()->html();expect(str_contains($html,'Choose products')&&!str_contains($html,'chooseField')&&!str_contains($html,'productSwitch'),'Managers get Choose products and no field picker');
 expect(!str_contains($html,'box1.example.net'),'No customer value on the page');
 expect(!str_contains($page($viewer)->html(),'Choose products'),'View-only staff get no Choose products');
