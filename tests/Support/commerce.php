@@ -62,7 +62,8 @@ function commerceFixture(bool $eligible = false, ?Closure $activation = null, En
         app()->instance(AccountBindings::class,$bindings);app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
     }
     foreach ($registrars as $key) {
-        $server = Server::create(['name' => 'Synthetic', 'type' => 'server', 'extension' => 'Domains', 'enabled' => true]);
+        // Schema is ready; this synthetic insert does not exercise native server installation.
+        $server = Server::withoutEvents(static fn () => Server::create(['name' => 'Synthetic', 'type' => 'server', 'extension' => 'Domains', 'enabled' => true]));
         $review=null;
         if($key==='namesilo'){
             // Use the real local enrollment/review with a synthetic authenticator; no provider routing is installed.
