@@ -56,6 +56,10 @@ foreach(['no queued read'=>[null,false],'running read'=>[['due_at'=>$now->getTim
     same($checking,(DomainPage::notice(RecordFamilies::owner($page,$facts))['text']??null)===DomainPage::INITIAL_READ,$case.' sets the first-read notice');
     $families($facts,ucfirst($case),$checking);
 }
+// Paused records may mean Orders off or record checks not set up: customers get the plain not-read note, staff the account reason.
+$work(['safe_code'=>'records_disabled']);$paused=RecordFamilies::read($d,$now);$pausedNote=static fn(bool $staff)=>strip_tags(view('domains::partials.record-read-note',['recordFamilies'=>$paused,'staff'=>$staff])->render());
+expect($paused['records_paused']&&str_contains($pausedNote(false),DomainPage::NOT_READ_NOTE),'Customers read the plain note for paused records, with no notice on the page');
+expect(!str_contains($pausedNote(true),DomainPage::NOT_READ_NOTE)&&trim($pausedNote(true))!=='','Staff keep the account reason for paused records');
 // Staff: a read that is due but not started waits in the account's read queue; the line does not show a past time as the next read.
 $work(['due_at'=>$now->getTimestamp()-600]);$queued=RecordFamilies::read($d,$now);
 same(true,$queued['read_queued'],'A due read that has not started is queued');
