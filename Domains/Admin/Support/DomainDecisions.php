@@ -6,7 +6,7 @@ namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Illuminate\Support\Facades\{DB, Schema};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\{DomainStatus, Missing, RequestStatus, StaffTime};
-use Paymenter\Extensions\Servers\Domains\Services\{BillingCalendar, DomainStates, HoldingObservationWork, ObligationAlerts, ObservationProjection, ObservationRecords, ObservationWork, OwnedDomains, OwnerRecords, RenewalCycles, RenewalStop, StaffHoldingReview, StaffOperationReview};
+use Paymenter\Extensions\Servers\Domains\Services\{BillingCalendar, DomainStates, HoldingObservationWork, ObligationAlerts, ObservationProjection, ObservationRecords, ObservationWork, OwnedDomains, OwnerRecords, RenewalCycles, RenewalOwnership, RenewalStop, StaffHoldingReview, StaffOperationReview};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 /** Staff domain page rows and the status, sync and alert decisions behind them. Request-local allowlisted projection. Never cache across actors, call providers or serialize models.
  * Each fact is ['value'=>string|list<string>|null,'sub'=>?string,'url'=>?string,'tone'=>?string,'help'=>?string,'demo'=>bool], and 'at' (a timestamp) on a time the page shows in the viewer's zone.
@@ -189,9 +189,11 @@ final class DomainDecisions
                 $f['Renewal']['help'] = null;
             }
             $expired=$d->provider_expires_at&&$d->provider_expires_at->format('Y-m-d')<=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d');
-            // An issued renewal is due even when future automatic renewals have been stopped.
-            if ($renewalInvoice) { $f['Next invoice']=Facts::row($renewalInvoice->due_at?'Due '.gmdate('M j, Y',strtotime(substr($renewalInvoice->due_at,0,10).' 00:00:00 UTC')):'Due'); }
-            elseif (!$pending&&$d->status==='active'&&!$expired&&$renewal&&!$off&&!$settledRenewal) { $f['Next invoice']=self::nextInvoice($d); }
+            $fenced=RenewalOwnership::blocked($d);
+            if ($fenced) { $f['Renewal']['sub']=ObligationAlerts::LABELS[RenewalOwnership::REVIEW]; $f['Renewal']['help']=null; }
+            // An ownership fence pauses collection too; existing debt stays accessible in Open invoice.
+            if (!$fenced&&$renewalInvoice) { $f['Next invoice']=Facts::row($renewalInvoice->due_at?'Due '.gmdate('M j, Y',strtotime(substr($renewalInvoice->due_at,0,10).' 00:00:00 UTC')):'Due'); }
+            elseif (!$fenced&&!$pending&&$d->status==='active'&&!$expired&&$renewal&&!$off&&!$settledRenewal) { $f['Next invoice']=self::nextInvoice($d); }
         }
         if ($invoice) { $f['Open invoice']=Facts::row(Facts::invoiceName((int)$invoice->id),sub:'Awaiting payment',url:Facts::invoiceUrl((int)$invoice->id)); }
         // A failed read leaves the unread rows red Missing without a sentence each. Why, and what to do, is said once:
