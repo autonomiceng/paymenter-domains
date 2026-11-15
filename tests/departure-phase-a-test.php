@@ -42,6 +42,8 @@ $actor=staffUser([Staff::VIEW,'admin.domains.manage']);staffPanel();Auth::setUse
 $page=Livewire\Livewire::actingAs($actor)->test(ViewDomain::class,['record'=>$d->id]);
 $page->assertActionVisible('check_departure')->assertActionEnabled('check_departure');
 $observation->fault='';app()->instance(\Paymenter\Extensions\Servers\Domains\Services\DomainObservation::class,$observer);
+Illuminate\Support\Facades\Schema::create('cache',function($t){$t->string('key')->primary();$t->mediumText('value');$t->integer('expiration');});
+Illuminate\Support\Facades\Schema::create('cache_locks',function($t){$t->string('key')->primary();$t->string('owner');$t->integer('expiration');});
 Illuminate\Support\Facades\Queue::fake();config(['queue.default'=>'database','queue.connections.database.driver'=>'database','queue.connections.database.retry_after'=>900,'cache.default'=>'database']);
 $page->callAction('check_departure');
 Illuminate\Support\Facades\Queue::assertPushed(\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::class,function($job)use($observer){expect($job->departure,'Check again requests RDAP too');$job->handle($observer);return true;});
@@ -54,5 +56,7 @@ foreach(['lock'=>['locked'=>false],'auth_code_email'=>[],'contacts'=>[],'nameser
 }
 $allowed=$management->available($user,$d->fresh(),$driver,['dns','lock','nameservers','contacts','auth_code_email']);
 same(['dns'],$allowed,'DNS stays available while registrar changes pause');
+$dnsOp=$management->request($user,$d->id,'dns',['records'=>[['name'=>'@','type'=>'A','address'=>'8.8.8.8']]],hash('sha256','suspected-dns'),$driver);
+same('queued',$dnsOp->state,'DNS request is admitted while suspected');
 same($money,$nativeMoney(),'Departure checks make no money changes');same($originalBefore,$original->fresh()->getAttributes(),'Original purchase stays intact');
 $nativeSuccessful=true;echo "Departure state, automatic false-absence recovery, delayed alert, staff recheck and management guard passed.\n";

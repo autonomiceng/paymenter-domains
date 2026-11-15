@@ -53,6 +53,7 @@ final class DepartureChecks
             $result=$reader->read($seed->domain,$context);if($dns->saturated||($result['reason']??null)==='deferred'){return false;}
             return DB::transaction(function()use($seed,$identity,$result,$clock):bool{
                 $d=HoldingLocks::take($seed)['domain'];if(ObservationRecords::identity($d)!==$identity){return false;}
+                if(!self::suspected($d)){return true;}
                 $p=$d->observation??[];$p['departure_check']??=['identity'=>$identity,'at'=>$clock(),'rechecked'=>false];
                 $p['departure_check']['registry']=[...$result,'at'=>$clock()];$d->update(['observation'=>$p]);return true;
             });
