@@ -67,7 +67,7 @@ final readonly class RenewalCompletion
                 $autoRenewConfirmed = $attempt->binding->registrarKey === 'namesilo' && !$autoRenewUnconfirmed;
                 $proof = $autoRenewUnconfirmed ? null : ReconciliationEvidence::completion($attempt, $facts, $this->clock->now());
                 $absence = EnomAbsence::observe($attempt, $facts, $started, $this->clock->now());
-                $completed = EnomAbsence::readCompleted($ctx);
+                $completed = EnomAbsence::readCompleted($ctx, $facts);
                 $check->observe($attempt,$facts,$proof!==null);
             }
         } catch (ReadDeferred) { $check->deferred = 'read_limit';

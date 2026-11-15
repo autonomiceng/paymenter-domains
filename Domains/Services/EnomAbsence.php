@@ -40,7 +40,7 @@ final class EnomAbsence
         $op->update(['policy'=>$policy]);
         return true;
     }
-    /** A read completed: it returned in time and every request in it got an Enom reply. This attempt's late read is used up.
+    /** A read completed (readCompleted): this attempt's late read is used up.
      * Called in the read's own locked save, so the evidence and the used-up mark are saved together. */
     public static function completed(array $policy, Operation $op): array
     {
@@ -50,12 +50,18 @@ final class EnomAbsence
     /** The same mark in its own write, under the check's lock, for a completed read whose save did not run. */
     public static function useUp(Operation $op): void
     {
-        $claim = self::claim($op, $op->policy ?? []);
-        if ($claim !== null && ($claim['done'] ?? false) !== true) { $op->update(['policy'=>self::completed($op->policy, $op)]); }
+        if (self::open($op)) { $op->update(['policy'=>self::completed($op->policy, $op)]); }
     }
-    /** True when the read made at least one request and got an Enom reply to each. */
-    public static function readCompleted(RequestContext $context): bool
-    { return $context->exchanges() > 0 && $context->failedExchanges() === 0; }
+    /** This attempt's late read is claimed and not yet used up. */
+    public static function open(Operation $op): bool
+    {
+        $claim = self::claim($op, $op->policy ?? []);
+        return $claim !== null && ($claim['done'] ?? false) !== true;
+    }
+    /** The read returned in time (the caller checks), made at least one request, got an Enom reply to each, and finished its
+     * order scan. A partial scan continues on a later turn within READ_TRIES. */
+    public static function readCompleted(RequestContext $context, Evidence $facts): bool
+    { return $context->exchanges() > 0 && $context->failedExchanges() === 0 && $facts->historyComplete; }
     private static function claim(Operation $op, array $policy): ?array
     {
         $claim = $policy['enom_absence_read'] ?? null;

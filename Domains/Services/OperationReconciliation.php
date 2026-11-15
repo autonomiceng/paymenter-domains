@@ -17,8 +17,11 @@ final class OperationReconciliation
         if (!$this->eligible($op)) { return $op; }
         $check = new RegistrarCheck($this->clock);
         $completed = false; $op = $this->read($id, $check, $completed);
-        // A completed read uses up the late no-order read even when its own save did not run.
-        if ($completed) { $this->claims->locked($id, static function ($op): Operation { EnomAbsence::useUp($op); return $op; }); $op->refresh(); }
+        // A completed read uses up an open Enom late no-order read even when its own save did not run. That mark never breaks the turn.
+        if ($completed && EnomAbsence::open($op)) {
+            try { $this->claims->locked($id, static function ($op): Operation { EnomAbsence::useUp($op); return $op; }); $op->refresh(); }
+            catch (\Throwable $e) { logger()->warning('Late no-order read mark deferred.', ['exception_class'=>$e::class]); }
+        }
         return $check->finish($op);
     }
     private function read(int $id, RegistrarCheck $check, bool &$completed): Operation
@@ -97,7 +100,7 @@ final class OperationReconciliation
                 if ($attempt->query->action->value === 'transfer' && $transfer !== \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Unknown) { $covered = true; }
                 $proof = ReconciliationEvidence::completion($attempt, $facts, $this->clock->now());
                 $absence = EnomAbsence::observe($attempt, $facts, $started, $this->clock->now());
-                $completed = EnomAbsence::readCompleted($context);
+                $completed = EnomAbsence::readCompleted($context, $facts);
                 $check->observe($attempt,$facts,$proof!==null);
             }
         } catch (ReadDeferred) {
