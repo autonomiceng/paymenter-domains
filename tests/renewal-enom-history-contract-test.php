@@ -123,11 +123,12 @@ $stall->fresh()->update(['policy'=>[...$stall->fresh()->policy,'renewal_polls'=>
 config(['domains.enom_identity.environment'=>'test']); $clock->instant=$dense->sent->modify('+2 days');
 \Paymenter\Extensions\Servers\Domains\Registrars\Enom\TestOrderHistory::upgrade(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$b3->serverId)->sole());
 $turns=[];
-foreach (range(1,9) as $n) { $dense->forms=[]; Cache::flush(); $op=$recover->run($stall->id)->fresh(); $turns[]=[$op->policy['renewal_polls'],count($dense->forms)]; }
-same([[0,21],[0,14],[1,3],[2,3],[3,3],[4,3],[5,3],[6,3],[6,0]],$turns,'Two progressing turns are exempt; each later read that resolves nothing counts once; at the limit the one read a day after the send runs once, then reads stop');
+foreach (range(1,11) as $n) { $dense->forms=[]; Cache::flush(); $op=$recover->run($stall->id)->fresh(); $turns[]=[$op->policy['renewal_polls'],count($dense->forms)]; }
+// The stalled scan never completes, so the late read a day after the send is tried on three turns, then reads stop.
+same([[0,21],[0,14],[1,3],[2,3],[3,3],[4,3],[5,3],[6,3],[7,3],[8,3],[8,0]],$turns,'Two progressing turns are exempt; each later read that resolves nothing counts once; at the limit the late read a day after the send runs on three turns, then reads stop');
 $op=$stall->fresh();
 same(['uncertain',5,'poll_limit_reached',false],[$op->state,$op->policy['history_resumption']['prior_polls'],$op->policy['renewal_execution']['reason'],isset($op->attempt['reconciliation'])],'The resumption revision is used up without completing the renewal');
-same(8,$op->policy['history_scan']['state']['refusal_totals']['detail_unsupported'] ?? null,'Every read of the unsupported order is recorded');
+same(10,$op->policy['history_scan']['state']['refusal_totals']['detail_unsupported'] ?? null,'Every read of the unsupported order is recorded');
 same([$writes,$money,null],[$state->writes,$nativeMoney(),$op->funding['refund'] ?? null],'No Extend, refund or money change while the scan is stalled');
 // A history read that returns past the 250-second deadline is used up once, like a stalled read; its facts are not acted on.
 config(['domains.enom_identity.environment'=>null]);
