@@ -459,7 +459,7 @@ final class RequestFacts
         if(self::invoiceStatus($op)==='paid'&&($invoice=\App\Models\Invoice::find($op->invoice_id))){
             try{
                 $refund=$op->funding['refund']??null;
-                if(($refund['to']??null)==='original_payment'&&\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::settled($op)
+                if(($refund['to']??null)==='original_payment'&&(\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::summary($op)[0]??null)==='Refunded'
                     &&\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::amount($refund)>0
                     &&\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::amount($refund)>=\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)$invoice->total)){return 'Refunded';}
                 $minor=0;foreach(\Paymenter\Extensions\Servers\Domains\Services\ReceiptReversals::forInvoice($invoice) as $row){

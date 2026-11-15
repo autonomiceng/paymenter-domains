@@ -26,4 +26,9 @@ MoneyReceiptGateway::complete(App\Models\Invoice::findOrFail($op->invoice_id),$k
 $run($op->fresh(),'credit');
 same(true,ReceiptReturns::settled($op->fresh()),'The original payment return settled');
 same('Refunded',RequestFacts::for($op->fresh())['invoice_state'],'The staff request reports a full Cancel and refund return');
+MoneyReceiptGateway::credit(App\Models\Invoice::findOrFail($op->invoice_id),$key);
+ReceiptReturns::resume($op->id,$clock->now());
+same('credited',$op->fresh()->funding['receipt_return_results'][$key]['state'],'A failed original payment refund becomes account credit');
+same(true,ReceiptReturns::settled($op->fresh()),'The account credit return settled');
+same('Paid',RequestFacts::for($op->fresh())['invoice_state'],'A return credited to the account stays Paid');
 $nativeSuccessful=true;
