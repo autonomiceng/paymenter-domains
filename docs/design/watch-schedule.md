@@ -86,20 +86,29 @@ or discovery also needs server review.
 DNS templates leave the menu until both activation gates are met; existing
 permission-protected routes and retained configuration remain available.
 
-Each scheduler turn looks at up to 25 hosting products that have services and no row yet
-(`WatchProducts`, durable cursor in scope `products`). It reads only saved values, the same
-properties discovery reads, so no hosting API is called. Values come from the product's active
-services, or all of them if none are active. Past 1,000 rows nothing is picked, since a partial
-read can't prove a field fits or is the only one, and the product waits for staff. The field
-picker lists every key the product's services ever saved. A field named domain or hostname wins
-if its values all look like domain names; with no named field, the one field whose values all
-do. A named field holding anything else is a contradiction and nothing is picked. Alias keys stay ineligible. A found product is monitored from then on, with
-`edited_by` 0 marking the system. A row is only written once, so the turn never overrides staff
-and a product staff turned off stays off. Domain monitoring lists every hosting product as
-Monitored, Not monitored, No domain found or No services yet. Staff switch a product on or off,
-and pick a field on No domain found or Not monitored, because the system can't tell that a
-saved field is wrong. Without a DNS template a monitored domain gets expiry checks only; DNS
-checks need a template on the domain.
+Hosting products (Ilya, Nov 15, 2026). A product is in scope when its orders carry a domain: a
+service saved a non-empty `domain`, else `hostname`, property. It counts with or without a server.
+Domain registrations (server extension Domains, or the `domains_catalogue` setting) never are.
+Every in-scope product is monitored, new ones too, with no staff step. Staff only turn products
+off, and those off maps are the only choice stored.
+
+Each scheduler turn looks at up to 25 products (`WatchProducts::unmapped`, durable cursor in scope
+`products`). It maps an in-scope product with no row, enabled, with `edited_by` 0 marking the
+system. It moves a map on any other field to the convention; on or off stays as it was (audit
+`mapping_corrected`). The map's key only marks the convention: discovery and every source check
+read each service's own `domain`, else its `hostname` (`WatchProducts::field`), so mixed orders on
+one product keep their domains. It reads only saved properties, so no hosting API is called.
+
+There is no field picker. `WatchProductMap` refuses any key but `domain` or `hostname`, and the
+staff mapping save is refused. Monitoring settings shows one summary row and a Choose products
+checklist, and the product editor has a Monitor domains switch. Both write through
+`WatchMappings::monitor()`. The checklist sends the off list it opened with, so a stale dialog
+saves nothing, and only the products it showed can change; one that entered the list later stays on. Products whose orders carry no domain are named as Not listed.
+
+A hosting domain that Domains already manages for the same owner becomes a `managed_link` source,
+not a second watch. If the watch came first, saving the Domain hints discovery and the watch is
+linked. Without a DNS template, a monitored domain gets expiry checks only; DNS checks need a
+template on the domain.
 
 The explicit two-jobs-per-owner/five-minute-turn ceiling permits at most 576 jobs/day per
 owner and 2,880 globally. Rough baseline capacity is 96 watched names/owner or 480 globally

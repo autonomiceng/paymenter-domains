@@ -139,7 +139,7 @@ final class WatchDnsChecks
                 (int) $service->user_id !== $userId || (int) $source->user_id !== $userId || (int) $service->product_id !== (int) $map->product_id ||
                 (int) $map->revision !== (int) $source->map_revision || $source->registrable_name !== $watch->canonical_name ||
                 ($source->hostname !== $watch->canonical_name && !str_ends_with((string) $source->hostname, '.'.$watch->canonical_name))) { return null; }
-            $values = $service->properties()->where('key', $map->property_key)->when($lock, fn($q) => $q->lockForUpdate())->pluck('value');
+            $values = WatchProducts::field($service->properties()->whereIn('key', WatchProducts::KEYS)->when($lock, fn($q) => $q->lockForUpdate())->get())->pluck('value')->values();
             if ($values->count() !== 1 || !is_string($values[0])) { return null; }
             try { if (DnsQuery::hostname($values[0]) !== $source->hostname) { return null; } } catch (\InvalidArgumentException) { return null; }
             $hosts[] = $source->hostname;

@@ -32,7 +32,7 @@ final class DomainSummaryContext
         $this->profiles=WatchProfile::whereIn('id',[...array_map(fn($w)=>$w->ns_profile_id,$this->watches),...array_map(fn($c)=>$c->profile_id,$this->configs),$default?->id])->get()->keyBy('id')->all();
         foreach($this->domains as$id=>$d){$this->defaults[$id]=$default?->id;}
         $this->defaults['site']=$default?->id;
-        $this->properties=Property::where('model_type',(new Service)->getMorphClass())->whereIn('model_id',$ids)->whereIn('key',[...array_map(fn($m)=>$m->property_key,$this->maps),'domain'])->whereIn('id',DB::query()->fromSub(DB::table('properties')->where('model_type',(new Service)->getMorphClass())->whereIn('model_id',$ids)->selectRaw('id, row_number() over (partition by model_type,model_id,'.$this->propertyKey().' order by id) as position'),'bounded')->where('position','<=',2)->select('id'))->orderBy('id')->get()->groupBy('model_id')->all();
+        $this->properties=Property::where('model_type',(new Service)->getMorphClass())->whereIn('model_id',$ids)->whereIn('key',WatchProducts::KEYS)->whereIn('id',DB::query()->fromSub(DB::table('properties')->where('model_type',(new Service)->getMorphClass())->whereIn('model_id',$ids)->selectRaw('id, row_number() over (partition by model_type,model_id,'.$this->propertyKey().' order by id) as position'),'bounded')->where('position','<=',2)->select('id'))->orderBy('id')->get()->groupBy('model_id')->all();
     }
     /** Staff-only watch context; every identity is still checked against its row's owner. */
     public static function staffWatches(array $ids): self
@@ -55,8 +55,7 @@ final class DomainSummaryContext
         $c->maps=WatchProductMap::whereIn('id',array_map(fn($s)=>$s->map_id,$c->sources))->get()->keyBy('id')->all();
         $c->defaults['site']=SiteDnsDefault::profile()?->id;
         $c->profiles=WatchProfile::whereIn('id',[...array_map(fn($w)=>$w->ns_profile_id,$c->watches),$c->defaults['site']])->get()->keyBy('id')->all();
-        $keys=array_map(fn($m)=>$m->property_key,$c->maps);
-        $c->properties=Property::where('model_type',(new Service)->getMorphClass())->whereIn('model_id',$serviceIds)->whereIn('key',[...$keys,'domain'])->whereIn('id',DB::query()->fromSub(DB::table('properties')->where('model_type',(new Service)->getMorphClass())->whereIn('model_id',$serviceIds)->selectRaw('id, row_number() over (partition by model_type,model_id,'.$c->propertyKey().' order by id) as position'),'bounded')->where('position','<=',2)->select('id'))->orderBy('id')->get()->groupBy('model_id')->all();
+                $c->properties=Property::where('model_type',(new Service)->getMorphClass())->whereIn('model_id',$serviceIds)->whereIn('key',WatchProducts::KEYS)->whereIn('id',DB::query()->fromSub(DB::table('properties')->where('model_type',(new Service)->getMorphClass())->whereIn('model_id',$serviceIds)->selectRaw('id, row_number() over (partition by model_type,model_id,'.$c->propertyKey().' order by id) as position'),'bounded')->where('position','<=',2)->select('id'))->orderBy('id')->get()->groupBy('model_id')->all();
         return $c;
     }
     public function watchProfile(int $id): ?WatchProfile
@@ -73,7 +72,7 @@ final class DomainSummaryContext
     {
         $h=$this->services[$s->service_id]??null;$m=$this->maps[$s->map_id]??null;$o=$this->orders[$h?->order_id]??null;
         if (!$h || !$o || (int)$h->user_id!==(int)$s->user_id || (int)$o->user_id!==(int)$s->user_id || !$m || !$m->enabled || $h->status!=='active' || !isset($this->products[$h->product_id]) || (int)$h->product_id!==(int)$m->product_id || (int)$s->map_revision!==$m->revision) { return false; }
-        $props=($this->properties[$h->id]??collect())->where('key',$m->property_key);
+        $props=WatchProducts::field($this->properties[$h->id]??collect());
         try { return $props->count()===1 && DnsQuery::hostname($props->first()->value)===$s->hostname; } catch (\Throwable) { return false; }
     }
     private function propertyKey(): string { return DB::connection()->getQueryGrammar()->wrap('key'); }
@@ -87,7 +86,7 @@ final class DomainSummaryContext
         foreach ($sources as $s) {
             if ($kind==='watch' && (!$this->validSource($s) || $s->registrable_name!==$t->canonical_name)) { return null; }
             $h=$this->services[$s->service_id]??null;$m=$this->maps[$s->map_id]??null;
-            $evidence[]=[$s->only(['id','user_id','service_id','map_id','map_revision','hostname','registrable_name','watch_id','managed_domain_id','state','source_digest','revision']),$h?->only(['id','user_id','order_id','product_id','status']),($this->orders[$h?->order_id]??null)?->user_id,$m?->getRawOriginal(),($this->properties[$h?->id]??collect())->where('key',$m?->property_key)->pluck('value')->all(),($this->products[$h?->product_id]??null)?->server_id];
+            $evidence[]=[$s->only(['id','user_id','service_id','map_id','map_revision','hostname','registrable_name','watch_id','managed_domain_id','state','source_digest','revision']),$h?->only(['id','user_id','order_id','product_id','status']),($this->orders[$h?->order_id]??null)?->user_id,$m?->getRawOriginal(),WatchProducts::field($this->properties[$h?->id]??collect())->pluck('value')->all(),($this->products[$h?->product_id]??null)?->server_id];
         }
         $identity=$kind==='watch'?$t->only(['id','user_id','canonical_name','psl_revision','state']):$t->only(['id','user_id','domain','service_id','server_id','registrar_key','account_fingerprint','authority_generation','confirmed_revision','provider_expires_at','status']);
         if ($family!=='registry') { $identity['dns']=$kind==='watch'?$t->only(['expected_dns','ns_profile_id','profile_revision']):null; } else { $profile=null; }

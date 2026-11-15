@@ -27,13 +27,13 @@ final class WatchDiscovery
             // An old product turn must never remove a new product's already reconciled source.
             if((int)$service?->product_id!==$productId && (!$old || (int)$old->map_id!==(int)$map?->id)){return;}
             $eligible=$service && $product && $map && $map->enabled && (int)$service->product_id===$productId
-                && $product->server && $product->server->extension!=='Domains'
+                && $product->server?->extension!=='Domains'
                 && !$product->settings()->where('key','domains_catalogue')->exists()
                 && User::whereKey($service->user_id)->exists()
                 && Order::whereKey($service->order_id)->where('user_id',$service->user_id)->exists()
                 && in_array($service->status,['active','suspended'],true);
             if(!$eligible){$this->remove($old,'hosting_unavailable',$now);return;}
-            $values=$service->properties()->where('key',$map->property_key)->lockForUpdate()->pluck('value')->all();
+            $values=self::values($service,true);
             $digest=$this->digest($service,$map,$values);
             $same=$old && (int)$old->user_id===(int)$service->user_id && (int)$old->map_id===(int)$map->id
                 && (int)$old->map_revision===(int)$map->revision && hash_equals($old->source_digest,$digest);
@@ -85,9 +85,12 @@ final class WatchDiscovery
             // Property writers participate in the native transaction; reject reentrant stale-value writes too.
             $current=$service->fresh();$currentMap=$map->fresh();
             if(!$current || !$currentMap?->enabled || $current->status!==$service->status || $snapshot?->revision!==$this->psl->revision()
-                || $digest!==$this->digest($current,$currentMap,$service->properties()->where('key',$currentMap->property_key)->pluck('value')->all())){throw new \DomainException('Discovery source changed.');}
+                || $digest!==$this->digest($current,$currentMap,self::values($service))){throw new \DomainException('Discovery source changed.');}
         },3);
     }
+    /** The service's own domain, else its hostname. */
+    private static function values(Service $s,bool $lock=false): array
+    {return WatchProducts::field($s->properties()->whereIn('key',WatchProducts::KEYS)->when($lock,fn($q)=>$q->lockForUpdate())->get())->pluck('value')->all();}
     private function digest(Service $s,WatchProductMap $map,array $values): string
     {return hash('sha256',json_encode([$s->id,$s->user_id,$s->order_id,$s->product_id,$map->id,$map->revision,$map->property_key,$values],JSON_THROW_ON_ERROR));}
     private function seen(WatchSource $source,int $now): void

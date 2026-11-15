@@ -1,8 +1,10 @@
 # Dormant domain watch storage
 
-Product mappings save one exact primary service-property key, disabled, with a reason and
-optimistic revision. Enabling remains refused until the audited enable action exists. Watch view/manage permissions default denied; the existing Domains view
-permission is also required. Saving never reads service properties or invokes discovery.
+Product mappings hold one key, `domain` or `hostname`, with a reason and optimistic revision; any
+other key is refused. The system writes them enabled for hosting products whose orders carry a
+domain (`WatchProducts`, `edited_by` 0). Staff turn products off or on through the audited
+`WatchMappings::monitor()`; a direct enable without it is refused. Watch view/manage permissions
+default denied; the existing Domains view permission is also required. Saving never invokes discovery.
 
 Names are unique per customer and canonical ASCII name, not globally. The PSL revision belongs
 to the saved derivation. `service` is the only origin; no manual add or alias list is provided.

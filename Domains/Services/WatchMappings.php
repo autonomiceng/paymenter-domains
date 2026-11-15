@@ -22,15 +22,35 @@ final class WatchMappings
             WatchAudit::create(['subject_type'=>'product_map','subject_id'=>$id,'actor_id'=>$actor->id,'event'=>'mapping_enabled','reason'=>trim($reason),'before_revision'=>(string)$revision,'after_revision'=>(string)$row->revision,'data'=>[],'created_at'=>now()]);return $row;
         });
     }
-    /** A product the system found a field on. Only products with no row: a saved choice is never reversed. edited_by 0 marks the system. */
+    /** Maps a product the tick found, monitored, or corrects a map on another field to the convention; on or off stays as it was. edited_by 0 marks the system. */
     public function adopt(int $productId,string $key): void
     {
         $reason='Domain field found';
         DB::transaction(function()use($productId,$key,$reason):void {
             Product::whereKey($productId)->lockForUpdate()->firstOrFail();
-            if(WatchProductMap::where('product_id',$productId)->lockForUpdate()->exists()){return;}
-            self::$enabling=true;try{$row=WatchProductMap::create(['product_id'=>$productId,'property_key'=>$key,'enabled'=>true,'edited_by'=>0,'reason'=>$reason]);}finally{self::$enabling=false;}
-            WatchAudit::create(['subject_type'=>'product_map','subject_id'=>$row->id,'event'=>'mapping_found','reason'=>$reason,'before_revision'=>'0','after_revision'=>(string)$row->revision,'data'=>['property_key'=>$key],'created_at'=>now()]);
+            $map=WatchProductMap::where('product_id',$productId)->lockForUpdate()->first();$before=(int)$map?->revision;
+            if($map?->property_key===$key){return;}
+            self::$enabling=true;try{$map?$map->fill(['property_key'=>$key,'revision'=>$before+1])->save():$map=WatchProductMap::create(['product_id'=>$productId,'property_key'=>$key,'enabled'=>true,'edited_by'=>0,'reason'=>$reason]);}finally{self::$enabling=false;}
+            WatchAudit::create(['subject_type'=>'product_map','subject_id'=>$map->id,'event'=>$before?'mapping_corrected':'mapping_found','reason'=>$reason,'before_revision'=>(string)$before,'after_revision'=>(string)$map->revision,'data'=>['property_key'=>$key],'created_at'=>now()]);
+        });
+    }
+    /** Staff turn hosting products on or off ([product id => on]). Products out of scope are left alone. With $loaded, the
+     * off list the page showed, a page that is out of date changes nothing. */
+    public function monitor(User $actor,array $changes,?array $loaded=null): void
+    {
+        $this->authorize($actor);
+        DB::transaction(function()use($actor,$changes,$loaded):void {
+            $ids=WatchProducts::inScope()->orderBy('id')->lockForUpdate()->pluck('id')->all();$this->authorize($actor);
+            $maps=WatchProductMap::whereIn('product_id',$ids)->lockForUpdate()->get()->keyBy('product_id');
+            $sorted=fn(array $list)=>collect($list)->map(fn($id)=>(int)$id)->intersect($ids)->unique()->sort()->values()->all();
+            if($loaded!==null&&$sorted($maps->where('enabled',false)->keys()->all())!==$sorted($loaded)){throw new \DomainException('The saved mapping changed.');}
+            foreach(array_intersect_key($changes,array_flip($ids)) as $id=>$on){
+                $map=$maps[$id]??null;$on=(bool)$on;$key=in_array($map?->property_key,WatchProducts::KEYS,true)?$map->property_key:WatchProducts::key((int)$id);
+                if($map?(bool)$map->enabled===$on&&$map->property_key===$key:$on){continue;}
+                $before=(int)$map?->revision;$reason=$on?'Monitoring turned on':'Monitoring turned off';$map??=new WatchProductMap(['product_id'=>(int)$id]);
+                self::$enabling=true;try{$map->fill(['property_key'=>$key,'enabled'=>$on,'revision'=>$before+1,'edited_by'=>$actor->id,'reason'=>$reason])->save();}finally{self::$enabling=false;}
+                WatchAudit::create(['subject_type'=>'product_map','subject_id'=>$map->id,'actor_id'=>$actor->id,'event'=>$on?'mapping_enabled':'mapping_disabled','reason'=>$reason,'before_revision'=>(string)$before,'after_revision'=>(string)$map->revision,'data'=>['property_key'=>$key],'created_at'=>now()]);
+            }
         });
     }
     public function save(User $actor, int $productId, string $key, int $expectedRevision, string $reason): WatchProductMap

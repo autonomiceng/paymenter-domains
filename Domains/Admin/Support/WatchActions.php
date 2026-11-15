@@ -10,8 +10,8 @@ use Filament\Schemas\Components\Fieldset;
 use Filament\Support\Enums\Width;
 use Illuminate\Support\Facades\Auth;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\{RoutingProfileResource,WatchResource};
-use Paymenter\Extensions\Servers\Domains\Models\{WatchName,WatchProductMap,WatchProfile};
-use Paymenter\Extensions\Servers\Domains\Services\{SiteDnsDefault,StaffWatchWrites as Writes,WatchDiscovery,WatchProducts};
+use Paymenter\Extensions\Servers\Domains\Models\{WatchName,WatchProfile};
+use Paymenter\Extensions\Servers\Domains\Services\{SiteDnsDefault,StaffWatchWrites as Writes,WatchDiscovery};
 /** Staff writes for monitored domains, DNS templates and hosting product lines. The ticket binds the revision the page loaded, so a stale page changes nothing. */
 final class WatchActions
 {
@@ -27,7 +27,7 @@ final class WatchActions
         if($action==='read'){$a->tooltip('Monitoring uses 0 registrar reads per domain per day.');}
         return $a->action(function(array $data,array $arguments,$livewire)use($kind,$id,$revision,$action,$defaultId):void {
                 $id=(int)($arguments['map']??$id);$revision=(int)($arguments['revision']??$revision);
-                $reason=match($action){'note'=>(string)($data['note']??''),'save'=>$kind==='mapping'?'Domain field chosen':'DNS template saved','enable'=>'DNS template turned on','disable'=>'DNS template turned off','delete'=>'DNS template deleted',default=>self::REASONS[$action]};
+                $reason=match($action){'note'=>(string)($data['note']??''),'save'=>'DNS template saved','enable'=>'DNS template turned on','disable'=>'DNS template turned off','delete'=>'DNS template deleted',default=>self::REASONS[$action]};
                 try{(new Writes())->run(Auth::user(),$kind,$id,$action,Writes::ticket((int)Auth::id(),$kind,$id,$revision,$action,$defaultId),$reason,$data+$arguments);}
                 catch(\DomainException|\InvalidArgumentException|\Illuminate\Database\QueryException|\Illuminate\Database\Eloquent\ModelNotFoundException $e){
                     if($action==='read' && $e instanceof \DomainException && $e->getMessage()==='A check was recently requested. Try again later.'){$livewire->waitForCheck();}
@@ -125,24 +125,6 @@ final class WatchActions
         return self::action('profile',(int)$row->id,$revision,'delete','Delete')->color('danger')->outlined()
             ->requiresConfirmation()->modalHeading('Delete DNS template?')->modalDescription('The saved nameservers and records will be deleted. This cannot be undone.')
             ->modalSubmitActionLabel('Delete');
-    }
-    /** The switch on a hosting product's settings row (Monitoring settings). $canManage is the page's permission, read once per request. The revision is the one the page loaded, so a stale page changes nothing. */
-    public static function productSwitch(\Closure $canManage): Action
-    {
-        return Action::make('productSwitch')->visible($canManage)
-            ->action(function(array $arguments):void {
-                $id=(int)($arguments['map']??0);$on=WatchProductMap::whereKey($id)->value('enabled');$action=$on?'disable':'enable';
-                try{(new Writes())->run(Auth::user(),'mapping',$id,$action,Writes::ticket((int)Auth::id(),'mapping',$id,(int)($arguments['revision']??0),$action),$on?'Monitoring turned off':'Monitoring turned on');}
-                catch(\DomainException|\InvalidArgumentException|\Illuminate\Database\QueryException|\Illuminate\Database\Eloquent\ModelNotFoundException $e){Notification::make()->warning()->title(self::error('mapping',$e))->send();}
-            });
-    }
-    /** For a line that isn't monitored. The system can't tell which field holds the domain, or that a field it or staff chose is wrong, so a person says which. */
-    public static function chooseField(\Closure $canManage): Action
-    {
-        return self::action('mapping',0,0,'save','Choose a field')->name('chooseField')->visible($canManage)->link()->modalHeading('Choose the domain field')->modalDescription('Choose the field that holds the main domain. Monitoring starts when you save.')->modalSubmitActionLabel('Save')
-            ->schema(function(array $arguments):array {$fields=WatchProducts::fields(\App\Models\Product::findOrFail((int)($arguments['product_id']??0)));
-                return [Select::make('property_key')->label('Domain field')->options($fields)->required()
-                    ->helperText($fields===[]?'No service on this product has a text field yet. If it has a domain, add a text option for it.':null)];});
     }
     /** Add (no row) or Edit a DNS template. Validated edits preserve whether monitoring is on. */
     public static function configuration(?WatchProfile $row,int $revision=0,?int $defaultId=null): Action
