@@ -11,8 +11,9 @@ use Paymenter\Extensions\Servers\Domains\Models\WatchProductMap;
  * products off, so the turned-off maps are the only choice stored. */
 final class WatchProducts
 {
-    /** The order field that holds the domain: domain, else hostname. No other field is ever read. */
-    public const KEYS=['domain','hostname'];
+    /** The order field that holds the domain: domain, else hostname. No other field is ever read. These are field
+     * names, never reason codes. */
+    public const DOMAIN='domain', HOSTNAME='hostname', KEYS=[self::DOMAIN,self::HOSTNAME];
     /** @return Builder<Product> Every product but a domain registration. */
     private static function hosting(): Builder
     {return Product::whereDoesntHave('server',fn($q)=>$q->where('extension','Domains'))->whereDoesntHave('settings',fn($q)=>$q->where('key','domains_catalogue'));}
@@ -24,7 +25,7 @@ final class WatchProducts
     /** One service's domain values: its domain, else its hostname. Each service reads its own, so a product with mixed
      * orders, or old services with another field, never drops a monitored domain. $props are that service's properties. */
     public static function field(Collection $props): Collection
-    {$domain=$props->where('key','domain')->filter(fn($p)=>trim((string)$p->value)!=='');return $domain->isNotEmpty()?$domain:$props->where('key','hostname');}
+    {$domain=$props->where('key',self::DOMAIN)->filter(fn($p)=>trim((string)$p->value)!=='');return $domain->isNotEmpty()?$domain:$props->where('key',self::HOSTNAME);}
     /** The next products the tick maps or corrects: in scope with no map yet, or a map on a field other than the convention. */
     public static function unmapped(int $after,int $limit): Collection
     {
@@ -36,7 +37,7 @@ final class WatchProducts
     public static function adopt(Product $product): void { (new WatchMappings())->adopt((int)$product->id,self::key((int)$product->id)); }
     /** The key a new or corrected map stores. Reads go per service through field(), so it only marks the convention. */
     public static function key(int $product): string
-    {$has=fn(string $key)=>Service::where('product_id',$product)->where(self::saved($key))->exists();return $has('domain')||!$has('hostname')?'domain':'hostname';}
+    {$has=fn(string $key)=>Service::where('product_id',$product)->where(self::saved($key))->exists();return $has(self::DOMAIN)||!$has(self::HOSTNAME)?self::DOMAIN:self::HOSTNAME;}
     /** The Hosting products section: products to choose (name, hidden, on, active services) and the names of the rest. */
     public static function lines(): array
     {

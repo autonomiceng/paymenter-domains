@@ -40,7 +40,7 @@
         <fieldset id="hp-list" class="domains-hp-list" x-bind:class="{ 'domains-hp-searching': query }"><legend class="sr-only">Monitored hosting products</legend>
             <template x-for="item in shown()" :key="item.id"><label class="domains-hp-ck"><x-filament::input.checkbox x-model="item.on" />
                 <span class="domains-hp-nm" x-html="mark(item.name)"></span><span class="domains-panel-st domains-hp-hidden" x-show="item.hidden">Not for sale</span></label></template>
-            <template x-for="name in unlistedShown()" :key="name"><div class="domains-hp-ck domains-hp-nl"><span class="domains-hp-gap" aria-hidden="true"></span><span><span class="domains-hp-nm" x-html="mark(name)"></span> <span class="domains-panel-sub">&mdash; not listed: its orders carry no domain</span></span></div></template>
+            <template x-for="name in unlistedShown()" :key="name"><div class="domains-hp-ck domains-hp-nl"><span class="domains-hp-gap" aria-hidden="true"></span><span><span class="domains-hp-nm" x-html="mark(name)"></span><span class="domains-panel-sub">: not listed. Its orders carry no domain.</span></span></div></template>
             <p class="domains-hp-none" x-show="query && !shown().length && !unlistedShown().length">No products match "<span x-text="query"></span>". <x-filament::link tag="button" x-on:click="query = ''">Clear search</x-filament::link></p>
         </fieldset>
         <p class="domains-hp-eff" id="hp-eff" x-text="effect()"></p>
