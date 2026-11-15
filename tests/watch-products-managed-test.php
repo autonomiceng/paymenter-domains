@@ -31,4 +31,17 @@ $later=$order('later.com');$sweep();same('watch',WatchSource::where('service_id'
 $domain=$managed('later.com');$sweep();
 same(['managed_link',(int)$domain->id],[WatchSource::where('service_id',$later->id)->value('state'),(int)WatchSource::where('service_id',$later->id)->value('managed_domain_id')],'The watch moves to the managed domain once Domains manages it');
 same([1,'linked'],[WatchName::where('canonical_name','later.com')->count(),WatchName::where('canonical_name','later.com')->value('state')],'The earlier watch is linked, not duplicated or left checking');
+// Mixed orders on one product: each service reads its own domain, else its hostname. A later domain order, or an old
+// cancelled service with a domain, never moves the hostname-only services off their monitored domains.
+$mixed=$product->replicate();$mixed->name='Mixed hosting';$mixed->slug='mixed-hosting';$mixed->save();
+$sell=function(array $values,string $status='active')use($owner,$mixed,$plan){
+    $o=App\Models\Order::create(['user_id'=>$owner->id,'currency_code'=>'USD']);
+    $s=App\Models\Service::create(['user_id'=>$owner->id,'order_id'=>$o->id,'product_id'=>$mixed->id,'plan_id'=>$plan->id,'status'=>$status,'quantity'=>1,'price'=>'5.00','currency_code'=>'USD']);
+    foreach($values as $key=>$value){$s->properties()->create(['key'=>$key,'value'=>$value]);}return $s;
+};
+$visit=function()use($work,$clock,$mixed){WatchProducts::adopt($mixed->fresh());$work->hint((int)$mixed->id);$work->tick($clock->at);expect(!$work->failed,'Discovery completes');};
+$hostOnly=$sell(['hostname'=>'hostonly.com']);$visit();same('watch',WatchSource::where('service_id',$hostOnly->id)->value('state'),'A hostname-only order is watched');
+$sell(['domain'=>'cancelled.com'],'cancelled');$withDomain=$sell(['domain'=>'www.ordered.com','hostname'=>'box1.hosting.example.net']);$visit();$visit();
+same(['watch','active'],[WatchSource::where('service_id',$hostOnly->id)->value('state'),WatchName::where('canonical_name','hostonly.com')->value('state')],'The hostname-only order stays monitored after domain orders join the product');
+same(['watch','ordered.com'],[WatchSource::where('service_id',$withDomain->id)->value('state'),WatchSource::where('service_id',$withDomain->id)->value('registrable_name')],'The order with a domain is watched by its domain, not its hostname');
 $nativeSuccessful=true;echo "Hosting links to managed domains.\n";
