@@ -58,10 +58,11 @@ final class RefundPayment
     }
     /** A closed new order shares its invoice's payments with other orders, maybe on another account, so it reads what any of them credited.
      * @return array<int,int> Payment id => minor amount already credited from a closed order. */
-    public static function lateCredited(Operation $op): array
+    public static function lateCredited(Operation $op, ?\Illuminate\Support\Collection $observedPeers = null): array
     {
+        if ($observedPeers !== null && DB::transactionLevel() > 0) { throw new \LogicException('Observed credits are only for unlocked inspection.'); }
         $ops = $op->safe_code === UnpaidAcquisitionProof::CODE
-            ? Operation::where('invoice_id', $op->invoice_id)->orderBy('id')->when(DB::transactionLevel() > 0, fn ($q) => $q->lockForUpdate())->get() : [$op];
+            ? ($observedPeers ?? Operation::where('invoice_id', $op->invoice_id)->orderBy('id')->when(DB::transactionLevel() > 0, fn ($q) => $q->lockForUpdate())->get()) : [$op];
         $done = [];
         foreach ($ops as $row) {
             // An unreadable retained return stays with staff before its coverage is read.

@@ -177,12 +177,20 @@ final readonly class AcquisitionRetirement
         $cancelled=ServiceCancellation::where('service_id',$seed->service_id)->exists()
             ||(Schema::hasTable('domains_native_intents')&&DB::table('domains_native_intents')->where('service_id',$seed->service_id)->exists());
         // Quiet closed history never locks the owner's unrelated hosting/money rows.
-        $hit=$seed->operations()->whereIn('action',['register','transfer'])->get()->contains(function($op)use($seed,$service,$cancelled){
+        $ops=$seed->operations()->whereIn('action',['register','transfer'])->get();
+        // Batch the preliminary history reads only outside transactions. The authoritative path below
+        // still takes the native prefix and rereads each operation before recording any alert.
+        $observed=DB::transactionLevel()===0;
+        $ids=$ops->pluck('invoice_id')->filter()->unique();
+        $invoices=$observed?Invoice::whereIn('id',$ids)->pluck('status','id'):null;
+        $payments=$observed?InvoiceTransaction::whereIn('invoice_id',$ids)->orderBy('id')->get()->groupBy('invoice_id'):null;
+        $peers=$observed?Operation::whereIn('invoice_id',$ids)->orderBy('id')->get()->groupBy('invoice_id'):null;
+        $hit=$ops->contains(function($op)use($seed,$service,$cancelled,$observed,$invoices,$payments,$peers){
             if(self::needsSnapshot($op,$service)){return true;}
             if(!self::closed($op,$seed,$service,$cancelled)){return false;}
-            $status=Invoice::whereKey($op->invoice_id)->value('status');
-            $transactions=InvoiceTransaction::where('invoice_id',$op->invoice_id)->orderBy('id')->get();
-            if(!self::activity($op,$service,$status,$transactions)){return false;}
+            $status=$observed?($invoices[$op->invoice_id]??null):Invoice::whereKey($op->invoice_id)->value('status');
+            $transactions=$observed?($payments[$op->invoice_id]??collect()):InvoiceTransaction::where('invoice_id',$op->invoice_id)->orderBy('id')->get();
+            if(!self::activity($op,$service,$status,$transactions,$observed?($peers[$op->invoice_id]??collect()):null)){return false;}
             $key=ObligationAlerts::key($seed,'acquisition_late_money',(int)$op->id,self::identity($seed,$service,$status,$transactions));
             return !DB::table('domains_obligation_alerts')->where('alert_key',$key)->whereNull('resolved_at')->exists();
         });
@@ -244,7 +252,7 @@ final readonly class AcquisitionRetirement
     }
     private static function payments(\Illuminate\Support\Collection $transactions): array
     {return $transactions->map(fn($t)=>[(int)$t->id,$t->status->value,(string)$t->amount])->values()->all();}
-    private static function activity($op,?string $service,?string $invoice,\Illuminate\Support\Collection $transactions): bool
+    private static function activity($op,?string $service,?string $invoice,\Illuminate\Support\Collection $transactions,?\Illuminate\Support\Collection $observedPeers=null): bool
     {
         if($service==='active'&&(isset($op->policy['native_acquisition_cancelled_at'])||!isset($op->funding['refund_authorization'])||isset($op->funding['refund']))){return true;}
         try{$transactions=ReceiptReturns::activityTransactions($op,$transactions);}
@@ -257,7 +265,7 @@ final readonly class AcquisitionRetirement
                 ->map(fn($t)=>['id'=>(int)$t->id,'amount_minor'=>PricingRule::minor($t->amount)])->values()->all();
             return $payments!==($refund['payments']??null)||$transactions->contains(fn($t)=>$t->status===PaymentStatus::Processing);
         }
-        $credited=RefundPayment::lateCredited($op);
+        $credited=RefundPayment::lateCredited($op,$observedPeers);
         return $transactions->contains(fn($t)=>$t->status!==PaymentStatus::Failed&&!isset($credited[$t->id]))||$invoice==='paid';
     }
     private static function closedOrder(Invoice $invoice): bool
