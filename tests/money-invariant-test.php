@@ -271,6 +271,12 @@ foreach (['reserved', 'sending', 'pending', 'review', 'released', 'refunded', 'c
     same($state === 'released' ? 110 : 50, $r['receipts'][10]['credit'], 'Bridge and released credit counted once');
     if (in_array($state, ['refunded','credited'], true)) {
         same($r['pool'], InvoiceMoney::record($rows, $peers, [$observation('stripe:refund:synthetic_refund', 'refunded', 100)])['pool'], 'Own refund observation is not external');
+        foreach ([150, 50] as $observedMinor) {
+            $refused = false;
+            try { InvoiceMoney::record($rows, $peers, [$observation('stripe:refund:synthetic_refund', 'refunded', $observedMinor)]); }
+            catch (DomainException) { $refused = true; }
+            expect($refused, 'Conflicting own-refund observation must fail closed');
+        }
     }
 }
 // A gateway result is authoritative after acceptance even if Domains has no local result yet.
