@@ -121,7 +121,7 @@ final class InvoiceMoney
                 $nativeId = array_key_first($matches);
                 if (isset($used[$nativeId]) || PricingRule::minor($matches[$nativeId]['amount']) !== -$minor) { throw new \DomainException('Completed return amount changed.'); }
                 $used[$nativeId] = true; $receipts[$id]['completed'] += $minor;
-                if (!empty($result['refund_id'])) { $refunds[$identity($receipts[$id]['gateway_id'], $receipts[$id]['receipt'], $result['refund_id'])] = true; }
+                if (!empty($result['refund_id'])) { $refunds[$identity($receipts[$id]['gateway_id'], $receipts[$id]['receipt'], $result['refund_id'])] = $minor; }
             } else {
                 $receipts[$id]['reserved'] += $minor;
                 // A known sending key may already have its native row while a local result is stale.
@@ -134,7 +134,10 @@ final class InvoiceMoney
             $ids = array_keys(array_filter($receipts, fn($r)=>$r['gateway_id'] === $entry['gateway_id'] && $r['receipt'] === $entry['payment_intent_id']));
             if (count($ids) !== 1) { throw new \DomainException('Reversal receipt is missing or ambiguous.'); }
             $id = $ids[0]; $state = $entry['state'];
-            if ($parts[1] === 'refund' && isset($refunds[$identity($entry['gateway_id'], $entry['payment_intent_id'], $parts[2])])) { continue; }
+            if ($parts[1] === 'refund' && isset($refunds[$key = $identity($entry['gateway_id'], $entry['payment_intent_id'], $parts[2])])) {
+                if ($refunds[$key] !== (int)$entry['amount_minor']) { throw new \DomainException('Conflicting refund observation amount.'); }
+                continue;
+            }
             $receipts[$id]['cardOk'] = false;
             if ($parts[1] === 'dispute' ? $state === 'lost' : $state === 'refunded') { $receipts[$id]['external'] += (int)$entry['amount_minor']; }
             if ($parts[1] === 'dispute' ? !in_array($state, ['won', 'lost', 'cleared'], true) : !in_array($state, ['refunded', 'failed'], true)) { $receipts[$id]['hold'] = true; }

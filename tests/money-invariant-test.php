@@ -74,8 +74,8 @@ $run = static function (int $seed, string $mode, array $actions) use (
     $gross = PricingRule::minor($op->amount);
     $beforeCredit = $balance(); $receipts = []; $trace = []; $seen = []; $closing = false; $previousOut = 0; $promised = 0;
     $record = static function (string $rule, array $facts) use (&$failures, &$seen, &$trace, $seed, $mode): void {
-        if (isset($seen[$rule])) { return; }
-        $seen[$rule] = true;
+        if (isset($seen[$rule][$facts['out']])) { return; }
+        $seen[$rule][$facts['out']] = true;
         $failure = ['seed'=>$seed, 'mode'=>$mode, 'rule'=>$rule, 'sequence'=>$trace, 'facts'=>$facts];
         $failures[] = $failure;
         echo 'INVARIANT_FAIL '.json_encode($failure, JSON_THROW_ON_ERROR)."\n";
@@ -195,7 +195,7 @@ $run = static function (int $seed, string $mode, array $actions) use (
 $run(1, 'ordinary', [['payment','a','full','refund'], ['lost','a','full'], ['refund'], ['retry']]);
 $run(2, 'ordinary', [['payment','a','half','refund'], ['payment','b','rest','refund'], ['refund'], ['retry']]);
 $run(3, 'late', [['late_payment','a',200,'credit'], ['credit'], ['lost','a','full'],
-    ['late_payment','b',200,'credit'], ['credit'], ['retry']]);
+    ['late_payment','b',200,'credit'], ['credit'], ['retry'], ['late_payment','c',100,'credit'], ['retry']]);
 $run(4, 'ordinary', [['payment','a','full','credit'], ['open','a','full'], ['refund'], ['won','a','full'], ['retry']]);
 $run(5, 'late', [['late_payment','a',100,'credit'], ['credit'], ['lost','a','full'],
     ['late_payment','b',300,'credit'], ['retry']]);
@@ -271,6 +271,12 @@ foreach (['reserved', 'sending', 'pending', 'review', 'released', 'refunded', 'c
     same($state === 'released' ? 110 : 50, $r['receipts'][10]['credit'], 'Bridge and released credit counted once');
     if (in_array($state, ['refunded','credited'], true)) {
         same($r['pool'], InvoiceMoney::record($rows, $peers, [$observation('stripe:refund:synthetic_refund', 'refunded', 100)])['pool'], 'Own refund observation is not external');
+        foreach ([150, 50] as $observedMinor) {
+            $refused = false;
+            try { InvoiceMoney::record($rows, $peers, [$observation('stripe:refund:synthetic_refund', 'refunded', $observedMinor)]); }
+            catch (DomainException) { $refused = true; }
+            expect($refused, 'Conflicting own-refund observation must fail closed');
+        }
     }
 }
 // A gateway result is authoritative after acceptance even if Domains has no local result yet.
@@ -347,6 +353,8 @@ $callerBaseline = [
     ['late:3', 3, 'external_deficit', 200],
     ['late:3', 5, 'returned_exceeds_paid_less_lost', 400],
     ['late:3', 5, 'new_return_exceeds_available', 400],
+    ['late:3', 8, 'returned_exceeds_paid_less_lost', 500],
+    ['late:3', 8, 'new_return_exceeds_available', 500],
     ['ordinary:4', 3, 'return_during_open_dispute', 780],
     ['late:5', 3, 'external_deficit', 100],
     ['late:5', 5, 'returned_exceeds_paid_less_lost', 400],
@@ -363,6 +371,7 @@ $callerBaseline = [
     ['late:307', 3, 'return_during_open_dispute', 528],
     ['late:401', 5, 'external_deficit', 505],
     ['late:401', 6, 'returned_exceeds_paid_less_lost', 505],
+    ['late:401', 7, 'returned_exceeds_paid_less_lost', 816],
     ['late:401', 7, 'new_return_exceeds_available', 816],
     ['ordinary:503', 4, 'return_during_open_dispute', 780],
     ['late:503', 3, 'return_during_open_dispute', 184],
@@ -374,8 +383,10 @@ $callerBaseline = [
     ['late:809', 3, 'return_during_open_dispute', 168],
     ['late:809', 4, 'external_deficit', 168],
     ['late:809', 5, 'returned_exceeds_paid_less_lost', 168],
+    ['late:809', 6, 'returned_exceeds_paid_less_lost', 324],
     ['late:809', 6, 'new_return_exceeds_available', 324],
     ['ordinary:907', 5, 'return_during_open_dispute', 390],
+    ['ordinary:907', 6, 'return_during_open_dispute', 780],
     ['ordinary:907', 7, 'external_deficit', 780],
     ['ordinary:907', 8, 'returned_exceeds_paid_less_lost', 780],
     ['late:907', 3, 'return_during_open_dispute', 297],
@@ -387,6 +398,7 @@ $callerBaseline = [
     ['late:1103', 3, 'return_during_open_dispute', 474],
     ['late:1103', 4, 'external_deficit', 474],
     ['late:1103', 5, 'returned_exceeds_paid_less_lost', 474],
+    ['late:1103', 6, 'returned_exceeds_paid_less_lost', 700],
     ['late:1103', 6, 'new_return_exceeds_available', 700],
     ['late:1201', 3, 'return_during_open_dispute', 527],
     ['ordinary:1301', 4, 'return_during_open_dispute', 780],
