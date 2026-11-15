@@ -147,7 +147,7 @@ final readonly class Refunds
         }
     }
     /** A stale pay form can pay an order we closed. Return its funds only with the retained no-send proof.
-     * One order takes the whole invoice, and RefundPayment::lateCredited stops any other order on it, on any account, crediting the same payment.
+     * One order takes the held invoice pool, with every peer return counted under the invoice locks.
      * Funding is encrypted, so SQL cannot skip settled orders. The cursor gives every order a turn; losing it only restarts the pass.
      * Whatever is not credited goes to staff.
      * @return list<int> Domains that got credit, for the caller's notice. */
@@ -159,9 +159,7 @@ final readonly class Refunds
             ->selectRaw('min(id) as id')->groupBy('invoice_id')->orderBy('id')->limit(100)->pluck('id');
         Cache::forever($cursor, $ids->count() === 100 ? $ids->last() : 0);
         foreach (Operation::whereIn('id', $ids)->orderBy('id')->get() as $op) {
-            $paid = InvoiceTransaction::where('invoice_id', $op->invoice_id)->where('status', InvoiceTransactionStatus::Succeeded)->pluck('id')->all();
             try {
-                if (!ReceiptReturns::plans($op) && array_diff($paid, array_keys(RefundPayment::lateCredited($op))) === []) { continue; }
                 if ($this->creditClosed($op) !== null) { $credited[] = (int) $op->domain_id; continue; }
             }
             catch (\Throwable $e) { RefundRepairs::failed((int)$op->id, $this->clock->now()->getTimestamp()); logger()->warning('Domains late payment stays with staff.', ['operation_id' => (int) $op->id, 'exception_class' => $e::class]); }

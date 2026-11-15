@@ -6,7 +6,7 @@ require __DIR__.'/Support/money-receipt.php';
 
 use App\Models\{Credit, Gateway, Invoice, InvoiceTransaction, Role};
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Services\{HoldingLocks, InvoiceMoney, PricingRule, Refunds};
+use Paymenter\Extensions\Servers\Domains\Services\{FundsWaits, HoldingLocks, InvoiceMoney, PricingRule, Refunds};
 
 // Both gateway ports use only process-local observations. The native runner disables network I/O.
 class InvariantReceiptGateway extends MoneyReceiptGateway
@@ -27,7 +27,7 @@ class InvariantReceiptGateway extends MoneyReceiptGateway
             foreach ($observations as $o) {
                 if ($o['invoice_id'] === (int)$invoice->id && InvoiceTransaction::where('invoice_id',$invoice->id)
                     ->where('transaction_id',$receipt)->first()?->gateway?->extension === $extension) {
-                    $ledger[] = [...$o, 'allocation_key'=>'stripe:dispute:'.$o['id'], 'state'=>$o['status']];
+                    $ledger[] = [...$o, 'allocation_key'=>'stripe:'.$o['kind'].':'.$o['id'], 'state'=>$o['status']];
                 }
             }
         }
@@ -85,9 +85,10 @@ $run = static function (int $seed, string $mode, array $actions) use (
     $name = 'money-invariant-'.$cases.'-placeholder.com';
     $clock->instant = $now;
     activeCommerceFacts($now, $now->modify('+30 days'), $ports);
-    if ($mode === 'late') {
+    if ($mode !== 'ordinary') {
         [$op, , , $invoice] = $makeRenewal($name, false);
-        $cycles->retireUnpaid($op->id);
+        if ($mode === 'late') { $cycles->retireUnpaid($op->id); }
+        else { DB::table('invoices')->where('id', $invoice->id)->update(['status'=>'paid']); }
     } else {
         $op = $new($name, false); $op->update(['state'=>'held', 'safe_code'=>'staff_review']);
         $invoice = Invoice::findOrFail($op->invoice_id);
@@ -115,16 +116,22 @@ $run = static function (int $seed, string $mode, array $actions) use (
                 InvoiceTransaction::create(['invoice_id'=>$invoice->id, 'amount'=>PricingRule::decimal($minor),
                     'fee'=>'0.00', 'status'=>'succeeded', 'gateway_id'=>$gateway->id, 'transaction_id'=>$receipt]);
                 $receipts[$label] = ['receipt'=>$receipt, 'amount'=>$minor, 'dispute'=>null, 'lost'=>0];
-            } elseif (in_array($kind, ['open', 'lost', 'won'], true)) {
+            } elseif (in_array($kind, ['open', 'lost', 'won', 'external_refund'], true)) {
                 [, $label, $minor] = $action; $r = &$receipts[$label];
                 $minor = $minor === 'full' ? $r['amount'] : $minor;
-                $r['dispute'] = $kind; $r['lost'] = $kind === 'lost' ? $minor : 0;
+                $r['dispute'] = $kind === 'external_refund' ? null : $kind; $r['lost'] = in_array($kind, ['lost','external_refund'], true) ? $minor : 0;
                 InvariantReceiptGateway::$observations[$r['receipt']] = [[
-                    'kind'=>'dispute', 'id'=>'synthetic_dispute_'.$label, 'status'=>$kind, 'needs_review'=>$kind !== 'won',
+                    'kind'=>$kind === 'external_refund' ? 'refund' : 'dispute', 'id'=>'synthetic_dispute_'.$label, 'status'=>$kind === 'external_refund' ? 'refunded' : $kind, 'needs_review'=>$kind !== 'won',
                     'invoice_id'=>(int) $invoice->id, 'user_id'=>(int) $invoice->user_id,
                     'payment_intent_id'=>$r['receipt'], 'currency'=>'usd', 'amount_minor'=>$minor, 'credited_minor'=>0,
                 ]];
                 unset($r);
+            } elseif ($kind === 'close_renewal') {
+                DB::transaction(static function() use ($op, $clock): void {
+                    $l = HoldingLocks::take($op->domain);
+                    FundsWaits::closeRenewal($l['operations']->firstWhere('id', $op->id), $l, $clock->now());
+                });
+                expect(FundsWaits::closedRenewal($op->fresh(), $op->domain), 'Closed renewal retains its no-send proof');
             } elseif ($kind === 'pending') {
                 MoneyReceiptGateway::$outcome = 'pending';
             } elseif ($kind === 'plan_crash') {
@@ -165,7 +172,7 @@ $run = static function (int $seed, string $mode, array $actions) use (
         if ($cash < 0 || $credit < 0 || $out < 0) { $record('negative_return', $facts); }
         if ($out > $paid-$lost) {
             // External loss after a completed return is an unavoidable deficit, distinct from a new payout.
-            $record($kind === 'lost' ? 'external_deficit' : 'returned_exceeds_paid_less_lost', $facts);
+            $record(in_array($kind, ['lost','external_refund'], true) ? 'external_deficit' : 'returned_exceeds_paid_less_lost', $facts);
         }
         if ($out > $previousOut && $held < 0) { $record('new_return_exceeds_available', $facts); }
         $open = (bool) array_filter($receipts, static fn($r)=>$r['dispute'] === 'open');
@@ -180,7 +187,7 @@ $run = static function (int $seed, string $mode, array $actions) use (
         foreach ($native as $row) {
             foreach (InvariantReceiptGateway::$observations[$row->transaction_id] ?? [] as $observation) {
                 $ledger[] = [...$observation, 'gateway_id'=>(int)$row->gateway_id,
-                    'allocation_key'=>'stripe:dispute:'.$observation['id'], 'state'=>$observation['status']];
+                    'allocation_key'=>'stripe:'.$observation['kind'].':'.$observation['id'], 'state'=>$observation['status']];
             }
         }
         foreach (InvariantReceiptGateway::$requests as $key=>$request) {
@@ -211,7 +218,7 @@ $run = static function (int $seed, string $mode, array $actions) use (
         // One retry must finish synchronous fake returns once funding and the dispute are resolved.
         // Ordinary refunds owe their line; retired invoices return every incremental receipt.
         if ($kind === 'retry' && $closing && !$open && !$pending) {
-            $due = $mode === 'late' ? max(0, $paid-$lost) : min($gross, max(0, $paid-$lost));
+            $due = $mode !== 'ordinary' ? max(0, $paid-$lost) : min($gross, max(0, $paid-$lost));
             if ($out < $due) { $record('refund_stalled', [...$facts, 'due'=>$due]); }
         }
     }
@@ -230,6 +237,12 @@ $run(6, 'late', [['late_payment','a',200,'credit'], ['lost','a','full'],
     ['late_payment','b',200,'credit'], ['credit'], ['retry']]);
 
 $run(7, 'ordinary', [['payment','a','full','refund'], ['plan_crash'], ['refund'], ['lost','a','full'], ['retry']]);
+
+// A capped renewal refund must not turn the lost share into a later credit.
+foreach (['lost', 'external_refund'] as $loss) {
+    $run($loss === 'lost' ? 8 : 9, 'closed', [['payment','a','full','credit'], [$loss,'a',100],
+        ['close_renewal'], ['credit'], ['credit'], ['retry']]);
+}
 
 // A local PRNG keeps sequences identical across revisions and independent of framework randomness.
 // Seeded choices vary receipt splits, destinations, dispute amounts/outcomes, reply loss and retry order.
@@ -371,6 +384,43 @@ DB::transaction(static function() use ($probe): void {
     InvariantReceiptGateway::$ledger = [];
     expect($refused, 'Gateway currency mismatch throws before projecting money');
 });
+// A closed-invoice gateway row can commit before the native receipt. Refuse the whole
+// payout until both identities are present; skipping it could conceal a return or loss.
+[$orphanOp, , , $orphanInvoice] = $makeRenewal('money-orphan-ledger-placeholder.com', false);
+$cycles->retireUnpaid($orphanOp->id);
+$orphanBefore = $balance(); $orphanSends = MoneyReceiptGateway::$sends;
+InvoiceTransaction::create(['invoice_id'=>$orphanInvoice->id, 'amount'=>'1.00', 'fee'=>'0.00', 'status'=>'succeeded',
+    'gateway_id'=>$receiptGateway->id, 'transaction_id'=>'synthetic_known']);
+InvariantReceiptGateway::$ledger = [];
+foreach (['synthetic_known'=>100, 'synthetic_before_native'=>200] as $receipt=>$minor) {
+    InvariantReceiptGateway::$ledger[] = ['invoice_id'=>(int)$orphanInvoice->id, 'user_id'=>(int)$orphanInvoice->user_id,
+        'currency'=>'usd', 'payment_intent_id'=>$receipt, 'allocation_key'=>'excess', 'state'=>'pending', 'amount_minor'=>$minor];
+}
+$refused = false;
+try { $refunds->creditRejected($orphanOp->id); } catch (DomainException) { $refused = true; }
+expect($refused, 'An unposted closed receipt refuses the complete late payout');
+same($orphanBefore, $balance(), 'Unposted gateway receipt creates no account credit');
+same([], $orphanOp->fresh()->funding['late_credits'] ?? [], 'Unposted gateway receipt creates no return plan');
+expect(DB::table('domains_obligation_alerts')->where('operation_id',$orphanOp->id)->where('code','refund_repair')->whereNull('resolved_at')->exists(),
+    'Unposted gateway receipt retains repair evidence for retry');
+InvoiceTransaction::create(['invoice_id'=>$orphanInvoice->id, 'amount'=>'2.00', 'fee'=>'0.00', 'status'=>'succeeded',
+    'gateway_id'=>$receiptGateway->id, 'transaction_id'=>'synthetic_before_native']);
+foreach (['synthetic_known'=>100, 'synthetic_before_native'=>200] as $receipt=>$minor) {
+    MoneyReceiptGateway::automatic($orphanInvoice, $receipt, $minor, 'pending');
+}
+same(null, $refunds->creditRejected($orphanOp->id), 'Posted receipts adopt the existing pending gateway returns');
+same(2, count($orphanOp->fresh()->funding['late_credits'][0]['allocations']), 'Both gateway returns are retained once');
+foreach (InvariantReceiptGateway::$ledger as &$entry) {
+    MoneyReceiptGateway::complete($orphanInvoice, $entry['payment_intent_id'].':excess');
+    $entry = [...$entry, ...MoneyReceiptGateway::$returns[$entry['payment_intent_id'].':excess']];
+    $entry['return_key'] = $entry['key'];
+}
+unset($entry);
+same(['amount'=>'3.00','currency'=>'USD'], $refunds->creditRejected($orphanOp->id), 'Posted gateway receipts finish through their existing returns');
+same(null, $refunds->creditRejected($orphanOp->id), 'Completed orphan handoff replays without another payout');
+same($orphanBefore, $balance(), 'Gateway-owned money is never also credited by Domains');
+same($orphanSends+2, MoneyReceiptGateway::$sends, 'Only the two existing gateway-owned returns send');
+InvariantReceiptGateway::$ledger = [];
 echo 'PROJECTION_SUMMARY '.json_encode(['checks'=>$projectionChecks, 'failures'=>count($projectionFailures), 'cases'=>$cases, 'steps'=>$steps], JSON_THROW_ON_ERROR)."\n";
 echo 'INVARIANT_SUMMARY '.json_encode(['cases'=>$cases, 'steps'=>$steps, 'checks'=>$checks,
     'failures'=>count($failures), 'coverage'=>$coverage], JSON_THROW_ON_ERROR)."\n";
@@ -378,49 +428,11 @@ echo 'INVARIANT_SUMMARY '.json_encode(['cases'=>$cases, 'steps'=>$steps, 'checks
 // Entry is [scenario (mode:seed), one-based action step, violation kind, total payout in minor units].
 $callerBaseline = [
     ['late:3', 3, 'external_deficit', 200],
-    ['late:3', 5, 'returned_exceeds_paid_less_lost', 400],
-    ['late:3', 5, 'new_return_exceeds_available', 400],
-    ['late:3', 8, 'returned_exceeds_paid_less_lost', 500],
-    ['late:3', 8, 'new_return_exceeds_available', 500],
     ['late:5', 3, 'external_deficit', 100],
-    ['late:5', 5, 'returned_exceeds_paid_less_lost', 400],
-    ['late:5', 5, 'new_return_exceeds_available', 400],
-    ['late:6', 4, 'returned_exceeds_paid_less_lost', 400],
-    ['late:6', 4, 'new_return_exceeds_available', 400],
-    ['late:211', 5, 'returned_exceeds_paid_less_lost', 528],
-    ['late:211', 5, 'new_return_exceeds_available', 528],
-    ['late:307', 3, 'return_during_open_dispute', 528],
     ['late:401', 5, 'external_deficit', 505],
-    ['late:401', 6, 'returned_exceeds_paid_less_lost', 505],
-    ['late:401', 7, 'returned_exceeds_paid_less_lost', 816],
-    ['late:401', 7, 'new_return_exceeds_available', 816],
-    ['late:503', 3, 'return_during_open_dispute', 184],
     ['late:701', 5, 'external_deficit', 175],
-    ['late:701', 7, 'returned_exceeds_paid_less_lost', 654],
-    ['late:701', 7, 'new_return_exceeds_available', 654],
-    ['late:809', 3, 'return_during_open_dispute', 168],
-    ['late:809', 4, 'external_deficit', 168],
-    ['late:809', 5, 'returned_exceeds_paid_less_lost', 168],
-    ['late:809', 6, 'returned_exceeds_paid_less_lost', 324],
-    ['late:809', 6, 'new_return_exceeds_available', 324],
-    ['late:907', 3, 'return_during_open_dispute', 297],
     ['late:1009', 4, 'external_deficit', 170],
-    ['late:1009', 6, 'returned_exceeds_paid_less_lost', 426],
-    ['late:1009', 6, 'new_return_exceeds_available', 426],
-    ['late:1103', 3, 'return_during_open_dispute', 474],
-    ['late:1103', 4, 'external_deficit', 474],
-    ['late:1103', 5, 'returned_exceeds_paid_less_lost', 474],
-    ['late:1103', 6, 'returned_exceeds_paid_less_lost', 700],
-    ['late:1103', 6, 'new_return_exceeds_available', 700],
-    ['late:1201', 3, 'return_during_open_dispute', 527],
-    ['late:1409', 3, 'return_during_open_dispute', 198],
-    ['late:1511', 3, 'return_during_open_dispute', 137],
-    ['late:1511', 4, 'external_deficit', 137],
-    ['late:1511', 6, 'returned_exceeds_paid_less_lost', 708],
-    ['late:1511', 6, 'new_return_exceeds_available', 708],
     ['late:1601', 5, 'external_deficit', 538],
-    ['late:1601', 7, 'returned_exceeds_paid_less_lost', 1080],
-    ['late:1601', 7, 'new_return_exceeds_available', 1080],
 ];
 $callerIdentities = array_map(static fn($failure)=>[$failure['mode'].':'.$failure['seed'], count($failure['sequence']), $failure['rule'], $failure['facts']['out']], $failures);
 $encodeIdentity = static fn(array $identity): string => json_encode($identity, JSON_THROW_ON_ERROR);

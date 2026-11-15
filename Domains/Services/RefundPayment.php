@@ -70,27 +70,12 @@ final class RefundPayment
     /** Succeeded payments not credited yet. A failed row is not money; a processing row counts once it succeeds. */
     public static function lateUncredited(Operation $op, array $l): array
     {
-        $done = self::lateCredited($op); $new = [];
-        $rows = $l['transactions']->where('invoice_id', $op->invoice_id)->where('status', InvoiceTransactionStatus::Succeeded);
-        $net = $rows->sum(fn ($row) => PricingRule::minor($row->amount));
-        $local=0;
-        $peers=$op->safe_code===UnpaidAcquisitionProof::CODE?Operation::where('invoice_id',$op->invoice_id)->orderBy('id')->lockForUpdate()->get():[$op];
-        $outstanding=0;
-        foreach($peers as $peer){
-            if(ReceiptReturns::malformed($peer)){throw new \DomainException('Retained return plan needs review.');}
-            $outstanding+=ReceiptReturns::outstanding($peer);
-            foreach(ReceiptReturns::effective($peer) as $p){
-                $local+=($p['to']??null)==='original_payment'?ReceiptReturns::bridge($p):PricingRule::minor($p['amount']);
-            }
+        $money = InvoiceMoney::load($l, (int)$op->invoice_id); $new = [];
+        if ($money['overdrawn']) { throw new \DomainException('Returned credit exceeds current settled funds. Review the reversal.'); }
+        foreach ($money['receipts'] as $id=>$receipt) {
+            $minor = array_sum(InvoiceMoney::heldFor($money, $id));
+            if ($minor > 0) { $new[] = ['id'=>$id, 'amount_minor'=>$minor]; }
         }
-        $left = $net - $local - $outstanding;
-        // A reversal after credit needs finance repair; never guess a debit, especially if credit was spent.
-        if ($left < 0) { throw new \DomainException('Returned credit exceeds current settled funds. Review the reversal.'); }
-        foreach ($rows as $row) {
-            $minor = min($left, max(0, PricingRule::minor($row->amount) - ($done[$row->id] ?? 0)));
-            if ($minor > 0) { $new[] = ['id' => (int) $row->id, 'amount_minor' => $minor]; $left -= $minor; }
-        }
-        if($left!==0){throw new \DomainException('Settled money lacks an unreturned receipt. Review the native return rows.');}
         return $new;
     }
     public static function requireCurrent(Operation $op, array $l): array

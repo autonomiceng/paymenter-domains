@@ -5,7 +5,17 @@ class MoneyReceiptGateway extends \App\Classes\Extension\Gateway {
     public static array $returns=[];public static bool $lost=true;public static int $sends=0;public static ?\Closure $onAllocated=null;
     public static string $outcome='refunded';public static ?\Closure $onStatus=null;public static int $statusCalls=0;
     public function pay(\App\Models\Invoice $invoice,$total){return '';}
-    public function receiptLedger(\App\Models\Invoice $invoice):array { return []; }
+    public function receiptLedger(\App\Models\Invoice $invoice):array {
+        $ledger=[];
+        foreach(self::$returns as $key=>$result){
+            if(!str_ends_with($key,':excess')){continue;}
+            $receipt=substr($key,0,-7);
+            if(!\App\Models\InvoiceTransaction::where('invoice_id',$invoice->id)->where('transaction_id',$receipt)->exists()){continue;}
+            $ledger[]=[...$result,'invoice_id'=>(int)$invoice->id,'user_id'=>(int)$invoice->user_id,'currency'=>$invoice->currency_code,
+                'payment_intent_id'=>$receipt,'allocation_key'=>'excess','return_key'=>$result['key']];
+        }
+        return $ledger;
+    }
     public function receiptReturnStatus(\App\Models\Invoice $invoice,string $receipt,string $key):?array {
         self::$statusCalls++;$result=self::$returns[$key==='excess'?$receipt.':excess':$key]??null;
         $next=self::$onStatus;self::$onStatus=null;$next?->__invoke();return $result;

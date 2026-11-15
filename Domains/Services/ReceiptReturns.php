@@ -60,11 +60,12 @@ final class ReceiptReturns
     /** Adopt the gateway-owned closed receipt without creating a second entitlement or issuing money. */
     public static function adoptClosed(Operation $op,array $l,\DateTimeImmutable $now): bool
     {
-        $done=RefundPayment::lateCredited($op);$allocations=[];$payments=[];$minor=0;
+        $money=InvoiceMoney::load($l,(int)$op->invoice_id);$done=RefundPayment::lateCredited($op);$allocations=[];$payments=[];$minor=0;
         foreach($l['transactions']->where('invoice_id',$op->invoice_id)->where('status',InvoiceTransactionStatus::Succeeded)->sortBy('id') as $row){
-            $gross=PricingRule::minor($row->amount);
-            if($gross<=0||!self::capable($row->gateway)){continue;}
-            $prior=$done[$row->id]??0;if($prior===$gross){continue;}
+            if(PricingRule::minor($row->amount)<=0||!self::capable($row->gateway)){continue;}
+            $entry=collect($money['ledger'])->first(fn($r)=>$r['gateway_id']===(int)$row->gateway_id&&$r['payment_intent_id']===$row->transaction_id&&$r['allocation_key']===self::CLOSED_ALLOCATION);
+            $gross=$entry?(int)$entry['amount_minor']:InvoiceMoney::heldFor($money,(int)$row->id)['card'];
+            $prior=$done[$row->id]??0;if($gross===0||$prior===$gross){continue;}
             if($prior!==0){throw new \DomainException('Closed receipt already has a partial return. Review the gateway return before adding credit.');}
             if(!is_string($row->transaction_id)||$row->transaction_id===''){throw new \DomainException('Original receipt identity is missing. Check the invoice payment.');}
             $payments[]=['id'=>(int)$row->id,'amount_minor'=>$gross];$minor+=$gross;
