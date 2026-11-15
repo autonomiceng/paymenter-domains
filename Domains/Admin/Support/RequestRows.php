@@ -48,6 +48,7 @@ final class RequestRows
     /** The invoice: its state with the invoice name and Auto Pay under it. A linked invoice with no readable state keeps its name. */
     public static function invoice(?string $name, ?string $state, ?string $sub): Value
     {
+        if ($state === 'Refunded' && $name !== null) { return self::text($name, implode('. ', array_filter([$state, $sub]))); }
         $word = match ($state) { 'Paid' => State::Paid, 'Not paid' => State::AwaitingPayment, 'Cancelled' => State::Cancelled, default => null };
         if ($word === null || $name === null) { return self::text($name, $sub); }
         return Value::state($word, Reader::Staff, self::sentence(implode('. ', array_filter([$name, $sub]))));

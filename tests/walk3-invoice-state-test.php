@@ -5,12 +5,22 @@ require __DIR__.'/Support/money-receipt.php';
 $nativeSuccessful=false;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts;
 use Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns;
+$assertRefundedInvoice=static function($op):void {
+    $facts=RequestFacts::for($op->fresh());$sub='Auto Pay off';
+    $value=Paymenter\Extensions\Servers\Domains\Admin\Support\RequestRows::invoice($facts['invoice'],$facts['invoice_state'],$sub);
+    $invoiceRow=Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Row::make('Invoice',$value);
+    Filament\Schemas\Schema::make(Livewire\Livewire::test(Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation::class,['record'=>$op->id])->instance())->components([$invoiceRow])->getComponents();
+    $rendered=strip_tags($invoiceRow->toEmbeddedHtml());
+    expect($value->state!==Paymenter\Extensions\Servers\Domains\Presentation\State::Paid&&!preg_match('/\bPaid\b/',$rendered),'A fully refunded invoice never renders as Paid');
+    expect(str_contains($rendered,'Refunded')&&str_contains($rendered,$facts['invoice'])&&str_contains($rendered,$sub),'The invoice row retains its name, refunded money fact and Auto Pay detail');
+};
 foreach(['partial'=>['amount_minor'=>500],'open'=>['status'=>'open'],'failed'=>['status'=>'failed'],'read failure'=>'unreadable'] as $name=>$over){
     StaffInvoiceReversalGateway::$observations['pi_staff_invoice']=is_array($over)?$row($over):$over;
     same('Paid',RequestFacts::for($op->fresh())['invoice_state'],$name.' does not report a full refund');
 }
 StaffInvoiceReversalGateway::$observations['pi_staff_invoice']=$row(['kind'=>'refund','status'=>'refunded','amount_minor'=>1099]);
 same('Refunded',RequestFacts::for($op->fresh())['invoice_state'],'The staff request reports a full webhook refund');
+$assertRefundedInvoice($op);
 
 $op=$held('request-invoice-return-placeholder.com');
 $gateway=App\Models\Gateway::create(['extension'=>'MoneyReceipt','name'=>'Receipt fixture','type'=>'gateway','enabled'=>true]);
@@ -26,6 +36,7 @@ MoneyReceiptGateway::complete(App\Models\Invoice::findOrFail($op->invoice_id),$k
 $run($op->fresh(),'credit');
 same(true,ReceiptReturns::settled($op->fresh()),'The original payment return settled');
 same('Refunded',RequestFacts::for($op->fresh())['invoice_state'],'The staff request reports a full Cancel and refund return');
+$assertRefundedInvoice($op);
 $invoice=App\Models\Invoice::findOrFail($op->invoice_id);
 App\Models\InvoiceTransaction::create(['invoice_id'=>$invoice->id,'amount'=>'10.99','fee'=>'0.00','status'=>'succeeded','gateway_id'=>$gateway->id,'transaction_id'=>'synthetic-late-invoice']);
 MoneyReceiptGateway::automatic($invoice,'synthetic-late-invoice',1099);
