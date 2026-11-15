@@ -256,7 +256,7 @@ class ViewDomain extends RecordDetailPage
     }
     private function departureSections(): array
     {
-        $d=$this->getRecord();$facts=$this->facts();$check=$d->observation['departure_check']??[];$registry=$check['registry']??[];
+        $d=$this->getRecord();$facts=$this->facts();$facts['Next invoice']=['value'=>'Paused','sub'=>'While we check this domain.','url'=>null,'tone'=>null];$check=$d->observation['departure_check']??[];$registry=$check['registry']??[];
         $notice=DomainRows::notice('departure',[[State::UnderReview,'Not in our registrar account.',null]],'departure-'.$d->id);
         $read=$d->observation['record_failure']??[];$recheck=Row::make('Recheck',Value::fact(\Paymenter\Extensions\Servers\Domains\Presentation\Fact::entered((($read['code']??null)==='domain_not_in_account'?'Not in our registrar account':"Couldn't read").(isset($read['at'])?' '.StaffTime::at(strtotime($read['at'])):''))))->actions($this->getAction('check_departure'));
         $sections=[Section::make('Departure check',[$notice,Row::make('First read',Value::fact(\Paymenter\Extensions\Servers\Domains\Presentation\Fact::entered(isset($check['at'])?StaffTime::at($check['at']):'Not read yet'))),$recheck,
@@ -264,7 +264,7 @@ class ViewDomain extends RecordDetailPage
             ...array_map(fn($label)=>$this->row($label,$facts[$label],[]),array_intersect(['Registrar'],array_keys($facts)))],
             'Next step: look for the domain at the registrar, then use Check again on the Recheck row.')];
         $renew=DomainRows::notice('renewal',[[State::Paused,'Renewal paused while we check this domain.',null]],'departure-renewal-'.$d->id);
-        $sections[]=Section::make('Renewal',[$renew,...array_map(fn($label)=>$this->row($label,$label==='Renewal'?[...$facts[$label],'value'=>'Paused','sub'=>'Resumes if the domain is still ours.']:$facts[$label],$this->side($label,$facts[$label],$this->edits(),null)),array_intersect(['Expires','Renewal','Next invoice'],array_keys($facts)))]);
+        $sections[]=Section::make('Renewal',[$renew,...array_map(fn($label)=>$this->row($label,$label==='Renewal'&&$facts[$label]['value']==='On'?[...$facts[$label],'value'=>'Paused','sub'=>'Set to On. Resumes if the domain is still ours.','tone'=>null]:$facts[$label],$this->side($label,$facts[$label],$this->edits(),null)),array_intersect(['Expires','Renewal','Next invoice'],array_keys($facts)))]);
         $pause=DomainRows::notice('registrar-pause',[[State::Paused,DepartureChecks::PAUSED,null]],'departure-registrar-'.$d->id);
         $rows=[$pause];foreach(array_intersect(['Transfer lock','Email auth code','Contacts','Nameservers'],array_keys($facts)) as $label){$rows[]=$this->row($label,$facts[$label],[Sheet::button(Action::make('paused_'.md5($label))->label(self::blockedLabel($label,$facts[$label])))->disabled()->extraAttributes(['aria-describedby'=>'departure-registrar-'.$d->id])]);}
         $sections[]=Section::make('Registrar records',$rows);
