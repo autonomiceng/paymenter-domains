@@ -44,7 +44,7 @@ final class DomainPage
      * Amber (warn) means the customer has a step. Work that is ours reads blue (ours()), as Under review does. */
     public static function notice(OwnedDomain $d, ?string $support = null, ?DomainSummary $s = null): ?array
     {
-        if($d->departureSuspected){return self::ours('Not in our registrar account. We are checking this domain.',null);}
+        if($d->departureSuspected){return self::ours('Not in our registrar account. We are checking this domain.',$support?['label'=>'Contact support','url'=>$support]:null);}
         $setup = $d->actions['setup'] ?? null; $phase = $d->transfer['phase'] ?? null;
         $movedAt = isset($s?->noticeDates['dns']) ? ' on '.CarbonImmutable::createFromTimestampUTC((int) $s->noticeDates['dns'])->format('M j, Y') : '';
         $contact = $support ? ['label' => 'Contact support', 'url' => $support] : null;
@@ -205,7 +205,7 @@ final class DomainPage
         $open = (bool) ($d->transfer['open'] ?? false);
         if ($d->transfer['received'] ?? false) { return ['missing' => false, 'action' => ['label' => $open ? 'Change auth code' : 'View transfer', 'url' => $d->actions['code']]]; }
         if ($open) { return null; }
-        if($d->departureSuspected){return self::ours('Not in our registrar account. We are checking this domain.',null);}
+        if($d->departureSuspected){return self::ours('Not in our registrar account. We are checking this domain.',$support?['label'=>'Contact support','url'=>$support]:null);}
         $setup = $d->actions['setup'] ?? null;
         return ['missing' => true, 'fix' => $setup && ($d->transfer['phase'] ?? null) === 'cutoff' && ($d->setup['contacts'] ?? false) ? ['label' => 'Update details', 'url' => $setup] : Missing::support($support)];
     }
