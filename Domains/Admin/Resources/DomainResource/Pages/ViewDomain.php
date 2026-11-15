@@ -240,10 +240,10 @@ class ViewDomain extends RecordDetailPage
         // The status notice opens Registration, or the first section when there is none.
         $statusIn=isset($placed['Registration'])?'Registration':(array_key_first($placed)??'Registrar records');
         $items[$statusIn]=[...($suspected?[]:$this->statusItems()),...($items[$statusIn]??[])];
-        if ($suspected) { unset($items['Registrar records']); $items['Registration'][]=[State::UnderReview,DepartureChecks::PAUSED,null]; $items['Renewal'][]=[State::UnderReview,'Renewal paused while we check this domain.',null]; }
+        if ($suspected) { unset($items['Registrar records']); $items['Registration'][]=[State::UnderReview,DepartureChecks::PAUSED,null]; }
         $notices=[];
         foreach ($items as $title=>$list) { if (($row=DomainRows::notice(strtolower((string)preg_replace('/[^A-Za-z]+/','-',$title)),$list,'domain-'.$d->id.'-'.md5($title)))!==null) { $notices[$title]=$row; } }
-        $this->heldNotice=$suspected?($notices['Registration']??null):($heldIn!==null?($notices[$heldIn]??null):null); $this->renewalNotice=$notices['Renewal']??null;
+        $this->heldNotice=$suspected?($notices['Registration']??null):($heldIn!==null?($notices[$heldIn]??null):null);
         $sections=[];
         foreach ($placed as $title=>$labels) {
             $rows=[];
@@ -277,7 +277,6 @@ class ViewDomain extends RecordDetailPage
     }
     /** The notice that says why changes are held, so the rows it blocks point to it. */
     private ?Row $heldNotice=null;
-    private ?Row $renewalNotice=null;
     /** What the domain's state waits for, which the head line used to say: the notice's cause and links, else the hold,
      * else the status step. A change the page stopped following says so here too.
      * @return list<array{0:State,1:mixed,2:?Action}> */
@@ -463,7 +462,7 @@ class ViewDomain extends RecordDetailPage
             $fact=[...$fact,'sub'=>$fact['sub']??null,'value'=>$failed?null:\Paymenter\Extensions\Servers\Domains\Presentation\Missing::NOT_READ,'tone'=>null];
         }
         $row=DomainRows::row($label,$fact,$side,self::SHOWN[$label]??null);
-        if (DepartureChecks::suspected($this->getRecord())) { if (in_array($label,['Nameservers','Contacts'],true)) { return $row->blocked('Paused while we check this domain.'); } if ($label==='Renewal'&&$this->renewalNotice) { return $row->blockedBy($this->renewalNotice); } }
+        if (DepartureChecks::suspected($this->getRecord())) { if (in_array($label,['Nameservers','Contacts'],true)) { return $row->blocked('Paused while we check this domain.'); } if ($label==='Renewal'&&($this->cachedActions['resume']??null)?->isVisible()) { return $row->blocked('Auto-renew can turn on once this domain is back in our registrar account.'); } }
         if (($this->blocked[$label]??false)) {
             if ($this->heldNotice!==null) { $row->blockedBy($this->heldNotice); } else { $row->blocked((string)$this->edits()['held']); }
         }

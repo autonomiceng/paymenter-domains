@@ -5,6 +5,7 @@ require_once __DIR__.'/bootstrap.php';
 $argv[1]=renderOutput(null);
 require __DIR__.'/Support/departure-render.php';
 $nativeSuccessful=false;
+$page->assertActionEnabled('stop');
 use Paymenter\Extensions\Servers\Domains\Presentation\{Fact,State};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts;
 $failures=[];$check=static function(bool $ok,string $why)use(&$failures):void{if(!$ok){$failures[]=$why;}};
