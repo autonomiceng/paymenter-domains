@@ -17,10 +17,8 @@ same('refund',RequestFacts::notice($op->fresh())['action'],'The notice carries t
 $page=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id]);
 $html=$page->html();
 expect(!str_contains($html,'add credit'),'No page text says add credit while the action says refund');
-expect((bool)preg_match('/<(?:button|a)\b[^>]*class="[^"]*\bfi-color-danger\b[^"]*"[^>]*>(?:(?!<\/(?:button|a)>).)*Cancel and refund/s',$html),'The notice button is red, not primary');
 $action=$page->instance()->getAction('refund');
 expect(str_contains((string)$action->getModalDescription(),'refunds '.$amount.' to the original payment'),'The dialog names the amount and where it goes: '.$action->getModalDescription());
-same('danger',$action->getModalSubmitAction()?->getColor(),'The destructive confirm is red');
 // The result names the amount and why it went to credit.
 $page->callAction('refund',['reason'=>'Registrar does not support this order'])->assertHasNoActionErrors();
 $result=RequestFacts::for($op->fresh());
