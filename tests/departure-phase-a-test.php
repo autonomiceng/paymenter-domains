@@ -59,5 +59,13 @@ $allowed=$management->available($user,$d->fresh(),$driver,['dns','lock','nameser
 same(['dns'],$allowed,'DNS stays available while registrar changes pause');
 $dnsOp=$management->request($user,$d->id,'dns',['records'=>[['name'=>'@','type'=>'A','address'=>'8.8.8.8']],'preimage_digest'=>\Paymenter\Extensions\Servers\Domains\Services\ManagementPayload::digest(\Paymenter\Extensions\Servers\Domains\Services\OwnerRecords::forDomain($d->fresh())['dns'],'dns')],hash('sha256','suspected-dns'),$driver);
 same('queued',$dnsOp->state,'DNS request is admitted while suspected');
+// A saturated public quota cannot postpone the one registrar recheck or make it repeat.
+$clock->instant=$clock->now()->modify('+61 seconds');
+DB::transaction(function()use($d,$clock):void{$fresh=$d->fresh();$p=$fresh->observation;$p['departure_check']['at']=$clock->now()->getTimestamp()-86400;$p['departure_check']['rechecked']=false;unset($p['departure_check']['registry']);$fresh->update(['observation'=>$p]);});
+HoldingObservationWork::current($d->fresh())->update(['safe_code'=>'departure_registry','due_at'=>$clock->now()->getTimestamp(),'lease_until'=>0]);
+$pool=new \Paymenter\Extensions\Servers\Domains\Services\PublicDnsQuota();$one=$pool->acquire($clock->now()->getTimestamp());$two=$pool->acquire($clock->now()->getTimestamp());
+same('departure_registry',$worker->turn($queue,$guard),'The registrar recheck runs at 24 hours despite public quota saturation');
+$calls=count($observation->calls);same('read_deferred',$worker->turn($queue,$guard),'Only the uncompleted registry read remains queued');
+same($calls,count($observation->calls),'The automatic registrar recheck is not repeated');$pool->release($one);$pool->release($two);
 same($money,$nativeMoney(),'Departure checks make no money changes');same($originalBefore,$original->fresh()->getAttributes(),'Original purchase stays intact');
 $nativeSuccessful=true;echo "Departure state, automatic false-absence recovery, delayed alert, staff recheck and management guard passed.\n";
