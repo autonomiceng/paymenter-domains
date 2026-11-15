@@ -124,6 +124,13 @@ $case('open hold and later win',function()use($make,$reserve,$observe,$refunds,$
     $presenter=(new ReflectionClass(NativePresenter::class))->newInstanceWithoutConstructor();
     $equal(['credit','$'.PricingRule::decimal($a['amount_minor'])],(new ReflectionMethod(NativePresenter::class,'outcomeMoney'))->invoke($presenter,[$op->fresh()],Invoice::findOrFail($op->invoice_id)),'Native outcome reports a fully released credit');
 });
+$case('lost receipt releases without a credit notice',function()use($make,$reserve,$observe,$refunds,$equal,$balance):void{
+    $op=$make('fully-lost');$a=$reserve($op);$before=$balance();$observe($op,'lost',$a['amount_minor']);
+    $equal(null,$refunds->creditRejected($op->id),'Zero released credit produces no money-return notification');
+    $equal('released',$op->fresh()->funding['receipt_return_results'][$a['key']]['state'],'Fully lost receipt releases its reservation');
+    $equal(null,ReceiptReturns::summary($op->fresh()),'A release without credit never claims account credit was added');
+    $equal($before,$balance(),'Fully lost receipt pays no credit');
+});
 $case('owner hold waits',function()use($make,$reserve,$refunds,$equal,$balance):void{
     $op=$make('owner-hold');$a=$reserve($op);$before=$balance();
     $id=DB::table('domains_obligation_alerts')->insertGetId(['alert_key'=>hash('sha256','release-owner-hold'),'domain_id'=>$op->domain_id,

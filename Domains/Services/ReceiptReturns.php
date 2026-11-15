@@ -286,7 +286,8 @@ final class ReceiptReturns
             if(!$complete||$repair){RefundRepairs::failed($id,$now->getTimestamp());return null;}
             RefundRepairs::resolved($id,$now->getTimestamp());
             $new=array_filter($results,fn($r,$key)=>!in_array($seen->funding['receipt_return_results'][$key]['state']??null,['refunded','credited','released'],true),ARRAY_FILTER_USE_BOTH);
-            return $new?['amount'=>PricingRule::decimal(array_sum(array_map(fn($r)=>$r['state']==='released'?$r['credit_minor']:$r['amount_minor'],$new))),'currency'=>'USD']:null;
+            $minor=array_sum(array_map(fn($r)=>$r['state']==='released'?$r['credit_minor']:$r['amount_minor'],$new));
+            return $minor>0?['amount'=>PricingRule::decimal($minor),'currency'=>'USD']:null;
         }catch(\Throwable $e){RefundRepairs::failed($id,$now->getTimestamp());throw $e;}
     }
 }
