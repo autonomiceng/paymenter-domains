@@ -96,6 +96,9 @@ trait TldSalesPage
         $s=$this->sales();$reason=(string)$s['reason'];
         if($s['label']==='For sale'){return null;}
         if($this->staffStop()){return rtrim($reason,'.').'.';}
+        if(($this->snap()['selected']??false)&&!\Paymenter\Extensions\Servers\Domains\Admin\Support\TldTerms::read($this->getRecord())&&!str_contains($reason,'registrar terms')){
+            return ($reason===''?'':rtrim($reason,'.').'. ').'Registrar terms have not been confirmed. Use Sync prices below.';
+        }
         return match($reason){
             'Cost missing','Cost out of date'=>$reason.'. Use Sync prices below.',
             'No registrar selected'=>'No registrar selected. '.($this->settings()['seller']->isVisible()?'Choose a registrar for new orders.':'Ask staff who can change the registrar.'),
