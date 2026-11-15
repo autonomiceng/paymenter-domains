@@ -29,7 +29,9 @@ final class InvoiceMoney
                 'gateway_id'=>(int)$row->gateway_id, 'transaction_id'=>$row->transaction_id, 'cardOk'=>$capable];
             if (!$readable || $row->status !== InvoiceTransactionStatus::Succeeded || PricingRule::minor($row->amount) <= 0 || isset($gateways[$gateway->id])) { continue; }
             $gateways[$gateway->id] = true;
-            foreach (ExtensionHelper::call($gateway, 'receiptLedger', [$invoice]) as $entry) {
+            $source = ExtensionHelper::call($gateway, 'receiptLedger', [$invoice]);
+            if (!is_iterable($source)) { throw new \DomainException('Unreadable receipt ledger.'); }
+            foreach ($source as $entry) {
                 $entry = (array)$entry;
                 if ((int)($entry['invoice_id'] ?? 0) !== $invoiceId || (int)($entry['user_id'] ?? 0) !== (int)$invoice->user_id
                     || strtoupper($entry['currency'] ?? '') !== $invoice->currency_code) { throw new \DomainException('Receipt ledger identity changed.'); }
@@ -59,6 +61,9 @@ final class InvoiceMoney
         foreach ($ledger as $entry) {
             if (!isset($entry['gateway_id'], $entry['payment_intent_id'], $entry['allocation_key'], $entry['state'], $entry['amount_minor'])
                 || !ctype_digit((string)$entry['amount_minor'])) { throw new \DomainException('Unreadable receipt ledger row.'); }
+            $observation = str_starts_with($entry['allocation_key'], 'stripe:');
+            $states = $observation ? ['open','inquiry','warning','won','lost','cleared','refunded','failed'] : ['reserved','sending','pending','review','refunded','credited'];
+            if (!in_array($entry['state'], $states, true) || $observation && !preg_match('/^stripe:(refund|dispute):.+$/D', $entry['allocation_key'])) { throw new \DomainException('Unreadable receipt state.'); }
             $key = $identity($entry['gateway_id'], $entry['payment_intent_id'], $entry['allocation_key']);
             if (isset($entries[$key]) && $entries[$key] !== $entry) { throw new \DomainException('Conflicting receipt ledger rows.'); }
             $entries[$key] = $entry;
