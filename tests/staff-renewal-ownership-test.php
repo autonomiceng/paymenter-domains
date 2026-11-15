@@ -26,6 +26,7 @@ $fenced->assertActionHidden('sync_now');
 expect(str_contains(panelRowText($fenced->html(),'Next invoice')??'','Paused'),'The invoice schedule stays visible as paused during departure review');
 same('On',DomainFacts::for($d->fresh())['Renewal']['value'],'The saved Auto-renew preference stays visible');
 // Pausing collection keeps the existing debt's identity and amount visible, with or without a due date.
+same($money,$nativeMoney(),'The preceding staff list and detail preserve all native money records');
 $invoice->update(['number'=>'INV-142']);
 foreach ([$invoice->due_at,null] as $due) {
     // Synthetic retained-data variant; the normal invoice writer keeps its immutable calendar guard.
