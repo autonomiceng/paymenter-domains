@@ -44,7 +44,8 @@ final class DomainManagement
                 return array_values(array_filter($actions,function($action)use($l,$actor,$driver,&$refused):bool {
                     if ($action==='auth_code_email'&&$this->emailCooling($l)) { return false; }
                     try { $this->authority($l,(int)$actor->id,$action,$driver,advisory:true); }
-                    catch (\Throwable $refusal) { $refused??=$refusal->getMessage(); return false; }
+                    // Orders off holds every action, so it is the reason over another action's own refusal; a request in the way stays first.
+                    catch (\Throwable $refusal) { if(!is_int($refused)&&$refusal instanceof RuntimeIneligible&&$refusal->reason===RuntimeReason::ProcessingOff){$refused=$refusal->getMessage();} $refused??=$refusal->getMessage(); return false; }
                     return $driver->capabilities()->get(self::capability($action))->support===Support::Supported;
                 }));
             })();

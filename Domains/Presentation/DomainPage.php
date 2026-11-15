@@ -104,6 +104,7 @@ final class DomainPage
         'Prior operation unresolved.' => 'Changes open once an earlier change finishes. '.self::NOTHING_TO_DO,
         'Current records required.' => 'Changes open once we’ve read this domain’s records from the registrar. '.self::NOTHING_TO_DO,
         'Management lifecycle held.' => 'Changes are on hold for this domain right now.',
+        'Registrar processing is disabled.' => 'We’ve paused requests to the registrar for now. Changes open once we resume them. '.self::NOTHING_TO_DO,
     ];
     /** A notice for work that is ours: blue, with the way to reach us. */
     private static function ours(string $text, ?array $contact): array
