@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom;
-use Paymenter\Extensions\Servers\Domains\Data\{AttemptEvidence, CanonicalName, Evidence, ExpiryPrecision, HistoryScan, RequestContext};
+use Paymenter\Extensions\Servers\Domains\Data\{AttemptEvidence, CanonicalName, Evidence, ExpiryPrecision, HistoryScan, RequestContext, RequestDeadlineReached};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ReadCommand, ProtocolResult};
 /** Accepted, counted Enom history only. No partial scan can establish uniqueness. A dense day continues on later scheduled
  * reads: each read lists every page again, keeps validated order outcomes bound to their listed IDs and dates, and reads
@@ -48,7 +48,8 @@ final class History
         $start = 1; $total = null; $ids = []; $rows = [];
         do {
             if ($context->budget->remaining() < 1 || $context->now() >= $context->deadline) { return $stop('read_budget'); }
-            $reply = $this->client->read(ReadCommand::Orders, $parameters + ['Start'=>$start], $context);
+            try { $reply = $this->client->read(ReadCommand::Orders, $parameters + ['Start'=>$start], $context); }
+            catch (RequestDeadlineReached) { return $stop('read_budget'); }
             if ($context->now() >= $context->deadline) { return $stop('read_budget'); }
             $page = self::page($reply, $start, $begin, $end);
             if (!$page) { return $stop('list_invalid'); }
@@ -92,10 +93,12 @@ final class History
             if ($read >= self::DETAILS || $context->budget->remaining() <= count($stale) || $context->now() >= $context->deadline) { $complete = false; $refuse($read >= self::DETAILS ? 'detail_ceiling' : 'read_budget'); break; }
             $prior = $orders[$row['orderid']] ?? null;
             $read++; unset($orders[$row['orderid']]);
-            if ($row['open'] ?? false) { $outcome = $this->otherDomain($attempt, $context, $row) ? 'n' : 'order_open'; $candidate = null; }
-            else { [$outcome, $candidate] = $this->detail($attempt, $context, $row); }
+            try {
+                if ($row['open'] ?? false) { $outcome = $this->otherDomain($attempt, $context, $row) ? 'n' : 'order_open'; $candidate = null; }
+                else { [$outcome, $candidate] = $this->detail($attempt, $context, $row); }
+            } catch (RequestDeadlineReached) { $outcome = 'read_budget'; $candidate = null; }
             // Keep earlier validated outcomes, but never accept a reply that used up the deadline.
-            if ($context->now() >= $context->deadline) {
+            if ($outcome === 'read_budget' || $context->now() >= $context->deadline) {
                 if ($prior !== null) { $orders[$row['orderid']] = $prior; }
                 $complete = false; $refuse('read_budget'); break;
             }
@@ -110,7 +113,8 @@ final class History
         if ($complete) {
             foreach ($stale as $row) {
                 if ($context->now() >= $context->deadline) { $complete = false; $refuse('read_budget'); break; }
-                [$outcome, $candidate] = $this->detail($attempt, $context, $row);
+                try { [$outcome, $candidate] = $this->detail($attempt, $context, $row); }
+                catch (RequestDeadlineReached) { $complete = false; $refuse('read_budget'); break; }
                 if ($context->now() >= $context->deadline) { $complete = false; $refuse('read_budget'); break; }
                 if ($candidate) { $candidates[] = $candidate; }
                 elseif ($outcome === 'n') { $orders[$row['orderid']] = ['n', $row['signature']]; }

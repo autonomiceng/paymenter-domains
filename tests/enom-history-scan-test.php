@@ -101,4 +101,28 @@ same([false, true, ['detail_unsupported'=>1]], [$d->historyComplete, $d->history
 [$e, $reads] = $turn($d);
 same([false, false, 3], [$e->historyComplete, $e->historyScan->progressed, $reads], 'Rereading only the unsupported order is no progress, so it counts toward the read limit');
 same(2, $e->historyScan->state['refusal_totals']['detail_unsupported'], 'Refusal totals add up across reads');
+
+// A valid detail can leave less than one millisecond for the next claim, before the deadline itself.
+$wire->fault = '';
+$deadline = $clock->now()->modify('+1 second');
+$raceClock = new class($clock->now()) implements Clock {
+    public function __construct(public DateTimeImmutable $time) {}
+    public function now(): DateTimeImmutable { return $this->time; }
+};
+$raceWire = new class($wire, $raceClock, $deadline) implements Transport {
+    public function __construct(private Transport $wire, private Clock $clock, private DateTimeImmutable $deadline) {}
+    public function send(Environment $e, ReadCommand $command, array $p, string $uid, string $token, int $ms): string {
+        $reply = $this->wire->send($e, $command, $p, $uid, $token, $ms);
+        if ($command === ReadCommand::Order) { $this->clock->time = $this->deadline->modify('-500 microseconds'); }
+        return $reply;
+    }
+};
+$wire->requests = [];
+$raceContext = new RequestContext($binding, RequestOrigin::Background, $deadline, new RequestBudget(21), $raceClock);
+$race = (new History(new Client($binding, 'offline', 'token', $raceWire)))->inspect($attempt(null), $raceContext);
+same([false, true, 1, ['read_budget'=>1]], [$race->historyComplete, $race->historyScan->progressed,
+    $race->historyScan->state['resolved'], $race->historyScan->state['refusals']], 'A refused deadline claim retains the validated outcome as incomplete progress');
+same(['9003'], array_map('strval', array_keys($race->historyScan->state['orders'])), 'Only the validated order is saved');
+same([3, 3], [count($wire->requests), $raceContext->exchanges()], 'The refused claim never enters the transport');
+same(null, $complete($race), 'Deadline progress cannot authorize completion');
 echo "Dense Enom history scans continue across reads and complete only after every order is resolved\n";
