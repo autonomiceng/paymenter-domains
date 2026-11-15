@@ -87,8 +87,8 @@ final class DomainObservation
             if ($records!==null && count($records['glue']['records']??[])>GlueDiscoveryLimit::HOSTS) { $records=null; $recordOverflow=true; }
             if ($records!==null) { ObservationRecords::save($l['domain'],$records,$this->clock->now(),$capabilities); }
             if ($snapshot || $transfer!==TransferStatus::Unknown) {
+                RenewalOwnership::observe($l['domain'],$snapshot,$this->clock->now());
                 ObservationProjection::save($l['domain'],$snapshot,$transfer,$this->clock->now());
-                RenewalOwnership::observe($l['domain'],$snapshot?->owned,$this->clock->now());
             }
             $incomplete=$records!==null && ObservationRecords::incomplete($l['domain'],$this->clock->now());
             if ($incomplete && $failedFamily===null) {

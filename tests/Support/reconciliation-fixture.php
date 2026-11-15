@@ -24,7 +24,7 @@ $wire = new class($observation) implements Transport {
         $expiry = (2026 + ($s->expiryYears ?? $s->years)).'-10-18'; if ($s->fault === 'term') { $expiry = '2026-10-18'; }
         $item = '<Description>'.($s->fault === 'history-zero' ? 'unrelated.example.com' : $s->name).'</Description><ProductType>Register</ProductType><Quantity>'.$s->years.'</Quantity><Status>Successful</Status><OrderStatus>Closed</OrderStatus><AmountPaid>8.95</AmountPaid><ExpiryDateTime>'.$expiry.'</ExpiryDateTime>';
         $data = match ($command) {
-            ReadCommand::Info => '<GetDomainInfo><DomainName DomainNameID="456">'.$s->name.'</DomainName><Status><Belongs-To>'.($s->fault==='owner'?'another-account':'account-enom').'</Belongs-To><Expiration>'.$expiry.'</Expiration></Status></GetDomainInfo>',
+            ReadCommand::Info => '<GetDomainInfo><DomainName DomainNameID="'.($s->domainId??'456').'">'.$s->name.'</DomainName><Status><Belongs-To>'.($s->fault==='owner'?'another-account':'account-enom').'</Belongs-To><Expiration>'.$expiry.'</Expiration></Status></GetDomainInfo>',
             ReadCommand::Nameservers => implode('',array_map(fn($ns)=>'<dns>'.$ns.'</dns>',$s->nameservers)),
             ReadCommand::Expiry => '<ExpirationDate>'.$expiry.'</ExpirationDate>',
             ReadCommand::Renewal => '<RenewName>0</RenewName>', ReadCommand::Lock => '<Reg-Lock>1</Reg-Lock>',

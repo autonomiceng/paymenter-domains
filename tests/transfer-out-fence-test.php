@@ -59,16 +59,18 @@ ObligationAlerts::finish($gone->fresh(),$keys,$clock->now()->getTimestamp());
 $check(1,$alerts($gone)->count(),'Successful reminder inspection retains current absence');
 // A later timeout or unclear read cannot clear an established negative proof.
 foreach(['timeout','transport','info_missing'] as $fault){
-    try{$read($gone,$fault);}catch(DomainException){}
+    try{$read($gone,$fault);}catch(DomainException|RuntimeException){}
     $check(true,$refused(fn()=>$billing->invoice($gone->id,$user)),'Unclear read cannot lift established absence: '.$fault);
 }
-$read($gone); $rearmed=$billing->invoice($gone->id);
+$observation->domainId='457'; $read($gone);
+$check(true,$refused(fn()=>$billing->invoice($gone->id,$user)),'Positive read for a different provider identity cannot lift absence');
+$observation->domainId='456'; $read($gone); $rearmed=$billing->invoice($gone->id);
 $check(true,$rearmed instanceof Invoice,'Later positive read re-arms renewal billing');
 $check(0,$alerts($gone)->count(),'Positive read resolves absence review');
 
 // Failure before any negative proof is not absence; billing and payment-time authority stay usable.
 $timeout=$holder('timeout');
-try{$read($timeout,'timeout');}catch(DomainException){}
+try{$read($timeout,'timeout');throw new LogicException('Expected read deadline');}catch(RuntimeException $e){same('read_deadline',\Paymenter\Extensions\Servers\Domains\Services\ReadFailure::code($e),'The fixture reached an actual registrar read deadline');}
 $invoice=$billing->invoice($timeout->id); $context=$auto->renewalAutoPayContext($invoice->id);
 expect(is_array($context),'Transport failure permits the ordinary Auto Pay context');
 same(true,DB::transaction(fn()=>$auto->renewalAutoPayStillAllowed($invoice->id,$context)),'Transport failure does not refuse collection');

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Illuminate\Support\Facades\{DB, Schema};
+use Paymenter\Extensions\Servers\Domains\Data\DomainSnapshot;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 /** Collection fence only. A missing holding is not proof to retire debt or release its name. */
 final class RenewalOwnership
@@ -16,11 +17,17 @@ final class RenewalOwnership
         return HoldingReadRetry::absent($d);
     }
     /** Caller holds the observation's identity/stamp locks. Unknown reads retain the last definite answer. */
-    public static function observe(Domain $d, ?bool $owned, \DateTimeImmutable $now): void
+    public static function observe(Domain $d, ?DomainSnapshot $facts, \DateTimeImmutable $now): void
     {
+        $owned=$facts?->owned; $at=$now->format(DATE_ATOM);
+        // A positive read of a different provider identity cannot lift retained absence.
+        if ($owned===true&&$d->provider_domain_id!==null&&$facts->providerReference!==$d->provider_domain_id) {
+            if (!self::blocked($d)) { return; }
+            $owned=false; $at=$d->observation['renewal_ownership']['at']??$d->observation['record_failure']['at']??$at;
+        }
         if ($owned===null||!in_array($d->status, ['active', 'expired', 'grace'], true)) { return; }
         $d->update(['observation'=>[...($d->observation??[]), 'renewal_ownership'=>[
-            'identity'=>ObservationRecords::identity($d), 'owned'=>$owned, 'at'=>$now->format(DATE_ATOM)]]]);
+            'identity'=>ObservationRecords::identity($d), 'owned'=>$owned, 'at'=>$at]]]);
         self::review($d,$now->getTimestamp());
     }
     /** Staff must verify departure; absence alone cannot safely settle existing money or release a name. */
