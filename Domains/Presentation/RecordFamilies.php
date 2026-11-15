@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Presentation;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
-use Paymenter\Extensions\Servers\Domains\Services\{ObservationProjection,ObservationRecords};
+use Paymenter\Extensions\Servers\Domains\Services\{DepartureChecks,ObservationProjection,ObservationRecords};
 /** No inferred completeness or edit grants. Last-good evidence remains historical after a failed read. */
 final class RecordFamilies
 {
@@ -11,7 +11,6 @@ final class RecordFamilies
     public const EVIDENCE='Public DNS can’t confirm a registrar change or renewal.';
     public static function owner(OwnedDomain $page,array $facts): OwnedDomain
     {
-        if($page->departureSuspected){return $page;}
         $management=$page->management;
         foreach($facts['rows'] as $family){$key=$family['kind'];
             $section=$management[$key]??['label'=>$family['label'],'actions'=>[],'url'=>null,'family_only'=>true];
@@ -37,6 +36,11 @@ final class RecordFamilies
         try{$status=ObservationProjection::recordStatus($d,$now);$hold=$d->observation['record_hold']['reason']??null;
             $currentRead=$status['at']!==null&&($d->observation['record_failure']['identity']??null)!==ObservationRecords::identity($d);}
         catch(\Illuminate\Contracts\Encryption\DecryptException){$readable=false;$empty=clone $d;$empty->observation=[];$status=ObservationProjection::recordStatus($empty,$now);$hold=null;$currentRead=false;}
+        // A definite absence is the departure check's finding, said on its own rows. The records keep their last read, so DNS stays usable.
+        if($readable&&DepartureChecks::suspected($d)&&($d->observation['record_failure']['code']??null)==='domain_not_in_account'){
+            $kept=clone $d;$p=$kept->observation;unset($p['record_failure']);$kept->observation=$p;$last=ObservationProjection::recordStatus($kept,$now);
+            $status=[...$status,'families'=>$last['families'],'settings'=>$last['settings']];$currentRead=$last['at']!==null;
+        }
         $cancelled=false;
         if($readable&&in_array($d->status,['cancelled','registration_rejected','transfer_rejected'],true)&&empty($d->observation['records'])&&$status['at']===null&&$d->provider_domain_id===null&&$d->provider_order_id===null&&$d->provider_expires_at===null){
             $ops=$d->operations;
