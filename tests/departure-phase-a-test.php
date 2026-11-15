@@ -5,7 +5,8 @@ require __DIR__.'/Support/observation-records-ready.php';
 use Illuminate\Support\Facades\{Auth,DB};
 use Paymenter\Extensions\Servers\Domains\Services\{DepartureChecks,DomainStates,HoldingObservationWork,HoldingReadRetry,ObservationRecords,ObligationAlerts,PublicRegistryReader,RenewalOwnership};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts,Staff};
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain;
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource;
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\{ListDomains,ViewDomain};
 use Paymenter\Extensions\Servers\Domains\Contracts\DnsReader;
 use Paymenter\Extensions\Servers\Domains\Dns\{DnsAnswer,DnsContext,DnsQuery};
 require_once __DIR__.'/Support/staff-panel.php';
@@ -40,6 +41,19 @@ $clock->instant=$clock->now()->modify('+61 seconds');$observation->fault='transp
 same(true,HoldingReadRetry::absent($d->fresh()),'Unknown read cannot clear definite absence');
 app()->instance(\Paymenter\Extensions\Servers\Domains\Services\OwnedDomains::class,$owners);
 $actor=staffUser([Staff::VIEW,'admin.domains.manage']);staffPanel();Auth::setUser($actor);
+$beforeList=$clock->instant;
+foreach([0,172800] as $elapsed){
+    $clock->instant=$at->modify('+'.$elapsed.' seconds');
+    $list=Livewire\Livewire::actingAs($actor)->test(ListDomains::class)->filterTable('alerts',true)->assertSuccessful()->assertCanSeeTableRecords([$d]);
+    $record=$list->instance()->getTableRecords()->firstWhere('id',$d->id);
+    $cause=DomainFacts::alertCause(RenewalOwnership::REVIEW,$record);
+    $note=$list->instance()->getTable()->getColumn('note')->record($record)->getState();
+    expect(str_contains($note,$cause)&&str_contains($note,$record->provider_expires_at->format('Y-m-d')),'Needing-action row retains its current departure alert and expiry at '.$elapsed.' seconds');
+    expect(str_contains(DomainFacts::for($record)['Renewal']['sub'],$cause),'The registered Renewal row carries the same departure alert');
+    same(DomainResource::getUrl('view',['record'=>$d->id]),$list->instance()->getTable()->getRecordUrl($record),'The attention row opens the suspected domain');
+    same((string)$list->instance()->getTableRecords()->total(),DomainResource::getNavigationBadge(),'Needing-action list and navigation count agree');
+}
+$clock->instant=$beforeList;
 $page=Livewire\Livewire::actingAs($actor)->test(ViewDomain::class,['record'=>$d->id]);
 $page->assertActionVisible('check_departure')->assertActionEnabled('check_departure');
 $observation->fault='';app()->instance(\Paymenter\Extensions\Servers\Domains\Services\DomainObservation::class,$observer);
