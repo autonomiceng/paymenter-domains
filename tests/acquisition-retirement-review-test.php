@@ -48,8 +48,8 @@ foreach(['register','transfer'] as $action){
     $ready=new DispatchReadiness($r->binding,$r->query,$r->capabilities,$r->cost,$r->eligible,$r->premium,$r->observedAt,$r->validUntil,$r->payloadDigest,
         $action==='transfer'?['base_expiry'=>'2027-10-18','privacy'=>false]:null);
     $sealed=$claims->seal($claimed,$ready,$clock->now());expect($sealed!==null,'Funded acquisition seals');
-    $reply=new DriverResult($binding,Disposition::Accepted,SendState::Sent,ResultReason::Acknowledged,
-        $action==='register'?new Evidence(registration:new RegistrationEvidence($r->query,'9001',null,null,[])):new Evidence(transferReference:'7001'));
+    $reply=new DriverResult($binding,Disposition::Pending,SendState::Sent,ResultReason::Processing,
+        $action==='register'?new Evidence(registration:new RegistrationEvidence($r->query,'9001',null,null,[])):new Evidence(transfer:TransferStatus::Pending,transferReference:'7001'));
     $claims->finish($sealed,$reply);$op->refresh();
     $retirement->closeUnpaid((int)$op->invoice_id,PayCheck::notice('expired'));
     $check(fn()=>same(0,$open($op),$action.' paid acquisition after send raises no unpaid review'));

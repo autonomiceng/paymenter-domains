@@ -136,7 +136,9 @@ final readonly class AcquisitionRetirement
             ||($op->attempt['charge']??null)!==null||($op->attempt['order_candidates']??[])!==[]
             ||array_key_exists('dispatch_attempted_at',$op->policy??[])||array_diff(array_keys($op->cost??[]),['estimated','currency','unit'])){return false;}
         if(array_key_exists('execution',$op->attempt)&&(!in_array($op->attempt['execution']['send_state']??null,['sent','possibly_sent'],true)
-            ||!in_array($op->attempt['execution']['disposition']??null,['accepted','accepted_with_discrepancy','unknown'],true))){return false;}
+            ||!in_array($op->attempt['execution']['disposition']??null,['accepted','accepted_with_discrepancy','pending','unknown'],true))){return false;}
+        if(($op->attempt['execution']['disposition']??null)==='pending'&&(($op->attempt['execution']['send_state']??null)!=='sent'
+            ||($op->attempt['execution']['reason']??null)!=='processing')){return false;}
         ReconciliationEvidence::attempt($op,$d,$binding,$l['server']);
         return true;
     }
