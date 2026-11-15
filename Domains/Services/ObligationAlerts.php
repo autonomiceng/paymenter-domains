@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\RenewalCode;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
+use Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus;
 /** Safe durable staff inbox; expiry/account/generation/obligation distinguish once-only alerts. */
 final class ObligationAlerts
 {
@@ -85,7 +86,9 @@ final class ObligationAlerts
             if($op->action==='renew'&&isset($p['price'])){
                 // Retained retail is informational; RenewalReminders checks current cost independently.
                 $code=$p['price']['staff_alert']??null;
-                if($code!=='retained_renewal'&&($code!==null||($p['price']['retained']??false))){
+                // Completed losses still matter; other finished requests incurred no renewal margin.
+                $closed=$op->state!=='succeeded'&&in_array($op->state,RequestStatus::FINISHED,true);
+                if(($code!=='below_cost'||!$closed)&&$code!=='retained_renewal'&&($code!==null||($p['price']['retained']??false))){
                     $keys[]=self::record($d,$code==='below_cost'?'below_cost':'unknown_cost',$now,(int)$op->id);
                 }
             }
