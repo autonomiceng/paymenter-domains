@@ -33,7 +33,7 @@ final class RenewalOwnership
     /** Caller holds observation locks. Preserve legacy absence before record/failure writers replace its diagnostic. */
     public static function retainAbsence(Domain $d, \DateTimeImmutable $now, bool $definite=false): void
     {
-        if ($d->status!=='active'||(!$definite&&!self::blocked($d))) { return; }
+        if (!in_array($d->status,['active','expired','grace'],true)||(!$definite&&!self::blocked($d))) { return; }
         $proof=$d->observation['renewal_ownership']??[];
         $prior=($proof['identity']??null)===ObservationRecords::identity($d)?($proof['at']??null):($d->observation['record_failure']['at']??null);
         $at=(!$definite&&is_string($prior))?$prior:$now->format(DATE_ATOM);
