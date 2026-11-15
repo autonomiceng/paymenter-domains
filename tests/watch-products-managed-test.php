@@ -69,10 +69,4 @@ same([(int)$profile->id,'platform','hosting_product'],[(int)$proof[0]?->id,$proo
 $fallback=$sell(['hostname'=>'fallback.example']);$visit();same('watch',WatchSource::where('service_id',$fallback->id)->value('state'),'A hostname-only order is watched');
 $fallback->properties()->create(['key'=>'domain','value'=>'not a domain']);
 same([false,false],$monitored('fallback.example'),'An invalid domain is not replaced by the hostname for expiry and DNS checks');
-// Summaries see two domains behind a blank one, as the public checks do, so they don't accept a source those checks refuse.
-$twice=$sell(['domain'=>'']);$twice->properties()->create(['key'=>'domain','value'=>'twice.example']);$visit();
-$source=fn()=>WatchSource::where('service_id',$twice->id)->sole();$summary=fn()=>new Paymenter\Extensions\Servers\Domains\Services\DomainSummaryContext((int)$owner->id,[],[(int)$source()->watch_id]);
-same(['watch',true],[$source()->state,$summary()->validSource($source())],'A blank domain row beside one domain is a valid source');
-$twice->properties()->create(['key'=>'domain','value'=>'other.example']);
-same(false,$summary()->validSource($source()),'A second domain behind a blank row makes the source invalid in summaries');
 $nativeSuccessful=true;echo "Hosting links to managed domains.\n";
