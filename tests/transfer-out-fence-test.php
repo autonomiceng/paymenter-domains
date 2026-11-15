@@ -55,6 +55,8 @@ $read($gone,'owner'); $check(1,$alerts($gone)->count(),'Repeated absence dedupli
 // A complete sweep must retain this alert even without observation work rows.
 $locked=DB::transaction(fn()=>HoldingLocks::take($gone));
 $keys=ObligationAlerts::retained($locked,$clock->now()->getTimestamp());
+$noticeAlerts=[]; \Paymenter\Extensions\Servers\Domains\Services\RenewalReminders::plan($locked,(object)['before_days'=>'[]','after_days'=>'[]'],$clock->now(),$noticeAlerts,$bindings);
+$check([],$noticeAlerts,'Paused billing must not raise a missing-invoice incident');
 ObligationAlerts::finish($gone->fresh(),$keys,$clock->now()->getTimestamp());
 $check(1,$alerts($gone)->count(),'Successful reminder inspection retains current absence');
 // A later timeout or unclear read cannot clear an established negative proof.
