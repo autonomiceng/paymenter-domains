@@ -158,10 +158,11 @@ for($i=0;$i<110;$i++){
 // Inspecting settled history reads invoice payments and peer credits in batches, without moving money.
 $historyQueries=0;$countHistory=true;
 DB::listen(static function($query)use(&$historyQueries,&$countHistory):void {
-    if($countHistory&&preg_match('/^select .* from "(?:invoices|invoice_transactions|domains_operations)"/i',$query->sql)){$historyQueries++;}
+    $sql=str_replace(['"','`','[',']'],'',$query->sql);
+    if($countHistory&&preg_match('/^select .* from (?:invoices|invoice_transactions|domains_operations)\b/i',$sql)){$historyQueries++;}
 });
 $settledCash=$cash();$retirement->inspect((int)$late->domain_id);$countHistory=false;
-expect($historyQueries<=8,'Settled history inspection batches invoice, payment and peer reads; queries='.$historyQueries);
+expect($historyQueries>0&&$historyQueries<=8,'Settled history inspection batches invoice, payment and peer reads; queries='.$historyQueries);
 same($settledCash,$cash(),'Inspecting the settled cursor history moves no money');
 $behind=$new(placeholderComFixtureName('late-behind-placeholder.com'),paid:false);$shut($behind);ExtensionHelper::addPayment($behind->invoice_id,null,amount:$behind->amount);ExtensionHelper::addPayment($parts->invoice_id,null,amount:'0.25');$before=$cash();
 foreach(range(1,3) as $pass){$refunds->creditRetired($account);}
