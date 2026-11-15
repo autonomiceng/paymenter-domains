@@ -62,7 +62,7 @@ expect(!str_contains($html,'box1.example.net'),'No customer value on the page');
 expect(!str_contains($page($viewer)->html(),'Choose products'),'View-only staff get no Choose products');
 $new=$hosting('New since the page loaded');$saved($new,['domain'=>'new.example.com']);
 $ids=array_column(WatchProducts::lines()['products'],'id');$loaded=array_column(array_filter(WatchProducts::lines()['products'],fn($p)=>!$p['on']),'id');
-$page()->call('saveMonitored',array_values(array_diff($ids,[$both->id,$new->id])),$loaded);
+$page()->call('saveMonitored',array_values(array_diff($ids,[$both->id,$new->id],$loaded)),$loaded);
 same([['domain',false],['domain',false],['domain',true],['domain',false]],[$state($both),$state($new),$state($serverless),$state($fixedOff)],'Unchecked products are saved off, a product not yet mapped included; the rest keep their choice');
 $page()->call('saveMonitored',$ids,$loaded);same(['domain',false],$state($both),'A dialog opened before the last save changes nothing');
 $page($viewer)->call('saveMonitored',$ids,[$both->id,$new->id,$fixedOff->id])->assertForbidden();same(['domain',false],$state($both),'View-only staff change nothing');
