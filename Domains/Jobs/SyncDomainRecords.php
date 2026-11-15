@@ -103,7 +103,7 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
                 if ($lost) { $this->notice('Sync stopped','The registrar read ran past its time limit. Press Sync now again.'); return; }
                 $this->notice("Couldn't sync domain",'Check the registrar account, then try Sync now again.');
             } finally {
-                try{if($this->departure&&!$lost){app(\Paymenter\Extensions\Servers\Domains\Services\DepartureChecks::class)->registry($d->fresh());}}
+                try{if($this->departure&&!$lost&&$work>0&&HoldingObservationWork::ownsManual($work,$claim,$clock->now())){app(\Paymenter\Extensions\Servers\Domains\Services\DepartureChecks::class)->registry($d->fresh());}}
                 finally{HoldingObservationWork::releaseManual($work,$claim);}
             }
         } finally { Cache::forget($this->pendingKey()); }
