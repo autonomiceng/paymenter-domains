@@ -16,7 +16,7 @@ app()->instance(OwnedDomains::class,$owners);
 App\Models\Server::findOrFail($d->server_id)->settings()->updateOrCreate(['key'=>'domains_billing_enabled'],['value'=>true,'type'=>'boolean']);
 $domain=$owners->present($d->fresh());
 session()->forget(['domains_failed_form','_old_input']);
-app('view')->share('keys',array_fill_keys(['setup','recovery','code','renew','auto-renew','dns','srv','ds','glue'],str_repeat('a',64)));
+app('view')->share('keys',array_fill_keys(['setup','recovery','code','renew','auto-renew',...\Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerActionController::ACTIONS],str_repeat('a',64)));
 $customer=view('domains::show',['domain'=>$domain])->render();
 $colors=':root{--color-primary:190 100% 50%;--color-neutral:0 0% 17%;--color-base:100 100% 100%;--color-muted:220 0% 53%;--color-success:142 71% 45%;--color-error:0 75% 60%;--color-warning:25 95% 53%;--color-info:210 100% 60%;--color-background:240 18% 9%;--color-background-secondary:240 13% 11%}body{margin:0;padding:24px;background:hsl(var(--color-background));font:15px/1.5 system-ui}.container{max-width:1180px;margin:auto}';
 writeRenderArtifact($out.'/customer.html',str_replace(['<html>','</head>'],['<html lang="en" class="dark">','<style>'.$colors.'</style></head>'],$customer));
