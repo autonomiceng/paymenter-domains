@@ -187,6 +187,20 @@ $read($op, '+2 hours');
 same([false, 1, false], [$op->fresh()->policy['history_scan']['state']['complete'], $op->fresh()->policy['reconciliation']['polls'] ?? 0,
     isset($op->fresh()->policy['enom_absence'])], 'The second unchanged blocked turn spends one poll and authorizes no absence');
 $history->blockedName = null;
+// Deadline-reaching rechecks retain old exclusions, so identical slow reads still escalate.
+[$op] = $register('absence-slow-blocked-placeholder.com');
+$history->orders = 13; $history->blockedName = $op->domain->domain;
+$read($op, '+1 hours');
+$history->detailTick = static function (int $ms) use ($clock): void { $clock->instant = $clock->instant->modify('+'.min(24000, $ms).' milliseconds'); };
+foreach (range(1, 3) as $turn) {
+    $read($op, '+'.($turn + 1).' hours');
+    $saved = $op->fresh()->policy;
+    same([$turn, false, false, null], [$saved['reconciliation']['polls'] ?? 0, $saved['history_scan']['state']['complete'],
+        isset($saved['enom_absence']), $op->fresh()->funding['refund_authorization'] ?? null],
+        'Every identical slow blocked turn raises the poll count without financial authority');
+}
+same(12, $saved['history_scan']['state']['resolved'], 'Deadline-reaching and unreached rechecks both retain their earlier exclusions');
+$history->orders = 3; $history->blockedName = null; $history->detailTick = null;
 // Validated detail progress survives the deadline; the reply that reaches it supplies no financial facts.
 $deadlineScan = static function ($op, callable $run, string $why) use ($clock, $history, $refused): void {
     $history->orders = 11;

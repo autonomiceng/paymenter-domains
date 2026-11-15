@@ -82,11 +82,15 @@ final class History
         $candidates = []; $read = 0; $added = 0;
         foreach ($pending as $row) {
             if ($read >= self::DETAILS || $context->budget->remaining() <= count($stale) || $context->now() >= $context->deadline) { $complete = false; $refuse($read >= self::DETAILS ? 'detail_ceiling' : 'read_budget'); break; }
+            $prior = $orders[$row['orderid']] ?? null;
             $read++; unset($orders[$row['orderid']]);
             if ($row['open'] ?? false) { $outcome = $this->otherDomain($attempt, $context, $row) ? 'n' : 'order_open'; $candidate = null; }
             else { [$outcome, $candidate] = $this->detail($attempt, $context, $row); }
             // Keep earlier validated outcomes, but never accept a reply that used up the deadline.
-            if ($context->now() >= $context->deadline) { $complete = false; $refuse('read_budget'); break; }
+            if ($context->now() >= $context->deadline) {
+                if ($prior !== null) { $orders[$row['orderid']] = $prior; }
+                $complete = false; $refuse('read_budget'); break;
+            }
             if (!in_array($outcome, ['n', 'c'], true)) { $complete = false; $refuse($outcome); continue; }
             $validated = [$outcome, $row['signature']];
             if (($known[$row['orderid']] ?? null) !== $validated) { $added++; }
