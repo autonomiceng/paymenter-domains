@@ -30,7 +30,7 @@ $scheduled = new OperationReconciliation($claims, new AccountBindings($historyRe
 app()->instance(AccountBindings::class, $bindings);
 $staff->role->update(['permissions' => [...$all, 'admin.domains.manage-policy', Review::permission('enom_answer')]]);
 $panel = Filament::getCurrentPanel(); $css = file_get_contents($fixture.'/vendor/filament/filament/dist/theme.css');
-$admin = getenv('BECO_ADMIN_CSS'); $css .= is_string($admin) && is_file($admin) ? file_get_contents($admin) : '';
+$admin = getenv('ADMIN_THEME_CSS'); $css .= is_string($admin) && is_file($admin) ? file_get_contents($admin) : '';
 $panel->viteTheme([])->theme(new HtmlString('<link rel="stylesheet" href="fixture.css">'))->brandName('Paymenter');
 $render = static function ($test, string $name) use ($out, $css): void {
     // The panel sidebar reads the current request; give it the page's own GET request.
