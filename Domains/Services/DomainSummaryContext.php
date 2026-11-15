@@ -32,7 +32,7 @@ final class DomainSummaryContext
         $this->profiles=WatchProfile::whereIn('id',[...array_map(fn($w)=>$w->ns_profile_id,$this->watches),...array_map(fn($c)=>$c->profile_id,$this->configs),$default?->id])->get()->keyBy('id')->all();
         foreach($this->domains as$id=>$d){$this->defaults[$id]=$default?->id;}
         $this->defaults['site']=$default?->id;
-        $this->properties=Property::where('model_type',(new Service)->getMorphClass())->whereIn('model_id',$ids)->whereIn('key',WatchProducts::KEYS)->whereIn('id',DB::query()->fromSub(DB::table('properties')->where('model_type',(new Service)->getMorphClass())->whereIn('model_id',$ids)->selectRaw('id, row_number() over (partition by model_type,model_id,'.$this->propertyKey().' order by id) as position'),'bounded')->where('position','<=',2)->select('id'))->orderBy('id')->get()->groupBy('model_id')->all();
+        $this->properties=self::fields($ids);
     }
     /** Staff-only watch context; every identity is still checked against its row's owner. */
     public static function staffWatches(array $ids): self
@@ -55,7 +55,7 @@ final class DomainSummaryContext
         $c->maps=WatchProductMap::whereIn('id',array_map(fn($s)=>$s->map_id,$c->sources))->get()->keyBy('id')->all();
         $c->defaults['site']=SiteDnsDefault::profile()?->id;
         $c->profiles=WatchProfile::whereIn('id',[...array_map(fn($w)=>$w->ns_profile_id,$c->watches),$c->defaults['site']])->get()->keyBy('id')->all();
-                $c->properties=Property::where('model_type',(new Service)->getMorphClass())->whereIn('model_id',$serviceIds)->whereIn('key',WatchProducts::KEYS)->whereIn('id',DB::query()->fromSub(DB::table('properties')->where('model_type',(new Service)->getMorphClass())->whereIn('model_id',$serviceIds)->selectRaw('id, row_number() over (partition by model_type,model_id,'.$c->propertyKey().' order by id) as position'),'bounded')->where('position','<=',2)->select('id'))->orderBy('id')->get()->groupBy('model_id')->all();
+        $c->properties=self::fields($serviceIds);
         return $c;
     }
     public function watchProfile(int $id): ?WatchProfile
@@ -75,7 +75,15 @@ final class DomainSummaryContext
         $props=WatchProducts::field($this->properties[$h->id]??collect());
         try { return $props->count()===1 && DnsQuery::hostname($props->first()->value)===$s->hostname; } catch (\Throwable) { return false; }
     }
-    private function propertyKey(): string { return DB::connection()->getQueryGrammar()->wrap('key'); }
+    /** Up to two domain and two hostname rows per service, enough for field() to see a duplicate. Blank domain rows are
+     * dropped before the limit, as field() drops them, so two nonblank domains are never hidden behind a blank one. */
+    private static function fields(array $ids): array
+    {
+        $morph=(new Service)->getMorphClass();$grammar=DB::connection()->getQueryGrammar();$key=$grammar->wrap('key');
+        $ranked=DB::table('properties')->where('model_type',$morph)->whereIn('model_id',$ids)->where(fn($q)=>$q->where('key','<>',WatchProducts::DOMAIN)->orWhereRaw('trim(coalesce('.$grammar->wrap('value').",'')) <> ''"))
+            ->selectRaw('id, row_number() over (partition by model_type,model_id,'.$key.' order by id) as position');
+        return Property::where('model_type',$morph)->whereIn('model_id',$ids)->whereIn('key',WatchProducts::KEYS)->whereIn('id',DB::query()->fromSub($ranked,'bounded')->where('position','<=',2)->select('id'))->orderBy('id')->get()->groupBy('model_id')->all();
+    }
     public function stamp(string $kind,int $id,string $family='dns'): ?string
     {
         $t=$kind==='watch'?($this->watches[$id]??null):($this->domains[$id]??null);if (!$t) { return null; }

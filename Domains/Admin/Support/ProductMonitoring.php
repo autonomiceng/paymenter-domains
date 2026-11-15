@@ -18,6 +18,10 @@ final class ProductMonitoring extends Component
 {
     public const NAME='domains-product-monitoring';
     #[Locked] public int $product;
+    /** What the editor showed at the last render: this product's state and every turned-off product. A click asks for
+     * the opposite of what it showed; if either changed since, monitor() refuses it and the editor reloads. */
+    #[Locked] public bool $shown=true;
+    #[Locked] public array $off=[];
     public static function boot(): void
     {
         if(!class_exists(\App\Admin\Resources\ProductResource\Pages\EditProduct::class)||!HookRegistration::claim(FilamentView::getFacadeRoot(),self::class)){return;}
@@ -33,14 +37,15 @@ final class ProductMonitoring extends Component
     public function toggle(): void
     {
         abort_unless(self::manager(),403);
-        try{(new WatchMappings())->monitor(Auth::user(),[$this->product=>!$this->on()]);}
+        $on=!$this->shown;
+        try{(new WatchMappings())->monitor(Auth::user(),[$this->product=>$on],$this->off);}
         catch(\DomainException){Notification::make()->warning()->title('This product changed. Reload the page and try again.')->send();return;}
-        Notification::make()->success()->title($this->on()?'Monitoring turned on':'Monitoring turned off')->send();
+        Notification::make()->success()->title($on?'Monitoring turned on':'Monitoring turned off')->send();
     }
-    private function on(): bool { return WatchProductMap::where('product_id',$this->product)->value('enabled')!==false; }
     public function render(): View
     {
-        $on=$this->on();
+        $this->off=WatchProductMap::where('enabled',false)->orderBy('product_id')->pluck('product_id')->map(fn($id)=>(int)$id)->all();
+        $on=$this->shown=!in_array($this->product,$this->off,true);
         try{$active=WatchProducts::active([$this->product])[$this->product]??0;}catch(\Throwable){$active=null;}
         return view('domains::admin.product-monitoring',['on'=>$on,'active'=>$active,'can'=>self::manager(),'settings'=>WatchResource::getUrl('settings')]);
     }
