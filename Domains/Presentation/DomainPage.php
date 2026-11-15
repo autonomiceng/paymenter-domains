@@ -170,7 +170,7 @@ final class DomainPage
     /** Next invoice: the current renewal invoice's state (Due + Pay invoice, Paid, Under review in blue while we check it, or Missing with its cause and fix), else the day the next invoice is issued and when it is due. Null when it does not apply. */
     public static function nextInvoice(OwnedDomain $d, ?DomainSummary $s, ?string $support): ?array
     {
-        if ($d->departureSuspected) { return ['value'=>State::Paused->label(),'note'=>'While we check this domain.']; }
+        if ($d->departureSuspected) { return ['value'=>State::Paused->label().' while we check this domain.']; }
         $state = $d->renewNow['status'] ?? (isset($d->renewNow['invoice']) ? 'pending' : null) ?? $d->renewalInvoice['state'] ?? null;
         $contact = Missing::support($support);
         $due = $d->renewalDue ?? $d->renewalInvoice['due'] ?? null;
