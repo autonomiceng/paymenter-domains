@@ -27,7 +27,7 @@ final class WatchDiscovery
             // An old product turn must never remove a new product's already reconciled source.
             if((int)$service?->product_id!==$productId && (!$old || (int)$old->map_id!==(int)$map?->id)){return;}
             $eligible=$service && $product && $map && $map->enabled && (int)$service->product_id===$productId
-                && $product->server && $product->server->extension!=='Domains'
+                && $product->server?->extension!=='Domains'
                 && !$product->settings()->where('key','domains_catalogue')->exists()
                 && User::whereKey($service->user_id)->exists()
                 && Order::whereKey($service->order_id)->where('user_id',$service->user_id)->exists()

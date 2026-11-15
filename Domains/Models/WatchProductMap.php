@@ -15,12 +15,12 @@ final class WatchProductMap extends WatchRecord
     {return is_string($key)&&preg_match('/\A[a-zA-Z][a-zA-Z0-9_-]{0,63}\z/D',$key)===1&&!preg_match('/(?:^|[_-])(?:alias(?:es)?|additional[_-]domains?)(?:[_-]|$)|(?:alias(?:es)?|additionalDomains?)$/i',$key);}
     protected function validateRecord(): void
     {
-        if (!self::validPropertyKey($this->property_key) || ($this->enabled && (!$this->exists || $this->isDirty(['enabled','property_key'])) && !\Paymenter\Extensions\Servers\Domains\Services\WatchMappings::enabling()) ||
+        if (!in_array($this->property_key, \Paymenter\Extensions\Servers\Domains\Services\WatchProducts::KEYS, true) || ($this->enabled && (!$this->exists || $this->isDirty(['enabled','property_key'])) && !\Paymenter\Extensions\Servers\Domains\Services\WatchMappings::enabling()) ||
             !is_string($this->reason) || trim($this->reason) === '' || !\Paymenter\Extensions\Servers\Domains\Services\StaffReason::valid($this->reason,1,1000) || (!$this->edited_by && !\Paymenter\Extensions\Servers\Domains\Services\WatchMappings::enabling())) {
-            throw new \DomainException('A scalar primary property key, editor and reason are required.');
+            throw new \DomainException('The domain or hostname field, editor and reason are required.');
         }
         $product = \App\Models\Product::findOrFail($this->product_id);
-        if (!$product->server || $product->server->extension === 'Domains' || $product->settings()->where('key', 'domains_catalogue')->exists()) {
+        if ($product->server?->extension === 'Domains' || $product->settings()->where('key', 'domains_catalogue')->exists()) {
             throw new \DomainException('Choose a hosting product.');
         }
     }

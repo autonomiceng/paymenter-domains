@@ -79,19 +79,14 @@ final class StaffWatchWrites
                 }
                 if(!$row->enabled){throw new \DomainException('The saved details changed. Reload and try again.');}
                 $row->enabled=false;$row->edited_by=$actor->id;$row->reason=$reason;
-            }elseif($action==='save'){
+            }elseif($kind==='profile' && $action==='save'){
+                // Hosting products have no field to save: the field is always the order's domain, else hostname.
                 $row->edited_by=$actor->id;$row->reason=$reason;
-                if($kind==='profile'){
-                    $row->name=(string)($input['name']??'');self::requireUniqueName($row->name,$row->exists?(int)$row->id:null);
-                    $row->nameservers=self::lines($input['nameservers']??'');
-                    foreach(['website_endpoints','email_endpoints'] as $field){$row->$field=['exact'=>self::lines($input[$field]??''),'ips'=>self::lines($input[$field.'_ips']??''),'suffix'=>self::lines($input[$field.'_suffix']??'')];}
-                }else{
-                    if(!$row->exists){$row->product_id=(int)($input['product_id']??0);}
-                    $row->property_key=(string)($input['property_key']??'');$row->enabled=false;
-                }
+                $row->name=(string)($input['name']??'');self::requireUniqueName($row->name,$row->exists?(int)$row->id:null);
+                $row->nameservers=self::lines($input['nameservers']??'');
+                foreach(['website_endpoints','email_endpoints'] as $field){$row->$field=['exact'=>self::lines($input[$field]??''),'ips'=>self::lines($input[$field.'_ips']??''),'suffix'=>self::lines($input[$field.'_suffix']??'')];}
             }else{throw new \DomainException('Reload and try again.');}
-            if($kind==='mapping' && $action==='save'){$saved=(new WatchMappings())->save($actor,(int)$row->product_id,$row->property_key,$before,$reason);$row=(new WatchMappings())->enable($actor,(int)$saved->id,(int)$saved->revision,$reason);}
-            elseif(!($kind==='watch' && in_array($action,['read','note'],true)) && !($kind==='mapping' && in_array($action,['enable','disable'],true))){$row->revision=$before+1;$row->save();}self::authorize($actor);
+            if(!($kind==='watch' && in_array($action,['read','note'],true)) && !($kind==='mapping' && in_array($action,['enable','disable'],true))){$row->revision=$before+1;$row->save();}self::authorize($actor);
             if($kind==='watch'){WatchAudit::create(['subject_type'=>$kind,'subject_id'=>$row->id,'user_id'=>$kind==='watch'?$row->user_id:null,'actor_id'=>$actor->id,
                 'event'=>$action==='read'?'staff_read_requested':'staff_'.$action,'reason'=>$reason,'before_revision'=>(string)$before,'after_revision'=>(string)$row->revision,'data'=>$data,'created_at'=>now()]);}
 
