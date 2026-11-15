@@ -52,6 +52,8 @@ final readonly class AcquisitionRetirement
     /** Frees names held by orders nobody paid for. The proof is the last guard: it refuses money, registrar evidence and other requests. */
     public function expireUnpaid(Account $a): void
     {
+        foreach(Domain::where('server_id',$a->server_id)->whereIn('id',DB::table('domains_obligation_alerts')->select('domain_id')
+            ->where('code','acquisition_retirement_review')->whereNull('resolved_at'))->orderBy('id')->limit(25)->get() as $d){$this->askStaff($d,false);}
         $cut=\DateTimeImmutable::createFromInterface($this->clock->now())->modify('-'.UnpaidHoldSetting::minutes((int)$a->server_id).' minutes')
             ->setTimezone(new \DateTimeZone(date_default_timezone_get()));
         $invoices=Operation::where('server_id',$a->server_id)->whereIn('action',['register','transfer'])->whereIn('state',PayCheck::OPEN)
@@ -88,10 +90,54 @@ final readonly class AcquisitionRetirement
         DomainReservations::releaseUnfunded($l);
         DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code','acquisition_retirement_review')->whereNull('resolved_at')->update(['resolved_at'=>$this->clock->now()->getTimestamp()]);
     }
-    private function askStaff(Domain $d): void
+    private function askStaff(Domain $d,bool $raise=true): void
     {
+        try{
+            DB::transaction(function()use($d,$raise):void {
+                $l=HoldingLocks::take($d,foreignInvoices:true,completeInvoices:true);$locked=$l['domain'];
+                if($this->retirementObsolete($l)){
+                    DB::table('domains_obligation_alerts')->where('domain_id',$locked->id)->where('code','acquisition_retirement_review')
+                        ->whereNull('resolved_at')->update(['resolved_at'=>$this->clock->now()->getTimestamp()]);
+                }elseif($raise){ObligationAlerts::record($locked,'acquisition_retirement_review',$this->clock->now()->getTimestamp());}
+            });
+            return;
+        }catch(\DomainException|\InvalidArgumentException|\TypeError|\ValueError){ /* Unproved identity, funding or send evidence keeps the review. */ }
+        if(!$raise){return;}
         DB::transaction(function()use($d):void { $locked=Domain::whereKey($d->id)->lockForUpdate()->firstOrFail();
             ObligationAlerts::record($locked,'acquisition_retirement_review',$this->clock->now()->getTimestamp()); });
+    }
+    /** Alert cleanup only. This never authorizes retirement, a send or a money return. Caller owns HoldingLocks. */
+    private function retirementObsolete(array $l): bool
+    {
+        $d=$l['domain'];$op=$l['operations']->first();
+        if($l['operations']->count()!==1||!$op||!in_array($op->action,['register','transfer'],true)||$op->funding_basis!=='paid_invoice'
+            ||array_diff(array_keys($op->funding??[]),['claim','seal'])
+            ||isset($op->policy['native_acquisition_closure'])||isset($op->policy['unpaid_retirement'])){return false;}
+        $billed=$l['items']->where('reference_type',$l['service']->getMorphClass())->where('reference_id',$l['service']->id)->pluck('invoice_id');
+        if($l['items']->where('invoice_id',$op->invoice_id)->count()!==1
+            ||$l['transactions']->whereIn('invoice_id',$billed)->contains(fn($t)=>$t->status===PaymentStatus::Processing)
+            ||$l['invoices']->whereIn('id',$billed)->where('id','!=',$op->invoice_id)->contains('status','paid')
+            ||$l['transactions']->whereIn('invoice_id',$billed)->where('invoice_id','!=',$op->invoice_id)->contains(fn($t)=>$t->status!==PaymentStatus::Failed)){return false;}
+        $paid=InvoiceFunding::requireInitialFacts($op,$l);$binding=AccountBindings::binding($l['account']);
+        foreach(['claim','seal'] as $key){if(array_key_exists($key,$op->funding??[])&&$op->funding[$key]!==$paid){return false;}}
+        if($op->state==='succeeded'){
+            return in_array($d->status,['active','expired','grace'],true)&&RenewalAuthority::completed($op,$d,$binding);
+        }
+        if($d->status!==($op->action==='transfer'?'transfer_pending':'registration_pending')
+            ||!in_array($op->state,['awaiting_payment','awaiting_code','queued','held','running','pending','uncertain'],true)
+            ||$d->provider_domain_id!==null||$d->provider_order_id!==null||$d->provider_expires_at!==null
+            ||$op->provider_order_id!==null||$op->confirmed_expires_at!==null){return false;}
+        if(($op->attempt['seal']??null)!=='sealed'){RefundProof::requireUnsent($op,$d);return true;}
+        // A normal funded send makes unpaid closure obsolete; contradictory retained send facts do not.
+        if(($op->funding['claim']??null)!==$paid||($op->funding['seal']??null)!==$paid
+            ||($op->attempt['send_state']??null)!=='possibly_sent'||!preg_match('/^[a-f0-9]{32}$/D',$op->attempt['claim_key']??'')
+            ||array_diff(array_keys($op->attempt),['claim_key','seal','send_state','capacity_deferrals','test_call_refusals','dispatch_attempted_at',
+                'authorized_cost','registration_admission','transfer_admission','execution','evidence','registration','corrections'])
+            ||array_key_exists('dispatch_attempted_at',$op->policy??[])||array_diff(array_keys($op->cost??[]),['estimated','currency','unit'])){return false;}
+        if(array_key_exists('execution',$op->attempt)&&(!in_array($op->attempt['execution']['send_state']??null,['sent','possibly_sent'],true)
+            ||!in_array($op->attempt['execution']['disposition']??null,['accepted','accepted_with_discrepancy','unknown'],true))){return false;}
+        ReconciliationEvidence::attempt($op,$d,$binding,$l['server']);
+        return true;
     }
     private function review(array $l,User $actor,?string $ticket,?string $reason): void
     {
@@ -110,6 +156,7 @@ final readonly class AcquisitionRetirement
     {
         try{
             $d=Domain::find($id);if(!$d){return;}
+            if(DB::table('domains_obligation_alerts')->where('domain_id',$id)->where('code','acquisition_retirement_review')->whereNull('resolved_at')->exists()){$this->askStaff($d,false);}
             try{$this->lateMoney($d);}catch(\Throwable $e){
                 try{Log::warning('Domains acquisition late-money inspection deferred.',['domain_id'=>$id,'exception_class'=>$e::class]);}
                 catch(\Throwable){ /* Independent retirement still runs if diagnostics fail. */ }
