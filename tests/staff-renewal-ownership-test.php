@@ -28,7 +28,8 @@ same('On',DomainFacts::for($d->fresh())['Renewal']['value'],'The saved Auto-rene
 // Pausing collection keeps the existing debt's identity and amount visible, with or without a due date.
 $invoice->update(['number'=>'INV-142']);
 foreach ([$invoice->due_at,null] as $due) {
-    $invoice->update(['due_at'=>$due]);$unchanged=$nativeMoney();
+    // Synthetic retained-data variant; the normal invoice writer keeps its immutable calendar guard.
+    Illuminate\Support\Facades\DB::table('invoices')->where('id',$invoice->id)->update(['due_at'=>$due]);$unchanged=$nativeMoney();
     $paused=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$d->id])->assertSuccessful();
     $line=panelRowText($paused->html(),'Next invoice')??'';
     expect(str_contains($line,\Paymenter\Extensions\Servers\Domains\Admin\Support\Facts::invoiceName((int)$invoice->id))&&str_contains($line,(string)$invoice->fresh()->formattedTotal),'Paused renewal shows the native invoice identity and total');

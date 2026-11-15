@@ -39,7 +39,8 @@ $invoice->items()->create(['description'=>'Domain renewal','price'=>'14.99','qua
 $renewal=$d->operations()->where('action','register')->firstOrFail()->replicate();
 $renewal->fill(['operation_key'=>'departure-render-renewal','action'=>'renew','invoice_id'=>$invoice->id,'state'=>'awaiting_payment','base_expires_at'=>$d->provider_expires_at]);$renewal->save();
 writePanelPage($out.'/staff-invoice.html',Livewire\Livewire::actingAs($actor)->test(ViewDomain::class,['record'=>$d->id]));
-$invoice->update(['due_at'=>null]);
+// Model a retained invoice without a date; normal issued invoice edits stay refused.
+DB::table('invoices')->where('id',$invoice->id)->update(['due_at'=>null]);
 writePanelPage($out.'/staff-invoice-no-date.html',Livewire\Livewire::actingAs($actor)->test(ViewDomain::class,['record'=>$d->id]));
 DB::transaction(function()use($d):void{$fresh=$d->fresh();$p=$fresh->observation;unset($p['departure_check']);$fresh->update(['observation'=>$p]);});
 writePanelPage($out.'/staff-no-marker.html',Livewire\Livewire::actingAs($actor)->test(ViewDomain::class,['record'=>$d->id]));
