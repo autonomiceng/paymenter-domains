@@ -13,6 +13,8 @@ app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new
 $viewer=staffUser([Staff::VIEW]);Auth::setUser($viewer);
 [$paid,,$second]=Operation::orderBy('id')->get()->all();
 DB::table('domains_operations')->whereIn('id',[$paid->id,$second->id])->update(['state'=>'uncertain','safe_code'=>null,'funding_basis'=>'paid_invoice']);
+$completed=$paid->replicate();$completed->operation_key='completed-paid-panel';
+$completed->state='succeeded';$completed->safe_code=null;$completed->funding_basis='paid_invoice';$completed->save();
 $free=[];
 foreach(['auth_code_email','nameservers'] as $i=>$action){
     $op=$paid->replicate();$op->operation_key='free-panel-'.$i;$op->action=$action;$op->funding_basis='non_billable_management';
@@ -24,7 +26,11 @@ parse_str((string)parse_url($hold['url'],PHP_URL_QUERY),$params);
 expect(isset($params['filters']),'Panel links to a filtered list');
 $page=Livewire::actingAs($viewer)->test(ListOperations::class)->set('tableFilters',$params['filters']);
 $page->set('tableDeferredFilters',$page->get('tableFilters'))->call('applyTableFilters')
-    ->assertCanSeeTableRecords([$paid,$second])->assertCanNotSeeTableRecords($free)->assertCountTableRecords(2);
+    ->assertCanSeeTableRecords([$paid,$second])->assertCanNotSeeTableRecords([...$free,$completed])->assertCountTableRecords(2);
+$filters=$params['filters'];$filters['status']['values']=['completed'];
+$page=Livewire::actingAs($viewer)->test(ListOperations::class)->set('tableFilters',$filters);
+$page->set('tableDeferredFilters',$page->get('tableFilters'))->call('applyTableFilters')
+    ->assertCanSeeTableRecords([$completed])->assertCanNotSeeTableRecords([$paid,$second,...$free])->assertCountTableRecords(1);
 DB::table('domains_operations')->whereIn('id',[$paid->id,$second->id])->update(['state'=>'succeeded']);
 same([],PaidUncertainty::holds(),'Free uncertainty alone produces no paid panel');
 $nativeSuccessful=true;
