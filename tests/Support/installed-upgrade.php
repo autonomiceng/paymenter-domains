@@ -5,6 +5,9 @@ use Illuminate\Support\Facades\{Auth,DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Services\{AuditArchives,StaffSettingsReview};
 function seedInstalledUpgrade(): void
 {
+    // Native request termination reloads settings from storage before the next route renders.
+    App\Models\Setting::whereNull('settingable_type')->whereNull('settingable_id')->updateOrCreate(
+        ['key'=>'default_currency'],['value'=>'USD','type'=>'string','encrypted'=>false]);
     // Use only APIs and tables supplied by the installed baseline; never create
     // current schema or import the source-tree runtime into the older process.
     require_once __DIR__.'/staff-panel.php';
