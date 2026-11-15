@@ -36,7 +36,7 @@ final class OperationActions
                     ->modalDescription($complimentaryClosure?'Closes this complimentary order and its service. Nothing is charged or credited.':($name==='refund'?self::refundWords($op):self::description($name)));
                 // A destructive confirm is red wherever the action is shown, including as a notice button. Filament passes the
                 // confirm button only as $action; any other name gets this action itself, whose button reopens the dialog.
-                if($name==='refund'){$action->modalSubmitAction(fn(Action $action)=>$action->color('danger'));}
+                if($name==='refund'){$action->modalCancelActionLabel('Keep order')->modalSubmitAction(fn(Action $action)=>$action->color('danger'));}
             }
             $account=$name==='release'&&!$contactRecovery&&$op->state==='held'?RequestFacts::account($op)['account']:null;
             // A held complimentary cost comes back on release, so release sends nothing until the cost is approved.
@@ -137,7 +137,7 @@ final class OperationActions
                 &&($op->safe_code!==\Paymenter\Extensions\Servers\Domains\Services\ContactProfileHold::CODE||\Paymenter\Extensions\Servers\Domains\Services\ContactProfileHold::unsent($op)),
             // A closed unpaid order released its name, so Refunds can never credit it. Late money goes through the payment review.
             // Complimentary orders have no payment for the refund sweep; retry only their unfinished closure.
-            'credit'=>$op->state==='rejected'&&(($op->funding_basis==='paid_invoice'&&$op->safe_code!==UnpaidAcquisitionProof::CODE)
+            'credit'=>$op->state==='rejected'&&!ReceiptReturns::settled($op)&&(($op->funding_basis==='paid_invoice'&&$op->safe_code!==UnpaidAcquisitionProof::CODE)
                 ||($op->funding_basis==='complimentary'&&in_array($op->action,['register','transfer'],true)&&($d=$op->domain)
                     &&!self::complimentaryCloseBlocked($op)&&($d->status!==($op->action==='register'?'registration_rejected':'transfer_rejected')||$d->service?->status!==\App\Models\Service::STATUS_CANCELLED))),
             'replacement'=>$op->action==='renew'&&$op->state==='rejected',

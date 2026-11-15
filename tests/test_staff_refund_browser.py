@@ -133,7 +133,7 @@ def main(scenario='refund'):
             assert [(Decimal(a), c) for a, c in saved['credits']] == [(amount, 'USD')], f'The paid amount returns exactly once: {saved["credits"]}'
             reloaded = steps['reloaded']['text']
             assert 'Cancelled' in reloaded and 'Credit added' in reloaded, 'The request page shows the cancelled request and its credit'
-            assert 'Cancel and refund' not in steps['reloaded']['menu'], 'A closed request offers no second refund'
+            assert not {'Cancel and refund', 'Retry refund'} & set(steps['reloaded']['menu']), 'A settled refund offers no second refund or retry'
             duplicate = steps['duplicate']
             assert not duplicate['modalOpen'] and duplicate['mounted'] == [] and duplicate['notificationTitles'] == ['This request changed'], f'A second click from an old dialog is answered: {duplicate}'
 

@@ -15,6 +15,13 @@ $migration = require dirname(__DIR__).'/Domains/database/migrations/2026_10_18_0
 // The extension lifecycle owns fresh-install authority through catalogue retirement.
 (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
 $installedTables = Schema::getTableListing(); sort($installedTables);
+// Resuming Orders verifies this installation; repeated schema dependencies must not create hundreds of reference tables.
+DB::flushQueryLog(); DB::enableQueryLog();
+(new \Paymenter\Extensions\Servers\Domains\Services\Installation)->verify();
+$verificationQueries=DB::getQueryLog(); DB::disableQueryLog();
+$referenceCreates=count(array_filter($verificationQueries,static fn(array $q):bool=>str_starts_with(strtolower($q['query']),'create table ')));
+expect($referenceCreates<=100,'One verification uses at most 100 reference tables, got '.$referenceCreates);
+
 FoundationSchema::verify();
 expect(DB::table('migrations')->where('migration', '2026_10_18_000001_create_domains_foundation')->exists(), 'Native migration history recorded');
 foreach (Schema::getTableListing() as $table) {

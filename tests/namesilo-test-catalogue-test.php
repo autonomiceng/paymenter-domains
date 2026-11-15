@@ -146,7 +146,15 @@ $locked=DB::transaction(fn()=>app(SellerPolicies::class)->admit([$offer['selecti
 same('13.00',$locked[0]->retail,'Locked seller admission uses the same exact annual retail');
 same($before,count($GLOBALS['nsCatalogueCalls']),'Local readiness and locked sale admission never send');
 $checklist=\Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup($account->fresh(),['label'=>'Connected','reason'=>null]);
-$rows=array_column($checklist,null,'label');same('On, follows Orders',$rows['Registrations']['value'],'Checklist registrations follow the installed TEST engine');
+$rows=array_column($checklist,null,'label');
+$processing=$account->fresh()->processing_enabled;
+try {
+    foreach([false,true] as $on){
+        DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>$on]);
+        $states=array_column(\Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup($account->fresh(),['label'=>'Connected','reason'=>null]),null,'label');
+        same($states['Orders']['value'],$states['Registrations']['value'],'Registration availability follows the account Orders state');
+    }
+} finally { DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>$processing]); }
 same('On',$rows['Transfers (Experimental)']['value'],'Checklist accepts installed TEST transfer gate');
 $summary=\Paymenter\Extensions\Servers\Domains\Services\EnomLiveActivation::summary($account->fresh(),['registration'=>true,'renewal'=>true,'management'=>true,'transfer'=>true]);
 same([1,1,1],array_values($summary['counts']),'Shared activation summary reads each retained NS16 action');

@@ -128,6 +128,9 @@ final class ReceiptReturns
         foreach(self::returns($op) as $r){if(self::amount($r)===null){return true;}}
         return false;
     }
+    /** A retained refund whose original payment or account-credit return has finished. */
+    public static function settled(Operation $op): bool
+    { return isset($op->funding['refund'])&&!self::malformed($op)&&self::outstanding($op)===0; }
     /** Pending allocations reserve funds; completed ones already have a signed native reversal from the gateway. */
     public static function outstanding(Operation $op): int
     {

@@ -121,4 +121,22 @@ $shown=array_map(fn($n)=>$n->textContent,iterator_to_array($x->query('//*[@title
 same([$full,$full,1,$full],[$x->query('//*[@title]')->item(0)?->getAttribute('title'),implode('',$shown),$read->length,$read->item(0)?->textContent],'Hover, the visible parts and screen readers (once) all read the full name');
 expect(count($shown)===2&&$shown[0]!==''&&str_ends_with($shown[1],'.com'),'A cut name is cut in its head and keeps its TLD');
 expect(str_contains(Livewire::actingAs($viewer)->test(ListDomains::class)->html(),'title="'.e($active->domain).'"'),'The Domain column draws the shared name cell');
+// A current renewal waiting for payment shares its invoice read across the list's Status and Note cells.
+$invoiceId=DB::table('invoices')->insertGetId(['user_id'=>$owner->id,'currency_code'=>'USD','status'=>'paid']);
+$clone('domains_operations',$active->fresh()->latestAcquisition->id,['action'=>'renew','state'=>'awaiting_payment','safe_code'=>null,
+    'invoice_id'=>$invoiceId,'operation_key'=>'list-current-renewal','base_expires_at'=>$active->fresh()->provider_expires_at->format('Y-m-d')]);
+[, $records]=$list();
+$accounts=Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::ordersOffAccounts();
+$inputs=Paymenter\Extensions\Servers\Domains\Admin\Support\StaffDomainInputs::for($records->values(),$accounts);
+$renewal=$inputs[$active->id]['renewal'];expect($renewal!==null,'The measured list row has a current renewal');
+DB::flushQueryLog();DB::enableQueryLog();
+$paid=Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::paidWaiting($renewal,$accounts);
+$invoiceReads=array_filter(DB::getQueryLog(),static fn(array $q):bool=>str_contains($q['query'],'from "invoices"'));
+DB::disableQueryLog();
+same(0,count($invoiceReads),'Renewal invoice status is batched, never read per cell');
+expect($paid!==null,'A listed paid renewal is distinguished from unpaid');
+DB::table('invoices')->where('id',$invoiceId)->update(['status'=>'pending']);
+[, $records]=$list();
+$inputs=Paymenter\Extensions\Servers\Domains\Admin\Support\StaffDomainInputs::for($records->values(),$accounts);
+same(null,Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::paidWaiting($inputs[$active->id]['renewal'],$accounts),'A later request reads changed payment state');
 echo "Staff Domains list: Auto-renew on every state, one demo-paused definition and a fixed query count passed.\n";$nativeSuccessful=true;

@@ -18,7 +18,7 @@ final class RequestContext
         $now = $this->clock->now();
         $remaining = intdiv(((int) $this->deadline->format('U') - (int) $now->format('U')) * 1000000
             + (int) $this->deadline->format('u') - (int) $now->format('u'), 1000);
-        if ($remaining < 1) { throw new \RuntimeException('Registrar request deadline reached.'); }
+        if ($remaining < 1) { throw new RequestDeadlineReached('Registrar request deadline reached.'); }
         $this->budget->consume();
         return $remaining;
     }
@@ -59,7 +59,7 @@ final class RequestContext
         try {
             $until=$reserved?min($this->deadline,$this->leaseUntil):$this->deadline;
             $remaining = (int) floor(((float)$until->format('U.u') - (float)$this->clock->now()->format('U.u')) * 1000);
-            if ($remaining < 1) { throw new \RuntimeException('Registrar request deadline reached.'); }
+            if ($remaining < 1) { throw new RequestDeadlineReached('Registrar request deadline reached.'); }
             if($this->current){($this->current)();}
             // A refusal raised inside the wire before sending is not an exchange; any other failure may have reached the registrar.
             $this->exchanges++;

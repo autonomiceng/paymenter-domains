@@ -34,7 +34,7 @@ final class StaffDomainInputs
                 $q->where('action','renew')->orWhereIn('domain_id',$linked);
                 if($release){$q->orWhereIn('state',[...StaffDomainStatus::MOVING,'held','uncertain']);}
             })
-            ->orderBy('id')->get()->groupBy('domain_id');
+            ->with('invoice')->orderBy('id')->get()->groupBy('domain_id');
         $services=$domains->pluck('service_id')->filter()->unique()->values()->all();
         $statuses=Service::whereIn('id',$services)->pluck('status','id');
         $cancel=NativeCancellation::withIntents(ServiceCancellation::whereIn('service_id',$services)->get(),$services,true);

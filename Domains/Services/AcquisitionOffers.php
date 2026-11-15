@@ -16,6 +16,10 @@ final class AcquisitionOffers
     public function __construct(private readonly CallerPorts $ports, private readonly AccountBindings $bindings,
         private readonly NativeCatalogue $native) {}
 
+    /** A payment-only view; checkout and provider admission retain their processing gate. */
+    public function forIssuedInvoice(): self
+    { return new self($this->ports->forIssuedInvoice(),$this->bindings,$this->native); }
+
     public function selection(string $ending, string $action, int $term): SaleSelection
     { return $this->offers([[$ending, $action, $term]])[0]['selection']; }
 

@@ -72,6 +72,7 @@ final class CartHandoffFailure
         ],
         WriteHeld::class => ['Registrar write is held.' => 'write_held'],
         \LogicException::class => ['Eligibility reads require an unlocked cart.' => 'eligibility_cart_locked'],
+        \Paymenter\Extensions\Servers\Domains\Data\RequestDeadlineReached::class => ['Registrar request deadline reached.' => 'request_deadline_reached'],
         \RuntimeException::class => [
             'Registrar reader could not be created.' => 'registrar_reader_unavailable',
             'Registrar request deadline reached.' => 'request_deadline_reached',

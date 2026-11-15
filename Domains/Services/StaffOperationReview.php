@@ -36,6 +36,7 @@ final class StaffOperationReview
         if($op?->state==='succeeded' && ($this->action!=='resume_observation' || !ObservationRecords::stopped($d))){
             throw new StaffReviewRefused($this->action==='resume_observation' ? 'Sync is already running.' : 'This request is already completed.');
         }
+        if($this->action==='credit'&&$op&&ReceiptReturns::settled($op)){throw new StaffReviewRefused('This payment has already been returned.');}
         StaffReason::require($this->reason);
         if($op){$this->requireIdle($op);}
         $t=$this->decode();

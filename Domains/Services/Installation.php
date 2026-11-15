@@ -17,7 +17,7 @@ final class Installation
             if(filter_var($value,FILTER_VALIDATE_BOOLEAN)){throw new \DomainException('Pause processing on every legacy Enom server before installing or enabling Domains.');}
         }
     }
-    public function verify(): void { foreach(self::SCHEMAS as $schema){$schema::verify();} }
+    public function verify(): void { SchemaVerifier::batch(static function():void {foreach(self::SCHEMAS as $schema){$schema::verify();}}); }
     public function install(): void
     {
         OperationClaims::outside(); self::legacy();

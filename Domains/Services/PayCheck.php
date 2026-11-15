@@ -75,6 +75,7 @@ class PayCheck
     private function catalogueStop(Invoice $invoice, AcquisitionOffers $offers): ?array
     {
         if ($invoice->fresh()?->status !== 'pending') { return null; }
+        $offers = $offers->forIssuedInvoice();
         $ops = $this->orders($invoice);
         if ($ops->isEmpty()) { return null; }
         $unavailable = ['why' => 'unavailable', 'text' => 'Domains can’t be ordered right now. Please try again later.'];
