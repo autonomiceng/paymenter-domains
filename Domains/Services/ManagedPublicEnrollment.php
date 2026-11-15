@@ -35,7 +35,7 @@ final class ManagedPublicEnrollment
             if(!ManagedDnsSetup::usable($profile)){$profile=null;}
             foreach($sources as $source) {
                 $s=$l['services']->firstWhere('id',$source->service_id);$map=$maps[$source->map_id]??null;$o=$l['orders']->firstWhere('id',$s?->order_id);
-                $props=$l['relatedProperties']->where('model_id',$s?->id)->where('key',$map?->property_key);
+                $props=WatchProducts::field($l['relatedProperties']->where('model_id',$s?->id));
                 $valid=$s && $o && $map && $watch && (int)$source->watch_id===(int)$watch->id && (in_array($watch->state,['active','paused'],true) || ($watch->state==='linked' && (int)$watch->managed_domain_id===$id))
                     && (int)$s->user_id===$owner && (int)$o->user_id===$owner && $s->status==='active' && $map->enabled
                     && (int)$s->product_id===(int)$map->product_id && (int)$map->revision===(int)$source->map_revision && $props->count()===1;

@@ -21,17 +21,20 @@ final class WatchProducts
     private static function carries(string ...$keys): \Closure { return fn($q)=>$q->whereHas('services',self::saved(...$keys)); }
     /** @return Builder<Product> Hosting products whose orders carry a domain. */
     public static function inScope(): Builder { return self::hosting()->where(self::carries(...self::KEYS)); }
+    /** One service's domain values: its domain, else its hostname. Each service reads its own, so a product with mixed
+     * orders, or old services with another field, never drops a monitored domain. $props are that service's properties. */
+    public static function field(Collection $props): Collection
+    {$domain=$props->where('key','domain')->filter(fn($p)=>trim((string)$p->value)!=='');return $domain->isNotEmpty()?$domain:$props->where('key','hostname');}
     /** The next products the tick maps or corrects: in scope with no map yet, or a map on a field other than the convention. */
     public static function unmapped(int $after,int $limit): Collection
     {
         $maps=fn()=>WatchProductMap::select('product_id');
         return self::hosting()->where(fn($q)=>$q->where(fn($q)=>$q->where(self::carries(...self::KEYS))->whereNotIn('id',$maps()))
-            ->orWhereIn('id',$maps()->whereNotIn('property_key',self::KEYS))
-            ->orWhere(fn($q)=>$q->where(self::carries('domain'))->whereIn('id',$maps()->where('property_key','hostname'))))
+            ->orWhereIn('id',$maps()->whereNotIn('property_key',self::KEYS)))
             ->where('id','>',$after)->orderBy('id')->limit($limit)->get();
     }
     public static function adopt(Product $product): void { (new WatchMappings())->adopt((int)$product->id,self::key((int)$product->id)); }
-    /** The convention field for this product's orders. */
+    /** The key a new or corrected map stores. Reads go per service through field(), so it only marks the convention. */
     public static function key(int $product): string
     {$has=fn(string $key)=>Service::where('product_id',$product)->where(self::saved($key))->exists();return $has('domain')||!$has('hostname')?'domain':'hostname';}
     /** The Hosting products section: products to choose (name, hidden, on, active services) and the names of the rest. */

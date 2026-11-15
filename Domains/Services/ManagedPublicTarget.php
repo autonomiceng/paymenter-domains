@@ -33,7 +33,7 @@ final class ManagedPublicTarget
         foreach($sources as $source) {
             $s=$l['services']->firstWhere('id',$source->service_id);$m=$maps[$source->map_id]??null;
             $o=$l['orders']->firstWhere('id',$s?->order_id);$p=$l['products']->firstWhere('id',$s?->product_id);
-            $props=$l['relatedProperties']->where('model_id',$s?->id)->where('key',$m?->property_key);
+            $props=WatchProducts::field($l['relatedProperties']->where('model_id',$s?->id));
             $evidence[]=[$source->getRawOriginal(),$m?->getRawOriginal(),$s?->only(['id','user_id','order_id','product_id','status']),$o?->user_id,$p?->server_id,$props->pluck('value')->all()];
             if (!$s || !$o || !$p || !$m || !$m->enabled || $s->status!=='active' || (int)$s->user_id!==$owner
                 || (int)$o->user_id!==$owner || (int)$source->user_id!==$owner || (int)$s->product_id!==(int)$m->product_id

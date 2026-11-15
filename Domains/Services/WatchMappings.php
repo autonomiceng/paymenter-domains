@@ -45,7 +45,7 @@ final class WatchMappings
             $sorted=fn(array $list)=>collect($list)->map(fn($id)=>(int)$id)->intersect($ids)->unique()->sort()->values()->all();
             if($loaded!==null&&$sorted($maps->where('enabled',false)->keys()->all())!==$sorted($loaded)){throw new \DomainException('The saved mapping changed.');}
             foreach(array_intersect_key($changes,array_flip($ids)) as $id=>$on){
-                $map=$maps[$id]??null;$on=(bool)$on;$key=WatchProducts::key((int)$id);
+                $map=$maps[$id]??null;$on=(bool)$on;$key=in_array($map?->property_key,WatchProducts::KEYS,true)?$map->property_key:WatchProducts::key((int)$id);
                 if($map?(bool)$map->enabled===$on&&$map->property_key===$key:$on){continue;}
                 $before=(int)$map?->revision;$reason=$on?'Monitoring turned on':'Monitoring turned off';$map??=new WatchProductMap(['product_id'=>(int)$id]);
                 self::$enabling=true;try{$map->fill(['property_key'=>$key,'enabled'=>$on,'revision'=>$before+1,'edited_by'=>$actor->id,'reason'=>$reason])->save();}finally{self::$enabling=false;}

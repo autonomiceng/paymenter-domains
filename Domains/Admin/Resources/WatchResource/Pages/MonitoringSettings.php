@@ -41,12 +41,13 @@ class MonitoringSettings extends ResourceSettingsPage
         $add=Staff::can('admin.products.create')&&class_exists(\App\Admin\Resources\ProductResource::class)?\App\Admin\Resources\ProductResource::getUrl('create'):null;
         return Section::make('Hosting products',[Partial::make('domains::admin.hosting-products',['lines'=>$lines,'active'=>$active,'can'=>$this->canManageProducts(),'add'=>$add],'hosting-products-summary')],null,'hosting-products');
     }
-    /** Choose products saves the products shown checked. $loaded is the off list the dialog opened with, so an out of
-     * date dialog changes nothing. Returns why it didn't save, or null. */
-    public function saveMonitored(array $on,array $loaded): ?string
+    /** Choose products saves the products it showed ($shown), checked ones on. A product that entered the list after the
+     * dialog opened was never offered, so it keeps its default. $loaded is the off list the dialog opened with, so an
+     * out of date dialog changes nothing. Returns why it didn't save, or null. */
+    public function saveMonitored(array $on,array $loaded,array $shown): ?string
     {
         abort_unless($this->canManageProducts(),403);
-        $on=array_map('intval',$on);$ids=array_column(WatchProducts::lines()['products'],'id');
+        $on=array_map('intval',$on);$ids=array_values(array_intersect(array_column(WatchProducts::lines()['products'],'id'),array_map('intval',$shown)));
         try{(new WatchMappings())->monitor(Auth::user(),array_combine($ids,array_map(fn($id)=>in_array($id,$on,true),$ids)),$loaded);}
         catch(\DomainException){return 'Someone changed these products since you opened this. Close it and choose again; nothing changed yet.';}
         unset($this->cachedSchemas['content']);Notification::make()->success()->title('Saved')->send();

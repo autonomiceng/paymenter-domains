@@ -39,7 +39,7 @@ final readonly class AdoptionEnrollment
             foreach ($sources as $source) {
                 $s = $l['services']->firstWhere('id', $source->service_id); $map = $maps[$source->map_id] ?? null;
                 $order = $l['orders']->firstWhere('id', $s?->order_id);
-                $props = $l['relatedProperties']->where('model_id', $s?->id)->where('key', $map?->property_key);
+                $props = WatchProducts::field($l['relatedProperties']->where('model_id', $s?->id));
                 if (!$s || !$order || !$map || (int) $s->user_id !== (int) $d->user_id || (int) $order->user_id !== (int) $d->user_id
                     || $s->status !== 'active' || (int) $s->product_id !== (int) $map->product_id || !$map->enabled
                     || (int) $map->revision !== (int) $source->map_revision || $props->count() !== 1

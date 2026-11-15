@@ -75,7 +75,7 @@ function domainsHostingProducts(products, unlisted, counted) {
             const stop = counted && turning.length ? ` ${off.length === 1 ? 'Its' : 'Their'} ${n.toLocaleString()} active ${n === 1 ? 'service stops' : 'services stop'} being monitored, unless another monitored product has their domain.` : '';
             return `Off after saving: ${list(off.map((i) => i.name))}.${stop}`; },
         async save() { if (!this.changed() || this.saving) return; this.saving = true;
-            try { this.error = await this.$wire.saveMonitored(this.items.filter((i) => i.on).map((i) => i.id), products.filter((p) => !p.on).map((p) => p.id)); if (!this.error) this.$refs.dlg.close(); }
+            try { this.error = await this.$wire.saveMonitored(this.items.filter((i) => i.on).map((i) => i.id), products.filter((p) => !p.on).map((p) => p.id), products.map((p) => p.id)); if (!this.error) this.$refs.dlg.close(); }
             catch (e) { this.error = 'The save didn\'t finish. Your choices are kept; nothing changed yet.'; }
             finally { this.saving = false; } },
     };
