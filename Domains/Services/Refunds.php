@@ -93,7 +93,20 @@ final readonly class Refunds
                 $review?->record($l);return null;
             }
             $payment = RefundPayment::requireCurrent($op, $l);
-            if (ReceiptReturns::reserve($op, $l, $payment, $this->clock->now())) { $review?->record($l); return null; }
+            if (in_array($op->action, ['register', 'transfer'], true)) {
+                $l['domain']->update(['status' => $op->action === 'transfer' ? 'transfer_rejected' : 'registration_rejected']);
+                NativeDomainGuard::terminal($l, $op);
+            }
+            $money = InvoiceMoney::load($l, (int)$op->invoice_id);
+            $left = min(PricingRule::minor($payment['amount']), InvoiceMoney::held($money));
+            if ($left === 0) { $review?->record($l); return null; }
+            $payment['amount'] = PricingRule::decimal($left); $payment['payments'] = [];
+            foreach ($money['receipts'] as $receiptId => $receipt) {
+                $minor = min($left, array_sum(InvoiceMoney::heldFor($money, $receiptId)));
+                if ($minor > 0) { $payment['payments'][] = ['id'=>$receiptId, 'amount_minor'=>$minor]; $left -= $minor; }
+                if ($left === 0) { break; }
+            }
+            if (ReceiptReturns::reserve($op, $l, $payment, $money, $this->clock->now())) { $review?->record($l); return null; }
             $credit = $l['credit'] ?? new Credit(['user_id' => $l['user']->id, 'currency_code' => 'USD', 'amount' => '0.00']);
             $credit->amount = PricingRule::decimal(PricingRule::minor((string) $credit->amount) + PricingRule::minor($payment['amount']));
             $credit->save();
@@ -101,10 +114,6 @@ final readonly class Refunds
                 'at' => $this->clock->now()->format(DATE_ATOM), 'actor_id' => $approved['actor_id'] ?? null,
                 'reason' => $approved['reason'] ?? (RefundProof::transferTimeout($op, $l['domain']) ? 'transfer_code_timeout' : (RefundProof::retired($op, $l['domain']) || PrivacyRetirement::safe($op, $l['domain']) ? 'late_retired_payment' : (RegistrationRefusals::proved($op,$l['domain'])?RegistrationRefusals::CODE:'terminal_unsent')))];
             $op->update(['funding' => [...($op->funding ?? []), 'refund' => $refund]]);
-            if (in_array($op->action, ['register', 'transfer'], true)) {
-                $l['domain']->update(['status' => $op->action === 'transfer' ? 'transfer_rejected' : 'registration_rejected']);
-                NativeDomainGuard::terminal($l, $op);
-            }
             $review?->record($l);
             return ['amount' => $payment['amount'], 'currency' => 'USD'];
         });
@@ -138,7 +147,7 @@ final readonly class Refunds
         }
     }
     /** A stale pay form can pay an order we closed. Return its funds only with the retained no-send proof.
-     * One order takes the whole invoice, and RefundPayment::lateCredited stops any other order on it, on any account, crediting the same payment.
+     * One order takes the held invoice pool, with every peer return counted under the invoice locks.
      * Funding is encrypted, so SQL cannot skip settled orders. The cursor gives every order a turn; losing it only restarts the pass.
      * Whatever is not credited goes to staff.
      * @return list<int> Domains that got credit, for the caller's notice. */
@@ -150,9 +159,8 @@ final readonly class Refunds
             ->selectRaw('min(id) as id')->groupBy('invoice_id')->orderBy('id')->limit(100)->pluck('id');
         Cache::forever($cursor, $ids->count() === 100 ? $ids->last() : 0);
         foreach (Operation::whereIn('id', $ids)->orderBy('id')->get() as $op) {
-            $paid = InvoiceTransaction::where('invoice_id', $op->invoice_id)->where('status', InvoiceTransactionStatus::Succeeded)->pluck('id')->all();
             try {
-                if (!ReceiptReturns::plans($op) && array_diff($paid, array_keys(RefundPayment::lateCredited($op))) === []) { continue; }
+                if (!ReceiptReturns::plans($op) && ReceiptReturns::malformed($op)) { throw new \DomainException('Retained return plan needs review.'); }
                 if ($this->creditClosed($op) !== null) { $credited[] = (int) $op->domain_id; continue; }
             }
             catch (\Throwable $e) { RefundRepairs::failed((int)$op->id, $this->clock->now()->getTimestamp()); logger()->warning('Domains late payment stays with staff.', ['operation_id' => (int) $op->id, 'exception_class' => $e::class]); }

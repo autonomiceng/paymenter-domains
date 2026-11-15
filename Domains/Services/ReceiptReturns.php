@@ -28,36 +28,26 @@ final class ReceiptReturns
         return match(true){$capable===0=>'credit',$capable===$paid->count()=>'original',default=>'split'};
     }
     /** Caller holds the owner/invoice/operation locks. Commit the immutable plan before any gateway call. */
-    public static function reserve(Operation $op,array $l,array $payment,\DateTimeImmutable $now): bool
+    public static function reserve(Operation $op,array $l,array $payment,array $money,\DateTimeImmutable $now): bool
     {
-        $rows=$l['transactions']->where('invoice_id',$op->invoice_id)->where('status',InvoiceTransactionStatus::Succeeded)
-            ->filter(fn($r)=>PricingRule::minor($r->amount)>0)->sortBy('id');
-        if(!$rows->contains(fn($r)=>self::capable($r->gateway))){return false;}
-        $peers=Operation::where('invoice_id',$op->invoice_id)->orderBy('id')->lockForUpdate()->get();$used=0;
-        foreach($peers as $peer){
-            foreach([...(isset($peer->funding['refund'])?[$peer->funding['refund']]:[]),...($peer->funding['late_credits']??[])] as $return){$used+=PricingRule::minor($return['amount']);}
-        }
-        $left=PricingRule::minor($payment['amount']);$allocations=[];$payments=[];$bridge=0;
-        foreach($rows as $row){
-            $gross=PricingRule::minor($row->amount);$skip=min($gross,$used);$used-=$skip;
-            $minor=min($left,$gross-$skip);
-            if($minor<=0){continue;}
-            $payments[]=['id'=>(int)$row->id,'amount_minor'=>$minor];
-            if(!self::capable($row->gateway)){$bridge+=$minor;}
+        if(InvoiceMoney::held($money)===0){return true;}
+        if(!array_filter($payment['payments'],fn($p)=>InvoiceMoney::heldFor($money,$p['id'])['card']>0)){return false;}
+        $allocations=[];$bridge=0;
+        foreach($payment['payments'] as $p){
+            $row=$l['transactions']->firstWhere('id',$p['id']);$minor=$p['amount_minor'];
+            if(InvoiceMoney::heldFor($money,$p['id'])['card']===0){$bridge+=$minor;}
             else{
                 if(!is_string($row->transaction_id)||$row->transaction_id===''){throw new \DomainException('Original receipt identity is missing. Check the invoice payment.');}
                 $allocations[]=['transaction_id'=>(int)$row->id,'gateway_id'=>(int)$row->gateway_id,'receipt'=>$row->transaction_id,
                     'key'=>'domains:operation:'.$op->id.':refund:receipt:'.hash('sha256',$row->transaction_id),'amount_minor'=>$minor];
             }
-            $left-=$minor;if($left===0){break;}
         }
-        if($left!==0){throw new \DomainException('Unreturned receipt funds are missing. Review earlier returns.');}
         $credit=null;
         if($bridge>0){
             $credit=$l['credit']??new Credit(['user_id'=>$l['user']->id,'currency_code'=>'USD','amount'=>'0.00']);
             $credit->amount=PricingRule::decimal(PricingRule::minor((string)$credit->amount)+$bridge);$credit->save();
         }
-        $refund=[...$payment,'payments'=>$payments,'to'=>'original_payment','allocations'=>$allocations,
+        $refund=[...$payment,'to'=>'original_payment','allocations'=>$allocations,
             'bridge_minor'=>$bridge,'credit_id'=>$credit?->id,'at'=>$now->format(DATE_ATOM)];
         $funding=$op->funding??[];
         $funding['refund']=$refund;
@@ -70,11 +60,12 @@ final class ReceiptReturns
     /** Adopt the gateway-owned closed receipt without creating a second entitlement or issuing money. */
     public static function adoptClosed(Operation $op,array $l,\DateTimeImmutable $now): bool
     {
-        $done=RefundPayment::lateCredited($op);$allocations=[];$payments=[];$minor=0;
+        $money=InvoiceMoney::load($l,(int)$op->invoice_id);$done=RefundPayment::lateCredited($op);$allocations=[];$payments=[];$minor=0;
         foreach($l['transactions']->where('invoice_id',$op->invoice_id)->where('status',InvoiceTransactionStatus::Succeeded)->sortBy('id') as $row){
-            $gross=PricingRule::minor($row->amount);
-            if($gross<=0||!self::capable($row->gateway)){continue;}
-            $prior=$done[$row->id]??0;if($prior===$gross){continue;}
+            if(PricingRule::minor($row->amount)<=0||!self::capable($row->gateway)){continue;}
+            $entry=collect($money['ledger'])->first(fn($r)=>$r['gateway_id']===(int)$row->gateway_id&&$r['payment_intent_id']===$row->transaction_id&&$r['allocation_key']===self::CLOSED_ALLOCATION);
+            $gross=$entry?(int)$entry['amount_minor']:InvoiceMoney::heldFor($money,(int)$row->id)['card'];
+            $prior=$done[$row->id]??0;if($gross===0||$prior===$gross){continue;}
             if($prior!==0){throw new \DomainException('Closed receipt already has a partial return. Review the gateway return before adding credit.');}
             if(!is_string($row->transaction_id)||$row->transaction_id===''){throw new \DomainException('Original receipt identity is missing. Check the invoice payment.');}
             $payments[]=['id'=>(int)$row->id,'amount_minor'=>$gross];$minor+=$gross;
@@ -91,6 +82,24 @@ final class ReceiptReturns
     public static function plans(Operation $op): array
     {
         return array_values(array_filter(self::returns($op),fn($p)=>($p['to']??null)==='original_payment'));
+    }
+    /** Active allocations and actual per-receipt coverage; stored plans remain immutable. */
+    public static function effective(Operation $op): array
+    {
+        $plans=self::returns($op);
+        foreach($plans as &$p){
+            if(self::amount($p)===null){throw new \DomainException('Retained return plan needs review.');}
+            foreach($p['allocations']??[] as $i=>$a){
+                $r=$op->funding['receipt_return_results'][$a['key']]??[];
+                if(($r['state']??null)!=='released'){continue;}
+                $credit=$r['credit_minor']??null;
+                if(!is_int($credit)||$credit<0||$credit>$a['amount_minor']){throw new \DomainException('Released credit needs review.');}
+                $drop=$a['amount_minor']-$credit;$p['amount']=PricingRule::decimal(PricingRule::minor($p['amount'])-$drop);
+                $p['bridge_minor']+=$credit;unset($p['allocations'][$i]);
+                foreach($p['payments'] as &$payment){if($payment['id']===$a['transaction_id']){$payment['amount_minor']-=$drop;break;}}unset($payment);
+            }
+        }unset($p);
+        return $plans;
     }
     /** Isolate the original refund and its retained allocation results from later returns. */
     public static function originalRefund(Operation $op): Operation
@@ -143,7 +152,7 @@ final class ReceiptReturns
     public static function outstanding(Operation $op): int
     {
         $minor=0;
-        foreach(self::plans($op) as $p){foreach($p['allocations'] as $a){
+        foreach(self::effective($op) as $p){foreach($p['allocations']??[] as $a){
             if(!in_array($op->funding['receipt_return_results'][$a['key']]['state']??null,['refunded','credited'],true)){$minor+=$a['amount_minor'];}
         }}
         return $minor;
@@ -157,7 +166,7 @@ final class ReceiptReturns
     public static function reversals(Operation $op,\Illuminate\Support\Collection $transactions): array
     {
         $keys=[];
-        foreach(self::plans($op) as $p){foreach($p['allocations'] as $a){
+        foreach(self::effective($op) as $p){foreach($p['allocations']??[] as $a){
             $r=$op->funding['receipt_return_results'][$a['key']]??[];
             if(!in_array($r['state']??null,['refunded','credited'],true)){continue;}
             $key=$r['key']??null;
@@ -171,7 +180,7 @@ final class ReceiptReturns
     public static function activityTransactions(Operation $op,\Illuminate\Support\Collection $transactions): \Illuminate\Support\Collection
     {
         $keys=array_keys(self::reversals($op,$transactions));$ids=[];
-        foreach(self::plans($op) as $p){foreach($p['allocations'] as $a){
+        foreach(self::effective($op) as $p){foreach($p['allocations']??[] as $a){
             if(isset($a['gateway_key'])&&in_array($op->funding['receipt_return_results'][$a['key']]['state']??null,['refunded','credited'],true)){$ids[]=$a['transaction_id'];}
         }}
         return $transactions->whereNotIn('transaction_id',$keys)->whereNotIn('id',$ids);
@@ -180,12 +189,41 @@ final class ReceiptReturns
     {
         $plans=self::plans($op);if(!$plans){return null;}$states=[];$bridge=0;
         if(self::malformed($op)){return self::REVIEW;}
-        foreach(self::returns($op) as $p){if(($p['to']??null)==='account_credit'){$bridge+=PricingRule::minor($p['amount']);}}
-        foreach($plans as $p){$bridge+=$p['bridge_minor'];foreach($p['allocations'] as $a){$states[]=$op->funding['receipt_return_results'][$a['key']]['state']??'reserved';}}
+        foreach(self::effective($op) as $p){if(($p['to']??null)==='account_credit'){$bridge+=PricingRule::minor($p['amount']);}}
+        foreach(self::effective($op) as $p){if(($p['to']??null)!=='original_payment'){continue;}$bridge+=$p['bridge_minor'];foreach($p['allocations'] as $a){$states[]=$op->funding['receipt_return_results'][$a['key']]['state']??'reserved';}}
+        if(!$states&&$bridge===0){return null;}
         if(array_intersect($states,['review'])){return self::REVIEW;}
         if(array_diff($states,['refunded','credited'])){return ['Refund processing','We are returning your payment and checking its progress automatically.'];}
         if(in_array('refunded',$states,true)&&($bridge>0||in_array('credited',$states,true))){return ['Money returned','Part was refunded to your original payment method. The rest is account credit because it could not be refunded.'];}
         return in_array('refunded',$states,true)?['Refunded','Your payment was refunded to your original payment method.']:['Credit added','The payment could not be refunded. The returned amount is account credit.'];
+    }
+    /** Caller owns HoldingLocks in its outer transaction. The ledger always wins over a stale local result. */
+    public static function release(Operation $op,string $key,string $reason): void
+    {
+        $d=$op->domain()->firstOrFail();$l=HoldingLocks::take($d,released:$d->reservation_name===null);$op=$l['operations']->firstWhere('id',$op->id);
+        $a=collect(self::plans($op))->flatMap(fn($p)=>$p['allocations'])->firstWhere('key',$key);
+        if(!$a){throw new \DomainException('Missing receipt allocation.');}
+        $known=$op->funding['receipt_return_results'][$key]??[];
+        if($known){return;} // Sending and gateway-owned results can never be released.
+        $money=InvoiceMoney::load($l,(int)$op->invoice_id,$key);
+        $entry=collect($money['ledger'])->first(fn($r)=>$r['gateway_id']===$a['gateway_id']&&$r['payment_intent_id']===$a['receipt']&&$r['allocation_key']===($a['gateway_key']??$key));
+        if($entry){
+            $result=[...$entry,'amount_minor'=>(int)$entry['amount_minor']];
+            if(isset($entry['return_key'])){$result['key']=$entry['return_key'];}
+        }else{
+            if(isset($a['gateway_key'])||$reason!=='recovery'&&($money['ownerHold']||array_filter($money['receipts'],fn($r)=>$r['hold']))){return;}
+            $minor=min($a['amount_minor'],array_sum(InvoiceMoney::heldFor($money,$a['transaction_id'])));
+            $credit=$l['credit']??new Credit(['user_id'=>$l['user']->id,'currency_code'=>'USD','amount'=>'0.00']);
+            if($minor>0){$credit->amount=PricingRule::decimal(PricingRule::minor($credit->amount)+$minor);$credit->save();}
+            $result=['state'=>'released','amount_minor'=>$a['amount_minor'],'credit_minor'=>$minor,'credit_id'=>$credit->id,'reason'=>$reason,'at'=>now()->toAtomString()];
+        }
+        self::saveResult($op,$a,$result,$l);
+    }
+    private static function saveResult(Operation $op,array $a,array $result,array $l): void
+    {
+        if(($result['amount_minor']??null)!==$a['amount_minor']||!in_array($result['state']??null,['reserved','sending','pending','review','refunded','credited','released'],true)){throw new \DomainException('Gateway return outcome needs review.');}
+        $funding=[...$op->funding,'receipt_return_results'=>[...($op->funding['receipt_return_results']??[]),$a['key']=>$result]];
+        $proof=clone $op;$proof->funding=$funding;self::completedMinor($proof,$l);$op->update(['funding'=>$funding]);
     }
     public static function resume(int $id,\DateTimeImmutable $now): ?array
     {
@@ -194,10 +232,12 @@ final class ReceiptReturns
         // An unbalanced plan stays with staff: no gateway call and no automatic resolution until it is reviewed.
         if(self::malformed($seen)){RefundRepairs::failed($id,$now->getTimestamp());return null;}
         try{
-            $results=[];
-            foreach($plans as $plan){foreach($plan['allocations'] as $a){
+            $results=[];$repair=false;
+            $allocations=collect($plans)->flatMap(fn($p)=>$p['allocations'])->all();
+            usort($allocations,fn($a,$b)=>isset($seen->funding['receipt_return_results'][$b['key']])<=>isset($seen->funding['receipt_return_results'][$a['key']]));
+            foreach($allocations as $a){
                 $known=$seen->funding['receipt_return_results'][$a['key']]??null;
-                if(($known['state']??null)==='credited'){$results[$a['key']]=$known;continue;}
+                if(in_array($known['state']??null,['credited','released'],true)){$results[$a['key']]=$known;continue;}
                 $row=InvoiceTransaction::findOrFail($a['transaction_id']);$invoice=Invoice::findOrFail($seen->invoice_id);
                 if($row->invoice_id!==$seen->invoice_id||(int)$row->gateway_id!==$a['gateway_id']||$row->transaction_id!==$a['receipt']
                     ||$row->status!==InvoiceTransactionStatus::Succeeded||!self::capable($row->gateway)){
@@ -210,7 +250,17 @@ final class ReceiptReturns
                 }else{
                     $result=ExtensionHelper::call($row->gateway,'receiptReturnStatus',[$invoice,$a['receipt'],$a['key']]);
                 }
-                if(!isset($a['gateway_key'])&&$result===null&&$known===null){
+                if(!isset($a['gateway_key'])&&$result===null&&($known===null||($known['state']??null)==='sending')){
+                    if($known===null){
+                        $send=DB::transaction(function()use($seen,$a,$now,&$repair):bool {
+                            $d=$seen->domain()->firstOrFail();$l=HoldingLocks::take($d,released:$d->reservation_name===null);$op=$l['operations']->firstWhere('id',$seen->id);
+                            if(isset($op->funding['receipt_return_results'][$a['key']])){return false;}
+                            $money=InvoiceMoney::load($l,(int)$op->invoice_id,$a['key']);
+                            if(InvoiceMoney::heldFor($money,$a['transaction_id'])['card']<$a['amount_minor']){$repair=$repair||$money['overdrawn'];self::release($op,$a['key'],'receipt_changed');return false;}
+                            self::saveResult($op,$a,['state'=>'sending','amount_minor'=>$a['amount_minor'],'at'=>$now->format(DATE_ATOM)],$l);return true;
+                        });
+                        if(!$send){continue;}
+                    }
                     $result=ExtensionHelper::call($row->gateway,'allocateReceiptReturn',[$invoice,$a['receipt'],$a['key'],$a['amount_minor']]);
                 }
                 $result??=[...($known??[]),'state'=>'review','amount_minor'=>$a['amount_minor'],'reason'=>'Retained gateway return is missing. Review the original payment.'];
@@ -219,25 +269,26 @@ final class ReceiptReturns
                     throw new \DomainException('Gateway return outcome needs review.');
                 }
                 if(in_array($result['state'],['refunded','credited'],true)&&(!is_string($result['key']??null)||$result['key']==='')){throw new \DomainException('Completed return reversal identity is missing.');}
-                $results[$a['key']]=array_intersect_key($result,array_flip(['state','amount_minor','refund_id','reason','key']));
-            }}
-            DB::transaction(function()use($seen,$plans,&$results):void {
-                $d=$seen->domain()->firstOrFail();$l=HoldingLocks::take($d,released:$d->reservation_name===null);$op=$l['operations']->firstWhere('id',$seen->id);
-                if(self::plans($op)!==$plans){throw new \DomainException('Receipt return plan changed.');}
-                $saved=$op->funding['receipt_return_results']??[];
-                foreach($results as $key=>$r){
-                    if(($saved[$key]??null)!==($seen->funding['receipt_return_results'][$key]??null)){$results[$key]=$saved[$key];continue;}
-                    if(($saved[$key]['state']??null)!=='credited'){$saved[$key]=$r;}
-                }
-                $funding=[...$op->funding,'receipt_return_results'=>$saved];
-                $proof=clone $op;$proof->funding=$funding;self::completedMinor($proof,$l);
-                $op->update(['funding'=>$funding]);
-            });
-            $complete=!array_filter($results,fn($r)=>!in_array($r['state'],['refunded','credited'],true));
-            if(!$complete){RefundRepairs::failed($id,$now->getTimestamp());return null;}
+                $result=array_intersect_key($result,array_flip(['state','amount_minor','refund_id','reason','key']));
+                DB::transaction(function()use($seen,$plans,$a,$known,$result):void {
+                    $d=$seen->domain()->firstOrFail();$l=HoldingLocks::take($d,released:$d->reservation_name===null);$op=$l['operations']->firstWhere('id',$seen->id);
+                    if(self::plans($op)!==$plans){throw new \DomainException('Receipt return plan changed.');}
+                    $saved=$op->funding['receipt_return_results'][$a['key']]??null;
+                    if($saved!==$known&&($saved['state']??null)!=='sending'){return;}
+                    self::saveResult($op,$a,$result,$l);
+                });
+            }
+            $fresh=$seen->fresh();$results=$fresh->funding['receipt_return_results']??[];
+            $complete=self::outstanding($fresh)===0;
+            if($complete){$repair=DB::transaction(function()use($fresh):bool {
+                $d=$fresh->domain()->firstOrFail();$l=HoldingLocks::take($d,released:$d->reservation_name===null);
+                return InvoiceMoney::load($l,(int)$fresh->invoice_id)['overdrawn'];
+            });}
+            if(!$complete||$repair){RefundRepairs::failed($id,$now->getTimestamp());return null;}
             RefundRepairs::resolved($id,$now->getTimestamp());
-            $new=array_filter($results,fn($r,$key)=>!in_array($seen->funding['receipt_return_results'][$key]['state']??null,['refunded','credited'],true),ARRAY_FILTER_USE_BOTH);
-            return $new?['amount'=>PricingRule::decimal(array_sum(array_column($new,'amount_minor'))),'currency'=>'USD']:null;
+            $new=array_filter($results,fn($r,$key)=>!in_array($seen->funding['receipt_return_results'][$key]['state']??null,['refunded','credited','released'],true),ARRAY_FILTER_USE_BOTH);
+            $minor=array_sum(array_map(fn($r)=>$r['state']==='released'?$r['credit_minor']:$r['amount_minor'],$new));
+            return $minor>0?['amount'=>PricingRule::decimal($minor),'currency'=>'USD']:null;
         }catch(\Throwable $e){RefundRepairs::failed($id,$now->getTimestamp());throw $e;}
     }
 }
