@@ -18,8 +18,10 @@ Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->asse
 // A dispute lost on that invoice shows on the request in amber.
 class StaffInvoiceReversalGateway extends \App\Classes\Extension\Gateway {
     public static array $observations=[];
+    public static int $reads=0;
     public function pay(\App\Models\Invoice $invoice,$total){return '';}
     public function receiptReversals(\App\Models\Invoice $invoice,string $receipt):array {
+        self::$reads++;
         if((self::$observations[$receipt]??null)==='unreadable'){throw new RuntimeException('Synthetic gateway read failure');}
         return self::$observations[$receipt]??[];
     }
@@ -32,7 +34,9 @@ StaffInvoiceReversalGateway::$observations['pi_staff_invoice']=[['kind'=>'disput
     'invoice_id'=>(int)$invoice->id,'user_id'=>(int)$invoice->user_id,'payment_intent_id'=>'pi_staff_invoice','currency'=>strtolower($invoice->currency_code),
     'amount_minor'=>1099,'credited_minor'=>0,'credit_balance_minor'=>0]];
 same(['words'=>'$10.99 lost to a dispute.','act'=>true],RequestFacts::for($op->fresh())['payment_reversed']??null,'The request states the lost dispute and its amount');
+StaffInvoiceReversalGateway::$reads=0;
 $html=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertSee('$10.99 lost to a dispute.')->html();
+same(1,StaffInvoiceReversalGateway::$reads,'One request render reads invoice reversals once');
 $at=strpos($html,'$10.99 lost to a dispute.');$before=substr($html,max(0,$at-3000),3000);
 preg_match_all('/data-domains-tone="([a-z]+)"/',$before,$tones);
 same('warn',end($tones[1])?:null,'The lost dispute reads amber');

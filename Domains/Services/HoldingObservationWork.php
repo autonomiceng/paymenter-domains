@@ -16,6 +16,15 @@ final class HoldingObservationWork
             'domain_id'=>$d->id,'generation'=>$d->authority_generation,'phase'=>self::phase($d),'due_at'=>$now->getTimestamp(),
             'safe_code'=>self::firstRecordRead($d)?self::INITIAL_READ:null]);
     }
+    /** Under holding locks, grant one read after the renewal settled this identity's expiry drift. */
+    public static function renewed(Domain $d, \DateTimeImmutable $now): void
+    {
+        if(!Schema::hasTable('domains_observation_work')||ObservationRecords::held($d)){return;}
+        $job=self::current($d)->lockForUpdate()->first();
+        if(!$job||$job->safe_code!=='budget_exhausted'||self::reading($job,$now->getTimestamp())||$job->resumes>=20){return;}
+        self::current($d)->where('id',$job->id)->update(['tries'=>HoldingReadRetry::LIMIT-1,'resumes'=>$job->resumes+1,
+            'claim'=>null,'lease_until'=>0,'safe_code'=>null,'due_at'=>$now->getTimestamp()]);
+    }
     /**
      * What the current read waits for, and when it is due. 'first': the first scheduled read has not finished (never tried, resumed
      * or given a result, or leased on its first try). 'retry': a failed or recovered read tries again. 'next': the next routine read,

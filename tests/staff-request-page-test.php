@@ -332,7 +332,7 @@ $holds=static function(): array {
     return [array_map(fn(string $line)=>trim(html_entity_decode(strip_tags($line))),explode('<br>',$html)),$reads];
 };
 $name=static fn(int $server)=>\App\Models\Server::whereKey($server)->value('name');
-DB::table('domains_operations')->whereIn('id',[$heldOp->id,$longOp->id])->update(['state'=>'uncertain','safe_code'=>null]);
+DB::table('domains_operations')->whereIn('id',[$heldOp->id,$longOp->id])->update(['state'=>'uncertain','safe_code'=>null,'funding_basis'=>'paid_invoice']);
 [$lines,$oneAccount]=$holds();
 same(['Check 2 requests Paid orders on '.$name($heldOp->server_id).' have no registrar result yet.'],$lines,'One held account');
 DB::table('domains_operations')->where('id',$doneOp->id)->update(['state'=>'uncertain','safe_code'=>null]);
@@ -342,7 +342,7 @@ same(['Check 2 requests Paid orders on '.$name($heldOp->server_id).' have no reg
 same($oneAccount,$twoAccounts,'Held accounts are read together, not one by one');
 // The Domains list shows both held accounts, each with the link to its requests.
 $domains=Livewire::actingAs(Auth::user())->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ListDomains::class)->assertSuccessful();
-foreach ([RegistrarFacts::requestsUrl((int)$heldOp->server_id,['under_review']),Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::requestUrl(['request'=>$doneOp->id])] as $url) {
+foreach ([RegistrarFacts::requestsUrl((int)$heldOp->server_id,['under_review'],paid:true),Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::requestUrl(['request'=>$doneOp->id])] as $url) {
     expect(is_string($url)&&str_contains($domains->html(),'href="'.e($url).'"'),'Each held account links to its requests on the Domains list');
 }
 foreach ($saved as $row) { DB::table('domains_operations')->where('id',$row->id)->update(['state'=>$row->state,'safe_code'=>$row->safe_code]); }

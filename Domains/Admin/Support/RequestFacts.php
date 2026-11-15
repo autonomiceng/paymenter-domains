@@ -59,10 +59,10 @@ final class RequestFacts
             }
             if ($grants->metadata && ($failure=\Paymenter\Extensions\Servers\Domains\Data\SendFailure::words($a['send_failure']??null))) { $out['send_failure']=$failure; }
             if ($grants->metadata && ($reply=\Paymenter\Extensions\Servers\Domains\Data\RegistrarReply::fromArray($a['evidence']['registrarReply']??null))) { $out['registrar_reply']=$reply->words(); }
-            $paid=$op->invoice_id||in_array($op->action,self::PAID_ACTIONS,true);
+            $paid=$op->invoice_id||in_array($op->action,self::PAID_ACTIONS,true);$reversals=[];
             if ($paid) {
                 $out['invoice']=$op->invoice_id ? Facts::invoiceName((int)$op->invoice_id) : null;
-                if ($op->invoice_id) { $out['payment_reversed']=self::paymentReversed($op);$out['invoice_state']=self::invoiceState($op); }
+                if ($op->invoice_id) { $out['payment_reversed']=self::paymentReversed($op,$reversals);$out['invoice_state']=self::invoiceState($op,$reversals); }
                 $out['invoice_sub']=$op->invoice_id ? (array_key_exists('auto_pay',$f) ? Labels::autoPay($f['auto_pay_result']??$f['auto_pay']) : null) : 'No invoice linked. No action needed.';
             }
             if (array_key_exists('auto_pay',$f)) { $out['auto_pay']=Labels::autoPay($f['auto_pay_result']??$f['auto_pay']); }
@@ -102,7 +102,7 @@ final class RequestFacts
             elseif ($paid && $op->state==='rejected' && $op->funding_basis!=='paid_invoice') { [$out['refund'],$out['refund_sub']]=[null,'No paid invoice recorded. No action needed.']; }
             elseif ($closed && $op->funding_basis==='paid_invoice') { $out['refund']='No credit added'; }
             if($grants->costs&&(array_key_exists('refund',$f)||array_key_exists('late_credits',$f))){
-                try{$context=\Paymenter\Extensions\Servers\Domains\Services\ReceiptReversals::summary($op);if($context!==null){$out['refund_sub']=trim(($out['refund_sub']??'').' '.$context);}}
+                try{if($reversals===null){throw new \DomainException('Invoice reversals unavailable.');}$context=\Paymenter\Extensions\Servers\Domains\Services\ReceiptReversals::summary($op,$reversals);if($context!==null){$out['refund_sub']=trim(($out['refund_sub']??'').' '.$context);}}
                 catch(\Throwable){$out['refund_sub']=trim(($out['refund_sub']??'').' Missing. Check the invoice payment reversal and credit history.');}
             }
             if ($op->registrar_key==='namesilo' && $op->action==='transfer' && $closed
@@ -454,7 +454,7 @@ final class RequestFacts
     /** Refunds and disputes the gateway recorded on the request's own invoice, so staff see money we no longer hold.
      * Null when there are none; ['words'=>null] when they could not be read. */
     /** The invoice's current state in a word. A refund or dispute after payment has its own Payment row. */
-    private static function invoiceState(Operation $op): ?string
+    private static function invoiceState(Operation $op, ?array $reversals): ?string
     {
         if(self::invoiceStatus($op)==='paid'&&($invoice=\App\Models\Invoice::find($op->invoice_id))){
             try{
@@ -462,17 +462,17 @@ final class RequestFacts
                 if(($refund['to']??null)==='original_payment'&&(\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::summary(\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::originalRefund($op))[0]??null)==='Refunded'
                     &&\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::amount($refund)>0
                     &&\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::amount($refund)>=\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)$invoice->total)){return 'Refunded';}
-                $minor=0;foreach(\Paymenter\Extensions\Servers\Domains\Services\ReceiptReversals::forInvoice($invoice) as $row){
+                $minor=0;foreach($reversals??[] as $row){
                 if(($row['kind']??null)==='refund'&&($row['status']??null)==='refunded'&&is_int($row['amount_minor']??null)&&$row['amount_minor']>0){$minor+=$row['amount_minor'];}
             }if($minor>0&&$minor>=\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)$invoice->total)){return 'Refunded';}}catch(\Throwable){}
         }
         return match(self::invoiceStatus($op)){'paid'=>'Paid','pending'=>'Not paid','cancelled'=>'Cancelled',default=>null};
     }
-    private static function paymentReversed(Operation $op): ?array
+    private static function paymentReversed(Operation $op, ?array &$rows): ?array
     {
         $invoice=\App\Models\Invoice::find($op->invoice_id); if (!$invoice) { return null; }
         try { $rows=\Paymenter\Extensions\Servers\Domains\Services\ReceiptReversals::forInvoice($invoice); }
-        catch (\Throwable) { return ['words'=>null,'act'=>true]; }
+        catch (\Throwable) { $rows=null;return ['words'=>null,'act'=>true]; }
         $lines=[];$act=false;
         foreach ($rows as $r) {
             // Missing or invalid money is a payment read problem: never show it as zero.

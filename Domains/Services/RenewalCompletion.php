@@ -116,11 +116,13 @@ final readonly class RenewalCompletion
             $op->update(['state' => 'succeeded', 'safe_code' => $changed ? 'actual_charge_changed' : null, 'policy' => $policy,
                 'attempt' => [...$op->attempt, 'reconciliation' => $proof], 'cost' => ['actual' => $cost], 'provider_order_id' => $proof['order_reference'],
                 'confirmed_expires_at' => $proof['expiry'], 'completed_at' => $this->clock->now(), 'lease_expires_at' => null]);
+            $priorExpiry=$d->provider_expires_at;
             $d->update(['status' => 'active', 'provider_expires_at' => $proof['expiry'], 'provider_order_id' => $proof['order_reference'],
                 'confirmed_revision' => $d->confirmed_revision + 1, 'last_synced_at' => $this->clock->now(),
                 'renewal_policy' => [...$d->renewal_policy, 'automatic_spend_paused' => $over || ($d->renewal_policy['automatic_spend_paused'] ?? false),
                     'billing_anchor' => ['expiry' => $proof['expiry'], 'operation_key' => $op->operation_key,
                         ...($l['identity_source']['kind'] === 'adoption' ? ['kind' => 'completed_operation', 'confirmed_revision' => $d->confirmed_revision + 1] : [])]]]);
+            if(ObservationProjection::renewed($d,$priorExpiry)){HoldingObservationWork::renewed($d,$this->clock->now());}
             ComplimentaryInvoices::complete($op);
             return $op;
         });
