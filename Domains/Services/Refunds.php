@@ -93,6 +93,10 @@ final readonly class Refunds
                 $review?->record($l);return null;
             }
             $payment = RefundPayment::requireCurrent($op, $l);
+            if (in_array($op->action, ['register', 'transfer'], true)) {
+                $l['domain']->update(['status' => $op->action === 'transfer' ? 'transfer_rejected' : 'registration_rejected']);
+                NativeDomainGuard::terminal($l, $op);
+            }
             $money = InvoiceMoney::load($l, (int)$op->invoice_id);
             $left = min(PricingRule::minor($payment['amount']), InvoiceMoney::held($money));
             if ($left === 0) { $review?->record($l); return null; }
@@ -110,10 +114,6 @@ final readonly class Refunds
                 'at' => $this->clock->now()->format(DATE_ATOM), 'actor_id' => $approved['actor_id'] ?? null,
                 'reason' => $approved['reason'] ?? (RefundProof::transferTimeout($op, $l['domain']) ? 'transfer_code_timeout' : (RefundProof::retired($op, $l['domain']) || PrivacyRetirement::safe($op, $l['domain']) ? 'late_retired_payment' : (RegistrationRefusals::proved($op,$l['domain'])?RegistrationRefusals::CODE:'terminal_unsent')))];
             $op->update(['funding' => [...($op->funding ?? []), 'refund' => $refund]]);
-            if (in_array($op->action, ['register', 'transfer'], true)) {
-                $l['domain']->update(['status' => $op->action === 'transfer' ? 'transfer_rejected' : 'registration_rejected']);
-                NativeDomainGuard::terminal($l, $op);
-            }
             $review?->record($l);
             return ['amount' => $payment['amount'], 'currency' => 'USD'];
         });

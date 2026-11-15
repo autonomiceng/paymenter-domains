@@ -94,7 +94,7 @@ $run = static function (int $seed, string $mode, array $actions) use (
         DB::table('invoices')->where('id', $invoice->id)->update(['status'=>'paid']);
     }
     $gross = PricingRule::minor($op->amount);
-    $beforeCredit = $balance(); $receipts = []; $trace = []; $seen = []; $closing = false; $previousOut = 0; $promised = 0;
+    $beforeCredit = $balance(); $receipts = []; $trace = []; $seen = []; $closing = false; $previousOut = 0; $promised = 0; $planCrashed = false;
     $record = static function (string $rule, array $facts) use (&$failures, &$seen, &$trace, $seed, $mode): void {
         if (isset($seen[$rule][$facts['out']])) { return; }
         $seen[$rule][$facts['out']] = true;
@@ -127,6 +127,9 @@ $run = static function (int $seed, string $mode, array $actions) use (
                 unset($r);
             } elseif ($kind === 'pending') {
                 MoneyReceiptGateway::$outcome = 'pending';
+            } elseif ($kind === 'plan_crash') {
+                $planCrashed = true;
+                MoneyReceiptGateway::$onStatus = static fn()=>throw new RuntimeException('Synthetic reply lost after acceptance');
             } elseif ($kind === 'lose_reply') {
                 MoneyReceiptGateway::$lost = true;
             } elseif ($kind === 'settle') {
@@ -190,6 +193,8 @@ $run = static function (int $seed, string $mode, array $actions) use (
         // Plan coverage comes from the independent pre-payout balance and open-dispute facts,
         // including unsent work after a lost gateway reply, capped at the issued line.
         if ($kind === 'refund' && $error !== DomainException::class) { $promised = $open ? 0 : min($gross, max(0, $paid-$lost-$previousOut)); }
+        // After an unsent plan's retry, only funds still held can remain promised; no gateway accepted this crash.
+        if ($planCrashed && $kind === 'retry' && !$open) { $promised = min($gross, max($out, $paid-$lost)); }
         $reserved = max($reserved, max(0, $promised-$out));
         $peers = \Paymenter\Extensions\Servers\Domains\Models\Operation::where('invoice_id', $invoice->id)->orderBy('id')->get()
             ->map(fn($peer)=>['funding'=>$peer->funding ?? []])->all();
@@ -223,6 +228,8 @@ $run(5, 'late', [['late_payment','a',100,'credit'], ['credit'], ['lost','a','ful
     ['late_payment','b',300,'credit'], ['retry']]);
 $run(6, 'late', [['late_payment','a',200,'credit'], ['lost','a','full'],
     ['late_payment','b',200,'credit'], ['credit'], ['retry']]);
+
+$run(7, 'ordinary', [['payment','a','full','refund'], ['plan_crash'], ['refund'], ['lost','a','full'], ['retry']]);
 
 // A local PRNG keeps sequences identical across revisions and independent of framework randomness.
 // Seeded choices vary receipt splits, destinations, dispute amounts/outcomes, reply loss and retry order.

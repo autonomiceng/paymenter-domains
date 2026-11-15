@@ -175,7 +175,7 @@ class Operation extends Model
             if(!is_array($history)||!is_array($next)||!array_is_list($next)||array_slice($next,0,count($history))!==$history){throw new \DomainException('Late money returns are append-only.');}
             foreach($before['receipt_return_results']??[] as $key=>$result){
                 $next=$after['receipt_return_results'][$key]??null;
-                if(!is_array($next)||($result['state']??null)==='credited'&&$next!==$result){throw new \DomainException('Receipt returns are retained.');}
+                if(!is_array($next)||in_array($result['state']??null,['credited','released'],true)&&$next!==$result){throw new \DomainException('Receipt returns are retained.');}
                 foreach(['amount_minor','key','refund_id'] as $field){
                     if(isset($result[$field])&&($next[$field]??null)!==$result[$field]){throw new \DomainException('Receipt return identity is frozen.');}
                 }

@@ -197,7 +197,7 @@ final class OperationActions
     public static function refundPending(?Operation $op,string $code): ?Notification
     {
         if($op?->state!=='rejected'||!isset($op->funding['refund_authorization'])){return null;}
-        if(isset($op->funding['refund'])&&!ReceiptReturns::malformed($op)&&ReceiptReturns::outstanding($op)===0){return null;}
+        if(ReceiptReturns::settled($op)){return null;}
         $ended=in_array($op->action,['register','transfer'],true)?'The order and its service are cancelled.':'The request is cancelled.';
         $where=isset($op->funding['refund'])?" The payment provider hasn't confirmed the refund.":" The refund hasn't gone through (ref {$code}).";
         return Notification::make()->warning()->title('Cancelled, refund not finished')

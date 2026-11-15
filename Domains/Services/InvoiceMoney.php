@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Operation;
 final class InvoiceMoney
 {
     /** HoldingLocks must already own the user, credit, invoice and native transaction rows. */
-    public static function load(array $l, int $invoiceId): array
+    public static function load(array $l, int $invoiceId, ?string $exclude = null): array
     {
         if (DB::transactionLevel() < 1 || ($l['advisory'] ?? true)) { throw new \LogicException('Money reads require holding locks.'); }
         $invoice = $l['invoices']->firstWhere('id', $invoiceId);
@@ -38,7 +38,12 @@ final class InvoiceMoney
                 $ledger[] = [...$entry, 'gateway_id'=>(int)$gateway->id];
             }
         }
-        return self::record($rows, $peers->map(fn($op)=>['funding'=>$op->funding ?? []])->all(), $ledger, $ownerHold);
+        $funding = $peers->map(function($op) use ($exclude): array {
+            $f = $op->funding ?? [];
+            if ($exclude !== null) { $f['receipt_return_results'][$exclude] = ['state'=>'released', 'credit_minor'=>0]; }
+            return ['funding'=>$f];
+        })->all();
+        return [...self::record($rows, $funding, $ledger, $ownerHold), 'ledger'=>$ledger];
     }
 
     /** Plain native rows (cardOk supplied by load), peer funding arrays and raw gateway ledger rows. No queries or I/O. */

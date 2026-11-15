@@ -99,7 +99,7 @@ final readonly class NativePresenter
         // An unreadable return is under review: pending with no total, before any amount or coverage is read.
         foreach($ops as $op){if(ReceiptReturns::malformed($op)){return ['pending',null];}}
         foreach($ops as $op){
-            foreach([...(isset($op->funding['refund'])?[$op->funding['refund']]:[]),...($op->funding['late_credits']??[])] as $p){
+            foreach(ReceiptReturns::effective($op) as $p){
                 $minor+=ReceiptReturns::amount($p);
                 foreach($p['payments']??[] as $payment){$covered[$payment['id']]=($covered[$payment['id']]??0)+max(0,$payment['amount_minor']);}
                 if(($p['to']??null)==='account_credit'){$states[]='credit';continue;}

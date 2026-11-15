@@ -61,8 +61,7 @@ final class RefundPayment
         foreach ($ops as $row) {
             // An unreadable retained return stays with staff before its coverage is read.
             if (ReceiptReturns::malformed($row)) { throw new \DomainException('Retained return plan needs review.'); }
-            $f = $row->funding ?? [];
-            foreach ([...(isset($f['refund']) ? [$f['refund']] : []), ...($f['late_credits'] ?? [])] as $credit) {
+            foreach (ReceiptReturns::effective($row) as $credit) {
                 foreach ($credit['payments'] as $payment) { $done[$payment['id']] = ($done[$payment['id']] ?? 0) + $payment['amount_minor']; }
             }
         }
@@ -80,7 +79,7 @@ final class RefundPayment
         foreach($peers as $peer){
             if(ReceiptReturns::malformed($peer)){throw new \DomainException('Retained return plan needs review.');}
             $outstanding+=ReceiptReturns::outstanding($peer);
-            foreach([...(isset($peer->funding['refund'])?[$peer->funding['refund']]:[]),...($peer->funding['late_credits']??[])] as $p){
+            foreach(ReceiptReturns::effective($peer) as $p){
                 $local+=($p['to']??null)==='original_payment'?ReceiptReturns::bridge($p):PricingRule::minor($p['amount']);
             }
         }
