@@ -29,7 +29,7 @@ expect(isset($params['filters']),'Panel links to a filtered list');
 $page=Livewire::actingAs($viewer)->test(ListOperations::class)->set('tableFilters',$params['filters']);
 $page->set('tableDeferredFilters',$page->get('tableFilters'))->call('applyTableFilters')
     ->assertCanSeeTableRecords([$paid,$second])->assertCanNotSeeTableRecords([...$free,$completed,$held])->assertCountTableRecords($hold['count']);
-$filters=['server_id'=>$params['filters']['server_id'],'paid'=>['isActive'=>true],'status'=>['values'=>['completed']]];
+$filters=['server_id'=>$params['filters']['server_id'],'paid'=>['isActive'=>true],'paid_uncertainty'=>['isActive'=>false],'status'=>['values'=>['completed']]];
 $page=Livewire::actingAs($viewer)->test(ListOperations::class)->set('tableFilters',$filters);
 $page->set('tableDeferredFilters',$page->get('tableFilters'))->call('applyTableFilters')
     ->assertCanSeeTableRecords([$completed])->assertCanNotSeeTableRecords([$paid,$second,$held,...$free])->assertCountTableRecords(1);
