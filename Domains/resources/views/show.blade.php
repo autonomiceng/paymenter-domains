@@ -49,10 +49,10 @@
 @if ($domain->departureSuspected)
 <x-domains::customer.section id="registrar-records" title="Registrar records">
 <div id="departure-registrar-pause"><x-domains::customer.notice>Registrar changes paused while we check this domain.</x-domains::customer.notice></div>
-<ul class="domains-rows">@include('domains::partials.owner-management', ['caps' => array_values(array_intersect($settings, ['lock','auth_code_email','contacts','nameservers']))])</ul>
+<ul class="domains-rows">@include('domains::partials.owner-management', ['caps' => array_values(array_diff($settings, ['dns','srv','ds','glue']))])</ul>
 </x-domains::customer.section>
-@if (array_intersect($settings, ['dns','srv']) || $domain->dnsNotice)
-<x-domains::customer.section id="dns-records" title="DNS records" :note="$domain->dnsNotice"><ul class="domains-rows">@include('domains::partials.owner-management', ['caps' => array_values(array_intersect($settings, ['dns','srv']))])</ul></x-domains::customer.section>
+@if (array_intersect($settings, ['dns','srv','ds','glue']) || $domain->dnsNotice)
+<x-domains::customer.section id="dns-records" title="DNS records" :note="$domain->dnsNotice"><ul class="domains-rows">@include('domains::partials.owner-management', ['caps' => array_values(array_intersect($settings, ['dns','srv','ds','glue']))])</ul></x-domains::customer.section>
 @endif
 @endif
 <x-slot:rail>@unless ($domain->setupPending)@include('domains::partials.activity')@endunless</x-slot:rail>

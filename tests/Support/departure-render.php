@@ -13,6 +13,7 @@ $out=$argv[1]??'';expect(is_dir($out),'Render output exists');
 $clock->instant=$clock->now()->modify('+61 seconds');$observation->fault='absent';$observer->run($d->id,readRecords:true);
 DB::transaction(function()use($d,$clock):void{$fresh=$d->fresh();$p=$fresh->observation;$p['departure_check']['registry']=['registrar'=>'Example Registrar','status'=>['ok'],'result'=>'facts','at'=>$clock->now()->getTimestamp()];$fresh->update(['observation'=>$p]);});
 app()->instance(OwnedDomains::class,$owners);
+App\Models\Server::findOrFail($d->server_id)->settings()->updateOrCreate(['key'=>'domains_billing_enabled'],['value'=>true,'type'=>'boolean']);
 $domain=$owners->present($d->fresh());
 session()->forget(['domains_failed_form','_old_input']);
 app('view')->share('keys',array_fill_keys(['setup','recovery','code','renew','auto-renew','dns','srv','ds','glue'],str_repeat('a',64)));
