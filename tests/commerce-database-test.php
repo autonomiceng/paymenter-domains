@@ -38,5 +38,21 @@ try {
     try { restoreCommerceDatabase();throw new LogicException('Changed snapshot accepted'); }
     catch(RuntimeException $error){same('Installed fixture snapshot retains admitted bytes',$error->getMessage(),'Wrong snapshot hash refuses before database changes');}
     same(0,DB::table('migrations')->where('migration','like','%domains%')->count(),'Hash refusal preserves the pristine native database');
+    putenv('PAYMENTER_TEST_COMMERCE_SHA256='.hash_file('sha256',$installed));
+    $reset();$context=InstalledCommerceFixture::prepare();
+    App\Models\User::create(['first_name'=>'Staff','last_name'=>'Fixture','email'=>'staff@example.test','password'=>'synthetic']);
+    $context->consume();same('staff@example.test',App\Models\User::sole()->email,'Prepared context preserves staff records written after restore');
+    $contextRefuses=static function(InstalledCommerceFixture $context):void {
+        $refused=false;try{$context->consume();}catch(LogicException){$refused=true;}
+        expect($refused,'A stale installed fixture context refuses reuse');
+    };
+    $contextRefuses($context);
+    $reset();$context=InstalledCommerceFixture::prepare();DB::beginTransaction();$contextRefuses($context);DB::rollBack();$context->consume();
+    $reset();$context=InstalledCommerceFixture::prepare();$reset();$contextRefuses($context);
+    $context=InstalledCommerceFixture::prepare();DB::statement('CREATE TABLE fixture_sentinel (value TEXT)');$contextRefuses($context);
+    $reset();App\Models\User::create(['first_name'=>'Existing','last_name'=>'Fixture','email'=>'retained@example.test','password'=>'synthetic']);
+    InstalledCommerceFixture::prepare()->consume();
+    same('retained@example.test',App\Models\User::sole()->email,'Dirty fixture uses installation without replacing customer data');
+    (new Installation)->verify();
 } finally {unlink($core);unlink($installed);}
 $nativeSuccessful=true;
