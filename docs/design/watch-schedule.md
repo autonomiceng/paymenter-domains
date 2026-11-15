@@ -94,15 +94,16 @@ off, and those off maps are the only choice stored.
 
 Each scheduler turn looks at up to 25 products (`WatchProducts::unmapped`, durable cursor in scope
 `products`). It maps an in-scope product with no row, enabled, with `edited_by` 0 marking the
-system. It moves a map on any other field to the convention, and a `hostname` map to `domain` once
-orders carry one. On or off stays as it was (audit `mapping_corrected`). It reads only saved
-properties, so no hosting API is called.
+system. It moves a map on any other field to the convention; on or off stays as it was (audit
+`mapping_corrected`). The map's key only marks the convention: discovery and every source check
+read each service's own `domain`, else its `hostname` (`WatchProducts::field`), so mixed orders on
+one product keep their domains. It reads only saved properties, so no hosting API is called.
 
 There is no field picker. `WatchProductMap` refuses any key but `domain` or `hostname`, and the
 staff mapping save is refused. Monitoring settings shows one summary row and a Choose products
 checklist, and the product editor has a Monitor domains switch. Both write through
 `WatchMappings::monitor()`. The checklist sends the off list it opened with, so a stale dialog
-saves nothing. Products whose orders carry no domain are named as Not listed.
+saves nothing, and only the products it showed can change; one that entered the list later stays on. Products whose orders carry no domain are named as Not listed.
 
 A hosting domain that Domains already manages for the same owner becomes a `managed_link` source,
 not a second watch. If the watch came first, saving the Domain hints discovery and the watch is
