@@ -54,7 +54,7 @@ final class FundsWaits
     {
         $alerts=Schema::hasTable('domains_obligation_alerts');
         if($alerts){DB::table('domains_obligation_alerts')->where('code','renewal_funds')->whereNull('resolved_at')
-            ->whereIn('operation_id',Operation::select('id')->where('server_id',$a->server_id)->whereIn('state',['succeeded','rejected','disposed']))
+            ->whereIn('operation_id',Operation::select('id')->where('server_id',$a->server_id)->where('action','renew')->whereIn('state',['running','pending','uncertain','succeeded','rejected','disposed']))
             ->update(['resolved_at'=>$now->getTimestamp()]);}
         $key='domains.funds-wait-cursor.'.$a->server_id;
         $ops=Operation::where('server_id',$a->server_id)->where('account_fingerprint',$a->account_fingerprint)
@@ -63,10 +63,12 @@ final class FundsWaits
         Cache::forever($key,$ops->count()===100?$ops->last()->id:0);
         foreach($ops as $op){
             if($op->action==='renew'){
-                if($alerts&&($op->safe_code==='registrar_balance_insufficient_or_unknown'||isset($op->policy['funds_wait_until']))){
+                if($alerts&&$op->safe_code==='registrar_balance_insufficient_or_unknown'){
                     DB::transaction(function()use($op,$now):void {
-                        $d=$op->domain()->lockForUpdate()->firstOrFail();ObligationAlerts::record($d,'renewal_funds',$now->getTimestamp(),(int)$op->id);
-                        if(!isset($op->policy['funds_wait_until'])&&DomainBilling::expired($d,$now)){ObligationAlerts::record($d,'funds_wait_review',$now->getTimestamp(),(int)$op->id);}
+                        $d=$op->domain()->lockForUpdate()->firstOrFail();$current=Operation::whereKey($op->id)->lockForUpdate()->firstOrFail();
+                        if(!in_array($current->state,['held','queued','awaiting_payment'],true)||$current->safe_code!=='registrar_balance_insufficient_or_unknown'){return;}
+                        ObligationAlerts::record($d,'renewal_funds',$now->getTimestamp(),(int)$current->id);
+                        if(!isset($current->policy['funds_wait_until'])&&DomainBilling::expired($d,$now)){ObligationAlerts::record($d,'funds_wait_review',$now->getTimestamp(),(int)$current->id);}
                     });
                 }
             }

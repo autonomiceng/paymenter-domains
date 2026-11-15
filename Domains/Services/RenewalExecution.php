@@ -73,6 +73,11 @@ final class RenewalExecution
                 if ($l['stamp'] !== $stamp || !$op || ($op->policy['renewal_admission']['key'] ?? null) !== $admissionClaim
                     || new \DateTimeImmutable($op->policy['renewal_admission']['until']) <= $this->clock->now() || !RenewalCycles::registrarVirgin($op) || !in_array($op->state, ['awaiting_payment', 'queued'], true)) { throw new \DomainException('Renewal changed.'); }
                 $funding = $this->current($op, $l); $writer->requirePolicy($binding, $this->features, $this->accepted);
+                // Both admissions proved sufficient registrar funds; a later hold has its own cause.
+                if(\Illuminate\Support\Facades\Schema::hasTable('domains_obligation_alerts')){
+                    DB::table('domains_obligation_alerts')->where('operation_id',$op->id)->where('code','renewal_funds')->whereNull('resolved_at')
+                        ->update(['resolved_at'=>$this->clock->now()->getTimestamp()]);
+                }
                 $cap = $op->policy['renewal']['cost_cap'] ?? null;
                 if(isset($op->policy['account_complimentary'])&&$cap){
                     try{ComplimentaryCosts::require($op,$ready->cost,$cap['amount']);}catch(WriteHeld){$this->hold($op->refresh(),'registrar_price_increased');return [null,null];}
