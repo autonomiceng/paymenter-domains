@@ -56,8 +56,9 @@ final readonly class RenewalCompletion
             $sample = $result->result()->evidence()->billZoneSample;
             // A read that returned after the deadline is used up like a stalled read; its facts are too late to act on.
             $late = $this->clock->now() >= $ctx->deadline && $ctx->completedReads() > 0;
+            // Scan progress is reusable after the deadline; financial conclusions still require an in-time read.
+            $facts = $result->result()->evidence(); $scan = $facts->historyScan;
             if ($this->clock->now() < $ctx->deadline) {
-                $facts = $result->result()->evidence(); $scan = $facts->historyScan;
                 $covered = $facts->domain?->owned === true && $facts->domain->expiry !== null
                     && ($facts->historyComplete || ($attempt->executionFacts && $attempt->providerReference !== null && count($facts->candidates) > 0));
                 $autoRenewUnconfirmed = $attempt->binding->registrarKey === 'namesilo'

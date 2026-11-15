@@ -41,8 +41,9 @@ final class History
         };
         $start = 1; $total = null; $ids = []; $rows = [];
         do {
-            if ($context->budget->remaining() < 1) { return $stop('read_budget'); }
+            if ($context->budget->remaining() < 1 || $context->now() >= $context->deadline) { return $stop('read_budget'); }
             $reply = $this->client->read(ReadCommand::Orders, $parameters + ['Start'=>$start], $context);
+            if ($context->now() >= $context->deadline) { return $stop('read_budget'); }
             $page = self::page($reply, $start, $begin, $end);
             if (!$page) { return $stop('list_invalid'); }
             if ($total !== null && $total !== $page['count']) { return $stop('list_changed'); }
@@ -60,19 +61,26 @@ final class History
         if (count($ids) !== $total) { return $stop('list_changed'); }
         // A saved outcome counts only for the same listed order and receipt date; a candidate is read again before it is used.
         $orders = []; $pending = []; $stale = []; $complete = true;
+        $listing = hash('sha256', json_encode($rows, JSON_THROW_ON_ERROR));
+        $priorRefusals = self::counts($saved['refusals'] ?? null);
+        $continueOpen = ($saved['complete'] ?? null) === false && $priorRefusals
+            && !array_diff(array_keys($priorRefusals), ['detail_ceiling', 'read_budget']);
         foreach ($rows as $row) {
-            // An unfinished or canceled order is read every time: it blocks unless its detail names only other domains.
-            if ($row['statusdesc'] !== 'Order complete' || $row['orderprocessflag'] !== 'True') { $row['open'] = true; $pending[] = $row; continue; }
-            $id = $row['orderid']; $signature = substr(hash('sha256', $row['orderdate']), 0, 12); $row['signature'] = $signature;
+            $row['open'] = $row['statusdesc'] !== 'Order complete' || $row['orderprocessflag'] !== 'True';
+            $id = $row['orderid']; $signature = substr(hash('sha256', $row['orderdate'].($row['open'] ? $listing : '')), 0, 12); $row['signature'] = $signature;
+            // Open exclusions continue only an unchanged listing stopped by capacity. A finished or blocked scan re-reads them.
+            if ($row['open'] && (!$continueOpen || ($known[$id][0] ?? null) !== 'n')) { $pending[] = $row; continue; }
             if (($known[$id][1] ?? null) === $signature) { $orders[$id] = $known[$id]; if ($known[$id][0] === 'c') { $stale[] = $row; } }
             else { $pending[] = $row; }
         }
         $candidates = []; $read = 0; $added = 0;
         foreach ($pending as $row) {
-            if ($read >= self::DETAILS || $context->budget->remaining() <= count($stale)) { $complete = false; $refuse($read >= self::DETAILS ? 'detail_ceiling' : 'read_budget'); break; }
+            if ($read >= self::DETAILS || $context->budget->remaining() <= count($stale) || $context->now() >= $context->deadline) { $complete = false; $refuse($read >= self::DETAILS ? 'detail_ceiling' : 'read_budget'); break; }
             $read++;
-            if ($row['open'] ?? false) { if (!$this->otherDomain($attempt, $context, $row['orderid'])) { $complete = false; $refuse('order_open'); } continue; }
-            [$outcome, $candidate] = $this->detail($attempt, $context, $row);
+            if ($row['open'] ?? false) { $outcome = $this->otherDomain($attempt, $context, $row) ? 'n' : 'order_open'; $candidate = null; }
+            else { [$outcome, $candidate] = $this->detail($attempt, $context, $row); }
+            // Keep earlier validated outcomes, but never accept a reply that used up the deadline.
+            if ($context->now() >= $context->deadline) { $complete = false; $refuse('read_budget'); break; }
             if (!in_array($outcome, ['n', 'c'], true)) { $complete = false; $refuse($outcome); continue; }
             $orders[$row['orderid']] = [$outcome, $row['signature']]; $added++;
             if ($candidate) { $candidates[] = $candidate; }
@@ -80,7 +88,9 @@ final class History
         if ($complete && $context->budget->remaining() < count($stale)) { $complete = false; $refuse('read_budget'); }
         if ($complete) {
             foreach ($stale as $row) {
+                if ($context->now() >= $context->deadline) { $complete = false; $refuse('read_budget'); break; }
                 [$outcome, $candidate] = $this->detail($attempt, $context, $row);
+                if ($context->now() >= $context->deadline) { $complete = false; $refuse('read_budget'); break; }
                 if ($candidate) { $candidates[] = $candidate; }
                 elseif ($outcome === 'n') { $orders[$row['orderid']] = ['n', $row['signature']]; }
                 else { unset($orders[$row['orderid']]); $complete = false; $refuse($outcome); }
@@ -115,11 +125,13 @@ final class History
         return $candidate ? ['c', $candidate] : [$other ? 'other_zone_candidate' : 'n', null];
     }
     /** True only when the exact order's detail positively names a different canonical domain on every item. */
-    private function otherDomain(AttemptEvidence $attempt, RequestContext $context, string $id): bool
+    private function otherDomain(AttemptEvidence $attempt, RequestContext $context, array $row): bool
     {
+        $id = $row['orderid'];
         $order = $this->client->read(ReadCommand::Order, ['OrderID'=>$id], $context);
         $items = $order->value('order.orderdetail');
-        if ($order->status !== 'success' || $order->value('order.orderid') !== $id || !is_array($items) || !$items) { return false; }
+        if ($order->status !== 'success' || $order->value('order.orderid') !== $id || !is_array($items) || !$items
+            || self::localClock($order->value('order.orderdate')) != self::localClock($row['orderdate'])) { return false; }
         foreach (array_is_list($items) ? $items : [$items] as $item) {
             try { if (!is_array($item) || !is_string($item['description'] ?? null) || CanonicalName::normalize($item['description']) === $attempt->query->name) { return false; } }
             catch (\InvalidArgumentException|\TypeError) { return false; }

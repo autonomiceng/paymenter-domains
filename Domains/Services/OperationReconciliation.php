@@ -84,8 +84,9 @@ final class OperationReconciliation
             $result=$limiter?$limiter->run($attempt->binding,$read):$read();
             $result->requireAttempt($attempt);
             if ($sample = $result->result()->evidence()->billZoneSample) { EnomBillZones::record($attempt->binding, $sample); }
+            // Scan progress is reusable after the deadline; financial conclusions still require an in-time read.
+            $facts = $result->result()->evidence(); $scan = $facts->historyScan;
             if ($this->clock->now() < $context->deadline) {
-                $facts = $result->result()->evidence(); $scan = $facts->historyScan;
                 $nameservers = $facts->domain?->nameservers ?? $requestedNameservers;
                 $covered = $facts->domain?->owned === true && $facts->domain->expiry !== null
                     && ($facts->historyComplete || ($attempt->executionFacts && $attempt->providerReference !== null && count($facts->candidates) > 0));
@@ -146,7 +147,7 @@ final class OperationReconciliation
                 return $op;
             });
         }
-        $completed = $this->claims->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($attempt, $stamp, $contract, $proof, $nameservers, $transfer, $transferConflict, $pendingAnomaly, $readStarted, $privacyBlocked, $check, $scan, $absence, $completed): Operation {
+        $operation = $this->claims->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($attempt, $stamp, $contract, $proof, $nameservers, $transfer, $transferConflict, $pendingAnomaly, $readStarted, $privacyBlocked, $check, $scan, $absence, $completed): Operation {
             if (!$this->eligible($op) || self::stamp($op, $domain) !== $stamp) { return $op; }
             try {
                 $binding = $this->authority($op, $domain, $all, $funding, $server, $account);
@@ -211,11 +212,11 @@ final class OperationReconciliation
             ComplimentaryInvoices::complete($op);
             return $op;
         });
-        if ($completed->action === 'transfer' && $completed->state === 'succeeded') {
-            try { (new TransferWatchEnrollment())->repair((int)$completed->domain_id,(int)$completed->domain->user_id,$this->clock->now()->getTimestamp()); }
+        if ($operation->action === 'transfer' && $operation->state === 'succeeded') {
+            try { (new TransferWatchEnrollment())->repair((int)$operation->domain_id,(int)$operation->domain->user_id,$this->clock->now()->getTimestamp()); }
             catch (\Throwable $e) { logger()->warning('Transfer watch repair deferred.',['exception_class'=>$e::class]); } // Runtime cursor retries.
         }
-        return $completed;
+        return $operation;
     }
     /** Internal audited resume seam; staff authorization/route belongs to36. No send authority. */
     public function resume(int $id, string $reason, ?StaffOperationReview $review = null): Operation

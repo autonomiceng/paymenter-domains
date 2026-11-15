@@ -4,7 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/Support/renewal-execution.php';
 use Illuminate\Support\Facades\{Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Contracts\{Clock, ReadLimiter};
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, HistoryAcceptance, RequestOrigin};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, HistoryAcceptance, HistoryScan, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ReadCommand, Transport};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, EnomAnswers, HistoryAcceptances, OperationReconciliation, ReadDeferred, RegistrarRegistry, Runtime, StaffSettingsReview as Review, StaffSettingsWrites};
@@ -13,8 +13,9 @@ use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, EnomAnswers,
 // $match lists the renewal fixture's own order for this renewal instead, $late runs once when the order list is read, and
 // $fail makes every order list request fail before Enom replies. $orders is how many orders the day lists.
 $history = new class implements Transport {
-    public ?Transport $domain = null; public ?DateTimeImmutable $sent = null; public string $fault = ''; public array $forms = []; public bool $match = false; public $late = null; public bool $fail = false; public int $orders = 3;
+    public ?Transport $domain = null; public ?DateTimeImmutable $sent = null; public string $fault = ''; public array $forms = []; public bool $match = false; public $late = null; public bool $fail = false; public int $orders = 3; public ?ReadCommand $failedCommand = null; public $detailTick = null;
     public function send($env, ReadCommand $command, array $parameters, string $uid, string $token, int $timeoutMs): string {
+        if ($command === $this->failedCommand) { throw new RuntimeException('Connection reset before a flag reply'); }
         if ($this->match || !in_array($command, [ReadCommand::Orders, ReadCommand::Order], true)) { return $this->domain->send($env, $command, $parameters, $uid, $token, $timeoutMs); }
         if ($this->fail && $command === ReadCommand::Orders) { throw new RuntimeException('Connection reset before a reply'); }
         $this->forms[] = $command; $at = fn (int $i) => $this->sent->modify('-'.(10 * ($i + 1)).' minutes')->setTimezone(new DateTimeZone('America/Denver'))->format('n/j/Y g:i:s A');
@@ -23,6 +24,7 @@ $history = new class implements Transport {
             $rows = array_map(fn ($i) => ['id' => (string)(8001 + $i), 'date' => $at($i)], range(0, $this->orders - 1));
             return enomHistoryEnvelope(enomHistoryPage($rows, $parameters['Start'], count($rows)));
         }
+        if ($this->detailTick) { ($this->detailTick)($timeoutMs); }
         $i = (int)$parameters['OrderID'] - 8001;
         $body = enomHistoryDetail($parameters['OrderID'], 'other-'.$i.'-placeholder.com', $at($i), '2028-10-18', '8.95', 1, $at($i));
         return $i === 1 && $this->fault === 'unsupported' ? preg_replace('~<AdjustToAccount\s*/>~', '<AdjustToAccount>1.00</AdjustToAccount>', $body) : $body;
@@ -175,6 +177,35 @@ $allowed($op, 'Registration: the late read after a deferral recorded the evidenc
 [$op] = $register('absence-late-failed-placeholder.com');
 $failed(fn () => same('uncertain', $scheduled->run($op->id)->state, 'A scheduled read leaves the lost reply open'), $registrationCalls,
     fn () => isset($op->fresh()->policy['enom_absence']), 'Registration');
+// Validated detail progress survives the deadline; the reply that reaches it supplies no financial facts.
+$deadlineScan = static function ($op, callable $run, string $why) use ($clock, $history, $refused): void {
+    $history->orders = 11;
+    $history->detailTick = static function (int $ms) use ($clock): void { $clock->instant = $clock->instant->modify('+'.min(24000, $ms).' milliseconds'); };
+    $clock->instant = $history->sent->modify('+25 hours'); Cache::flush(); $run();
+    same([10, false, false, null], [$op->fresh()->policy['history_scan']['state']['resolved'] ?? null,
+        $op->fresh()->policy['history_scan']['state']['complete'] ?? null, isset($op->fresh()->policy['enom_absence']),
+        $op->fresh()->funding['refund_authorization'] ?? null], $why.': only the ten in-time details survive, with no completion or refund evidence');
+    $refused($op, $why.': an expired partial scan');
+    $history->detailTick = null; $history->forms = [];
+    $clock->instant = $history->sent->modify('+26 hours'); Cache::flush(); $run();
+    same([11, true, 1], [$op->fresh()->policy['history_scan']['state']['resolved'], $op->fresh()->policy['history_scan']['state']['complete'],
+        count(array_filter($history->forms, fn ($command) => $command === ReadCommand::Order))], $why.': the next turn reuses the saved progress and reads only the late order');
+    $history->orders = 3;
+};
+[$op] = $register('absence-deadline-progress-placeholder.com');
+$deadlineScan($op, fn () => same('uncertain', $scheduled->run($op->id)->state, 'Deadline registration stays unresolved'), 'Registration');
+// A covered history cannot finish the late claim when one domain flag exchange failed.
+[$op, $binding] = $register('absence-covered-failure-placeholder.com', '');
+$op->update(['policy' => [...$op->policy, 'reconciliation' => ['polls' => OperationReconciliation::POLL_LIMIT],
+    'history_resumption' => ['revision' => HistoryScan::revision(HistoryAcceptances::load($binding))]]]);
+$history->failedCommand = ReadCommand::Renewal;
+$read($op, '+25 hours');
+same([true, false, null], [$op->fresh()->policy['history_scan']['state']['complete'], $op->fresh()->policy['enom_absence_read']['done'],
+    $op->fresh()->funding['refund_authorization'] ?? null], 'Covered history with a failed flag exchange leaves the late claim open and authorizes no refund');
+$history->failedCommand = null;
+$read($op, '+26 hours');
+expect(count($history->forms) > 0, 'The next scheduled turn retries the covered read after the failed exchange');
+same(true, $op->fresh()->policy['enom_absence_read']['done'], 'The successful retry finishes the late claim');
 // A late read that ends with a partial order scan is not used up: the scan continues on a later turn, within the three tries.
 $partial = static function ($op, callable $run, callable $calls, string $why) use ($clock, $history): void {
     $reads = static function (string $after) use ($run, $calls, $clock, $history): int { $clock->instant = $history->sent->modify($after); Cache::flush(); $calls(true); $run(); return $calls(false); };
@@ -245,6 +276,8 @@ $renewRead = static function ($op, string $after = '+25 hours') use ($completion
     same('uncertain', $completion->run($op->id)->state, 'A scheduled renewal read leaves the lost reply open');
 };
 $writes = $state->writes;
+[$op] = $renew('absence-renew-deadline-placeholder.com', '2027-10-18');
+$deadlineScan($op, fn () => same('uncertain', $completion->run($op->id)->state, 'Deadline renewal stays unresolved'), 'Renewal');
 [$op, $binding] = $renew('absence-renew-unchanged-placeholder.com', '2027-10-18');
 $renewRead($op);
 same(true, $op->fresh()->policy['history_scan']['state']['complete'], 'The renewal scan finishes with no match');
@@ -279,5 +312,5 @@ $failed(fn () => same('uncertain', $completion->run($op->id)->state, 'A schedule
 [$op] = $renew('absence-renew-late-partial-placeholder.com', '2027-10-18'); $history->orders = 23;
 $partial($op, fn () => same('uncertain', $completion->run($op->id)->state, 'A scheduled renewal read leaves the lost reply open'), $renewalCalls, 'Renewal');
 $allowed($op, 'Renewal: the late read that finished a partial scan recorded the evidence');
-same($writes + 8, $state->writes, 'Only the eight original Extends were sent');
+same($writes + 9, $state->writes, 'Only the nine original Extends were sent');
 echo "A lost Enom reply is refundable without a case number only when the scheduled read proves Enom has no order and the domain is unchanged.\n"; $nativeSuccessful = true;
