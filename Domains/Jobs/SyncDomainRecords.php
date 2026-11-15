@@ -68,7 +68,7 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
     public function handle(DomainObservation $observer): void
     {
         // A departure Check again names its own button; Sync now is hidden on that page.
-        $again=$this->departure?'Check again':'Sync now';
+        $again=$this->departure?'Check again':'Sync now';$retry=$this->departure?$again:$again.' again';
         try {
             if (!Staff::allows(User::find($this->actor),'admin.domains.manage')) { $this->notice('Sync stopped','The staff permission to sync this domain was removed.'); return; }
             $d=Domain::find($this->domain);
@@ -85,7 +85,7 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
                 $before=self::recordFacts($d);
                 $result=$observer->run($this->domain,$this->generation,$this->fingerprint,readRecords:true,current:$current);
                 if($this->departure){$this->departure=false;app(\Paymenter\Extensions\Servers\Domains\Services\DepartureChecks::class)->registry($d->fresh());}
-                if ($result==='records_disabled') { $this->notice('Records not read','Record checks are paused or not set up for this registrar account. Check the DNS, nameservers and contacts row on the registrar account page, then use '.$again.'.'); return; }
+                if ($result==='records_disabled') { $this->notice('Records not read','Record checks are paused or not set up for this registrar account. Check the DNS, nameservers and contacts row on the registrar account page, then use '.$retry.'.'); return; }
                 $failed=ObservationRecords::held($d->refresh())||in_array($result,ReadFailure::CODES,true)||$result==='read_deferred';
                 if($result==='refreshed'){HoldingReadRetry::completedManually($d,claim:$claim);}
                 $retry=HoldingReadRetry::status($d);
@@ -94,7 +94,7 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
                 }
                 if ($result==='domain_not_in_account') { HoldingReadRetry::completedManually($d,$result,$claim); $this->notice("Couldn't read all records",'Domain is not in the registrar account. Check the assigned account or complete the transfer there, then use '.$again.'.'); return; }
                 if (!$failed&&$result!=='refreshed') { $this->notice('Sync needs a check','The registrar read finished, but its facts differ from the saved domain. Check the domain and its open request.'); return; }
-                if ($failed) { $this->notice("Couldn't read all records",ObservationRecords::limitNotice($d)??'Open the domain and check the sync notice, then try '.$again.'.'); }
+                if ($failed) { $this->notice("Couldn't read all records",ObservationRecords::limitNotice($d)??'Open the domain and check the sync notice, then try '.$retry.'.'); }
                 else {
                     $after=self::recordFacts($d);
                     $changed=(bool)array_filter(array_keys($before),fn($key)=>array_key_exists($key,$after)&&$before[$key]!==$after[$key]);
@@ -103,8 +103,8 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
                 }
             } catch (\Throwable) {
                 // After its lease expires, the scheduler may claim the work, so this read must not save its result.
-                if ($lost) { $this->notice('Sync stopped','The registrar read ran past its time limit. Press '.$again.'.'); return; }
-                $this->notice("Couldn't sync domain",'Check the registrar account, then try '.$again.'.');
+                if ($lost) { $this->notice('Sync stopped','The registrar read ran past its time limit. Press '.$retry.'.'); return; }
+                $this->notice("Couldn't sync domain",'Check the registrar account, then try '.$retry.'.');
             } finally {
                 try{if($this->departure&&!$lost&&$work>0&&HoldingObservationWork::ownsManual($work,$claim,$clock->now())){app(\Paymenter\Extensions\Servers\Domains\Services\DepartureChecks::class)->registry($d->fresh());}}
                 finally{HoldingObservationWork::releaseManual($work,$claim);}
@@ -112,7 +112,7 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
         } finally { Cache::forget($this->pendingKey()); }
     }
     public function failed(?\Throwable $error): void
-    { Cache::forget($this->pendingKey()); $this->notice("Couldn't sync domain",'The background read stopped. Ask your site admin to check the queue worker, then try '.($this->departure?'Check again':'Sync now').'.'); }
+    { Cache::forget($this->pendingKey()); $this->notice("Couldn't sync domain",'The background read stopped. Ask your site admin to check the queue worker, then try '.($this->departure?'Check again':'Sync now again').'.'); }
     private function recordHistory(string $event): void
     {
         // Only this domain row is locked; no provider or financial work runs inside this transaction.
