@@ -28,7 +28,7 @@ final class StaffReviewHistory
                 'recheck'=>$phase==='read_failed'?'Status check failed':($phase==='read_requested'?'Status check requested':(isset($entry['check'])?\Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::words($entry['check'])['title']
                     :(isset($entry['management_check'])?match($entry['management_check']['outcome']??(($entry['management_check']['confirmed']??false)===true?'confirmed':(($entry['after']['state']??null)==='rejected'?'failed':'unconfirmed'))){'confirmed'=>'Status check: change confirmed','failed'=>'Status check: failed',default=>'Status check: still unconfirmed'}:'Status check finished'))),
                 'resume_reads'=>'Status checks restarted', 'resume_observation'=>'Sync resumed',
-                'approve_charge'=>'Captured charge approved','disposition'=>'Request closed', 'refund'=>'Cancelled',
+                'approve_charge'=>'Captured charge approved','disposition'=>'Request closed', 'mark_failed'=>'Marked as failed', 'refund'=>'Cancelled',
                 'credit'=>$op->funding_basis==='complimentary'?'Order closed':'Refund checked', 'replacement'=>'Renewal invoice reissued', 'engine_hold'=>'Back on hold',
                 default=>'Staff action',
             };
@@ -59,8 +59,8 @@ final class StaffReviewHistory
         $system=fn(?\DateTimeInterface $at,string $event,?string $sub=null)=>['time'=>self::time($at),'event'=>$event,'sub'=>$sub,'by'=>'System'];
         $status=Labels::requestStatus($op);
         try { $hold=$op->policy['first_hold']??null; } catch (\Throwable) { $hold=null; }
-        // A staff Cancelled already says how this request ended.
-        $ended=$op->completed_at&&in_array($op->state,['succeeded','rejected','disposed','cancelled'],true)&&!in_array($status['label'],array_column($rows,'event'),true);
+        // A staff Cancelled or Marked as failed already says how this request ended.
+        $ended=$op->completed_at&&in_array($op->state,['succeeded','rejected','disposed','cancelled'],true)&&!array_intersect([$status['label'],'Marked as failed'],array_column($rows,'event'));
         $all=[$system($op->created_at,'Request created'),...($hold?[$system(new \DateTimeImmutable($hold['at']),'Put on hold',Labels::reason($hold['reason'],$op->funding_basis==='complimentary'))]:[]),...(($at=self::sentAt($op))&&($sent=self::sendEvent($op))?[$system($at,$sent)]:[]),...$rows,...($ended?[$system($op->completed_at,$status['label'],$status['reason'])]:[])];
         $at=PHP_INT_MIN;
         $keyed=array_map(function(array $row)use(&$at){$at=$row['time']===null?$at:(int)strtotime($row['time']);return [$at,$row];},$all);

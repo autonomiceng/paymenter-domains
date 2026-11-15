@@ -140,11 +140,11 @@ final class ObligationAlerts
         try{return $alert->code==='unknown_cost'&&($op->policy['price']['staff_alert']??null)==='retained_renewal'||in_array($alert->code,self::REVIEW,true)&&($op->state==='succeeded'&&!self::flagged($op,$operations,$d)||ManagementEvidence::recoverable($op));}
         catch(\Throwable){return false;}
     }
-    /** A request that succeeds closes its own alert now: a paused sync runs no inspection, and the Open alerts filter reads the row.
+    /** A request that succeeds, or that staff mark as failed, closes its own alert now: a paused sync runs no inspection, and the Open alerts filter reads the row.
      * Runs inside the writer's save, so it reads its own Domain and leaves the writer's loaded relation alone. */
     public static function settle(Operation $op):void
     {
-        if($op->state!=='succeeded'||!$op->wasChanged('state')||!Schema::hasTable('domains_obligation_alerts')){return;}
+        if(($op->state!=='succeeded'&&!ManagementEvidence::staffFailed($op))||!$op->wasChanged('state')||!Schema::hasTable('domains_obligation_alerts')){return;}
         $open=DB::table('domains_obligation_alerts')->where('operation_id',$op->id)->whereIn('code',self::REVIEW)->whereNull('resolved_at');
         if(!$open->exists()||!($d=Domain::find($op->domain_id))||self::flagged($op,$d->operations()->get(),$d)){return;}
         $open->update(['resolved_at'=>app(Clock::class)->now()->getTimestamp()]);

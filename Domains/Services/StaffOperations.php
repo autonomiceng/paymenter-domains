@@ -23,6 +23,7 @@ final readonly class StaffOperations
                     }
                 }else{$r->local(fn($op,$l)=>StaffOperationWrites::release($op,$l,$this->clock->now()));}break;
             case 'disposition': $r->local(fn($op,$l)=>StaffOperationWrites::disposition($op,$l));break;
+            case 'mark_failed': $r->local(fn($op,$l)=>StaffOperationWrites::markFailed($op,$l,$this->clock->now()));break;
             case 'replacement': $r->local(fn($op,$l)=>RenewalReplacements::authorize($op,$l,$r,$this->clock));break;
             case 'refund': app(Refunds::class)->refundHeld($actor,$operation,'staff_review',$r);break;
             case 'credit': app(Refunds::class)->creditRejected($operation,$r);break;

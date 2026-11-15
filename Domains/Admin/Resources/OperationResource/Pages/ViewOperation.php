@@ -88,6 +88,8 @@ class ViewOperation extends RecordDetailPage
     public function history_recoveryAction(): Action { return HistoryRecovery::action($this->getRecord()); }
     /** Sits on the one request that can't settle itself. */
     public function enom_answerAction(): Action { return EnomAnswerAction::make($this->getRecord(),$this->answerStamp); }
+    /** A free change's final result, on the reply row where a paid one records the registrar support answer. */
+    public function mark_failedAction(): Action { return $this->pageAction('mark_failed'); }
     private function pageAction(string $name): Action
     { return array_values(array_filter($this->operationActions(),fn(Action $a)=>$a->getName()===$name))[0]; }
     private function operationActions(): array { return OperationActions::make($this->getRecord(),$this->reviewStamp); }
@@ -101,6 +103,7 @@ class ViewOperation extends RecordDetailPage
         $notice=RequestFacts::notice($op,$facts)??($answers?['title'=>$who.' didn’t confirm this order.','body'=>'Open a ticket with '.$who.' support, then record their answer.','tone'=>'warning']:null);
         // Support needs the request's facts for the ticket, so whoever can record the answer can copy them.
         $copy=$answers?SupportDetails::action($op):null;
+        $fail=$this->getAction('mark_failed',false); $fail=$fail?->isVisible()?Sheet::button($fail):null;
         // The notice's link moves to the row it names; the notice keeps the one action that retries, and the registrar's answer
         // sits on Registrar reply when the notice already has its action.
         $link=$notice===null?null:($notice['link']??null);
@@ -127,10 +130,10 @@ class ViewOperation extends RecordDetailPage
         if (($op->started_at || in_array($op->state,['running','pending','uncertain','succeeded'],true)) && StaffReviewHistory::sendEvent($op)===StaffReviewHistory::SENT) { $rows[]=Row::make(StaffReviewHistory::SENT,RequestRows::time(StaffReviewHistory::sentAt($op),RequestFacts::NO_TIME)); }
         if (!($facts['unreadable']??false)) {
             $reply=$facts['registrar_reply']??$facts['send_failure']??null;
-            if ($reply!==null||$answers||$check!==null||$copy!==null) {
+            if ($reply!==null||$answers||$check!==null||$copy!==null||$fail!==null) {
                 $row=Row::make('Registrar reply',$reply === null ? Value::state(State::NotReadYet,Reader::Staff,'Waiting for the registrar\'s answer.') : RequestRows::text($reply));
                 // The notice holds one action (P-NTC-5), so copying the ticket details sits here, on the registrar's reply.
-                $replyActs=array_values(array_filter([$answers?Sheet::button($answer):$check,$copy]));
+                $replyActs=array_values(array_filter([$answers?Sheet::button($answer):$check,$fail,$copy]));
                 $rows[]=$replyActs===[]?$row:$row->actions(...$replyActs);
             }
             if (array_key_exists('invoice',$facts)) { $rows[]=self::linked(Row::make('Invoice',RequestRows::invoice($facts['invoice'],$facts['invoice_state']??null,$facts['invoice_sub'])),'Open invoice',$invoiceUrl); }

@@ -170,7 +170,7 @@ final class Labels
             'seal_authority_invalid'=>'Not sent: registrar account changed','registration_authority_changed'=>'Sent. Registrar account changed before it finished',
             'registration_correction_required'=>'Not sent: contact details need fixing','registration_evidence_required'=>'Not sent: contact details need fixing',
             'transfer_setup_review_required'=>'Not sent: registrar account not set up','contacts_closed_unsent'=>'Cancelled before sending',
-            'renewal_cancelled_unpaid'=>'Renewal cancelled: not paid','management_retired'=>'Cancelled',
+            'renewal_cancelled_unpaid'=>'Renewal cancelled: not paid','management_retired'=>'Cancelled','management_staff_failed'=>'Marked as failed by staff',
             'management_preparation_failed'=>RequestStatus::UNSENT.' Preparation failed. The customer can try again.',
             'management_unconfirmed'=>RequestStatus::UNCONFIRMED,'management_provider_refused'=>\Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus::REFUSED.' The customer can try again.',
             'management_deferred'=>null,'readback_confirmed'=>null,

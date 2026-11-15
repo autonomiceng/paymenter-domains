@@ -110,6 +110,20 @@ final class StaffOperationWrites
             throw new \DomainException('A proven terminal outcome is required. Re-check the original attempt.'); }
         // Acknowledges existing engine proof. It changes no outcome, financial marker or reservation.
     }
+    /** A free change whose send is unknown. Reads alone never settle it, so only staff can. The offer and the writer use this one test. */
+    public static function failable(Operation $op): bool
+    {
+        try { $p=$op->policy['management']??null; $seal=$op->attempt['seal']??null; } catch (\Throwable) { return false; }
+        return is_array($p)&&!array_intersect_key($p,array_flip(['sequence','sequence_parent','prerequisite']))
+            &&$op->funding_basis==='non_billable_management'&&$op->invoice_id===null&&$op->state==='uncertain'&&$seal==='sealed'&&$op->lease_expires_at===null;
+    }
+    /** Records the final failed result. Sends nothing; the domain's real settings still come from the normal reads. */
+    public static function markFailed(Operation $op,array $l,\DateTimeImmutable $now): void
+    {
+        if(!self::failable($op)){throw new \DomainException('Only an unconfirmed free change can be marked as failed.');}
+        $op->update(['state'=>'rejected','safe_code'=>ManagementEvidence::STAFF_FAILED,'completed_at'=>$now,
+            'attempt'=>[...$op->attempt,'management_staff_outcome'=>['actor_id'=>(int)$l['staff']->id,'at'=>$now->format(DATE_ATOM)]]]);
+    }
     private static function virgin(Operation $op,array $l): void
     {
         if(($op->attempt??[])!==[]||$op->started_at!==null||$op->request_fingerprint!==null||$op->completed_at!==null
