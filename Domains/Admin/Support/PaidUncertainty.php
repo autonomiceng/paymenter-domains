@@ -84,7 +84,7 @@ final class PaidUncertainty
             $count=max(1,(int)($review->total??0)); $first=$count===1?((int)($review->first??0) ?: (int)$oldest):0;
             [$label,$url,$until]=$count===1
                 ? ['Check request #'.$first,DomainFacts::requestUrl(['request'=>$first]),'it is checked']
-                : ['Check '.$count.' requests',RegistrarFacts::requestsUrl((int)$id,['under_review'],paid:true),'they are checked'];
+                : ['Check '.$count.' requests',RegistrarFacts::requestsUrl((int)$id,[],paidUncertainty:true),'they are checked'];
             $out[]=['server_id'=>(int)$id,'label'=>$label,'url'=>$url,'until'=>$until,'name'=>(string)($names->get($id) ?: 'this registrar account'),'count'=>$count,'state'=>($op=$firstOps->get($id)) !== null && self::waitState($op) === State::Delayed ? State::Delayed : State::Checking];
         }
         return $out;
