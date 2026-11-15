@@ -166,7 +166,7 @@ final class HoldingObservationWork
                 ->where('lease_until','>',$this->clock->now()->getTimestamp());
             if(!(DB::transactionLevel()>0?$q->lockForUpdate():$q)->exists()){throw new ReadDeferred('Stale observation work.');}
         };
-        if($job->safe_code==='departure_registry'&&$this->clock->now()->getTimestamp()>=(Domain::findOrFail($job->domain_id)->observation['departure_check']['at']??PHP_INT_MAX)+86400){$job->safe_code='departure_recheck';}
+        if($job->safe_code==='departure_registry'&&empty(Domain::findOrFail($job->domain_id)->observation['departure_check']['rechecked'])&&$this->clock->now()->getTimestamp()>=(Domain::findOrFail($job->domain_id)->observation['departure_check']['at']??PHP_INT_MAX)+86400){$job->safe_code='departure_recheck';}
         if($job->safe_code==='departure_registry'){
             $done=app(DepartureChecks::class)->registry(Domain::findOrFail($job->domain_id));
             return $this->finish($job,$done?'departure_recheck':'read_deferred',$current);

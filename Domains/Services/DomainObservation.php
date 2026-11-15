@@ -107,7 +107,7 @@ final class DomainObservation
             if ($failed) { ObservationRecords::failPrimary($l['domain'],$this->clock->now(),$failureCode); return $failureCode; }
             if ($snapshot?->owned===false && in_array($l['domain']->status,['active','grace','expired'],true)) { ObservationRecords::failPrimary($l['domain'],$this->clock->now(),'domain_not_in_account'); return 'domain_not_in_account'; }
             if ($deferred) { return 'read_deferred'; }
-            $baseCode=$l['domain']->status==='transfer_pending'&&$transfer===TransferStatus::Pending?'healthy_pending':($l['domain']->status==='active'&&!($l['domain']->observation['drift']??true)?'refreshed':'unresolved');
+            $baseCode=$l['domain']->status==='transfer_pending'&&$transfer===TransferStatus::Pending?'healthy_pending':(in_array($l['domain']->status,['active','grace','expired'],true)&&!($l['domain']->observation['drift']??true)?'refreshed':'unresolved');
             // A record gate must never hide drift, pending status or another unresolved core result.
             if ($baseCode==='refreshed' && $readRecords && ($this->records!==null || $this->observationReader!==null) && !$recordEnabled) { return 'records_disabled'; }
             return $baseCode;

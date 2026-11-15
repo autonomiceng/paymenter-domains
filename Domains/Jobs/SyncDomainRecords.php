@@ -54,7 +54,7 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
         if (!in_array($connection['driver']??null,['database','redis'],true)||(int)($connection['retry_after']??0)<=self::TIMEOUT) { throw new \DomainException(self::WORKER); }
         $cache=config('cache.stores.'.config('cache.default').'.driver');
         if (!in_array($cache,['redis','database','memcached'],true)) { throw new \DomainException('Sync now needs a shared cache to prevent duplicate reads. Ask your site admin to configure Redis, database or Memcached cache, then try again.'); }
-        if ($d->status!=='active') { throw new \DomainException('Domain is no longer active. Reload this page.'); }
+        if ($d->status!=='active'&&!($departure&&\Paymenter\Extensions\Servers\Domains\Services\DepartureChecks::suspected($d))) { throw new \DomainException('Domain is no longer active. Reload this page.'); }
         // The worker also yields to a live lease; this refusal only explains it before queueing.
         if (HoldingObservationWork::leased($d,app(Clock::class)->now())) { throw new \DomainException(self::RUNNING); }
         $job=new self($actor,(int)$d->id,$d->authority_generation,$d->account_fingerprint,$departure);
@@ -70,7 +70,7 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
         try {
             if (!Staff::allows(User::find($this->actor),'admin.domains.manage')) { $this->notice('Sync stopped','The staff permission to sync this domain was removed.'); return; }
             $d=Domain::find($this->domain);
-            if (!$d||$d->status!=='active'||$d->authority_generation!==$this->generation||$d->account_fingerprint!==$this->fingerprint) { $this->notice('Sync stopped','Domain changed. Reload its page before trying Sync now again.'); return; }
+            if (!$d||($d->status!=='active'&&!($this->departure&&\Paymenter\Extensions\Servers\Domains\Services\DepartureChecks::suspected($d)))||$d->authority_generation!==$this->generation||$d->account_fingerprint!==$this->fingerprint) { $this->notice('Sync stopped','Domain changed. Reload its page before trying Sync now again.'); return; }
             $clock=app(Clock::class); $work=0; $claim=''; $lost=false;
             try {
                 // Take the scheduler's lease so a scheduled read and this one never overlap; never take a live one.

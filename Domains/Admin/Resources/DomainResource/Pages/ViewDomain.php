@@ -198,7 +198,8 @@ class ViewDomain extends RecordDetailPage
     { return Sheet::button(Action::make('check_departure')->label('Check again')->visible(fn()=>Staff::can('admin.domains.manage')&&DepartureChecks::suspected($this->getRecord()))
         ->disabled(fn()=>\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::pending($this->getRecord()))->action(function():void{
             Staff::requireView();abort_unless(Staff::can('admin.domains.manage'),403);
-            \Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::enqueue((int)Auth::id(),$this->getRecord()->refresh(),true);
+            try{\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::enqueue((int)Auth::id(),$this->getRecord()->refresh(),true);}
+            catch(\DomainException $error){\Filament\Notifications\Notification::make()->warning()->title($error->getMessage())->send();}
         })); }
     /** Resume sync sits in the page notice and is mounted as a page action. */
     public function resume_observationAction(): Action
