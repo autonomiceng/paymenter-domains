@@ -44,6 +44,7 @@ final class DomainDecisions
         'renewal_funds'=>['Registrar','warning'],
         'unknown_payment_time'=>['Registrar','danger'],
         'observation_review'=>['Last sync','warning'],
+        'departure_review'=>['Renewal','warning'],
         'native_identity_missing'=>['Service','danger'],
         'acquisition_retirement_review'=>['Service','warning'],
         'refund_repair'=>['Service','warning'],

@@ -8,11 +8,13 @@ use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\{ListDomains, ViewDomain};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts, Staff};
 use Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus;
-use Paymenter\Extensions\Servers\Domains\Services\{ObligationAlerts, PslReviewSchema};
+use Paymenter\Extensions\Servers\Domains\Services\{ObligationAlerts, ObservationRecords, PslReviewSchema, RenewalOwnership};
 staffPanel(); [, $domain]=staffData(ordinaryCompleted:true); PslReviewSchema::install(); \Paymenter\Extensions\Servers\Domains\Services\RetentionSchema::install();
 Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
 app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new Paymenter\Extensions\Servers\Domains\Data\SystemClock);
 $viewer=staffUser([Staff::VIEW]); Auth::setUser($viewer);
+$domain->update(['observation'=>[...$domain->observation,'renewal_ownership'=>[
+    'identity'=>ObservationRecords::identity($domain),'owned'=>false,'at'=>gmdate(DATE_ATOM)]]]);
 // Exercise the actual rendered page for every known state, including derived and unfamiliar states.
 foreach(array_keys(DomainFacts::ALERTS) as $code){ObligationAlerts::record($domain,$code,time());}
 // A sync alert only counts while the sync is stopped, because Resume sync is its way out.
@@ -35,6 +37,8 @@ foreach([...array_keys(DomainStatus::STATES),'unknown'] as $status){
         $cause=$pageCause($code);
         // Nothing syncs on an ended domain, so a stopped sync is no job there.
         if($code==='observation_review'&&DomainFacts::ended($domain->fresh())){continue;}
+        // A departure review applies only while this current holding is fenced, never to a pending acquisition or ended domain.
+        if($code===RenewalOwnership::REVIEW&&!RenewalOwnership::blocked($domain->fresh())){continue;}
         if(!str_contains($html,$cause)||$code==='observation_review'&&!str_contains($html,'Read stopped')){$hidden[]=$code.'/'.$status;}
     }
 }
@@ -63,6 +67,7 @@ Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$domain->id])->as
 // Every allowlisted kind, including late payments, has its cause, as the list's one clause, in the actual list cell.
 foreach([...array_keys(DomainFacts::ALERTS),'acquisition_late_money'] as $code){
     DB::table('domains_obligation_alerts')->where('domain_id',$domain->id)->update(['resolved_at'=>time()]);
+    $domain->update(['status'=>$code===RenewalOwnership::REVIEW?'active':'registration_pending']);
     ObligationAlerts::record($domain,$code,time());
     Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($domain->domain)->assertSee(\Paymenter\Extensions\Servers\Domains\Admin\Support\ListNote::clause(DomainFacts::alertCause($code)));
 }
@@ -71,7 +76,7 @@ DB::table('domains_obligation_alerts')->where('domain_id',$domain->id)->update([
 foreach(array_keys(DomainFacts::ALERTS) as $code){ObligationAlerts::record($domain,$code,time());}
 DB::table('domains_domains')->where('id',$domain->id)->update(['renewal_policy'=>'unreadable']);
 $unreadable=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$domain->id])->assertSee('Open alerts');
-foreach(array_keys(DomainFacts::ALERTS) as $code){$unreadable->assertSee($pageCause($code));}
+foreach(array_keys(DomainFacts::ALERTS) as $code){if($code!==RenewalOwnership::REVIEW||RenewalOwnership::blocked($domain->fresh())){$unreadable->assertSee($pageCause($code));}}
 $unreadable->assertSee('Read stopped');
 // Unknown kinds still surface safely, without printing stored codes.
 DB::table('domains_obligation_alerts')->where('domain_id',$domain->id)->update(['resolved_at'=>time()]);
