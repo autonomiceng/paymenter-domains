@@ -72,6 +72,13 @@ $case('same key resend',function()use($make,$refunds,$staff,$equal,$balance):voi
     $equal('refunded',$op->fresh()->funding['receipt_return_results'][$a['key']]['state'],'Resent allocation completes');
     $equal($before,$balance(),'Resend creates no local credit');
 });
+$case('retained sending key with no gateway row',function()use($make,$reserve,$refunds,$equal):void{
+    $op=$make('retained-sending');$a=$reserve($op);$saved=$op->fresh();
+    $saved->update(['funding'=>[...$saved->funding,'receipt_return_results'=>[$a['key']=>['state'=>'sending','amount_minor'=>$a['amount_minor'],'at'=>'2026-11-15T00:00:00+00:00']]]]);
+    $before=count(ReleaseGateway::$attempts);$refunds->creditRejected($op->id);
+    $equal([[$a['key'],$a['amount_minor']]],array_slice(ReleaseGateway::$attempts,$before),'Successful null status resends a retained sending key');
+    $equal('refunded',$op->fresh()->funding['receipt_return_results'][$a['key']]['state'],'Retained sending key completes after retry');
+});
 $case('release coverage',function()use($make,$reserve,$observe,$refunds,$equal,$balance,$check):void{
     $op=$make('coverage');$a=$reserve($op);$before=$balance();$sends=MoneyReceiptGateway::$sends;
     $observe($op,'lost',100);$refunds->creditRejected($op->id);$saved=$op->fresh();$r=$saved->funding['receipt_return_results'][$a['key']]??[];
