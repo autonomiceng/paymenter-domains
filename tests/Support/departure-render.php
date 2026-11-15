@@ -35,6 +35,7 @@ writePanelPage($out.'/attention.html',$list);
 writeRenderArtifact($out.'/attention.txt',\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::alertCause('departure_review',$d->fresh()));
 // Staff money and legacy-marker variants use the same real page and synthetic native debt.
 $invoice=App\Models\Invoice::create(['user_id'=>$user->id,'number'=>'INV-142','currency_code'=>'USD','status'=>'pending','due_at'=>'2026-11-26']);
+$invoice->update(['number'=>'142']);
 $invoice->items()->create(['description'=>'Domain renewal','price'=>'14.99','quantity'=>1]);
 $renewal=$d->operations()->where('action','register')->firstOrFail()->replicate();
 $renewal->fill(['operation_key'=>'departure-render-renewal','action'=>'renew','invoice_id'=>$invoice->id,'state'=>'awaiting_payment','base_expires_at'=>$d->provider_expires_at]);$renewal->save();
