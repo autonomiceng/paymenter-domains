@@ -180,7 +180,7 @@ final class DomainDecisions
                     $server = \App\Models\Server::with('settings')->find($d->server_id);
                     $timing = BillingCalendar::timing($server?->settings ?? collect());
                     $dates = BillingCalendar::dates($d->provider_expires_at, $timing['issue'], $timing['due']);
-                    if ($dates['issue'] >= gmdate('Y-m-d')) { $calendar = $dates; }
+                    if ($dates['issue'] >= app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d')) { $calendar = $dates; }
                 }
                 $autoPay = \Paymenter\Extensions\Servers\Domains\Services\RenewalAutoPay::ready($service);
                 $amount = $f['Renewal price']['value'] === null ? null : preg_replace('~ / year$~', '', $f['Renewal price']['value']);
@@ -188,7 +188,7 @@ final class DomainDecisions
                 $f['Renewal']['sub'] = $off ?: \Paymenter\Extensions\Servers\Domains\Presentation\RenewalPayment::line(true, $amount, $autoPay, $autoPay ? $service->billingAgreement->name : null, $calendar, $d->price_mode === 'complimentary');
                 $f['Renewal']['help'] = null;
             }
-            $expired=$d->provider_expires_at&&$d->provider_expires_at->format('Y-m-d')<=gmdate('Y-m-d');
+            $expired=$d->provider_expires_at&&$d->provider_expires_at->format('Y-m-d')<=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d');
             // An issued renewal is due even when future automatic renewals have been stopped.
             if ($renewalInvoice) { $f['Next invoice']=Facts::row($renewalInvoice->due_at?'Due '.gmdate('M j, Y',strtotime(substr($renewalInvoice->due_at,0,10).' 00:00:00 UTC')):'Due'); }
             elseif (!$pending&&$d->status==='active'&&!$expired&&$renewal&&!$off&&!$settledRenewal) { $f['Next invoice']=self::nextInvoice($d); }
@@ -457,7 +457,7 @@ final class DomainDecisions
         $server=\App\Models\Server::with('settings')->find($d->server_id);
         $timing=BillingCalendar::timing($server?->settings??collect());
         $issue=BillingCalendar::dates($d->provider_expires_at,$timing['issue'],$timing['due'])['issue'];
-        return $issue>=gmdate('Y-m-d') ? Facts::row(gmdate('M j, Y',strtotime($issue.' 00:00:00 UTC'))) : Facts::row(null,sub:'Not issued. Check Renewals on the registrar account.');
+        return $issue>=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d') ? Facts::row(gmdate('M j, Y',strtotime($issue.' 00:00:00 UTC'))) : Facts::row(null,sub:'Not issued. Check Renewals on the registrar account.');
     }
     /** Progress takes its own line under a row's words, so Contacts keeps its email; a Missing cause gives way to it. A settled or replaced result says nothing.
      * A stopped change reads its request's line, never the sentence written for the customer. It names its request only when that is $named, the one the head names (headRequest),
