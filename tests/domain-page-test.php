@@ -362,7 +362,15 @@ same('Changes are on hold: DNS, nameservers and contacts are Off. Contact us to 
 same('Changes are on hold until we finish checking an earlier request. There’s nothing you need to do.',DomainPage::notice($domain(['changesUnavailable'=>true,'changesRefused'=>7]),'/tickets/create')['text']??null,'A request in the way says who acts');
 // With Orders off, a renewal check notice says the pause, not that changes open once the renewal is confirmed.
 $renewalCheck=['body'=>'We’re checking your renewal.'];$offText=DomainPage::notice($domain(['changesUnavailable'=>true,'changesRefused'=>'Registrar processing is disabled.','renewNow'=>['status'=>'review','check'=>$renewalCheck]]),'/tickets/create')['text']??'';
-expect(str_starts_with($offText,$renewalCheck['body'].' ')&&str_contains(DomainPage::PAUSED,substr($offText,strlen($renewalCheck['body'])+1)),'Renewal check beside Orders off names the pause: '.$offText);
+same($renewalCheck['body'].' '.DomainPage::PAUSED_AFTER,$offText,'Renewal check beside Orders off names the full pause reason');
+$combinedCheck=[...$renewalCheck,'brief'=>'Renewal under review.'];
+$nameserverNotice=DomainPage::notice($domain(['dnsCorrection'=>true,'management'=>[]]),'/tickets/create');
+foreach([false,true] as $ordersOff){
+    $combined=DomainPage::notice($domain(['dnsCorrection'=>true,'management'=>[],'changesUnavailable'=>$ordersOff,
+        'changesRefused'=>$ordersOff?'Registrar processing is disabled.':null,'renewNow'=>['status'=>'review','check'=>$combinedCheck]]),'/tickets/create');
+    same([...$nameserverNotice,'text'=>$nameserverNotice['text'].' '.$combinedCheck['brief'].($ordersOff?' '.DomainPage::PAUSED_AFTER:'')],$combined,
+        'Combined nameserver and renewal notice retains the customer step and names the Orders pause when present');
+}
 // The notice already says there is nothing to do, so the renewal row under review does not say it again (demo R18b).
 $dom=storefrontDom($render($d=$domain(['changesUnavailable'=>true,'changesRefused'=>7,'renewNow'=>['status'=>'review']]),$summary($d)));
 same('Under review Renewal being checked.',$card($dom,'Next invoice'),'Renewal under review leaves the no-action line to the notice');

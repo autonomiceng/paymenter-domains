@@ -52,7 +52,7 @@ final class DomainPage
         $nameservers = self::nameserverNotice($d, $s, $movedAt, $contact);
         $notice = match (true) {
             // A nameserver step restores service, so it stays with its action and the renewal check is said beside it.
-            $renewalCheck!==null && $nameservers!==null => [...$nameservers, 'text' => $nameservers['text'].' '.($renewalCheck['brief'] ?? $renewalCheck['body'])],
+            $renewalCheck!==null && $nameservers!==null => [...$nameservers, 'text' => $nameservers['text'].' '.($renewalCheck['brief'] ?? $renewalCheck['body']).($d->changesUnavailable && $d->changesRefused===self::PROCESSING_OFF ? ' '.self::PAUSED_AFTER : '')],
             // The rows lose their Edit while changes wait, so the one notice says why (DESIGN.md P-ACT-8).
             // Confirming the renewal does not reopen changes the account switched Off, an earlier request holds or Orders off pauses, so those cases say what does.
             $renewalCheck!==null => ['tone'=>'info','text'=>$renewalCheck['body'].(!$d->changesUnavailable ? '' : ($d->changesRefused === DomainManagement::SWITCH_OFF ? ' '.self::SWITCH_OFF_AFTER : (is_int($d->changesRefused) ? ' '.self::EARLIER_AFTER : (($d->changesRefused === self::PROCESSING_OFF) ? ' '.self::PAUSED_AFTER : ' '.self::CHANGES_AFTER)))),'action'=>$contact,'asks'=>$renewalCheck['asks']??false],
