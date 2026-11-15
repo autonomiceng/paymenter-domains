@@ -58,7 +58,7 @@ final class DomainEditActions
         $plain=static fn(string $held,?int $request=null,?string $first=null)=>['held'=>$held,'note'=>$held,'request'=>$request,'first'=>$first];
         return match(true) {
             \Paymenter\Extensions\Servers\Domains\Services\RenewalStop::policy($d)===null=>$plain(DomainFacts::UNREADABLE_RENEWAL),
-            !Account::where('server_id',$d->server_id)->value('processing_enabled')=>$plain('Changes are on hold: Orders are off for this registrar account. Turn Orders on in Registrars, then reload this page.',first:'Orders are off. Turn them on in Registrars'),
+            !is_int($refused)&&!Account::where('server_id',$d->server_id)->value('processing_enabled')=>[...$plain('Orders are off for this registrar account. Turn Orders on in Registrars to make changes.',first:'Orders are off. Turn them on in Registrars'),'note'=>null],
             (bool)($d->renewal_policy['automatic_spend_paused']??false)=>$plain('Changes are on hold: orders are paused for this domain. Check the alerts on this page.'),
             $refused===DomainManagement::SWITCH_OFF=>self::switchOff($d),
             is_int($refused)=>$plain('On hold until request #'.$refused.' is checked.',$refused,'Wait until request #'.$refused.' is checked'),

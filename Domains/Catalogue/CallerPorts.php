@@ -19,8 +19,8 @@ final class CallerPorts implements Catalogue
     private readonly Writer $writer;
     private readonly OfferReader $reader;
 
-    public function __construct(Projection $projection, private readonly Clock $clock, private readonly AccountBindings $bindings,
-        private readonly \Closure $authorize, private readonly \Closure $featureReady, ?int $actorId = null, private readonly ?\Closure $current = null)
+    public function __construct(private readonly Projection $projection, private readonly Clock $clock, private readonly AccountBindings $bindings,
+        private readonly \Closure $authorize, private readonly \Closure $featureReady, ?int $actorId = null, private readonly ?\Closure $current = null, private readonly bool $issuedInvoice = false)
     {
         $ready = static function (AccountBinding $binding, Server $server, Account $account, ?Query $query = null) use ($bindings, $featureReady): bool {
             try {
@@ -29,8 +29,16 @@ final class CallerPorts implements Catalogue
             } catch (\DomainException) { return false; }
         };
         $this->writer = new Writer($projection, $clock, $authorize, $ready, $actorId, $current);
-        $this->reader = new OfferReader($clock, $authorize, $ready, $current);
+        $paymentReady = static function (AccountBinding $binding, Server $server, Account $account, ?Query $query = null) use ($bindings, $featureReady): bool {
+            try { $bindings->requireOfferReadiness($binding, $server, $account); return $featureReady($binding, $query?->action) === true; }
+            catch (\DomainException) { return false; }
+        };
+        $this->reader = new OfferReader($clock, $authorize, $issuedInvoice ? $paymentReady : $ready, $current);
     }
+
+    /** Issued invoices may collect payment while sending is paused. All other account and sale checks still apply. */
+    public function forIssuedInvoice(): self
+    { return new self($this->projection,$this->clock,$this->bindings,$this->authorize,$this->featureReady,current:$this->current,issuedInvoice:true); }
 
     public function writer(): Writer { return $this->writer; }
 
@@ -56,7 +64,7 @@ final class CallerPorts implements Catalogue
         $checked = [];
         $ready = function (AccountBinding $b, Server $server, Account $account, Query $q) use (&$checked): bool {
             if (!array_key_exists($b->serverId, $checked)) {
-                try { $this->bindings->requireOfferAccount($b, $server, $account); $checked[$b->serverId] = true; }
+                try { $this->issuedInvoice ? $this->bindings->requireOfferReadiness($b, $server, $account) : $this->bindings->requireOfferAccount($b, $server, $account); $checked[$b->serverId] = true; }
                 catch (\DomainException) { $checked[$b->serverId] = false; }
             }
             return $checked[$b->serverId] && ($this->featureReady)($b, $q->action) === true;

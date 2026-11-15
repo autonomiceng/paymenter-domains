@@ -36,9 +36,15 @@ final class DomainHistory
             }
             foreach ($history as $i=>$action) {
                 // engine_hold: the system put the request back on hold, the same row the request History shows (StaffReviewHistory).
-                if (!is_array($action)||!in_array($action['action']??null,['hold','release','resume_observation','engine_hold'],true)||($action['phase']??null)!=='completed') { continue; }
-                $rows[]=['__key'=>$action['action'].'-'.$op->id.'-'.$i,'__request'=>$op->id,'__order'=>$i+1,'time'=>self::at($action['at']??null),'event'=>match($action['action']){'hold'=>'Put on hold','release'=>'Hold released','resume_observation'=>'Sync resumed','engine_hold'=>'Back on hold'},
+                if (!is_array($action)||!in_array($action['action']??null,['hold','release','resume_observation','engine_hold','refund'],true)||($action['phase']??null)!=='completed') { continue; }
+                $rows[]=['__key'=>$action['action'].'-'.$op->id.'-'.$i,'__request'=>$op->id,'__order'=>$i+1,'time'=>self::at($action['at']??null),'event'=>match($action['action']){'hold'=>'Put on hold','release'=>'Hold released','resume_observation'=>'Sync resumed','engine_hold'=>'Back on hold','refund'=>'Cancelled'},
                     'sub'=>'Request #'.$op->id.' '.Labels::action($op->action),'status'=>null,'by'=>$action['action']==='engine_hold'?'System':(is_string($action['actor_name']??null)&&$action['actor_name']!==''?$action['actor_name']:'Staff')];
+            }
+            $refund=$op->funding['refund']??null;
+            $summary=\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::summary($op);
+            if(is_array($refund)&&\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::settled($op)){
+                $rows[]=['__key'=>'refund-'.$op->id,'__request'=>$op->id,'__order'=>103,'time'=>self::at($refund['at']??null),
+                    'event'=>$summary[0]??'Credit added','sub'=>'Request #'.$op->id.' '.Labels::action($op->action),'status'=>null,'by'=>'System'];
             }
         }
         $holdings=[]; $audits=[];
@@ -93,7 +99,7 @@ final class DomainHistory
         if ($entry->state==='queued'&&$ordersOff&&$reason!==null) { $reason=StaffDomainStatus::sentence($reason).RequestFacts::ordersStep($reason); }
         return ['time'=>self::when($entry),'event'=>'Request #'.$entry->id.' '.Labels::action($entry->action),
             'sub'=>$reason,
-            'status'=>RequestFacts::status($entry,$ordersOff,$domain),'by'=>self::requester($entry,$domain)];
+            'status'=>$entry->completed_at!==null&&in_array($entry->state,['succeeded','rejected','disposed','cancelled'],true)?null:RequestFacts::status($entry,$ordersOff,$domain),'by'=>self::requester($entry,$domain)];
     }
     /** The newest entries as Sheet::trace steps: the reason, then when and who.
      * $said is the page's status line, which names request $request: that request's reason is not said again. */

@@ -129,6 +129,9 @@ final class ReceiptReturns
         return false;
     }
     /** Pending allocations reserve funds; completed ones already have a signed native reversal from the gateway. */
+    /** A retained refund whose original payment or account-credit return has finished. */
+    public static function settled(Operation $op): bool
+    { return isset($op->funding['refund'])&&!self::malformed($op)&&self::outstanding($op)===0; }
     public static function outstanding(Operation $op): int
     {
         $minor=0;

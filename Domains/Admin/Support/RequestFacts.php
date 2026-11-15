@@ -455,7 +455,14 @@ final class RequestFacts
      * Null when there are none; ['words'=>null] when they could not be read. */
     /** The invoice's current state in a word. A refund or dispute after payment has its own Payment row. */
     private static function invoiceState(Operation $op): ?string
-    { return match(self::invoiceStatus($op)){'paid'=>'Paid','pending'=>'Not paid','cancelled'=>'Cancelled',default=>null}; }
+    {
+        if(self::invoiceStatus($op)==='paid'&&($invoice=\App\Models\Invoice::find($op->invoice_id))){
+            try{$minor=0;foreach(\Paymenter\Extensions\Servers\Domains\Services\ReceiptReversals::forInvoice($invoice) as $row){
+                if(($row['kind']??null)==='refund'&&($row['status']??null)==='refunded'&&is_int($row['amount_minor']??null)&&$row['amount_minor']>0){$minor+=$row['amount_minor'];}
+            }if($minor>0&&$minor>=\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)$invoice->total)){return 'Refunded';}}catch(\Throwable){}
+        }
+        return match(self::invoiceStatus($op)){'paid'=>'Paid','pending'=>'Not paid','cancelled'=>'Cancelled',default=>null};
+    }
     private static function paymentReversed(Operation $op): ?array
     {
         $invoice=\App\Models\Invoice::find($op->invoice_id); if (!$invoice) { return null; }
