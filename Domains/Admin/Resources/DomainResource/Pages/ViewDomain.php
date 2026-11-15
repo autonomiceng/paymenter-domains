@@ -81,8 +81,9 @@ class ViewDomain extends RecordDetailPage
     protected function head(): Head
     {
         Staff::requireView(); $d=$this->getRecord();
-        return Head::make((string)$d->domain,Reader::Staff)->domain()->tag(DemoData::is($d),DomainFacts::test($d))
+        $head=Head::make((string)$d->domain,Reader::Staff)->domain()->tag(DemoData::is($d),DomainFacts::test($d))
             ->state(State::tryFrom((string)($this->status()['key']??''))??State::UnderReview,'domain-'.$d->id);
+        return DepartureChecks::suspected($d)?$head->note('Not in our registrar account.'):$head;
     }
     private function headLine(): array { return $this->head??=DomainFacts::head($this->getRecord(),$this->status(),$this->facts(),$this->edits()['request'],$this->notice()); }
     /** The head's step as plain text, so rows and Activity can leave out what it already says. */
@@ -101,7 +102,8 @@ class ViewDomain extends RecordDetailPage
     {
         if ($this->facts!==null) { return $this->facts; }
         $d=$this->getRecord(); $facts=self::withDnsSetup($d,DomainFacts::for($d,$this->notice(),$this->familyState())); $progress=$this->managementProgress();
-        if ($this->edits()['authCode'] || isset($progress['auth_code_email'])) { $facts['Email auth code']=['value'=>'Goes to the '.OwnedDomains::authCodeRecipient($d),'sub'=>'Never shown here.','url'=>null,'tone'=>null,'help'=>'The code moves this domain to another registrar. We email it and never show it here.','demo'=>false]; }
+        if (DepartureChecks::suspected($d) || $this->edits()['authCode'] || isset($progress['auth_code_email'])) { $facts['Email auth code']=['value'=>'Goes to the '.OwnedDomains::authCodeRecipient($d),'sub'=>'Never shown here.','url'=>null,'tone'=>null,'help'=>'The code moves this domain to another registrar. We email it and never show it here.','demo'=>false]; }
+        if (DepartureChecks::suspected($d)) { if (($facts['Renewal']['value']??null)==='On') { $facts['Renewal']=[...$facts['Renewal'],'value'=>'Paused','sub'=>'Set to On. Resumes if the domain is still ours.','tone'=>null,'alert'=>false]; } $facts['Next invoice']=['value'=>'Paused','sub'=>'While we check this domain.','url'=>null,'tone'=>null]; }
         if ($this->edits()['held']) { $facts=DomainFacts::whileHeld($facts,$this->edits()['first']??null); }
         return $this->facts=DomainFacts::withProgress($facts,$progress,DomainFacts::headRequest($d,$this->status(),$this->edits()['request'],$this->notice()));
     }
@@ -211,9 +213,8 @@ class ViewDomain extends RecordDetailPage
     protected function sections(): array
     {
         $this->cacheHoldingActions();
-        if(DepartureChecks::suspected($this->getRecord())){return $this->departureSections();}
         $d=$this->getRecord(); $facts=DomainFacts::besideHead($this->facts(),$this->said()); $edits=$this->edits();
-        $late=$this->recordsLate($d);
+        $suspected=DepartureChecks::suspected($d); $late=!$suspected&&$this->recordsLate($d);
         // The notice above the sheet gives the cause and the next step once, so the rows it explains stay calm.
         $this->calmMissing=$late;
         // The summary above the sheet says once why values are missing, so rows drop the repeated cause.
@@ -238,7 +239,8 @@ class ViewDomain extends RecordDetailPage
         $items=$this->noticeItems($d,$late,$heldIn);
         // The status notice opens Registration, or the first section when there is none.
         $statusIn=isset($placed['Registration'])?'Registration':(array_key_first($placed)??'Registrar records');
-        $items[$statusIn]=[...$this->statusItems(),...($items[$statusIn]??[])];
+        $items[$statusIn]=[...($suspected?[]:$this->statusItems()),...($items[$statusIn]??[])];
+        if ($suspected) { $items['Registrar records']=[[State::UnderReview,DepartureChecks::PAUSED,null]]; $items['Renewal'][]=[State::UnderReview,'Renewal paused while we check this domain.',null]; }
         $notices=[];
         foreach ($items as $title=>$list) { if (($row=DomainRows::notice(strtolower((string)preg_replace('/[^A-Za-z]+/','-',$title)),$list,'domain-'.$d->id.'-'.md5($title)))!==null) { $notices[$title]=$row; } }
         $this->heldNotice=$heldIn!==null?($notices[$heldIn]??null):null;
@@ -252,27 +254,17 @@ class ViewDomain extends RecordDetailPage
         $records=[$this->recordFamilies($d,$facts,$edits,$notices['Registrar records']??null)];
         $monitoring=Section::make('Monitoring',[...(isset($notices['Monitoring'])?[$notices['Monitoring']]:[]),
             Partial::make('domains::admin.monitoring-evidence',['evidence'=>\Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence::read($d),'withRecords'=>true],'monitoring-evidence')],\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::EVIDENCE);
-        return [...($d->status==='active'?[...$records,...$sections]:[...$sections,...$records]),$monitoring];
+        return [...($suspected?[$this->departureCheck()]:[]),...($d->status==='active'?[...$records,...$sections]:[...$sections,...$records]),$monitoring];
     }
-    private function departureSections(): array
+    private function departureCheck(): Section
     {
-        $d=$this->getRecord();$facts=$this->facts();if(!\Paymenter\Extensions\Servers\Domains\Presentation\PrivacyVisibility::SHOWN){unset($facts['WHOIS privacy']);}$facts['Next invoice']=['value'=>'Paused','sub'=>'While we check this domain.','url'=>null,'tone'=>null];$check=$d->observation['departure_check']??[];$registry=$check['registry']??[];
-        $notice=DomainRows::notice('departure',[[State::UnderReview,'Not in our registrar account.',null]],'departure-'.$d->id);
-        $read=$d->observation['record_failure']??[];$recheck=Row::make('Recheck',Value::fact(\Paymenter\Extensions\Servers\Domains\Presentation\Fact::entered((($read['code']??null)==='domain_not_in_account'?'Not in our registrar account':"Couldn't read").(isset($read['at'])?' '.StaffTime::at(strtotime($read['at'])):''))))->actions($this->getAction('check_departure'));
-        $sections=[Section::make('Departure check',[$notice,Row::make('First read',Value::fact(\Paymenter\Extensions\Servers\Domains\Presentation\Fact::entered(isset($check['at'])?StaffTime::at($check['at']):'Not read yet'))),$recheck,
-            Row::make('Public registry',Value::fact(\Paymenter\Extensions\Servers\Domains\Presentation\Fact::entered(($registry['registrar']??(($registry['result']??null)==='not_registered'?'Not registered':"Couldn't read")).(($registry['status']??[])?'. '.implode(', ',$registry['status']):'')))),
-            ...array_map(fn($label)=>$this->row($label,$facts[$label],[]),array_intersect(['Registrar'],array_keys($facts)))],
-            'Next step: look for the domain at the registrar, then use Check again on the Recheck row.')];
-        $renew=DomainRows::notice('renewal',[[State::Paused,'Renewal paused while we check this domain.',null]],'departure-renewal-'.$d->id);
-        $sections[]=Section::make('Renewal',[$renew,...array_map(fn($label)=>$this->row($label,$label==='Renewal'&&$facts[$label]['value']==='On'?[...$facts[$label],'value'=>'Paused','sub'=>'Set to On. Resumes if the domain is still ours.','tone'=>null]:$facts[$label],$this->side($label,$facts[$label],$this->edits(),null)),array_intersect(['Expires','Renewal','Renewal price','Next invoice','Open invoice'],array_keys($facts)))]);
-        $pause=DomainRows::notice('registrar-pause',[[State::Paused,DepartureChecks::PAUSED,null]],'departure-registrar-'.$d->id);
-        $rows=[$pause];foreach(array_intersect(['Transfer lock','Email auth code','Contacts','Nameservers'],array_keys($facts)) as $label){$rows[]=$this->row($label,$facts[$label],[Sheet::button(Action::make('paused_'.md5($label))->label(self::blockedLabel($label,$facts[$label])))])->blockedBy($pause);}
-        $sections[]=Section::make('Registrar records',$rows);
-        $sections[]=Section::make('DNS records',array_map(fn($label)=>$this->row($label,$facts[$label],$this->side($label,$facts[$label],$this->edits(),null)),array_intersect(['DNS records'],array_keys($facts))),DepartureChecks::dnsNote($d));
-        $shown=['Registrar','Expires','Renewal','Renewal price','Next invoice','Open invoice','Transfer lock','Email auth code','Contacts','Nameservers','DNS records'];
-        foreach(DomainFacts::SECTIONS as $title=>$labels){$remaining=array_intersect(array_diff($labels,$shown),array_keys($facts));if($remaining){$sections[]=Section::make($title,array_map(fn($label)=>$this->row($label,$facts[$label],$this->side($label,$facts[$label],$this->edits(),null)),$remaining));}}
-        $sections[]=Section::make('Monitoring',[Partial::make('domains::admin.monitoring-evidence',['evidence'=>\Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence::read($d),'withRecords'=>true],'monitoring-evidence')],\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::EVIDENCE);
-        return $sections;
+        $d=$this->getRecord();$check=$d->observation['departure_check']??[];$registry=$check['registry']??[];$read=$d->observation['record_failure']??[];
+        $fact=\Paymenter\Extensions\Servers\Domains\Presentation\Fact::class;
+        $first=Value::state(State::UnderReview,Reader::Staff,'Not in our registrar account. '.($d->server?->name??'Registrar').' #'.$d->server_id.'.')->when((int)$check['at']);
+        $recheck=($check['rechecked']??false)?Value::state(State::UnderReview,Reader::Staff,($read['code']??null)==='domain_not_in_account'?'Not in our registrar account.':'The latest read got no clear answer.')->when(strtotime($read['at'])):Value::state(State::Queued,Reader::Staff,'Automatic recheck scheduled',at:$fact::date((int)$check['at']+86400,Reader::Staff));
+        $statuses=array_values(array_unique(array_map(fn($status)=>match(strtolower(str_replace(' ','',$status))){'ok'=>'No registry restriction reported.','clienttransferprohibited','servertransferprohibited'=>'Transfers prohibited.','pendingtransfer'=>'Transfer pending.',default=>'Registry status is not recognized.'},$registry['status']??[])));
+        $registryValue=match($registry['result']??null){'facts'=>Value::fact($fact::entered('Lists '.($registry['registrar']??'an unreported registrar')),trim(implode(' ',$statuses).' Compare with '.ucfirst($d->registrar_key).'. Read'),isset($registry['at'])?$fact::date($registry['at'],Reader::Staff):null),'not_registered'=>Value::fact($fact::entered('Not registered')),default=>Value::state(State::CouldntRead,Reader::Staff,'The public registry got no clear answer.')};
+        return Section::make('Departure check',[Row::make('First read',$first),Row::make('Recheck',$recheck)->actions($this->getAction('check_departure')),Row::make('Public registry',$registryValue)],'Next step: look for the domain at the registrar, then use Check again on the Recheck row.');
     }
     /** The rail: the newest history, with the History tab holding the rest. */
     protected function rail(): array
@@ -445,6 +437,7 @@ class ViewDomain extends RecordDetailPage
         if ($label==='Open alerts') { return $review?[$review]:[]; }
         // One Resume sync per page: the Registrar records head draws it when the records show the stop.
         if ($label==='Last sync') { if (DomainFacts::syncNow($this->getRecord())) { return []; } $resume=$this->getAction('resume_observation',false); return $resume?->isVisible()&&!($this->familyState()['resume']??false)?[$resume]:[]; }
+        if (DepartureChecks::suspected($this->getRecord())&&in_array($label,['Transfer lock','Email auth code','Contacts','Nameservers'],true)) { $this->blocked[$label]=true; return [Sheet::button(Action::make('paused_'.md5($label))->label(self::blockedLabel($label,$fact)))]; }
         $side=array_map(fn(Action $action)=>in_array($action->getLabel(),['Edit','Change'],true)?Sheet::edit($action,$label):Sheet::button($action),$edits['rows'][$label]??[]);
         if ($side===[]&&$edits['held']&&in_array($label,self::BLOCKED,true)) { $side[]=Sheet::button(Action::make('held_'.md5($label))->label(self::blockedLabel($label,$fact))); $this->blocked[$label]=true; }
         if (($fact['setup']??false)&&Staff::can(StaffWatchWrites::VIEW)) { $side[]=Sheet::link('dns_setup','Choose DNS template',WatchResource::getUrl('dns-setup')); }

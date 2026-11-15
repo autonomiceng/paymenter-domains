@@ -26,7 +26,7 @@
 @if ($notice && !$dnsNotice)<x-domains::customer.notice :tone="$notice['tone']">{{ $noticeText }}</x-domains::customer.notice>@endif
 <x-domains::customer.split>
 <x-domains::customer.section id="dns" title="DNS">
-@if ($dnsNotice)<div class="domains-notice domains-notice--sec domains-notice--{{ $notice['tone'] }}" role="status"><span class="domains-notice__mark domains-status domains-tone-{{ $notice['tone'] }}" aria-hidden="true"></span><span class="domains-notice__tx">{{ $noticeText }}</span></div>@endif
+@if ($dnsNotice)<x-domains::customer.notice variant="section" :state="\Paymenter\Extensions\Servers\Domains\Presentation\State::ActionRequired">{{ $noticeText }}</x-domains::customer.notice>@endif
 <ul class="domains-rows"><li class="domains-row" id="nameservers"><span class="domains-row__l">Nameservers</span>
 <span class="domains-row__v">@if ($nameservers['missing']){{-- With checks off nothing fills in by itself, so the value only says it was not read. --}}<x-domains::customer.unread :cause="$off ? null : $nameservers['cause']" :calm="(bool) $off" />@else<span @class(['domains-mono' => $nameservers['mono']])>{{ $nameservers['values'][0] }}</span>@foreach (array_slice($nameservers['values'], 1) as $server) <span class="domains-sub domains-mono">{{ $server }}</span>@endforeach @if ($nameservers['sub']) <span class="domains-sub">{{ $nameservers['sub'] }}</span>@endif @endif</span></li></ul>
 </x-domains::customer.section>

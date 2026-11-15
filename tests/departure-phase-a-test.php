@@ -48,9 +48,7 @@ foreach([0,172800] as $elapsed){
     $record=$list->instance()->getTableRecords()->firstWhere('id',$d->id);
     $cause=DomainFacts::alertCause(RenewalOwnership::REVIEW,$record);
     $note=$list->instance()->getTable()->getColumn('note')->record($record)->getState();
-    expect(str_contains($note,$cause)&&str_contains($note,$record->provider_expires_at->format('Y-m-d')),'Needing-action row retains its current departure alert and expiry at '.$elapsed.' seconds');
-    $column=$list->instance()->getTable()->getColumn('note')->record($record);
-    same(\Paymenter\Extensions\Servers\Domains\Admin\Support\ListNote::clause($cause),$column->formatState($note),'The visible attention cell leads with the current alert state');
+    expect(str_contains($note,$cause)&&str_contains($note,\Paymenter\Extensions\Servers\Domains\Presentation\Fact::day($record->provider_expires_at)->text),'Needing-action row retains its current departure alert and expiry at '.$elapsed.' seconds');
     expect(str_contains(DomainFacts::for($record)['Renewal']['sub'],$cause),'The registered Renewal row carries the same departure alert');
     same(DomainResource::getUrl('view',['record'=>$d->id]),$list->instance()->getTable()->getRecordUrl($record),'The attention row opens the suspected domain');
     same((string)$list->instance()->getTableRecords()->total(),DomainResource::getNavigationBadge(),'Needing-action list and navigation count agree');

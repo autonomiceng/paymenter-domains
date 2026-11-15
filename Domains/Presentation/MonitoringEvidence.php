@@ -32,7 +32,7 @@ final class MonitoringEvidence
         $registrarAt=$families['families']['dns']['at']??null;$failedAt=$families['read_failed_at']??null;
         if($failedAt!==null&&($registrarAt===null||strtotime($failedAt)>strtotime($registrarAt))){$registrarAt=$failedAt;}
         return ['state'=>$state,'public_stale'=>self::publicStale($d,$public,$name),'public'=>$answers,'public_at'=>$public?->started_at,'public_read'=>$publicRead,
-            'registrar'=>$registrar,'registrar_at'=>$registrarAt,'registrar_read'=>$families['families']['dns']['state']??null,'at'=>$families['at']??null,'families'=>$families,
+            'registrar'=>$registrar,'registrar_absent'=>$d&&\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::absent($d),'registrar_at'=>$registrarAt,'registrar_read'=>$families['families']['dns']['state']??null,'at'=>$families['at']??null,'families'=>$families,
             'separation'=>RecordFamilies::EVIDENCE];
     }
     /** Use the established public-signal freshness and structural target checks; retained answers are historical. */
@@ -76,7 +76,7 @@ final class MonitoringEvidence
         return [...($withRecords ? [] : ['Registrar refresh' => $refresh]),
             'Public DNS' => $seen($evidence['public'] ?? [], $evidence['public_at'] ?? null, ($evidence['public_read'] ?? null) === 'negative',
                 'Checked', 'The check got no clear answer. Last tried', (bool) ($evidence['public_stale'] ?? false)),
-            'Registrar records' => $seen($evidence['registrar'] ?? [], $evidence['registrar_at'] ?? null, ($evidence['registrar_read'] ?? null) === 'complete',
+            'Registrar records' => ($evidence['registrar_absent']??false) ? Value::state(State::UnderReview,Reader::Staff,'Not in our registrar account.')->detail(...(($evidence['registrar']??[])?[Fact::lines($evidence['registrar'])]:[])) : $seen($evidence['registrar'] ?? [], $evidence['registrar_at'] ?? null, ($evidence['registrar_read'] ?? null) === 'complete',
                 'Read', 'The last read did not finish. Last tried', false, ($evidence['registrar_read'] ?? null) !== 'complete')];
     }
     /** Only timestamps actually retained by the registrar inventory are represented as read events. */

@@ -32,6 +32,7 @@ final class DomainDecisions
     {
         if (self::accountRenewalsOff($d)) { return self::REGISTRAR_RENEW_HELD; }
         $company = \Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company();
+        if (\Paymenter\Extensions\Servers\Domains\Services\DepartureChecks::suspected($d)) { return 'Off on purpose. '.($company !== '' ? $company.' renews' : 'We renew').' after the invoice is paid, not while under review.'; }
         return 'Off on purpose. '.($company !== '' ? $company.' renews' : 'We renew').' the domain after the invoice is paid, so you are never charged by the registrar directly.';
     }
     /** Open alerts by kind: the row each concerns and its tone. ObligationAlerts::LABELS has the words. The row keeps its value; with no value it is Missing.
@@ -226,7 +227,7 @@ final class DomainDecisions
     }
     /** Safe cause text shared by the domain page and the list. Unknown saved kinds still need review. With the domain, a stopped sync names the control these staff have. */
     public static function alertCause(string $code, ?Domain $d=null): string
-    { if($code==='departure_review'&&$d){$a=\Paymenter\Extensions\Servers\Domains\Services\DepartureChecks::attention($d,app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp());return ($a['state']==='delayed'?'Delayed. ':'').'Not in our registrar account. Expires '.($a['expiry']??'unknown').'.';} return $code==='observation_review'?'Sync stopped. '.self::stoppedStep($d):(ObligationAlerts::LABELS[$code]??'Domain alert needs review.'); }
+    { if($code==='departure_review'&&$d){$a=\Paymenter\Extensions\Servers\Domains\Services\DepartureChecks::attention($d,app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp());return ($a['state']==='delayed'?'Delayed. ':'').'Check the departure. Not in our registrar account. Expires '.(\Paymenter\Extensions\Servers\Domains\Presentation\Fact::day($a['expiry'])?->text??'unknown').'.';} return $code==='observation_review'?'Sync stopped. '.self::stoppedStep($d):(ObligationAlerts::LABELS[$code]??'Domain alert needs review.'); }
     /** Puts each cause under its row, collecting causes without a row on the Open alerts row. */
     private static function alerts(Domain $d, array $f, array|false|null $notice=false): array
     {

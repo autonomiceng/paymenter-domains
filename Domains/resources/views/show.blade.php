@@ -15,6 +15,7 @@
         && !($cap === 'flags' && ($domain->management['flags']['family']['state'] ?? null) === 'complete' && ($domain->management['flags']['family_only'] ?? false))));
 @endphp
 <x-domains::customer.head :title="$domain->name" :domain="true" :demo="$domain->demo" :test="$domain->testEnvironment" :crumbs="[['Domains', route('domains.domains.index')], [$domain->name, null]]" :state="$state" />
+@if ($domain->departureSuspected)<p class="domains-hint">Didn't move this domain? @include('domains::partials.contact-support')</p>@endif
 @include('domains::partials.notices', ['fieldKeys'=>['nameservers','contact','dns','srv','ds','glue']])
 @if ($notice)<x-domains::customer.notice :tone="$notice['tone']" :action="$notice['action']">{{ $notice['text'] }}</x-domains::customer.notice>@endif
 @if (($summary ?? null) && $summary->kind === 'managed' && !$summary->relatedServices && !$summary->relatedOverflow && $domain->expiry && !$domain->setupPending && in_array('domain.dns.platform', $summary->dnsKeys, true) && !$summary->website && !$summary->email)
@@ -23,7 +24,7 @@
 <x-domains::customer.split>
 {{-- Renewal leads the settings section, as in the approved customer layout. --}}
 @include('domains::partials.owner-renew')
-@if ($settings && !$domain->departureSuspected)
+@if ($settings)
 {{-- When reads are stopped, the page notice already says we can't read this domain and are on it. --}}
 @php
     $readHeld = \Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::readHeldSaid($notice);
@@ -39,21 +40,16 @@
             && !($section['progress'] ?? null) && !($section['off'] ?? false);
     });
 @endphp
-<x-domains::customer.section id="settings" :title="($recordFamilies ?? null) ? 'Registrar records' : 'Settings'">
+<x-domains::customer.section id="settings" title="Settings">
 <x-slot:head>@if (($recordFamilies ?? null) && $recordFamilies['stale'] && !($recordFamilies['initial_read_pending'] ?? false) && !$readHeld && !$unreadRows)<p class="domains-hint">Registrar records are waiting for an update.@if ($recordFamilies['retained']) Last confirmed data is retained.@endif</p>@endif
 @if (($recordFamilies ?? null) && !$readHeld)@include('domains::partials.record-read-note', ['recordFamilies' => $recordFamilies])@endif
 @if ($readAt)<p class="domains-hint">Checked @include('domains::partials.moment', ['at' => $readAt]).</p>@endif</x-slot:head>
-@unless ($allUnread)<ul class="domains-rows">@include('domains::partials.owner-management', ['caps' => $settings])</ul>@endunless
+@if ($domain->departureSuspected)<x-domains::customer.notice variant="section" id="departure-registrar-pause">Registrar changes paused while we check this domain.</x-domains::customer.notice>@endif
+@unless ($allUnread)<ul class="domains-rows">@include('domains::partials.owner-management', ['caps' => array_values(array_diff($settings, ['dns','srv','ds','glue']))])</ul>@endunless
 </x-domains::customer.section>
 @endif
-@if ($domain->departureSuspected)
-<x-domains::customer.section id="registrar-records" title="Registrar records">
-<div id="departure-registrar-pause"><x-domains::customer.notice>Registrar changes paused while we check this domain.</x-domains::customer.notice></div>
-<ul class="domains-rows">@include('domains::partials.owner-management', ['caps' => array_values(array_diff($settings, ['dns','srv','ds','glue']))])</ul>
-</x-domains::customer.section>
 @if (array_intersect($settings, ['dns','srv','ds','glue']) || $domain->dnsNotice)
-<x-domains::customer.section id="dns-records" title="DNS records" :note="$domain->dnsNotice"><ul class="domains-rows">@include('domains::partials.owner-management', ['caps' => array_values(array_intersect($settings, ['dns','srv','ds','glue']))])</ul></x-domains::customer.section>
-@endif
+<x-domains::customer.section id="dns" title="DNS" :note="$domain->dnsNotice"><ul class="domains-rows">@include('domains::partials.owner-management', ['caps' => array_values(array_intersect($settings, ['dns','srv','ds','glue']))])</ul></x-domains::customer.section>
 @endif
 <x-slot:rail>@unless ($domain->setupPending)@include('domains::partials.activity')@endunless</x-slot:rail>
 </x-domains::customer.split>
