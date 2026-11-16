@@ -43,12 +43,12 @@ final readonly class RenewalCompletion
                 if (($op->policy['renewal_polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT && !EnomAbsence::claimRead($op, $attempt, $this->clock->now())) { return null; }
                 $read=$financial?CapturedChargeReview::reserve($op,$this->clock):null;
                 // A new read starts: earlier no-order evidence goes now, so nobody can use it while this read runs or after it fails.
-                EnomAbsence::clear($op);
+                EnomAbsence::clear($op); OrderUnproven::clear($op);
                 return [$attempt, HoldingLocks::take($l['domain'])['stamp'],$read];
             } catch (\PDOException|RenewalBusy $e) { throw $e; } catch (\Throwable) { return null; }
         }, $staff);
         if (!$capture) { return Operation::findOrFail($id); }
-        [$attempt, $stamp,$financialRead] = $capture; $proof = null; $covered = false; $late = false; $autoRenewConfirmed = false; $autoRenewUnconfirmed = $attempt->binding->registrarKey === 'namesilo'; $scan = null; $absence = null; $sample = null; $completed = false;
+        [$attempt, $stamp,$financialRead] = $capture; $proof = null; $covered = false; $late = false; $autoRenewConfirmed = false; $autoRenewUnconfirmed = $attempt->binding->registrarKey === 'namesilo'; $scan = null; $absence = null; $sample = null; $completed = false; $unproven = null;
         try {
             $started = $this->clock->now();
             $ctx = $check->context = new RequestContext($attempt->binding, RequestOrigin::Background, $deadline, new RequestBudget(25), $this->clock, Runtime::limiter());
@@ -69,6 +69,7 @@ final readonly class RenewalCompletion
                 $proof = $autoRenewUnconfirmed ? null : ReconciliationEvidence::completion($attempt, $facts, $this->clock->now());
                 $absence = EnomAbsence::observe($attempt, $facts, $started, $this->clock->now());
                 $completed = EnomAbsence::readCompleted($ctx, $facts);
+                $unproven = $proof === null ? OrderUnproven::observe($attempt, $facts) : null;
                 $check->observe($attempt,$facts,$proof!==null);
             }
         } catch (ReadDeferred) { $check->deferred = 'read_limit';
@@ -76,8 +77,8 @@ final readonly class RenewalCompletion
         } catch (\Throwable) { $late = isset($ctx) && $this->clock->now() >= $ctx->deadline && $ctx->completedReads() > 0; }
         // A bill zone sample is saved only after this turn's locked step: server settings are part of the holding stamp it compares.
         try {
-        if (!$financialRead && !$covered && !$autoRenewUnconfirmed && !$autoRenewConfirmed && !$scan && !$late) { return Operation::findOrFail($id); }
-        return $this->decide($seed, $id, function (array $l) use ($id, $stamp, $proof, $attempt, $covered, $autoRenewUnconfirmed, $autoRenewConfirmed,$financialRead,$check,$scan,$late,$absence,$completed) {
+        if (!$financialRead && !$covered && !$autoRenewUnconfirmed && !$autoRenewConfirmed && !$scan && !$late && $unproven === null) { return Operation::findOrFail($id); }
+        return $this->decide($seed, $id, function (array $l) use ($id, $stamp, $proof, $attempt, $covered, $autoRenewUnconfirmed, $autoRenewConfirmed,$financialRead,$check,$scan,$late,$absence,$completed,$unproven) {
             $op = $l['operations']->firstWhere('id', $id); $d = $l['domain'];
             if (!$op || !$this->eligible($op) || $l['stamp'] !== $stamp || ($proof && $proof['provider_domain_id'] !== $d->provider_domain_id)) { return $op; }
             try { $this->bindings->requireReadableLocked($l['server'], $l['account']); RenewalFunding::requireCurrent($op, $l, true); }
@@ -85,11 +86,13 @@ final readonly class RenewalCompletion
             if($financialRead){CapturedChargeReview::retain($op,$financialRead,$proof,$this->clock);return $op;}
             // A finished history read that resolved no more orders counts like a covered read; a progressing scan does not.
             // A deadline counts only without new validated progress. Admission and call-cap deferrals throw before either.
-            $stalled = !$covered && !($scan?->progressed ?? false) && ($scan !== null || $late) && $check->deferred === null;
+            // A completed read of a renewal with an order number that still finds no proof of that order counts too, or checks never stop.
+            $stalled = !$covered && !($scan?->progressed ?? false) && ($scan !== null || $late || $unproven !== null) && $check->deferred === null;
             $policy = $op->policy; $policy['renewal_polls'] = ($policy['renewal_polls'] ?? 0) + ($covered || $stalled ? 1 : 0); $check->counted = $covered || $stalled;
             // Saved scan progress; a scan that resolved more orders continues on the next turn.
             if ($scan) { $policy['history_scan'] = $scan->saved(); $policy = EnomAbsence::apply($policy, $op, $absence); $check->continued = !$covered && $scan->progressed; }
             if ($completed) { $policy = EnomAbsence::completed($policy, $op); }
+            if ($unproven !== null) { $policy = OrderUnproven::apply($policy, $op, $unproven, $this->clock->now()); }
             if (!$proof) {
                 $policy['renewal_execution']['reason'] = $autoRenewUnconfirmed ? 'provider_auto_renew_unconfirmed'
                     : ($policy['renewal_polls'] >= OperationReconciliation::POLL_LIMIT ? 'poll_limit_reached' : 'original_attempt_unresolved');

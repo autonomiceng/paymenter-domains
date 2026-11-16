@@ -9,7 +9,7 @@ use Filament\Schemas\Components\{Section,Text};
 use Illuminate\Support\Facades\Auth;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Services\{RegistrarAnswers as Answers,StaffSettingsReview as Review,StaffSettingsWrites};
+use Paymenter\Extensions\Servers\Domains\Services\{OrderUnproven,RegistrarAnswers as Answers,StaffSettingsReview as Review,StaffSettingsWrites};
 final class EnomAnswerAction
 {
     public const LABEL='Resolve with Enom support';
@@ -18,7 +18,7 @@ final class EnomAnswerAction
     public static function button(Operation $op): string {return $op->action==='transfer'?self::label($op):'Record answer';}
     /** Unreadable saved attempt data never offers the no-order answer. */
     private static function accepted(Operation $op): bool
-    {return !Answers::readable($op)||Answers::capturedReference($op)!==null||isset($op->attempt['registration'])||isset($op->attempt['renewal']);}
+    {return !Answers::readable($op)||Answers::capturedReference($op)!==null||(isset($op->attempt['registration'])||isset($op->attempt['renewal']))&&!OrderUnproven::applies($op);}
     /** The evidence line: what the scheduled read found and when. */
     private static function absenceLine(Operation $op,?array $absence): string
     {
@@ -34,6 +34,7 @@ final class EnomAnswerAction
         // The scheduled read's proof that Enom has no order: the case number becomes optional for the no-order answer only.
         $absence=static function()use($op):?array{static $read=false,$value=null;if(!$read){$read=true;$value=Answers::absence($op,app(Clock::class)->now());}return $value;};
         $relaxed=static fn($get):bool=>$get('outcome')==='not_processed'&&$absence()!==null;
+        $unproven=OrderUnproven::applies($op);
         return Action::make('enom_answer')->label(self::button($op))->modalHeading(self::label($op))->color('gray')
             // While an automatic check is scheduled the system can still read the result itself, so staff wait for it before asking support.
             ->visible(fn()=>Staff::can(Staff::POLICY)&&Staff::can(Review::permission('enom_answer'))&&Answers::ready($op,app(Clock::class)->now())&&!\Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::scheduled($op))
@@ -49,8 +50,10 @@ final class EnomAnswerAction
                         :(self::accepted($op)
                             ? ['accepted'=>'Processed: support confirmed the order number']
                             : ['accepted'=>'Processed: '.$registrar.' made the order','not_processed'=>'Not processed: no order and no charge'])),
-                    TextInput::make('order_reference')->default(fn()=>$transfer?($op->attempt['evidence']['transferReference']??null):Answers::capturedReference($op))->label(fn($get)=>$get('outcome')==='transfer_rejected'&&$op->registrar_key==='enom'?'Enom transfer number':'Order number')
-                        ->helperText(fn($get)=>$get('outcome')==='not_processed'?'Leave blank when there was no order.':'As support gave it. Saving it sends no new order.')->maxLength(20),
+                    TextInput::make('order_reference')->default(fn()=>$transfer?($op->attempt['evidence']['transferReference']??null):(Answers::capturedReference($op)??($unproven?$op->provider_order_id:null)))->label(fn($get)=>$get('outcome')==='transfer_rejected'&&$op->registrar_key==='enom'?'Enom transfer number':'Order number')
+                        ->helperText(fn($get)=>$get('outcome')==='not_processed'?'Leave blank when there was no order.':'As support gave it. Saving it sends no new order.')->maxLength(20)
+                        // The saved order number is not sent with a Not processed answer; the answer keeps it from the request.
+                        ->visible(fn($get)=>!($get('outcome')==='not_processed'&&$unproven)),
                     TextInput::make('processed_at')->label('Processing time')->required()
                         ->visible(fn($get)=>$get('outcome')==='accepted'&&$op->registrar_key==='namesilo')
                         ->helperText('As support gave it, with the UTC offset, for example 2026-10-18T05:00:01-07:00.')->maxLength(35),
