@@ -28,8 +28,7 @@
 <x-slot:toolbar><x-domains::customer.tabs label="Filter by status" :tabs="$tabs" />
 <form method="GET" action="{{ route('domains.domains.index') }}" class="domains-filter" role="search">@foreach (array_diff_key($params,['q'=>1]) as $name=>$v)<input type="hidden" name="{{ $name }}" value="{{ $v }}">@endforeach
 <label for="domains-q" class="domains-sr">Search your domains</label><input id="domains-q" class="domains-input" type="search" name="q" value="{{ $search }}" placeholder="Search domains" maxlength="253" autocomplete="off"></form></x-slot:toolbar>
-@if ($domains->isEmpty() && ($filterCounts['']??0) === 0 && $search === '' && $filter === '')<x-domains::customer.list-empty text="Only inactive domains here."><a class="domains-a" href="{{ $url(['status'=>'inactive','page'=>null]) }}">Show inactive domains</a></x-domains::customer.list-empty>
-@elseif ($domains->isEmpty())<x-domains::customer.list-empty :text="$noMatch"><a class="domains-a" href="{{ route('domains.domains.index') }}">Show all domains</a></x-domains::customer.list-empty>@else
+@if ($domains->isEmpty())<x-domains::customer.list-empty :text="$noMatch"><a class="domains-a" href="{{ route('domains.domains.index') }}">Show all domains</a></x-domains::customer.list-empty>@else
 <div class="domains-tablewrap"><table class="domains-tbl domains-stackable domains-list"><thead><tr><th scope="col" aria-sort="{{ $order('name') }}"><a href="{{ $sorted('name') }}">Domain</a></th><th scope="col">Status</th><th scope="col" aria-sort="{{ $order('expiry') }}"><a href="{{ $sorted('expiry') }}">Expires</a></th><th scope="col">Auto-renew</th></tr></thead><tbody>
 @foreach ($domains as $domain)
 @php

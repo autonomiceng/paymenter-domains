@@ -15,15 +15,15 @@ $row=(new DomainSummaries)->listed($owner,$clock->now()->getTimestamp())['manage
 expect($row!==null,'The departed domain stays with its owner');
 $pill=StatusPill::summary($row);
 same(['Transferred away','Moved to another registrar'],[$pill['label']??null,$pill['reason']??null],'Customers read the saved departure as transferred away with its reason');
-// The customer list keeps it behind the Inactive tab, outside the default list.
+// The customer list shows it in All and in the Inactive tab.
 foreach(['PslSchema','PslReviewSchema','WatchSchema','WatchDnsSchema','ManagedPublicWorkSchema','ManagedPublicSchema','WatchScheduleSchema','WatchNoticeSchema','AdoptionSchema','NativeIntentSchema'] as $schema){('Paymenter\\Extensions\\Servers\\Domains\\Services\\'.$schema)::install();}
 require dirname(__DIR__).'/Domains/routes/web.php';require dirname(__DIR__).'/Domains/routes/owned.php';app('router')->getRoutes()->refreshNameLookups();view()->addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
 $listed=static function(string $query)use($owner):array{
     $request=Illuminate\Http\Request::create('/domains'.$query);$request->setUserResolver(static fn()=>$owner);
     $data=app(Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController::class)->index($request)->getData();
-    return [array_map(static fn($row)=>$row->name,$data['domains']->items()),$data['filterCounts']['inactive']??0];};
-same([[],1],$listed(''),'The default list leaves the departed domain out and counts it as inactive');
-same([[$d->domain],1],$listed('?status=inactive'),'The Inactive tab lists the departed domain');
+    return [array_map(static fn($row)=>$row->name,$data['domains']->items()),$data['filterCounts']['inactive']??0,$data['filterCounts']['']??0];};
+same([[$d->domain],1,1],$listed(''),'All lists and counts the departed domain, and the Inactive tab counts it');
+same([[$d->domain],1,1],$listed('?status=inactive'),'The Inactive tab lists the departed domain');
 // Staff read the same word and reason, with no step, on the list and the domain page.
 $status=DomainFacts::status($d->fresh());
 same(['transferred_away','Transferred away','Moved to another registrar',null,false],[$status['key'],$status['label'],$status['reason'],$status['step'],$status['act']],'Staff read the saved departure with nothing to do');

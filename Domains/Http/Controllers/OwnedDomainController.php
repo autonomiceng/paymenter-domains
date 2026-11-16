@@ -21,11 +21,11 @@ final readonly class OwnedDomainController
         // and expiry, not only the status column, so chips, filters and sorting work on resolved rows.
         $rows=(new DomainSummaries())->listed($request->user(),now('UTC')->getTimestamp());
         $key=fn($row)=>$row->statusState===null?null:\Paymenter\Extensions\Servers\Domains\Presentation\StatusPill::key($row->statusState);
-        // Ended domains (cancelled, transferred away, deleted) stay out of the way until the Inactive tab asks for them.
+        // Ended domains (cancelled, transferred away, deleted) share the Inactive tab. All lists and counts every domain, so
+        // the tab counts add up (mock 03).
         $tab=fn($row)=>in_array($k=$key($row),DomainStatus::INACTIVE,true)?'inactive':$k;
-        $shown=array_filter($rows,fn($row)=>$tab($row)!=='inactive');
-        $filterCounts=[''=>count($shown),...array_count_values(array_filter(array_map($tab,array_values($rows))))];
-        $rows=$filter===''?$shown:array_filter($rows,fn($row)=>($filter==='inactive'?$tab($row):$key($row))===$filter);
+        $filterCounts=[''=>count($rows),...array_count_values(array_filter(array_map($tab,array_values($rows))))];
+        $rows=$filter===''?$rows:array_filter($rows,fn($row)=>($filter==='inactive'?$tab($row):$key($row))===$filter);
         if ($search!=='') { $rows=array_filter($rows,fn($row)=>str_contains(strtolower($row->name),strtolower($search))); }
         $desc=$sort[0]==='-';$rows=array_values($rows);
         usort($rows,function($a,$b)use($sort,$desc){
