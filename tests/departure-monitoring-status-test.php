@@ -18,10 +18,12 @@ $opens=static function()use($d,$watch):bool{
 };
 expect($opens(),'The linked monitored domain page opens');
 // A live holding of the same name takes precedence, so the watch page would not open and the departed page does not link it.
-$live=$d->fresh()->replicate();$live->status='active';$live->renewal_policy=[];$live->save();
+$row=(array)DB::table('domains_domains')->where('id',$d->id)->first();unset($row['id']);
+$service=$d->fresh()->service->replicate();$service->status='active';$service->saveQuietly();
+$liveId=(int)DB::table('domains_domains')->insertGetId([...$row,'service_id'=>$service->id,'status'=>'active','renewal_policy'=>null]);
 expect(!$opens(),'A same-name live holding hides the watch page');
 same(0,count($monitoring()),'The departed page does not link a watch page that would not open');
-$live->delete();
+DB::table('domains_domains')->where('id',$liveId)->delete();
 same(1,count($monitoring()),'The link comes back once no same-name live holding remains');
 DB::transaction(fn()=>$watch->refresh()->update(['state'=>'retired','revision'=>$watch->revision+1]));
 same(0,count($monitoring()),'A retired watch is no longer presented as running');
