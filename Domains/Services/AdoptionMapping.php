@@ -19,7 +19,15 @@ final class AdoptionMapping
     {
         $service = $lock ? $lock->nativeRows($target->customerId)['service'] : Service::find($target->serviceId);
         $extension = $lock?->extensionRows();
-        $matches = Domain::where(fn ($q) => $q->where('reservation_name', $target->name)->orWhere('domain', $target->name))->limit(2)->when($lock, fn ($q) => $q->lockForUpdate())->get();
+        $matches = Domain::where(fn ($q) => $q->where('reservation_name', $target->name)->orWhere('domain', $target->name))->orderBy('id')->when($lock, fn ($q) => $q->lockForUpdate())->get();
+        $departedServices = []; $departureStamps = []; $pending = [];
+        foreach ($matches as $match) {
+            if ($match->adoptionPending()) { $pending[] = $match; continue; }
+            $departureStamps[] = self::departed($match, $target, $lock);
+            if (isset($departedServices[$match->service_id])) { throw new \DomainException('competing_holding'); }
+            $departedServices[$match->service_id] = $match;
+        }
+        $matches = collect($pending);
         if ($matches->count() > 1) { throw new \DomainException('competing_holding'); }
         $domain = $matches->first();
         if (!$service || (int) $service->user_id !== $target->customerId) { throw new \DomainException('mapping_unconfirmed'); }
@@ -68,11 +76,14 @@ final class AdoptionMapping
             })) { throw new \DomainException('competing_holding'); }
             $p = $peer->product; $server = $p?->server;
             $watch = $p ? \Paymenter\Extensions\Servers\Domains\Models\WatchProductMap::where('product_id', $p->id)->first() : null;
-            if (!$p || $p->settings()->whereIn('key', ['domains_catalogue', 'domains_tld_id', 'domains_action', 'domains_registrar'])->exists()
-                || ($p->server_id !== null && (!$watch || !$server || in_array(strtolower($server->extension), ['domains', 'enom', 'namesilo'], true)))) {
+            $departed = $departedServices[$peer->id] ?? null;
+            if ($departed && ((int) $peer->user_id !== (int) $departed->user_id || $peer->status !== 'cancelled'
+                || Domain::where('service_id', $peer->id)->whereKeyNot($departed->id)->exists())) { throw new \DomainException('competing_holding'); }
+            if (!$departed && (!$p || $p->settings()->whereIn('key', ['domains_catalogue', 'domains_tld_id', 'domains_action', 'domains_registrar'])->exists()
+                || ($p->server_id !== null && (!$watch || !$server || in_array(strtolower($server->extension), ['domains', 'enom', 'namesilo'], true))))) {
                 throw new \DomainException('competing_holding');
             }
-            $peerStamps[] = self::stamp([$peer->getRawOriginal(), $p->getRawOriginal(), $server?->getRawOriginal(), $watch?->getRawOriginal(), $peerNames->map(fn ($n) => $n->getRawOriginal())->all()]);
+            $peerStamps[] = self::stamp([$peer->getRawOriginal(), $p?->getRawOriginal(), $server?->getRawOriginal(), $watch?->getRawOriginal(), $peerNames->map(fn ($n) => $n->getRawOriginal())->all()]);
         }
         $ops = Operation::where(fn ($q) => $q->where('service_id', $service->id)->when($domain, fn ($q) => $q->orWhere('domain_id', $domain->id)))->orderBy('id')->limit(101)->when($lock, fn ($q) => $q->lockForUpdate())->get();
         $items = $lock ? $l['items']->where('reference_type', $service->getMorphClass())->where('reference_id', $service->id)->values() : $service->invoiceItems()->orderBy('id')->limit(101)->get();
@@ -129,6 +140,7 @@ final class AdoptionMapping
             $stamps[$key] = self::stamp($rows->map(fn ($r) => $r->getRawOriginal())->all());
         }
         $stamps['peer_sources'] = self::stamp($peerStamps);
+        $stamps['departed_history'] = self::stamp($departureStamps);
         $stamps['site'] = self::stamp(config('app.url'));
         return ['binding' => $binding, 'domain_id' => $domain?->id, 'native_identity' => $native, 'suffix' => $tld->tld,
             'existing_do_not_renew' => $l['cancel']->contains('service_id', $service->id) || (bool) ($domain?->renewal_policy['renewals_stopped'] ?? false), 'expected_provider_id' => $domain?->provider_domain_id,
@@ -137,6 +149,22 @@ final class AdoptionMapping
             'retail' => ['price_id' => $retail->id, 'revision' => $retail->revision, 'annual_net' => $retail->retail, 'annual_gross' => $gross, 'currency' => 'USD', 'tax_basis' => 'native_exclusive_once', 'tax_digest' => $stamps['tax'], 'retained' => $retail->retained, 'staff_alert' => $retail->staffAlert],
             'calendar_timing' => $timing, 'history_link_ids' => $history,
             'history_review' => $invoices->map(fn ($i) => ['invoice_id' => (int) $i->id, 'status' => $i->status])->all()];
+    }
+    /** Isolation relies on the saved departure, never the former owner's invoices, credit or returns.
+     * Only operation identity and terminal state are read; late receipt bookkeeping cannot revoke this proof. */
+    private static function departed(Domain $domain, Target $target, ?HoldingIdentityLock $lock): string
+    {
+        if (!DepartureProof::verified($domain) || (int) $domain->service_id === $target->serviceId) { throw new \DomainException('competing_holding'); }
+        $ops = Operation::where(fn ($q) => $q->where('domain_id', $domain->id)->orWhere('service_id', $domain->service_id))
+            ->orderBy('id')->when($lock, fn ($q) => $q->lockForUpdate())->get(['id', 'domain_id', 'service_id', 'server_id',
+                'registrar_key', 'account_fingerprint', 'authority_generation', 'action', 'state', 'completed_at', 'lease_expires_at']);
+        if ($ops->contains(fn ($op) => (int) $op->domain_id !== (int) $domain->id || (int) $op->service_id !== (int) $domain->service_id
+            || (int) $op->server_id !== (int) $domain->server_id || $op->registrar_key !== $domain->registrar_key
+            || $op->account_fingerprint !== $domain->account_fingerprint || $op->authority_generation < 1
+            || $op->authority_generation > $domain->authority_generation || $op->lease_expires_at !== null
+            || !in_array($op->state, ['succeeded', 'rejected', 'disposed', 'cancelled'], true)
+            || ($op->state === 'succeeded' && $op->completed_at === null))) { throw new \DomainException('competing_holding'); }
+        return self::stamp([$domain->renewal_policy['departure'], $ops->map(fn ($op) => $op->getRawOriginal())->all()]);
     }
     public static function stamp(mixed $value): string { return hash('sha256', json_encode($value, JSON_THROW_ON_ERROR)); }
 }
