@@ -547,12 +547,13 @@ final class RequestFacts
     public static function refundLimit(Operation $op, bool $none): ?string
     {
         if(!$op->invoice_id||$op->funding_basis!=='paid_invoice'){return null;}
-        $refund=$op->funding['refund']??null;
         try{
             if(!$none){
                 // What actually went back: a share released after a lost dispute is not part of the return, and money
                 // returned later, such as account credit after a won dispute, is.
-                $minor=is_array($refund)&&($refund['to']??null)!==null?array_sum(array_map(fn($p)=>(int)\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::amount($p),\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::effective($op))):null;
+                // A closed return can be kept only as a late credit, with no refund record, so every retained return counts.
+                $plans=\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::effective($op);
+                $minor=$plans?array_sum(array_map(fn($p)=>(int)\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::amount($p),$plans)):null;
                 // The request's price, but never more than its own invoice line: a refund of all the request paid is not capped.
                 $invoice=\App\Models\Invoice::find($op->invoice_id);
                 $line=$invoice?min(\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)$op->amount),self::ownLineMinor($op,$invoice)):0;

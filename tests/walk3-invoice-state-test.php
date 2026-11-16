@@ -112,5 +112,11 @@ $funding['late_credits']=[['payments'=>[['id'=>(int)$b->id,'amount_minor'=>$gros
 $op->update(['funding'=>$funding]);
 same(0,Paymenter\Extensions\Servers\Domains\Services\InvoiceMoney::project((int)$op->invoice_id)['held'],'The later credit returned the rest');
 $want(RequestFacts::refundLimit($op->fresh(),false)===null&&!str_contains((string)($staffFacts($op)['refund_sub']??''),$capped),'Money returned later as account credit counts toward the return');
+// A closed return can be kept only as a late credit, with no refund record. A part of the price returned that way still says why it is smaller.
+$funding=$op->fresh()->funding;$credit=$funding['refund']['credit_id'];unset($funding['refund']);
+$funding['late_credits']=[['payments'=>[['id'=>(int)$a->id,'amount_minor'=>500]],'amount'=>'5.00','currency'=>'USD','to'=>'account_credit','credit_id'=>$credit,'at'=>'2026-11-03T00:00:00+00:00']];
+$op->update(['funding'=>$funding]);
+$lateOnly=RequestFacts::refundLimit($op->fresh(),false);
+expect($lateOnly!==null&&str_contains($lateOnly,'$5.00'),'A partial return kept only as a late credit says why it is smaller: '.json_encode($lateOnly));
 expect($followups===[],'Request money follow-ups: '.json_encode($followups,JSON_THROW_ON_ERROR));
 $nativeSuccessful=true;
