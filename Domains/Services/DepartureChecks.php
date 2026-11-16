@@ -36,10 +36,30 @@ final class DepartureChecks
     { return ['state'=>$now>=($d->observation['departure_check']['at']??$now)+172800?'delayed':'needs_review','expiry'=>$d->provider_expires_at?->format('Y-m-d')]; }
     public static function dnsNote(Domain $d): ?string
     {
-        if(!self::suspected($d)){return null;}
-        if(RegistrationDns::registrarDns($d)){return "This domain uses our registrar's DNS. Its records stop when the transfer completes, so set up DNS at your new host first.";}
+        return match(self::dnsCase($d)){
+            'registrar'=>"This domain uses our registrar's DNS. Its records stop when the transfer completes, so set up DNS at your new host first.",
+            'hosting'=>'DNS records on your hosting plan keep working while the plan is active.',
+            default=>null};
+    }
+    /** Where this suspected holding's DNS is served, from the nameservers in the last registrar read: our registrar's DNS,
+     * our hosting nameservers, or other nameservers. Null when not suspected or no nameservers were read. */
+    public static function dnsCase(Domain $d): ?string
+    {
+        if(!self::suspected($d)||ObservationProjection::nameservers($d)?->state!=='observed'){return null;}
+        if(RegistrationDns::registrarDns($d)){return 'registrar';}
         $actual=ObservationProjection::nameservers($d)?->nameservers??[];$ours=SiteDnsDefault::profile()?->nameservers??[];sort($actual);sort($ours);
-        return $ours&&$actual===$ours?'DNS records on your hosting plan keep working while the plan is active.':null;
+        return $ours&&$actual===$ours?'hosting':'other';
+    }
+    /** The staff words for dnsCase(): a short title for the Nameservers row and a sentence for the DNS records row. @return array{0:string,1:string}|null */
+    public static function staffDnsCase(Domain $d): ?array
+    {
+        $company=\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company();$ours=($company!==''?$company:'Our').' nameservers';
+        $product=match($d->registrar_key){'enom'=>'Enom DNS','namesilo'=>'NameSilo DNSOwl',default=>null};
+        return match(self::dnsCase($d)){
+            'registrar'=>["Our registrar's DNS",($product?'On '.$product.', our':'On our')." registrar's DNS."],
+            'hosting'=>[$ours.', hosting plan','On '.$ours.', on the hosting plan.'],
+            'other'=>['Other nameservers','On other nameservers.'],
+            default=>null};
     }
     public function registry(Domain $seed): bool
     {

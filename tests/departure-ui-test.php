@@ -36,6 +36,12 @@ $detail=(string)$staffDom->querySelector('[data-piece="head-detail"]')?->textCon
 foreach([\Paymenter\Extensions\Servers\Domains\Services\ManagementNameservers::registrar($fresh),(string)$fresh->server->name,$read] as $fact){$check($fact!==''&&str_contains($detail,$fact),'The staff head names the registrar, account and absence read time: '.$fact);}
 $owned=null;foreach($staffDom->querySelectorAll('[data-piece="row"]') as $row){if(trim((string)$row->querySelector('.domains-panel-row-k')?->textContent)==='In registrar account'){$owned=$row->textContent;}}
 $check($owned!==null&&str_contains($owned,$read),'In registrar account carries the absence read time');
+// Nameservers and DNS records say where DNS is served while the domain is under review.
+$case=\Paymenter\Extensions\Servers\Domains\Services\DepartureChecks::staffDnsCase($fresh);$rows=[];
+foreach($staffDom->querySelectorAll('[data-piece="row"]') as $row){$rows[trim((string)$row->querySelector('.domains-panel-row-k')?->textContent)]=$row->textContent;}
+$check($case!==null,'The suspected fixture has read nameservers, so its DNS case is known');
+$check($case!==null&&str_contains($rows['Nameservers']??'',$case[0])&&array_filter(\Paymenter\Extensions\Servers\Domains\Services\OwnedDomains::storedNameservers($fresh)??[''],fn($ns)=>!str_contains($rows['Nameservers']??'',$ns))===[],'Nameservers names the DNS case and keeps the read nameservers');
+$check($case!==null&&str_contains($rows['DNS records']??'',$case[1]),'DNS records names the DNS case');
 // The staff next step survives the automatic recheck when the domain is still absent.
 Illuminate\Support\Facades\DB::transaction(function()use($d,$clock):void {
     $fresh=$d->fresh();$p=$fresh->observation;$at=$clock->now()->getTimestamp()-172800;

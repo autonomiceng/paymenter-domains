@@ -119,6 +119,12 @@ class ViewDomain extends RecordDetailPage
             // Say which facts came from the absence read and which were kept from the last read while the domain was ours.
             if (isset($facts['In registrar account'])&&($at=$this->absenceReadAt())!==null) { $facts['In registrar account']['sub']='Last read '.StaffTime::at($at).'.'; }
             if (in_array($facts['Transfer lock']['value']??null,['On','Off'],true)) { $facts['Transfer lock']['sub']='Last read while in our registrar account.'; }
+            // Staff see where DNS is served, since registrar DNS stops when a transfer completes.
+            if (($case=DepartureChecks::staffDnsCase($d))!==null) {
+                if (is_array($facts['Nameservers']['value']??null)&&$facts['Nameservers']['value']!==[]) { $facts['Nameservers']=[...$facts['Nameservers'],'value'=>$case[0],'sub'=>trim(implode(', ',$facts['Nameservers']['value']).(is_string($facts['Nameservers']['sub']??null)&&$facts['Nameservers']['sub']!==''?'. '.$facts['Nameservers']['sub']:''))]; }
+                if (isset($facts['DNS records'])) { $sub=$facts['DNS records']['sub']??null;
+                    $facts['DNS records']['sub']=$sub instanceof Htmlable?new \Illuminate\Support\HtmlString(e($case[1]).' '.$sub->toHtml()):trim($case[1].' '.(string)$sub); }
+            }
             if (($facts['Renewal']['value']??null)==='On') { $facts['Renewal']=[...$facts['Renewal'],'value'=>'Paused','sub'=>'Set to On. Resumes if the domain is still ours.','tone'=>null,'alert'=>false]; } $facts['Next invoice']=['value'=>'Paused','sub'=>($facts['Next invoice']['value']??null)==='Paused'?$facts['Next invoice']['sub']:DepartureChecks::RENEWAL_WAITS,'url'=>null,'tone'=>null]; }
         if ($this->edits()['held']) { $facts=DomainFacts::whileHeld($facts,$this->edits()['first']??null); }
         return $this->facts=DomainFacts::withProgress($facts,$progress,DomainFacts::headRequest($d,$this->status(),$this->edits()['request'],$this->notice()));
