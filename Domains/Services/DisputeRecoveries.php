@@ -76,6 +76,18 @@ final readonly class DisputeRecoveries
             'operation_id'=>$op->id,'code'=>$code,'first_seen'=>$now,'last_seen'=>$now]);
         if($code==='dispute_recovery'){DB::table('domains_obligation_alerts')->where('alert_key',$key)->update(['resolved_at'=>null,'last_seen'=>$now]);}
     }
+    /** This dispute's total obligation on one receipt and the owed amount already recorded for it on any peer.
+     * Only completed returns and credit count; reserved and pending allocations never create recovery debt.
+     * Credit removed for this dispute is added back, so its own recovery never shrinks what it owes. */
+    public static function obligation(iterable $peers,string $id,int $receiptId,array $r,int $lost): array
+    {
+        $recorded=0;$own=0;
+        foreach($peers as $peer){foreach($peer->funding['dispute_holds']??[] as $hold){
+            if($hold['dispute_id']!==$id){continue;}
+            $recorded+=$hold['owed_minor'];if($hold['payment_id']===$receiptId){$own+=$hold['removed_minor'];}
+        }}
+        return [min($lost,max(0,$r['completed']+$r['credit']-($r['recovered']-$own)+$r['external']-$r['gross'])),$recorded];
+    }
     /** Reuses the caller's locks. No runner, remote sends or notices; load() uses this for a newly observed owed loss. */
     public static function locked(array $l,int $invoiceId,array $entry,\DateTimeImmutable $now,?array $money=null): void
     {
@@ -92,11 +104,7 @@ final readonly class DisputeRecoveries
         $receiptId=null;
         foreach($money['receipts'] as $pid=>$r){if($r['receipt']===$entry['payment_intent_id']&&$r['gateway_id']===$lost['gateway_id']){$receiptId=$pid;break;}}
         if($receiptId===null){throw new \DomainException('Dispute receipt missing.');}
-        $r=$money['receipts'][$receiptId];
-        $recorded=0;
-        foreach($peers as $peer){foreach($peer->funding['dispute_holds']??[] as $hold){if($hold['dispute_id']===$id){$recorded+=$hold['owed_minor'];}}}
-        // Only completed returns and credit count; reserved and pending allocations never create recovery debt.
-        $owed=min((int)$entry['amount_minor'],max(0,$r['completed']+$r['credit']-$r['recovered']+$r['external']-$r['gross']));
+        [$owed,$recorded]=self::obligation($peers,$id,$receiptId,$money['receipts'][$receiptId],(int)$entry['amount_minor']);
         $left=max(0,$owed-$recorded);$credit=$l['credit'];$unused=$credit?PricingRule::minor($credit->amount):0;
         foreach($peers as $peer){
             $f=$peer->funding??[];$share=0;
@@ -122,7 +130,9 @@ final readonly class DisputeRecoveries
             $prior=0;foreach($f['dispute_holds']??[] as $hold){if($hold['dispute_id']===$id){$prior+=$hold['owed_minor'];}}
             $amount=min($left,max(0,$share-$prior));if($amount===0){continue;}
             $removed=min($amount,$unused);$unused-=$removed;$left-=$amount;
-            $hold=['dispute_id'=>$id,'payment_id'=>$receiptId,'lost_minor'=>(int)$entry['amount_minor'],'owed_minor'=>$amount,
+            // A later increment for the same dispute on this peer gets the next number, so retained history stays readable.
+            $increment=count(array_filter($f['dispute_holds']??[],fn($h)=>$h['dispute_id']===$id));
+            $hold=['dispute_id'=>$id,'increment'=>$increment,'payment_id'=>$receiptId,'lost_minor'=>(int)$entry['amount_minor'],'owed_minor'=>$amount,
                 'removed_minor'=>$removed,'remainder_minor'=>$amount-$removed,'credit_id'=>$credit?->id,'at'=>$now->format(DATE_ATOM)];
             $peer->update(['funding'=>[...$f,'dispute_holds'=>[...($f['dispute_holds']??[]),$hold]]]);
         }

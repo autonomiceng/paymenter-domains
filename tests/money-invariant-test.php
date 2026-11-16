@@ -545,6 +545,57 @@ $credit->refresh()->update(['amount'=>'1.00']);$notices=DB::table('domains_remin
 $record=DB::transaction(fn()=>InvoiceMoney::load(HoldingLocks::take($op->domain),(int)$op->invoice_id));
 same([0,0,$notices],[$balance(),$record['pool'],DB::table('domains_reminder_deliveries')->count()],'Locked fallback removes credit once and sends no notice inside the transaction');
 AccountMoneyHolds::release($staff,(int)DB::table('domains_obligation_alerts')->where('alert_key',DisputeRecoveries::key('account_money_hold','synthetic_fallback'))->value('id'));
+// Each regression reports on its own, so one failing case cannot hide another.
+$regressions=[];
+$regression=static function(string $item,callable $test)use(&$regressions,$clock):void{
+    try{$test();echo 'REGRESSION_PASS '.$item."\n";}
+    catch(\Throwable $e){$regressions[]=$item;echo 'REGRESSION_FAIL '.json_encode(['item'=>$item,'error'=>$e::class,'message'=>$e->getMessage()],JSON_THROW_ON_ERROR)."\n";}
+    finally{DB::table('domains_obligation_alerts')->whereIn('code',['account_money_hold','dispute_recovery'])->whereNull('resolved_at')->update(['resolved_at'=>$clock->now()->getTimestamp()]);}
+};
+// Two operations share one receipt. A credits first; B's credit completes after the first recovery.
+$sharedLoss=static function(string $name,int $gross,int $lost,int $first,int $unused)use($new,$loss,$credit):array{
+    $a=$new($name.'-a-placeholder.com');$payment=InvoiceTransaction::where('invoice_id',$a->invoice_id)->sole();
+    DB::table('invoice_transactions')->where('id',$payment->id)->update(['amount'=>PricingRule::decimal($gross)]);
+    $b=$new($name.'-b-placeholder.com');DB::table('domains_operations')->where('id',$b->id)->update(['invoice_id'=>$a->invoice_id]);
+    $a->update(['funding'=>['refund'=>['to'=>'account_credit','amount'=>PricingRule::decimal($first),'payments'=>[['id'=>(int)$payment->id,'amount_minor'=>$first]]]]]);
+    $credit->refresh()->update(['amount'=>PricingRule::decimal($unused)]);
+    return [$a,$b->fresh(),(int)$payment->id,$loss($a,$lost,'synthetic_'.$name)];
+};
+$later=static function($b,int $pid,int $minor,int $unused)use($credit):void{
+    $b->update(['funding'=>['refund'=>['to'=>'account_credit','amount'=>PricingRule::decimal($minor),'payments'=>[['id'=>$pid,'amount_minor'=>$minor]]]]]);
+    $credit->refresh()->update(['amount'=>PricingRule::decimal($unused)]);
+};
+$owedBy=static fn($op,string $field)=>array_column($op->fresh()->funding['dispute_holds']??[],$field);
+// G6: the first recovery's own removed credit must not shrink the dispute's later obligation.
+$regression('G6 own recovery counted once',static function()use($sharedLoss,$later,$recovery,$balance,$owedBy):void{
+    [$a,$b,$pid,$entry]=$sharedLoss('recovery-own-twice',100,100,40,40);
+    $recovery->recover($entry);
+    same([[40],[40]],[$owedBy($a,'owed_minor'),$owedBy($a,'removed_minor')],'First recovery removes the credited share');
+    $later($b,$pid,60,60);$recovery->recover($entry);
+    same([[60],[60],0],[$owedBy($b,'owed_minor'),$owedBy($b,'removed_minor'),$balance()],'Later completed credit is recovered in full');
+});
+// G7: a second increment on the same peer and dispute stays readable.
+$regression('G7 repeated increments readable',static function()use($sharedLoss,$later,$recovery,$balance,$owedBy):void{
+    [$a,$b,$pid,$entry]=$sharedLoss('recovery-increment',100,60,80,0);
+    $recovery->recover($entry);
+    same([40],$owedBy($a,'owed_minor'),'First recovery records the owed share with nothing removed');
+    $later($b,$pid,20,20);$recovery->recover($entry);
+    same([[40,20],[0,20],0],[$owedBy($a,'owed_minor'),$owedBy($a,'removed_minor'),$balance()],'The increment uses the headroom of the first peer');
+    same(20,InvoiceMoney::project((int)$a->invoice_id)['receipts'][$pid]['recovered'],'Retained increments project their removed credit');
+    $snapshot=[$a->fresh()->funding,$b->fresh()->funding,$balance()];$recovery->recover($entry);
+    same($snapshot,[$a->fresh()->funding,$b->fresh()->funding,$balance()],'Increment replay changes nothing');
+});
+// C2: a locked load recovers the increase of a dispute it has already recorded.
+$regression('C2 locked load recovers increase',static function()use($sharedLoss,$later,$recovery,$balance,$owedBy):void{
+    [$a,$b,$pid,$entry]=$sharedLoss('recovery-growth',100,100,40,40);
+    $recovery->recover($entry);
+    $later($b,$pid,60,60);
+    DB::transaction(fn()=>InvoiceMoney::load(HoldingLocks::take($a->domain),(int)$a->invoice_id));
+    same([[60],[60],0],[$owedBy($b,'owed_minor'),$owedBy($b,'removed_minor'),$balance()],'Locked load removes the newly owed credit');
+    $snapshot=[$b->fresh()->funding,$balance()];
+    DB::transaction(fn()=>InvoiceMoney::load(HoldingLocks::take($a->domain),(int)$a->invoice_id));
+    same($snapshot,[$b->fresh()->funding,$balance()],'Load replay changes nothing');
+});
 // Discovery finds history on its first sweep, retries failures before new pages and keeps its cursor atomic.
 class DiscoveryRecoveryGateway extends InvariantReceiptGateway {
     public function receiptLedger(Invoice $invoice,string $extension='InvariantReceipt'):array {
@@ -579,4 +630,5 @@ InvariantReceiptGateway::$ledger=[$entry];
 AccountMoneyHolds::release($staff,(int)DB::table('domains_obligation_alerts')->where('alert_key',DisputeRecoveries::key('account_money_hold','synthetic_historical'))->value('id'));
 $refunds->creditRejected((int)$otherOut->id);
 same($before+PricingRule::minor($otherOut->amount),$balance(),'Releasing the hold permits money out on other invoices');
+expect($regressions===[],'Regressions failed: '.implode(', ',$regressions));
 $nativeSuccessful = true;

@@ -25,10 +25,11 @@ final class InvoiceMoney
         foreach ($record['ledger'] as $entry) {
             $id = DisputeRecoveries::dispute($entry);
             if ($id === null) { continue; }
-            foreach ($record['receipts'] as $r) {
-                if ($r['receipt'] === $entry['payment_intent_id'] && $r['gateway_id'] === $entry['gateway_id']
-                    && min((int)$entry['amount_minor'], max(0,$r['completed']+$r['credit']-$r['recovered']+$r['external']-$r['gross'])) > 0
-                    && !$peers->contains(fn($peer)=>collect($peer->funding['dispute_holds']??[])->contains('dispute_id',$id))) {
+            foreach ($record['receipts'] as $pid => $r) {
+                if ($r['receipt'] !== $entry['payment_intent_id'] || $r['gateway_id'] !== $entry['gateway_id']) { continue; }
+                // A later completed return can raise what a dispute owes after its first recovery was recorded.
+                [$owed, $recorded] = DisputeRecoveries::obligation($peers, $id, (int)$pid, $r, (int)$entry['amount_minor']);
+                if ($owed > $recorded) {
                     DisputeRecoveries::locked($l,$invoiceId,$entry,app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now(),$record);
                     $peers=Operation::where('invoice_id',$invoiceId)->orderBy('id')->lockForUpdate()->get();
                     $record=self::lockedRecord($l,$invoiceId,$peers,$exclude);
@@ -165,11 +166,12 @@ final class InvoiceMoney
                 if (array_sum($split) !== $minor || array_diff_key($split, $receipts)) { $U += $minor; }
                 else { foreach ($split as $id=>$amount) { $receipts[$id]['credit'] += $amount; } }
             }
+            // Each peer numbers its increments for one dispute from 0; entries written before numbering count as 0.
             foreach ($funding['dispute_holds'] ?? [] as $recovery) {
-                $id = $recovery['payment_id'];
+                $id = $recovery['payment_id']; $next = $recoveries[$recovery['dispute_id']] ?? 0;
                 if (!isset($receipts[$id]) || !is_int($recovery['removed_minor']) || $recovery['removed_minor'] < 0
-                    || isset($recoveries[$recovery['dispute_id']])) { throw new \DomainException('Credit recovery needs review.'); }
-                $recoveries[$recovery['dispute_id']] = true;
+                    || ($recovery['increment'] ?? 0) !== $next) { throw new \DomainException('Credit recovery needs review.'); }
+                $recoveries[$recovery['dispute_id']] = $next + 1;
                 $receipts[$id]['recovered'] += $recovery['removed_minor'];
             }
         }
