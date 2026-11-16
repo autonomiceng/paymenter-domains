@@ -45,11 +45,11 @@ foreach(['none'=>[false,false],'Test'=>[false,true],'Demo'=>[true,false],'Demo a
     same(0,storefrontDom($pages['list'])->query('//*[@class="domains-testbar"]')->length,'The list uses tags, not a banner: '.$case);
     if($tag!=='none'){
         $node=storefrontDom($pages['domain page'])->query('//h1//span[contains(@class,"domains-demo-tag")]')->item(0);
-        same($demo?DemoData::TOOLTIP:DemoData::TEST_TOOLTIP,$node?->getAttribute('title'),'Tooltip explains the tag: '.$case);
+        same($demo?DemoData::TOOLTIP:DemoData::testTooltip(),$node?->getAttribute('title'),'Tooltip explains the tag: '.$case);
     }
 }
-// Shared by every request type and by test registrar accounts, so it names no operation. Registrar test mode never stops billing, so the tag never promises that no money moves.
-same('Registrar test environment. Nothing is real at the registrar, but invoices are still real, and paying one charges you.',DemoData::TEST_TOOLTIP,'Test tooltip');
+// Registrar test mode never stops billing: without the site's Test mode tag the Test tag never promises that nothing is charged.
+same(DemoData::TEST_TOOLTIP,DemoData::testTooltip(),'Without the site Test mode tag, the Test tag says invoices are real');
 
 // Hosting domains: the related list tags seeded watches (domain-portal-test covers their details and hosting pages). Watches never use a registrar test mode.
 $strings=DomainSummaryStrings::all();
