@@ -120,12 +120,14 @@ final class RequestFacts
                 catch(\Throwable){$out['refund_sub']=trim(($out['refund_sub']??'').' Missing. Check the invoice payment reversal and credit history.');}
             }
             // A closed request whose payment a lost dispute already took back: nothing was left to credit, and that is no staff step.
-            // Only when the disputes took the whole payment, so this request's own line is surely gone; a partial dispute keeps the
-            // refund row's next step. The amount is this request's own line, not the invoice's.
+            // Only when the disputes took the whole payment and the invoice money holds nothing more for it: no money left on any
+            // receipt, no return still on its way, no open dispute or refund (the reads refundLimit uses). Otherwise the refund row
+            // keeps its next step. The amount is this request's own line, not the invoice's.
             if ($op->state==='rejected'&&($out['refund']??null)==='No credit added'&&is_array($reversals)
                 &&($invoice=\App\Models\Invoice::find($op->invoice_id))!==null
                 &&($total=\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)$invoice->total))>0
-                &&array_sum(array_map(fn($r)=>[$r['kind']??null,$r['status']??null]===['dispute','lost']&&is_int($r['amount_minor']??null)?$r['amount_minor']:0,$reversals))>=$total) {
+                &&array_sum(array_map(fn($r)=>[$r['kind']??null,$r['status']??null]===['dispute','lost']&&is_int($r['amount_minor']??null)?$r['amount_minor']:0,$reversals))>=$total
+                &&self::nothingLeft((int)$op->invoice_id)) {
                 $out['refund_sub']='The lost dispute already returned '.\Paymenter\Extensions\Servers\Domains\Services\Storefront::money(\Paymenter\Extensions\Servers\Domains\Services\PricingRule::decimal(self::ownLineMinor($op,$invoice))).' to the customer’s bank.';
             }
             if ($op->registrar_key==='namesilo' && $op->action==='transfer' && $closed
@@ -564,6 +566,13 @@ final class RequestFacts
         // A return still reserved, sending or pending, or a payment still processing, is not yet lost or returned.
         if($money['pending']||array_filter($money['receipts'],fn($r)=>$r['reserved']>0)){return null;}
         return $money['held']===0?'Nothing left to return. The payment was lost to a dispute or already returned.':null;
+    }
+    /** True when the invoice money holds nothing more to return: no money left on any receipt, nothing pending or reserved,
+     * no open dispute or refund. False when the money cannot be read. */
+    private static function nothingLeft(int $invoiceId): bool
+    {
+        try{$money=\Paymenter\Extensions\Servers\Domains\Services\InvoiceMoney::project($invoiceId);}catch(\Throwable){return false;}
+        return $money['pool']<=0&&!$money['pending']&&!array_filter($money['receipts'],fn($r)=>$r['reserved']>0||$r['hold']);
     }
     /** What this request paid on its invoice: its own line, so one domain refunded in a cart reads as refunded. A line that
      * cannot be read falls back to the invoice total, which never claims a refund that did not happen. */
