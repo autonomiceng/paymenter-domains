@@ -44,7 +44,7 @@ same($before,$nativeMoney(),'Staff release changes no native financial rows');
 commerceReject(fn()=>AccountMoneyHolds::release($staff,(int)$alert));
 same(1,Audit::where('event','account_money_hold_released')->count(),'Repeated release retains one Audit');
 // G2: while recovery is still open, a readable ledger does not make the hold amounts final.
-$pendingOp=$new('pending-hold-placeholder.com');
+$pendingOp=$new('pending-hold-placeholder.com');$partOp=$new('partial-hold-placeholder.com');
 $lostGateway=Gateway::create(['extension'=>'LostHold','name'=>'Synthetic lost receipt','type'=>'gateway','enabled'=>true]);
 DB::table('invoice_transactions')->where('invoice_id',$pendingOp->invoice_id)->update(['gateway_id'=>$lostGateway->id,'transaction_id'=>'synthetic_pending_hold']);
 $pendingInvoice=Invoice::findOrFail($pendingOp->invoice_id);
@@ -58,6 +58,24 @@ same([true,100,null,null,null],[$evidence['pending']??false,$evidence['lost_mino
 DB::table('domains_obligation_alerts')->where('alert_key',DisputeRecoveries::key('dispute_recovery','synthetic_pending'))->update(['resolved_at'=>2]);
 $evidence=$holdEvidence->invoke(null,$pendingOp,$holdKey);
 same([false,0,0,0],[$evidence['pending']??false,$evidence['owed_minor'],$evidence['removed_minor'],$evidence['remainder_minor']],'Finished owed-zero recovery shows final amounts');
+// One open account hold is one entry in the domain's Billing: its notice with Release hold. No row repeats it, and staff see no dispute id.
+staffPanel();
+$holdPage=Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$pendingOp->domain_id])->assertSuccessful();
+$holdFacts=Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::for(Paymenter\Extensions\Servers\Domains\Models\Domain::findOrFail($pendingOp->domain_id));
+$holdRows=array_keys(array_filter($holdFacts,fn(array $f)=>($f['alert']??false)||$f===($holdFacts['Open alerts']??null)));
+same([],$holdRows,'No Billing row repeats the account hold');
+$holdDom=new DOMDocument;@$holdDom->loadHTML('<?xml encoding="utf-8"?>'.$holdPage->html());
+same(1,(new DOMXPath($holdDom))->query('//*[@id="'.Paymenter\Extensions\Servers\Domains\Admin\Support\AccountMoneyHoldActions::ANCHOR.'"]')->length,'The domain page has one account hold entry');
+expect(!str_contains($holdPage->html(),'synthetic_pending'),'Staff page text carries no dispute id');
+// A lost dispute whose returned credit was partly spent: the hold says what is still to repay before Release hold.
+$partOp->update(['funding'=>[...($partOp->funding??[]),'dispute_holds'=>[['dispute_id'=>'synthetic_partial','increment'=>0,'payment_id'=>'synthetic_partial_receipt',
+    'lost_minor'=>1000,'owed_minor'=>600,'removed_minor'=>200,'remainder_minor'=>400,'credit_id'=>null,'at'=>gmdate(DATE_ATOM,1)]]]]);
+DB::table('domains_obligation_alerts')->insert(['alert_key'=>DisputeRecoveries::key('account_money_hold','synthetic_partial'),
+    'domain_id'=>$partOp->domain_id,'operation_id'=>$partOp->id,'generation'=>$partOp->authority_generation,'code'=>'account_money_hold','first_seen'=>1,'last_seen'=>1]);
+$partDom=new DOMDocument;@$partDom->loadHTML('<?xml encoding="utf-8"?>'.Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$partOp->domain_id])->assertSuccessful()->html());
+$partHold=(new DOMXPath($partDom))->query('//*[@id="'.Paymenter\Extensions\Servers\Domains\Admin\Support\AccountMoneyHoldActions::ANCHOR.'"]');
+expect($partHold->length===1&&str_contains($partHold->item(0)->textContent,'$4.00'),'The one account hold shows the amount still to repay');
+expect(!str_contains($partDom->saveHTML(),'synthetic_partial'),'The recovery amounts carry no dispute id');
 // The request's Payment row asks staff to look while the dispute's account hold is open, and settles once staff release it.
 $lostAct=static function()use($pendingOp,$staff):bool {
     Illuminate\Support\Facades\Auth::setUser($staff);

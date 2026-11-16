@@ -55,6 +55,15 @@ config(['domains.test_payments'=>static fn()=>true]);
 same(DemoData::TEST_PAYMENTS_TOOLTIP,DemoData::testTooltip(),'With site test payments, the Test tag says nothing real is charged');
 config(['domains.test_payments'=>static fn()=>throw new RuntimeException('unreadable')]);
 same(DemoData::TEST_TOOLTIP,DemoData::testTooltip(),'An unreadable site setting keeps invoices real');
+config(['domains.test_payments'=>true]);$testPayments=DemoData::testTooltip();
+$testSetting=new class {
+    public int $calls=0;
+    public function __invoke(): bool { $this->calls++;return true; }
+};
+config(['domains.test_payments'=>$testSetting]);
+$callableTooltip=DemoData::testTooltip();
+expect($testSetting->calls===1,'An invokable test-payments setting is resolved once');
+expect($callableTooltip===$testPayments,'An invokable true setting has the same payment meaning as boolean true');
 config(['domains.test_payments'=>null]);
 
 // Hosting domains: the related list tags seeded watches (domain-portal-test covers their details and hosting pages). Watches never use a registrar test mode.

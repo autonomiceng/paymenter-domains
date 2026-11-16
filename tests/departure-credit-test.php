@@ -28,8 +28,15 @@ $staff=staffUser([Staff::VIEW,'admin.domains.manage',HoldingDeparture::PERMISSIO
 $rows=static fn()=>array_map(fn($t)=>Illuminate\Support\Facades\DB::table($t)->orderBy('id')->get()->map(fn($r)=>(array)$r)->all(),
     ['domains_domains','domains_operations','invoices','invoice_transactions','credits','services','domains_obligation_alerts','domains_watch_names']);
 $seen=$rows();Illuminate\Support\Facades\Auth::setUser($staff);
-Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$d->id])
+$dialog=Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$d->id])
     ->assertSuccessful()->assertActionEnabled('confirm_departure')->mountAction('confirm_departure');
+$schema=$dialog->instance()->getSchema($dialog->instance()->getMountedActionSchemaName());
+$dialogDom=Dom\HTMLDocument::createFromString('<!doctype html><meta charset="utf-8">'.$schema->toHtml(),LIBXML_NOERROR);
+$note=$dialogDom->querySelector('textarea');
+$description=$note?->getAttribute('aria-describedby');
+expect($description!==null&&$description!=='','The staff note has an accessible description');
+$guidance=$dialogDom->getElementById((string)$description);
+expect($guidance!==null&&trim($guidance->textContent)!=='','The note description resolves to its guidance');
 same($seen,$rows(),'The staff preview and confirm dialog write nothing');
 $ticket=StaffHoldingReview::ticket((int)$staff->id,(int)$d->id,HoldingDeparture::ACTION,StaffHoldingReview::stamp(HoldingLocks::take($d->fresh(),advisory:true)),$clock);
 $result=(new HoldingDeparture($clock))->confirm($staff,(int)$d->id,$ticket,'other_registrar','Checked the registrar account.');

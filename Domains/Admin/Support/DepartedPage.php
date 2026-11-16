@@ -27,11 +27,12 @@ final class DepartedPage
         return [HoldingDeparture::REASONS[$r['reason']], $at === null ? null : 'Confirmed by '.self::staff($r).', '.StaffTime::at($at).'.'];
     }
     /** @param list<Row> $billing the shipped Customer row, then the Service row's link */
-    /** The Open alerts row of a departed page: every live alert with its cause, a failed customer notice, and the reminder
+    /** The Open alerts row of a departed page: every live alert but an account hold with its cause, a failed customer notice, and the reminder
      * check. Confirmation resolved only its departure review and stopped-sync alerts. Null when nothing is open. */
     public static function alerts(Domain $d, bool $reminderCheck): ?array
     {
-        $codes = array_values(array_unique(array_column(StaffDomainInputs::for([$d])[$d->id]['alerts'] ?? [], 'code')));
+        // An open account hold is the Billing notice, with Release hold, so Open alerts does not repeat it.
+        $codes = array_values(array_diff(array_unique(array_column(StaffDomainInputs::for([$d])[$d->id]['alerts'] ?? [], 'code')), ['account_money_hold']));
         $causes = array_map(fn (string $code) => DomainFacts::alertCause($code, $d), $codes);
         $tone = array_filter($codes, fn (string $code) => (DomainFacts::ALERTS[$code][1] ?? 'warning') === 'danger') ? 'danger' : 'warning';
         if ($failed = NoticeHealth::open('managed', (int) $d->id, (string) $d->domain)) { $causes[] = $failed['text']; $tone = $failed['tone'] === 'danger' ? 'danger' : $tone; }

@@ -82,7 +82,8 @@ final class DepartureConfirm
                 Radio::make('reason')->label('Reason')->required()->live()->options(array_map(fn($r)=>rtrim($r,'.'),HoldingDeparture::REASONS)),
                 // The helper sits under the label, before the field, so it is read before typing (mock 06).
                 Textarea::make('note')->label('Staff note')->required()->minLength(5)->maxLength(500)->rows(2)
-                    ->belowLabel(Text::make('Only staff see it. Say how you know the domain moved.'))
+                    ->extraInputAttributes(['aria-describedby'=>'domains-departure-note-help-'.$d->id])
+                    ->belowLabel(Text::make('Only staff see it. Say how you know the domain moved.')->extraAttributes(['id'=>'domains-departure-note-help-'.$d->id]))
                     ->rules(['regex:'.StaffReason::SINGLE_LINE])->validationMessages(['regex'=>'Use one line.']),
                 Placeholder::make('outcome')->label('When you confirm')->content(fn($get)=>self::outcome($d,$get('reason'))),
             ])

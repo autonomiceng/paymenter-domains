@@ -54,7 +54,8 @@ final class DomainNotices
         // word's tone: Missing rows say so in their own rows, so they don't turn a green Active amber.
         $tone=match(true) { ($notice['tone']??null)==='danger'=>'danger',$status['tone']==='success'&&($notice['resume']??false)=>'warning',default=>$status['tone'] };
         $mark=!in_array($tone,['warning','danger'],true);
-        $step=match(true) { $notice!==null=>self::noticeHtml($notice,$mark),$held!==null=>self::holdHtml($held,$mark),default=>self::stepHtml($status,$mark) };
+        // An account hold step is the Billing notice, with Release hold, so the head does not say it again. The list note keeps it.
+        $step=match(true) { $notice!==null=>self::noticeHtml($notice,$mark),$held!==null=>self::holdHtml($held,$mark),($status['alert']??null)==='account_money_hold'=>null,default=>self::stepHtml($status,$mark) };
         return ['tone'=>$tone,'step'=>$step??($missing!==[]?'Some details are Missing. Each row says what to do.':null)];
     }
     /** The one request the head names, or null. A notice names one only beside Resume sync. Rows name no other (withProgress). */
