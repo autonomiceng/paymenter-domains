@@ -80,7 +80,8 @@ final class InvoiceMoney
             if ($exclude !== null) { $f['receipt_return_results'][$exclude] = ['state'=>'released', 'credit_minor'=>0]; }
             return ['funding'=>$f];
         })->all();
-        return [...self::record($rows, $funding, $ledger, $ownerHold), 'ledger'=>$ledger];
+        return [...self::record($rows, $funding, $ledger, $ownerHold), 'ledger'=>$ledger,
+            'attentionFingerprint'=>hash('sha256',json_encode([$rows,$funding,$ledger],JSON_THROW_ON_ERROR))];
     }
 
     /** Plain native rows (cardOk supplied by load), peer funding arrays and raw gateway ledger rows. No queries or I/O. */

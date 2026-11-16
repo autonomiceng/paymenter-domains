@@ -203,8 +203,10 @@ final readonly class AcquisitionRetirement
             if(!self::closed($op,$seed,$service,$cancelled)){return false;}
             $status=$observed?($invoices[$op->invoice_id]??null):Invoice::whereKey($op->invoice_id)->value('status');
             $transactions=$observed?($payments[$op->invoice_id]??collect()):InvoiceTransaction::where('invoice_id',$op->invoice_id)->orderBy('id')->get();
-            if(!self::activity($op,$service,$status,$transactions,$observed?($peers[$op->invoice_id]??collect()):null)){return false;}
-            $key=ObligationAlerts::key($seed,'acquisition_late_money',(int)$op->id,self::identity($seed,$service,$status,$transactions));
+            if(!self::activity($op,$service,$status,$transactions,$observed?($peers[$op->invoice_id]??collect()):null)){
+                return DB::table('domains_obligation_alerts')->where('operation_id',$op->id)->where('code','acquisition_late_money')->whereNull('resolved_at')->exists();
+            }
+            $key=ObligationAlerts::key($seed,'acquisition_late_money',(int)$op->id,self::identity($seed,$service,$status,$transactions,$op,$observed?($peers[$op->invoice_id]??collect()):null));
             return !DB::table('domains_obligation_alerts')->where('alert_key',$key)->whereNull('resolved_at')->exists();
         });
         if(!$hit){return;}
@@ -218,16 +220,22 @@ final readonly class AcquisitionRetirement
                     self::retainClosure($op,$transactions,$status,$this->clock->now(),cancelled:true);
                     continue;
                 }
-                if(!self::closed($op,$d,$service,$cancelled)||!self::activity($op,$service,$status,$transactions)){continue;}
+                if(!self::closed($op,$d,$service,$cancelled)){continue;}
+                if(!self::activity($op,$service,$status,$transactions)){
+                    DB::table('domains_obligation_alerts')->where('operation_id',$op->id)->where('code','acquisition_late_money')->whereNull('resolved_at')->update(['resolved_at'=>$this->clock->now()->getTimestamp()]);
+                    continue;
+                }
                 // Existing alert identities distinguish later activity from repeated observations.
-                $identity=self::identity($d,$service,$status,$transactions);
+                $identity=self::identity($d,$service,$status,$transactions,$op);
                 ObligationAlerts::record($d,'acquisition_late_money',$this->clock->now()->getTimestamp(),(int)$op->id,$identity);
             }
         });
     }
-    private static function identity(Domain $d,?string $service,?string $invoice,\Illuminate\Support\Collection $transactions): string
+    private static function identity(Domain $d,?string $service,?string $invoice,\Illuminate\Support\Collection $transactions,Operation $op,?\Illuminate\Support\Collection $peers=null): string
     {
-        $basis=[$service,$invoice,self::payments($transactions)];
+        try{$money=InvoiceMoney::project((int)$op->invoice_id,$transactions,$peers)['attentionFingerprint'];}
+        catch(\Throwable){$money='unreadable';}
+        $basis=[$service,$invoice,self::payments($transactions),$money];
         // The native guard retains each reactivation before its status SQL.
         if($service==='active'&&isset($d->renewal_policy['late_payment_service_event'])){$basis[]=$d->renewal_policy['late_payment_service_event'];}
         return hash('sha256',json_encode($basis,JSON_THROW_ON_ERROR));
@@ -268,19 +276,10 @@ final readonly class AcquisitionRetirement
     private static function activity($op,?string $service,?string $invoice,\Illuminate\Support\Collection $transactions,?\Illuminate\Support\Collection $observedPeers=null): bool
     {
         if($service==='active'&&(isset($op->policy['native_acquisition_cancelled_at'])||!isset($op->funding['refund_authorization'])||isset($op->funding['refund']))){return true;}
-        try{$transactions=ReceiptReturns::activityTransactions($op,$transactions);}
-        catch(\Throwable){return true;} // A missing or changed completed reversal needs review.
-        $closure=$op->policy['native_acquisition_closure']??null;
-        if(is_array($closure)){return self::payments($transactions)!==$closure['payments']||($invoice==='paid'&&$closure['invoice_status']!=='paid');}
-        $refund=$op->funding['refund']??null;
-        if(is_array($refund)&&($refund['to']??null)==='account_credit'){
-            $payments=$transactions->filter(fn($t)=>$t->status===PaymentStatus::Succeeded)
-                ->map(fn($t)=>['id'=>(int)$t->id,'amount_minor'=>PricingRule::minor($t->amount)])->values()->all();
-            return $payments!==($refund['payments']??null)||$transactions->contains(fn($t)=>$t->status===PaymentStatus::Processing);
-        }
-        $credited=RefundPayment::lateCredited($op,$observedPeers);
-        return $transactions->contains(fn($t)=>$t->status!==PaymentStatus::Failed&&!isset($credited[$t->id]))||$invoice==='paid';
+        try{return !InvoiceMoney::settled(InvoiceMoney::project((int)$op->invoice_id,$transactions,$observedPeers));}
+        catch(\Throwable){return true;} // Unreadable evidence still needs a check.
     }
+
     private static function closedOrder(Invoice $invoice): bool
     {return Operation::where('invoice_id',$invoice->id)->where('safe_code',UnpaidAcquisitionProof::CODE)->exists();}
     public static function boot(): void

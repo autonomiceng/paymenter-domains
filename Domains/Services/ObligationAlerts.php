@@ -75,7 +75,10 @@ final class ObligationAlerts
         if(!isset(self::LABELS[$code])){throw new \InvalidArgumentException('Unknown obligation alert.');}
         $key=self::key($d,$code,$operationId,$identity);
         $q=DB::table('domains_obligation_alerts')->where('alert_key',$key);$old=(clone $q)->first();
-        if($old){$q->update(['last_seen'=>$now,...($code==='acquisition_late_money'?[]:['resolved_at'=>null])]);}
+        if($old){
+            $ack=$code==='acquisition_late_money'&&collect($d->renewal_policy['acquisition_payment_reviews']??[])->contains(fn($review)=>in_array((int)$old->id,$review['alert_ids']??[],true));
+            $q->update(['last_seen'=>$now,...($ack?[]:['resolved_at'=>null])]);
+        }
         else{DB::table('domains_obligation_alerts')->insert(['alert_key'=>$key,'domain_id'=>$d->id,'generation'=>$d->authority_generation,'code'=>$code,
             'operation_id'=>$operationId,'first_seen'=>$now,'last_seen'=>$now]);}
         return $key;
@@ -138,6 +141,7 @@ final class ObligationAlerts
         if($alert->code===RenewalOwnership::REVIEW){try{return !HoldingReadRetry::absent($d);}catch(\Throwable){return false;}}
         if($alert->code==='observation_review'){try{return !ObservationRecords::stopped($d);}catch(\Throwable){return false;}}
         if(!$op){return false;}
+        if(in_array($alert->code,self::REVIEW,true)&&self::settledRenewal($op,$d)&&!self::flagged($op,$operations,$d)){return true;}
         // A refusal before sending (dispatch, balance or claim checks) records a review alert. Once the request is sent and inside the registrar's
         // normal wait it is In progress, so that alert is outdated; an unconfirmed result records a fresh one (retained()).
         if(in_array($alert->code,self::REVIEW,true)&&in_array($op->state,['running','pending'],true)){try{if(!self::flagged($op,$operations,$d)){return true;}}catch(\Throwable){}}
@@ -162,8 +166,15 @@ final class ObligationAlerts
     {
         try {
             $p=$op->policy??[];
-            return ($p['reconciliation']['staff_alert']??false)&&!self::corrected($op,$operations,$d)||($p['renewal_execution']['staff_alert']??false);
+            return ($p['reconciliation']['staff_alert']??false)&&!self::corrected($op,$operations,$d)||($p['renewal_execution']['staff_alert']??false)&&!self::settledRenewal($op,$d);
         } catch (\Illuminate\Contracts\Encryption\DecryptException) { return true; }
+    }
+    /** Historical renewal uncertainty clears only with current terminal proof and a settled invoice. */
+    public static function settledRenewal(Operation $op,Domain $d): bool
+    {
+        try{return $op->action==='renew'&&OperationTerminalProof::safe($op,$d)&&$op->invoice_id!==null
+            &&InvoiceMoney::settled(InvoiceMoney::project((int)$op->invoice_id));}
+        catch(\Throwable){return false;}
     }
     /** Every section the registration flagged was fixed by a successful, confirmed request. The saved flag itself never changes. */
     private static function corrected(Operation $op,Collection $operations,Domain $d):bool
