@@ -401,7 +401,8 @@ final class DomainDecisions
      * While a registration is unconfirmed its request owns recovery (DomainNotices::notice), so no stopped sync is shown on the page or the list. */
     public static function sync(Domain $d, ?Account $account=null, ?bool $stopped=null, bool $accountLoaded=false): ?string
     {
-        if (self::ended($d)) { return null; }
+        // A confirmed departure never reads again (ObservationEligibility), so an earlier stopped read is not staff work.
+        if (self::ended($d)||$d->status==='departed') { return null; }
         if(!$accountLoaded){$account??=self::account($d);}
         if ($account&&DemoData::syncPaused($d,$account)) { return 'paused'; }
         return !self::unconfirmedRegistration($d)&&($stopped??isset(ObservationRecords::stoppedIds(collect([$d]))[$d->id]))?'failed':null;
