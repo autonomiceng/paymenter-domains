@@ -61,7 +61,9 @@ same([false,0,0,0],[$evidence['pending']??false,$evidence['owed_minor'],$evidenc
 // The request's Payment row asks staff to look while the dispute's account hold is open, and settles once staff release it.
 $lostAct=static function()use($pendingOp,$staff):bool {
     Illuminate\Support\Facades\Auth::setUser($staff);
-    return Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::for($pendingOp->fresh())['payment_reversed']['act']??false;
+    $row=Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::for($pendingOp->fresh())['payment_reversed']??null;
+    expect(is_array($row)&&array_key_exists('act',$row),'The request keeps its Payment row with an act field');
+    return (bool)$row['act'];
 };
 same(true,$lostAct(),'A lost dispute needs review while its account hold is open');
 AccountMoneyHolds::release($staff,(int)DB::table('domains_obligation_alerts')->where('alert_key',$holdKey)->value('id'));

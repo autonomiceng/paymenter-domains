@@ -6,7 +6,7 @@ use App\Models\Invoice;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DepartedHistory, DepartedPage, DepartureConfirm};
 use Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, WatchName};
-use Paymenter\Extensions\Servers\Domains\Services\HoldingDeparture;
+use Paymenter\Extensions\Servers\Domains\Services\{DepartureChecks, HoldingDeparture};
 /** The customer page of a confirmed departure (mocks 02, 02b, 02c), read from its saved record and the confirmation's
  * history entry only. It is read-only: the one link out is the way back, transfer or register again, on the existing
  * order pages. */
@@ -27,7 +27,7 @@ final class DepartedOwnerPage
         if ($d->provider_expires_at !== null) { $rows[] = ['label' => 'Last known expiry', 'value' => $d->provider_expires_at->format('M j, Y'), 'note' => 'From our last registrar read.']; }
         $hosting = $summary && count($summary->relatedServices) === 1 ? ($summary->relatedServices[0]['url'] ?? null) : null;
         // Other nameservers: customer surfaces say nothing about DNS (README, DNS lines).
-        match ($r['dns_case'] ?? null) {
+        match (DepartureChecks::savedDnsCase($d, $r['dns_case'] ?? null)) {
             'registrar' => $rows[] = ['label' => 'DNS records', 'value' => $deleted ? 'Stopped at deletion' : 'Stopped at the transfer',
                 'note' => $deleted ? "This domain used our registrar's DNS. Its records stopped working when the domain was deleted." : "This domain used our registrar's DNS. Its records stopped working when the transfer completed. If you haven't already, set up DNS at your new host."],
             'hosting' => $rows[] = ['label' => 'DNS records', 'value' => 'On your hosting plan', 'note' => 'DNS records on your hosting plan keep working while the plan is active.', 'link' => $hosting ? ['Open hosting service', $hosting] : null],

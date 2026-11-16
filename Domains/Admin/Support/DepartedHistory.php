@@ -21,6 +21,19 @@ final class DepartedHistory
         $row = DB::table('domains_reminder_deliveries')->where('delivery_key', $fact['delivery_key'])->where('domain_id', $d->id)->first();
         return $row && $row->state === 'accepted' && $row->accepted_at !== null ? ['subject' => $fact['subject'], 'to' => $fact['to'], 'at' => (int) $row->accepted_at] : null;
     }
+    /** Requests a confirmed departure closed, by id. Its own invoice and credit rows say what happened to each, so History
+     * does not add a separate ended row for them; the request keeps its own page and history.
+     * @return list<int> */
+    public static function closed(Domain $d): array
+    {
+        if ($d->status !== 'departed') { return []; }
+        try { $record = $d->renewal_policy['departure'] ?? null; } catch (\Throwable) { return []; }
+        $ids = [];
+        foreach (is_array($record['invoices'] ?? null) ? $record['invoices'] : [] as $o) {
+            if (is_array($o) && is_int($o['operation_id'] ?? null) && in_array($o['outcome'] ?? null, ['cancelled_unpaid', 'credited'], true)) { $ids[] = $o['operation_id']; }
+        }
+        return $ids;
+    }
     /** The confirmation's staff_holdings entry. */
     public static function entry(Domain $d): array
     {

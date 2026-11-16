@@ -8,7 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Row,Value};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\Section;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Presentation\{Fact,Reader,StaffTime,State};
-use Paymenter\Extensions\Servers\Domains\Services\{HoldingDeparture,ManagementNameservers};
+use Paymenter\Extensions\Servers\Domains\Services\{DepartureChecks,HoldingDeparture,ManagementNameservers};
 /** The staff page of a confirmed departure (mock 07), read from its saved record and the confirmation's history entry
  * only. The suspected review's sections, notices and steps no longer apply, so the page shows Departure, Registration and
  * Billing. */
@@ -62,7 +62,7 @@ final class DepartedPage
         $rows[] = Row::make('Service', Value::state(State::Cancelled, Reader::Staff, 'Service #'.$d->service_id.'.'));
         $registrar = ManagementNameservers::registrar($d);
         $product = match ($d->registrar_key) { 'enom' => 'Enom DNS', 'namesilo' => 'NameSilo DNSOwl', default => $registrar.' DNS' };
-        $dns = match ($r['dns_case'] ?? null) {
+        $dns = match (DepartureChecks::savedDnsCase($d, $r['dns_case'] ?? null)) {
             'registrar' => Value::fact(Fact::entered("Our registrar's DNS"), $product.', from the last registrar read. '.$registrar.' stopped serving it when the transfer completed.'),
             'hosting' => Value::fact(Fact::entered('Hosting plan'), 'From the last registrar read. DNS records on the hosting plan keep working while the plan is active.'),
             'other' => Value::fact(Fact::entered('Other nameservers'), 'From the last registrar read. The transfer does not change them.'),

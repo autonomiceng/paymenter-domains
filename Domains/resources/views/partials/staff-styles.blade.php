@@ -2,6 +2,8 @@
 <style>
 /* Filament reverses end-aligned footers. Keep the configured Cancel-first DOM and keyboard order visible. */
 .domains-dialog .fi-modal-footer:is(.fi-align-end,.fi-align-right) .fi-modal-footer-actions{flex-direction:row;justify-content:flex-end}
+/* Phones: dialog buttons stack full width with the saving action on top; Cancel stays first for keyboards. */
+@media (max-width:639px){.domains-dialog .fi-modal-footer .fi-modal-footer-actions,.domains-dialog .fi-modal-footer:is(.fi-align-end,.fi-align-right) .fi-modal-footer-actions{display:flex;flex-direction:column-reverse;align-items:stretch}.domains-dialog .fi-modal-footer-actions>*{width:100%}}
 .domains-mono,.domains-wrap,.domains-panel-head-title,.domains-row .fi-in-entry-content-col{overflow-wrap:anywhere}
 .domains-title{display:inline-flex;flex-wrap:wrap;align-items:center;gap:.5rem;min-width:0}
 /* Not read and other calm words: the panel's muted gray, the same tone as a gray fact value. */

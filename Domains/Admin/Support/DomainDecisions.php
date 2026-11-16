@@ -201,9 +201,10 @@ final class DomainDecisions
                 $open=\App\Models\Invoice::findOrFail($renewalInvoice->id);
                 $name=Facts::invoiceName((int)$open->id);$name=ctype_digit($name)?'Invoice #'.$name:$name;
                 $rest=', '.(string)$open->formattedTotal.($open->due_at?', due '.$open->due_at->format('M j, Y'):'').'. '.\Paymenter\Extensions\Servers\Domains\Services\DepartureChecks::RENEWAL_WAITS;
-                // This line names the open renewal invoice and links it, so Billing does not list it again.
+                // This line names the open renewal invoice and links it, so Billing does not list it again. The link
+                // becomes the row's Open invoice action; the name stays in the sentence.
                 $url=Facts::invoiceUrl((int)$open->id);
-                $f['Next invoice']=[...Facts::row('Paused'),'sub'=>$url?new \Illuminate\Support\HtmlString('<a class="fi-link domains-link" href="'.e($url).'">'.e($name).'</a>'.e($rest)):$name.$rest];
+                $f['Next invoice']=[...Facts::row('Paused'),'sub'=>$url?new \Illuminate\Support\HtmlString(e($name.$rest).' <a class="fi-link domains-link" href="'.e($url).'">Open invoice</a>'):$name.$rest];
                 $invoice=null;
             }
             elseif (!$fenced&&$renewalInvoice) { $f['Next invoice']=Facts::row($renewalInvoice->due_at?'Due '.gmdate('M j, Y',strtotime(substr($renewalInvoice->due_at,0,10).' 00:00:00 UTC')):'Due'); }

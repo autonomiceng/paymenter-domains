@@ -225,9 +225,13 @@ final readonly class OwnedDomains
         }
         $progress=$d->provenance === 'adopted' ? [['label' => 'Imported', 'state' => 'Completed']] : [];
         $entries=$d->operations()->where('authority_generation',$d->authority_generation)->where('account_fingerprint',$d->account_fingerprint)->orderByDesc('updated_at')->orderByDesc('id')->limit(100)->get();
+        // A confirmed departure's own rows say what happened to the requests it closed.
+        $departed=\Paymenter\Extensions\Servers\Domains\Admin\Support\DepartedHistory::closed($d);
         foreach ($entries as $entry) {
             try {
                 if (($late=RenewalCycles::lateNote($entry))!==null) { $progress[]=['label'=>'Renewal','state'=>'Cancelled','date'=>$entry->updated_at?->toIso8601String(),'note'=>$late]; continue; }
+                // Only the generic row goes; a late payment's return status above stays.
+                if (in_array((int)$entry->id,$departed,true)) { continue; }
                 if ($entry->action==='renew') {
                     // A paid renewal is a change to the domain; an unpaid invoice is not one yet.
                     $key=RequestStatus::key(RequestStatus::readsAs($entry->state,$entry->safe_code));

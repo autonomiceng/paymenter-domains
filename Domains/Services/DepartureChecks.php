@@ -47,13 +47,26 @@ final class DepartureChecks
             default=>null};
     }
     /** Where this suspected holding's DNS is served, from the nameservers in the last registrar read: our registrar's DNS,
-     * our hosting nameservers, or other nameservers. Null when not suspected or no nameservers were read. */
+     * our nameservers on the owner's hosting plan, or other nameservers. Our nameservers without a hosting service of the
+     * owner's for this domain read as other nameservers: nothing says a plan keeps them working. Null when not suspected
+     * or no nameservers were read. */
     public static function dnsCase(Domain $d): ?string
     {
         if(!self::suspected($d)||ObservationProjection::nameservers($d)?->state!=='observed'){return null;}
         if(RegistrationDns::registrarDns($d)){return 'registrar';}
         $actual=ObservationProjection::nameservers($d)?->nameservers??[];$ours=SiteDnsDefault::profile()?->nameservers??[];sort($actual);sort($ours);
-        return $ours&&$actual===$ours?'hosting':'other';
+        return $ours&&$actual===$ours&&self::hosted($d)?'hosting':'other';
+    }
+    /** A departure record's saved DNS case as it reads now: the hosting case only while the owner still has a hosting
+     * service for this domain. */
+    public static function savedDnsCase(Domain $d, mixed $saved): ?string
+    { return $saved==='hosting'&&!self::hosted($d)?'other':(is_string($saved)?$saved:null); }
+    /** The owner has an active hosting service whose domain is this one, the same link the customer domain page lists. */
+    public static function hosted(Domain $d): bool
+    {
+        $c=new DomainSummaryContext((int)$d->user_id,[(int)$d->id],[]);
+        foreach($c->related('managed',(int)$d->id) as $s){if($c->validSource($s)){return true;}}
+        return false;
     }
     /** The staff words for dnsCase(): a short title for the Nameservers row and a sentence for the DNS records row. @return array{0:string,1:string}|null */
     public static function staffDnsCase(Domain $d): ?array

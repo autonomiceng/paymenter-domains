@@ -15,13 +15,14 @@ final class DomainHistory
     public static function entries(Domain $domain): array
     {
         $rows=DomainQueries::operations($domain)->with('invoice:id,status')->orderByDesc('id')->get()->all();
+        $departed=DepartedHistory::closed($domain);
         foreach ($rows as $op) {
             if(is_array($op)){continue;}
             if(($sent=StaffReviewHistory::sendEvent($op))!==null&&($at=StaffReviewHistory::sentAt($op))!==null){
                 $rows[]=['__key'=>'sent-'.$op->id,'__request'=>$op->id,'__order'=>101,'time'=>$at,'event'=>$sent,
                     'sub'=>'Request #'.$op->id.' '.Labels::action($op->action),'status'=>null,'by'=>'System'];
             }
-            if($op->completed_at!==null&&in_array($op->state,['succeeded','rejected','disposed','cancelled'],true)){
+            if($op->completed_at!==null&&in_array($op->state,['succeeded','rejected','disposed','cancelled'],true)&&!in_array((int)$op->id,$departed,true)){
                 $event=$op->state==='succeeded'&&in_array($op->action,['ds_add','ds_delete'],true)
                     ?\Paymenter\Extensions\Servers\Domains\Presentation\DsState::event($op,$domain,true)['state']:Labels::requestStatus($op)['label'];
                 $rows[]=['__key'=>'ended-'.$op->id,'__request'=>$op->id,'__order'=>102,'time'=>$op->completed_at,'event'=>$event,

@@ -5,6 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Filament\Actions\Action;
 use Filament\Forms\Components\{Hidden,Placeholder,Radio,Textarea};
 use Filament\Notifications\Notification;
+use Filament\Schemas\Components\Text;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\HtmlString;
 use Illuminate\Support\Facades\{Auth,Log};
@@ -73,14 +74,15 @@ final class DepartureConfirm
             // Muted, focusable and described by the Departure check row while a line blocks it.
             ->disabled(fn()=>self::preview($d)['block']!==null)
             ->tooltip(fn()=>($b=self::preview($d)['block'])?self::line($b,$d)[1]:null)
-            ->modalHeading(self::LABEL.' '.$d->domain)->modalSubmitActionLabel(self::LABEL)->modalWidth('2xl')
+            ->modalHeading(self::LABEL)->modalDescription($d->domain)->modalSubmitActionLabel(self::LABEL)->modalWidth('2xl')
             ->modalSubmitAction(fn(Action $action)=>$action->color('danger'))
             ->schema(fn()=>[
                 Hidden::make('review_key')->default(fn()=>StaffHoldingReview::ticket((int)Auth::id(),(int)$d->id,HoldingDeparture::ACTION,
                     StaffHoldingReview::stamp(HoldingLocks::take($d,advisory:true)),app(Clock::class))),
                 Radio::make('reason')->label('Reason')->required()->live()->options(array_map(fn($r)=>rtrim($r,'.'),HoldingDeparture::REASONS)),
+                // The helper sits under the label, before the field, so it is read before typing (mock 06).
                 Textarea::make('note')->label('Staff note')->required()->minLength(5)->maxLength(500)->rows(2)
-                    ->helperText('Only staff see it. Say how you know the domain moved.')
+                    ->belowLabel(Text::make('Only staff see it. Say how you know the domain moved.'))
                     ->rules(['regex:'.StaffReason::SINGLE_LINE])->validationMessages(['regex'=>'Use one line.']),
                 Placeholder::make('outcome')->label('When you confirm')->content(fn($get)=>self::outcome($d,$get('reason'))),
             ])
@@ -147,13 +149,13 @@ final class DepartureConfirm
             if(isset($p['credit_minor'][$invoice])){return 'Cancelled on confirm, with '.self::money($p['credit_minor'][$invoice]).' to account credit.';}
             return in_array($invoice,$closed,true)?'Cancelled on confirm.':null;
         };
-        $next=$facts['Next invoice']['sub']??null;$shown=null;
+        // The row names its invoice first (DomainDecisions); the outcome follows the due date, before the pause sentence.
+        $next=$facts['Next invoice']['sub']??null;$shown=null;$html=$next instanceof Htmlable?$next->toHtml():e((string)$next);
         foreach([...$closed,...array_keys($p['credit_minor'])] as $invoice){
-            $name=e(self::invoice($invoice));
-            if($next instanceof Htmlable&&str_contains($next->toHtml(),'>'.$name.'</a>')){$shown=$invoice;break;}
+            if(str_starts_with($html,e(self::invoice($invoice).','))){$shown=$invoice;break;}
         }
         if($shown!==null&&($line=$outcome($shown))!==null){
-            $facts['Next invoice']['sub']=new HtmlString(str_replace(e(DepartureChecks::RENEWAL_WAITS),e($line).'<br>'.e(DepartureChecks::RENEWAL_WAITS),$next->toHtml()));
+            $facts['Next invoice']['sub']=new HtmlString(str_replace(e(DepartureChecks::RENEWAL_WAITS),e($line.' '.DepartureChecks::RENEWAL_WAITS),$html));
         }
         // A paid renewal never sent has no open invoice for the row, so the row names it with its outcome.
         foreach($p['credit_minor'] as $invoice=>$minor){
@@ -162,7 +164,7 @@ final class DepartureConfirm
             $total=(string)\App\Models\Invoice::find($invoice)?->formattedTotal;
             $rest=($total!==''?', '.$total:'').', paid, never sent to the registrar. '.$outcome((int)$invoice);
             $facts['Next invoice']=[...($facts['Next invoice']??Facts::row('Paused')),'value'=>'Paused',
-                'sub'=>new HtmlString(($url?'<a class="fi-link domains-link" href="'.e($url).'">'.e($name).'</a>':e($name)).e($rest).'<br>'.e(DepartureChecks::RENEWAL_WAITS))];
+                'sub'=>new HtmlString(e($name.$rest.' '.DepartureChecks::RENEWAL_WAITS).($url?' <a class="fi-link domains-link" href="'.e($url).'">Open invoice</a>':''))];
             break;
         }
         if(isset($facts['Service'])&&($facts['Service']['value']??null)!==null){$facts['Service']['sub']='Service #'.$d->service_id.'. Cancelled on confirm.';}
