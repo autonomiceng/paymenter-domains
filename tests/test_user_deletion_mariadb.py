@@ -60,7 +60,7 @@ def refund_contention(command, php_args, env, scratch):
                 except subprocess.TimeoutExpired:
                     holder.kill(); holder.wait()
     proof = json.loads(result.stdout.decode().splitlines()[-1])
-    if not proof['complete'] or proof['cases'] != ['retry', 'deferred', 'timeout', 'inversion-retry', 'inversion-deferred', 'funds']:
+    if not proof['complete'] or proof['cases'] != ['retry', 'deferred', 'timeout', 'inversion-retry', 'inversion-deferred', 'funds', 'busy']:
         raise AssertionError('Wrong refund contention proof')
     return proof['cases']
 

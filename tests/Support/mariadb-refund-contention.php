@@ -11,7 +11,8 @@ use Illuminate\Database\Events\TransactionCommitted;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\{DB,Event,Queue};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation,Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{AuditArchives,FundsWaits,MoneyWorkSchema,NativeIntentSchema,PricingRule,Refunds};
+use Paymenter\Extensions\Servers\Domains\Data\RenewalRequest;
+use Paymenter\Extensions\Servers\Domains\Services\{AuditArchives,FundsWaits,MoneyWorkSchema,NativeIntentSchema,PricingRule,Refunds,RenewalAuthority};
 $root=(string)getenv('REFUND_BARRIERS');expect(is_dir($root),'Private barriers required');$role=getenv('REFUND_ROLE');
 $signal=static fn(string $step)=>file_put_contents($root.'/'.$step,'ready');
 $wait=static function(string $step)use($root):void {
@@ -20,13 +21,15 @@ $wait=static function(string $step)use($root):void {
 // retry: one deadlock, then the fresh retry credits. deferred: two deadlocks, queued, next sweep credits. timeout: two lock wait timeouts.
 // inversion-retry and inversion-deferred: the same contracts when the holder locks invoice before customer.
 // funds: two deadlocks in the funds wait closure, queued with no staff review, next sweep closes it.
-$cases=['retry'=>1,'deferred'=>2,'timeout'=>2,'inversion-retry'=>1,'inversion-deferred'=>2,'funds'=>2];
+// busy: a lock wait timeout in the renewal authority read is the named retryable error, with nothing changed or queued.
+$cases=['retry'=>1,'deferred'=>2,'timeout'=>2,'inversion-retry'=>1,'inversion-deferred'=>2,'funds'=>2,'busy'=>1];
 Queue::fake();
 if($role==='holder'){
     DB::statement('SET SESSION innodb_lock_wait_timeout=10');
     foreach($cases as $case=>$rounds){
         $wait($case.'-ready');$blocker=(int)file_get_contents($root.'/blocker');$domain=(int)file_get_contents($root.'/'.$case.'-domain');
         $inversion=str_starts_with($case,'inversion-');$customer=(int)file_get_contents($root.'/'.$case.'-customer');
+        if($case==='busy'){DB::beginTransaction();Domain::whereKey($domain)->lockForUpdate()->first();$signal('busy-locked-1');$wait('busy-done');DB::rollBack();continue;}
         for($round=1;$round<=$rounds;$round++){
             DB::beginTransaction();
             if($case!=='timeout'){
@@ -114,6 +117,16 @@ foreach($cases as $case=>$rounds){
     $account=Account::where('server_id',$op->server_id)->sole();
     file_put_contents($root.'/'.$case.'-domain',(string)$op->domain_id);
     file_put_contents($root.'/'.$case.'-customer',(string)Domain::findOrFail($op->domain_id)->user_id);
+    if($case==='busy'){
+        // The lock wait comes before any anchor check, so a held order's anchor is enough.
+        $signal('busy-ready');$wait('busy-locked-1');$before=[$state($op),DB::table(MoneyWorkSchema::TABLE)->count()];$d=Domain::findOrFail($op->domain_id);
+        try{app(RenewalAuthority::class)->capture(new RenewalRequest((int)$d->id,max(1,(int)$d->authority_generation),max(1,(int)$d->confirmed_revision),'2030-01-01',null));$thrown=null;}
+        catch(Throwable $error){$thrown=$error;}
+        $signal('busy-done');
+        same(['Paymenter\\Extensions\\Servers\\Domains\\Services\\RenewalBusy',1205],[$thrown===null?null:$thrown::class,(int)($thrown?->getPrevious()?->errorInfo[1]??0)],'busy: a lock wait timeout in the authority read is the named retryable error');
+        same($before,[$state($op),DB::table(MoneyWorkSchema::TABLE)->count()],'busy: nothing changed and nothing queued');
+        $proofs[]=$case;continue;
+    }
     if($case==='funds'){
         $op->update(['safe_code'=>'registrar_balance_insufficient','policy'=>[...$op->policy,'funds_wait_at'=>$clock->now()->modify('-4 days')->format(DATE_ATOM)]]);
         $armed=['case'=>$case,'rounds'=>$rounds,'op'=>$op];$attempts=0;$signal($case.'-ready');
