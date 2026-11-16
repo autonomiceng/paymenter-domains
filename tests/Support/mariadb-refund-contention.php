@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering. Two native connections, no provider calls.
 // A holder takes a row the refund credit needs after its tentative credit write: real deadlocks and lock wait timeouts.
+// Inversion: the holder takes an invoice, then the customer (AeStripe's order); Domains keeps customer before invoice.
 declare(strict_types=1);
 $deferDomainsBootstrap=true;require __DIR__.'/mariadb-bootstrap.php';
 require __DIR__.'/commerce.php';require __DIR__.'/native-commerce.php';
@@ -17,24 +18,29 @@ $wait=static function(string $step)use($root):void {
     $end=microtime(true)+25;while(!is_file($root.'/'.$step)){if(microtime(true)>$end){throw new RuntimeException('Barrier timeout: '.$step);}usleep(10000);}
 };
 // retry: one deadlock, then the fresh retry credits. deferred: two deadlocks, queued, next sweep credits. timeout: two lock wait timeouts.
-$cases=['retry'=>1,'deferred'=>2,'timeout'=>2];
+// inversion-retry and inversion-deferred: the same contracts when the holder locks invoice before customer.
+$cases=['retry'=>1,'deferred'=>2,'timeout'=>2,'inversion-retry'=>1,'inversion-deferred'=>2];
 Queue::fake();
 if($role==='holder'){
     DB::statement('SET SESSION innodb_lock_wait_timeout=10');
     foreach($cases as $case=>$rounds){
         $wait($case.'-ready');$blocker=(int)file_get_contents($root.'/blocker');$domain=(int)file_get_contents($root.'/'.$case.'-domain');
+        $inversion=str_starts_with($case,'inversion-');$customer=(int)file_get_contents($root.'/'.$case.'-customer');
         for($round=1;$round<=$rounds;$round++){
             DB::beginTransaction();
             if($case!=='timeout'){
                 // Enough undo makes InnoDB choose the refund as the deadlock victim.
                 foreach(array_chunk(range(1,1000),250) as $chunk){DB::table('jobs')->insert(array_map(static fn($i)=>['queue'=>'ballast','payload'=>'{}','attempts'=>0,'available_at'=>1,'created_at'=>1],$chunk));}
             }
-            DB::table('users')->where('id',$blocker)->lockForUpdate()->first();
+            if($inversion){DB::table('invoices')->where('id',(int)file_get_contents($root.'/other-invoice'))->lockForUpdate()->first();}
+            else{DB::table('users')->where('id',$blocker)->lockForUpdate()->first();}
             $signal($case.'-locked-'.$round);
             if($case==='timeout'){$wait('timeout-done');DB::rollBack();break;}
             $wait($case.'-credited-'.$round);
-            try{Domain::whereKey($domain)->lockForUpdate()->first();}
+            try{$inversion?DB::table('users')->where('id',$customer)->lockForUpdate()->first():Domain::whereKey($domain)->lockForUpdate()->first();}
             catch(QueryException $e){throw new RuntimeException('The holder was chosen as the deadlock victim: '.($e->errorInfo[1]??'unknown'));}
+            // The customer lock is free only after the victim rolled back: none of its credit is committed.
+            if($inversion){expect((float)DB::table('credits')->where('user_id',$customer)->sum('amount')===0.0,$case.' round '.$round.': the victim committed no credit');}
             DB::rollBack();
         }
     }
@@ -51,6 +57,8 @@ $refunds=new Refunds($clock);app()->instance(Refunds::class,$refunds);
 $person=static fn():App\Models\User=>App\Models\User::create(['first_name'=>'Test','last_name'=>'Refund','email'=>'refund-'.((int)App\Models\User::max('id')+1).'@example.com','password'=>'test-password']);
 $staff=$person();$staff->update(['role_id'=>Role::create(['name'=>'Contention refunds','permissions'=>['admin.domains.manage','admin.invoices.update']])->id]);
 file_put_contents($root.'/blocker',(string)$person()->id);
+// Another customer's invoice: outside the refund's locks, so the holder can take it before the refund customer.
+file_put_contents($root.'/other-invoice',(string)DB::table('invoices')->insertGetId(['user_id'=>(int)file_get_contents($root.'/blocker'),'status'=>'pending','currency_code'=>'USD','created_at'=>now(),'updated_at'=>now()]));
 $product=$native->product(Tld::where('registrar_key','enom')->sole(),'register');
 $order=static function(string $name)use($product,$clock,$person):Operation {
     Carbon\Carbon::setTestNow($clock->now());$user=$person();
@@ -71,16 +79,21 @@ $armed=null;$attempts=0;$snapshot=null;
 Event::listen(TransactionCommitted::class,static function()use(&$armed,&$snapshot,$state):void {
     if($armed&&$snapshot===null&&DB::transactionLevel()===0){$snapshot=$state($armed['op']);}
 });
-Credit::saved(static function()use(&$armed,&$attempts,$signal,$wait,$root,$credits):void {
+Credit::saved(static function()use(&$armed,&$attempts,$signal,$wait,$root,$credits,$balance):void {
     if(!$armed){return;}
     $attempts++;[$case,$rounds,$op]=[$armed['case'],$armed['rounds'],$armed['op']];
     same(1,DB::transactionLevel(),$case.': the credit write runs in the one outer transaction');
     // Inside the retry, nothing of the first attempt remains on the operation.
     same(null,Operation::findOrFail($op->id)->funding['refund']??null,$case.' attempt '.$attempts.': no earlier refund survives');
+    $inversion=str_starts_with($case,'inversion-');
+    // Each attempt writes the whole refund once: nothing of a rolled-back attempt is added to it.
+    if($inversion){same(PricingRule::minor($op->amount),$balance($op),$case.' attempt '.$attempts.': the credit row holds this attempt only');}
     if($attempts>$rounds){return;}
     if($case!=='timeout'||$attempts===1){$wait($case.'-locked-'.$attempts);}
     $signal($case.'-credited-'.$attempts);
-    DB::table('users')->where('id',(int)file_get_contents($root.'/blocker'))->lockForUpdate()->first();
+    // After its credit write the refund needs an invoice the holder took before the customer: a lock order inversion.
+    if($inversion){DB::table('invoices')->where('id',(int)file_get_contents($root.'/other-invoice'))->lockForUpdate()->first();}
+    else{DB::table('users')->where('id',(int)file_get_contents($root.'/blocker'))->lockForUpdate()->first();}
 });
 $orders=[];foreach($cases as $case=>$rounds){$orders[$case]=$order(placeholderComFixtureName('refund-'.$case.'-contention-placeholder.com'));}
 // Holding locks route through the installed catalogue contract, which names the real adapters, not the checkout fixture subclasses.
@@ -96,11 +109,12 @@ foreach($cases as $case=>$rounds){
     $op=$orders[$case];
     $account=Account::where('server_id',$op->server_id)->sole();
     file_put_contents($root.'/'.$case.'-domain',(string)$op->domain_id);
+    file_put_contents($root.'/'.$case.'-customer',(string)Domain::findOrFail($op->domain_id)->user_id);
     $armed=['case'=>$case,'rounds'=>$rounds,'op'=>$op];$attempts=0;$snapshot=null;$signal($case.'-ready');
     $result=$refunds->refundHeld($staff,$op->id,'customer_cancelled');$armed=null;
     $repairs=DB::table('domains_obligation_alerts')->where('operation_id',$op->id)->where('code','refund_repair')->count();
     $queued=!$runner?null:DB::table(MoneyWorkSchema::TABLE)->where('subject_id',$op->id)->where('kind','refund_rejected')->value('revision');
-    if($case==='retry'){
+    if(str_ends_with($case,'retry')){
         same(2,$attempts,'retry: one deadlock is retried once');
         same(['amount'=>$op->amount,'currency'=>'USD'],$result,'retry: the fresh retry credits');
         same(PricingRule::minor($op->amount),$balance($op),'retry: the credit is exact, once');
