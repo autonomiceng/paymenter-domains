@@ -27,7 +27,19 @@ final class DepartedPage
         return [HoldingDeparture::REASONS[$r['reason']], $at === null ? null : 'Confirmed by '.self::staff($r).', '.StaffTime::at($at).'.'];
     }
     /** @param list<Row> $billing the shipped Customer row, then the Service row's link */
-    public static function sections(Domain $d, array $r, ?Row $customer, ?string $serviceUrl): array
+    /** The Open alerts row of a departed page: every live alert with its cause, a failed customer notice, and the reminder
+     * check. Confirmation resolved only its departure review and stopped-sync alerts. Null when nothing is open. */
+    public static function alerts(Domain $d, bool $reminderCheck): ?array
+    {
+        $codes = array_values(array_unique(array_column(StaffDomainInputs::for([$d])[$d->id]['alerts'] ?? [], 'code')));
+        $causes = array_map(fn (string $code) => DomainFacts::alertCause($code, $d), $codes);
+        $tone = array_filter($codes, fn (string $code) => (DomainFacts::ALERTS[$code][1] ?? 'warning') === 'danger') ? 'danger' : 'warning';
+        if ($failed = NoticeHealth::open('managed', (int) $d->id, (string) $d->domain)) { $causes[] = $failed['text']; $tone = $failed['tone'] === 'danger' ? 'danger' : $tone; }
+        if ($reminderCheck && $causes === []) { $causes[] = 'A reminder needs a check.'; }
+        return $causes === [] ? null : ['value' => array_values(array_unique($causes)), 'sub' => null, 'url' => null, 'tone' => $tone, 'help' => null, 'demo' => false];
+    }
+    /** @param ?Row $alerts the Open alerts row, first in Registration as on the review page */
+    public static function sections(Domain $d, array $r, ?Row $customer, ?string $serviceUrl, ?Row $alerts = null): array
     {
         $entry = DepartedHistory::entry($d); $at = self::time($r['confirmed_at'] ?? null);
         $registry = is_array($r['registry'] ?? null) ? $r['registry'] : [];
@@ -64,7 +76,7 @@ final class DepartedPage
             $owner = $d->user; $name = $owner ? (trim($owner->first_name.' '.$owner->last_name) ?: (string) $owner->email) : $email['to'];
             $rows[] = Row::make('Email', Value::fact(Fact::entered('Sent to '.$name.', '.StaffTime::at($email['at'])), 'Subject “'.$email['subject'].'”.'));
         }
-        $registration = []; $us = \Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company() ?: 'us';
+        $registration = $alerts ? [$alerts] : []; $us = \Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company() ?: 'us';
         $from = $d->created_at; $zone = new \DateTimeZone(config('domains.time_zone') ?: config('app.timezone'));
         if ($from !== null && $at !== null) { $registration[] = Row::make('With '.$us, Value::fact(Fact::entered(\Carbon\Carbon::parse($from)->setTimezone($zone)->format('M j, Y').' to '.(new \DateTimeImmutable('@'.$at))->setTimezone($zone)->format('M j, Y')))); }
         if ($d->provider_expires_at !== null) { $registration[] = Row::make('Last known expiry', Value::fact(Fact::entered($d->provider_expires_at->format('M j, Y')), 'From the last registrar read.')); }

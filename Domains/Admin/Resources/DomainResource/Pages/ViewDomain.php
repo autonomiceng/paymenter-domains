@@ -244,7 +244,10 @@ class ViewDomain extends RecordDetailPage
         // A confirmed departure reads from its saved record; the review's sections and notices no longer apply.
         if (($r=DepartedPage::record($d))!==null) {
             $customer=isset($facts['Customer'])?$this->row('Customer',$facts['Customer'],$this->side('Customer',$facts['Customer'],$edits,null)):null;
-            return DepartedPage::sections($d,$r,$customer,$facts['Service']['url']??null);
+            // Live money, dispute and delivery alerts, and the reminder check, stay beside the saved facts until staff clear them.
+            $review=$this->getAction('notice_review',false); $review=$review?->isVisible()?$review:null;
+            $alerts=($fact=DepartedPage::alerts($d,$review!==null))===null?null:$this->row('Open alerts',$fact,$review?[$review]:[]);
+            return DepartedPage::sections($d,$r,$customer,$facts['Service']['url']??null,$alerts);
         }
         $suspected=$this->departureSuspected(); $late=!$suspected&&$this->recordsLate($d);
         // The notice above the sheet gives the cause and the next step once, so the rows it explains stay calm.
