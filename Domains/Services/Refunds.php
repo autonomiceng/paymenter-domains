@@ -258,18 +258,21 @@ final readonly class Refunds
     {
         $staff = $review !== null;
         if (ReceiptReturns::plans($seen)) {
-            $review?->local(static fn()=>null); $review = null;
+            if ($review) {
+                $checked = MoneyDecisions::run(self::request($seen, null, $review->actorId, true), static function (array $l) use ($seen, $review): void {
+                    $review->check($l); self::departedOperation($l, (int) $seen->id); $review->record($l);
+                });
+                if ($checked->outcome === MoneyOutcome::Deferred) { throw new StaffReviewRefused(MoneyDecisions::BUSY); }
+                if ($checked->error) { throw $checked->error; }
+                $review = null;
+            }
             $returned = ReceiptReturns::resume((int) $seen->id, $this->clock->now(), self::REJECTED, $deferred);
             if ($deferred && $staff) { throw new StaffReviewRefused(MoneyDecisions::BUSY); }
             $fresh = $seen->fresh();
             if (ReceiptReturns::malformed($fresh) || ReceiptReturns::outstanding($fresh) > 0) { return $returned; }
         }
         $decision = MoneyDecisions::run(self::request($seen, $review ? null : self::REJECTED, $review?->actorId, true), function (array $l) use ($seen, $review): ?array {
-            $review?->check($l); $op = $l['operations']->firstWhere('id', $seen->id);
-            if (!DepartureProof::verified($l['domain']) || !$op || $op->action !== 'renew' || $op->state !== 'rejected'
-                || (!RefundProof::retired($op, $l['domain']) && !FundsWaits::closedRenewal($op, $l['domain']))) {
-                throw new \DomainException('Departed renewal proof is unavailable.');
-            }
+            $review?->check($l); $op = self::departedOperation($l, (int) $seen->id);
             return $this->creditLate($op, $l, $review);
         });
         if ($decision->outcome === MoneyOutcome::Deferred) { if ($staff) { throw new StaffReviewRefused(MoneyDecisions::BUSY); } return $returned ?? null; }
@@ -282,6 +285,15 @@ final readonly class Refunds
         // Contention leaves durable retry work, rather than a failed refund.
         if ($deferred && $staff) { throw new StaffReviewRefused(MoneyDecisions::BUSY); }
         return $resumed ?? $result ?? ($returned ?? null);
+    }
+    private static function departedOperation(array $l, int $id): Operation
+    {
+        $op = $l['operations']->firstWhere('id', $id);
+        if (!DepartureProof::verified($l['domain']) || !$op || $op->action !== 'renew' || $op->state !== 'rejected'
+            || (!RefundProof::retired($op, $l['domain']) && !FundsWaits::closedRenewal($op, $l['domain']))) {
+            throw new \DomainException('Departed renewal proof is unavailable.');
+        }
+        return $op;
     }
     /** Automatic work locks only the order's invoice; a miss reruns on the full scope. Staff and orders with no invoice use the full scope. */
     private static function request(Operation $seen, ?string $kind, ?int $staffId = null, bool $released = false): MoneyRequest
