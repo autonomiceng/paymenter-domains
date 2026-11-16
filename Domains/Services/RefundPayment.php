@@ -53,7 +53,8 @@ final class RefundPayment
             $rows = $l['transactions']->where('invoice_id', $op->invoice_id)->map(fn($row)=>[
                 'id'=>(int)$row->id, 'amount'=>(string)$row->amount, 'status'=>$row->status->value,
                 'gateway_id'=>(int)$row->gateway_id, 'transaction_id'=>$row->transaction_id]);
-            $peers = Operation::where('invoice_id', $op->invoice_id)->orderBy('id')->get()->map(fn($peer)=>['funding'=>array_diff_key($peer->funding ?? [],['dispute_holds'=>true])]);
+            $peers = ($l['invoice_peers']??InvoiceMoney::peers([(int)$op->invoice_id]))->where('invoice_id',$op->invoice_id)
+                ->map(fn($peer)=>['funding'=>array_diff_key($peer->funding ?? [],['dispute_holds'=>true])]);
             return self::retiredPool(InvoiceMoney::record($rows, $peers, []));
         } catch (\PDOException $e) { throw $e; } catch (\Throwable) { return false; }
     }

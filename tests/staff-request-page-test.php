@@ -165,15 +165,20 @@ same(['Put on hold','Cancelled','Staff action'],array_column($rows,'event'),'His
 same(['Ada Admin','Staff'],[$rows[0]['by'],$rows[1]['by']],'By shows the stored name, else Staff');
 same(['Customer asked to wait',null],[$rows[0]['sub'],$rows[2]['sub']],'Reason as the event sub-line');
 same(null,$rows[2]['time'],'Unreadable entry time is Missing');
-same('Credit added',RequestFacts::for(Operation::find($longOp->id))['refund'],'Credit marker reads Credit added');
+same('Refund needs a check',RequestFacts::for(Operation::find($longOp->id))['refund'],'A credit marker without amount or payment coverage needs a check');
 Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$longOp->id])->assertSee('Failed')->assertSee('Put on hold')->assertSee('Ada Admin')
-    ->assertSee('Cancelled')->assertSee('Credit added')->assertDontSee('older staff review');
+    ->assertSee('Cancelled')->assertSee('Refund needs a check')->assertDontSee('older staff review');
 
 // Gateway return facts keep their title but direct staff to the invoice/gateway, never to support.
+require __DIR__.'/Support/money-receipt.php';
+$returnGateway=App\Models\Gateway::create(['extension'=>'MoneyReceipt','name'=>'Synthetic return','type'=>'gateway','enabled'=>true]);
+$returnInvoice=new App\Models\Invoice(['user_id'=>$manager->id,'currency_code'=>'USD','status'=>'paid']);$returnInvoice->send_create_email=false;$returnInvoice->save();
+$returnPayment=DB::table('invoice_transactions')->insertGetId(['invoice_id'=>$returnInvoice->id,'amount'=>'1.00','fee'=>'0.00','status'=>'succeeded','gateway_id'=>$returnGateway->id,'transaction_id'=>'synthetic_staff_return']);
 foreach(['review'=>'Refund needs a check','pending'=>'Refund processing','refunded'=>'Refunded'] as $result=>$title){
-    $row=Operation::find($longOp->id);$row->forceFill(['funding'=>[
-        'refund'=>['amount'=>'1.00','to'=>'original_payment','bridge_minor'=>0,'payments'=>[['id'=>1,'amount_minor'=>100]],'allocations'=>[['key'=>'staff-return','amount_minor'=>100]]],
-        'receipt_return_results'=>['staff-return'=>['state'=>$result]]]])->saveQuietly();
+    if($result==='refunded'){DB::table('invoice_transactions')->insert(['invoice_id'=>$returnInvoice->id,'amount'=>'-1.00','fee'=>'0.00','status'=>'succeeded','transaction_id'=>'synthetic_staff_reversal']);}
+    $row=Operation::find($longOp->id);$row->forceFill(['invoice_id'=>$returnInvoice->id,'funding'=>[
+        'refund'=>['amount'=>'1.00','to'=>'original_payment','bridge_minor'=>0,'payments'=>[['id'=>$returnPayment,'amount_minor'=>100]],'allocations'=>[['key'=>'staff-return','amount_minor'=>100,'transaction_id'=>$returnPayment,'gateway_id'=>$returnGateway->id,'receipt'=>'synthetic_staff_return']]],
+        'receipt_return_results'=>['staff-return'=>['state'=>$result,'key'=>'synthetic_staff_reversal','amount_minor'=>100]]]])->saveQuietly();
     $facts=RequestFacts::for($row);same($title,$facts['refund'],'Staff keeps the gateway return title');
     expect(!str_contains($facts['refund_sub'],'Contact support')&&!str_contains($facts['refund_sub'],'We are returning'),'Staff guidance does not address the customer');
     same('Refund',$facts['refund_label'],'A gateway return is named Refund, not Credit');
@@ -183,8 +188,8 @@ same(['Refund approved','Returned to the original payment method. The refund sho
 // Review: the header names the destination. Credit returns read Credit approved; only a card refund reads Refund approved.
 DB::table('domains_operations')->where('id',$longOp->id)->update(['safe_code'=>'refund_approved']);
 $approved=static function(array $funding)use($longOp):string{$row=Operation::find($longOp->id);$row->forceFill(['funding'=>$funding])->saveQuietly();return Labels::requestStatus(Operation::find($longOp->id))['reason'];};
-$cardReturn=static fn(string $state)=>['refund'=>['amount'=>'1.00','to'=>'original_payment','bridge_minor'=>0,'payments'=>[['id'=>1,'amount_minor'=>100]],'allocations'=>[['key'=>'staff-return','amount_minor'=>100]]],
-    'receipt_return_results'=>['staff-return'=>['state'=>$state]]];
+$cardReturn=static fn(string $state)=>['refund'=>['amount'=>'1.00','to'=>'original_payment','bridge_minor'=>0,'payments'=>[['id'=>$returnPayment,'amount_minor'=>100]],'allocations'=>[['key'=>'staff-return','amount_minor'=>100,'transaction_id'=>$returnPayment,'gateway_id'=>$returnGateway->id,'receipt'=>'synthetic_staff_return']]],
+    'receipt_return_results'=>['staff-return'=>['state'=>$state,'key'=>'synthetic_staff_reversal','amount_minor'=>100]]];
 same(['Credit approved','Credit approved','Refund approved','Refund approved'],
     [$approved(['refund'=>['to'=>'account_credit']]),$approved($cardReturn('credited')),$approved($cardReturn('refunded')),$approved($cardReturn('pending'))],
     'Credit returns read Credit approved; card refunds, done or processing, read Refund approved');

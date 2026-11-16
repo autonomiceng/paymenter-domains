@@ -22,9 +22,11 @@ foreach ($cases as [$state,$code,$word]) {
 // Money that reached an early renewal after it closed reads as account credit, from the request's retained credit.
 // Retained evidence is frozen against model writes, so the fixture writes the stored columns as billing left them.
 $early=Paymenter\Extensions\Servers\Domains\Models\Operation::findOrFail($renewal->id);$seal=static fn(array $value)=>Illuminate\Support\Facades\Crypt::encryptString(json_encode($value));
-Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$renewal->id)->update(['state'=>'rejected','safe_code'=>'renewal_cancelled_unpaid',
+$creditInvoice=new App\Models\Invoice(['user_id'=>$d->user_id,'currency_code'=>'USD','status'=>'cancelled']);$creditInvoice->send_create_email=false;$creditInvoice->save();
+$paymentId=Illuminate\Support\Facades\DB::table('invoice_transactions')->insertGetId(['invoice_id'=>$creditInvoice->id,'amount'=>'12.50','fee'=>'0.00','status'=>'succeeded']);
+Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$renewal->id)->update(['invoice_id'=>$creditInvoice->id,'state'=>'rejected','safe_code'=>'renewal_cancelled_unpaid',
     'policy'=>$seal([...($early->policy??[]),'unpaid_retirement'=>['reason'=>'Early renewal not paid']]),
-    'funding'=>$seal(['late_credits'=>[['payments'=>[['id'=>9101,'amount_minor'=>1250]],'amount'=>'12.50','currency'=>'USD','to'=>'account_credit','credit_id'=>null,'at'=>'2026-11-10T08:00:00+00:00']]])]);
+    'funding'=>$seal(['late_credits'=>[['payments'=>[['id'=>$paymentId,'amount_minor'=>1250]],'amount'=>'12.50','currency'=>'USD','to'=>'account_credit','credit_id'=>null,'at'=>'2026-11-10T08:00:00+00:00']]])]);
 same([['Cancelled','Paid after this invoice closed. We added $12.50 to account credit. You can apply it on an invoice.']],
     array_map(static fn($row)=>[$row['state'],$row['note']],$rows()),'A closed early renewal with late money names the account credit');
 $nativeSuccessful=true; echo "Customer renewal history passed.\n";

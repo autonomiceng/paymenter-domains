@@ -27,6 +27,7 @@ final readonly class RenewalCycles
     {
         $key = self::key($l['domain']); $cycle = $l['operations']->filter(fn ($op) => $op->action === 'renew'
             && $op->authority_generation === $l['domain']->authority_generation && $op->base_expires_at == $l['domain']->provider_expires_at);
+        if(($l['advisory']??true)&&$cycle->isNotEmpty()){$l['invoice_peers']??=InvoiceMoney::peers($cycle->pluck('invoice_id')->filter()->unique()->all());}
         foreach ($cycle as $op) {
             if(RenewalRetries::resolved($op,$l['domain'])){FinancialAdjustments::requireHistory($op,$l);continue;}
             if (RenewalReplacements::reviewed($op,$l['domain'])) { RenewalReplacements::requireSettled($op,$l); continue; }
@@ -131,12 +132,12 @@ final readonly class RenewalCycles
     public static function lateNote(Operation $op): ?string
     {
         if($op->action!=='renew'){return null;}
-        if($return=ReceiptReturns::summary($op)){return $return[1];}
-        if(!self::closedEarly($op)){return null;}
+        if(!self::closedEarly($op)||ReceiptReturns::plans($op)){return ReceiptReturns::summary($op)[1]??null;}
+        if(!isset($op->funding['refund'])&&!isset($op->funding['late_credits'])){return null;}
         // Account credit alone has no original-payment plan for summary(); unreadable coverage still reads as a check.
         if(ReceiptReturns::malformed($op)){return ReceiptReturns::REVIEW[1];}
-        try{$money=InvoiceMoney::project((int)$op->invoice_id);if(!$money['settled']){return ReceiptReturns::REVIEW[1];}}catch(\Throwable){return ReceiptReturns::REVIEW[1];}
-        $minor = array_sum(array_map(fn($r)=>$r['completed']+$r['credit']-$r['recovered'],$money['receipts']));
+        try{$money=InvoiceMoney::project((int)$op->invoice_id);if(InvoiceMoney::returnBlocked($money)){return ReceiptReturns::REVIEW[1];}}catch(\Throwable){return ReceiptReturns::REVIEW[1];}
+        $minor = array_sum(array_map(fn($p)=>PricingRule::minor($p['amount']),ReceiptReturns::effective($op)));
         return $minor > 0 ? RequestStatus::lateCredit(RenewalReminders::money(PricingRule::decimal($minor))) : null;
     }
     /** Read-only eligibility proof, independent of expiry. Writes require the current locked ledger. */

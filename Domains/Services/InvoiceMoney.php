@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Enums\InvoiceTransactionStatus;
+use App\Models\Invoice;
 use App\Helpers\ExtensionHelper;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
@@ -49,12 +50,34 @@ final class InvoiceMoney
         return self::readRecord($l['invoices']->firstWhere('id',$invoiceId),$l['transactions']->where('invoice_id',$invoiceId),$peers,self::ownerHeld((int)$l['user']->id,true),$exclude);
     }
     /** Display and attention only. No recovery or payout authority. Gateway reads use their read transaction contract. */
-    public static function project(int $invoiceId,?iterable $rows=null,?iterable $peers=null): array
+    public static function project(int|Invoice $invoiceId,?iterable $rows=null,?iterable $peers=null,?bool $ownerHold=null): array
     {
-        $invoice=\App\Models\Invoice::findOrFail($invoiceId);
-        $rows??=\App\Models\InvoiceTransaction::where('invoice_id',$invoiceId)->orderBy('id')->get();
-        $peers??=Operation::where('invoice_id',$invoiceId)->orderBy('id')->get();
-        return DB::transaction(fn()=>self::readRecord($invoice,$rows,$peers,self::ownerHeld((int)$invoice->user_id)));
+        $invoice=$invoiceId instanceof Invoice?$invoiceId:Invoice::findOrFail($invoiceId);
+        $rows??=\App\Models\InvoiceTransaction::with('gateway')->where('invoice_id',$invoice->id)->orderBy('id')->get();
+        $peers??=self::peers([(int)$invoice->id]);
+        return self::readRecord($invoice,$rows,$peers,$ownerHold??self::ownerHeld((int)$invoice->user_id));
+    }
+    /** Bounded peer reads shared by display batches and advisory replacement proofs. */
+    public static function peers(array $invoiceIds): \Illuminate\Support\Collection
+    {
+        $peers=collect();
+        Operation::whereIn('invoice_id',$invoiceIds)->chunkById(100,function($rows)use(&$peers):void{$peers=$peers->concat($rows);});
+        return $peers;
+    }
+    /** Reuse one invoice/payment/peer batch. Unreadable invoices stay unknown without hiding the other invoices. */
+    public static function projectBatch(iterable $invoices,iterable $rows,iterable $peers): array
+    {
+        $invoices=collect($invoices);if($invoices->isEmpty()){return [];}
+        $rows=collect($rows)->groupBy('invoice_id');$peers=collect($peers)->groupBy('invoice_id');
+        $held=DB::table('domains_obligation_alerts')->join('domains_domains','domains_domains.id','=','domains_obligation_alerts.domain_id')
+            ->whereIn('domains_domains.user_id',$invoices->pluck('user_id')->unique())->where('code','account_money_hold')->whereNull('resolved_at')
+            ->distinct()->pluck('domains_domains.user_id')->all();
+        $out=[];
+        foreach($invoices as $invoice){
+            try{$out[$invoice->id]=self::project($invoice,$rows->get($invoice->id,collect()),$peers->get($invoice->id,collect()),in_array((int)$invoice->user_id,$held));}
+            catch(\Throwable){$out[$invoice->id]=null;}
+        }
+        return $out;
     }
     private static function readRecord($invoice,iterable $transactions,iterable $peers,bool $ownerHold,?string $exclude=null): array
     {
@@ -69,8 +92,12 @@ final class InvoiceMoney
                 'gateway_id'=>(int)$row->gateway_id, 'transaction_id'=>$row->transaction_id, 'cardOk'=>$capable];
             if (!$readable || $row->status !== InvoiceTransactionStatus::Succeeded || PricingRule::minor($row->amount) <= 0 || isset($gateways[$gateway->id])) { continue; }
             $gateways[$gateway->id] = true;
-            $source = ExtensionHelper::call($gateway, 'receiptLedger', [$invoice]);
-            if (!is_iterable($source)) { throw new \DomainException('Unreadable receipt ledger.'); }
+            $read=static function()use($gateway,$invoice):array{
+                $source=ExtensionHelper::call($gateway,'receiptLedger',[$invoice]);
+                if(!is_iterable($source)){throw new \DomainException('Unreadable receipt ledger.');}
+                $entries=[];foreach($source as $entry){$entries[]=(array)$entry;}return $entries;
+            };
+            $source = DB::transactionLevel()>0?$read():DB::transaction($read);
             foreach ($source as $entry) {
                 $entry = (array)$entry;
                 if ((int)($entry['invoice_id'] ?? 0) !== $invoiceId || (int)($entry['user_id'] ?? 0) !== (int)$invoice->user_id

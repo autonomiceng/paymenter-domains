@@ -49,6 +49,8 @@ final class DomainDecisions
         'native_identity_missing'=>['Service','danger'],
         'acquisition_retirement_review'=>['Service','warning'],
         'refund_repair'=>['Service','warning'],
+        'account_money_hold'=>['Service','warning'],
+        'dispute_recovery'=>['Service','warning'],
         'unknown_price'=>['Renewal price','danger'],
         'unknown_cost'=>['Renewal price','danger'],
         'below_cost'=>['Renewal price','danger'],
