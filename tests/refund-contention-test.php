@@ -87,7 +87,7 @@ same([['kind'=>'refund_rejected','subject_id'=>$op->id,'revision'=>2]], $work(),
 // A full retry budget of newer deferrals cannot push it out of the next sweep.
 $newer = array_map(fn(int $i) => MoneyDecisions::run(new MoneyRequest($op->domain, 'refund_rejected', 900000 + $i), fn() => throw $busy('HY000', 1213))->outcome, range(1, 25));
 same(array_fill(0, 25, MoneyOutcome::Deferred), $newer, 'Newer contention defers 25 decisions');
-$refunds->creditRetired($account);
+same([(int)$op->domain_id], $refunds->creditRetired($account), 'The sweep reports the credited queued refund for its notice');
 same($before + PricingRule::minor($op->amount), $balance(), 'The next sweep credits the older deferral exactly once');
 same([[900025], false], [array_column($work(), 'subject_id'), $repaired($op)], 'Completed work leaves the queue with no repair; the newest waits its turn');
 DB::table(MoneyWorkSchema::TABLE)->delete();

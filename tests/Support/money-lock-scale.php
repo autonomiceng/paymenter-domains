@@ -47,7 +47,7 @@ const MONEY_SCALE_STATEMENTS = 100;
 const MONEY_SCALE_PAGE_STATEMENTS = 20;
 const MONEY_SCALE_ROW_STATEMENTS = 10;
 // Frozen observations at 11ed0dd8; tuples are [sql, Invoice, InvoiceItem, InvoiceTransaction].
-// Each entry contains complete-pass and per-decision ceilings. Never raise these for PR C.
+// Each entry contains complete-pass and per-decision ceilings. Never raise these for PR C's own cost.
 // When a row metric meets its final bound, replace its allowance with null (or remove the cell).
 // The optional research matrix uses the same process: only the first N5/C1 refund is cold.
 const MONEY_SCALE_BASELINE = [

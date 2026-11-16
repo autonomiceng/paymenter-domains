@@ -231,10 +231,11 @@ final class ReceiptReturns
         $proof=clone $op;$proof->funding=$funding;self::completedMinor($proof,$l);$op->update(['funding'=>$funding]);
     }
     /** Each phase is one money decision on the order's invoice. Contention retries it once; a second defers it under the
-     * caller's work kind, with no repair, and resume stops there: the queued work runs resume again. */
-    public static function resume(int $id,\DateTimeImmutable $now,string $kind): ?array
+     * caller's work kind, with no repair, and resume stops there: the queued work runs resume again. $deferred tells
+     * the caller that a phase was queued, so a staff caller can say to try again. */
+    public static function resume(int $id,\DateTimeImmutable $now,string $kind,?bool &$deferred=null): ?array
     {
-        OperationClaims::outside();$seen=Operation::findOrFail($id);$plans=self::plans($seen);
+        $deferred=false;OperationClaims::outside();$seen=Operation::findOrFail($id);$plans=self::plans($seen);
         if(!$plans){return null;}
         // An unbalanced plan stays with staff: no gateway call and no automatic resolution until it is reviewed.
         if(self::malformed($seen)){RefundRepairs::failed($id,$now->getTimestamp());return null;}
@@ -275,7 +276,7 @@ final class ReceiptReturns
                             if(InvoiceMoney::heldFor($money,$a['transaction_id'])['card']<$a['amount_minor']){self::release($op,$a['key'],'receipt_changed',$l);return [false,$money['overdrawn']];}
                             self::saveResult($op,$a,['state'=>'sending','amount_minor'=>$a['amount_minor'],'at'=>$now->format(DATE_ATOM)],$l);return [true,false];
                         });
-                        if($send->outcome===MoneyOutcome::Deferred){return null;}
+                        if($send->outcome===MoneyOutcome::Deferred){$deferred=true;return null;}
                         $repair=$repair||$send->value[1];
                         if(!$send->value[0]){continue;}
                     }
@@ -295,13 +296,13 @@ final class ReceiptReturns
                     if($saved!==$known&&($saved['state']??null)!=='sending'){return null;}
                     self::saveResult($op,$a,$result,$l);return true;
                 });
-                if($saved->outcome===MoneyOutcome::Deferred){return null;}
+                if($saved->outcome===MoneyOutcome::Deferred){$deferred=true;return null;}
             }
             $fresh=$seen->fresh();$results=$fresh->funding['receipt_return_results']??[];
             $complete=self::outstanding($fresh)===0;
             if($complete){
                 $checked=$phase(fn(Operation $op,array $l):bool=>InvoiceMoney::load($l,(int)$fresh->invoice_id)['overdrawn']);
-                if($checked->outcome===MoneyOutcome::Deferred){return null;}
+                if($checked->outcome===MoneyOutcome::Deferred){$deferred=true;return null;}
                 $repair=$checked->value;
             }
             if(!$complete||$repair){RefundRepairs::failed($id,$now->getTimestamp());return null;}

@@ -57,10 +57,13 @@ final readonly class Refunds
     }
     public function creditRejected(int $id, ?StaffOperationReview $review = null): ?array
     {
-        OperationClaims::outside(); $seen = Operation::findOrFail($id);
+        OperationClaims::outside(); $seen = Operation::findOrFail($id); $staff = $review !== null;
         if (ReceiptReturns::plans($seen)) {
-            $review?->local(static fn()=>null);$review=null; // Consume the bound staff review before gateway recovery.
-            $returned = ReceiptReturns::resume($id, $this->clock->now(), self::REJECTED);
+            // Consume the bound staff review before gateway recovery. Deferred work stays queued as automatic work, and staff
+            // are told to try again.
+            $review?->local(static fn()=>null);$review=null;
+            $returned = ReceiptReturns::resume($id, $this->clock->now(), self::REJECTED, $deferred);
+            if ($deferred && $staff) { throw new StaffReviewRefused(MoneyDecisions::BUSY); }
             $seen->refresh();
             if (ReceiptReturns::malformed($seen) || ReceiptReturns::outstanding($seen)>0 || (!RefundProof::retired($seen, $seen->domain)&&!FundsWaits::closedRenewal($seen,$seen->domain))) { return $returned; }
         }
@@ -120,13 +123,16 @@ final readonly class Refunds
             $review?->record($l);
             return ['amount' => $payment['amount'], 'currency' => 'USD'];
         });
-        if ($decision->outcome === MoneyOutcome::Deferred) { if ($review) { throw new StaffReviewRefused(MoneyDecisions::BUSY); } return $returned ?? null; }
+        if ($decision->outcome === MoneyOutcome::Deferred) { if ($staff) { throw new StaffReviewRefused(MoneyDecisions::BUSY); } return $returned ?? null; }
         try {
             if ($decision->error) { throw $decision->error; }
             $result = $decision->value;
-            if (ReceiptReturns::plans(Operation::findOrFail($id))) { return ReceiptReturns::resume($id, $this->clock->now(), self::REJECTED) ?? $result ?? ($returned ?? null); }
-            RefundRepairs::resolved($id, $this->clock->now()->getTimestamp()); return $result;
+            if (!ReceiptReturns::plans(Operation::findOrFail($id))) { RefundRepairs::resolved($id, $this->clock->now()->getTimestamp()); return $result; }
+            $resumed = ReceiptReturns::resume($id, $this->clock->now(), self::REJECTED, $deferred);
         } catch (\Throwable $e) { RefundRepairs::failed($id, $this->clock->now()->getTimestamp()); throw $e; }
+        // Outside the repair catch: a deferral is queued work, not a failure.
+        if ($deferred && $staff) { throw new StaffReviewRefused(MoneyDecisions::BUSY); }
+        return $resumed ?? $result ?? ($returned ?? null);
     }
     /** Return incremental net funds received after retirement, however little or much arrives. */
     private function creditLate(Operation $op, array $l, ?StaffOperationReview $review): ?array
@@ -171,7 +177,9 @@ final readonly class Refunds
                         if (!ReceiptReturns::plans($op) && ReceiptReturns::malformed($op)) { throw new \DomainException('Retained return plan needs review.'); }
                         if ($this->creditClosed($op) !== null) { $credited[] = (int) $op->domain_id; }
                         $inspect[(int) $op->domain_id] = true;
-                    } elseif ($op && $work->kind === self::REJECTED) { $this->creditRejected((int) $op->id); }
+                    } elseif ($op && $work->kind === self::REJECTED && $this->creditRejected((int) $op->id) !== null) {
+                        $credited[] = (int) $op->domain_id; $inspect[(int) $op->domain_id] = true;
+                    }
                 } catch (MoneyWorkUnqueued $e) { throw $e; }
                 catch (\Throwable $e) {
                     try { RefundRepairs::failed((int) $work->subject_id, $this->clock->now()->getTimestamp()); }

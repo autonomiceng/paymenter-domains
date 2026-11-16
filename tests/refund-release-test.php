@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\{DB,Mail};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\OperationActions;
 use Paymenter\Extensions\Servers\Domains\Mail\DomainNotice;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Services\{HistoryRetention,HoldingLocks,InvoiceMoney,NativePresenter,OwnedDomains,PricingRule,ReceiptReturns,ReceiptReversals,RefundPayment,Refunds,ReminderSchedules,Reminders};
+use Paymenter\Extensions\Servers\Domains\Services\{HistoryRetention,HoldingLocks,InvoiceMoney,MoneyDecisions,NativePresenter,OwnedDomains,PricingRule,ReceiptReturns,ReceiptReversals,RefundPayment,Refunds,ReminderSchedules,Reminders,StaffOperationReview,StaffReviewRefused};
 
 class ReleaseGateway extends MoneyReceiptGateway
 {
@@ -316,6 +316,22 @@ foreach([1,2] as $fails){$case('resume contention '.$fails,function()use($fails,
     $equal(['refunded',$sends+1,false],[$op->fresh()->funding['receipt_return_results'][$a['key']]['state']??null,MoneyReceiptGateway::$sends,$repaired()],'The queued resume sends once on its next run');
     DB::table('domains_money_work')->where('subject_id',$op->id)->delete();
 });}
+// A staff credit that defers in resume uses up its review, stays queued as automatic work and tells staff to try again.
+$case('staff credit resume contention',function()use($make,$reserve,$refunds,$equal,$clock,&$busy):void{
+    \Paymenter\Extensions\Servers\Domains\Services\MoneyWorkSchema::install();
+    $op=$make('resume-busy-staff');$a=$reserve($op);$sends=MoneyReceiptGateway::$sends;
+    $retry=commerceUser();$retry->update(['role_id'=>Role::create(['name'=>'Release staff retry','permissions'=>['admin.domains.view','admin.domains.manage','admin.invoices.update',StaffOperationReview::permission('credit')]])->id]);
+    $review=new StaffOperationReview((int)$retry->id,$op->domain_id,$op->id,'credit',StaffOperationReview::ticket((int)$retry->id,$op->domain_id,$op->id,'credit',
+        StaffOperationReview::stamp($op->fresh(),$op->domain->fresh()),$clock),'Reviewed current evidence',$clock);
+    $busy=['armed'=>$op->id,'fails'=>2,'tries'=>0];$refused=null;
+    try{$refunds->creditRejected($op->id,$review);}catch(StaffReviewRefused $e){$refused=$e->getMessage();}finally{$busy['armed']=null;}
+    $work=DB::table('domains_money_work')->where('subject_id',$op->id)->pluck('kind')->all();
+    $equal([MoneyDecisions::BUSY,null,$sends,['refund_rejected']],[$refused,$op->fresh()->funding['receipt_return_results'][$a['key']]??null,MoneyReceiptGateway::$sends,$work],
+        'Two contentions on a staff credit: staff are told to try again, nothing is sent and the order stays queued');
+    $refunds->creditRejected($op->id);
+    $equal(['refunded',$sends+1],[$op->fresh()->funding['receipt_return_results'][$a['key']]['state']??null,MoneyReceiptGateway::$sends],'The queued resume sends once on its next run');
+    DB::table('domains_money_work')->where('subject_id',$op->id)->delete();
+});
 foreach(['register','transfer'] as $action){$case('zero held '.$action,function()use($make,$action,$observe,$refunds,$equal,$balance):void{
     $op=$make('zero-'.$action,$action);$op->update(['state'=>'rejected','attempt'=>['seal'=>'absent','send_state'=>'definitely_unsent','disposition'=>'rejected',
         'rejection_basis'=>'definitely_unsent','terminal'=>['operation_key'=>$op->operation_key,'generation'=>$op->authority_generation]]]);
