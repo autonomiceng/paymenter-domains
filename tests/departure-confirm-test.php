@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
-use Paymenter\Extensions\Servers\Domains\Services\{DepartureBlocked,DepartureChecks,DepartureProof,HoldingDeparture,HoldingLocks,MoneyOutcome,RenewalOwnership,StaffHoldingReview,StaffReviewRefused};
+use Paymenter\Extensions\Servers\Domains\Services\{DepartureBlocked,DepartureChecks,DepartureProof,HoldingDeparture,HoldingLocks,MoneyOutcome,ReminderSchedules,Reminders,RenewalOwnership,StaffHoldingReview,StaffReviewRefused};
 
 $nativeSuccessful=false;
 staffPanel();
@@ -79,6 +79,10 @@ $other=$watchRow((int)$manager->id,['state'=>'active','registration'=>'external'
 // Confirmation: one decision closes the unpaid renewal, cancels the service and freezes the record.
 $credit=DB::table('credits')->where('user_id',$d->user_id)->get()->map(fn($r)=>(array)$r)->all();
 // A stopped sync has nothing to resume once the domain departs; an unrelated alert stays open.
+$follow=$d->fresh()->observation['followup']??[];
+DB::table('domains_observation_work')->updateOrInsert(['domain_id'=>$d->id,'generation'=>$d->authority_generation,
+    'phase'=>isset($follow['operation_key'])?hash('sha256',$follow['operation_key']):'holding'],
+    ['server_id'=>$d->server_id,'account_fingerprint'=>$d->account_fingerprint,'due_at'=>0,'safe_code'=>'domain_not_in_account']);
 Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::record($d->fresh(),'observation_review',$clock->now()->getTimestamp());
 Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::record($d->fresh(),'unknown_expiry',$clock->now()->getTimestamp());
 $page($staff)->callAction('confirm_departure',['reason'=>'other_account','note'=>'Checked the registrar account.'])->assertHasNoActionErrors();
@@ -99,5 +103,14 @@ $again=$departure->confirm($staff,(int)$d->id,'',  'other_account','Checked the 
 same(MoneyOutcome::Failed,$again->outcome,'A departed holding cannot be confirmed again');
 $refusedWrite=false;try{$held->update(['status'=>'active']);}catch(DomainException){$refusedWrite=true;}
 same(true,$refusedWrite,'Departed status is retained');
+// Retained read failures cannot reopen the stopped-sync alert after confirmation.
+ReminderSchedules::enroll((int)$d->server_id);
+$reminders=new Reminders($clock,$bindings);
+foreach([1,2] as $sweep){
+    DB::table('domains_reminder_schedules')->where('server_id',$d->server_id)->update(['due_at'=>0,'cursor'=>$d->id-1]);
+    $reminders->sweep(accounts:1,limit:1);
+    same(0,$openAlert('observation_review'),'The stopped-sync alert stays resolved after reminder sweep '.$sweep);
+    same(0,$openAlert('reminder_failed'),'The departed reminder inspection completes without failure');
+}
 echo "Departure confirmation closes unpaid renewals in one decision and refuses blocked holdings.\n";
 $nativeSuccessful=true;
