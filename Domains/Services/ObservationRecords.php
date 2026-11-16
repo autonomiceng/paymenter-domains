@@ -123,7 +123,8 @@ final class ObservationRecords
             // HoldingReadRetry::status: the current job is this holding's work row; any stopped current row stops reads.
             $current=$rows->get($d->id,collect())->filter(fn($r)=>(int)$r->server_id===(int)$d->server_id&&$r->account_fingerprint===$d->account_fingerprint
                 &&(int)$r->generation===(int)$d->authority_generation&&$r->phase===$phase);
-            if ($current->isEmpty()||$current->contains(fn($r)=>$stopped->has($r->id)||$r->safe_code==='records_disabled')||HoldingReadRetry::absent($d)) { $ids[$d->id]=true; }
+            // HoldingReadRetry::status keeps next_read for active holdings even when record reads are disabled.
+            if ($current->isEmpty()||$current->contains(fn($r)=>$stopped->has($r->id)||($r->safe_code==='records_disabled'&&$d->status!=='active'))||HoldingReadRetry::absent($d)) { $ids[$d->id]=true; }
         }
         return $ids;
     }
