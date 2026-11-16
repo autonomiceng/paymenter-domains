@@ -64,8 +64,9 @@ final readonly class Refunds
             $seen->refresh();
             if (ReceiptReturns::malformed($seen) || ReceiptReturns::outstanding($seen)>0 || (!RefundProof::retired($seen, $seen->domain)&&!FundsWaits::closedRenewal($seen,$seen->domain))) { return $returned; }
         }
-        // A staff review is answered now and never queued; every other caller is automatic and queues a deferral.
-        $decision = MoneyDecisions::run(new MoneyRequest($seen->domain()->firstOrFail(), $review ? null : self::REJECTED, $id, $review?->actorId),
+        // A staff review is answered now on the full scope and never queued; every other caller is automatic, locks only
+        // the order's invoice and queues a deferral.
+        $decision = MoneyDecisions::run(self::request($seen, $review ? null : self::REJECTED, $review?->actorId),
             function (array $l) use ($id, $review): ?array {
             $review?->check($l); $op = $l['operations']->firstWhere('id', $id);
             // A cancelled in-flight receipt and later money use incremental returns; neither assumes full settlement.
@@ -215,10 +216,12 @@ final readonly class Refunds
         // An unreadable return stays with staff before any allocation arithmetic; resume() records a plan's repair itself.
         if (ReceiptReturns::malformed($fresh)) { RefundRepairs::failed((int)$seen->id, $this->clock->now()->getTimestamp()); return null; }
         if (ReceiptReturns::outstanding($fresh)>0) { return null; }
-        $decision = MoneyDecisions::run(new MoneyRequest($seen->domain()->firstOrFail(), self::CLOSED, (int) $seen->id, released: true), function (array $l) use ($seen): ?array {
+        $decision = MoneyDecisions::run(self::request($seen, self::CLOSED, released: true), function (array $l) use ($seen): ?array {
             $op = $l['operations']->firstWhere('id', $seen->id);
             if (!$op || !UnpaidAcquisitionProof::terminal($op, $l['domain'])) { throw new \DomainException('Closed order proof is unavailable.'); }
             // Paid already started this invoice's services. Credit on top would give the money back and keep them, so a person decides.
+            // A scope without this invoice reruns on the full scope; it never reads as an invoice that is not cancelled.
+            InvoiceScope::cover($l, (int) $op->invoice_id);
             if ($l['invoices']->firstWhere('id', $op->invoice_id)?->status !== 'cancelled') { return null; }
             return $this->creditLate($op, $l, null);
         });
@@ -227,6 +230,13 @@ final readonly class Refunds
         $result = $decision->value;
         if (ReceiptReturns::plans($seen->fresh())) { return ReceiptReturns::resume((int)$seen->id, $this->clock->now()) ?? $result ?? $returned; }
         return $result;
+    }
+    /** Automatic work locks only the order's invoice; a miss reruns on the full scope. Staff and orders with no invoice use the full scope. */
+    private static function request(Operation $seen, ?string $kind, ?int $staffId = null, bool $released = false): MoneyRequest
+    {
+        $scoped = $kind !== null && $seen->invoice_id !== null;
+        return new MoneyRequest($seen->domain()->firstOrFail(), $kind, (int) $seen->id, $staffId, $released,
+            $scoped ? MoneyScope::Invoice : MoneyScope::Full, $scoped ? (int) $seen->invoice_id : null);
     }
     /** Bounded caller-selected retry batch; scheduler/fair cursors remain31/39. */
     public function retryPending(int $afterId = 0, int $limit = 100): int
