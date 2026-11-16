@@ -7,12 +7,16 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Services\DisputeRecoveries;
 
+$peer=$new('credit-notice-peer-placeholder.com');
 [$domain]=$make(placeholderComFixtureName('credit-notice-overdue-placeholder.com'),false);
 $op=Operation::where('domain_id',$domain->id)->where('action','register')->sole();
 $dispute='synthetic_notice_overdue';
 $committed=$clock->now()->modify('-59 minutes');
-$op->update(['funding'=>[...($op->funding??[]),'dispute_holds'=>[
-    ['dispute_id'=>$dispute,'payment_id'=>1,'lost_minor'=>100,'owed_minor'=>100,'removed_minor'=>100,
+DB::table('domains_operations')->where('id',$peer->id)->update(['invoice_id'=>$op->invoice_id,'state'=>'rejected']);$peer->refresh();
+$payment=\App\Models\InvoiceTransaction::where('invoice_id',$op->invoice_id)->where('amount','>','0')->sole();
+DB::table('invoice_transactions')->where('id',$payment->id)->update(['amount'=>'5.00']);
+$peer->update(['funding'=>['refund'=>['to'=>'account_credit','amount'=>'3.00','payments'=>[['id'=>(int)$payment->id,'amount_minor'=>300]]],'dispute_holds'=>[
+    ['dispute_id'=>$dispute,'payment_id'=>(int)$payment->id,'lost_minor'=>300,'owed_minor'=>100,'removed_minor'=>100,
         'remainder_minor'=>0,'credit_id'=>null,'at'=>$committed->format(DATE_ATOM)],
 ]]]);
 DB::table('domains_obligation_alerts')->insert(['alert_key'=>DisputeRecoveries::key('account_money_hold',$dispute),
@@ -38,4 +42,6 @@ $reminders->remind((int)$domain->id);
 same(0,$alerts()->whereNull('resolved_at')->count(),'A recorded delivery clears the overdue alert');
 same($clock->now()->getTimestamp(),(int)$alerts()->sole()->resolved_at,'The overdue alert retains its resolution');
 same(1,$delivery()->count(),'Repeated reminder checks do not duplicate the credit notice');
+$reminders->remind((int)$peer->domain_id);
+same(1,DB::table('domains_reminder_deliveries')->where('template','domains_credit_removed')->count(),'Peer checks preserve one removal notice per dispute');
 $nativeSuccessful=true;

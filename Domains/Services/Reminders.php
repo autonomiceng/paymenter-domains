@@ -63,14 +63,14 @@ final readonly class Reminders
     private static function recovery(array $l,\DateTimeImmutable $now,array &$alerts):?array
     {
         foreach($l['operations'] as $op){
-            $ids=array_unique(array_column($op->funding['dispute_holds']??[],'dispute_id'));
+            $holds=\Paymenter\Extensions\Servers\Domains\Models\Operation::where('invoice_id',$op->invoice_id)->orderBy('id')->get()
+                ->flatMap(fn($peer)=>$peer->funding['dispute_holds']??[])->all();
+            $ids=array_unique(array_column($holds,'dispute_id'));
             foreach($ids as $id){
                 $anchor=DB::table('domains_obligation_alerts')->where('alert_key',DisputeRecoveries::key('account_money_hold',$id))->first();
                 if(!$anchor||(int)$anchor->domain_id!==(int)$l['domain']->id){continue;}
                 $minor=0;$at=null;
-                foreach(\Paymenter\Extensions\Servers\Domains\Models\Operation::where('invoice_id',$op->invoice_id)->orderBy('id')->get() as $peer){
-                    foreach($peer->funding['dispute_holds']??[] as $hold){if($hold['dispute_id']===$id){$minor+=$hold['removed_minor'];$at=$hold['at'];}}
-                }
+                foreach($holds as $hold){if($hold['dispute_id']===$id){$minor+=$hold['removed_minor'];$at=$hold['at'];}}
                 if($minor===0){continue;}
                 $identity='recovery:'.$id;$key=hash('sha256',$l['domain']->id.':'.$identity);
                 if(HistoryRetention::replayed('reminder',$key)||DB::table('domains_reminder_deliveries')->where('delivery_key',$key)->exists()){continue;}

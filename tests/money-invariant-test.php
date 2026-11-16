@@ -495,13 +495,17 @@ foreach([0,70,300] as $unused){
     same(1,\App\Models\Audit::where('auditable_id',$op->invoice_id)->where('event','account_money_hold_released')->where('user_id',$staff->id)->count(),'Hold release retains one native invoice audit for its actor');
     expect(DB::table('domains_obligation_alerts')->where('id',$alert->id)->value('resolved_at')!==null,'Replay never reopens a staff-released hold');
 }
-// One shared receipt, two $1.50 credits, $5 gross and a $3 loss: only $1 is owed across the peers.
+// One shared receipt, A kept, B credited $3, $5 gross and a $3 loss: only $1 is owed.
 $op=$new('recovery-shared-placeholder.com');$payment=InvoiceTransaction::where('invoice_id',$op->invoice_id)->sole();DB::table('invoice_transactions')->where('id',$payment->id)->update(['amount'=>'5.00']);$payment->refresh();
 $other=$new('recovery-peer-placeholder.com');
 DB::table('domains_operations')->where('id',$other->id)->update(['invoice_id'=>$op->invoice_id]);$other->refresh();
-foreach([$op,$other] as $peer){$peer->update(['funding'=>['refund'=>['to'=>'account_credit','amount'=>'1.50','payments'=>[['id'=>(int)$payment->id,'amount_minor'=>150]]]]]);}
+$op->update(['state'=>'succeeded']);
+$other->update(['funding'=>['refund'=>['to'=>'account_credit','amount'=>'3.00','payments'=>[['id'=>(int)$payment->id,'amount_minor'=>300]]]]]);
 $credit->refresh()->update(['amount'=>'3.00']);$entry=$loss($op,300,'synthetic_shared');$recovery->recover($entry);
 same(200,$balance(),'Shared receipt recovers $1 once, not once per operation');
+same([],$op->fresh()->funding['dispute_holds']??[],'Kept anchor has no returned credit share');
+same(100,$other->fresh()->funding['dispute_holds'][0]['removed_minor'],'Only the credited peer records the removal');
+same(1,DB::table('domains_reminder_deliveries')->where('domain_id',$op->domain_id)->where('template','domains_credit_removed')->count(),'Anchor sends one notice for credit removed on its peer');
 $before=[$op->fresh()->funding,$other->fresh()->funding,$balance()];$recovery->recover($entry);
 same($before,[$op->fresh()->funding,$other->fresh()->funding,$balance()],'Shared recovery replay retains both peer shares');
 AccountMoneyHolds::release($staff,(int)DB::table('domains_obligation_alerts')->where('alert_key',DisputeRecoveries::key('account_money_hold','synthetic_shared'))->value('id'));
