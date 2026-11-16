@@ -130,6 +130,8 @@ final class HoldingDeparture
             if(!in_array($op->state,[...self::OPEN,...self::TERMINAL],true)){$block(self::AT_REGISTRAR,$invoice,(int)$op->id);continue;}
             if(in_array($op->state,self::OPEN,true)&&$generation&&RenewalCycles::canRetireUnpaid($op,$l)){$close[]=$op;continue;}
             if(in_array($op->state,self::OPEN,true)&&$generation&&$r!==null&&self::paidUnsent($op,$l)){$credit[]=$op;continue;}
+            // A retry predecessor shares its paid invoice with the child that completed it: history of the kept child.
+            if($op->state==='rejected'&&self::retriedToSuccess($op,$l)){continue;}
             // Closed earlier with nothing left on its invoice: history, not part of this closure.
             if(in_array($op->state,self::TERMINAL,true)&&$r!==null&&InvoiceMoney::settled($r)){continue;}
             if(in_array($op->state,self::TERMINAL,true)&&$invoice===null){continue;}
@@ -153,6 +155,16 @@ final class HoldingDeparture
             ||!RenewalCycles::registrarVirgin($op)||!RenewalCycles::moneyMoved($l,(int)$invoice->id)
             ||$op->base_expires_at?->format('Y-m-d')!==$d->provider_expires_at?->format('Y-m-d')){return false;}
         try{RefundProof::requireUnsent($op,$d);RefundPayment::requireLine($op,$l);return true;}catch(\DomainException){return false;}
+    }
+    /** Proved unsent retry history whose chain on the same paid debt ends in a completed renewal. */
+    private static function retriedToSuccess(Operation $op,array $l): bool
+    {
+        for($i=0;$i<=3&&$op->state==='rejected';$i++){
+            if(!RenewalRetries::resolved($op,$l['domain'])){return false;}
+            $op=$l['operations']->firstWhere('operation_key',$op->policy['unsent_retry']['next_key']);
+            if(!$op){return false;}
+        }
+        return $op->state==='succeeded';
     }
     private static function creditMinor(array $l): int
     { return PricingRule::minor((string)(\App\Models\Credit::where('user_id',$l['user']->id)->where('currency_code','USD')->value('amount')??'0.00')); }
