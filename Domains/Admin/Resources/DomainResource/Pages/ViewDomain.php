@@ -183,12 +183,13 @@ class ViewDomain extends RecordDetailPage
     }
     private function syncNow(): Action
     {
-        // Record reads use registrar calls; Sync now lets staff request them only when needed.
-        return Action::make('sync_now')->label('Sync now')->color('gray')->disabled(fn()=>\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::pending($this->getRecord()))->visible(fn()=>DomainFacts::syncNow($this->getRecord())&&!$this->departureSuspected())
+        // Record reads use registrar calls; Sync now lets staff request them only when needed. Under review it queues the
+        // same departure read as Check again, so a grace or expired holding is admitted and the two share one pending read.
+        return Action::make('sync_now')->label('Sync now')->color('gray')->disabled(fn()=>\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::pending($this->getRecord()))->visible(fn()=>DomainFacts::syncNow($this->getRecord())||(Staff::can('admin.domains.manage')&&$this->departureSuspected()))
             ->action(function():void {
                 if (!Staff::can('admin.domains.manage')) { abort(403); }
                 try {
-                    $queued=\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::enqueue((int)\Illuminate\Support\Facades\Auth::id(),$this->getRecord()->refresh());
+                    $queued=\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::enqueue((int)\Illuminate\Support\Facades\Auth::id(),$this->getRecord()->refresh(),$this->departureSuspected());
                     if (!$queued) {
                         $minutes=(int)ceil(\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::UNIQUE_FOR/60);
                         \Filament\Notifications\Notification::make()->info()->title("A sync was already requested. If nothing changes in {$minutes} minutes, press Sync now again. If it still doesn't run, check the queue worker.")->send();

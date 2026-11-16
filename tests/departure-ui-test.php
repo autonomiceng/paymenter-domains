@@ -44,6 +44,14 @@ Illuminate\Support\Facades\DB::transaction(function()use($d):void{$fresh=$d->fre
 try{Livewire\Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$d->id])->assertSuccessful()->assertActionVisible('check_departure');$legacy=true;}
 catch(Throwable $error){$legacy=false;echo 'Legacy absence page: '.$error->getMessage()."\n";}
 $check($legacy,'A suspected holding without a departure marker renders with Check again');
+// Sync now stays in the head under review and queues the same departure read as Check again.
+$review=Livewire\Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$d->id]);
+$review->assertActionVisible('sync_now')->assertActionEnabled('sync_now');
+Illuminate\Support\Facades\Schema::create('cache',function($t){$t->string('key')->primary();$t->mediumText('value');$t->integer('expiration');});
+Illuminate\Support\Facades\Schema::create('cache_locks',function($t){$t->string('key')->primary();$t->string('owner');$t->integer('expiration');});
+Illuminate\Support\Facades\Queue::fake();config(['queue.default'=>'database','queue.connections.database.driver'=>'database','queue.connections.database.retry_after'=>900,'cache.default'=>'database']);
+$review->callAction('sync_now');
+$check(Illuminate\Support\Facades\Queue::pushed(\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::class,fn($job)=>$job->departure)->count()===1,'Sync now under review queues one departure read');
 $section=view('domains::components.customer.notice',['variant'=>'section','state'=>State::UnderReview,'slot'=>new Illuminate\Support\HtmlString('The saved check is pending.')])->render();
 $check(str_contains(strip_tags($section),State::UnderReview->label()),'A section notice exposes its state word');
 expect($failures===[],implode("\n",$failures));
