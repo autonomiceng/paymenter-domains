@@ -41,7 +41,7 @@ def exercise(command, php_args, env, scratch):
                             receipt.kill(); receipt.wait()
             if (barriers/(name+'-invoice-wait')).read_text() != 'proved':
                 raise AssertionError('The runner did not wait on the native invoice')
-            proof = json.loads(result.stdout.decode().splitlines()[-1])
+            proof = json.loads(next(line for line in result.stdout.decode().splitlines() if line.startswith('{')))
             expected = revision != 'base'
             attempts = 2 if case == 'widened' else 1
             if (proof['outcome'] != 'Applied' or proof['transaction_level'] != 0
