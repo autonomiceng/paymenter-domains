@@ -12,7 +12,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource,TldReso
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Price};
 use Paymenter\Extensions\Servers\Domains\Presentation\{AccountStatus,Missing};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,DomainBilling,EnomLiveActivation,EnomTestManagement,EnomTestRenewal,EnomTestTransfer,NativePaidHooks,NativeServerGuard,NativeServiceRefusal,UnpaidHoldSetting,
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,DisputeRecoveries,DomainBilling,EnomLiveActivation,EnomTestManagement,EnomTestRenewal,EnomTestTransfer,NativePaidHooks,NativeServerGuard,NativeServiceRefusal,UnpaidHoldSetting,
     RenewalBillingSettings,RuntimePorts,WatchWork,CardFee,PricingRules,PricingRule};
 /** Rows for a registrar account's sections and System checks.
  * A row is {label, value (null = Missing), tone, cause, help, action}; a cause shows under its value.
@@ -285,6 +285,7 @@ final class AccountChecklist
         $checks[]=$editor===null?self::row('Domain editor','OK',null,'This Paymenter version works with it. Each registrar account has its own switch.',null,self::EDITOR):self::row('Domain editor',null,'danger','Update Paymenter or Domains.',null,'Paymenter is missing '.$editor.'.');
         if (($missing=PricingEditorNotice::missing())!==null) { $checks[]=self::row('Pricing change warning',null,'danger','Update Paymenter or Domains. Until then, check each TLD is still for sale after a price change.',null,'Paymenter is missing '.$missing.'.'); }
         if (($missing=NativeServerGuard::deletionNoticeMissing())!==null) { $checks[]=self::row('Account delete warning',null,'danger','Update Paymenter or Domains. Deleting a registrar account is still refused.',null,'Paymenter is missing '.$missing.'.'); }
+        if (DisputeRecoveries::off()) { $checks[]=self::row(DisputeRecoveries::FEATURE,null,'danger','Update the Stripe extension. Until then, a lost bank dispute does not take back returned account credit or put the account on hold.',null,'Finds lost bank disputes in Stripe. The Stripe extension is missing lostDisputes.'); }
         if (($missing=NativeServiceRefusal::missing())!==null) { $checks[]=self::row('Service change warning',null,'danger','Update Paymenter or Domains. Unsafe service changes are still refused.',null,'Paymenter is missing '.$missing.'.'); }
         // Only the host can supply this: Paymenter has no support contact setting, and mail_from_address may be a no-reply inbox.
         $checks[]=self::supportContact();

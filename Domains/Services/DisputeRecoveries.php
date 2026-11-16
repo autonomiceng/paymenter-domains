@@ -24,6 +24,16 @@ final readonly class DisputeRecoveries
         $rows=$open()->where('id','>',$after)->limit(25)->get();
         return $rows->count()<25?$rows->concat($open()->where('id','<=',$after)->limit(25-$rows->count())->get()):$rows;
     }
+    public const FEATURE='Lost bank disputes';
+    public const OFF='Off. The Stripe extension is missing lostDisputes. Lost bank disputes are not found until it is updated.';
+    private static function gateway(): ?Gateway { return Gateway::where('extension','AeStripe')->orderBy('id')->first(); }
+    /** The enabled Stripe gateway cannot list lost disputes. Computed, so it clears once the Stripe extension has lostDisputes. */
+    public static function off(): bool
+    {
+        $gateway=self::gateway();
+        if(!$gateway?->enabled){return false;}
+        try{return !ExtensionHelper::hasFunction($gateway,'lostDisputes');}catch(\Throwable){return true;}
+    }
     public function sweep(): void
     {
         OperationClaims::outside();
@@ -39,8 +49,11 @@ final readonly class DisputeRecoveries
                 }
             }catch(\Throwable){ /* Keep the retry record open; discovery has its own budget. */ }
         }
-        $gateway=Gateway::where('extension','AeStripe')->orderBy('id')->first();
-        if(!$gateway||!ExtensionHelper::hasFunction($gateway,'lostDisputes')){return;}
+        $gateway=self::gateway();
+        if(!$gateway||!ExtensionHelper::hasFunction($gateway,'lostDisputes')){
+            if($gateway?->enabled){HookDiagnostics::unavailable(self::FEATURE,self::OFF,['AeStripe lostDisputes']);}
+            return;
+        }
         $cursor=json_decode(self::cursor()->value('value')??'{"at":0,"key":""}',true,8,JSON_THROW_ON_ERROR);
         for($page=0;$page<10;$page++){
             $rows=ExtensionHelper::call($gateway,'lostDisputes',[(int)$cursor['at'],(string)$cursor['key'],100]);
