@@ -287,6 +287,7 @@ $excluded=[
     'OwnedDomains.php'=>['closed','credited','paid','pending','registration','returned','review','split'], // registration: a word in the transfer-out date line.
     'DomainStates.php'=>['closed','paid','pending','review'], // Renewal invoice states, shown by DomainPage::nextInvoice.
     'Storefront.php'=>['ending'],
+    'DepartureChecks.php'=>['hosting','other','registrar'], // DNS cases for the departure review, worded by dnsNote and staffDnsCase.
     'ReceiptReturns.php'=>['credit','original','split'],
     // Storefront maps these RDAP transfer checks to customer guidance.
     'Rdap.php'=>['transfer_creation_lock','transfer_previous_lock'],
