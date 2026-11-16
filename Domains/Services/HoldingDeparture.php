@@ -141,11 +141,11 @@ final class HoldingDeparture
                 'monitored'=>($watch['state']??null)==='active','domain_url'=>url('/domains/'.$d->id),
                 'support_url'=>\Paymenter\Extensions\Servers\Domains\Presentation\Missing::supportUrl()??'','company'=>\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company()];
             $claim=ReminderDelivery::reserve((int)$d->id,$identity,'domains_domain_departed',$data,$user,$now->getTimestamp());
+            if(!$claim){return null;}
+            return ['delivery_key'=>hash('sha256',$d->id.':'.$identity),'subject'=>$claim['mail']?->envelope()->subject,'to'=>$claim['mail']?(string)$user->email:null];
         }
         catch(\Illuminate\Database\QueryException|\PDOException $e){throw $e;}
         catch(\Throwable){$claim=null;ObligationAlerts::record($d,'template_failed',$now->getTimestamp(),null,$identity);return null;}
-        if(!$claim){return null;}
-        return ['delivery_key'=>hash('sha256',$d->id.':'.$identity),'subject'=>$claim['mail']?->envelope()->subject,'to'=>$claim['mail']?(string)$user->email:null];
     }
     /** Email money. A paid renewal whose payment was already returned outside closes with a zero credit, which still formats. */
     private static function money(string $value): string
