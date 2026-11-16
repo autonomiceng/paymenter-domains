@@ -49,6 +49,12 @@ final class HoldingLocks
         }
         $nativeIdentity = HoldingNativeIdentity::capture($domain, $nativeLocks, $tld);
         $identity_source = HoldingIdentitySource::resolve($domain, $nativeIdentity, $adoption, $account, $cancel);
+        // A closed renewal grants no authority to revive; keep its real receipt even if invoice ownership changed.
+        if ($nativeReceipt && (int) $invoices->first()?->user_id !== (int) $user->id
+            && $operations->contains(static fn ($op) => (int) $op->invoice_id === $receiptInvoice && $op->action === 'renew'
+                && in_array($op->state, ['awaiting_payment', 'queued', 'held'], true))) {
+            throw new MoneyScopeChanged('The scoped invoice changed owner.');
+        }
         $service->setRelation('user', $user);
         $rows = [$user, ...$user->properties, ...$invoices, ...$items, ...$transactions, ...$orders, ...$services, ...$products, ...$plans, ...$cancel, ...$configs, ...$properties, ...$markers, $server, $account, ...$settings, $tld, ...$prices, $domain, ...($adoption ? [$adoption] : []), ...$operations, ...$upgrades, ...$links, ...($tax === 0 ? [] : [$tax])];
         // A scoped stamp covers fewer rows, so it never equals a full one; full stamps are unchanged.
