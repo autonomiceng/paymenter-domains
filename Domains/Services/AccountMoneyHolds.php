@@ -49,12 +49,13 @@ final class AccountMoneyHolds
             $alert=DB::table('domains_obligation_alerts')->where('id',$alertId)->where('domain_id',$seed->id)->where('code','account_money_hold')->lockForUpdate()->first();
             if(!$alert||$alert->resolved_at!==null){throw new \DomainException('Hold already released.');}
             $op=Operation::findOrFail($alert->operation_id);
-            $evidence=self::evidence($op,$alert->alert_key)??throw new \DomainException('Dispute evidence needs a check.');
-            $dispute=$evidence['dispute_id'];
+            try{$evidence=self::evidence($op,$alert->alert_key);}catch(\Throwable){$evidence=null;}
+            $detail=['alert_id'=>(int)$alert->id,'dispute_id'=>$evidence['dispute_id']??null];
+            if($evidence===null){$detail['evidence_unreadable']=true;}
             DB::table('domains_obligation_alerts')->where('id',$alertId)->update(['resolved_at'=>now()->timestamp]);
             Audit::create(['user_type'=>$actor->getMorphClass(),'user_id'=>$actor->id,'event'=>'account_money_hold_released',
                 'auditable_type'=>(new Invoice)->getMorphClass(),'auditable_id'=>$op->invoice_id,'old_values'=>[],
-                'new_values'=>['dispute_id'=>$dispute],'url'=>url('/admin/invoices/'.$op->invoice_id)]);
+                'new_values'=>$detail,'url'=>url('/admin/invoices/'.$op->invoice_id)]);
         });
     }
 }
