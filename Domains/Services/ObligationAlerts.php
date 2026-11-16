@@ -196,11 +196,12 @@ final class ObligationAlerts
             return ($p['reconciliation']['staff_alert']??false)&&!self::corrected($op,$operations,$d)||($p['renewal_execution']['staff_alert']??false)&&!self::settledRenewal($op,$d);
         } catch (\Illuminate\Contracts\Encryption\DecryptException) { return true; }
     }
-    /** A saved result whose charge still needs a person: a changed actual charge or a price below cost. A departure ends
-     * registrar corrections, not this money review. Unreadable evidence keeps it. */
+    /** A saved result whose charge still needs a person: the registrar charged other than the authorized amount, which
+     * staff reconcile with the registrar. A departure ends registrar corrections and makes a below-cost price moot (no
+     * renewal is left to reprice), not this money review. Unreadable evidence keeps it. */
     public static function moneyReview(Operation $op): bool
     {
-        try { $r=$op->policy['reconciliation']??[]; return ($r['staff_alert']??false)&&in_array($r['reason']??null,['actual_charge_changed','below_cost'],true); }
+        try { $r=$op->policy['reconciliation']??[]; return ($r['staff_alert']??false)&&($r['reason']??null)==='actual_charge_changed'; }
         catch (\Illuminate\Contracts\Encryption\DecryptException) { return true; }
     }
     /** Historical renewal uncertainty clears only with current terminal proof and a settled invoice. */
