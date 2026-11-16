@@ -9,11 +9,16 @@ use Paymenter\Extensions\Servers\Domains\Services\{ObligationAlerts,ObservationR
 
 $nativeSuccessful=false;
 $ids=static fn()=>DomainQueries::alerting(Domain::query())->pluck('id')->map(fn($id)=>(int)$id)->all();
-// The registration completed at a different charge than expected, and staff never reviewed it. The departure ends
-// registrar work, not that money review.
+// The registrar charged more than the authorized amount, and above the customer price, so the saved reason is
+// below_cost. Staff never reviewed it. The departure ends registrar work, not that money review.
 $acquisition=$d->operations()->whereIn('action',['register','transfer'])->where('state','succeeded')->orderBy('id')->firstOrFail();
-$policy=$acquisition->policy??[];$policy['reconciliation']=[...($policy['reconciliation']??[]),'staff_alert'=>true,'reason'=>'actual_charge_changed'];
-$acquisition->update(['policy'=>$policy,'safe_code'=>'actual_charge_changed']);
+expect(($acquisition->policy['reconciliation']['reason']??null)==='below_cost'&&($acquisition->policy['reconciliation']['staff_alert']??false),'The fixture registration keeps its below-cost review');
+// Retained cost evidence is frozen on the model; model a record whose actual charge exceeds its authorized charge.
+$charged=static function(string $amount)use($acquisition):void{
+    Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$acquisition->id)->update(['cost'=>Illuminate\Support\Facades\Crypt::encryptString(json_encode([...$acquisition->fresh()->cost,'actual'=>['amount'=>$amount,'currency'=>'USD']]))]);
+};
+$authorized=(string)($acquisition->attempt['authorized_cost']['amount']??'');expect($authorized!=='','The fixture registration keeps its authorized charge');
+$charged(number_format((float)$authorized+21,2,'.',''));
 ObligationAlerts::record($d->fresh(),'operation_review',$clock->now()->getTimestamp(),(int)$acquisition->id);
 Cache::flush();
 expect(in_array((int)$d->id,$ids(),true),'An unreviewed charge on a departed domain stays in Needs attention');
@@ -30,9 +35,10 @@ same([true,'operation_review',(int)$acquisition->id],[$status['act'],$status['al
 ObservationRecords::failPrimary($d->fresh(),$clock->now());
 Cache::flush();
 expect(DomainQueries::openAlertCount(Domain::whereKey($d->id))===1,'An obsolete stopped read does not add to the staff count');
-// Once staff review the charge, the departed domain is settled.
-Illuminate\Support\Facades\DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('operation_id',$acquisition->id)->update(['resolved_at'=>$clock->now()->getTimestamp()]);
+// A pure below-cost review (charged exactly the authorized amount, still above the customer price) closes at
+// departure: the loss is booked and no renewal is left to reprice.
+$charged($authorized);
 Cache::flush();
-expect(!in_array((int)$d->id,$ids(),true),'A reviewed charge leaves the departed domain settled');
-echo "A departed domain keeps an unreviewed charge in Needs attention and the staff count; the obsolete read never counts.\n";
+expect(!in_array((int)$d->id,$ids(),true),'A pure below-cost review leaves the departed domain settled');
+echo "A departed domain keeps a charge above its authorized amount in Needs attention, whatever the saved reason; a pure below-cost review and the obsolete read do not count.\n";
 $nativeSuccessful=true;

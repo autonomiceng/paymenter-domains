@@ -196,13 +196,19 @@ final class ObligationAlerts
             return ($p['reconciliation']['staff_alert']??false)&&!self::corrected($op,$operations,$d)||($p['renewal_execution']['staff_alert']??false)&&!self::settledRenewal($op,$d);
         } catch (\Illuminate\Contracts\Encryption\DecryptException) { return true; }
     }
-    /** A saved result whose charge still needs a person: the registrar charged other than the authorized amount, which
-     * staff reconcile with the registrar. A departure ends registrar corrections and makes a below-cost price moot (no
-     * renewal is left to reprice), not this money review. Unreadable evidence keeps it. */
+    /** A saved result whose charge still needs a person after a departure: the registrar charged more than the authorized
+     * amount, or in another currency, whatever the saved reason says (a below-cost reason can hide an overcharge). A
+     * charge within the authorized amount is booked margin, and a departure leaves no renewal to reprice. With no retained
+     * charges the reason decides. Unreadable evidence keeps it. */
     public static function moneyReview(Operation $op): bool
     {
-        try { $r=$op->policy['reconciliation']??[]; return ($r['staff_alert']??false)&&($r['reason']??null)==='actual_charge_changed'; }
-        catch (\Illuminate\Contracts\Encryption\DecryptException) { return true; }
+        try {
+            $r=$op->policy['reconciliation']??[]; if(!($r['staff_alert']??false)){return false;}
+            $authorized=$op->attempt['authorized_cost']??null; $actual=$op->cost['actual']??null;
+            if(!is_array($authorized)||!is_array($actual)){return ($r['reason']??null)==='actual_charge_changed';}
+            if(($authorized['currency']??null)!==($actual['currency']??null)){return true;}
+            return WriteMoney::compare((string)$actual['amount'],(string)$authorized['amount'])>0;
+        } catch (\Throwable) { return true; }
     }
     /** Historical renewal uncertainty clears only with current terminal proof and a settled invoice. */
     public static function settledRenewal(Operation $op,Domain $d): bool
