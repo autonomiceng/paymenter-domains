@@ -97,14 +97,17 @@ final class WatchDiscovery
         $owner=(int)$d->user_id;
         $watch=WatchName::where('user_id',$owner)->where('managed_domain_id',$d->id)->where('state','linked')->lockForUpdate()->first();
         if(!$watch){return null;}
-        foreach(WatchSource::where('user_id',$owner)->where('managed_domain_id',$d->id)->where('state','managed_link')->orderBy('id')->lockForUpdate()->get() as $link){
+        $links=WatchSource::where('user_id',$owner)->where('managed_domain_id',$d->id)->where('state','managed_link')->orderBy('id')->lockForUpdate()->get();
+        // Decide from the sources the watch will have, then move it out of linked first: a watch source needs an active
+        // or paused watch. The new sources copy each link's owner, service and mapping, so hosting reads the same.
+        $ids=[...$links->pluck('id')->all(),...WatchSource::where('watch_id',$watch->id)->where('state','watch')->lockForUpdate()->pluck('id')->all()];
+        $state=!$ids?'retired':(self::staffPaused($watch)||!self::activeHosting(WatchSource::whereIn('id',$ids))?'paused':'active');
+        $this->change($watch,['state'=>$state,'managed_domain_id'=>null,'registration'=>null,'registration_evidence'=>null],'registration_departed',$now);
+        foreach($links as $link){
             $attrs=$link->only(['user_id','service_id','map_id','map_revision','hostname','registrable_name','source_digest','last_seen_at']);
             $link->retire('registration_departed');
             WatchSource::create([...$attrs,'state'=>'watch','watch_id'=>$watch->id]);
         }
-        $sources=WatchSource::where('watch_id',$watch->id)->where('state','watch')->exists();
-        $state=!$sources?'retired':(self::staffPaused($watch)||!self::hostingActive((int)$watch->id)?'paused':'active');
-        $this->change($watch,['state'=>$state,'managed_domain_id'=>null,'registration'=>null,'registration_evidence'=>null],'registration_departed',$now);
         if($state!=='active'){$this->stop($watch,'registration_departed',$now);}
         return ['id'=>(int)$watch->id,'state'=>$state];
     }
@@ -153,8 +156,11 @@ final class WatchDiscovery
     {return $watch->state==='paused' && (self::staffPaused($watch) || self::hostingActive((int)$watch->id));}
     /** Whether an active hosting service on an enabled product line still names this watch. Without one, monitoring stays paused. */
     public static function hostingActive(int $id): bool
+    { return self::activeHosting(WatchSource::where('watch_id',$id)->where('state','watch')); }
+    /** Any of these sources is backed by active, enabled-map hosting of its own owner. */
+    private static function activeHosting(\Illuminate\Database\Eloquent\Builder $sources): bool
     {
-        return WatchSource::where('watch_id',$id)->where('state','watch')->whereExists(fn($q)=>$q->selectRaw('1')->from('services as s')->join('orders as o','o.id','=','s.order_id')->join('domains_watch_product_maps as m','m.product_id','=','s.product_id')
+        return $sources->whereExists(fn($q)=>$q->selectRaw('1')->from('services as s')->join('orders as o','o.id','=','s.order_id')->join('domains_watch_product_maps as m','m.product_id','=','s.product_id')
             ->whereColumn('s.id','domains_watch_sources.service_id')->whereColumn('s.user_id','domains_watch_sources.user_id')->whereColumn('o.user_id','s.user_id')
             ->whereColumn('m.id','domains_watch_sources.map_id')->whereColumn('m.revision','domains_watch_sources.map_revision')->where('m.enabled',true)->where('s.status','active'))->exists();
     }
