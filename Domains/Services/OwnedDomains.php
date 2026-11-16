@@ -96,9 +96,15 @@ final readonly class OwnedDomains
         if (isset($op->funding['refund'])) {
             if (ReceiptReturns::malformed($op)) { return null; } // An unreadable return names no destination.
             try{$refund=ReceiptReturns::effective(ReceiptReturns::originalRefund($op))[0];}catch(\DomainException){return null;}
-            return match ($refund['to']??null) { 'account_credit'=>'credited',
-                'original_payment'=>empty($refund['allocations'])?(ReceiptReturns::bridge($refund)>0?'credited':null)
-                    :match (ReceiptReturns::bridge($refund)) { null=>null, 0=>'returned', default=>'split' },default=>null };
+            if(($refund['to']??null)==='account_credit'){return 'credited';}
+            if(($refund['to']??null)!=='original_payment'||($bridge=ReceiptReturns::bridge($refund))===null){return null;}
+            $credit=$bridge>0;$card=false;
+            foreach($refund['allocations'] as $a){
+                $state=$op->funding['receipt_return_results'][$a['key']]['state']??null;
+                if(!in_array($state,['refunded','credited'],true)){return null;}
+                $credit=$credit||$state==='credited';$card=$card||$state==='refunded';
+            }
+            return $card?($credit?'split':'returned'):($credit?'credited':null);
         }
         return ReceiptReturns::destination(\App\Models\InvoiceTransaction::where('invoice_id', $op->invoice_id)->with('gateway')->get());
     }
