@@ -202,6 +202,15 @@ final class NativeDomainGuard
         self::persist($service, ['status' => Service::STATUS_CANCELLED, 'expires_at' => null]);
     }
 
+    /** A confirmed departure cancels its own service. The caller has written the frozen record under the same locks. */
+    public static function departed(array $locked): void
+    {
+        $d = $locked['domain'];
+        if (($locked['advisory'] ?? true) || !MoneyDecisions::running() || $d->status !== 'departed' || !DepartureProof::matches($d)
+            || (int) $locked['service']->id !== (int) $d->service_id) { throw new \DomainException('No retained departure.'); }
+        self::persist($locked['service'], ['status' => Service::STATUS_CANCELLED, 'expires_at' => null]);
+    }
+
     /** Read-only guard check: a different instance, row, field, value or preimage grants nothing. */
     public static function identityProjection(Service $service): bool
     {

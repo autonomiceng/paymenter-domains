@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
-use App\Models\{Service,Order,Product,Property};
+use App\Models\{Service,Order,Product,Property,InvoiceTransaction};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Dns\DnsQuery;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,WatchName,WatchSource,WatchProductMap,WatchProfile,ManagedPublicConfig};
@@ -18,9 +18,8 @@ final class DomainSummaryContext
         $this->domains=Domain::where('user_id',$owner)->whereIn('id',$domainIds)->whereHas('service',$native)->get()->keyBy('id')->all();
         $this->watches=WatchName::where('user_id',$owner)->whereIn('id',$watchIds)->whereIn('state',['active','paused','retired'])->whereNull('managed_domain_id')->get()->keyBy('id')->all();
         $names=array_map(fn($w)=>$w->canonical_name,$this->watches);
-        // Pending reservations also suppress a duplicate name in the related section.
-        $managed=Domain::where('user_id',$owner)->whereIn('domain',$names)->whereHas('service',$native)->pluck('domain')->all();
-        $this->watches=array_filter($this->watches,fn($w)=>!in_array($w->canonical_name,$managed,true));
+        $managed=self::suppressingNames(Domain::where('user_id',$owner)->whereIn('domain',$names)->whereHas('service',$native));
+        $this->watches=array_filter($this->watches,fn($w)=>!isset($managed[$w->user_id][$w->canonical_name]));
         $this->sources=WatchSource::withActiveWatchServices()->where('user_id',$owner)->where(fn($q)=>$q->whereIn('watch_id',array_keys($this->watches))->orWhereIn('managed_domain_id',array_keys($this->domains))->orWhereIn('registrable_name',array_map(fn($d)=>$d->domain,$this->domains)))->whereIn('state',['watch','managed_link'])->whereIn('id',DB::query()->fromSub(WatchSource::withActiveWatchServices()->where('user_id',$owner)->where(fn($q)=>$q->whereIn('watch_id',array_keys($this->watches))->orWhereIn('managed_domain_id',array_keys($this->domains))->orWhereIn('registrable_name',array_map(fn($d)=>$d->domain,$this->domains)))->selectRaw('id, row_number() over (partition by watch_id,managed_domain_id order by id) as position'),'bounded')->where('position','<=',101)->select('id'))->orderBy('id')->get()->all();
         $ids=[...array_map(fn($d)=>$d->service_id,$this->domains),...array_map(fn($s)=>$s->service_id,$this->sources)];
         $this->services=Service::whereIn('id',$ids)->where('user_id',$owner)->get()->keyBy('id')->all();
@@ -42,8 +41,7 @@ final class DomainSummaryContext
         $c=new self(0,[],[]);$c->staff=true;
         $c->watches=WatchName::whereIn('id',$ids)->whereIn('user_id',\App\Models\User::select('id'))->whereIn('state',['active','paused','retired'])->whereNull('managed_domain_id')->get()->keyBy('id')->all();
         $owners=array_unique(array_map(fn($w)=>$w->user_id,$c->watches));$names=array_map(fn($w)=>$w->canonical_name,$c->watches);
-        $managed=Domain::whereIn('user_id',$owners)->whereIn('domain',$names)->whereHas('service',fn($q)=>$q->whereColumn('services.user_id','domains_domains.user_id')->whereHas('order',fn($q)=>$q->whereColumn('orders.user_id','services.user_id')))->get(['user_id','domain']);
-        $suppressed=[];foreach ($managed as $d) { $suppressed[$d->user_id][$d->domain]=true; }
+        $suppressed=self::suppressingNames(Domain::whereIn('user_id',$owners)->whereIn('domain',$names)->whereHas('service',fn($q)=>$q->whereColumn('services.user_id','domains_domains.user_id')->whereHas('order',fn($q)=>$q->whereColumn('orders.user_id','services.user_id'))));
         $c->watches=array_filter($c->watches,fn($w)=>!isset($suppressed[$w->user_id][$w->canonical_name]));
         $sources=WatchSource::withActiveWatchServices()->whereIn('watch_id',array_keys($c->watches))->whereExists(fn($q)=>$q->selectRaw('1')->from('domains_watch_names as w')->whereColumn('w.id','domains_watch_sources.watch_id')->whereColumn('w.user_id','domains_watch_sources.user_id'));
         $bounded=DB::query()->fromSub((clone $sources)->selectRaw('domains_watch_sources.id, row_number() over (partition by watch_id,managed_domain_id order by domains_watch_sources.id) as position'),'bounded')->where('position','<=',101)->select('id');
@@ -57,6 +55,29 @@ final class DomainSummaryContext
         $c->profiles=WatchProfile::whereIn('id',[...array_map(fn($w)=>$w->ns_profile_id,$c->watches),$c->defaults['site']])->get()->keyBy('id')->all();
         $c->properties=self::fields($serviceIds);
         return $c;
+    }
+    /** The same managed records customer lists retain, keyed by owner and name. Paid records still suppress duplicates
+     * after reservation release; cancelled unpaid orders leave independent watches visible before and after retirement. */
+    private static function suppressingNames(\Illuminate\Database\Eloquent\Builder $query): array
+    {
+        $names=[];
+        $query->chunkById(250,function($rows)use(&$names):void{
+            $domains=$rows->keyBy('id')->all();
+            $services=Service::whereIn('id',$rows->pluck('service_id'))->get()->keyBy('id')->all();
+            $inputs=DomainStateInputs::load($domains,$services);
+            $ops=[];foreach($domains as $id=>$d){$ops[$id]=$inputs->acquisition($d);}
+            $terminal=array_filter($ops,fn($op)=>$op && $op->state==='rejected' && $op->safe_code===UnpaidAcquisitionProof::CODE);
+            $paid=InvoiceTransaction::whereIn('invoice_id',array_map(fn($op)=>$op->invoice_id,$terminal))
+                ->where('status',\App\Enums\InvoiceTransactionStatus::Succeeded)->pluck('invoice_id')->all();
+            foreach($domains as $id=>$d){
+                $op=$ops[$id];$invoice=$inputs->invoice($op?->invoice_id,$d);
+                if($op && UnpaidAcquisitionProof::terminal($op,$d) && $invoice?->status!=='paid' && !in_array($op->invoice_id,$paid,true)){continue;}
+                $order=$op?OwnedDomains::order($d,$op,$invoice,OwnedDomains::closed($services[$d->service_id]->status,$inputs->stopped($d)),$inputs->paying()):[];
+                if(($order['state']??null)==='cancelled' && ($order['unpaid']??false)===true){continue;}
+                $names[$d->user_id][$d->domain]=true;
+            }
+        });
+        return $names;
     }
     public function watchProfile(int $id): ?WatchProfile
     { return $this->profiles[$this->watches[$id]->ns_profile_id??$this->defaults['site']??0]??null; }

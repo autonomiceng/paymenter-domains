@@ -45,9 +45,15 @@ $keys=[];
 foreach ($cases as $case=>[$domain,$acquisition,$label,$reason]) {
     DB::table('domains_domains')->where('id',$d->id)->update([...$base,...$domain]);
     DB::table('domains_operations')->where('id',$op->id)->update(['action'=>'transfer','safe_code'=>null,...$acquisition]);
-    // Cancelled rows stay out of the default list, behind their tab.
-    $hidden=$case==='cancelled';same($hidden?0:1,$controller->index($request())->getData()['domains']->total(),'Default list: '.$case);
-    $list=storefrontDom($controller->index($request($hidden?['status'=>'cancelled']:[]))->render());
+    // All lists every domain that held a registration, ended ones included (mock 03: All 12 = Active 7, Under review 1, Inactive 4).
+    $all=$controller->index($request());$data=$all->getData();
+    same(1,$data['domains']->total(),'Default list: '.$case);
+    $list=storefrontDom($all->render());
+    if ($case==='cancelled') {
+        // An older ?status=cancelled link opens the Inactive tab, which lists the row.
+        $old=$controller->index($request(['status'=>'cancelled']));
+        same(['inactive',1],[$old->getData()['filter'],$old->getData()['domains']->total()],'An old cancelled link selects the Inactive tab');
+    }
     $row=$list->query('//tbody/tr')->item(0);
     $show=storefrontDom($controller->show($request(),$d->id)->render());
     $header=$show->query('//*[@data-piece="head-line"]')->item(0);
@@ -58,17 +64,17 @@ foreach ($cases as $case=>[$domain,$acquisition,$label,$reason]) {
     // The detail page says its reason in the notice instead, so only the list and the service card carry it under the state.
     $reasons=['list'=>array_map(fn($n)=>trim($n->textContent),iterator_to_array($list->query('td[@data-label="Status"]//*[contains(@class,"domains-panel-sub")]',$row))),'service card'=>$text($card,'domains-pill-reason')];
     foreach ($reasons as $page=>$lines) { same($reason===null?[]:[$reason],$lines,'Same reason line on the '.$page.': '.$case); }
-    // Tabs name the statuses present; the tab for this status keeps the row, any other tab drops it.
-    // A stopped registration reads Pending registration, the same word as the tab that holds it (approved mock).
-    $tab=$label;
-    $tabs=array_map(fn($t)=>trim(preg_replace('/\s+/',' ',$t)),$text($list,'domains-tab'));
-    same([$hidden?0:1,1],array_map(fn($t)=>(int)preg_replace('/^.*\s(\d+)$/','$1',$t),$tabs),'Tab counts match the rows: '.$case);
-    same($tab.' 1',$tabs[1]??null,'The second tab is this status with its count: '.$case);
+    // Status filters count and retain their members, including ended domains under inactive.
+    same([1,1],array_values($data['filterCounts']),'Numeric tab counts match the rows: '.$case);
     parse_str((string)parse_url($list->query('//a[contains(@class,"domains-tab")]/@href')->item(0)?->value??'',PHP_URL_QUERY),$first);
     same('',(string)($first['status']??''),'The first tab is unfiltered: '.$case);
     parse_str((string)parse_url($list->query('//a[contains(@class,"domains-tab")]/@href')->item(1)?->value??'',PHP_URL_QUERY),$query);
-    $key=(string)($query['status']??''); $keys[$tab]=$key;
-    same(1,$controller->index($request(['status'=>$key]))->getData()['domains']->total(),'Status tab keeps the row: '.$case);
+    $key=(string)($query['status']??''); $keys[$label]=$key;
+    same(1,$data['filterCounts'][$key]??null,'The status link selects a counted filter: '.$case);
+    if($case==='cancelled'){same('inactive',$key,'Ended domains use the inactive filter key');}
+    $filtered=$controller->index($request(['status'=>$key]))->getData();
+    same($key,$filtered['filter'],'The status link selects its filter: '.$case);
+    same([$d->domain],array_map(static fn($row)=>$row->name,$filtered['domains']->items()),'Status filter keeps the domain: '.$case);
     same(0,$controller->index($request(['status'=>$label==='Active'?'expired':'active']))->getData()['domains']->total(),'Other tabs drop the row: '.$case);
 }
 same(count($keys),count(array_unique($keys)),'Each tab has its own filter key');

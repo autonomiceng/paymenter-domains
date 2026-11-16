@@ -58,6 +58,8 @@ final readonly class Refunds
     public function creditRejected(int $id, ?StaffOperationReview $review = null): ?array
     {
         OperationClaims::outside(); $seen = Operation::findOrFail($id); $staff = $review !== null;
+        // A departed holding released its name: its late money is credited on the released row, never a new holding.
+        if ($seen->domain?->status === 'departed') { return $this->creditDeparted($seen, $review); }
         if (ReceiptReturns::plans($seen)) {
             // Consume the bound staff review before gateway recovery. Deferred work stays queued as automatic work, and staff
             // are told to try again.
@@ -134,11 +136,39 @@ final readonly class Refunds
         if ($deferred && $staff) { throw new StaffReviewRefused(MoneyDecisions::BUSY); }
         return $resumed ?? $result ?? ($returned ?? null);
     }
-    /** Return incremental net funds received after retirement, however little or much arrives. */
-    private function creditLate(Operation $op, array $l, ?StaffOperationReview $review): ?array
+    /** Departure confirmation only: the caller's money decision holds the full locks and has just closed this paid renewal
+     * unsent. Its remaining receipt shares become account credit through the late-credit record, in the same decision.
+     * @return int the new account credit in minor units */
+    public function departLocked(array $l, Operation $op, int &$released = 0): int
+    {
+        if (!MoneyDecisions::running() || ($l['advisory'] ?? true) || !$l['operations']->contains(static fn ($row) => $row === $op)
+            || $op->state !== 'rejected' || !isset($op->attempt['terminal']['transactions']) || !FundsWaits::closedRenewal($op, $l['domain'])) {
+            throw new \DomainException('Closed renewal proof unavailable.');
+        }
+        $released = 0;
+        $l['credit'] ??= Credit::where('user_id', $l['user']->id)->where('currency_code', 'USD')->first();
+        foreach (ReceiptReturns::localAllocations($op, InvoiceMoney::load($l, (int) $op->invoice_id)) as $a) {
+            // Exclude just this reservation to measure its currently available share, as release() does.
+            $money = InvoiceMoney::load($l, (int) $op->invoice_id, $a['key']);
+            $available = min($a['amount_minor'], array_sum(InvoiceMoney::heldFor($money, $a['transaction_id'])));
+            ReceiptReturns::release($op, $a['key'], 'domain_departed', $l);
+            $result = $op->funding['receipt_return_results'][$a['key']] ?? [];
+            if (($result['state'] ?? null) !== 'released' || ($result['credit_minor'] ?? null) !== $available) {
+                throw new \DomainException('Departure return coverage changed.');
+            }
+            $released += $available;
+            // An absent credit row may have been created by the first release; reuse it for later shares.
+            $l['credit'] ??= Credit::where('user_id', $l['user']->id)->where('currency_code', 'USD')->first();
+        }
+        $credited = $this->creditLate($op, $l, null, true);
+        return $released + ($credited === null ? 0 : PricingRule::minor($credited['amount']));
+    }
+    /** Return incremental net funds received after retirement, however little or much arrives. Departure credits locally available shares directly;
+     * other callers first adopt the original-payment return. Gateway-owned shares remain reserved in the shared ledger. */
+    private function creditLate(Operation $op, array $l, ?StaffOperationReview $review, bool $departure = false): ?array
     {
         RefundProof::requireUnsent($op, $l['domain']); RefundPayment::requireLine($op, $l);
-        if (ReceiptReturns::adoptClosed($op, $l, $this->clock->now())) { $review?->record($l); return null; }
+        if (ReceiptReturns::adoptClosed($op, $l, $this->clock->now(), existingOnly: $departure)) { $review?->record($l); return null; }
         $payments = RefundPayment::lateUncredited($op, $l); $minor = array_sum(array_column($payments, 'amount_minor'));
         if ($minor <= 0) { if($review){throw new \DomainException('No pending account credit. Reload this page.');} return null; }
         $credit = $l['credit'] ?? new Credit(['user_id' => $l['user']->id, 'currency_code' => 'USD', 'amount' => '0.00']);
@@ -237,11 +267,56 @@ final readonly class Refunds
         if (ReceiptReturns::plans($seen->fresh())) { return ReceiptReturns::resume((int)$seen->id, $this->clock->now(), self::CLOSED) ?? $result ?? $returned; }
         return $result;
     }
+    /** Late money on a departed holding's closed renewal returns to its old owner as account credit. Existing return plans
+     * resume first on their own released decisions; this decision reuses the released row's locks only. */
+    private function creditDeparted(Operation $seen, ?StaffOperationReview $review): ?array
+    {
+        $staff = $review !== null;
+        if (ReceiptReturns::plans($seen)) {
+            if ($review) {
+                $checked = MoneyDecisions::run(self::request($seen, null, $review->actorId, true), static function (array $l) use ($seen, $review): void {
+                    $review->check($l); self::departedOperation($l, (int) $seen->id); $review->record($l);
+                });
+                if ($checked->outcome === MoneyOutcome::Deferred) { throw new StaffReviewRefused(MoneyDecisions::BUSY); }
+                if ($checked->error) { throw $checked->error; }
+                $review = null;
+            }
+            $returned = ReceiptReturns::resume((int) $seen->id, $this->clock->now(), self::REJECTED, $deferred);
+            if ($deferred && $staff) { throw new StaffReviewRefused(MoneyDecisions::BUSY); }
+            $fresh = $seen->fresh();
+            if (ReceiptReturns::malformed($fresh) || ReceiptReturns::outstanding($fresh) > 0) { return $returned; }
+        }
+        $decision = MoneyDecisions::run(self::request($seen, $review ? null : self::REJECTED, $review?->actorId, true), function (array $l) use ($seen, $review): ?array {
+            $review?->check($l); $op = self::departedOperation($l, (int) $seen->id);
+            return $this->creditLate($op, $l, $review, departure: true);
+        });
+        if ($decision->outcome === MoneyOutcome::Deferred) { if ($staff) { throw new StaffReviewRefused(MoneyDecisions::BUSY); } return $returned ?? null; }
+        try {
+            if ($decision->error) { throw $decision->error; }
+            $result = $decision->value;
+            if (!ReceiptReturns::plans(Operation::findOrFail($seen->id))) { RefundRepairs::resolved((int) $seen->id, $this->clock->now()->getTimestamp()); return $result; }
+            $resumed = ReceiptReturns::resume((int) $seen->id, $this->clock->now(), self::REJECTED, $deferred);
+        } catch (\Throwable $e) { RefundRepairs::failed((int) $seen->id, $this->clock->now()->getTimestamp()); throw $e; }
+        // Contention leaves durable retry work, rather than a failed refund.
+        if ($deferred && $staff) { throw new StaffReviewRefused(MoneyDecisions::BUSY); }
+        return $resumed ?? $result ?? ($returned ?? null);
+    }
+    private static function departedOperation(array $l, int $id): Operation
+    {
+        $op = $l['operations']->firstWhere('id', $id);
+        if (!DepartureProof::verified($l['domain']) || !$op || $op->action !== 'renew' || $op->state !== 'rejected'
+            || (!RefundProof::retired($op, $l['domain']) && !FundsWaits::closedRenewal($op, $l['domain']))) {
+            throw new \DomainException('Departed renewal proof is unavailable.');
+        }
+        return $op;
+    }
     /** Automatic work locks only the order's invoice; a miss reruns on the full scope. Staff and orders with no invoice use the full scope. */
     private static function request(Operation $seen, ?string $kind, ?int $staffId = null, bool $released = false): MoneyRequest
     {
         $scoped = $kind !== null && $seen->invoice_id !== null;
-        return new MoneyRequest($seen->domain()->firstOrFail(), $kind, (int) $seen->id, $staffId, $released,
+        // Reuse a domain the caller already read; the locks check this seed against the locked row.
+        $seed = $seen->relationLoaded('domain') && $seen->domain !== null ? $seen->domain : $seen->domain()->firstOrFail();
+        return new MoneyRequest($seed, $kind, (int) $seen->id, $staffId, $released,
             $scoped ? MoneyScope::Invoice : MoneyScope::Full, $scoped ? (int) $seen->invoice_id : null);
     }
     /** Bounded caller-selected retry batch; scheduler/fair cursors remain31/39. */

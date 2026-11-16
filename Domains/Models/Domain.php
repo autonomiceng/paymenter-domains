@@ -54,6 +54,10 @@ class Domain extends Model
             }
             if (!$domain->attachingAdoption && ($domain->isDirty('adoption_id') || (($domain->snapshot['holding'] ?? null) !== (($domain->getOriginal('snapshot') ?? [])['holding'] ?? null)))) { throw new \DomainException('Original holding adoption is frozen.'); }
             if (!$domain->attachingAdoption && ($domain->isDirty('provenance') || (($domain->adoptionPending() || $domain->getRawOriginal('status') === 'adoption_pending' || $domain->getRawOriginal('provenance') === 'adoption_pending') && $domain->isDirty(['status', 'billing_managed', 'provider_expires_at', 'confirmed_revision', 'renewal_policy'])))) { throw new \DomainException('Holding provenance requires verified adoption.'); }
+            // Departure is terminal; its record is written once, together with the status, and a stale save cannot erase it.
+            $departure = fn ($policy) => is_array($policy) ? ($policy['departure'] ?? null) : null;
+            if ($current->status === 'departed' && ($domain->status !== 'departed' || $departure($domain->renewal_policy) !== $departure($current->renewal_policy))) { throw new \DomainException('Departed holdings are retained.'); }
+            if ($current->status !== 'departed' && ($domain->status === 'departed') !== ($departure($domain->renewal_policy) !== null)) { throw new \DomainException('Departure requires its confirmation record.'); }
             if ($domain->getRawOriginal('adoption_id') !== null && isset($domain->snapshot['checkout'])) { throw new \DomainException('Adoption is not checkout evidence.'); }
             $checkout = ($domain->getOriginal('snapshot') ?? [])['checkout'] ?? null;
             if ($checkout !== null && ($domain->snapshot['checkout'] ?? null) !== $checkout) { throw new \DomainException('Domain checkout evidence is frozen.'); }

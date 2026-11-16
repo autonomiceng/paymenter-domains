@@ -27,6 +27,17 @@ staffPanel();$actor=staffUser([Staff::VIEW,'admin.domains.manage','admin.domains
 panelTheme(getenv('PAYMENTER_TEST_FIXTURE'));
 $page=Livewire\Livewire::actingAs($actor)->test(ViewDomain::class,['record'=>$d->id]);
 writePanelPage($out.'/staff.html',$page);
+// Phase B: staff who may confirm see Confirm transferred away and the confirm step, and its dialog. The owner's watch
+// linked to this domain has no sources, so its row says it won't be monitored after confirm.
+DB::transaction(fn()=>Paymenter\Extensions\Servers\Domains\Models\WatchName::create(['user_id'=>$d->user_id,'canonical_name'=>$d->domain,'psl_revision'=>str_repeat('a',64),'notice_preferences'=>[],'state'=>'linked','registration'=>'platform','managed_domain_id'=>$d->id]));
+$departer=staffUser([Staff::VIEW,'admin.domains.manage','admin.domains.holdings.stop','admin.domains.holdings.depart']);Auth::setUser($departer);
+writePanelPage($out.'/staff-confirm.html',Livewire\Livewire::actingAs($departer)->test(ViewDomain::class,['record'=>$d->id]));
+writePanelPage($out.'/staff-confirm-dialog.html',Livewire\Livewire::actingAs($departer)->test(ViewDomain::class,['record'=>$d->id])->mountAction('confirm_departure'));
+// With site mail off, the dialog promises no email.
+$mailOff=config('settings.mail_disable');config(['settings.mail_disable'=>true]);
+writePanelPage($out.'/staff-confirm-dialog-mail-off.html',Livewire\Livewire::actingAs($departer)->test(ViewDomain::class,['record'=>$d->id])->mountAction('confirm_departure'));
+config(['settings.mail_disable'=>$mailOff]);
+Auth::setUser($actor);
 $list=Livewire\Livewire::actingAs($actor)->test(ListDomains::class)->filterTable('alerts',true)->assertCanSeeTableRecords([$d]);
 writePanelPage($out.'/attention-fresh.html',$list);
 $clock->instant=$clock->now()->modify('+2 days');
@@ -40,6 +51,8 @@ $invoice->items()->create(['description'=>'Domain renewal','price'=>'14.99','qua
 $renewal=$d->operations()->where('action','register')->firstOrFail()->replicate();
 $renewal->fill(['operation_key'=>'departure-render-renewal','action'=>'renew','invoice_id'=>$invoice->id,'state'=>'awaiting_payment','base_expires_at'=>$d->provider_expires_at]);$renewal->save();
 writePanelPage($out.'/staff-invoice.html',Livewire\Livewire::actingAs($actor)->test(ViewDomain::class,['record'=>$d->id]));
+// This synthetic renewal's records don't agree with its invoice, so line 8 blocks Confirm.
+Auth::setUser($departer);writePanelPage($out.'/staff-confirm-blocked.html',Livewire\Livewire::actingAs($departer)->test(ViewDomain::class,['record'=>$d->id]));Auth::setUser($actor);
 // Model a retained invoice without a date; normal issued invoice edits stay refused.
 DB::table('invoices')->where('id',$invoice->id)->update(['due_at'=>null]);
 writePanelPage($out.'/staff-invoice-no-date.html',Livewire\Livewire::actingAs($actor)->test(ViewDomain::class,['record'=>$d->id]));

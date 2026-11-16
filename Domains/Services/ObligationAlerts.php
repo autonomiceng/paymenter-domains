@@ -106,7 +106,7 @@ final class ObligationAlerts
             foreach(self::PRICE as $code){$keep(self::price($op,$d,$code),$code,(int)$op->id);}
             $keep(self::review($op,$l['operations'],$d,$now),$op->action==='renew'&&$op->state==='held'?'held_obligation':'operation_review',(int)$op->id);
         }
-        if(Schema::hasTable('domains_observation_work')&&!RenewalOwnership::blocked($d)){$keep(self::observation($d),'observation_review');}
+        if($d->status!=='departed'&&Schema::hasTable('domains_observation_work')&&!RenewalOwnership::blocked($d)){$keep(self::observation($d),'observation_review');}
         return $keys;
     }
     /** The request's saved price evaluation, for one price alert code. The sweep, the domain page and the request Cost row read this one check. */

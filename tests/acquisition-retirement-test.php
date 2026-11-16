@@ -22,7 +22,7 @@ $listed=static function(string $query='')use($user):array {
     $request=Illuminate\Http\Request::create('/domains'.$query);$request->setUserResolver(static fn()=>$user);
     return array_map(static fn($row)=>$row->name,app(Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController::class)->index($request)->getData()['domains']->items());};
 same(false,in_array('unpaid-solo-placeholder.com',[...$listed(),...$listed('?status=cancelled')],true),'A never-paid order is never listed');
-same([false,true],[in_array('paid-cancelled-placeholder.com',$listed(),true),in_array('paid-cancelled-placeholder.com',$listed('?status=cancelled'),true)],'A cancelled domain waits behind the Cancelled chip');
+same([true,true],[in_array('paid-cancelled-placeholder.com',$listed(),true),in_array('paid-cancelled-placeholder.com',$listed('?status=cancelled'),true)],'A cancelled domain is listed in All and behind its status filter');
 $second=commerceUser();$cart=commerceCart($second);commerceAdd($cart,$product,placeholderComFixtureName('unpaid-solo-placeholder.com'));commerceCheckout($second,$cart);
 $again=Domain::where('reservation_name','unpaid-solo-placeholder.com')->sole()->operations()->sole();expect($again->domain_id!==$solo->domain_id,'Another customer can order a retired name');
 // Wake-up runs after outer commit and is discarded on rollback.

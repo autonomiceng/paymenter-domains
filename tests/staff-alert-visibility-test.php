@@ -6,7 +6,7 @@ require __DIR__.'/Support/staff-panel.php';
 use Illuminate\Support\Facades\{Auth, DB};
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\{ListDomains, ViewDomain};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts, Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts, Staff, StaffDomainInputs};
 use Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus;
 use Paymenter\Extensions\Servers\Domains\Services\{ObligationAlerts, ObservationRecords, PslReviewSchema, RenewalOwnership};
 staffPanel(); [, $domain]=staffData(ordinaryCompleted:true); PslReviewSchema::install(); \Paymenter\Extensions\Servers\Domains\Services\RetentionSchema::install();
@@ -35,8 +35,13 @@ foreach([...array_keys(DomainStatus::STATES),'unknown'] as $status){
     $html=html_entity_decode(strip_tags(Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$domain->id])->assertSuccessful()->html()),ENT_QUOTES);
     foreach(DomainFacts::ALERTS as $code=>[$row]){
         $cause=$pageCause($code);
-        // Nothing syncs on an ended domain, so a stopped sync is no job there.
-        if($code==='observation_review'&&DomainFacts::ended($domain->fresh())){continue;}
+        // Nothing syncs on an ended or departed domain, so a stopped sync is no job there. Confirming a departure resolves it.
+        if($code==='observation_review'&&(DomainFacts::ended($domain->fresh())||$status==='departed')){
+            if($status==='departed'){ObservationRecords::hold($domain->fresh(),'read_unavailable',new DateTimeImmutable);}
+            $alerts=StaffDomainInputs::for([$domain->fresh()])[$domain->id]['alerts'];
+            same(false,in_array('observation_review',array_column($alerts,'code'),true),'Stopped-sync alerts are ineligible for '.$status);
+            continue;
+        }
         // A departure review applies only while this current holding is fenced, never to a pending acquisition or ended domain.
         if($code===RenewalOwnership::REVIEW&&!RenewalOwnership::blocked($domain->fresh())){continue;}
         if(!str_contains($html,$cause)||$code==='observation_review'&&!str_contains($html,'Read stopped')){$hidden[]=$code.'/'.$status;}

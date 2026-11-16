@@ -88,6 +88,44 @@ final class WatchDiscovery
                 || $digest!==$this->digest($current,$currentMap,self::values($service))){throw new \DomainException('Discovery source changed.');}
         },3);
     }
+    /** Departure confirmation, inside its money decision: this owner's watch linked to the departed domain goes back to
+     * its hosting sources. Staff pause holds, and sources and hosting decide active, paused or retired. Monitoring work is
+     * enrolled by the caller after the decision commits. Creates no watch. @return array{id:int,state:string}|null */
+    public function departed(Domain $d,int $now): ?array
+    {
+        if(!MoneyDecisions::running()||DB::transactionLevel()<1||$d->status!=='departed'){throw new \LogicException('Departure handoff requires its confirmation decision.');}
+        $owner=(int)$d->user_id;
+        $watch=WatchName::where('user_id',$owner)->where('managed_domain_id',$d->id)->where('state','linked')->lockForUpdate()->first();
+        if(!$watch){return null;}
+        // Decide from the sources the watch will have, then move it out of linked first: a watch source needs an active
+        // or paused watch. The new sources copy each link's owner, service and mapping, so hosting reads the same.
+        [$links,$state]=self::handoff($watch,$d,true);
+        $this->change($watch,['state'=>$state,'managed_domain_id'=>null,'registration'=>null,'registration_evidence'=>null],'registration_departed',$now);
+        foreach($links as $link){
+            $attrs=$link->only(['user_id','service_id','map_id','map_revision','hostname','registrable_name','source_digest','last_seen_at']);
+            $link->retire('registration_departed');
+            WatchSource::create([...$attrs,'state'=>'watch','watch_id'=>$watch->id]);
+        }
+        if($state!=='active'){$this->stop($watch,'registration_departed',$now);}
+        return ['id'=>(int)$watch->id,'state'=>$state];
+    }
+    /** The outcome confirmation would give this owner's watch linked to the domain, for the staff preview: active,
+     * paused (staff paused it), hosting (paused, no active hosting names it), retired (no sources), or null without one.
+     * Reads only. */
+    public static function departurePreview(Domain $d): ?string
+    {
+        $watch=WatchName::where('user_id',(int)$d->user_id)->where('managed_domain_id',$d->id)->where('state','linked')->first();
+        if(!$watch){return null;}
+        $state=self::handoff($watch,$d,false)[1];
+        return $state==='paused'&&!self::staffPaused($watch)?'hosting':$state;
+    }
+    /** The watch's managed links and the state its sources give it after the handoff. @return array{0:\Illuminate\Support\Collection,1:string} */
+    private static function handoff(WatchName $watch,Domain $d,bool $lock): array
+    {
+        $links=WatchSource::where('user_id',(int)$d->user_id)->where('managed_domain_id',$d->id)->where('state','managed_link')->orderBy('id')->when($lock,fn($q)=>$q->lockForUpdate())->get();
+        $ids=[...$links->pluck('id')->all(),...WatchSource::where('watch_id',$watch->id)->where('state','watch')->when($lock,fn($q)=>$q->lockForUpdate())->pluck('id')->all()];
+        return [$links,!$ids?'retired':(self::staffPaused($watch)||!self::activeHosting(WatchSource::whereIn('id',$ids))?'paused':'active')];
+    }
     /** The service's own domain, else its hostname. */
     private static function values(Service $s,bool $lock=false): array
     {return WatchProducts::field($s->properties()->whereIn('key',WatchProducts::KEYS)->when($lock,fn($q)=>$q->lockForUpdate())->get())->pluck('value')->all();}
@@ -133,8 +171,11 @@ final class WatchDiscovery
     {return $watch->state==='paused' && (self::staffPaused($watch) || self::hostingActive((int)$watch->id));}
     /** Whether an active hosting service on an enabled product line still names this watch. Without one, monitoring stays paused. */
     public static function hostingActive(int $id): bool
+    { return self::activeHosting(WatchSource::where('watch_id',$id)->where('state','watch')); }
+    /** Any of these sources is backed by active, enabled-map hosting of its own owner. */
+    private static function activeHosting(\Illuminate\Database\Eloquent\Builder $sources): bool
     {
-        return WatchSource::where('watch_id',$id)->where('state','watch')->whereExists(fn($q)=>$q->selectRaw('1')->from('services as s')->join('orders as o','o.id','=','s.order_id')->join('domains_watch_product_maps as m','m.product_id','=','s.product_id')
+        return $sources->whereExists(fn($q)=>$q->selectRaw('1')->from('services as s')->join('orders as o','o.id','=','s.order_id')->join('domains_watch_product_maps as m','m.product_id','=','s.product_id')
             ->whereColumn('s.id','domains_watch_sources.service_id')->whereColumn('s.user_id','domains_watch_sources.user_id')->whereColumn('o.user_id','s.user_id')
             ->whereColumn('m.id','domains_watch_sources.map_id')->whereColumn('m.revision','domains_watch_sources.map_revision')->where('m.enabled',true)->where('s.status','active'))->exists();
     }

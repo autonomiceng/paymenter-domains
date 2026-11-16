@@ -35,7 +35,13 @@ foreach ([$invoice->due_at,null] as $due) {
     $line=panelRowText($paused->html(),'Next invoice')??'';
     expect(str_contains($line,\Paymenter\Extensions\Servers\Domains\Admin\Support\Facts::invoiceName((int)$invoice->id))&&str_contains($line,(string)$invoice->fresh()->formattedTotal),'Paused renewal shows the native invoice identity and total');
     same($unchanged,$nativeMoney(),'Viewing paused invoice details preserves all money records');
+    same(null,panelRowText($paused->html(),'Open invoice'),'The paused renewal invoice is listed once, in Next invoice');
 }
+// Staff who may open the invoice reach it from the Next invoice line.
+$billing=staffUser([Staff::VIEW,'admin.invoices.update']);Illuminate\Support\Facades\Auth::setUser($billing);
+$linked=new DOMXPath((static function(string $html){$dom=new DOMDocument;@$dom->loadHTML('<?xml encoding="utf-8"?>'.$html);return $dom;})(Livewire::actingAs($billing)->test(ViewDomain::class,['record'=>$d->id])->assertSuccessful()->html()));
+same(1,$linked->query('//div[@data-domains-row][starts-with(normalize-space(div[contains(concat(" ",@class," ")," domains-panel-row-k ")]),"Next invoice")]//a[@href="'.\Paymenter\Extensions\Servers\Domains\Admin\Support\Facts::invoiceUrl((int)$invoice->id).'"]')->length,'The paused Next invoice links the renewal invoice');
+Illuminate\Support\Facades\Auth::setUser($viewer);
 $money=$nativeMoney();
 
 // A positive read for a foreign provider reference cannot contradict the retained ownership fence.

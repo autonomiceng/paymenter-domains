@@ -50,12 +50,17 @@ final readonly class RenewalCycles
     public static function beforePayment(int $invoiceId, Clock $clock, ?int $receiptId = null): void
     {
         $open = ['awaiting_payment', 'queued', 'held'];
-        $seed = Operation::where('invoice_id', $invoiceId)->where('action', 'renew')->first()?->domain;
-        if (!$seed) { return; }
+        $domainId = Operation::where('invoice_id', $invoiceId)->where('action', 'renew')->first()?->domain_id;
+        if ($domainId === null) { return; }
         // Retained membership survives an older snapshot; only the ordered, current locked scan decides state.
-        $write = static function () use ($seed, $invoiceId, $clock, $open, $receiptId): void {
+        $write = static function () use ($domainId, $invoiceId, $clock, $open, $receiptId): void {
             // Native updateOrCreate uses a savepoint; all locks still belong to the outer payment transaction.
             if (Invoice::whereKey($invoiceId)->lockForUpdate()->value('status') !== 'cancelled') { return; }
+            $seed = Domain::find($domainId);
+            if (!$seed) { return; }
+            // Read the holding after the invoice lock: confirmation may have released it while this receipt waited.
+            // A departed holding has released its name: its retained renewal accepts the receipt as accounting evidence only.
+            if ($seed->status === 'departed') { self::admitDeparted($seed, $invoiceId); return; }
             $l = HoldingLocks::take($seed, nativeReceipt: true);
             foreach ($l['operations']->where('invoice_id', $invoiceId)->where('action', 'renew')->whereIn('state', $open) as $op) {
                 if (!self::canRetireUnpaid($op, $l)) {
@@ -70,6 +75,17 @@ final readonly class RenewalCycles
             }
         };
         if (DB::transactionLevel() === 0) { DB::transaction($write); } else { $write(); }
+    }
+    /** A late receipt on a departed holding joins the payment transaction on the released row. It needs the frozen
+     * departure record and every renewal on the invoice closed unsent; it restores no reservation, service or renewal. */
+    private static function admitDeparted(Domain $seed, int $invoiceId): void
+    {
+        $l = HoldingLocks::take($seed, nativeReceipt: true, released: true);
+        $ops = $l['operations']->where('invoice_id', $invoiceId)->where('action', 'renew');
+        if (!DepartureProof::verified($l['domain']) || $ops->isEmpty() || $ops->contains(static fn ($op) => $op->state !== 'rejected'
+            || (!RefundProof::retired($op, $l['domain']) && !FundsWaits::closedRenewal($op, $l['domain'])))) {
+            throw new \DomainException('Departed renewal needs payment review before another receipt.');
+        }
     }
     public function retireUnpaid(int $id): Operation
     {
@@ -152,6 +168,14 @@ final readonly class RenewalCycles
                 || $l['items']->where('invoice_id', $invoice->id)->count() !== 1 || $item->reference_type !== null || $item->reference_id !== null
                 || PricingRule::minor($item->price) !== PricingRule::minor($op->amount) || (string) $item->quantity !== '1'
                 || !in_array($op->state, ['awaiting_payment', 'queued', 'held'], true) || !self::virgin($op));
+    }
+    /** Departure confirmation only: the caller's money decision already holds the full locks. */
+    public static function retireDeparted(Operation $op, array $l, string $reason, Clock $clock): Operation
+    {
+        if (!MoneyDecisions::running() || ($l['advisory'] ?? true) || !$l['operations']->contains(static fn ($row) => $row === $op) || !self::canRetireUnpaid($op, $l)) {
+            throw new \DomainException('Unpaid terminal proof unavailable.');
+        }
+        return self::retireLocked($op, $l, $reason, $clock);
     }
     private static function retireLocked(Operation $op, array $l, string $reason, Clock $clock): Operation
     {

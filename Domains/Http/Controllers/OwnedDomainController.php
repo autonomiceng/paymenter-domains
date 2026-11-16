@@ -14,17 +14,20 @@ final readonly class OwnedDomainController
     public function index(Request $request)
     {
         $raw=$request->query('q');$search=is_string($raw)?trim(substr($raw,0,253)):'';
-        $raw=$request->query('status');$filter=is_string($raw)&&isset(DomainStatus::SET[$raw])?$raw:'';
+        $raw=$request->query('status');$filter=is_string($raw)&&(isset(DomainStatus::SET[$raw])||$raw==='inactive')?$raw:'';
+        // Older links name one ended status, such as ?status=cancelled; they open the Inactive tab that now holds it.
+        if (in_array($filter,DomainStatus::INACTIVE,true)) { $filter='inactive'; }
         $sort=in_array($request->query('sort'),['expiry','-expiry','name','-name'],true)?$request->query('sort'):'expiry';
         $perPage=in_array((int)$request->query('per_page'),[25,50,100],true)?(int)$request->query('per_page'):25;
         // One list: registered domains and the domains your hosting uses. Status depends on the order, renewal stops
         // and expiry, not only the status column, so chips, filters and sorting work on resolved rows.
         $rows=(new DomainSummaries())->listed($request->user(),now('UTC')->getTimestamp());
         $key=fn($row)=>$row->statusState===null?null:\Paymenter\Extensions\Servers\Domains\Presentation\StatusPill::key($row->statusState);
-        // Cancelled domains stay out of the way until the Cancelled chip asks for them.
-        $shown=array_filter($rows,fn($row)=>$key($row)!=='cancelled');
-        $filterCounts=[''=>count($shown),...array_count_values(array_filter(array_map($key,array_values($rows))))];
-        $rows=$filter===''?$shown:array_filter($rows,fn($row)=>$key($row)===$filter);
+        // Ended domains (cancelled, transferred away, deleted) share the Inactive tab. All lists and counts every domain, so
+        // the tab counts add up (mock 03).
+        $tab=fn($row)=>in_array($k=$key($row),DomainStatus::INACTIVE,true)?'inactive':$k;
+        $filterCounts=[''=>count($rows),...array_count_values(array_filter(array_map($tab,array_values($rows))))];
+        $rows=$filter===''?$rows:array_filter($rows,fn($row)=>($filter==='inactive'?$tab($row):$key($row))===$filter);
         if ($search!=='') { $rows=array_filter($rows,fn($row)=>str_contains(strtolower($row->name),strtolower($search))); }
         $desc=$sort[0]==='-';$rows=array_values($rows);
         usort($rows,function($a,$b)use($sort,$desc){
@@ -58,6 +61,9 @@ final readonly class OwnedDomainController
         $holding=$this->owners->owned($request->user(),$id);
         $summary=$page==='show'?(new DomainSummaries())->one($request->user(),'managed',$id,now('UTC')->getTimestamp()):null;
         $domain=$this->owners->present($holding);
+        // A confirmed departure shows its saved record read-only (mocks 02, 02b, 02c); its outcomes lead History.
+        $departed=$page==='show'?\Paymenter\Extensions\Servers\Domains\Presentation\DepartedOwnerPage::of($holding,$summary):null;
+        if($departed){$domain=new \Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(...[...get_object_vars($domain),'progress'=>[...$departed['history'],...$domain->progress]]);}
         $recordFamilies=$holding->status==='active'&&!$domain->setupPending?\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::read($holding,app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()):null;
         if($recordFamilies){$domain=\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::owner($domain,$recordFamilies);}
         $renewalChoices=[];
@@ -71,6 +77,6 @@ final readonly class OwnedDomainController
         $recoveryContact=\Paymenter\Extensions\Servers\Domains\Services\ContactDetails::collect($request->user())['registrant'];
         $recoveryLimits=\Paymenter\Extensions\Servers\Domains\Services\ContactDetails::limits($holding->registrar_key);
         $recoveryStateRequired=$holding->registrar_key==='namesilo';
-        return view('domains::'.$page,compact('domain','summary','recordFamilies','renewalChoices','keys','recoveryContact','recoveryLimits','recoveryStateRequired'));
+        return view('domains::'.$page,compact('domain','summary','departed','recordFamilies','renewalChoices','keys','recoveryContact','recoveryLimits','recoveryStateRequired'));
     }
 }

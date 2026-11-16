@@ -104,7 +104,7 @@ final class StaffDomainStatus
             'active', 'renewal_off_expiring', 'expires_today' => [null, false],
             'needs_review' => ['Check the domain and its requests.', false],
             'expired', 'grace', 'redemption' => [self::LATE, true],
-            'registration_rejected', 'transfer_rejected', 'cancelled' => [null, true],
+            'registration_rejected', 'transfer_rejected', 'cancelled', 'departed', 'departed_deleted' => [null, true],
             default => [self::CHECK, false],
         }, null];
     }

@@ -12,8 +12,12 @@ final readonly class HoldingAnchor
     public static function resolved(Operation $op, array $l): bool
     {
         $d = $l['domain'];
-        if (RenewalAuthority::resolved($op, $d, AccountBindings::binding($l['account']))) { return true; }
-        $source = $l['identity_source'];
+        return RenewalAuthority::resolved($op, $d, AccountBindings::binding($l['account'])) || self::adopted($op, $l);
+    }
+    /** Unchanged, proved-unsent history of the generation an adoption replaced. */
+    public static function adopted(Operation $op, array $l): bool
+    {
+        $d = $l['domain']; $source = $l['identity_source'];
         if ($source['kind'] !== 'adoption' || $op->authority_generation !== $source['holding']['generation'] - 1) { return false; }
         $history = $l['operations']->filter(fn ($row) => $row->authority_generation === $source['holding']['generation'] - 1)->values();
         $stamp = $source['prior_operations_stamp'] ?? null;

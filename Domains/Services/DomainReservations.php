@@ -36,6 +36,17 @@ final class DomainReservations
         WatchDiscoveryHints::names([[(int)$locks['domain']->user_id,$locks['domain']->reservation_name]]);
     }
 
+    /** A confirmed departure frees the name inside its own money decision, after its record is written. */
+    public static function releaseDeparted(array $locks): void
+    {
+        $d=$locks['domain'];
+        if(!MoneyDecisions::running()||DB::transactionLevel()!==1||($locks['advisory']??true)||$d->status!=='departed'||!DepartureProof::matches($d)
+            ||$d->reservation_name!==$d->domain){throw new \DomainException('No retained departure.');}
+        Domain::whereKey($d->id)->where('reservation_name',$d->domain)->update(['reservation_name'=>null]);
+        $d->setRawAttributes([...$d->getAttributes(),'reservation_name'=>null],true);
+        if(!DepartureProof::verified(Domain::whereKey($d->id)->firstOrFail())){throw new \DomainException('No retained departure.');}
+    }
+
     private static function releaseLocked(string $name): void
     {
         $domain = Domain::where('reservation_name', $name)->lockForUpdate()->first();

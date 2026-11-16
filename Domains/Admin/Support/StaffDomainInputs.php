@@ -52,7 +52,7 @@ final class StaffDomainInputs
             $stops=$cancel->where('service_id',$d->service_id)->values();
             try { $off=RenewalStop::stopped(['domain'=>$d,'adoption'=>$adoptions->get($d->adoption_id),'cancel'=>$stops]); } catch (\Throwable) { $off=null; }
             $invoice=$invoices->get($d->latestAcquisition?->invoice_id);
-            $live=$rows->reject(fn(object $a)=>$a->code==='renewal_unpaid'&&$replaced||$a->code==='observation_review'&&DomainFacts::ended($d)
+            $live=$rows->reject(fn(object $a)=>$a->code==='renewal_unpaid'&&$replaced||$a->code==='observation_review'&&(DomainFacts::ended($d)||$d->status==='departed')
                 ||ObligationAlerts::outdated($a,$a->operation_id===null?null:$ops->firstWhere('id',(int)$a->operation_id),$ops,$d));
             $inputs[$d->id]=['alerts'=>$live->map(function(object $a)use($ops):array {
                     $request=$a->operation_id===null?null:(int)$a->operation_id;

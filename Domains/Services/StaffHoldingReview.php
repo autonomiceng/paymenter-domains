@@ -41,13 +41,7 @@ final class StaffHoldingReview
             if(!$staff||!$staff->hasPermission('admin.domains.view')||!$staff->hasPermission('admin.domains.manage')
                 ||!$staff->hasPermission(self::permission($action))){throw new \DomainException('Current staff permissions required. Reload this page.');}
             StaffReason::require($reason);
-            try{$t=json_decode(Crypt::decryptString($ticket),true,8,JSON_THROW_ON_ERROR);}catch(\Throwable){throw new \DomainException('Invalid review key. Reload this page.');}
-            if(($t['actor']??null)!==(int)$actor->id||($t['domain']??null)!==(int)$d->id||($t['action']??null)!==$action
-                ||!is_int($t['until']??null)||$t['until']<=$this->clock->now()->getTimestamp()||!is_string($t['stamp']??null)
-                ||!is_string($t['key']??null)||!hash_equals($t['stamp'],self::stamp($l))){throw new \DomainException('Holding changed. Reload this page and review it again.');}
-            $history=$d->renewal_policy['staff_holdings']??[];
-            if(!is_array($history)||!array_is_list($history)||count($history)>=100){throw new \DomainException('Holding audit full or unavailable.');}
-            if(array_filter($history,fn($r)=>($r['key']??null)===$t['key'])){throw new \DomainException('Review key used.');}
+            [$t,$history]=self::verify($l,(int)$actor->id,$action,$ticket,$this->clock);
             $before=self::state($l);
             if($action!=='stop'){
                 $binding=AccountBindings::binding($l['account']);$acquisitions=$l['operations']->whereIn('action',['register','transfer']);
@@ -63,6 +57,19 @@ final class StaffHoldingReview
                 'before'=>$before,'after'=>self::state($l)];
             $d->update(['renewal_policy'=>[...($d->renewal_policy??[]),'staff_holdings'=>$history]]);
         });
+    }
+    /** The 15-minute review key for this actor, holding and action, against the current locked rows. @return array{0:array,1:list<array>} */
+    public static function verify(array $l,int $actorId,string $action,string $ticket,Clock $clock): array
+    {
+        $d=$l['domain'];
+        try{$t=json_decode(Crypt::decryptString($ticket),true,8,JSON_THROW_ON_ERROR);}catch(\Throwable){throw new \DomainException('Invalid review key. Reload this page.');}
+        if(($t['actor']??null)!==$actorId||($t['domain']??null)!==(int)$d->id||($t['action']??null)!==$action
+            ||!is_int($t['until']??null)||$t['until']<=$clock->now()->getTimestamp()||!is_string($t['stamp']??null)
+            ||!is_string($t['key']??null)||!hash_equals($t['stamp'],self::stamp($l))){throw new \DomainException('Holding changed. Reload this page and review it again.');}
+        $history=$d->renewal_policy['staff_holdings']??[];
+        if(!is_array($history)||!array_is_list($history)||count($history)>=100){throw new \DomainException('Holding audit full or unavailable.');}
+        if(array_filter($history,fn($r)=>($r['key']??null)===$t['key'])){throw new \DomainException('Review key used.');}
+        return [$t,$history];
     }
     private static function state(array $l): array
     {

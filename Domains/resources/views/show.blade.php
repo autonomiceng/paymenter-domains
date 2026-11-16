@@ -3,7 +3,8 @@
 @include('domains::partials.styles')
 @php
     $support = ($summary ?? null)?->urls['support'] ?? \Paymenter\Extensions\Servers\Domains\Presentation\Missing::supportUrl();
-    $notice = \Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::notice($domain, $support, $summary ?? null);
+    // A departed page has no notice: its head says the departure with its saved reason.
+    $notice = ($departed ?? null) ? null : \Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::notice($domain, $support, $summary ?? null);
     $pill = \Paymenter\Extensions\Servers\Domains\Presentation\StatusPill::owned($domain, $summary ?? null);
     // The status reason is said once: the page notice already gives it, so the line under the status would repeat it.
     if ($pill && $notice && filled($pill['reason'] ?? null) && str_contains(strtolower($notice['text']), strtolower(rtrim($pill['reason'], '.')))) { $pill['reason'] = null; }
@@ -14,6 +15,23 @@
         // Domain settings only says the settings were read. Once the read is full, the rows below show each one.
         && !($cap === 'flags' && ($domain->management['flags']['family']['state'] ?? null) === 'complete' && ($domain->management['flags']['family_only'] ?? false))));
 @endphp
+@if ($departed ?? null)
+{{-- A confirmed departure (mocks 02, 02b, 02c): read-only, with the way back as the one action. --}}
+<x-domains::customer.head :title="$domain->name" :domain="true" :demo="$domain->demo" :test="$domain->testEnvironment" :crumbs="[['Domains', route('domains.domains.index')], [$domain->name, null]]" :state="$state">
+<x-slot:actions><a class="domains-btn domains-btn--secondary" href="{{ $departed['back'][1] }}">{{ $departed['back'][0] }}</a></x-slot:actions>
+</x-domains::customer.head>
+@if (\Paymenter\Extensions\Servers\Domains\Presentation\Missing::supportUrl())<p class="domains-hint">@include('domains::partials.contact-support', ['before' => $departed['support'], 'after' => '.'])</p>@endif
+<x-domains::customer.split>
+<x-domains::customer.section id="registration" title="Registration" :note="$departed['note']">
+<x-domains::customer.rows>@foreach ($departed['rows'] as $row)
+<x-domains::customer.row :label="$row['label']"><span class="domains-card__v">{{ $row['value'] }}</span>@if ($row['note'] ?? null) <span class="domains-sub">{{ $row['note'] }}</span>@endif
+<x-slot:actions>@if ($row['link'] ?? null)<a class="domains-a" href="{{ $row['link'][1] }}">{{ $row['link'][0] }}</a>@endif</x-slot:actions></x-domains::customer.row>
+@endforeach</x-domains::customer.rows>
+</x-domains::customer.section>
+<x-slot:rail>@include('domains::partials.activity')</x-slot:rail>
+</x-domains::customer.split>
+@include('domains::partials.client-script')
+@else
 <x-domains::customer.head :title="$domain->name" :domain="true" :demo="$domain->demo" :test="$domain->testEnvironment" :crumbs="[['Domains', route('domains.domains.index')], [$domain->name, null]]" :state="$state" />
 @if ($domain->departureSuspected)<p class="domains-hint">Didn't move this domain? @include('domains::partials.contact-support')</p>@endif
 @include('domains::partials.notices', ['fieldKeys'=>['nameservers','contact','dns','srv','ds','glue']])
@@ -52,5 +70,6 @@
 @include('domains::partials.client-script')
 @include('domains::partials.management-poll')
 @include('domains::partials.order-poll')
+@endif
 </div></div>
 @endcomponent

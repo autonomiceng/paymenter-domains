@@ -19,7 +19,8 @@ final class Staff
             self::METADATA => 'View domain secret metadata', self::POLICY => 'Manage domain policy',
             'admin.domains.watch.view' => 'View domain watch and public suffix list',
             'admin.domains.watch.manage' => 'Manage domain watch and public suffix list',
-            'admin.domains.manage' => 'Manage domain operations', 'admin.domains.fund' => 'Fund domain renewals'];
+            'admin.domains.manage' => 'Manage domain operations', 'admin.domains.fund' => 'Fund domain renewals',
+            \Paymenter\Extensions\Servers\Domains\Services\HoldingDeparture::PERMISSION => 'Confirm domains transferred away'];
         foreach(\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::ACTIONS as $action=>$label){
             // Check status has two permissions; the second restarts reads after the read limit.
             $permissions[\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::permission($action)]=$label.($action==='resume_reads'?' after read limit':'');

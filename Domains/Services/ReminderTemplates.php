@@ -89,6 +89,22 @@ final class ReminderTemplates
                 'mail_enabled'=>'force','in_app_title'=>'{{ $amount }} added to your account credit',
                 'in_app_body'=>'Your {{ $action }} of {{ $domain }} was cancelled.',
                 'body'=>"# Your {{ \$action }} of {{ \$domain }} was cancelled\n\nWe added **{{ \$amount }}** to your account credit. You can use this credit toward a future invoice.\n\n".$button('domain_url','View domain')]),
+            // Sent once after staff confirm a departure (mocks 08, 08b, 08c). The subject and title follow the reason.
+            'domains_domain_departed'=>array_replace($common,['name'=>'Domain transferred away','subject'=>'{{ $domain }} {{ $deleted ? \'deleted at the registry\' : \'transferred away\' }}',
+                'mail_enabled'=>'force','in_app_enabled'=>'never','in_app_title'=>'{{ $domain }} {{ $deleted ? \'deleted at the registry\' : \'transferred away\' }}',
+                'in_app_body'=>'It is no longer registered with {{ $company ?: \'us\' }}.','edit_preference_message'=>'Domain departure notices',
+                'body'=>"# {{ \$domain }} {{ \$deleted ? 'deleted at the registry' : 'transferred away' }}\n\n"
+                    ."{{ \$domain }} {{ \$deleted ? 'was deleted at the registry' : (\$same_registrar ? 'moved to another account at the same registrar' : 'moved to another registrar') }} on {{ \$date }}, so it is no longer registered with {{ \$company ?: 'us' }}.\n\n"
+                    ."What changed:\n\n<table class=\"domains-changes\">\n"
+                    ."@foreach(\$renewals as \$renewal)\n<tr><td>Renewal</td><td>@if(\$renewal['credited'])Invoice #{{ \$renewal['invoice'] }} is cancelled. We hadn't renewed yet, so the {{ \$renewal['amount'] }} you paid is now account credit.@else Invoice #{{ \$renewal['invoice'] }} for {{ \$renewal['amount'] }} is cancelled. You don't need to pay it.@endif</td></tr>\n@endforeach\n"
+                    ."<tr><td>Service</td><td>Cancelled. We no longer renew this domain.</td></tr>\n"
+                    ."@if(\$dns === 'registrar')\n<tr><td>DNS</td><td>This domain used our registrar's DNS. Its records stopped working when the transfer completed. If you haven't already, set up DNS at your new host.</td></tr>\n"
+                    ."@elseif(\$dns === 'hosting')\n<tr><td>DNS</td><td>DNS records on your hosting plan keep working while the plan is active.</td></tr>\n@endif\n"
+                    ."@if(\$monitored)\n<tr><td>Monitoring</td><td>Monitored as an external domain.</td></tr>\n@endif\n</table>\n\n"
+                    ."{{ \$deleted ? 'You can register it again from your domain page.' : 'You can transfer it back to '.(\$company ?: 'us').' any time from your domain page.' }}\n\n"
+                    ."@if(\$deleted)If you didn't expect this,@else If you didn't move this domain,@endif @if(\$support_url)[contact support]({{ \$support_url }}).@else contact support.@endif\n\n"
+                    .$button('domain_url','View domain')."\n\n"
+                    ."<p class=\"domains-why\">@if(\$company){{ \$company }}. You get this email because {{ \$domain }} was on your {{ \$company }} account.@else You get this email because {{ \$domain }} was on your account.@endif</p>"]),
         ];
     }
 }

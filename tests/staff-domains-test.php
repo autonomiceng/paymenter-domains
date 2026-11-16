@@ -302,6 +302,7 @@ $excluded=[
     'WatchWork.php'=>['disabled','queue_configuration'],
     'PublicRegistryReader.php'=>['no_expiry','facts','endpoint_failed','deferred'], // Result reason, distinct safe_code.
     'WatchRegistryObserver.php'=>['deferred'],
+    'WatchDiscovery.php'=>['hosting'], // Departure preview watch outcome, worded by DepartureConfirm::rows and subject() as "Not monitored after confirm" (mock 06).
     'DnsResolverSettings.php'=>['dns_rcode_'], // DNS response prefix, formatted locally.
     'DomainManagement.php'=>['owner_request','staff_correction','nameservers','lock','auto_renew_off','privacy','contacts','dns','ds','glue',
         'ds_add','glue_add','glue_update','privacy_enable','privacy_disable','privacy_purchase'], // Audit reasons and capability names.
