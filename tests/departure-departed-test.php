@@ -29,5 +29,12 @@ $status=DomainFacts::status($d->fresh());
 same(['transferred_away','Transferred away','Moved to another registrar',null,false],[$status['key'],$status['label'],$status['reason'],$status['step'],$status['act']],'Staff read the saved departure with nothing to do');
 same(State::TransferredAway,State::tryFrom($status['key']),'The staff head shows the transferred away status');
 Livewire\Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$d->id])->assertSuccessful();
-echo "A confirmed departure reads as transferred away on customer, list and staff pages.\n";
+// History keeps the departure's saved outcomes, with the exact saved credit, after the earlier registrar reads.
+$saved=$d->fresh()->renewal_policy['departure'];
+$departed=array_values(array_filter(Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::entries($d->fresh()),fn($r)=>is_array($r)&&str_starts_with((string)($r['__key']??''),'departed-')));
+$name=(fn(string $n)=>ctype_digit($n)?'Invoice #'.$n:$n)(Paymenter\Extensions\Servers\Domains\Admin\Support\Facts::invoiceName((int)$invoice->id));
+same(['Departure confirmed',$name.' cancelled','Credit added','Name released'],array_column($departed,'event'),'History lists the confirmation, the closed invoice, the credit and the released name');
+same(trim($staff->first_name.' '.$staff->last_name)?:'Staff',$departed[0]['by'],'The confirmation row names the staff member who confirmed');
+expect(str_contains((string)$departed[2]['sub'],'$'.number_format($saved['credit_minor']/100,2)),'The Credit added row carries the saved credit amount');
+echo "A confirmed departure reads as transferred away on customer, list and staff pages, with its saved history.\n";
 $nativeSuccessful=true;

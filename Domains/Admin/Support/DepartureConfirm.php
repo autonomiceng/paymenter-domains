@@ -63,7 +63,7 @@ final class DepartureConfirm
         return [$state,$text,$links];
     }
     /** The invoice name as the Next invoice row shows it. */
-    private static function invoice(int $id): string
+    public static function invoice(int $id): string
     { $name=Facts::invoiceName($id); return ctype_digit($name)?'Invoice #'.$name:$name; }
     public static function action(Domain $d): Action
     {
@@ -124,7 +124,7 @@ final class DepartureConfirm
     /** The customer's name as the Billing Customer row shows it. */
     private static function owner(Domain $d): string
     { $u=$d->user; return $u?(trim($u->first_name.' '.$u->last_name)?:(string)$u->email):'The customer'; }
-    private static function money(int $minor): string
+    public static function money(int $minor): string
     { return '$'.number_format($minor/100,2); }
     /** The page rows confirmation changes, each saying "on confirm" in its own helper (mock 05, 05b). Read-only. */
     public static function pageFacts(Domain $d,array $facts): array
