@@ -13,7 +13,7 @@ final class Value implements Htmlable
 {
     /** @param list<Fact> $extra Staff only. */
     private function __construct(public readonly string $kind, public readonly string $word, public readonly ?Tone $tone, public readonly ?Fact $fact,
-        public readonly ?string $sub, public readonly ?Reader $reader, public readonly ?string $record, public readonly array $extra = [], public readonly ?State $state = null, public readonly ?Fact $subAt = null, public readonly ?\Illuminate\Support\HtmlString $tag = null, public readonly ?string $then = null, public readonly bool $labelled = false)
+        public readonly ?string $sub, public readonly ?Reader $reader, public readonly ?string $record, public readonly array $extra = [], public readonly ?State $state = null, public readonly ?Fact $subAt = null, public readonly ?\Illuminate\Support\HtmlString $tag = null, public readonly ?string $then = null, public readonly bool $labelled = false, public readonly ?string $note = null)
     { assert($sub === null || trim($sub) !== '' && !Fact::isWord($sub), 'A line under a value is a sentence, never a state or plain word: '.$sub); }
 
     /** $record names the record the state belongs to, so a skin sweeps the mark only on a real change. */
@@ -54,15 +54,26 @@ final class Value implements Htmlable
     public function detail(Fact ...$facts): self
     {
         if ($this->reader === null) { throw new \LogicException('Only a state has a staff line.'); }
-        return new self($this->kind, $this->word, $this->tone, $this->fact, $this->sub, $this->reader, $this->record, [...$this->extra, ...array_values($facts)], $this->state);
+        return new self($this->kind, $this->word, $this->tone, $this->fact, $this->sub, $this->reader, $this->record, [...$this->extra, ...array_values($facts)], $this->state, note: $this->note);
     }
+    /** One sentence for staff at the end of the line under the reason, after its times: what they mean or what to do
+     * before them, so the reason above stays a reason. */
+    public function note(string $sentence): self
+    {
+        $sentence = trim($sentence);
+        if ($this->reader === null) { throw new \LogicException('Only a state has a staff line.'); }
+        if ($sentence === '' || !str_ends_with($sentence, '.')) { throw new \InvalidArgumentException('The staff line ends with a sentence.'); }
+        return new self($this->kind, $this->word, $this->tone, $this->fact, $this->sub, $this->reader, $this->record, $this->extra, $this->state, $this->subAt, $this->tag, $this->then, $this->labelled, $sentence);
+    }
+    /** The staff line's closing sentence, empty for customers. */
+    public function shownNote(): ?string { return $this->reader === Reader::Staff ? $this->note : null; }
     /** True for Checking: we wait on the registrar, so a row holding it gets the waiting edge. */
     public function waits(): bool { return $this->state === State::Checking; }
     /** The staff line, empty for customers. @return list<Fact> */
     public function shownExtra(): array { return $this->reader === Reader::Staff ? $this->extra : []; }
     /** The Demo tag that belongs after the first line, beside the name it marks. */
     public function tagged(?\Illuminate\Support\HtmlString $tag): self
-    { return $tag === null ? $this : new self($this->kind, $this->word, $this->tone, $this->fact, $this->sub, $this->reader, $this->record, $this->extra, $this->state, $this->subAt, $tag, $this->then, $this->labelled); }
+    { return $tag === null ? $this : new self($this->kind, $this->word, $this->tone, $this->fact, $this->sub, $this->reader, $this->record, $this->extra, $this->state, $this->subAt, $tag, $this->then, $this->labelled, $this->note); }
     /** The first line only, for a list cell (P-TBL-7) whose reason repeats on every row and is on the record's page. */
     public function line(): self
     { return new self($this->kind, $this->word, $this->tone, $this->fact, null, $this->reader, $this->record, [], $this->state, null, $this->tag, null); }
@@ -71,7 +82,7 @@ final class Value implements Htmlable
     {
         $sentence = trim($sentence);
         if ($sentence === '' || !str_ends_with($sentence, '.')) { throw new \InvalidArgumentException('The line under a value ends with a sentence.'); }
-        return new self($this->kind, $this->word, $this->tone, $this->fact, $this->sub, $this->reader, $this->record, $this->extra, $this->state, $this->subAt, $this->tag, $sentence, $this->labelled);
+        return new self($this->kind, $this->word, $this->tone, $this->fact, $this->sub, $this->reader, $this->record, $this->extra, $this->state, $this->subAt, $this->tag, $sentence, $this->labelled, $this->note);
     }
     public function toHtml(): string { return view('domains::components.panel.value', ['value' => $this])->render(); }
 }

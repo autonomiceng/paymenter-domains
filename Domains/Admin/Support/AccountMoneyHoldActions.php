@@ -22,11 +22,12 @@ final class AccountMoneyHoldActions
         // The Billing notice is where the hold shows on every domain page, so it opens with the shared cause, naming the amount and invoice when known.
         $cause=\Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::LABELS['account_money_hold'];
         if($lost!==null&&$op?->invoice_id){$cause=str_replace('a payment was',\Paymenter\Extensions\Servers\Domains\Services\Storefront::money(\Paymenter\Extensions\Servers\Domains\Services\PricingRule::decimal($lost)).' on '.Facts::invoiceName((int)$op->invoice_id).' was',$cause);}
-        $line=$cause.' '.($op?self::recovery($op,(string)$alert->alert_key):self::UNREADABLE)
-            .' Held since '.\Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at((int)$alert->first_seen).'. Domain payouts and new domain orders for this customer wait; renewals within paid terms continue.';
+        $line=$cause.' '.($op?self::recovery($op,(string)$alert->alert_key):self::UNREADABLE);
         $action=$release?$release('release_money_hold_'.$alert->id):null;
+        // The reason and recovery stay in the sentence; when the hold began and what it stops go on the staff line (mock).
         return \Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Row::notice('account-hold',\Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Value::state(
-            \Paymenter\Extensions\Servers\Domains\Presentation\State::NeedsReview,\Paymenter\Extensions\Servers\Domains\Presentation\Reader::Staff,$line),$action)->target();
+            \Paymenter\Extensions\Servers\Domains\Presentation\State::NeedsReview,\Paymenter\Extensions\Servers\Domains\Presentation\Reader::Staff,$line)
+            ->when((int)$alert->first_seen,'Held since')->note('Domain payouts and new domain orders for this customer wait; renewals within paid terms continue.'),$action)->target();
     }
     private const UNREADABLE="Recovery amounts can't be read. Check the invoice.";
     /** What recovery settled, so staff know what is still to repay before Release hold. One sentence, no dispute id. */

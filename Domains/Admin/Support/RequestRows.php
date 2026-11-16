@@ -31,7 +31,11 @@ final class RequestRows
         // Each part is made a sentence on its own, so a typed body never reaches the page as markup; a timed retry stays a time.
         $try = $notice['next_try'] ?? null;
         $line = self::sentence(implode(' ', array_filter([self::sentence($notice['title']), self::sentence($notice['body'] ?? null), $try === null ? null : 'Next try'])));
-        return Row::notice('request', Value::state($word, Reader::Staff, $line, null, $try === null ? null : Fact::date((int) $try, Reader::Staff)), $action);
+        $value = Value::state($word, Reader::Staff, $line, null, $try === null ? null : Fact::date((int) $try, Reader::Staff));
+        // Times and their step, when the notice has them, go on the staff line under the reason.
+        foreach ($notice['times'] ?? [] as $label => $at) { $value = $value->when((int) $at, (string) $label); }
+        if (isset($notice['note'])) { $value = $value->note((string) $notice['note']); }
+        return Row::notice('request', $value, $action);
     }
     /** The request's reason, when no notice gives one: the head shows the word, so the reason opens the sheet. */
     public static function reason(State $state, string $reason, string $record): Row

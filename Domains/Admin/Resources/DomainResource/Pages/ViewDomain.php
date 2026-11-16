@@ -563,7 +563,9 @@ class ViewDomain extends RecordDetailPage
             $fact=[...$fact,'sub'=>$fact['sub']??null,'value'=>$failed?null:\Paymenter\Extensions\Servers\Domains\Presentation\Missing::NOT_READ,'tone'=>null];
         }
         $row=DomainRows::row($label,$fact,$side,self::SHOWN[$label]??null);
-        if ($this->departureSuspected()) { if (in_array($label,['Nameservers','Contacts'],true)) { return $row->blocked('Paused while we check this domain.'); } if ($label==='Renewal'&&($this->cachedActions['resume']??null)?->isVisible()) { return $row->blocked('Auto-renew can turn on once this domain is back in our registrar account.'); } }
+        if ($this->departureSuspected()) { if (in_array($label,['Nameservers','Contacts'],true)) { return $row->blocked('Paused while we check this domain.'); }
+            // Phase B: nothing serves registrar DNS once the registry lists another registrar, so Edit and Edit SRV are muted.
+            if ($label==='DNS records'&&\Paymenter\Extensions\Servers\Domains\Admin\Support\DepartureConfirm::allowed()&&($stopped=DepartureChecks::dnsStopped($this->getRecord()))!==null) { return $row->blocked($stopped." Confirm doesn't change DNS."); } if ($label==='Renewal'&&($this->cachedActions['resume']??null)?->isVisible()) { return $row->blocked('Auto-renew can turn on once this domain is back in our registrar account.'); } }
         if (($this->blocked[$label]??false)) {
             if ($this->heldNotice!==null) { $row->blockedBy($this->heldNotice); } else { $row->blocked((string)$this->edits()['held']); }
         }

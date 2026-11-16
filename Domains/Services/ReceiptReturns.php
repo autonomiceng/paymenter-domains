@@ -149,9 +149,10 @@ final class ReceiptReturns
         foreach(self::returns($op) as $r){if(self::amount($r)===null){return true;}}
         return false;
     }
-    /** A retained refund whose original payment or account-credit return has finished. */
+    /** A retained refund whose original payment or account-credit return has finished. An unreadable released credit
+     * has not: it stays under review. */
     public static function settled(Operation $op): bool
-    { return isset($op->funding['refund'])&&!self::malformed($op)&&self::outstanding($op)===0; }
+    { try{return isset($op->funding['refund'])&&!self::malformed($op)&&self::outstanding($op)===0;}catch(\DomainException){return false;} }
     /** Pending allocations reserve funds; completed ones already have a signed native reversal from the gateway. */
     public static function outstanding(Operation $op): int
     {
@@ -196,8 +197,9 @@ final class ReceiptReturns
         try{$money=InvoiceMoney::project((int)$op->invoice_id);}
         catch(\Throwable){return self::REVIEW;}
         if($money['overdrawn']||array_filter($money['receipts'],fn($r)=>$r['hold'])){return self::REVIEW;}
-        foreach(self::effective($op) as $p){if(($p['to']??null)==='account_credit'){$bridge+=PricingRule::minor($p['amount']);}}
-        foreach(self::effective($op) as $p){if(($p['to']??null)!=='original_payment'){continue;}$bridge+=$p['bridge_minor'];foreach($p['allocations'] as $a){$entry=collect($money['ledger'])->first(fn($e)=>$e['gateway_id']===$a['gateway_id']&&$e['payment_intent_id']===$a['receipt']&&$e['allocation_key']===($a['gateway_key']??$a['key']));$states[]=$entry['state']??$op->funding['receipt_return_results'][$a['key']]['state']??'reserved';}}
+        try{$effective=self::effective($op);}catch(\DomainException){return self::REVIEW;} // An unreadable released credit.
+        foreach($effective as $p){if(($p['to']??null)==='account_credit'){$bridge+=PricingRule::minor($p['amount']);}}
+        foreach($effective as $p){if(($p['to']??null)!=='original_payment'){continue;}$bridge+=$p['bridge_minor'];foreach($p['allocations'] as $a){$entry=collect($money['ledger'])->first(fn($e)=>$e['gateway_id']===$a['gateway_id']&&$e['payment_intent_id']===$a['receipt']&&$e['allocation_key']===($a['gateway_key']??$a['key']));$states[]=$entry['state']??$op->funding['receipt_return_results'][$a['key']]['state']??'reserved';}}
         if(!$states&&$bridge===0){return null;}
         if(array_intersect($states,['review'])){return self::REVIEW;}
         if(array_diff($states,['refunded','credited'])){return ['Refund processing','We are returning your payment and checking its progress automatically.'];}
