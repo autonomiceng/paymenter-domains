@@ -97,7 +97,10 @@ final class RequestFacts
             }
             elseif (array_key_exists('refund',$f)||array_key_exists('late_credits',$f)) {
                 try{$money=\Paymenter\Extensions\Servers\Domains\Services\InvoiceMoney::project((int)$op->invoice_id);
-                    [$out['refund'],$out['refund_sub']]=$money['settled']?self::creditWords($f):\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::REVIEW;
+                    [$out['refund'],$out['refund_sub']]=!\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::malformed($op)
+                        &&\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::outstanding($op)===0
+                        &&!\Paymenter\Extensions\Servers\Domains\Services\InvoiceMoney::returnBlocked($money)
+                        ?self::creditWords($f):\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::REVIEW;
                 }catch(\Throwable){[$out['refund'],$out['refund_sub']]=\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::REVIEW;}
             }
             elseif (RefundCandidates::matches($op,$f) || ($p['renewal_execution']['refundable_later']??false)===true) {

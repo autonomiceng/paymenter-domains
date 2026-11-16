@@ -7,7 +7,9 @@ use App\Helpers\ExtensionHelper;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 
-/** Signed invoice amounts, derived from retained evidence. Locked loads recover newly observed lost credit; display reads use project(). */
+/** Signed invoice amounts, derived from retained evidence. Locked loads recover newly observed lost credit; display reads use project().
+ * settled is invoice-wide: a kept peer can retain money after an operation's return finishes.
+ * Operation returns keep their own completion checks; returnBlocked only vetoes completion on unsafe invoice evidence. */
 final class InvoiceMoney
 {
     /** HoldingLocks must already own the user, credit, invoice and native transaction rows. */
@@ -212,4 +214,6 @@ final class InvoiceMoney
         return ['card'=>0, 'credit'=>0];
     }
     public static function settled(array $record): bool { return $record['settled']; }
+    public static function returnBlocked(array $record): bool
+    { return $record['overdrawn'] || (bool)array_filter($record['receipts'],fn($r)=>$r['hold']); }
 }

@@ -42,7 +42,8 @@ final readonly class OwnedDomains
         if (!$op) { return []; }
         $kind=$op->action==='transfer'?'transfer':'registration';
         if($op->state==='rejected'){
-            try{$return=ReceiptReturns::summary($op);$returned=$return&&InvoiceMoney::settled(InvoiceMoney::project((int)$op->invoice_id));}
+            try{$return=ReceiptReturns::summary($op);$returned=$return&&!ReceiptReturns::malformed($op)&&ReceiptReturns::outstanding($op)===0
+                &&!InvoiceMoney::returnBlocked(InvoiceMoney::project((int)$op->invoice_id));}
             catch(\Throwable){$return=ReceiptReturns::REVIEW;$returned=false;}
             if($return){return ['state'=>'cancelled','kind'=>$kind,'return'=>$return[1],'returned'=>$returned];}
         }

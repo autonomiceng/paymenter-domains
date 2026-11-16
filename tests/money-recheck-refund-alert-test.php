@@ -45,6 +45,16 @@ same($money,$nativeMoney(),'Inspections and staff projections write no money');
 same(1,MoneyReceiptGateway::$sends,'No repeated refund was sent');
 same([0,0,false],[$first,$second,$inputs['late']],'Settled original refund must not require late-payment review');
 
+// A successful peer's retained money must not reopen this completed return.
+$kept=$new('recheck-kept-placeholder.com');$kept->update(['state'=>'succeeded']);
+DB::table('domains_operations')->where('id',$kept->id)->update(['invoice_id'=>$op->invoice_id]);
+$payment=InvoiceTransaction::where('invoice_id',$op->invoice_id)->where('amount','>','0')->sole();
+DB::table('invoice_transactions')->where('id',$payment->id)->update(['amount'=>PricingRule::decimal(PricingRule::minor($payment->amount)+200)]);
+$record=InvoiceMoney::project((int)$op->invoice_id);
+same([200,false],[$record['pool'],$record['settled']],'Shared invoice retains the kept peer payment');
+$retirement->inspect($domain->id);$retirement->inspect($domain->id);
+same(0,$alerts()->count(),'A completed shared-invoice refund raises no late-money alert');
+
 // Settlement also closes false rows retained by an earlier build.
 \Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::record($domain,'acquisition_late_money',$clock->now()->getTimestamp(),(int)$op->id,'synthetic_old_projection');
 $retirement->inspect($domain->id);same(0,$alerts()->count(),'A settled prefilter clears an already-open false alert');

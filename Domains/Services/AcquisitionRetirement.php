@@ -276,7 +276,17 @@ final readonly class AcquisitionRetirement
     private static function activity($op,?string $service,?string $invoice,\Illuminate\Support\Collection $transactions,?\Illuminate\Support\Collection $observedPeers=null): bool
     {
         if($service==='active'&&(isset($op->policy['native_acquisition_cancelled_at'])||!isset($op->funding['refund_authorization'])||isset($op->funding['refund']))){return true;}
-        try{return !InvoiceMoney::settled(InvoiceMoney::project((int)$op->invoice_id,$transactions,$observedPeers));}
+        try{
+            $money=InvoiceMoney::project((int)$op->invoice_id,$transactions,$observedPeers);
+            if(InvoiceMoney::returnBlocked($money)||$money['pending']){return true;}
+            if((isset($op->funding['refund'])||isset($op->funding['late_credits']))&&!ReceiptReturns::malformed($op)&&ReceiptReturns::outstanding($op)===0){
+                $credited=RefundPayment::lateCredited($op,$observedPeers);
+                // Kept peers retain their original receipt share. A new receipt still needs inspection.
+                foreach($money['receipts'] as $id=>$receipt){if($receipt['net']>0&&!isset($credited[$id])){return true;}}
+                return false;
+            }
+            return !InvoiceMoney::settled($money);
+        }
         catch(\Throwable){return true;} // Unreadable evidence still needs a check.
     }
 
