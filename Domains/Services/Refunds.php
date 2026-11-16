@@ -58,6 +58,8 @@ final readonly class Refunds
     public function creditRejected(int $id, ?StaffOperationReview $review = null): ?array
     {
         OperationClaims::outside(); $seen = Operation::findOrFail($id); $staff = $review !== null;
+        // A departed holding released its name: its late money is credited on the released row, never a new holding.
+        if ($seen->domain?->status === 'departed') { return $this->creditDeparted($seen, $review); }
         if (ReceiptReturns::plans($seen)) {
             // Consume the bound staff review before gateway recovery. Deferred work stays queued as automatic work, and staff
             // are told to try again.
@@ -249,6 +251,31 @@ final readonly class Refunds
         $result = $decision->value;
         if (ReceiptReturns::plans($seen->fresh())) { return ReceiptReturns::resume((int)$seen->id, $this->clock->now(), self::CLOSED) ?? $result ?? $returned; }
         return $result;
+    }
+    /** Late money on a departed holding's closed renewal returns to its old owner as account credit. Existing return plans
+     * resume first on their own released decisions; this decision reuses the released row's locks only. */
+    private function creditDeparted(Operation $seen, ?StaffOperationReview $review): ?array
+    {
+        $staff = $review !== null;
+        if (ReceiptReturns::plans($seen)) {
+            $review?->local(static fn()=>null); $review = null;
+            $returned = ReceiptReturns::resume((int) $seen->id, $this->clock->now(), self::REJECTED, $deferred);
+            if ($deferred && $staff) { throw new StaffReviewRefused(MoneyDecisions::BUSY); }
+            $fresh = $seen->fresh();
+            if (ReceiptReturns::malformed($fresh) || ReceiptReturns::outstanding($fresh) > 0) { return $returned; }
+        }
+        $decision = MoneyDecisions::run(self::request($seen, $review ? null : self::REJECTED, $review?->actorId, true), function (array $l) use ($seen, $review): ?array {
+            $review?->check($l); $op = $l['operations']->firstWhere('id', $seen->id);
+            if (!DepartureProof::verified($l['domain']) || !$op || $op->action !== 'renew' || $op->state !== 'rejected'
+                || (!RefundProof::retired($op, $l['domain']) && !FundsWaits::closedRenewal($op, $l['domain']))) {
+                throw new \DomainException('Departed renewal proof is unavailable.');
+            }
+            return $this->creditLate($op, $l, $review);
+        });
+        if ($decision->outcome === MoneyOutcome::Deferred) { if ($staff) { throw new StaffReviewRefused(MoneyDecisions::BUSY); } return $returned ?? null; }
+        if ($decision->error) { throw $decision->error; }
+        if (ReceiptReturns::plans(Operation::findOrFail($seen->id))) { return ReceiptReturns::resume((int) $seen->id, $this->clock->now(), self::REJECTED) ?? $decision->value ?? ($returned ?? null); }
+        return $decision->value;
     }
     /** Automatic work locks only the order's invoice; a miss reruns on the full scope. Staff and orders with no invoice use the full scope. */
     private static function request(Operation $seen, ?string $kind, ?int $staffId = null, bool $released = false): MoneyRequest
