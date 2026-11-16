@@ -25,6 +25,7 @@ if($prefix!==''){config(['database.connections.mysql.prefix'=>$prefix]);DB::purg
 Queue::fake();
 if($phase==='seed'){
     extract(commerceFixture(true,registrars:['enom']));$ids=[];
+    require $runtime.'/tests/Support/mariadb-commerce.php';
     $customer=commerceUser();
     foreach(['scoped','widened']as$kind){
         $cart=commerceCart($customer);commerceAdd($cart,$native->product($tlds[0],'register'),placeholderComFixtureName('receipt-'.$kind.'-placeholder.com'));
