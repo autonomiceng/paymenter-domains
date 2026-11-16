@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Presentation;
 use App\Models\Invoice;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DepartedHistory, DepartedPage, DepartureConfirm};
 use Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels;
-use Paymenter\Extensions\Servers\Domains\Models\Domain;
+use Paymenter\Extensions\Servers\Domains\Models\{Domain, WatchName};
 use Paymenter\Extensions\Servers\Domains\Services\HoldingDeparture;
 /** The customer page of a confirmed departure (mocks 02, 02b, 02c), read from its saved record and the confirmation's
  * history entry only. It is read-only: the one link out is the way back, transfer or register again, on the existing
@@ -33,10 +33,11 @@ final class DepartedOwnerPage
             default => null,
         };
         // Monitoring is said only when the monitored domain is running (it never promises monitoring that is off).
-        $watch = DepartedHistory::entry($d)['watch'] ?? null;
-        if (($watch['state'] ?? null) === 'active') {
-            $id = (int) ($watch['id'] ?? 0);
-            $rows[] = ['label' => 'Monitoring', 'value' => 'Monitored as an external domain', 'link' => $id > 0 ? ['Open monitored domain', route('domains.checks.show', ['kind' => 'watch', 'id' => $id])] : null];
+        $savedWatch = DepartedHistory::entry($d)['watch'] ?? null;
+        $watch = WatchName::whereKey((int) ($savedWatch['id'] ?? 0))->where('user_id', $d->user_id)
+            ->where('canonical_name', $d->domain)->whereNull('managed_domain_id')->where('state', 'active')->first();
+        if ($watch !== null) {
+            $rows[] = ['label' => 'Monitoring', 'value' => 'Monitored as an external domain', 'link' => ['Open monitored domain', route('domains.checks.show', ['kind' => 'watch', 'id' => (int) $watch->id])]];
         }
         $reason = HoldingDeparture::REASONS[$r['reason']];
         $history = $at === null ? [] : [['label' => 'Departure', 'state' => $deleted ? 'Deleted' : 'Transferred away', 'note' => $reason, 'date' => $at->format(DATE_ATOM)]];
