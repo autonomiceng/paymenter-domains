@@ -459,6 +459,7 @@ expect($projectionFailures === [], 'Projection checks failed: '.count($projectio
 
 // Recovery oracle: native Credit deltas and immutable peer shares, independently of the recovery calculation.
 use Paymenter\Extensions\Servers\Domains\Services\{AccountMoneyHolds,DisputeRecoveries,MoneyWorkSchema,ReminderSchema,ReminderSchedules,ReminderTemplates,Reminders,StaffOperationReview};
+require __DIR__.'/Support/reminder-mail.php';
 ReminderSchema::install();MoneyWorkSchema::install();ReminderTemplates::ensure();
 app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
 app()->instance(Reminders::class,new Reminders($clock,$bindings));
