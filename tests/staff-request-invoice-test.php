@@ -71,5 +71,45 @@ foreach(['gateway failure'=>'unreadable','missing amount'=>$row(['amount_minor'=
     StaffInvoiceReversalGateway::$observations['pi_staff_invoice']=$observed;
     Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertSee('Could not read refunds and disputes. Check the invoice payments.')->assertDontSee('encryption key');
 }
+// A closed request with no credit says a lost dispute already returned its money only when the dispute took the whole payment
+// and the invoice money holds nothing more, and then names this request's own line. Otherwise the refund row keeps its next step.
+class StaffInvoiceLedgerGateway extends StaffInvoiceReversalGateway {
+    public static array $ledger=[];
+    public function receiptLedger(\App\Models\Invoice $invoice):array { return self::$ledger; }
+}
+class_alias(StaffInvoiceLedgerGateway::class,'Paymenter\\Extensions\\Gateways\\StaffInvoiceLedger\\StaffInvoiceLedger');
+$ledgerGateway=\App\Models\Gateway::create(['extension'=>'StaffInvoiceLedger','name'=>'Ledger fixture','type'=>'gateway','enabled'=>true]);
+InvoiceTransaction::where('invoice_id',$op->invoice_id)->update(['gateway_id'=>$ledgerGateway->id]);
+$open=$op->only(['state','funding_basis']);$op->update(['state'=>'rejected','funding_basis'=>'paid_invoice']);
+// The dispute's account hold is open, as after any lost dispute, so the refund waits for it.
+$accountHold=DB::table('domains_obligation_alerts')->insertGetId(['alert_key'=>Paymenter\Extensions\Servers\Domains\Services\DisputeRecoveries::key('account_money_hold','dp_share'),
+    'domain_id'=>$op->domain_id,'operation_id'=>$op->id,'generation'=>$op->authority_generation,'code'=>'account_money_hold','first_seen'=>1,'last_seen'=>1]);
+$lost=static function(int $minor)use($invoice):void {
+    $who=['invoice_id'=>(int)$invoice->id,'user_id'=>(int)$invoice->user_id,'payment_intent_id'=>'pi_staff_invoice'];
+    StaffInvoiceReversalGateway::$observations['pi_staff_invoice']=[['kind'=>'dispute','id'=>'dp_share','status'=>'lost','needs_review'=>true,...$who,
+        'currency'=>strtolower($invoice->currency_code),'amount_minor'=>$minor,'credited_minor'=>0,'credit_balance_minor'=>0]];
+    StaffInvoiceLedgerGateway::$ledger=[[...$who,'currency'=>$invoice->currency_code,'allocation_key'=>'stripe:dispute:dp_share','state'=>'lost','amount_minor'=>$minor]];
+};
+$own=Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)$invoice->fresh()->total);
+$returned=static function()use($op):array{$facts=RequestFacts::for($op->fresh());return [$facts['refund']??null,(string)($facts['refund_sub']??'')];};
+$waiting='The refund waits until the hold is released.';
+$lost($own);[$refund,$sub]=$returned();
+same('No credit added',$refund,'A closed request with a lost dispute adds no credit');
+expect(str_contains($sub,'already returned $'.number_format($own/100,2))&&!str_contains($sub,$waiting),'A dispute that took the whole payment returned this request\'s money: '.$sub);
+// Paid twice: the second payment is still held, so the refund still waits for the hold.
+$second=InvoiceTransaction::where('invoice_id',$op->invoice_id)->orderBy('id')->firstOrFail()->replicate();$second->transaction_id='pi_staff_second';$second->save();
+[,$sub]=$returned();
+expect(!str_contains($sub,'already returned')&&str_contains($sub,$waiting),'A request paid twice keeps the waiting words after one payment is lost: '.$sub);
+DB::table('invoice_transactions')->where('id',$second->id)->delete();
+// Cart invoice: another line joins the bill. A dispute for this request's line amount is still part of the payment.
+$other=\App\Models\InvoiceItem::create(['invoice_id'=>$invoice->id,'description'=>'Other cart line','price'=>'20.00','quantity'=>1]);
+$lost($own);[,$sub]=$returned();
+expect(!str_contains($sub,'already returned')&&str_contains($sub,$waiting),'A partial dispute on a cart invoice keeps the waiting words: '.$sub);
+$lost($own+2000);[,$sub]=$returned();
+expect(str_contains($sub,'already returned $'.number_format($own/100,2).' '),'A full dispute on a cart invoice names only this request\'s own line: '.$sub);
+// Tests that build on this file start from the held request with its single line.
+DB::table('invoice_items')->where('id',$other->id)->delete();$op->update($open);DB::table('domains_obligation_alerts')->where('id',$accountHold)->delete();
+InvoiceTransaction::where('invoice_id',$op->invoice_id)->update(['gateway_id'=>$gateway->id]);
+StaffInvoiceReversalGateway::$observations['pi_staff_invoice']=[];StaffInvoiceLedgerGateway::$ledger=[];
 echo "Request invoice name and reversal passed.\n";
 $nativeSuccessful=true;

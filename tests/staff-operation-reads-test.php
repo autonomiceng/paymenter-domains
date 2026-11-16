@@ -245,6 +245,15 @@ same(['owned'=>true,'expiry'=>'2027-10-18','expiry_precision'=>'date','charge_co
 same('awaiting_answer',$lost->policy['status_check']['outcome'],'Unknown original charge still needs the registrar answer');
 same(1,$lost->policy['reconciliation']['polls'],'A completed read of a lost reply counts toward the read limit');
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$lost->id])->assertActionVisible('enom_answer')->assertSee('The original charge is still unconfirmed.');
+// While an automatic check is scheduled the system can still read the result, so the page sends no one to the registrar's support yet.
+$readPolicy=$lost->fresh()->policy;
+$lost->fresh()->update(['policy'=>[...$readPolicy,'status_check'=>[...$readPolicy['status_check'],'outcome'=>'checked','next_at'=>$clock->now()->getTimestamp()+3600]]]);
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$lost->id])->assertActionHidden('enom_answer')->assertActionVisible('recheck')
+    ->assertDontSee(\Paymenter\Extensions\Servers\Domains\Admin\Support\SupportDetails::LABEL);
+// Once checks stop, recording the answer is the way out.
+$lost->fresh()->update(['policy'=>[...$readPolicy,'status_check'=>[...$readPolicy['status_check'],'outcome'=>'checked','next_at'=>null]]]);
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$lost->id])->assertActionVisible('enom_answer');
+$lost->fresh()->update(['policy'=>$readPolicy]);
 same('uncertain',$lost->state,'A found domain cannot settle a lost purchase');
 same(null,$lost->cost['actual']??null,'Unknown charge stays unknown');
 same($before,[$lost->attempt,$lost->funding,$lost->domain->fresh()->reservation_name,$credit()],'Reads keep the original attempt, reservation and payment');
@@ -267,7 +276,7 @@ $policy=$lost->fresh()->policy;$policy['reconciliation']['polls']=0;$lost->fresh
 $observation->fault='send_guard';$reconcile->run($lost->id);$observation->fault='';
 same(true,$lost->fresh()->policy['status_check']['read_attempted'],'A refused read keeps the earlier read of this attempt');
 $policy=$lost->fresh()->policy;$policy['reconciliation']['polls']=OperationReconciliation::POLL_LIMIT;$lost->fresh()->update(['policy'=>$policy]);
-Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$lost->id])->callAction('resume_reads')->assertNotified('Status checks restarted')->assertActionVisible('enom_answer');
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$lost->id])->callAction('resume_reads')->assertNotified('Status checks restarted')->assertActionHidden('enom_answer');
 same(true,$lost->fresh()->policy['status_check']['read_attempted'],'A resume keeps the earlier read of this attempt');
 // A lost renewal reply outside its history window can still read the domain.
 DB::table('domains_accounts')->where('server_id',$lost->server_id)->update(['processing_enabled'=>true]);
@@ -294,7 +303,7 @@ same($before,[$lostRenew->fresh()->attempt,$lostRenew->fresh()->funding,$lostDom
 // When the answer leads, Check status stays on the page: staff can read again before answering.
 same('enom_answer',RequestFacts::notice($lostRenew->fresh())['primary']??null,'An unconfirmed renewal past the answer wait leads with the answer');
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$lostRenew->id])->assertActionVisible('recheck')->assertActionVisible('enom_answer')
-    ->assertSee(\Paymenter\Extensions\Servers\Domains\Admin\Support\EnomAnswerAction::LABEL)->assertSee('Check status')
+    ->assertSee(\Paymenter\Extensions\Servers\Domains\Admin\Support\EnomAnswerAction::button($lostRenew))->assertSee('Check status')
     // Whoever can record the answer can copy the request's facts for the support ticket; nothing else on the page offers them.
     ->assertSee(\Paymenter\Extensions\Servers\Domains\Admin\Support\SupportDetails::LABEL)->assertSee('Our reference: Request #'.$lostRenew->id);
 // The copied details survive any account name: a quote or an entity in it never cuts the text or becomes markup.

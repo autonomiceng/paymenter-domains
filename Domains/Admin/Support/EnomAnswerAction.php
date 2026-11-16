@@ -14,6 +14,8 @@ final class EnomAnswerAction
 {
     public const LABEL='Resolve with Enom support';
     public static function label(Operation $op): string {return $op->registrar_key==='namesilo'?'Resolve with NameSilo support':self::LABEL;}
+    /** The button names what it does; its dialog keeps the support heading. A transfer's rejection keeps its own label. */
+    public static function button(Operation $op): string {return $op->action==='transfer'?self::label($op):'Record answer';}
     /** Unreadable saved attempt data never offers the no-order answer. */
     private static function accepted(Operation $op): bool
     {return !Answers::readable($op)||Answers::capturedReference($op)!==null||isset($op->attempt['registration'])||isset($op->attempt['renewal']);}
@@ -32,8 +34,9 @@ final class EnomAnswerAction
         // The scheduled read's proof that Enom has no order: the case number becomes optional for the no-order answer only.
         $absence=static function()use($op):?array{static $read=false,$value=null;if(!$read){$read=true;$value=Answers::absence($op,app(Clock::class)->now());}return $value;};
         $relaxed=static fn($get):bool=>$get('outcome')==='not_processed'&&$absence()!==null;
-        return Action::make('enom_answer')->label(self::label($op))->modalHeading(self::label($op))->color('gray')
-            ->visible(fn()=>Staff::can(Staff::POLICY)&&Staff::can(Review::permission('enom_answer'))&&Answers::ready($op,app(Clock::class)->now()))
+        return Action::make('enom_answer')->label(self::button($op))->modalHeading(self::label($op))->color('gray')
+            // While an automatic check is scheduled the system can still read the result itself, so staff wait for it before asking support.
+            ->visible(fn()=>Staff::can(Staff::POLICY)&&Staff::can(Review::permission('enom_answer'))&&Answers::ready($op,app(Clock::class)->now())&&!\Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::scheduled($op))
             ->modalDescription('Record what '.$registrar.' support found for Request #'.$id.'. Saving sends nothing to '.$registrar.'.')
             ->modalSubmitActionLabel('Record answer')->schema([
                 Hidden::make('review_key')->default(fn()=>Review::ticket((int)Auth::id(),$server,null,'enom_answer',$stamp)),

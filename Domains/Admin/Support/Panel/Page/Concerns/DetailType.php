@@ -13,6 +13,8 @@ trait DetailType
     abstract protected function sections(): array;
     /** Beside the sheet: activity, or a few facts about the account. @return list<Section> */
     protected function rail(): array { return []; }
+    /** One notice under the head for a hold that blocks more than one section (P-NTC-5 page form). Read after sections(). */
+    protected function pageNotice(): ?\Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Row { return null; }
     final public function content(Schema $schema): Schema
     {
         $record = $this instanceof RecordDetailPage;
@@ -22,6 +24,8 @@ trait DetailType
             if ($section->hasPartial() && !$record) { throw new \InvalidArgumentException('A partial view belongs on a record Detail page.'); }
         }
         $split = Sheet::split(array_map(static fn (Section $s) => $s->toSchema(), $sections), array_map(static fn (Section $s) => $s->toSchema(), $railSections), 'sheet');
-        return $schema->components([$record ? $this->withRelations($split) : $split]);
+        $notice = $this->pageNotice();
+        $notice = $notice === null ? [] : [\Filament\Schemas\Components\Group::make([$notice])->columnSpanFull()->extraAttributes(['class' => 'domains-page-notice', 'data-piece' => 'page-notice', 'role' => 'status'])];
+        return $schema->components([...$notice, $record ? $this->withRelations($split) : $split]);
     }
 }

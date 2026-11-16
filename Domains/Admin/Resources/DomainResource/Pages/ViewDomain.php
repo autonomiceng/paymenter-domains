@@ -146,7 +146,7 @@ class ViewDomain extends RecordDetailPage
     {
         $d=$this->getRecord();
         // Import domain for a pending import sits in the page notice.
-        return [\Paymenter\Extensions\Servers\Domains\Admin\Support\DepartureConfirm::action($d),$this->approveComplimentaryCost($d),self::complimentaryRenewal($d),$this->syncNow(),...AcquisitionActions::make($d),...AcquisitionPaymentReview::actions($d),...\Paymenter\Extensions\Servers\Domains\Admin\Support\AccountMoneyHoldActions::actions($d),$this->customerView($d)];
+        return [\Paymenter\Extensions\Servers\Domains\Admin\Support\DepartureConfirm::action($d),$this->approveComplimentaryCost($d),self::complimentaryRenewal($d),$this->syncNow(),...AcquisitionActions::make($d),...AcquisitionPaymentReview::actions($d),$this->customerView($d)];
     }
     /** A held order's Release hold and Cancel and refund, the same actions as its request page. They act on that request,
      * so they sit on its own row under the Registration notice, which keeps its one link (P-NTC-5, P-ACT-9, P-ACT-11). */
@@ -203,6 +203,8 @@ class ViewDomain extends RecordDetailPage
     {
         if (isset($this->cachedActions['stop'])) { return; }
         foreach (HoldingActions::make($this->getRecord()) as $action) { $this->cacheAction(Sheet::button($action)); /* Quiet, like every row button; red only in its confirm. */ }
+        // Release hold sits in the Billing notice of the account hold it releases.
+        foreach (\Paymenter\Extensions\Servers\Domains\Admin\Support\AccountMoneyHoldActions::actions($this->getRecord()) as $action) { $this->cacheAction(Sheet::button($action)); }
     }
     private function syncNow(): Action
     {
@@ -247,7 +249,8 @@ class ViewDomain extends RecordDetailPage
             // Live money, dispute and delivery alerts, and the reminder check, stay beside the saved facts until staff clear them.
             $review=$this->getAction('notice_review',false); $review=$review?->isVisible()?$review:null;
             $alerts=($fact=DepartedPage::alerts($d,$review!==null))===null?null:$this->row('Open alerts',$fact,$review?[$review]:[]);
-            return DepartedPage::sections($d,$r,$customer,$facts['Service']['url']??null,$alerts);
+            // A dispute lost after the departure still holds the account, so Billing keeps its notice and Release hold.
+            return DepartedPage::sections($d,$r,$customer,$facts['Service']['url']??null,$alerts,$this->accountHold($d));
         }
         $suspected=$this->departureSuspected(); $late=!$suspected&&$this->recordsLate($d);
         // The notice above the sheet gives the cause and the next step once, so the rows it explains stay calm.
@@ -271,6 +274,9 @@ class ViewDomain extends RecordDetailPage
         $recordsHeld=isset($placed[self::HELD_SECTION]);unset($placed[self::HELD_SECTION]);
         // The rows that stay blocked are said once, in the notice of their section. A request's notice names it, so only a page with no such section and no request needs it elsewhere.
         $heldIn=$recordsHeld?'Registrar records':($edits['request']===null?array_key_first($placed):null);
+        // A request's hold blocks Registrar records and Registration, so it is one notice under the head, said once.
+        $this->pageHold=$suspected?null:$this->requestHold($d,$edits['request']);
+        if ($this->pageHold!==null) { $heldIn=null; }
         $items=$this->noticeItems($d,$late,$heldIn);
         // The status notice opens Registration, or the first section when there is none.
         $statusIn=isset($placed['Registration'])?'Registration':(array_key_first($placed)??'Registrar records');
@@ -279,13 +285,17 @@ class ViewDomain extends RecordDetailPage
         $notices=[];
         foreach ($items as $title=>$list) { if (($row=DomainRows::notice(strtolower((string)preg_replace('/[^A-Za-z]+/','-',$title)),$list,'domain-'.$d->id.'-'.md5($title)))!==null) { $notices[$title]=$row; } }
         if ($suspected && isset($notices['Registration'])) { $notices['Registration']->target(); }
-        $this->heldNotice=$suspected?(isset($placed['Registration'])?($notices['Registration']??null):null):($heldIn!==null?($notices[$heldIn]??null):null);
+        $this->heldNotice=$this->pageHold??($suspected?(isset($placed['Registration'])?($notices['Registration']??null):null):($heldIn!==null?($notices[$heldIn]??null):null));
+        // An open account hold opens Billing, with Release hold beside it (P-ACT-11).
+        $money=$this->accountHold($d);
+        if ($money!==null) { $placed['Billing']??=[]; }
         $sections=[];
         foreach ($placed as $title=>$labels) {
             $rows=[];
             foreach (array_intersect($labels,array_keys($facts)) as $label) { $rows[]=$this->row($label,$facts[$label],$this->side($label,$facts[$label],$edits,$label===$slot?$review:null)); array_push($rows,...DomainRows::retry($facts[$label])); }
             $held=$title==='Registration'?self::heldOrderRow($d):null;
-            $sections[]=Section::make($title,[...(isset($notices[$title])?[$notices[$title]]:[]),...($held?[$held]:[]),...$rows]);
+            $notice=$title==='Billing'&&$money!==null?$money:($notices[$title]??null);
+            $sections[]=Section::make($title,[...($notice?[$notice]:[]),...($held?[$held]:[]),...$rows]);
         }
         $records=[$this->recordFamilies($d,$facts,$edits,$notices['Registrar records']??null)];
         $monitoring=Section::make('Monitoring',[...(isset($notices['Monitoring'])?[$notices['Monitoring']]:[]),
@@ -336,8 +346,37 @@ class ViewDomain extends RecordDetailPage
         return [Section::make('Activity',[DomainHistory::trace($d,array_slice($entries,0,Sheet::RAIL_STEPS),DomainFacts::headRequest($d,$this->status(),$this->edits()['request'],$this->notice()),$this->said())])
             ->link(Sheet::link('view_history','View all '.count($entries),$url))];
     }
+    /** The open account hold as the Billing notice, with Release hold when this reader may release it (P-ACT-11). */
+    private function accountHold(Domain $d): ?Row
+    { return \Paymenter\Extensions\Servers\Domains\Admin\Support\AccountMoneyHoldActions::notice($d,fn(string $name)=>($a=$this->cachedActions[$name]??null)?->isVisible()?$a:null); }
     /** The notice that says why changes are held, so the rows it blocks point to it. */
     private ?Row $heldNotice=null;
+    /** The request hold as one notice under the head, when a request holds changes. */
+    private ?Row $pageHold=null;
+    protected function pageNotice(): ?Row { return $this->pageHold; }
+    /** The request that holds changes, in its own word: Checking or Delayed while its checks are scheduled, Under review once
+     * staff must record the registrar's answer. Names both held sections and links the request (P-NTC-5 page form, P-ACT-8). */
+    private function requestHold(Domain $d, ?int $request): ?Row
+    {
+        $op=$request===null?null:\Paymenter\Extensions\Servers\Domains\Models\Operation::find($request);
+        if ($op===null) { return null; }
+        $op->setRelation('domain',$d);
+        $url=\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainNotices::requestUrl(['request'=>$op->id]);
+        $link=$url?Sheet::link('held_request','Open request #'.$op->id,$url):null;
+        $kind=['renew'=>'renewal ','register'=>'registration ','transfer'=>'transfer '][$op->action]??'';
+        $who=\Paymenter\Extensions\Servers\Domains\Admin\Support\PaidUncertainty::registrar($op);
+        $held='Changes to Registrar records and Registration wait for '.$kind.'request #'.$op->id;
+        $stand=\Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::answerState($op); $next=null;
+        if ($stand==='checking') {
+            $next=\Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::status($op)['next_at']??null;
+            $state=\Paymenter\Extensions\Servers\Domains\Admin\Support\PaidUncertainty::waitState($op);
+            $line=$held.', which '.$who.' has not confirmed yet.';
+        } elseif ($stand!==null) { $state=State::UnderReview; $line=$held.', which needs '.$who.'’s answer recorded.'; }
+        else { $state=State::UnderReview; $line='Changes are on hold until request #'.$op->id.' is checked.'; }
+        // The next check is a time, so it goes on the staff line under the reason, not in it.
+        $value=Value::state($state,Reader::Staff,$line,'domain-'.$d->id.'-hold');
+        return Row::notice('request-hold',$next?$value->when((int)$next,'Next request check'):$value,$link);
+    }
     /** What the domain's state waits for, which the head line used to say: the notice's cause and links, else the hold,
      * else the status step. A change the page stopped following says so here too.
      * @return list<array{0:State,1:mixed,2:?Action}> */
@@ -354,8 +393,9 @@ class ViewDomain extends RecordDetailPage
             $items[]=[$state,implode(' ',array_filter([$notice['title']??null,$notice['body']??null])),isset($links[0])?Sheet::link('notice_link',$links[0]['label'],$links[0]['url']):null];
             // A second link (late money's invoice) is the Invoice to check row in Billing (sheet()).
         } elseif ($held!==null) {
-            $url=\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainNotices::requestUrl(['request'=>$held]);
-            $items[]=[State::UnderReview,'Changes are on hold until request #'.$held.' is checked.',$url?Sheet::link('held_request','Check request #'.$held,$url):null];
+            // The page notice under the head already says it.
+            $url=$this->pageHold===null?\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainNotices::requestUrl(['request'=>$held]):null;
+            if ($this->pageHold===null) { $items[]=[State::UnderReview,'Changes are on hold until request #'.$held.' is checked.',$url?Sheet::link('held_request','Check request #'.$held,$url):null]; }
         } else {
             $step=$this->headLine()['step'];
             if ($step!==null) { [$line,$link]=RegistrarRows::line($step,'status_link'); if ($line!==null) { $items[]=[$word,$line,$link]; } }

@@ -14,6 +14,12 @@ class_alias(UnreadableHoldGateway::class,'Paymenter\\Extensions\\Gateways\\Unrea
 class LostHoldGateway extends MoneyReceiptGateway {
     public static array $ledger=[];
     public function receiptLedger(Invoice $invoice):array { return self::$ledger; }
+    /** The same lost dispute as the request page's Payment row reads it. */
+    public function receiptReversals(Invoice $invoice,string $receipt):array {
+        return array_map(fn($r)=>['kind'=>'dispute','id'=>substr($r['allocation_key'],15),'status'=>$r['state'],'invoice_id'=>$r['invoice_id'],'user_id'=>$r['user_id'],
+            'payment_intent_id'=>$r['payment_intent_id'],'currency'=>$r['currency'],'amount_minor'=>$r['amount_minor'],'needs_review'=>true],
+            array_filter(self::$ledger,fn($r)=>$r['payment_intent_id']===$receipt));
+    }
 }
 class_alias(LostHoldGateway::class,'Paymenter\\Extensions\\Gateways\\LostHold\\LostHold');
 ReminderSchema::install();
@@ -52,4 +58,12 @@ same([true,100,null,null,null],[$evidence['pending']??false,$evidence['lost_mino
 DB::table('domains_obligation_alerts')->where('alert_key',DisputeRecoveries::key('dispute_recovery','synthetic_pending'))->update(['resolved_at'=>2]);
 $evidence=$holdEvidence->invoke(null,$pendingOp,$holdKey);
 same([false,0,0,0],[$evidence['pending']??false,$evidence['owed_minor'],$evidence['removed_minor'],$evidence['remainder_minor']],'Finished owed-zero recovery shows final amounts');
+// The request's Payment row asks staff to look while the dispute's account hold is open, and settles once staff release it.
+$lostAct=static function()use($pendingOp,$staff):bool {
+    Illuminate\Support\Facades\Auth::setUser($staff);
+    return Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::for($pendingOp->fresh())['payment_reversed']['act']??false;
+};
+same(true,$lostAct(),'A lost dispute needs review while its account hold is open');
+AccountMoneyHolds::release($staff,(int)DB::table('domains_obligation_alerts')->where('alert_key',$holdKey)->value('id'));
+same(false,$lostAct(),'A lost dispute needs no review once its account hold is released');
 $nativeSuccessful=true;

@@ -37,7 +37,8 @@ final class DepartedOwnerPage
         $savedWatch = DepartedHistory::entry($d)['watch'] ?? null;
         $watch = WatchName::whereKey((int) ($savedWatch['id'] ?? 0))->where('user_id', $d->user_id)
             ->where('canonical_name', $d->domain)->whereNull('managed_domain_id')->where('state', 'active')->first();
-        if ($watch !== null) {
+        // The watch's own page opens only while no live holding of the same name takes precedence over it, so link only then.
+        if ($watch !== null && $d->user !== null && (new \Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($d->user, 'watch', (int) $watch->id) !== null) {
             $rows[] = ['label' => 'Monitoring', 'value' => 'Monitored as an external domain', 'link' => ['Open monitored domain', route('domains.checks.show', ['kind' => 'watch', 'id' => (int) $watch->id])]];
         }
         $reason = HoldingDeparture::REASONS[$r['reason']];

@@ -39,6 +39,10 @@ $op->update(['state'=>'queued']);$actor->role->update(['permissions'=>$permissio
 // A sent request with no answer yet blocks the next edit, as it does for the owner, and the page says so.
 $op->update(['state'=>'uncertain']);$busy=DomainEditActions::for($d->fresh());same([],$busy['rows'],'An unresolved request blocks the next edit');$view()->assertSee(ManagementForms::REQUESTED)->assertSee('wire:poll.2s',false);$op->update(['state'=>'queued']);
 $finish($op);
+// A renewal with an unconfirmed result holds changes on the domain. The capture shows the page says so once.
+$renewal=$op->replicate();$renewal->fill(['operation_key'=>'held-renewal-one-notice','action'=>'renew','state'=>'uncertain','funding_basis'=>'paid_invoice','attempt'=>['started_at'=>time()]])->save();
+same($renewal->id,DomainEditActions::for($d->fresh())['request'],'The unconfirmed renewal holds changes on the domain');
+DB::table('domains_operations')->where('id',$renewal->id)->delete();
 
 // History names the staff member, and the customer sees Staff.
 Livewire::actingAs($actor)->test(RequestsRelationManager::class,['ownerRecord'=>$d->fresh(),'pageClass'=>ViewDomain::class])->assertSee('Sam Support');

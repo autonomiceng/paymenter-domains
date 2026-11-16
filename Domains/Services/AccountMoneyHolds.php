@@ -23,6 +23,9 @@ final class AccountMoneyHolds
         }
         return implode(' ',$details);
     }
+    /** The amount the dispute behind this hold took, or null when its evidence can't be read. */
+    public static function lost(Operation $op,string $key): ?int
+    { try{return isset(($a=self::amounts($op,$key))['lost_minor'])?(int)$a['lost_minor']:null;}catch(\Throwable){return null;} }
     /** Amounts are final only once recovery has finished; an open retry record leaves them unknown. */
     private static function evidence(Operation $op,string $key): ?array
     {

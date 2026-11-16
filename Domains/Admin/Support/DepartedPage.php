@@ -38,8 +38,9 @@ final class DepartedPage
         if ($reminderCheck && $causes === []) { $causes[] = 'A reminder needs a check.'; }
         return $causes === [] ? null : ['value' => array_values(array_unique($causes)), 'sub' => null, 'url' => null, 'tone' => $tone, 'help' => null, 'demo' => false];
     }
-    /** @param ?Row $alerts the Open alerts row, first in Registration as on the review page */
-    public static function sections(Domain $d, array $r, ?Row $customer, ?string $serviceUrl, ?Row $alerts = null): array
+    /** @param ?Row $alerts the Open alerts row, first in Registration as on the review page
+     * @param ?Row $hold the open account hold notice, first in Billing as on the review page */
+    public static function sections(Domain $d, array $r, ?Row $customer, ?string $serviceUrl, ?Row $alerts = null, ?Row $hold = null): array
     {
         $entry = DepartedHistory::entry($d); $at = self::time($r['confirmed_at'] ?? null);
         $registry = is_array($r['registry'] ?? null) ? $r['registry'] : [];
@@ -84,7 +85,7 @@ final class DepartedPage
         $registration[] = Row::make('Registrar with '.$us, Value::fact(Fact::entered($registrar), $account !== '' && !Fact::isWord($account) ? $account : null));
         $service = Row::make('Service', Value::state(State::Cancelled, Reader::Staff, $d->domain.' registration, Service #'.$d->service_id.'.'))
             ->actions(Sheet::link('departed_service', 'Open service', $serviceUrl));
-        return [Section::make('Departure', $rows), Section::make('Registration', $registration), Section::make('Billing', [...($customer ? [$customer] : []), $service])];
+        return [Section::make('Departure', $rows), Section::make('Registration', $registration), Section::make('Billing', [...($hold ? [$hold] : []), ...($customer ? [$customer] : []), $service])];
     }
     private static function staff(array $r): string
     {
