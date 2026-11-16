@@ -256,6 +256,8 @@ final class RequestFacts
         if ($paid=self::paidWaiting($op,$accounts)) { [$status['label'],$status['tone']]=RequestStatus::SET['in_progress'];$status['reason']=$paid; }
         // A scheduled check still settles the result by itself: Checking inside the normal time, Delayed after it (P-STA-8).
         if (self::checking($op)) { $late=PaidUncertainty::waitState($op)===State::Delayed; [$status['label'],$status['tone']]=$late?['Delayed','warning']:['Checking','info']; }
+        // A renewal whose order no read could prove has stopped checking: it waits for staff to record Enom's answer.
+        try { if (\Paymenter\Extensions\Servers\Domains\Services\OrderUnproven::applies($op)&&RegistrarCheck::stopped($op)) { [$status['label'],$status['tone']]=['Needs review','warning']; } } catch (\Throwable) {}
         if (!self::heldAcquisition($op,$off)) { return $status; }
         [$status['label'],$status['tone']]=self::STATUSES['on_hold'];
         return $status;
