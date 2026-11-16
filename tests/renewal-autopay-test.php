@@ -58,10 +58,21 @@ $paidProof = static function (Operation $op): array {
 };
 $credit = Credit::create(['user_id'=>$user->id, 'currency_code'=>'USD', 'amount'=>'0.00']);
 $d = $holder('once');
+$issueAttempts = 0; $issueFailures = 1; $issueDomain = $d->id;
+Operation::created(static function(Operation $row) use (&$issueAttempts, &$issueFailures, &$issueDomain): void {
+    if ($row->action !== 'renew' || $row->domain_id !== $issueDomain) { return; }
+    $issueAttempts++; same(1, DB::transactionLevel(), 'Renewal issue owns one outer transaction');
+    if ($issueFailures-- > 0) {
+        $cause = new PDOException('Synthetic issue deadlock'); $cause->errorInfo = ['40001', 1213, 'Synthetic'];
+        throw new Illuminate\Database\QueryException('sqlite', 'synthetic renewal issue', [], $cause);
+    }
+});
+$issueCounts = [Invoice::count(), Operation::count()];
 DomainRenewalGateway::$during = static function ($op) use ($billing): void {
     same($op->invoice_id, $billing->invoice($op->domain_id)->id, 'Concurrent-style re-fetch while outcome uncertain reuses invoice');
 };
 $i = $billing->invoice($d->id); $op = $operation($i);
+same([2, $issueCounts[0] + 1, $issueCounts[1] + 1], [$issueAttempts, Invoice::count(), Operation::count()], 'A contended issue rolls back the first debt and retries once');
 same(1, count(DomainRenewalGateway::$calls), 'Issued scheduled invoice charges once');
 same('paid', $i->fresh()->status, 'Successful native payment marks renewal invoice paid');
 same('submitted', $op->funding['auto_pay_result']['status'], 'Gateway acceptance is only submission');
@@ -305,8 +316,9 @@ same(false, RenewalAutoPay::account(null), 'No owner: account Off');
 // Two deadlocks in the charge check change nothing and queue the charge; the next sweep charges once and finishes the work.
 \Paymenter\Extensions\Servers\Domains\Services\MoneyWorkSchema::install(); DomainRenewalGateway::$mode = 'paid';
 $busy = $holder('busy'); $count = count(DomainRenewalGateway::$calls); $fails = 2;
-BillingAgreement::retrieved(static function () use (&$fails): void {
-    if ($fails < 1 || !\Paymenter\Extensions\Servers\Domains\Services\MoneyDecisions::running()) { return; }
+BillingAgreement::retrieved(static function () use (&$fails, $busy): void {
+    if ($fails < 1 || !\Paymenter\Extensions\Servers\Domains\Services\MoneyDecisions::running()
+        || !isset(Operation::where('domain_id', $busy->id)->where('action', 'renew')->first()?->funding['auto_pay'])) { return; }
     $fails--; $cause = new PDOException('Synthetic deadlock'); $cause->errorInfo = ['40001', 1213, 'Synthetic'];
     throw new Illuminate\Database\QueryException('sqlite', 'synthetic charge check', [], $cause);
 });
@@ -317,5 +329,18 @@ $autopay->sweep(\Paymenter\Extensions\Servers\Domains\Models\Account::where('ser
 same(['submitted', $count + 1, 0], [$busyOp->fresh()->funding['auto_pay_result']['status'] ?? null, count(DomainRenewalGateway::$calls), DB::table('domains_money_work')->count()], 'The next sweep charges the queued renewal once');
 $autopay->sweep(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $busy->server_id)->sole());
 same($count + 1, count(DomainRenewalGateway::$calls), 'A finished charge is never repeated');
+// Exhausted issue contention leaves no debt or collection and is retried from durable work.
+$deferredIssue = $holder('issue-busy'); $issueDomain = $deferredIssue->id; $issueAttempts = 0; $issueFailures = 2;
+$issueCounts = [Invoice::count(), Operation::count(), count(DomainRenewalGateway::$calls)];
+same(null, $billing->invoice($deferredIssue->id), 'Exhausted issue contention creates no invoice');
+same([2, $issueCounts, [['kind'=>'renewal_issue', 'subject_id'=>$deferredIssue->id]]], [$issueAttempts, [Invoice::count(), Operation::count(), count(DomainRenewalGateway::$calls)],
+    DB::table('domains_money_work')->get(['kind', 'subject_id'])->map(fn($r)=>(array)$r)->all()], 'A deferred issue queues its domain with no debt or gateway call');
+$issueFailures = 2; $billing->sweep(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $deferredIssue->server_id)->sole());
+same([2, $issueCounts], [(int)DB::table('domains_money_work')->sole()->revision, [Invoice::count(), Operation::count(), count(DomainRenewalGateway::$calls)]], 'A second deferral keeps newer work queued with no effects');
+$billing->sweep(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $deferredIssue->server_id)->sole());
+same([$issueCounts[0] + 1, $issueCounts[1] + 1, $issueCounts[2] + 1, 0], [Invoice::count(), Operation::count(), count(DomainRenewalGateway::$calls), DB::table('domains_money_work')->count()], 'The next sweep issues one debt and charges once');
+$billing->sweep(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $deferredIssue->server_id)->sole());
+$billing->invoice($deferredIssue->id);
+same($issueCounts[2] + 1, count(DomainRenewalGateway::$calls), 'Finished issue work and repeated billing never charge again');
 echo "Scheduled renewal Auto Pay: committed once-only attempts, credits, failures, skips, staff facts and native funding passed.\n";
 $nativeSuccessful = true;

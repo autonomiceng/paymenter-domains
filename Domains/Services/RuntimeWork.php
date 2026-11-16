@@ -110,6 +110,7 @@ final readonly class RuntimeWork
                 DB::table('domains_runtime_turns')->where('id',$row->id)->update(['operation_cursor'=>$ops->count()===25?$ops->last()->id:0,'finished_at'=>$this->clock->now()->getTimestamp()]);
                 continue;
             }
+            $this->attempt('producer',fn()=>app(DomainBilling::class)->sweep($a),(int)$a->server_id);
             $domains=Domain::where('server_id',$a->server_id)->where('id','>',$row->domain_cursor)->orderBy('id')->limit(25)->get();
             foreach($domains as $d){if(in_array($d->provenance,[null,'purchased','converted_purchase'],true)){$this->attempt('transfer_watch_enrollment',fn()=>(new TransferWatchEnrollment())->repair((int)$d->id,(int)$d->user_id,$this->clock->now()->getTimestamp()),(int)$d->id);}if($d->provenance==='adopted'){$this->attempt('adoption_enrollment',fn()=>app(AdoptionEnrollment::class)->repair((int)$d->id),(int)$d->id);}$this->attempt('acquisition_retirement',fn()=>app(AcquisitionRetirement::class)->inspect((int)$d->id),(int)$d->id);$this->attempt('native_identity',fn()=>NativeIdentityDiscrepancies::inspect($d,$this->clock->now()->getTimestamp()),(int)$d->id);$this->bill($d);$this->attempt('corrections',fn()=>$this->ports->corrections($d),(int)$d->id);}
             $tlds=\Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$a->server_id)->where('id','>',$row->tld_cursor)->orderBy('id')->limit(25)->get();

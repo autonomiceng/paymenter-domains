@@ -7,11 +7,12 @@ use App\Models\{Invoice, User};
 use Illuminate\Support\Facades\{Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Catalogue\TermSupport;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 
 /** Native renewal debts and collection. Late debt requires fresh reads; only execution can dispatch. */
 final class DomainBilling
 {
+    public const KIND = 'renewal_issue';
     public function __construct(private readonly AccountBindings $bindings, private readonly NativeDomainGuard $native, private readonly Clock $clock, private readonly ?\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities $catalogue = null) {}
 
     public static function calendar(Domain $domain, int $issueDays = 21, int $dueDays = 7): array
@@ -26,8 +27,8 @@ final class DomainBilling
         OperationClaims::outside(); $seed = Domain::findOrFail($domainId);
         if ($actor && (int)$actor->id !== (int)$seed->user_id) { throw new \DomainException('Domain renewal is unavailable.'); }
         $late = $this->lateQuote($seed, $actor !== null, $years);
-        return DB::transaction(function () use ($seed, $actor, $years, $late): ?Invoice {
-            $l = HoldingLocks::take($seed, catalogue: $this->catalogue); $d = $l['domain']; $s = $l['service'];
+        $issue = function (array $l) use ($actor, $years, $late): ?Invoice {
+            $d = $l['domain']; $s = $l['service'];
             if ($l['identity_source']['kind'] === 'adoption') { HoldingAnchor::resolve($l); }
             if ($actor && (int) $actor->id !== (int) $l['user']->id) { throw new \DomainException('Domain renewal is unavailable.'); }
             if (RenewalStop::adopted($l)) {
@@ -98,7 +99,27 @@ final class DomainBilling
                 if ($issued && $issued->status === Invoice::STATUS_PENDING) { event(new \App\Events\Invoice\Finalized($issued, true)); }
             });
             return $invoice->fresh();
+        };
+        if ($actor !== null) { return DB::transaction(fn () => $issue(HoldingLocks::take($seed, catalogue: $this->catalogue))); }
+        $decision = MoneyDecisions::run(new MoneyRequest($seed, self::KIND, $domainId), function (array $l) use ($issue): ?Invoice {
+            // An explicit composition reads the same already locked catalogue rows as the native entry point.
+            if ($this->catalogue !== null) { $l['offer'] = $this->catalogue->holding(AccountBindings::binding($l['account']), $l['tld'], $l['prices']); }
+            return $issue($l);
         });
+        if ($decision->error !== null) { throw $decision->error; }
+        return $decision->value;
+    }
+
+    /** Retry scheduled issues before the billing cursor, acknowledging only the revision that was attempted. */
+    public function sweep(Account $account): void
+    {
+        OperationClaims::outside();
+        foreach (MoneyDecisions::queued((int)$account->server_id, 25, [self::KIND]) as $work) {
+            (new RuntimeDiagnostics($this->clock))->attempt('billing', function () use ($work): void {
+                if (Domain::whereKey($work->subject_id)->exists()) { $this->invoice((int)$work->subject_id); }
+                MoneyDecisions::done($work);
+            }, (int)$work->subject_id);
+        }
     }
 
 
