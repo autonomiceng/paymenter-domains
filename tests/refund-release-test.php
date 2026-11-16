@@ -81,7 +81,7 @@ foreach(['full','split','bridge','invalid','zero'] as $mode){$case('released cre
     $a=$reserve($op);$release($op,$a);
     if($mode==='split'){
         $pending=$op->fresh();
-        $equal(null,OwnedDomains::refundTo($pending->domain,$pending,[]),'An unfinished remaining allocation has no known refund destination');
+        $equal('split',OwnedDomains::refundTo($pending->domain,$pending,[]),'An unfinished remaining allocation keeps its planned card return beside released credit');
         $refunds->creditRejected($op->id);
     }
     $saved=$op->fresh();$d=$saved->domain;

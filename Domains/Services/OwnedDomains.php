@@ -100,9 +100,10 @@ final readonly class OwnedDomains
             if(($refund['to']??null)!=='original_payment'||($bridge=ReceiptReturns::bridge($refund))===null){return null;}
             $credit=$bridge>0;$card=false;
             foreach($refund['allocations'] as $a){
-                $state=$op->funding['receipt_return_results'][$a['key']]['state']??null;
-                if(!in_array($state,['refunded','credited'],true)){return null;}
-                $credit=$credit||$state==='credited';$card=$card||$state==='refunded';
+                // Completed outcomes decide; an unfinished allocation still names its planned card return.
+                $state=$op->funding['receipt_return_results'][$a['key']]['state']??'reserved';
+                if(!in_array($state,['reserved','sending','pending','refunded','credited'],true)){return null;}
+                $credit=$credit||$state==='credited';$card=$card||$state!=='credited';
             }
             return $card?($credit?'split':'returned'):($credit?'credited':null);
         }
