@@ -273,9 +273,15 @@ final readonly class Refunds
             return $this->creditLate($op, $l, $review);
         });
         if ($decision->outcome === MoneyOutcome::Deferred) { if ($staff) { throw new StaffReviewRefused(MoneyDecisions::BUSY); } return $returned ?? null; }
-        if ($decision->error) { throw $decision->error; }
-        if (ReceiptReturns::plans(Operation::findOrFail($seen->id))) { return ReceiptReturns::resume((int) $seen->id, $this->clock->now(), self::REJECTED) ?? $decision->value ?? ($returned ?? null); }
-        return $decision->value;
+        try {
+            if ($decision->error) { throw $decision->error; }
+            $result = $decision->value;
+            if (!ReceiptReturns::plans(Operation::findOrFail($seen->id))) { RefundRepairs::resolved((int) $seen->id, $this->clock->now()->getTimestamp()); return $result; }
+            $resumed = ReceiptReturns::resume((int) $seen->id, $this->clock->now(), self::REJECTED, $deferred);
+        } catch (\Throwable $e) { RefundRepairs::failed((int) $seen->id, $this->clock->now()->getTimestamp()); throw $e; }
+        // Contention leaves durable retry work, rather than a failed refund.
+        if ($deferred && $staff) { throw new StaffReviewRefused(MoneyDecisions::BUSY); }
+        return $resumed ?? $result ?? ($returned ?? null);
     }
     /** Automatic work locks only the order's invoice; a miss reruns on the full scope. Staff and orders with no invoice use the full scope. */
     private static function request(Operation $seen, ?string $kind, ?int $staffId = null, bool $released = false): MoneyRequest
