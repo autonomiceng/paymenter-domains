@@ -96,6 +96,7 @@ final class ReceiptReturns
                 if(!is_int($credit)||$credit<0||$credit>$a['amount_minor']){throw new \DomainException('Released credit needs review.');}
                 $drop=$a['amount_minor']-$credit;$p['amount']=PricingRule::decimal(PricingRule::minor($p['amount'])-$drop);
                 $p['bridge_minor']+=$credit;unset($p['allocations'][$i]);
+                if($credit>0){$p['credit_id']=$r['credit_id']??null;}
                 foreach($p['payments'] as &$payment){if($payment['id']===$a['transaction_id']){$payment['amount_minor']-=$drop;break;}}unset($payment);
             }
         }unset($p);

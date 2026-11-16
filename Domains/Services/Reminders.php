@@ -66,8 +66,20 @@ final readonly class Reminders
         foreach($l['operations'] as $op){
             if(ReceiptReturns::malformed($op)){continue;} // An unreadable return sends no credit notice until staff review it.
             // A closed order can credit more than once, and each credit gets its own notice.
-            $credits=['refund:'.$op->id=>$op->funding['refund']??null];
-            foreach($op->funding['late_credits']??[] as $i=>$late){$credits['refund:'.$op->id.':'.$i]=$late;}
+            try{ReceiptReturns::effective($op);}catch(\DomainException){continue;}
+            $plans=[];$credits=[];
+            if(isset($op->funding['refund'])){$plans['refund:'.$op->id]=$op->funding['refund'];}
+            foreach(array_values($op->funding['late_credits']??[]) as $i=>$late){$plans['refund:'.$op->id.':'.$i]=$late;}
+            foreach($plans as $identity=>$plan){
+                $credits[$identity]=$plan;
+                // A released allocation commits after its plan's bridge and needs a separate delivery identity.
+                foreach($plan['allocations']??[] as $a){
+                    $r=$op->funding['receipt_return_results'][$a['key']]??[];
+                    if(($r['state']??null)!=='released'||$r['credit_minor']<=0){continue;}
+                    $credits[$identity.':released:'.hash('sha256',$a['key'])]=['to'=>'account_credit','amount'=>PricingRule::decimal($r['credit_minor']),
+                        'currency'=>$plan['currency'],'credit_id'=>$r['credit_id']??null,'at'=>$r['at']??null];
+                }
+            }
             foreach($credits as $identity=>$r){
             if(is_array($r)&&($r['to']??null)==='original_payment'&&($bridge=ReceiptReturns::bridge($r))>0){$r=[...$r,'to'=>'account_credit','amount'=>PricingRule::decimal($bridge)];}
             if($op->state!=='rejected'||!is_array($r)||($r['to']??null)!=='account_credit'||($r['currency']??null)!=='USD'
