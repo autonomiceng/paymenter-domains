@@ -28,7 +28,11 @@ same([[$d->domain],1],$listed('?status=inactive'),'The Inactive tab lists the de
 $status=DomainFacts::status($d->fresh());
 same(['transferred_away','Transferred away','Moved to another registrar',null,false],[$status['key'],$status['label'],$status['reason'],$status['step'],$status['act']],'Staff read the saved departure with nothing to do');
 same(State::TransferredAway,State::tryFrom($status['key']),'The staff head shows the transferred away status');
-Livewire\Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$d->id])->assertSuccessful();
+// The staff page reads the saved departure: its staff note and who confirmed it, without the review's sections.
+$staffName=trim($staff->first_name.' '.$staff->last_name);
+Livewire\Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$d->id])->assertSuccessful()
+    ->assertSee($d->fresh()->renewal_policy['departure']['note'])->assertSee($staffName)
+    ->assertDontSee('Registrar records')->assertDontSee('Next invoice')->assertDontSee('Auto-renew');
 // History keeps the departure's saved outcomes, with the exact saved credit, after the earlier registrar reads.
 $saved=$d->fresh()->renewal_policy['departure'];
 $departed=array_values(array_filter(Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::entries($d->fresh()),fn($r)=>is_array($r)&&str_starts_with((string)($r['__key']??''),'departed-')));

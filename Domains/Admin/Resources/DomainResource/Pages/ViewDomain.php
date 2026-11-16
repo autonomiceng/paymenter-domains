@@ -8,7 +8,7 @@ use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Facades\Auth;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource,WatchResource};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{AcquisitionActions, AcquisitionPaymentReview, DomainEditActions, DomainFacts, DomainHistory, DomainRows, HoldingActions, NoticeReview, OperationActions, RegistrarRows, Sheet, Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{AcquisitionActions, AcquisitionPaymentReview, DepartedPage, DomainEditActions, DomainFacts, DomainHistory, DomainRows, HoldingActions, NoticeReview, OperationActions, RegistrarRows, Sheet, Staff};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Head, Partial, Row, Value};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\{RecordDetailPage, Section};
 use Paymenter\Extensions\Servers\Domains\Presentation\{Reader, StaffTime, State};
@@ -83,6 +83,8 @@ class ViewDomain extends RecordDetailPage
         Staff::requireView(); $d=$this->getRecord();
         $head=Head::make((string)$d->domain,Reader::Staff)->domain()->tag(DemoData::is($d),DomainFacts::test($d))
             ->state(State::tryFrom((string)($this->status()['key']??''))??State::UnderReview,'domain-'.$d->id);
+        // A confirmed departure names its saved reason and who confirmed it (mock 07).
+        if (($r=DepartedPage::record($d))!==null) { [$note,$confirmed]=DepartedPage::head($d,$r); $head->note($note); return $confirmed===null?$head:$head->detail($confirmed); }
         if (!$this->departureSuspected()) { return $head; }
         $at=$this->absenceReadAt();
         return $head->note('Not in our registrar account.')->detail(\Paymenter\Extensions\Servers\Domains\Services\ManagementNameservers::registrar($d).($d->server?->name?', '.$d->server->name:'').'.'.($at?' Read '.StaffTime::at($at).'.':''));
@@ -239,6 +241,11 @@ class ViewDomain extends RecordDetailPage
     {
         $this->cacheHoldingActions();
         $d=$this->getRecord(); $facts=DomainFacts::besideHead($this->facts(),$this->said()); $edits=$this->edits();
+        // A confirmed departure reads from its saved record; the review's sections and notices no longer apply.
+        if (($r=DepartedPage::record($d))!==null) {
+            $customer=isset($facts['Customer'])?$this->row('Customer',$facts['Customer'],$this->side('Customer',$facts['Customer'],$edits,null)):null;
+            return DepartedPage::sections($d,$r,$customer,$facts['Service']['url']??null);
+        }
         $suspected=$this->departureSuspected(); $late=!$suspected&&$this->recordsLate($d);
         // The notice above the sheet gives the cause and the next step once, so the rows it explains stay calm.
         $this->calmMissing=$late;
