@@ -191,8 +191,11 @@ final class ReceiptReturns
     {
         $plans=self::plans($op);if(!$plans){return null;}$states=[];$bridge=0;
         if(self::malformed($op)){return self::REVIEW;}
+        try{$money=InvoiceMoney::project((int)$op->invoice_id);}
+        catch(\Throwable){return self::REVIEW;}
+        if($money['overdrawn']||array_filter($money['receipts'],fn($r)=>$r['hold'])){return self::REVIEW;}
         foreach(self::effective($op) as $p){if(($p['to']??null)==='account_credit'){$bridge+=PricingRule::minor($p['amount']);}}
-        foreach(self::effective($op) as $p){if(($p['to']??null)!=='original_payment'){continue;}$bridge+=$p['bridge_minor'];foreach($p['allocations'] as $a){$states[]=$op->funding['receipt_return_results'][$a['key']]['state']??'reserved';}}
+        foreach(self::effective($op) as $p){if(($p['to']??null)!=='original_payment'){continue;}$bridge+=$p['bridge_minor'];foreach($p['allocations'] as $a){$entry=collect($money['ledger'])->first(fn($e)=>$e['gateway_id']===$a['gateway_id']&&$e['payment_intent_id']===$a['receipt']&&$e['allocation_key']===($a['gateway_key']??$a['key']));$states[]=$entry['state']??$op->funding['receipt_return_results'][$a['key']]['state']??'reserved';}}
         if(!$states&&$bridge===0){return null;}
         if(array_intersect($states,['review'])){return self::REVIEW;}
         if(array_diff($states,['refunded','credited'])){return ['Refund processing','We are returning your payment and checking its progress automatically.'];}

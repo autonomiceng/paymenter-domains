@@ -27,7 +27,8 @@ final class InvoiceMoney
                     && min((int)$entry['amount_minor'], max(0,$r['completed']+$r['credit']-$r['recovered']+$r['external']-$r['gross'])) > 0
                     && !$peers->contains(fn($peer)=>collect($peer->funding['dispute_holds']??[])->contains('dispute_id',$id))) {
                     DisputeRecoveries::locked($l,$invoiceId,$entry,app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now(),$record);
-                    return self::lockedRecord($l,$invoiceId,Operation::where('invoice_id',$invoiceId)->orderBy('id')->lockForUpdate()->get(),$exclude);
+                    $peers=Operation::where('invoice_id',$invoiceId)->orderBy('id')->lockForUpdate()->get();
+                    $record=self::lockedRecord($l,$invoiceId,$peers,$exclude);
                 }
             }
         }

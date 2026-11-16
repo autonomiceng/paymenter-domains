@@ -95,7 +95,11 @@ final class RequestFacts
                     default=>'The original payment could not be refunded, so it went to account credit.',
                 };
             }
-            elseif (array_key_exists('refund',$f)||array_key_exists('late_credits',$f)) { [$out['refund'],$out['refund_sub']]=self::creditWords($f); }
+            elseif (array_key_exists('refund',$f)||array_key_exists('late_credits',$f)) {
+                try{$money=\Paymenter\Extensions\Servers\Domains\Services\InvoiceMoney::project((int)$op->invoice_id);
+                    [$out['refund'],$out['refund_sub']]=$money['settled']?self::creditWords($f):\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::REVIEW;
+                }catch(\Throwable){[$out['refund'],$out['refund_sub']]=\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::REVIEW;}
+            }
             elseif (RefundCandidates::matches($op,$f) || ($p['renewal_execution']['refundable_later']??false)===true) {
                 $out['refund']='No credit added'; $out['refund_fix']=$op->state==='held' ? 'refund' : 'credit';
             }

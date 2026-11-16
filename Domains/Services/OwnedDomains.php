@@ -42,8 +42,8 @@ final readonly class OwnedDomains
         if (!$op) { return []; }
         $kind=$op->action==='transfer'?'transfer':'registration';
         if($op->state==='rejected'){
-            try{$return=ReceiptReturns::summary($op);$returned=$return&&!ReceiptReturns::malformed($op)&&ReceiptReturns::outstanding($op)===0;}
-            catch(\DomainException){$return=ReceiptReturns::REVIEW;$returned=false;}
+            try{$return=ReceiptReturns::summary($op);$returned=$return&&InvoiceMoney::settled(InvoiceMoney::project((int)$op->invoice_id));}
+            catch(\Throwable){$return=ReceiptReturns::REVIEW;$returned=false;}
             if($return){return ['state'=>'cancelled','kind'=>$kind,'return'=>$return[1],'returned'=>$returned];}
         }
         // Applying the credit closes the domain row too. The order still reads Cancelled, as its request does. Approval alone adds no money: the credit can fail and retry.
@@ -94,6 +94,7 @@ final readonly class OwnedDomains
     {
         if (!$op || $op->state !== 'rejected' || !(in_array($d->status, ['registration_rejected', 'transfer_rejected'], true) || ($order['state'] ?? null) === 'failed')) { return null; }
         if (isset($op->funding['refund'])) {
+            try{if(InvoiceMoney::project((int)$op->invoice_id)['overdrawn']){return null;}}catch(\Throwable){return null;}
             if (ReceiptReturns::malformed($op)) { return null; } // An unreadable return names no destination.
             try{$refund=ReceiptReturns::effective(ReceiptReturns::originalRefund($op))[0];}catch(\DomainException){return null;}
             if(($refund['to']??null)==='account_credit'){return 'credited';}
