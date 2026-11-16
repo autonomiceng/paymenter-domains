@@ -30,8 +30,9 @@ $rows=static fn()=>array_map(fn($t)=>Illuminate\Support\Facades\DB::table($t)->o
 $seen=$rows();Illuminate\Support\Facades\Auth::setUser($staff);
 $dialog=Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$d->id])
     ->assertSuccessful()->assertActionEnabled('confirm_departure')->mountAction('confirm_departure');
-$dialogDom=Dom\HTMLDocument::createFromString('<!doctype html><meta charset="utf-8">'.$dialog->html(),LIBXML_NOERROR);
-$note=$dialogDom->querySelector('textarea[id$=".note"]');
+$schema=$dialog->instance()->getSchema($dialog->instance()->getMountedActionSchemaName());
+$dialogDom=Dom\HTMLDocument::createFromString('<!doctype html><meta charset="utf-8">'.$schema->toHtml(),LIBXML_NOERROR);
+$note=$dialogDom->querySelector('textarea');
 $description=$note?->getAttribute('aria-describedby');
 expect($description!==null&&$description!=='','The staff note has an accessible description');
 $guidance=$dialogDom->getElementById((string)$description);
