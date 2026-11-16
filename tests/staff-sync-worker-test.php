@@ -114,7 +114,7 @@ DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>'
 $observation->fault='owner';$clock->instant=$clock->now()->modify('+61 seconds');
 $page->call('pollManagement')->callAction('sync_now')->assertNotified('Sync queued');
 Artisan::call('queue:work',['--stop-when-empty'=>true,'--sleep'=>0,'--tries'=>1]);
-$page->call('pollManagement')->assertActionVisible('check_departure')->assertActionHidden('sync_now');
+$page->call('pollManagement')->assertActionVisible('check_departure')->assertActionVisible('sync_now');
 same('departure_registry',DB::table('domains_observation_work')->where('id',$work)->value('safe_code'),'Manual absence schedules registry evidence before the automatic recheck');
 // Manual and scheduled reads share one lease, so they never read the same holding at once.
 $observation->fault='';

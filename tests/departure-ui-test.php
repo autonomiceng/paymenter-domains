@@ -29,6 +29,24 @@ foreach($controls as $button){
 // DNS stays editable while suspected, so the customer keeps the record values they would copy to a new host.
 $check($dom->querySelector('table.domains-dns-inventory')!==null,'The suspected customer page keeps its DNS records table');
 $check($dom->getElementById('glue')!==null,'The suspected customer page keeps its Glue records row');
+// The staff head says where and when the absence was read; Registration dates the absence read.
+$staffDom=Dom\HTMLDocument::createFromString('<!doctype html><meta charset="utf-8">'.$page->html(),LIBXML_NOERROR);
+$fresh=$d->fresh();$read=\Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at(strtotime($fresh->observation['renewal_ownership']['at']));
+$detail=(string)$staffDom->querySelector('[data-piece="head-detail"]')?->textContent;
+foreach([\Paymenter\Extensions\Servers\Domains\Services\ManagementNameservers::registrar($fresh),(string)$fresh->server->name,$read] as $fact){$check($fact!==''&&str_contains($detail,$fact),'The staff head names the registrar, account and absence read time: '.$fact);}
+$owned=null;foreach($staffDom->querySelectorAll('[data-piece="row"]') as $row){if(trim((string)$row->querySelector('.domains-panel-row-k')?->textContent)==='In registrar account'){$owned=$row->textContent;}}
+$check($owned!==null&&str_contains($owned,$read),'In registrar account carries the absence read time');
+$absenceAt=strtotime($fresh->observation['renewal_ownership']['at']);
+$railReads=$staffDom->querySelectorAll('[data-piece="trace"] [wire\:key="moment-'.$absenceAt.'"]');
+$check($railReads->length===1,'Activity lists the absence read at its recorded time');
+$absenceRow=$railReads->item(0)?->closest('[data-domains-tone]');
+$check($absenceRow?->getAttribute('data-domains-tone')===State::UnderReview->tone(\Paymenter\Extensions\Servers\Domains\Presentation\Reader::Staff)->value,'The absence read has the staff review state');
+// Nameservers and DNS records say where DNS is served while the domain is under review.
+$case=\Paymenter\Extensions\Servers\Domains\Services\DepartureChecks::staffDnsCase($fresh);$rows=[];
+foreach($staffDom->querySelectorAll('[data-piece="row"]') as $row){$rows[trim((string)$row->querySelector('.domains-panel-row-k')?->textContent)]=$row->textContent;}
+$check($case!==null,'The suspected fixture has read nameservers, so its DNS case is known');
+$check($case!==null&&str_contains($rows['Nameservers']??'',$case[0])&&array_filter(\Paymenter\Extensions\Servers\Domains\Services\OwnedDomains::storedNameservers($fresh)??[''],fn($ns)=>!str_contains($rows['Nameservers']??'',$ns))===[],'Nameservers names the DNS case and keeps the read nameservers');
+$check($case!==null&&str_contains($rows['DNS records']??'',$case[1]),'DNS records names the DNS case');
 // The staff next step survives the automatic recheck when the domain is still absent.
 Illuminate\Support\Facades\DB::transaction(function()use($d,$clock):void {
     $fresh=$d->fresh();$p=$fresh->observation;$at=$clock->now()->getTimestamp()-172800;
@@ -44,6 +62,14 @@ Illuminate\Support\Facades\DB::transaction(function()use($d):void{$fresh=$d->fre
 try{Livewire\Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$d->id])->assertSuccessful()->assertActionVisible('check_departure');$legacy=true;}
 catch(Throwable $error){$legacy=false;echo 'Legacy absence page: '.$error->getMessage()."\n";}
 $check($legacy,'A suspected holding without a departure marker renders with Check again');
+// Sync now stays in the head under review and queues the same departure read as Check again.
+$review=Livewire\Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$d->id]);
+$review->assertActionVisible('sync_now')->assertActionEnabled('sync_now');
+Illuminate\Support\Facades\Schema::create('cache',function($t){$t->string('key')->primary();$t->mediumText('value');$t->integer('expiration');});
+Illuminate\Support\Facades\Schema::create('cache_locks',function($t){$t->string('key')->primary();$t->string('owner');$t->integer('expiration');});
+Illuminate\Support\Facades\Queue::fake();config(['queue.default'=>'database','queue.connections.database.driver'=>'database','queue.connections.database.retry_after'=>900,'cache.default'=>'database']);
+$review->callAction('sync_now');
+$check(Illuminate\Support\Facades\Queue::pushed(\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::class,fn($job)=>$job->departure)->count()===1,'Sync now under review queues one departure read');
 $section=view('domains::components.customer.notice',['variant'=>'section','state'=>State::UnderReview,'slot'=>new Illuminate\Support\HtmlString('The saved check is pending.')])->render();
 $check(str_contains(strip_tags($section),State::UnderReview->label()),'A section notice exposes its state word');
 expect($failures===[],implode("\n",$failures));

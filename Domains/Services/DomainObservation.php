@@ -112,8 +112,8 @@ final class DomainObservation
             if ($baseCode==='refreshed' && $readRecords && ($this->records!==null || $this->observationReader!==null) && !$recordEnabled) { return 'records_disabled'; }
             return $baseCode;
         });
-        DB::transaction(function()use($seed):void { $d=HoldingLocks::take($seed)['domain'];
-            if(ObservationRecords::identity($d)===ObservationRecords::identity($seed)){DepartureChecks::capture($d,$this->clock->now()->getTimestamp());} });
+        DB::transaction(function()use($seed,$code):void { $d=HoldingLocks::take($seed)['domain'];
+            if(ObservationRecords::identity($d)===ObservationRecords::identity($seed)){DepartureChecks::capture($d,$this->clock->now()->getTimestamp(),$code==='domain_not_in_account');} });
         return $completion ? $completion($code,$wireGuard) : $code;
     }
     /** Observation must yield before it can invalidate a live management/financial grant. */

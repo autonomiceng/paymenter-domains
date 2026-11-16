@@ -67,7 +67,7 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
     }
     public function handle(DomainObservation $observer): void
     {
-        // A departure Check again names its own button; Sync now is hidden on that page.
+        // A departure read names the review's own Check again button, which sits beside Sync now on that page.
         $again=$this->departure?'Check again':'Sync now';$retryAction=$this->departure?$again:$again.' again';
         try {
             if (!Staff::allows(User::find($this->actor),'admin.domains.manage')) { $this->notice('Sync stopped','The staff permission to sync this domain was removed.'); return; }

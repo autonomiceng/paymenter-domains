@@ -49,7 +49,15 @@ final class RenewalOwnership
     public static function review(Domain $d, int $now): ?string
     {
         if (!Schema::hasTable('domains_obligation_alerts')) { return null; }
-        if (HoldingReadRetry::absent($d)) { return ObligationAlerts::record($d,self::REVIEW,$now); }
+        if (HoldingReadRetry::absent($d)) {
+            $open=DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code',self::REVIEW)->whereNull('resolved_at')->exists();
+            $key=ObligationAlerts::record($d,self::REVIEW,$now);
+            // One bell notice when the review opens; the receipt keeps a repeated or replayed opening silent.
+            if (!$open) { $id=(int)$d->id; $body=$d->domain.' is not in our registrar account.';
+                DB::afterCommit(static fn()=>\Paymenter\Extensions\Servers\Domains\Admin\Support\StaffAlert::send('Domain under review',$body,'filament.admin.resources.domains.view',
+                    \Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::VIEW,'departure:'.$key.':'.$now,['record'=>$id])); }
+            return $key;
+        }
         DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code',self::REVIEW)
             ->whereNull('resolved_at')->update(['resolved_at'=>$now]);
         return null;

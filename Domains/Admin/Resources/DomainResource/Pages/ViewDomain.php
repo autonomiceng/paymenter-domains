@@ -83,7 +83,16 @@ class ViewDomain extends RecordDetailPage
         Staff::requireView(); $d=$this->getRecord();
         $head=Head::make((string)$d->domain,Reader::Staff)->domain()->tag(DemoData::is($d),DomainFacts::test($d))
             ->state(State::tryFrom((string)($this->status()['key']??''))??State::UnderReview,'domain-'.$d->id);
-        return $this->departureSuspected()?$head->note('Not in our registrar account.'):$head;
+        if (!$this->departureSuspected()) { return $head; }
+        $at=$this->absenceReadAt();
+        return $head->note('Not in our registrar account.')->detail(\Paymenter\Extensions\Servers\Domains\Services\ManagementNameservers::registrar($d).($d->server?->name?', '.$d->server->name:'').'.'.($at?' Read '.StaffTime::at($at).'.':''));
+    }
+    /** When the registrar last answered that this holding is absent: the identity-bound ownership read, else the review's first read. */
+    private function absenceReadAt(): ?int
+    {
+        $d=$this->getRecord();$proof=$d->observation['renewal_ownership']??[];
+        if (($proof['identity']??null)===\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::identity($d)&&($proof['owned']??null)===false&&is_string($proof['at']??null)&&($at=strtotime($proof['at']))!==false) { return $at; }
+        return isset($d->observation['departure_check']['at'])?(int)$d->observation['departure_check']['at']:null;
     }
     private function headLine(): array { return $this->head??=DomainFacts::head($this->getRecord(),$this->status(),$this->facts(),$this->edits()['request'],$this->notice()); }
     /** The head's step as plain text, so rows and Activity can leave out what it already says. */
@@ -106,7 +115,17 @@ class ViewDomain extends RecordDetailPage
         if ($this->facts!==null) { return $this->facts; }
         $d=$this->getRecord(); $facts=self::withDnsSetup($d,DomainFacts::for($d,$this->notice(),$this->familyState())); $progress=$this->managementProgress();
         if ($this->departureSuspected() || $this->edits()['authCode'] || isset($progress['auth_code_email'])) { $facts['Email auth code']=['value'=>'Goes to the '.OwnedDomains::authCodeRecipient($d),'sub'=>'Never shown here.','url'=>null,'tone'=>null,'help'=>'The code moves this domain to another registrar. We email it and never show it here.','demo'=>false]; }
-        if ($this->departureSuspected()) { if (($facts['Renewal']['value']??null)==='On') { $facts['Renewal']=[...$facts['Renewal'],'value'=>'Paused','sub'=>'Set to On. Resumes if the domain is still ours.','tone'=>null,'alert'=>false]; } $facts['Next invoice']=['value'=>'Paused','sub'=>($facts['Next invoice']['value']??null)==='Paused'?$facts['Next invoice']['sub']:DepartureChecks::RENEWAL_WAITS,'url'=>null,'tone'=>null]; }
+        if ($this->departureSuspected()) {
+            // Say which facts came from the absence read and which were kept from the last read while the domain was ours.
+            if (isset($facts['In registrar account'])&&($at=$this->absenceReadAt())!==null) { $facts['In registrar account']['sub']='Last read '.StaffTime::at($at).'.'; }
+            if (in_array($facts['Transfer lock']['value']??null,['On','Off'],true)) { $facts['Transfer lock']['sub']='Last read while in our registrar account.'; }
+            // Staff see where DNS is served, since registrar DNS stops when a transfer completes.
+            if (($case=DepartureChecks::staffDnsCase($d))!==null) {
+                if (is_array($facts['Nameservers']['value']??null)&&$facts['Nameservers']['value']!==[]) { $facts['Nameservers']=[...$facts['Nameservers'],'value'=>$case[0],'sub'=>trim(implode(', ',$facts['Nameservers']['value']).(is_string($facts['Nameservers']['sub']??null)&&$facts['Nameservers']['sub']!==''?'. '.$facts['Nameservers']['sub']:''))]; }
+                if (isset($facts['DNS records'])) { $sub=$facts['DNS records']['sub']??null;
+                    $facts['DNS records']['sub']=$sub instanceof Htmlable?new \Illuminate\Support\HtmlString(e($case[1]).' '.$sub->toHtml()):trim($case[1].' '.(string)$sub); }
+            }
+            if (($facts['Renewal']['value']??null)==='On') { $facts['Renewal']=[...$facts['Renewal'],'value'=>'Paused','sub'=>'Set to On. Resumes if the domain is still ours.','tone'=>null,'alert'=>false]; } $facts['Next invoice']=['value'=>'Paused','sub'=>($facts['Next invoice']['value']??null)==='Paused'?$facts['Next invoice']['sub']:DepartureChecks::RENEWAL_WAITS,'url'=>null,'tone'=>null]; }
         if ($this->edits()['held']) { $facts=DomainFacts::whileHeld($facts,$this->edits()['first']??null); }
         return $this->facts=DomainFacts::withProgress($facts,$progress,DomainFacts::headRequest($d,$this->status(),$this->edits()['request'],$this->notice()));
     }
@@ -183,12 +202,13 @@ class ViewDomain extends RecordDetailPage
     }
     private function syncNow(): Action
     {
-        // Record reads use registrar calls; Sync now lets staff request them only when needed.
-        return Action::make('sync_now')->label('Sync now')->color('gray')->disabled(fn()=>\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::pending($this->getRecord()))->visible(fn()=>DomainFacts::syncNow($this->getRecord())&&!$this->departureSuspected())
+        // Record reads use registrar calls; Sync now lets staff request them only when needed. Under review it queues the
+        // same departure read as Check again, so a grace or expired holding is admitted and the two share one pending read.
+        return Action::make('sync_now')->label('Sync now')->color('gray')->disabled(fn()=>\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::pending($this->getRecord()))->visible(fn()=>DomainFacts::syncNow($this->getRecord())||(Staff::can('admin.domains.manage')&&$this->departureSuspected()))
             ->action(function():void {
                 if (!Staff::can('admin.domains.manage')) { abort(403); }
                 try {
-                    $queued=\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::enqueue((int)\Illuminate\Support\Facades\Auth::id(),$this->getRecord()->refresh());
+                    $queued=\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::enqueue((int)\Illuminate\Support\Facades\Auth::id(),$this->getRecord()->refresh(),$this->departureSuspected());
                     if (!$queued) {
                         $minutes=(int)ceil(\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::UNIQUE_FOR/60);
                         \Filament\Notifications\Notification::make()->info()->title("A sync was already requested. If nothing changes in {$minutes} minutes, press Sync now again. If it still doesn't run, check the queue worker.")->send();

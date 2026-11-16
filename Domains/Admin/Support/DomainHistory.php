@@ -7,7 +7,7 @@ use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation, WatchAudit};
 use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
 use Paymenter\Extensions\Servers\Domains\Services\{ReceiptReturns,StaffOperationReview};
-/** One domain's history: registrar requests, staff holds, releases and renewal changes, and customer auto-renew changes, newest first. Read by the History tab and the Activity rail. */
+/** One domain's history: registrar requests, staff holds, releases and renewal changes, customer auto-renew changes and departure reads, newest first. Read by the History tab and the Activity rail. */
 final class DomainHistory
 {
     private const HOLDINGS = ['stop' => 'Auto-renew turned off', 'resume' => 'Auto-renew turned on', 'reprice' => 'Renewal price updated', 'resume_observation' => 'Sync resumed'];
@@ -75,6 +75,13 @@ final class DomainHistory
             if (!in_array($entry['event']??null,$events,true)) { continue; }
             $rows[]=['__key'=>'sync-'.$i,'__order'=>$i+1,'time'=>self::at($entry['at']??null),'event'=>$entry['event'],'sub'=>null,'status'=>null,
                 'by'=>is_string($entry['actor_name']??null)&&$entry['actor_name']!==''?$entry['actor_name']:($names[$entry['actor_id']??0]??'Staff')];
+        }
+        // Registrar reads that found the domain missing from our account: the one that opened the review, then its rechecks.
+        try { $reads=$domain->observation['departure_reads']??[]; } catch (\Throwable) { $reads=[]; }
+        foreach (is_array($reads)?array_slice($reads,-\Paymenter\Extensions\Servers\Domains\Services\DepartureChecks::READS):[] as $i=>$read) {
+            if (!is_array($read)||!is_int($read['at']??null)) { continue; }
+            $rows[]=['__key'=>'departure-'.$i,'__order'=>$i+1,'time'=>(new \DateTimeImmutable())->setTimestamp($read['at']),'event'=>($read['recheck']??false)?'Recheck':'Registrar read',
+                'sub'=>'Not in our registrar account.','status'=>['label'=>'Under review','tone'=>'warning'],'by'=>'System'];
         }
         $at=fn(Operation|array $r)=>($r instanceof Operation?self::when($r):$r['time'])?->getTimestamp()??PHP_INT_MIN;
         $order=static fn(Operation|array $r)=>$r instanceof Operation?[$r->id,0]:[$r['__request']??0,$r['__order']??0];

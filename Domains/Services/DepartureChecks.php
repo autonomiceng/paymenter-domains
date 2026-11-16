@@ -15,14 +15,19 @@ final class DepartureChecks
     public function __construct(private DnsReader $dns,private Clock $clock,private ?\Closure $factory=null) {}
     public static function suspected(Domain $d): bool
     { return !$d->adoptionPending()&&in_array($d->status,['active','grace','expired'],true)&&HoldingReadRetry::absent($d); }
-    /** Called under holding locks after observation writers have saved the final result. */
-    public static function capture(Domain $d,int $now): void
+    /** Kept departure reads for staff Activity, newest last. */
+    public const READS=20;
+    /** Called under holding locks after observation writers have saved the final result. $absent: this read itself found
+     * the domain missing from our registrar account, so staff Activity lists it. */
+    public static function capture(Domain $d,int $now,bool $absent=false): void
     {
         RenewalOwnership::review($d,$now);$p=$d->observation??[];
         if(!self::suspected($d)){if(isset($p['departure_check'])){unset($p['departure_check']);$d->update(['observation'=>$p]);}return;}
-        if(($p['departure_check']['identity']??null)!==ObservationRecords::identity($d)){
-            $p['departure_check']=['identity'=>ObservationRecords::identity($d),'at'=>$now,'rechecked'=>false];$d->update(['observation'=>$p]);
-        }
+        $opened=($p['departure_check']['identity']??null)!==ObservationRecords::identity($d);
+        if($opened){$p['departure_check']=['identity'=>ObservationRecords::identity($d),'at'=>$now,'rechecked'=>false];}
+        // The read that opens the review is the registrar read; later absent reads are its rechecks.
+        if($absent){$reads=is_array($p['departure_reads']??null)?$p['departure_reads']:[];$p['departure_reads']=array_slice([...$reads,['at'=>$now,'recheck'=>!$opened]],-self::READS);}
+        if($opened||$absent){$d->update(['observation'=>$p]);}
         HoldingObservationWork::queueInitial($d,(new \DateTimeImmutable())->setTimestamp($now));
         HoldingObservationWork::idle(HoldingObservationWork::current($d),$now)->update(self::schedule($d,$now));
     }
@@ -36,10 +41,30 @@ final class DepartureChecks
     { return ['state'=>$now>=($d->observation['departure_check']['at']??$now)+172800?'delayed':'needs_review','expiry'=>$d->provider_expires_at?->format('Y-m-d')]; }
     public static function dnsNote(Domain $d): ?string
     {
-        if(!self::suspected($d)){return null;}
-        if(RegistrationDns::registrarDns($d)){return "This domain uses our registrar's DNS. Its records stop when the transfer completes, so set up DNS at your new host first.";}
+        return match(self::dnsCase($d)){
+            'registrar'=>"This domain uses our registrar's DNS. Its records stop when the transfer completes, so set up DNS at your new host first.",
+            'hosting'=>'DNS records on your hosting plan keep working while the plan is active.',
+            default=>null};
+    }
+    /** Where this suspected holding's DNS is served, from the nameservers in the last registrar read: our registrar's DNS,
+     * our hosting nameservers, or other nameservers. Null when not suspected or no nameservers were read. */
+    public static function dnsCase(Domain $d): ?string
+    {
+        if(!self::suspected($d)||ObservationProjection::nameservers($d)?->state!=='observed'){return null;}
+        if(RegistrationDns::registrarDns($d)){return 'registrar';}
         $actual=ObservationProjection::nameservers($d)?->nameservers??[];$ours=SiteDnsDefault::profile()?->nameservers??[];sort($actual);sort($ours);
-        return $ours&&$actual===$ours?'DNS records on your hosting plan keep working while the plan is active.':null;
+        return $ours&&$actual===$ours?'hosting':'other';
+    }
+    /** The staff words for dnsCase(): a short title for the Nameservers row and a sentence for the DNS records row. @return array{0:string,1:string}|null */
+    public static function staffDnsCase(Domain $d): ?array
+    {
+        $company=\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company();$ours=($company!==''?$company:'Our').' nameservers';
+        $product=match($d->registrar_key){'enom'=>'Enom DNS','namesilo'=>'NameSilo DNSOwl',default=>null};
+        return match(self::dnsCase($d)){
+            'registrar'=>["Our registrar's DNS",($product?'On '.$product.', our':'On our')." registrar's DNS."],
+            'hosting'=>[$ours.', hosting plan','On '.$ours.', on the hosting plan.'],
+            'other'=>['Other nameservers','On other nameservers.'],
+            default=>null};
     }
     public function registry(Domain $seed): bool
     {
