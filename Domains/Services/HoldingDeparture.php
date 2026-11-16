@@ -71,7 +71,7 @@ final class HoldingDeparture
             foreach($a['credit'] as $op){
                 $receipts=$l['transactions']->where('invoice_id',$op->invoice_id)->where('status',InvoiceTransactionStatus::Succeeded)->pluck('id')->map(fn($id)=>(int)$id)->values()->all();
                 if($op->state!=='rejected'){FundsWaits::closeRenewal($op,$l,$now,$receipts);}
-                $minor=app(Refunds::class)->departLocked($l,$op);$credited+=$minor;
+                $released=0;$minor=app(Refunds::class)->departLocked($l,$op,$released);$free+=$released;$credited+=$minor;
                 $outcomes[]=['operation_id'=>(int)$op->id,'invoice_id'=>(int)$op->invoice_id,'outcome'=>'credited','credit_minor'=>$minor];
             }
             if($free!==$credited||self::creditMinor($l)-$creditBefore!==$credited){
@@ -124,7 +124,7 @@ final class HoldingDeparture
                 if($r['ownerHold']){$block(self::OWNER_HOLD,$invoice);}
                 if(array_filter($r['receipts'],fn($x)=>$x['hold'])){$block(self::DISPUTE,$invoice);}
                 if($r['overdrawn']){$block(self::OVERDRAWN,$invoice);}
-                if(array_sum(array_column($r['receipts'],'reserved'))>0){$block(self::RETURN_SENDING,$invoice);}
+                if(self::returnSending($l,$r,(int)$invoice)){$block(self::RETURN_SENDING,$invoice);}
                 if($r['pending']){$block(self::PAYMENT_PROCESSING,$invoice);}
             }
             $generation=$op->authority_generation===$d->authority_generation&&(int)$op->service_id===(int)$d->service_id;
@@ -149,6 +149,19 @@ final class HoldingDeparture
         if($at===null||$now-$at>self::FRESH){$block(self::STALE);}
         usort($blocks,fn($a,$b)=>$a['line']<=>$b['line']);
         return ['block'=>$blocks[0]??null,'close'=>$close,'credit'=>$credit,'kept'=>$kept];
+    }
+    /** Reserved money waits unless every reserved share belongs to a proved closed renewal and is still local. */
+    private static function returnSending(array $l,array $money,int $invoice): bool
+    {
+        $reserved=array_sum(array_column($money['receipts'],'reserved'));
+        if($reserved===0){return false;}
+        $local=0;$d=$l['domain'];
+        foreach(self::renewals($l)->where('invoice_id',$invoice) as $op){
+            if($op->state!=='rejected'||$op->authority_generation!==$d->authority_generation
+                ||(int)$op->service_id!==(int)$d->service_id||!self::closedUnsent($op,$l)){continue;}
+            foreach(ReceiptReturns::localAllocations($op,$money) as $a){$local+=$a['amount_minor'];}
+        }
+        return $reserved!==$local;
     }
     /** Paid or part paid, never attempted at the registrar and still on the current expiry: the same proof the renewal
      * funds closure checks before it closes the request unsent. Reads only. */

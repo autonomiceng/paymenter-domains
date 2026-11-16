@@ -204,6 +204,17 @@ final class ReceiptReturns
         if(in_array('refunded',$states,true)&&($bridge>0||in_array('credited',$states,true))){return ['Money returned','Part was refunded to your original payment method. The rest is account credit because it could not be refunded.'];}
         return in_array('refunded',$states,true)?['Refunded','Your payment was refunded to your original payment method.']:['Credit added','The payment could not be refunded. The returned amount is account credit.'];
     }
+    /** Read-only candidates only. A saved result or gateway allocation keeps its original return authority. */
+    public static function localAllocations(Operation $op, array $money): array
+    {
+        $local=[];
+        foreach(self::plans($op) as $plan){foreach($plan['allocations'] as $a){
+            if(isset($a['gateway_key'])||!empty($op->funding['receipt_return_results'][$a['key']])){continue;}
+            $entry=collect($money['ledger'])->first(fn($r)=>$r['gateway_id']===$a['gateway_id']&&$r['payment_intent_id']===$a['receipt']&&$r['allocation_key']===$a['key']);
+            if(!$entry){$local[]=$a;}
+        }}
+        return $local;
+    }
     /** Runs in the caller's outer transaction. A caller holding HoldingLocks passes them, so no prefix is taken again after
      * its ledger read; alone, release takes them first. The ledger always wins over a stale local result. */
     public static function release(Operation $op,string $key,string $reason,?array $l=null): void

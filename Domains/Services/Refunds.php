@@ -139,14 +139,29 @@ final readonly class Refunds
     /** Departure confirmation only: the caller's money decision holds the full locks and has just closed this paid renewal
      * unsent. Its remaining receipt shares become account credit through the late-credit record, in the same decision.
      * @return int the new account credit in minor units */
-    public function departLocked(array $l, Operation $op): int
+    public function departLocked(array $l, Operation $op, int &$released = 0): int
     {
         if (!MoneyDecisions::running() || ($l['advisory'] ?? true) || !$l['operations']->contains(static fn ($row) => $row === $op)
             || $op->state !== 'rejected' || !isset($op->attempt['terminal']['transactions']) || !FundsWaits::closedRenewal($op, $l['domain'])) {
             throw new \DomainException('Closed renewal proof unavailable.');
         }
+        $released = 0;
+        $l['credit'] ??= Credit::where('user_id', $l['user']->id)->where('currency_code', 'USD')->first();
+        foreach (ReceiptReturns::localAllocations($op, InvoiceMoney::load($l, (int) $op->invoice_id)) as $a) {
+            // Exclude just this reservation to measure its currently available share, as release() does.
+            $money = InvoiceMoney::load($l, (int) $op->invoice_id, $a['key']);
+            $available = min($a['amount_minor'], array_sum(InvoiceMoney::heldFor($money, $a['transaction_id'])));
+            ReceiptReturns::release($op, $a['key'], 'domain_departed', $l);
+            $result = $op->funding['receipt_return_results'][$a['key']] ?? [];
+            if (($result['state'] ?? null) !== 'released' || ($result['credit_minor'] ?? null) !== $available) {
+                throw new \DomainException('Departure return coverage changed.');
+            }
+            $released += $available;
+            // An absent credit row may have been created by the first release; reuse it for later shares.
+            $l['credit'] ??= Credit::where('user_id', $l['user']->id)->where('currency_code', 'USD')->first();
+        }
         $credited = $this->creditLate($op, $l, null, true);
-        return $credited === null ? 0 : PricingRule::minor($credited['amount']);
+        return $released + ($credited === null ? 0 : PricingRule::minor($credited['amount']));
     }
     /** Return incremental net funds received after retirement, however little or much arrives. Departure credits locally available shares directly;
      * other callers first adopt the original-payment return. Gateway-owned shares remain reserved in the shared ledger. */
