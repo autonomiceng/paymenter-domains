@@ -48,8 +48,12 @@ expect(str_contains((string)$departed[2]['sub'],'$'.number_format($saved['credit
 $hold=Illuminate\Support\Facades\DB::table('domains_obligation_alerts')->insertGetId(['alert_key'=>Paymenter\Extensions\Servers\Domains\Services\DisputeRecoveries::key('account_money_hold','synthetic_departed'),
     'domain_id'=>$d->id,'operation_id'=>$op->id,'generation'=>$op->authority_generation,'code'=>'account_money_hold','first_seen'=>1,'last_seen'=>1]);
 $staff->role->update(['permissions'=>[...$staff->role->permissions,Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::permission('release'),'admin.invoices.update']]);
-Livewire\Livewire::actingAs($staff->fresh())->test(ViewDomain::class,['record'=>$d->id])->assertSuccessful()
-    ->assertActionVisible('release_money_hold_'.$hold)->callAction('release_money_hold_'.$hold)->assertHasNoActionErrors();
+$page=Livewire\Livewire::actingAs($staff->fresh())->test(ViewDomain::class,['record'=>$d->id])->assertSuccessful();
+// The request page's Payment row links to the hold's anchor, so Release hold must be drawn there, not only registered.
+$holdDom=new DOMDocument;@$holdDom->loadHTML('<?xml encoding="utf-8"?>'.$page->html());
+$anchor=(new DOMXPath($holdDom))->query('//*[@id="'.Paymenter\Extensions\Servers\Domains\Admin\Support\AccountMoneyHoldActions::ANCHOR.'"]')->item(0);
+expect($anchor!==null&&str_contains($holdDom->saveHTML($anchor),"mountAction('release_money_hold_".$hold."'"),'The departed page draws Release hold at the account hold anchor');
+$page->callAction('release_money_hold_'.$hold)->assertHasNoActionErrors();
 expect(Illuminate\Support\Facades\DB::table('domains_obligation_alerts')->where('id',$hold)->value('resolved_at')!==null,'Release hold on a departed domain clears its account hold');
 echo "A confirmed departure reads as transferred away on customer, list and staff pages, with its saved history.\n";
 $nativeSuccessful=true;
