@@ -464,7 +464,7 @@ app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$cl
 app()->instance(Reminders::class,new Reminders($clock,$bindings));
 \Illuminate\Support\Facades\Mail::fake();config(['settings.mail_disable'=>false]);
 $staff->role->update(['permissions'=>['admin.domains.view','admin.domains.manage',StaffOperationReview::permission('release'),'admin.invoices.update']]);
-$recovery=new DisputeRecoveries($clock);$clock->instant=$now;
+$recovery=new DisputeRecoveries($clock);$clock->instant=$now;activeCommerceFacts($now,$now->modify('+30 days'),$ports);
 $loss=static function($op,int $lost,string $id)use($creditGateway):array {
     $payment=InvoiceTransaction::where('invoice_id',$op->invoice_id)->where('amount','>','0')->sole();
     $payment->update(['gateway_id'=>$creditGateway->id,'transaction_id'=>'synthetic_recovery_'.$id]);
@@ -502,6 +502,7 @@ $credit->update(['amount'=>'3.00']);$entry=$loss($op,300,'synthetic_shared');$re
 same(200,$balance(),'Shared receipt recovers $1 once, not once per operation');
 $before=[$op->fresh()->funding,$other->fresh()->funding,$balance()];$recovery->recover($entry);
 same($before,[$op->fresh()->funding,$other->fresh()->funding,$balance()],'Shared recovery replay retains both peer shares');
+AccountMoneyHolds::release($staff,(int)DB::table('domains_obligation_alerts')->where('alert_key',DisputeRecoveries::key('account_money_hold','synthetic_shared'))->value('id'));
 // A loss with no return still holds a successful operation. Failed and exhausted decisions write durable evidence.
 $op=$new('recovery-deferred-placeholder.com');$entry=$loss($op,300,'synthetic_deferred');
 $op->update(['state'=>'succeeded']);InvariantReceiptGateway::$conflicts=2;
