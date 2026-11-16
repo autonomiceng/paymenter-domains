@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/bootstrap.php';
 // The stopped-monitoring render fixture refuses outside the skin harness, before any setup or page write.
 putenv('DOMAINS_PANEL_SETUP');putenv('SKIN_RENDER_MARKER');
 $out=sys_get_temp_dir().'/watch-stopped-render-guard-'.bin2hex(random_bytes(4));mkdir($out);$argv=[__FILE__,$out];
