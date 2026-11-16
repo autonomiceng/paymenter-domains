@@ -136,6 +136,20 @@ $inner = MoneyDecisions::run(new MoneyRequest($op->domain, released: true), fn()
 same([MoneyOutcome::Failed, LogicException::class, false], [$inner->outcome, $inner->error ? $inner->error::class : null, $ran], 'A runner inside a runner is refused before its decision runs');
 same(0, DB::transactionLevel(), 'No transaction is left open');
 
+// After commit the decision has ended, so dispatch can start a separate money decision.
+$after = null;
+$outer = MoneyDecisions::run(new MoneyRequest($op->domain, released: true), static function() use ($op, &$after): bool {
+    DB::afterCommit(static function() use ($op, &$after): void {
+        same([0, false], [DB::transactionLevel(), MoneyDecisions::running()], 'After-commit dispatch is outside the active decision');
+        $after = MoneyDecisions::run(new MoneyRequest($op->domain, released: true), static fn() => true);
+    });
+    return true;
+});
+same([MoneyOutcome::Applied, MoneyOutcome::Applied, true], [$outer->outcome, $after?->outcome, $after?->value], 'After-commit dispatch can run another money decision');
+same(false, MoneyDecisions::running(), 'The runner clears its active state after commit');
+$thrown = MoneyDecisions::run(new MoneyRequest($op->domain, released: true), static fn() => throw new RuntimeException('Synthetic decision failure'));
+same([MoneyOutcome::Failed, false, 0], [$thrown->outcome, MoneyDecisions::running(), DB::transactionLevel()], 'A failed decision clears its active state after rollback');
+
 // Invoice scope: the same lock order, with only the request's invoice, its items and payments. Reuses the closed order above.
 $other = Operation::where('invoice_id', '!=', $op->invoice_id)->whereNotNull('invoice_id')->orderBy('id')->firstOrFail();
 $scoped = static fn(int $invoice) => new MoneyRequest($op->domain, 'refund_closed', $op->id, released: true, scope: MoneyScope::Invoice, invoiceId: $invoice);
