@@ -71,5 +71,22 @@ foreach(['gateway failure'=>'unreadable','missing amount'=>$row(['amount_minor'=
     StaffInvoiceReversalGateway::$observations['pi_staff_invoice']=$observed;
     Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertSee('Could not read refunds and disputes. Check the invoice payments.')->assertDontSee('encryption key');
 }
+// A closed request with no credit says a lost dispute already returned its money only when the dispute took the whole payment,
+// and then names this request's own line. A partial dispute leaves money to settle, so the refund row keeps its next step.
+$op->update(['state'=>'rejected','funding_basis'=>'paid_invoice']);
+$lost=static function(int $minor)use($invoice):void {StaffInvoiceReversalGateway::$observations['pi_staff_invoice']=[['kind'=>'dispute','id'=>'dp_share','status'=>'lost','needs_review'=>true,
+    'invoice_id'=>(int)$invoice->id,'user_id'=>(int)$invoice->user_id,'payment_intent_id'=>'pi_staff_invoice','currency'=>strtolower($invoice->currency_code),
+    'amount_minor'=>$minor,'credited_minor'=>0,'credit_balance_minor'=>0]];};
+$own=Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)$invoice->fresh()->total);
+$returned=static fn():array=>[RequestFacts::for($op->fresh())['refund']??null,(string)(RequestFacts::for($op->fresh())['refund_sub']??'')];
+$lost($own);[$refund,$sub]=$returned();
+same('No credit added',$refund,'A closed request with a lost dispute adds no credit');
+expect(str_contains($sub,'already returned $'.number_format($own/100,2)),'A dispute that took the whole payment returned this request\'s money: '.$sub);
+// Cart invoice: another line joins the bill. A dispute for this request's line amount is still part of the payment.
+\App\Models\InvoiceItem::create(['invoice_id'=>$invoice->id,'description'=>'Other cart line','price'=>'20.00','quantity'=>1]);
+$lost($own);[,$sub]=$returned();
+expect(!str_contains($sub,'already returned'),'A partial dispute on a cart invoice leaves the refund step open: '.$sub);
+$lost($own+2000);[,$sub]=$returned();
+expect(str_contains($sub,'already returned $'.number_format($own/100,2).' '),'A full dispute on a cart invoice names only this request\'s own line: '.$sub);
 echo "Request invoice name and reversal passed.\n";
 $nativeSuccessful=true;

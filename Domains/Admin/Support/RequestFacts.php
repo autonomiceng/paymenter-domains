@@ -120,9 +120,13 @@ final class RequestFacts
                 catch(\Throwable){$out['refund_sub']=trim(($out['refund_sub']??'').' Missing. Check the invoice payment reversal and credit history.');}
             }
             // A closed request whose payment a lost dispute already took back: nothing was left to credit, and that is no staff step.
+            // Only when the disputes took the whole payment, so this request's own line is surely gone; a partial dispute keeps the
+            // refund row's next step. The amount is this request's own line, not the invoice's.
             if ($op->state==='rejected'&&($out['refund']??null)==='No credit added'&&is_array($reversals)
-                &&($lostMinor=array_sum(array_map(fn($r)=>[$r['kind']??null,$r['status']??null]===['dispute','lost']&&is_int($r['amount_minor']??null)?$r['amount_minor']:0,$reversals)))>0) {
-                $out['refund_sub']='The lost dispute already returned '.\Paymenter\Extensions\Servers\Domains\Services\Storefront::money(\Paymenter\Extensions\Servers\Domains\Services\PricingRule::decimal($lostMinor)).' to the customer’s bank.';
+                &&($invoice=\App\Models\Invoice::find($op->invoice_id))!==null
+                &&($total=\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)$invoice->total))>0
+                &&array_sum(array_map(fn($r)=>[$r['kind']??null,$r['status']??null]===['dispute','lost']&&is_int($r['amount_minor']??null)?$r['amount_minor']:0,$reversals))>=$total) {
+                $out['refund_sub']='The lost dispute already returned '.\Paymenter\Extensions\Servers\Domains\Services\Storefront::money(\Paymenter\Extensions\Servers\Domains\Services\PricingRule::decimal(self::ownLineMinor($op,$invoice))).' to the customer’s bank.';
             }
             if ($op->registrar_key==='namesilo' && $op->action==='transfer' && $closed
                 && ($op->safe_code==='transfer_provider_rejected' || ($p['reconciliation']['transfer_status']??null)==='rejected')) {
