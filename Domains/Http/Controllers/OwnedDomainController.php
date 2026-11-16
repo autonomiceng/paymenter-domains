@@ -15,6 +15,8 @@ final readonly class OwnedDomainController
     {
         $raw=$request->query('q');$search=is_string($raw)?trim(substr($raw,0,253)):'';
         $raw=$request->query('status');$filter=is_string($raw)&&(isset(DomainStatus::SET[$raw])||$raw==='inactive')?$raw:'';
+        // Older links name one ended status, such as ?status=cancelled; they open the Inactive tab that now holds it.
+        if (in_array($filter,DomainStatus::INACTIVE,true)) { $filter='inactive'; }
         $sort=in_array($request->query('sort'),['expiry','-expiry','name','-name'],true)?$request->query('sort'):'expiry';
         $perPage=in_array((int)$request->query('per_page'),[25,50,100],true)?(int)$request->query('per_page'):25;
         // One list: registered domains and the domains your hosting uses. Status depends on the order, renewal stops

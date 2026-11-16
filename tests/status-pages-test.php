@@ -48,6 +48,11 @@ foreach ($cases as $case=>[$domain,$acquisition,$label,$reason]) {
     // All lists every domain that held a registration, ended ones included (mock 03: All 12 = Active 7, Under review 1, Inactive 4).
     same(1,$controller->index($request())->getData()['domains']->total(),'Default list: '.$case);
     $list=storefrontDom($controller->index($request())->render());
+    if ($case==='cancelled') {
+        // An older ?status=cancelled link opens the Inactive tab, which lists the row.
+        $old=$controller->index($request(['status'=>'cancelled']));
+        same(['inactive',1],[$old->getData()['filter'],$old->getData()['domains']->total()],'An old cancelled link selects the Inactive tab');
+    }
     $row=$list->query('//tbody/tr')->item(0);
     $show=storefrontDom($controller->show($request(),$d->id)->render());
     $header=$show->query('//*[@data-piece="head-line"]')->item(0);
