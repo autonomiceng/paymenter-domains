@@ -13,9 +13,9 @@ final readonly class DisputeRecoveries
     public function __construct(private Clock $clock) {}
     public static function key(string $code,string $dispute): string { return hash('sha256',$code.':'.$dispute); }
     private static function cursor()
-    { return Setting::whereNull('settingable_type')->whereNull('settingable_id')->where('key','domains_dispute_scan'); }
+    { return Setting::where('settingable_type',self::class)->where('settingable_id',0)->where('key','domains_dispute_scan'); }
     private static function advance(array $cursor): void
-    { Setting::updateOrCreate(['settingable_type'=>null,'settingable_id'=>null,'key'=>'domains_dispute_scan'],['value'=>json_encode($cursor,JSON_THROW_ON_ERROR),'type'=>'string','encrypted'=>false]); }
+    { Setting::updateOrCreate(['settingable_type'=>self::class,'settingable_id'=>0,'key'=>'domains_dispute_scan'],['value'=>json_encode($cursor,JSON_THROW_ON_ERROR),'type'=>'string','encrypted'=>false]); }
     public function sweep(): void
     {
         OperationClaims::outside();
