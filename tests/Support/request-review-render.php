@@ -11,7 +11,9 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 $out=$argv[1]??'';expect(is_dir($out),'Render output exists');
 config(['domains.time_zone'=>'America/Los_Angeles']);
-$staff=staffUser([...array_keys(Staff::permissions()),'admin.invoices.view']);Auth::setUser($staff);
+// Only the permissions these two pages use, so the navigation holds only the domain and request pages the fixture routes.
+$staff=staffUser([Staff::VIEW,'admin.domains.manage',Staff::POLICY,Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::permission('enom_answer'),
+    ...array_map(fn($a)=>Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::permission($a),['recheck','resume_reads','mark_failed'])]);Auth::setUser($staff);
 panelTheme(getenv('PAYMENTER_TEST_FIXTURE'));
 $now=$clock->now()->getTimestamp();
 // A paid renewal sent a day ago with no confirmed result: past its lease, with the next automatic check scheduled.
