@@ -410,6 +410,22 @@ same([],Paymenter\Extensions\Servers\Domains\Admin\Support\StaffDomainInputs::fo
 same(null,DomainFacts::notice($d),'The domain page head names no request to check during the automatic wait');
 expect(!DomainQueries::alerting(Domain::whereKey($d->id))->exists(),'The open alerts count leaves the automatic wait out');
 
+// A current record hold with no work row stopped sync: the count, the list and the sweep read it as the domain page does.
+$observation=static fn(Domain $d)=>DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code','observation_review')->whereNull('resolved_at')->exists();
+$sweep=static fn(Domain $d)=>ObligationAlerts::finish($d,ObligationAlerts::retained(['domain'=>$d,'operations'=>collect()],time()),time());
+$d=$row('active',null,null);Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::hold($d,'caa_unsupported',new DateTimeImmutable());$d=$d->fresh();
+same(0,DB::table('domains_observation_work')->where('domain_id',$d->id)->count(),'The held domain has no work row');
+expect(Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::stopped($d),'The domain page reads the hold without a job as stopped');
+expect(DomainQueries::alerting(Domain::whereKey($d->id))->exists(),'The open alerts count includes the hold without a job');
+expect(isset(Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::stoppedIds(collect([$d]))[$d->id]),'The list reads the hold without a job as stopped');
+$sweep($d);expect($observation($d),'The sweep records the hold without a job');
+// The sweep uses the reader's retry limit and stopped codes: a retry still queued is clear, a stopped incomplete read is not.
+$d=$row('active',null,null);Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::queueInitial($d,new DateTimeImmutable());
+$work=Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::current($d);
+$work->update(['safe_code'=>'read_failed','tries'=>1,'due_at'=>time()+600]);ObligationAlerts::record($d,'observation_review',time()-60);
+$sweep($d);expect(!$observation($d),'A failed read with its retry queued is not a stopped sync');
+$work->update(['safe_code'=>'records_incomplete','tries'=>0]);
+$sweep($d);expect($observation($d),'A stopped incomplete read is a stopped sync');
 $d=$row('registration_pending','register','held','staff_review_required');
 expect(DomainQueries::alerting(Domain::whereKey($d->id))->exists(),'A visible staff task counts even before a saved alert is written');
 $table=Livewire::actingAs($viewer)->test(ListDomains::class)->instance()->getTable();

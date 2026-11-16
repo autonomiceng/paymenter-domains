@@ -397,7 +397,7 @@ final class DomainDecisions
         if (self::ended($d)) { return null; }
         if(!$accountLoaded){$account??=self::account($d);}
         if ($account&&DemoData::syncPaused($d,$account)) { return 'paused'; }
-        return !self::unconfirmedRegistration($d)&&($stopped??ObservationWork::stopped($d))?'failed':null;
+        return !self::unconfirmedRegistration($d)&&($stopped??ObservationRecords::stopped($d))?'failed':null;
     }
     /** A value the last registrar read left out. The staff domain page says it once, above the sheet, when the read is late. */
     public const NOT_RETURNED='Registrar did not return it. Check the domain at the registrar.';

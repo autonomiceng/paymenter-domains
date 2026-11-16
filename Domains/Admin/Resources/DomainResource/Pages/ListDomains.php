@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Head, Row, Value};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\{Column, Filter, RecordListPage, Section};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain};
 use Paymenter\Extensions\Servers\Domains\Presentation\{Fact, Missing, Plain, Reader, State};
-use Paymenter\Extensions\Servers\Domains\Services\{AdoptionCommit, ComplimentaryAccounts, ObservationWork};
+use Paymenter\Extensions\Servers\Domains\Services\{AdoptionCommit, ComplimentaryAccounts, ObservationRecords};
 /** Domains > Domains, a List page: every domain with its status, next step, customer, expiry, renewal and registrar. */
 class ListDomains extends RecordListPage
 {
@@ -147,7 +147,7 @@ class ListDomains extends RecordListPage
             $page = collect(method_exists($records, 'items') ? $records->items() : $records->all())->filter(fn ($r) => $r instanceof Domain);
             if (!$page->contains('id', $record->id)) { $page = collect([$record]); }
             $accounts = Account::whereIn('server_id', $page->pluck('server_id')->unique()->values()->all())->get();
-            $stopped = ObservationWork::stoppedIds($page);
+            $stopped = ObservationRecords::stoppedIds($page);
             $inputs = StaffDomainInputs::for($page, $this->orders());
             $accountOff = [];
             foreach ($page as $d) {

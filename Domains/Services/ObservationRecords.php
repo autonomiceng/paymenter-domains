@@ -89,7 +89,21 @@ final class ObservationRecords
     }
     /** Staff recovery is needed for either a record hold or stopped current scheduled reads. */
     public static function stopped(Domain $d): bool
-    { return ObservationWork::stopped($d)||(self::held($d)&&HoldingReadRetry::status($d)['next_read']===null); }
+    { return ObservationWork::stopped($d)||self::heldStopped($d); }
+    /** Batched stopped() for a page of domains: the ids, as keys. Only a held domain reads its own work row, and holds are rare. */
+    public static function stoppedIds(\Illuminate\Support\Collection $domains): array
+    {
+        $ids=ObservationWork::stoppedIds($domains);
+        foreach ($domains as $d) {
+            if (isset($ids[$d->id])) { continue; }
+            // Saved evidence that can't be read stops sync, as on the domain page.
+            try { if (self::heldStopped($d)) { $ids[$d->id]=true; } } catch (\Throwable) { $ids[$d->id]=true; }
+        }
+        return $ids;
+    }
+    /** A current-identity record hold with no next scheduled read, including a hold with no work row: only Sync now clears it. */
+    private static function heldStopped(Domain $d): bool
+    { return self::held($d)&&HoldingReadRetry::status($d)['next_read']===null; }
     public static function held(Domain $d): bool
     { return ($d->observation['record_hold']['identity']??null)===self::identity($d); }
     /** Shared by the staff inbox, sync notice and Missing DNS row. */
