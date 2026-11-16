@@ -103,7 +103,7 @@ class ViewOperation extends RecordDetailPage
         $notice=RequestFacts::notice($op,$facts)??($answers?['title'=>$who.' didn’t confirm this order.','body'=>'Open a ticket with '.$who.' support, then record their answer.','tone'=>'warning']:null);
         // Support needs the request's facts for the ticket, so whoever can record the answer can copy them.
         // Enom's no-order read needs no support ticket, so nothing is copied for one.
-        $copy=$answers&&($notice['copy']??true)?SupportDetails::action($op)->label('Copy details')->extraAttributes(['aria-label'=>SupportDetails::LABEL]):null;
+        $copy=$answers&&($notice['copy']??true)?SupportDetails::action($op)->label('Copy details')->extraAttributes(['aria-label'=>SupportDetails::LABEL],merge:true):null;
         $fail=$this->getAction('mark_failed',false); $fail=$fail?->isVisible()?Sheet::button($fail):null;
         // The notice keeps its own action; staff who may close the change also learn when to use the button on Registrar reply.
         if ($notice!==null&&$fail!==null) { $notice['body']=trim(($notice['body']??'').' If you know the change didn’t happen, use '.$fail->getLabel().'.'); }

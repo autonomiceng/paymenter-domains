@@ -276,7 +276,7 @@ $policy=$lost->fresh()->policy;$policy['reconciliation']['polls']=0;$lost->fresh
 $observation->fault='send_guard';$reconcile->run($lost->id);$observation->fault='';
 same(true,$lost->fresh()->policy['status_check']['read_attempted'],'A refused read keeps the earlier read of this attempt');
 $policy=$lost->fresh()->policy;$policy['reconciliation']['polls']=OperationReconciliation::POLL_LIMIT;$lost->fresh()->update(['policy'=>$policy]);
-Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$lost->id])->callAction('resume_reads')->assertNotified('Status checks restarted')->assertActionVisible('enom_answer');
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$lost->id])->callAction('resume_reads')->assertNotified('Status checks restarted')->assertActionHidden('enom_answer');
 same(true,$lost->fresh()->policy['status_check']['read_attempted'],'A resume keeps the earlier read of this attempt');
 // A lost renewal reply outside its history window can still read the domain.
 DB::table('domains_accounts')->where('server_id',$lost->server_id)->update(['processing_enabled'=>true]);

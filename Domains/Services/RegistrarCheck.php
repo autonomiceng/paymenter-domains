@@ -197,7 +197,9 @@ final class RegistrarCheck
         // Most requests have no saved next check; only those pay for the full status read.
         if (!in_array($op->action,['register','renew'],true) || !in_array($op->state,['running','pending','uncertain'],true) || !isset($op->policy['status_check']['next_at'])) { return false; }
         $check=self::status($op);
-        return in_array($check['outcome']??null,['checked','deferred','scheduled'],true) && isset($check['next_at']);
+        // A deferral by our own limit or sending settings keeps its own cause on the page.
+        $outcome=$check['outcome']??null;
+        return (in_array($outcome,['checked','scheduled'],true)||$outcome==='deferred'&&($check['reason']??null)==='scheduled') && isset($check['next_at']);
     }
     /** Checks of this attempt have stopped: a read happened and none is scheduled. Staff now record the registrar's answer. */
     public static function stopped(Operation $op): bool
