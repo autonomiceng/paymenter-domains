@@ -148,12 +148,12 @@ final readonly class Refunds
         $credited = $this->creditLate($op, $l, null, true);
         return $credited === null ? 0 : PricingRule::minor($credited['amount']);
     }
-    /** Return incremental net funds received after retirement, however little or much arrives. Departure credits what is
-     * left after adopting a gateway-owned closed receipt; every other caller stops there. */
+    /** Return incremental net funds received after retirement, however little or much arrives. Departure credits locally available shares directly;
+     * other callers first adopt the original-payment return. Gateway-owned shares remain reserved in the shared ledger. */
     private function creditLate(Operation $op, array $l, ?StaffOperationReview $review, bool $departure = false): ?array
     {
         RefundProof::requireUnsent($op, $l['domain']); RefundPayment::requireLine($op, $l);
-        if (ReceiptReturns::adoptClosed($op, $l, $this->clock->now()) && !$departure) { $review?->record($l); return null; }
+        if (!$departure && ReceiptReturns::adoptClosed($op, $l, $this->clock->now())) { $review?->record($l); return null; }
         $payments = RefundPayment::lateUncredited($op, $l); $minor = array_sum(array_column($payments, 'amount_minor'));
         if ($minor <= 0) { if($review){throw new \DomainException('No pending account credit. Reload this page.');} return null; }
         $credit = $l['credit'] ?? new Credit(['user_id' => $l['user']->id, 'currency_code' => 'USD', 'amount' => '0.00']);
