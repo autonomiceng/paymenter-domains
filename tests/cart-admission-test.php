@@ -4,6 +4,9 @@ declare(strict_types=1);
 $cartAdmissionCase='basics';
 require __DIR__.'/Support/cart-admission.php';
 
+$nativeSuccessful=false;
+use App\Models\Order;
+use Illuminate\Support\Facades\DB;
 // A Domains money hold gates only carts containing a domain, through the real native checkout.
 \Paymenter\Extensions\Servers\Domains\Services\ReminderSchema::install();
 $domain=\Paymenter\Extensions\Servers\Domains\Models\Domain::where('user_id',$user->id)->firstOrFail();
@@ -16,3 +19,5 @@ same($before+1,Order::count(),'Account hold allows a hosting-only cart');
 DB::table('domains_obligation_alerts')->where('id',$holdId)->update(['resolved_at'=>1]);
 $cart=commerceCart($user);commerceAdd($cart,$product,'money-released-placeholder.com');commerceCheckout($user,$cart)->assertHasNoErrors();
 same($before+2,Order::count(),'Staff release permits domain orders again');
+
+$nativeSuccessful=true;

@@ -70,6 +70,7 @@ $role = Role::create(['name'=>'Invariant refunds', 'permissions'=>['admin.domain
 $staff->update(['role_id'=>$role->id]);
 $refunds = new Refunds($clock);
 $balance = static fn(): int => PricingRule::minor((string) (Credit::where('user_id', $user->id)->where('currency_code', 'USD')->value('amount') ?? '0.00'));
+app()->instance(\Paymenter\Extensions\Servers\Domains\Services\Reminders::class,new \Paymenter\Extensions\Servers\Domains\Services\Reminders($clock,$bindings));
 $projectionChecks = 0; $projectionFailures = [];
 $assertProjection = static function($expected, $actual, string $message) use (&$projectionFailures): void {
     if ($expected !== $actual) {
@@ -128,11 +129,16 @@ $run = static function (int $seed, string $mode, array $actions) use (
                 $minor = $minor === 'full' ? $r['amount'] : $minor;
                 $r['dispute'] = $kind === 'external_refund' ? null : $kind; $r['lost'] = in_array($kind, ['lost','external_refund'], true) ? $minor : 0;
                 InvariantReceiptGateway::$observations[$r['receipt']] = [[
-                    'kind'=>$kind === 'external_refund' ? 'refund' : 'dispute', 'id'=>'synthetic_dispute_'.$label, 'status'=>$kind === 'external_refund' ? 'refunded' : $kind, 'needs_review'=>$kind !== 'won',
+                    'kind'=>$kind === 'external_refund' ? 'refund' : 'dispute', 'id'=>'synthetic_dispute_'.$cases.'_'.$label, 'status'=>$kind === 'external_refund' ? 'refunded' : $kind, 'needs_review'=>$kind !== 'won',
                     'invoice_id'=>(int) $invoice->id, 'user_id'=>(int) $invoice->user_id,
                     'payment_intent_id'=>$r['receipt'], 'currency'=>'usd', 'amount_minor'=>$minor, 'credited_minor'=>0,
                 ]];
                 unset($r);
+                if($kind==='lost'){
+                    $e=InvariantReceiptGateway::$observations[$receipts[$label]['receipt']][0];
+                    (new \Paymenter\Extensions\Servers\Domains\Services\DisputeRecoveries($clock))->recover([...$e,'allocation_key'=>'stripe:dispute:'.$e['id'],'state'=>'lost']);
+                    $promised=0;
+                }
             } elseif ($kind === 'close_renewal') {
                 DB::transaction(static function() use ($op, $clock): void {
                     $l = HoldingLocks::take($op->domain);
@@ -212,23 +218,25 @@ $run = static function (int $seed, string $mode, array $actions) use (
         $reserved = max($reserved, max(0, $promised-$out));
         $peers = \Paymenter\Extensions\Servers\Domains\Models\Operation::where('invoice_id', $invoice->id)->orderBy('id')->get()
             ->map(fn($peer)=>['funding'=>$peer->funding ?? []])->all();
-        $money = InvoiceMoney::record($input, $peers, $ledger);
+        $heldOwner=(bool)array_filter($receipts,static fn($r)=>$r['dispute']==='lost');
+        $money = InvoiceMoney::record($input, $peers, $ledger, $heldOwner);
         $assertProjection($held-$reserved, $money['pool'], 'Projection pool mismatch '.json_encode(compact('seed','mode','trace','held','reserved','money','peers'), JSON_THROW_ON_ERROR));
-        $assertProjection($open ? 0 : max(0, $held-$reserved), InvoiceMoney::held($money), 'Projection held matches independent oracle');
+        $assertProjection($open || $heldOwner ? 0 : max(0, $held-$reserved), InvoiceMoney::held($money), 'Projection held matches independent oracle');
         $assertProjection($held-$reserved < 0, $money['overdrawn'], 'Projection preserves the signed deficit');
         $assertProjection($held-$reserved === 0 && !$reserved && !$pending && !$open, InvoiceMoney::settled($money), 'Settled uses pool and unresolved work');
         $parts = array_map(fn($id)=>array_sum(InvoiceMoney::heldFor($money, $id)), array_keys($money['receipts']));
         $assertProjection(InvoiceMoney::held($money), array_sum($parts), 'Receipt shares cover exactly the held pool');
-        $assertProjection($money, InvoiceMoney::record($input, $peers, $ledger), 'Pure record replay is idempotent');
+        $assertProjection($money, InvoiceMoney::record($input, $peers, $ledger, $heldOwner), 'Pure record replay is idempotent');
         $projectionChecks += 6;
         $previousOut = $out;
         // One retry must finish synchronous fake returns once funding and the dispute are resolved.
         // Ordinary refunds owe their line; retired invoices return every incremental receipt.
-        if ($kind === 'retry' && $closing && !$open && !$pending) {
+        if ($kind === 'retry' && $closing && !$open && !$pending && !$heldOwner) {
             $due = $mode !== 'ordinary' ? max(0, $paid-$lost) : min($gross, max(0, $paid-$lost));
             if ($out < $due) { $record('refund_stalled', [...$facts, 'due'=>$due]); }
         }
     }
+    DB::table('domains_obligation_alerts')->where('code','account_money_hold')->whereNull('resolved_at')->update(['resolved_at'=>$clock->now()->getTimestamp()]);
     echo 'INVARIANT_CASE '.json_encode(['seed'=>$seed, 'mode'=>$mode, 'steps'=>count($trace), 'rules'=>array_keys($seen)], JSON_THROW_ON_ERROR)."\n";
 };
 
@@ -435,13 +443,6 @@ echo 'INVARIANT_SUMMARY '.json_encode(['cases'=>$cases, 'steps'=>$steps, 'checks
 // later observations of that same deficit without any new payout. Match them exactly.
 // Entry is [scenario (mode:seed), one-based action step, violation kind, total payout in minor units].
 $callerBaseline = [
-    ['late:3', 3, 'external_deficit', 200],
-    ['late:5', 3, 'external_deficit', 100],
-    ['late:401', 5, 'external_deficit', 505],
-    ['late:401', 6, 'returned_exceeds_paid_less_lost', 505],
-    ['late:701', 5, 'external_deficit', 175],
-    ['late:1009', 4, 'external_deficit', 170],
-    ['late:1601', 5, 'external_deficit', 538],
 ];
 $callerIdentities = array_map(static fn($failure)=>[$failure['mode'].':'.$failure['seed'], count($failure['sequence']), $failure['rule'], $failure['facts']['out']], $failures);
 $encodeIdentity = static fn(array $identity): string => json_encode($identity, JSON_THROW_ON_ERROR);
