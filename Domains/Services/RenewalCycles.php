@@ -50,7 +50,7 @@ final readonly class RenewalCycles
     public static function beforePayment(int $invoiceId, Clock $clock, ?int $receiptId = null): void
     {
         $open = ['awaiting_payment', 'queued', 'held'];
-        $domainId = Operation::where('invoice_id', $invoiceId)->where('action', 'renew')->value('domain_id');
+        $domainId = Operation::where('invoice_id', $invoiceId)->where('action', 'renew')->first()?->domain_id;
         if ($domainId === null) { return; }
         // Retained membership survives an older snapshot; only the ordered, current locked scan decides state.
         $write = static function () use ($domainId, $invoiceId, $clock, $open, $receiptId): void {
