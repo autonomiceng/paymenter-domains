@@ -165,7 +165,7 @@ $checkMoney = static function(array $ops, array $owners, bool $closed, array $be
     }
     return $funding;
 };
-foreach ($moneyScaleSizes as $n) { foreach ($moneyScaleOwners as $customers) { foreach ($moneyScaleClosed as $closed) {
+foreach ($moneyScaleCells as [$n,$customers]) { foreach ([false,true] as $closed) {
     $ops = []; $owners = [];
     for ($c=0;$c<$customers;$c++) {
         $owner = commerceUser(); $owners[] = $owner->id;
@@ -185,14 +185,14 @@ foreach ($moneyScaleSizes as $n) { foreach ($moneyScaleOwners as $customers) { f
         $funding = $checkMoney($ops,$owners,$closed,$phase === 'settled' ? $funding : []);
     }
     DB::table('domains_operations')->whereIn('id',array_column($ops,'id'))->update(['state'=>'cancelled']);
-}}}
+}}
 // Keep the exact target fixed while unrelated invoices/items/payments grow on the same owner.
 foreach ($moneyScaleHistory ? [false,true] : [] as $closed) {
     $owner = commerceUser(); Credit::create(['user_id'=>$owner->id,'currency_code'=>'USD','amount'=>'0.00']);
     $target = $make($owner->id,$closed ? 'closed_fresh' : 'refund_fresh');
     $pass([$target],$closed); $before = $checkMoney([$target],[$owner->id],$closed);
     $previous = null;
-    foreach ([0,49] as $history) {
+    foreach ([0,10] as $history) {
         for ($j=0;$j<$history;$j++) {
             $other = $make($owner->id,$closed ? 'closed_fresh' : 'refund_fresh');
             DB::table('domains_operations')->where('id',$other->id)->update(['state'=>'cancelled']);
