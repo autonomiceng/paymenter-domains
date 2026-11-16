@@ -409,6 +409,15 @@ Auth::setUser($viewer);ObligationAlerts::record($d,'operation_review',time()-60,
 same([],Paymenter\Extensions\Servers\Domains\Admin\Support\StaffDomainInputs::for([$d])[$d->id]['alerts'],'A saved review alert on the automatic wait is outdated');
 same(null,DomainFacts::notice($d),'The domain page head names no request to check during the automatic wait');
 expect(!DomainQueries::alerting(Domain::whereKey($d->id))->exists(),'The open alerts count leaves the automatic wait out');
+// An accepted transfer before its first status read is the same automatic wait in the sweep, the list and the count.
+$d=$row('transfer_pending','transfer','uncertain','reconciliation_required');$op=$d->latestAcquisition;
+$op->update(['started_at'=>now(),'attempt'=>['seal'=>'sealed','execution'=>['disposition'=>'accepted']],'policy'=>['reconciliation'=>['reason'=>'transfer_read_deferred','polls'=>0,'read_at'=>time()]]]);
+$d=$d->fresh();$op=$op->fresh();
+same(ObligationAlerts::CLEAR,ObligationAlerts::review($op,$d->operations()->get(),$d,time()),'The sweep reads the first-poll wait as clear');
+$status=DomainFacts::status($d);
+expect(!$status['act'],'The list asks nothing of staff before the first transfer read: '.$status['step']);
+expect(!DomainQueries::alerting(Domain::whereKey($d->id))->exists(),'The open alerts count leaves the first-poll wait out');
+expect(!Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::status(Operation::whereKey($op->id),['under_review'])->exists(),'The request review filter leaves the first-poll wait out');
 
 // A current record hold with no work row stopped sync: the count, the list and the sweep read it as the domain page does.
 $observation=static fn(Domain $d)=>DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code','observation_review')->whereNull('resolved_at')->exists();

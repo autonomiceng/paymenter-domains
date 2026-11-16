@@ -23,6 +23,14 @@ final class TransferPolling
         return self::applies($op) && in_array($r['transfer_status']??null,['pending','needs_action'],true)
             && in_array($r['reason']??null,['transfer_pending','transfer_needs_action','transfer_read_deferred','original_attempt_unresolved','poll_limit_reached'],true);
     }
+    /** An accepted sealed transfer before its first status read: the next poll reads it, so no one has a step yet. */
+    public static function firstPoll(Operation $op): bool
+    {
+        $r=$op->policy['reconciliation']??[];
+        return self::applies($op)&&$op->state==='uncertain'&&$op->safe_code==='reconciliation_required'&&empty($r['read_failed'])
+            &&($r['polls']??0)===0&&!isset($r['transfer_status'])&&in_array($r['reason']??null,['original_attempt_unresolved','transfer_read_deferred'],true)
+            &&in_array($op->attempt['execution']['disposition']??null,['accepted','pending'],true);
+    }
     /** Unsent readmission can advance the execution window, but the sealed claim keeps that window immutable. */
     public static function start(Operation $op): int
     {

@@ -148,9 +148,7 @@ final class ObligationAlerts
                 &&$d->provider_expires_at?->getTimestamp()>$now+$window;
         }
         $review=$op->policy['reconciliation']??[];$read=$review['read_at']??TransferPolling::start($op);
-        $first=TransferPolling::applies($op)&&($review['polls']??0)===0&&!isset($review['transfer_status'])
-            &&in_array($review['reason']??null,['original_attempt_unresolved','transfer_read_deferred'],true)
-            &&in_array($op->attempt['execution']['disposition']??null,['accepted','pending'],true);
+        $first=TransferPolling::firstPoll($op);
         return $op->state==='uncertain'&&$op->safe_code==='reconciliation_required'
             &&(TransferPolling::expected($op)||$first)&&$now<TransferPolling::deadline($op)
             &&empty($review['read_failed'])&&$read>$now-self::READ_STALE_SECONDS

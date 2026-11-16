@@ -208,9 +208,10 @@ final class RequestFacts
     public static function automaticTransfer(Operation $op): bool
     {
         $now=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp();
-        try{return \Paymenter\Extensions\Servers\Domains\Services\TransferPolling::expected($op)
+        // The sweep's first-poll wait (ObligationAlerts::review) is the same automatic wait, so staff have no task before the first read.
+        try{return (\Paymenter\Extensions\Servers\Domains\Services\TransferPolling::expected($op)
             &&($op->policy['reconciliation']['transfer_status']??null)==='pending'
-            &&($op->policy['reconciliation']['staff_alert']??true)===false
+            &&($op->policy['reconciliation']['staff_alert']??true)===false||\Paymenter\Extensions\Servers\Domains\Services\TransferPolling::firstPoll($op))
             &&!\Paymenter\Extensions\Servers\Domains\Services\TransferPolling::expired($op,$now)
             &&($op->policy['reconciliation']['read_at']??\Paymenter\Extensions\Servers\Domains\Services\TransferPolling::start($op))>$now-86400;
         }catch(\Throwable){return false;}
