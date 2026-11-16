@@ -47,14 +47,15 @@ final class DomainSummaries
         if (count($domainIds)+count($watchIds)>250) { throw new \InvalidArgumentException('At most 250 targets per batch.'); }
         return $this->summaries(new DomainSummaryContext((int)$owner->id,$domainIds,$watchIds),$now??app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp());
     }
-    /** The customer's domains: registered ones and the ones their hosting uses, without abandoned orders. Every customer list starts here. */
+    /** The customer's domains: registered ones and the ones their hosting uses, without abandoned or never-paid cancelled
+     * orders, which never held a domain. Every customer list starts here. */
     public function listed(User $owner,int $now): array
     {
         $base=Domain::where('user_id',$owner->id)->whereHas('service',fn($q)=>$q->where('user_id',$owner->id)->whereHas('order',fn($q)=>$q->where('user_id',$owner->id)));$rows=[];
         foreach ((clone $base)->pluck('id')->chunk(250) as $ids) { $rows+=$this->batch($owner,$ids->all(),[],$now); }
         $watches=WatchName::where('user_id',$owner->id)->whereNull('managed_domain_id')->whereIn('state',['active','paused','retired'])->whereNotIn('canonical_name',(clone $base)->select('domain'))->pluck('id');
         foreach ($watches->chunk(250) as $ids) { $rows+=$this->batch($owner,[],$ids->all(),$now); }
-        return array_filter($rows,fn($row)=>!$row->abandoned);
+        return array_filter($rows,fn($row)=>!$row->abandoned && !$row->neverPaidOrder());
     }
     /** Staff-only multi-owner watch projection. Customer batch() always retains its owner-scoped context. */
     public function staffWatches(array $watchIds,?int $now=null): array
