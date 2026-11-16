@@ -19,7 +19,7 @@ final class DomainSummaryContext
         $this->watches=WatchName::where('user_id',$owner)->whereIn('id',$watchIds)->whereIn('state',['active','paused','retired'])->whereNull('managed_domain_id')->get()->keyBy('id')->all();
         $names=array_map(fn($w)=>$w->canonical_name,$this->watches);
         // Pending reservations also suppress a duplicate name in the related section.
-        $managed=Domain::where('user_id',$owner)->whereIn('domain',$names)->whereHas('service',$native)->pluck('domain')->all();
+        $managed=Domain::where('user_id',$owner)->whereIn('reservation_name',$names)->whereHas('service',$native)->pluck('reservation_name')->all();
         $this->watches=array_filter($this->watches,fn($w)=>!in_array($w->canonical_name,$managed,true));
         $this->sources=WatchSource::withActiveWatchServices()->where('user_id',$owner)->where(fn($q)=>$q->whereIn('watch_id',array_keys($this->watches))->orWhereIn('managed_domain_id',array_keys($this->domains))->orWhereIn('registrable_name',array_map(fn($d)=>$d->domain,$this->domains)))->whereIn('state',['watch','managed_link'])->whereIn('id',DB::query()->fromSub(WatchSource::withActiveWatchServices()->where('user_id',$owner)->where(fn($q)=>$q->whereIn('watch_id',array_keys($this->watches))->orWhereIn('managed_domain_id',array_keys($this->domains))->orWhereIn('registrable_name',array_map(fn($d)=>$d->domain,$this->domains)))->selectRaw('id, row_number() over (partition by watch_id,managed_domain_id order by id) as position'),'bounded')->where('position','<=',101)->select('id'))->orderBy('id')->get()->all();
         $ids=[...array_map(fn($d)=>$d->service_id,$this->domains),...array_map(fn($s)=>$s->service_id,$this->sources)];

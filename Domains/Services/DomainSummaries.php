@@ -53,7 +53,8 @@ final class DomainSummaries
     {
         $base=Domain::where('user_id',$owner->id)->whereHas('service',fn($q)=>$q->where('user_id',$owner->id)->whereHas('order',fn($q)=>$q->where('user_id',$owner->id)));$rows=[];
         foreach ((clone $base)->pluck('id')->chunk(250) as $ids) { $rows+=$this->batch($owner,$ids->all(),[],$now); }
-        $watches=WatchName::where('user_id',$owner->id)->whereNull('managed_domain_id')->whereIn('state',['active','paused','retired'])->whereNotIn('canonical_name',(clone $base)->select('domain'))->pluck('id');
+        $rows=array_filter($rows,fn($row)=>!$row->abandoned && !$row->neverPaidOrder());
+        $watches=WatchName::where('user_id',$owner->id)->whereNull('managed_domain_id')->whereIn('state',['active','paused','retired'])->whereNotIn('canonical_name',array_map(fn($row)=>$row->name,$rows))->pluck('id');
         foreach ($watches->chunk(250) as $ids) { $rows+=$this->batch($owner,[],$ids->all(),$now); }
         return array_filter($rows,fn($row)=>!$row->abandoned && !$row->neverPaidOrder());
     }
