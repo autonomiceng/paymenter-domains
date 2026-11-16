@@ -12,6 +12,8 @@ final class RequestFacts
     public const NO_TIME='No time recorded. No action needed.';
     private const CHECK_STATUS='Use Check status to ask the registrar for the result.';
     private const ORDERS_OFF='Orders are off for this account.';
+    /** Staff words for a credit record that cannot be read or is still blocked; customers see ReceiptReturns::REVIEW. */
+    private const CREDIT_CHECK=['Refund needs a check','Check the invoice payment and the customer\'s account credit. Do not return it again.'];
     /** The step after a queued request's reason while Orders are off. A reason that already says so needs only the step. */
     public static function ordersStep(string $reason): string
     { return str_contains($reason,self::ORDERS_OFF)?' Turn them on in Registrars.':' Turn Orders on in Registrars.'; }
@@ -100,8 +102,8 @@ final class RequestFacts
                     [$out['refund'],$out['refund_sub']]=!\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::malformed($op)
                         &&\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::outstanding($op)===0
                         &&!\Paymenter\Extensions\Servers\Domains\Services\InvoiceMoney::returnBlocked($money)
-                        ?self::creditWords($f):\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::REVIEW;
-                }catch(\Throwable){[$out['refund'],$out['refund_sub']]=\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::REVIEW;}
+                        ?self::creditWords($f):self::CREDIT_CHECK;
+                }catch(\Throwable){[$out['refund'],$out['refund_sub']]=self::CREDIT_CHECK;}
             }
             elseif (RefundCandidates::matches($op,$f) || ($p['renewal_execution']['refundable_later']??false)===true) {
                 $out['refund']='No credit added'; $out['refund_fix']=$op->state==='held' ? 'refund' : 'credit';

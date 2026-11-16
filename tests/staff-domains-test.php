@@ -203,7 +203,8 @@ same('NameSilo has not confirmed this transfer.',RequestFacts::notice($op)['titl
 expect(!isset(RequestFacts::for($op)['registrar_refund']),'Registrar refund shows only once the request failed or was cancelled');
 $op->state='rejected'; $facts=RequestFacts::for($op);
 same('Ask NameSilo support for a refund',$facts['registrar_refund'],'NameSilo manual refund indicator');
-same(Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::REVIEW,[$facts['refund'],$facts['refund_sub']],'An unreadable credit marker requires a payment check');
+same('Refund needs a check',$facts['refund'],'An unreadable credit marker requires a payment check');
+expect($facts['refund_sub']!==Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::REVIEW[1],'Staff never see the customer support text on an unreadable credit marker');
 expect(!str_contains($facts['registrar_refund'],'credit'),'Registrar refund does not duplicate customer-credit wording');
 $op->state='rejected'; $op->safe_code='transfer_code_timeout';
 expect(!isset(RequestFacts::for($op)['registrar_refund']),'Local unsent rejection does not imply a registrar charge');
