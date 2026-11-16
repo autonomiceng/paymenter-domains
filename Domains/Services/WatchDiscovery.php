@@ -67,7 +67,15 @@ final class WatchDiscovery
                     'state'=>'managed_link','managed_domain_id'=>$domain->id,'source_digest'=>$digest,'last_seen_at'=>$now];
                 // The watch is linked below, so replacing its last source must not retire it first.
                 $this->source($old,$attrs,$now,$watch?->id);
-                if($watch){$watch->refresh();$this->change($watch,['state'=>'linked','managed_domain_id'=>$domain->id,'registration'=>in_array($domain->status,WatchManagedTarget::MANAGED,true)?'platform':null],'registration_managed',$now);$this->stop($watch,'registration_managed',$now);}
+                if($watch){
+                    $watch->refresh();
+                    // Legacy pauses exist only in the current state until their first staff-intent audit is saved.
+                    if($watch->state==='paused'&&self::staffPaused($watch)
+                        &&!WatchAudit::where('subject_type','watch')->where('subject_id',$watch->id)->whereIn('event',['staff_pause','staff_resume'])->exists()){
+                        $this->audit($watch,'staff_pause',(int)$watch->revision,$now);
+                    }
+                    $this->change($watch,['state'=>'linked','managed_domain_id'=>$domain->id,'registration'=>in_array($domain->status,WatchManagedTarget::MANAGED,true)?'platform':null],'registration_managed',$now);$this->stop($watch,'registration_managed',$now);
+                }
                 DB::afterCommit(fn()=>app(WatchWork::class)->enrollManaged((int)$domain->id,$owner));
             }elseif($retainedLink){
                 // Without a current suffix list, a link that lost its managed target waits rather than starting a new watch.
