@@ -57,4 +57,26 @@ ReceiptReturns::resume($op->id,$clock->now(),'refund_rejected');
 same('credited',$op->fresh()->funding['receipt_return_results'][$key]['state'],'A failed original payment refund becomes account credit');
 same(true,ReceiptReturns::settled($op->fresh()),'The account credit return settled');
 same('Paid',RequestFacts::for($op->fresh())['invoice_state'],'A return credited to the account stays Paid');
+// Two card receipts on one request: one share was released with no credit after a lost dispute, the other was refunded.
+// Only part went back, so the invoice stays Paid and staff see the smaller return.
+$returnSetup=static function(string $name,\Closure $funding)use($held,$gateway):array {
+    $op=$held($name);$gross=Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)$op->amount);
+    App\Models\InvoiceTransaction::where('invoice_id',$op->invoice_id)->update(['gateway_id'=>$gateway->id,'transaction_id'=>$name.'-a','amount'=>'5.00']);
+    $a=App\Models\InvoiceTransaction::where('invoice_id',$op->invoice_id)->sole();
+    $b=App\Models\InvoiceTransaction::create(['invoice_id'=>$op->invoice_id,'amount'=>Paymenter\Extensions\Servers\Domains\Services\PricingRule::decimal($gross-500),'fee'=>'0.00','status'=>'succeeded','gateway_id'=>$gateway->id,'transaction_id'=>$name.'-b']);
+    $op->update(['state'=>'rejected','funding'=>$funding($op,$a,$b,$gross)]);return [$op->fresh(),$a,$b,$gross];
+};
+$allocation=static fn($row,string $key,int $minor)=>['transaction_id'=>(int)$row->id,'gateway_id'=>(int)$row->gateway_id,'receipt'=>$row->transaction_id,'key'=>$key,'amount_minor'=>$minor];
+[$op,$a,$b,$gross]=$returnSetup('request-invoice-half-placeholder.com',static fn($op,$a,$b,$gross)=>[
+    'refund'=>['amount'=>$op->amount,'currency'=>'USD','payments'=>[['id'=>(int)$a->id,'amount_minor'=>500],['id'=>(int)$b->id,'amount_minor'=>$gross-500]],
+        'to'=>'original_payment','allocations'=>[$allocation($a,'half-a',500),$allocation($b,'half-b',$gross-500)],'bridge_minor'=>0,'credit_id'=>null,'at'=>'2026-11-01T00:00:00+00:00'],
+    'receipt_return_results'=>['half-a'=>['state'=>'released','amount_minor'=>500,'credit_minor'=>0,'credit_id'=>null,'reason'=>'recovery','at'=>'2026-11-01T00:00:00+00:00'],
+        'half-b'=>['state'=>'refunded','amount_minor'=>$gross-500,'refund_id'=>'synthetic-half-return','key'=>'fixture-return:half-b']]]);
+App\Models\InvoiceTransaction::create(['invoice_id'=>$op->invoice_id,'amount'=>Paymenter\Extensions\Servers\Domains\Services\PricingRule::decimal(500-$gross),'fee'=>'0.00','status'=>'succeeded','transaction_id'=>'fixture-return:half-b']);
+App\Models\InvoiceTransaction::create(['invoice_id'=>$op->invoice_id,'amount'=>'-5.00','fee'=>'0.00','status'=>'succeeded','gateway_id'=>$gateway->id,'transaction_id'=>'synthetic-half-chargeback']);
+Illuminate\Support\Facades\Auth::setUser($staff);$facts=RequestFacts::for($op->fresh());$limit=RequestFacts::refundLimit($op->fresh(),false);
+same('Refunded',$facts['refund']??null,'The refunded share settled to the original payment');
+same('Paid',$facts['invoice_state'],'A request with only part of its line returned stays Paid');
+expect($limit!==null&&str_contains($limit,Paymenter\Extensions\Servers\Domains\Services\Storefront::money(Paymenter\Extensions\Servers\Domains\Services\PricingRule::decimal($gross-500)))
+    &&str_contains((string)($facts['refund_sub']??''),$limit),'Staff see the smaller amount actually returned');
 $nativeSuccessful=true;

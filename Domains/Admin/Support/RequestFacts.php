@@ -471,10 +471,11 @@ final class RequestFacts
     {
         if(self::invoiceStatus($op)==='paid'&&($invoice=\App\Models\Invoice::find($op->invoice_id))){
             try{
-                $refund=$op->funding['refund']??null;
-                if(($refund['to']??null)==='original_payment'&&(\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::summary(\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::originalRefund($op))[0]??null)==='Refunded'
-                    &&\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::amount($refund)>0
-                    &&\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::amount($refund)>=self::ownLineMinor($op,$invoice)){return 'Refunded';}
+                $refund=$op->funding['refund']??null;$original=\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::originalRefund($op);
+                // What actually went back: a share released after a lost dispute no longer counts as refunded.
+                $sent=($refund['to']??null)==='original_payment'?\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::amount(\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::effective($original)[0]??null):null;
+                if((\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::summary($original)[0]??null)==='Refunded'
+                    &&$sent!==null&&$sent>0&&$sent>=self::ownLineMinor($op,$invoice)){return 'Refunded';}
                 $minor=0;foreach($reversals??[] as $row){
                 if(($row['kind']??null)==='refund'&&($row['status']??null)==='refunded'&&is_int($row['amount_minor']??null)&&$row['amount_minor']>0){$minor+=$row['amount_minor'];}
             }if($minor>0&&$minor>=\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)$invoice->total)){return 'Refunded';}}catch(\Throwable){}
@@ -489,7 +490,8 @@ final class RequestFacts
         $refund=$op->funding['refund']??null;
         try{
             if(!$none){
-                $minor=is_array($refund)&&($refund['to']??null)!==null?\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::amount($refund):null;
+                // What actually went back: a share released after a lost dispute is not part of the return.
+                $minor=is_array($refund)&&($refund['to']??null)!==null?\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::amount(\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::effective(\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::originalRefund($op))[0]??null):null;
                 // The request's price, but never more than its own invoice line: a refund of all the request paid is not capped.
                 $invoice=\App\Models\Invoice::find($op->invoice_id);
                 $line=$invoice?min(\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)$op->amount),self::ownLineMinor($op,$invoice)):0;
