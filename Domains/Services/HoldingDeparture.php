@@ -122,27 +122,36 @@ final class HoldingDeparture
     }
 
     /** Reserves the one departure email (mocks 08, 08b, 08c) under the decision's locks. Returns the Email sent fact for
-     * the history entry: delivery key, subject and recipient. A template or channel failure leaves the staff alert and
-     * never blocks the confirmation; database errors pass through to the decision. */
+     * the history entry: delivery key, subject and recipient. Building the email data or a template or channel failure
+     * leaves the staff alert and never blocks the confirmation; database errors pass through to the decision. */
     private static function notice(array $l,array $record,?array $watch,\DateTimeImmutable $now,?array &$claim): ?array
     {
-        $d=$l['domain'];$user=$l['user'];$identity='departure:'.$record['identity']['service_id'].':'.$record['identity']['authority_generation'];$renewals=[];
-        foreach($record['invoices'] as $o){
-            if(!in_array($o['outcome'],['cancelled_unpaid','credited'],true)){continue;}
-            $invoice=$l['invoices']->firstWhere('id',$o['invoice_id']);$credited=$o['outcome']==='credited';
-            $renewals[]=['invoice'=>(string)($invoice?->number??$o['invoice_id']),'credited'=>$credited,
-                'amount'=>RenewalReminders::money($credited?PricingRule::decimal((int)$o['credit_minor']):(string)$invoice?->total)];
+        $d=$l['domain'];$user=$l['user'];$identity='departure:'.$record['identity']['service_id'].':'.$record['identity']['authority_generation'];
+        try{
+            $renewals=[];
+            foreach($record['invoices'] as $o){
+                if(!in_array($o['outcome'],['cancelled_unpaid','credited'],true)){continue;}
+                $invoice=$l['invoices']->firstWhere('id',$o['invoice_id']);$credited=$o['outcome']==='credited';
+                $renewals[]=['invoice'=>(string)($invoice?->number??$o['invoice_id']),'credited'=>$credited,
+                    'amount'=>self::money($credited?PricingRule::decimal((int)$o['credit_minor']):(string)$invoice?->total)];
+            }
+            $zone=new \DateTimeZone(config('domains.time_zone')?:config('app.timezone'));
+            $data=['domain'=>$d->domain,'deleted'=>$record['reason']==='deleted','same_registrar'=>$record['reason']==='other_account',
+                'date'=>$now->setTimezone($zone)->format('M j, Y'),'renewals'=>$renewals,'dns'=>$record['dns_case'],
+                'monitored'=>($watch['state']??null)==='active','domain_url'=>url('/domains/'.$d->id),
+                'support_url'=>\Paymenter\Extensions\Servers\Domains\Presentation\Missing::supportUrl()??'','company'=>\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company()];
+            $claim=ReminderDelivery::reserve((int)$d->id,$identity,'domains_domain_departed',$data,$user,$now->getTimestamp());
         }
-        $zone=new \DateTimeZone(config('domains.time_zone')?:config('app.timezone'));
-        $data=['domain'=>$d->domain,'deleted'=>$record['reason']==='deleted','same_registrar'=>$record['reason']==='other_account',
-            'date'=>$now->setTimezone($zone)->format('M j, Y'),'renewals'=>$renewals,'dns'=>$record['dns_case'],
-            'monitored'=>($watch['state']??null)==='active','domain_url'=>url('/domains/'.$d->id),
-            'support_url'=>\Paymenter\Extensions\Servers\Domains\Presentation\Missing::supportUrl()??'','company'=>\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company()];
-        try{$claim=ReminderDelivery::reserve((int)$d->id,$identity,'domains_domain_departed',$data,$user,$now->getTimestamp());}
         catch(\Illuminate\Database\QueryException|\PDOException $e){throw $e;}
-        catch(\Throwable){ObligationAlerts::record($d,'template_failed',$now->getTimestamp(),null,$identity);return null;}
+        catch(\Throwable){$claim=null;ObligationAlerts::record($d,'template_failed',$now->getTimestamp(),null,$identity);return null;}
         if(!$claim){return null;}
         return ['delivery_key'=>hash('sha256',$d->id.':'.$identity),'subject'=>$claim['mail']?->envelope()->subject,'to'=>$claim['mail']?(string)$user->email:null];
+    }
+    /** Email money. A paid renewal whose payment was already returned outside closes with a zero credit, which still formats. */
+    private static function money(string $value): string
+    {
+        if(PricingRule::minor($value)!==0){return RenewalReminders::money($value);}
+        return (new \App\Classes\Price(['price'=>'0.00','currency'=>\App\Models\Currency::where('code','USD')->sole()]))->formatted->price;
     }
     private static function alert(int $id,string $code,int $now): void
     {
