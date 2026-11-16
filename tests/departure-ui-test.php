@@ -30,7 +30,12 @@ foreach($controls as $button){
 $check($dom->querySelector('table.domains-dns-inventory')!==null,'The suspected customer page keeps its DNS records table');
 $check($dom->getElementById('glue')!==null,'The suspected customer page keeps its Glue records row');
 // The staff next step survives the automatic recheck when the domain is still absent.
-Illuminate\Support\Facades\DB::transaction(function()use($d):void{$fresh=$d->fresh();$p=$fresh->observation;$p['departure_check']['rechecked']=true;$fresh->update(['observation'=>$p]);});
+Illuminate\Support\Facades\DB::transaction(function()use($d,$clock):void {
+    $fresh=$d->fresh();$p=$fresh->observation;$at=$clock->now()->getTimestamp()-172800;
+    $p['departure_check']=['identity'=>\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::identity($fresh),'at'=>$at,
+        'registry'=>['registrar'=>'Example Registrar','status'=>['ok'],'result'=>'facts','at'=>$at],'rechecked'=>true];
+    $fresh->update(['observation'=>$p]);
+});
 $after=Dom\HTMLDocument::createFromString('<!doctype html><meta charset="utf-8">'.Livewire\Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$d->id])->html(),LIBXML_NOERROR);
 $step=null;foreach($after->querySelectorAll('[data-piece="row"]') as $row){if(trim((string)$row->querySelector('.domains-panel-row-k')?->textContent)==='Departure check'){$step=$row;}}
 $check($step!==null,'After the automatic recheck staff keep the Departure check step');
