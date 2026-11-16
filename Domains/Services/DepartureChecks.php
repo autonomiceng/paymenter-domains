@@ -15,14 +15,19 @@ final class DepartureChecks
     public function __construct(private DnsReader $dns,private Clock $clock,private ?\Closure $factory=null) {}
     public static function suspected(Domain $d): bool
     { return !$d->adoptionPending()&&in_array($d->status,['active','grace','expired'],true)&&HoldingReadRetry::absent($d); }
-    /** Called under holding locks after observation writers have saved the final result. */
-    public static function capture(Domain $d,int $now): void
+    /** Kept departure reads for staff Activity, newest last. */
+    public const READS=20;
+    /** Called under holding locks after observation writers have saved the final result. $absent: this read itself found
+     * the domain missing from our registrar account, so staff Activity lists it. */
+    public static function capture(Domain $d,int $now,bool $absent=false): void
     {
         RenewalOwnership::review($d,$now);$p=$d->observation??[];
         if(!self::suspected($d)){if(isset($p['departure_check'])){unset($p['departure_check']);$d->update(['observation'=>$p]);}return;}
-        if(($p['departure_check']['identity']??null)!==ObservationRecords::identity($d)){
-            $p['departure_check']=['identity'=>ObservationRecords::identity($d),'at'=>$now,'rechecked'=>false];$d->update(['observation'=>$p]);
-        }
+        $opened=($p['departure_check']['identity']??null)!==ObservationRecords::identity($d);
+        if($opened){$p['departure_check']=['identity'=>ObservationRecords::identity($d),'at'=>$now,'rechecked'=>false];}
+        // The read that opens the review is the registrar read; later absent reads are its rechecks.
+        if($absent){$reads=is_array($p['departure_reads']??null)?$p['departure_reads']:[];$p['departure_reads']=array_slice([...$reads,['at'=>$now,'recheck'=>!$opened]],-self::READS);}
+        if($opened||$absent){$d->update(['observation'=>$p]);}
         HoldingObservationWork::queueInitial($d,(new \DateTimeImmutable())->setTimestamp($now));
         HoldingObservationWork::idle(HoldingObservationWork::current($d),$now)->update(self::schedule($d,$now));
     }

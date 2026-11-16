@@ -48,6 +48,9 @@ $clock->instant=$clock->now()->modify('+61 seconds');$observation->fault='transp
 same(true,HoldingReadRetry::absent($d->fresh()),'Unknown read cannot clear definite absence');
 $clock->instant=$clock->now()->modify('+61 seconds');$observation->fault='absent';$observer->run($d->id,readRecords:true);
 same(2,$bell($viewer),'Later reads while the review stays open send no further bell notice');
+$departureRows=array_values(array_filter(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::entries($d->fresh()),fn($r)=>is_array($r)&&str_starts_with($r['__key'],'departure-')));
+same(['Recheck','Registrar read','Registrar read'],array_column($departureRows,'event'),'Activity lists each absence read that opened a review and the later absent read, not the unanswered read');
+same($clock->now()->getTimestamp(),$departureRows[0]['time']->getTimestamp(),'The recheck row carries its own read time');
 app()->instance(\Paymenter\Extensions\Servers\Domains\Services\OwnedDomains::class,$owners);
 $actor=staffUser([Staff::VIEW,'admin.domains.manage']);Auth::setUser($actor);
 $beforeList=$clock->instant;
