@@ -646,6 +646,32 @@ $regression('G10 undisputed reservation residual',static function()use($new,$los
     \Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::resume((int)$op->id,$clock->now(),'refund_rejected');
     same([200,$sends,[$a]],[$balance(),MoneyReceiptGateway::$sends,$op->fresh()->funding['refund']['allocations']],'Exactly the undisputed $2 is returned once, with no new allocation');
 });
+// A send decision that recovers a dispute increase keeps that recovery when it saves its own result.
+$regression('Send keeps a recovered increase',static function()use($new,$loss,$recovery,$balance,$credit,$receiptGateway,$staff,$clock):void{
+    $op=$new('recovery-send-increase-placeholder.com');$entry=$loss($op,100,'synthetic_send_increase');
+    $first=InvoiceTransaction::where('invoice_id',$op->invoice_id)->sole();
+    DB::table('invoice_transactions')->where('id',$first->id)->update(['amount'=>'1.00','gateway_id'=>$receiptGateway->id]);
+    $secondId=DB::table('invoice_transactions')->insertGetId(['invoice_id'=>$op->invoice_id,'amount'=>'1.00','fee'=>'0.00','status'=>'succeeded',
+        'gateway_id'=>$receiptGateway->id,'transaction_id'=>'synthetic_send_increase_second','created_at'=>now(),'updated_at'=>now()]);
+    $a1=['transaction_id'=>(int)$first->id,'gateway_id'=>(int)$receiptGateway->id,'receipt'=>$first->transaction_id,'key'=>'synthetic_send_increase_first','amount_minor'=>100];
+    $a2=['transaction_id'=>$secondId,'gateway_id'=>(int)$receiptGateway->id,'receipt'=>'synthetic_send_increase_second','key'=>'synthetic_send_increase_second','amount_minor'=>100];
+    $op->update(['funding'=>['refund'=>['to'=>'original_payment','amount'=>'2.00','bridge_minor'=>0,'allocations'=>[$a1,$a2],
+        'payments'=>[['id'=>(int)$first->id,'amount_minor'=>100],['id'=>$secondId,'amount_minor'=>100]]],
+        'receipt_return_results'=>[$a1['key']=>['state'=>'sending','amount_minor'=>100,'at'=>$clock->now()->format(DATE_ATOM)]]]]);
+    MoneyReceiptGateway::$returns=[];MoneyReceiptGateway::$lost=false;MoneyReceiptGateway::$outcome='refunded';MoneyReceiptGateway::$onStatus=null;MoneyReceiptGateway::$onAllocated=null;
+    $credit->refresh()->update(['amount'=>'2.00']);
+    // The first return is still sending, so nothing is owed yet; staff release the hold.
+    $recovery->recover($entry);
+    same([200,[]],[$balance(),$op->fresh()->funding['dispute_holds']??[]],'Nothing is owed while the first return is sending');
+    AccountMoneyHolds::release($staff,(int)DB::table('domains_obligation_alerts')->where('alert_key',DisputeRecoveries::key('account_money_hold','synthetic_send_increase'))->value('id'));
+    // The gateway finishes the first return; the next run records it and sends the second.
+    $invoice=Invoice::findOrFail($op->invoice_id);
+    MoneyReceiptGateway::$returns[$a1['key']]=['state'=>'refunded','amount_minor'=>100,'refund_id'=>'synthetic-return','key'=>'fixture-return:'.$a1['key']];
+    MoneyReceiptGateway::complete($invoice,$a1['key']);
+    \Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::resume((int)$op->id,$clock->now(),'refund_rejected');
+    $holds=$op->fresh()->funding['dispute_holds']??[];
+    same([[100],[100],100],[array_column($holds,'owed_minor'),array_column($holds,'removed_minor'),$balance()],'The dispute removes the returned $1 of credit once');
+});
 // G5: records that keep failing cannot take every retry turn from a later recoverable dispute.
 $regression('G5 retry turns rotate',static function()use($new,$loss,$recovery):void{
     $op=$new('recovery-starved-placeholder.com');$entry=$loss($op,300,'synthetic_starved');InvariantReceiptGateway::$lostRows=[];

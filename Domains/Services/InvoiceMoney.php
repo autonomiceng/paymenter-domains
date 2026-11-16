@@ -32,6 +32,11 @@ final class InvoiceMoney
                 if ($owed > $recorded) {
                     DisputeRecoveries::locked($l,$invoiceId,$entry,app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now(),$record);
                     $peers=Operation::where('invoice_id',$invoiceId)->orderBy('id')->lockForUpdate()->get();
+                    // Callers save funding from their locked rows, so those rows must keep the recovery just written.
+                    foreach($l['operations']??[] as $held){
+                        $fresh=$peers->firstWhere('id',$held->id);
+                        if($fresh){$held->funding=$fresh->funding;$held->syncOriginalAttribute('funding');}
+                    }
                     $record=self::lockedRecord($l,$invoiceId,$peers,$exclude);
                 }
             }
