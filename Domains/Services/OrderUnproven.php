@@ -13,9 +13,10 @@ final class OrderUnproven
     public static function observe(AttemptEvidence $attempt, Evidence $facts): ?array
     {
         $d = $facts->domain;
-        // Only a completed order detail read can say the order was not found. A failed one is a read failure, never a counted read.
+        // Only a completed order detail read that found no matching order can say the order was not found. A failed one is a
+        // read failure, and one that found the order (charged, even with the expiry not yet moved) is never unproven.
         if ($attempt->binding->registrarKey !== 'enom' || $attempt->query->action !== Action::Renew || $attempt->executionFacts === null
-            || $attempt->providerReference === null || !$facts->orderRead || !$d || !$d->binding->matches($attempt->binding) || $d->name !== $attempt->query->name
+            || $attempt->providerReference === null || !$facts->orderRead || $facts->candidates !== [] || !$d || !$d->binding->matches($attempt->binding) || $d->name !== $attempt->query->name
             || ($d->owned === true && $d->expiry === null)) { return null; }
         return ['order_reference' => $attempt->providerReference, 'owned' => $d->owned, 'expiry' => $d->owned ? substr($d->expiry->value, 0, 10) : null,
             'expiry_reads' => $facts->expiryReads];

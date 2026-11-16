@@ -106,4 +106,13 @@ expect(!RegistrarCheck::stopped($op) && !RegistrarAnswers::ready($op, $clock->no
 same([null, $before], [$op->funding['refund_authorization'] ?? null, $credit()], 'No money moves');
 $state->fail = null; $completion->run($op->id);
 same(1, $op->fresh()->policy['renewal_polls'] ?? 0, 'Once the order detail read completes, the read counts');
+// 5. Order detail shows the matching charged order but the expiry has not moved yet: the order is not unproven, so Not processed stays refused.
+$state->order = '9002';
+[$op, $engine, $writer, $completion] = $sent('renew-unproven-charged-placeholder.com', '2027-10-18');
+$state->order = '9002'; $before = $credit();
+for ($i = 0; $i <= OperationReconciliation::POLL_LIMIT; $i++) { $completion->run($op->id); $clock->instant = $clock->now()->modify('+10 minutes'); }
+$op = $op->fresh();
+same(false, isset($op->policy['order_unproven']), 'A read that found the charged order saves no unproven evidence');
+expect($record($op, $full, 'not_processed') !== null, 'Not processed is refused for an order Enom shows as charged');
+same([null, $before], [$op->fresh()->funding['refund_authorization'] ?? null, $credit()], 'No money moves');
 echo "A renewal with an order number stops its checks at the limit and each answer moves money once.\n"; $nativeSuccessful = true;
