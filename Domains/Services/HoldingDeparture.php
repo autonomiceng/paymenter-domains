@@ -106,8 +106,9 @@ final class HoldingDeparture
             if($watch!==null){$history[array_key_last($history)]['watch']=$watch;}
             if($email!==null){$history[array_key_last($history)]['email']=$email;}
             if($watch!==null||$email!==null){$d->update(['renewal_policy'=>[...$d->renewal_policy,'staff_holdings'=>$history]]);}
-            // Only this holding's departure review; money, dispute and loss alerts stay open.
-            DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code',RenewalOwnership::REVIEW)->whereNull('resolved_at')->update(['resolved_at'=>$now->getTimestamp()]);
+            // Only this holding's departure review and its stopped-sync alert: a departed domain never syncs again, so Resume
+            // sync has nothing to resume. Money, dispute, delivery and loss alerts stay open.
+            DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->whereIn('code',[RenewalOwnership::REVIEW,'observation_review'])->whereNull('resolved_at')->update(['resolved_at'=>$now->getTimestamp()]);
             return [...$record,'watch'=>$watch];
         });
         // Monitoring work, discovery hints and the email start only after the decision committed.

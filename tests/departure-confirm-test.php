@@ -78,8 +78,13 @@ $linked=$watchRow((int)$d->user_id,['state'=>'linked','registration'=>'platform'
 $other=$watchRow((int)$manager->id,['state'=>'active','registration'=>'external']);$otherBefore=$other->fresh()->getAttributes();
 // Confirmation: one decision closes the unpaid renewal, cancels the service and freezes the record.
 $credit=DB::table('credits')->where('user_id',$d->user_id)->get()->map(fn($r)=>(array)$r)->all();
+// A stopped sync has nothing to resume once the domain departs; an unrelated alert stays open.
+Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::record($d->fresh(),'observation_review',$clock->now()->getTimestamp());
+Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::record($d->fresh(),'unknown_expiry',$clock->now()->getTimestamp());
 $page($staff)->callAction('confirm_departure',['reason'=>'other_account','note'=>'Checked the registrar account.'])->assertHasNoActionErrors();
 $held=$d->fresh();
+$openAlert=static fn(string $code)=>DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code',$code)->whereNull('resolved_at')->count();
+same([0,1],[$openAlert('observation_review'),$openAlert('unknown_expiry')],'Confirmation resolves the stopped-sync alert and keeps other alerts open');
 same(['departed','other_account',true],[$held->status,$held->renewal_policy['departure']['reason'],DepartureProof::matches($held)],'The holding is departed with its frozen record');
 same(['cancelled','rejected','renewal_cancelled_unpaid'],[$invoice->fresh()->status,$renewal->fresh()->state,$renewal->fresh()->safe_code],'The unpaid renewal invoice is cancelled and its request closed unsent');
 same('cancelled',$held->service->status,'The native service is cancelled');

@@ -35,8 +35,8 @@ foreach([...array_keys(DomainStatus::STATES),'unknown'] as $status){
     $html=html_entity_decode(strip_tags(Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$domain->id])->assertSuccessful()->html()),ENT_QUOTES);
     foreach(DomainFacts::ALERTS as $code=>[$row]){
         $cause=$pageCause($code);
-        // Nothing syncs on an ended domain, so a stopped sync is no job there.
-        if($code==='observation_review'&&DomainFacts::ended($domain->fresh())){continue;}
+        // Nothing syncs on an ended or departed domain, so a stopped sync is no job there. Confirming a departure resolves it.
+        if($code==='observation_review'&&(DomainFacts::ended($domain->fresh())||$status==='departed')){continue;}
         // A departure review applies only while this current holding is fenced, never to a pending acquisition or ended domain.
         if($code===RenewalOwnership::REVIEW&&!RenewalOwnership::blocked($domain->fresh())){continue;}
         if(!str_contains($html,$cause)||$code==='observation_review'&&!str_contains($html,'Read stopped')){$hidden[]=$code.'/'.$status;}
