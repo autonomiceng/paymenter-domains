@@ -11,15 +11,16 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account, Adoption, Domain, Oper
 /** Internal billing/save prefix, joining exactly one caller-owned transaction. Never performs I/O. */
 final class HoldingLocks
 {
-    public static function take(Domain $seed, ?int $staffId = null, bool $advisory = false, array $additionalServices = [], bool $completeInvoices = false, bool $foreignInvoices = false, bool $released = false, bool $nativeReceipt = false, ?\Closure $beforeCatalogue = null, ?Capabilities $catalogue = null): array
+    public static function take(Domain $seed, ?int $staffId = null, bool $advisory = false, array $additionalServices = [], bool $completeInvoices = false, bool $foreignInvoices = false, bool $released = false, bool $nativeReceipt = false, ?\Closure $beforeCatalogue = null, ?Capabilities $catalogue = null, ?InvoiceScope $scope = null): array
     {
+        if ($scope && !MoneyDecisions::running()) { throw new \LogicException('Invoice scope is taken only by the money runner.'); }
         if (!$advisory && ($nativeReceipt ? DB::transactionLevel() < 1 : DB::transactionLevel() !== 1)) { throw new \LogicException('Holding locks require the outer transaction.'); }
         ['user' => $user, 'staff' => $staff, 'credit' => $credit, 'invoices' => $invoices, 'items' => $items,
             'transactions' => $transactions, 'orders' => $orders, 'services' => $services, 'products' => $products,
             'plans' => $plans, 'service' => $service, 'product' => $product, 'plan' => $plan, 'cancel' => $cancel,
             'configs' => $configs, 'properties' => $properties, 'markers' => $markers, 'tax' => $tax,
             'upgrades' => $upgrades, 'links' => $links, 'opIds' => $opIds]
-            = $nativeLocks = HoldingNativeLocks::take((int) $seed->user_id, (int) $seed->service_id, $staffId, $advisory, $seed, adoption: $foreignInvoices, additionalServices: $additionalServices, completeInvoices: $completeInvoices, nativeReceipt: $nativeReceipt);
+            = $nativeLocks = HoldingNativeLocks::take((int) $seed->user_id, (int) $seed->service_id, $staffId, $advisory, $seed, adoption: $foreignInvoices, additionalServices: $additionalServices, completeInvoices: $completeInvoices, nativeReceipt: $nativeReceipt, invoice: $scope?->invoiceId);
         // A pay-check guard takes its ENTIRE offer batch after native locks, before any domain/operation.
         if ($beforeCatalogue) { $beforeCatalogue(); }
         $order = $orders->firstWhere('id', $service->order_id);
@@ -45,7 +46,8 @@ final class HoldingLocks
         $identity_source = HoldingIdentitySource::resolve($domain, $nativeIdentity, $adoption, $account, $cancel);
         $service->setRelation('user', $user);
         $rows = [$user, ...$user->properties, ...$invoices, ...$items, ...$transactions, ...$orders, ...$services, ...$products, ...$plans, ...$cancel, ...$configs, ...$properties, ...$markers, $server, $account, ...$settings, $tld, ...$prices, $domain, ...($adoption ? [$adoption] : []), ...$operations, ...$upgrades, ...$links, ...($tax === 0 ? [] : [$tax])];
-        $stamp = hash('sha256', json_encode([array_map(static fn ($row) => method_exists($row, 'getRawOriginal') ? $row->getRawOriginal() : (array) $row, $rows), $identity_source], JSON_THROW_ON_ERROR));
-        return compact('offer', 'identity_source', 'adoption', 'advisory', 'credit', 'staff', 'stamp', 'prices', 'transactions', 'domain', 'service', 'product', 'plan', 'user', 'tax', 'server', 'account', 'settings', 'tld', 'operations', 'invoices', 'items', 'cancel', 'services', 'orders', 'products') + ['relatedProperties' => $nativeLocks['relatedProperties']];
+        // A scoped stamp covers fewer rows, so it never equals a full one; full stamps are unchanged.
+        $stamp = hash('sha256', json_encode([array_map(static fn ($row) => method_exists($row, 'getRawOriginal') ? $row->getRawOriginal() : (array) $row, $rows), $identity_source, ...($scope ? [['invoice_scope' => $scope->invoiceId]] : [])], JSON_THROW_ON_ERROR));
+        return compact('offer', 'scope', 'identity_source', 'adoption', 'advisory', 'credit', 'staff', 'stamp', 'prices', 'transactions', 'domain', 'service', 'product', 'plan', 'user', 'tax', 'server', 'account', 'settings', 'tld', 'operations', 'invoices', 'items', 'cancel', 'services', 'orders', 'products') + ['relatedProperties' => $nativeLocks['relatedProperties']];
     }
 }

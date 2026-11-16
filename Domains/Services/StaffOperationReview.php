@@ -30,6 +30,7 @@ final class StaffOperationReview
     public function check(array $l): void
     {
         if(DB::transactionLevel()!==1){throw new \LogicException('Staff review requires the outer writer transaction.');}
+        InvoiceScope::requireFull($l); // The review stamp covers the full holding scope.
         $staff=$l['staff']??null; $op=$l['operations']->firstWhere('id',$this->operationId); $d=$l['domain'];
         if((int)$staff?->id!==$this->actorId){throw new StaffReviewRefused("You don't have permission to do this.");}
         self::requirePermission($staff,$this->action,$op);

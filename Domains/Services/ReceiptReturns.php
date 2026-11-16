@@ -199,10 +199,13 @@ final class ReceiptReturns
         if(in_array('refunded',$states,true)&&($bridge>0||in_array('credited',$states,true))){return ['Money returned','Part was refunded to your original payment method. The rest is account credit because it could not be refunded.'];}
         return in_array('refunded',$states,true)?['Refunded','Your payment was refunded to your original payment method.']:['Credit added','The payment could not be refunded. The returned amount is account credit.'];
     }
-    /** Caller owns HoldingLocks in its outer transaction. The ledger always wins over a stale local result. */
-    public static function release(Operation $op,string $key,string $reason): void
+    /** Runs in the caller's outer transaction. A caller holding HoldingLocks passes them, so no prefix is taken again after
+     * its ledger read; alone, release takes them first. The ledger always wins over a stale local result. */
+    public static function release(Operation $op,string $key,string $reason,?array $l=null): void
     {
-        $d=$op->domain()->firstOrFail();$l=HoldingLocks::take($d,released:$d->reservation_name===null);$op=$l['operations']->firstWhere('id',$op->id);
+        if($l===null){$d=$op->domain()->firstOrFail();$l=HoldingLocks::take($d,released:$d->reservation_name===null);}
+        InvoiceScope::cover($l,(int)$op->invoice_id);
+        $op=$l['operations']->firstWhere('id',$op->id)??throw new \DomainException('Missing receipt allocation.');
         $a=collect(self::plans($op))->flatMap(fn($p)=>$p['allocations'])->firstWhere('key',$key);
         if(!$a){throw new \DomainException('Missing receipt allocation.');}
         $known=$op->funding['receipt_return_results'][$key]??[];
@@ -258,7 +261,7 @@ final class ReceiptReturns
                             $d=$seen->domain()->firstOrFail();$l=HoldingLocks::take($d,released:$d->reservation_name===null);$op=$l['operations']->firstWhere('id',$seen->id);
                             if(isset($op->funding['receipt_return_results'][$a['key']])){return false;}
                             $money=InvoiceMoney::load($l,(int)$op->invoice_id,$a['key']);
-                            if(InvoiceMoney::heldFor($money,$a['transaction_id'])['card']<$a['amount_minor']){$repair=$repair||$money['overdrawn'];self::release($op,$a['key'],'receipt_changed');return false;}
+                            if(InvoiceMoney::heldFor($money,$a['transaction_id'])['card']<$a['amount_minor']){$repair=$repair||$money['overdrawn'];self::release($op,$a['key'],'receipt_changed',$l);return false;}
                             self::saveResult($op,$a,['state'=>'sending','amount_minor'=>$a['amount_minor'],'at'=>$now->format(DATE_ATOM)],$l);return true;
                         });
                         if(!$send){continue;}

@@ -16,20 +16,28 @@ final class MoneyDecisions
         if (self::$running || DB::transactionLevel() !== 0) { throw new \LogicException('Money decisions do not nest.'); }
         self::$running = true;
         try {
+            $scoped = $request->scope === MoneyScope::Invoice;
             for ($attempt = 0; $attempt < 2; $attempt++) {
+                $scope = $scoped ? new InvoiceScope($request->invoiceId) : null;
                 try {
-                    $value = DB::transaction(static fn () => $decide(match ($request->scope) {
-                        MoneyScope::Full => HoldingLocks::take($request->seed, $request->staffId, released: $request->released),
-                    }));
+                    $value = DB::transaction(static fn () => $decide(HoldingLocks::take($request->seed, $request->staffId, released: $request->released, scope: $scope)));
                     return new MoneyResult($value === null ? MoneyOutcome::NoChange : MoneyOutcome::Applied, $value);
                 } catch (\Throwable $e) {
                     // DB::transaction issued ROLLBACK: a lock wait timeout may have undone only its statement.
+                    // A scope miss runs the next attempt on the full scope with fresh rows; it never widens in place.
+                    if ($scope && self::caused($e, MoneyScopeChanged::class)) { $scoped = false; continue; }
                     if (!self::contention($e)) { return new MoneyResult(MoneyOutcome::Failed, error: $e); }
-                }
+                } finally { $scope?->close(); }
             }
         } finally { self::$running = false; }
         if ($request->kind !== null) { self::enqueue($request); }
         return new MoneyResult(MoneyOutcome::Deferred);
+    }
+    public static function running(): bool { return self::$running; }
+    private static function caused(\Throwable $error, string $class): bool
+    {
+        for (; $error !== null; $error = $error->getPrevious()) { if ($error instanceof $class) { return true; } }
+        return false;
     }
     /** SQLSTATE 40001 or driver 1213/1205, on the error or any previous cause. No message matching. */
     public static function contention(\Throwable $error): bool

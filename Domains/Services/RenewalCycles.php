@@ -42,6 +42,7 @@ final readonly class RenewalCycles
     /** A declined card leaves a failed row and no money. */
     public static function moneyMoved(array $l, ?int $invoice): bool
     {
+        if ($invoice !== null) { InvoiceScope::cover($l, $invoice); }
         return $l['transactions']->contains(fn ($row) => (int) $row->invoice_id === $invoice && $row->status !== InvoiceTransactionStatus::Failed);
     }
     /** Native receipts may make Cancelled invoices Paid. Close their unpaid authority before INSERT, not at Paid or a later sweep. */

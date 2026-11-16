@@ -10,7 +10,7 @@ final class RefundPayment
 {
     public static function requireLine(Operation $op, array $l): array
     {
-        $d = $l['domain']; $s = $l['service'];
+        $d = $l['domain']; $s = $l['service']; InvoiceScope::cover($l, (int) $op->invoice_id);
         $invoice = $l['invoices']->firstWhere('id', $op->invoice_id); $item = $l['items']->firstWhere('id', $op->invoice_item_id);
         if (!in_array($op->action, ['register', 'renew', 'transfer', 'privacy_purchase', 'privacy_renew'], true) || $op->domain_id !== $d->id || $op->service_id !== $d->service_id
             || $op->server_id !== $d->server_id || $op->registrar_key !== $d->registrar_key || $op->account_fingerprint !== $d->account_fingerprint
@@ -40,6 +40,7 @@ final class RefundPayment
     /** Retired debt can stop blocking a replacement only while its exact full credit still covers all activity. */
     public static function retiredSettled(Operation $op, array $l): bool
     {
+        InvoiceScope::cover($l, (int) $op->invoice_id); // Outside the catch: missing coverage is never "not settled".
         try {
             if (!RefundProof::retired($op, $l['domain'])) { return false; }
             RefundProof::requireUnsent($op, $l['domain']);
