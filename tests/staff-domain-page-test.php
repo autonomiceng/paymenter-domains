@@ -38,6 +38,14 @@ expect(str_contains($switch['note']->toHtml(),'switch=dns#switch-dns'),'Turn the
 same(['On hold until request #7 is checked.',7],[DomainEditActions::held($active,7)['held'],DomainEditActions::held($active,7)['request']],'Only the blocking request is named');
 same('Wait until request #7 is checked, then add them with Edit.',DomainFacts::whileHeld(['Contacts'=>['value'=>null,'sub'=>DomainFacts::ADD_CONTACTS]],DomainEditActions::held($active,7)['first'])['Contacts']['sub'],'Contacts names the request in the way');
 same(['This registrar doesn\'t support this change.',null],[DomainEditActions::held($active,'Management capability unsupported.')['held'],DomainEditActions::held($active,'Management capability unsupported.')['request']],'A known refusal keeps its words');
+// A renewal with an unconfirmed result holds changes in two sections: the page says so once, in one notice naming the request.
+$renewal=$active->operations()->firstOrFail()->replicate();$renewal->fill(['operation_key'=>'held-renewal-one-notice','action'=>'renew','state'=>'uncertain','funding_basis'=>'paid_invoice'])->save();
+same($renewal->id,DomainEditActions::for($active->fresh())['request'],'The unconfirmed renewal holds changes on the domain');
+$heldHtml=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSuccessful()->html();
+$heldDom=new DOMDocument;@$heldDom->loadHTML('<?xml encoding="utf-8"?>'.$heldHtml);$heldNotices=0;
+foreach((new DOMXPath($heldDom))->query('//div[@data-domains-row="notice"]') as $n){if(str_contains($n->textContent,'request #'.$renewal->id)){$heldNotices++;}}
+same(1,$heldNotices,'The domain page draws the request hold once');
+DB::table('domains_operations')->where('id',$renewal->id)->delete();
 $unknown=DomainEditActions::held($active,null)['held'];
 expect(!str_contains($unknown,'last request')&&!str_contains($unknown,'History'),'With no cause, the hold claims no request');
 Account::where('server_id',$active->server_id)->update(['processing_enabled'=>$processing]);
