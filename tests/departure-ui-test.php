@@ -65,21 +65,21 @@ $dnsButtons=static function()use($d,$departer,$actor):array{
     Illuminate\Support\Facades\Auth::setUser($actor);
     $dom=Dom\HTMLDocument::createFromString('<!doctype html><meta charset="utf-8">'.$html,LIBXML_NOERROR);$out=[];
     foreach($dom->querySelectorAll('[data-piece="row"]') as $row){if(trim((string)$row->querySelector('.domains-panel-row-k')?->textContent)!=='DNS records'){continue;}
-        // True: muted and described by this row's own reason, not a section notice.
-        foreach($row->querySelectorAll('button,a') as $b){$why=$dom->getElementById((string)$b->getAttribute('aria-describedby'));$out[trim($b->textContent)]=$b->getAttribute('aria-disabled')==='true'&&$why!==null&&$row->contains($why);}}
+        // Muted, and separately whether it is described by this row's own reason (not a section notice).
+        foreach($row->querySelectorAll('button,a') as $b){$why=$dom->getElementById((string)$b->getAttribute('aria-describedby'));$out[trim($b->textContent)]=['disabled'=>$b->getAttribute('aria-disabled')==='true','reason'=>$why!==null&&$row->contains($why)];}}
     return $out;
 };
 $check(\Paymenter\Extensions\Servers\Domains\Services\DepartureChecks::dnsCase($d->fresh())==='registrar','The suspected fixture uses our registrar DNS');
 $other=$dnsButtons();
-$check(isset($other['Edit'])&&$other['Edit']===true,'Another registrar at the registry mutes DNS Edit with its reason');
-$check(!isset($other['Edit SRV'])||$other['Edit SRV']===true,'Another registrar at the registry mutes Edit SRV with its reason');
+$check(isset($other['Edit'])&&$other['Edit']['disabled']&&$other['Edit']['reason'],'Another registrar at the registry mutes DNS Edit with its reason');
+$check(!isset($other['Edit SRV'])||$other['Edit SRV']['disabled']&&$other['Edit SRV']['reason'],'Another registrar at the registry mutes Edit SRV with its reason');
 Illuminate\Support\Facades\DB::transaction(function()use($d):void{$fresh=$d->fresh();$p=$fresh->observation;$p['departure_check']['registry']['registrar']='eNom, LLC';$fresh->update(['observation'=>$p]);});
 $ours=$dnsButtons();
-$check(isset($ours['Edit'])&&$ours['Edit']===false,'DNS Edit is not muted as stopped while the registry lists our registrar');
+$check(isset($ours['Edit'])&&!$ours['Edit']['disabled'],'DNS Edit is not muted as stopped while the registry lists our registrar');
 // A blank registrar name names no other registrar, so DNS stays editable.
 Illuminate\Support\Facades\DB::transaction(function()use($d):void{$fresh=$d->fresh();$p=$fresh->observation;$p['departure_check']['registry']['registrar']=" \t ";$fresh->update(['observation'=>$p]);});
 $blank=$dnsButtons();
-$check(isset($blank['Edit'])&&$blank['Edit']===false,'DNS Edit is not muted as stopped when the registry names no registrar');
+$check(isset($blank['Edit'])&&!$blank['Edit']['disabled'],'DNS Edit is not muted as stopped when the registry names no registrar');
 // Absence saved before departure checks existed has no marker; the staff page still opens and offers Check again.
 Illuminate\Support\Facades\DB::transaction(function()use($d):void{$fresh=$d->fresh();$p=$fresh->observation;unset($p['departure_check']);$fresh->update(['observation'=>$p]);});
 try{Livewire\Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$d->id])->assertSuccessful()->assertActionVisible('check_departure');$legacy=true;}
