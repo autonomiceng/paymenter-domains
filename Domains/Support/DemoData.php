@@ -67,7 +67,7 @@ final class DemoData
     public static function testTooltip(): string
     {
         $test = config('domains.test_payments');
-        try { $test = $test instanceof \Closure ? $test() : $test; } catch (\Throwable) { $test = false; }
+        try { $test = is_callable($test) ? $test() : $test; } catch (\Throwable) { $test = false; }
         return $test === true ? self::TEST_PAYMENTS_TOOLTIP : self::TEST_TOOLTIP;
     }
     public static function tag(bool $inline = false, bool $test = false): HtmlString
