@@ -84,7 +84,7 @@ final class RequestFacts
                 unset($out['admission']);
             }
             // The refund row appears once money is in question: a refund was recorded, one is possible, or a paid request ended.
-            $closed=in_array($op->state,['rejected','disposed'],true); $neverPaid=self::neverPaid($op);
+            $closed=in_array($op->state,['rejected','disposed'],true); $neverPaid=self::neverPaid($op); $waits=false;
             if ($neverPaid) { /* No money moved, so no refund row. */ }
             elseif ($returned=\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::summary($op)) {
                 // A return to the card is a refund, not credit, so the row is named for what happened.
@@ -106,11 +106,15 @@ final class RequestFacts
                 }catch(\Throwable){[$out['refund'],$out['refund_sub']]=self::CREDIT_CHECK;}
             }
             elseif (RefundCandidates::matches($op,$f) || ($p['renewal_execution']['refundable_later']??false)===true) {
-                $out['refund']='No credit added'; $out['refund_fix']=$op->state==='held' ? 'refund' : 'credit';
+                $out['refund']='No credit added'; $out['refund_fix']=$op->state==='held' ? 'refund' : 'credit'; $waits=true;
             }
             elseif ($paid && $op->state==='rejected' && $op->funding_basis!=='paid_invoice') { [$out['refund'],$out['refund_sub']]=[null,'No paid invoice recorded. No action needed.']; }
-            elseif ($closed && $op->funding_basis==='paid_invoice') { $out['refund']='No credit added'; }
-            if(!$neverPaid&&($limit=self::refundLimit($op,($out['refund']??null)==='No credit added'))!==null){$out['refund_sub']=trim(($out['refund_sub']??'').' '.$limit);}
+            elseif ($closed && $op->funding_basis==='paid_invoice') {
+                // Only the closed unpaid order sweep returns these; a rejected transfer or a disposed request gets no refund.
+                $out['refund']='No credit added'; $waits=$op->state==='rejected'&&$op->safe_code===\Paymenter\Extensions\Servers\Domains\Services\UnpaidAcquisitionProof::CODE;
+            }
+            $none=($out['refund']??null)==='No credit added';
+            if(!$neverPaid&&(!$none||$waits)&&($limit=self::refundLimit($op,$none))!==null){$out['refund_sub']=trim(($out['refund_sub']??'').' '.$limit);}
             if($grants->costs&&(array_key_exists('refund',$f)||array_key_exists('late_credits',$f))){
                 try{if($reversals===null){throw new \DomainException('Invoice reversals unavailable.');}$context=\Paymenter\Extensions\Servers\Domains\Services\ReceiptReversals::summary($op,$reversals);if($context!==null){$out['refund_sub']=trim(($out['refund_sub']??'').' '.$context);}}
                 catch(\Throwable){$out['refund_sub']=trim(($out['refund_sub']??'').' Missing. Check the invoice payment reversal and credit history.');}

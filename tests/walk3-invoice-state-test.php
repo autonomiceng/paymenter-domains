@@ -59,6 +59,7 @@ same(true,ReceiptReturns::settled($op->fresh()),'The account credit return settl
 same('Paid',RequestFacts::for($op->fresh())['invoice_state'],'A return credited to the account stays Paid');
 // Request money follow-ups report every failing case before stopping.
 $followups=[];$want=static function(bool $ok,string $message)use(&$followups):void{if(!$ok){$followups[]=$message;echo 'FOLLOWUP_FAIL '.$message."\n";}};
+$staffFacts=static function($op)use($staff):array{Illuminate\Support\Facades\Auth::setUser($staff);return RequestFacts::for($op->fresh());};
 // Two card receipts on one request: one share was released with no credit after a lost dispute, the other was refunded.
 // Only part went back, so the invoice stays Paid and staff see the smaller return.
 $returnSetup=static function(string $name,\Closure $funding)use($held,$gateway):array {
@@ -76,7 +77,7 @@ $allocation=static fn($row,string $key,int $minor)=>['transaction_id'=>(int)$row
         'half-b'=>['state'=>'refunded','amount_minor'=>$gross-500,'refund_id'=>'synthetic-half-return','key'=>'fixture-return:half-b']]]);
 App\Models\InvoiceTransaction::create(['invoice_id'=>$op->invoice_id,'amount'=>Paymenter\Extensions\Servers\Domains\Services\PricingRule::decimal(500-$gross),'fee'=>'0.00','status'=>'succeeded','transaction_id'=>'fixture-return:half-b']);
 App\Models\InvoiceTransaction::create(['invoice_id'=>$op->invoice_id,'amount'=>'-5.00','fee'=>'0.00','status'=>'succeeded','gateway_id'=>$gateway->id,'transaction_id'=>'synthetic-half-chargeback']);
-Illuminate\Support\Facades\Auth::setUser($staff);$facts=RequestFacts::for($op->fresh());$limit=RequestFacts::refundLimit($op->fresh(),false);
+$facts=$staffFacts($op);$limit=RequestFacts::refundLimit($op->fresh(),false);
 same('Refunded',$facts['refund']??null,'The refunded share settled to the original payment');
 $want('Paid'===$facts['invoice_state'],'A request with only part of its line returned stays Paid');
 $want($limit!==null&&str_contains($limit,Paymenter\Extensions\Servers\Domains\Services\Storefront::money(Paymenter\Extensions\Servers\Domains\Services\PricingRule::decimal($gross-500)))
@@ -87,7 +88,14 @@ $op=$held('request-invoice-late-return-placeholder.com');$op->update(['state'=>'
 App\Models\InvoiceTransaction::where('invoice_id',$op->invoice_id)->update(['gateway_id'=>$gateway->id,'transaction_id'=>'synthetic-late-return']);
 MoneyReceiptGateway::automatic($invoice,'synthetic-late-return',Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)App\Models\InvoiceTransaction::where('invoice_id',$op->invoice_id)->sole()->amount),'pending');
 same(0,Paymenter\Extensions\Servers\Domains\Services\InvoiceMoney::project((int)$op->invoice_id)['held'],'The return in progress leaves nothing held');
-$facts=RequestFacts::for($op->fresh());
+$facts=$staffFacts($op);
 $want(['No credit added',null]===[$facts['refund']??null,$facts['refund_sub']??null],'A return still in progress gives staff no lost or returned reason');
+// A rejected provider transfer is never refunded by Domains, so a lost payment gives staff no refund wait reason.
+$op=$held('request-invoice-provider-rejected-placeholder.com');$op->update(['state'=>'rejected','safe_code'=>'transfer_provider_rejected']);
+App\Models\InvoiceTransaction::where('invoice_id',$op->invoice_id)->update(['gateway_id'=>$gateway->id,'transaction_id'=>'synthetic-provider-rejected']);
+App\Models\InvoiceTransaction::create(['invoice_id'=>$op->invoice_id,'amount'=>'-'.App\Models\InvoiceTransaction::where('invoice_id',$op->invoice_id)->sole()->amount,'fee'=>'0.00','status'=>'succeeded','gateway_id'=>$gateway->id,'transaction_id'=>'synthetic-provider-chargeback']);
+same(0,Paymenter\Extensions\Servers\Domains\Services\InvoiceMoney::project((int)$op->invoice_id)['held'],'The lost payment leaves nothing held');
+$facts=$staffFacts($op);
+$want(['No credit added',null]===[$facts['refund']??null,$facts['refund_sub']??null],'A request no refund runs for gives staff no refund wait reason');
 expect($followups===[],'Request money follow-ups: '.json_encode($followups,JSON_THROW_ON_ERROR));
 $nativeSuccessful=true;
