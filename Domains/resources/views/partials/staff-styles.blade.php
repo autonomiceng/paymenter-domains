@@ -159,13 +159,15 @@ td.domains-history-detail{min-width:20rem}
 :where(.domains-panel-partial){display:block;min-width:0;overflow-wrap:anywhere}
 :where(.domains-hp-sum){display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px}:where(.domains-hp-line){display:block}:where(.domains-hp-err){color:var(--panel-danger,#F87171)}
 @media(max-width:39.99rem){.domains-hp>.domains-panel-row-v{display:contents}.domains-hp .domains-hp-line{grid-column:1/-1}}
-.domains-hp-dlg{width:min(480px,calc(100vw - 32px));max-height:calc(100dvh - 32px);padding:20px;border-radius:12px;background:var(--panel-card,#111B36);color:inherit;border:1px solid var(--panel-line-soft,color-mix(in srgb,currentColor 20%,transparent))}
+.domains-hp-dlg{margin:auto;width:min(480px,calc(100vw - 32px));max-height:calc(100dvh - 32px);padding:20px;border-radius:12px;background:var(--panel-card,#111B36);color:inherit;border:1px solid var(--panel-line-soft,color-mix(in srgb,currentColor 20%,transparent))}
 .domains-hp-dlg::backdrop{background:rgb(0 0 0/.6)}
 .domains-hp-dlg-h,.domains-hp-all,.domains-hp-foot{display:flex;align-items:center;justify-content:space-between;gap:12px}.domains-hp-dlg-h h2{font-size:1.125rem;font-weight:600}
 .domains-hp-search,.domains-hp-all,.domains-hp-eff,.domains-hp-err-line{margin-top:12px}.domains-hp-solo{justify-content:flex-end}.domains-hp-foot{justify-content:flex-end;margin-top:16px}
 .domains-hp-list{max-height:320px;overflow:auto;margin-top:4px;border-top:1px solid var(--panel-line-soft,color-mix(in srgb,currentColor 20%,transparent))}
 .domains-hp-ck{display:flex;align-items:center;gap:12px;min-height:44px}.domains-hp-hidden{margin-inline-start:auto}.domains-hp-gap{width:16px;flex:none}
 .domains-hp-searching .domains-hp-nm,.domains-hp-searching .domains-hp-nm *{font-weight:400}.domains-hp-searching .domains-hp-nm b{font-weight:700}
+/* The search field has its own clear button, so hide the native one. */
+.domains-hp-dlg input[type=search]::-webkit-search-cancel-button,.domains-hp-dlg input[type=search]::-webkit-search-decoration{-webkit-appearance:none;appearance:none;display:none}
 .domains-hp-clr{display:grid;place-items:center;min-width:44px;min-height:44px}.domains-hp-none{padding:12px 0}
 </style>
 @include('domains::partials.domain-name-styles')
