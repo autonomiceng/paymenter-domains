@@ -42,7 +42,9 @@ $notice='Required Service listeners are missing in this process: Service saving 
 same($notice,NativePaidHooks::notices()['Paymenter payment events'],'Payment events notice describes current process');
 Illuminate\Support\Facades\Auth::login($staff);
 expect(!isset(Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::for($missing->domain)['Paymenter payment events']),'Process notice lives with registrar setup, not on each domain');
-$setup=Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$missing->server_id])->assertSeeInOrder(['System checks','Payment events',$check='Service listeners are missing. Restart the queue worker.',\Paymenter\Extensions\Servers\Domains\Presentation\State::Failed->label()]);
+$setup=Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$missing->server_id])->assertSeeInOrder(['System checks','Payment events',$check='Service listeners are missing. Restart the queue worker.'])->assertSeeInOrder(['System checks','Payment events',\Paymenter\Extensions\Servers\Domains\Presentation\State::Failed->label()]);
+$paymentEvents=array_values(array_filter(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::system()['failing'],fn(array $row)=>$row['label']==='Payment events'));
+expect(count($paymentEvents)===1&&$paymentEvents[0]['tone']==='danger'&&$paymentEvents[0]['cause']===$check,'Missing service listeners fail the Payment events system check with its fix');
 same(1,substr_count(html_entity_decode($setup->html(),ENT_QUOTES),$check),'Registrar account System checks show the fact once');
 Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$missing->domain_id])->assertDontSee($notice);
 foreach($saving as$listener){Event::listen($savingEvent,$listener);}
