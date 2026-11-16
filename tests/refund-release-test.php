@@ -99,6 +99,12 @@ foreach(['full','split','bridge','invalid','zero'] as $mode){$case('released cre
     if($mode==='invalid'){
         $order=OwnedDomains::order($d,$saved,Invoice::findOrFail($op->invoice_id));
         $equal(false,$order['returned']??null,'Invalid released credit keeps the customer order under review');
+        // The other readers say review too, without an error.
+        $presenter=(new ReflectionClass(NativePresenter::class))->newInstanceWithoutConstructor();
+        $equal(['pending',null],(new ReflectionMethod(NativePresenter::class,'outcomeMoney'))->invoke($presenter,[$saved],Invoice::findOrFail($op->invoice_id)),'Invalid released credit keeps the invoice outcome pending');
+        $equal(ReceiptReturns::REVIEW,ReceiptReturns::summary($saved),'Invalid released credit summary is under review');
+        // Staff request actions and History read it through settled.
+        $equal(false,ReceiptReturns::settled($saved),'Invalid released credit is not settled');
     }
 });}
 

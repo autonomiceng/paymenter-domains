@@ -151,7 +151,8 @@ final readonly class RenewalCycles
         // Account credit alone has no original-payment plan for summary(); unreadable coverage still reads as a check.
         if(ReceiptReturns::malformed($op)){return ReceiptReturns::REVIEW[1];}
         try{$money=InvoiceMoney::project((int)$op->invoice_id);if(InvoiceMoney::returnBlocked($money)){return ReceiptReturns::REVIEW[1];}}catch(\Throwable){return ReceiptReturns::REVIEW[1];}
-        $minor = array_sum(array_map(fn($p)=>PricingRule::minor($p['amount']),ReceiptReturns::effective($op)));
+        try{$plans=ReceiptReturns::effective($op);}catch(\DomainException){return ReceiptReturns::REVIEW[1];} // An unreadable released credit.
+        $minor = array_sum(array_map(fn($p)=>PricingRule::minor($p['amount']),$plans));
         return $minor > 0 ? RequestStatus::lateCredit(RenewalReminders::money(PricingRule::decimal($minor))) : null;
     }
     /** Read-only eligibility proof, independent of expiry. Writes require the current locked ledger. */

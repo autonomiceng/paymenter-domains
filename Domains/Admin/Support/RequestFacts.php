@@ -499,9 +499,9 @@ final class RequestFacts
         $at=static fn(?int $t):?string=>$t===null?null:\Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at($t);
         $check=RegistrarCheck::status($op)??[]; $hold=$facts['auto_renew']??PaidUncertainty::holdSummary($op);
         if ($stand==='checking') {
-            $sent=$at(StaffReviewHistory::sentAt($op)?->getTimestamp());
-            $body=implode(' ',array_filter([$sent?'Sent '.$sent.'.':null,'Next automatic check '.$at((int)$check['next_at']).'.','Check status reads '.$history.' now instead of waiting.',$hold]));
-            return ['title'=>'Waiting for '.$who.' to confirm the '.$kind.'.','body'=>$body,'tone'=>PaidUncertainty::waitState($op)===State::Delayed?'warning':'info',
+            // The reason stays in the sentence; its times and the Check status step go on the staff line under it (mock).
+            $times=array_filter(['Sent'=>StaffReviewHistory::sentAt($op)?->getTimestamp(),'Next automatic check'=>(int)$check['next_at']],fn($t)=>$t!==null);
+            return ['title'=>'Waiting for '.$who.' to confirm the '.$kind.'.','body'=>$hold,'times'=>$times,'note'=>'Check status reads '.$history.' now instead of waiting.','tone'=>PaidUncertainty::waitState($op)===State::Delayed?'warning':'info',
                 'action'=>OperationActions::readLimit($op)?'resume_reads':'recheck'];
         }
         $stopped=isset($check['at'])?'Checks stopped '.$at((int)$check['at']).'.':null;

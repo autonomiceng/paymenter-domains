@@ -169,7 +169,8 @@ final class DepartureConfirm
             break;
         }
         if(isset($facts['Service'])&&($facts['Service']['value']??null)!==null){$facts['Service']['sub']='Service #'.$d->service_id.'. Cancelled on confirm.';}
-        if(isset($facts['DNS records'])){$sub=$facts['DNS records']['sub']??null;$add="Confirm doesn't change DNS.";
+        // Muted DNS records say it in their reason instead (ViewDomain::row).
+        if(isset($facts['DNS records'])&&DepartureChecks::dnsStopped($d)===null){$sub=$facts['DNS records']['sub']??null;$add="Confirm doesn't change DNS.";
             $facts['DNS records']['sub']=$sub instanceof Htmlable?new HtmlString($sub->toHtml().' '.e($add)):trim((string)$sub.' '.$add);}
         return $facts;
     }
