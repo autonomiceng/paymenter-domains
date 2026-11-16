@@ -84,7 +84,7 @@ final class ReminderTemplates
                 'mail_enabled'=>'force','in_app_enabled'=>'force','in_app_title'=>'{{ $amount }} removed from account credit',
                 'in_app_body'=>'Your bank reversed your payment on invoice #{{ $invoice_number }} after a dispute. If you have questions, contact support.',
                 'in_app_url'=>'{{ $support_url }}',
-                'body'=>"We removed {{ \$amount }} of account credit. Your bank reversed your payment on invoice #{{ \$invoice_number }} after a dispute. If you have questions, contact us: {{ \$support_url }}."]),
+                'body'=>"We removed {{ \$amount }} of account credit. Your bank reversed your payment on invoice #{{ \$invoice_number }} after a dispute. If you have questions, contact us@if(\$support_url): {{ \$support_url }}@endif."]),
             'domains_domain_order_refunded'=>array_replace($common,['name'=>'Domain order credited','subject'=>'Account credit for your {{ $action }} of {{ $domain }}',
                 'mail_enabled'=>'force','in_app_title'=>'{{ $amount }} added to your account credit',
                 'in_app_body'=>'Your {{ $action }} of {{ $domain }} was cancelled.',
