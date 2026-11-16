@@ -150,7 +150,9 @@ final class RequestFacts
                 if ($paid||isset($c['actual'])) {
                     $out['cost']=$actual??($unknown&&$quote!==null?'Not confirmed':null);
                     $out['cost_sub']=$out['registrar_refund'] ?? $quote ?? ($actual===null ? 'No cost recorded. Check at the registrar.' : null);
-                    if(\Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::open()->where('domain_id',$op->domain_id)->where('code','below_cost')->exists()){
+                    // This request's own margin alert: another renewal's loss on the same domain is not this request's cost.
+                    if(\Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::open([$op->domain_id])->where('operation_id',$op->id)->where('code','below_cost')->exists()
+                        &&\Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::price($op,$op->domain,'below_cost')!==\Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::CLEAR){
                         $out['cost_sub']=trim(($out['cost_sub']??'').' '.\Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::LABELS['below_cost']);
                     }
                     if(\Paymenter\Extensions\Servers\Domains\Services\TransferRejections::proved($op,$op->domain)){
@@ -206,9 +208,10 @@ final class RequestFacts
     public static function automaticTransfer(Operation $op): bool
     {
         $now=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp();
-        try{return \Paymenter\Extensions\Servers\Domains\Services\TransferPolling::expected($op)
+        // The sweep's first-poll wait (ObligationAlerts::review) is the same automatic wait, so staff have no task before the first read.
+        try{return (\Paymenter\Extensions\Servers\Domains\Services\TransferPolling::expected($op)
             &&($op->policy['reconciliation']['transfer_status']??null)==='pending'
-            &&($op->policy['reconciliation']['staff_alert']??true)===false
+            &&($op->policy['reconciliation']['staff_alert']??true)===false||\Paymenter\Extensions\Servers\Domains\Services\TransferPolling::firstPoll($op))
             &&!\Paymenter\Extensions\Servers\Domains\Services\TransferPolling::expired($op,$now)
             &&($op->policy['reconciliation']['read_at']??\Paymenter\Extensions\Servers\Domains\Services\TransferPolling::start($op))>$now-86400;
         }catch(\Throwable){return false;}

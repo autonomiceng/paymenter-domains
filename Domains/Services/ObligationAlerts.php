@@ -41,7 +41,13 @@ final class ObligationAlerts
         'template_failed'=>'Reminder failed. Check its template and channels.',
         'reminder_failed'=>'Renewal reminder check failed. Check the registrar account.',
     ];
+    public const ACTIVE='active';
+    public const CLEAR='clear';
+    /** The evidence can't be read, so an open alert stays as it is. */
+    public const UNKNOWN='unknown';
     private const REVIEW=['operation_review','held_obligation'];
+    /** Request price alerts. RenewalReminders also raises unknown_cost for the current cost, without a request. */
+    private const PRICE=['below_cost','unknown_cost'];
     private const IN_FLIGHT=['queued','running','pending'];
     /** Transfers finish within 7 days, and a paid renewal this close to expiry can't wait. */
     private const WAIT_DAYS=7;
@@ -87,31 +93,47 @@ final class ObligationAlerts
     {
         $d=$l['domain'];$keys=[];
         if (($key=RenewalOwnership::review($d,$now))!==null) { $keys[]=$key; }
+        // Active records the alert; unknown keeps its open rows as they are, including rows keyed at an earlier expiry; clear lets finish() resolve them.
+        $keep=static function(string $state,string $code,?int $operationId=null)use($d,$now,&$keys):void {
+            if($state===self::ACTIVE){$keys[]=self::record($d,$code,$now,$operationId);}
+            elseif($state===self::UNKNOWN){
+                $open=DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code',$code)->whereNull('resolved_at');
+                array_push($keys,...($operationId===null?$open->whereNull('operation_id'):$open->where('operation_id',$operationId))->pluck('alert_key')->all());
+            }
+        };
         foreach($l['operations'] as $op){
             if($op->account_fingerprint!==$d->account_fingerprint||$op->authority_generation!==$d->authority_generation){continue;}
-            $p=$op->policy??[];
-            if($op->action==='renew'&&isset($p['price'])){
-                // Retained retail is informational; RenewalReminders checks current cost independently.
-                $code=$p['price']['staff_alert']??null;
-                // Completed losses still matter; other finished requests incurred no renewal margin.
-                $closed=$op->state!=='succeeded'&&in_array($op->state,RequestStatus::FINISHED,true);
-                if(($code!=='below_cost'||!$closed)&&$code!=='retained_renewal'&&($code!==null||($p['price']['retained']??false))){
-                    $keys[]=self::record($d,$code==='below_cost'?'below_cost':'unknown_cost',$now,(int)$op->id);
-                }
-            }
-            if(self::waiting($op,$d,$now)){continue;}
-            if(in_array($op->state,['held','uncertain'],true)||self::flagged($op,$l['operations'],$d)){
-                $keys[]=self::record($d,$op->action==='renew'&&$op->state==='held'?'held_obligation':'operation_review',$now,(int)$op->id);
-            }
+            foreach(self::PRICE as $code){$keep(self::price($op,$d,$code),$code,(int)$op->id);}
+            $keep(self::review($op,$l['operations'],$d,$now),$op->action==='renew'&&$op->state==='held'?'held_obligation':'operation_review',(int)$op->id);
         }
-        if(Schema::hasTable('domains_observation_work')&&!RenewalOwnership::blocked($d)){
-            $follow=$d->observation['followup']??[];
-            $phase=isset($follow['operation_key'])&&($follow['generation']??null)===$d->authority_generation?hash('sha256',$follow['operation_key']):'holding';
-            if(DB::table('domains_observation_work')->where('domain_id',$d->id)->where('generation',$d->authority_generation)
-                ->where('account_fingerprint',$d->account_fingerprint)->where('phase',$phase)
-                ->whereIn('safe_code',['budget_exhausted','read_unavailable',...ReadFailure::CODES])->exists()){$keys[]=self::record($d,'observation_review',$now);}
-        }
+        if(Schema::hasTable('domains_observation_work')&&!RenewalOwnership::blocked($d)){$keep(self::observation($d),'observation_review');}
         return $keys;
+    }
+    /** The request's saved price evaluation, for one price alert code. The sweep, the domain page and the request Cost row read this one check. */
+    public static function price(Operation $op,Domain $d,string $code):string
+    {
+        try{
+            $p=$op->policy??[];
+            if($op->action!=='renew'||!isset($p['price'])||$op->account_fingerprint!==$d->account_fingerprint||$op->authority_generation!==$d->authority_generation){return self::CLEAR;}
+            // Retained retail is informational; RenewalReminders checks current cost independently.
+            $saved=$p['price']['staff_alert']??null;
+            // Completed losses still matter; other finished requests incurred no renewal margin.
+            $closed=$op->state!=='succeeded'&&in_array($op->state,RequestStatus::FINISHED,true);
+            $raised=$saved==='below_cost'?$code==='below_cost'&&!$closed
+                :$code==='unknown_cost'&&$saved!=='retained_renewal'&&($saved!==null||($p['price']['retained']??false));
+            return $raised?self::ACTIVE:self::CLEAR;
+        }catch(\Throwable){return self::UNKNOWN;}
+    }
+    /** Whether a request needs a staff check: held or unconfirmed, or a saved result that still needs a person, unless it is a wait the system clears by itself. */
+    public static function review(Operation $op,Collection $operations,Domain $d,int $now):string
+    {
+        try{return !self::waiting($op,$d,$now)&&(in_array($op->state,['held','uncertain'],true)||self::flagged($op,$operations,$d))?self::ACTIVE:self::CLEAR;}
+        catch(\Throwable){return self::UNKNOWN;}
+    }
+    /** Sync stopped for this holding's current identity, by the detail rule (ObservationRecords::stopped). */
+    public static function observation(Domain $d):string
+    {
+        try{return ObservationRecords::stopped($d)?self::ACTIVE:self::CLEAR;}catch(\Throwable){return self::UNKNOWN;}
     }
     /** Waits the system clears by itself, so no one has a step to take yet. The request keeps every fact, and when the wait
      * runs out the next inspection raises the same alert. Anything unproven alerts: an uncertain transfer may not have been accepted.
@@ -126,9 +148,7 @@ final class ObligationAlerts
                 &&$d->provider_expires_at?->getTimestamp()>$now+$window;
         }
         $review=$op->policy['reconciliation']??[];$read=$review['read_at']??TransferPolling::start($op);
-        $first=TransferPolling::applies($op)&&($review['polls']??0)===0&&!isset($review['transfer_status'])
-            &&in_array($review['reason']??null,['original_attempt_unresolved','transfer_read_deferred'],true)
-            &&in_array($op->attempt['execution']['disposition']??null,['accepted','pending'],true);
+        $first=TransferPolling::firstPoll($op);
         return $op->state==='uncertain'&&$op->safe_code==='reconciliation_required'
             &&(TransferPolling::expected($op)||$first)&&$now<TransferPolling::deadline($op)
             &&empty($review['read_failed'])&&$read>$now-self::READ_STALE_SECONDS
@@ -139,9 +159,12 @@ final class ObligationAlerts
     public static function outdated(object $alert,?Operation $op,Collection $operations,Domain $d):bool
     {
         if($alert->code===RenewalOwnership::REVIEW){try{return !HoldingReadRetry::absent($d);}catch(\Throwable){return false;}}
-        if($alert->code==='observation_review'){try{return !ObservationRecords::stopped($d);}catch(\Throwable){return false;}}
+        if($alert->code==='observation_review'){return self::observation($d)===self::CLEAR;}
         if(!$op){return false;}
+        if(in_array($alert->code,self::PRICE,true)){return self::price($op,$d,$alert->code)===self::CLEAR;}
         if(in_array($alert->code,self::REVIEW,true)&&self::settledRenewal($op,$d)&&!self::flagged($op,$operations,$d)){return true;}
+        // A wait the system clears by itself is clear in review() too, so the next inspection resolves this row.
+        if(in_array($alert->code,self::REVIEW,true)){try{if(self::waiting($op,$d,app(Clock::class)->now()->getTimestamp())){return true;}}catch(\Throwable){}}
         // A refusal before sending (dispatch, balance or claim checks) records a review alert. Once the request is sent and inside the registrar's
         // normal wait it is In progress, so that alert is outdated; an unconfirmed result records a fresh one (retained()).
         if(in_array($alert->code,self::REVIEW,true)&&in_array($op->state,['running','pending'],true)){try{if(!self::flagged($op,$operations,$d)){return true;}}catch(\Throwable){}}
@@ -149,7 +172,7 @@ final class ObligationAlerts
         if(in_array($alert->code,self::REVIEW,true)&&in_array($d->status,['cancelled','registration_rejected','transfer_rejected'],true)){
             try{if((array_key_exists('refund',$op->funding??[])||$op->funding_basis!=='paid_invoice')&&OperationTerminalProof::safe($op,$d)){return true;}}catch(\Throwable){}
         }
-        try{return $alert->code==='unknown_cost'&&($op->policy['price']['staff_alert']??null)==='retained_renewal'||in_array($alert->code,self::REVIEW,true)&&($op->state==='succeeded'&&!self::flagged($op,$operations,$d)||ManagementEvidence::recoverable($op));}
+        try{return in_array($alert->code,self::REVIEW,true)&&($op->state==='succeeded'&&!self::flagged($op,$operations,$d)||ManagementEvidence::recoverable($op));}
         catch(\Throwable){return false;}
     }
     /** A request that succeeds, or that staff mark as failed, closes its own alert now: a paused sync runs no inspection, and the Open alerts filter reads the row.

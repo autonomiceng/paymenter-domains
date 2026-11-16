@@ -404,7 +404,47 @@ expect(!DomainQueries::status(Domain::whereKey($d->id),['under_review'])->exists
 same('In progress',RequestFacts::status($op->fresh())['label'],'Pending transfer request is in progress');
 expect(!Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::status(Operation::whereKey($op->id),['under_review'])->exists(),'Pending transfer is excluded from staff review filters');
 expect(Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::status(Operation::whereKey($op->id),['in_progress'])->exists(),'Pending transfer is included in its displayed status filter');
+// The sweep clears its review alert, so an older saved one and the domain page head ask nothing of staff either.
+Auth::setUser($viewer);ObligationAlerts::record($d,'operation_review',time()-60,(int)$op->id);$d=$d->fresh();
+same([],Paymenter\Extensions\Servers\Domains\Admin\Support\StaffDomainInputs::for([$d])[$d->id]['alerts'],'A saved review alert on the automatic wait is outdated');
+same(null,DomainFacts::notice($d),'The domain page head names no request to check during the automatic wait');
+expect(!DomainQueries::alerting(Domain::whereKey($d->id))->exists(),'The open alerts count leaves the automatic wait out');
+// An accepted transfer before its first status read is the same automatic wait in the sweep, the list and the count.
+$d=$row('transfer_pending','transfer','uncertain','reconciliation_required');$op=$d->latestAcquisition;
+$op->update(['started_at'=>now(),'attempt'=>['seal'=>'sealed','execution'=>['disposition'=>'accepted']],'policy'=>['reconciliation'=>['reason'=>'transfer_read_deferred','polls'=>0,'read_at'=>time()]]]);
+$d=$d->fresh();$op=$op->fresh();
+same(ObligationAlerts::CLEAR,ObligationAlerts::review($op,$d->operations()->get(),$d,time()),'The sweep reads the first-poll wait as clear');
+$status=DomainFacts::status($d);
+expect(!$status['act'],'The list asks nothing of staff before the first transfer read: '.$status['step']);
+expect(!DomainQueries::alerting(Domain::whereKey($d->id))->exists(),'The open alerts count leaves the first-poll wait out');
+expect(!Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::status(Operation::whereKey($op->id),['under_review'])->exists(),'The request review filter leaves the first-poll wait out');
 
+// A current record hold with no work row stopped sync: the count, the list and the sweep read it as the domain page does.
+$observation=static fn(Domain $d)=>DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code','observation_review')->whereNull('resolved_at')->exists();
+$sweep=static fn(Domain $d)=>ObligationAlerts::finish($d,ObligationAlerts::retained(['domain'=>$d,'operations'=>collect()],time()),time());
+$d=$row('active',null,null);Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::hold($d,'caa_unsupported',new DateTimeImmutable());$d=$d->fresh();
+same(0,DB::table('domains_observation_work')->where('domain_id',$d->id)->count(),'The held domain has no work row');
+expect(Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::stopped($d),'The domain page reads the hold without a job as stopped');
+expect(DomainQueries::alerting(Domain::whereKey($d->id))->exists(),'The open alerts count includes the hold without a job');
+expect(isset(Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::stoppedIds(collect([$d]))[$d->id]),'The list reads the hold without a job as stopped');
+$sweep($d);expect($observation($d),'The sweep records the hold without a job');
+// The sweep uses the reader's retry limit and stopped codes: a retry still queued is clear, a stopped incomplete read is not.
+$d=$row('active',null,null);Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::queueInitial($d,new DateTimeImmutable());
+$work=Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::current($d);
+$work->update(['safe_code'=>'read_failed','tries'=>1,'due_at'=>time()+600]);ObligationAlerts::record($d,'observation_review',time()-60);
+$sweep($d);expect(!$observation($d),'A failed read with its retry queued is not a stopped sync');
+$work->update(['safe_code'=>'records_incomplete','tries'=>0]);
+$sweep($d);expect($observation($d),'A stopped incomplete read is a stopped sync');
+// The list and the count read held domains in a fixed number of queries per page, never per domain.
+$records='Paymenter\\Extensions\\Servers\\Domains\\Services\\ObservationRecords';
+$heldPage=collect(range(1,3))->map(function()use($row,$records){$h=$row('active',null,null);$records::hold($h,'caa_unsupported',new DateTimeImmutable());return $h->fresh();});
+$queries=static function(Illuminate\Support\Collection $page)use($records):int{DB::enableQueryLog();DB::flushQueryLog();$records::stoppedIds($page);$n=count(DB::getQueryLog());DB::disableQueryLog();return $n;};
+same($queries($heldPage->take(1)),$queries($heldPage),'Three held domains read in the same number of queries as one');
+// A held grace domain with its retry queued is read again by the scheduler, so sync has not stopped.
+$d=$row('grace',null,null);Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::queueInitial($d,new DateTimeImmutable());
+Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::current($d)->update(['safe_code'=>'read_failed','tries'=>1,'due_at'=>time()+600]);
+$records::hold($d,'caa_unsupported',new DateTimeImmutable());$d=$d->fresh();
+expect(!$records::stopped($d)&&!isset($records::stoppedIds(collect([$d]))[$d->id]),'A held grace domain with its retry queued has not stopped sync');
 $d=$row('registration_pending','register','held','staff_review_required');
 expect(DomainQueries::alerting(Domain::whereKey($d->id))->exists(),'A visible staff task counts even before a saved alert is written');
 $table=Livewire::actingAs($viewer)->test(ListDomains::class)->instance()->getTable();

@@ -8,7 +8,8 @@ use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
-use Paymenter\Extensions\Servers\Domains\Services\{ObservationWork, RenewalReplacements, RenewalStop};
+use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
+use Paymenter\Extensions\Servers\Domains\Services\{ObligationAlerts, ObservationWork, RenewalReplacements, RenewalStop};
 /** The staff domain page head: the most urgent notice, its links, and request links in status text. Request-local; never cache across actors. */
 final class DomainNotices
 {
@@ -136,7 +137,9 @@ final class DomainNotices
         }
         if (!DomainDecisions::account($d)) { return ['title'=>DomainDecisions::NO_ACCOUNT,'tone'=>'warning']; }
         $op=$d->latestAcquisition;
-        if ($op&&in_array($op->state,['held','uncertain'],true)&&in_array($d->status,StaffDomainStatus::ACQUIRING,true)) {
+        // The sweep's review check: a wait the system clears by itself, such as a transfer still pending at the registrar, asks nothing of staff.
+        if ($op&&in_array($op->state,['held','uncertain'],true)&&in_array($d->status,StaffDomainStatus::ACQUIRING,true)
+            &&ObligationAlerts::review($op,$d->operations()->get(),$d,app(Clock::class)->now()->getTimestamp())!==ObligationAlerts::CLEAR) {
             $cause=rtrim(preg_replace('/^Not sent: /','',(string)Labels::reason($op->safe_code,$op->funding_basis==='complimentary')),'.');
             $title=Labels::action($op->action).($op->state==='held'?' not sent'.($cause===''?'':': '.(preg_match('/\A(?:Enom|NameSilo)\b/',$cause)?$cause:lcfirst($cause))).'.':' not confirmed by the registrar.');
             try{$title=RequestFacts::readyMessage($op)??$title;}catch(\Throwable){}
