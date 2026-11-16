@@ -86,6 +86,35 @@ final readonly class DisputeRecoveries
             'operation_id'=>$op->id,'code'=>$code,'first_seen'=>$now,'last_seen'=>$now]);
         if($code==='dispute_recovery'){DB::table('domains_obligation_alerts')->where('alert_key',$key)->update(['resolved_at'=>null,'last_seen'=>$now]);}
     }
+    /** Receipts a lost dispute removed credit from, keyed by payment id. A removal can be recorded on any peer that shares
+     * the invoice, so every peer is read; an operation without an invoice has only its own holds. */
+    public static function removedReceipts(Operation $op): array
+    {
+        $peers=$op->invoice_id===null?[$op]:Operation::where('invoice_id',$op->invoice_id)->get();$removed=[];
+        foreach($peers as $peer){foreach($peer->funding['dispute_holds']??[] as $hold){
+            if(($hold['removed_minor']??0)>0){$removed[(int)$hold['payment_id']]=true;}
+        }}
+        return $removed;
+    }
+    /** True when a return plan paid from or allocated against a receipt in $removed: credit from it may be gone. */
+    public static function planRemoved(array $plan,array $removed): bool
+    {
+        if(!$removed){return false;}
+        foreach([...(is_array($plan['payments']??null)?$plan['payments']:[]),...(is_array($plan['allocations']??null)?$plan['allocations']:[])] as $row){
+            $id=is_array($row)?($row['transaction_id']??$row['id']??null):null;
+            if(is_int($id)&&isset($removed[$id])){return true;}
+        }
+        return false;
+    }
+    /** True when a lost dispute removed credit from any receipt this operation returned, recorded on it or on a peer. */
+    public static function creditRemoved(Operation $op): bool
+    {
+        $funding=$op->funding??[];$plans=[...(isset($funding['refund'])?[$funding['refund']]:[]),...($funding['late_credits']??[])];
+        if(!$plans){return false;}
+        $removed=self::removedReceipts($op);
+        foreach($plans as $plan){if(is_array($plan)&&self::planRemoved($plan,$removed)){return true;}}
+        return false;
+    }
     /** This dispute's total obligation on one receipt and the owed amount already recorded for it on any peer.
      * Only completed returns and credit count; reserved and pending allocations never create recovery debt.
      * Credit removed for this dispute is added back, so its own recovery never shrinks what it owes. */

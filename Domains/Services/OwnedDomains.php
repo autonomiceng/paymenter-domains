@@ -42,7 +42,7 @@ final readonly class OwnedDomains
         if (!$op) { return []; }
         $kind=$op->action==='transfer'?'transfer':'registration';
         if($op->state==='rejected'){
-            try{$return=ReceiptReturns::summary($op);$returned=$return&&!ReceiptReturns::malformed($op)&&ReceiptReturns::outstanding($op)===0
+            try{$return=ReceiptReturns::summary($op);$returned=$return&&$return!==ReceiptReturns::REVIEW&&!ReceiptReturns::malformed($op)&&ReceiptReturns::outstanding($op)===0
                 &&!InvoiceMoney::returnBlocked(InvoiceMoney::project((int)$op->invoice_id));}
             catch(\Throwable){$return=ReceiptReturns::REVIEW;$returned=false;}
             if($return){return ['state'=>'cancelled','kind'=>$kind,'return'=>$return[1],'returned'=>$returned];}
@@ -74,9 +74,10 @@ final readonly class OwnedDomains
     private static function creditUnsafe(Operation $op): bool
     {
         // A credit recorded without an invoice has no invoice money to check. Its plan shape is not checked here either:
-        // the ordinary account credit stays Cancelled, and only blocked or unreadable invoice money sends it to review.
-        if($op->invoice_id===null){return false;}
-        try{return InvoiceMoney::returnBlocked(InvoiceMoney::project((int)$op->invoice_id));}catch(\Throwable){return true;}
+        // the ordinary account credit stays Cancelled.
+        // Credit a lost dispute removed from this order's receipt cannot be spent, even when another order recorded the removal.
+        try{return DisputeRecoveries::creditRemoved($op)||$op->invoice_id!==null&&InvoiceMoney::returnBlocked(InvoiceMoney::project((int)$op->invoice_id));}
+        catch(\Throwable){return true;}
     }
     private static function defaultNameservers(Operation $op): bool
     { try { return NewDomainDns::forOperation($op) !== []; } catch (\Throwable) { return false; } }

@@ -95,10 +95,10 @@ final readonly class Reminders
             $plans=[];$credits=[];$removed=[];
             if(isset($op->funding['refund'])){$plans['refund:'.$op->id]=$op->funding['refund'];}
             foreach(array_values($op->funding['late_credits']??[]) as $i=>$late){$plans['refund:'.$op->id.':'.$i]=$late;}
-            foreach($op->funding['dispute_holds']??[] as $hold){if($hold['removed_minor']>0){$removed[$hold['payment_id']]=true;}}
+            if($plans){$removed=DisputeRecoveries::removedReceipts($op);}
             foreach($plans as $identity=>$plan){
-                // A lost dispute removed credit from this receipt, so a notice saying the credit can be used would be wrong.
-                if(array_intersect_key($removed,array_flip([...array_column($plan['payments'],'id'),...array_column($plan['allocations']??[],'transaction_id')]))){continue;}
+                // A lost dispute removed credit from this receipt, here or on a peer, so a notice saying the credit can be used would be wrong.
+                if(DisputeRecoveries::planRemoved($plan,$removed)){continue;}
                 $credits[$identity]=$plan;
                 // A released allocation commits after its plan's bridge and needs a separate delivery identity.
                 foreach($plan['allocations']??[] as $a){

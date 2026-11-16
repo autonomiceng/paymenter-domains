@@ -7,10 +7,11 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Services\DisputeRecoveries;
 
-$peer=$new('credit-notice-peer-placeholder.com');
+$peer=$new('credit-notice-peer-placeholder.com');$sharedPeer=$new('credit-notice-shared-peer-placeholder.com');
 [$domain]=$make(placeholderComFixtureName('credit-notice-overdue-placeholder.com'),false);
 // Made before any owner hold below refuses new domain carts.
 [$stale]=$make(placeholderComFixtureName('credit-notice-stale-placeholder.com'),false);
+[$shared]=$make(placeholderComFixtureName('credit-notice-shared-placeholder.com'),false);
 $op=Operation::where('domain_id',$domain->id)->where('action','register')->sole();
 $dispute='synthetic_notice_overdue';
 $committed=$clock->now()->modify('-59 minutes');
@@ -74,4 +75,17 @@ DB::table('domains_obligation_alerts')->insert(['alert_key'=>DisputeRecoveries::
 $sent=static fn(string $template)=>DB::table('domains_reminder_deliveries')->where('domain_id',$stale->id)->where('template',$template)->count();
 $reminders->remind((int)$stale->id);$reminders->remind((int)$stale->id);
 same([1,0],[$sent('domains_credit_removed'),$sent('domains_domain_order_refunded')],'Only the removal notice is sent for removed credit');
+// Removal recorded on a peer: the shared receipt's credit is gone, so this order's credit notice is not sent either.
+$sharedOp=Operation::where('domain_id',$shared->id)->where('action','register')->sole();
+$sharedPayment=\App\Models\InvoiceTransaction::where('invoice_id',$sharedOp->invoice_id)->where('amount','>','0')->sole();
+DB::table('domains_operations')->where('id',$sharedOp->id)->update(['state'=>'rejected']);
+DB::table('domains_operations')->where('id',$sharedPeer->id)->update(['invoice_id'=>$sharedOp->invoice_id,'state'=>'rejected']);
+$sharedHold=static fn(int $removed)=>['dispute_id'=>'synthetic_notice_shared','increment'=>0,'payment_id'=>(int)$sharedPayment->id,'lost_minor'=>100,
+    'owed_minor'=>$removed===0?80:20,'removed_minor'=>$removed,'remainder_minor'=>$removed===0?80:0,'credit_id'=>$credit->id,'at'=>$clock->now()->modify('-10 minutes')->format(DATE_ATOM)];
+$sharedPeer->refresh()->update(['funding'=>['refund'=>['to'=>'account_credit','amount'=>'0.20','currency'=>'USD','credit_id'=>$credit->id,
+    'at'=>$clock->now()->modify('-2 hours')->format(DATE_ATOM),'payments'=>[['id'=>(int)$sharedPayment->id,'amount_minor'=>20]]],'dispute_holds'=>[$sharedHold(20)]]]);
+$sharedOp->refresh()->update(['funding'=>[...($sharedOp->funding??[]),'refund'=>['to'=>'account_credit','amount'=>'0.80','currency'=>'USD','credit_id'=>$credit->id,
+    'at'=>$clock->now()->modify('-2 hours')->format(DATE_ATOM),'payments'=>[['id'=>(int)$sharedPayment->id,'amount_minor'=>80]]],'dispute_holds'=>[$sharedHold(0)]]]);
+$reminders->remind((int)$shared->id);$reminders->remind((int)$shared->id);
+same(0,DB::table('domains_reminder_deliveries')->where('domain_id',$shared->id)->where('template','domains_domain_order_refunded')->count(),'Credit removed on a peer sends no spendable credit notice');
 $nativeSuccessful=true;
