@@ -19,7 +19,8 @@ final class AdoptionMapping
     {
         $service = $lock ? $lock->nativeRows($target->customerId)['service'] : Service::find($target->serviceId);
         $extension = $lock?->extensionRows();
-        $matches = Domain::where(fn ($q) => $q->where('reservation_name', $target->name)->orWhere('domain', $target->name))->orderBy('id')->when($lock, fn ($q) => $q->lockForUpdate())->get();
+        $matches = Domain::where(fn ($q) => $q->where('reservation_name', $target->name)->orWhere('domain', $target->name))->orderBy('id')->limit(101)->when($lock, fn ($q) => $q->lockForUpdate())->get();
+        if ($matches->count() > 100) { throw new \DomainException('competing_holding'); }
         $departedServices = []; $departureStamps = []; $pending = [];
         foreach ($matches as $match) {
             if ($match->adoptionPending()) { $pending[] = $match; continue; }
@@ -53,7 +54,6 @@ final class AdoptionMapping
         if ($binding->registrarKey !== $tld->registrar_key || $binding->environment !== $target->environment
             || $binding->fingerprint !== $tld->account_fingerprint) { throw new \DomainException('account_unconfirmed'); }
         $this->bindings->requireAdoptionSource($binding->registrarKey);
-        if ($domain && !$domain->adoptionPending()) { throw new \DomainException('competing_holding'); }
         if ($domain && ((int) $domain->service_id !== $target->serviceId || (int) $domain->user_id !== $target->customerId
             || (int) $domain->server_id !== $target->serverId || $domain->registrar_key !== $binding->registrarKey
             || $domain->account_fingerprint !== $binding->fingerprint)) { throw new \DomainException('mapping_unconfirmed'); }
@@ -156,9 +156,9 @@ final class AdoptionMapping
     {
         if (!DepartureProof::verified($domain) || (int) $domain->service_id === $target->serviceId) { throw new \DomainException('competing_holding'); }
         $ops = Operation::where(fn ($q) => $q->where('domain_id', $domain->id)->orWhere('service_id', $domain->service_id))
-            ->orderBy('id')->when($lock, fn ($q) => $q->lockForUpdate())->get(['id', 'domain_id', 'service_id', 'server_id',
+            ->orderBy('id')->limit(101)->when($lock, fn ($q) => $q->lockForUpdate())->get(['id', 'domain_id', 'service_id', 'server_id',
                 'registrar_key', 'account_fingerprint', 'authority_generation', 'action', 'state', 'completed_at', 'lease_expires_at']);
-        if ($ops->contains(fn ($op) => (int) $op->domain_id !== (int) $domain->id || (int) $op->service_id !== (int) $domain->service_id
+        if ($ops->count() > 100 || $ops->contains(fn ($op) => (int) $op->domain_id !== (int) $domain->id || (int) $op->service_id !== (int) $domain->service_id
             || (int) $op->server_id !== (int) $domain->server_id || $op->registrar_key !== $domain->registrar_key
             || $op->account_fingerprint !== $domain->account_fingerprint || $op->authority_generation < 1
             || $op->authority_generation > $domain->authority_generation || $op->lease_expires_at !== null
