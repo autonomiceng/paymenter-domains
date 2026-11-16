@@ -9,6 +9,9 @@ use Paymenter\Extensions\Servers\Domains\Presentation\{State,StatusPill};
 use Paymenter\Extensions\Servers\Domains\Services\DomainSummaries;
 
 $nativeSuccessful=false;
+// The synthetic registration was charged a different amount. Staff reviewed that charge here, so the departure leaves
+// nothing to do; an unreviewed charge stays in Needs attention (departure-money-review-attention-test).
+Illuminate\Support\Facades\DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code','operation_review')->whereNull('resolved_at')->update(['resolved_at'=>$clock->now()->getTimestamp()]);
 // The departure above is confirmed as moved to another registrar, with the paid unsent renewal returned as credit.
 $owner=User::findOrFail($d->user_id);
 $row=(new DomainSummaries)->listed($owner,$clock->now()->getTimestamp())['managed:'.$d->id]??null;

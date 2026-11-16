@@ -9,6 +9,9 @@ use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Services\ObservationRecords;
 
 $nativeSuccessful=false;
+// The synthetic registration was charged a different amount. Staff reviewed that charge here, so the departure leaves
+// nothing to do; an unreviewed charge stays in Needs attention (departure-money-review-attention-test).
+Illuminate\Support\Facades\DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code','operation_review')->whereNull('resolved_at')->update(['resolved_at'=>$clock->now()->getTimestamp()]);
 // A records read failed before staff confirmed the departure (Nov 16 walk): the record hold stays on the departed domain.
 ObservationRecords::failPrimary($d->fresh(),$clock->now());
 expect(ObservationRecords::held($d->fresh()),'The departed domain keeps the earlier record hold');
