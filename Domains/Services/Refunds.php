@@ -163,7 +163,7 @@ final readonly class Refunds
         OperationClaims::outside(); $credited = []; $inspect = []; $cursor = 'domains.closed-credit-cursor.'.$account->server_id;
         $failure = null; $from = (int) Cache::get($cursor, 0); $reached = $from; $complete = $kept = false;
         try {
-            foreach (MoneyDecisions::queued((int) $account->server_id, 25) as $work) {
+            foreach (MoneyDecisions::queued((int) $account->server_id, 25, [self::CLOSED, self::REJECTED]) as $work) {
                 $op = Operation::find($work->subject_id);
                 try {
                     if ($op && $work->kind === self::CLOSED) {

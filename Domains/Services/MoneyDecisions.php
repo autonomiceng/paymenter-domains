@@ -60,11 +60,12 @@ final class MoneyDecisions
                 ['account_fingerprint', 'turn', 'revision' => DB::raw('revision + 1')]);
         } catch (\Throwable $e) { throw new MoneyWorkUnqueued('A deferred money decision could not be queued.', 0, $e); }
     }
-    /** Deferred work for one account, longest waiting since its last deferral first. Read without locks; nothing is held across a decision. */
-    public static function queued(int $serverId, int $limit): array
+    /** Deferred work of the caller's kinds for one account, longest waiting since its last deferral first. Other kinds stay
+     * queued for their own sweep. Read without locks; nothing is held across a decision. */
+    public static function queued(int $serverId, int $limit, array $kinds): array
     {
         if (!Schema::hasTable(MoneyWorkSchema::TABLE)) { return []; }
-        return DB::table(MoneyWorkSchema::TABLE)->where('server_id', $serverId)->orderBy('turn')->orderBy('id')->limit($limit)->get()->all();
+        return DB::table(MoneyWorkSchema::TABLE)->where('server_id', $serverId)->whereIn('kind', $kinds)->orderBy('turn')->orderBy('id')->limit($limit)->get()->all();
     }
     /** Only the revision that was run is removed; a deferral since then keeps the item queued. */
     public static function done(object $work): void

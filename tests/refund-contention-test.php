@@ -121,6 +121,11 @@ same([['kind'=>'refund_closed','subject_id'=>$op->id,'revision'=>1]], $work(), '
 same([$before, false], [$balance(), $repaired($op)], 'A queued closed order has no credit or repair yet');
 same([$op->domain_id], $refunds->creditRetired($account), 'The queued closed order is credited and reported');
 same([$before + 300, []], [$balance(), $work()], 'Closed order credit is exact and its work is done');
+// The refund sweep runs and removes only refund work; another kind stays queued for its own sweep.
+DB::table(MoneyWorkSchema::TABLE)->insert(['server_id'=>$account->server_id, 'account_fingerprint'=>$account->account_fingerprint, 'kind'=>'renewal_issue', 'subject_id'=>$op->id, 'revision'=>1, 'turn'=>1]);
+$refunds->creditRetired($account);
+same([['kind'=>'renewal_issue','subject_id'=>$op->id,'revision'=>1]], $work(), 'Work of another kind stays queued after the refund sweep');
+DB::table(MoneyWorkSchema::TABLE)->delete();
 
 // The runner opens the only transaction.
 $ran = false; $nested = static function() use (&$ran) { $ran = true; };
