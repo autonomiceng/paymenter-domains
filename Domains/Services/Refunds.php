@@ -134,11 +134,24 @@ final readonly class Refunds
         if ($deferred && $staff) { throw new StaffReviewRefused(MoneyDecisions::BUSY); }
         return $resumed ?? $result ?? ($returned ?? null);
     }
-    /** Return incremental net funds received after retirement, however little or much arrives. */
-    private function creditLate(Operation $op, array $l, ?StaffOperationReview $review): ?array
+    /** Departure confirmation only: the caller's money decision holds the full locks and has just closed this paid renewal
+     * unsent. Its remaining receipt shares become account credit through the late-credit record, in the same decision.
+     * @return int the new account credit in minor units */
+    public function departLocked(array $l, Operation $op): int
+    {
+        if (!MoneyDecisions::running() || ($l['advisory'] ?? true) || !$l['operations']->contains(static fn ($row) => $row === $op)
+            || $op->state !== 'rejected' || !isset($op->attempt['terminal']['transactions']) || !FundsWaits::closedRenewal($op, $l['domain'])) {
+            throw new \DomainException('Closed renewal proof unavailable.');
+        }
+        $credited = $this->creditLate($op, $l, null, true);
+        return $credited === null ? 0 : PricingRule::minor($credited['amount']);
+    }
+    /** Return incremental net funds received after retirement, however little or much arrives. Departure credits what is
+     * left after adopting a gateway-owned closed receipt; every other caller stops there. */
+    private function creditLate(Operation $op, array $l, ?StaffOperationReview $review, bool $departure = false): ?array
     {
         RefundProof::requireUnsent($op, $l['domain']); RefundPayment::requireLine($op, $l);
-        if (ReceiptReturns::adoptClosed($op, $l, $this->clock->now())) { $review?->record($l); return null; }
+        if (ReceiptReturns::adoptClosed($op, $l, $this->clock->now()) && !$departure) { $review?->record($l); return null; }
         $payments = RefundPayment::lateUncredited($op, $l); $minor = array_sum(array_column($payments, 'amount_minor'));
         if ($minor <= 0) { if($review){throw new \DomainException('No pending account credit. Reload this page.');} return null; }
         $credit = $l['credit'] ?? new Credit(['user_id' => $l['user']->id, 'currency_code' => 'USD', 'amount' => '0.00']);

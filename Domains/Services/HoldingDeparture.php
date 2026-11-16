@@ -2,12 +2,14 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
+use App\Enums\InvoiceTransactionStatus;
 use App\Models\{Invoice,InvoiceTransaction,User};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
-/** Staff confirm a suspected departure once. One full money decision closes unpaid renewals, cancels the service and
- * freezes the departure record; any blocking line rolls all of it back. No provider call or notification runs inside. */
+/** Staff confirm a suspected departure once. One full money decision closes unpaid renewals, returns paid unsent renewals
+ * as account credit, cancels the service and freezes the departure record; any blocking line rolls all of it back. No
+ * provider call or notification runs inside. */
 final class HoldingDeparture
 {
     public const PERMISSION='admin.domains.holdings.depart';
@@ -21,7 +23,7 @@ final class HoldingDeparture
     public function __construct(private readonly Clock $clock){}
 
     /** Read-only preview for the staff page: advisory rows and the shared money projection. Never load, recovery or a writer.
-     * @return array{block:?array,close:list<int>,kept:list<int>} */
+     * @return array{block:?array,close:list<int>,credit:list<int>,kept:list<int>} */
     public static function preview(Domain $d,int $now): array
     {
         try{
@@ -30,8 +32,9 @@ final class HoldingDeparture
             $money=InvoiceMoney::projectBatch(Invoice::whereIn('id',$ids)->orderBy('id')->get(),
                 InvoiceTransaction::with('gateway')->whereIn('invoice_id',$ids)->orderBy('id')->get(),InvoiceMoney::peers($ids));
             $a=self::assess($l,fn(int $id)=>$money[$id]??null,$now,InvoiceMoney::ownerHeld((int)$d->user_id));
-        }catch(\Throwable){return ['block'=>['line'=>self::UNREADABLE,'invoice'=>null,'operation'=>null,'hold_domain'=>null],'close'=>[],'kept'=>[]];}
-        return ['block'=>$a['block'],'close'=>array_map(fn($op)=>(int)$op->id,$a['close']),'kept'=>array_map(fn($op)=>(int)$op->id,$a['kept'])];
+        }catch(\Throwable){return ['block'=>['line'=>self::UNREADABLE,'invoice'=>null,'operation'=>null,'hold_domain'=>null],'close'=>[],'credit'=>[],'kept'=>[]];}
+        $ids=fn(array $ops)=>array_map(fn($op)=>(int)$op->id,$ops);
+        return ['block'=>$a['block'],'close'=>$ids($a['close']),'credit'=>$ids($a['credit']),'kept'=>$ids($a['kept'])];
     }
 
     /** Applied with the frozen record; Failed carries DepartureBlocked or a review refusal; Deferred is MoneyDecisions::BUSY. */
@@ -59,15 +62,28 @@ final class HoldingDeparture
                 RenewalCycles::retireDeparted($op,$l,self::REASONS[$reason],$this->clock);
                 $outcomes[]=['operation_id'=>(int)$op->id,'invoice_id'=>(int)$op->invoice_id,'outcome'=>'cancelled_unpaid'];
             }
+            // Paid but never sent: close it unsent with its retained receipts, then return every free share as account
+            // credit. The free pool read before these writes must equal the new credit exactly.
+            $free=0;$creditBefore=self::creditMinor($l);$credited=0;
+            foreach(array_unique(array_map(fn($op)=>(int)$op->invoice_id,$a['credit'])) as $id){$free+=InvoiceMoney::held($money($id)??throw new DepartureBlocked(['line'=>self::UNREADABLE,'invoice'=>$id,'operation'=>null,'hold_domain'=>null]));}
+            foreach($a['credit'] as $op){
+                $receipts=$l['transactions']->where('invoice_id',$op->invoice_id)->where('status',InvoiceTransactionStatus::Succeeded)->pluck('id')->map(fn($id)=>(int)$id)->values()->all();
+                FundsWaits::closeRenewal($op,$l,$now,$receipts);
+                $minor=app(Refunds::class)->departLocked($l,$op);$credited+=$minor;
+                $outcomes[]=['operation_id'=>(int)$op->id,'invoice_id'=>(int)$op->invoice_id,'outcome'=>'credited','credit_minor'=>$minor];
+            }
+            if($free!==$credited||self::creditMinor($l)-$creditBefore!==$credited){
+                throw new DepartureBlocked(['line'=>self::RENEWAL_REVIEW,'invoice'=>$a['credit']?(int)$a['credit'][0]->invoice_id:null,'operation'=>null,'hold_domain'=>null]);
+            }
             foreach($a['kept'] as $op){$outcomes[]=['operation_id'=>(int)$op->id,'invoice_id'=>(int)$op->invoice_id,'outcome'=>'kept'];}
             // Strict settlement of every closed invoice from fresh locked rows, never the earlier read.
-            foreach(array_unique(array_map(fn($op)=>(int)$op->invoice_id,$a['close'])) as $id){
+            foreach(array_unique(array_map(fn($op)=>(int)$op->invoice_id,[...$a['close'],...$a['credit']])) as $id){
                 $r=InvoiceMoney::lockedRecord($l,$id,Operation::where('invoice_id',$id)->orderBy('id')->lockForUpdate()->get());
                 if(!InvoiceMoney::settled($r)||$r['ownerHold']){throw new DepartureBlocked(['line'=>self::RENEWAL_REVIEW,'invoice'=>$id,'operation'=>null,'hold_domain'=>null]);}
             }
             $record=['identity'=>DepartureProof::identity($d),'reason'=>$reason,'note'=>$note,'actor_id'=>(int)$staff->id,'confirmed_at'=>$now->format(DATE_ATOM),
                 'absence'=>['identity'=>ObservationRecords::identity($d),'at'=>$absence],'registry'=>$d->observation['departure_check']['registry']??null,
-                'dns_case'=>$dns,'invoices'=>$outcomes,'credit_minor'=>0];
+                'dns_case'=>$dns,'invoices'=>$outcomes,'credit_minor'=>$credited];
             $history[]=['key'=>$t['key'],'actor_id'=>(int)$staff->id,'action'=>self::ACTION,'reason'=>$note,'at'=>$now->format(DATE_ATOM),
                 'before'=>['status'=>$d->status],'after'=>['status'=>'departed']];
             $d->update(['status'=>'departed','renewal_policy'=>[...($d->renewal_policy??[]),'departure'=>$record,'staff_holdings'=>$history]]);
@@ -90,10 +106,10 @@ final class HoldingDeparture
 
     /** First blocking line in check order, plus the renewals confirmation closes and the completed ones it keeps.
      * @param \Closure(int):?array $money a locked load or a projection; null means unreadable
-     * @return array{block:?array,close:list<Operation>,kept:list<Operation>} */
+     * @return array{block:?array,close:list<Operation>,credit:list<Operation>,kept:list<Operation>} */
     private static function assess(array $l,\Closure $money,int $now,bool $ownerHeld): array
     {
-        $d=$l['domain'];$blocks=[];$close=[];$kept=[];
+        $d=$l['domain'];$blocks=[];$close=[];$credit=[];$kept=[];
         $block=static function(int $line,?int $invoice=null,?int $op=null)use(&$blocks,$d):void{
             $blocks[]=['line'=>$line,'invoice'=>$invoice,'operation'=>$op,'hold_domain'=>in_array($line,[self::OWNER_HOLD,self::OVERDRAWN],true)?self::holdDomain((int)$d->user_id):null];
         };
@@ -113,6 +129,7 @@ final class HoldingDeparture
             if($op->state==='succeeded'){$kept[]=$op;continue;}
             if(!in_array($op->state,[...self::OPEN,...self::TERMINAL],true)){$block(self::AT_REGISTRAR,$invoice,(int)$op->id);continue;}
             if(in_array($op->state,self::OPEN,true)&&$generation&&RenewalCycles::canRetireUnpaid($op,$l)){$close[]=$op;continue;}
+            if(in_array($op->state,self::OPEN,true)&&$generation&&$r!==null&&self::paidUnsent($op,$l)){$credit[]=$op;continue;}
             // Closed earlier with nothing left on its invoice: history, not part of this closure.
             if(in_array($op->state,self::TERMINAL,true)&&$r!==null&&InvoiceMoney::settled($r)){continue;}
             if(in_array($op->state,self::TERMINAL,true)&&$invoice===null){continue;}
@@ -125,8 +142,20 @@ final class HoldingDeparture
         $at=self::absenceAt($d);
         if($at===null||$now-$at>self::FRESH){$block(self::STALE);}
         usort($blocks,fn($a,$b)=>$a['line']<=>$b['line']);
-        return ['block'=>$blocks[0]??null,'close'=>$close,'kept'=>$kept];
+        return ['block'=>$blocks[0]??null,'close'=>$close,'credit'=>$credit,'kept'=>$kept];
     }
+    /** Paid or part paid, never attempted at the registrar and still on the current expiry: the same proof the renewal
+     * funds closure checks before it closes the request unsent. Reads only. */
+    private static function paidUnsent(Operation $op,array $l): bool
+    {
+        $d=$l['domain'];$invoice=$l['invoices']->firstWhere('id',$op->invoice_id);
+        if($op->action!=='renew'||$op->funding_basis!=='paid_invoice'||!$invoice||!in_array($invoice->status,['paid','pending'],true)
+            ||!RenewalCycles::registrarVirgin($op)||!RenewalCycles::moneyMoved($l,(int)$invoice->id)
+            ||$op->base_expires_at?->format('Y-m-d')!==$d->provider_expires_at?->format('Y-m-d')){return false;}
+        try{RefundProof::requireUnsent($op,$d);RefundPayment::requireLine($op,$l);return true;}catch(\DomainException){return false;}
+    }
+    private static function creditMinor(array $l): int
+    { return PricingRule::minor((string)(\App\Models\Credit::where('user_id',$l['user']->id)->where('currency_code','USD')->value('amount')??'0.00')); }
     private static function renewals(array $l): \Illuminate\Support\Collection
     { return $l['operations']->where('action','renew')->sortBy('id')->values(); }
     /** Time of the identity-bound definite absence read, or null when unproved. */
