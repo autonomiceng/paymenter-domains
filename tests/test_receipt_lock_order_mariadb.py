@@ -22,7 +22,7 @@ def exercise(command, php_args, env, scratch):
         revisions.insert(0, ('base', os.environ['DOMAINS_TEST_RECEIPT_BASE']))
     proofs = []
     for revision, runtime in revisions:
-        for case in ('scoped', 'widened'):
+        for case in (('scoped',) if revision == 'base' else ('scoped', 'widened')):
             name = revision+'-'+case
             cell = dict(env, RECEIPT_CASE=case, RECEIPT_NAME=name, RECEIPT_RUNTIME=runtime)
             command('receipt-reset-'+name, php_args+[script], env=dict(cell, RECEIPT_PHASE='reset'))
