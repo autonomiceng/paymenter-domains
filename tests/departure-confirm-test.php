@@ -27,6 +27,7 @@ $blocked=static function(\Closure $call,int $line,string $why)use($state):void{
 $manager=staffUser([Staff::VIEW,'admin.domains.manage']);$staff=staffUser([Staff::VIEW,'admin.domains.manage',HoldingDeparture::PERMISSION]);
 
 // Permission: managing domains is not enough to confirm a departure.
+same(true,array_key_exists(HoldingDeparture::PERMISSION,Staff::permissions()),'Role editors can grant the depart permission');
 $before=$state();$result=$confirm($manager);
 same([MoneyOutcome::Failed,true],[$result->outcome,$result->error instanceof StaffReviewRefused],'Confirmation needs its own permission');
 same($before,$state(),'A refused confirmation changes nothing');
