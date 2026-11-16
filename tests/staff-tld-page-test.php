@@ -83,7 +83,7 @@ $tab=$activeTab($page);
 same([1,ViewTld::getUrl(['record'=>$enom->id])],[count($tab),$tab[0]?->getUrl()],'One active tab, and it opens this record');
 expect(str_contains((string)$page->instance()->getTitle(),(string)$tab[0]->getLabel()),'The browser title names the open tab');
 same('.com on Enom TEST identity check',$named($page),'A TLD offered by two accounts is titled by its account');
-// The other account's page for the same TLD names its own account.
+// The other account's page for the same TLD names its own account in the browser title.
 $other=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$silo->id])->assertSuccessful();
 same('.com on OFFLINE DEMO NameSilo (synthetic)',$named($other),'Two pages for one TLD never share a title');
 // Each price shows the cost for the same action, so a price never reads against another action's cost.

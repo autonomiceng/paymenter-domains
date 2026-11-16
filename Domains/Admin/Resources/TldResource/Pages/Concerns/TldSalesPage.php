@@ -75,13 +75,15 @@ trait TldSalesPage
         if($s['invalid']||in_array($s['reason'],['Below cost','Price missing','Prices not published'],true)){return 'override';}
         return in_array($s['reason'],['No registrar selected','Not offered by this registrar'],true)||TldFacts::unsupported($s['reason'])?'seller':null;
     }
+    /** Browser tabs keep the account, so two accounts' pages for one TLD never share a title. */
+    protected function browserTitle(): ?string {$a=$this->account();return $a===null?null:'.'.$this->getRecord()->tld.' on '.$a;}
     /** The head: the TLD, its sales state, and the link that names where the reason is fixed. The reason itself is the
      * Sales notice, so the head says only the state. */
     protected function head(): Head
     {
         $t=$this->getRecord();$s=$this->sales();$reason=(string)$s['reason'];$a=$this->account();
-        // With no registrar for new orders, naming this row's account would read as the registrar.
-        $head=Head::make('.'.$t->tld.($a!==null&&($this->snap()['seller']??null)!==null?' on '.$a:''),Reader::Staff)->tag((bool)($this->snap()['demo']??false),false)
+        // Only the account for new orders is named: on another account's row the name would read as the registrar.
+        $head=Head::make('.'.$t->tld.($a!==null&&($this->snap()['seller']??null)===(int)$t->server_id?' on '.$a:''),Reader::Staff)->tag((bool)($this->snap()['demo']??false),false)
             ->state($s['label']==='For sale'?State::ForSale:State::NotForSale,'tld-'.$t->id);
         if($s['label']==='For sale'||$this->staffStop()){return $head;}
         $url=match(true){

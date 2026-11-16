@@ -352,10 +352,9 @@ final class StaffCatalogue
             $chosen=$invalidRule?null:$chosen;
             if(!$selected&&!isset($sellers[$t->tld])){$label=TldFacts::NO_SELLER;}
             // Another account takes this TLD's new orders: name it, so each account's page for one TLD tells the same story.
-            if(!$unreadable&&$reason==='seller_changed'&&isset($sellers[$t->tld])&&(int)$sellers[$t->tld]!==(int)$t->server_id){
-                $other=(int)$sellers[$t->tld];
-                $label=TldFacts::OTHER_SELLER.' '.($accountNames[$other]??=(string)(\App\Models\Server::whereKey($other)->value('name')?:'another registrar account'));
-            }
+            $other=!$unreadable&&isset($sellers[$t->tld])&&(int)$sellers[$t->tld]!==(int)$t->server_id?(int)$sellers[$t->tld]:null;
+            $otherSeller=static function()use(&$accountNames,$other):string{return TldFacts::OTHER_SELLER.' '.($accountNames[$other]??=(string)(\App\Models\Server::whereKey($other)->value('name')?:'another registrar account'));};
+            if($other!==null&&$reason==='seller_changed'){$label=$otherSeller();}
             $queue=$refresh[$t->server_id]??null;
             if($queue&&$queue->account_fingerprint!==$t->account_fingerprint){$queue=null;}
             $work=$queue?OfferState::decode($queue->offer_work):[];
@@ -373,6 +372,8 @@ final class StaffCatalogue
                 // Keep an account-unavailable status. A first read failure cannot establish a missing feed entry.
                 elseif($reason==='account_unavailable'||$refreshed['failure']){$label='Check registrar account';}
             }
+            // This account can't take new orders anyway, so its own account check is not why the TLD isn't sold here.
+            if($other!==null&&$label==='Check registrar account'){$label=$otherSeller();}
             $error=['invalid_rule_kind'=>$ruleKind];
             $out[$t->id]=['selected'=>(bool)$selected,'invalid_rule'=>$invalidRule,...$error,
                 'refresh'=>$refreshed,

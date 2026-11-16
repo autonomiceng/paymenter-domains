@@ -20,6 +20,14 @@ $page=static fn($op)=>Livewire::actingAs($staff)->test(ViewOperation::class,['re
 $op=$submit($d,$driver,'lock',['locked'=>false]);same('uncertain',$management->run($op->id,$driver)->state,'The free change is unconfirmed');
 ObligationAlerts::record($d->fresh(),'operation_review',time(),(int)$op->id);
 $calls=count($state->calls);$attempt=$op->fresh()->attempt;$observation=$d->fresh()->observation;$note='Enom support found no lock change';
+// The notice names Mark as failed only to staff who may use it.
+$notice=static function($page):string{$dom=new DOMDocument;@$dom->loadHTML('<?xml encoding="utf-8" ?>'.$page->html());
+    return implode(' ',array_map(fn($n)=>$n->textContent,iterator_to_array((new DOMXPath($dom))->query('//*[@data-domains-row="notice"]'))));};
+$label=StaffOperationReview::ACTIONS['mark_failed'];
+expect(str_contains($notice($page($op)),$label),'The notice points permitted staff to Mark as failed');
+$viewer=staffUser(array_values(array_diff($role->permissions,[StaffOperationReview::permission('mark_failed')])));
+$plain=Livewire::actingAs($viewer)->test(ViewOperation::class,['record'=>$op->id])->assertActionHidden('mark_failed');
+expect(!str_contains($notice($plain),$label)&&$notice($plain)!=='','Staff who can\'t mark it failed are not pointed to it');
 $page($op)->assertActionVisible('mark_failed')
     ->callAction('mark_failed',['reason'=>'no'])->assertHasActionErrors(['reason'=>'min'])->unmountAction()
     ->callAction('mark_failed',['reason'=>$note])->assertHasNoActionErrors()->assertSee($note)->assertActionHidden('mark_failed');
