@@ -13,8 +13,6 @@ final class DemoData
     public const TEST_TOOLTIP = 'Registrar test environment. Nothing is real at the registrar, but invoices are still real, and paying one charges you.';
     /** The same tag while the site's Test mode tag says payments are test payments, in that tag's words. */
     public const TEST_PAYMENTS_TOOLTIP = 'Registrar test environment. Nothing is real at the registrar. Payments are test payments and nothing real is charged.';
-    /** The site's Test mode tag, when the site has one: it decides whether payments are test payments. */
-    private const SITE_TEST_MODE = 'Paymenter\\Extensions\\Others\\BecoAdmin\\TestMode';
     public const BANNER = 'Test system. Records tagged Demo are seeded examples.';
     public const ACCOUNTS = ['enom' => 'demo-enom', 'namesilo' => 'demo-namesilo'];
     // Exact prior identities remain readable; new seeds use ACCOUNTS.
@@ -63,14 +61,14 @@ final class DemoData
         return self::is($account) && $account->registrar_key === 'enom' && (config('domains.enom_identity.environment') === 'test'
             || config('domains.enom_writes.registration') === true || config('domains.enom_writes.renewal') === true);
     }
-    /** The Test tag's words. Invoices read as real unless the site's own Test mode tag shows payments are test payments,
-     * so the tag never says nothing is charged where a real charge can happen. */
+    /** The Test tag's words. Invoices read as real unless the site says its payments are test payments, so the tag never
+     * says nothing is charged where a real charge can happen. A site with its own Test mode tag sets domains.test_payments
+     * to true or to a callable returning true, as it sets domains.support_url; Domains reads only that setting. */
     public static function testTooltip(): string
     {
-        return once(static function (): bool {
-            $mode = self::SITE_TEST_MODE;
-            try { return class_exists($mode) && is_callable([$mode, 'on']) && $mode::on() === true; } catch (\Throwable) { return false; }
-        }) ? self::TEST_PAYMENTS_TOOLTIP : self::TEST_TOOLTIP;
+        $test = config('domains.test_payments');
+        try { $test = $test instanceof \Closure ? $test() : $test; } catch (\Throwable) { $test = false; }
+        return $test === true ? self::TEST_PAYMENTS_TOOLTIP : self::TEST_TOOLTIP;
     }
     public static function tag(bool $inline = false, bool $test = false): HtmlString
     {

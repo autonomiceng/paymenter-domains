@@ -50,6 +50,12 @@ foreach(['none'=>[false,false],'Test'=>[false,true],'Demo'=>[true,false],'Demo a
 }
 // Registrar test mode never stops billing: without the site's Test mode tag the Test tag never promises that nothing is charged.
 same(DemoData::TEST_TOOLTIP,DemoData::testTooltip(),'Without the site Test mode tag, the Test tag says invoices are real');
+// A site whose own Test mode tag says payments are test payments sets domains.test_payments; the Test tag then agrees.
+config(['domains.test_payments'=>static fn()=>true]);
+same(DemoData::TEST_PAYMENTS_TOOLTIP,DemoData::testTooltip(),'With site test payments, the Test tag says nothing real is charged');
+config(['domains.test_payments'=>static fn()=>throw new RuntimeException('unreadable')]);
+same(DemoData::TEST_TOOLTIP,DemoData::testTooltip(),'An unreadable site setting keeps invoices real');
+config(['domains.test_payments'=>null]);
 
 // Hosting domains: the related list tags seeded watches (domain-portal-test covers their details and hosting pages). Watches never use a registrar test mode.
 $strings=DomainSummaryStrings::all();
