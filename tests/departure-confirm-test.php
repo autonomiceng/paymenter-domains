@@ -41,6 +41,11 @@ same([(int)$renewal->id],HoldingDeparture::preview($d->fresh(),$clock->now()->ge
 $price=DB::table('invoice_items')->where('id',$renewal->invoice_item_id)->value('price');
 DB::table('invoice_items')->where('id',$renewal->invoice_item_id)->update(['price'=>'1.00']); // Synthetic retained-data conflict.
 same(HoldingDeparture::RENEWAL_REVIEW,HoldingDeparture::preview($d->fresh(),$clock->now()->getTimestamp())['block']['line'],'The preview shows line 8');
+// The blocking line links its records: the invoice and the renewal request.
+Illuminate\Support\Facades\Auth::setUser($staff);
+$links=Paymenter\Extensions\Servers\Domains\Admin\Support\DepartureConfirm::line(HoldingDeparture::preview($d->fresh(),$clock->now()->getTimestamp())['block'],$d->fresh())[2];
+same(['departure_invoice','departure_request'],array_column($links,0),'Line 8 links the invoice and the request');
+same(true,str_contains((string)$links[1][2],'/'.$renewal->id),'The request link opens the blocking renewal request');
 $page($staff)->assertActionDisabled('confirm_departure');
 $blocked(fn()=>$confirm($staff),HoldingDeparture::RENEWAL_REVIEW,'Line 8');
 DB::table('invoice_items')->where('id',$renewal->invoice_item_id)->update(['price'=>$price]);

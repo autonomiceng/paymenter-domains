@@ -97,11 +97,9 @@ final class WatchDiscovery
         $owner=(int)$d->user_id;
         $watch=WatchName::where('user_id',$owner)->where('managed_domain_id',$d->id)->where('state','linked')->lockForUpdate()->first();
         if(!$watch){return null;}
-        $links=WatchSource::where('user_id',$owner)->where('managed_domain_id',$d->id)->where('state','managed_link')->orderBy('id')->lockForUpdate()->get();
         // Decide from the sources the watch will have, then move it out of linked first: a watch source needs an active
         // or paused watch. The new sources copy each link's owner, service and mapping, so hosting reads the same.
-        $ids=[...$links->pluck('id')->all(),...WatchSource::where('watch_id',$watch->id)->where('state','watch')->lockForUpdate()->pluck('id')->all()];
-        $state=!$ids?'retired':(self::staffPaused($watch)||!self::activeHosting(WatchSource::whereIn('id',$ids))?'paused':'active');
+        [$links,$state]=self::handoff($watch,$d,true);
         $this->change($watch,['state'=>$state,'managed_domain_id'=>null,'registration'=>null,'registration_evidence'=>null],'registration_departed',$now);
         foreach($links as $link){
             $attrs=$link->only(['user_id','service_id','map_id','map_revision','hostname','registrable_name','source_digest','last_seen_at']);
@@ -110,6 +108,23 @@ final class WatchDiscovery
         }
         if($state!=='active'){$this->stop($watch,'registration_departed',$now);}
         return ['id'=>(int)$watch->id,'state'=>$state];
+    }
+    /** The outcome confirmation would give this owner's watch linked to the domain, for the staff preview: active,
+     * paused (staff paused it), hosting (paused, no active hosting names it), retired (no sources), or null without one.
+     * Reads only. */
+    public static function departurePreview(Domain $d): ?string
+    {
+        $watch=WatchName::where('user_id',(int)$d->user_id)->where('managed_domain_id',$d->id)->where('state','linked')->first();
+        if(!$watch){return null;}
+        $state=self::handoff($watch,$d,false)[1];
+        return $state==='paused'&&!self::staffPaused($watch)?'hosting':$state;
+    }
+    /** The watch's managed links and the state its sources give it after the handoff. @return array{0:\Illuminate\Support\Collection,1:string} */
+    private static function handoff(WatchName $watch,Domain $d,bool $lock): array
+    {
+        $links=WatchSource::where('user_id',(int)$d->user_id)->where('managed_domain_id',$d->id)->where('state','managed_link')->orderBy('id')->when($lock,fn($q)=>$q->lockForUpdate())->get();
+        $ids=[...$links->pluck('id')->all(),...WatchSource::where('watch_id',$watch->id)->where('state','watch')->when($lock,fn($q)=>$q->lockForUpdate())->pluck('id')->all()];
+        return [$links,!$ids?'retired':(self::staffPaused($watch)||!self::activeHosting(WatchSource::whereIn('id',$ids))?'paused':'active')];
     }
     /** The service's own domain, else its hostname. */
     private static function values(Service $s,bool $lock=false): array

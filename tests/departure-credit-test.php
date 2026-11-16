@@ -21,15 +21,23 @@ same(['paid',true],[$invoice->fresh()->status,RenewalCycles::registrarVirgin($re
 $preview=HoldingDeparture::preview($d->fresh(),$clock->now()->getTimestamp());
 same(null,$preview['block'],'A paid unsent renewal does not block confirmation');
 same([[],[(int)$renewal->id]],[$preview['close'],$preview['credit']??null],'The preview returns the paid unsent renewal as credit');
+same([(int)$invoice->id=>$amount],$preview['credit_minor']??null,'The preview names the account credit confirmation would add');
 
 $staff=staffUser([Staff::VIEW,'admin.domains.manage',HoldingDeparture::PERMISSION]);
+// The staff page and its confirm dialog read the preview only: no row changes.
+$rows=static fn()=>array_map(fn($t)=>Illuminate\Support\Facades\DB::table($t)->orderBy('id')->get()->map(fn($r)=>(array)$r)->all(),
+    ['domains_domains','domains_operations','invoices','invoice_transactions','credits','services','domains_obligation_alerts','domains_watch_names']);
+$seen=$rows();Illuminate\Support\Facades\Auth::setUser($staff);
+Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$d->id])
+    ->assertSuccessful()->assertActionEnabled('confirm_departure')->mountAction('confirm_departure');
+same($seen,$rows(),'The staff preview and confirm dialog write nothing');
 $ticket=StaffHoldingReview::ticket((int)$staff->id,(int)$d->id,HoldingDeparture::ACTION,StaffHoldingReview::stamp(HoldingLocks::take($d->fresh(),advisory:true)),$clock);
 $result=(new HoldingDeparture($clock))->confirm($staff,(int)$d->id,$ticket,'other_registrar','Checked the registrar account.');
 same([MoneyOutcome::Applied,null],[$result->outcome,$result->error?->getMessage()],'Confirmation closes the paid unsent renewal');
 same($before+$amount,$cash($owner),"The full payment returns as the old owner's account credit");
 same(300,$cash((int)$stranger->id),"Another customer's credit is unchanged");
 $held=$d->fresh();$op=$renewal->fresh();
-same(['departed',$amount],[$held->status,$held->renewal_policy['departure']['credit_minor']],'The frozen record carries the new credit');
+same(['departed',$amount],[$held->status,$held->renewal_policy['departure']['credit_minor']],'The frozen record carries the credit the preview named');
 same(['rejected','renewal_funds_expired','cancelled'],[$op->state,$op->safe_code,$invoice->fresh()->status],'The request closes unsent and its invoice is cancelled');
 same([['operation_id'=>(int)$op->id,'invoice_id'=>(int)$invoice->id,'outcome'=>'credited','credit_minor'=>$amount]],$held->renewal_policy['departure']['invoices'],'The record names the credited invoice');
 same(true,InvoiceMoney::settled(InvoiceMoney::project((int)$invoice->id)),'Nothing is left on the closed invoice');

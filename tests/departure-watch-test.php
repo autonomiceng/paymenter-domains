@@ -26,6 +26,10 @@ $watch=DB::transaction(fn()=>WatchName::create(['user_id'=>$owner,'canonical_nam
 $link=DB::transaction(fn()=>WatchSource::create(['user_id'=>$owner,'service_id'=>$hosting->id,'map_id'=>$map->id,'map_revision'=>1,'hostname'=>'www.'.$name,
     'registrable_name'=>$name,'managed_domain_id'=>$d->id,'state'=>'managed_link','source_digest'=>str_repeat('b',64),'last_seen_at'=>1]));
 
+// The staff preview names the outcome confirmation gives this watch and changes nothing: suspended hosting no longer qualifies.
+$watchBefore=[$watch->fresh()->getAttributes(),$link->fresh()->getAttributes()];
+same($watchCase==='active'?'active':'hosting',Paymenter\Extensions\Servers\Domains\Services\WatchDiscovery::departurePreview($d->fresh()),'The preview names the watch outcome');
+same($watchBefore,[$watch->fresh()->getAttributes(),$link->fresh()->getAttributes()],'The watch preview writes nothing');
 $staff=staffUser([Staff::VIEW,'admin.domains.manage',HoldingDeparture::PERMISSION]);
 $ticket=StaffHoldingReview::ticket((int)$staff->id,(int)$d->id,HoldingDeparture::ACTION,StaffHoldingReview::stamp(HoldingLocks::take($d->fresh(),advisory:true)),$clock);
 $result=(new HoldingDeparture($clock))->confirm($staff,(int)$d->id,$ticket,'other_registrar','Checked the registrar account.');

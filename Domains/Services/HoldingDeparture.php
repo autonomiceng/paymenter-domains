@@ -23,7 +23,7 @@ final class HoldingDeparture
     public function __construct(private readonly Clock $clock){}
 
     /** Read-only preview for the staff page: advisory rows and the shared money projection. Never load, recovery or a writer.
-     * @return array{block:?array,close:list<int>,credit:list<int>,kept:list<int>} */
+     * @return array{block:?array,close:list<int>,credit:list<int>,kept:list<int>,credit_minor:array<int,int>} */
     public static function preview(Domain $d,int $now): array
     {
         try{
@@ -32,9 +32,16 @@ final class HoldingDeparture
             $money=InvoiceMoney::projectBatch(Invoice::whereIn('id',$ids)->orderBy('id')->get(),
                 InvoiceTransaction::with('gateway')->whereIn('invoice_id',$ids)->orderBy('id')->get(),InvoiceMoney::peers($ids));
             $a=self::assess($l,fn(int $id)=>$money[$id]??null,$now,InvoiceMoney::ownerHeld((int)$d->user_id));
-        }catch(\Throwable){return ['block'=>['line'=>self::UNREADABLE,'invoice'=>null,'operation'=>null,'hold_domain'=>null],'close'=>[],'credit'=>[],'kept'=>[]];}
+            // The account credit each credited invoice would return: its free pool plus local returns released back to it,
+            // as confirmation counts them.
+            $amounts=[];
+            foreach($a['credit'] as $op){
+                $id=(int)$op->invoice_id;$amounts[$id]??=InvoiceMoney::held($money[$id]);
+                if($op->state==='rejected'){foreach(ReceiptReturns::localAllocations($op,$money[$id]) as $x){$amounts[$id]+=$x['amount_minor'];}}
+            }
+        }catch(\Throwable){return ['block'=>['line'=>self::UNREADABLE,'invoice'=>null,'operation'=>null,'hold_domain'=>null],'close'=>[],'credit'=>[],'kept'=>[],'credit_minor'=>[]];}
         $ids=fn(array $ops)=>array_map(fn($op)=>(int)$op->id,$ops);
-        return ['block'=>$a['block'],'close'=>$ids($a['close']),'credit'=>$ids($a['credit']),'kept'=>$ids($a['kept'])];
+        return ['block'=>$a['block'],'close'=>$ids($a['close']),'credit'=>$ids($a['credit']),'kept'=>$ids($a['kept']),'credit_minor'=>$amounts];
     }
 
     /** Applied with the frozen record; Failed carries DepartureBlocked or a review refusal; Deferred is MoneyDecisions::BUSY. */

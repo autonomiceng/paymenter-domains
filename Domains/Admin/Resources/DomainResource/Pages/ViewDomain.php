@@ -125,7 +125,9 @@ class ViewDomain extends RecordDetailPage
                 if (isset($facts['DNS records'])) { $sub=$facts['DNS records']['sub']??null;
                     $facts['DNS records']['sub']=$sub instanceof Htmlable?new \Illuminate\Support\HtmlString(e($case[1]).' '.$sub->toHtml()):trim($case[1].' '.(string)$sub); }
             }
-            if (($facts['Renewal']['value']??null)==='On') { $facts['Renewal']=[...$facts['Renewal'],'value'=>'Paused','sub'=>'Set to On. Resumes if the domain is still ours.','tone'=>null,'alert'=>false]; } $facts['Next invoice']=['value'=>'Paused','sub'=>($facts['Next invoice']['value']??null)==='Paused'?$facts['Next invoice']['sub']:DepartureChecks::RENEWAL_WAITS,'url'=>null,'tone'=>null]; }
+            if (($facts['Renewal']['value']??null)==='On') { $facts['Renewal']=[...$facts['Renewal'],'value'=>'Paused','sub'=>'Set to On. Resumes if the domain is still ours.','tone'=>null,'alert'=>false]; } $facts['Next invoice']=['value'=>'Paused','sub'=>($facts['Next invoice']['value']??null)==='Paused'?$facts['Next invoice']['sub']:DepartureChecks::RENEWAL_WAITS,'url'=>null,'tone'=>null];
+            // Rows that confirmation changes say so in their own helper, for staff who may confirm.
+            if (\Paymenter\Extensions\Servers\Domains\Admin\Support\DepartureConfirm::allowed()) { $facts=\Paymenter\Extensions\Servers\Domains\Admin\Support\DepartureConfirm::pageFacts($d,$facts); } }
         if ($this->edits()['held']) { $facts=DomainFacts::whileHeld($facts,$this->edits()['first']??null); }
         return $this->facts=DomainFacts::withProgress($facts,$progress,DomainFacts::headRequest($d,$this->status(),$this->edits()['request'],$this->notice()));
     }
@@ -277,7 +279,8 @@ class ViewDomain extends RecordDetailPage
         }
         $records=[$this->recordFamilies($d,$facts,$edits,$notices['Registrar records']??null)];
         $monitoring=Section::make('Monitoring',[...(isset($notices['Monitoring'])?[$notices['Monitoring']]:[]),
-            Partial::make('domains::admin.monitoring-evidence',['evidence'=>\Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence::read($d),'withRecords'=>true],'monitoring-evidence')],\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::EVIDENCE);
+            Partial::make('domains::admin.monitoring-evidence',['evidence'=>\Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence::read($d),'withRecords'=>true],'monitoring-evidence'),
+            ...(($suspected&&\Paymenter\Extensions\Servers\Domains\Admin\Support\DepartureConfirm::allowed()&&($watch=\Paymenter\Extensions\Servers\Domains\Admin\Support\DepartureConfirm::rows($d)['watch']))?[$watch]:[])],\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::EVIDENCE);
         return [...($d->status==='active'?[...$records,...$sections]:[...$sections,...$records]),$monitoring];
     }
     private function departureCheck(): array
@@ -306,11 +309,13 @@ class ViewDomain extends RecordDetailPage
                 [$state,$text,$links]=\Paymenter\Extensions\Servers\Domains\Admin\Support\DepartureConfirm::line($block,$d);
                 $step=Row::make('Departure check',Value::state($state,Reader::Staff,$text))->actions(...array_map(fn($l)=>Sheet::link(...$l),$links));
             } else {
-                $step=Row::make('Departure check',Value::fact($fact::entered('Next step: check '.$registrar.', then confirm transferred away'),"Confirming can't be undone."))
+                $step=Row::make('Departure check',Value::fact($fact::entered('Next step: check '.$registrar.', then confirm transferred away'),"Rows that say “on confirm” show what Confirm changes. Confirming can't be undone."))
                     ->actions(Sheet::link('departure_registrar','Open registrar',\Paymenter\Extensions\Servers\Domains\Admin\Support\Facts::url(fn()=>\Paymenter\Extensions\Servers\Domains\Admin\Support\RegistrarFacts::accountUrl((int)$d->server_id))));
             }
         }
-        return [$step,Row::make('First read',$first),Row::make('Recheck',$recheck)->actions($this->cachedActions['check_departure']??$this->check_departureAction()),Row::make('Public registry',$registryValue)];
+        // Name carries the re-entry fact, so it stays on the page when a block replaces the step.
+        $outcome=\Paymenter\Extensions\Servers\Domains\Admin\Support\DepartureConfirm::allowed()?[\Paymenter\Extensions\Servers\Domains\Admin\Support\DepartureConfirm::rows($d)['name']]:[];
+        return [$step,Row::make('First read',$first),Row::make('Recheck',$recheck)->actions($this->cachedActions['check_departure']??$this->check_departureAction()),Row::make('Public registry',$registryValue),...$outcome];
     }
     /** The rail: the newest history, with the History tab holding the rest. */
     protected function rail(): array

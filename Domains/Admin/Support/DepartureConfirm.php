@@ -5,12 +5,15 @@ namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Filament\Actions\Action;
 use Filament\Forms\Components\{Hidden,Placeholder,Radio,Textarea};
 use Filament\Notifications\Notification;
+use Illuminate\Contracts\Support\Htmlable;
+use Illuminate\Support\HtmlString;
 use Illuminate\Support\Facades\{Auth,Log};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource,OperationResource};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Row,Value};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Presentation\{Reader,State};
-use Paymenter\Extensions\Servers\Domains\Services\{DepartureBlocked,DepartureChecks,HoldingDeparture,HoldingLocks,MoneyDecisions,MoneyOutcome,StaffHoldingReview,StaffReason};
+use Paymenter\Extensions\Servers\Domains\Services\{DepartureBlocked,DepartureChecks,HoldingDeparture,HoldingLocks,MoneyDecisions,MoneyOutcome,PricingRule,StaffHoldingReview,StaffReason,WatchDiscovery};
 /** Confirm transferred away: the head action, its blocking line and its dialog. Facts are read-only previews; the
  * confirmation checks them all again. */
 final class DepartureConfirm
@@ -28,7 +31,7 @@ final class DepartureConfirm
     /** Staff who may confirm and see the action. */
     public static function allowed(): bool
     { return Staff::can('admin.domains.manage')&&Staff::can(HoldingDeparture::PERMISSION); }
-    /** @return array{block:?array,close:list<int>,kept:list<int>} */
+    /** @return array{block:?array,close:list<int>,credit:list<int>,kept:list<int>,credit_minor:array<int,int>} */
     public static function preview(Domain $d): array
     {
         // One read per loaded record: a page render asks several times, a new request loads a new record.
@@ -100,17 +103,72 @@ final class DepartureConfirm
                 $action->halt();
             });
     }
-    /** What confirmation changes, from the read-only preview. */
-    private static function outcome(Domain $d): string
+    /** What confirmation changes, from the read-only preview: each line is also on the page. */
+    private static function outcome(Domain $d): HtmlString
     {
-        $lines=[];
-        foreach(self::preview($d)['close'] as $id){
+        $p=self::preview($d);$lines=[];$b=fn(string $s)=>'<strong>'.e($s).'</strong>';
+        foreach($p['close'] as $id){
             $op=$d->operations()->whereKey($id)->first();if(!$op){continue;}
-            $lines[]=self::invoice((int)$op->invoice_id).' is cancelled. It was an unpaid renewal of $'.number_format((float)$op->amount,2).'.';
+            $lines[]=$b(self::invoice((int)$op->invoice_id)).e(' is cancelled. It was an unpaid renewal of $'.number_format((float)$op->amount,2).'.');
         }
-        $lines[]='Service #'.$d->service_id.' is cancelled. The name becomes available to order.';
-        $lines[]="Confirm doesn't change DNS.";
-        $lines[]="This can't be undone. If the domain comes back, import it as a new domain.";
-        return implode(' ',$lines);
+        foreach($p['credit_minor'] as $invoice=>$minor){$lines[]=$b(self::invoice((int)$invoice)).e(' is cancelled, with '.self::money($minor).' to account credit.');}
+        $lines[]=$b('Service #'.$d->service_id).e(' is cancelled.');
+        $lines[]=e('The name becomes available to order.');
+        $lines[]=e(trim("Confirm doesn't change DNS. ".(DepartureChecks::staffDnsCase($d)[1]??'')));
+        $owner=self::owner($d);
+        $watch=match(WatchDiscovery::departurePreview($d)){'active'=>'as an external domain','paused'=>'paused','hosting','retired'=>'not monitored',default=>null};
+        if($watch!==null){$lines[]=e($owner."'s monitored domain stays, {$watch}.");}
+        $lines[]=$b("This can't be undone.").e(' If the domain comes back, import it as a new domain.');
+        return new HtmlString(implode('',array_map(fn($l)=>'<p>'.$l.'</p>',$lines)));
+    }
+    /** The customer's name as the Billing Customer row shows it. */
+    private static function owner(Domain $d): string
+    { $u=$d->user; return $u?(trim($u->first_name.' '.$u->last_name)?:(string)$u->email):'The customer'; }
+    private static function money(int $minor): string
+    { return '$'.number_format($minor/100,2); }
+    /** The page rows confirmation changes, each saying "on confirm" in its own helper (mock 05, 05b). Read-only. */
+    public static function pageFacts(Domain $d,array $facts): array
+    {
+        $p=self::preview($d);
+        $closed=array_map(fn($id)=>(int)$d->operations()->whereKey($id)->value('invoice_id'),$p['close']);
+        $outcome=static function(int $invoice)use($closed,$p):?string{
+            if(isset($p['credit_minor'][$invoice])){return 'Cancelled on confirm, with '.self::money($p['credit_minor'][$invoice]).' to account credit.';}
+            return in_array($invoice,$closed,true)?'Cancelled on confirm.':null;
+        };
+        $next=$facts['Next invoice']['sub']??null;$shown=null;
+        foreach([...$closed,...array_keys($p['credit_minor'])] as $invoice){
+            $name=e(self::invoice($invoice));
+            if($next instanceof Htmlable&&str_contains($next->toHtml(),'>'.$name.'</a>')){$shown=$invoice;break;}
+        }
+        if($shown!==null&&($line=$outcome($shown))!==null){
+            $facts['Next invoice']['sub']=new HtmlString(str_replace(e(DepartureChecks::RENEWAL_WAITS),e($line).'<br>'.e(DepartureChecks::RENEWAL_WAITS),$next->toHtml()));
+        }
+        // A paid renewal never sent has no open invoice for the row, so the row names it with its outcome.
+        foreach($p['credit_minor'] as $invoice=>$minor){
+            if($invoice===$shown){continue;}
+            $url=Facts::invoiceUrl((int)$invoice);$name=self::invoice((int)$invoice);
+            $total=(string)\App\Models\Invoice::find($invoice)?->formattedTotal;
+            $rest=($total!==''?', '.$total:'').', paid, never sent to the registrar. '.$outcome((int)$invoice);
+            $facts['Next invoice']=[...($facts['Next invoice']??Facts::row('Paused')),'value'=>'Paused',
+                'sub'=>new HtmlString(($url?'<a class="fi-link domains-link" href="'.e($url).'">'.e($name).'</a>':e($name)).e($rest).'<br>'.e(DepartureChecks::RENEWAL_WAITS))];
+            break;
+        }
+        if(isset($facts['Service'])&&($facts['Service']['value']??null)!==null){$facts['Service']['sub']='Service #'.$d->service_id.'. Cancelled on confirm.';}
+        if(isset($facts['DNS records'])){$sub=$facts['DNS records']['sub']??null;$add="Confirm doesn't change DNS.";
+            $facts['DNS records']['sub']=$sub instanceof Htmlable?new HtmlString($sub->toHtml().' '.e($add)):trim((string)$sub.' '.$add);}
+        return $facts;
+    }
+    /** The job rows after Public registry, and the Monitored domain row, for staff who may confirm. @return array{name:Row,watch:?Row} */
+    public static function rows(Domain $d): array
+    {
+        $fact=\Paymenter\Extensions\Servers\Domains\Presentation\Fact::class;$owner=self::owner($d)."'s monitored domain stays.";
+        $watch=match(WatchDiscovery::departurePreview($d)){
+            'active'=>Value::fact($fact::entered('Monitored as an external domain on confirm'),$owner),
+            'paused'=>Value::fact($fact::entered('Stays paused on confirm'),$owner),
+            'retired'=>Value::fact($fact::entered('Not monitored after confirm'),$owner.' Its sources are off.'),
+            'hosting'=>Value::fact($fact::entered('Not monitored after confirm'),$owner),
+            default=>null};
+        return ['name'=>Row::make('Name',Value::fact($fact::entered('Released on confirm'),'The name becomes available to order. If the domain comes back, import it as a new domain.')),
+            'watch'=>$watch?Row::make('Monitored domain',$watch):null];
     }
 }
