@@ -29,6 +29,13 @@ foreach($controls as $button){
 // DNS stays editable while suspected, so the customer keeps the record values they would copy to a new host.
 $check($dom->querySelector('table.domains-dns-inventory')!==null,'The suspected customer page keeps its DNS records table');
 $check($dom->getElementById('glue')!==null,'The suspected customer page keeps its Glue records row');
+// The staff head says where and when the absence was read; Registration dates the absence read.
+$staffDom=Dom\HTMLDocument::createFromString('<!doctype html><meta charset="utf-8">'.$page->html(),LIBXML_NOERROR);
+$fresh=$d->fresh();$read=\Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at(strtotime($fresh->observation['renewal_ownership']['at']));
+$detail=(string)$staffDom->querySelector('[data-piece="head-detail"]')?->textContent;
+foreach([\Paymenter\Extensions\Servers\Domains\Services\ManagementNameservers::registrar($fresh),(string)$fresh->server->name,$read] as $fact){$check($fact!==''&&str_contains($detail,$fact),'The staff head names the registrar, account and absence read time: '.$fact);}
+$owned=null;foreach($staffDom->querySelectorAll('[data-piece="row"]') as $row){if(trim((string)$row->querySelector('.domains-panel-row-k')?->textContent)==='In registrar account'){$owned=$row->textContent;}}
+$check($owned!==null&&str_contains($owned,$read),'In registrar account carries the absence read time');
 // The staff next step survives the automatic recheck when the domain is still absent.
 Illuminate\Support\Facades\DB::transaction(function()use($d,$clock):void {
     $fresh=$d->fresh();$p=$fresh->observation;$at=$clock->now()->getTimestamp()-172800;

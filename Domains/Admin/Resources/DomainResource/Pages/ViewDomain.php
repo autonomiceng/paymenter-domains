@@ -83,7 +83,16 @@ class ViewDomain extends RecordDetailPage
         Staff::requireView(); $d=$this->getRecord();
         $head=Head::make((string)$d->domain,Reader::Staff)->domain()->tag(DemoData::is($d),DomainFacts::test($d))
             ->state(State::tryFrom((string)($this->status()['key']??''))??State::UnderReview,'domain-'.$d->id);
-        return $this->departureSuspected()?$head->note('Not in our registrar account.'):$head;
+        if (!$this->departureSuspected()) { return $head; }
+        $at=$this->absenceReadAt();
+        return $head->note('Not in our registrar account.')->detail(\Paymenter\Extensions\Servers\Domains\Services\ManagementNameservers::registrar($d).($d->server?->name?', '.$d->server->name:'').'.'.($at?' Read '.StaffTime::at($at).'.':''));
+    }
+    /** When the registrar last answered that this holding is absent: the identity-bound ownership read, else the review's first read. */
+    private function absenceReadAt(): ?int
+    {
+        $d=$this->getRecord();$proof=$d->observation['renewal_ownership']??[];
+        if (($proof['identity']??null)===\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::identity($d)&&($proof['owned']??null)===false&&is_string($proof['at']??null)&&($at=strtotime($proof['at']))!==false) { return $at; }
+        return isset($d->observation['departure_check']['at'])?(int)$d->observation['departure_check']['at']:null;
     }
     private function headLine(): array { return $this->head??=DomainFacts::head($this->getRecord(),$this->status(),$this->facts(),$this->edits()['request'],$this->notice()); }
     /** The head's step as plain text, so rows and Activity can leave out what it already says. */
@@ -106,7 +115,11 @@ class ViewDomain extends RecordDetailPage
         if ($this->facts!==null) { return $this->facts; }
         $d=$this->getRecord(); $facts=self::withDnsSetup($d,DomainFacts::for($d,$this->notice(),$this->familyState())); $progress=$this->managementProgress();
         if ($this->departureSuspected() || $this->edits()['authCode'] || isset($progress['auth_code_email'])) { $facts['Email auth code']=['value'=>'Goes to the '.OwnedDomains::authCodeRecipient($d),'sub'=>'Never shown here.','url'=>null,'tone'=>null,'help'=>'The code moves this domain to another registrar. We email it and never show it here.','demo'=>false]; }
-        if ($this->departureSuspected()) { if (($facts['Renewal']['value']??null)==='On') { $facts['Renewal']=[...$facts['Renewal'],'value'=>'Paused','sub'=>'Set to On. Resumes if the domain is still ours.','tone'=>null,'alert'=>false]; } $facts['Next invoice']=['value'=>'Paused','sub'=>($facts['Next invoice']['value']??null)==='Paused'?$facts['Next invoice']['sub']:DepartureChecks::RENEWAL_WAITS,'url'=>null,'tone'=>null]; }
+        if ($this->departureSuspected()) {
+            // Say which facts came from the absence read and which were kept from the last read while the domain was ours.
+            if (isset($facts['In registrar account'])&&($at=$this->absenceReadAt())!==null) { $facts['In registrar account']['sub']='Last read '.StaffTime::at($at).'.'; }
+            if (in_array($facts['Transfer lock']['value']??null,['On','Off'],true)) { $facts['Transfer lock']['sub']='Last read while in our registrar account.'; }
+            if (($facts['Renewal']['value']??null)==='On') { $facts['Renewal']=[...$facts['Renewal'],'value'=>'Paused','sub'=>'Set to On. Resumes if the domain is still ours.','tone'=>null,'alert'=>false]; } $facts['Next invoice']=['value'=>'Paused','sub'=>($facts['Next invoice']['value']??null)==='Paused'?$facts['Next invoice']['sub']:DepartureChecks::RENEWAL_WAITS,'url'=>null,'tone'=>null]; }
         if ($this->edits()['held']) { $facts=DomainFacts::whileHeld($facts,$this->edits()['first']??null); }
         return $this->facts=DomainFacts::withProgress($facts,$progress,DomainFacts::headRequest($d,$this->status(),$this->edits()['request'],$this->notice()));
     }
