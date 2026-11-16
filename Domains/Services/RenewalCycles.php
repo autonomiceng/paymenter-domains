@@ -55,11 +55,9 @@ final readonly class RenewalCycles
         // Retained membership survives an older snapshot; only the ordered, current locked scan decides state.
         $write = static function () use ($domainId, $invoiceId, $clock, $open, $receiptId): void {
             // Native updateOrCreate uses a savepoint; all locks still belong to the outer payment transaction.
+            if (Invoice::whereKey($invoiceId)->lockForUpdate()->value('status') !== 'cancelled') { return; }
             $seed = Domain::find($domainId);
             if (!$seed) { return; }
-            // Match the money runner before the current invoice-status read; ordinary receipts need no holding locks.
-            User::whereKey($seed->user_id)->lockForUpdate()->firstOrFail();
-            if (Invoice::whereKey($invoiceId)->lockForUpdate()->value('status') !== 'cancelled') { return; }
             $l = HoldingLocks::take($seed, nativeReceipt: true);
             // Only the current locked holding decides routing; the discovery read can be an older payment snapshot.
             if ($l['domain']->status === 'departed') { self::admitDeparted($l, $invoiceId); return; }
