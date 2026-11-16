@@ -27,6 +27,7 @@ final class DomainBilling
         OperationClaims::outside(); $seed = Domain::findOrFail($domainId);
         if ($actor && (int)$actor->id !== (int)$seed->user_id) { throw new \DomainException('Domain renewal is unavailable.'); }
         $late = $this->lateQuote($seed, $actor !== null, $years);
+        if ($late === MoneyOutcome::Deferred) { return null; }
         $issue = function (array $l) use ($actor, $years, $late): ?Invoice {
             $d = $l['domain']; $s = $l['service'];
             if ($l['identity_source']['kind'] === 'adoption') { HoldingAnchor::resolve($l); }
@@ -124,12 +125,12 @@ final class DomainBilling
     }
 
 
-    /** Fetch late evidence outside invoice locks, then recheck its stamp before issuing existing native debt. */
-    private function lateQuote(Domain $d,bool $manual,?int $years): ?array
+    /** Fetch late evidence outside invoice locks. A deferred capture stops issuance until its queued retry. */
+    private function lateQuote(Domain $d,bool $manual,?int $years): array|MoneyOutcome|null
     {
         if(!DomainBilling::expired($d,$this->clock->now())){return null;}
-        $captured=DB::transaction(function()use($d,$manual,$years):?array{
-            $l=HoldingLocks::take($d, catalogue: $this->catalogue);$d=$l['domain'];
+        $capture=function(array $l)use($manual,$years):?array{
+            $d=$l['domain'];
             if(!$manual&&RenewalStop::stopped($l)){return null;}
             // Existing payable debt keeps its frozen terms, even when the feature is switched off.
             if($l['operations']->contains(fn($op)=>$op->action==='renew'&&$op->base_expires_at==$d->provider_expires_at&&$op->safe_code!=='renewal_cancelled_unpaid'&&!RenewalReplacements::reviewed($op,$d))){return null;}
@@ -137,7 +138,17 @@ final class DomainBilling
             if(!EnomLateRenewal::accepted($b)||($years!==null&&$years!==1)){throw new RuntimeIneligible(RuntimeReason::OutsideCalendar);}
             $this->requireRequest($l,$manual,1,true);
             return [$b,$l['stamp'],new \Paymenter\Extensions\Servers\Domains\Data\RenewalRequest($d->id,$d->authority_generation,$d->confirmed_revision,$d->provider_expires_at->format('Y-m-d'),$d->provider_domain_id,manual:$manual)];
-        });
+        };
+        if($manual){$captured=DB::transaction(fn()=>$capture(HoldingLocks::take($d,catalogue:$this->catalogue)));}
+        else{
+            $decision=MoneyDecisions::run(new MoneyRequest($d,self::KIND,(int)$d->id),function(array $l)use($capture):?array{
+                if($this->catalogue!==null){$l['offer']=$this->catalogue->holding(AccountBindings::binding($l['account']),$l['tld'],$l['prices']);}
+                return $capture($l);
+            });
+            if($decision->error!==null){throw $decision->error;}
+            if($decision->outcome===MoneyOutcome::Deferred){return MoneyOutcome::Deferred;}
+            $captured=$decision->value;
+        }
         if($captured===null){return null;}
         [$b,$stamp,$request]=$captured;
         // The billing cursor wraps every tick. Reserve a short retry window before optional scheduled reads.
