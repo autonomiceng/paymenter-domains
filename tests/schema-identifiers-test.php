@@ -53,23 +53,31 @@ final class IdentifierSweepBuilder extends SQLiteBuilder
 
     private function inspect(string $table, Closure $callback, ?string $retained, bool $create = true): void
     {
+        // Several checks below compile the same table/prefix combination. Reuse
+        // only that compilation, within this one definition inspection; every
+        // migration, verifier invocation and prefix still gets checked.
+        $compiled = [];
+        $identifiers = function (string $name, string $prefix, bool $prefixIndexes) use (&$compiled, $callback, $create): array {
+            $key = json_encode([$name, $prefix, $prefixIndexes], JSON_THROW_ON_ERROR);
+            return $compiled[$key] ??= $this->identifiers($name, $callback, $prefix, $prefixIndexes, $create);
+        };
         // Compile with and without index prefixes, including the longest prefix
         // for which this retained definition's own identifiers still fit.
         foreach ([false, true] as $prefixIndexes) {
-            $baseline = $this->identifiers($retained ?? $table, $callback, '', $prefixIndexes, $create);
+            $baseline = $identifiers($retained ?? $table, '', $prefixIndexes);
             foreach ($baseline as $identifier) {
                 expect(strlen($identifier) <= 64, 'Retained/migration identifier exceeds 64: '.$identifier);
             }
-            $onePrefix = $this->identifiers($retained ?? $table, $callback, 'p', $prefixIndexes, $create);
+            $onePrefix = $identifiers($retained ?? $table, 'p', $prefixIndexes);
             $room = 64;
             foreach ($baseline as $position => $identifier) {
                 // Explicit names and prefix_indexes=false indexes do not grow.
                 if ($onePrefix[$position] !== $identifier) { $room = min($room, 64 - strlen($identifier)); }
             }
             foreach (array_unique(['', 'p_', str_repeat('p', max(0, $room))]) as $prefix) {
-                $original = $this->identifiers($retained ?? $table, $callback, $prefix, $prefixIndexes, $create);
+                $original = $identifiers($retained ?? $table, $prefix, $prefixIndexes);
                 if (max(array_map('strlen', $original)) > 64) { continue; }
-                foreach ($this->identifiers($table, $callback, $prefix, $prefixIndexes, $create) as $identifier) {
+                foreach ($identifiers($table, $prefix, $prefixIndexes) as $identifier) {
                     $this->maximum = max($this->maximum, strlen($identifier));
                     if (strlen($identifier) > 64) {
                         $this->failures[] = ($retained ?? $table).': '.strlen($identifier).' '.$identifier;
