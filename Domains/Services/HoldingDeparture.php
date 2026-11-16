@@ -28,7 +28,7 @@ final class HoldingDeparture
     {
         try{
             $l=HoldingLocks::take($d,advisory:true);
-            $ids=self::renewals($l)->pluck('invoice_id')->filter()->map(fn($id)=>(int)$id)->unique()->values()->all();
+            $ids=self::invoiceIds($l);
             $money=InvoiceMoney::projectBatch(Invoice::whereIn('id',$ids)->orderBy('id')->get(),
                 InvoiceTransaction::with('gateway')->whereIn('invoice_id',$ids)->orderBy('id')->get(),InvoiceMoney::peers($ids));
             $a=self::assess($l,fn(int $id)=>$money[$id]??null,$now,InvoiceMoney::ownerHeld((int)$d->user_id));
@@ -50,6 +50,8 @@ final class HoldingDeparture
             [$t,$history]=StaffHoldingReview::verify($l,(int)$actor->id,self::ACTION,$ticket,$this->clock);
             if(!DepartureChecks::suspected($d)){throw new \DomainException('Holding changed. Reload this page and review it again.');}
             $now=$this->clock->now();$records=[];
+            // Every affected invoice's peers in invoice id order before the first receipt-ledger read; later loads reuse them.
+            foreach(self::invoiceIds($l) as $id){Operation::where('invoice_id',$id)->orderBy('id')->lockForUpdate()->get();}
             // Locked authority. An unreadable record is line 1; any block below rolls back what a load wrote.
             $money=function(int $id)use($l,&$records):?array{
                 if(array_key_exists($id,$records)){return $records[$id];}
@@ -168,6 +170,9 @@ final class HoldingDeparture
     }
     private static function creditMinor(array $l): int
     { return PricingRule::minor((string)(\App\Models\Credit::where('user_id',$l['user']->id)->where('currency_code','USD')->value('amount')??'0.00')); }
+    /** @return list<int> renewal invoice ids, ascending */
+    private static function invoiceIds(array $l): array
+    { return self::renewals($l)->pluck('invoice_id')->filter()->map(fn($id)=>(int)$id)->unique()->sort()->values()->all(); }
     private static function renewals(array $l): \Illuminate\Support\Collection
     { return $l['operations']->where('action','renew')->sortBy('id')->values(); }
     /** Time of the identity-bound definite absence read, or null when unproved. */
