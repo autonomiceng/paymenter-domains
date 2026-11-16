@@ -100,7 +100,7 @@ expect(str_contains($sub,'already returned $'.number_format($own/100,2))&&!str_c
 $second=InvoiceTransaction::where('invoice_id',$op->invoice_id)->orderBy('id')->firstOrFail()->replicate();$second->transaction_id='pi_staff_second';$second->save();
 [,$sub]=$returned();
 expect(!str_contains($sub,'already returned')&&str_contains($sub,$waiting),'A request paid twice keeps the waiting words after one payment is lost: '.$sub);
-$second->delete();
+DB::table('invoice_transactions')->where('id',$second->id)->delete();
 // Cart invoice: another line joins the bill. A dispute for this request's line amount is still part of the payment.
 $other=\App\Models\InvoiceItem::create(['invoice_id'=>$invoice->id,'description'=>'Other cart line','price'=>'20.00','quantity'=>1]);
 $lost($own);[,$sub]=$returned();
@@ -108,7 +108,7 @@ expect(!str_contains($sub,'already returned')&&str_contains($sub,$waiting),'A pa
 $lost($own+2000);[,$sub]=$returned();
 expect(str_contains($sub,'already returned $'.number_format($own/100,2).' '),'A full dispute on a cart invoice names only this request\'s own line: '.$sub);
 // Tests that build on this file start from the held request with its single line.
-$other->delete();$op->update($open);DB::table('domains_obligation_alerts')->where('id',$accountHold)->delete();
+DB::table('invoice_items')->where('id',$other->id)->delete();$op->update($open);DB::table('domains_obligation_alerts')->where('id',$accountHold)->delete();
 InvoiceTransaction::where('invoice_id',$op->invoice_id)->update(['gateway_id'=>$gateway->id]);
 StaffInvoiceReversalGateway::$observations['pi_staff_invoice']=[];StaffInvoiceLedgerGateway::$ledger=[];
 echo "Request invoice name and reversal passed.\n";
