@@ -47,8 +47,9 @@ final class Value implements Htmlable
         if ($at !== null && $sub === null) { throw new \InvalidArgumentException('A time follows a label.'); }
         return new self('fact', $fact->text, null, $fact, $sub, null, null, [], null, $at);
     }
-    /** A state's time, such as when a change was sent or a read last failed. Staff only, since a reason carries no time. */
-    public function when(int|\DateTimeInterface $at): self { return $this->detail(Fact::date($at, Reader::Staff)); }
+    /** A state's time, such as when a change was sent or a read last failed. Staff only, since a reason carries no time.
+     * $label names it on the staff line: "Next request check <time>." */
+    public function when(int|\DateTimeInterface $at, ?string $label = null): self { return $this->detail(Fact::date($at, Reader::Staff, $label)); }
     /** Codes, provider names or times for staff, on the line under the reason. */
     public function detail(Fact ...$facts): self
     {

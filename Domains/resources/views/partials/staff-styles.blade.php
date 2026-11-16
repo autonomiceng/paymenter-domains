@@ -141,6 +141,13 @@ td.domains-history-detail{min-width:20rem}
 :where(.domains-panel-blocked){cursor:not-allowed}
 @media(min-width:40rem){:where(.domains-panel-row){grid-template-columns:156px minmax(0,1fr) auto}:where(.domains-panel-row-k){grid-column:auto}}
 :where(.domains-panel-row[data-domains-row=notice]){grid-template-columns:minmax(0,1fr) auto}
+/* A hold on the whole page is one notice under the page head: its state mark and a 1px edge in the state's tone, no
+   tint (P-NTC-5). The edge replaces the row's divider. Real specificity, so a skin's notice divider can't draw inside it. */
+.domains-page-notice{--domains-edge:var(--panel-line,color-mix(in srgb,currentColor 20%,transparent));border:1px solid var(--domains-edge);border-radius:8px;background:var(--panel-card,transparent)}
+.domains-page-notice:has(.domains-panel-st[data-domains-tone=prog]){--domains-edge:var(--panel-cyan,var(--info-500))}
+.domains-page-notice:has(.domains-panel-st[data-domains-tone=warn]){--domains-edge:var(--panel-warn,var(--warning-500))}
+.domains-page-notice:has(.domains-panel-st[data-domains-tone=err]){--domains-edge:var(--panel-err,var(--danger-500))}
+.domains-page-notice .domains-panel-row[data-domains-row=notice]{border:0}
 /* A setting's switch sits right before its On or Off, and the line under them starts at the switch (Ilya, Nov 14, 2026).
    Real specificity: a skin that puts toggles in the action column must not pull it away from its word. */
 .domains-panel-row-v[data-domains-switch]{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;column-gap:10px;row-gap:2px}

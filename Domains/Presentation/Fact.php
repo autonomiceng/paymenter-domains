@@ -10,8 +10,8 @@ final class Fact
 {
     /** How the value reads: text, code and host are names (host and code in mono), money and count are numbers. */
     public const KINDS = ['text', 'code', 'host', 'money', 'count', 'date', 'entered'];
-    /** @param ?list<string> $items The whole list, one per line, when the fact is a list. */
-    private function __construct(public readonly string $kind, public readonly string $text, public readonly ?string $datetime = null, public readonly ?string $title = null, public readonly bool $instant = false, public readonly ?array $items = null)
+    /** @param ?list<string> $items The whole list, one per line, when the fact is a list. @param ?string $label Words before a moment, which then reads as a sentence. */
+    private function __construct(public readonly string $kind, public readonly string $text, public readonly ?string $datetime = null, public readonly ?string $title = null, public readonly bool $instant = false, public readonly ?array $items = null, public readonly ?string $label = null)
     { assert($kind === 'code' || $kind === 'entered' || !self::isWord($text), 'A fact never reads as a state or plain word: '.$text); }
 
     /** A model attribute. Status and state columns are refused: their word comes from State. */
@@ -81,13 +81,16 @@ final class Fact
     public static function code(?string $code): ?self
     { return $code !== null && preg_match('/^[A-Za-z0-9][A-Za-z0-9_.:\/-]{0,63}$/D', $code) === 1 ? new self('code', $code) : null; }
     /** A moment. Staff read date and time in their browser's zone (the moment partial), with UTC on hover and the site's
-     * staff zone, named, as the text without script. Customers read the date only, a calendar day. */
-    public static function date(int|\DateTimeInterface $at, Reader $reader): self
+     * staff zone, named, as the text without script. Customers read the date only, a calendar day. $label puts a few
+     * words before it, so the staff line reads as a sentence: "Next request check <time>." */
+    public static function date(int|\DateTimeInterface $at, Reader $reader, ?string $label = null): self
     {
+        $label = $label === null ? null : trim($label);
+        if ($label === '' || $label !== null && self::isWord($label)) { throw new \InvalidArgumentException('A time label is a few words, never a state or plain word.'); }
         $at = $at instanceof \DateTimeInterface ? $at->getTimestamp() : $at;
-        if ($reader === Reader::Customer) { $day = StaffTime::local($at); return new self('date', $day->format('M j, Y'), $day->format('Y-m-d')); }
+        if ($reader === Reader::Customer) { $day = StaffTime::local($at); return new self('date', $day->format('M j, Y'), $day->format('Y-m-d'), null, false, null, $label); }
         $utc = new \DateTimeImmutable('@'.$at);
-        return new self('date', StaffTime::at($at), $utc->format('Y-m-d\TH:i:s\Z'), $utc->format('M j, Y, g:i A').' UTC', true);
+        return new self('date', StaffTime::at($at), $utc->format('Y-m-d\TH:i:s\Z'), $utc->format('M j, Y, g:i A').' UTC', true, null, $label);
     }
     /** A calendar date such as an expiry, the same for every reader, with no zone change. Null when it isn't a date. */
     public static function day(string|\DateTimeInterface|null $date): ?self

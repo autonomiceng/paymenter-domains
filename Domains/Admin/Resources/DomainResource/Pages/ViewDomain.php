@@ -362,14 +362,16 @@ class ViewDomain extends RecordDetailPage
         $kind=['renew'=>'renewal ','register'=>'registration ','transfer'=>'transfer '][$op->action]??'';
         $who=\Paymenter\Extensions\Servers\Domains\Admin\Support\PaidUncertainty::registrar($op);
         $held='Changes to Registrar records and Registration wait for '.$kind.'request #'.$op->id;
-        $stand=\Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::answerState($op);
+        $stand=\Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::answerState($op); $next=null;
         if ($stand==='checking') {
             $next=\Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::status($op)['next_at']??null;
             $state=\Paymenter\Extensions\Servers\Domains\Admin\Support\PaidUncertainty::waitState($op);
-            $line=$held.', which '.$who.' has not confirmed yet.'.($next?' Next request check '.StaffTime::at((int)$next).'.':'');
+            $line=$held.', which '.$who.' has not confirmed yet.';
         } elseif ($stand!==null) { $state=State::UnderReview; $line=$held.', which needs '.$who.'’s answer recorded.'; }
         else { $state=State::UnderReview; $line='Changes are on hold until request #'.$op->id.' is checked.'; }
-        return Row::notice('request-hold',Value::state($state,Reader::Staff,$line,'domain-'.$d->id.'-hold'),$link);
+        // The next check is a time, so it goes on the staff line under the reason, not in it.
+        $value=Value::state($state,Reader::Staff,$line,'domain-'.$d->id.'-hold');
+        return Row::notice('request-hold',$next?$value->when((int)$next,'Next request check'):$value,$link);
     }
     /** What the domain's state waits for, which the head line used to say: the notice's cause and links, else the hold,
      * else the status step. A change the page stopped following says so here too.
