@@ -597,7 +597,8 @@ final class RequestFacts
             $lines[]=$line.'.';
             $act=$act||($lost?($held['state']??null)!=='released':(($r['needs_review']??false)||$r['kind']==='dispute'||$r['status']==='failed'));
         }
-        return $lines?['words'=>implode(' ',array_unique($lines)),'act'=>$act,'hold'=>$hold]:null;
+        // The hold is added only when a lost dispute opened one, so a row with no hold keeps its words and act alone.
+        return $lines?['words'=>implode(' ',array_unique($lines)),'act'=>$act,...($hold!==null?['hold'=>$hold]:[])]:null;
     }
     /** The account hold a lost dispute opened: open, or released with when and by whom. Null when none was opened yet. */
     private static function disputeHold(string $dispute): ?array
