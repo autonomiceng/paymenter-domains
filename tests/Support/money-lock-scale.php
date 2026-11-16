@@ -50,7 +50,7 @@ const MONEY_SCALE_ROW_STATEMENTS = 10;
 // When a row metric meets its final bound, replace its allowance with null (or remove the cell).
 // The optional research matrix uses the same process: only the first N5/C1 refund is cold.
 const MONEY_SCALE_BASELINE = [
-    'refund:fresh:N5:C1' => [[297, 25, 25, 25], [60, 5, 5, 5]],
+    'refund:fresh:N5:C1' => [[298, 25, 25, 25], [61, 5, 5, 5]], // re-frozen at 1f6e4bc9: #584 added one statement to the cold first refund
     'refund:settled:N5:C1' => [[201, 25, 25, 25], [40, 5, 5, 5]],
     'closed:fresh:N5:C1' => [[222, 25, 25, 25], [44, 5, 5, 5]],
     'closed:settled:N5:C1' => [[267, 25, 25, 30], [53, 5, 5, 6]],
