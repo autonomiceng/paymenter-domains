@@ -249,7 +249,8 @@ class ViewDomain extends RecordDetailPage
             // Live money, dispute and delivery alerts, and the reminder check, stay beside the saved facts until staff clear them.
             $review=$this->getAction('notice_review',false); $review=$review?->isVisible()?$review:null;
             $alerts=($fact=DepartedPage::alerts($d,$review!==null))===null?null:$this->row('Open alerts',$fact,$review?[$review]:[]);
-            return DepartedPage::sections($d,$r,$customer,$facts['Service']['url']??null,$alerts);
+            // A dispute lost after the departure still holds the account, so Billing keeps its notice and Release hold.
+            return DepartedPage::sections($d,$r,$customer,$facts['Service']['url']??null,$alerts,$this->accountHold($d));
         }
         $suspected=$this->departureSuspected(); $late=!$suspected&&$this->recordsLate($d);
         // The notice above the sheet gives the cause and the next step once, so the rows it explains stay calm.
@@ -286,7 +287,7 @@ class ViewDomain extends RecordDetailPage
         if ($suspected && isset($notices['Registration'])) { $notices['Registration']->target(); }
         $this->heldNotice=$this->pageHold??($suspected?(isset($placed['Registration'])?($notices['Registration']??null):null):($heldIn!==null?($notices[$heldIn]??null):null));
         // An open account hold opens Billing, with Release hold beside it (P-ACT-11).
-        $money=\Paymenter\Extensions\Servers\Domains\Admin\Support\AccountMoneyHoldActions::notice($d,fn(string $name)=>($a=$this->cachedActions[$name]??null)?->isVisible()?$a:null);
+        $money=$this->accountHold($d);
         if ($money!==null) { $placed['Billing']??=[]; }
         $sections=[];
         foreach ($placed as $title=>$labels) {
@@ -345,6 +346,9 @@ class ViewDomain extends RecordDetailPage
         return [Section::make('Activity',[DomainHistory::trace($d,array_slice($entries,0,Sheet::RAIL_STEPS),DomainFacts::headRequest($d,$this->status(),$this->edits()['request'],$this->notice()),$this->said())])
             ->link(Sheet::link('view_history','View all '.count($entries),$url))];
     }
+    /** The open account hold as the Billing notice, with Release hold when this reader may release it (P-ACT-11). */
+    private function accountHold(Domain $d): ?Row
+    { return \Paymenter\Extensions\Servers\Domains\Admin\Support\AccountMoneyHoldActions::notice($d,fn(string $name)=>($a=$this->cachedActions[$name]??null)?->isVisible()?$a:null); }
     /** The notice that says why changes are held, so the rows it blocks point to it. */
     private ?Row $heldNotice=null;
     /** The request hold as one notice under the head, when a request holds changes. */
