@@ -104,6 +104,8 @@ class ViewOperation extends RecordDetailPage
         // Support needs the request's facts for the ticket, so whoever can record the answer can copy them.
         $copy=$answers?SupportDetails::action($op):null;
         $fail=$this->getAction('mark_failed',false); $fail=$fail?->isVisible()?Sheet::button($fail):null;
+        // The notice keeps its own action; staff who may close the change also learn when to use the button on Registrar reply.
+        if ($notice!==null&&$fail!==null) { $notice['body']=trim(($notice['body']??'').' If you know the change didn’t happen, use '.$fail->getLabel().'.'); }
         // The notice's link moves to the row it names; the notice keeps the one action that retries, and the registrar's answer
         // sits on Registrar reply when the notice already has its action.
         $link=$notice===null?null:($notice['link']??null);
