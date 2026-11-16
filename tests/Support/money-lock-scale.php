@@ -45,6 +45,56 @@ const MONEY_SCALE_ROWS = 4;
 const MONEY_SCALE_STATEMENTS = 100;
 const MONEY_SCALE_PAGE_STATEMENTS = 20;
 const MONEY_SCALE_ROW_STATEMENTS = 10;
+// Frozen observations at 11ed0dd8; tuples are [sql, Invoice, InvoiceItem, InvoiceTransaction].
+// Each entry contains complete-pass and per-decision ceilings. Never raise these for PR C.
+// When a row metric meets its final bound, replace its allowance with null (or remove the cell).
+// The optional research matrix uses the same process: only the first N5/C1 refund is cold.
+const MONEY_SCALE_BASELINE = [
+    'refund:fresh:N5:C1' => [[297, 25, 25, 25], [60, 5, 5, 5]],
+    'refund:settled:N5:C1' => [[201, 25, 25, 25], [40, 5, 5, 5]],
+    'closed:fresh:N5:C1' => [[222, 25, 25, 25], [44, 5, 5, 5]],
+    'closed:settled:N5:C1' => [[267, 25, 25, 30], [53, 5, 5, 6]],
+    'refund:fresh:N15:C1' => [[886, 225, 225, 225], [59, 15, 15, 15]],
+    'refund:settled:N15:C1' => [[601, 225, 225, 225], [40, 15, 15, 15]],
+    'closed:fresh:N15:C1' => [[662, 225, 225, 225], [44, 15, 15, 15]],
+    'closed:settled:N15:C1' => [[797, 225, 225, 240], [53, 15, 15, 16]],
+    'refund:fresh:N5:C2' => [[591, 50, 50, 50], [59, 5, 5, 5]],
+    'refund:settled:N5:C2' => [[401, 50, 50, 50], [40, 5, 5, 5]],
+    'closed:fresh:N5:C2' => [[442, 50, 50, 50], [44, 5, 5, 5]],
+    'closed:settled:N5:C2' => [[532, 50, 50, 60], [53, 5, 5, 6]],
+    'refund:fresh:N5:C4' => [[1181, 100, 100, 100], [59, 5, 5, 5]],
+    'refund:settled:N5:C4' => [[801, 100, 100, 100], [40, 5, 5, 5]],
+    'closed:fresh:N5:C4' => [[882, 100, 100, 100], [44, 5, 5, 5]],
+    'closed:settled:N5:C4' => [[1062, 100, 100, 120], [53, 5, 5, 6]],
+    'refund:fresh:N20:C1' => [[1181, 400, 400, 400], [59, 20, 20, 20]],
+    'refund:settled:N20:C1' => [[801, 400, 400, 400], [40, 20, 20, 20]],
+    'closed:fresh:N20:C1' => [[882, 400, 400, 400], [44, 20, 20, 20]],
+    'closed:settled:N20:C1' => [[1062, 400, 400, 420], [53, 20, 20, 21]],
+    'refund:fresh:N20:C2' => [[2361, 800, 800, 800], [59, 20, 20, 20]],
+    'refund:settled:N20:C2' => [[1601, 800, 800, 800], [40, 20, 20, 20]],
+    'closed:fresh:N20:C2' => [[1762, 800, 800, 800], [44, 20, 20, 20]],
+    'closed:settled:N20:C2' => [[2122, 800, 800, 840], [53, 20, 20, 21]],
+    'refund:fresh:N20:C4' => [[4721, 1600, 1600, 1600], [59, 20, 20, 20]],
+    'refund:settled:N20:C4' => [[3201, 1600, 1600, 1600], [40, 20, 20, 20]],
+    'closed:fresh:N20:C4' => [[3522, 1600, 1600, 1600], [44, 20, 20, 20]],
+    'closed:settled:N20:C4' => [[4242, 1600, 1600, 1680], [53, 20, 20, 21]],
+    'refund:fresh:N50:C1' => [[2951, 2500, 2500, 2500], [59, 50, 50, 50]],
+    'refund:settled:N50:C1' => [[2001, 2500, 2500, 2500], [40, 50, 50, 50]],
+    'closed:fresh:N50:C1' => [[2202, 2500, 2500, 2500], [44, 50, 50, 50]],
+    'closed:settled:N50:C1' => [[2652, 2500, 2500, 2550], [53, 50, 50, 51]],
+    'refund:fresh:N50:C2' => [[5901, 5000, 5000, 5000], [59, 50, 50, 50]],
+    'refund:settled:N50:C2' => [[4001, 5000, 5000, 5000], [40, 50, 50, 50]],
+    'closed:fresh:N50:C2' => [[4404, 5000, 5000, 5000], [44, 50, 50, 50]],
+    'closed:settled:N50:C2' => [[5304, 5000, 5000, 5100], [53, 50, 50, 51]],
+    'refund:fresh:N50:C4' => [[11802, 10000, 10000, 10000], [59, 50, 50, 50]],
+    'refund:settled:N50:C4' => [[8002, 10000, 10000, 10000], [40, 50, 50, 50]],
+    'closed:fresh:N50:C4' => [[8806, 10000, 10000, 10000], [44, 50, 50, 50]],
+    'closed:settled:N50:C4' => [[10606, 10000, 10000, 10200], [53, 50, 50, 51]],
+];
+const MONEY_SCALE_HISTORY_BASELINE = [
+    'refund:fixed-target' => [[40, 1, 1, 1], [40, 11, 11, 11]],
+    'closed:fixed-target' => [[53, 1, 1, 2], [53, 11, 11, 12]],
+];
 final class MoneyScaleMeter
 {
     public static bool $active = false;
@@ -88,11 +138,22 @@ $failures = []; $baseline = [];
 $bound = static function(bool $ok, string $key, array $facts) use (&$failures): void {
     if (!$ok) { $failures[] = $key; echo 'MONEY_SCALE_RED '.json_encode(['case'=>$key, ...$facts], JSON_THROW_ON_ERROR)."\n"; }
 };
-$measure = static function(string $label, array $ops, array $required, Closure $run) use ($bound): mixed {
+// Keep the failure-name ratchet as well: an allowance that now meets the goal must be removed.
+$freeze = static function(string $key, array $counts, array $ceilings, bool $allowRows = true) use ($bound, &$baseline): void {
+    foreach (array_keys(MoneyScaleMeter::zero()) as $index=>$class) {
+        $ceiling = $ceilings[$index] ?? null;
+        if ($ceiling === null) { continue; }
+        if ($allowRows && $class !== 'sql') { $baseline[] = $key.':'.$class; }
+        $bound($counts[$class] <= $ceiling, $key.':'.$class.':ceiling', ['actual'=>$counts[$class], 'ceiling'=>$ceiling]);
+    }
+};
+$measure = static function(string $label, array $ops, array $required, Closure $run) use ($bound, $freeze): mixed {
     MoneyScaleMeter::start($ops); $start = hrtime(true);
     try { [$result, $pages] = $run(); }
     finally { MoneyScaleMeter::$active = false; }
     $counts = MoneyScaleMeter::$total; $decisions = MoneyScaleMeter::$decisions;
+    [$passCeilings, $decisionCeilings] = MONEY_SCALE_BASELINE[$label] ?? [[], []];
+    $freeze($label.':pass', $counts, $passCeilings);
     $seconds = (hrtime(true)-$start)/1e9;
     $sum = ['Invoice'=>0, 'InvoiceItem'=>0, 'InvoiceTransaction'=>0];
     foreach ($required as $rows) { foreach ($sum as $class=>$n) { $sum[$class] += $rows[$class]; } }
@@ -103,6 +164,7 @@ $measure = static function(string $label, array $ops, array $required, Closure $
         $bound($counts[$class] <= MONEY_SCALE_ROWS*$rows, $label.':pass:'.$class, ['actual'=>$counts[$class], 'limit'=>MONEY_SCALE_ROWS*$rows]);
     }
     foreach ($decisions as $id=>$countsForDecision) {
+        $freeze($label.':decision:'.$id, $countsForDecision, $decisionCeilings);
         expect($countsForDecision['sql'] > 0, 'Each scheduled decision was executed and measured');
         expect($countsForDecision['sql'] <= MONEY_SCALE_STATEMENTS + MONEY_SCALE_PAGE_STATEMENTS + MONEY_SCALE_ROW_STATEMENTS*array_sum($required[$id]), 'Fixed per-decision SQL bound');
         foreach ($sum as $class=>$rows) {
@@ -175,11 +237,6 @@ foreach ($moneyScaleCells as [$n,$customers]) { foreach ([false,true] as $closed
     $required = $requiredFor($ops);
     foreach (['fresh','settled'] as $phase) {
         $label = ($closed ? 'closed' : 'refund').':'.$phase.':N'.$n.':C'.$customers;
-        // Every fixture decision is known red at the frozen base; exact identities keep new failures visible.
-        foreach (['Invoice','InvoiceItem','InvoiceTransaction'] as $class) {
-            $baseline[] = $label.':pass:'.$class;
-            foreach ($ops as $op) { $baseline[] = $label.':decision:'.$op->id.':'.$class; }
-        }
         $done = $measure($label,$ops,$required,static fn()=>$pass($ops,$closed));
         same($phase === 'fresh' ? count($ops) : 0,$done,'Complete pass returns each fresh payment exactly once');
         $funding = $checkMoney($ops,$owners,$closed,$phase === 'settled' ? $funding : []);
@@ -201,10 +258,15 @@ foreach ($moneyScaleHistory ? [false,true] : [] as $closed) {
         try { $pass([$target],$closed); } finally { MoneyScaleMeter::$active = false; }
         $counts = MoneyScaleMeter::$decisions[$target->id];
         $label = ($closed ? 'closed' : 'refund').':fixed-target';
+        // Freeze both endpoints: allowing the before count to grow would conceal regressions.
+        $freeze($label.($history === 0 ? ':before' : ':after'), $counts,
+            MONEY_SCALE_HISTORY_BASELINE[$label][$history === 0 ? 0 : 1] ?? [], false);
         if ($previous !== null) {
             expect($counts['sql'] <= $previous['sql'], 'Unrelated owner history does not add per-decision SQL statements');
             foreach (['Invoice','InvoiceItem','InvoiceTransaction'] as $class) {
-                $key = $label.':history:'.$class; $baseline[] = $key;
+                $key = $label.':history:'.$class;
+                $index = array_search($class, array_keys(MoneyScaleMeter::zero()), true);
+                if (isset(MONEY_SCALE_HISTORY_BASELINE[$label][1][$index])) { $baseline[] = $key; }
                 $bound($counts[$class] <= $previous[$class],$key,['before'=>$previous[$class],'after'=>$counts[$class]]);
             }
             echo 'MONEY_SCALE_HISTORY '.json_encode(['case'=>$label,'before'=>$previous,'after'=>$counts],JSON_THROW_ON_ERROR)."\n";
