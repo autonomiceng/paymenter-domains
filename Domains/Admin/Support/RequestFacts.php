@@ -279,7 +279,8 @@ final class RequestFacts
     {
         try {
             if (self::checking($op)) { return 'checking'; }
-            if ($op->state!=='uncertain'||!RegistrarCheck::stopped($op)) { return null; }
+            // A renewal whose order number no read could prove stays pending, but its checks have stopped the same way.
+            if (!RegistrarCheck::stopped($op)||$op->state!=='uncertain'&&!\Paymenter\Extensions\Servers\Domains\Services\OrderUnproven::applies($op)) { return null; }
             $now=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now();
             if (!\Paymenter\Extensions\Servers\Domains\Services\RegistrarAnswers::ready($op,$now)) { return null; }
             return \Paymenter\Extensions\Servers\Domains\Services\RegistrarAnswers::absence($op,$now)!==null?'no_order':'unclear';
