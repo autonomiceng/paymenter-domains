@@ -44,4 +44,22 @@ echo 'REFUND_RECHECK '.json_encode(['pool'=>$record['pool'],'settled'=>$record['
 same($money,$nativeMoney(),'Inspections and staff projections write no money');
 same(1,MoneyReceiptGateway::$sends,'No repeated refund was sent');
 same([0,0,false],[$first,$second,$inputs['late']],'Settled original refund must not require late-payment review');
+
+// Settlement also closes false rows retained by an earlier build.
+\Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::record($domain,'acquisition_late_money',$clock->now()->getTimestamp(),(int)$op->id,'synthetic_old_projection');
+$retirement->inspect($domain->id);same(0,$alerts()->count(),'A settled prefilter clears an already-open false alert');
+$pending=InvoiceTransaction::create(['invoice_id'=>$op->invoice_id,'amount'=>'0.01','fee'=>'0.00','status'=>'processing']);
+$retirement->inspect($domain->id);$active=$alerts()->sole();
+$identity=InvoiceMoney::project((int)$op->invoice_id)['attentionFingerprint'];
+$hold=DB::table('domains_obligation_alerts')->insertGetId(['alert_key'=>hash('sha256','synthetic_attention_owner_hold'),'domain_id'=>$domain->id,'generation'=>1,
+    'code'=>'account_money_hold','first_seen'=>1,'last_seen'=>1]);
+same($identity,InvoiceMoney::project((int)$op->invoice_id)['attentionFingerprint'],'An unrelated owner hold never changes attention identity');
+DB::table('invoice_transactions')->where('id',$pending->id)->update(['status'=>'failed']);$retirement->inspect($domain->id);
+same(0,$alerts()->count(),'Automatic settlement resolves pending-payment attention');
+DB::table('invoice_transactions')->where('id',$pending->id)->update(['status'=>'processing']);$retirement->inspect($domain->id);
+same((int)$active->id,(int)$alerts()->sole()->id,'The same evidence reopens after automatic resolution');
+$staff->role->update(['permissions'=>['admin.domains.view','admin.domains.manage-policy','admin.invoices.view',\Paymenter\Extensions\Servers\Domains\Services\AcquisitionPaymentReviews::PERMISSION]]);
+$reviews=new \Paymenter\Extensions\Servers\Domains\Services\AcquisitionPaymentReviews($clock);
+$reviews->review($staff,(int)$domain->id,$reviews->ticket($staff,(int)$domain->id),'Reviewed the same pending payment',true);
+$retirement->inspect($domain->id);same(0,$alerts()->count(),'Only an audited staff acknowledgement suppresses the same evidence');
 $nativeSuccessful=true;
