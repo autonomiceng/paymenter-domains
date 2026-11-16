@@ -18,13 +18,13 @@ class_alias(DepartureReleaseGateway::class,'Paymenter\\Extensions\\Gateways\\Dep
 Gateway::create(['extension'=>'DepartureRelease','name'=>'Synthetic card receipt','type'=>'gateway','enabled'=>true]);
 $renewal=$d->operations()->where('action','renew')->where('invoice_id',$invoice->id)->sole();
 App\Helpers\ExtensionHelper::addPayment($invoice->fresh(),'DepartureRelease',$renewal->amount,'0.00','departure-local-return');
-$closed=MoneyDecisions::run(new MoneyRequest($d->fresh()),function(array $l)use($renewal,$clock):void{
+$closed=MoneyDecisions::run(new MoneyRequest($d->fresh()),function(array $l)use($renewal,$clock):bool{
     $op=$l['operations']->firstWhere('id',$renewal->id);
     FundsWaits::closeRenewal($op,$l,$clock->now(),$l['transactions']->where('invoice_id',$op->invoice_id)->pluck('id')->all());
     $money=InvoiceMoney::load($l,(int)$op->invoice_id);
-    ReceiptReturns::reserve($op,$l,RefundPayment::requireCurrent($op,$l),$money,$clock->now());
+    return ReceiptReturns::reserve($op,$l,RefundPayment::requireCurrent($op,$l),$money,$clock->now());
 });
-same(MoneyOutcome::Applied,$closed->outcome,'The closed renewal has a retained unsent card return');
+same(MoneyOutcome::Applied,$closed->outcome,'The closed renewal has a retained unsent card return: '.($closed->error?->getMessage()??''));
 $op=$renewal->fresh();$allocation=ReceiptReturns::plans($op)[0]['allocations'][0];$key=$allocation['key'];
 $balance=static fn()=>PricingRule::minor((string)(Credit::where('user_id',$d->user_id)->where('currency_code','USD')->value('amount')??'0.00'));
 $before=$balance();$minor=PricingRule::minor($op->amount);
@@ -39,7 +39,8 @@ $funding=$op->funding;
 $op->update(['funding'=>[...$funding,'receipt_return_results'=>[$key=>['state'=>'sending','amount_minor'=>$minor]]]]);
 same(HoldingDeparture::RETURN_SENDING,HoldingDeparture::preview($d->fresh(),$clock->now()->getTimestamp())['block']['line'],'A sending card return still blocks preview');
 $blocked=$confirm();same([MoneyOutcome::Failed,$before],[$blocked->outcome,$balance()],'A sending card return cannot be converted');
-$op->update(['funding'=>$funding]);
+// Restore the synthetic unsent variant without weakening retained-result protection.
+DB::table('domains_operations')->where('id',$op->id)->update(['funding'=>Illuminate\Support\Facades\Crypt::encryptString(json_encode($funding,JSON_THROW_ON_ERROR))]);
 // Gateway evidence overrides the missing local result.
 DepartureReleaseGateway::$ledger=[['invoice_id'=>(int)$invoice->id,'user_id'=>(int)$d->user_id,'currency'=>'USD',
     'payment_intent_id'=>'departure-local-return','allocation_key'=>$key,'state'=>'pending','amount_minor'=>$minor]];
