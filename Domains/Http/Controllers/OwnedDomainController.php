@@ -14,17 +14,18 @@ final readonly class OwnedDomainController
     public function index(Request $request)
     {
         $raw=$request->query('q');$search=is_string($raw)?trim(substr($raw,0,253)):'';
-        $raw=$request->query('status');$filter=is_string($raw)&&isset(DomainStatus::SET[$raw])?$raw:'';
+        $raw=$request->query('status');$filter=is_string($raw)&&(isset(DomainStatus::SET[$raw])||$raw==='inactive')?$raw:'';
         $sort=in_array($request->query('sort'),['expiry','-expiry','name','-name'],true)?$request->query('sort'):'expiry';
         $perPage=in_array((int)$request->query('per_page'),[25,50,100],true)?(int)$request->query('per_page'):25;
         // One list: registered domains and the domains your hosting uses. Status depends on the order, renewal stops
         // and expiry, not only the status column, so chips, filters and sorting work on resolved rows.
         $rows=(new DomainSummaries())->listed($request->user(),now('UTC')->getTimestamp());
         $key=fn($row)=>$row->statusState===null?null:\Paymenter\Extensions\Servers\Domains\Presentation\StatusPill::key($row->statusState);
-        // Cancelled domains stay out of the way until the Cancelled chip asks for them.
-        $shown=array_filter($rows,fn($row)=>$key($row)!=='cancelled');
-        $filterCounts=[''=>count($shown),...array_count_values(array_filter(array_map($key,array_values($rows))))];
-        $rows=$filter===''?$shown:array_filter($rows,fn($row)=>$key($row)===$filter);
+        // Ended domains (cancelled, transferred away, deleted) stay out of the way until the Inactive tab asks for them.
+        $tab=fn($row)=>in_array($k=$key($row),DomainStatus::INACTIVE,true)?'inactive':$k;
+        $shown=array_filter($rows,fn($row)=>$tab($row)!=='inactive');
+        $filterCounts=[''=>count($shown),...array_count_values(array_filter(array_map($tab,array_values($rows))))];
+        $rows=$filter===''?$shown:array_filter($rows,fn($row)=>($filter==='inactive'?$tab($row):$key($row))===$filter);
         if ($search!=='') { $rows=array_filter($rows,fn($row)=>str_contains(strtolower($row->name),strtolower($search))); }
         $desc=$sort[0]==='-';$rows=array_values($rows);
         usort($rows,function($a,$b)use($sort,$desc){

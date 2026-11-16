@@ -13,6 +13,13 @@ final class DomainStates
 {
     /** Auto-renew off turns Active into Action required this many days before expiry. */
     public const WINDOW = 30;
+    /** A confirmed departure reads from its saved record: Deleted for a registry deletion, else Transferred away, with the
+     * saved reason. @return array{0:string,1:?string} */
+    public static function departed(Domain $d): array
+    {
+        $reason = (string) (($d->renewal_policy ?? [])['departure']['reason'] ?? '');
+        return [$reason === 'deleted' ? 'departed_deleted' : 'departed', isset(HoldingDeparture::REASONS[$reason]) ? rtrim(HoldingDeparture::REASONS[$reason], '.') : null];
+    }
     /** @return array{0:string,1:?string} */
     public static function managed(Domain $d, ?Operation $op, string $today, bool $renewalOff): array
     {
@@ -30,6 +37,7 @@ final class DomainStates
             };
             if ($state) { return $state; }
         }
+        if ($d->status === 'departed') { return self::departed($d); }
         if ($d->status !== 'active') { return [$d->status, null]; }
         $expiry = $d->provider_expires_at?->format('Y-m-d');
         return match (true) {

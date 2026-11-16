@@ -12,6 +12,7 @@ final class DomainStatus
         'active' => ['Active', 'success'], 'pending_registration' => ['Pending registration', 'info'], 'pending_transfer' => ['Pending transfer', 'info'],
         'awaiting_payment' => ['Awaiting payment', 'info'], 'action_required' => ['Action required', 'warning'], 'under_review' => ['Under review', 'warning'], 'expires_today' => ['Expires today', 'warning'], 'expired' => ['Expired', 'danger'],
         'redemption' => ['Redemption', 'danger'], 'failed' => ['Failed', 'danger'], 'cancelled' => ['Cancelled', 'gray'],
+        'transferred_away' => ['Transferred away', 'gray'], 'deleted' => ['Deleted', 'gray'],
     ];
     /** Shared support fallback for a managed domain past expiry. */
     public const LATE = 'Contact support to check whether it can still be renewed';
@@ -36,7 +37,11 @@ final class DomainStatus
         'redemption' => ['redemption', self::LATE], 'watch.redemption' => ['redemption', 'Restore at your registrar'],
         'registration_rejected' => ['failed', 'Registration did not finish'], 'transfer_rejected' => ['failed', 'Transfer did not finish'],
         'cancelled' => ['cancelled', null],
+        // A confirmed departure: the saved departure record gives the reason (DomainStates::managed).
+        'departed' => ['transferred_away', null], 'departed_deleted' => ['deleted', null],
     ];
+    /** Ended domains: the customer list groups them under Inactive, outside the default list. */
+    public const INACTIVE = ['cancelled', 'transferred_away', 'deleted'];
     /** The expiry-day rule, the same for customers and staff (UTC dates, Y-m-d): before the expiry date the domain is
      * active, on the date it expires today, and after it it has expired. */
     public static function expiry(string $expiry, string $today): string
