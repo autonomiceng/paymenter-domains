@@ -302,5 +302,20 @@ DomainRenewalGateway::$default = ['agreement_id'=>$agreement->id];
 same(true, RenewalAutoPay::account($user), 'An account default with no linked service: account On');
 DomainRenewalGateway::$default = null;
 same(false, RenewalAutoPay::account(null), 'No owner: account Off');
+// Two deadlocks in the charge check change nothing and queue the charge; the next sweep charges once and finishes the work.
+\Paymenter\Extensions\Servers\Domains\Services\MoneyWorkSchema::install(); DomainRenewalGateway::$mode = 'paid';
+$busy = $holder('busy'); $count = count(DomainRenewalGateway::$calls); $fails = 2;
+BillingAgreement::retrieved(static function () use (&$fails): void {
+    if ($fails < 1 || !\Paymenter\Extensions\Servers\Domains\Services\MoneyDecisions::running()) { return; }
+    $fails--; $cause = new PDOException('Synthetic deadlock'); $cause->errorInfo = ['40001', 1213, 'Synthetic'];
+    throw new Illuminate\Database\QueryException('sqlite', 'synthetic charge check', [], $cause);
+});
+$busyOp = $operation($billing->invoice($busy->id));
+same([0, null, $count, [['kind'=>'auto_pay', 'subject_id'=>$busyOp->id]]], [$fails, $busyOp->funding['auto_pay_result'] ?? null, count(DomainRenewalGateway::$calls),
+    DB::table('domains_money_work')->get(['kind', 'subject_id'])->map(fn ($r) => (array) $r)->all()], 'Contention twice records no result, charges nothing and queues the charge');
+$autopay->sweep(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $busy->server_id)->sole());
+same(['submitted', $count + 1, 0], [$busyOp->fresh()->funding['auto_pay_result']['status'] ?? null, count(DomainRenewalGateway::$calls), DB::table('domains_money_work')->count()], 'The next sweep charges the queued renewal once');
+$autopay->sweep(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $busy->server_id)->sole());
+same($count + 1, count(DomainRenewalGateway::$calls), 'A finished charge is never repeated');
 echo "Scheduled renewal Auto Pay: committed once-only attempts, credits, failures, skips, staff facts and native funding passed.\n";
 $nativeSuccessful = true;

@@ -96,6 +96,7 @@ final readonly class RuntimeWork
             foreach($ops->sortBy(fn($op)=>TransferPolling::priority($op)) as $op){if($op->action==='transfer'){$this->transferPayment($op);}$this->attempt('operation',fn()=>$this->enqueue((int)$op->id),(int)$op->id);}
             $this->attempt('producer',fn()=>app(AcquisitionRetirement::class)->expireUnpaid($a),(int)$a->server_id);
             $this->attempt('producer',fn()=>app(Refunds::class)->closeRefused($a),(int)$a->server_id);
+            $this->attempt('producer',fn()=>app(RenewalAutoPay::class)->sweep($a),(int)$a->server_id);
             $this->attempt('producer',function()use($a):void {
                 foreach(app(Refunds::class)->creditRetired($a) as $id){ReminderSchedules::enroll((int)$a->server_id);$this->notice($id);}
             },(int)$a->server_id);

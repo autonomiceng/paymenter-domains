@@ -67,7 +67,7 @@ final class MoneyDecisions
         if (!Schema::hasTable(MoneyWorkSchema::TABLE)) { return []; }
         return DB::table(MoneyWorkSchema::TABLE)->where('server_id', $serverId)->whereIn('kind', $kinds)->orderBy('turn')->orderBy('id')->limit($limit)->get()->all();
     }
-    /** Only the revision that was run is removed; a deferral since then keeps the item queued. */
-    public static function done(object $work): void
-    { DB::table(MoneyWorkSchema::TABLE)->where('id', $work->id)->where('revision', $work->revision)->delete(); }
+    /** Only the revision that was run is removed; a deferral since then keeps the item queued. True when this call removed it. */
+    public static function done(object $work): bool
+    { return DB::table(MoneyWorkSchema::TABLE)->where('id', $work->id)->where('revision', $work->revision)->delete() > 0; }
 }

@@ -12,6 +12,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account, Adoption, Operation, T
 /** One saved-method attempt per newly issued debt. No retry entry point or funding authority. */
 final readonly class RenewalAutoPay
 {
+    public const KIND = 'auto_pay';
     public function __construct(private Clock $clock) {}
 
     /** Whether a renewal invoice can be charged to the service's saved method today. The read-only form of the agreement checks in eligibility(). */
@@ -151,13 +152,25 @@ final readonly class RenewalAutoPay
         return [!$gateway ? 'gateway_missing' : (!(bool)$gateway->enabled ? 'gateway_disabled' : null), $agreement, $gateway];
     }
 
+    /** Charges deferred by database contention, one claimed turn each. The claim is removed before the charge runs, so a
+     * crash after it leaves the uncertain marker for staff, never a second charge. */
+    public function sweep(Account $a): void
+    {
+        OperationClaims::outside();
+        foreach (MoneyDecisions::queued((int) $a->server_id, 25, [self::KIND]) as $work) {
+            if (!MoneyDecisions::done($work)) { continue; }
+            $op = Operation::find($work->subject_id);
+            if ($op && is_array($marker = $op->funding['auto_pay'] ?? null)) { $this->charge((int) $op->id, $marker); }
+        }
+    }
+
     private function charge(int $id, array $marker): void
     {
         // Refresh authority after commit, without holding locks during gateway I/O.
         $op = Operation::findOrFail($id); $seed = $op->domain()->firstOrFail();
         try {
-            $ready = DB::transaction(function () use ($id, $seed, $marker): ?array {
-                $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
+            $decision = MoneyDecisions::run(new MoneyRequest($seed, self::KIND, $id), function (array $l) use ($id, $marker): ?array {
+                $op = $l['operations']->firstWhere('id', $id);
                 if (!$op || ($op->funding['auto_pay'] ?? null) !== $marker || array_key_exists('auto_pay_result', $op->funding ?? [])) { return null; }
                 $invoice = $l['invoices']->firstWhere('id', $op->invoice_id);
                 if (!$invoice) { throw new \DomainException('Renewal invoice unavailable.'); }
@@ -166,11 +179,15 @@ final readonly class RenewalAutoPay
                 if ($reason !== null) { $this->resultLocked($op, ['status'=>'skipped', 'reason'=>$reason]); return null; }
                 return [$invoice, $agreement, $gateway];
             });
-        } catch (\Throwable) {
-            $this->result($id, ['status'=>'skipped', 'reason'=>'authority_changed']); return;
+        } catch (MoneyWorkUnqueued) {
+            // The uncertain marker stays, which staff see as a missing result. Nothing is charged.
+            Log::warning('Domains renewal Auto Pay could not be queued after contention; staff review required.'); return;
         }
-        if ($ready === null) { return; }
-        [$invoice, $agreement, $gateway] = $ready;
+        // Contention twice changes nothing; the queued charge runs on a later sweep.
+        if ($decision->outcome === MoneyOutcome::Deferred) { return; }
+        if ($decision->error) { $this->result($id, ['status'=>'skipped', 'reason'=>'authority_changed']); return; }
+        if ($decision->value === null) { return; }
+        [$invoice, $agreement, $gateway] = $decision->value;
         try {
             $submitted = ExtensionHelper::charge($gateway, $invoice, $agreement);
         } catch (\Throwable) {
