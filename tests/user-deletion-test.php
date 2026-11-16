@@ -112,7 +112,7 @@ $trace=new class($connection) extends Illuminate\Database\Query\Grammars\SQLiteG
 $connection->setQueryGrammar($trace);
 try{$traceOwner->delete();}finally{$connection->setQueryGrammar($original);}
 $tables=array_column($trace->reads,'table');
-$prefix=['users','invoices','orders','services','domains_domains','domains_operations',UserDeletionSchema::TABLE];
+$prefix=['invoices','users','orders','services','domains_domains','domains_operations',UserDeletionSchema::TABLE];
 foreach($prefix as$index=>$table){
     $position=array_search($table,$tables,true);expect($position!==false,'Deletion requires current read: '.$table);
     if($index>0){expect(array_search($prefix[$index-1],$tables,true)<$position,'Deletion lock order: '.$table);}
