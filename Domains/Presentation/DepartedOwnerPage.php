@@ -28,7 +28,8 @@ final class DepartedOwnerPage
         $hosting = $summary && count($summary->relatedServices) === 1 ? ($summary->relatedServices[0]['url'] ?? null) : null;
         // Other nameservers: customer surfaces say nothing about DNS (README, DNS lines).
         match ($r['dns_case'] ?? null) {
-            'registrar' => $rows[] = ['label' => 'DNS records', 'value' => 'Stopped at the transfer', 'note' => "This domain used our registrar's DNS. Its records stopped working when the transfer completed. If you haven't already, set up DNS at your new host."],
+            'registrar' => $rows[] = ['label' => 'DNS records', 'value' => $deleted ? 'Stopped at deletion' : 'Stopped at the transfer',
+                'note' => $deleted ? "This domain used our registrar's DNS. Its records stopped working when the domain was deleted." : "This domain used our registrar's DNS. Its records stopped working when the transfer completed. If you haven't already, set up DNS at your new host."],
             'hosting' => $rows[] = ['label' => 'DNS records', 'value' => 'On your hosting plan', 'note' => 'DNS records on your hosting plan keep working while the plan is active.', 'link' => $hosting ? ['Open hosting service', $hosting] : null],
             default => null,
         };
