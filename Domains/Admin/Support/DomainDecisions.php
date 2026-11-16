@@ -49,6 +49,8 @@ final class DomainDecisions
         'native_identity_missing'=>['Service','danger'],
         'acquisition_retirement_review'=>['Service','warning'],
         'refund_repair'=>['Service','warning'],
+        'account_money_hold'=>['Service','warning'],
+        'dispute_recovery'=>['Service','warning'],
         'unknown_price'=>['Renewal price','danger'],
         'unknown_cost'=>['Renewal price','danger'],
         'below_cost'=>['Renewal price','danger'],
@@ -232,7 +234,7 @@ final class DomainDecisions
     }
     /** Safe cause text shared by the domain page and the list. Unknown saved kinds still need review. With the domain, a stopped sync names the control these staff have. */
     public static function alertCause(string $code, ?Domain $d=null): string
-    { if($code==='departure_review'&&$d){$a=\Paymenter\Extensions\Servers\Domains\Services\DepartureChecks::attention($d,app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp());return ($a['state']==='delayed'?'Delayed. ':'').'Check the departure. Not in our registrar account. Expires '.(\Paymenter\Extensions\Servers\Domains\Presentation\Fact::day($a['expiry'])?->text??'unknown').'.';} return $code==='observation_review'?'Sync stopped. '.self::stoppedStep($d):(ObligationAlerts::LABELS[$code]??'Domain alert needs review.'); }
+    { if($code==='account_money_hold'&&$d){return ObligationAlerts::LABELS[$code].' '.\Paymenter\Extensions\Servers\Domains\Services\AccountMoneyHolds::detail($d);} if($code==='departure_review'&&$d){$a=\Paymenter\Extensions\Servers\Domains\Services\DepartureChecks::attention($d,app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp());return ($a['state']==='delayed'?'Delayed. ':'').'Check the departure. Not in our registrar account. Expires '.(\Paymenter\Extensions\Servers\Domains\Presentation\Fact::day($a['expiry'])?->text??'unknown').'.';} return $code==='observation_review'?'Sync stopped. '.self::stoppedStep($d):(ObligationAlerts::LABELS[$code]??'Domain alert needs review.'); }
     /** Puts each cause under its row, collecting causes without a row on the Open alerts row. */
     private static function alerts(Domain $d, array $f, array|false|null $notice=false): array
     {

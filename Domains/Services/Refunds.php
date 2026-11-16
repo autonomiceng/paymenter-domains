@@ -209,10 +209,8 @@ final readonly class Refunds
         finally {
             Cache::forever($cursor, $complete && !$kept ? ($ids->count() === 100 ? $ids->last() : 0) : $reached);
             // Inspect final evidence once per domain, even if a later invoice or its diagnostics failed.
-            foreach (array_keys($inspect) as $id) {
-                try { app(AcquisitionRetirement::class)->inspect($id); }
-                catch (\Throwable $e) { $failure ??= $e; }
-            }
+            if($inspect){try{app(AcquisitionRetirement::class)->inspectMany(array_keys($inspect));}
+                catch(\Throwable $e){$failure??=$e;}}
         }
         if ($failure !== null) { throw $failure; }
         return $credited;

@@ -51,7 +51,9 @@ foreach(['status'=>'succeeded','amount'=>'2.00'] as $field=>$value){
     expect($lateLocks>0,'Changed transaction '.$field.' takes locked late-money recheck');
 }
 same(3,DB::table('domains_obligation_alerts')->where('domain_id',$staffOp->domain_id)->where('code','acquisition_late_money')->count(),'Payment status and amount each retain a distinct alert');
-DB::table('domains_obligation_alerts')->where('domain_id',$staffOp->domain_id)->update(['resolved_at'=>time()]);
+$reviewer=staffUser(['admin.domains.view','admin.domains.manage-policy','admin.invoices.view',Paymenter\Extensions\Servers\Domains\Services\AcquisitionPaymentReviews::PERMISSION]);
+$paymentReviews=new Paymenter\Extensions\Servers\Domains\Services\AcquisitionPaymentReviews($clock);
+$paymentReviews->review($reviewer,$staffOp->domain_id,$paymentReviews->ticket($reviewer,$staffOp->domain_id),'Reviewed the late payment and account credit',true);
 $lateLocks=0;$countTransactions=true;$retirement->inspect($staffOp->domain_id);$countTransactions=false;
 expect($lateLocks>0,'Resolved late-money alert receives a locked recheck');
 same(0,DB::table('domains_obligation_alerts')->where('domain_id',$staffOp->domain_id)->whereNull('resolved_at')->count(),'Same reviewed late-money identity stays resolved after locked recheck');

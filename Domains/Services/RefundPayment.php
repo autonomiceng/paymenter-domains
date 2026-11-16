@@ -48,14 +48,19 @@ final class RefundPayment
             // Incremental returns do not grant replacement authority or resolve an unseen Auto Pay attempt.
             $net=$l['transactions']->where('invoice_id',$op->invoice_id)->where('status',InvoiceTransactionStatus::Succeeded)->sum(fn($row)=>PricingRule::minor($row->amount));
             if(!RenewalCycles::closedEarly($op)&&$net+ReceiptReturns::completedMinor($op,$l)!==PricingRule::minor($op->amount)){return false;}
-            if (!($l['advisory'] ?? false)) { return InvoiceMoney::settled(InvoiceMoney::load($l, (int)$op->invoice_id)); }
+            if (!($l['advisory'] ?? false)) { return self::retiredPool(InvoiceMoney::load($l, (int)$op->invoice_id)); }
             // Owner choices use retained evidence without gateway I/O. Billing rechecks the current ledger under locks.
             $rows = $l['transactions']->where('invoice_id', $op->invoice_id)->map(fn($row)=>[
                 'id'=>(int)$row->id, 'amount'=>(string)$row->amount, 'status'=>$row->status->value,
                 'gateway_id'=>(int)$row->gateway_id, 'transaction_id'=>$row->transaction_id]);
-            $peers = Operation::where('invoice_id', $op->invoice_id)->orderBy('id')->get()->map(fn($peer)=>['funding'=>$peer->funding ?? []]);
-            return InvoiceMoney::settled(InvoiceMoney::record($rows, $peers, []));
+            $peers = ($l['invoice_peers']??InvoiceMoney::peers([(int)$op->invoice_id]))->where('invoice_id',$op->invoice_id)
+                ->map(fn($peer)=>['funding'=>array_diff_key($peer->funding ?? [],['dispute_holds'=>true])]);
+            return self::retiredPool(InvoiceMoney::record($rows, $peers, []));
         } catch (\PDOException $e) { throw $e; } catch (\Throwable) { return false; }
+    }
+    private static function retiredPool(array $record): bool
+    {
+        return $record['pool']<=0&&!$record['pending']&&!array_filter($record['receipts'],fn($r)=>$r['reserved']>0||$r['hold']);
     }
     /** A closed new order shares its invoice's payments with other orders, maybe on another account, so it reads what any of them credited.
      * @return array<int,int> Payment id => minor amount already credited from a closed order. */

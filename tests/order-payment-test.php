@@ -1,7 +1,8 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering. A pending order says where its payment stands, the same on the list and the page, and History says why a change failed.
 declare(strict_types=1);
-require __DIR__.'/native-app.php';require __DIR__.'/Support/storefront.php';
+require __DIR__.'/Support/operation-fixture.php';require __DIR__.'/Support/storefront.php';
+require __DIR__.'/Support/money-receipt.php';
 use App\Models\Invoice;
 use Illuminate\Support\Carbon;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
@@ -36,10 +37,17 @@ same(['Cancelled','Order cancelled'],[$pill($credited=OwnedDomains::order($d(['s
 same([],OwnedDomains::order($d(['status'=>'registration_rejected']),$op(['state'=>'rejected','safe_code'=>'preflight_failed']),$invoice('paid')),'A failed domain stays Failed');
 same([],$rejected('acquisition_cancelled_unpaid'),'Unpaid close is not a failed order');
 // A completed gateway return cancels the order without calling it account credit.
+$returnGateway=App\Models\Gateway::create(['extension'=>'MoneyReceipt','name'=>'Synthetic return','type'=>'gateway','enabled'=>true]);
 foreach(['refunded','credited','pending','reserved','review'] as $result){
-    $returned=OwnedDomains::order($d(),$op(['state'=>'rejected','safe_code'=>'refund_approved','funding'=>[
-        'refund'=>['amount'=>'1.00','to'=>'original_payment','bridge_minor'=>0,'payments'=>[['id'=>1,'amount_minor'=>100]],'allocations'=>[['key'=>'return-key','amount_minor'=>100]]],
-        'receipt_return_results'=>['return-key'=>['state'=>$result]]]]),$invoice('paid'));
+    $financial=$new('payment-display-'.$result.'-placeholder.com',false);
+    Illuminate\Support\Facades\DB::table('invoices')->where('id',$financial->invoice_id)->update(['status'=>'paid']);
+    $payment=App\Models\InvoiceTransaction::findOrFail(Illuminate\Support\Facades\DB::table('invoice_transactions')->insertGetId(['invoice_id'=>$financial->invoice_id,'amount'=>$financial->amount,'fee'=>'0.00','status'=>'succeeded','gateway_id'=>$returnGateway->id,'transaction_id'=>'synthetic_display_'.$result,'created_at'=>now(),'updated_at'=>now()]));
+    $minor=Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor($financial->amount);
+    if(in_array($result,['refunded','credited'],true)){Illuminate\Support\Facades\DB::table('invoice_transactions')->insert(['invoice_id'=>$financial->invoice_id,'amount'=>'-'.$financial->amount,'fee'=>'0.00','status'=>'succeeded','transaction_id'=>'synthetic_reversal_'.$result,'created_at'=>now(),'updated_at'=>now()]);}
+    $financial->forceFill(['state'=>'rejected','safe_code'=>'refund_approved','funding'=>[
+        'refund'=>['amount'=>$financial->amount,'to'=>'original_payment','bridge_minor'=>0,'payments'=>[['id'=>$payment->id,'amount_minor'=>$minor]],'allocations'=>[['key'=>'return-key','amount_minor'=>$minor,'transaction_id'=>$payment->id,'gateway_id'=>$returnGateway->id,'receipt'=>'synthetic_display_'.$result]]],
+        'receipt_return_results'=>['return-key'=>['state'=>$result,'key'=>'synthetic_reversal_'.$result,'amount_minor'=>$minor]]]])->saveQuietly();
+    $returned=OwnedDomains::order($financial->domain,$financial,Invoice::find($financial->invoice_id));
     same(in_array($result,['refunded','credited'],true)?'Cancelled':'Under review',$pill($returned)['label'],'Gateway return pill agrees with '.$result);
     expect(!isset($returned['credit']),'A gateway return does not set the account credit marker');
 }

@@ -171,8 +171,10 @@ class Operation extends Model
                 }
             }
             $before=$operation->getOriginal('funding')??[];$after=$operation->funding??[];
-            $history=$before['late_credits']??[];$next=$after['late_credits']??[];
-            if(!is_array($history)||!is_array($next)||!array_is_list($next)||array_slice($next,0,count($history))!==$history){throw new \DomainException('Late money returns are append-only.');}
+            foreach(['late_credits','dispute_holds'] as $key){
+                $history=$before[$key]??[];$next=$after[$key]??[];
+                if(!is_array($history)||!is_array($next)||!array_is_list($next)||array_slice($next,0,count($history))!==$history){throw new \DomainException('Money evidence is append-only.');}
+            }
             foreach($before['receipt_return_results']??[] as $key=>$result){
                 $next=$after['receipt_return_results'][$key]??null;
                 if(!is_array($next)||in_array($result['state']??null,['credited','released'],true)&&$next!==$result){throw new \DomainException('Receipt returns are retained.');}

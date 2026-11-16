@@ -20,6 +20,8 @@ final class ObligationAlerts
         'unknown_price'=>'Renewal price missing. Check pricing before you contact the customer.',
         'unknown_cost'=>"Cost missing. Check the registrar account's price.",
         'schedule_binding'=>'Reminder account changed. Check the schedule before you turn on notices.',
+        'account_money_hold'=>'Account on hold: a payment was lost to a bank dispute. Check the dispute and the customer, then release the hold.',
+        'dispute_recovery'=>'Bank dispute recovery needs a check. Automatic checks continue.',
         'refund_repair'=>'Money return needs a check. Review the request, invoice and gateway outcome. Do not return it again. Automatic checks continue.',
         'funds_wait_review'=>'Registrar funds wait ended. Check the request outcome before returning money.',
         'renewal_funds'=>'Renewal needs registrar funds now. Fund the account before the safe expiry deadline; the system retries.',
@@ -73,7 +75,10 @@ final class ObligationAlerts
         if(!isset(self::LABELS[$code])){throw new \InvalidArgumentException('Unknown obligation alert.');}
         $key=self::key($d,$code,$operationId,$identity);
         $q=DB::table('domains_obligation_alerts')->where('alert_key',$key);$old=(clone $q)->first();
-        if($old){$q->update(['last_seen'=>$now,...($code==='acquisition_late_money'?[]:['resolved_at'=>null])]);}
+        if($old){
+            $ack=$code==='acquisition_late_money'&&collect($d->renewal_policy['acquisition_payment_reviews']??[])->contains(fn($review)=>in_array((int)$old->id,$review['alert_ids']??[],true));
+            $q->update(['last_seen'=>$now,...($ack?[]:['resolved_at'=>null])]);
+        }
         else{DB::table('domains_obligation_alerts')->insert(['alert_key'=>$key,'domain_id'=>$d->id,'generation'=>$d->authority_generation,'code'=>$code,
             'operation_id'=>$operationId,'first_seen'=>$now,'last_seen'=>$now]);}
         return $key;
@@ -136,6 +141,7 @@ final class ObligationAlerts
         if($alert->code===RenewalOwnership::REVIEW){try{return !HoldingReadRetry::absent($d);}catch(\Throwable){return false;}}
         if($alert->code==='observation_review'){try{return !ObservationRecords::stopped($d);}catch(\Throwable){return false;}}
         if(!$op){return false;}
+        if(in_array($alert->code,self::REVIEW,true)&&self::settledRenewal($op,$d)&&!self::flagged($op,$operations,$d)){return true;}
         // A refusal before sending (dispatch, balance or claim checks) records a review alert. Once the request is sent and inside the registrar's
         // normal wait it is In progress, so that alert is outdated; an unconfirmed result records a fresh one (retained()).
         if(in_array($alert->code,self::REVIEW,true)&&in_array($op->state,['running','pending'],true)){try{if(!self::flagged($op,$operations,$d)){return true;}}catch(\Throwable){}}
@@ -160,8 +166,15 @@ final class ObligationAlerts
     {
         try {
             $p=$op->policy??[];
-            return ($p['reconciliation']['staff_alert']??false)&&!self::corrected($op,$operations,$d)||($p['renewal_execution']['staff_alert']??false);
+            return ($p['reconciliation']['staff_alert']??false)&&!self::corrected($op,$operations,$d)||($p['renewal_execution']['staff_alert']??false)&&!self::settledRenewal($op,$d);
         } catch (\Illuminate\Contracts\Encryption\DecryptException) { return true; }
+    }
+    /** Historical renewal uncertainty clears only with current terminal proof and a settled invoice. */
+    public static function settledRenewal(Operation $op,Domain $d): bool
+    {
+        try{return $op->action==='renew'&&OperationTerminalProof::safe($op,$d)&&$op->invoice_id!==null
+            &&InvoiceMoney::settled(InvoiceMoney::project((int)$op->invoice_id));}
+        catch(\Throwable){return false;}
     }
     /** Every section the registration flagged was fixed by a successful, confirmed request. The saved flag itself never changes. */
     private static function corrected(Operation $op,Collection $operations,Domain $d):bool
@@ -188,7 +201,7 @@ final class ObligationAlerts
     /** Resolve only after a successful, complete inspection, retaining all historical rows. */
     public static function finish(Domain $d,array $active,int $now):void
     {
-        $q=DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->whereNull('resolved_at')->whereNotIn('code',['refund_repair','funds_wait_review','renewal_funds','template_failed','acquisition_retirement_review','acquisition_late_money','transfer_watch_relink']);
+        $q=DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->whereNull('resolved_at')->whereNotIn('code',['account_money_hold','dispute_recovery','refund_repair','funds_wait_review','renewal_funds','template_failed','acquisition_retirement_review','acquisition_late_money','transfer_watch_relink']);
         if($active){$q->whereNotIn('alert_key',$active);}$q->update(['resolved_at'=>$now]);
     }
 }

@@ -191,8 +191,11 @@ final class ReceiptReturns
     {
         $plans=self::plans($op);if(!$plans){return null;}$states=[];$bridge=0;
         if(self::malformed($op)){return self::REVIEW;}
+        try{$money=InvoiceMoney::project((int)$op->invoice_id);}
+        catch(\Throwable){return self::REVIEW;}
+        if($money['overdrawn']||array_filter($money['receipts'],fn($r)=>$r['hold'])){return self::REVIEW;}
         foreach(self::effective($op) as $p){if(($p['to']??null)==='account_credit'){$bridge+=PricingRule::minor($p['amount']);}}
-        foreach(self::effective($op) as $p){if(($p['to']??null)!=='original_payment'){continue;}$bridge+=$p['bridge_minor'];foreach($p['allocations'] as $a){$states[]=$op->funding['receipt_return_results'][$a['key']]['state']??'reserved';}}
+        foreach(self::effective($op) as $p){if(($p['to']??null)!=='original_payment'){continue;}$bridge+=$p['bridge_minor'];foreach($p['allocations'] as $a){$entry=collect($money['ledger'])->first(fn($e)=>$e['gateway_id']===$a['gateway_id']&&$e['payment_intent_id']===$a['receipt']&&$e['allocation_key']===($a['gateway_key']??$a['key']));$states[]=$entry['state']??$op->funding['receipt_return_results'][$a['key']]['state']??'reserved';}}
         if(!$states&&$bridge===0){return null;}
         if(array_intersect($states,['review'])){return self::REVIEW;}
         if(array_diff($states,['refunded','credited'])){return ['Refund processing','We are returning your payment and checking its progress automatically.'];}
@@ -210,14 +213,14 @@ final class ReceiptReturns
         if(!$a){throw new \DomainException('Missing receipt allocation.');}
         $known=$op->funding['receipt_return_results'][$key]??[];
         if($known){return;} // Sending and gateway-owned results can never be released.
-        $money=InvoiceMoney::load($l,(int)$op->invoice_id,$key);
+        $money=$reason==='recovery'?InvoiceMoney::lockedRecord($l,(int)$op->invoice_id,Operation::where('invoice_id',$op->invoice_id)->orderBy('id')->lockForUpdate()->get(),$key):InvoiceMoney::load($l,(int)$op->invoice_id,$key);
         $entry=collect($money['ledger'])->first(fn($r)=>$r['gateway_id']===$a['gateway_id']&&$r['payment_intent_id']===$a['receipt']&&$r['allocation_key']===($a['gateway_key']??$key));
         if($entry){
             $result=[...$entry,'amount_minor'=>(int)$entry['amount_minor']];
             if(isset($entry['return_key'])){$result['key']=$entry['return_key'];}
         }else{
             if(isset($a['gateway_key'])||$reason!=='recovery'&&($money['ownerHold']||array_filter($money['receipts'],fn($r)=>$r['hold']))){return;}
-            $minor=min($a['amount_minor'],array_sum(InvoiceMoney::heldFor($money,$a['transaction_id'])));
+            $minor=$reason==='recovery'?0:min($a['amount_minor'],array_sum(InvoiceMoney::heldFor($money,$a['transaction_id'])));
             $credit=$l['credit']??new Credit(['user_id'=>$l['user']->id,'currency_code'=>'USD','amount'=>'0.00']);
             if($minor>0){$credit->amount=PricingRule::decimal(PricingRule::minor($credit->amount)+$minor);$credit->save();}
             $result=['state'=>'released','amount_minor'=>$a['amount_minor'],'credit_minor'=>$minor,'credit_id'=>$credit->id,'reason'=>$reason,'at'=>now()->toAtomString()];
