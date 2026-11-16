@@ -96,8 +96,9 @@ final class DomainDecisions
             $unread=self::unread($d,$sync);
             // A current not-found read or ownership hold outranks older ownership facts; other read failures leave them as they were.
             // A strictly newer ownership read of the same identity answers membership, while the hold keeps its own notice until records are read again.
+            // Retained renewal proof also checks the provider reference, unlike generic observation facts.
             $drift=ObservationRecords::held($d)&&($observation['record_hold']['reason']??null)==='ownership_drift';
-            $absent=\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::absent($d)
+            $absent=RenewalOwnership::blocked($d)||\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::absent($d)
                 ||$drift&&!\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::ownedAfter($d,$observation['record_hold']['at']??null);
             $f['In registrar account']=Facts::row($absent?'No':Facts::flag($facts['owned']??null,'Yes','No'),sub:$absent||isset($facts['owned'])?null:$unread);
             // Before the first registrar read, the customer page says Checking (RecordFamilies initial_read_pending); the staff row waits too.

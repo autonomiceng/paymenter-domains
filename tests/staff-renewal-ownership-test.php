@@ -25,7 +25,19 @@ $fenced=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$d->id])-
 $fenced->assertDontSee('Next invoice')->assertDontSee('Paid by Auto Pay')->assertSee(ObligationAlerts::LABELS[RenewalOwnership::REVIEW]);
 same('On',DomainFacts::for($d->fresh())['Renewal']['value'],'The saved Auto-renew preference stays visible');
 
+// A positive read for a foreign provider reference cannot contradict the retained ownership fence.
+$absentMembership=DomainFacts::for($d->fresh())['In registrar account'];
+expect($absentMembership['value']!==null,'Definite absence has a known membership value');
+$observation->domainId='457';
+same('refreshed',$read(),'A foreign provider reference still saves diagnostic facts');
+same(true,$d->fresh()->observation['facts']['owned'],'The foreign read contains a newer positive diagnostic');
+same(false,\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::absent($d->fresh()),'The newer generic facts supersede the not-found diagnostic');
+same(true,RenewalOwnership::blocked($d->fresh()),'Identity-scoped absence still blocks renewal');
+same($absentMembership,DomainFacts::for($d->fresh())['In registrar account'],'Staff membership retains the same absence answer after foreign-provider recovery');
+same(true,DomainFacts::for($d->fresh())['Renewal']['alert']??false,'Foreign-provider recovery retains the billing review');
+$observation->domainId='456';
 same('refreshed',$read(),'Positive ownership restores the billing display');
+expect(DomainFacts::for($d->fresh())['In registrar account']['value']!==$absentMembership['value'],'Same-provider recovery restores membership');
 $restored=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$d->id])->assertSuccessful();
 $restored->assertSee('Next invoice')->assertSee('Paid by Auto Pay');
 // A stale saved row must not revive an alert whose current-state predicate has cleared.
