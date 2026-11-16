@@ -30,15 +30,18 @@ final class History
             && !array_diff(array_keys($priorRefusals), ['detail_ceiling', 'read_budget']);
         $checked = $continueOpen ? self::outcomes($saved['open_checked'] ?? null) : [];
         $known = self::outcomes($saved['orders'] ?? null); $refusals = [];
+        // The most open orders this pass has confirmed unrelated. Re-confirming more of them is scan progress; a blocked turn
+        // that confirms the same orders again is not. A finished scan starts a new pass.
+        $confirmed = ($saved['complete'] ?? null) === false && is_int($saved['open_confirmed'] ?? null) ? max(0, min(self::ORDERS, $saved['open_confirmed'])) : 0;
         $refuse = function (string $category) use (&$refusals): void { $refusals[$category] = ($refusals[$category] ?? 0) + 1; };
-        $result = function (bool $complete, array $orders, array $candidates, int $listed, int $window, bool $progressed) use (&$refusals, &$checked, $saved, $key): Evidence {
+        $result = function (bool $complete, array $orders, array $candidates, int $listed, int $window, bool $progressed) use (&$refusals, &$checked, &$confirmed, $saved, $key): Evidence {
             $totals = self::counts($saved['refusal_totals'] ?? null);
             foreach ($refusals as $category=>$count) { $totals[$category] = min(1000000, ($totals[$category] ?? 0) + $count); }
             $encoded = [];
             foreach ($orders as $id=>[$outcome, $signature]) { $encoded[(string)$id] = $outcome.':'.$signature; }
             $validatedOpen = [];
             foreach ($checked as $id=>[$outcome, $signature]) { $validatedOpen[(string)$id] = $outcome.':'.$signature; }
-            $state = ['orders'=>$encoded, 'open_checked'=>$validatedOpen, 'listed'=>$listed, 'in_window'=>$window, 'resolved'=>count($orders), 'complete'=>$complete,
+            $state = ['orders'=>$encoded, 'open_checked'=>$validatedOpen, 'open_confirmed'=>$confirmed, 'listed'=>$listed, 'in_window'=>$window, 'resolved'=>count($orders), 'complete'=>$complete,
                 'reads'=>min(1000000, (int)($saved['reads'] ?? 0) + 1), 'refusals'=>$refusals, 'refusal_totals'=>$totals];
             return new Evidence(candidates: $candidates, historyComplete: $complete, historyScan: new HistoryScan($key, $state, $progressed && !$complete));
         };
@@ -122,7 +125,8 @@ final class History
             }
             if ($complete && count($candidates) > 1) { $refuse('multiple_matches'); }
         }
-        return $result($complete, $orders, $candidates, count($ids), count($rows), $added > 0);
+        $more = count($checked) > $confirmed; $confirmed = max($confirmed, count($checked));
+        return $result($complete, $orders, $candidates, count($ids), count($rows), $added > 0 || $more);
     }
     /** One exact order: 'n' a validated non-match, 'c' a matching candidate, otherwise a refusal category. */
     private function detail(AttemptEvidence $attempt, RequestContext $context, array $row): array

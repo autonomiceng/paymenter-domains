@@ -186,8 +186,10 @@ $read($op, '+2 hours');
 same([true, false], [$op->fresh()->policy['history_scan']['state']['complete'], isset($op->fresh()->policy['enom_absence'])],
     'The earlier complete scan predates the no-order margin');
 $history->detailTick = static function (int $ms) use ($clock): void { $clock->instant = $clock->instant->modify('+'.min(24000, $ms).' milliseconds'); };
+$polls = $op->fresh()->policy['reconciliation']['polls'] ?? 0;
 $read($op, '+25 hours');
 same(false, $op->fresh()->policy['history_scan']['state']['complete'], 'Fresh open-order revalidation reaches the deadline before the final details');
+same($polls, $op->fresh()->policy['reconciliation']['polls'] ?? 0, 'Re-confirming unrelated open orders is scan progress, not a failed check');
 $history->detailTick = null;
 $history->late = static function () use ($clock): void { $clock->instant = $clock->instant->modify('+300 seconds'); };
 $read($op, '+26 hours'); // A list-level interruption must also preserve the outstanding rechecks.
