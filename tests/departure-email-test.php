@@ -24,6 +24,10 @@ expect((Paymenter\Extensions\Servers\Domains\Admin\Support\DepartureConfirm::row
 $template->update(['enabled'=>false]);
 same(null,Paymenter\Extensions\Servers\Domains\Admin\Support\DepartureConfirm::rows($d->fresh())['email']??null,'No Email row while the departure email is off');
 $template->update(['enabled'=>true]);
+// With mail turned off for the site, neither the row nor the confirm dialog promises an email.
+$mailOff=config('settings.mail_disable');config(['settings.mail_disable'=>true]);
+same([null,null],[Paymenter\Extensions\Servers\Domains\Admin\Support\DepartureConfirm::rows($d->fresh())['email']??null,Paymenter\Extensions\Servers\Domains\Admin\Support\DepartureConfirm::subject($d->fresh(),'other_registrar')],'No email promised while mail is disabled');
+config(['settings.mail_disable'=>$mailOff]);
 
 // A blocked confirmation rolls back, and its reserved email goes with it.
 $at=$clock->instant;$clock->instant=$clock->now()->modify('+25 hours');

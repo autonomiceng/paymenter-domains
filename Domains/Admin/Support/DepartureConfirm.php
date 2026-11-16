@@ -127,7 +127,9 @@ final class DepartureConfirm
     {
         try{
             $t=\App\Models\NotificationTemplate::where('key','domains_domain_departed')->first();
-            if(!$t||!$t->enabled||$d->user===null){return null;}
+            if(!$t||!$t->enabled||$d->user===null||config('settings.mail_disable')){return null;}
+            // The same mail checks the departure email reserves with: a customer who turned the email off gets none.
+            if(!$t->isEnabledForPreference($d->user->notificationsPreferences()->where('notification_template_id',$t->id)->first(),'mail')){return null;}
             return trim(\Illuminate\View\Compilers\BladeCompiler::render((string)$t->subject,['domain'=>$d->domain,'deleted'=>$reason==='deleted','company'=>\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company()]));
         }catch(\Throwable){return null;}
     }
