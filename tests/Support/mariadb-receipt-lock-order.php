@@ -44,7 +44,7 @@ $op=Operation::findOrFail($ids[$case]);$seed=$op->domain()->firstOrFail();
 if($phase==='reset'){
     DB::table('invoice_transactions')->where('invoice_id',$op->invoice_id)->delete();
     DB::table('invoices')->where('id',$op->invoice_id)->update(['status'=>'cancelled']);
-    DB::table('domains_operations')->where('id',$op->id)->update(['state'=>'awaiting_payment','safe_code'=>null,'attempt'=>null,'policy'=>null,'completed_at'=>null]);
+    DB::table('domains_operations')->where('id',$op->id)->update(['state'=>'awaiting_payment','safe_code'=>null,'attempt'=>null,'policy'=>null,'cost'=>null,'funding'=>null,'completed_at'=>null]);
     echo "Reset retained unpaid renewal.\n";$nativeSuccessful=true;return;
 }
 require $runtime.'/tests/Support/mariadb-commerce.php';
