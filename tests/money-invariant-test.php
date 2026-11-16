@@ -516,4 +516,54 @@ expect(DB::table('domains_obligation_alerts')->where('id',$retry->id)->value('re
 $recovery->recover($entry);
 expect(DB::table('domains_obligation_alerts')->where('id',$retry->id)->value('resolved_at')!==null,'Successful owed-zero recovery resolves its own retry evidence');
 same([], $op->fresh()->funding['dispute_holds']??[], 'Owed-zero recovery adds no amount entry');
+
+AccountMoneyHolds::release($staff,(int)DB::table('domains_obligation_alerts')->where('alert_key',DisputeRecoveries::key('account_money_hold','synthetic_deferred'))->value('id'));
+// Reserved money is not returned money. Only an unsent reservation can be released.
+foreach([false,true] as $gatewayOwned){
+    $op=$new('recovery-reservation-'.(int)$gatewayOwned.'-placeholder.com');$entry=$loss($op,300,'synthetic_reserved_'.(int)$gatewayOwned);
+    $payment=InvoiceTransaction::where('invoice_id',$op->invoice_id)->sole();
+    $a=['transaction_id'=>(int)$payment->id,'gateway_id'=>(int)$creditGateway->id,'receipt'=>$payment->transaction_id,'key'=>'synthetic_reserved_'.(int)$gatewayOwned,'amount_minor'=>300];
+    $op->update(['funding'=>['refund'=>['to'=>'original_payment','amount'=>'3.00','bridge_minor'=>0,'allocations'=>[$a],'payments'=>[['id'=>(int)$payment->id,'amount_minor'=>300]]]]]);
+    if($gatewayOwned){InvariantReceiptGateway::$ledger[]=[...$entry,'allocation_key'=>$a['key'],'state'=>'sending'];}
+    $before=$balance();$recovery->recover($entry);
+    same($before,$balance(),'A reservation never removes credit');
+    same([],$op->fresh()->funding['dispute_holds']??[],'A reservation creates no returned-money recovery entry');
+    same($gatewayOwned?null:'released',$op->fresh()->funding['receipt_return_results'][$a['key']]['state']??null,'Legacy gateway evidence prevents release even without a local result');
+    if(!$gatewayOwned){same(0,$op->fresh()->funding['receipt_return_results'][$a['key']]['credit_minor'],'Recovery releases without adding credit');}
+    AccountMoneyHolds::release($staff,(int)DB::table('domains_obligation_alerts')->where('alert_key',DisputeRecoveries::key('account_money_hold',DisputeRecoveries::dispute($entry)))->value('id'));
+}
+// A newly observed owed loss inside an existing money transaction uses only the locked helper.
+$op=$new('recovery-fallback-placeholder.com');$entry=$loss($op,100,'synthetic_fallback');
+$payment=InvoiceTransaction::where('invoice_id',$op->invoice_id)->sole();
+$op->update(['funding'=>['refund'=>['to'=>'account_credit','amount'=>$op->amount,'payments'=>[['id'=>(int)$payment->id,'amount_minor'=>PricingRule::minor($op->amount)]]]]]);
+$credit->refresh()->update(['amount'=>'1.00']);$notices=DB::table('domains_reminder_deliveries')->count();
+$record=DB::transaction(fn()=>InvoiceMoney::load(HoldingLocks::take($op->domain),(int)$op->invoice_id));
+same([0,0,$notices],[$balance(),$record['pool'],DB::table('domains_reminder_deliveries')->count()],'Locked fallback removes credit once and sends no notice inside the transaction');
+AccountMoneyHolds::release($staff,(int)DB::table('domains_obligation_alerts')->where('alert_key',DisputeRecoveries::key('account_money_hold','synthetic_fallback'))->value('id'));
+// Discovery finds history on its first sweep, retries failures before new pages and keeps its cursor atomic.
+class DiscoveryRecoveryGateway extends InvariantReceiptGateway {
+    public function receiptLedger(Invoice $invoice,string $extension='InvariantReceipt'):array {
+        if(self::$unreadable){throw new RuntimeException('Synthetic unreadable ledger');}return self::$ledger;
+    }
+}
+class_alias(DiscoveryRecoveryGateway::class,'Paymenter\\Extensions\\Gateways\\AeStripe\\AeStripe');
+$discoveryGateway=Gateway::create(['extension'=>'AeStripe','name'=>'Synthetic discovery','type'=>'gateway','enabled'=>true]);
+$op=$new('recovery-history-placeholder.com');$entry=$loss($op,300,'synthetic_historical');$entry['updated_at']=2;
+DB::table('invoice_transactions')->where('invoice_id',$op->invoice_id)->update(['gateway_id'=>$discoveryGateway->id]);
+InvariantReceiptGateway::$ledger=[$entry];InvariantReceiptGateway::$lostRows=[$entry];
+DB::table('settings')->where('key','domains_dispute_scan')->update(['value'=>'{"at":0,"key":""}']);
+InvariantReceiptGateway::$unreadable=true;$recovery->sweep();InvariantReceiptGateway::$unreadable=false;
+$retry=DB::table('domains_obligation_alerts')->where('operation_id',$op->id)->where('code','dispute_recovery')->sole();
+expect($retry->resolved_at===null,'A permanent failure commits its alert and cursor together');
+$recovery->sweep();
+expect(DB::table('domains_obligation_alerts')->where('id',$retry->id)->value('resolved_at')!==null,'The next sweep retries the historical dispute and resolves its evidence');
+$state=DB::table('domains_obligation_alerts')->where('operation_id',$op->id)->get()->toJson();$recovery->sweep();
+same($state,DB::table('domains_obligation_alerts')->where('operation_id',$op->id)->get()->toJson(),'Replaying discovery makes no evidence changes');
+$cursor=\App\Models\Setting::where('key','domains_dispute_scan')->value('value');
+$failCursor=true;\App\Models\Setting::saving(static function($setting)use(&$failCursor):void{if($failCursor&&$setting->key==='domains_dispute_scan'){throw new RuntimeException('Synthetic cursor failure');}});
+$bad=[...$entry,'allocation_key'=>'stripe:dispute:synthetic_atomic_failure'];InvariantReceiptGateway::$ledger=[$bad];
+try{$recovery->recover($bad,['at'=>3,'key'=>'synthetic_failed_cursor']);throw new LogicException('Expected failed evidence transaction');}catch(RuntimeException $e){same('Synthetic cursor failure',$e->getMessage(),'Evidence transaction failure is surfaced');}
+$failCursor=false;
+same($cursor,\App\Models\Setting::where('key','domains_dispute_scan')->value('value'),'A failed evidence transaction never advances discovery');
+same(0,DB::table('domains_obligation_alerts')->whereIn('alert_key',[DisputeRecoveries::key('account_money_hold','synthetic_atomic_failure'),DisputeRecoveries::key('dispute_recovery','synthetic_atomic_failure')])->count(),'Failed evidence rolls back its fixed hold and retry record');
 $nativeSuccessful = true;
