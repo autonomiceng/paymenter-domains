@@ -47,7 +47,7 @@ def exercise(command, php_args, env, scratch):
                 if (native['complete'] != expected or (receipt_code == 0) != expected
                         or not other['complete'] or result.returncode != 0
                         or native['transaction_level'] != 0 or other['transaction_level'] != 0
-                        or (not expected and (native['error'] != 'contention' or native['receipts'] != 0))):
+                        or (not expected and (native['error'] != 1213 or native['receipts'] != 0))):
                     raise AssertionError('Unexpected multi-invoice outcome for '+name+': '+str((native, other)))
                 wait = barriers/(name+'-invoice-wait')
                 if (case == 'full' or not expected) and (not wait.is_file() or wait.read_text() != 'proved'):
