@@ -10,14 +10,14 @@ use Paymenter\Extensions\Servers\Domains\Models\Operation;
 final readonly class RenewalCompletion
 {
     public function __construct(private AccountBindings $bindings, private Clock $clock) {}
-    public function run(int $id): Operation
+    public function run(int $id, bool $staff = false): Operation
     {
         OperationClaims::outside(); $op = Operation::findOrFail($id);
         if (!$this->eligible($op) || self::capturedChargeHeld($op)) { return $op; }
         $check = new RegistrarCheck($this->clock);
-        return $check->finish(EntryDeadline::run($this->clock, fn ($deadline) => $this->runEntered($id, $deadline, $check), RenewalAdmission::READ_SECONDS));
+        return $check->finish(EntryDeadline::run($this->clock, fn ($deadline) => $this->runEntered($id, $deadline, $check, $staff), RenewalAdmission::READ_SECONDS));
     }
-    private function runEntered(int $id, \DateTimeImmutable $deadline, RegistrarCheck $check): Operation
+    private function runEntered(int $id, \DateTimeImmutable $deadline, RegistrarCheck $check, bool $staff): Operation
     {
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
         $capture = $this->decide($seed, $id, function (array $l) use ($id, $check) {
@@ -46,7 +46,7 @@ final readonly class RenewalCompletion
                 EnomAbsence::clear($op);
                 return [$attempt, HoldingLocks::take($l['domain'])['stamp'],$read];
             } catch (\PDOException|RenewalBusy $e) { throw $e; } catch (\Throwable) { return null; }
-        });
+        }, $staff);
         if (!$capture) { return Operation::findOrFail($id); }
         [$attempt, $stamp,$financialRead] = $capture; $proof = null; $covered = false; $late = false; $autoRenewConfirmed = false; $autoRenewUnconfirmed = $attempt->binding->registrarKey === 'namesilo'; $scan = null; $absence = null; $sample = null; $completed = false;
         try {
@@ -125,7 +125,7 @@ final readonly class RenewalCompletion
             if(ObservationProjection::renewed($d,$priorExpiry)){HoldingObservationWork::renewed($d,$this->clock->now());}
             ComplimentaryInvoices::complete($op);
             return $op;
-        }) ?? Operation::findOrFail($id);
+        }, $staff) ?? Operation::findOrFail($id);
         } finally {
             if ($sample) { EnomBillZones::record($attempt->binding, $sample); }
             // A completed read uses up the late no-order read even when its own save did not run.
@@ -135,11 +135,12 @@ final readonly class RenewalCompletion
             }
         }
     }
-    /** One locked step through the money runner. Contention twice changes nothing and queues the renewal; other errors throw. */
-    private function decide($seed, int $id, \Closure $step): mixed
+    /** Contention queues automatic work; interactive checks refuse so staff never see an unsaved read as finished. */
+    private function decide($seed, int $id, \Closure $step, bool $staff): mixed
     {
-        $decision = MoneyDecisions::run(new MoneyRequest($seed, RenewalExecution::KIND, $id), $step);
+        $decision = MoneyDecisions::run(new MoneyRequest($seed, $staff ? null : RenewalExecution::KIND, $id), $step);
         if ($decision->error) { throw $decision->error; }
+        if ($staff && $decision->outcome === MoneyOutcome::Deferred) { throw new StaffReviewRefused(MoneyDecisions::BUSY); }
         return $decision->value;
     }
     /** Explicit bounded read-only recovery; original paid uncertainty and attempt remain unchanged. */

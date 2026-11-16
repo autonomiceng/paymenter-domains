@@ -40,7 +40,7 @@ final readonly class StaffOperations
                 if(!in_array($op->action,['register','transfer','renew'],true)){
                     app(DomainManagement::class)->reconcileReviewed($operation,fn()=>app(OwnerPorts::class)->forDomain($op->domain),$r);
                 }else{$r->read(function()use($operation,$op){
-                    if($op->action==='renew'){app(RenewalCompletion::class)->run($operation);}
+                    if($op->action==='renew'){app(RenewalCompletion::class)->run($operation, staff: true);}
                     else{app(OperationReconciliation::class)->run($operation);}
                 });}break;
             default: throw new \DomainException('Unknown staff action.');
