@@ -33,6 +33,7 @@ final class RenewalStop
     /** Cancellation, staff and adoption intent take precedence over the owner preference. */
     public static function offReason(array $l): ?string
     {return match(true){
+        $l['domain']->status==='departed'=>'departed',
         self::settings($l)===null=>'unreadable',
         $l['cancel']->contains('service_id',$l['domain']->service_id)=>'cancellation',
         (bool)(self::settings($l)['renewals_stopped']??false)=>'staff',

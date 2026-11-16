@@ -142,7 +142,7 @@ class ViewDomain extends RecordDetailPage
     {
         $d=$this->getRecord();
         // Import domain for a pending import sits in the page notice.
-        return [$this->approveComplimentaryCost($d),self::complimentaryRenewal($d),$this->syncNow(),...AcquisitionActions::make($d),...AcquisitionPaymentReview::actions($d),...\Paymenter\Extensions\Servers\Domains\Admin\Support\AccountMoneyHoldActions::actions($d),$this->customerView($d)];
+        return [\Paymenter\Extensions\Servers\Domains\Admin\Support\DepartureConfirm::action($d),$this->approveComplimentaryCost($d),self::complimentaryRenewal($d),$this->syncNow(),...AcquisitionActions::make($d),...AcquisitionPaymentReview::actions($d),...\Paymenter\Extensions\Servers\Domains\Admin\Support\AccountMoneyHoldActions::actions($d),$this->customerView($d)];
     }
     /** A held order's Release hold and Cancel and refund, the same actions as its request page. They act on that request,
      * so they sit on its own row under the Registration notice, which keeps its one link (P-NTC-5, P-ACT-9, P-ACT-11). */
@@ -299,6 +299,17 @@ class ViewDomain extends RecordDetailPage
         // The next step stays after the automatic recheck: only a person can look at the registrar and settle it (phase B).
         $step=Row::make('Departure check',Value::fact($fact::entered('Next step: look for the domain at '.$registrar),'Then use Check again on the Recheck row.'))
             ->actions(Sheet::link('departure_registrar','Open registrar',\Paymenter\Extensions\Servers\Domains\Admin\Support\Facts::url(fn()=>\Paymenter\Extensions\Servers\Domains\Admin\Support\RegistrarFacts::accountUrl((int)$d->server_id))));
+        // Staff who may confirm see the first blocking line here, or the confirm step; it describes the muted head action.
+        if (\Paymenter\Extensions\Servers\Domains\Admin\Support\DepartureConfirm::allowed()) {
+            $block=\Paymenter\Extensions\Servers\Domains\Admin\Support\DepartureConfirm::preview($d)['block'];
+            if ($block!==null) {
+                [$state,$text,$links]=\Paymenter\Extensions\Servers\Domains\Admin\Support\DepartureConfirm::line($block,$d);
+                $step=Row::make('Departure check',Value::state($state,Reader::Staff,$text))->actions(...array_map(fn($l)=>Sheet::link(...$l),$links));
+            } else {
+                $step=Row::make('Departure check',Value::fact($fact::entered('Next step: check '.$registrar.', then confirm transferred away'),"Confirming can't be undone."))
+                    ->actions(Sheet::link('departure_registrar','Open registrar',\Paymenter\Extensions\Servers\Domains\Admin\Support\Facts::url(fn()=>\Paymenter\Extensions\Servers\Domains\Admin\Support\RegistrarFacts::accountUrl((int)$d->server_id))));
+            }
+        }
         return [$step,Row::make('First read',$first),Row::make('Recheck',$recheck)->actions($this->cachedActions['check_departure']??$this->check_departureAction()),Row::make('Public registry',$registryValue)];
     }
     /** The rail: the newest history, with the History tab holding the rest. */

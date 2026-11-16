@@ -49,7 +49,7 @@ final class RenewalOwnership
     public static function review(Domain $d, int $now): ?string
     {
         if (!Schema::hasTable('domains_obligation_alerts')) { return null; }
-        if (HoldingReadRetry::absent($d)) {
+        if (HoldingReadRetry::absent($d) && $d->status !== 'departed') {
             $open=DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code',self::REVIEW)->whereNull('resolved_at')->exists();
             $key=ObligationAlerts::record($d,self::REVIEW,$now);
             // One bell notice when the review opens; the receipt keeps a repeated or replayed opening silent.

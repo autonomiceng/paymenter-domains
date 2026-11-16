@@ -153,6 +153,14 @@ final readonly class RenewalCycles
                 || PricingRule::minor($item->price) !== PricingRule::minor($op->amount) || (string) $item->quantity !== '1'
                 || !in_array($op->state, ['awaiting_payment', 'queued', 'held'], true) || !self::virgin($op));
     }
+    /** Departure confirmation only: the caller's money decision already holds the full locks. */
+    public static function retireDeparted(Operation $op, array $l, string $reason, Clock $clock): Operation
+    {
+        if (!MoneyDecisions::running() || ($l['advisory'] ?? true) || !$l['operations']->contains(static fn ($row) => $row === $op) || !self::canRetireUnpaid($op, $l)) {
+            throw new \DomainException('Unpaid terminal proof unavailable.');
+        }
+        return self::retireLocked($op, $l, $reason, $clock);
+    }
     private static function retireLocked(Operation $op, array $l, string $reason, Clock $clock): Operation
     {
         $invoice = $l['invoices']->firstWhere('id', $op->invoice_id);
