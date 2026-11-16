@@ -168,7 +168,7 @@ final readonly class Refunds
     private function creditLate(Operation $op, array $l, ?StaffOperationReview $review, bool $departure = false): ?array
     {
         RefundProof::requireUnsent($op, $l['domain']); RefundPayment::requireLine($op, $l);
-        if (!$departure && ReceiptReturns::adoptClosed($op, $l, $this->clock->now())) { $review?->record($l); return null; }
+        if (ReceiptReturns::adoptClosed($op, $l, $this->clock->now(), existingOnly: $departure)) { $review?->record($l); return null; }
         $payments = RefundPayment::lateUncredited($op, $l); $minor = array_sum(array_column($payments, 'amount_minor'));
         if ($minor <= 0) { if($review){throw new \DomainException('No pending account credit. Reload this page.');} return null; }
         $credit = $l['credit'] ?? new Credit(['user_id' => $l['user']->id, 'currency_code' => 'USD', 'amount' => '0.00']);
@@ -288,7 +288,7 @@ final readonly class Refunds
         }
         $decision = MoneyDecisions::run(self::request($seen, $review ? null : self::REJECTED, $review?->actorId, true), function (array $l) use ($seen, $review): ?array {
             $review?->check($l); $op = self::departedOperation($l, (int) $seen->id);
-            return $this->creditLate($op, $l, $review);
+            return $this->creditLate($op, $l, $review, departure: true);
         });
         if ($decision->outcome === MoneyOutcome::Deferred) { if ($staff) { throw new StaffReviewRefused(MoneyDecisions::BUSY); } return $returned ?? null; }
         try {
