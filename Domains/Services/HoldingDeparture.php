@@ -114,11 +114,23 @@ final class HoldingDeparture
         // Monitoring work, discovery hints and the email start only after the decision committed.
         if($result->outcome===MoneyOutcome::Applied){
             $at=$this->clock->now()->getTimestamp();
-            if($claim&&!ReminderDelivery::handoff($claim,$at)){self::alert($domainId,'delivery_uncertain',$at);}
-            WatchDiscoveryHints::names([[(int)$seed->user_id,(string)$seed->domain]]);
-            if(($result->value['watch']['state']??null)==='active'){app(WatchWork::class)->enrollWatch((int)$result->value['watch']['id'],(int)$seed->user_id);}
+            if($claim&&!self::followUp($domainId,'email',fn()=>ReminderDelivery::handoff($claim,$at))){self::alert($domainId,'delivery_uncertain',$at);}
+            self::followUp($domainId,'discovery',fn()=>WatchDiscoveryHints::names([[(int)$seed->user_id,(string)$seed->domain]]));
+            if(($result->value['watch']['state']??null)==='active'){
+                self::followUp($domainId,'monitoring',fn()=>app(WatchWork::class)->enrollWatch((int)$result->value['watch']['id'],(int)$seed->user_id));
+            }
         }
         return $result;
+    }
+
+    /** The decision is committed. Isolate each handoff; the discovery and watch scheduler sweeps retain recovery. */
+    private static function followUp(int $domainId,string $stage,\Closure $run): bool
+    {
+        try{return $run()!==false;}
+        catch(\Throwable $e){
+            try{logger()->warning('Domains departure follow-up deferred.',['domain_id'=>$domainId,'stage'=>$stage,'exception_class'=>$e::class]);}catch(\Throwable){}
+            return false;
+        }
     }
 
     /** Reserves the one departure email (mocks 08, 08b, 08c) under the decision's locks. Returns the Email sent fact for
