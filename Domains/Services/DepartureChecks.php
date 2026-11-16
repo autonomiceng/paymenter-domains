@@ -80,13 +80,15 @@ final class DepartureChecks
             default=>null};
     }
     /** The public registry's last answer lists a registrar other than this holding's: the transfer completed, so our
-     * registrar no longer serves its DNS. No answer, no registrar listed or a registrar we can't name reads as false. */
+     * registrar no longer serves its DNS. No answer, no registrar listed (including a blank name) or a registrar we can't
+     * name reads as false. */
     public static function registryListsOther(Domain $d): bool
     {
         $registry=$d->observation['departure_check']['registry']??null;
         $ours=match($d->registrar_key){'enom'=>'enom','namesilo'=>'namesilo',default=>null};
         if(!is_array($registry)||($registry['result']??null)!=='facts'||!is_string($registry['registrar']??null)||$ours===null){return false;}
-        return !str_contains((string)preg_replace('/[^a-z0-9]/','',strtolower($registry['registrar'])),$ours);
+        $listed=(string)preg_replace('/[^a-z0-9]/','',strtolower($registry['registrar']));
+        return $listed!==''&&!str_contains($listed,$ours);
     }
     /** Why DNS records can't be edited: the domain used our registrar's DNS and the registry lists another registrar, so
      * nothing serves those records (mock Decision 1). Null while they may still be served. */

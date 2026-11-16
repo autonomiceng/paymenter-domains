@@ -76,6 +76,10 @@ $check(!isset($other['Edit SRV'])||$other['Edit SRV']===true,'Another registrar 
 Illuminate\Support\Facades\DB::transaction(function()use($d):void{$fresh=$d->fresh();$p=$fresh->observation;$p['departure_check']['registry']['registrar']='eNom, LLC';$fresh->update(['observation'=>$p]);});
 $ours=$dnsButtons();
 $check(isset($ours['Edit'])&&$ours['Edit']===false,'DNS Edit is not muted as stopped while the registry lists our registrar');
+// A blank registrar name names no other registrar, so DNS stays editable.
+Illuminate\Support\Facades\DB::transaction(function()use($d):void{$fresh=$d->fresh();$p=$fresh->observation;$p['departure_check']['registry']['registrar']=" \t ";$fresh->update(['observation'=>$p]);});
+$blank=$dnsButtons();
+$check(isset($blank['Edit'])&&$blank['Edit']===false,'DNS Edit is not muted as stopped when the registry names no registrar');
 // Absence saved before departure checks existed has no marker; the staff page still opens and offers Check again.
 Illuminate\Support\Facades\DB::transaction(function()use($d):void{$fresh=$d->fresh();$p=$fresh->observation;unset($p['departure_check']);$fresh->update(['observation'=>$p]);});
 try{Livewire\Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$d->id])->assertSuccessful()->assertActionVisible('check_departure');$legacy=true;}
