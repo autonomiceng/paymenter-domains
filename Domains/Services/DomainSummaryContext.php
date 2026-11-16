@@ -56,8 +56,8 @@ final class DomainSummaryContext
         $c->properties=self::fields($serviceIds);
         return $c;
     }
-    /** The same managed records customer lists retain, keyed by owner and name. Paid records still suppress duplicates
-     * after reservation release; cancelled unpaid orders leave independent watches visible before and after retirement. */
+    /** Same-name live managed records take precedence for direct watch access. Customer lists deduplicate departed
+     * history separately; it must not hide a handed-off watch's own page. Cancelled unpaid orders also leave it visible. */
     private static function suppressingNames(\Illuminate\Database\Eloquent\Builder $query): array
     {
         $names=[];
@@ -70,6 +70,7 @@ final class DomainSummaryContext
             $paid=InvoiceTransaction::whereIn('invoice_id',array_map(fn($op)=>$op->invoice_id,$terminal))
                 ->where('status',\App\Enums\InvoiceTransactionStatus::Succeeded)->pluck('invoice_id')->all();
             foreach($domains as $id=>$d){
+                if($d->status==='departed'){continue;}
                 $op=$ops[$id];$invoice=$inputs->invoice($op?->invoice_id,$d);
                 if($op && UnpaidAcquisitionProof::terminal($op,$d) && $invoice?->status!=='paid' && !in_array($op->invoice_id,$paid,true)){continue;}
                 $order=$op?OwnedDomains::order($d,$op,$invoice,OwnedDomains::closed($services[$d->service_id]->status,$inputs->stopped($d)),$inputs->paying()):[];

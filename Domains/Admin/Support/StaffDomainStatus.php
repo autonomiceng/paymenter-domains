@@ -29,6 +29,9 @@ final class StaffDomainStatus
     private const LATE = 'Check renewal options and status at the registrar.';
     /** Reasons written for the customer. Staff read their step. */
     private const CUSTOMER_ONLY = [DomainStatus::LATE, DomainStatus::ON_IT];
+    /** Departure ends registrar and renewal work. Retained money, loss and delivery alerts still name a staff step. */
+    private const DEPARTED_STEPS = ['operation_review', 'held_obligation', 'departure_review', 'observation_review',
+        'unknown_expiry', 'unknown_price', 'renewal_funds', 'renewal_unpaid', 'missing_execution', 'missing_obligation', 'imported_renewal_unproven'];
     /** $shared is the status the customer sees and $state the state it came from (DomainFacts::status). $alerts, $renewal, $waiting and $ordersOff come from StaffDomainInputs.
      * An open alert names the step unless the row already has a specific one (a held request, an import) or has ended.
      * With no alert, an open renewal says what happens next on a domain that is otherwise Active.
@@ -37,6 +40,9 @@ final class StaffDomainStatus
      * @return array{key:string,label:string,tone:string,reason:?string,step:?string,request:?int,act:bool,alert:?string} $request is set when the step names one, $act when staff have a job here, $alert when the step is that open alert */
     public static function for(array $shared, string $state, Domain $d, ?Operation $op, array $alerts, ?Operation $renewal=null, ?Operation $waiting=null, bool $ordersOff=false, ?array $accounts=null, ?array $release=null): array
     {
+        if (in_array($state, ['departed', 'departed_deleted'], true)) {
+            $alerts = array_values(array_filter($alerts, static fn (array $alert) => !in_array($alert['code'], self::DEPARTED_STEPS, true)));
+        }
         [$step, $specific, $request] = self::resolve($state, $d, $op, $accounts, $release);
         $act = $step !== null && !in_array($step, self::WAITING, true);
         $named = null;
@@ -104,7 +110,8 @@ final class StaffDomainStatus
             'active', 'renewal_off_expiring', 'expires_today' => [null, false],
             'needs_review' => ['Check the domain and its requests.', false],
             'expired', 'grace', 'redemption' => [self::LATE, true],
-            'registration_rejected', 'transfer_rejected', 'cancelled', 'departed', 'departed_deleted' => [null, true],
+            'departed', 'departed_deleted' => [null, false],
+            'registration_rejected', 'transfer_rejected', 'cancelled' => [null, true],
             default => [self::CHECK, false],
         }, null];
     }

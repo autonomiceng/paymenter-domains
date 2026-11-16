@@ -45,9 +45,9 @@ final class DomainHistory
                 if(is_array($refund)){
                     $original=ReceiptReturns::originalRefund($op);
                     if(ReceiptReturns::settled($original)){
-                        $summary=ReceiptReturns::summary($original);
+                        $summary=ReceiptReturns::summary($original);$limit=RequestFacts::refundLimit($op,false);
                         $rows[]=['__key'=>'refund-'.$op->id,'__request'=>$op->id,'__order'=>103,'time'=>self::at($refund['at']??null),
-                            'event'=>$summary[0]??'Credit added','sub'=>'Request #'.$op->id.' '.Labels::action($op->action),'status'=>null,'by'=>'System'];
+                            'event'=>$summary[0]??'Credit added','sub'=>'Request #'.$op->id.' '.Labels::action($op->action).($limit===null?'':'. '.$limit),'status'=>null,'by'=>'System'];
                     }
                 }
             } catch (\Throwable) { /* Unreadable payment evidence cannot hide the retained request history. */ }

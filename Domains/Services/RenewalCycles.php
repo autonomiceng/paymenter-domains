@@ -58,10 +58,9 @@ final readonly class RenewalCycles
             if (Invoice::whereKey($invoiceId)->lockForUpdate()->value('status') !== 'cancelled') { return; }
             $seed = Domain::find($domainId);
             if (!$seed) { return; }
-            // Read the holding after the invoice lock: confirmation may have released it while this receipt waited.
-            // A departed holding has released its name: its retained renewal accepts the receipt as accounting evidence only.
-            if ($seed->status === 'departed') { self::admitDeparted($seed, $invoiceId); return; }
             $l = HoldingLocks::take($seed, nativeReceipt: true);
+            // Only the current locked holding decides routing; the discovery read can be an older payment snapshot.
+            if ($l['domain']->status === 'departed') { self::admitDeparted($l, $invoiceId); return; }
             foreach ($l['operations']->where('invoice_id', $invoiceId)->where('action', 'renew')->whereIn('state', $open) as $op) {
                 if (!self::canRetireUnpaid($op, $l)) {
                     $receipt=$l['transactions']->firstWhere('id',$receiptId);
@@ -78,12 +77,11 @@ final readonly class RenewalCycles
     }
     /** A late receipt on a departed holding joins the payment transaction on the released row. It needs the frozen
      * departure record and every renewal on the invoice closed unsent; it restores no reservation, service or renewal. */
-    private static function admitDeparted(Domain $seed, int $invoiceId): void
+    private static function admitDeparted(array $l, int $invoiceId): void
     {
-        $l = HoldingLocks::take($seed, nativeReceipt: true, released: true);
         $ops = $l['operations']->where('invoice_id', $invoiceId)->where('action', 'renew');
         if (!DepartureProof::verified($l['domain']) || $ops->isEmpty() || $ops->contains(static fn ($op) => $op->state !== 'rejected'
-            || (!RefundProof::retired($op, $l['domain']) && !FundsWaits::closedRenewal($op, $l['domain'])))) {
+            || (!RefundProof::retired($op, $l['domain']) && !FundsWaits::closedRenewal($op, $l['domain']) && !RenewalRetries::resolved($op, $l['domain'], $l['operations'])))) {
             throw new \DomainException('Departed renewal needs payment review before another receipt.');
         }
     }
