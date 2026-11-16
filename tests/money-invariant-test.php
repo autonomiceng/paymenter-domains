@@ -526,7 +526,8 @@ AccountMoneyHolds::release($staff,(int)DB::table('domains_obligation_alerts')->w
 // Reserved money is not returned money. Only an unsent reservation can be released.
 foreach([false,true] as $gatewayOwned){
     $op=$new('recovery-reservation-'.(int)$gatewayOwned.'-placeholder.com');$entry=$loss($op,300,'synthetic_reserved_'.(int)$gatewayOwned);
-    $payment=InvoiceTransaction::where('invoice_id',$op->invoice_id)->sole();
+    // The loss takes the whole receipt, so nothing undisputed is left for the reservation.
+    $payment=InvoiceTransaction::where('invoice_id',$op->invoice_id)->sole();DB::table('invoice_transactions')->where('id',$payment->id)->update(['amount'=>'3.00']);
     $a=['transaction_id'=>(int)$payment->id,'gateway_id'=>(int)$creditGateway->id,'receipt'=>$payment->transaction_id,'key'=>'synthetic_reserved_'.(int)$gatewayOwned,'amount_minor'=>300];
     $op->update(['funding'=>['refund'=>['to'=>'original_payment','amount'=>'3.00','bridge_minor'=>0,'allocations'=>[$a],'payments'=>[['id'=>(int)$payment->id,'amount_minor'=>300]]]]]);
     if($gatewayOwned){InvariantReceiptGateway::$ledger[]=[...$entry,'allocation_key'=>$a['key'],'state'=>'sending'];}
@@ -630,6 +631,21 @@ InvariantReceiptGateway::$ledger=[$entry];
 AccountMoneyHolds::release($staff,(int)DB::table('domains_obligation_alerts')->where('alert_key',DisputeRecoveries::key('account_money_hold','synthetic_historical'))->value('id'));
 $refunds->creditRejected((int)$otherOut->id);
 same($before+PricingRule::minor($otherOut->amount),$balance(),'Releasing the hold permits money out on other invoices');
+// G10: a smaller loss keeps the undisputed part of an unsent reservation for the customer after the hold is released.
+$regression('G10 undisputed reservation residual',static function()use($new,$loss,$recovery,$balance,$credit,$receiptGateway,$staff,$clock):void{
+    $op=$new('recovery-residual-placeholder.com');$entry=$loss($op,100,'synthetic_residual');
+    $payment=InvoiceTransaction::where('invoice_id',$op->invoice_id)->sole();
+    DB::table('invoice_transactions')->where('id',$payment->id)->update(['amount'=>'3.00','gateway_id'=>$receiptGateway->id]);
+    $a=['transaction_id'=>(int)$payment->id,'gateway_id'=>(int)$receiptGateway->id,'receipt'=>$payment->transaction_id,'key'=>'synthetic_residual_return','amount_minor'=>300];
+    $op->update(['funding'=>['refund'=>['to'=>'original_payment','amount'=>'3.00','bridge_minor'=>0,'allocations'=>[$a],'payments'=>[['id'=>(int)$payment->id,'amount_minor'=>300]]]]]);
+    $credit->refresh()->update(['amount'=>'0.00']);$sends=MoneyReceiptGateway::$sends;
+    $recovery->recover($entry);
+    same(0,$balance(),'No credit while the account is held');
+    AccountMoneyHolds::release($staff,(int)DB::table('domains_obligation_alerts')->where('alert_key',DisputeRecoveries::key('account_money_hold','synthetic_residual'))->value('id'));
+    \Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::resume((int)$op->id,$clock->now(),'refund_rejected');
+    \Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::resume((int)$op->id,$clock->now(),'refund_rejected');
+    same([200,$sends,[$a]],[$balance(),MoneyReceiptGateway::$sends,$op->fresh()->funding['refund']['allocations']],'Exactly the undisputed $2 is returned once, with no new allocation');
+});
 // G5: records that keep failing cannot take every retry turn from a later recoverable dispute.
 $regression('G5 retry turns rotate',static function()use($new,$loss,$recovery):void{
     $op=$new('recovery-starved-placeholder.com');$entry=$loss($op,300,'synthetic_starved');InvariantReceiptGateway::$lostRows=[];

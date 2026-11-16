@@ -114,7 +114,10 @@ final readonly class DisputeRecoveries
         $receiptId=null;
         foreach($money['receipts'] as $pid=>$r){if($r['receipt']===$entry['payment_intent_id']&&$r['gateway_id']===$lost['gateway_id']){$receiptId=$pid;break;}}
         if($receiptId===null){throw new \DomainException('Dispute receipt missing.');}
-        [$owed,$recorded]=self::obligation($peers,$id,$receiptId,$money['receipts'][$receiptId],(int)$entry['amount_minor']);
+        $r=$money['receipts'][$receiptId];[$owed,$recorded]=self::obligation($peers,$id,$receiptId,$r,(int)$entry['amount_minor']);
+        // Money still on the receipt after the loss, before any reservation. An unsent reservation is dropped without credit
+        // only when nothing is left; otherwise it stays, and the refund retry returns the undisputed part once the hold is released.
+        $free=$r['gross']-$r['completed']-$r['credit']-$r['external']+$r['recovered'];
         $left=max(0,$owed-$recorded);$credit=$l['credit'];$unused=$credit?PricingRule::minor($credit->amount):0;
         foreach($peers as $peer){
             $f=$peer->funding??[];$share=0;
@@ -127,7 +130,7 @@ final readonly class DisputeRecoveries
                     $e=collect($money['ledger'])->first(fn($e)=>$e['gateway_id']===$a['gateway_id']&&$e['payment_intent_id']===$a['receipt']&&$e['allocation_key']===($a['gateway_key']??$a['key']));
                     $state=$e['state']??$f['receipt_return_results'][$a['key']]['state']??'reserved';
                     if(in_array($state,['refunded','credited'],true)){$share+=$a['amount_minor'];}
-                    elseif($state==='reserved'&&!$e&&!isset($f['receipt_return_results'][$a['key']])){
+                    elseif($state==='reserved'&&!$e&&!isset($f['receipt_return_results'][$a['key']])&&$free<=0){
                         ReceiptReturns::release($peer,$a['key'],'recovery',[...$l,'operations'=>$peers]);
                         $peer->refresh();$f=$peer->funding;
                     }
