@@ -62,13 +62,16 @@ final readonly class Reminders
     }
     private static function recovery(array $l,\DateTimeImmutable $now,array &$alerts):?array
     {
+        // Every pending notice is checked for lateness; the first one found is the one to send.
+        $notice=null;$checked=[];
         foreach($l['operations'] as $op){
             $holds=\Paymenter\Extensions\Servers\Domains\Models\Operation::where('invoice_id',$op->invoice_id)->orderBy('id')->get()
                 ->flatMap(fn($peer)=>$peer->funding['dispute_holds']??[])->all();
             $ids=array_unique(array_column($holds,'dispute_id'));
             foreach($ids as $id){
                 $anchor=DB::table('domains_obligation_alerts')->where('alert_key',DisputeRecoveries::key('account_money_hold',$id))->first();
-                if(!$anchor||(int)$anchor->domain_id!==(int)$l['domain']->id){continue;}
+                if(!$anchor||(int)$anchor->domain_id!==(int)$l['domain']->id||isset($checked[$id])){continue;}
+                $checked[$id]=true;
                 $minor=0;$at=null;
                 foreach($holds as $hold){if($hold['dispute_id']===$id){$minor+=$hold['removed_minor'];$at=$hold['at'];}}
                 if($minor===0){continue;}
@@ -76,11 +79,11 @@ final readonly class Reminders
                 if(HistoryRetention::replayed('reminder',$key)||DB::table('domains_reminder_deliveries')->where('delivery_key',$key)->exists()){continue;}
                 if(!$at||strtotime($at)>$now->getTimestamp()||strtotime($at)<$now->getTimestamp()-3600){$alerts[]=ObligationAlerts::record($l['domain'],'credit_notice_overdue',$now->getTimestamp(),(int)$op->id);}
                 $invoice=$l['invoices']->firstWhere('id',$op->invoice_id);
-                return ['identity'=>$identity,'template'=>'domains_credit_removed','data'=>['amount'=>RenewalReminders::money(PricingRule::decimal($minor)),
+                $notice??=['identity'=>$identity,'template'=>'domains_credit_removed','data'=>['amount'=>RenewalReminders::money(PricingRule::decimal($minor)),
                     'invoice_number'=>$invoice?->number??$op->invoice_id,'domain_url'=>url('/domains/'.$l['domain']->id),'support_url'=>\Paymenter\Extensions\Servers\Domains\Presentation\Missing::supportUrl()??'']];
             }
         }
-        return null;
+        return $notice;
     }
     private static function refund(array $l,\DateTimeImmutable $now,array &$alerts):?array
     {

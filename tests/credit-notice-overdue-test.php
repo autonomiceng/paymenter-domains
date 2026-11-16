@@ -44,4 +44,16 @@ same($clock->now()->getTimestamp(),(int)$alerts()->sole()->resolved_at,'The over
 same(1,$delivery()->count(),'Repeated reminder checks do not duplicate the credit notice');
 $reminders->remind((int)$peer->domain_id);
 same(1,DB::table('domains_reminder_deliveries')->where('template','domains_credit_removed')->count(),'Peer checks preserve one removal notice per dispute');
+// G11: a recent first notice cannot hide a later dispute's overdue notice while delivery is paused.
+$hold=static fn(string $id,int $minutes)=>['dispute_id'=>$id,'payment_id'=>(int)$payment->id,'lost_minor'=>300,'owed_minor'=>50,'removed_minor'=>50,
+    'remainder_minor'=>0,'credit_id'=>null,'at'=>$clock->now()->modify('-'.$minutes.' minutes')->format(DATE_ATOM)];
+$peer->refresh()->update(['funding'=>[...$peer->funding,'dispute_holds'=>[...$peer->funding['dispute_holds'],$hold('synthetic_notice_recent',10),$hold('synthetic_notice_late',120)]]]);
+foreach(['synthetic_notice_recent','synthetic_notice_late'] as $id){DB::table('domains_obligation_alerts')->insert(['alert_key'=>DisputeRecoveries::key('account_money_hold',$id),
+    'domain_id'=>$domain->id,'generation'=>$domain->authority_generation,'code'=>'account_money_hold','operation_id'=>$op->id,'first_seen'=>1,'last_seen'=>1]);}
+Server::whereKey($domain->server_id)->update(['enabled'=>false]);
+$reminders->remind((int)$domain->id);
+same(1,$alerts()->whereNull('resolved_at')->count(),'A later overdue notice raises its alert behind a recent one');
+$reminders->remind((int)$domain->id);
+same(1,$alerts()->whereNull('resolved_at')->count(),'The later overdue alert stays open on the next check');
+Server::whereKey($domain->server_id)->update(['enabled'=>true]);
 $nativeSuccessful=true;
