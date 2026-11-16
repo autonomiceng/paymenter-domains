@@ -471,12 +471,22 @@ final class RequestFacts
                 $refund=$op->funding['refund']??null;
                 if(($refund['to']??null)==='original_payment'&&(\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::summary(\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::originalRefund($op))[0]??null)==='Refunded'
                     &&\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::amount($refund)>0
-                    &&\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::amount($refund)>=\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)$invoice->total)){return 'Refunded';}
+                    &&\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::amount($refund)>=self::ownLineMinor($op,$invoice)){return 'Refunded';}
                 $minor=0;foreach($reversals??[] as $row){
                 if(($row['kind']??null)==='refund'&&($row['status']??null)==='refunded'&&is_int($row['amount_minor']??null)&&$row['amount_minor']>0){$minor+=$row['amount_minor'];}
             }if($minor>0&&$minor>=\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)$invoice->total)){return 'Refunded';}}catch(\Throwable){}
         }
         return match(self::invoiceStatus($op)){'paid'=>'Paid','pending'=>'Not paid','cancelled'=>'Cancelled',default=>null};
+    }
+    /** What this request paid on its invoice: its own line, so one domain refunded in a cart reads as refunded. A line that
+     * cannot be read falls back to the invoice total, which never claims a refund that did not happen. */
+    private static function ownLineMinor(Operation $op, \App\Models\Invoice $invoice): int
+    {
+        $total=\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)$invoice->total);
+        $item=$op->invoice_item_id?\App\Models\InvoiceItem::whereKey($op->invoice_item_id)->where('invoice_id',$invoice->id)->first():null;
+        if(!$item||!ctype_digit((string)$item->quantity)||(int)$item->quantity<1){return $total;}
+        $own=\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)$item->price)*(int)$item->quantity;
+        return $own>0?min($own,$total):$total;
     }
     private static function paymentReversed(Operation $op, ?array &$rows): ?array
     {

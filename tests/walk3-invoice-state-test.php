@@ -37,6 +37,11 @@ $run($op->fresh(),'credit');
 same(true,ReceiptReturns::settled($op->fresh()),'The original payment return settled');
 same('Refunded',RequestFacts::for($op->fresh())['invoice_state'],'The staff request reports a full Cancel and refund return');
 $assertRefundedInvoice($op);
+// A two-domain cart: this request's own return covers its own line, so it reads Refunded, not Paid for the whole invoice.
+$second=App\Models\InvoiceItem::create(['invoice_id'=>$op->invoice_id,'description'=>'second-cart-placeholder.com','price'=>'12.49','quantity'=>1]);
+expect(Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)App\Models\Invoice::findOrFail($op->invoice_id)->total)>ReceiptReturns::amount($op->fresh()->funding['refund']),'The cart invoice is larger than this request\'s own return');
+same('Refunded',RequestFacts::for($op->fresh())['invoice_state'],'A cart refund of one domain reports that domain refunded');
+$second->delete();
 $invoice=App\Models\Invoice::findOrFail($op->invoice_id);
 App\Models\InvoiceTransaction::create(['invoice_id'=>$invoice->id,'amount'=>'10.99','fee'=>'0.00','status'=>'succeeded','gateway_id'=>$gateway->id,'transaction_id'=>'synthetic-late-invoice']);
 MoneyReceiptGateway::automatic($invoice,'synthetic-late-invoice',1099);
