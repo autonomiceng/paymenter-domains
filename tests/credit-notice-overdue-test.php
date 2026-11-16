@@ -58,6 +58,10 @@ $reminders->remind((int)$domain->id);
 same(1,$alerts()->whereNull('resolved_at')->count(),'A later overdue notice raises its alert behind a recent one');
 $reminders->remind((int)$domain->id);
 same(1,$alerts()->whereNull('resolved_at')->count(),'The later overdue alert stays open on the next check');
+// A later increment recorded now on another peer keeps the first removal's overdue clock and its open alert.
+$op->refresh()->update(['funding'=>[...($op->funding??[]),'dispute_holds'=>[...($op->funding['dispute_holds']??[]),[...$hold('synthetic_notice_late',0),'increment'=>1]]]]);
+$reminders->remind((int)$domain->id);
+same(1,$alerts()->whereNull('resolved_at')->count(),'A later removal does not restart the overdue clock');
 Server::whereKey($domain->server_id)->update(['enabled'=>true]);
 // C6: after credit is removed, the older notice saying that credit can be used is not sent.
 $staleOp=Operation::where('domain_id',$stale->id)->where('action','register')->sole();
