@@ -492,6 +492,7 @@ foreach([0,70,300] as $unused){
     same($unused>0?1:0,DB::table('domains_reminder_deliveries')->where('domain_id',$op->domain_id)->where('template','domains_credit_removed')->count(),'One notice only when credit was removed');
     $alert=DB::table('domains_obligation_alerts')->where('alert_key',DisputeRecoveries::key('account_money_hold',DisputeRecoveries::dispute($entry)))->sole();
     AccountMoneyHolds::release($staff,(int)$alert->id);$recovery->recover($entry);
+    same(1,\App\Models\Audit::where('auditable_id',$op->invoice_id)->where('event','account_money_hold_released')->where('user_id',$staff->id)->count(),'Hold release retains one native invoice audit for its actor');
     expect(DB::table('domains_obligation_alerts')->where('id',$alert->id)->value('resolved_at')!==null,'Replay never reopens a staff-released hold');
 }
 // One shared receipt, two $1.50 credits, $5 gross and a $3 loss: only $1 is owed across the peers.
@@ -548,6 +549,7 @@ class DiscoveryRecoveryGateway extends InvariantReceiptGateway {
 }
 class_alias(DiscoveryRecoveryGateway::class,'Paymenter\\Extensions\\Gateways\\AeStripe\\AeStripe');
 $discoveryGateway=Gateway::create(['extension'=>'AeStripe','name'=>'Synthetic discovery','type'=>'gateway','enabled'=>true]);
+$otherOut=$new('recovery-other-invoice-placeholder.com');$otherOut->update(['state'=>'held','safe_code'=>'staff_review']);
 $op=$new('recovery-history-placeholder.com');$entry=$loss($op,300,'synthetic_historical');$entry['updated_at']=2;
 DB::table('invoice_transactions')->where('invoice_id',$op->invoice_id)->update(['gateway_id'=>$discoveryGateway->id]);
 InvariantReceiptGateway::$ledger=[$entry];InvariantReceiptGateway::$lostRows=[$entry];
@@ -566,4 +568,11 @@ try{$recovery->recover($bad,['at'=>3,'key'=>'synthetic_failed_cursor']);throw ne
 $failCursor=false;
 same($cursor,\App\Models\Setting::where('key','domains_dispute_scan')->value('value'),'A failed evidence transaction never advances discovery');
 same(0,DB::table('domains_obligation_alerts')->whereIn('alert_key',[DisputeRecoveries::key('account_money_hold','synthetic_atomic_failure'),DisputeRecoveries::key('dispute_recovery','synthetic_atomic_failure')])->count(),'Failed evidence rolls back its fixed hold and retry record');
+
+$before=$balance();$refunds->refundHeld($staff,(int)$otherOut->id,'customer_cancelled');
+same($before,$balance(),'The customer hold blocks money out on another Domains invoice');
+InvariantReceiptGateway::$ledger=[$entry];
+AccountMoneyHolds::release($staff,(int)DB::table('domains_obligation_alerts')->where('alert_key',DisputeRecoveries::key('account_money_hold','synthetic_historical'))->value('id'));
+$refunds->creditRejected((int)$otherOut->id);
+same($before+PricingRule::minor($otherOut->amount),$balance(),'Releasing the hold permits money out on other invoices');
 $nativeSuccessful = true;
