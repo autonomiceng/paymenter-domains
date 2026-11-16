@@ -630,5 +630,15 @@ InvariantReceiptGateway::$ledger=[$entry];
 AccountMoneyHolds::release($staff,(int)DB::table('domains_obligation_alerts')->where('alert_key',DisputeRecoveries::key('account_money_hold','synthetic_historical'))->value('id'));
 $refunds->creditRejected((int)$otherOut->id);
 same($before+PricingRule::minor($otherOut->amount),$balance(),'Releasing the hold permits money out on other invoices');
+// G5: records that keep failing cannot take every retry turn from a later recoverable dispute.
+$regression('G5 retry turns rotate',static function()use($new,$loss,$recovery):void{
+    $op=$new('recovery-starved-placeholder.com');$entry=$loss($op,300,'synthetic_starved');InvariantReceiptGateway::$lostRows=[];
+    for($i=0;$i<25;$i++){DB::table('domains_obligation_alerts')->insert(['alert_key'=>hash('sha256','synthetic_stuck_'.$i),'domain_id'=>$op->domain_id,
+        'generation'=>$op->authority_generation,'operation_id'=>0,'code'=>'dispute_recovery','first_seen'=>1,'last_seen'=>1]);}
+    $retry=DB::table('domains_obligation_alerts')->insertGetId(['alert_key'=>DisputeRecoveries::key('dispute_recovery','synthetic_starved'),'domain_id'=>$op->domain_id,
+        'generation'=>$op->authority_generation,'operation_id'=>$op->id,'code'=>'dispute_recovery','first_seen'=>2,'last_seen'=>2]);
+    $recovery->sweep();$recovery->sweep();
+    expect(DB::table('domains_obligation_alerts')->where('id',$retry)->value('resolved_at')!==null,'A later sweep retries the recoverable dispute');
+});
 expect($regressions===[],'Regressions failed: '.implode(', ',$regressions));
 $nativeSuccessful = true;

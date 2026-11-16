@@ -12,14 +12,24 @@ final readonly class DisputeRecoveries
 {
     public function __construct(private Clock $clock) {}
     public static function key(string $code,string $dispute): string { return hash('sha256',$code.':'.$dispute); }
-    private static function cursor()
-    { return Setting::where('settingable_type',self::class)->where('settingable_id',0)->where('key','domains_dispute_scan'); }
-    private static function advance(array $cursor): void
-    { Setting::updateOrCreate(['settingable_type'=>self::class,'settingable_id'=>0,'key'=>'domains_dispute_scan'],['value'=>json_encode($cursor,JSON_THROW_ON_ERROR),'type'=>'string','encrypted'=>false]); }
+    private static function cursor(string $key='domains_dispute_scan')
+    { return Setting::where('settingable_type',self::class)->where('settingable_id',0)->where('key',$key); }
+    private static function advance(array $cursor,string $key='domains_dispute_scan'): void
+    { Setting::updateOrCreate(['settingable_type'=>self::class,'settingable_id'=>0,'key'=>$key],['value'=>json_encode($cursor,JSON_THROW_ON_ERROR),'type'=>'string','encrypted'=>false]); }
+    /** Up to 25 open retry records after the last one tried, oldest first, then from the start again. */
+    private static function retries(): \Illuminate\Support\Collection
+    {
+        $open=fn()=>DB::table('domains_obligation_alerts')->where('code','dispute_recovery')->whereNull('resolved_at')->orderBy('id');
+        $after=(int)(json_decode(self::cursor('domains_dispute_retry')->value('value')??'{"id":0}',true,8,JSON_THROW_ON_ERROR)['id']??0);
+        $rows=$open()->where('id','>',$after)->limit(25)->get();
+        return $rows->count()<25?$rows->concat($open()->where('id','<=',$after)->limit(25-$rows->count())->get()):$rows;
+    }
     public function sweep(): void
     {
         OperationClaims::outside();
-        foreach(DB::table('domains_obligation_alerts')->where('code','dispute_recovery')->whereNull('resolved_at')->orderBy('first_seen')->orderBy('id')->limit(25)->get() as $alert){
+        foreach(self::retries() as $alert){
+            // Move past every tried record, so records that keep failing cannot hold back later ones.
+            try{self::advance(['id'=>(int)$alert->id],'domains_dispute_retry');}catch(\Throwable){}
             try{
                 $op=Operation::findOrFail($alert->operation_id);
                 $record=InvoiceMoney::project((int)$op->invoice_id);
