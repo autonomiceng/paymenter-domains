@@ -147,13 +147,13 @@ final class DepartureConfirm
             if(isset($p['credit_minor'][$invoice])){return 'Cancelled on confirm, with '.self::money($p['credit_minor'][$invoice]).' to account credit.';}
             return in_array($invoice,$closed,true)?'Cancelled on confirm.':null;
         };
-        $next=$facts['Next invoice']['sub']??null;$shown=null;
+        // The row names its invoice first (DomainDecisions); the outcome follows the due date, before the pause sentence.
+        $next=$facts['Next invoice']['sub']??null;$shown=null;$html=$next instanceof Htmlable?$next->toHtml():e((string)$next);
         foreach([...$closed,...array_keys($p['credit_minor'])] as $invoice){
-            $name=e(self::invoice($invoice));
-            if($next instanceof Htmlable&&str_contains($next->toHtml(),'>'.$name.'</a>')){$shown=$invoice;break;}
+            if(str_starts_with($html,e(self::invoice($invoice).','))){$shown=$invoice;break;}
         }
         if($shown!==null&&($line=$outcome($shown))!==null){
-            $facts['Next invoice']['sub']=new HtmlString(str_replace(e(DepartureChecks::RENEWAL_WAITS),e($line).'<br>'.e(DepartureChecks::RENEWAL_WAITS),$next->toHtml()));
+            $facts['Next invoice']['sub']=new HtmlString(str_replace(e(DepartureChecks::RENEWAL_WAITS),e($line.' '.DepartureChecks::RENEWAL_WAITS),$html));
         }
         // A paid renewal never sent has no open invoice for the row, so the row names it with its outcome.
         foreach($p['credit_minor'] as $invoice=>$minor){
@@ -162,7 +162,7 @@ final class DepartureConfirm
             $total=(string)\App\Models\Invoice::find($invoice)?->formattedTotal;
             $rest=($total!==''?', '.$total:'').', paid, never sent to the registrar. '.$outcome((int)$invoice);
             $facts['Next invoice']=[...($facts['Next invoice']??Facts::row('Paused')),'value'=>'Paused',
-                'sub'=>new HtmlString(($url?'<a class="fi-link domains-link" href="'.e($url).'">'.e($name).'</a>':e($name)).e($rest).'<br>'.e(DepartureChecks::RENEWAL_WAITS))];
+                'sub'=>new HtmlString(e($name.$rest.' '.DepartureChecks::RENEWAL_WAITS).($url?' <a class="fi-link domains-link" href="'.e($url).'">Open invoice</a>':''))];
             break;
         }
         if(isset($facts['Service'])&&($facts['Service']['value']??null)!==null){$facts['Service']['sub']='Service #'.$d->service_id.'. Cancelled on confirm.';}
