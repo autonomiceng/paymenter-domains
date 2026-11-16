@@ -3,7 +3,9 @@
 declare(strict_types=1);
 require __DIR__.'/Support/renewal-execution.php';
 use Illuminate\Support\Facades\Cache;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
+use Paymenter\Extensions\Servers\Domains\Presentation\State;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, OperationReconciliation, RegistrarAnswers, RegistrarCheck, StaffSettingsReview as Review, StaffSettingsWrites};
 app()->instance(Clock::class, $clock); app()->instance(AccountBindings::class, $bindings);
 $settings = new StaffSettingsWrites($native, $sellers, $bindings);
@@ -36,6 +38,7 @@ $readUntilStopped = static function ($op, $completion) use ($state, $clock): voi
         same($i, $op->fresh()->policy['renewal_polls'] ?? 0, 'A completed read that finds no proof counts toward the read limit');
     }
     expect(!RegistrarCheck::scheduled($op->fresh()) && RegistrarCheck::stopped($op->fresh()), 'Checks stop at the read limit');
+    same(State::NeedsReview, RequestFacts::state(RequestFacts::status($op->fresh())), 'Once checks stop the request no longer reads as checking');
     $calls = count($state->calls); $completion->run($op->id);
     same($calls, count($state->calls), 'A check after the limit reads nothing more');
 };
