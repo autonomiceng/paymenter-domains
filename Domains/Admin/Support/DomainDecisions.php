@@ -199,8 +199,12 @@ final class DomainDecisions
             // An ownership fence pauses collection too; existing debt stays accessible in Open invoice.
             if ($fenced&&$renewalInvoice&&\Paymenter\Extensions\Servers\Domains\Services\DepartureChecks::suspected($d)) {
                 $open=\App\Models\Invoice::findOrFail($renewalInvoice->id);
-                $name=Facts::invoiceName((int)$open->id);$line=(ctype_digit($name)?'Invoice #'.$name:$name).', '.(string)$open->formattedTotal.($open->due_at?', due '.$open->due_at->format('M j, Y'):'');
-                $f['Next invoice']=Facts::row('Paused',sub:$line.'. '.\Paymenter\Extensions\Servers\Domains\Services\DepartureChecks::RENEWAL_WAITS);
+                $name=Facts::invoiceName((int)$open->id);$name=ctype_digit($name)?'Invoice #'.$name:$name;
+                $rest=', '.(string)$open->formattedTotal.($open->due_at?', due '.$open->due_at->format('M j, Y'):'').'. '.\Paymenter\Extensions\Servers\Domains\Services\DepartureChecks::RENEWAL_WAITS;
+                // This line names the open renewal invoice and links it, so Billing does not list it again.
+                $url=Facts::invoiceUrl((int)$open->id);
+                $f['Next invoice']=[...Facts::row('Paused'),'sub'=>$url?new \Illuminate\Support\HtmlString('<a class="fi-link domains-link" href="'.e($url).'">'.e($name).'</a>'.e($rest)):$name.$rest];
+                $invoice=null;
             }
             elseif (!$fenced&&$renewalInvoice) { $f['Next invoice']=Facts::row($renewalInvoice->due_at?'Due '.gmdate('M j, Y',strtotime(substr($renewalInvoice->due_at,0,10).' 00:00:00 UTC')):'Due'); }
             elseif (!$fenced&&!$pending&&$d->status==='active'&&!$expired&&$renewal&&!$off&&!$settledRenewal) { $f['Next invoice']=self::nextInvoice($d); }
