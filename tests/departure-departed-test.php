@@ -32,7 +32,11 @@ same(State::TransferredAway,State::tryFrom($status['key']),'The staff head shows
 $staffName=trim($staff->first_name.' '.$staff->last_name);
 Livewire\Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$d->id])->assertSuccessful()
     ->assertSee($d->fresh()->renewal_policy['departure']['note'])->assertSee($staffName)
-    ->assertDontSee('Registrar records')->assertDontSee('Next invoice')->assertDontSee('Auto-renew');
+    // Nothing on the page changes the departed domain: no registrar read, departure step or free renewal is offered.
+    ->assertActionHidden('sync_now')->assertActionHidden('check_departure')->assertActionHidden('confirm_departure')
+    ->assertActionHidden('resume_observation')->assertActionHidden('complimentary_renewal');
+same([false,[]],[DomainFacts::syncNow($d->fresh()),array_values(array_filter(Paymenter\Extensions\Servers\Domains\Admin\Support\HoldingActions::make($d->fresh()),fn($a)=>$a->isVisible()))],
+    'A departed domain offers no sync and no renewal invoice action');
 // History keeps the departure's saved outcomes, with the exact saved credit, after the earlier registrar reads.
 $saved=$d->fresh()->renewal_policy['departure'];
 $departed=array_values(array_filter(Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::entries($d->fresh()),fn($r)=>is_array($r)&&str_starts_with((string)($r['__key']??''),'departed-')));
