@@ -102,7 +102,8 @@ class ViewOperation extends RecordDetailPage
         $who=$op->registrar_key==='namesilo'?'NameSilo':'Enom';
         $notice=RequestFacts::notice($op,$facts)??($answers?['title'=>$who.' didn’t confirm this order.','body'=>'Open a ticket with '.$who.' support, then record their answer.','tone'=>'warning']:null);
         // Support needs the request's facts for the ticket, so whoever can record the answer can copy them.
-        $copy=$answers?SupportDetails::action($op):null;
+        // Enom's no-order read needs no support ticket, so nothing is copied for one.
+        $copy=$answers&&($notice['copy']??true)?SupportDetails::action($op)->label('Copy details')->extraAttributes(['aria-label'=>SupportDetails::LABEL]):null;
         $fail=$this->getAction('mark_failed',false); $fail=$fail?->isVisible()?Sheet::button($fail):null;
         // The notice keeps its own action; staff who may close the change also learn when to use the button on Registrar reply.
         if ($notice!==null&&$fail!==null) { $notice['body']=trim(($notice['body']??'').' If you know the change didn’t happen, use '.$fail->getLabel().'.'); }
@@ -132,8 +133,8 @@ class ViewOperation extends RecordDetailPage
         if (($op->started_at || in_array($op->state,['running','pending','uncertain','succeeded'],true)) && StaffReviewHistory::sendEvent($op)===StaffReviewHistory::SENT) { $rows[]=Row::make(StaffReviewHistory::SENT,RequestRows::time(StaffReviewHistory::sentAt($op),RequestFacts::NO_TIME)); }
         if (!($facts['unreadable']??false)) {
             $reply=$facts['registrar_reply']??$facts['send_failure']??null;
-            if ($reply!==null||$answers||$check!==null||$copy!==null||$fail!==null) {
-                $row=Row::make('Registrar reply',$reply === null ? Value::state(State::NotReadYet,Reader::Staff,'Waiting for the registrar\'s answer.') : RequestRows::text($reply));
+            if ($reply!==null||$answers||$check!==null||$copy!==null||$fail!==null||RequestFacts::answerState($op)!==null) {
+                $row=Row::make('Registrar reply',$reply === null ? self::noReply($op) : RequestRows::text($reply));
                 // The notice holds one action (P-NTC-5), so copying the ticket details sits here, on the registrar's reply.
                 $replyActs=array_values(array_filter([$answers?Sheet::button($answer):$check,$fail,$copy]));
                 $rows[]=$replyActs===[]?$row:$row->actions(...$replyActs);
@@ -142,8 +143,17 @@ class ViewOperation extends RecordDetailPage
             // A refund or dispute on this invoice means money we no longer hold, so staff must look.
             if (isset($facts['payment_reversed'])) {
                 $words=$facts['payment_reversed']['words'];
-                $rows[]=Row::make('Payment',$words===null?RequestRows::text(null,cause:'Could not read refunds and disputes. Check the invoice payments.')
-                    :($facts['payment_reversed']['act']?Value::state(State::NeedsReview,Reader::Staff,RequestRows::sentence($words)):RequestRows::text($words)));
+                // The account hold a lost dispute opened is released on the domain page, so the row says so and links there; once
+                // released it is a plain fact with when and by whom.
+                $hold=$facts['payment_reversed']['hold']??null; $holdUrl=null;
+                if (($hold['state']??null)==='open') {
+                    $words=rtrim((string)$words).' The customer’s account is on hold until staff release it on the domain page.';
+                    $holdUrl=Facts::url(fn()=>DomainResource::getUrl('view',['record'=>$hold['domain_id']]).'#'.\Paymenter\Extensions\Servers\Domains\Admin\Support\AccountMoneyHoldActions::ANCHOR);
+                }
+                $payment=Row::make('Payment',$words===null?RequestRows::text(null,cause:'Could not read refunds and disputes. Check the invoice payments.')
+                    :($facts['payment_reversed']['act']?Value::state(State::NeedsReview,Reader::Staff,RequestRows::sentence($words))
+                        :RequestRows::text($words,($hold['state']??null)==='released'?'Account hold released '.\Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at($hold['at']).($hold['by']?', by '.$hold['by']:'').'.':null)));
+                $rows[]=self::linked($payment,'Go to account hold',$holdUrl);
             }
             if (array_key_exists('cost',$facts)) { $rows[]=Row::make('Cost',RequestRows::text($facts['cost'],$facts['cost_sub'])); }
             if (array_key_exists('auth_code',$facts)) {
@@ -167,6 +177,20 @@ class ViewOperation extends RecordDetailPage
         $steps=array_reverse(StaffReviewHistory::timeline($op,$rows));
         if ($steps===[]) { return [Section::make('History',[],'No history yet.')]; }
         return [Section::make('History',[RequestRows::trace($steps,RequestRows::state(RequestFacts::status($op,true,$op->domain),$op))])];
+    }
+    /** Registrar reply before the registrar answered: none needed yet while a check is scheduled, then what the stopped checks found. */
+    private static function noReply(Operation $op): Value
+    {
+        $check=\Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::status($op)??[];
+        $last=isset($check['at'])?\Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at((int)$check['at']):null;
+        $history=$op->registrar_key==='enom'?'Enom’s order history':'the registrar';
+        return match (RequestFacts::answerState($op)) {
+            'checking'=>RequestRows::text('None yet','Needed only if checks stop without a clear answer.'),
+            'no_order'=>RequestRows::text('No '.($op->action==='renew'?'renewal':'registration').' order',$last?'From '.$history.', read '.$last.'.':null),
+            'unclear'=>RequestRows::text('No clear answer',trim(($n=(int)($op->action==='renew'?($op->policy['renewal_polls']??0):($op->policy['reconciliation']['polls']??0)))>0
+                ?$n.' '.($n===1?'check':'checks').' of '.$history.'.':'').($last?' Last read '.$last.'.':'')),
+            default=>Value::state(State::NotReadYet,Reader::Staff,'Waiting for the registrar\'s answer.'),
+        };
     }
     /** A row whose value names a record gets the link to it. */
     private static function linked(Row $row, string $label, ?string $url): Row

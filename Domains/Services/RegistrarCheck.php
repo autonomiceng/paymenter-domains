@@ -191,6 +191,21 @@ final class RegistrarCheck
         } catch (\Throwable) {}
         return $check;
     }
+    /** An automatic check of this attempt is still to come, so asking the registrar's support is not needed yet. Read only. */
+    public static function scheduled(Operation $op): bool
+    {
+        // Most requests have no saved next check; only those pay for the full status read.
+        if (!in_array($op->action,['register','renew'],true) || !in_array($op->state,['running','pending','uncertain'],true) || !isset($op->policy['status_check']['next_at'])) { return false; }
+        $check=self::status($op);
+        return in_array($check['outcome']??null,['checked','deferred','scheduled'],true) && isset($check['next_at']);
+    }
+    /** Checks of this attempt have stopped: a read happened and none is scheduled. Staff now record the registrar's answer. */
+    public static function stopped(Operation $op): bool
+    {
+        if (!in_array($op->action,['register','renew'],true) || !in_array($op->state,['running','pending','uncertain'],true)) { return false; }
+        $check=self::status($op);
+        return in_array($check['outcome']??null,['checked','deferred'],true) && !isset($check['next_at']);
+    }
     /** Customers wait for our registrar check; recording the answer is a staff task. */
     public static function forCustomer(Operation $op, ?array $known = null): array
     {

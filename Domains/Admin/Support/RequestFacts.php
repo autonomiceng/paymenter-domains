@@ -119,6 +119,11 @@ final class RequestFacts
                 try{if($reversals===null){throw new \DomainException('Invoice reversals unavailable.');}$context=\Paymenter\Extensions\Servers\Domains\Services\ReceiptReversals::summary($op,$reversals);if($context!==null){$out['refund_sub']=trim(($out['refund_sub']??'').' '.$context);}}
                 catch(\Throwable){$out['refund_sub']=trim(($out['refund_sub']??'').' Missing. Check the invoice payment reversal and credit history.');}
             }
+            // A closed request whose payment a lost dispute already took back: nothing was left to credit, and that is no staff step.
+            if ($op->state==='rejected'&&($out['refund']??null)==='No credit added'&&is_array($reversals)
+                &&($lostMinor=array_sum(array_map(fn($r)=>[$r['kind']??null,$r['status']??null]===['dispute','lost']&&is_int($r['amount_minor']??null)?$r['amount_minor']:0,$reversals)))>0) {
+                $out['refund_sub']='The lost dispute already returned '.\Paymenter\Extensions\Servers\Domains\Services\Storefront::money(\Paymenter\Extensions\Servers\Domains\Services\PricingRule::decimal($lostMinor)).' to the customer’s bank.';
+            }
             if ($op->registrar_key==='namesilo' && $op->action==='transfer' && $closed
                 && ($op->safe_code==='transfer_provider_rejected' || ($p['reconciliation']['transfer_status']??null)==='rejected')) {
                 $out['registrar_refund']='Ask NameSilo support for a refund';
@@ -157,6 +162,9 @@ final class RequestFacts
                 if ($paid||isset($c['actual'])) {
                     $out['cost']=$actual??($unknown&&$quote!==null?'Not confirmed':null);
                     $out['cost_sub']=$out['registrar_refund'] ?? $quote ?? ($actual===null ? 'No cost recorded. Check at the registrar.' : null);
+                    if ($unknown&&$quote!==null&&$actual===null&&($stand=self::answerState($op))!==null) {
+                        $out['cost_sub']=$quote.'. '.sprintf(self::COST_NEXT[$stand],PaidUncertainty::registrar($op),$op->action==='renew'?'renewal':'registration');
+                    }
                     // This request's own margin alert: another renewal's loss on the same domain is not this request's cost.
                     if(\Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::open([$op->domain_id])->where('operation_id',$op->id)->where('code','below_cost')->exists()
                         &&\Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::price($op,$op->domain,'below_cost')!==\Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::CLEAR){
@@ -240,6 +248,8 @@ final class RequestFacts
         try { $key=$d?ManagementProgress::statusKey($op,$d,$off):null; } catch (\Throwable) { $key=null; }
         if ($key!==null) { [$status['label'],$status['tone']]=RequestStatus::SET[$key]; }
         if ($paid=self::paidWaiting($op,$accounts)) { [$status['label'],$status['tone']]=RequestStatus::SET['in_progress'];$status['reason']=$paid; }
+        // A scheduled check still settles the result by itself: Checking inside the normal time, Delayed after it (P-STA-8).
+        if (self::checking($op)) { $late=PaidUncertainty::waitState($op)===State::Delayed; [$status['label'],$status['tone']]=$late?['Delayed','warning']:['Checking','info']; }
         if (!self::heldAcquisition($op,$off)) { return $status; }
         [$status['label'],$status['tone']]=self::STATUSES['on_hold'];
         return $status;
@@ -252,6 +262,23 @@ final class RequestFacts
         if (self::invoiceStatus($op)!=='paid') { return null; }
         return OperationQueries::ordersOff($op,$accounts)?'Paid. Not sent. '.self::ORDERS_OFF:self::PAID_GOES;
     }
+    /** A registration or renewal whose result the next scheduled check reads, so staff have nothing to record yet. */
+    public static function checking(Operation $op): bool
+    { try { return $op->state==='uncertain'&&RegistrarCheck::scheduled($op); } catch (\Throwable) { return false; } }
+    /** Where an unconfirmed registration or renewal stands for staff: 'checking' while a check is scheduled, then, once checks
+     * stop and the answer can be recorded, 'no_order' when Enom's order history shows no order, else 'unclear'. Null otherwise. */
+    public static function answerState(Operation $op): ?string
+    {
+        try {
+            if (self::checking($op)) { return 'checking'; }
+            if ($op->state!=='uncertain'||!RegistrarCheck::stopped($op)) { return null; }
+            $now=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now();
+            if (!\Paymenter\Extensions\Servers\Domains\Services\RegistrarAnswers::ready($op,$now)) { return null; }
+            return \Paymenter\Extensions\Servers\Domains\Services\RegistrarAnswers::absence($op,$now)!==null?'no_order':'unclear';
+        } catch (\Throwable) { return null; }
+    }
+    /** What the authorized cost becomes, by answerState(). */
+    private const COST_NEXT=['checking'=>'Final when %s confirms the %s.','no_order'=>'Not charged once the answer is recorded.','unclear'=>'Final when %s support answers.'];
     /** Lists and history preload invoices once; detail callers may read their single invoice directly. */
     private static function invoiceStatus(Operation $op): ?string
     { return $op->relationLoaded('invoice')?$op->invoice?->status:\App\Models\Invoice::whereKey($op->invoice_id)->value('status'); }
@@ -394,6 +421,7 @@ final class RequestFacts
             }
             return $notice;
         }
+        if (isset($facts['outcome'])&&($stand=self::answerState($op))!==null) { return self::answerNotice($op,$stand,$facts); }
         if (isset($facts['outcome'])) {
             $recover=HistoryRecovery::offered($op);$tooOld=HistoryRecovery::tooOld($op);
             $step=RegistrarCheck::step($op)??(($check=ManagementCheck::words($op))?['title'=>$check['title'].'. '.$check['at'],'body'=>$check['detail']]:null);
@@ -455,6 +483,28 @@ final class RequestFacts
                 'link'=>$approval?'domain':$recovery['link'],'link_label'=>$fix,'next_try'=>self::nextTry($op)];
         }
         return null;
+    }
+    /** An unconfirmed registration or renewal by answerState(): while a check is scheduled, Check status is the one step; once
+     * checks stop, recording the answer is (no support ticket when Enom's order history shows no order). */
+    private static function answerNotice(Operation $op, string $stand, array $facts): array
+    {
+        $who=PaidUncertainty::registrar($op); $kind=$op->action==='renew'?'renewal':'registration';
+        $history=$op->registrar_key==='enom'?'Enom’s order history':'the registrar';
+        $at=static fn(?int $t):?string=>$t===null?null:\Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at($t);
+        $check=RegistrarCheck::status($op)??[]; $hold=$facts['auto_renew']??PaidUncertainty::holdSummary($op);
+        if ($stand==='checking') {
+            $sent=$at(StaffReviewHistory::sentAt($op)?->getTimestamp());
+            $body=implode(' ',array_filter([$sent?'Sent '.$sent.'.':null,'Next automatic check '.$at((int)$check['next_at']).'.','Check status reads '.$history.' now instead of waiting.',$hold]));
+            return ['title'=>'Waiting for '.$who.' to confirm the '.$kind.'.','body'=>$body,'tone'=>PaidUncertainty::waitState($op)===State::Delayed?'warning':'info',
+                'action'=>OperationActions::readLimit($op)?'resume_reads':'recheck'];
+        }
+        $stopped=isset($check['at'])?'Checks stopped '.$at((int)$check['at']).'.':null;
+        if ($stand==='no_order') {
+            return ['title'=>$who.'’s order history shows no '.$kind.' order, and the domain is unchanged.','tone'=>'warning','primary'=>'enom_answer','copy'=>false,
+                'body'=>implode(' ',array_filter([$stopped,'Record the answer as Not processed. No support ticket or case number is needed.',$hold]))];
+        }
+        return ['title'=>ucfirst($history).' gave no clear answer, so checks have stopped.','tone'=>'warning','primary'=>'enom_answer',
+            'body'=>implode(' ',array_filter(['Ask '.$who.' support whether they made the '.$kind.'. Use Copy details on Registrar reply, then record their answer.',$hold]))];
     }
     /** A paid renewal waiting out Enom's 24-hour repeat refusal: why, the fixed time it goes and that nothing is needed. Blue: it is not a problem. */
     private static function repeatWait(Operation $op, \DateTimeImmutable $until): array
@@ -526,11 +576,15 @@ final class RequestFacts
         $invoice=\App\Models\Invoice::find($op->invoice_id); if (!$invoice) { return null; }
         try { $rows=\Paymenter\Extensions\Servers\Domains\Services\ReceiptReversals::forInvoice($invoice); }
         catch (\Throwable) { $rows=null;return ['words'=>null,'act'=>true]; }
-        $lines=[];$act=false;
+        $lines=[];$act=false;$hold=null;
         foreach ($rows as $r) {
             // Missing or invalid money is a payment read problem: never show it as zero.
             if (!is_int($r['amount_minor']??null) || $r['amount_minor']<0) { return ['words'=>null,'act'=>true]; }
             $amount=\Paymenter\Extensions\Servers\Domains\Services\Storefront::money(\Paymenter\Extensions\Servers\Domains\Services\PricingRule::decimal($r['amount_minor']));
+            // A lost dispute holds the customer's account; staff releasing that hold is the one step, so it settles this row too.
+            $lost=[$r['kind']??null,$r['status']??null]===['dispute','lost'];
+            $held=$lost?self::disputeHold((string)($r['id']??'')):null;
+            if ($held!==null) { $hold=$hold===null||$hold['state']==='released'?$held:$hold; }
             $line=match ([$r['kind']??null,$r['status']??null]) {
                 ['dispute','lost']=>$amount.' lost to a dispute',
                 ['dispute','open'],['dispute','inquiry']=>$amount.' under dispute. Submit evidence in Stripe before the deadline',
@@ -541,9 +595,21 @@ final class RequestFacts
             };
             if ($line===null) { continue; }
             $lines[]=$line.'.';
-            $act=$act||($r['needs_review']??false)||$r['kind']==='dispute'||$r['status']==='failed';
+            $act=$act||($lost?($held['state']??null)!=='released':(($r['needs_review']??false)||$r['kind']==='dispute'||$r['status']==='failed'));
         }
-        return $lines?['words'=>implode(' ',array_unique($lines)),'act'=>$act]:null;
+        return $lines?['words'=>implode(' ',array_unique($lines)),'act'=>$act,'hold'=>$hold]:null;
+    }
+    /** The account hold a lost dispute opened: open, or released with when and by whom. Null when none was opened yet. */
+    private static function disputeHold(string $dispute): ?array
+    {
+        if ($dispute==='') { return null; }
+        $alert=\Illuminate\Support\Facades\DB::table('domains_obligation_alerts')->where('code','account_money_hold')
+            ->where('alert_key',\Paymenter\Extensions\Servers\Domains\Services\DisputeRecoveries::key('account_money_hold',$dispute))->first();
+        if (!$alert) { return null; }
+        if ($alert->resolved_at===null) { return ['state'=>'open','domain_id'=>(int)$alert->domain_id]; }
+        $audit=\App\Models\Audit::where('event','account_money_hold_released')->where('new_values->alert_id',(int)$alert->id)->latest('id')->first();
+        $by=$audit?->user_id?\App\Models\User::whereKey($audit->user_id)->first()?->name:null;
+        return ['state'=>'released','domain_id'=>(int)$alert->domain_id,'at'=>(int)$alert->resolved_at,'by'=>is_string($by)&&trim($by)!==''?trim($by):null];
     }
     /** Money returned as account credit: the amount, and why it is credit and not a refund to the payment. */
     private static function creditWords(array $f): array
