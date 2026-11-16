@@ -48,7 +48,7 @@ final class ComplimentaryInvoices
             return PricingRule::minor($item->price)===PricingRule::minor($amount)&&$offset!==null
                 &&PricingRule::minor($offset->price)===-PricingRule::minor($amount)&&$offset->description==='Complimentary'
                 &&$offset->reference_type===null&&$offset->reference_id===null;
-        }catch(\Throwable){return false;}
+        }catch(\PDOException $e){throw $e;}catch(\Throwable){return false;}
     }
     private static function nativeCharge(string $amount):string
     {
