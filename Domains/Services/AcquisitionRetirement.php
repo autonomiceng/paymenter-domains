@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
-use App\Models\{Invoice,InvoiceTransaction,Service,ServiceCancellation,User};
+use App\Models\{Invoice,InvoiceTransaction,Server,Service,ServiceCancellation,User};
 use App\Enums\InvoiceTransactionStatus as PaymentStatus;
 use Illuminate\Support\Facades\{Crypt,DB,Log,Schema};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
@@ -52,8 +52,7 @@ final readonly class AcquisitionRetirement
     /** Frees names held by orders nobody paid for. The proof is the last guard: it refuses money, registrar evidence and other requests. */
     public function expireUnpaid(Account $a): void
     {
-        foreach(Domain::where('server_id',$a->server_id)->whereIn('id',DB::table('domains_obligation_alerts')->select('domain_id')
-            ->where('code','acquisition_retirement_review')->whereNull('resolved_at'))->orderBy('id')->limit(25)->get() as $d){$this->askStaff($d,false);}
+        foreach($this->reviewBatch($a) as $d){$this->askStaff($d,false);}
         $cut=\DateTimeImmutable::createFromInterface($this->clock->now())->modify('-'.UnpaidHoldSetting::minutes((int)$a->server_id).' minutes')
             ->setTimezone(new \DateTimeZone(date_default_timezone_get()));
         $invoices=Operation::where('server_id',$a->server_id)->whereIn('action',['register','transfer'])->whereIn('state',PayCheck::OPEN)
@@ -64,6 +63,20 @@ final readonly class AcquisitionRetirement
         foreach($invoices as $id){
             $this->closeUnpaid((int)$id,PayCheck::notice('expired'));
         }
+    }
+    /** Persist progress in native server settings, independent of the cache driver. Release the cursor lock before holding locks. */
+    private function reviewBatch(Account $a): \Illuminate\Support\Collection
+    {
+        return DB::transaction(function()use($a){
+            $server=Server::whereKey($a->server_id)->lockForUpdate()->firstOrFail();
+            $cursor=$server->settings()->where('key','domains_retirement_review_cursor')->first()
+                ??$server->settings()->make(['key'=>'domains_retirement_review_cursor']);
+            $batch=Domain::where('server_id',$a->server_id)->where('id','>',max(0,(int)$cursor->value))
+                ->whereIn('id',DB::table('domains_obligation_alerts')->select('domain_id')->where('code','acquisition_retirement_review')->whereNull('resolved_at'))
+                ->orderBy('id')->limit(25)->get();
+            $cursor->value=(string)($batch->count()===25?$batch->last()->id:0);$cursor->type='integer';$cursor->encrypted=false;$cursor->save();
+            return $batch;
+        });
     }
     /** The rest of a closed invoice stays payable. Lines bound to an order stay as history; the customer's old invoice keeps them. */
     private static function reissue(Invoice $old,array $l): ?Invoice

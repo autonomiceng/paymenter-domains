@@ -23,4 +23,27 @@ same('cancelled',$shared->fresh()->status,'Vanilla cron cancels the whole shared
 same(0,$invoiceEvents,'Vanilla cron bulk cancellation emits no Invoice update event');
 same('cancelled',App\Models\Invoice::find($soloCron->invoice_id)->status,'Vanilla cron cancels solo invoice');same('cancelled',$soloCron->domain->service->fresh()->status,'Vanilla cron cancels solo service');$retirement->inspect($soloCron->domain_id);same(null,$soloCron->domain->fresh()->reservation_name,'Solo cron retirement releases name');
 $retirement->inspect($mixed->domain_id);same(null,$mixed->domain->fresh()->reservation_name,'Sweep releases shared-invoice unpaid acquisition');same(null,$product->fresh()->stock,'Cron never replenishes managed stock');
+// Retained reviews cannot starve an obsolete review beyond the first 25 domains.
+$retained=[];
+for($i=0;$i<25;$i++){
+    $op=$new(placeholderComFixtureName('review-fair-'.$i.'-placeholder.com'),paid:false);$retained[]=$op;
+    \Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::record($op->domain,'acquisition_retirement_review',$clock->now()->getTimestamp());
+}
+$obsolete=$new(placeholderComFixtureName('review-fair-obsolete-placeholder.com'));
+\Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::record($obsolete->domain,'acquisition_retirement_review',$clock->now()->getTimestamp());
+$account=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$obsolete->server_id)->sole();
+$open=static fn($op)=>DB::table('domains_obligation_alerts')->where('domain_id',$op->domain_id)->where('code','acquisition_retirement_review')->whereNull('resolved_at')->exists();
+$money=$nativeMoney();
+(new AcquisitionRetirement($clock))->expireUnpaid($account);
+expect($open($obsolete),'The first sweep respects the 25-domain review limit');
+(new AcquisitionRetirement($clock))->expireUnpaid($account);
+expect(!$open($obsolete),'A later sweep reaches the obsolete review behind 25 retained reviews');
+foreach($retained as $op){expect($open($op),'Unproved retirement keeps its review');}
+same($money,$nativeMoney(),'Review cleanup leaves money and jobs unchanged');
+// A new service instance must wrap and revisit a previously retained review.
+$first=$retained[0];DB::table('invoices')->where('id',$first->invoice_id)->update(['status'=>'paid']);
+App\Models\InvoiceTransaction::create(['invoice_id'=>$first->invoice_id,'amount'=>$first->amount,'fee'=>'0.00','status'=>'succeeded']);
+$paidMoney=$nativeMoney();(new AcquisitionRetirement($clock))->expireUnpaid($account);
+expect(!$open($first),'The durable review cursor wraps to the beginning');
+same($paidMoney,$nativeMoney(),'Review sweeps leave money and jobs unchanged');
 echo "Unpaid acquisition retirement case passed.\n";$nativeSuccessful=true;
