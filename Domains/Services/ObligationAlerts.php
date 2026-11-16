@@ -109,17 +109,17 @@ final class ObligationAlerts
     /** The request's saved price evaluation, for one price alert code. The sweep, the domain page and the request Cost row read this one check. */
     public static function price(Operation $op,Domain $d,string $code):string
     {
-        try{return self::priceCode($op,$d)===$code?self::ACTIVE:self::CLEAR;}catch(\Throwable){return self::UNKNOWN;}
-    }
-    private static function priceCode(Operation $op,Domain $d):?string
-    {
-        $p=$op->policy??[];
-        if($op->action!=='renew'||!isset($p['price'])||$op->account_fingerprint!==$d->account_fingerprint||$op->authority_generation!==$d->authority_generation){return null;}
-        // Retained retail is informational; RenewalReminders checks current cost independently.
-        $code=$p['price']['staff_alert']??null;
-        // Completed losses still matter; other finished requests incurred no renewal margin.
-        if($code==='below_cost'){return $op->state!=='succeeded'&&in_array($op->state,RequestStatus::FINISHED,true)?null:'below_cost';}
-        return $code!=='retained_renewal'&&($code!==null||($p['price']['retained']??false))?'unknown_cost':null;
+        try{
+            $p=$op->policy??[];
+            if($op->action!=='renew'||!isset($p['price'])||$op->account_fingerprint!==$d->account_fingerprint||$op->authority_generation!==$d->authority_generation){return self::CLEAR;}
+            // Retained retail is informational; RenewalReminders checks current cost independently.
+            $saved=$p['price']['staff_alert']??null;
+            // Completed losses still matter; other finished requests incurred no renewal margin.
+            $closed=$op->state!=='succeeded'&&in_array($op->state,RequestStatus::FINISHED,true);
+            $raised=$saved==='below_cost'?$code==='below_cost'&&!$closed
+                :$code==='unknown_cost'&&$saved!=='retained_renewal'&&($saved!==null||($p['price']['retained']??false));
+            return $raised?self::ACTIVE:self::CLEAR;
+        }catch(\Throwable){return self::UNKNOWN;}
     }
     /** Whether a request needs a staff check: held or unconfirmed, or a saved result that still needs a person, unless it is a wait the system clears by itself. */
     public static function review(Operation $op,Collection $operations,Domain $d,int $now):string
