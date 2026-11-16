@@ -11,6 +11,11 @@ class UnreadableHoldGateway extends MoneyReceiptGateway {
     public function receiptLedger(Invoice $invoice):array { throw new RuntimeException('Synthetic unreadable evidence'); }
 }
 class_alias(UnreadableHoldGateway::class,'Paymenter\\Extensions\\Gateways\\UnreadableHold\\UnreadableHold');
+class LostHoldGateway extends MoneyReceiptGateway {
+    public static array $ledger=[];
+    public function receiptLedger(Invoice $invoice):array { return self::$ledger; }
+}
+class_alias(LostHoldGateway::class,'Paymenter\\Extensions\\Gateways\\LostHold\\LostHold');
 ReminderSchema::install();
 $op=$new('unreadable-hold-placeholder.com');
 $gateway=Gateway::create(['extension'=>'UnreadableHold','name'=>'Synthetic unreadable receipt','type'=>'gateway','enabled'=>true]);
@@ -32,4 +37,19 @@ same((int)$alert,$audit->new_values['alert_id']??null,'Audit retains the release
 same($before,$nativeMoney(),'Staff release changes no native financial rows');
 commerceReject(fn()=>AccountMoneyHolds::release($staff,(int)$alert));
 same(1,Audit::where('event','account_money_hold_released')->count(),'Repeated release retains one Audit');
+// G2: while recovery is still open, a readable ledger does not make the hold amounts final.
+$pendingOp=$new('pending-hold-placeholder.com');
+$lostGateway=Gateway::create(['extension'=>'LostHold','name'=>'Synthetic lost receipt','type'=>'gateway','enabled'=>true]);
+DB::table('invoice_transactions')->where('invoice_id',$pendingOp->invoice_id)->update(['gateway_id'=>$lostGateway->id,'transaction_id'=>'synthetic_pending_hold']);
+$pendingInvoice=Invoice::findOrFail($pendingOp->invoice_id);
+LostHoldGateway::$ledger=[['invoice_id'=>(int)$pendingInvoice->id,'user_id'=>(int)$pendingInvoice->user_id,'currency'=>$pendingInvoice->currency_code,
+    'payment_intent_id'=>'synthetic_pending_hold','allocation_key'=>'stripe:dispute:synthetic_pending','state'=>'lost','amount_minor'=>100]];
+foreach(['account_money_hold','dispute_recovery'] as $code){DB::table('domains_obligation_alerts')->insert(['alert_key'=>DisputeRecoveries::key($code,'synthetic_pending'),
+    'domain_id'=>$pendingOp->domain_id,'operation_id'=>$pendingOp->id,'generation'=>$pendingOp->authority_generation,'code'=>$code,'first_seen'=>1,'last_seen'=>1]);}
+$holdKey=DisputeRecoveries::key('account_money_hold','synthetic_pending');$holdEvidence=new ReflectionMethod(AccountMoneyHolds::class,'evidence');
+$evidence=$holdEvidence->invoke(null,$pendingOp,$holdKey);
+same([true,100,null,null,null],[$evidence['pending']??false,$evidence['lost_minor'],$evidence['owed_minor'],$evidence['removed_minor'],$evidence['remainder_minor']],'Open recovery leaves owed, removed and remainder unknown');
+DB::table('domains_obligation_alerts')->where('alert_key',DisputeRecoveries::key('dispute_recovery','synthetic_pending'))->update(['resolved_at'=>2]);
+$evidence=$holdEvidence->invoke(null,$pendingOp,$holdKey);
+same([false,0,0,0],[$evidence['pending']??false,$evidence['owed_minor'],$evidence['removed_minor'],$evidence['remainder_minor']],'Finished owed-zero recovery shows final amounts');
 $nativeSuccessful=true;
