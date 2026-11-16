@@ -513,18 +513,18 @@ final class OperationClaims
             BalanceRetry::from($op);
             $proof=clone $op;$proof->state='held';$proof->safe_code='registrar_balance_insufficient';
             RefundProof::requireUnsent($proof,$op->domain);
-        }catch(\Throwable){return 'pre_send_interrupted';}
+        }catch(\PDOException $e){throw $e;}catch(\Throwable){return 'pre_send_interrupted';}
         try {
             if(!app(AccountBindings::class)->configurationAvailable((int)$op->server_id)){return 'balance_retry_authority_changed';}
             $facts??=HoldingLocks::take($op->domain,advisory:true,completeInvoices:true);
             $domain=$facts['domain'];self::requireAcquisitionAuthority($op,$domain,$facts['operations'],$facts['account'],app(Clock::class)->now());
-        }catch(\Throwable){return 'balance_retry_authority_changed';}
+        }catch(\PDOException $e){throw $e;}catch(\Throwable){return 'balance_retry_authority_changed';}
         try {
             $paid=InvoiceFunding::requireInitialFacts($op,$facts);
             if(isset($op->attempt['claim_key'])&&($op->funding['claim']??null)!==$paid){return 'balance_retry_funding_changed';}
-        }catch(\Throwable){return 'balance_retry_funding_changed';}
+        }catch(\PDOException $e){throw $e;}catch(\Throwable){return 'balance_retry_funding_changed';}
         $op->setRelation('domain',$domain);
-        try{ContactSetup::requireReady($op);}catch(\Throwable){return 'balance_retry_setup_changed';}
+        try{ContactSetup::requireReady($op);}catch(\PDOException $e){throw $e;}catch(\Throwable){return 'balance_retry_setup_changed';}
         if(isset($op->attempt['claim_key'])&&$op->request_fingerprint!==self::digest($op,$domain)){return 'balance_retry_authority_changed';}
         return self::balanceRefusalRetryable($op)?null:'pre_send_interrupted';
     }

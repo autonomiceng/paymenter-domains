@@ -32,7 +32,7 @@ final readonly class RenewalAuthority
                         throw new RenewalRefused(RenewalCode::Acceptance);
                     }
                 }
-                catch (\Throwable) { throw new RenewalRefused(RenewalCode::Acceptance); }
+                catch (\Throwable $error) { self::database($error); throw new RenewalRefused(RenewalCode::Acceptance); }
                 // A named issued obligation keeps its original authority through a future-only stop.
                 $issued=$l['operations']->contains(fn($op)=>self::expected($op,$request));
                 if (!in_array($domain->status, ['active', 'expired', 'grace'], true) || $l['service']->status !== 'active'
@@ -46,7 +46,7 @@ final readonly class RenewalAuthority
                 if ($domain->renewal_policy['automatic_spend_paused'] ?? false) { throw new RenewalRefused(RenewalCode::Paused); }
                 try { $anchor = HoldingAnchor::resolve($l); }
                 catch (RenewalRefused $error) { throw $error; }
-                catch (\Throwable) { throw new RenewalRefused(RenewalCode::Prior); }
+                catch (\Throwable $error) { self::database($error); throw new RenewalRefused(RenewalCode::Prior); }
                 $prior = $anchor->operation;
                 if ($all->contains(fn ($op) => $op->id !== $prior?->id && self::blocksRenewal($op, $l) && !self::expected($op, $request))) {
                     throw new RenewalRefused(RenewalCode::Prior);
@@ -77,8 +77,16 @@ final readonly class RenewalAuthority
                     $all->first(fn ($op) => self::expected($op, $request))?->policy['renewal'] ?? null, environment: $binding->environment);
                 return [$binding, $domain->domain, $current, $retail, $nonpremium, $capabilityUntil, $termRule];
             });
-        } catch (RenewalRefused $error) { throw $error; }
-        catch (\Throwable) { throw new RenewalRefused(RenewalCode::Authority); }
+        } catch (RenewalRefused|RenewalBusy $error) { throw $error; }
+        catch (\Throwable $error) { self::database($error); throw new RenewalRefused(RenewalCode::Authority); }
+    }
+    /** This read changes nothing, so contention is a named retryable error with nothing queued; callers already retry.
+     * Any other database error is never a refusal either. */
+    private static function database(\Throwable $error): void
+    {
+        if ($error instanceof RenewalBusy) { throw $error; }
+        if (MoneyDecisions::contention($error)) { throw new RenewalBusy(MoneyDecisions::BUSY, 0, $error); }
+        if ($error instanceof \PDOException) { throw $error; }
     }
     public static function requireCostAnchor(Operation $op): void
     {

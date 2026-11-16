@@ -33,8 +33,8 @@ final class RenewalExecution
             if (FundsWaits::elapsed($op,$this->clock->now())) { return null; }
             if (isset($op->policy['renewal_admission']['until']) && new \DateTimeImmutable($op->policy['renewal_admission']['until']) > $this->clock->now()) { return null; }
             if ($op->funding_basis === 'paid_invoice' && $l['invoices']->firstWhere('id', $op->invoice_id)?->status === 'pending') { return null; }
-            try { $this->configured($l); } catch (\Throwable) { $this->hold($op, RenewalCode::Acceptance->value, true); return null; }
-            try { $this->current($op, $l); } catch (RenewalHold $held) { $this->hold($op, $held->reason, $held->reason===EnomLateRenewal::PAUSED); return null; } catch (RenewalRefused $refused) { $this->hold($op, $refused->reason->value); return null; } catch (\Throwable) { $this->hold($op, 'renewal_funding_or_authority'); return null; }
+            try { $this->configured($l); } catch (\PDOException $e) { throw $e; } catch (\Throwable) { $this->hold($op, RenewalCode::Acceptance->value, true); return null; }
+            try { $this->current($op, $l); } catch (RenewalHold $held) { $this->hold($op, $held->reason, $held->reason===EnomLateRenewal::PAUSED); return null; } catch (RenewalRefused $refused) { $this->hold($op, $refused->reason->value); return null; } catch (\PDOException $e) { throw $e; } catch (\Throwable) { $this->hold($op, 'renewal_funding_or_authority'); return null; }
             // Enom's Extend contract requires OverrideOrder for another renewal within 24 hours.
             // Wait from confirmed completion (later than the send), never bypass replay protection.
             // The time it may go is the latest such completion + 24 hours, stored once so pages show a fixed time.
@@ -179,7 +179,7 @@ final class RenewalExecution
         try {
             $this->features->requireEnabled(Action::Renew); $this->bindings->requireProcessingLocked($l['server'], $l['account']);
             $this->accepted->requireCurrent(AccountBindings::binding($l['account']));
-        } catch (\Throwable $error) { throw new RenewalRefused(RenewalCode::Acceptance); }
+        } catch (\PDOException $e) { throw $e; } catch (\Throwable $error) { throw new RenewalRefused(RenewalCode::Acceptance); }
     }
     private function hasPayment(Operation $op): bool
     {
