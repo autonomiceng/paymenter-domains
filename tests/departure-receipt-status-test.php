@@ -17,13 +17,14 @@ $ticket=StaffHoldingReview::ticket((int)$staff->id,(int)$d->id,HoldingDeparture:
 $result=(new HoldingDeparture($clock))->confirm($staff,(int)$d->id,$ticket,'other_registrar','Checked the registrar account.');
 same(MoneyOutcome::Applied,$result->outcome,'The renewal invoice was cancelled by departure');
 // Model a discovery read completed before confirmation while the invoice-lock wait completes afterward.
-// Only unlocked discovery sees the old snapshot; the retained row is already departed.
-$stale=true;
-Domain::retrieved(static function(Domain $row)use(&$stale,$prior,$d):void{
-    if($stale&&(int)$row->id===(int)$d->id&&DB::transactionLevel()===0){$row->setRawAttributes($prior,true);}
+// Only the first holding read sees the old snapshot; the later locked read sees the departed row.
+$stale=true;$injected=false;
+Domain::retrieved(static function(Domain $row)use(&$stale,&$injected,$prior,$d):void{
+    if($stale&&(int)$row->id===(int)$d->id){$stale=false;$injected=true;$row->setRawAttributes($prior,true);}
 });
 $error=null;try{RenewalCycles::beforePayment((int)$invoice->id,$clock);}catch(Throwable $e){$error=$e;}
 $stale=false;
+same(true,$injected,'The receipt admission read saw the pre-departure snapshot');
 same(null,$error?->getMessage(),'A receipt waiting behind confirmation uses current departed authority');
 $balance=static fn()=>PricingRule::minor((string)(Credit::where('user_id',$d->user_id)->where('currency_code','USD')->value('amount')??'0.00'));
 $before=$balance();
