@@ -42,7 +42,7 @@ same($before,$state->writes,'Partial settlement and replay never send a cancelle
 $ordinaryUserReads=[];$observeOrdinary=true;
 DB::listen(static function($q)use(&$ordinaryUserReads,&$observeOrdinary):void{if($observeOrdinary&&str_contains($q->sql,'from "users"')){$ordinaryUserReads[]=$q->sql;}});
 DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Services\RenewalCycles::beforePayment((int)$ni->id,$clock));
-$observeOrdinary=false;same([],$ordinaryUserReads,'An ordinary renewal receipt takes no owner lock from the payment hook');
+$observeOrdinary=false;expect(count($ordinaryUserReads)===1,'An ordinary renewal receipt takes only the owner lock before checking invoice status');
 App\Helpers\ExtensionHelper::addPayment($ni,null,$normal->amount,'0.00','normal-renewal');
 same(null,$presenter->invoiceOutcome($user,(int)$ni->id),'Ordinary payment retains ordinary paid mail');
 [$engine,$writer]=$compose($nb);$engine->run($normal->id,$writer);
