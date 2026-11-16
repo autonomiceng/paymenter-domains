@@ -110,6 +110,7 @@ final class RequestFacts
             }
             elseif ($paid && $op->state==='rejected' && $op->funding_basis!=='paid_invoice') { [$out['refund'],$out['refund_sub']]=[null,'No paid invoice recorded. No action needed.']; }
             elseif ($closed && $op->funding_basis==='paid_invoice') { $out['refund']='No credit added'; }
+            if(!$neverPaid&&($limit=self::refundLimit($op,($out['refund']??null)==='No credit added'))!==null){$out['refund_sub']=trim(($out['refund_sub']??'').' '.$limit);}
             if($grants->costs&&(array_key_exists('refund',$f)||array_key_exists('late_credits',$f))){
                 try{if($reversals===null){throw new \DomainException('Invoice reversals unavailable.');}$context=\Paymenter\Extensions\Servers\Domains\Services\ReceiptReversals::summary($op,$reversals);if($context!==null){$out['refund_sub']=trim(($out['refund_sub']??'').' '.$context);}}
                 catch(\Throwable){$out['refund_sub']=trim(($out['refund_sub']??'').' Missing. Check the invoice payment reversal and credit history.');}
@@ -479,6 +480,25 @@ final class RequestFacts
             }if($minor>0&&$minor>=\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)$invoice->total)){return 'Refunded';}}catch(\Throwable){}
         }
         return match(self::invoiceStatus($op)){'paid'=>'Paid','pending'=>'Not paid','cancelled'=>'Cancelled',default=>null};
+    }
+    /** Why staff see less returned than this request paid, from the money still held on its invoice. $none: nothing was
+     * returned yet. Null when nothing limits the return or the invoice money cannot be read; other rows cover a read failure. */
+    public static function refundLimit(Operation $op, bool $none): ?string
+    {
+        if(!$op->invoice_id||$op->funding_basis!=='paid_invoice'){return null;}
+        $refund=$op->funding['refund']??null;
+        try{
+            if(!$none){
+                $minor=is_array($refund)&&($refund['to']??null)!==null?\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::amount($refund):null;
+                $line=\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)$op->amount);
+                return $minor!==null&&$minor>0&&$minor<$line
+                    ?'Only '.\Paymenter\Extensions\Servers\Domains\Services\Storefront::money(\Paymenter\Extensions\Servers\Domains\Services\PricingRule::decimal($minor)).' was still held. The rest was lost to a dispute or already returned.':null;
+            }
+            $money=\Paymenter\Extensions\Servers\Domains\Services\InvoiceMoney::project((int)$op->invoice_id);
+        }catch(\Throwable){return null;}
+        if($money['ownerHold']){return 'Account on hold: a payment was lost to a bank dispute. The refund waits until the hold is released.';}
+        if(array_filter($money['receipts'],fn($r)=>$r['hold'])){return 'A dispute or refund on this payment is still open. The refund waits until it settles. Automatic checks continue.';}
+        return $money['held']===0?'Nothing left to return. The payment was lost to a dispute or already returned.':null;
     }
     /** What this request paid on its invoice: its own line, so one domain refunded in a cart reads as refunded. A line that
      * cannot be read falls back to the invoice total, which never claims a refund that did not happen. */

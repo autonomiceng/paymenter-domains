@@ -33,16 +33,20 @@ class_alias(HeldPlanCreditGateway::class, 'Paymenter\\Extensions\\Gateways\\Held
 $card = Gateway::create(['extension'=>'HeldPlan','name'=>'Offline card','type'=>'gateway','enabled'=>true]);
 $creditOnly = Gateway::create(['extension'=>'HeldPlanCredit','name'=>'Offline credit','type'=>'gateway','enabled'=>true]);
 $staff = commerceUser();
-$role = Role::create(['name'=>'Refund plans','permissions'=>['admin.domains.manage','admin.invoices.update']]);
+$role = Role::create(['name'=>'Refund plans','permissions'=>['admin.domains.manage','admin.domains.view','admin.invoices.update']]);
 $staff->update(['role_id'=>$role->id]);
 $refunds = new Refunds($clock);
 MoneyReceiptGateway::$lost = false;
 MoneyReceiptGateway::$outcome = 'pending';
-$failures = [];
+$failures = []; $reasons = [];
 $check = static function(bool $condition, string $message) use (&$failures): void {
     if (!$condition) { $failures[] = $message; echo 'HELD_PLAN_FAIL '.$message."\n"; }
 };
 $equal = static fn($expected, $actual, string $message) => $check($expected === $actual, $message);
+$staffFacts = static function($op) use ($staff): array {
+    $prior = Illuminate\Support\Facades\Auth::user(); Illuminate\Support\Facades\Auth::setUser($staff);
+    try { return Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::for($op->fresh()); } finally { $prior ? Illuminate\Support\Facades\Auth::setUser($prior) : Illuminate\Support\Facades\Auth::forgetUser(); }
+};
 $creditWrites = 0;
 Credit::saving(static function() use (&$creditWrites): void { $creditWrites++; });
 $balance = static fn(): int => PricingRule::minor((string)(Credit::where('user_id',$user->id)->value('amount') ?? '0.00'));
@@ -68,6 +72,8 @@ foreach ([[$card,'open'],[$creditOnly,'lost']] as [$gateway,$state]) {
     $equal(null,$refunds->refundHeld($staff,$op->id,'customer_cancelled'),'No completion when held is zero');
     $check(!isset($op->fresh()->funding['refund']),'Zero held writes no immutable refund plan');
     $check(RefundCandidates::query(\Paymenter\Extensions\Servers\Domains\Models\Operation::query())->where('id',$op->id)->exists(),'Zero held remains a refund candidate');
+    $facts=$staffFacts($op);$reasons[$state]=$facts['refund_sub']??null;
+    $check(($facts['refund']??null)==='No credit added'&&is_string($reasons[$state])&&$reasons[$state]!=='','Staff see why a held refund waits ('.$state.')');
     $funding = $op->fresh()->getRawOriginal('funding');
     $refunds->creditRejected($op->id);
     $equal($funding,$op->fresh()->getRawOriginal('funding'),'Retry with zero held writes no funding');
@@ -83,6 +89,8 @@ foreach ([[$card,'open'],[$creditOnly,'lost']] as [$gateway,$state]) {
         $equal($sends,MoneyReceiptGateway::$sends,'Won dispute does not return to the card');
     }
 }
+
+$check(($reasons['open']??null)!==($reasons['lost']??null),'An open dispute and a lost one give staff different reasons');
 
 // Receipt identity determines the split: a won card dispute and an unsupported gateway become credit,
 // while the other card receipt keeps its original-payment allocation.
@@ -103,6 +111,7 @@ $equal([$original->id,200],[$plan['allocations'][0]['transaction_id'],$plan['all
     'Card allocation has the correct receipt identity and amount');
 $refunds->creditRejected($op->id);
 $equal($before+$gross-200,$balance(),'Pending card retry cannot duplicate bridge credit');
+$equal(null,Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::refundLimit($op->fresh(),false),'A return of the full line has no limit reason');
 
 // Credit-only fallback retains held shares after a partial loss, rather than gross receipts.
 [$op,$invoice]=$held('held-plan-credit-only-placeholder.com');$gross=PricingRule::minor($op->amount);
@@ -121,6 +130,8 @@ $equal($before+$gross-100,$balance(),'Credit-only retries never duplicate credit
 $equal($writes+1,$creditWrites,'Credit-only fallback saves credit exactly once across retries');
 $equal($funding,$op->fresh()->getRawOriginal('funding'),'Credit-only retries retain the immutable plan');
 $equal($sends,MoneyReceiptGateway::$sends,'Credit-only fallback never sends a card return');
+$limit=Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::refundLimit($op->fresh(),false);
+$check($limit!==null&&str_contains((string)($staffFacts($op)['refund_sub']??''),$limit),'Staff see why the return is smaller than the line');
 
 // Approval survives an unreadable ledger, with no money or plan, for the ordinary retry.
 [$op,$invoice]=$held('held-plan-unreadable-placeholder.com');$gross=PricingRule::minor($op->amount);
