@@ -167,7 +167,8 @@ td.domains-history-detail{min-width:20rem}
 /* Helper lines keep a readable measure on wide sheets. */
 .domains-panel-row-v .domains-panel-sub{max-width:80ch}
 :where(.domains-panel-trace){display:grid;gap:12px;margin:0;padding:0;list-style:none}
-:where(.domains-panel-step){display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px}
+:where(.domains-panel-step){display:block}
+:where(.domains-panel-step-h){display:flex;flex-wrap:wrap;align-items:baseline;gap:0 8px}
 :where(.domains-panel-step-d){font-size:.75rem;line-height:1.125rem;color:var(--panel-fg-2,inherit)}
 :where(.domains-panel-step-w){font-weight:500;white-space:nowrap}
 :where(.domains-panel-step-a){display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin-top:4px}:where(.domains-panel-step-a:empty){display:none}
