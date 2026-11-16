@@ -404,6 +404,11 @@ expect(!DomainQueries::status(Domain::whereKey($d->id),['under_review'])->exists
 same('In progress',RequestFacts::status($op->fresh())['label'],'Pending transfer request is in progress');
 expect(!Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::status(Operation::whereKey($op->id),['under_review'])->exists(),'Pending transfer is excluded from staff review filters');
 expect(Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::status(Operation::whereKey($op->id),['in_progress'])->exists(),'Pending transfer is included in its displayed status filter');
+// The sweep clears its review alert, so an older saved one and the domain page head ask nothing of staff either.
+Auth::setUser($viewer);ObligationAlerts::record($d,'operation_review',time()-60,(int)$op->id);$d=$d->fresh();
+same([],Paymenter\Extensions\Servers\Domains\Admin\Support\StaffDomainInputs::for([$d])[$d->id]['alerts'],'A saved review alert on the automatic wait is outdated');
+same(null,DomainFacts::notice($d),'The domain page head names no request to check during the automatic wait');
+expect(!DomainQueries::alerting(Domain::whereKey($d->id))->exists(),'The open alerts count leaves the automatic wait out');
 
 $d=$row('registration_pending','register','held','staff_review_required');
 expect(DomainQueries::alerting(Domain::whereKey($d->id))->exists(),'A visible staff task counts even before a saved alert is written');
