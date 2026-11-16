@@ -11,16 +11,16 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account, Adoption, Domain, Oper
 /** Internal billing/save prefix, joining exactly one caller-owned transaction. Never performs I/O. */
 final class HoldingLocks
 {
-    public static function take(Domain $seed, ?int $staffId = null, bool $advisory = false, array $additionalServices = [], bool $completeInvoices = false, bool $foreignInvoices = false, bool $released = false, bool $nativeReceipt = false, ?\Closure $beforeCatalogue = null, ?Capabilities $catalogue = null, ?InvoiceScope $scope = null, ?int $firstInvoice = null): array
+    public static function take(Domain $seed, ?int $staffId = null, bool $advisory = false, array $additionalServices = [], bool $completeInvoices = false, bool $foreignInvoices = false, bool $released = false, bool $nativeReceipt = false, ?\Closure $beforeCatalogue = null, ?Capabilities $catalogue = null, ?InvoiceScope $scope = null): array
     {
-        if (($scope || $firstInvoice !== null) && !MoneyDecisions::running()) { throw new \LogicException('Invoice scope is taken only by the money runner.'); }
+        if ($scope && !MoneyDecisions::running()) { throw new \LogicException('Invoice scope is taken only by the money runner.'); }
         if (!$advisory && ($nativeReceipt ? DB::transactionLevel() < 1 : DB::transactionLevel() !== 1)) { throw new \LogicException('Holding locks require the outer transaction.'); }
         ['user' => $user, 'staff' => $staff, 'credit' => $credit, 'invoices' => $invoices, 'items' => $items,
             'transactions' => $transactions, 'orders' => $orders, 'services' => $services, 'products' => $products,
             'plans' => $plans, 'service' => $service, 'product' => $product, 'plan' => $plan, 'cancel' => $cancel,
             'configs' => $configs, 'properties' => $properties, 'markers' => $markers, 'tax' => $tax,
             'upgrades' => $upgrades, 'links' => $links, 'opIds' => $opIds]
-            = $nativeLocks = HoldingNativeLocks::take((int) $seed->user_id, (int) $seed->service_id, $staffId, $advisory, $seed, adoption: $foreignInvoices, additionalServices: $additionalServices, completeInvoices: $completeInvoices, nativeReceipt: $nativeReceipt, invoice: $scope?->invoiceId, firstInvoice: $firstInvoice);
+            = $nativeLocks = HoldingNativeLocks::take((int) $seed->user_id, (int) $seed->service_id, $staffId, $advisory, $seed, adoption: $foreignInvoices, additionalServices: $additionalServices, completeInvoices: $completeInvoices, nativeReceipt: $nativeReceipt, invoice: $scope?->invoiceId);
         // A pay-check guard takes its ENTIRE offer batch after native locks, before any domain/operation.
         if ($beforeCatalogue) { $beforeCatalogue(); }
         $order = $orders->firstWhere('id', $service->order_id);
