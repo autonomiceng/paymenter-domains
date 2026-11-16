@@ -20,7 +20,7 @@ final class ObligationAlerts
         'unknown_price'=>'Renewal price missing. Check pricing before you contact the customer.',
         'unknown_cost'=>"Cost missing. Check the registrar account's price.",
         'schedule_binding'=>'Reminder account changed. Check the schedule before you turn on notices.',
-        'account_money_hold'=>'Account on hold: a payment was lost to a bank dispute. Check the dispute and the customer, then release the hold.',
+        'account_money_hold'=>'Account on hold: a payment was lost to a bank dispute. Release it once the customer has paid it back or you accept the loss.',
         'dispute_recovery'=>'Bank dispute recovery needs a check. Automatic checks continue.',
         'refund_repair'=>'Money return needs a check. Review the request, invoice and gateway outcome. Do not return it again. Automatic checks continue.',
         'funds_wait_review'=>'Registrar funds wait ended. Check the request outcome before returning money.',
