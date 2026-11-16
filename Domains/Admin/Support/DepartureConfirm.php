@@ -75,13 +75,15 @@ final class DepartureConfirm
             ->disabled(fn()=>self::preview($d)['block']!==null)
             ->tooltip(fn()=>($b=self::preview($d)['block'])?self::line($b,$d)[1]:null)
             ->modalHeading(self::LABEL)->modalDescription(fn()=>new HtmlString('<span class="domains-mono">'.e($d->domain).'</span> '.e('is not in our registrar account.')))->modalSubmitActionLabel(self::LABEL)->modalWidth('2xl')
+            // Cancel then Confirm, right-aligned from 640px; stacked on phones with Confirm on top (staff-styles, mock 06).
+            ->modalFooterActionsAlignment(\Filament\Support\Enums\Alignment::End)
             ->modalSubmitAction(fn(Action $action)=>$action->color('danger'))
             ->schema(fn()=>[
                 Hidden::make('review_key')->default(fn()=>StaffHoldingReview::ticket((int)Auth::id(),(int)$d->id,HoldingDeparture::ACTION,
                     StaffHoldingReview::stamp(HoldingLocks::take($d,advisory:true)),app(Clock::class))),
-                Radio::make('reason')->label('Reason')->required()->live()->options(array_map(fn($r)=>rtrim($r,'.'),HoldingDeparture::REASONS)),
+                Radio::make('reason')->label('Reason')->required()->markAsRequired(false)->live()->options(array_map(fn($r)=>rtrim($r,'.'),HoldingDeparture::REASONS)),
                 // The helper sits under the label, before the field, so it is read before typing (mock 06).
-                Textarea::make('note')->label('Staff note')->required()->minLength(5)->maxLength(500)->rows(2)
+                Textarea::make('note')->label('Staff note (required)')->required()->markAsRequired(false)->minLength(5)->maxLength(500)->rows(2)
                     ->extraInputAttributes(['aria-describedby'=>'domains-departure-note-help-'.$d->id])
                     ->belowLabel(Text::make('Only staff see it. Say how you know the domain moved.')->extraAttributes(['id'=>'domains-departure-note-help-'.$d->id]))
                     ->rules(['regex:'.StaffReason::SINGLE_LINE])->validationMessages(['regex'=>'Use one line.']),
