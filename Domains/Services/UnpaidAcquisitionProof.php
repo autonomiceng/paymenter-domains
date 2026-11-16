@@ -9,6 +9,7 @@ final class UnpaidAcquisitionProof
     public const CODE='acquisition_cancelled_unpaid';
     public static function require(array $l,bool $terminal=false): Operation
     {
+        InvoiceScope::requireFull($l);
         $d=$l['domain'];$s=$l['service'];$ops=$l['operations'];$op=$ops->first();
         if($ops->count()!==1||!$op||!in_array($op->action,['register','transfer'],true)||$op->funding_basis!=='paid_invoice'
             ||$d->provider_expires_at!==null||$d->provider_domain_id!==null||$d->provider_order_id!==null
@@ -47,6 +48,7 @@ final class UnpaidAcquisitionProof
     /** The payment half of require(), so a page can hide what the writer would refuse. */
     public static function paid(array $l): bool
     {
+        InvoiceScope::requireFull($l);
         $invoices=$l['operations']->pluck('invoice_id')->filter();
         return $l['invoices']->whereIn('id',$invoices)->contains('status','paid')||self::money($l,$invoices);
     }

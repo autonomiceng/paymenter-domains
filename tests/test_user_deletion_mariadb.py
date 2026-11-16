@@ -35,8 +35,34 @@ def exercise(command, php_args, env, scratch):
                         child.kill(); child.wait()
     if (barriers/'checkout-lock-wait').read_text() != 'proved':
         raise AssertionError('Real user row lock wait was not observed')
+    refunds = refund_contention(command, php_args, env, scratch) if env['SCHEMA_PREFIX'] == '' else None
     return {'complete': True, 'prefix': env['SCHEMA_PREFIX'], 'intent_first': True,
-            'checkout_first_lock_wait': True, 'older_repeatable_read': True, 'real_provider_calls': 0}
+            'checkout_first_lock_wait': True, 'older_repeatable_read': True, 'refund_contention': refunds, 'real_provider_calls': 0}
+
+
+def refund_contention(command, php_args, env, scratch):
+    """Refund credit after real deadlocks and lock wait timeouts, on this scenario's database."""
+    barriers = scratch/'refund-contention'
+    barriers.mkdir(mode=0o700)
+    env = dict(env, REFUND_BARRIERS=str(barriers))
+    script = str(ROOT/'tests/Support/mariadb-refund-contention.php')
+    with (barriers/'holder.stdout').open('wb') as stdout, (barriers/'holder.stderr').open('wb') as stderr:
+        holder = subprocess.Popen(php_args+[script], cwd=ROOT, env=dict(env, REFUND_ROLE='holder'), stdout=stdout, stderr=stderr)
+        try:
+            result = command('refund-contention', php_args+[script], env=dict(env, REFUND_ROLE='victim'), timeout=120)
+            if holder.wait(timeout=45) != 0:
+                raise AssertionError('Refund contention holder failed; inspect private logs: '+str(barriers))
+        finally:
+            if holder.poll() is None:
+                holder.terminate()
+                try:
+                    holder.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    holder.kill(); holder.wait()
+    proof = json.loads(result.stdout.decode().splitlines()[-1])
+    if not proof['complete'] or proof['cases'] != ['retry', 'deferred', 'timeout']:
+        raise AssertionError('Wrong refund contention proof')
+    return proof['cases']
 
 
 if __name__ == '__main__':

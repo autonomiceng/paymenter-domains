@@ -187,9 +187,14 @@ $case('retained sending key with no gateway row',function()use($make,$reserve,$r
     $equal([[$a['key'],$a['amount_minor']]],array_slice(ReleaseGateway::$attempts,$before),'Successful null status resends a retained sending key');
     $equal('refunded',$op->fresh()->funding['receipt_return_results'][$a['key']]['state'],'Retained sending key completes after retry');
 });
-$case('release coverage',function()use($make,$reserve,$observe,$refunds,$equal,$balance,$check):void{
+// Each transaction takes the holding prefix once: release reuses its caller's locks instead of retaking them after the ledger read.
+$prefix=['on'=>false,'takes'=>0,'begins'=>0];
+DB::listen(static function($q)use(&$prefix):void{if($prefix['on']&&preg_match('/from "users" where "users"\."id" in \(.*\) order by "id" asc/',$q->sql)){$prefix['takes']++;}});
+\Illuminate\Support\Facades\Event::listen(\Illuminate\Database\Events\TransactionBeginning::class,static function()use(&$prefix):void{if($prefix['on']){$prefix['begins']++;}});
+$case('release coverage',function()use($make,$reserve,$observe,$refunds,$equal,$balance,$check,&$prefix):void{
     $op=$make('coverage');$a=$reserve($op);$before=$balance();$sends=MoneyReceiptGateway::$sends;
-    $observe($op,'lost',100);$refunds->creditRejected($op->id);$saved=$op->fresh();$r=$saved->funding['receipt_return_results'][$a['key']]??[];
+    $observe($op,'lost',100);$prefix['on']=true;$refunds->creditRejected($op->id);$prefix['on']=false;$saved=$op->fresh();
+    $equal($prefix['begins'],$prefix['takes'],'Each money transaction takes the holding locks once, including its release');$r=$saved->funding['receipt_return_results'][$a['key']]??[];
     $equal('released',$r['state']??null,'Reduced receipt releases its unsent allocation');
     $equal($a['amount_minor']-100,$r['credit_minor']??null,'Release pays only the still held share');
     $equal($before+$a['amount_minor']-100,$balance(),'Released credit is saved exactly');

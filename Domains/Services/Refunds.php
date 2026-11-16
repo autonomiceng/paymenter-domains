@@ -10,6 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account, Operation};
 /** Proved no-send returns. Commit credit or a receipt plan atomically, then let the gateway return its receipts. */
 final readonly class Refunds
 {
+    private const REJECTED='refund_rejected', CLOSED='refund_closed';
     public function __construct(private Clock $clock) {}
     public function refundHeld(User $actor, int $id, string $reason, ?StaffOperationReview $review = null): ?array
     {
@@ -63,9 +64,10 @@ final readonly class Refunds
             $seen->refresh();
             if (ReceiptReturns::malformed($seen) || ReceiptReturns::outstanding($seen)>0 || (!RefundProof::retired($seen, $seen->domain)&&!FundsWaits::closedRenewal($seen,$seen->domain))) { return $returned; }
         }
-        $seed = $seen->domain()->firstOrFail();
-        try { $result = DB::transaction(function () use ($seed, $id, $review): ?array {
-            $l = HoldingLocks::take($seed, $review?->actorId); $review?->check($l); $op = $l['operations']->firstWhere('id', $id);
+        // A staff review is answered now and never queued; every other caller is automatic and queues a deferral.
+        $decision = MoneyDecisions::run(new MoneyRequest($seen->domain()->firstOrFail(), $review ? null : self::REJECTED, $id, $review?->actorId),
+            function (array $l) use ($id, $review): ?array {
+            $review?->check($l); $op = $l['operations']->firstWhere('id', $id);
             // A cancelled in-flight receipt and later money use incremental returns; neither assumes full settlement.
             if ($op?->state === 'rejected' && (RefundProof::retired($op, $l['domain'])
                 || ((isset($op->funding['refund'])||isset($op->attempt['terminal']['transactions']))&&FundsWaits::closedRenewal($op,$l['domain'])))) { return $this->creditLate($op, $l, $review); }
@@ -117,8 +119,12 @@ final readonly class Refunds
             $review?->record($l);
             return ['amount' => $payment['amount'], 'currency' => 'USD'];
         });
-        if (ReceiptReturns::plans(Operation::findOrFail($id))) { return ReceiptReturns::resume($id, $this->clock->now()) ?? $result ?? ($returned ?? null); }
-        RefundRepairs::resolved($id, $this->clock->now()->getTimestamp()); return $result;
+        if ($decision->outcome === MoneyOutcome::Deferred) { if ($review) { throw new StaffReviewRefused(MoneyDecisions::BUSY); } return $returned ?? null; }
+        try {
+            if ($decision->error) { throw $decision->error; }
+            $result = $decision->value;
+            if (ReceiptReturns::plans(Operation::findOrFail($id))) { return ReceiptReturns::resume($id, $this->clock->now()) ?? $result ?? ($returned ?? null); }
+            RefundRepairs::resolved($id, $this->clock->now()->getTimestamp()); return $result;
         } catch (\Throwable $e) { RefundRepairs::failed($id, $this->clock->now()->getTimestamp()); throw $e; }
     }
     /** Return incremental net funds received after retirement, however little or much arrives. */
@@ -148,33 +154,51 @@ final readonly class Refunds
     }
     /** A stale pay form can pay an order we closed. Return its funds only with the retained no-send proof.
      * One order takes the held invoice pool, with every peer return counted under the invoice locks.
-     * Funding is encrypted, so SQL cannot skip settled orders. The cursor gives every order a turn; losing it only restarts the pass.
-     * Whatever is not credited goes to staff.
+     * Funding is encrypted, so SQL cannot skip settled orders. The cursor gives every order a turn and moves past an order
+     * only once its outcome is durable: credited, unchanged, queued after contention or with staff. Losing it restarts the pass.
+     * Deferred refund work runs first within its own budget, so new orders keep theirs.
      * @return list<int> Domains that got credit, for the caller's notice. */
     public function creditRetired(Account $account): array
     {
         OperationClaims::outside(); $credited = []; $inspect = []; $cursor = 'domains.closed-credit-cursor.'.$account->server_id;
-        $ids = Operation::where('server_id', $account->server_id)->where('state', 'rejected')->where('safe_code', UnpaidAcquisitionProof::CODE)->where('id', '>', (int) Cache::get($cursor, 0))
-            ->whereIn('invoice_id', InvoiceTransaction::select('invoice_id')->where('status', InvoiceTransactionStatus::Succeeded))
-            ->selectRaw('min(id) as id')->groupBy('invoice_id')->orderBy('id')->limit(100)->pluck('id');
-        Cache::forever($cursor, $ids->count() === 100 ? $ids->last() : 0);
-        $failure = null;
+        $failure = null; $from = (int) Cache::get($cursor, 0); $reached = $from; $complete = $kept = false;
         try {
+            foreach (MoneyDecisions::queued((int) $account->server_id, 25, [self::CLOSED, self::REJECTED]) as $work) {
+                $op = Operation::find($work->subject_id);
+                try {
+                    if ($op && $work->kind === self::CLOSED) {
+                        if (!ReceiptReturns::plans($op) && ReceiptReturns::malformed($op)) { throw new \DomainException('Retained return plan needs review.'); }
+                        if ($this->creditClosed($op) !== null) { $credited[] = (int) $op->domain_id; }
+                        $inspect[(int) $op->domain_id] = true;
+                    } elseif ($op && $work->kind === self::REJECTED) { $this->creditRejected((int) $op->id); }
+                } catch (MoneyWorkUnqueued $e) { throw $e; }
+                catch (\Throwable $e) {
+                    try { RefundRepairs::failed((int) $work->subject_id, $this->clock->now()->getTimestamp()); }
+                    catch (\Throwable $repair) { $failure ??= $repair; continue; } // Kept queued without its repair.
+                }
+                MoneyDecisions::done($work);
+            }
+            $ids = Operation::where('server_id', $account->server_id)->where('state', 'rejected')->where('safe_code', UnpaidAcquisitionProof::CODE)->where('id', '>', $from)
+                ->whereIn('invoice_id', InvoiceTransaction::select('invoice_id')->where('status', InvoiceTransactionStatus::Succeeded))
+                ->selectRaw('min(id) as id')->groupBy('invoice_id')->orderBy('id')->limit(100)->pluck('id');
             foreach (Operation::whereIn('id', $ids)->orderBy('id')->get() as $op) {
                 try {
                     if (!ReceiptReturns::plans($op) && ReceiptReturns::malformed($op)) { throw new \DomainException('Retained return plan needs review.'); }
-                    if ($this->creditClosed($op) !== null) { $credited[] = (int) $op->domain_id; continue; }
+                    if ($this->creditClosed($op) !== null) { $credited[] = (int) $op->domain_id; $reached = $kept ? $reached : (int) $op->id; continue; }
                 }
+                catch (MoneyWorkUnqueued $e) { throw $e; }
                 catch (\Throwable $e) {
                     try { RefundRepairs::failed((int)$op->id, $this->clock->now()->getTimestamp()); }
-                    catch (\Throwable $repair) { $failure ??= $repair; }
+                    catch (\Throwable $repair) { $failure ??= $repair; $kept = true; } // Later orders still run; the cursor stays here.
                     try { logger()->warning('Domains late payment stays with staff.', ['operation_id' => (int) $op->id, 'exception_class' => $e::class]); }
                     catch (\Throwable $logging) { $failure ??= $logging; }
                 }
-                $inspect[(int)$op->domain_id] = true;
+                $inspect[(int)$op->domain_id] = true; $reached = $kept ? $reached : (int) $op->id;
             }
+            $complete = true;
         } catch (\Throwable $e) { $failure ??= $e; }
         finally {
+            Cache::forever($cursor, $complete && !$kept ? ($ids->count() === 100 ? $ids->last() : 0) : $reached);
             // Inspect final evidence once per domain, even if a later invoice or its diagnostics failed.
             foreach (array_keys($inspect) as $id) {
                 try { app(AcquisitionRetirement::class)->inspect($id); }
@@ -191,13 +215,16 @@ final readonly class Refunds
         // An unreadable return stays with staff before any allocation arithmetic; resume() records a plan's repair itself.
         if (ReceiptReturns::malformed($fresh)) { RefundRepairs::failed((int)$seen->id, $this->clock->now()->getTimestamp()); return null; }
         if (ReceiptReturns::outstanding($fresh)>0) { return null; }
-        $result = DB::transaction(function () use ($seen): ?array {
-            $l = HoldingLocks::take($seen->domain()->firstOrFail(), released: true); $op = $l['operations']->firstWhere('id', $seen->id);
+        $decision = MoneyDecisions::run(new MoneyRequest($seen->domain()->firstOrFail(), self::CLOSED, (int) $seen->id, released: true), function (array $l) use ($seen): ?array {
+            $op = $l['operations']->firstWhere('id', $seen->id);
             if (!$op || !UnpaidAcquisitionProof::terminal($op, $l['domain'])) { throw new \DomainException('Closed order proof is unavailable.'); }
             // Paid already started this invoice's services. Credit on top would give the money back and keep them, so a person decides.
             if ($l['invoices']->firstWhere('id', $op->invoice_id)?->status !== 'cancelled') { return null; }
             return $this->creditLate($op, $l, null);
         });
+        if ($decision->outcome === MoneyOutcome::Deferred) { return $returned; }
+        if ($decision->error) { throw $decision->error; }
+        $result = $decision->value;
         if (ReceiptReturns::plans($seen->fresh())) { return ReceiptReturns::resume((int)$seen->id, $this->clock->now()) ?? $result ?? $returned; }
         return $result;
     }

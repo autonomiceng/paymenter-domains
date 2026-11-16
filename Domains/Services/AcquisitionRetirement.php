@@ -81,7 +81,7 @@ final readonly class AcquisitionRetirement
     /** The rest of a closed invoice stays payable. Lines bound to an order stay as history; the customer's old invoice keeps them. */
     private static function reissue(Invoice $old,array $l): ?Invoice
     {
-        $bound=Operation::where('invoice_id',$old->id)->pluck('invoice_item_id')->all();
+        InvoiceScope::cover($l,(int)$old->id);$bound=Operation::where('invoice_id',$old->id)->pluck('invoice_item_id')->all();
         $rest=$l['items']->where('invoice_id',$old->id)->whereNotIn('id',$bound);
         if($rest->isEmpty()){return null;}
         $new=new Invoice([...$old->only(['user_id','currency_code','due_at']),'status'=>'pending']);$new->send_create_email=false;$new->save();
@@ -122,7 +122,7 @@ final readonly class AcquisitionRetirement
     /** Alert cleanup only. This never authorizes retirement, a send or a money return. Caller owns HoldingLocks. */
     private function retirementObsolete(array $l): bool
     {
-        $d=$l['domain'];$acquisitions=$l['operations']->whereIn('action',['register','transfer']);$op=$acquisitions->first();
+        InvoiceScope::requireFull($l);$d=$l['domain'];$acquisitions=$l['operations']->whereIn('action',['register','transfer']);$op=$acquisitions->first();
         if($acquisitions->count()!==1||!$op||$op->funding_basis!=='paid_invoice'
             ||array_diff(array_keys($op->funding??[]),['claim','seal'])
             ||isset($op->policy['native_acquisition_closure'])||isset($op->policy['unpaid_retirement'])){return false;}

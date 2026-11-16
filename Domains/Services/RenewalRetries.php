@@ -51,7 +51,7 @@ final class RenewalRetries
     {
         $p=$op->policy['unsent_retry']??[];
         if($op->state!=='rejected'||$op->safe_code!=='renewal_definitely_unsent'||($p['number']??0)!==($op->retry_number??0)||($p['proof_hash']??null)!==EnomAnswers::identity($op)){return false;}
-        try{RefundProof::requireUnsent($op,$d);}catch(\Throwable){return false;}
+        try{RefundProof::requireUnsent($op,$d);}catch(\PDOException $e){throw $e;}catch(\Throwable){return false;}
         $child=$d->operations()->where('operation_key',$p['next_key']??'')->first();
         return $child&&$child->action==='renew'&&$child->account_fingerprint===$op->account_fingerprint
             &&$child->base_expires_at==$op->base_expires_at&&$child->term===$op->term&&$child->amount===$op->amount

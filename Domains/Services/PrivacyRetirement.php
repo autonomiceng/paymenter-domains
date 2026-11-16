@@ -51,7 +51,7 @@ final class PrivacyRetirement
             $last=$issued;
             foreach($a['management_deferrals']??[] as $value){$date=self::instant($value);if(!$date||$date<$last||$date>$at){return false;}$last=$date;}
             return true;
-        }catch(\Throwable){return false;}
+        }catch(\PDOException $e){throw $e;}catch(\Throwable){return false;}
     }
     private static function instant(mixed $value): ?\DateTimeImmutable
     {

@@ -14,6 +14,7 @@ final class InvoiceMoney
     public static function load(array $l, int $invoiceId, ?string $exclude = null): array
     {
         if (DB::transactionLevel() < 1 || ($l['advisory'] ?? true)) { throw new \LogicException('Money reads require holding locks.'); }
+        InvoiceScope::cover($l, $invoiceId);
         $invoice = $l['invoices']->firstWhere('id', $invoiceId);
         if (!$invoice || (int)$invoice->user_id !== (int)$l['user']->id) { throw new \DomainException('Invoice owner changed.'); }
         $peers = Operation::where('invoice_id', $invoiceId)->orderBy('id')->lockForUpdate()->get();
