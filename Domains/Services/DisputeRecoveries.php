@@ -79,6 +79,7 @@ final readonly class DisputeRecoveries
     /** Reuses the caller's locks. No runner, remote sends or notices; load() uses this for a newly observed owed loss. */
     public static function locked(array $l,int $invoiceId,array $entry,\DateTimeImmutable $now,?array $money=null): void
     {
+        if(DB::transactionLevel()<1||($l['advisory']??true)){throw new \LogicException('Dispute recovery requires holding locks.');}
         InvoiceScope::cover($l,$invoiceId);
         $id=self::dispute($entry)??throw new \DomainException('Lost dispute required.');
         $peers=Operation::where('invoice_id',$invoiceId)->orderBy('id')->lockForUpdate()->get();$op=$peers->firstOrFail();

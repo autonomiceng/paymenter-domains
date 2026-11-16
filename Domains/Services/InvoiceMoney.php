@@ -7,7 +7,7 @@ use App\Helpers\ExtensionHelper;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 
-/** Read-only invoice projection. Amounts are signed integer minor units; no balance is persisted. */
+/** Signed invoice amounts, derived from retained evidence. Locked loads recover newly observed lost credit; display reads use project(). */
 final class InvoiceMoney
 {
     /** HoldingLocks must already own the user, credit, invoice and native transaction rows. */
