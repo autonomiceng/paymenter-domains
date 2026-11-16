@@ -36,7 +36,8 @@ final class HoldingNativeLocks
         if ($staff) { $staff->setRelation('role', $staff->role()->when(!$advisory,fn($q)=>$q->lockForUpdate())->first()); }
         $user->setRelation('properties', $user->properties()->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get());
         $credit = $user->credits()->where('currency_code', 'USD')->when(!$advisory,fn($q)=>$q->lockForUpdate())->first();
-        if ($invoice !== null && (int) $invoices->first()?->user_id !== (int) $user->id) { throw new MoneyScopeChanged('The scoped invoice changed owner.'); }
+        // Native receipts check owner mismatch against current renewal membership in HoldingLocks.
+        if ($invoice !== null && (!$nativeReceipt || $invoices->isEmpty()) && (int) $invoices->first()?->user_id !== (int) $user->id) { throw new MoneyScopeChanged('The scoped invoice changed owner.'); }
         $items = InvoiceItem::where(fn ($q) => $q->whereIn('invoice_id', $ids)->when($adoption, fn ($q) => $q->orWhere(fn ($q) => $q->where('reference_type', (new Service)->getMorphClass())->where('reference_id', $serviceId))))->when($advisory&&!$completeInvoices,fn($q)=>$q->where(fn ($q) => $q->whereIn('id', $itemIds)->when($adoption, fn ($q) => $q->orWhere(fn ($q) => $q->where('reference_type', (new Service)->getMorphClass())->where('reference_id', $serviceId)))))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         // A current item read must cover discovery, even if an older read view hid a foreign invoice.
         // Missing invoice locks abort here, before any order/service/ledger locks; never acquire them late.
