@@ -186,7 +186,11 @@ $miss = $closed('contention-scope-miss-placeholder.com'); $before = $balance();
 $stale = Operation::findOrFail($miss->id); $stale->invoice_id = (int) Invoice::where('user_id', $miss->domain->user_id)->where('id', '!=', $miss->invoice_id)->orderBy('id')->value('id');
 (new ReflectionMethod(Refunds::class, 'creditClosed'))->invoke($refunds, $stale);
 same([$before + 300, [], false], [$balance(), $work(), $repaired($miss)], 'A closed order outside its scope is credited on the full scope, not skipped');
-foreach ([fn() => new MoneyRequest($op->domain, scope: MoneyScope::Invoice), fn() => new MoneyRequest($op->domain, staffId: (int)$staff->id, scope: MoneyScope::Invoice, invoiceId: (int)$op->invoice_id),
+$declared = new MoneyRequest($op->domain, scope: MoneyScope::Invoice, invoiceId: (int)$op->invoice_id, retryRecord: 'dispute_recovery');
+same([null, 'dispute_recovery'], [$declared->kind, $declared->retryRecord], 'An invoice decision may declare its separately durable retry record');
+foreach ([fn() => new MoneyRequest($op->domain, retryRecord: '', scope: MoneyScope::Invoice, invoiceId: (int)$op->invoice_id),
+    fn() => new MoneyRequest($op->domain, staffId: (int)$staff->id, retryRecord: 'dispute_recovery', scope: MoneyScope::Invoice, invoiceId: (int)$op->invoice_id),
+    fn() => new MoneyRequest($op->domain, scope: MoneyScope::Invoice), fn() => new MoneyRequest($op->domain, staffId: (int)$staff->id, scope: MoneyScope::Invoice, invoiceId: (int)$op->invoice_id),
     fn() => new MoneyRequest($op->domain, scope: MoneyScope::Invoice, invoiceId: (int)$op->invoice_id),
     fn() => DB::transaction(fn() => HoldingLocks::take($op->domain, released: true, scope: new InvoiceScope((int)$op->invoice_id)))] as $refused) {
     try { $refused(); throw new RuntimeException('Expected a refused scope'); } catch (LogicException $e) { same(false, $e instanceof MoneyScopeChanged, 'A malformed scope request is refused'); }
