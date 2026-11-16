@@ -47,13 +47,16 @@ expect(str_contains($costSub($op),ObligationAlerts::LABELS['below_cost']),'The c
 expect(!str_contains($costSub($later),ObligationAlerts::LABELS['below_cost']),'The cancelled renewal has no margin warning of its own: '.$costSub($later));
 same(1,DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code','below_cost')->whereNull('resolved_at')->count(),'Only the completed loss stays open');
 // Price evidence that can't be read keeps the loss and its review open, though both were recorded at an earlier expiry.
+$originalReview=DB::table('domains_obligation_alerts')->where('operation_id',$op->id)->where('code','operation_review')->whereNull('resolved_at')->sole();
 $policy=$op->fresh()->getRawOriginal('policy');$expiry=$d->fresh()->provider_expires_at;
 DB::table('domains_domains')->where('id',$d->id)->update(['provider_expires_at'=>$expiry->addYear()->format('Y-m-d')]);
 DB::table('domains_operations')->where('id',$op->id)->update(['policy'=>'unreadable-price-fixture']);
 $moved=$d->fresh();$now=$clock->now()->getTimestamp();
 ObligationAlerts::finish($moved,ObligationAlerts::retained(['domain'=>$moved,'operations'=>$moved->operations()->get()],$now),$now);
 expect($alert($op)->whereNull('resolved_at')->exists(),'Unreadable price evidence keeps the open loss alert');
-expect(DB::table('domains_obligation_alerts')->where('operation_id',$op->id)->where('code','operation_review')->whereNull('resolved_at')->exists(),'Unreadable evidence keeps the open execution review');
+same(null,DB::table('domains_obligation_alerts')->where('id',$originalReview->id)->sole()->resolved_at,'Unreadable evidence keeps the original execution review open at its earlier expiry');
+same(ObligationAlerts::UNKNOWN,ObligationAlerts::review($op->fresh(),$moved->operations()->get(),$moved,$now),'Unreadable succeeded renewal policy has an unknown review state');
+expect(!ObligationAlerts::outdated($originalReview,$op->fresh(),$moved->operations()->get(),$moved),'Unreadable renewal policy cannot make the review outdated or interrupt inspection');
 DB::table('domains_operations')->where('id',$op->id)->update(['policy'=>$policy]);DB::table('domains_domains')->where('id',$d->id)->update(['provider_expires_at'=>$expiry->format('Y-m-d')]);
 
 // Cancelled unpaid, refused and other finished requests must settle an already-open margin alert.

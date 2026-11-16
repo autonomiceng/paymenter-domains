@@ -127,7 +127,11 @@ final class ObligationAlerts
     /** Whether a request needs a staff check: held or unconfirmed, or a saved result that still needs a person, unless it is a wait the system clears by itself. */
     public static function review(Operation $op,Collection $operations,Domain $d,int $now):string
     {
-        try{return !self::waiting($op,$d,$now)&&(in_array($op->state,['held','uncertain'],true)||self::flagged($op,$operations,$d))?self::ACTIVE:self::CLEAR;}
+        try{
+            // Read before flagged()'s conservative fallback so unknown evidence retains the original alert keys.
+            $op->getAttribute('policy');
+            return !self::waiting($op,$d,$now)&&(in_array($op->state,['held','uncertain'],true)||self::flagged($op,$operations,$d))?self::ACTIVE:self::CLEAR;
+        }
         catch(\Throwable){return self::UNKNOWN;}
     }
     /** Sync stopped for this holding's current identity, by the detail rule (ObservationRecords::stopped). */

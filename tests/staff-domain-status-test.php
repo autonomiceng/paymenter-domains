@@ -440,6 +440,23 @@ $records='Paymenter\\Extensions\\Servers\\Domains\\Services\\ObservationRecords'
 $heldPage=collect(range(1,3))->map(function()use($row,$records){$h=$row('active',null,null);$records::hold($h,'caa_unsupported',new DateTimeImmutable());return $h->fresh();});
 $queries=static function(Illuminate\Support\Collection $page)use($records):int{DB::enableQueryLog();DB::flushQueryLog();$records::stoppedIds($page);$n=count(DB::getQueryLog());DB::disableQueryLog();return $n;};
 same($queries($heldPage->take(1)),$queries($heldPage),'Three held domains read in the same number of queries as one');
+// Disabled record reads need recovery only without a next read; active holdings and transient retries keep theirs.
+$heldWork=collect();$stoppedExpected=[];
+foreach ([['grace','records_disabled',true],['active','read_failed',false],['active','records_disabled',false]] as [$status,$code,$stopped]) {
+    $h=$row($status,null,null);Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::queueInitial($h,new DateTimeImmutable());
+    Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::current($h)->update(['safe_code'=>$code,
+        'tries'=>Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::LIMIT-1,'due_at'=>time()+600]);
+    $records::hold($h,'caa_unsupported',new DateTimeImmutable());$h=$h->fresh();$heldWork->push($h);
+    $stoppedExpected[$h->id]=$stopped;
+    same($stopped,Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($h)['next_read']===null,'The fixture stops only when no next read is scheduled');
+}
+DB::enableQueryLog();DB::flushQueryLog();$stoppedIds=$records::stoppedIds($heldWork);$heldWorkQueries=count(DB::getQueryLog());DB::disableQueryLog();
+same($queries($heldWork->take(1)),$heldWorkQueries,'Held domains with current work use the same query count for one or three domains');
+expect($heldWorkQueries<=$queries($heldPage),'Current work stays within the existing held-page query bound');
+foreach ($heldWork as $h) {
+    same($stoppedExpected[$h->id],$records::stopped($h),'Disabled records stop a held domain only without a next read');
+    same($stoppedExpected[$h->id],isset($stoppedIds[$h->id]),'The stopped list preserves scheduled reads for disabled records and retries below the limit');
+}
 // A held grace domain with its retry queued is read again by the scheduler, so sync has not stopped.
 $d=$row('grace',null,null);Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::queueInitial($d,new DateTimeImmutable());
 Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::current($d)->update(['safe_code'=>'read_failed','tries'=>1,'due_at'=>time()+600]);
