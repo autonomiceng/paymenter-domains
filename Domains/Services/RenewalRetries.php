@@ -47,12 +47,14 @@ final class RenewalRetries
             return $child;
         });
     }
-    public static function resolved(Operation $op,Domain $d): bool
+    public static function resolved(Operation $op,Domain $d,?\Illuminate\Support\Collection $operations=null): bool
     {
         $p=$op->policy['unsent_retry']??[];
         if($op->state!=='rejected'||$op->safe_code!=='renewal_definitely_unsent'||($p['number']??0)!==($op->retry_number??0)||($p['proof_hash']??null)!==EnomAnswers::identity($op)){return false;}
         try{RefundProof::requireUnsent($op,$d);}catch(\PDOException $e){throw $e;}catch(\Throwable){return false;}
-        $child=$d->operations()->where('operation_key',$p['next_key']??'')->first();
+        // Receipt admission must use its current locked rows, even with an older payment snapshot.
+        $child=$operations!==null?$operations->where('domain_id',$d->id)->firstWhere('operation_key',$p['next_key']??'')
+            :$d->operations()->where('operation_key',$p['next_key']??'')->first();
         return $child&&$child->action==='renew'&&$child->account_fingerprint===$op->account_fingerprint
             &&$child->base_expires_at==$op->base_expires_at&&$child->term===$op->term&&$child->amount===$op->amount
             &&($child->policy['unsent_retry']['number']??null)===($p['number']??0)+1&&$child->invoice_id===$op->invoice_id&&$child->invoice_item_id===$op->invoice_item_id
