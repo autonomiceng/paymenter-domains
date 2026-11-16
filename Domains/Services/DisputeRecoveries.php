@@ -15,7 +15,7 @@ final readonly class DisputeRecoveries
     private static function cursor()
     { return Setting::whereNull('settingable_type')->whereNull('settingable_id')->where('key','domains_dispute_scan'); }
     private static function advance(array $cursor): void
-    { self::cursor()->updateOrCreate([],['value'=>json_encode($cursor,JSON_THROW_ON_ERROR),'type'=>'string','encrypted'=>false]); }
+    { Setting::updateOrCreate(['settingable_type'=>null,'settingable_id'=>null,'key'=>'domains_dispute_scan'],['value'=>json_encode($cursor,JSON_THROW_ON_ERROR),'type'=>'string','encrypted'=>false]); }
     public function sweep(): void
     {
         OperationClaims::outside();
