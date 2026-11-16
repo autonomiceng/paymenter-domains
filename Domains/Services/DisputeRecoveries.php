@@ -30,8 +30,8 @@ final readonly class DisputeRecoveries
     /** The enabled Stripe gateway cannot list lost disputes. Computed, so it clears once the Stripe extension has lostDisputes. */
     public static function off(): bool
     {
-        $gateway=self::gateway();
-        if(!$gateway?->enabled){return false;}
+        $gateway=Gateway::where('extension','AeStripe')->where('enabled',true)->orderBy('id')->first();
+        if(!$gateway){return false;}
         try{return !ExtensionHelper::hasFunction($gateway,'lostDisputes');}catch(\Throwable){return true;}
     }
     public function sweep(): void

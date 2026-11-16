@@ -22,6 +22,12 @@ function disputeSweepCase(bool $readable): void
     $recovery->sweep();$recovery->sweep();
     same(0,DB::table('domains_obligation_alerts')->count(),'The sweep opens no hold or retry record');
     same($readable?0:1,$warnings,'Two sweeps write one throttled warning only when lost disputes cannot be read');
+    $gateway->update(['enabled'=>false]);
+    $enabled=Gateway::create(['extension'=>'AeStripe','name'=>'Synthetic enabled Stripe','type'=>'gateway','enabled'=>true]);
+    expect(DisputeRecoveries::off(),'A disabled earlier gateway cannot hide the enabled gateway missing lost-dispute support');
+    expect($failing()===$before+1,'The enabled gateway missing lost-dispute support appears in the system checklist');
+    $enabled->update(['enabled'=>false]);
+    expect(!DisputeRecoveries::off(),'Disabling every Stripe gateway clears the unavailable diagnostic');
 }
 // A Stripe extension built before lostDisputes.
 class UnreadDisputeGateway extends \App\Classes\Extension\Gateway { public function pay(\App\Models\Invoice $invoice,$total){return '';} }
