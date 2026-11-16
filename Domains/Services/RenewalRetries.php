@@ -32,7 +32,7 @@ final class RenewalRetries
             try{
                 app(AccountBindings::class)->requireProcessingLocked($l['server'],$l['account']);
                 RefundProof::requireUnsent($op,$l['domain']);RenewalFunding::requireCurrent($op,$l);
-            }catch(\Throwable){return $op;}
+            }catch(\PDOException $e){throw $e;}catch(\Throwable){return $op;}
             $key=RenewalCycles::key($l['domain']).':replacement:'.RenewalCycles::current($l['domain'],$l['operations'])->count();
             $policy=$op->policy;unset($policy['renewal_admission'],$policy['renewal_execution'],$policy['enom_answer']);
             $policy['unsent_retry']=['number'=>$count+1,'previous_key'=>$op->operation_key,'at'=>$clock->now()->format(DATE_ATOM)];

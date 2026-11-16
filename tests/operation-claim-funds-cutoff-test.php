@@ -22,8 +22,20 @@ $engine->execute($op->id);same('held',$op->fresh()->state,'Later worker cannot t
 $credit=fn()=>\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)(App\Models\Credit::where('user_id',$user->id)->where('currency_code','USD')->value('amount')??'0.00'));$before=$credit();
 app()->instance(\Paymenter\Extensions\Servers\Domains\Services\Refunds::class,new \Paymenter\Extensions\Servers\Domains\Services\Refunds($clock));
 $account=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->sole();
+// Two deadlocks roll the whole closure back and queue it with no staff review; the next sweep runs it first.
+$runner=is_file(dirname(__DIR__).'/Domains/Services/MoneyWorkSchema.php');if($runner){\Paymenter\Extensions\Servers\Domains\Services\MoneyWorkSchema::install();}
+$fails=2;Operation::updating(static function(Operation $row)use(&$fails):void {
+    if($fails<1||$row->state!=='rejected'||!$row->isDirty('state')){return;}
+    $fails--;same(1,DB::transactionLevel(),'The funds closure runs in one outer transaction');
+    $cause=new PDOException('Synthetic deadlock');$cause->errorInfo=['40001',1213,'Synthetic'];
+    throw new Illuminate\Database\QueryException('sqlite','synthetic funds closure',[],$cause);
+});
 \Paymenter\Extensions\Servers\Domains\Services\FundsWaits::sweep($account,$clock->now());
-same('rejected',$op->fresh()->state,'Sweep closes the definitely-unsent elapsed claim');
+same([0,'held',0],[$fails,$op->fresh()->state,DB::table('domains_obligation_alerts')->where('operation_id',$op->id)->where('code','funds_wait_review')->count()],'Contention twice changes nothing and asks no staff review');
+same([['kind'=>'funds_wait','subject_id'=>$op->id]],!$runner?[]:DB::table('domains_money_work')->get(['kind','subject_id'])->map(fn($r)=>(array)$r)->all(),'The deferred closure is queued');
+Illuminate\Support\Facades\Cache::forever('domains.funds-wait-cursor.'.$op->server_id,$op->id); // Only the queue can reach it.
+\Paymenter\Extensions\Servers\Domains\Services\FundsWaits::sweep($account,$clock->now());
+same(['rejected',0],[$op->fresh()->state,DB::table('domains_money_work')->count()],'The next sweep closes the queued claim and finishes the work');
 \Paymenter\Extensions\Servers\Domains\Services\FundsWaits::sweep($account,$clock->now());
 same($before+\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor($op->amount),$credit(),'Elapsed claim returns its payment once without staff repair');
 $nativeSuccessful=true;echo "Native operation claim scenario passed.\n";

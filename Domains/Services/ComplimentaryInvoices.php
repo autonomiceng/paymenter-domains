@@ -22,6 +22,7 @@ final class ComplimentaryInvoices
     public static function require(Operation $op,array $l):array
     {
         $a=$op->policy['account_complimentary']??[];ComplimentaryAccounts::require($a,(int)$l['domain']->user_id);
+        if($op->invoice_id!==null){InvoiceScope::cover($l,(int)$op->invoice_id);} // A scope miss is never a changed receipt.
         $invoice=$l['invoices']->firstWhere('id',$op->invoice_id);$item=$l['items']->firstWhere('id',$op->invoice_item_id);
         $items=$l['items']->where('invoice_id',$op->invoice_id);
         if($op->domain_id!==$l['domain']->id||$op->service_id!==$l['domain']->service_id||$op->server_id!==$l['domain']->server_id

@@ -87,7 +87,7 @@ same([['kind'=>'refund_rejected','subject_id'=>$op->id,'revision'=>2]], $work(),
 // A full retry budget of newer deferrals cannot push it out of the next sweep.
 $newer = array_map(fn(int $i) => MoneyDecisions::run(new MoneyRequest($op->domain, 'refund_rejected', 900000 + $i), fn() => throw $busy('HY000', 1213))->outcome, range(1, 25));
 same(array_fill(0, 25, MoneyOutcome::Deferred), $newer, 'Newer contention defers 25 decisions');
-$refunds->creditRetired($account);
+same([(int)$op->domain_id], $refunds->creditRetired($account), 'The sweep reports the credited queued refund for its notice');
 same($before + PricingRule::minor($op->amount), $balance(), 'The next sweep credits the older deferral exactly once');
 same([[900025], false], [array_column($work(), 'subject_id'), $repaired($op)], 'Completed work leaves the queue with no repair; the newest waits its turn');
 DB::table(MoneyWorkSchema::TABLE)->delete();
@@ -136,9 +136,23 @@ $inner = MoneyDecisions::run(new MoneyRequest($op->domain, released: true), fn()
 same([MoneyOutcome::Failed, LogicException::class, false], [$inner->outcome, $inner->error ? $inner->error::class : null, $ran], 'A runner inside a runner is refused before its decision runs');
 same(0, DB::transactionLevel(), 'No transaction is left open');
 
+// After commit the decision has ended, so dispatch can start a separate money decision.
+$after = null;
+$outer = MoneyDecisions::run(new MoneyRequest($op->domain, released: true), static function() use ($op, &$after): bool {
+    DB::afterCommit(static function() use ($op, &$after): void {
+        same([0, false], [DB::transactionLevel(), MoneyDecisions::running()], 'After-commit dispatch is outside the active decision');
+        $after = MoneyDecisions::run(new MoneyRequest($op->domain, released: true), static fn() => true);
+    });
+    return true;
+});
+same([MoneyOutcome::Applied, MoneyOutcome::Applied, true], [$outer->outcome, $after?->outcome, $after?->value], 'After-commit dispatch can run another money decision');
+same(false, MoneyDecisions::running(), 'The runner clears its active state after commit');
+$thrown = MoneyDecisions::run(new MoneyRequest($op->domain, released: true), static fn() => throw new RuntimeException('Synthetic decision failure'));
+same([MoneyOutcome::Failed, false, 0], [$thrown->outcome, MoneyDecisions::running(), DB::transactionLevel()], 'A failed decision clears its active state after rollback');
+
 // Invoice scope: the same lock order, with only the request's invoice, its items and payments. Reuses the closed order above.
 $other = Operation::where('invoice_id', '!=', $op->invoice_id)->whereNotNull('invoice_id')->orderBy('id')->firstOrFail();
-$scoped = static fn(int $invoice) => new MoneyRequest($op->domain, released: true, scope: MoneyScope::Invoice, invoiceId: $invoice);
+$scoped = static fn(int $invoice) => new MoneyRequest($op->domain, 'refund_closed', $op->id, released: true, scope: MoneyScope::Invoice, invoiceId: $invoice);
 $tables = []; $tracing = false;
 DB::listen(static function($q) use (&$tables, &$tracing): void { if ($tracing && preg_match('/^select .*? from "([a-z_]+)"/', $q->sql, $m)) { $tables[] = $m[1]; } });
 $view = static function(array $l) use ($op, &$tracing): array {
@@ -167,7 +181,13 @@ foreach ([fn(array $l) => InvoiceMoney::load($l, (int)$other->invoice_id)['settl
 $scopes = [];
 $result = MoneyDecisions::run($scoped(DB::table('invoices')->insertGetId([...array_diff_key((array)DB::table('invoices')->find($op->invoice_id), ['id'=>0]), 'user_id'=>$staff->id, 'number'=>null])), function(array $l) use (&$scopes) { $scopes[] = $l['scope']; return true; });
 same([MoneyOutcome::Applied, [null]], [$result->outcome, $scopes], 'A changed invoice owner runs only the full attempt');
+// A closed order whose discovery named another of the owner's invoices reruns on the full scope and is credited once.
+$miss = $closed('contention-scope-miss-placeholder.com'); $before = $balance();
+$stale = Operation::findOrFail($miss->id); $stale->invoice_id = (int) Invoice::where('user_id', $miss->domain->user_id)->where('id', '!=', $miss->invoice_id)->orderBy('id')->value('id');
+(new ReflectionMethod(Refunds::class, 'creditClosed'))->invoke($refunds, $stale);
+same([$before + 300, [], false], [$balance(), $work(), $repaired($miss)], 'A closed order outside its scope is credited on the full scope, not skipped');
 foreach ([fn() => new MoneyRequest($op->domain, scope: MoneyScope::Invoice), fn() => new MoneyRequest($op->domain, staffId: (int)$staff->id, scope: MoneyScope::Invoice, invoiceId: (int)$op->invoice_id),
+    fn() => new MoneyRequest($op->domain, scope: MoneyScope::Invoice, invoiceId: (int)$op->invoice_id),
     fn() => DB::transaction(fn() => HoldingLocks::take($op->domain, released: true, scope: new InvoiceScope((int)$op->invoice_id)))] as $refused) {
     try { $refused(); throw new RuntimeException('Expected a refused scope'); } catch (LogicException $e) { same(false, $e instanceof MoneyScopeChanged, 'A malformed scope request is refused'); }
 }

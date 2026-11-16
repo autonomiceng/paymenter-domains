@@ -39,7 +39,7 @@ final class RenewalReplacements
     {
         // An unreadable policy or refund proof is never a reviewed replacement.
         try { $p=$op->policy['renewal_replacement']??null; RefundProof::requireUnsent($op,$d); }
-        catch(\Throwable){return false;}
+        catch(\PDOException $e){throw $e;}catch(\Throwable){return false;}
         return $op->action==='renew'&&$op->state==='rejected'&&$op->safe_code==='refund_approved'&&is_array($p)
             &&array_keys($p)===['actor_id','operation_key','generation','expiry','refund_hash','at']&&($p['actor_id']===null||is_int($p['actor_id'])&&$p['actor_id']>0)
             &&$p['operation_key']===$op->operation_key&&$p['generation']===$d->authority_generation
@@ -74,6 +74,6 @@ final class RenewalReplacements
                 ||$current['invoice_total_minor']!==PricingRule::minor($op->amount)||$current['succeeded_net_minor']!==$current['invoice_total_minor']
                 ||count($current['payments'])!==$l['transactions']->where('invoice_id',$op->invoice_id)->count()){return false;}
             foreach($current as $key=>$value){if(!array_key_exists($key,$refund)||$refund[$key]!==$value){return false;}}return true;
-        }catch(\Throwable){return false;}
+        }catch(\PDOException $e){throw $e;}catch(\Throwable){return false;}
     }
 }

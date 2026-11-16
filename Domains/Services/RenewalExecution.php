@@ -9,6 +9,8 @@ use Paymenter\Extensions\Servers\Domains\Models\Operation;
 /** One sealed attempt. A durable row, request or admission decision is never a live grant. */
 final class RenewalExecution
 {
+    /** Renewal steps deferred by database contention. The runtime turn hands them back to the operation queue. */
+    public const KIND = 'renewal';
     private \WeakMap $grants;
     public function __construct(private readonly AccountBindings $bindings, private readonly RenewalAuthority $authority,
         private readonly RenewalAdmission $admission, private readonly RenewalAcceptance $accepted,
@@ -23,8 +25,8 @@ final class RenewalExecution
     private function runEntered(int $id, RenewalWriter $writer, \DateTimeImmutable $finishCap): Operation
     {
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
-        $capture = DB::transaction(function () use ($seed, $id) {
-            $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
+        $capture = $this->decide($seed, $id, function (array $l) use ($id) {
+            $op = $l['operations']->firstWhere('id', $id);
             if ($op?->action === 'renew' && $op->state === 'running' && (!$op->lease_expires_at || $op->lease_expires_at <= $this->clock->now())) {
                 $op->update(['state' => 'uncertain', 'lease_expires_at' => null, 'safe_code' => 'stale_claim',
                     'policy' => [...$op->policy, 'renewal_execution' => ['staff_alert' => true, 'reason' => 'stale_claim', 'refundable_later' => false]]]); return null;
@@ -33,8 +35,8 @@ final class RenewalExecution
             if (FundsWaits::elapsed($op,$this->clock->now())) { return null; }
             if (isset($op->policy['renewal_admission']['until']) && new \DateTimeImmutable($op->policy['renewal_admission']['until']) > $this->clock->now()) { return null; }
             if ($op->funding_basis === 'paid_invoice' && $l['invoices']->firstWhere('id', $op->invoice_id)?->status === 'pending') { return null; }
-            try { $this->configured($l); } catch (\Throwable) { $this->hold($op, RenewalCode::Acceptance->value, true); return null; }
-            try { $this->current($op, $l); } catch (RenewalHold $held) { $this->hold($op, $held->reason, $held->reason===EnomLateRenewal::PAUSED); return null; } catch (RenewalRefused $refused) { $this->hold($op, $refused->reason->value); return null; } catch (\Throwable) { $this->hold($op, 'renewal_funding_or_authority'); return null; }
+            try { $this->configured($l); } catch (\PDOException|RenewalBusy $e) { throw $e; } catch (\Throwable) { $this->hold($op, RenewalCode::Acceptance->value, true); return null; }
+            try { $this->current($op, $l); } catch (RenewalHold $held) { $this->hold($op, $held->reason, $held->reason===EnomLateRenewal::PAUSED); return null; } catch (RenewalRefused $refused) { $this->hold($op, $refused->reason->value); return null; } catch (\PDOException|RenewalBusy $e) { throw $e; } catch (\Throwable) { $this->hold($op, 'renewal_funding_or_authority'); return null; }
             // Enom's Extend contract requires OverrideOrder for another renewal within 24 hours.
             // Wait from confirmed completion (later than the send), never bypass replay protection.
             // The time it may go is the latest such completion + 24 hours, stored once so pages show a fixed time.
@@ -107,7 +109,7 @@ final class RenewalExecution
             return $descriptor?$this->dispatch($seed,$id,$descriptor,$context,$writer):Operation::findOrFail($id);
             }));
         } catch (\Throwable $error) {
-            DB::transaction(function () use ($seed, $id, $admissionClaim, $error, $refusals, $first, $ready) { $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
+            $this->decide($seed, $id, function (array $l) use ($id, $admissionClaim, $error, $refusals, $first, $ready): void { $op = $l['operations']->firstWhere('id', $id);
                 if ($op && RenewalCycles::registrarVirgin($op) && ($op->policy['renewal_admission']['key'] ?? null) === $admissionClaim) {
                     $reason = $error instanceof RenewalRefused ? $error->reason : ($error instanceof ReadDeferred?RenewalCode::Rate:RenewalCode::Changed);
                     $retry = in_array($reason, [RenewalCode::Rate, RenewalCode::Reads, RenewalCode::Balance, RenewalCode::Changed, RenewalCode::Acceptance], true);
@@ -133,8 +135,9 @@ final class RenewalExecution
             Log::warning('Domains renewal reply not recorded.', ['operation_id' => $id, 'exception_class' => $error::class] + ($failure?->facts() ?? []));
         }
         finally { unset($this->grants[$descriptor]); }
-        return DB::transaction(function () use ($seed, $id, $descriptor, $result, $failure, $context) {
-            $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
+        // A deferred reply record leaves the claim running; its lease ends and completion reads the registrar.
+        return $this->decide($seed, $id, function (array $l) use ($id, $descriptor, $result, $failure, $context) {
+            $op = $l['operations']->firstWhere('id', $id);
             if ($op->state === 'succeeded' || ($op->attempt['claim_key'] ?? null) !== $descriptor->claimKey || array_key_exists('execution', $op->attempt)) { return $op; }
             try { $result?->binding->requireMatch($descriptor->binding); } catch (\Throwable) { $result = null; }
             $a = $op->attempt; $a['execution'] = $result?->jsonSerialize();
@@ -146,7 +149,14 @@ final class RenewalExecution
             $op->update(['attempt' => $a, 'provider_order_id' => $facts?->orderReference, 'state' => $op->state !== 'running' ? $op->state : ($unsent ? 'held' : ($accepted ? 'pending' : 'uncertain')),
                 'safe_code' => $op->state !== 'running' ? $op->safe_code : ($unsent ? 'renewal_definitely_unsent' : 'renewal_confirmation_required'), 'lease_expires_at' => null,
                 'policy' => [...$op->policy, 'renewal_execution' => ['staff_alert' => true, 'reason' => $unsent ? 'renewal_definitely_unsent' : 'awaiting_unique_charge', 'refundable_later' => $unsent && $this->hasPayment($op)]]]); return $op;
-        });
+        }) ?? Operation::findOrFail($id);
+    }
+    /** One locked step through the money runner. Contention twice changes nothing and queues the renewal; other errors throw. */
+    private function decide($seed, int $id, \Closure $step): mixed
+    {
+        $decision = MoneyDecisions::run(new MoneyRequest($seed, self::KIND, $id), $step);
+        if ($decision->error) { throw $decision->error; }
+        return $decision->value;
     }
     /** Exact-object consume at the last local boundary, after final reads and before the single wire call. */
     public function consume(AdmittedOperation $op, RequestContext $context, RenewalWriter $writer): string
@@ -179,7 +189,7 @@ final class RenewalExecution
         try {
             $this->features->requireEnabled(Action::Renew); $this->bindings->requireProcessingLocked($l['server'], $l['account']);
             $this->accepted->requireCurrent(AccountBindings::binding($l['account']));
-        } catch (\Throwable $error) { throw new RenewalRefused(RenewalCode::Acceptance); }
+        } catch (\PDOException $e) { throw $e; } catch (\Throwable $error) { throw new RenewalRefused(RenewalCode::Acceptance); }
     }
     private function hasPayment(Operation $op): bool
     {

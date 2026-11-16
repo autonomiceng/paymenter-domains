@@ -10,18 +10,18 @@ use Paymenter\Extensions\Servers\Domains\Models\Operation;
 final readonly class RenewalCompletion
 {
     public function __construct(private AccountBindings $bindings, private Clock $clock) {}
-    public function run(int $id): Operation
+    public function run(int $id, bool $staff = false): Operation
     {
         OperationClaims::outside(); $op = Operation::findOrFail($id);
         if (!$this->eligible($op) || self::capturedChargeHeld($op)) { return $op; }
         $check = new RegistrarCheck($this->clock);
-        return $check->finish(EntryDeadline::run($this->clock, fn ($deadline) => $this->runEntered($id, $deadline, $check), RenewalAdmission::READ_SECONDS));
+        return $check->finish(EntryDeadline::run($this->clock, fn ($deadline) => $this->runEntered($id, $deadline, $check, $staff), RenewalAdmission::READ_SECONDS));
     }
-    private function runEntered(int $id, \DateTimeImmutable $deadline, RegistrarCheck $check): Operation
+    private function runEntered(int $id, \DateTimeImmutable $deadline, RegistrarCheck $check, bool $staff): Operation
     {
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
-        $capture = DB::transaction(function () use ($seed, $id, $check) {
-            $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
+        $capture = $this->decide($seed, $id, function (array $l) use ($id, $check) {
+            $op = $l['operations']->firstWhere('id', $id);
             if (!$op || !$this->eligible($op) || self::capturedChargeHeld($op)) { return null; }
             $check->capture($op);
             $financial=CapturedChargeReview::hasProof($op);
@@ -45,8 +45,8 @@ final readonly class RenewalCompletion
                 // A new read starts: earlier no-order evidence goes now, so nobody can use it while this read runs or after it fails.
                 EnomAbsence::clear($op);
                 return [$attempt, HoldingLocks::take($l['domain'])['stamp'],$read];
-            } catch (\Throwable) { return null; }
-        });
+            } catch (\PDOException|RenewalBusy $e) { throw $e; } catch (\Throwable) { return null; }
+        }, $staff);
         if (!$capture) { return Operation::findOrFail($id); }
         [$attempt, $stamp,$financialRead] = $capture; $proof = null; $covered = false; $late = false; $autoRenewConfirmed = false; $autoRenewUnconfirmed = $attempt->binding->registrarKey === 'namesilo'; $scan = null; $absence = null; $sample = null; $completed = false;
         try {
@@ -77,11 +77,11 @@ final readonly class RenewalCompletion
         // A bill zone sample is saved only after this turn's locked step: server settings are part of the holding stamp it compares.
         try {
         if (!$financialRead && !$covered && !$autoRenewUnconfirmed && !$autoRenewConfirmed && !$scan && !$late) { return Operation::findOrFail($id); }
-        return DB::transaction(function () use ($seed, $id, $stamp, $proof, $attempt, $covered, $autoRenewUnconfirmed, $autoRenewConfirmed,$financialRead,$check,$scan,$late,$absence,$completed) {
-            $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id); $d = $l['domain'];
+        return $this->decide($seed, $id, function (array $l) use ($id, $stamp, $proof, $attempt, $covered, $autoRenewUnconfirmed, $autoRenewConfirmed,$financialRead,$check,$scan,$late,$absence,$completed) {
+            $op = $l['operations']->firstWhere('id', $id); $d = $l['domain'];
             if (!$op || !$this->eligible($op) || $l['stamp'] !== $stamp || ($proof && $proof['provider_domain_id'] !== $d->provider_domain_id)) { return $op; }
             try { $this->bindings->requireReadableLocked($l['server'], $l['account']); RenewalFunding::requireCurrent($op, $l, true); }
-            catch (\Throwable) { return $op; }
+            catch (\PDOException|RenewalBusy $e) { throw $e; } catch (\Throwable) { return $op; }
             if($financialRead){CapturedChargeReview::retain($op,$financialRead,$proof,$this->clock);return $op;}
             // A finished history read that resolved no more orders counts like a covered read; a progressing scan does not.
             // A deadline counts only without new validated progress. Admission and call-cap deferrals throw before either.
@@ -125,7 +125,7 @@ final readonly class RenewalCompletion
             if(ObservationProjection::renewed($d,$priorExpiry)){HoldingObservationWork::renewed($d,$this->clock->now());}
             ComplimentaryInvoices::complete($op);
             return $op;
-        });
+        }, $staff) ?? Operation::findOrFail($id);
         } finally {
             if ($sample) { EnomBillZones::record($attempt->binding, $sample); }
             // A completed read uses up the late no-order read even when its own save did not run.
@@ -134,6 +134,14 @@ final readonly class RenewalCompletion
                 catch (\Throwable $e) { logger()->warning('Late no-order read mark deferred.', ['exception_class'=>$e::class]); }
             }
         }
+    }
+    /** Contention queues automatic work; interactive checks refuse so staff never see an unsaved read as finished. */
+    private function decide($seed, int $id, \Closure $step, bool $staff): mixed
+    {
+        $decision = MoneyDecisions::run(new MoneyRequest($seed, $staff ? null : RenewalExecution::KIND, $id), $step);
+        if ($decision->error) { throw $decision->error; }
+        if ($staff && $decision->outcome === MoneyOutcome::Deferred) { throw new StaffReviewRefused(MoneyDecisions::BUSY); }
+        return $decision->value;
     }
     /** Explicit bounded read-only recovery; original paid uncertainty and attempt remain unchanged. */
     public function resume(int $id, StaffOperationReview $review): Operation

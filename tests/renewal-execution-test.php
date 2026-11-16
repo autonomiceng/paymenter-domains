@@ -14,6 +14,25 @@ $before = serialize(DB::table('invoices')->get()); $items = serialize(DB::table(
 $settings = $product->server->settings(); $settings->updateOrCreate(['key' => 'domains_manual_renewals_enabled'], ['value' => false, 'type' => 'boolean']);
 activeFixtureSeller($sellers,'com',(int)\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->value('revision'), $tlds[1]->server_id, true, true, $now);
 $tlds[0]->update(tldColumns(['enabled' => false, 'renew_enabled' => false],$tlds[0]));
+// A database error reading registrar settings reaches the caller as an error, never a renewal refusal or hold.
+$broken = 1; DB::listen(static function ($query) use (&$broken): void {
+    if ($broken < 1 || !collect(debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS))->contains(fn ($f) => ($f['function'] ?? '') === 'configuration' && str_ends_with($f['class'] ?? '', 'AccountBindings'))) { return; }
+    $broken--; $cause = new PDOException('Synthetic connection loss'); $cause->errorInfo = ['HY000', 2006, 'Synthetic'];
+    throw new Illuminate\Database\QueryException('sqlite', $query->sql, [], $cause);
+});
+$stateBefore = $op->fresh()->state; $codeBefore = $op->fresh()->safe_code;
+try { $engine->run($op->id, $writer); $thrown = null; } catch (Throwable $error) { $thrown = $error; }
+same([Illuminate\Database\QueryException::class, $stateBefore, $codeBefore, 0], [$thrown === null ? null : $thrown::class, $op->fresh()->state, $op->fresh()->safe_code, $state->writes], 'A settings read database error is an error, not a refusal');
+// Two deadlocks in the locked capture change nothing and queue the renewal for the runtime turn.
+\Paymenter\Extensions\Servers\Domains\Services\MoneyWorkSchema::install(); $stateBefore = $op->fresh()->state; $fails = 2;
+DB::listen(static function ($query) use (&$fails): void {
+    if ($fails < 1 || DB::transactionLevel() !== 1) { return; } $fails--;
+    $cause = new PDOException('Synthetic deadlock'); $cause->errorInfo = ['40001', 1213, 'Synthetic'];
+    throw new Illuminate\Database\QueryException('sqlite', $query->sql, [], $cause);
+});
+same([$stateBefore, 0, 0, [['kind'=>'renewal', 'subject_id'=>$op->id]]], [$engine->run($op->id, $writer)->state, $fails, $state->writes,
+    DB::table('domains_money_work')->get(['kind', 'subject_id'])->map(fn ($r) => (array) $r)->all()], 'Contention twice in the capture changes nothing and queues the renewal');
+DB::table('domains_money_work')->delete();
 same('pending', $engine->run($op->id, $writer)->state, 'Late paid obligation survives preferences, seller, sales flags and stale retail');
 same(1, $state->writes, 'One renewal write'); same(12, count($state->calls), 'Initial and final full read sequences, single reservation');
 same('2027-10-18', $d->fresh()->provider_expires_at->format('Y-m-d'), 'Acknowledgement cannot advance expiry');
@@ -22,6 +41,10 @@ $nativeBeforeReplay = nativeFinancialSnapshot($op);
 $engine->run($op->id, $writer); same(1, $state->writes, 'No replay after acknowledgement');
 same($nativeBeforeReplay, nativeFinancialSnapshot($op), 'Replay preserves native/financial state');
 $state->expiry = '2028-10-18'; $state->charge = '8.00';
+// A database error inside the completion capture rolls it back and reaches the caller; no earlier write commits.
+$broken = 1; $rowBefore = $op->fresh()->only(['state', 'safe_code', 'policy']);
+try { $completion->run($op->id); $thrown = null; } catch (Throwable $error) { $thrown = $error; }
+same([Illuminate\Database\QueryException::class, $rowBefore], [$thrown === null ? null : $thrown::class, $op->fresh()->only(['state', 'safe_code', 'policy'])], 'A completion read database error changes nothing');
 same('succeeded', $completion->run($op->id)->state, 'Unique original charge plus full term completes');
 same('2028-10-18', $d->fresh()->provider_expires_at->format('Y-m-d'), 'Confirmed provider expiry stored');
 same($op->operation_key, $d->fresh()->renewal_policy['billing_anchor']['operation_key'], 'Latest completed renewal anchor advances');

@@ -88,6 +88,15 @@ try{foreach(array_intersect_key($chargeCases,[$capturedCase=>true])as$case=>[$li
  try{(new \Paymenter\Extensions\Servers\Domains\Services\StaffOperations($clock))->run($staff,$d->id,$op->id,'approve_charge',$key,'Approve without the approval permission');expect(false,'Missing approval permission must refuse');}catch(DomainException $refused){same("You don't have permission to do this.",$refused->getMessage(),'Refused for the missing approval permission');}
  same($before,[$op->fresh()->getRawOriginal(),$d->fresh()->getRawOriginal()],'Missing approval permission changes nothing');$role->update(['permissions'=>$rights]);
  expect(\Paymenter\Extensions\Servers\Domains\Services\CapturedChargeReview::approvable($op->fresh()),'The same proof stays approvable for permitted staff');
+ // A database error while checking the proof reaches staff as an error, never as a request to read again.
+ $broken=1;DB::listen(static function($query)use(&$broken):void{
+  if($broken<1||!collect(debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS))->contains(fn($f)=>($f['function']??'')==='approvable')){return;}
+  $broken--;$cause=new PDOException('Synthetic connection loss');$cause->errorInfo=['HY000',2006,'Synthetic'];
+  throw new \Illuminate\Database\QueryException('sqlite',$query->sql,[],$cause);
+ });
+ $key=\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::ticket($staff->id,$d->id,$op->id,'approve_charge',\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::stamp($op->fresh(),$d->fresh()),$clock);$before=[$op->fresh()->getRawOriginal(),$d->fresh()->getRawOriginal()];
+ try{(new \Paymenter\Extensions\Servers\Domains\Services\StaffOperations($clock))->run($staff,$d->id,$op->id,'approve_charge',$key,'Approve during a database error');$thrown=null;}catch(Throwable $error){$thrown=$error;}
+ same([\Illuminate\Database\QueryException::class,$before],[$thrown===null?null:$thrown::class,[$op->fresh()->getRawOriginal(),$d->fresh()->getRawOriginal()]],'A database error during approval is an error and changes nothing');
  // Foreign captured proof cannot turn current observations into approval authority.
  $rawAttempt=$op->fresh()->getRawOriginal('attempt');$foreign=$op->fresh()->attempt;$foreign['reconciliation']['fingerprint']=str_repeat('f',64);
  DB::table('domains_operations')->where('id',$op->id)->update(['attempt'=>\Illuminate\Support\Facades\Crypt::encryptString(json_encode($foreign))]);

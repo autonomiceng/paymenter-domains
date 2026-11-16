@@ -11,7 +11,8 @@ use Illuminate\Database\Events\TransactionCommitted;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\{DB,Event,Queue};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation,Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{AuditArchives,MoneyWorkSchema,NativeIntentSchema,PricingRule,Refunds};
+use Paymenter\Extensions\Servers\Domains\Data\RenewalRequest;
+use Paymenter\Extensions\Servers\Domains\Services\{AuditArchives,FundsWaits,MoneyWorkSchema,NativeIntentSchema,PricingRule,Refunds,RenewalAuthority};
 $root=(string)getenv('REFUND_BARRIERS');expect(is_dir($root),'Private barriers required');$role=getenv('REFUND_ROLE');
 $signal=static fn(string $step)=>file_put_contents($root.'/'.$step,'ready');
 $wait=static function(string $step)use($root):void {
@@ -19,13 +20,16 @@ $wait=static function(string $step)use($root):void {
 };
 // retry: one deadlock, then the fresh retry credits. deferred: two deadlocks, queued, next sweep credits. timeout: two lock wait timeouts.
 // inversion-retry and inversion-deferred: the same contracts when the holder locks invoice before customer.
-$cases=['retry'=>1,'deferred'=>2,'timeout'=>2,'inversion-retry'=>1,'inversion-deferred'=>2];
+// funds: two deadlocks in the funds wait closure, queued with no staff review, next sweep closes it.
+// busy: a lock wait timeout in the renewal authority read is the named retryable error, with nothing changed or queued.
+$cases=['retry'=>1,'deferred'=>2,'timeout'=>2,'inversion-retry'=>1,'inversion-deferred'=>2,'funds'=>2,'busy'=>1];
 Queue::fake();
 if($role==='holder'){
     DB::statement('SET SESSION innodb_lock_wait_timeout=10');
     foreach($cases as $case=>$rounds){
         $wait($case.'-ready');$blocker=(int)file_get_contents($root.'/blocker');$domain=(int)file_get_contents($root.'/'.$case.'-domain');
         $inversion=str_starts_with($case,'inversion-');$customer=(int)file_get_contents($root.'/'.$case.'-customer');
+        if($case==='busy'){DB::beginTransaction();Domain::whereKey($domain)->lockForUpdate()->first();$signal('busy-locked-1');$wait('busy-done');DB::rollBack();continue;}
         for($round=1;$round<=$rounds;$round++){
             DB::beginTransaction();
             if($case!=='timeout'){
@@ -79,8 +83,7 @@ $armed=null;$attempts=0;$snapshot=null;
 Event::listen(TransactionCommitted::class,static function()use(&$armed,&$snapshot,$state):void {
     if($armed&&$snapshot===null&&DB::transactionLevel()===0){$snapshot=$state($armed['op']);}
 });
-Credit::saved(static function()use(&$armed,&$attempts,$signal,$wait,$root,$credits,$balance):void {
-    if(!$armed){return;}
+$contend=static function()use(&$armed,&$attempts,$signal,$wait,$root,$credits,$balance):void {
     $attempts++;[$case,$rounds,$op]=[$armed['case'],$armed['rounds'],$armed['op']];
     same(1,DB::transactionLevel(),$case.': the credit write runs in the one outer transaction');
     // Inside the retry, nothing of the first attempt remains on the operation.
@@ -94,6 +97,10 @@ Credit::saved(static function()use(&$armed,&$attempts,$signal,$wait,$root,$credi
     // After its credit write the refund needs an invoice the holder took before the customer: a lock order inversion.
     if($inversion){DB::table('invoices')->where('id',(int)file_get_contents($root.'/other-invoice'))->lockForUpdate()->first();}
     else{DB::table('users')->where('id',(int)file_get_contents($root.'/blocker'))->lockForUpdate()->first();}
+};
+Credit::saved(static function()use(&$armed,$contend):void { if($armed&&$armed['case']!=='funds'){$contend();} });
+Operation::updating(static function(Operation $row)use(&$armed,$contend):void {
+    if($armed&&$armed['case']==='funds'&&$row->isDirty('state')&&$row->state==='rejected'){$contend();}
 });
 $orders=[];foreach($cases as $case=>$rounds){$orders[$case]=$order(placeholderComFixtureName('refund-'.$case.'-contention-placeholder.com'));}
 // Holding locks route through the installed catalogue contract, which names the real adapters, not the checkout fixture subclasses.
@@ -110,6 +117,27 @@ foreach($cases as $case=>$rounds){
     $account=Account::where('server_id',$op->server_id)->sole();
     file_put_contents($root.'/'.$case.'-domain',(string)$op->domain_id);
     file_put_contents($root.'/'.$case.'-customer',(string)Domain::findOrFail($op->domain_id)->user_id);
+    if($case==='busy'){
+        // The lock wait comes before any anchor check, so a held order's anchor is enough.
+        $signal('busy-ready');$wait('busy-locked-1');$before=[$state($op),DB::table(MoneyWorkSchema::TABLE)->count()];$d=Domain::findOrFail($op->domain_id);
+        try{app(RenewalAuthority::class)->capture(new RenewalRequest((int)$d->id,max(1,(int)$d->authority_generation),max(1,(int)$d->confirmed_revision),'2030-01-01',null));$thrown=null;}
+        catch(Throwable $error){$thrown=$error;}
+        $signal('busy-done');
+        same(['Paymenter\\Extensions\\Servers\\Domains\\Services\\RenewalBusy',1205],[$thrown===null?null:$thrown::class,(int)($thrown?->getPrevious()?->errorInfo[1]??0)],'busy: a lock wait timeout in the authority read is the named retryable error');
+        same($before,[$state($op),DB::table(MoneyWorkSchema::TABLE)->count()],'busy: nothing changed and nothing queued');
+        $proofs[]=$case;continue;
+    }
+    if($case==='funds'){
+        $op->update(['safe_code'=>'registrar_balance_insufficient','policy'=>[...$op->policy,'funds_wait_at'=>$clock->now()->modify('-4 days')->format(DATE_ATOM)]]);
+        $armed=['case'=>$case,'rounds'=>$rounds,'op'=>$op];$attempts=0;$signal($case.'-ready');
+        FundsWaits::sweep($account,$clock->now());$armed=null;
+        $reviews=DB::table('domains_obligation_alerts')->where('operation_id',$op->id)->where('code','funds_wait_review')->count();
+        same(2,$attempts,'funds: contention is retried once, then deferred');
+        same(['held',0,1],[$op->fresh()->state,$reviews,(int)DB::table(MoneyWorkSchema::TABLE)->where('subject_id',$op->id)->where('kind','funds_wait')->value('revision')],'funds: nothing closes, no staff review, the closure is queued');
+        FundsWaits::sweep($account,$clock->now());
+        same(['rejected',0],[$op->fresh()->state,DB::table(MoneyWorkSchema::TABLE)->where('subject_id',$op->id)->count()],'funds: the next sweep closes it and finishes the work');
+        $proofs[]=$case;continue;
+    }
     $armed=['case'=>$case,'rounds'=>$rounds,'op'=>$op];$attempts=0;$snapshot=null;$signal($case.'-ready');
     $result=$refunds->refundHeld($staff,$op->id,'customer_cancelled');$armed=null;
     $repairs=DB::table('domains_obligation_alerts')->where('operation_id',$op->id)->where('code','refund_repair')->count();

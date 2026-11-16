@@ -20,7 +20,11 @@ final class MoneyDecisions
             for ($attempt = 0; $attempt < 2; $attempt++) {
                 $scope = $scoped ? new InvoiceScope($request->invoiceId) : null;
                 try {
-                    $value = DB::transaction(static fn () => $decide(HoldingLocks::take($request->seed, $request->staffId, released: $request->released, scope: $scope)));
+                    $value = DB::transaction(static function () use ($request, $decide, $scope) {
+                        // End the guard after commit, before the decision's dispatch callbacks run.
+                        DB::afterCommit(static function (): void { self::$running = false; });
+                        return $decide(HoldingLocks::take($request->seed, $request->staffId, released: $request->released, scope: $scope));
+                    });
                     return new MoneyResult($value === null ? MoneyOutcome::NoChange : MoneyOutcome::Applied, $value);
                 } catch (\Throwable $e) {
                     // DB::transaction issued ROLLBACK: a lock wait timeout may have undone only its statement.
@@ -67,7 +71,7 @@ final class MoneyDecisions
         if (!Schema::hasTable(MoneyWorkSchema::TABLE)) { return []; }
         return DB::table(MoneyWorkSchema::TABLE)->where('server_id', $serverId)->whereIn('kind', $kinds)->orderBy('turn')->orderBy('id')->limit($limit)->get()->all();
     }
-    /** Only the revision that was run is removed; a deferral since then keeps the item queued. */
-    public static function done(object $work): void
-    { DB::table(MoneyWorkSchema::TABLE)->where('id', $work->id)->where('revision', $work->revision)->delete(); }
+    /** Only the revision that was run is removed; a deferral since then keeps the item queued. True when this call removed it. */
+    public static function done(object $work): bool
+    { return DB::table(MoneyWorkSchema::TABLE)->where('id', $work->id)->where('revision', $work->revision)->delete() > 0; }
 }

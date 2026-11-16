@@ -45,10 +45,10 @@ Illuminate\Support\Facades\DB::transaction(function()use($op,$clock):void {
     $domain=$op->domain->fresh();$l=Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($domain,released:$domain->reservation_name===null);
     expect(ReceiptReturns::adoptClosed($l['operations']->firstWhere('id',$op->id),$l,$clock->now()),'The later payment has its own retained return');
 });
-ReceiptReturns::resume($op->id,$clock->now());
+ReceiptReturns::resume($op->id,$clock->now(),'refund_rejected');
 same(['credited','Refunded'],[array_values($op->fresh()->funding['receipt_return_results'])[1]['state'],RequestFacts::for($op->fresh())['invoice_state']],'A separate later credit preserves the full original payment refund');
 MoneyReceiptGateway::credit(App\Models\Invoice::findOrFail($op->invoice_id),$key);
-ReceiptReturns::resume($op->id,$clock->now());
+ReceiptReturns::resume($op->id,$clock->now(),'refund_rejected');
 same('credited',$op->fresh()->funding['receipt_return_results'][$key]['state'],'A failed original payment refund becomes account credit');
 same(true,ReceiptReturns::settled($op->fresh()),'The account credit return settled');
 same('Paid',RequestFacts::for($op->fresh())['invoice_state'],'A return credited to the account stays Paid');

@@ -101,6 +101,14 @@ foreach (['auto' => ['1', '?'], 'balance' => ['8.94', '?'], 'price' => ['?', '8.
     foreach ($values as $value) { $state->$field = $value; expect(!$check()->allowed(), 'Unsafe fresh '.$field.' refused'); }
     $state->$field = $saved;
 }
+// A deadlock in the authority read is a named retryable error with nothing changed, never a renewal refusal.
+$busy = true; DB::listen(static function ($query) use (&$busy): void {
+    if (!$busy) { return; } $busy = false;
+    $cause = new PDOException('Synthetic deadlock'); $cause->errorInfo = ['40001', 1213, 'Synthetic'];
+    throw new Illuminate\Database\QueryException('sqlite', $query->sql, [], $cause);
+});
+try { $authority->capture($request()); $thrown = null; } catch (Throwable $error) { $thrown = $error; }
+same('Paymenter\\Extensions\\Servers\\Domains\\Services\\RenewalBusy', $thrown === null ? null : $thrown::class, 'Contention in the authority read is retryable');
 $state->auto = '1'; same(RenewalCode::AutoRenew, $check()->code, 'Enabled provider renewal gives staff-visible reason'); $state->auto = '0';
 $state->balance = '8.95'; same(RenewalCode::Admitted, $check()->code, 'Exact sufficient balance boundary');
 $state->balance = '999999999999999999.99'; same(RenewalCode::Admitted, $check()->code, 'Full precision balance comparison without floats'); $state->balance = '100.00';

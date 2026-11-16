@@ -392,7 +392,8 @@ final class AccountBindings
             }
             $this->configuration($account, true);
             return 'matched';
-        } catch (\Throwable) { return 'configuration_unavailable'; }
+        } catch (\PDOException $e) { throw $e; } // A database error is not a configuration answer.
+        catch (\Throwable) { return 'configuration_unavailable'; }
     }
 
     /** Local import capability; safe during locked admission and independent of credentials/I/O. */
@@ -506,6 +507,8 @@ final class AccountBindings
                 throw new \DomainException('Sandbox enrollment cannot be rebound.');
             }
             return $credentials;
+        } catch (\PDOException $e) {
+            throw $e; // Database errors reach the caller so its transaction rolls back; only business failures are refusals.
         } catch (\Throwable) {
             throw new \DomainException('Registrar configuration could not be verified.');
         }

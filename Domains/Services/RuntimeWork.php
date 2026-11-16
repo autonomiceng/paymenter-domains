@@ -82,6 +82,12 @@ final readonly class RuntimeWork
             $a=Account::where('server_id',$row->server_id)->first();
             if(!$a||$a->account_fingerprint!==$row->account_fingerprint){continue;}
             if(!$operationsOnly){$balanceAccounts[]=$a;}
+            // Renewal steps deferred by contention go back to the operation queue, which reruns them with fresh rows.
+            $this->attempt('producer',function()use($a):void {
+                foreach(MoneyDecisions::queued((int)$a->server_id,25,[RenewalExecution::KIND]) as $work){
+                    if(Operation::whereKey($work->subject_id)->exists()){$this->enqueue((int)$work->subject_id);}MoneyDecisions::done($work);
+                }
+            },(int)$a->server_id);
             $this->attempt('history_contract',fn()=>\Paymenter\Extensions\Servers\Domains\Registrars\Enom\TestOrderHistory::upgrade($a),(int)$a->server_id);
             $ops=Operation::where('server_id',$a->server_id)->where('account_fingerprint',$a->account_fingerprint)->where('id','>',$row->operation_cursor)
                 ->where(fn($q)=>$q->whereIn('state',['awaiting_payment','awaiting_code','queued','pending','uncertain','running'])
@@ -96,6 +102,7 @@ final readonly class RuntimeWork
             foreach($ops->sortBy(fn($op)=>TransferPolling::priority($op)) as $op){if($op->action==='transfer'){$this->transferPayment($op);}$this->attempt('operation',fn()=>$this->enqueue((int)$op->id),(int)$op->id);}
             $this->attempt('producer',fn()=>app(AcquisitionRetirement::class)->expireUnpaid($a),(int)$a->server_id);
             $this->attempt('producer',fn()=>app(Refunds::class)->closeRefused($a),(int)$a->server_id);
+            $this->attempt('producer',fn()=>app(RenewalAutoPay::class)->sweep($a),(int)$a->server_id);
             $this->attempt('producer',function()use($a):void {
                 foreach(app(Refunds::class)->creditRetired($a) as $id){ReminderSchedules::enroll((int)$a->server_id);$this->notice($id);}
             },(int)$a->server_id);
@@ -103,6 +110,7 @@ final readonly class RuntimeWork
                 DB::table('domains_runtime_turns')->where('id',$row->id)->update(['operation_cursor'=>$ops->count()===25?$ops->last()->id:0,'finished_at'=>$this->clock->now()->getTimestamp()]);
                 continue;
             }
+            $this->attempt('producer',fn()=>app(DomainBilling::class)->sweep($a),(int)$a->server_id);
             $domains=Domain::where('server_id',$a->server_id)->where('id','>',$row->domain_cursor)->orderBy('id')->limit(25)->get();
             foreach($domains as $d){if(in_array($d->provenance,[null,'purchased','converted_purchase'],true)){$this->attempt('transfer_watch_enrollment',fn()=>(new TransferWatchEnrollment())->repair((int)$d->id,(int)$d->user_id,$this->clock->now()->getTimestamp()),(int)$d->id);}if($d->provenance==='adopted'){$this->attempt('adoption_enrollment',fn()=>app(AdoptionEnrollment::class)->repair((int)$d->id),(int)$d->id);}$this->attempt('acquisition_retirement',fn()=>app(AcquisitionRetirement::class)->inspect((int)$d->id),(int)$d->id);$this->attempt('native_identity',fn()=>NativeIdentityDiscrepancies::inspect($d,$this->clock->now()->getTimestamp()),(int)$d->id);$this->bill($d);$this->attempt('corrections',fn()=>$this->ports->corrections($d),(int)$d->id);}
             $tlds=\Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$a->server_id)->where('id','>',$row->tld_cursor)->orderBy('id')->limit(25)->get();
