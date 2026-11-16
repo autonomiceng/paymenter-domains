@@ -9,13 +9,15 @@ require __DIR__.'/Support/native-commerce.php';
 require __DIR__.'/Support/staff-tlds.php';
 require __DIR__.'/Support/offer-commerce.php';
 use Illuminate\Support\Facades\{Auth,DB};
+use Livewire\Livewire;
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewTld;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,TldFacts};
 use Paymenter\Extensions\Servers\Domains\Catalogue\{Context, Cost, Edit, Facts, FactsObserved, FeedObserved, Intent, OfferState, Query, StaffCatalogue};
 use Paymenter\Extensions\Servers\Domains\Data\CostUnit;
 use Paymenter\Extensions\Servers\Domains\Models\Tld;
 $fixture = offerCommerceFixture(); extract($fixture); tldPanel(); pinStaffClock($now);
 [$second] = offerCommerceSecond($fixture);
-Auth::setUser(staffUser(array_keys(Staff::permissions())));
+Auth::setUser($staff = staffUser(array_keys(Staff::permissions())));
 $source = new StaffCatalogue($ports, $clock);
 $sales = static fn (Tld $t): array => TldFacts::snapshot($t->fresh(), null, $source)['sales'];
 // The second account gets its own .com row and takes new orders for it.
@@ -32,6 +34,16 @@ $ports->apply(Edit::override($second, 'com', new Intent(sell: true, transfers: t
 $ports->apply(Edit::seller($second, 'com', ['register', 'transfer']), $rev());
 $first = Tld::where('server_id', $binding->serverId)->where('tld', 'com')->sole();
 same('New orders go to Synthetic second account', $sales($first)['reason'], 'The first account row names the account that takes new orders');
+// Only the account that takes new orders is named in the TLD page head.
+$title = static fn (Tld $t): string => (string) Livewire::actingAs($staff)->test(ViewTld::class, ['record' => $t->id])->assertSuccessful()->instance()->getTitle();
+$firstName = (string) App\Models\Server::whereKey($binding->serverId)->value('name');
+expect($firstName !== '' && !str_contains($title($first), $firstName), 'The other account row does not name its account as the registrar');
+expect(str_contains($title(Tld::where('server_id', $second->serverId)->where('tld', 'com')->sole()), 'Synthetic second account'), 'The selling account row names its account');
+// The other account row's failed price read is not why it doesn't sell: another account takes new orders.
+DB::table('domains_prices')->where('server_id', $binding->serverId)->delete();
+DB::table('domains_observation_queues')->updateOrInsert(['server_id' => $binding->serverId, 'account_fingerprint' => $first->account_fingerprint],
+    ['offer_work' => OfferState::json(['feed_due' => $now->getTimestamp() + 3600]), 'offer_feed_succeeded_at' => null, 'offer_feed_failure' => 'account_unavailable']);
+same('New orders go to Synthetic second account', $sales($first)['reason'], 'A failed read on the other account row still names the account that takes new orders');
 // A failed terms read on the selling account says it failed.
 $row = Tld::where('server_id', $second->serverId)->where('tld', 'com')->sole();
 DB::table('domains_tlds')->where('id', $row->id)->update(['catalogue_facts' => null]);

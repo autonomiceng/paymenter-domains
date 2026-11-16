@@ -80,8 +80,8 @@ trait TldSalesPage
     protected function head(): Head
     {
         $t=$this->getRecord();$s=$this->sales();$reason=(string)$s['reason'];$a=$this->account();
-        // With no registrar for new orders, naming this row's account would read as the registrar.
-        $head=Head::make('.'.$t->tld.($a!==null&&($this->snap()['seller']??null)!==null?' on '.$a:''),Reader::Staff)->tag((bool)($this->snap()['demo']??false),false)
+        // Only the account for new orders is named: on another account's row the name would read as the registrar.
+        $head=Head::make('.'.$t->tld.($a!==null&&($this->snap()['seller']??null)===(int)$t->server_id?' on '.$a:''),Reader::Staff)->tag((bool)($this->snap()['demo']??false),false)
             ->state($s['label']==='For sale'?State::ForSale:State::NotForSale,'tld-'.$t->id);
         if($s['label']==='For sale'||$this->staffStop()){return $head;}
         $url=match(true){
