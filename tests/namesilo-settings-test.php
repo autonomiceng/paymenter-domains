@@ -13,6 +13,11 @@ use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount;
 use Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview as Review;
 $writes->run($review('processing'),['enabled'=>false,'confirmed'=>true]);
 $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertSuccessful();
+// Both account pricing rows open the shared pricing editor.
+foreach(['customer_pays','card_fee'] as $control){
+    $action=\Filament\Actions\Testing\TestAction::make('default_pricing_'.$control)->schemaComponent('sheet','content');
+    $page->assertActionVisible($action)->mountAction($action)->assertActionMounted($action);$page->unmountAction();gc_collect_cycles();gc_mem_caches();
+}
 $page->assertActionDoesNotExist('accept_namesilo_account');
 same(1,$GLOBALS['enrollmentCalls'],'Viewing local settings never probes the provider');
 $page->assertActionVisible('activate_test');
