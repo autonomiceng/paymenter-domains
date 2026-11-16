@@ -36,8 +36,11 @@ $detail=(string)$staffDom->querySelector('[data-piece="head-detail"]')?->textCon
 foreach([\Paymenter\Extensions\Servers\Domains\Services\ManagementNameservers::registrar($fresh),(string)$fresh->server->name,$read] as $fact){$check($fact!==''&&str_contains($detail,$fact),'The staff head names the registrar, account and absence read time: '.$fact);}
 $owned=null;foreach($staffDom->querySelectorAll('[data-piece="row"]') as $row){if(trim((string)$row->querySelector('.domains-panel-row-k')?->textContent)==='In registrar account'){$owned=$row->textContent;}}
 $check($owned!==null&&str_contains($owned,$read),'In registrar account carries the absence read time');
-$rail=$staffDom->querySelector('[data-piece="trace"]')?->textContent??'';
-$check(str_contains($rail,'Registrar read')&&str_contains($rail,\Paymenter\Extensions\Servers\Domains\Presentation\State::UnderReview->label()),'Activity lists the absence read under review');
+$absenceAt=strtotime($fresh->observation['renewal_ownership']['at']);
+$railReads=$staffDom->querySelectorAll('[data-piece="trace"] [wire\:key="moment-'.$absenceAt.'"]');
+$check($railReads->length===1,'Activity lists the absence read at its recorded time');
+$absenceRow=$railReads->item(0)?->closest('[data-domains-tone]');
+$check($absenceRow?->getAttribute('data-domains-tone')===State::UnderReview->tone(\Paymenter\Extensions\Servers\Domains\Presentation\Reader::Staff)->value,'The absence read has the staff review state');
 // Nameservers and DNS records say where DNS is served while the domain is under review.
 $case=\Paymenter\Extensions\Servers\Domains\Services\DepartureChecks::staffDnsCase($fresh);$rows=[];
 foreach($staffDom->querySelectorAll('[data-piece="row"]') as $row){$rows[trim((string)$row->querySelector('.domains-panel-row-k')?->textContent)]=$row->textContent;}

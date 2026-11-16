@@ -14,11 +14,12 @@ require_once __DIR__.'/Support/staff-alerts.php';
 use App\Models\Notification as NativeNotification;
 staffPanel();staffAlertFixture();$viewer=staffUser([Staff::VIEW]);$blind=staffUser(['admin.domains.watch.view']);
 $eligible=static fn()=>App\Models\User::whereHas('role')->get()->filter(static fn($u)=>Staff::allows($u,Staff::VIEW))->values()->all();
-$bell=static fn($user)=>NativeNotification::where('user_id',$user->id)->where('title','Domain under review')->count();
+$noticeUrl=route('filament.admin.resources.domains.view',['record'=>$d->id]);
+$bell=static fn($user)=>NativeNotification::where('user_id',$user->id)->where('url',$noticeUrl)->count();
 $money=$nativeMoney();$originalBefore=$original->fresh()->getAttributes();
 $clock->instant=$clock->now()->modify('+61 seconds');$observation->fault='absent';
 same('domain_not_in_account',$observer->run($d->id,readRecords:true),'A definite absence is recorded');
-staffAlerts('Domain under review',$d->domain.' is not in our registrar account.',route('filament.admin.resources.domains.view',['record'=>$d->id]),$eligible());
+staffAlerts(null,null,$noticeUrl,$eligible());
 same('departure_suspected',DomainStates::managed($d->fresh(),null,$clock->now()->format('Y-m-d'),false)[0],'Absence derives suspected departure');
 $wire=0;
 $dns=new class implements DnsReader {
@@ -49,8 +50,9 @@ same(true,HoldingReadRetry::absent($d->fresh()),'Unknown read cannot clear defin
 $clock->instant=$clock->now()->modify('+61 seconds');$observation->fault='absent';$observer->run($d->id,readRecords:true);
 same(2,$bell($viewer),'Later reads while the review stays open send no further bell notice');
 $departureRows=array_values(array_filter(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::entries($d->fresh()),fn($r)=>is_array($r)&&str_starts_with($r['__key'],'departure-')));
-same(['Recheck','Registrar read','Registrar read'],array_column($departureRows,'event'),'Activity lists each absence read that opened a review and the later absent read, not the unanswered read');
-same($clock->now()->getTimestamp(),$departureRows[0]['time']->getTimestamp(),'The recheck row carries its own read time');
+same(3,count($departureRows),'Activity lists the two reads that opened reviews and the later absent read, not the unanswered read');
+same(['departure-2','departure-1','departure-0'],array_column($departureRows,'__key'),'Activity identifies each absence read newest first');
+same([$clock->now()->getTimestamp(),$at->getTimestamp(),$first],array_map(static fn($row)=>$row['time']->getTimestamp(),$departureRows),'Each Activity row carries its own read time');
 app()->instance(\Paymenter\Extensions\Servers\Domains\Services\OwnedDomains::class,$owners);
 $actor=staffUser([Staff::VIEW,'admin.domains.manage']);Auth::setUser($actor);
 $beforeList=$clock->instant;

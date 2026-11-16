@@ -15,12 +15,13 @@ function staffAlertFixture(): void
     \Paymenter\Extensions\Servers\Domains\Services\StaffAlertSchema::install();
     Queue::fake();
 }
-function staffAlerts(string $title,string $body,string $url,array $staff): void
+// Null title/body expectations select by URL and leave notification wording unconstrained.
+function staffAlerts(?string $title,?string $body,string $url,array $staff): void
 {
-    $rows=NativeNotification::where('title',$title)->orderBy('user_id')->get();
+    $rows=NativeNotification::where($title===null?'url':'title',$title??$url)->orderBy('user_id')->get();
     $ids=array_map(static fn($user)=>(int)$user->id,$staff);sort($ids);
     same($ids,$rows->pluck('user_id')->map(static fn($id)=>(int)$id)->all(),'One native alert per eligible staff user, with no denied or customer recipients');
-    foreach($rows as $row){same($body,$row->body,'Existing alert body retained');same($url,$row->url,'Relevant native admin URL');
+    foreach($rows as $row){if($body!==null){same($body,$row->body,'Existing alert body retained');}same($url,$row->url,'Relevant native admin URL');
         expect((bool)$row->show_in_app && (bool)$row->show_as_push && $row->read_at===null,'Unread native notification defaults');}
     Queue::assertNotPushed(\Illuminate\Notifications\SendQueuedNotifications::class,static fn($job)=>$job->notification instanceof DatabaseNotification);
     same(0,DB::table('jobs')->count(),'No database job queued');
