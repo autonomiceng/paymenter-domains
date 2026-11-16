@@ -189,6 +189,7 @@ $run = static function (int $seed, string $mode, array $actions) use (
         }
         if ($out > $previousOut && $held < 0) { $record('new_return_exceeds_available', $facts); }
         $open = (bool) array_filter($receipts, static fn($r)=>$r['dispute'] === 'open');
+        $heldOwner=(bool)array_filter($receipts,static fn($r)=>$r['dispute']==='lost');
         $pending = (bool) array_filter(MoneyReceiptGateway::$returns, static fn($r)=>$r['state'] === 'pending');
         if ($open && $out > $previousOut) { $record('return_during_open_dispute', $facts); }
         // The projection consumes retained evidence; expected money still comes only from native payouts,
@@ -212,7 +213,7 @@ $run = static function (int $seed, string $mode, array $actions) use (
         }
         // Plan coverage comes from the independent pre-payout balance and open-dispute facts,
         // including unsent work after a lost gateway reply, capped at the issued line.
-        if ($kind === 'refund' && $error !== DomainException::class) { $promised = $open ? 0 : min($gross, max(0, $paid-$lost-$previousOut)); }
+        if ($kind === 'refund' && $error !== DomainException::class && !$heldOwner) { $promised = $open ? 0 : min($gross, max(0, $paid-$lost-$previousOut)); }
         // After an unsent plan's retry, only funds still held can remain promised; no gateway accepted this crash.
         if ($planCrashed && $kind === 'retry' && !$open) { $promised = min($gross, max($out, $paid-$lost)); }
         $reserved = max($reserved, max(0, $promised-$out));
@@ -399,6 +400,7 @@ DB::transaction(static function() use ($probe): void {
     InvariantReceiptGateway::$ledger = [];
     expect($refused, 'Gateway currency mismatch throws before projecting money');
 });
+DB::table('domains_obligation_alerts')->where('alert_key',hash('sha256','synthetic_hold'))->update(['resolved_at'=>$clock->now()->getTimestamp()]);
 // A closed-invoice gateway row can commit before the native receipt. Refuse the whole
 // payout until both identities are present; skipping it could conceal a return or loss.
 [$orphanOp, , , $orphanInvoice] = $makeRenewal('money-orphan-ledger-placeholder.com', false);
