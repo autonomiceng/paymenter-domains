@@ -14,6 +14,15 @@ $before = serialize(DB::table('invoices')->get()); $items = serialize(DB::table(
 $settings = $product->server->settings(); $settings->updateOrCreate(['key' => 'domains_manual_renewals_enabled'], ['value' => false, 'type' => 'boolean']);
 activeFixtureSeller($sellers,'com',(int)\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->value('revision'), $tlds[1]->server_id, true, true, $now);
 $tlds[0]->update(tldColumns(['enabled' => false, 'renew_enabled' => false],$tlds[0]));
+// A database error reading registrar settings reaches the caller as an error, never a renewal refusal or hold.
+$broken = 1; DB::listen(static function ($query) use (&$broken): void {
+    if ($broken < 1 || !collect(debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS))->contains(fn ($f) => ($f['function'] ?? '') === 'configuration' && str_ends_with($f['class'] ?? '', 'AccountBindings'))) { return; }
+    $broken--; $cause = new PDOException('Synthetic connection loss'); $cause->errorInfo = ['HY000', 2006, 'Synthetic'];
+    throw new Illuminate\Database\QueryException('sqlite', $query->sql, [], $cause);
+});
+$stateBefore = $op->fresh()->state; $codeBefore = $op->fresh()->safe_code;
+try { $engine->run($op->id, $writer); $thrown = null; } catch (Throwable $error) { $thrown = $error; }
+same([Illuminate\Database\QueryException::class, $stateBefore, $codeBefore, 0], [$thrown === null ? null : $thrown::class, $op->fresh()->state, $op->fresh()->safe_code, $state->writes], 'A settings read database error is an error, not a refusal');
 same('pending', $engine->run($op->id, $writer)->state, 'Late paid obligation survives preferences, seller, sales flags and stale retail');
 same(1, $state->writes, 'One renewal write'); same(12, count($state->calls), 'Initial and final full read sequences, single reservation');
 same('2027-10-18', $d->fresh()->provider_expires_at->format('Y-m-d'), 'Acknowledgement cannot advance expiry');
