@@ -36,12 +36,13 @@ final class StaffDomainStatus
      * An open alert names the step unless the row already has a specific one (a held request, an import) or has ended.
      * With no alert, an open renewal says what happens next on a domain that is otherwise Active.
      * @param array{key:string,label:string,tone:string,reason:?string} $shared
-     * @param list<array{code:string,request:?int,failed?:bool}> $alerts
+     * @param list<array{code:string,request:?int,failed?:bool,money?:bool}> $alerts
      * @return array{key:string,label:string,tone:string,reason:?string,step:?string,request:?int,act:bool,alert:?string} $request is set when the step names one, $act when staff have a job here, $alert when the step is that open alert */
     public static function for(array $shared, string $state, Domain $d, ?Operation $op, array $alerts, ?Operation $renewal=null, ?Operation $waiting=null, bool $ordersOff=false, ?array $accounts=null, ?array $release=null): array
     {
         if (in_array($state, ['departed', 'departed_deleted'], true)) {
-            $alerts = array_values(array_filter($alerts, static fn (array $alert) => !in_array($alert['code'], self::DEPARTED_STEPS, true)));
+            // An unreviewed charge is money staff still owe a decision on, so it outlives the registrar work.
+            $alerts = array_values(array_filter($alerts, static fn (array $alert) => ($alert['money'] ?? false) || !in_array($alert['code'], self::DEPARTED_STEPS, true)));
         }
         [$step, $specific, $request] = self::resolve($state, $d, $op, $accounts, $release);
         $act = $step !== null && !in_array($step, self::WAITING, true);

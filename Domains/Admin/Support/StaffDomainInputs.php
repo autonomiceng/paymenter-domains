@@ -58,7 +58,8 @@ final class StaffDomainInputs
                     $request=$a->operation_id===null?null:(int)$a->operation_id;
                     $op=$request===null?null:$ops->firstWhere('id',$request);
                     // The head and list keep the failed-request wording without another read per domain.
-                    return ['code'=>$a->code,'request'=>$request,'failed'=>$a->code==='operation_review'&&$op?->state==='rejected'&&!RequestStatus::closed($op->state,$op->safe_code)];
+                    return ['code'=>$a->code,'request'=>$request,'failed'=>$a->code==='operation_review'&&$op?->state==='rejected'&&!RequestStatus::closed($op->state,$op->safe_code),
+                        'money'=>$a->code==='operation_review'&&$op!==null&&ObligationAlerts::moneyReview($op)];
                 })->values()->all(),
                 'late'=>$rows->contains('code','acquisition_late_money'),
                 'renewal'=>$current&&in_array($current->state,self::OPEN_RENEWAL,true)?$current:null,'off'=>$off,
