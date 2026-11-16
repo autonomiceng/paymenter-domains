@@ -96,8 +96,8 @@ final class ObservationRecords
         $ids=ObservationWork::stoppedIds($domains);
         foreach ($domains as $d) {
             if (isset($ids[$d->id])) { continue; }
-            // Saved evidence that can't be read stops sync, as on the domain page.
-            try { if (self::heldStopped($d)) { $ids[$d->id]=true; } } catch (\Throwable) { $ids[$d->id]=true; }
+            // Saved data that can't be read proves no hold: only stopped work counts. The domain page shows the unreadable notice.
+            try { if (self::heldStopped($d)) { $ids[$d->id]=true; } } catch (\Illuminate\Contracts\Encryption\DecryptException) {}
         }
         return $ids;
     }
