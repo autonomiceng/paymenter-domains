@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
 /** Staff confirm a suspected departure once. One full money decision closes unpaid renewals, returns paid unsent renewals
  * as account credit, cancels the service and freezes the departure record; any blocking line rolls all of it back. No
- * provider call or notification runs inside. */
+ * provider call runs inside; the customer email is reserved inside and handed off once after commit. */
 final class HoldingDeparture
 {
     public const PERMISSION='admin.domains.holdings.depart';
@@ -47,8 +47,9 @@ final class HoldingDeparture
     /** Applied with the frozen record; Failed carries DepartureBlocked or a review refusal; Deferred is MoneyDecisions::BUSY. */
     public function confirm(User $actor,int $domainId,string $ticket,string $reason,string $note): MoneyResult
     {
-        OperationClaims::outside();$seed=Domain::findOrFail($domainId);
-        $result=MoneyDecisions::run(new MoneyRequest($seed,staffId:(int)$actor->id,scope:MoneyScope::Full),function(array $l)use($actor,$ticket,$reason,$note):array{
+        OperationClaims::outside();$seed=Domain::findOrFail($domainId);$claim=null;
+        $result=MoneyDecisions::run(new MoneyRequest($seed,staffId:(int)$actor->id,scope:MoneyScope::Full),function(array $l)use($actor,$ticket,$reason,$note,&$claim):array{
+            $claim=null; // A retried attempt reserves again; the rolled-back reservation is gone.
             $d=$l['domain'];$staff=$l['staff'];
             if(!$staff||!$staff->hasPermission('admin.domains.view')||!$staff->hasPermission('admin.domains.manage')||!$staff->hasPermission(self::PERMISSION)){
                 throw new StaffReviewRefused('Current staff permissions required. Reload this page.');}
@@ -99,20 +100,54 @@ final class HoldingDeparture
             NativeDomainGuard::departed($l);
             DomainReservations::releaseDeparted($l);
             $watch=app(WatchDiscovery::class)->departed($d,$now->getTimestamp());
-            // The frozen record is written once; the watch outcome joins this confirmation's history entry.
-            if($watch!==null){$history[array_key_last($history)]['watch']=$watch;$d->update(['renewal_policy'=>[...$d->renewal_policy,'staff_holdings'=>$history]]);}
+            // The customer email is reserved here and handed off only after commit, so a rollback sends nothing.
+            $email=self::notice($l,$record,$watch,$now,$claim);
+            // The frozen record is written once; the watch outcome and the email join this confirmation's history entry.
+            if($watch!==null){$history[array_key_last($history)]['watch']=$watch;}
+            if($email!==null){$history[array_key_last($history)]['email']=$email;}
+            if($watch!==null||$email!==null){$d->update(['renewal_policy'=>[...$d->renewal_policy,'staff_holdings'=>$history]]);}
             // Only this holding's departure review; money, dispute and loss alerts stay open.
             DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code',RenewalOwnership::REVIEW)->whereNull('resolved_at')->update(['resolved_at'=>$now->getTimestamp()]);
             return [...$record,'watch'=>$watch];
         });
-        // Monitoring work and discovery hints start only after the decision committed.
+        // Monitoring work, discovery hints and the email start only after the decision committed.
         if($result->outcome===MoneyOutcome::Applied){
+            $at=$this->clock->now()->getTimestamp();
+            if($claim&&!ReminderDelivery::handoff($claim,$at)){self::alert($domainId,'delivery_uncertain',$at);}
             WatchDiscoveryHints::names([[(int)$seed->user_id,(string)$seed->domain]]);
             if(($result->value['watch']['state']??null)==='active'){app(WatchWork::class)->enrollWatch((int)$result->value['watch']['id'],(int)$seed->user_id);}
         }
         return $result;
     }
 
+    /** Reserves the one departure email (mocks 08, 08b, 08c) under the decision's locks. Returns the Email sent fact for
+     * the history entry: delivery key, subject and recipient. A template or channel failure leaves the staff alert and
+     * never blocks the confirmation; database errors pass through to the decision. */
+    private static function notice(array $l,array $record,?array $watch,\DateTimeImmutable $now,?array &$claim): ?array
+    {
+        $d=$l['domain'];$user=$l['user'];$identity='departure:'.$record['identity']['service_id'].':'.$record['identity']['authority_generation'];$renewals=[];
+        foreach($record['invoices'] as $o){
+            if(!in_array($o['outcome'],['cancelled_unpaid','credited'],true)){continue;}
+            $invoice=$l['invoices']->firstWhere('id',$o['invoice_id']);$credited=$o['outcome']==='credited';
+            $renewals[]=['invoice'=>(string)($invoice?->number??$o['invoice_id']),'credited'=>$credited,
+                'amount'=>RenewalReminders::money($credited?PricingRule::decimal((int)$o['credit_minor']):(string)$invoice?->total)];
+        }
+        $zone=new \DateTimeZone(config('domains.time_zone')?:config('app.timezone'));
+        $data=['domain'=>$d->domain,'deleted'=>$record['reason']==='deleted','same_registrar'=>$record['reason']==='other_account',
+            'date'=>$now->setTimezone($zone)->format('M j, Y'),'renewals'=>$renewals,'dns'=>$record['dns_case'],
+            'monitored'=>($watch['state']??null)==='active','domain_url'=>url('/domains/'.$d->id),
+            'support_url'=>\Paymenter\Extensions\Servers\Domains\Presentation\Missing::supportUrl()??'','company'=>\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company()];
+        try{$claim=ReminderDelivery::reserve((int)$d->id,$identity,'domains_domain_departed',$data,$user,$now->getTimestamp());}
+        catch(\Illuminate\Database\QueryException|\PDOException $e){throw $e;}
+        catch(\Throwable){ObligationAlerts::record($d,'template_failed',$now->getTimestamp(),null,$identity);return null;}
+        if(!$claim){return null;}
+        return ['delivery_key'=>hash('sha256',$d->id.':'.$identity),'subject'=>$claim['mail']?->envelope()->subject,'to'=>$claim['mail']?(string)$user->email:null];
+    }
+    private static function alert(int $id,string $code,int $now): void
+    {
+        try{DB::transaction(function()use($id,$code,$now):void{$d=Domain::whereKey($id)->lockForUpdate()->first();if($d){ObligationAlerts::record($d,$code,$now);}});}
+        catch(\Throwable $e){try{logger()->warning('Domains departure email failure could not be recorded.',['domain_id'=>$id,'exception_class'=>$e::class]);}catch(\Throwable){}}
+    }
     /** First blocking line in check order, plus the renewals confirmation closes and the completed ones it keeps.
      * @param \Closure(int):?array $money a locked load or a projection; null means unreadable
      * @return array{block:?array,close:list<Operation>,credit:list<Operation>,kept:list<Operation>} */

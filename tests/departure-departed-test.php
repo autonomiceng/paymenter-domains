@@ -33,7 +33,7 @@ Livewire\Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$d->id])-
 $saved=$d->fresh()->renewal_policy['departure'];
 $departed=array_values(array_filter(Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::entries($d->fresh()),fn($r)=>is_array($r)&&str_starts_with((string)($r['__key']??''),'departed-')));
 $name=(fn(string $n)=>ctype_digit($n)?'Invoice #'.$n:$n)(Paymenter\Extensions\Servers\Domains\Admin\Support\Facts::invoiceName((int)$invoice->id));
-same(['Departure confirmed',$name.' cancelled','Credit added','Name released'],array_column($departed,'event'),'History lists the confirmation, the closed invoice, the credit and the released name');
+same(['Departure confirmed',$name.' cancelled','Credit added','Name released','Email sent'],array_column($departed,'event'),'History lists the confirmation, the closed invoice, the credit, the released name and the sent email');
 same(trim($staff->first_name.' '.$staff->last_name)?:'Staff',$departed[0]['by'],'The confirmation row names the staff member who confirmed');
 expect(str_contains((string)$departed[2]['sub'],'$'.number_format($saved['credit_minor']/100,2)),'The Credit added row carries the saved credit amount');
 echo "A confirmed departure reads as transferred away on customer, list and staff pages, with its saved history.\n";

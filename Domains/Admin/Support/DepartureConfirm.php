@@ -78,11 +78,11 @@ final class DepartureConfirm
             ->schema(fn()=>[
                 Hidden::make('review_key')->default(fn()=>StaffHoldingReview::ticket((int)Auth::id(),(int)$d->id,HoldingDeparture::ACTION,
                     StaffHoldingReview::stamp(HoldingLocks::take($d,advisory:true)),app(Clock::class))),
-                Radio::make('reason')->label('Reason')->required()->options(array_map(fn($r)=>rtrim($r,'.'),HoldingDeparture::REASONS)),
+                Radio::make('reason')->label('Reason')->required()->live()->options(array_map(fn($r)=>rtrim($r,'.'),HoldingDeparture::REASONS)),
                 Textarea::make('note')->label('Staff note')->required()->minLength(5)->maxLength(500)->rows(2)
                     ->helperText('Only staff see it. Say how you know the domain moved.')
                     ->rules(['regex:'.StaffReason::SINGLE_LINE])->validationMessages(['regex'=>'Use one line.']),
-                Placeholder::make('outcome')->label('When you confirm')->content(self::outcome($d)),
+                Placeholder::make('outcome')->label('When you confirm')->content(fn($get)=>self::outcome($d,$get('reason'))),
             ])
             ->action(function(array $data,Action $action,$livewire)use($d):void{
                 $actor=Auth::user();
@@ -104,7 +104,7 @@ final class DepartureConfirm
             });
     }
     /** What confirmation changes, from the read-only preview: each line is also on the page. */
-    private static function outcome(Domain $d): HtmlString
+    private static function outcome(Domain $d,?string $reason=null): HtmlString
     {
         $p=self::preview($d);$lines=[];$b=fn(string $s)=>'<strong>'.e($s).'</strong>';
         foreach($p['close'] as $id){
@@ -118,8 +118,18 @@ final class DepartureConfirm
         $owner=self::owner($d);
         $watch=match(WatchDiscovery::departurePreview($d)){'active'=>'as an external domain','paused'=>'paused','hosting','retired'=>'not monitored',default=>null};
         if($watch!==null){$lines[]=e($owner."'s monitored domain stays, {$watch}.");}
+        if(($subject=self::subject($d,$reason))!==null){$lines[]=e($owner.' gets one email, “'.$subject.'”.');}
         $lines[]=$b("This can't be undone.").e(' If the domain comes back, import it as a new domain.');
         return new HtmlString(implode('',array_map(fn($l)=>'<p>'.$l.'</p>',$lines)));
+    }
+    /** The departure email's subject for the picked reason, from its saved template; null when it won't send. */
+    public static function subject(Domain $d,?string $reason): ?string
+    {
+        try{
+            $t=\App\Models\NotificationTemplate::where('key','domains_domain_departed')->first();
+            if(!$t||!$t->enabled||$d->user===null){return null;}
+            return trim(\Illuminate\View\Compilers\BladeCompiler::render((string)$t->subject,['domain'=>$d->domain,'deleted'=>$reason==='deleted','company'=>\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company()]));
+        }catch(\Throwable){return null;}
     }
     /** The customer's name as the Billing Customer row shows it. */
     private static function owner(Domain $d): string
