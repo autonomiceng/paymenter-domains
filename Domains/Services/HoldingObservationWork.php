@@ -291,11 +291,12 @@ final class HoldingObservationWork
     private function finishCurrent(object $job, string $code, ?string $credential): void
     {
         $now=$this->clock->now()->getTimestamp();
-        // A local deferral is not a read. Keep due_at, so an overdue job keeps the wait claim() ranks it by, and
-        // retry after a minute through an unclaimed lease, which claim() already skips.
+        // A registry deferral yields to overdue registrar reads. Other local deferrals keep their age.
+        // Retry after a minute through an unclaimed lease, which claim() already skips.
         if ($code==='read_deferred') {
             DB::table('domains_observation_work')->where('id',$job->id)->where('claim',$job->claim)->update([
-                'claim'=>null,'lease_until'=>$now+60,'tries'=>$job->tries,'safe_code'=>$job->safe_code]); return;
+                'claim'=>null,'lease_until'=>$now+60,'tries'=>$job->tries,'safe_code'=>$job->safe_code,
+                'due_at'=>$job->safe_code==='departure_registry'?$now+60:$job->due_at]); return;
         }
         $d=Domain::findOrFail($job->domain_id); $tries=$job->tries+1;
         $code=HoldingReadRetry::result($d,$code);
