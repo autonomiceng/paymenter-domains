@@ -97,5 +97,20 @@ App\Models\InvoiceTransaction::create(['invoice_id'=>$op->invoice_id,'amount'=>'
 same(0,Paymenter\Extensions\Servers\Domains\Services\InvoiceMoney::project((int)$op->invoice_id)['held'],'The lost payment leaves nothing held');
 $facts=$staffFacts($op);
 $want(['No credit added',null]===[$facts['refund']??null,$facts['refund_sub']??null],'A request no refund runs for gives staff no refund wait reason');
+// A refund capped by a lost dispute, then the dispute was won and the rest went back as account credit: nothing is short.
+[$op,$a,$b,$gross]=$returnSetup('request-invoice-late-credit-placeholder.com',static function($op,$a,$b,$gross){
+    $credit=App\Models\Credit::firstOrCreate(['user_id'=>App\Models\Invoice::findOrFail($op->invoice_id)->user_id,'currency_code'=>'USD'],['amount'=>'0.00']);
+    return ['refund'=>['payments'=>[['id'=>(int)$a->id,'amount_minor'=>500]],'amount'=>'5.00','currency'=>'USD','to'=>'account_credit',
+        'bridge_reason'=>'gateway_return_unavailable','credit_id'=>(int)$credit->id,'at'=>'2026-11-01T00:00:00+00:00']];
+});
+$chargeback=App\Models\InvoiceTransaction::create(['invoice_id'=>$op->invoice_id,'amount'=>Paymenter\Extensions\Servers\Domains\Services\PricingRule::decimal(500-$gross),'fee'=>'0.00','status'=>'succeeded','gateway_id'=>$gateway->id,'transaction_id'=>'synthetic-late-credit-chargeback']);
+$capped=RequestFacts::refundLimit($op->fresh(),false);
+expect($capped!==null&&str_contains((string)($staffFacts($op)['refund_sub']??''),$capped),'A capped refund tells staff why it is smaller');
+// The won dispute reverses the chargeback.
+Illuminate\Support\Facades\DB::table('invoice_transactions')->where('id',$chargeback->id)->delete();$funding=$op->fresh()->funding;
+$funding['late_credits']=[['payments'=>[['id'=>(int)$b->id,'amount_minor'=>$gross-500]],'amount'=>Paymenter\Extensions\Servers\Domains\Services\PricingRule::decimal($gross-500),'currency'=>'USD','to'=>'account_credit','credit_id'=>$funding['refund']['credit_id'],'at'=>'2026-11-02T00:00:00+00:00']];
+$op->update(['funding'=>$funding]);
+same(0,Paymenter\Extensions\Servers\Domains\Services\InvoiceMoney::project((int)$op->invoice_id)['held'],'The later credit returned the rest');
+$want(RequestFacts::refundLimit($op->fresh(),false)===null&&!str_contains((string)($staffFacts($op)['refund_sub']??''),$capped),'Money returned later as account credit counts toward the return');
 expect($followups===[],'Request money follow-ups: '.json_encode($followups,JSON_THROW_ON_ERROR));
 $nativeSuccessful=true;
