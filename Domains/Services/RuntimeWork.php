@@ -82,6 +82,12 @@ final readonly class RuntimeWork
             $a=Account::where('server_id',$row->server_id)->first();
             if(!$a||$a->account_fingerprint!==$row->account_fingerprint){continue;}
             if(!$operationsOnly){$balanceAccounts[]=$a;}
+            // Renewal steps deferred by contention go back to the operation queue, which reruns them with fresh rows.
+            $this->attempt('producer',function()use($a):void {
+                foreach(MoneyDecisions::queued((int)$a->server_id,25,[RenewalExecution::KIND]) as $work){
+                    if(Operation::whereKey($work->subject_id)->exists()){$this->enqueue((int)$work->subject_id);}MoneyDecisions::done($work);
+                }
+            },(int)$a->server_id);
             $this->attempt('history_contract',fn()=>\Paymenter\Extensions\Servers\Domains\Registrars\Enom\TestOrderHistory::upgrade($a),(int)$a->server_id);
             $ops=Operation::where('server_id',$a->server_id)->where('account_fingerprint',$a->account_fingerprint)->where('id','>',$row->operation_cursor)
                 ->where(fn($q)=>$q->whereIn('state',['awaiting_payment','awaiting_code','queued','pending','uncertain','running'])
