@@ -83,6 +83,14 @@ class ListDomains extends RecordListPage
     /** The Orders switches are read once at boot, before the table is built or any other read, so a switch that changes
      * while the page is built can't split the filter from the rows. */
     public function boot(): void { $this->orders(); }
+    public function rendering(): void
+    {
+        $this->getTable()->getColumn('note')->formatStateUsing(function(?string $state,Domain $record) {
+            if (!\Paymenter\Extensions\Servers\Domains\Services\DepartureChecks::suspected($record)) { return \Paymenter\Extensions\Servers\Domains\Admin\Support\ListNote::clause($state,$this->status($record)['request']??null); }
+            $cause=DomainFacts::alertCause('departure_review',$record);$delayed=\Paymenter\Extensions\Servers\Domains\Services\DepartureChecks::attention($record,app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp())['state']==='delayed';
+            return new \Illuminate\Support\HtmlString(($delayed?Value::state(State::Delayed,Reader::Staff,'Check the departure. Expires '.Fact::day($record->provider_expires_at)->text.'.'):Value::fact(Fact::entered($cause)))->toHtml());
+        });
+    }
     /** Every word has to match the customer's name or email, so a full name finds them. */
     private static function customerSearch(Builder $query, string $search): Builder
     {
@@ -102,7 +110,13 @@ class ListDomains extends RecordListPage
         // A hold for staff reads Under review, and the note says who held it.
         return State::tryFrom((string) $status['key']) ?? State::UnderReview;
     }
-    private function note(Domain $d): array { $row = $this->row($d); return DomainFacts::note($this->status($d), $row['sync'], $row['noAccount'], $d); }
+    private function note(Domain $d): array
+    {
+        $row = $this->row($d); $status = $this->status($d);
+        // The departure alert leads with Delayed after two days; repeating the domain reason would hide it in the short cell.
+        if (($status['alert'] ?? null) === 'departure_review') { $status['reason'] = null; }
+        return DomainFacts::note($status, $row['sync'], $row['noAccount'], $d);
+    }
     /** A registered domain without a saved expiry reads Not read yet or Couldn't read, on one line: why is on the domain page. */
     private function expires(Domain $d): ?Value
     {
@@ -115,6 +129,7 @@ class ListDomains extends RecordListPage
     private function renewal(Domain $d): ?Value
     {
         if (DomainFacts::ended($d)) { return null; }
+        if (\Paymenter\Extensions\Servers\Domains\Services\DepartureChecks::suspected($d)) { return Value::state(State::Paused,Reader::Staff); }
         $row = $this->row($d);
         if ($row['off'] === null) { return Value::state(State::CouldntRead, Reader::Staff); }
         if (!$d->adoptionPending() && !$row['off'] && !$row['accountOff']) { return Value::plain(Plain::On); }

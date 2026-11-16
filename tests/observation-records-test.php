@@ -136,10 +136,10 @@ foreach(['provider_domain_id'=>'999','authority_generation'=>2] as $field=>$valu
     expect(!\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::absent($copy),'Absence for another '.$field.' does not apply');}
 $equal=$d->fresh();$o=$equal->observation;$o['facts']['at']=$o['record_failure']['at'];$equal->observation=$o;
 expect(\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::absent($equal),'Ownership facts from the same moment do not clear absence');
-// A generic failure is not absence, so the saved facts stay as they were.
+// A generic failure cannot erase the preceding definite absence.
 $observation->fault='transport';$clock->instant=$clock->now()->modify('+61 seconds');
 same('read_failed',$observer->run($d->id,readRecords:true),'Transport failure stays a read failure');
-expect(!\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::absent($d->fresh()),'A read failure is not absence');same('No',$membership(),'A read failure keeps the retained absence, matching the renewal fence');
+expect(\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::absent($d->fresh()),'A read failure retains the earlier definite absence');same('No',$membership(),'A read failure keeps the retained absence, matching the renewal fence');
 $observation->fault='absent';$clock->instant=$clock->now()->modify('+61 seconds');$observer->run($d->id,readRecords:true);same('No',$membership(),'Absence is current again');
 // A newer owned read with an incomplete record family clears absence and keeps the family diagnostic.
 $observation->fault='';$state->fault='GetDomainSRVHosts';$clock->instant=$clock->now()->modify('+61 seconds');
@@ -147,9 +147,9 @@ same('refreshed',$observer->run($d->id,readRecords:true),'Newer owned read with 
 same('domain_not_in_account',$d->fresh()->observation['record_failure']['code'],'Incomplete families keep the saved read failure');
 expect(ObservationRecords::held($d->fresh()),'The incomplete family keeps its record hold');
 same('Yes',$membership(),'Membership follows the newer ownership read');
-same("Sync stopped: couldn't read SRV records. Other domain facts were saved. Use Sync now to try again.",\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::notice($d->fresh())['title'],'Staff see the family diagnostic instead of absence');
+same(null,\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::notice($d->fresh()),'Queued record recovery does not need a staff warning');
 $status=\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($d->fresh());
-same(['records_incomplete',true],[$status['read_code'],$status['read_stopped']],'The stopped job reports the incomplete family, not absence');
+same([null,false],[$status['read_code'],$status['read_stopped']],'The queued recovery is no longer a stopped absence');
 expect(!\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::absent($d->fresh()),'Newer ownership proof ends absence');
 expect(ObservationProjection::recordStatus($d->fresh(),$clock->now())['families']['srv']['state']!=='complete','No complete family is invented');
 expect(!isset(OwnerRecords::forDomain($d->fresh())['dns']),'Edits stay closed until a complete read');

@@ -54,12 +54,15 @@ final class HoldingReadRetry
             $result=self::result($d,$code);$partial=$code==='refreshed'&&$result!==$code;
             $tries=$partial?(int)$job->tries+1:0;
             $q->update(['tries'=>$tries,'claim'=>null,'lease_until'=>0,'safe_code'=>$result,
-                'due_at'=>$now+($partial?self::delay($tries):($code==='refreshed'&&($d->observation['followup']['state']??null)==='pending'?300:86400))]);
+                'due_at'=>$now+($partial?self::delay($tries):($code==='refreshed'&&($d->observation['followup']['state']??null)==='pending'?300:86400)),
+                ...(DepartureChecks::suspected($d)?DepartureChecks::schedule($d,$now):[])]);
         });
     }
     /** This identity's confirmed not-found read, unless a later read of the same identity proved ownership. Other read failures are never absence. */
     public static function absent(Domain $d): bool
-    { return self::absenceFailure($d)!==null&&!self::absenceSuperseded($d); }
+    { $proof=$d->observation['renewal_ownership']??null;
+        if(is_array($proof)&&($proof['identity']??null)===ObservationRecords::identity($d)){return ($proof['owned']??null)===false;}
+        return self::absenceFailure($d)!==null&&!self::absenceSuperseded($d); }
     private static function absenceFailure(Domain $d): ?array
     {
         $failure=$d->observation['record_failure']??null;

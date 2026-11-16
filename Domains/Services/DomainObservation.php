@@ -53,7 +53,7 @@ final class DomainObservation
         } catch (ReadDeferred|EnomTestCallLimit $e) { throw $e; }
         catch (\Throwable $e) {
             $failureCode=ReadFailure::code($e);
-            if ($seed->status!=='active'||(!$recordProtected&&$failureCode!=='domain_not_in_account')) { throw $e; }
+            if (!in_array($seed->status,['active','grace','expired'],true)||(!$recordProtected&&$failureCode!=='domain_not_in_account')) { throw $e; }
             $snapshot=null; $transfer=TransferStatus::Unknown; $failed=true;
         }
         // A failed primary read retains inventory; record failures retain successful domain facts.
@@ -105,13 +105,15 @@ final class DomainObservation
                 ObservationRecords::hold($l['domain'],$recordOverflow?'child_host_limit':($snapshot?->owned===false?'ownership_drift':(($records['glue']['read_failed']??false)&&$failedFamily==='glue'?'glue_unavailable':(($records['dns']['caa']??false)&&$failedFamily==='dns'?'caa_unsupported':'records_unavailable'))),$this->clock->now(),$failureCode,$failedFamily);
             }
             if ($failed) { ObservationRecords::failPrimary($l['domain'],$this->clock->now(),$failureCode); return $failureCode; }
-            if ($snapshot?->owned===false && $l['domain']->status==='active') { ObservationRecords::failPrimary($l['domain'],$this->clock->now(),'domain_not_in_account'); return 'domain_not_in_account'; }
+            if ($snapshot?->owned===false && in_array($l['domain']->status,['active','grace','expired'],true)) { ObservationRecords::failPrimary($l['domain'],$this->clock->now(),'domain_not_in_account'); return 'domain_not_in_account'; }
             if ($deferred) { return 'read_deferred'; }
-            $baseCode=$l['domain']->status==='transfer_pending'&&$transfer===TransferStatus::Pending?'healthy_pending':($l['domain']->status==='active'&&!($l['domain']->observation['drift']??true)?'refreshed':'unresolved');
+            $baseCode=$l['domain']->status==='transfer_pending'&&$transfer===TransferStatus::Pending?'healthy_pending':(in_array($l['domain']->status,['active','grace','expired'],true)&&!($l['domain']->observation['drift']??true)?'refreshed':'unresolved');
             // A record gate must never hide drift, pending status or another unresolved core result.
             if ($baseCode==='refreshed' && $readRecords && ($this->records!==null || $this->observationReader!==null) && !$recordEnabled) { return 'records_disabled'; }
             return $baseCode;
         });
+        DB::transaction(function()use($seed):void { $d=HoldingLocks::take($seed)['domain'];
+            if(ObservationRecords::identity($d)===ObservationRecords::identity($seed)){DepartureChecks::capture($d,$this->clock->now()->getTimestamp());} });
         return $completion ? $completion($code,$wireGuard) : $code;
     }
     /** Observation must yield before it can invalidate a live management/financial grant. */

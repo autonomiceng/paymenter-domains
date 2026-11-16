@@ -32,6 +32,7 @@ final class DomainDecisions
     {
         if (self::accountRenewalsOff($d)) { return self::REGISTRAR_RENEW_HELD; }
         $company = \Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company();
+        if (\Paymenter\Extensions\Servers\Domains\Services\DepartureChecks::suspected($d)) { return 'Off on purpose. '.($company !== '' ? $company.' renews' : 'We renew').' after the invoice is paid, not while under review.'; }
         return 'Off on purpose. '.($company !== '' ? $company.' renews' : 'We renew').' the domain after the invoice is paid, so you are never charged by the registrar directly.';
     }
     /** Open alerts by kind: the row each concerns and its tone. ObligationAlerts::LABELS has the words. The row keeps its value; with no value it is Missing.
@@ -194,7 +195,12 @@ final class DomainDecisions
             $fenced=RenewalOwnership::blocked($d);
             if ($fenced) { $f['Renewal']['sub']=ObligationAlerts::LABELS[RenewalOwnership::REVIEW]; $f['Renewal']['help']=null; }
             // An ownership fence pauses collection too; existing debt stays accessible in Open invoice.
-            if (!$fenced&&$renewalInvoice) { $f['Next invoice']=Facts::row($renewalInvoice->due_at?'Due '.gmdate('M j, Y',strtotime(substr($renewalInvoice->due_at,0,10).' 00:00:00 UTC')):'Due'); }
+            if ($fenced&&$renewalInvoice&&\Paymenter\Extensions\Servers\Domains\Services\DepartureChecks::suspected($d)) {
+                $open=\App\Models\Invoice::findOrFail($renewalInvoice->id);
+                $name=Facts::invoiceName((int)$open->id);$line=(ctype_digit($name)?'Invoice #'.$name:$name).', '.(string)$open->formattedTotal.($open->due_at?', due '.$open->due_at->format('M j, Y'):'');
+                $f['Next invoice']=Facts::row('Paused',sub:$line.'. '.\Paymenter\Extensions\Servers\Domains\Services\DepartureChecks::RENEWAL_WAITS);
+            }
+            elseif (!$fenced&&$renewalInvoice) { $f['Next invoice']=Facts::row($renewalInvoice->due_at?'Due '.gmdate('M j, Y',strtotime(substr($renewalInvoice->due_at,0,10).' 00:00:00 UTC')):'Due'); }
             elseif (!$fenced&&!$pending&&$d->status==='active'&&!$expired&&$renewal&&!$off&&!$settledRenewal) { $f['Next invoice']=self::nextInvoice($d); }
         }
         if ($invoice) { $f['Open invoice']=Facts::row(Facts::invoiceName((int)$invoice->id),sub:'Awaiting payment',url:Facts::invoiceUrl((int)$invoice->id)); }
@@ -226,7 +232,7 @@ final class DomainDecisions
     }
     /** Safe cause text shared by the domain page and the list. Unknown saved kinds still need review. With the domain, a stopped sync names the control these staff have. */
     public static function alertCause(string $code, ?Domain $d=null): string
-    { return $code==='observation_review'?'Sync stopped. '.self::stoppedStep($d):(ObligationAlerts::LABELS[$code]??'Domain alert needs review.'); }
+    { if($code==='departure_review'&&$d){$a=\Paymenter\Extensions\Servers\Domains\Services\DepartureChecks::attention($d,app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp());return ($a['state']==='delayed'?'Delayed. ':'').'Check the departure. Not in our registrar account. Expires '.(\Paymenter\Extensions\Servers\Domains\Presentation\Fact::day($a['expiry'])?->text??'unknown').'.';} return $code==='observation_review'?'Sync stopped. '.self::stoppedStep($d):(ObligationAlerts::LABELS[$code]??'Domain alert needs review.'); }
     /** Puts each cause under its row, collecting causes without a row on the Open alerts row. */
     private static function alerts(Domain $d, array $f, array|false|null $notice=false): array
     {

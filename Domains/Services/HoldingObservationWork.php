@@ -11,7 +11,7 @@ final class HoldingObservationWork
     /** Called under the holding locks when registration or transfer becomes active. Never replaces existing work. */
     public static function queueInitial(Domain $d, \DateTimeImmutable $now): void
     {
-        if ($d->status!=='active'||!Schema::hasTable('domains_observation_work')) { return; }
+        if (!in_array($d->status,['active','grace','expired'],true)||!Schema::hasTable('domains_observation_work')) { return; }
         DB::table('domains_observation_work')->insertOrIgnore(['server_id'=>$d->server_id,'account_fingerprint'=>$d->account_fingerprint,
             'domain_id'=>$d->id,'generation'=>$d->authority_generation,'phase'=>self::phase($d),'due_at'=>$now->getTimestamp(),
             'safe_code'=>self::firstRecordRead($d)?self::INITIAL_READ:null]);
@@ -166,6 +166,11 @@ final class HoldingObservationWork
                 ->where('lease_until','>',$this->clock->now()->getTimestamp());
             if(!(DB::transactionLevel()>0?$q->lockForUpdate():$q)->exists()){throw new ReadDeferred('Stale observation work.');}
         };
+        if($job->safe_code==='departure_registry'&&empty(Domain::findOrFail($job->domain_id)->observation['departure_check']['rechecked'])&&$this->clock->now()->getTimestamp()>=(Domain::findOrFail($job->domain_id)->observation['departure_check']['at']??PHP_INT_MAX)+86400){$job->safe_code='departure_recheck';}
+        if($job->safe_code==='departure_registry'){
+            $done=app(DepartureChecks::class)->registry(Domain::findOrFail($job->domain_id));
+            return $this->finish($job,$done?'departure_recheck':'read_deferred',$current);
+        }
         $credential=null;
         try{return $this->observer->run((int)$job->domain_id,(int)$job->generation,$job->account_fingerprint,readRecords:true,current:$current,
             completion:function(string $code,?\Closure $credentials)use($job,$current,&$credential):string{return $this->finish($job,$code,$current,$credentials,$credential);},
@@ -183,7 +188,7 @@ final class HoldingObservationWork
             $q=DB::table('domains_observation_queues')->where('id',$queue->id); $current=(clone $q)->lockForUpdate()->firstOrFail();
             $rows=Domain::where('server_id',$a->server_id)->where('id','>',$current->cursor)->orderBy('id')->limit(25)->get();
             foreach ($rows as $d) {
-                if ($d->adoptionPending() || !in_array($d->status,['active','registration_pending','transfer_pending'],true)||$d->account_fingerprint!==$a->account_fingerprint) { continue; }
+                if ($d->adoptionPending() || !in_array($d->status,['active','grace','expired','registration_pending','transfer_pending'],true)||$d->account_fingerprint!==$a->account_fingerprint) { continue; }
                 // Financial transfer reconciliation already reads status, history and ownership. Avoid a second automatic poller.
                 if(TransferPolling::ownsObservation($d)){
                     self::idle(self::current($d),$this->clock->now()->getTimestamp())->delete();continue;
@@ -241,7 +246,7 @@ final class HoldingObservationWork
             $job=(int)$oldest->due_at<$starved?$oldest:($due->first(fn($row)=>self::firstRecordRead($domains->get($row->domain_id))) ?? $oldest);
             $d=$domains->get($job->domain_id);
             if($d&&TransferPolling::ownsObservation($d)){DB::table('domains_observation_work')->where('id',$job->id)->delete();return null;}
-            if ($d && (!in_array($d->status,['active','registration_pending','transfer_pending'],true)||!ObservationEligibility::allows($d)||$d->account_fingerprint!==$job->account_fingerprint||$d->adoptionPending() || (int)$job->generation!==$d->authority_generation || $job->phase!==self::phase($d))) {
+            if ($d && (!in_array($d->status,['active','grace','expired','registration_pending','transfer_pending'],true)||!ObservationEligibility::allows($d)||$d->account_fingerprint!==$job->account_fingerprint||$d->adoptionPending() || (int)$job->generation!==$d->authority_generation || $job->phase!==self::phase($d))) {
                 DB::table('domains_observation_work')->where('id',$job->id)->update(['safe_code'=>'superseded']); return null;
             }
 
@@ -303,6 +308,11 @@ final class HoldingObservationWork
             $p['read_retry']=['work_id'=>(int)$job->id,'credential'=>$credential,'at'=>$this->clock->now()->format(DATE_ATOM),
                 'auto_resumed'=>($prior['work_id']??null)===$job->id?($prior['auto_resumed']??false):false];
             $d->update(['observation'=>$p]);
+        }
+        if(DepartureChecks::suspected($d)){
+            $p=$d->observation;if($job->safe_code==='departure_recheck'){$p['departure_check']['rechecked']=true;$d->update(['observation'=>$p]);}
+            DB::table('domains_observation_work')->where('id',$job->id)->where('claim',$job->claim)->update([
+                ...DepartureChecks::schedule($d,$now),'claim'=>null,'lease_until'=>0,'tries'=>0]);return;
         }
         $pending=$code==='healthy_pending'; $start=$d->operations()->where('action','transfer')->where('authority_generation',$d->authority_generation)->orderBy('id')->get()->first(fn($o)=>($o->attempt['seal']??null)==='sealed'&&in_array($o->state,['pending','uncertain','held'],true))?->started_at;
         $startAt=$start instanceof \DateTimeInterface?$start->getTimestamp():($start===null?null:(new \DateTimeImmutable($start))->getTimestamp());

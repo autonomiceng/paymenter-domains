@@ -44,6 +44,7 @@ final class DomainPage
      * Amber (warn) means the customer has a step. Work that is ours reads blue (ours()), as Under review does. */
     public static function notice(OwnedDomain $d, ?string $support = null, ?DomainSummary $s = null): ?array
     {
+        if($d->departureSuspected){return null;}
         $setup = $d->actions['setup'] ?? null; $phase = $d->transfer['phase'] ?? null;
         $movedAt = isset($s?->noticeDates['dns']) ? ' on '.CarbonImmutable::createFromTimestampUTC((int) $s->noticeDates['dns'])->format('M j, Y') : '';
         $contact = $support ? ['label' => 'Contact support', 'url' => $support] : null;
@@ -169,6 +170,7 @@ final class DomainPage
     /** Next invoice: the current renewal invoice's state (Due + Pay invoice, Paid, Under review in blue while we check it, or Missing with its cause and fix), else the day the next invoice is issued and when it is due. Null when it does not apply. */
     public static function nextInvoice(OwnedDomain $d, ?DomainSummary $s, ?string $support): ?array
     {
+        if ($d->departureSuspected) { return ['value'=>State::Paused->label().' while we check this domain.']; }
         $state = $d->renewNow['status'] ?? (isset($d->renewNow['invoice']) ? 'pending' : null) ?? $d->renewalInvoice['state'] ?? null;
         $contact = Missing::support($support);
         $due = $d->renewalDue ?? $d->renewalInvoice['due'] ?? null;
@@ -204,6 +206,7 @@ final class DomainPage
         $open = (bool) ($d->transfer['open'] ?? false);
         if ($d->transfer['received'] ?? false) { return ['missing' => false, 'action' => ['label' => $open ? 'Change auth code' : 'View transfer', 'url' => $d->actions['code']]]; }
         if ($open) { return null; }
+        if($d->departureSuspected){return null;}
         $setup = $d->actions['setup'] ?? null;
         return ['missing' => true, 'fix' => $setup && ($d->transfer['phase'] ?? null) === 'cutoff' && ($d->setup['contacts'] ?? false) ? ['label' => 'Update details', 'url' => $setup] : Missing::support($support)];
     }

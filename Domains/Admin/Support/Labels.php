@@ -196,7 +196,7 @@ final class Labels
             'preference_off'=>'Monitoring alerts turned off','target_or_preference_changed'=>'Domain or alert settings changed',
             'daily_mail_limit'=>'Daily alert email limit reached','handoff_started'=>"Can't confirm the alert was sent.",
             'render_failed'=>'Alert template failed',
-            'read_deferred'=>'Check delayed. It runs again later.','clock_reversal'=>'Server clock problem. Try again.',
+            'read_deferred'=>'Check delayed. It runs again later.','departure_registry'=>'Public registry check queued','departure_recheck'=>'Registrar recheck queued','clock_reversal'=>'Server clock problem. Try again.',
             'profile_unavailable'=>"Couldn't load the check settings",'dns_not_configured'=>'DNS comparison not set up. Choose a DNS template.',
             'no_hosting'=>'No hosting service. DNS record checks do not apply.',
             'nameservers_missing'=>'Nameservers missing at the registry','srv'=>'SRV records',

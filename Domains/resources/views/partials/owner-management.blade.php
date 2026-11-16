@@ -8,6 +8,8 @@
 @continue($cap === 'privacy' && !\Paymenter\Extensions\Servers\Domains\Presentation\PrivacyVisibility::SHOWN)
 @php
     $section = $domain->management[$cap] ?? null;
+    $departurePaused = $domain->departureSuspected && in_array($cap, ['lock','auth_code_email','contacts','nameservers','ds'], true);
+    $pausedState = $cap === 'ds' ? (($section['off'] ?? false) ? false : (($section['records'] ?? null) === null ? null : (bool) $section['records'])) : ($section['state'] ?? null);
     $retry = $section['retry'] ?? null;
     $confirmStep = $retry && ($retry['confirm'] ?? false) ? $retry['action'] : null;
     $failed = session('domains_failed_form');
@@ -41,9 +43,12 @@
 @endphp
 @continue($section === null && !($cap === 'nameservers' && $domain->syncPaused))
 <x-domains::customer.settings-row :id="$cap" :label="$label" :help="array_key_exists($cap, \Paymenter\Extensions\Servers\Domains\Services\OwnerHelp::SECTIONS)" :pending="$section['progress']['pending'] ?? false">
-<x-slot:status>@if ($familyLabel)@include('domains::partials.record-family-status',['family'=>$section['family'],'support'=>'Not shown here?'])@endif
-@if (($section['progress'] ?? null) && !$section['progress']['pending'])<span @class(['domains-sub', 'domains-tone-text-bad' => ($section['progress']['tone'] ?? null) === 'bad']) role="status">{{ $section['progress']['text'] }}@if ($section['progress']['support'] ?? false)@include('domains::partials.contact-support', ['before' => ' '])@endif</span>@endif</x-slot:status>
-@if (($section['family_only'] ?? false) && !($section['off'] ?? false) && !($section['progress']['pending'] ?? false))
+<x-slot:status>@if ($familyLabel && !$departurePaused)@include('domains::partials.record-family-status',['family'=>$section['family'],'support'=>'Not shown here?'])@endif
+@if (!$departurePaused && ($section['progress'] ?? null) && !$section['progress']['pending'])<span @class(['domains-sub', 'domains-tone-text-bad' => ($section['progress']['tone'] ?? null) === 'bad']) role="status">{{ $section['progress']['text'] }}@if ($section['progress']['support'] ?? false)@include('domains::partials.contact-support', ['before' => ' '])@endif</span>@endif</x-slot:status>
+@if ($departurePaused)
+<span class="domains-row__v">@if ($cap === 'nameservers')@include('domains::partials.nameserver-list', ['servers' => $section['current'] ?? []])@elseif ($cap === 'contacts'){{ $domain->owner['name'] ?? 'Not read yet' }}@if ($domain->owner)<span class="domains-sub">{{ $domain->owner['email'] }}</span>@endif @elseif ($cap === 'auth_code_email')Goes to your {{ $section['recipient'] }}<span class="domains-sub">Never shown here.</span>@else{{ $pausedState === null ? $value::state($st::NotReadYet, $customer) : $value::plain($pausedState ? $plain::On : $plain::Off) }}@endif<span class="domains-sub" id="departure-{{ $cap }}-pause">Paused while we check this domain.</span></span>
+<span class="domains-row__a"><button class="domains-btn domains-btn--secondary domains-btn--sm" type="button" aria-disabled="true" aria-describedby="departure-{{ $cap }}-pause">{{ match($cap) { 'lock' => $state === true ? 'Turn off' : 'Turn on', 'auth_code_email' => 'Email code', 'ds' => 'Add DS record', default => 'Edit' } }}</button></span>
+@elseif (($section['family_only'] ?? false) && !($section['off'] ?? false) && !($section['progress']['pending'] ?? false))
 <span class="domains-row__v">@if ($cap === 'glue')@if ($section['family']['hosts'] ?? [])@include('domains::partials.nameserver-list', ['servers' => $section['family']['hosts']])@elseif (($section['family']['state'] ?? null) === 'partial')<span class="domains-muted">No glue records known here</span>@endif @endif @include('domains::partials.record-family-status',['family'=>$section['family'],'support'=>'Need a change?','asValue'=>true])</span>
 @if ($cap==='dns' && (($section['inventory'] ?? []) || ($section['caa'] ?? [])))<span class="domains-row__v domains-row__full">@include('domains::partials.dns-inventory')</span>@endif
 @elseif ($section['progress']['pending'] ?? false)
@@ -163,8 +168,9 @@
 @endif
 @endif
 @endif
-@if ($cap==='ds' && ($section['off']??false))<span class="domains-row__v">@if ($section['records'] ?? [])<span class="domains-sub">Observed DS records</span>@foreach ($section['records'] as $ds)<span class="domains-sub domains-mono">Key tag {{ $ds['key_tag'] }}, algorithm {{ $ds['algorithm'] }}, digest type {{ $ds['digest_type'] }}: {{ $ds['digest'] }}</span>@endforeach @endif</span>@endif
+@if (!$departurePaused && $cap==='ds' && ($section['off']??false))<span class="domains-row__v">@if ($section['records'] ?? [])<span class="domains-sub">Observed DS records</span>@foreach ($section['records'] as $ds)<span class="domains-sub domains-mono">Key tag {{ $ds['key_tag'] }}, algorithm {{ $ds['algorithm'] }}, digest type {{ $ds['digest_type'] }}: {{ $ds['digest'] }}</span>@endforeach @endif</span>@endif
+@if ($cap==='dns' && $domain->dnsNotice)<span class="domains-row__v domains-row__full domains-sub">{{ $domain->dnsNotice }}</span>@endif
 @if ($cap==='dns' && !($section['family_only']??false) && isset($section['inventory']))<span class="domains-row__v domains-row__full">@include('domains::partials.dns-inventory')</span>@endif
-@if ($section['waiting'] ?? null)<span class="domains-row__v domains-row__full domains-sub" role="status" data-management-waiting="{{ $cap }}">{{ $section['waiting'] }}</span>@endif
+@if (!$departurePaused && ($section['waiting'] ?? null))<span class="domains-row__v domains-row__full domains-sub" role="status" data-management-waiting="{{ $cap }}">{{ $section['waiting'] }}</span>@endif
 </x-domains::customer.settings-row>
 @endforeach

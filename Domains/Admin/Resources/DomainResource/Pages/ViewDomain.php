@@ -13,7 +13,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Head, Partial, Row
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\{RecordDetailPage, Section};
 use Paymenter\Extensions\Servers\Domains\Presentation\{Reader, StaffTime, State};
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
-use Paymenter\Extensions\Servers\Domains\Services\{ManagedDnsSetup,OwnedDomains,StaffWatchWrites};
+use Paymenter\Extensions\Servers\Domains\Services\{DepartureChecks,ManagedDnsSetup,OwnedDomains,StaffWatchWrites};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 /** One domain: its own state in the head, then its sections as rows, with Activity beside them and History as a tab.
  * Each notice sits first in the section it concerns, one per section. The page follows a change at its own cadence. */
@@ -81,8 +81,9 @@ class ViewDomain extends RecordDetailPage
     protected function head(): Head
     {
         Staff::requireView(); $d=$this->getRecord();
-        return Head::make((string)$d->domain,Reader::Staff)->domain()->tag(DemoData::is($d),DomainFacts::test($d))
+        $head=Head::make((string)$d->domain,Reader::Staff)->domain()->tag(DemoData::is($d),DomainFacts::test($d))
             ->state(State::tryFrom((string)($this->status()['key']??''))??State::UnderReview,'domain-'.$d->id);
+        return $this->departureSuspected()?$head->note('Not in our registrar account.'):$head;
     }
     private function headLine(): array { return $this->head??=DomainFacts::head($this->getRecord(),$this->status(),$this->facts(),$this->edits()['request'],$this->notice()); }
     /** The head's step as plain text, so rows and Activity can leave out what it already says. */
@@ -94,6 +95,9 @@ class ViewDomain extends RecordDetailPage
         return array_map(fn($manager)=>$manager===RequestsRelationManager::class?RequestsRelationManager::make([
             'headRequest'=>DomainFacts::headRequest($this->getRecord(),$this->status(),$this->edits()['request'],$this->notice()),'headSaid'=>$this->said()]):$manager,parent::getRelationManagers());
     }
+    /** Unreadable evidence has its own notice; it cannot establish a departure finding. */
+    private function departureSuspected(): bool
+    { try { return isset($this->record)&&DepartureChecks::suspected($this->getRecord()); } catch (\Illuminate\Contracts\Encryption\DecryptException) { return false; } }
     private function edits(): array { return $this->edits??=DomainEditActions::for($this->getRecord()); }
     private function status(): array { return $this->domainStatus??=DomainFacts::status($this->getRecord()); }
     private function notice(): ?array { if ($this->notice===false) { $this->notice=DomainFacts::notice($this->getRecord()); } return $this->notice; }
@@ -101,7 +105,8 @@ class ViewDomain extends RecordDetailPage
     {
         if ($this->facts!==null) { return $this->facts; }
         $d=$this->getRecord(); $facts=self::withDnsSetup($d,DomainFacts::for($d,$this->notice(),$this->familyState())); $progress=$this->managementProgress();
-        if ($this->edits()['authCode'] || isset($progress['auth_code_email'])) { $facts['Email auth code']=['value'=>'Goes to the '.OwnedDomains::authCodeRecipient($d),'sub'=>'Never shown here.','url'=>null,'tone'=>null,'help'=>'The code moves this domain to another registrar. We email it and never show it here.','demo'=>false]; }
+        if ($this->departureSuspected() || $this->edits()['authCode'] || isset($progress['auth_code_email'])) { $facts['Email auth code']=['value'=>'Goes to the '.OwnedDomains::authCodeRecipient($d),'sub'=>'Never shown here.','url'=>null,'tone'=>null,'help'=>'The code moves this domain to another registrar. We email it and never show it here.','demo'=>false]; }
+        if ($this->departureSuspected()) { if (($facts['Renewal']['value']??null)==='On') { $facts['Renewal']=[...$facts['Renewal'],'value'=>'Paused','sub'=>'Set to On. Resumes if the domain is still ours.','tone'=>null,'alert'=>false]; } $facts['Next invoice']=['value'=>'Paused','sub'=>($facts['Next invoice']['value']??null)==='Paused'?$facts['Next invoice']['sub']:DepartureChecks::RENEWAL_WAITS,'url'=>null,'tone'=>null]; }
         if ($this->edits()['held']) { $facts=DomainFacts::whileHeld($facts,$this->edits()['first']??null); }
         return $this->facts=DomainFacts::withProgress($facts,$progress,DomainFacts::headRequest($d,$this->status(),$this->edits()['request'],$this->notice()));
     }
@@ -179,7 +184,7 @@ class ViewDomain extends RecordDetailPage
     private function syncNow(): Action
     {
         // Record reads use registrar calls; Sync now lets staff request them only when needed.
-        return Action::make('sync_now')->label('Sync now')->color('gray')->disabled(fn()=>\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::pending($this->getRecord()))->visible(fn()=>DomainFacts::syncNow($this->getRecord()))
+        return Action::make('sync_now')->label('Sync now')->color('gray')->disabled(fn()=>\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::pending($this->getRecord()))->visible(fn()=>DomainFacts::syncNow($this->getRecord())&&!$this->departureSuspected())
             ->action(function():void {
                 if (!Staff::can('admin.domains.manage')) { abort(403); }
                 try {
@@ -194,6 +199,13 @@ class ViewDomain extends RecordDetailPage
                 catch (\Throwable) { \Filament\Notifications\Notification::make()->warning()->title("Couldn't queue sync. Ask your site admin to check the queue worker, then try again.")->send(); }
             });
     }
+    public function check_departureAction(): Action
+    { return Sheet::button(Action::make('check_departure')->label('Check again')->visible(fn()=>Staff::can('admin.domains.manage')&&$this->departureSuspected())
+        ->disabled(fn()=>\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::pending($this->getRecord()))->action(function():void{
+            Staff::requireView();abort_unless(Staff::can('admin.domains.manage'),403);
+            try{\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::enqueue((int)Auth::id(),$this->getRecord()->refresh(),true);}
+            catch(\DomainException $error){\Filament\Notifications\Notification::make()->warning()->title($error->getMessage())->send();}
+        })); }
     /** Resume sync sits in the page notice and is mounted as a page action. */
     public function resume_observationAction(): Action
     { return Sheet::button(OperationActions::scheduledReads($this->getRecord())[0]??Action::make('resume_observation')->hidden()); }
@@ -205,7 +217,7 @@ class ViewDomain extends RecordDetailPage
     {
         $this->cacheHoldingActions();
         $d=$this->getRecord(); $facts=DomainFacts::besideHead($this->facts(),$this->said()); $edits=$this->edits();
-        $late=$this->recordsLate($d);
+        $suspected=$this->departureSuspected(); $late=!$suspected&&$this->recordsLate($d);
         // The notice above the sheet gives the cause and the next step once, so the rows it explains stay calm.
         $this->calmMissing=$late;
         // The summary above the sheet says once why values are missing, so rows drop the repeated cause.
@@ -230,10 +242,12 @@ class ViewDomain extends RecordDetailPage
         $items=$this->noticeItems($d,$late,$heldIn);
         // The status notice opens Registration, or the first section when there is none.
         $statusIn=isset($placed['Registration'])?'Registration':(array_key_first($placed)??'Registrar records');
-        $items[$statusIn]=[...$this->statusItems(),...($items[$statusIn]??[])];
+        $items[$statusIn]=[...($suspected?[]:$this->statusItems()),...($items[$statusIn]??[])];
+        if ($suspected) { unset($items['Registrar records']); $items['Registration'][]=[State::UnderReview,DepartureChecks::PAUSED,null]; }
         $notices=[];
         foreach ($items as $title=>$list) { if (($row=DomainRows::notice(strtolower((string)preg_replace('/[^A-Za-z]+/','-',$title)),$list,'domain-'.$d->id.'-'.md5($title)))!==null) { $notices[$title]=$row; } }
-        $this->heldNotice=$heldIn!==null?($notices[$heldIn]??null):null;
+        if ($suspected && isset($notices['Registration'])) { $notices['Registration']->target(); }
+        $this->heldNotice=$suspected?(isset($placed['Registration'])?($notices['Registration']??null):null):($heldIn!==null?($notices[$heldIn]??null):null);
         $sections=[];
         foreach ($placed as $title=>$labels) {
             $rows=[];
@@ -245,6 +259,27 @@ class ViewDomain extends RecordDetailPage
         $monitoring=Section::make('Monitoring',[...(isset($notices['Monitoring'])?[$notices['Monitoring']]:[]),
             Partial::make('domains::admin.monitoring-evidence',['evidence'=>\Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence::read($d),'withRecords'=>true],'monitoring-evidence')],\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::EVIDENCE);
         return [...($d->status==='active'?[...$records,...$sections]:[...$sections,...$records]),$monitoring];
+    }
+    private function departureCheck(): array
+    {
+        $d=$this->getRecord();$check=$d->observation['departure_check']??[];$registry=$check['registry']??[];$read=$d->observation['record_failure']??[];
+        $fact=\Paymenter\Extensions\Servers\Domains\Presentation\Fact::class;
+        $registrar=\Paymenter\Extensions\Servers\Domains\Services\ManagementNameservers::registrar($d);
+        // Absence saved before departure checks existed has no marker: no automatic recheck was scheduled, so staff use Check again.
+        $at=isset($check['at'])?(int)$check['at']:(isset($read['at'])&&($read['code']??null)==='domain_not_in_account'?strtotime($read['at']):null);
+        $first=Value::state(State::UnderReview,Reader::Staff,'Not in our registrar account. '.$registrar.($d->server?->name?', '.$d->server->name:'').'.');
+        if($at){$first=$first->when($at);}
+        $recheck=match(true){
+            !isset($check['at'])=>Value::fact($fact::entered('Not scheduled'),'No automatic recheck scheduled.'),
+            (bool)($check['rechecked']??false)=>Value::state(State::UnderReview,Reader::Staff,($read['code']??null)==='domain_not_in_account'?'Not in our registrar account.':'The latest read got no clear answer.'),
+            default=>Value::state(State::Queued,Reader::Staff,'Automatic recheck scheduled',at:$fact::date((int)$check['at']+86400,Reader::Staff))};
+        if(isset($check['at'])&&($check['rechecked']??false)&&isset($read['at'])){$recheck=$recheck->when(strtotime($read['at']));}
+        $statuses=array_values(array_unique(array_map(fn($status)=>match(strtolower(str_replace(' ','',$status))){'ok'=>'No registry restriction reported.','clienttransferprohibited','servertransferprohibited'=>'Transfers prohibited.','pendingtransfer'=>'Transfer pending.',default=>'Registry status is not recognized.'},$registry['status']??[])));
+        $registryValue=match($registry['result']??null){'facts'=>Value::fact($fact::entered(isset($registry['registrar'])?'Lists '.$registry['registrar']:'No registrar listed'),trim(implode(' ',$statuses).' Compare with '.$registrar.'. Read'),isset($registry['at'])?$fact::date($registry['at'],Reader::Staff):null),'not_registered'=>Value::fact($fact::entered('Not registered')),null=>Value::state(State::NotReadYet,Reader::Staff),default=>Value::state(State::CouldntRead,Reader::Staff,'The public registry got no clear answer.')};
+        // The next step stays after the automatic recheck: only a person can look at the registrar and settle it (phase B).
+        $step=Row::make('Departure check',Value::fact($fact::entered('Next step: look for the domain at '.$registrar),'Then use Check again on the Recheck row.'))
+            ->actions(Sheet::link('departure_registrar','Open registrar',\Paymenter\Extensions\Servers\Domains\Admin\Support\Facts::url(fn()=>\Paymenter\Extensions\Servers\Domains\Admin\Support\RegistrarFacts::accountUrl((int)$d->server_id))));
+        return [$step,Row::make('First read',$first),Row::make('Recheck',$recheck)->actions($this->cachedActions['check_departure']??$this->check_departureAction()),Row::make('Public registry',$registryValue)];
     }
     /** The rail: the newest history, with the History tab holding the rest. */
     protected function rail(): array
@@ -376,7 +411,7 @@ class ViewDomain extends RecordDetailPage
         $own=array_intersect_key($facts,array_flip(DomainFacts::SECTIONS[self::HELD_SECTION]));$own['DS records']=\Paymenter\Extensions\Servers\Domains\Presentation\DsState::staff($d);
         // Under the late-read notice, Sync now is said once, there.
         if ($this->calmMissing && is_string($own['DS records']['sub']??null)) { $own['DS records']['sub']=trim(str_replace('Use Sync now to read them.','',$own['DS records']['sub']))?:null; }
-        $rows=[...($notice?[$notice]:[]),$view('head')];$shown=[];
+        $rows=[...($notice?[$notice]:[]),$view('head'),...($this->departureSuspected()?$this->departureCheck():[])];$shown=[];
         // SRV has no row of its own in the facts, so its change line comes straight from the stored progress.
         $srv=DomainFacts::progress($this->managementProgress(),'srv',DomainFacts::headRequest($d,$this->status(),$edits['request'],$this->notice()));
         foreach (($state['cancelled_without_records']??false)||($state['not_at_registrar']??null)!==null?[]:$state['rows'] as $family) {
@@ -417,6 +452,7 @@ class ViewDomain extends RecordDetailPage
         if ($label==='Open alerts') { return $review?[$review]:[]; }
         // One Resume sync per page: the Registrar records head draws it when the records show the stop.
         if ($label==='Last sync') { if (DomainFacts::syncNow($this->getRecord())) { return []; } $resume=$this->getAction('resume_observation',false); return $resume?->isVisible()&&!($this->familyState()['resume']??false)?[$resume]:[]; }
+        if ($this->departureSuspected()&&in_array($label,['Transfer lock','Email auth code','Contacts','Nameservers'],true)) { $this->blocked[$label]=true; return [Sheet::button(Action::make('paused_'.md5($label))->label($label==='Nameservers'?'Edit':self::blockedLabel($label,$fact)))]; }
         $side=array_map(fn(Action $action)=>in_array($action->getLabel(),['Edit','Change'],true)?Sheet::edit($action,$label):Sheet::button($action),$edits['rows'][$label]??[]);
         if ($side===[]&&$edits['held']&&in_array($label,self::BLOCKED,true)) { $side[]=Sheet::button(Action::make('held_'.md5($label))->label(self::blockedLabel($label,$fact))); $this->blocked[$label]=true; }
         if (($fact['setup']??false)&&Staff::can(StaffWatchWrites::VIEW)) { $side[]=Sheet::link('dns_setup','Choose DNS template',WatchResource::getUrl('dns-setup')); }
@@ -441,6 +477,7 @@ class ViewDomain extends RecordDetailPage
             $fact=[...$fact,'sub'=>$fact['sub']??null,'value'=>$failed?null:\Paymenter\Extensions\Servers\Domains\Presentation\Missing::NOT_READ,'tone'=>null];
         }
         $row=DomainRows::row($label,$fact,$side,self::SHOWN[$label]??null);
+        if ($this->departureSuspected()) { if (in_array($label,['Nameservers','Contacts'],true)) { return $row->blocked('Paused while we check this domain.'); } if ($label==='Renewal'&&($this->cachedActions['resume']??null)?->isVisible()) { return $row->blocked('Auto-renew can turn on once this domain is back in our registrar account.'); } }
         if (($this->blocked[$label]??false)) {
             if ($this->heldNotice!==null) { $row->blockedBy($this->heldNotice); } else { $row->blocked((string)$this->edits()['held']); }
         }

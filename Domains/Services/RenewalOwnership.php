@@ -33,7 +33,7 @@ final class RenewalOwnership
     /** Caller holds observation locks. Preserve legacy absence before record/failure writers replace its diagnostic. */
     public static function retainAbsence(Domain $d, \DateTimeImmutable $now, bool $definite=false): void
     {
-        if ($d->status!=='active'||(!$definite&&!self::blocked($d))) { return; }
+        if (!in_array($d->status,['active','expired','grace'],true)||(!$definite&&!self::blocked($d))) { return; }
         $proof=$d->observation['renewal_ownership']??[];
         $prior=($proof['identity']??null)===ObservationRecords::identity($d)?($proof['at']??null):($d->observation['record_failure']['at']??null);
         $at=(!$definite&&is_string($prior))?$prior:$now->format(DATE_ATOM);
@@ -49,7 +49,7 @@ final class RenewalOwnership
     public static function review(Domain $d, int $now): ?string
     {
         if (!Schema::hasTable('domains_obligation_alerts')) { return null; }
-        if (self::blocked($d)) { return ObligationAlerts::record($d,self::REVIEW,$now); }
+        if (HoldingReadRetry::absent($d)) { return ObligationAlerts::record($d,self::REVIEW,$now); }
         DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code',self::REVIEW)
             ->whereNull('resolved_at')->update(['resolved_at'=>$now]);
         return null;

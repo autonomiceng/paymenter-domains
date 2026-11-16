@@ -4,7 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/Support/owner-records.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\StaffDomainInputs;
-use Paymenter\Extensions\Servers\Domains\Services\{ObligationAlerts,RenewalOwnership};
+use Paymenter\Extensions\Servers\Domains\Services\{DepartureChecks,ObligationAlerts,PublicRegistryReader,RenewalOwnership};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,HoldingObservationWork,ObservationRecords,ObservationSchema,Runtime,RuntimePorts,RuntimeComposition,WriteFeatures,WriteAcceptance,RenewalAcceptance,TransferPrecheck,Rdap,AccountBindings,OwnerPorts};
 ObservationSchema::install();
 [$d,$driver,$original]=$holding(placeholderComFixtureName('automatic-records-placeholder.com'));
@@ -68,16 +68,30 @@ $recordPage=view('domains::partials.record-families',['recordFamilies'=>\Payment
 expect(str_contains($recordPage,'Last registrar read:')&&str_contains($recordPage,'Next registrar read:'),'Existing record rows show last and next reads');
 // The real closed gate must not replace an ownership-drift result with a healthy daily receipt.
 $readBindings->setProcessing($d->server_id,false);$observation->fault='owner';$q->update(['due_at'=>0]);$state->calls=[];
-// An active domain missing from the registrar account stops at its first read; later turns send nothing.
+// Phase A schedules one registry read and one registrar recheck even while record checks are off.
+// Both transports stay synthetic; a registry with no matching service returns an unknown answer.
+$registryReads=0;
+app()->instance(DepartureChecks::class,new DepartureChecks(new \Paymenter\Extensions\Servers\Domains\Dns\NativeDnsReader(static fn()=>[]),$clock,
+ static function($dns,$snapshot)use(&$registryReads){$registryReads++;return new PublicRegistryReader($dns,['services'=>[]],static fn()=>throw new RuntimeException('No registry HTTP calls'));}));
 $result=$worker->turn($queue,$guard);$job=(clone $q)->sole();
-$check($result==='domain_not_in_account','Closed-gate drift stops with the missing-domain cause');
-$check((int)$job->tries===1&&$job->safe_code==='domain_not_in_account','Closed-gate drift keeps its failure count and cause');
+$check($result==='departure_registry','Closed-gate absence queues the public registry read');
+$check((int)$job->tries===0&&$job->safe_code==='departure_registry','Departure work has its own bounded schedule');
+$coreCalls=count($observation->calls);$first=$clock->now()->getTimestamp();
+$check($worker->turn($queue,$guard)==='departure_recheck','The one registry read finishes before the registrar recheck');
+$check($registryReads===1&&count($observation->calls)===$coreCalls,'The registry read sends no registrar calls');
+$check((int)(clone $q)->sole()->due_at===$first+86400,'The automatic registrar recheck waits 24 hours');
+$check($worker->turn($queue,$guard)==='idle','No second registrar read before its due time');
+$clock->instant=$clock->now()->setTimestamp($first+86400);
+$check($worker->turn($queue,$guard)==='domain_not_in_account','The one automatic recheck retains definite absence');
+$check(count($observation->calls)>$coreCalls,'The recheck actually reads the registrar');
+$coreCalls=count($observation->calls);
+$check(($d->fresh()->observation['departure_check']['rechecked']??false)===true,'The automatic recheck is marked complete');
 for($try=2;$try<=5;$try++){
- $clock->instant=$clock->now()->setTimestamp(max((int)$job->due_at,$clock->now()->getTimestamp()+3600));
- $check($worker->turn($queue,$guard)==='idle'&&(int)(clone $q)->sole()->tries===1,'Stopped drift is not retried at turn '.$try);
+ $clock->instant=$clock->now()->modify('+1 day');
+ $check($worker->turn($queue,$guard)==='idle'&&count($observation->calls)===$coreCalls&&$registryReads===1,'No repeated departure reads at turn '.$try);
 }
 $check(($d->fresh()->observation['drift']??false)===true,'Drift facts remain visible');
-$check(HoldingObservationWork::stopped($d->fresh()),'Closed-gate drift stops after bounded retries');
+$check(HoldingObservationWork::stopped($d->fresh()),'Closed-gate absence stops after its one automatic recheck');
 \Paymenter\Extensions\Servers\Domains\Services\ReminderSchema::install();
 // Definite account absence has a departure review instead of the generic stopped-sync review.
 $keys=ObligationAlerts::retained(['domain'=>$d->fresh(),'operations'=>$d->operations()->get()],$clock->now()->getTimestamp());

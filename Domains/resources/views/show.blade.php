@@ -15,6 +15,7 @@
         && !($cap === 'flags' && ($domain->management['flags']['family']['state'] ?? null) === 'complete' && ($domain->management['flags']['family_only'] ?? false))));
 @endphp
 <x-domains::customer.head :title="$domain->name" :domain="true" :demo="$domain->demo" :test="$domain->testEnvironment" :crumbs="[['Domains', route('domains.domains.index')], [$domain->name, null]]" :state="$state" />
+@if ($domain->departureSuspected)<p class="domains-hint">Didn't move this domain? @include('domains::partials.contact-support')</p>@endif
 @include('domains::partials.notices', ['fieldKeys'=>['nameservers','contact','dns','srv','ds','glue']])
 @if ($notice)<x-domains::customer.notice :tone="$notice['tone']" :action="$notice['action']">{{ $notice['text'] }}</x-domains::customer.notice>@endif
 @if (($summary ?? null) && $summary->kind === 'managed' && !$summary->relatedServices && !$summary->relatedOverflow && $domain->expiry && !$domain->setupPending && in_array('domain.dns.platform', $summary->dnsKeys, true) && !$summary->website && !$summary->email)

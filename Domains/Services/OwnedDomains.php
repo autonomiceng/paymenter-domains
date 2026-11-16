@@ -271,7 +271,7 @@ final readonly class OwnedDomains
                 $sections=$forms&&array_intersect(array_keys($management),['dns','srv','ds','glue'])?ObservationProjection::sections($d):[];
                 $records=$sections?OwnerRecords::forDomain($d,$sections):[];
             } catch (\Illuminate\Contracts\Encryption\DecryptException) { $sections=$records=[]; }
-            $recordCheckHeld=$forms&&$management&&ObservationRecords::stopped($d);
+            $recordCheckHeld=$forms&&$management&&ObservationRecords::stopped($d)&&!DepartureChecks::suspected($d);
             foreach ($management as &$section) { $section['recordCheckHeld']=$recordCheckHeld; } unset($section);
             foreach (['dns','srv','ds','glue'] as $kind) {
                 if (isset($management[$kind])) { $management[$kind]['records']=$records[$kind]??null; $management[$kind]['asOf']=$kind==='glue'?GlueRecords::asOf($d,$sections):($sections[$kind]['at']??null); if ($kind==='glue') { $management[$kind]['ipv4Only']=$d->registrar_key==='namesilo'; $management[$kind]['warnings']=GlueDrift::warnings($d,known:$sections['known_glue']??[]); } }
@@ -303,6 +303,7 @@ final readonly class OwnedDomains
             foreach ($management as $key=>&$section) {
                 $wanted=array_keys($section['actions']);
                 $section['actions']=array_intersect_key($section['actions'],array_flip($allowed));
+                if (DepartureChecks::suspected($d)&&($key==='ds'||in_array($key,DepartureChecks::REGISTRAR,true))) { $section['departurePaused']=true;continue; }
                 if ($section['actions'] || isset($progressBySetting[ManagementProgress::setting($key)])) { continue; }
                 $supported=$caps!==null&&collect($wanted)->contains(fn($action)=>$caps->get(DomainManagement::capability($action))->support===Support::Supported);
                 if ($busyLabel!==null && $supported) { $section['waiting']='Opens when the '.$busyLabel.' change finishes.'; } else { unset($management[$key]); }
@@ -349,7 +350,7 @@ final readonly class OwnedDomains
             renewalOff:$renewal==='Off'?RenewalStop::offReason($renewalState):null,
             autoRenew:$forms&&OwnerAutoRenew::available($renewalState)?['url'=>route('domains.domains.auto-renew',$d->id),'enabled'=>!RenewalStop::ownerOff($renewalState)]:[],
             dnsCorrection:$dnsCorrection, statusReason:$pill['reason'], refundTo:self::refundTo($d,$op,$order), rejectedAcquisition:$op?->state==='rejected'&&in_array($d->status,['registration_rejected','transfer_rejected'],true)?$op->action:null, earlyRenewal:$earlyRenewal, demo:DemoData::is($d), syncPaused:DemoData::syncPaused($d), owner:self::owner($contacts??[]),
-            daysLeft:$d->provider_expires_at?(int)\Carbon\CarbonImmutable::parse($this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d'),'UTC')->diffInDays(\Carbon\CarbonImmutable::parse($d->provider_expires_at->format('Y-m-d'),'UTC'),false):null);
+            departureSuspected:DepartureChecks::suspected($d), dnsNotice:DepartureChecks::dnsNote($d), daysLeft:$d->provider_expires_at?(int)\Carbon\CarbonImmutable::parse($this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d'),'UTC')->diffInDays(\Carbon\CarbonImmutable::parse($d->provider_expires_at->format('Y-m-d'),'UTC'),false):null);
         return \Paymenter\Extensions\Servers\Domains\Presentation\DsState::owner($page,$d,$forms&&$caps!==null);
     }
     private static function contactOperations(Domain $d): \Illuminate\Support\Collection
