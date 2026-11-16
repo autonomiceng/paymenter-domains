@@ -135,6 +135,9 @@ class RegistrarAnswers
             &&($op->registrar_key!=='namesilo'||($a['account']??null)===['registrar'=>$op->registrar_key,'server_id'=>$op->server_id,'domain_id'=>$op->domain_id,'service_id'=>$op->service_id])
             &&($a['generation']??null)===$d->authority_generation&&is_int($a['actor_id']??null)&&$a['actor_id']>0?$a:null;
     }
+    /** Not processed for a renewal whose order number no read could prove: its payment returns as account credit, never to the card. */
+    public static function creditOnly(Operation $op,Domain $d): bool
+    {$a=self::answer($op,$d);return ($a['outcome']??null)==='not_processed'&&is_string($a['unproven_order']??null);}
     public static function unprocessed(Operation $op,Domain $d): bool
     {return (self::answer($op,$d)['outcome']??null)==='not_processed'&&$op->provider_order_id===null&&$op->confirmed_expires_at===null;}
 }
