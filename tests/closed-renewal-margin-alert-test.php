@@ -34,6 +34,18 @@ $op=$op->fresh();
 same(['1.00','8.00','below_cost'],[$op->amount,$op->cost['actual']['amount'],$op->policy['renewal_execution']['reason']],'Completion retains the actual loss');
 $sweep();same(1,$alert($op)->whereNull('resolved_at')->count(),'Completed below-cost renewal retains its margin alert');
 expect(DB::table('domains_obligation_alerts')->where('operation_id',$op->id)->where('code','operation_review')->whereNull('resolved_at')->exists(),'Completed loss retains its execution review');
+// A later renewal of the same domain, cancelled unpaid, does not inherit that loss on its own Cost row.
+require_once __DIR__.'/Support/staff-panel.php';
+Illuminate\Support\Facades\Auth::setUser(staffUser([Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::VIEW,Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::COSTS]));
+$later=$op->replicate();
+$later->fill(['operation_key'=>hash('sha256','later-cancelled-'.$op->id),'state'=>'rejected','safe_code'=>'renewal_cancelled_unpaid','cost'=>[],'provider_order_id'=>null,'invoice_id'=>null,'invoice_item_id'=>null,
+    'started_at'=>null,'attempt'=>['seal'=>'absent','send_state'=>'definitely_unsent'],'policy'=>['price'=>$op->policy['price']]])->save();
+ObligationAlerts::record($d->fresh(),'below_cost',$clock->now()->getTimestamp()-300,(int)$later->id);
+$sweep();
+$costSub=static fn($request)=>(string)Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::for($request->fresh())['cost_sub'];
+expect(str_contains($costSub($op),ObligationAlerts::LABELS['below_cost']),'The completed loss keeps its Cost row warning');
+expect(!str_contains($costSub($later),ObligationAlerts::LABELS['below_cost']),'The cancelled renewal has no margin warning of its own: '.$costSub($later));
+same(1,DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code','below_cost')->whereNull('resolved_at')->count(),'Only the completed loss stays open');
 
 // Cancelled unpaid, refused and other finished requests must settle an already-open margin alert.
 foreach([['rejected','renewal_cancelled_unpaid'],['rejected','renewal_term_refused'],['disposed',null],['cancelled',null]] as $i=>[$status,$code]){

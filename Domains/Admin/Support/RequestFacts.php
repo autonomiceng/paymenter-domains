@@ -150,7 +150,9 @@ final class RequestFacts
                 if ($paid||isset($c['actual'])) {
                     $out['cost']=$actual??($unknown&&$quote!==null?'Not confirmed':null);
                     $out['cost_sub']=$out['registrar_refund'] ?? $quote ?? ($actual===null ? 'No cost recorded. Check at the registrar.' : null);
-                    if(\Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::open()->where('domain_id',$op->domain_id)->where('code','below_cost')->exists()){
+                    // This request's own margin alert: another renewal's loss on the same domain is not this request's cost.
+                    if(\Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::open([$op->domain_id])->where('operation_id',$op->id)->where('code','below_cost')->exists()
+                        &&\Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::price($op,$op->domain,'below_cost')!==\Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::CLEAR){
                         $out['cost_sub']=trim(($out['cost_sub']??'').' '.\Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::LABELS['below_cost']);
                     }
                     if(\Paymenter\Extensions\Servers\Domains\Services\TransferRejections::proved($op,$op->domain)){
