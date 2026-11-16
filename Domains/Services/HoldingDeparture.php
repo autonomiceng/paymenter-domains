@@ -70,7 +70,7 @@ final class HoldingDeparture
             foreach(array_unique(array_map(fn($op)=>(int)$op->invoice_id,$a['credit'])) as $id){$free+=InvoiceMoney::held($money($id)??throw new DepartureBlocked(['line'=>self::UNREADABLE,'invoice'=>$id,'operation'=>null,'hold_domain'=>null]));}
             foreach($a['credit'] as $op){
                 $receipts=$l['transactions']->where('invoice_id',$op->invoice_id)->where('status',InvoiceTransactionStatus::Succeeded)->pluck('id')->map(fn($id)=>(int)$id)->values()->all();
-                FundsWaits::closeRenewal($op,$l,$now,$receipts);
+                if($op->state!=='rejected'){FundsWaits::closeRenewal($op,$l,$now,$receipts);}
                 $minor=app(Refunds::class)->departLocked($l,$op);$credited+=$minor;
                 $outcomes[]=['operation_id'=>(int)$op->id,'invoice_id'=>(int)$op->invoice_id,'outcome'=>'credited','credit_minor'=>$minor];
             }
@@ -136,6 +136,8 @@ final class HoldingDeparture
             if($op->state==='rejected'&&self::retriedToSuccess($op,$l)){continue;}
             // Closed earlier with nothing left on its invoice: history, not part of this closure.
             if(in_array($op->state,self::TERMINAL,true)&&$r!==null&&InvoiceMoney::settled($r)){continue;}
+            // Closed unsent earlier with money still free on its invoice: the same credit closure, without closing it again.
+            if($op->state==='rejected'&&$generation&&$r!==null&&self::closedUnsent($op,$l)){$credit[]=$op;continue;}
             if(in_array($op->state,self::TERMINAL,true)&&$invoice===null){continue;}
             $block(self::RENEWAL_REVIEW,$invoice,(int)$op->id);
         }
@@ -157,6 +159,12 @@ final class HoldingDeparture
             ||!RenewalCycles::registrarVirgin($op)||!RenewalCycles::moneyMoved($l,(int)$invoice->id)
             ||$op->base_expires_at?->format('Y-m-d')!==$d->provider_expires_at?->format('Y-m-d')){return false;}
         try{RefundProof::requireUnsent($op,$d);RefundPayment::requireLine($op,$l);return true;}catch(\DomainException){return false;}
+    }
+    /** A renewal the funds closure already closed unsent with its retained receipts, as the departure credit requires. */
+    private static function closedUnsent(Operation $op,array $l): bool
+    {
+        if(!isset($op->attempt['terminal']['transactions'])||!FundsWaits::closedRenewal($op,$l['domain'])){return false;}
+        try{RefundProof::requireUnsent($op,$l['domain']);RefundPayment::requireLine($op,$l);return true;}catch(\DomainException){return false;}
     }
     /** Proved unsent retry history whose chain on the same paid debt ends in a completed renewal. */
     private static function retriedToSuccess(Operation $op,array $l): bool
