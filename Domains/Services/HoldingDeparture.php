@@ -137,9 +137,9 @@ final class HoldingDeparture
             if(in_array($op->state,self::TERMINAL,true)&&$invoice===null){continue;}
             $block(self::RENEWAL_REVIEW,$invoice,(int)$op->id);
         }
-        // Acquisitions keep their completed history; one that never finished is not a departure.
+        // Acquisitions keep their completed history and an adoption's proved history; one that never finished is not a departure.
         foreach($l['operations']->whereIn('action',['register','transfer']) as $op){
-            if($op->state!=='succeeded'){$block(self::RENEWAL_REVIEW,$op->invoice_id===null?null:(int)$op->invoice_id,(int)$op->id);}
+            if($op->state!=='succeeded'&&!HoldingAnchor::adopted($op,$l)){$block(self::RENEWAL_REVIEW,$op->invoice_id===null?null:(int)$op->invoice_id,(int)$op->id);}
         }
         $at=self::absenceAt($d);
         if($at===null||$now-$at>self::FRESH){$block(self::STALE);}
