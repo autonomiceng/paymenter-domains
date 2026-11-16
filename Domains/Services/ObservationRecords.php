@@ -90,7 +90,7 @@ final class ObservationRecords
     /** Staff recovery is needed for either a record hold or stopped current scheduled reads. */
     public static function stopped(Domain $d): bool
     { return ObservationWork::stopped($d)||self::heldStopped($d); }
-    /** Batched stopped() for a page of domains: the ids, as keys. Held domains add at most three queries per page, never one per domain. */
+    /** Batched stopped() for a page of domains: the ids, as keys. Held domains add at most two queries per page, never one per domain. */
     public static function stoppedIds(\Illuminate\Support\Collection $domains): array
     {
         $ids=ObservationWork::stoppedIds($domains);
@@ -103,14 +103,13 @@ final class ObservationRecords
     /** A current-identity record hold with no next scheduled read, including a hold with no work row: only Sync now clears it. */
     private static function heldStopped(Domain $d): bool
     { return self::held($d)&&self::unscheduled(collect([$d]))!==[]; }
-    /** Of these held domains, the ids, as keys, the scheduler won't read again: a status it skips, no current work row, current work stopped, or not in the account. */
+    /** Of these held domains, the ids, as keys, the scheduler won't read again: a status it skips, no current work row, current work stopped, or not in the account.
+     * A held registration or transfer still in progress counts as stopped: its records wait for the acquisition, and the page says so (ObservationWork::resumeBlocked). */
     private static function unscheduled(\Illuminate\Support\Collection $held): array
     {
         if ($held->isEmpty()) { return []; }
-        $pending=$held->whereIn('status',['registration_pending','transfer_pending']);
-        $operations=$pending->isEmpty()?collect():\Paymenter\Extensions\Servers\Domains\Models\Operation::whereIn('domain_id',$pending->pluck('id'))->whereIn('action',['register','transfer'])->get()->groupBy('domain_id');
-        $readable=$held->filter(fn(Domain $d)=>in_array($d->status,HoldingObservationWork::READ_STATUSES,true)&&!$d->adoptionPending()
-            &&ObservationEligibility::allows($d,$operations->get($d->id,collect())));
+        $readable=$held->filter(fn(Domain $d)=>in_array($d->status,array_diff(HoldingObservationWork::READ_STATUSES,['registration_pending','transfer_pending']),true)
+            &&!$d->adoptionPending());
         $rows=collect();$stopped=collect();
         if ($readable->isNotEmpty()&&\Illuminate\Support\Facades\Schema::hasTable('domains_observation_work')) {
             $work=fn()=>\Illuminate\Support\Facades\DB::table('domains_observation_work')->whereIn('domain_id',$readable->pluck('id'));
