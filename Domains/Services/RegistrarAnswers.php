@@ -35,7 +35,7 @@ class RegistrarAnswers
         return in_array($op->registrar_key,['enom','namesilo'],true)&&in_array($op->action,['register','renew'],true)
             &&in_array($op->state,['running','pending','uncertain'],true)&&!($op->state==='running'&&$op->lease_expires_at!==null&&$op->lease_expires_at>$now)
             &&($op->attempt['seal']??null)==='sealed'&&$at<=$now->modify('-24 hours')
-            &&($op->provider_order_id===null||$op->provider_order_id===self::capturedReference($op))&&($op->registrar_key==='namesilo'||!isset($op->attempt['registration'])&&!isset($op->attempt['renewal']))
+            &&(($op->provider_order_id===null||$op->provider_order_id===self::capturedReference($op))&&($op->registrar_key==='namesilo'||!isset($op->attempt['registration'])&&!isset($op->attempt['renewal']))||OrderUnproven::applies($op))
             &&!isset($op->policy['enom_answer'])&&!isset($op->attempt['reconciliation']);
     }
     /** Staff ask the registrar only after the system has read this exact attempt, unless there is nothing to read. */
@@ -69,7 +69,9 @@ class RegistrarAnswers
                 ||$op->authority_generation!==$d->authority_generation){throw new \DomainException('This request changed. Reload the page and select it again.');}
             app(AccountBindings::class)->requireReadableLocked($l['server'],$l['account']);
             $attempt=ReconciliationEvidence::attempt($op,$d,AccountBindings::binding($l['account']));
-            if($op->action!=='transfer'&&($attempt->providerReference!==null||$attempt->executionFacts!==null)&&!$attempt->executionFacts?->capturedUnknown()
+            // A renewal whose order number no read could prove, once its checks stopped: support says whether Enom processed it.
+            $unproven=OrderUnproven::applies($op);
+            if(!$unproven&&$op->action!=='transfer'&&($attempt->providerReference!==null||$attempt->executionFacts!==null)&&!$attempt->executionFacts?->capturedUnknown()
                 &&!($op->registrar_key==='namesilo'&&$attempt->providerReference===null)){throw new \DomainException('This request already has a registrar order. Check that order instead.');}
             if(!self::readFirst($op,$attempt,$now)){throw new \DomainException('Use Check status to read this attempt first, then record the registrar’s answer.');}
             $outcome=$input['outcome']??null;$reference=trim((string)($input['order_reference']??''));
@@ -82,12 +84,15 @@ class RegistrarAnswers
             if(($input['confirmed']??false)!==true||!in_array($outcome,$transfer?['transfer_rejected']:['accepted','not_processed'],true)
                 ||($outcome!=='not_processed'?!preg_match('/^[1-9][0-9]{0,19}$/D',$reference):$reference!=='')){
                 throw new \DomainException('Record the registrar’s final answer for this account and attempt.');}
-            if($outcome==='not_processed'&&($op->provider_order_id!==null||(isset($op->attempt['registration'])||isset($op->attempt['renewal']))
+            // Not processed returns the payment only when the last read saw the domain unchanged.
+            $read=$unproven&&$outcome==='not_processed'?OrderUnproven::unchanged($op,$attempt):null;
+            if($unproven&&$outcome==='not_processed'&&$read===null){throw new \DomainException('The last check didn’t show this domain unchanged, so Enom may have renewed it. Ask Enom support to check the order again.');}
+            if(!$unproven&&$outcome==='not_processed'&&($op->provider_order_id!==null||(isset($op->attempt['registration'])||isset($op->attempt['renewal']))
                 ||isset($op->cost['actual'])||($op->attempt['execution']['send_state']??null)==='sent')){throw new \DomainException('This answer conflicts with the saved registrar result. Ask the registrar to check it.');}
-            if($op->provider_order_id!==null&&$reference!==$op->provider_order_id){throw new \DomainException('Registrar order number differs from the saved result.');}
+            if($op->provider_order_id!==null&&$read===null&&$reference!==$op->provider_order_id){throw new \DomainException('Registrar order number differs from the saved result.');}
             $answer=['identity'=>self::identity($op),'operation_key'=>$op->operation_key,'fingerprint'=>$op->account_fingerprint,
                 'generation'=>$op->authority_generation,'actor_id'=>$review->actorId,'at'=>$now->format(DATE_ATOM),
-                'outcome'=>$outcome,'order_reference'=>$reference?:null,'case_reference'=>$case,'evidence'=>$evidence,...($absence!==null?['absence'=>$absence]:[])];
+                'outcome'=>$outcome,'order_reference'=>$reference?:null,'case_reference'=>$case,'evidence'=>$evidence,...($absence!==null?['absence'=>$absence]:[]),...($read!==null?['unproven_order'=>$op->provider_order_id,'unproven_read'=>$read]:[])];
             if($op->registrar_key==='namesilo'){
                 $answer['account']=['registrar'=>$op->registrar_key,'server_id'=>$op->server_id,'domain_id'=>$op->domain_id,'service_id'=>$op->service_id];
                 if($outcome==='accepted'){
@@ -110,6 +115,8 @@ class RegistrarAnswers
                 ...($transfer?['state'=>'rejected','safe_code'=>TransferRejections::CODE,'completed_at'=>$now,
                     'cost'=>[...($op->cost??[]),'actual'=>['amount'=>$answer['absorbed_fee'],'currency'=>'USD']],
                     'funding'=>[...($op->funding??[]),'refund_authorization'=>['actor_id'=>$review->actorId,'reason'=>'transfer_fee_absorbed','at'=>$now->format(DATE_ATOM),'operation_key'=>$op->operation_key,'generation'=>$op->authority_generation]]]:[]),
+                // The order number stays in the attempt and the answer; the request no longer claims an order, so the existing refund path applies.
+                ...($read!==null?['provider_order_id'=>null]:[]),
                 ...($outcome==='not_processed'?['state'=>'rejected','safe_code'=>'refund_approved','lease_expires_at'=>null,
                     'funding'=>[...($op->funding??[]),'refund_authorization'=>['actor_id'=>$review->actorId,'reason'=>$op->registrar_key==='enom'?'enom_not_processed':'registrar_not_processed','at'=>$now->format(DATE_ATOM),'operation_key'=>$op->operation_key,'generation'=>$op->authority_generation]]]:[])]);}finally{self::$writing=null;}
             if($transfer){$d->update(['status'=>'transfer_rejected']);}
