@@ -73,7 +73,10 @@ final readonly class OwnedDomains
     }
     private static function creditUnsafe(Operation $op): bool
     {
-        try{return ReceiptReturns::malformed($op)||InvoiceMoney::returnBlocked(InvoiceMoney::project((int)$op->invoice_id));}catch(\Throwable){return true;}
+        // A credit recorded without an invoice has no invoice money to check. Its plan shape is not checked here either:
+        // the ordinary account credit stays Cancelled, and only blocked or unreadable invoice money sends it to review.
+        if($op->invoice_id===null){return false;}
+        try{return InvoiceMoney::returnBlocked(InvoiceMoney::project((int)$op->invoice_id));}catch(\Throwable){return true;}
     }
     private static function defaultNameservers(Operation $op): bool
     { try { return NewDomainDns::forOperation($op) !== []; } catch (\Throwable) { return false; } }
