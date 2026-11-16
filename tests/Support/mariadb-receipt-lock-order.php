@@ -49,6 +49,13 @@ if($phase==='reset'){
 }
 require $runtime.'/tests/Support/mariadb-commerce.php';
 app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class,new Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget($clock));
+// Checkout subclasses arrange synthetic offers; locking reads verify the installed adapters instead.
+foreach(['CartAdmission','CheckoutEligibility','Storefront','PayCheck','NativeCatalogue','StaffSettingsWrites','SellerPolicies','PriceCatalogue']as$type){
+    app()->offsetUnset('Paymenter\\Extensions\\Servers\\Domains\\Services\\'.$type);
+}
+$runtimePorts=new Paymenter\Extensions\Servers\Domains\Services\RuntimePorts;
+app()->instance(Paymenter\Extensions\Servers\Domains\Services\RuntimePorts::class,$runtimePorts);
+$runtimePorts->registerInitialManagedRecordObservations(Paymenter\Extensions\Servers\Domains\Services\Runtime::initialManagedRecordObservations(...));
 DB::statement('SET SESSION innodb_lock_wait_timeout=20');
 if($phase==='receipt'){
     DB::beginTransaction();
