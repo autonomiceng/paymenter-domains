@@ -113,7 +113,7 @@ final class ObservationRecords
         $rows=collect();$stopped=collect();
         if ($readable->isNotEmpty()&&\Illuminate\Support\Facades\Schema::hasTable('domains_observation_work')) {
             $work=fn()=>\Illuminate\Support\Facades\DB::table('domains_observation_work')->whereIn('domain_id',$readable->pluck('id'));
-            $rows=$work()->get(['id','domain_id','server_id','account_fingerprint','generation','phase'])->groupBy('domain_id');
+            $rows=$work()->get(['id','domain_id','server_id','account_fingerprint','generation','phase','safe_code'])->groupBy('domain_id');
             $stopped=HoldingReadRetry::stoppedQuery($work())->pluck('id')->flip();
         }
         $ids=[];
@@ -123,7 +123,7 @@ final class ObservationRecords
             // HoldingReadRetry::status: the current job is this holding's work row; any stopped current row stops reads.
             $current=$rows->get($d->id,collect())->filter(fn($r)=>(int)$r->server_id===(int)$d->server_id&&$r->account_fingerprint===$d->account_fingerprint
                 &&(int)$r->generation===(int)$d->authority_generation&&$r->phase===$phase);
-            if ($current->isEmpty()||$current->contains(fn($r)=>$stopped->has($r->id))||HoldingReadRetry::absent($d)) { $ids[$d->id]=true; }
+            if ($current->isEmpty()||$current->contains(fn($r)=>$stopped->has($r->id)||$r->safe_code==='records_disabled')||HoldingReadRetry::absent($d)) { $ids[$d->id]=true; }
         }
         return $ids;
     }
