@@ -55,7 +55,10 @@ try{
     });
 }catch(Throwable $e){
     if(!MoneyDecisions::contention($e)){throw $e;}
-    $error='contention';
+    for($cause=$e;$cause!==null;$cause=$cause->getPrevious()){
+        if($cause instanceof PDOException&&isset($cause->errorInfo[1])){$error=(int)$cause->errorInfo[1];break;}
+    }
+    $error??=0;
 }
 $subject=$phase==='receipt'?$op:$first;
 $count=InvoiceTransaction::where('invoice_id',$subject->invoice_id)->count();
