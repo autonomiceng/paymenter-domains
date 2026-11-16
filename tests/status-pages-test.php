@@ -45,9 +45,9 @@ $keys=[];
 foreach ($cases as $case=>[$domain,$acquisition,$label,$reason]) {
     DB::table('domains_domains')->where('id',$d->id)->update([...$base,...$domain]);
     DB::table('domains_operations')->where('id',$op->id)->update(['action'=>'transfer','safe_code'=>null,...$acquisition]);
-    // Cancelled rows stay out of the default list, behind their tab.
-    $hidden=$case==='cancelled';same($hidden?0:1,$controller->index($request())->getData()['domains']->total(),'Default list: '.$case);
-    $list=storefrontDom($controller->index($request($hidden?['status'=>'cancelled']:[]))->render());
+    // All lists every domain that held a registration, ended ones included (mock 03: All 12 = Active 7, Under review 1, Inactive 4).
+    same(1,$controller->index($request())->getData()['domains']->total(),'Default list: '.$case);
+    $list=storefrontDom($controller->index($request())->render());
     $row=$list->query('//tbody/tr')->item(0);
     $show=storefrontDom($controller->show($request(),$d->id)->render());
     $header=$show->query('//*[@data-piece="head-line"]')->item(0);
@@ -60,9 +60,10 @@ foreach ($cases as $case=>[$domain,$acquisition,$label,$reason]) {
     foreach ($reasons as $page=>$lines) { same($reason===null?[]:[$reason],$lines,'Same reason line on the '.$page.': '.$case); }
     // Tabs name the statuses present; the tab for this status keeps the row, any other tab drops it.
     // A stopped registration reads Pending registration, the same word as the tab that holds it (approved mock).
-    $tab=$label;
+    // Ended statuses share the Inactive tab, and each row keeps its own word (mock 03b).
+    $tab=$case==='cancelled'?'Inactive':$label;
     $tabs=array_map(fn($t)=>trim(preg_replace('/\s+/',' ',$t)),$text($list,'domains-tab'));
-    same([$hidden?0:1,1],array_map(fn($t)=>(int)preg_replace('/^.*\s(\d+)$/','$1',$t),$tabs),'Tab counts match the rows: '.$case);
+    same([1,1],array_map(fn($t)=>(int)preg_replace('/^.*\s(\d+)$/','$1',$t),$tabs),'Tab counts match the rows: '.$case);
     same($tab.' 1',$tabs[1]??null,'The second tab is this status with its count: '.$case);
     parse_str((string)parse_url($list->query('//a[contains(@class,"domains-tab")]/@href')->item(0)?->value??'',PHP_URL_QUERY),$first);
     same('',(string)($first['status']??''),'The first tab is unfiltered: '.$case);
