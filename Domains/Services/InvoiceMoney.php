@@ -18,11 +18,47 @@ final class InvoiceMoney
         $invoice = $l['invoices']->firstWhere('id', $invoiceId);
         if (!$invoice || (int)$invoice->user_id !== (int)$l['user']->id) { throw new \DomainException('Invoice owner changed.'); }
         $peers = Operation::where('invoice_id', $invoiceId)->orderBy('id')->lockForUpdate()->get();
-        $ownerHold = DB::table('domains_obligation_alerts')->join('domains_domains', 'domains_domains.id', '=', 'domains_obligation_alerts.domain_id')
-            ->where('domains_domains.user_id', $l['user']->id)->where('code', 'account_money_hold')->whereNull('resolved_at')
-            ->orderBy('domains_obligation_alerts.id')->lockForUpdate()->get(['domains_obligation_alerts.id'])->isNotEmpty();
+        $record = self::lockedRecord($l, $invoiceId, $peers, $exclude);
+        foreach ($record['ledger'] as $entry) {
+            $id = DisputeRecoveries::dispute($entry);
+            if ($id === null) { continue; }
+            foreach ($record['receipts'] as $r) {
+                if ($r['receipt'] === $entry['payment_intent_id'] && $r['gateway_id'] === $entry['gateway_id']
+                    && min((int)$entry['amount_minor'], max(0,$r['completed']+$r['credit']-$r['recovered']+$r['external']-$r['gross'])) > 0
+                    && !$peers->contains(fn($peer)=>collect($peer->funding['dispute_holds']??[])->contains('dispute_id',$id))) {
+                    DisputeRecoveries::locked($l,$invoiceId,$entry,app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now(),$record);
+                    return self::lockedRecord($l,$invoiceId,Operation::where('invoice_id',$invoiceId)->orderBy('id')->lockForUpdate()->get(),$exclude);
+                }
+            }
+        }
+        return $record;
+    }
+    public static function ownerHeld(int $userId, bool $lock = false): bool
+    {
+        return DB::table('domains_obligation_alerts')->join('domains_domains','domains_domains.id','=','domains_obligation_alerts.domain_id')
+            ->where('domains_domains.user_id',$userId)->where('code','account_money_hold')->whereNull('resolved_at')
+            ->orderBy('domains_obligation_alerts.id')->when($lock,fn($q)=>$q->lockForUpdate())->get(['domains_obligation_alerts.id'])->isNotEmpty();
+    }
+    public static function lockedRecord(array $l,int $invoiceId,iterable $peers,?string $exclude=null): array
+    {
+        if(DB::transactionLevel()<1||($l['advisory']??true)){throw new \LogicException('Money reads require holding locks.');}
+        InvoiceScope::cover($l,$invoiceId);
+        return self::readRecord($l['invoices']->firstWhere('id',$invoiceId),$l['transactions']->where('invoice_id',$invoiceId),$peers,self::ownerHeld((int)$l['user']->id,true),$exclude);
+    }
+    /** Display and attention only. No recovery or payout authority. Gateway reads use their read transaction contract. */
+    public static function project(int $invoiceId,?iterable $rows=null,?iterable $peers=null): array
+    {
+        $invoice=\App\Models\Invoice::findOrFail($invoiceId);
+        $rows??=\App\Models\InvoiceTransaction::where('invoice_id',$invoiceId)->orderBy('id')->get();
+        $peers??=Operation::where('invoice_id',$invoiceId)->orderBy('id')->get();
+        return DB::transaction(fn()=>self::readRecord($invoice,$rows,$peers,self::ownerHeld((int)$invoice->user_id)));
+    }
+    private static function readRecord($invoice,iterable $transactions,iterable $peers,bool $ownerHold,?string $exclude=null): array
+    {
+        if(!$invoice){throw new \DomainException('Invoice missing.');}
+        $invoiceId=(int)$invoice->id;
         $rows = []; $ledger = []; $gateways = [];
-        foreach ($l['transactions']->where('invoice_id', $invoiceId) as $row) {
+        foreach ($transactions as $row) {
             $gateway = $row->gateway;
             $readable = $gateway && ExtensionHelper::hasFunction($gateway, 'receiptLedger');
             $capable = $readable && ReceiptReturns::capable($gateway);
@@ -39,7 +75,7 @@ final class InvoiceMoney
                 $ledger[] = [...$entry, 'gateway_id'=>(int)$gateway->id];
             }
         }
-        $funding = $peers->map(function($op) use ($exclude): array {
+        $funding = collect($peers)->map(function($op) use ($exclude): array {
             $f = $op->funding ?? [];
             if ($exclude !== null) { $f['receipt_return_results'][$exclude] = ['state'=>'released', 'credit_minor'=>0]; }
             return ['funding'=>$f];

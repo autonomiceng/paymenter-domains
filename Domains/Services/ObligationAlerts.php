@@ -20,6 +20,8 @@ final class ObligationAlerts
         'unknown_price'=>'Renewal price missing. Check pricing before you contact the customer.',
         'unknown_cost'=>"Cost missing. Check the registrar account's price.",
         'schedule_binding'=>'Reminder account changed. Check the schedule before you turn on notices.',
+        'account_money_hold'=>'Account on hold: a payment was lost to a bank dispute. Check the dispute and the customer, then release the hold.',
+        'dispute_recovery'=>'Bank dispute recovery needs a check. Automatic checks continue.',
         'refund_repair'=>'Money return needs a check. Review the request, invoice and gateway outcome. Do not return it again. Automatic checks continue.',
         'funds_wait_review'=>'Registrar funds wait ended. Check the request outcome before returning money.',
         'renewal_funds'=>'Renewal needs registrar funds now. Fund the account before the safe expiry deadline; the system retries.',
@@ -188,7 +190,7 @@ final class ObligationAlerts
     /** Resolve only after a successful, complete inspection, retaining all historical rows. */
     public static function finish(Domain $d,array $active,int $now):void
     {
-        $q=DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->whereNull('resolved_at')->whereNotIn('code',['refund_repair','funds_wait_review','renewal_funds','template_failed','acquisition_retirement_review','acquisition_late_money','transfer_watch_relink']);
+        $q=DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->whereNull('resolved_at')->whereNotIn('code',['account_money_hold','dispute_recovery','refund_repair','funds_wait_review','renewal_funds','template_failed','acquisition_retirement_review','acquisition_late_money','transfer_watch_relink']);
         if($active){$q->whereNotIn('alert_key',$active);}$q->update(['resolved_at'=>$now]);
     }
 }

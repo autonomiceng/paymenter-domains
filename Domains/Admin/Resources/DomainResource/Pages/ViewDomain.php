@@ -123,7 +123,7 @@ class ViewDomain extends RecordDetailPage
     {
         $d=$this->getRecord();
         // Import domain for a pending import sits in the page notice.
-        return [$this->approveComplimentaryCost($d),self::complimentaryRenewal($d),$this->syncNow(),...AcquisitionActions::make($d),...AcquisitionPaymentReview::actions($d),$this->customerView($d)];
+        return [$this->approveComplimentaryCost($d),self::complimentaryRenewal($d),$this->syncNow(),...AcquisitionActions::make($d),...AcquisitionPaymentReview::actions($d),...\Paymenter\Extensions\Servers\Domains\Admin\Support\AccountMoneyHoldActions::actions($d),$this->customerView($d)];
     }
     /** A held order's Release hold and Cancel and refund, the same actions as its request page. They act on that request,
      * so they sit on its own row under the Registration notice, which keeps its one link (P-NTC-5, P-ACT-9, P-ACT-11). */

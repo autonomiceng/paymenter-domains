@@ -219,6 +219,7 @@ class CartAdmission
         foreach ($cart->items as $item) {
             $product = Product::findOrFail($item->product_id);
             if (!$this->native->mapping($product)) { continue; }
+            if (InvoiceMoney::ownerHeld((int)$order->user_id)) { throw new \App\Exceptions\DisplayException('Your account needs a check before new domain orders. Contact support.'); }
             $account = \Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $product->server_id)->firstOrFail();
             $binding = AccountBindings::binding($account);
             if ($legacy && EnomTestRegistration::checkoutPreviewOnly($binding) && !EnomTestRegistration::sellable($binding) && !(($this->native->mapping($product)['action']??null)==='transfer'&&EnomTestTransfer::accepted($binding))) {

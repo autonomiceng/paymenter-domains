@@ -127,6 +127,7 @@ final readonly class RuntimeWork
         foreach(ObservationCandidates::next('refund') as $ids){foreach($ids as $id){$this->attempt('refund',static function()use($id):void {
             $op=Operation::find($id);if($op && RefundCandidates::automatic($op)){app(Refunds::class)->creditRejected((int)$id);}
         },(int)$id);}}
+        $this->attempt('dispute_recovery',fn()=>app(DisputeRecoveries::class)->sweep());
         foreach(ObservationCandidates::next('timeout') as $ids){foreach($ids as $id){$this->attempt('timeout',fn()=>app(TransferInputs::class)->expireMissingCode((int)$id),(int)$id);}}
         $this->attempt('reminders',fn()=>app(Reminders::class)->sweep());
         $this->attempt('history_retention',fn()=>HistoryRetention::tick($this->clock->now()->getTimestamp()));

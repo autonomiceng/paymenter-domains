@@ -36,8 +36,8 @@ final readonly class Reminders
             $schedule??=(object)['enabled'=>false,'before_days'=>'[]','after_days'=>'[]'];
             $alerts=ObligationAlerts::retained($l,$now->getTimestamp());
             if(isset($schedule->account_fingerprint)&&$schedule->account_fingerprint!==$d->account_fingerprint){$alerts[]=ObligationAlerts::record($d,'schedule_binding',$now->getTimestamp());}
-            $candidates=[RenewalReminders::plan($l,$schedule,$now,$alerts,$this->bindings),TransferNotifications::plan($l,$now,$alerts),self::refund($l,$now,$alerts)];$notice=null;
-            foreach($candidates as $candidate){if($candidate&&($schedule->enabled||in_array($candidate['template'],['domains_transfer_code_paid','domains_domain_order_refunded'],true))&&!HistoryRetention::replayed('reminder',hash('sha256',$d->id.':'.$candidate['identity']))&&!DB::table('domains_reminder_deliveries')->where('delivery_key',hash('sha256',$d->id.':'.$candidate['identity']))->exists()){$notice=$candidate;break;}}
+            $candidates=[RenewalReminders::plan($l,$schedule,$now,$alerts,$this->bindings),TransferNotifications::plan($l,$now,$alerts),self::recovery($l,$now,$alerts),self::refund($l,$now,$alerts)];$notice=null;
+            foreach($candidates as $candidate){if($candidate&&($schedule->enabled||in_array($candidate['template'],['domains_transfer_code_paid','domains_domain_order_refunded','domains_credit_removed'],true))&&!HistoryRetention::replayed('reminder',hash('sha256',$d->id.':'.$candidate['identity']))&&!DB::table('domains_reminder_deliveries')->where('delivery_key',hash('sha256',$d->id.':'.$candidate['identity']))->exists()){$notice=$candidate;break;}}
             foreach(DB::table('domains_reminder_deliveries')->where('domain_id',$id=$d->id)->whereIn('state',['handoff','uncertain'])->get() as $delivery){
                 $alerts[]=ObligationAlerts::record($d,'delivery_uncertain',$now->getTimestamp());
             }
@@ -59,6 +59,28 @@ final readonly class Reminders
             try{logger()->warning('Domains reminder failure could not be recorded.', ['domain_id'=>$id,'exception_class'=>$e::class]);}
             catch(\Throwable){} // Database or logging failure is not a customer-send permission.
         }
+    }
+    private static function recovery(array $l,\DateTimeImmutable $now,array &$alerts):?array
+    {
+        foreach($l['operations'] as $op){
+            $ids=array_unique(array_column($op->funding['dispute_holds']??[],'dispute_id'));
+            foreach($ids as $id){
+                $anchor=DB::table('domains_obligation_alerts')->where('alert_key',DisputeRecoveries::key('account_money_hold',$id))->first();
+                if(!$anchor||(int)$anchor->domain_id!==(int)$l['domain']->id){continue;}
+                $minor=0;$at=null;
+                foreach(\Paymenter\Extensions\Servers\Domains\Models\Operation::where('invoice_id',$op->invoice_id)->orderBy('id')->get() as $peer){
+                    foreach($peer->funding['dispute_holds']??[] as $hold){if($hold['dispute_id']===$id){$minor+=$hold['removed_minor'];$at=$hold['at'];}}
+                }
+                if($minor===0){continue;}
+                $identity='recovery:'.$id;$key=hash('sha256',$l['domain']->id.':'.$identity);
+                if(HistoryRetention::replayed('reminder',$key)||DB::table('domains_reminder_deliveries')->where('delivery_key',$key)->exists()){continue;}
+                if(!$at||strtotime($at)<$now->getTimestamp()-86400){$alerts[]=ObligationAlerts::record($l['domain'],'credit_notice_overdue',$now->getTimestamp(),(int)$op->id);}
+                $invoice=$l['invoices']->firstWhere('id',$op->invoice_id);
+                return ['identity'=>$identity,'template'=>'domains_credit_removed','data'=>['amount'=>RenewalReminders::money(PricingRule::decimal($minor)),
+                    'invoice_number'=>$invoice?->number??$op->invoice_id,'domain_url'=>url('/domains/'.$l['domain']->id),'support_url'=>url('/tickets')]];
+            }
+        }
+        return null;
     }
     private static function refund(array $l,\DateTimeImmutable $now,array &$alerts):?array
     {

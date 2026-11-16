@@ -210,14 +210,14 @@ final class ReceiptReturns
         if(!$a){throw new \DomainException('Missing receipt allocation.');}
         $known=$op->funding['receipt_return_results'][$key]??[];
         if($known){return;} // Sending and gateway-owned results can never be released.
-        $money=InvoiceMoney::load($l,(int)$op->invoice_id,$key);
+        $money=$reason==='recovery'?InvoiceMoney::lockedRecord($l,(int)$op->invoice_id,Operation::where('invoice_id',$op->invoice_id)->orderBy('id')->lockForUpdate()->get(),$key):InvoiceMoney::load($l,(int)$op->invoice_id,$key);
         $entry=collect($money['ledger'])->first(fn($r)=>$r['gateway_id']===$a['gateway_id']&&$r['payment_intent_id']===$a['receipt']&&$r['allocation_key']===($a['gateway_key']??$key));
         if($entry){
             $result=[...$entry,'amount_minor'=>(int)$entry['amount_minor']];
             if(isset($entry['return_key'])){$result['key']=$entry['return_key'];}
         }else{
             if(isset($a['gateway_key'])||$reason!=='recovery'&&($money['ownerHold']||array_filter($money['receipts'],fn($r)=>$r['hold']))){return;}
-            $minor=min($a['amount_minor'],array_sum(InvoiceMoney::heldFor($money,$a['transaction_id'])));
+            $minor=$reason==='recovery'?0:min($a['amount_minor'],array_sum(InvoiceMoney::heldFor($money,$a['transaction_id'])));
             $credit=$l['credit']??new Credit(['user_id'=>$l['user']->id,'currency_code'=>'USD','amount'=>'0.00']);
             if($minor>0){$credit->amount=PricingRule::decimal(PricingRule::minor($credit->amount)+$minor);$credit->save();}
             $result=['state'=>'released','amount_minor'=>$a['amount_minor'],'credit_minor'=>$minor,'credit_id'=>$credit->id,'reason'=>$reason,'at'=>now()->toAtomString()];

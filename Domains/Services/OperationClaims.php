@@ -400,7 +400,7 @@ final class OperationClaims
         if(!in_array($op->action,['register','transfer'],true)||$op->registrar_key!=='enom'||!self::testCallHistory($history)||(!$history&&!$priceHold&&!$priceRelease)||!self::unsealed($op)
             ||$op->lease_expires_at!==null||$op->provider_order_id!==null||$op->confirmed_expires_at!==null||$op->completed_at!==null
             ||array_key_exists('actual',$op->cost??[])||array_key_exists('execution',$op->cost??[])||array_key_exists('dispatch_attempted_at',$op->policy??[])
-            ||array_diff(array_keys($f),['claim','seal','refund_authorization','refund','financial_adjustments'])||array_key_exists('seal',$f)) { return false; }
+            ||array_diff(array_keys($f),['claim','seal','refund_authorization','refund','dispute_holds','financial_adjustments'])||array_key_exists('seal',$f)) { return false; }
         $held=$op->state==='held'&&in_array($op->safe_code,$holdCodes,true);
         $queued=$op->state==='queued'&&in_array($op->safe_code,[null,'write_rate_limited'],true);
         $approved=$op->state==='rejected'&&$op->safe_code==='refund_approved';

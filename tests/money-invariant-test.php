@@ -13,6 +13,12 @@ class InvariantReceiptGateway extends MoneyReceiptGateway
 {
     public static array $observations = [];
     public static array $requests = []; public static array $ledger = []; public static bool $unreadable = false;
+    public static int $conflicts = 0; public static array $lostRows = [];
+    public function lostDisputes(int $afterAt,string $afterKey,int $limit):array
+    {
+        same(0,DB::transactionLevel(),'Discovery runs outside money transactions');
+        return array_slice(array_values(array_filter(self::$lostRows,fn($e)=>$e['updated_at']>$afterAt||$e['updated_at']===$afterAt&&strcmp($e['payment_intent_id'].':'.$e['allocation_key'],$afterKey)>0)),0,$limit);
+    }
     public function allocateReceiptReturn(Invoice $invoice, string $receipt, string $key, int $minor): array
     {
         self::$requests[$key] = ['receipt'=>$receipt, 'amount'=>$minor];
@@ -21,6 +27,7 @@ class InvariantReceiptGateway extends MoneyReceiptGateway
     public function receiptLedger(Invoice $invoice, string $extension = 'InvariantReceipt'): array
     {
         expect(DB::transactionLevel() > 0, 'Ledger reads require the caller transaction');
+        if(self::$conflicts>0){self::$conflicts--; $e=new PDOException('Synthetic contention');$e->errorInfo=['40001',1213,'Synthetic'];throw $e;}
         if (self::$unreadable) { throw new RuntimeException('Synthetic unreadable ledger'); }
         $ledger = self::$ledger;
         foreach (self::$observations as $receipt=>$observations) {
@@ -446,4 +453,62 @@ echo 'INVARIANT_RATCHET '.json_encode(['baseline'=>count($callerBaseline), 'obse
     'unexpected'=>$unexpected, 'missing'=>$missing], JSON_THROW_ON_ERROR)."\n";
 expect($unexpected === [] && $missing === [], 'Caller violation baseline changed: '.json_encode(compact('unexpected','missing'), JSON_THROW_ON_ERROR));
 expect($projectionFailures === [], 'Projection checks failed: '.count($projectionFailures));
+
+// Recovery oracle: native Credit deltas and immutable peer shares, independently of the recovery calculation.
+use Paymenter\Extensions\Servers\Domains\Services\{AccountMoneyHolds,DisputeRecoveries,MoneyWorkSchema,ReminderSchema,ReminderSchedules,ReminderTemplates,Reminders,StaffOperationReview};
+ReminderSchema::install();MoneyWorkSchema::install();ReminderTemplates::ensure();
+app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
+app()->instance(Reminders::class,new Reminders($clock,$bindings));
+\Illuminate\Support\Facades\Mail::fake();config(['settings.mail_disable'=>false]);
+$staff->role->update(['permissions'=>['admin.domains.view','admin.domains.manage',StaffOperationReview::permission('release'),'admin.invoices.update']]);
+$recovery=new DisputeRecoveries($clock);$clock->instant=$now;
+$loss=static function($op,int $lost,string $id)use($creditGateway):array {
+    $payment=InvoiceTransaction::where('invoice_id',$op->invoice_id)->where('amount','>','0')->sole();
+    $payment->update(['gateway_id'=>$creditGateway->id,'transaction_id'=>'synthetic_recovery_'.$id]);
+    $entry=['invoice_id'=>(int)$op->invoice_id,'user_id'=>(int)$op->domain->user_id,'currency'=>'USD','payment_intent_id'=>$payment->transaction_id,
+        'allocation_key'=>'stripe:dispute:'.$id,'state'=>'lost','amount_minor'=>$lost,'updated_at'=>1];
+    InvariantReceiptGateway::$ledger=[$entry];InvariantReceiptGateway::$observations=[];
+    return $entry;
+};
+$credit=Credit::firstOrCreate(['user_id'=>$user->id,'currency_code'=>'USD'],['amount'=>'0.00']);
+foreach([0,70,300] as $unused){
+    $op=$new('recovery-'.$unused.'-placeholder.com');$payment=InvoiceTransaction::where('invoice_id',$op->invoice_id)->sole();
+    $op->update(['funding'=>['refund'=>['to'=>'account_credit','amount'=>$op->amount,'currency'=>'USD','credit_id'=>$credit->id,
+        'at'=>$now->format(DATE_ATOM),'payments'=>[['id'=>(int)$payment->id,'amount_minor'=>PricingRule::minor($op->amount)]]]]]);
+    $credit->update(['amount'=>PricingRule::decimal($unused)]);$entry=$loss($op,300,'synthetic_recovery_'.$unused);
+    ReminderSchedules::enroll((int)$op->server_id);
+    $before=$balance();$service=DB::table('services')->find($op->service_id);$recovery->recover($entry);
+    same($before-min(300,$unused),$balance(),'Loss removes exactly the available returned credit');
+    $holds=$op->fresh()->funding['dispute_holds'];
+    same([300,min(300,$unused),300-min(300,$unused)],[$holds[0]['owed_minor'],$holds[0]['removed_minor'],$holds[0]['remainder_minor']],'Unused credit and spent remainder are recorded once');
+    expect(InvoiceMoney::ownerHeld((int)$user->id),'Loss holds the owner');
+    same((array)$service,(array)DB::table('services')->find($op->service_id),'A money hold leaves paid service terms unchanged');
+    $snapshot=[$balance(),$op->fresh()->funding];$recovery->recover($entry);
+    same($snapshot,[$balance(),$op->fresh()->funding],'Recovery replay changes no money or evidence');
+    same($unused>0?1:0,DB::table('domains_reminder_deliveries')->where('domain_id',$op->domain_id)->where('template','domains_credit_removed')->count(),'One notice only when credit was removed');
+    $alert=DB::table('domains_obligation_alerts')->where('alert_key',DisputeRecoveries::key('account_money_hold',DisputeRecoveries::dispute($entry)))->sole();
+    AccountMoneyHolds::release($staff,(int)$alert->id);$recovery->recover($entry);
+    expect(DB::table('domains_obligation_alerts')->where('id',$alert->id)->value('resolved_at')!==null,'Replay never reopens a staff-released hold');
+}
+// One shared receipt, two $1.50 credits, $5 gross and a $3 loss: only $1 is owed across the peers.
+$op=$new('recovery-shared-placeholder.com');$payment=InvoiceTransaction::where('invoice_id',$op->invoice_id)->sole();$payment->update(['amount'=>'5.00']);
+$other=$new('recovery-peer-placeholder.com');
+DB::table('domains_operations')->where('id',$other->id)->update(['invoice_id'=>$op->invoice_id]);$other->refresh();
+foreach([$op,$other] as $peer){$peer->update(['funding'=>['refund'=>['to'=>'account_credit','amount'=>'1.50','payments'=>[['id'=>(int)$payment->id,'amount_minor'=>150]]]]]);}
+$credit->update(['amount'=>'3.00']);$entry=$loss($op,300,'synthetic_shared');$recovery->recover($entry);
+same(200,$balance(),'Shared receipt recovers $1 once, not once per operation');
+$before=[$op->fresh()->funding,$other->fresh()->funding,$balance()];$recovery->recover($entry);
+same($before,[$op->fresh()->funding,$other->fresh()->funding,$balance()],'Shared recovery replay retains both peer shares');
+// A loss with no return still holds a successful operation. Failed and exhausted decisions write durable evidence.
+$op=$new('recovery-deferred-placeholder.com');$entry=$loss($op,300,'synthetic_deferred');
+$op->update(['state'=>'succeeded']);InvariantReceiptGateway::$conflicts=2;
+$recovery->recover($entry,['at'=>1,'key'=>'synthetic_cursor']);
+$retry=DB::table('domains_obligation_alerts')->where('code','dispute_recovery')->where('operation_id',$op->id)->sole();
+expect($retry->resolved_at===null,'Exhausted recovery commits its retry evidence');
+same(0,DB::table('domains_money_work')->count(),'Dispute retry never uses an operation queue key');
+(new ReflectionMethod(Refunds::class,'retryPending'))->invoke($refunds,$op->id-1,1);
+expect(DB::table('domains_obligation_alerts')->where('id',$retry->id)->value('resolved_at')===null,'Refund retries preserve dispute evidence');
+$recovery->recover($entry);
+expect(DB::table('domains_obligation_alerts')->where('id',$retry->id)->value('resolved_at')!==null,'Successful owed-zero recovery resolves its own retry evidence');
+same([], $op->fresh()->funding['dispute_holds']??[], 'Owed-zero recovery adds no amount entry');
 $nativeSuccessful = true;
