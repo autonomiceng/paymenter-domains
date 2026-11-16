@@ -24,9 +24,38 @@ same(0,$invoiceEvents,'Vanilla cron bulk cancellation emits no Invoice update ev
 same('cancelled',App\Models\Invoice::find($soloCron->invoice_id)->status,'Vanilla cron cancels solo invoice');same('cancelled',$soloCron->domain->service->fresh()->status,'Vanilla cron cancels solo service');$retirement->inspect($soloCron->domain_id);same(null,$soloCron->domain->fresh()->reservation_name,'Solo cron retirement releases name');
 $retirement->inspect($mixed->domain_id);same(null,$mixed->domain->fresh()->reservation_name,'Sweep releases shared-invoice unpaid acquisition');same(null,$product->fresh()->stock,'Cron never replenishes managed stock');
 // Retained reviews cannot starve an obsolete review beyond the first 25 domains.
-$retained=[];
-for($i=0;$i<25;$i++){
-    $op=$new(placeholderComFixtureName('review-fair-'.$i.'-placeholder.com'),paid:false);$retained[]=$op;
+// One real checkout supplies the review fixtures; copying its native rows avoids 24 repeated Livewire renders.
+// Each review still has its own order, service, invoice, line, domain and frozen checkout identity.
+$seed=$new(placeholderComFixtureName('review-fair-0-placeholder.com'),paid:false);
+$copy=static function(Illuminate\Database\Eloquent\Model $source,array $changes=[]):Illuminate\Database\Eloquent\Model {
+    $row=$source->replicate();
+    $row->forceFill(['created_at'=>$source->created_at,'updated_at'=>$source->updated_at,...$changes]);
+    $id=DB::table($row->getTable())->insertGetId($row->getAttributes());
+    return $row->newQuery()->findOrFail($id);
+};
+$retained=[$seed];$seedDomain=$seed->domain;$seedService=$seedDomain->service;
+$seedInvoice=App\Models\Invoice::findOrFail($seed->invoice_id);
+$seedItem=App\Models\InvoiceItem::findOrFail($seed->invoice_item_id);
+for($i=1;$i<25;$i++){
+    $name=placeholderComFixtureName('review-fair-'.$i.'-placeholder.com');
+    $order=$copy($seedService->order);
+    $service=$copy($seedService,['order_id'=>$order->id,'label'=>$name]);
+    foreach($seedService->properties as $property){
+        $copy($property,['model_id'=>$service->id,...($property->key==='domain'?['value'=>$name]:[])]);
+    }
+    $invoice=$copy($seedInvoice,['number'=>null]);
+    $item=$copy($seedItem,['invoice_id'=>$invoice->id,'reference_id'=>$service->id,
+        'description'=>str_replace($seedDomain->domain,$name,$seedItem->description)]);
+    $checkout=[...$seed->policy['checkout'],'name'=>$name,'order_id'=>$order->id,'service_id'=>$service->id,
+        'invoice_id'=>$invoice->id,'invoice_item_id'=>$item->id];
+    $domain=$copy($seedDomain,['domain'=>$name,'sld'=>substr($name,0,-4),'reservation_name'=>$name,'service_id'=>$service->id,
+        'snapshot'=>[...$seedDomain->snapshot,'checkout'=>$checkout]]);
+    $retained[]=$copy($seed,['domain_id'=>$domain->id,'service_id'=>$service->id,'invoice_id'=>$invoice->id,
+        'invoice_item_id'=>$item->id,'operation_key'=>'invoice-item:'.$item->id,'policy'=>[...$seed->policy,'checkout'=>$checkout]]);
+}
+foreach($retained as $op){
+    // Invalid copies must fail here instead of surviving because the review sweep catches identity refusals.
+    same($op->id,DB::transaction(fn()=>UnpaidAcquisitionProof::require(HoldingLocks::take($op->domain,foreignInvoices:true))->id),'Review fixture retains valid unpaid acquisition proof');
     \Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::record($op->domain,'acquisition_retirement_review',$clock->now()->getTimestamp());
 }
 $obsolete=$new(placeholderComFixtureName('review-fair-obsolete-placeholder.com'));

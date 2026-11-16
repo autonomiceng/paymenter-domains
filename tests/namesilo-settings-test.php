@@ -13,6 +13,13 @@ use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount;
 use Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview as Review;
 $writes->run($review('processing'),['enabled'=>false,'confirmed'=>true]);
 $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertSuccessful();
+// Both account pricing rows open the shared pricing editor.
+foreach(['customer_pays','card_fee'] as $control){
+    $action=\Filament\Actions\Testing\TestAction::make('default_pricing_'.$control)->schemaComponent('sheet','content');
+    $page->assertActionVisible($action)->mountAction($action)->assertActionMounted($action);$page->unmountAction();gc_collect_cycles();gc_mem_caches();
+}
+$page->assertActionDoesNotExist('accept_namesilo_account');
+same(1,$GLOBALS['enrollmentCalls'],'Viewing local settings never probes the provider');
 $page->assertActionVisible('activate_test');
 $page->callAction('activate_test')->assertNotified('Orders resumed');
 expect($account->fresh()->processing_enabled,'Activate enables the authenticated TEST account');
@@ -22,6 +29,7 @@ unset($page);gc_collect_cycles();gc_mem_caches();
 // An unsaved TEST renewal choice must agree with the native billing switches.
 $binding=Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account->fresh());
 $rows=array_column(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup($account->fresh(),['label'=>'Active','reason'=>null]),null,'label');
+same(null,$rows['Late renewal']['action'],'Unsupported late renewal has no switch');
 same('Off',$rows['Renewals']['value'],'A fresh TEST account with billing Off displays Renewals Off');
 foreach([[false,false],[true,false],[false,true],[true,true]] as [$scheduled,$manual]){
     foreach(['domains_billing_enabled'=>$scheduled,'domains_manual_renewals_enabled'=>$manual] as $key=>$on){
