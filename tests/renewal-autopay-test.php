@@ -342,5 +342,17 @@ same([$issueCounts[0] + 1, $issueCounts[1] + 1, $issueCounts[2] + 1, 0], [Invoic
 $billing->sweep(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $deferredIssue->server_id)->sole());
 $billing->invoice($deferredIssue->id);
 same($issueCounts[2] + 1, count(DomainRenewalGateway::$calls), 'Finished issue work and repeated billing never charge again');
+// Finished refusals leave the retry budget for other domains; the ordinary billing cursor revisits these later.
+foreach (['outside_calendar', 'billing_off'] as $refusal) {
+    $stoppedIssue = $holder('issue-'.str_replace('_', '-', $refusal)); $issueDomain = $stoppedIssue->id; $issueFailures = 2;
+    $issueCounts = [Invoice::count(), Operation::count(), count(DomainRenewalGateway::$calls)];
+    same(null, $billing->invoice($stoppedIssue->id), 'The contended issue starts with no debt');
+    same(1, DB::table('domains_money_work')->count(), 'The issue waits in durable work');
+    if ($refusal === 'outside_calendar') { $clock->instant = new DateTimeImmutable('2027-06-01T12:00:00Z'); }
+    else { $server->settings()->updateOrCreate(['key'=>'domains_billing_enabled'], ['value'=>false, 'type'=>'boolean']); }
+    $billing->sweep(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $stoppedIssue->server_id)->sole());
+    same([0, $issueCounts], [DB::table('domains_money_work')->count(), [Invoice::count(), Operation::count(), count(DomainRenewalGateway::$calls)]], 'A finished issue refusal clears its old work without debt or collection');
+    $server->settings()->updateOrCreate(['key'=>'domains_billing_enabled'], ['value'=>true, 'type'=>'boolean']);
+}
 echo "Scheduled renewal Auto Pay: committed once-only attempts, credits, failures, skips, staff facts and native funding passed.\n";
 $nativeSuccessful = true;

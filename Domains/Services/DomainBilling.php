@@ -117,8 +117,9 @@ final class DomainBilling
         foreach (MoneyDecisions::queued((int)$account->server_id, 25, [self::KIND]) as $work) {
             (new RuntimeDiagnostics($this->clock))->attempt('billing', function () use ($work): void {
                 if (Domain::whereKey($work->subject_id)->exists()) { $this->invoice((int)$work->subject_id); }
-                MoneyDecisions::done($work);
             }, (int)$work->subject_id);
+            // Finished refusals leave the regular cursor to revisit the domain; a newer deferral keeps its revision.
+            MoneyDecisions::done($work);
         }
     }
 
