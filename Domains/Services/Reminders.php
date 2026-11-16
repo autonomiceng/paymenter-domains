@@ -74,7 +74,7 @@ final readonly class Reminders
                 if($minor===0){continue;}
                 $identity='recovery:'.$id;$key=hash('sha256',$l['domain']->id.':'.$identity);
                 if(HistoryRetention::replayed('reminder',$key)||DB::table('domains_reminder_deliveries')->where('delivery_key',$key)->exists()){continue;}
-                if(!$at||strtotime($at)<$now->getTimestamp()-86400){$alerts[]=ObligationAlerts::record($l['domain'],'credit_notice_overdue',$now->getTimestamp(),(int)$op->id);}
+                if(!$at||strtotime($at)>$now->getTimestamp()){$alerts[]=ObligationAlerts::record($l['domain'],'credit_notice_overdue',$now->getTimestamp(),(int)$op->id);}
                 $invoice=$l['invoices']->firstWhere('id',$op->invoice_id);
                 return ['identity'=>$identity,'template'=>'domains_credit_removed','data'=>['amount'=>RenewalReminders::money(PricingRule::decimal($minor)),
                     'invoice_number'=>$invoice?->number??$op->invoice_id,'domain_url'=>url('/domains/'.$l['domain']->id),'support_url'=>\Paymenter\Extensions\Servers\Domains\Presentation\Missing::supportUrl()??'']];
