@@ -48,6 +48,7 @@ if($phase==='reset'){
     echo "Reset retained unpaid renewal.\n";$nativeSuccessful=true;return;
 }
 require $runtime.'/tests/Support/mariadb-commerce.php';
+app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class,new Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget($clock));
 DB::statement('SET SESSION innodb_lock_wait_timeout=20');
 if($phase==='receipt'){
     DB::beginTransaction();
