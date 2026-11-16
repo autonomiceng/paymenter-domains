@@ -33,6 +33,10 @@ DB::transaction(fn()=>Paymenter\Extensions\Servers\Domains\Models\WatchName::cre
 $departer=staffUser([Staff::VIEW,'admin.domains.manage','admin.domains.holdings.stop','admin.domains.holdings.depart']);Auth::setUser($departer);
 writePanelPage($out.'/staff-confirm.html',Livewire\Livewire::actingAs($departer)->test(ViewDomain::class,['record'=>$d->id]));
 writePanelPage($out.'/staff-confirm-dialog.html',Livewire\Livewire::actingAs($departer)->test(ViewDomain::class,['record'=>$d->id])->mountAction('confirm_departure'));
+// With site mail off, the dialog promises no email.
+$mailOff=config('settings.mail_disable');config(['settings.mail_disable'=>true]);
+writePanelPage($out.'/staff-confirm-dialog-mail-off.html',Livewire\Livewire::actingAs($departer)->test(ViewDomain::class,['record'=>$d->id])->mountAction('confirm_departure'));
+config(['settings.mail_disable'=>$mailOff]);
 Auth::setUser($actor);
 $list=Livewire\Livewire::actingAs($actor)->test(ListDomains::class)->filterTable('alerts',true)->assertCanSeeTableRecords([$d]);
 writePanelPage($out.'/attention-fresh.html',$list);
