@@ -27,10 +27,10 @@ final class NativeUserDeletion
         if(DB::transactionLevel()>1){self::refuse($user,'Customer deletion requires the outer database transaction.');}
         $write=static function()use($user):void {
             $ids=array_values(array_unique(array_filter([$user->getRawOriginal('id'),$user->id])));sort($ids,SORT_NUMERIC);
-            User::whereKey($ids)->orderBy('id')->lockForUpdate()->get();
             if(!Schema::hasTable(UserDeletionSchema::TABLE)){self::refuse($user,'Customer deletion is unavailable until the Domains update is finished.');}
             // Current reads also protect a caller with an older repeatable-read snapshot.
             $invoices=Invoice::whereIn('user_id',$ids)->orderBy('id')->lockForUpdate()->get(['id']);
+            User::whereKey($ids)->orderBy('id')->lockForUpdate()->get();
             $orders=Order::whereIn('user_id',$ids)->orderBy('id')->lockForUpdate()->get(['id']);
             $services=Service::where(fn($q)=>$q->whereIn('user_id',$ids)->orWhereIn('order_id',$orders->pluck('id')))->orderBy('id')->lockForUpdate()->get();
             $domains=Domain::where(fn($q)=>$q->whereIn('user_id',$ids)->orWhereIn('service_id',$services->pluck('id')))->orderBy('id')->lockForUpdate()->get(['id']);

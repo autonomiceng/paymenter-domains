@@ -564,6 +564,8 @@ final class OperationClaims
         // Discovery is before the transaction, so it cannot establish an old repeatable-read view.
         $route = Operation::findOrFail($id); $holding = Domain::findOrFail($route->domain_id);
         return DB::transaction(function () use ($route, $holding, $callback, $staffId) {
+            // Core receipts and money decisions acquire the invoice before its owner.
+            \App\Models\Invoice::whereKey($route->invoice_id)->lockForUpdate()->firstOrFail();
             $users=User::whereKey(array_filter([$holding->user_id,$staffId]))->orderBy('id')->lockForUpdate()->get();
             if(!$users->firstWhere('id',$holding->user_id)){throw new \DomainException('Missing domain owner.');}
             $staff=$users->firstWhere('id',$staffId); if($staff){$staff->setRelation('role',$staff->role()->lockForUpdate()->first());}

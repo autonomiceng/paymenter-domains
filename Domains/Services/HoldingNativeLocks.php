@@ -14,9 +14,11 @@ final class HoldingNativeLocks
         ?Domain $seed = null, ?int $expectedOrderId = null, bool $adoption = false, array $additionalServices = [], bool $completeInvoices = false, bool $nativeReceipt = false, ?int $invoice = null): array
     {
         if (!$advisory && ($nativeReceipt ? DB::transactionLevel() < 1 : DB::transactionLevel() !== 1)) { throw new \LogicException('Holding locks require the outer transaction.'); }
-        if ($invoice !== null && ($advisory || $adoption || $nativeReceipt)) { throw new \LogicException('Invoice scope is only for locked money decisions.'); }
+        if ($invoice !== null && ($advisory || $adoption)) { throw new \LogicException('Invoice scope is only for locked money decisions.'); }
+        if ($nativeReceipt && $invoice === null) { throw new \LogicException('A native receipt must lock only its target invoice.'); }
         // Native addPayment already holds its invoice before entering the receipt hook. Every writer
         // takes invoices before owners so full and invoice-scoped decisions share that order.
+        // Receipts never scan another owner invoice: core may already hold a non-lowest invoice.
         // Current locking reads also see invoices committed after an older native cron read view.
         // All owner invoices precede ALL services, matching InvoiceFunding, including mixed invoices.
         $opIds=$advisory?Operation::where('domain_id',$seed?->id)->orderByDesc('id')->limit(101)->pluck('id'):null;
