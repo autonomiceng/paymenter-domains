@@ -114,7 +114,7 @@ class ListWatches extends RecordListPage
     private function note(WatchName $w): ?string
     {
         // A stopped row says how it starts again; the domain page links to the setting.
-        $parts=array_values(array_unique(array_filter([$w->state==='retired'?WatchFindings::RESTART_SHORT:null,$this->watchRow($w)['status']['reason'],$this->lastCheck($w)['sub']??null,$this->expires($w)['sub']??null])));
+        $parts=array_values(array_unique(array_filter([$w->state==='retired'?WatchFindings::restart($w,true):null,$this->watchRow($w)['status']['reason'],$this->lastCheck($w)['sub']??null,$this->expires($w)['sub']??null])));
         return match(count($parts)){0=>null,1=>$parts[0],default=>implode(' ',array_map(StaffDomainStatus::sentence(...),$parts))};
     }
     /** Status reads at most CAP active names; the indicator says so only when more exist. */
