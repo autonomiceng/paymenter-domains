@@ -19,6 +19,13 @@ Cache::flush();
 expect(in_array((int)$d->id,$ids(),true),'An unreviewed charge on a departed domain stays in Needs attention');
 Cache::flush();
 expect(DomainQueries::openAlertCount(Domain::whereKey($d->id))===1,'An unreviewed charge on a departed domain stays in the staff count');
+// Money still moving on the departed domain names the step; the retained charge review keeps it in Needs attention.
+ObligationAlerts::record($d->fresh(),'funds_wait_review',$clock->now()->getTimestamp(),(int)$renewal->id);
+$status=Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::status($d->fresh());
+same([true,'funds_wait_review',(int)$renewal->id],[$status['act'],$status['alert'],$status['request']],'A live money alert names the step ahead of the retained charge review');
+Illuminate\Support\Facades\DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code','funds_wait_review')->update(['resolved_at'=>$clock->now()->getTimestamp()]);
+$status=Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::status($d->fresh());
+same([true,'operation_review',(int)$acquisition->id],[$status['act'],$status['alert'],$status['request']],'The retained charge review names the step on its own');
 // An earlier stopped registrar read adds nothing: it is obsolete after the departure.
 ObservationRecords::failPrimary($d->fresh(),$clock->now());
 Cache::flush();
