@@ -81,7 +81,7 @@ final readonly class RenewalCycles
     {
         $ops = $l['operations']->where('invoice_id', $invoiceId)->where('action', 'renew');
         if (!DepartureProof::verified($l['domain']) || $ops->isEmpty() || $ops->contains(static fn ($op) => $op->state !== 'rejected'
-            || (!RefundProof::retired($op, $l['domain']) && !FundsWaits::closedRenewal($op, $l['domain'])))) {
+            || (!RefundProof::retired($op, $l['domain']) && !FundsWaits::closedRenewal($op, $l['domain']) && !RenewalRetries::resolved($op, $l['domain'])))) {
             throw new \DomainException('Departed renewal needs payment review before another receipt.');
         }
     }
