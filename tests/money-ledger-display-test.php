@@ -41,8 +41,8 @@ same('cancelled',OwnedDomains::orderStatus(['registration_rejected',null],$peer-
 same(null,OperationActions::refundPending($peer,'guard_refused'),'Kept peer causes no unfinished refund warning');
 \Illuminate\Support\Facades\Auth::login($staff);
 $grants=\Paymenter\Extensions\Servers\Domains\Admin\Support\StaffGrants::current();
-$peer->update(['funding'=>[...$peer->funding,'refund'=>[...$peer->funding['refund'],'to'=>'account_credit']]]);
-$facts=\Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::for($peer,$grants);
+$legacy=clone $peer;$legacy->funding=[...$peer->funding,'refund'=>[...$peer->funding['refund'],'to'=>'account_credit']];
+$facts=\Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::for($legacy,$grants);
 expect(($facts['refund']??null)!==null&&$facts['refund']!==ReceiptReturns::REVIEW[0],'Staff facts retain completed account credit');
 same($before,$nativeMoney(),'Shared-invoice display remains read only');
 $nativeSuccessful=true;
