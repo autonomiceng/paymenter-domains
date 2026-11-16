@@ -467,7 +467,7 @@ $staff->role->update(['permissions'=>['admin.domains.view','admin.domains.manage
 $recovery=new DisputeRecoveries($clock);$clock->instant=$now;activeCommerceFacts($now,$now->modify('+30 days'),$ports);
 $loss=static function($op,int $lost,string $id)use($creditGateway):array {
     $payment=InvoiceTransaction::where('invoice_id',$op->invoice_id)->where('amount','>','0')->sole();
-    $payment->update(['gateway_id'=>$creditGateway->id,'transaction_id'=>'synthetic_recovery_'.$id]);
+    DB::table('invoice_transactions')->where('id',$payment->id)->update(['gateway_id'=>$creditGateway->id,'transaction_id'=>'synthetic_recovery_'.$id]);$payment->refresh();
     $entry=['invoice_id'=>(int)$op->invoice_id,'user_id'=>(int)$op->domain->user_id,'currency'=>'USD','payment_intent_id'=>$payment->transaction_id,
         'allocation_key'=>'stripe:dispute:'.$id,'state'=>'lost','amount_minor'=>$lost,'updated_at'=>1];
     InvariantReceiptGateway::$ledger=[$entry];InvariantReceiptGateway::$observations=[];
@@ -478,7 +478,7 @@ foreach([0,70,300] as $unused){
     $op=$new('recovery-'.$unused.'-placeholder.com');$payment=InvoiceTransaction::where('invoice_id',$op->invoice_id)->sole();
     $op->update(['funding'=>['refund'=>['to'=>'account_credit','amount'=>$op->amount,'currency'=>'USD','credit_id'=>$credit->id,
         'at'=>$now->format(DATE_ATOM),'payments'=>[['id'=>(int)$payment->id,'amount_minor'=>PricingRule::minor($op->amount)]]]]]);
-    $credit->update(['amount'=>PricingRule::decimal($unused)]);$entry=$loss($op,300,'synthetic_recovery_'.$unused);
+    $credit->refresh()->update(['amount'=>PricingRule::decimal($unused)]);$entry=$loss($op,300,'synthetic_recovery_'.$unused);
     ReminderSchedules::enroll((int)$op->server_id);
     $before=$balance();$service=DB::table('services')->find($op->service_id);$recovery->recover($entry);
     same($before-min(300,$unused),$balance(),'Loss removes exactly the available returned credit');
@@ -494,11 +494,11 @@ foreach([0,70,300] as $unused){
     expect(DB::table('domains_obligation_alerts')->where('id',$alert->id)->value('resolved_at')!==null,'Replay never reopens a staff-released hold');
 }
 // One shared receipt, two $1.50 credits, $5 gross and a $3 loss: only $1 is owed across the peers.
-$op=$new('recovery-shared-placeholder.com');$payment=InvoiceTransaction::where('invoice_id',$op->invoice_id)->sole();$payment->update(['amount'=>'5.00']);
+$op=$new('recovery-shared-placeholder.com');$payment=InvoiceTransaction::where('invoice_id',$op->invoice_id)->sole();DB::table('invoice_transactions')->where('id',$payment->id)->update(['amount'=>'5.00']);$payment->refresh();
 $other=$new('recovery-peer-placeholder.com');
 DB::table('domains_operations')->where('id',$other->id)->update(['invoice_id'=>$op->invoice_id]);$other->refresh();
 foreach([$op,$other] as $peer){$peer->update(['funding'=>['refund'=>['to'=>'account_credit','amount'=>'1.50','payments'=>[['id'=>(int)$payment->id,'amount_minor'=>150]]]]]);}
-$credit->update(['amount'=>'3.00']);$entry=$loss($op,300,'synthetic_shared');$recovery->recover($entry);
+$credit->refresh()->update(['amount'=>'3.00']);$entry=$loss($op,300,'synthetic_shared');$recovery->recover($entry);
 same(200,$balance(),'Shared receipt recovers $1 once, not once per operation');
 $before=[$op->fresh()->funding,$other->fresh()->funding,$balance()];$recovery->recover($entry);
 same($before,[$op->fresh()->funding,$other->fresh()->funding,$balance()],'Shared recovery replay retains both peer shares');
