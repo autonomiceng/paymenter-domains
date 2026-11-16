@@ -66,6 +66,10 @@ $at=$clock->instant;$clock->instant=$clock->now()->modify('+25 hours');
 $blocked(fn()=>$confirm($staff),HoldingDeparture::STALE,'Line 9');
 $clock->instant=$at;
 
+// The owner's watch linked to this domain is handed back; another customer's watch of the same name is not touched.
+$watchRow=static fn(int $owner,array $extra)=>DB::transaction(fn()=>Paymenter\Extensions\Servers\Domains\Models\WatchName::create(['user_id'=>$owner,'canonical_name'=>$d->domain,'psl_revision'=>str_repeat('a',64),'notice_preferences'=>[],...$extra]));
+$linked=$watchRow((int)$d->user_id,['state'=>'linked','registration'=>'platform','managed_domain_id'=>$d->id]);
+$other=$watchRow((int)$manager->id,['state'=>'active','registration'=>'external']);$otherBefore=$other->fresh()->getAttributes();
 // Confirmation: one decision closes the unpaid renewal, cancels the service and freezes the record.
 $credit=DB::table('credits')->where('user_id',$d->user_id)->get()->map(fn($r)=>(array)$r)->all();
 $page($staff)->callAction('confirm_departure',['reason'=>'other_account','note'=>'Checked the registrar account.'])->assertHasNoActionErrors();
@@ -75,7 +79,11 @@ same(['cancelled','rejected','renewal_cancelled_unpaid'],[$invoice->fresh()->sta
 same('cancelled',$held->service->status,'The native service is cancelled');
 same($credit,DB::table('credits')->where('user_id',$d->user_id)->get()->map(fn($r)=>(array)$r)->all(),'An unpaid renewal adds no account credit');
 same(0,DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code',RenewalOwnership::REVIEW)->whereNull('resolved_at')->count(),'Confirmation resolves the departure review');
-same($held->domain,$held->reservation_name,'Reservation release is not part of this step');
+same([null,true],[$held->reservation_name,DepartureProof::verified($held)],'Confirmation releases the name with the frozen record');
+same(['retired',null],[$linked->fresh()->state,$linked->fresh()->managed_domain_id],'A linked watch with no hosting source is retired, not attached elsewhere');
+same(1,Paymenter\Extensions\Servers\Domains\Models\WatchAudit::where('subject_id',$linked->id)->where('event','registration_departed')->count(),'The handoff is audited');
+same($otherBefore,$other->fresh()->getAttributes(),"Another customer's watch of the same name is unchanged");
+same(['id'=>(int)$linked->id,'state'=>'retired'],(array_slice($held->renewal_policy['staff_holdings'],-1)[0]['watch']??null),'The confirmation history records the watch outcome');
 $again=$departure->confirm($staff,(int)$d->id,'',  'other_account','Checked the registrar account.');
 same(MoneyOutcome::Failed,$again->outcome,'A departed holding cannot be confirmed again');
 $refusedWrite=false;try{$held->update(['status'=>'active']);}catch(DomainException){$refusedWrite=true;}

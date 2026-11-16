@@ -38,7 +38,7 @@ final class HoldingDeparture
     public function confirm(User $actor,int $domainId,string $ticket,string $reason,string $note): MoneyResult
     {
         OperationClaims::outside();$seed=Domain::findOrFail($domainId);
-        return MoneyDecisions::run(new MoneyRequest($seed,staffId:(int)$actor->id,scope:MoneyScope::Full),function(array $l)use($actor,$ticket,$reason,$note):array{
+        $result=MoneyDecisions::run(new MoneyRequest($seed,staffId:(int)$actor->id,scope:MoneyScope::Full),function(array $l)use($actor,$ticket,$reason,$note):array{
             $d=$l['domain'];$staff=$l['staff'];
             if(!$staff||!$staff->hasPermission('admin.domains.view')||!$staff->hasPermission('admin.domains.manage')||!$staff->hasPermission(self::PERMISSION)){
                 throw new StaffReviewRefused('Current staff permissions required. Reload this page.');}
@@ -72,10 +72,20 @@ final class HoldingDeparture
                 'before'=>['status'=>$d->status],'after'=>['status'=>'departed']];
             $d->update(['status'=>'departed','renewal_policy'=>[...($d->renewal_policy??[]),'departure'=>$record,'staff_holdings'=>$history]]);
             NativeDomainGuard::departed($l);
+            DomainReservations::releaseDeparted($l);
+            $watch=app(WatchDiscovery::class)->departed($d,$now->getTimestamp());
+            // The frozen record is written once; the watch outcome joins this confirmation's history entry.
+            if($watch!==null){$history[array_key_last($history)]['watch']=$watch;$d->update(['renewal_policy'=>[...$d->renewal_policy,'staff_holdings'=>$history]]);}
             // Only this holding's departure review; money, dispute and loss alerts stay open.
             DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code',RenewalOwnership::REVIEW)->whereNull('resolved_at')->update(['resolved_at'=>$now->getTimestamp()]);
-            return $record;
+            return [...$record,'watch'=>$watch];
         });
+        // Monitoring work and discovery hints start only after the decision committed.
+        if($result->outcome===MoneyOutcome::Applied){
+            WatchDiscoveryHints::names([[(int)$seed->user_id,(string)$seed->domain]]);
+            if(($result->value['watch']['state']??null)==='active'){app(WatchWork::class)->enrollWatch((int)$result->value['watch']['id'],(int)$seed->user_id);}
+        }
+        return $result;
     }
 
     /** First blocking line in check order, plus the renewals confirmation closes and the completed ones it keeps.

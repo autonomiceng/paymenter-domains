@@ -88,6 +88,26 @@ final class WatchDiscovery
                 || $digest!==$this->digest($current,$currentMap,self::values($service))){throw new \DomainException('Discovery source changed.');}
         },3);
     }
+    /** Departure confirmation, inside its money decision: this owner's watch linked to the departed domain goes back to
+     * its hosting sources. Staff pause holds, and sources and hosting decide active, paused or retired. Monitoring work is
+     * enrolled by the caller after the decision commits. Creates no watch. @return array{id:int,state:string}|null */
+    public function departed(Domain $d,int $now): ?array
+    {
+        if(!MoneyDecisions::running()||DB::transactionLevel()<1||$d->status!=='departed'){throw new \LogicException('Departure handoff requires its confirmation decision.');}
+        $owner=(int)$d->user_id;
+        $watch=WatchName::where('user_id',$owner)->where('managed_domain_id',$d->id)->where('state','linked')->lockForUpdate()->first();
+        if(!$watch){return null;}
+        foreach(WatchSource::where('user_id',$owner)->where('managed_domain_id',$d->id)->where('state','managed_link')->orderBy('id')->lockForUpdate()->get() as $link){
+            $attrs=$link->only(['user_id','service_id','map_id','map_revision','hostname','registrable_name','source_digest','last_seen_at']);
+            $link->retire('registration_departed');
+            WatchSource::create([...$attrs,'state'=>'watch','watch_id'=>$watch->id]);
+        }
+        $sources=WatchSource::where('watch_id',$watch->id)->where('state','watch')->exists();
+        $state=!$sources?'retired':(self::staffPaused($watch)||!self::hostingActive((int)$watch->id)?'paused':'active');
+        $this->change($watch,['state'=>$state,'managed_domain_id'=>null,'registration'=>null,'registration_evidence'=>null],'registration_departed',$now);
+        if($state!=='active'){$this->stop($watch,'registration_departed',$now);}
+        return ['id'=>(int)$watch->id,'state'=>$state];
+    }
     /** The service's own domain, else its hostname. */
     private static function values(Service $s,bool $lock=false): array
     {return WatchProducts::field($s->properties()->whereIn('key',WatchProducts::KEYS)->when($lock,fn($q)=>$q->lockForUpdate())->get())->pluck('value')->all();}

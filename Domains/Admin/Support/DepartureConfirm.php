@@ -38,7 +38,7 @@ final class DepartureConfirm
     /** The blocking line: its state word, sentence and record links. @return array{0:State,1:string,2:list<array{0:string,1:string,2:?string}>} */
     public static function line(array $block,Domain $d): array
     {
-        $invoice=$block['invoice']===null?'the renewal invoice':Facts::invoiceName($block['invoice']);
+        $invoice=$block['invoice']===null?'the renewal invoice':self::invoice($block['invoice']);
         $request=$block['operation']===null?null:'Request #'.$block['operation'];
         $hold=$block['hold_domain']===null?null:Domain::whereKey($block['hold_domain'])->value('domain');
         $owner=trim((string)($d->user?->name??''))?:'The customer';
@@ -54,11 +54,14 @@ final class DepartureConfirm
             default=>[State::NeedsReview,'Last registrar read is older than 24 hours. Use Check again on the Recheck row.'],
         };
         $links=[];
-        if($block['invoice']!==null){$links[]=['departure_invoice','Open '.Facts::invoiceName($block['invoice']),Facts::invoiceUrl($block['invoice'])];}
+        if($block['invoice']!==null){$links[]=['departure_invoice','Open '.self::invoice($block['invoice']),Facts::invoiceUrl($block['invoice'])];}
         if($request){$links[]=['departure_request','Open '.$request,Facts::url(fn()=>OperationResource::getUrl('view',['record'=>$block['operation']]))];}
         if($block['hold_domain']!==null&&$block['hold_domain']!==(int)$d->id){$links[]=['departure_hold','Open '.$hold,Facts::url(fn()=>DomainResource::getUrl('view',['record'=>$block['hold_domain']]))];}
         return [$state,$text,$links];
     }
+    /** The invoice name as the Next invoice row shows it. */
+    private static function invoice(int $id): string
+    { $name=Facts::invoiceName($id); return ctype_digit($name)?'Invoice #'.$name:$name; }
     public static function action(Domain $d): Action
     {
         $suspected=static function()use($d):bool{try{return DepartureChecks::suspected($d);}catch(\Throwable){return false;}};
@@ -103,9 +106,10 @@ final class DepartureConfirm
         $lines=[];
         foreach(self::preview($d)['close'] as $id){
             $op=$d->operations()->whereKey($id)->first();if(!$op){continue;}
-            $lines[]=Facts::invoiceName((int)$op->invoice_id).' is cancelled. It was an unpaid renewal of $'.number_format((float)$op->amount,2).'.';
+            $lines[]=self::invoice((int)$op->invoice_id).' is cancelled. It was an unpaid renewal of $'.number_format((float)$op->amount,2).'.';
         }
-        $lines[]='Service #'.$d->service_id." is cancelled. Confirm doesn't change DNS.";
+        $lines[]='Service #'.$d->service_id.' is cancelled. The name becomes available to order.';
+        $lines[]="Confirm doesn't change DNS.";
         $lines[]="This can't be undone. If the domain comes back, import it as a new domain.";
         return implode(' ',$lines);
     }
