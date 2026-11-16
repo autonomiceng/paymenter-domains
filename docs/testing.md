@@ -645,8 +645,10 @@ failure. `tests/test_schema_mariadb_guards.py` checks the harness refusals witho
 with an invoice-scoped money decision, including its full-scope retry. Both finish
 without a deadlock retry and retain the receipt and closed renewal. For paired
 red/green evidence in one run, `DOMAINS_TEST_RECEIPT_BASE` may name an exported
-buggy source tree; the same workers must then observe an extra deadlock retry
-there and no extra retry on the candidate. Both table prefixes are exercised.
+buggy source tree. The paired full-scope writer and two-receipt cases must lose
+the non-lowest invoice receipt there and retain both receipts on the candidate.
+Both table prefixes are exercised. Native receipt contexts cover only their one
+invoice and keep the same owner, identity and renewal closure guards.
 
 This package has no converter. The one-time conversion and its MariaDB rehearsal run from a
 checkout of Domains bridge 0.1.0 at `891124421645`; see the

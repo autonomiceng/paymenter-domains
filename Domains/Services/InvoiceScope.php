@@ -3,8 +3,8 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Illuminate\Support\Facades\DB;
-/** The one native invoice an invoice-scoped money decision locked, with its items and payments. Valid only inside the
- * runner attempt that took it. Readers of other invoices or of owner-wide billing refuse it instead of reading
+/** The one native invoice a money decision or native receipt locked, with its items and payments. Valid only inside the
+ * transaction that took it. Readers of other invoices or of owner-wide billing refuse it instead of reading
  * missing rows as no debt. A full context has no scope and passes every check. */
 final class InvoiceScope
 {

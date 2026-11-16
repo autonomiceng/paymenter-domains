@@ -58,7 +58,7 @@ final readonly class RenewalCycles
             if (Invoice::whereKey($invoiceId)->lockForUpdate()->value('status') !== 'cancelled') { return; }
             $seed = Domain::find($domainId);
             if (!$seed) { return; }
-            $l = HoldingLocks::take($seed, nativeReceipt: true);
+            $l = HoldingLocks::take($seed, nativeReceipt: true, receiptInvoice: $invoiceId);
             // Only the current locked holding decides routing; the discovery read can be an older payment snapshot.
             if ($l['domain']->status === 'departed') { self::admitDeparted($l, $invoiceId); return; }
             foreach ($l['operations']->where('invoice_id', $invoiceId)->where('action', 'renew')->whereIn('state', $open) as $op) {

@@ -40,11 +40,14 @@ if($phase==='seed'){
     echo "Seeded receipt lock fixtures.\n";$nativeSuccessful=true;return;
 }
 $ids=json_decode(file_get_contents($root.'/ids.json'),true,512,JSON_THROW_ON_ERROR);
-$op=Operation::findOrFail($ids[$case]);$seed=$op->domain()->firstOrFail();
+$op=Operation::findOrFail($ids[in_array($case,['full','receipts'],true)?'widened':$case]);$seed=$op->domain()->firstOrFail();
 if($phase==='reset'){
-    DB::table('invoice_transactions')->where('invoice_id',$op->invoice_id)->delete();
-    DB::table('invoices')->where('id',$op->invoice_id)->update(['status'=>'cancelled']);
-    DB::table('domains_operations')->where('id',$op->id)->update(['state'=>'awaiting_payment','safe_code'=>null,'attempt'=>null,'policy'=>null,'cost'=>null,'funding'=>null,'completed_at'=>null]);
+    foreach(in_array($case,['full','receipts'],true)?$ids:[$op->id]as$id){
+        $row=Operation::findOrFail($id);
+        DB::table('invoice_transactions')->where('invoice_id',$row->invoice_id)->delete();
+        DB::table('invoices')->where('id',$row->invoice_id)->update(['status'=>'cancelled']);
+        DB::table('domains_operations')->where('id',$id)->update(['state'=>'awaiting_payment','safe_code'=>null,'attempt'=>null,'policy'=>null,'cost'=>null,'funding'=>null,'completed_at'=>null]);
+    }
     echo "Reset retained unpaid renewal.\n";$nativeSuccessful=true;return;
 }
 require $runtime.'/tests/Support/mariadb-commerce.php';
@@ -57,6 +60,7 @@ $runtimePorts=new Paymenter\Extensions\Servers\Domains\Services\RuntimePorts;
 app()->instance(Paymenter\Extensions\Servers\Domains\Services\RuntimePorts::class,$runtimePorts);
 $runtimePorts->registerInitialManagedRecordObservations(Paymenter\Extensions\Servers\Domains\Services\Runtime::initialManagedRecordObservations(...));
 DB::statement('SET SESSION innodb_lock_wait_timeout=20');
+if(in_array($case,['full','receipts'],true)){require __DIR__.'/mariadb-receipt-cycles.php';return;}
 if($phase==='receipt'){
     DB::beginTransaction();
     // Weight only this native transaction so a reversed-order runner is the deadlock victim.

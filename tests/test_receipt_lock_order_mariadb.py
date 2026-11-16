@@ -22,7 +22,7 @@ def exercise(command, php_args, env, scratch):
         revisions.insert(0, ('base', os.environ['DOMAINS_TEST_RECEIPT_BASE']))
     proofs = []
     for revision, runtime in revisions:
-        for case in (('scoped',) if revision == 'base' else ('scoped', 'widened')):
+        for case in (('full', 'receipts') if revision == 'base' else ('scoped', 'widened', 'full', 'receipts')):
             name = revision+'-'+case
             cell = dict(env, RECEIPT_CASE=case, RECEIPT_NAME=name, RECEIPT_RUNTIME=runtime)
             command('receipt-reset-'+name, php_args+[script], env=dict(cell, RECEIPT_PHASE='reset'))
@@ -30,7 +30,8 @@ def exercise(command, php_args, env, scratch):
                 receipt = subprocess.Popen(php_args+[script], cwd=ROOT, env=dict(cell, RECEIPT_PHASE='receipt'), stdout=stdout, stderr=stderr)
                 try:
                     result = command('receipt-runner-'+name, php_args+[script], env=dict(cell, RECEIPT_PHASE='runner'), timeout=90, check=False)
-                    if receipt.wait(timeout=45) != 0:
+                    receipt_code = receipt.wait(timeout=45)
+                    if case in ('scoped', 'widened') and receipt_code != 0:
                         raise AssertionError('Native receipt failed; inspect '+str(barriers))
                 finally:
                     if receipt.poll() is None:
@@ -39,6 +40,20 @@ def exercise(command, php_args, env, scratch):
                             receipt.wait(timeout=5)
                         except subprocess.TimeoutExpired:
                             receipt.kill(); receipt.wait()
+            if case in ('full', 'receipts'):
+                native = json.loads(next(line for line in (barriers/(name+'.stdout')).read_text().splitlines() if line.startswith('{')))
+                other = json.loads(next(line for line in result.stdout.decode().splitlines() if line.startswith('{')))
+                expected = revision != 'base'
+                if (native['complete'] != expected or (receipt_code == 0) != expected
+                        or not other['complete'] or result.returncode != 0
+                        or native['transaction_level'] != 0 or other['transaction_level'] != 0
+                        or (not expected and (native['error'] != 'contention' or native['receipts'] != 0))):
+                    raise AssertionError('Unexpected multi-invoice outcome for '+name+': '+str((native, other)))
+                wait = barriers/(name+'-invoice-wait')
+                if (case == 'full' or not expected) and (not wait.is_file() or wait.read_text() != 'proved'):
+                    raise AssertionError('The other connection did not wait on invoice B')
+                proofs.append(dict(native, revision=revision, other=other))
+                continue
             if (barriers/(name+'-invoice-wait')).read_text() != 'proved':
                 raise AssertionError('The runner did not wait on the native invoice')
             proof = json.loads(next(line for line in result.stdout.decode().splitlines() if line.startswith('{')))
