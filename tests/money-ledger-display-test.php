@@ -45,4 +45,13 @@ $legacy=clone $peer;$legacy->funding=[...$peer->funding,'refund'=>[...$peer->fun
 $facts=\Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::for($legacy,$grants);
 expect(($facts['refund']??null)!==null&&$facts['refund']!==ReceiptReturns::REVIEW[0],'Staff facts retain completed account credit');
 same($before,$nativeMoney(),'Shared-invoice display remains read only');
+// G8: a pure account-credit return stays in review while invoice money is blocked.
+$credited=$new('ledger-credit-placeholder.com');$creditPayment=InvoiceTransaction::where('invoice_id',$credited->invoice_id)->sole();
+$creditMinor=\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor($credited->amount);
+$credited->update(['state'=>'rejected','safe_code'=>'refund_approved','funding'=>['refund'=>['to'=>'account_credit','amount'=>$credited->amount,'currency'=>'USD',
+    'payments'=>[['id'=>(int)$creditPayment->id,'amount_minor'=>$creditMinor]]]]]);
+$creditOrder=static fn()=>OwnedDomains::order($credited->domain->fresh(),$credited->fresh(),Invoice::find($credited->invoice_id));
+same([true,'cancelled'],[$creditOrder()['credit']??false,OwnedDomains::orderStatus(['registration_rejected',null],$credited->domain,$creditOrder())[0]],'Safe account credit stays an ordinary cancellation');
+InvoiceTransaction::create(['invoice_id'=>$credited->invoice_id,'amount'=>'-0.01','fee'=>'0.00','status'=>'succeeded','transaction_id'=>'synthetic_credit_unmatched']);
+same([false,'needs_review'],[$creditOrder()['credit']??false,OwnedDomains::orderStatus(['registration_rejected',null],$credited->domain,$creditOrder())[0]],'Blocked invoice money keeps account credit in review');
 $nativeSuccessful=true;

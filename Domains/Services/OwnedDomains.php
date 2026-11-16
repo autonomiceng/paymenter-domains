@@ -47,12 +47,16 @@ final readonly class OwnedDomains
             catch(\Throwable){$return=ReceiptReturns::REVIEW;$returned=false;}
             if($return){return ['state'=>'cancelled','kind'=>$kind,'return'=>$return[1],'returned'=>$returned];}
         }
+        $approved=$op->state==='rejected'&&($op->safe_code==='refund_approved'||isset($op->funding['refund'])&&in_array($op->safe_code,[...WriteHeld::FINAL_REFUSALS,TransferRejections::CODE],true))&&in_array($d->status,['registration_pending','transfer_pending',$kind.'_rejected'],true);
+        $late=$op->safe_code===UnpaidAcquisitionProof::CODE&&isset($op->funding['late_credits']);
+        // Account credit has no return summary. Unreadable or blocked invoice money still keeps it in review.
+        if(($approved&&isset($op->funding['refund'])||$late)&&self::creditUnsafe($op)){return ['state'=>'cancelled','kind'=>$kind,'return'=>ReceiptReturns::REVIEW[1],'returned'=>false];}
         // Applying the credit closes the domain row too. The order still reads Cancelled, as its request does. Approval alone adds no money: the credit can fail and retry.
-        if ($op->state==='rejected'&&($op->safe_code==='refund_approved'||isset($op->funding['refund'])&&in_array($op->safe_code,[...WriteHeld::FINAL_REFUSALS,TransferRejections::CODE],true))&&in_array($d->status,['registration_pending','transfer_pending',$kind.'_rejected'],true)) {
+        if ($approved) {
             $pending=($op->policy['held_order_refund']??false)===true&&$op->funding_basis==='paid_invoice'&&!isset($op->funding['refund']);
             return ['state'=>'cancelled','kind'=>$kind,...(isset($op->funding['refund'])?['credit'=>true]:[]),...($pending?['refund_pending'=>true]:[])];
         }
-        if ($op->safe_code===UnpaidAcquisitionProof::CODE&&isset($op->funding['late_credits'])) { return ['state'=>'cancelled','kind'=>$kind,'credit'=>true]; }
+        if ($late) { return ['state'=>'cancelled','kind'=>$kind,'credit'=>true]; }
         if (!in_array($d->status,['registration_pending','transfer_pending'],true)) { return []; }
         if ($op->state==='rejected') { return RequestStatus::closed($op->state,$op->safe_code)?[]:['state'=>'failed','kind'=>$kind]; }
         if ($closed && in_array($op->state,['awaiting_payment','awaiting_code','queued'],true)) { return ['state'=>'cancelled','kind'=>$kind,...self::unpaidCancel($op,$invoice,$paying)]; }
@@ -66,6 +70,10 @@ final readonly class OwnedDomains
             default => null,
         };
         return $invoice?->status==='paid'&&in_array($op->state,['awaiting_payment','awaiting_code','queued','running','pending','held','uncertain'],true)?['state'=>'paid','kind'=>$kind,'next'=>$next,'progress'=>$op->state,'retrying'=>isset($op->policy['status_check']['next_at']),...($op->funding_basis==='complimentary'?['complimentary'=>true]:[]),...(isset($op->policy['status_check'])&&!isset($op->policy['status_check']['next_at'])?['check'=>RegistrarCheck::forCustomer($op)]:[])]:[];
+    }
+    private static function creditUnsafe(Operation $op): bool
+    {
+        try{return ReceiptReturns::malformed($op)||InvoiceMoney::returnBlocked(InvoiceMoney::project((int)$op->invoice_id));}catch(\Throwable){return true;}
     }
     private static function defaultNameservers(Operation $op): bool
     { try { return NewDomainDns::forOperation($op) !== []; } catch (\Throwable) { return false; } }
