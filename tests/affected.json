@@ -34,5 +34,5 @@
     "tests/native-database.php": ["tests/test_runner.py"],
     "scripts/php-test": ["tests/test_runner.py"]
   },
-  "no_tests": ["*.md", "LICENSE", "*.png", "*.svg", "tests/enom-answer-render.php", "tests/staff-watch-render.php", "tests/Support/request-review-render.php", "tests/Support/billing-hold-render.php"]
+  "no_tests": ["*.md", "LICENSE", "*.png", "*.svg", "tests/enom-answer-render.php", "tests/staff-watch-render.php", "tests/Support/request-review-render.php", "tests/Support/billing-hold-render.php", "tests/Support/request-order-unproven-render.php"]
 }
