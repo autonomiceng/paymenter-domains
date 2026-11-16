@@ -92,10 +92,13 @@ final readonly class Reminders
             if(ReceiptReturns::malformed($op)){continue;} // An unreadable return sends no credit notice until staff review it.
             // A closed order can credit more than once, and each credit gets its own notice.
             try{ReceiptReturns::effective($op);}catch(\DomainException){continue;}
-            $plans=[];$credits=[];
+            $plans=[];$credits=[];$removed=[];
             if(isset($op->funding['refund'])){$plans['refund:'.$op->id]=$op->funding['refund'];}
             foreach(array_values($op->funding['late_credits']??[]) as $i=>$late){$plans['refund:'.$op->id.':'.$i]=$late;}
+            foreach($op->funding['dispute_holds']??[] as $hold){if($hold['removed_minor']>0){$removed[$hold['payment_id']]=true;}}
             foreach($plans as $identity=>$plan){
+                // A lost dispute removed credit from this receipt, so a notice saying the credit can be used would be wrong.
+                if(array_intersect_key($removed,array_flip([...array_column($plan['payments'],'id'),...array_column($plan['allocations']??[],'transaction_id')]))){continue;}
                 $credits[$identity]=$plan;
                 // A released allocation commits after its plan's bridge and needs a separate delivery identity.
                 foreach($plan['allocations']??[] as $a){

@@ -9,6 +9,8 @@ use Paymenter\Extensions\Servers\Domains\Services\DisputeRecoveries;
 
 $peer=$new('credit-notice-peer-placeholder.com');
 [$domain]=$make(placeholderComFixtureName('credit-notice-overdue-placeholder.com'),false);
+// Made before any owner hold below refuses new domain carts.
+[$stale]=$make(placeholderComFixtureName('credit-notice-stale-placeholder.com'),false);
 $op=Operation::where('domain_id',$domain->id)->where('action','register')->sole();
 $dispute='synthetic_notice_overdue';
 $committed=$clock->now()->modify('-59 minutes');
@@ -56,4 +58,20 @@ same(1,$alerts()->whereNull('resolved_at')->count(),'A later overdue notice rais
 $reminders->remind((int)$domain->id);
 same(1,$alerts()->whereNull('resolved_at')->count(),'The later overdue alert stays open on the next check');
 Server::whereKey($domain->server_id)->update(['enabled'=>true]);
+// C6: after credit is removed, the older notice saying that credit can be used is not sent.
+$staleOp=Operation::where('domain_id',$stale->id)->where('action','register')->sole();
+$stalePayment=\App\Models\InvoiceTransaction::where('invoice_id',$staleOp->invoice_id)->where('amount','>','0')->sole();
+$credit=\App\Models\Credit::firstOrCreate(['user_id'=>$stale->user_id,'currency_code'=>'USD'],['amount'=>'0.00']);
+DB::table('domains_operations')->where('id',$staleOp->id)->update(['state'=>'rejected']);
+$staleOp->refresh()->update(['funding'=>[...($staleOp->funding??[]),
+    'refund'=>['to'=>'account_credit','amount'=>'2.00','currency'=>'USD','credit_id'=>$credit->id,'at'=>$clock->now()->modify('-2 hours')->format(DATE_ATOM),
+        'payments'=>[['id'=>(int)$stalePayment->id,'amount_minor'=>200]]],
+    'dispute_holds'=>[['dispute_id'=>'synthetic_notice_stale','payment_id'=>(int)$stalePayment->id,'lost_minor'=>200,'owed_minor'=>200,'removed_minor'=>200,
+        'remainder_minor'=>0,'credit_id'=>$credit->id,'at'=>$clock->now()->modify('-10 minutes')->format(DATE_ATOM)]],
+]]);
+DB::table('domains_obligation_alerts')->insert(['alert_key'=>DisputeRecoveries::key('account_money_hold','synthetic_notice_stale'),
+    'domain_id'=>$stale->id,'generation'=>$stale->authority_generation,'code'=>'account_money_hold','operation_id'=>$staleOp->id,'first_seen'=>1,'last_seen'=>1]);
+$sent=static fn(string $template)=>DB::table('domains_reminder_deliveries')->where('domain_id',$stale->id)->where('template',$template)->count();
+$reminders->remind((int)$stale->id);$reminders->remind((int)$stale->id);
+same([1,0],[$sent('domains_credit_removed'),$sent('domains_domain_order_refunded')],'Only the removal notice is sent for removed credit');
 $nativeSuccessful=true;
