@@ -130,6 +130,7 @@ final readonly class RenewalAutoPay
     {
         $s = $l['service']; $d = $l['domain'];
         $reason = match (true) {
+            RenewalOwnership::blocked($d) => 'domain_not_in_account',
             LateRenewalQuote::deadline($op) !== null && (!EnomLateRenewal::accepted(AccountBindings::binding($l['account'])) || LateRenewalQuote::deadline($op) <= $this->clock->now()->modify('+25 seconds')) => 'late_renewal_closed',
             !$scheduled => 'manual_renewal',
             $op->currency !== 'USD' || $invoice->currency_code !== 'USD' || $s->currency_code !== 'USD' => 'currency',

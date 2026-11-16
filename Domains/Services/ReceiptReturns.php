@@ -113,7 +113,8 @@ final class ReceiptReturns
     /** Every retained return, the refund first and then each late credit. */
     private static function returns(Operation $op): array
     {
-        return [...(isset($op->funding['refund'])?[$op->funding['refund']]:[]),...($op->funding['late_credits']??[])];
+        $funding=$op->funding??[];
+        return [...(isset($funding['refund'])?[$funding['refund']]:[]),...($funding['late_credits']??[])];
     }
     /** A retained original-payment plan's bridge credit in minor units. Null when the bridge is missing, not a nonnegative
      * integer, an allocation lacks its key or a positive integer amount, or bridge plus allocations differs from the plan

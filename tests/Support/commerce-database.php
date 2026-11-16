@@ -29,3 +29,38 @@ function restoreCommerceDatabase(): bool
     Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::reset();
     return true;
 }
+
+/** A single commerce setup may reuse installation prepared before its staff records are written. */
+final class InstalledCommerceFixture
+{
+    private bool $consumed = false;
+
+    private function __construct(private PDO $pdo, private ?int $schema) {}
+
+    public static function prepare(): self
+    {
+        if (!app()->bound(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)) {
+            app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,
+                new Paymenter\Extensions\Servers\Domains\Tests\FakeClock(new DateTimeImmutable('2026-10-18T12:00:00Z')));
+        }
+        // Installation publishes through the registered runtime, including on the fallback path.
+        if (!app()->bound(Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class)) {
+            Paymenter\Extensions\Servers\Domains\Services\Runtime::register();
+        }
+        if (!restoreCommerceDatabase()) {
+            (new Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
+        }
+        $pdo = Illuminate\Support\Facades\DB::connection()->getPdo();
+        $schema = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite' ? (int) $pdo->query('PRAGMA schema_version')->fetchColumn() : null;
+        return new self($pdo, $schema);
+    }
+
+    public function consume(): void
+    {
+        if ($this->consumed || Illuminate\Support\Facades\DB::connection()->getPdo() !== $this->pdo
+            || $this->pdo->inTransaction() || ($this->schema !== null && $this->schema !== (int) $this->pdo->query('PRAGMA schema_version')->fetchColumn())) {
+            throw new LogicException('Installed commerce fixture context is no longer valid.');
+        }
+        $this->consumed = true;
+    }
+}

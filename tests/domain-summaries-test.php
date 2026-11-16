@@ -41,4 +41,28 @@ $ids=[$id];for($i=0;$i<12;$i++){
     foreach(DB::table('domains_watch_work')->where('watch_id',$id)->pluck('id') as $job){$clone('domains_watch_work',(int)$job,['watch_id'=>$wid]);}
 }
 DB::enableQueryLog();DB::flushQueryLog();$reader->batch($owner,[],[$id],$now+12);$single=count(DB::getQueryLog());DB::flushQueryLog();$all=$reader->batch($owner,[],$ids,$now+12);$many=count(DB::getQueryLog());same(13,count($all),'Batch includes independent names');same($single,$many,'Constant batch query count');DB::disableQueryLog();
+// Model retained duplicate properties in the disposable fixture; runtime leaves native schema alone.
+\Illuminate\Support\Facades\Schema::table('properties',static fn($t)=>$t->dropUnique(['key','model_id','model_type']));
+// SQL pre-ranking must drop every PHP-trim blank before retaining two domain values.
+\Illuminate\Support\Facades\Auth::setUser(staffUser(['admin.domains.view',\Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites::VIEW]));
+$property->update(['value'=>"\t"]);
+$service->properties()->create(['key'=>'domain','value'=>'a.example']);
+$service->properties()->create(['key'=>'domain','value'=>'b.example']);
+DB::table('domains_watch_sources')->where('id',$source->id)->update(['hostname'=>'a.example']);
+$blankFailures=[];
+foreach(["\t","\n","\r","\v","\0"," \t\n\r\v\0 "] as $blank){
+    $property->update(['value'=>$blank]);
+    foreach(['owner'=>new DomainSummaryContext((int)$owner->id,[],[$id]),'staff'=>DomainSummaryContext::staffWatches([$id])] as $audience=>$context){
+        $values=\Paymenter\Extensions\Servers\Domains\Services\WatchProducts::field($context->properties[$service->id]??collect())->pluck('value')->all();
+        if($values!==['a.example','b.example']||$context->validSource($context->sources[0])){$blankFailures[]=$audience.' '.bin2hex($blank).' '.json_encode($values);}
+    }
+}
+same([],$blankFailures,'Blank rows cannot conceal duplicate domains in owner or staff contexts: '.implode('; ',$blankFailures));
+foreach(["\0a.example\0","\x02\0"] as $nonblank){
+    $property->update(['value'=>$nonblank]);
+    foreach([new DomainSummaryContext((int)$owner->id,[],[$id]),DomainSummaryContext::staffWatches([$id])] as $context){
+        expect($context->properties[$service->id]->contains('id',$property->id),'A nonblank domain containing NUL still counts toward duplicate detection');
+    }
+}
+
 $nativeSuccessful=true;echo "Owner-safe batched summaries, local stamped freshness, independent axes and safe links passed.\n";

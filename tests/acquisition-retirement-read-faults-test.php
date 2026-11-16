@@ -24,4 +24,18 @@ foreach([false,true] as $paidFixture){
     same(['domain_id'=>(int)$isolated->domain_id,'exception_class'=>RuntimeException::class],$lateLogs[array_key_last($lateLogs)],'Late-money diagnostic exposes class and owned ID only');
 }
 same(2,$lateFaults,'Both late-money paths tested');same(2,count($lateLogs),'One diagnostic per failed inspection');
+// An unreadable retained operation must not abort expiry of independent unpaid invoices.
+$corrupt=$new(placeholderComFixtureName('review-decrypt-placeholder.com'));
+\Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::record($corrupt->domain,'acquisition_retirement_review',$clock->now()->getTimestamp());
+DB::table('domains_operations')->where('id',$corrupt->id)->update(['funding'=>'undecryptable synthetic ciphertext']);
+$expiring=$new(placeholderComFixtureName('review-decrypt-expiring-placeholder.com'),paid:false);
+DB::table('domains_operations')->where('id',$expiring->id)->update(['created_at'=>$clock->now()->modify('-2 hours')]);
+$account=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$corrupt->server_id)->sole();
+$escaped=false;
+try{$retirement->expireUnpaid($account);}catch(\Illuminate\Contracts\Encryption\DecryptException){$escaped=true;}
+same('cancelled',App\Models\Invoice::findOrFail($expiring->invoice_id)->status,'An unreadable reviewed operation does not skip independent invoice expiry');
+same(null,$expiring->domain->fresh()->reservation_name,'Independent unpaid expiry releases its reservation');
+expect(!$escaped,'Review decryption failure stays inside the sweep');
+expect(DB::table('domains_obligation_alerts')->where('domain_id',$corrupt->domain_id)->where('code','acquisition_retirement_review')->whereNull('resolved_at')->exists(),'Unreadable evidence retains the unresolved review');
+same('undecryptable synthetic ciphertext',DB::table('domains_operations')->where('id',$corrupt->id)->value('funding'),'The sweep preserves unreadable retained evidence');
 $nativeSuccessful=true;

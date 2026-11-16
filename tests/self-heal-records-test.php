@@ -3,6 +3,8 @@
 declare(strict_types=1);
 require __DIR__.'/Support/owner-records.php';
 use Illuminate\Support\Facades\DB;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\StaffDomainInputs;
+use Paymenter\Extensions\Servers\Domains\Services\{ObligationAlerts,RenewalOwnership};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,HoldingObservationWork,ObservationRecords,ObservationSchema,Runtime,RuntimePorts,RuntimeComposition,WriteFeatures,WriteAcceptance,RenewalAcceptance,TransferPrecheck,Rdap,AccountBindings,OwnerPorts};
 ObservationSchema::install();
 [$d,$driver,$original]=$holding(placeholderComFixtureName('automatic-records-placeholder.com'));
@@ -77,8 +79,13 @@ for($try=2;$try<=5;$try++){
 $check(($d->fresh()->observation['drift']??false)===true,'Drift facts remain visible');
 $check(HoldingObservationWork::stopped($d->fresh()),'Closed-gate drift stops after bounded retries');
 \Paymenter\Extensions\Servers\Domains\Services\ReminderSchema::install();
-\Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::retained(['domain'=>$d->fresh(),'operations'=>$d->operations()->get()],$clock->now()->getTimestamp());
-$check(DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code','observation_review')->whereNull('resolved_at')->exists(),'Closed-gate drift raises the staff Sync stopped alert');
+// Definite account absence has a departure review instead of the generic stopped-sync review.
+$keys=ObligationAlerts::retained(['domain'=>$d->fresh(),'operations'=>$d->operations()->get()],$clock->now()->getTimestamp());
+ObligationAlerts::finish($d->fresh(),$keys,$clock->now()->getTimestamp());
+$check(DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code',RenewalOwnership::REVIEW)->whereNull('resolved_at')->count()===1,'Closed-gate drift retains one staff departure review after inspection');
+$alerts=array_column(StaffDomainInputs::for([$d->fresh()])[$d->id]['alerts'],'code');
+$check(in_array(RenewalOwnership::REVIEW,$alerts,true),'Closed-gate drift keeps the departure review visible to staff');
+$check(!in_array('observation_review',$alerts,true),'Account absence does not also raise a generic stopped-sync review');
 same([],$state->calls,'Drifted closed gate still sends no family calls');
 same($before,$original->fresh()->getAttributes(),'Drift retries preserve the original registration evidence');same($money,$nativeMoney(),'Drift retries create no financial writes');
 DB::table('services')->where('id',$d->service_id)->update(['status'=>'cancelled']);

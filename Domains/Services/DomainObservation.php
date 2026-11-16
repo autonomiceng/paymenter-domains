@@ -52,8 +52,9 @@ final class DomainObservation
             if (!$snapshot&&$transfer===TransferStatus::Unknown) { throw new \DomainException('Observation unavailable.'); }
         } catch (ReadDeferred|EnomTestCallLimit $e) { throw $e; }
         catch (\Throwable $e) {
-            if (!$recordProtected || $seed->status!=='active') { throw $e; }
-            $snapshot=null; $transfer=TransferStatus::Unknown; $failed=true; $failureCode=ReadFailure::code($e);
+            $failureCode=ReadFailure::code($e);
+            if ($seed->status!=='active'||(!$recordProtected&&$failureCode!=='domain_not_in_account')) { throw $e; }
+            $snapshot=null; $transfer=TransferStatus::Unknown; $failed=true;
         }
         // A failed primary read retains inventory; record failures retain successful domain facts.
         if (!$failed && $recordEnabled && $seed->status==='active' && !$recordOverflow && !$recordHeld) {
@@ -84,9 +85,13 @@ final class DomainObservation
             if($current&&!hash_equals($credential,$this->bindings->holdingCredentialRevision($binding))){throw new ReadDeferred('Observation credentials changed.');}
             if ($stamp!==$l['stamp']) { throw new ReadDeferred('Observation authority changed.'); }
             if ($recordEnabled && $this->recordGate && !($this->recordGate)($l)) { throw new ReadDeferred('Record processing authority changed.'); }
+            RenewalOwnership::retainAbsence($l['domain'],$this->clock->now(),$failed&&$failureCode==='domain_not_in_account');
             if ($records!==null && count($records['glue']['records']??[])>GlueDiscoveryLimit::HOSTS) { $records=null; $recordOverflow=true; }
             if ($records!==null) { ObservationRecords::save($l['domain'],$records,$this->clock->now(),$capabilities); }
-            if ($snapshot || $transfer!==TransferStatus::Unknown) { ObservationProjection::save($l['domain'],$snapshot,$transfer,$this->clock->now()); }
+            if ($snapshot || $transfer!==TransferStatus::Unknown) {
+                RenewalOwnership::observe($l['domain'],$snapshot,$this->clock->now());
+                ObservationProjection::save($l['domain'],$snapshot,$transfer,$this->clock->now());
+            }
             $incomplete=$records!==null && ObservationRecords::incomplete($l['domain'],$this->clock->now());
             if ($incomplete && $failedFamily===null) {
                 $inventory=ObservationRecords::current($l['domain'],$this->clock->now());

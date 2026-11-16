@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
-use App\Models\{Invoice,InvoiceTransaction,Service,ServiceCancellation,User};
+use App\Models\{Invoice,InvoiceTransaction,Server,Service,ServiceCancellation,User};
 use App\Enums\InvoiceTransactionStatus as PaymentStatus;
 use Illuminate\Support\Facades\{Crypt,DB,Log,Schema};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
@@ -52,6 +52,7 @@ final readonly class AcquisitionRetirement
     /** Frees names held by orders nobody paid for. The proof is the last guard: it refuses money, registrar evidence and other requests. */
     public function expireUnpaid(Account $a): void
     {
+        foreach($this->reviewBatch($a) as $d){$this->askStaff($d,false);}
         $cut=\DateTimeImmutable::createFromInterface($this->clock->now())->modify('-'.UnpaidHoldSetting::minutes((int)$a->server_id).' minutes')
             ->setTimezone(new \DateTimeZone(date_default_timezone_get()));
         $invoices=Operation::where('server_id',$a->server_id)->whereIn('action',['register','transfer'])->whereIn('state',PayCheck::OPEN)
@@ -62,6 +63,20 @@ final readonly class AcquisitionRetirement
         foreach($invoices as $id){
             $this->closeUnpaid((int)$id,PayCheck::notice('expired'));
         }
+    }
+    /** Persist progress in native server settings, independent of the cache driver. Release the cursor lock before holding locks. */
+    private function reviewBatch(Account $a): \Illuminate\Support\Collection
+    {
+        return DB::transaction(function()use($a){
+            $server=Server::whereKey($a->server_id)->lockForUpdate()->firstOrFail();
+            $cursor=$server->settings()->where('key','domains_retirement_review_cursor')->first()
+                ??$server->settings()->make(['key'=>'domains_retirement_review_cursor']);
+            $batch=Domain::where('server_id',$a->server_id)->where('id','>',max(0,(int)$cursor->value))
+                ->whereIn('id',DB::table('domains_obligation_alerts')->select('domain_id')->where('code','acquisition_retirement_review')->whereNull('resolved_at'))
+                ->orderBy('id')->limit(25)->get();
+            $cursor->value=(string)($batch->count()===25?$batch->last()->id:0);$cursor->type='integer';$cursor->encrypted=false;$cursor->save();
+            return $batch;
+        });
     }
     /** The rest of a closed invoice stays payable. Lines bound to an order stay as history; the customer's old invoice keeps them. */
     private static function reissue(Invoice $old,array $l): ?Invoice
@@ -88,10 +103,57 @@ final readonly class AcquisitionRetirement
         DomainReservations::releaseUnfunded($l);
         DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code','acquisition_retirement_review')->whereNull('resolved_at')->update(['resolved_at'=>$this->clock->now()->getTimestamp()]);
     }
-    private function askStaff(Domain $d): void
+    private function askStaff(Domain $d,bool $raise=true): void
     {
+        try{
+            DB::transaction(function()use($d,$raise):void {
+                $l=HoldingLocks::take($d,foreignInvoices:true,completeInvoices:true);$locked=$l['domain'];
+                if($this->retirementObsolete($l)){
+                    DB::table('domains_obligation_alerts')->where('domain_id',$locked->id)->where('code','acquisition_retirement_review')
+                        ->whereNull('resolved_at')->update(['resolved_at'=>$this->clock->now()->getTimestamp()]);
+                }elseif($raise){ObligationAlerts::record($locked,'acquisition_retirement_review',$this->clock->now()->getTimestamp());}
+            });
+            return;
+        }catch(\Illuminate\Contracts\Encryption\DecryptException|\DomainException|\InvalidArgumentException|\TypeError|\ValueError){ /* Unproved identity, funding or send evidence keeps the review. */ }
+        if(!$raise){return;}
         DB::transaction(function()use($d):void { $locked=Domain::whereKey($d->id)->lockForUpdate()->firstOrFail();
             ObligationAlerts::record($locked,'acquisition_retirement_review',$this->clock->now()->getTimestamp()); });
+    }
+    /** Alert cleanup only. This never authorizes retirement, a send or a money return. Caller owns HoldingLocks. */
+    private function retirementObsolete(array $l): bool
+    {
+        $d=$l['domain'];$acquisitions=$l['operations']->whereIn('action',['register','transfer']);$op=$acquisitions->first();
+        if($acquisitions->count()!==1||!$op||$op->funding_basis!=='paid_invoice'
+            ||array_diff(array_keys($op->funding??[]),['claim','seal'])
+            ||isset($op->policy['native_acquisition_closure'])||isset($op->policy['unpaid_retirement'])){return false;}
+        $billed=$l['items']->where('reference_type',$l['service']->getMorphClass())->where('reference_id',$l['service']->id)->pluck('invoice_id');
+        if($l['items']->where('invoice_id',$op->invoice_id)->count()!==1
+            ||$l['transactions']->whereIn('invoice_id',$billed)->contains(fn($t)=>$t->status===PaymentStatus::Processing)
+            ||$l['invoices']->whereIn('id',$billed)->where('id','!=',$op->invoice_id)->contains('status','paid')
+            ||$l['transactions']->whereIn('invoice_id',$billed)->where('invoice_id','!=',$op->invoice_id)->contains(fn($t)=>$t->status!==PaymentStatus::Failed)){return false;}
+        $paid=InvoiceFunding::requireInitialFacts($op,$l);$binding=AccountBindings::binding($l['account']);
+        foreach(['claim','seal'] as $key){if(array_key_exists($key,$op->funding??[])&&$op->funding[$key]!==$paid){return false;}}
+        if($op->state==='succeeded'){
+            return in_array($d->status,['active','expired','grace'],true)&&RenewalAuthority::completed($op,$d,$binding);
+        }
+        if($l['operations']->count()!==1||$d->status!==($op->action==='transfer'?'transfer_pending':'registration_pending')
+            ||!in_array($op->state,['awaiting_payment','awaiting_code','queued','held','running','pending','uncertain'],true)
+            ||$d->provider_domain_id!==null||$d->provider_order_id!==null||$d->provider_expires_at!==null
+            ||$op->provider_order_id!==null||$op->confirmed_expires_at!==null){return false;}
+        if(($op->attempt['seal']??null)!=='sealed'){RefundProof::requireUnsent($op,$d);return true;}
+        // A normal funded send makes unpaid closure obsolete; contradictory retained send facts do not.
+        if(($op->funding['claim']??null)!==$paid||($op->funding['seal']??null)!==$paid
+            ||($op->attempt['send_state']??null)!=='possibly_sent'||!preg_match('/^[a-f0-9]{32}$/D',$op->attempt['claim_key']??'')
+            ||array_diff(array_keys($op->attempt),['claim_key','seal','send_state','capacity_deferrals','test_call_refusals','dispatch_attempted_at',
+                'authorized_cost','registration_admission','transfer_admission','execution','evidence','charge','order_candidates','registration','corrections'])
+            ||($op->attempt['charge']??null)!==null||($op->attempt['order_candidates']??[])!==[]
+            ||array_key_exists('dispatch_attempted_at',$op->policy??[])||array_diff(array_keys($op->cost??[]),['estimated','currency','unit'])){return false;}
+        if(array_key_exists('execution',$op->attempt)&&(!in_array($op->attempt['execution']['send_state']??null,['sent','possibly_sent'],true)
+            ||!in_array($op->attempt['execution']['disposition']??null,['accepted','accepted_with_discrepancy','pending','unknown'],true))){return false;}
+        if(($op->attempt['execution']['disposition']??null)==='pending'&&(($op->attempt['execution']['send_state']??null)!=='sent'
+            ||($op->attempt['execution']['reason']??null)!=='processing')){return false;}
+        ReconciliationEvidence::attempt($op,$d,$binding,$l['server']);
+        return true;
     }
     private function review(array $l,User $actor,?string $ticket,?string $reason): void
     {
@@ -110,6 +172,7 @@ final readonly class AcquisitionRetirement
     {
         try{
             $d=Domain::find($id);if(!$d){return;}
+            if(DB::table('domains_obligation_alerts')->where('domain_id',$id)->where('code','acquisition_retirement_review')->whereNull('resolved_at')->exists()){$this->askStaff($d,false);}
             try{$this->lateMoney($d);}catch(\Throwable $e){
                 try{Log::warning('Domains acquisition late-money inspection deferred.',['domain_id'=>$id,'exception_class'=>$e::class]);}
                 catch(\Throwable){ /* Independent retirement still runs if diagnostics fail. */ }
@@ -127,12 +190,20 @@ final readonly class AcquisitionRetirement
         $cancelled=ServiceCancellation::where('service_id',$seed->service_id)->exists()
             ||(Schema::hasTable('domains_native_intents')&&DB::table('domains_native_intents')->where('service_id',$seed->service_id)->exists());
         // Quiet closed history never locks the owner's unrelated hosting/money rows.
-        $hit=$seed->operations()->whereIn('action',['register','transfer'])->get()->contains(function($op)use($seed,$service,$cancelled){
+        $ops=$seed->operations()->whereIn('action',['register','transfer'])->get();
+        // Batch the preliminary history reads only outside transactions. The authoritative path below
+        // still takes the native prefix and rereads each operation before recording any alert.
+        $observed=DB::transactionLevel()===0;
+        $ids=$ops->pluck('invoice_id')->filter()->unique();
+        $invoices=$observed?Invoice::whereIn('id',$ids)->pluck('status','id'):null;
+        $payments=$observed?InvoiceTransaction::whereIn('invoice_id',$ids)->orderBy('id')->get()->groupBy('invoice_id'):null;
+        $peers=$observed?Operation::whereIn('invoice_id',$ids)->orderBy('id')->get()->groupBy('invoice_id'):null;
+        $hit=$ops->contains(function($op)use($seed,$service,$cancelled,$observed,$invoices,$payments,$peers){
             if(self::needsSnapshot($op,$service)){return true;}
             if(!self::closed($op,$seed,$service,$cancelled)){return false;}
-            $status=Invoice::whereKey($op->invoice_id)->value('status');
-            $transactions=InvoiceTransaction::where('invoice_id',$op->invoice_id)->orderBy('id')->get();
-            if(!self::activity($op,$service,$status,$transactions)){return false;}
+            $status=$observed?($invoices[$op->invoice_id]??null):Invoice::whereKey($op->invoice_id)->value('status');
+            $transactions=$observed?($payments[$op->invoice_id]??collect()):InvoiceTransaction::where('invoice_id',$op->invoice_id)->orderBy('id')->get();
+            if(!self::activity($op,$service,$status,$transactions,$observed?($peers[$op->invoice_id]??collect()):null)){return false;}
             $key=ObligationAlerts::key($seed,'acquisition_late_money',(int)$op->id,self::identity($seed,$service,$status,$transactions));
             return !DB::table('domains_obligation_alerts')->where('alert_key',$key)->whereNull('resolved_at')->exists();
         });
@@ -194,7 +265,7 @@ final readonly class AcquisitionRetirement
     }
     private static function payments(\Illuminate\Support\Collection $transactions): array
     {return $transactions->map(fn($t)=>[(int)$t->id,$t->status->value,(string)$t->amount])->values()->all();}
-    private static function activity($op,?string $service,?string $invoice,\Illuminate\Support\Collection $transactions): bool
+    private static function activity($op,?string $service,?string $invoice,\Illuminate\Support\Collection $transactions,?\Illuminate\Support\Collection $observedPeers=null): bool
     {
         if($service==='active'&&(isset($op->policy['native_acquisition_cancelled_at'])||!isset($op->funding['refund_authorization'])||isset($op->funding['refund']))){return true;}
         try{$transactions=ReceiptReturns::activityTransactions($op,$transactions);}
@@ -207,7 +278,7 @@ final readonly class AcquisitionRetirement
                 ->map(fn($t)=>['id'=>(int)$t->id,'amount_minor'=>PricingRule::minor($t->amount)])->values()->all();
             return $payments!==($refund['payments']??null)||$transactions->contains(fn($t)=>$t->status===PaymentStatus::Processing);
         }
-        $credited=RefundPayment::lateCredited($op);
+        $credited=RefundPayment::lateCredited($op,$observedPeers);
         return $transactions->contains(fn($t)=>$t->status!==PaymentStatus::Failed&&!isset($credited[$t->id]))||$invoice==='paid';
     }
     private static function closedOrder(Invoice $invoice): bool

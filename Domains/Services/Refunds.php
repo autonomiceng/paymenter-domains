@@ -153,19 +153,35 @@ final readonly class Refunds
      * @return list<int> Domains that got credit, for the caller's notice. */
     public function creditRetired(Account $account): array
     {
-        OperationClaims::outside(); $credited = []; $cursor = 'domains.closed-credit-cursor.'.$account->server_id;
+        OperationClaims::outside(); $credited = []; $inspect = []; $cursor = 'domains.closed-credit-cursor.'.$account->server_id;
         $ids = Operation::where('server_id', $account->server_id)->where('state', 'rejected')->where('safe_code', UnpaidAcquisitionProof::CODE)->where('id', '>', (int) Cache::get($cursor, 0))
             ->whereIn('invoice_id', InvoiceTransaction::select('invoice_id')->where('status', InvoiceTransactionStatus::Succeeded))
             ->selectRaw('min(id) as id')->groupBy('invoice_id')->orderBy('id')->limit(100)->pluck('id');
         Cache::forever($cursor, $ids->count() === 100 ? $ids->last() : 0);
-        foreach (Operation::whereIn('id', $ids)->orderBy('id')->get() as $op) {
-            try {
-                if (!ReceiptReturns::plans($op) && ReceiptReturns::malformed($op)) { throw new \DomainException('Retained return plan needs review.'); }
-                if ($this->creditClosed($op) !== null) { $credited[] = (int) $op->domain_id; continue; }
+        $failure = null;
+        try {
+            foreach (Operation::whereIn('id', $ids)->orderBy('id')->get() as $op) {
+                try {
+                    if (!ReceiptReturns::plans($op) && ReceiptReturns::malformed($op)) { throw new \DomainException('Retained return plan needs review.'); }
+                    if ($this->creditClosed($op) !== null) { $credited[] = (int) $op->domain_id; continue; }
+                }
+                catch (\Throwable $e) {
+                    try { RefundRepairs::failed((int)$op->id, $this->clock->now()->getTimestamp()); }
+                    catch (\Throwable $repair) { $failure ??= $repair; }
+                    try { logger()->warning('Domains late payment stays with staff.', ['operation_id' => (int) $op->id, 'exception_class' => $e::class]); }
+                    catch (\Throwable $logging) { $failure ??= $logging; }
+                }
+                $inspect[(int)$op->domain_id] = true;
             }
-            catch (\Throwable $e) { RefundRepairs::failed((int)$op->id, $this->clock->now()->getTimestamp()); logger()->warning('Domains late payment stays with staff.', ['operation_id' => (int) $op->id, 'exception_class' => $e::class]); }
-            app(AcquisitionRetirement::class)->inspect((int) $op->domain_id);
+        } catch (\Throwable $e) { $failure ??= $e; }
+        finally {
+            // Inspect final evidence once per domain, even if a later invoice or its diagnostics failed.
+            foreach (array_keys($inspect) as $id) {
+                try { app(AcquisitionRetirement::class)->inspect($id); }
+                catch (\Throwable $e) { $failure ??= $e; }
+            }
         }
+        if ($failure !== null) { throw $failure; }
         return $credited;
     }
     private function creditClosed(Operation $seen): ?array

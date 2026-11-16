@@ -139,7 +139,7 @@ expect(\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::absent($
 // A generic failure is not absence, so the saved facts stay as they were.
 $observation->fault='transport';$clock->instant=$clock->now()->modify('+61 seconds');
 same('read_failed',$observer->run($d->id,readRecords:true),'Transport failure stays a read failure');
-expect(!\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::absent($d->fresh()),'A read failure is not absence');same('Yes',$membership(),'A read failure keeps saved membership');
+expect(!\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::absent($d->fresh()),'A read failure is not absence');same('No',$membership(),'A read failure keeps the retained absence, matching the renewal fence');
 $observation->fault='absent';$clock->instant=$clock->now()->modify('+61 seconds');$observer->run($d->id,readRecords:true);same('No',$membership(),'Absence is current again');
 // A newer owned read with an incomplete record family clears absence and keeps the family diagnostic.
 $observation->fault='';$state->fault='GetDomainSRVHosts';$clock->instant=$clock->now()->modify('+61 seconds');

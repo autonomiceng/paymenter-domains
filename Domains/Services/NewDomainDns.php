@@ -3,7 +3,11 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Models\{Operation,WatchProfile};
-/** Site default for registration and public DNS monitoring. Never creates a DNS zone. */
+/** Site default for registration and public DNS monitoring. Never creates a DNS zone.
+ * Hosting-plan DNS zones are served by the hosting control panel (Plesk), provisioned by the hosting server
+ * extension and never seen by this extension. DNS templates only name those nameservers.
+ * Registrar DNS (Enom DNS, NameSilo DNSOwl) is used only while a domain points at the registrar's nameservers
+ * and stops when the domain transfers out. */
 final class NewDomainDns
 {
     public static function profile(int $server): ?WatchProfile

@@ -4,7 +4,7 @@ declare(strict_types=1);
 require_once __DIR__.'/OfferFixture.php';
 use Paymenter\Extensions\Servers\Domains\Catalogue\{Context, Edit, Facts, FactsObserved, Intent, Query};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionOffers, CartAdmission, CheckoutEligibility, Installation, InvoiceBinding, Storefront};
+use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionOffers, CartAdmission, CheckoutEligibility, InvoiceBinding, Storefront};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 use Illuminate\Support\Facades\Auth;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
@@ -32,7 +32,8 @@ function offerCommerceAsStaff(callable $body): mixed
 function offerCommerceFixture(): array
 {
     // One protected composition: every returned adapter and owner registration uses the installed staff rule.
-    (new Installation)->install(); extract(offerCommerceAsStaff(static fn () => commerceFixture(true, active: true, authorize: offerCommerceAuthorize())));
+    $installed = InstalledCommerceFixture::prepare();
+    extract(offerCommerceAsStaff(static fn () => commerceFixture(true, active: true, authorize: offerCommerceAuthorize(), installed: $installed)));
     $binding = \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id', $tlds[0]->server_id)->sole());
     foreach (Account::all() as $account) { (new \Paymenter\Extensions\Servers\Domains\Tests\OfferFixture)->batch(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account)); }
     $q = new Query($binding, ['com'], 'register');

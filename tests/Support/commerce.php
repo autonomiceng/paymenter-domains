@@ -12,12 +12,10 @@ use Paymenter\Extensions\Servers\Domains\Models\Tld;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, FoundationSchema, StaffAuditSchema, NativeCatalogue, PriceCatalogue, PricingRules, RegistrarRegistry, SalesPolicySchema, SellerPolicies};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
 
-function commerceFixture(bool $eligible = false, ?Closure $activation = null, Environment $environment = Environment::Test, string $ending = 'com', bool $active = true, ?Closure $authorize = null, array $registrars = ['enom','namesilo'], bool $nameSiloLocal = true, array $identities = []): array
+function commerceFixture(bool $eligible = false, ?Closure $activation = null, Environment $environment = Environment::Test, string $ending = 'com', bool $active = true, ?Closure $authorize = null, array $registrars = ['enom','namesilo'], bool $nameSiloLocal = true, array $identities = [], ?InstalledCommerceFixture $installed = null): array
 {
     if(!app()->bound(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)){app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new \Paymenter\Extensions\Servers\Domains\Tests\FakeClock(new DateTimeImmutable('2026-10-18T12:00:00Z')));}
-    // Installation republishes the retail rule through the runtime, so register it first as every production caller does.
-    if ($active && !app()->bound(\Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class)) { \Paymenter\Extensions\Servers\Domains\Services\Runtime::register(); }
-    if ($active) { if(!restoreCommerceDatabase()){(new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();}app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class);app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\RuntimePorts::class);
+    if ($active) { ($installed ?? InstalledCommerceFixture::prepare())->consume();app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class);app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\RuntimePorts::class);
         // Fresh empty ports keep the installed catalogue contract, without retaining provider factories.
         $runtimePorts=new \Paymenter\Extensions\Servers\Domains\Services\RuntimePorts;
         $runtimePorts->registerInitialManagedRecordObservations(\Paymenter\Extensions\Servers\Domains\Services\Runtime::initialManagedRecordObservations(...));
@@ -62,7 +60,8 @@ function commerceFixture(bool $eligible = false, ?Closure $activation = null, En
         app()->instance(AccountBindings::class,$bindings);app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
     }
     foreach ($registrars as $key) {
-        $server = Server::create(['name' => 'Synthetic', 'type' => 'server', 'extension' => 'Domains', 'enabled' => true]);
+        // Schema is ready; this synthetic insert does not exercise native server installation.
+        $server = Server::withoutEvents(static fn () => Server::create(['name' => 'Synthetic', 'type' => 'server', 'extension' => 'Domains', 'enabled' => true]));
         $review=null;
         if($key==='namesilo'){
             // Use the real local enrollment/review with a synthetic authenticator; no provider routing is installed.

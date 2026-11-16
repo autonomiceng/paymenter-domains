@@ -132,6 +132,8 @@ is still logged on every due retry.
 
 ## Site DNS default
 
+Hosting-plan DNS zones are served by the hosting control panel (Plesk), provisioned by the hosting server extension and never seen by this extension. DNS templates only name those nameservers. Registrar DNS (Enom DNS, NameSilo DNSOwl) is used only while a domain points at the registrar's nameservers and stops when the domain transfers out.
+
 Deployment supplies `domains.site_dns_default.nameservers`. Native install/upgrade seeds one enabled
 `Site DNS` template and saves its ID in the global native setting `domains_site_dns_template`.
 No deployment hosts live in the generic extension. Missing or invalid deployment names remain Missing.

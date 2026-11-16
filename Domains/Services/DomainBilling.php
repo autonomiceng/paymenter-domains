@@ -149,6 +149,7 @@ final class DomainBilling
     public static function requireAuthority(array $l,AccountBindings $bindings,bool $manual=false):void
     {
         $d=$l['domain'];$s=$l['service'];
+        if (RenewalOwnership::blocked($d)) { throw new RuntimeIneligible(RuntimeReason::LifecycleNotReady); }
         AdoptionRenewalEligibility::requireBilling($d);
         if($l['advisory']??false){$bindings->requireProcessing(AccountBindings::binding($l['account']));}
         else{$bindings->requireProcessingLocked($l['server'],$l['account']);}

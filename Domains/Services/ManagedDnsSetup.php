@@ -7,7 +7,11 @@ use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Dns\DnsQuery;
 use Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation,ManagedPublicConfig,WatchProfile,WatchAudit};
-/** Local comparison configuration only. A template never writes customer DNS or registrar defaults. */
+/** Local comparison configuration only. A template never writes customer DNS or registrar defaults.
+ * Hosting-plan DNS zones are served by the hosting control panel (Plesk), provisioned by the hosting server
+ * extension and never seen by this extension. DNS templates only name those nameservers.
+ * Registrar DNS (Enom DNS, NameSilo DNSOwl) is used only while a domain points at the registrar's nameservers
+ * and stops when the domain transfers out. */
 final class ManagedDnsSetup
 {
     public static function eligible(int $now): Builder

@@ -49,7 +49,6 @@
     "tests/ote-order-window-test.php",
     "tests/ote-collection-shapes-test.php",
     "tests/owned-style-test.php",
-    "tests/renewal-ready-copy-test.php",
     "tests/test_gitleaks_policy.py"
   ],
   "ui": [

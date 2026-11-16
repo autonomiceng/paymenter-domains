@@ -45,7 +45,13 @@ $termsNote=static function()use($actor,$t):string{$page=Livewire::actingAs($acto
     foreach(['sales'=>['label'=>'Not for sale','tone'=>'gray','reason'=>'Prices not published','invalid'=>false,'kind'=>null],'snap'=>['selected'=>true]] as $key=>$value){(new ReflectionProperty($page,$key))->setValue($page,$value);}
     return (string)(new ReflectionMethod($page,'saleReason'))->invoke($page);};
 $staleNote=$termsNote();DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>null]);$missingNote=$termsNote();
-expect($staleNote!==$missingNote&&str_starts_with($staleNote,'Prices not published. '),'Expired terms name another cause than missing terms: '.json_encode([$staleNote,$missingNote]));
+$classify=static fn(string $notice):array=>[
+    'prices_unpublished'=>str_starts_with($notice,'Prices not published. '),
+    'terms_stale'=>str_contains($notice,'Registrar terms are out of date.'),
+    'terms_unreadable'=>str_contains($notice,"Registrar terms couldn't be read."),
+];
+same(['prices_unpublished'=>true,'terms_stale'=>true,'terms_unreadable'=>false],$classify($staleNote),'Expired terms notice names the stale cause');
+same(['prices_unpublished'=>true,'terms_stale'=>false,'terms_unreadable'=>true],$classify($missingNote),'Missing terms notice names the unreadable cause');
 DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>OfferState::json($stale)]);
 Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->assertDontSee('Sync prices tries again now.')->assertSee('Set to sell; checking registrar terms');
 same(0,$reads->calls,'Staff guidance never resolves a registry reader');

@@ -78,7 +78,13 @@ foreach(['full','split','bridge','invalid','zero'] as $mode){$case('released cre
             'gateway_id'=>$mode==='split'?InvoiceTransaction::where('invoice_id',$op->invoice_id)->first()->gateway_id:null,
             'transaction_id'=>'synthetic_reader_second_'.$op->id]);
     }
-    $a=$reserve($op);$release($op,$a);$saved=$op->fresh();$d=$saved->domain;
+    $a=$reserve($op);$release($op,$a);
+    if($mode==='split'){
+        $pending=$op->fresh();
+        $equal('split',OwnedDomains::refundTo($pending->domain,$pending,[]),'An unfinished remaining allocation keeps its planned card return beside released credit');
+        $refunds->creditRejected($op->id);
+    }
+    $saved=$op->fresh();$d=$saved->domain;
     if(in_array($mode,['invalid','zero'],true)){
         // Historical damaged evidence must be readable without editing the immutable saved result.
         $funding=$saved->funding;$funding['receipt_return_results'][$a['key']]['credit_minor']=$mode==='invalid'?$minor+1:0;
@@ -105,6 +111,24 @@ $makeTen=static function(string $suffix)use($make,$tlds,$prices):Operation{
         activeFixtureRepublish($prices,$tld->fresh());return $make($suffix);
     }finally{$tld->update(['catalogue_intent'=>$saved]);activeFixtureRepublish($prices,$tld->fresh());}
 };
+foreach(['released','whole'] as $mode){foreach(['credited','refunded'] as $outcome){$case('refund destination '.$mode.' '.$outcome,function()use($mode,$outcome,$makeTen,$reserve,$release,$refunds,$equal):void{
+    $op=$makeTen('destination-'.$mode.'-'.$outcome);
+    if($mode==='released'){
+        $row=InvoiceTransaction::where('invoice_id',$op->invoice_id)->sole();$row->update(['amount'=>'2.00']);
+        InvoiceTransaction::create(['invoice_id'=>$op->invoice_id,'amount'=>'8.00','fee'=>'0.00','status'=>'succeeded',
+            'gateway_id'=>$row->gateway_id,'transaction_id'=>'synthetic_destination_'.$op->id]);
+    }
+    $first=$reserve($op);if($mode==='released'){$release($op,$first);}
+    $remaining=ReceiptReturns::effective($op->fresh())[0]['allocations'];$invoice=Invoice::findOrFail($op->invoice_id);
+    foreach($remaining as $a){
+        (new ReleaseGateway)->allocateReceiptReturn($invoice,$a['receipt'],$a['key'],$a['amount_minor']);
+        if($outcome==='credited'){MoneyReceiptGateway::credit($invoice,$a['key']);}
+    }
+    $refunds->creditRejected($op->id);$saved=$op->fresh();
+    $equal(0,ReceiptReturns::outstanding($saved),'Destination is checked after every remaining allocation completes');
+    $expected=$outcome==='credited'?'credited':($mode==='released'?'split':'returned');
+    $equal($expected,OwnedDomains::refundTo($saved->domain,$saved,[]),'Refund destination follows completed allocations and released credit: '.$mode.' '.$outcome);
+});}}
 $mails=static fn(Operation $op)=>Mail::queued(DomainNotice::class)->filter(fn($mail)=>$mail->data['domain']===$op->domain->domain)->map(fn($mail)=>$mail->data['amount'])->values()->all();
 foreach(['delivered','retained'] as $mode){$case('release after bridge '.$mode,function()use($mode,$makeTen,$reserve,$observe,$refunds,$equal,$balance,$clock,$bindings,$mails):void{
     $op=$makeTen('notice-'.$mode);$before=$balance();
