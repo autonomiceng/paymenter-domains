@@ -1,0 +1,7 @@
+<?php
+// MIT, Copyright (c) 2026 Autonomic Engineering.
+declare(strict_types=1);
+// Native suite discovery registers this shard; each runs in its own offline database.
+$moneyScaleSizes = [20]; $moneyScaleOwners = [1, 2, 4];
+$moneyScaleClosed = [false]; $moneyScaleHistory = false;
+require __DIR__.'/Support/money-lock-scale.php';
