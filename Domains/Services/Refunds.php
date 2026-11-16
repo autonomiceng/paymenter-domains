@@ -314,7 +314,9 @@ final readonly class Refunds
     private static function request(Operation $seen, ?string $kind, ?int $staffId = null, bool $released = false): MoneyRequest
     {
         $scoped = $kind !== null && $seen->invoice_id !== null;
-        return new MoneyRequest($seen->domain()->firstOrFail(), $kind, (int) $seen->id, $staffId, $released,
+        // Reuse a domain the caller already read; the locks check this seed against the locked row.
+        $seed = $seen->relationLoaded('domain') && $seen->domain !== null ? $seen->domain : $seen->domain()->firstOrFail();
+        return new MoneyRequest($seed, $kind, (int) $seen->id, $staffId, $released,
             $scoped ? MoneyScope::Invoice : MoneyScope::Full, $scoped ? (int) $seen->invoice_id : null);
     }
     /** Bounded caller-selected retry batch; scheduler/fair cursors remain31/39. */
