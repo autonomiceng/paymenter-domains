@@ -50,12 +50,15 @@ final readonly class RenewalCycles
     public static function beforePayment(int $invoiceId, Clock $clock, ?int $receiptId = null): void
     {
         $open = ['awaiting_payment', 'queued', 'held'];
-        $seed = Operation::where('invoice_id', $invoiceId)->where('action', 'renew')->first()?->domain;
-        if (!$seed) { return; }
+        $domainId = Operation::where('invoice_id', $invoiceId)->where('action', 'renew')->value('domain_id');
+        if ($domainId === null) { return; }
         // Retained membership survives an older snapshot; only the ordered, current locked scan decides state.
-        $write = static function () use ($seed, $invoiceId, $clock, $open, $receiptId): void {
+        $write = static function () use ($domainId, $invoiceId, $clock, $open, $receiptId): void {
             // Native updateOrCreate uses a savepoint; all locks still belong to the outer payment transaction.
             if (Invoice::whereKey($invoiceId)->lockForUpdate()->value('status') !== 'cancelled') { return; }
+            $seed = Domain::find($domainId);
+            if (!$seed) { return; }
+            // Read the holding after the invoice lock: confirmation may have released it while this receipt waited.
             // A departed holding has released its name: its retained renewal accepts the receipt as accounting evidence only.
             if ($seed->status === 'departed') { self::admitDeparted($seed, $invoiceId); return; }
             $l = HoldingLocks::take($seed, nativeReceipt: true);
