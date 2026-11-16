@@ -490,7 +490,9 @@ final class RequestFacts
         try{
             if(!$none){
                 $minor=is_array($refund)&&($refund['to']??null)!==null?\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::amount($refund):null;
-                $line=\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)$op->amount);
+                // The request's price, but never more than its own invoice line: a refund of all the request paid is not capped.
+                $invoice=\App\Models\Invoice::find($op->invoice_id);
+                $line=$invoice?min(\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)$op->amount),self::ownLineMinor($op,$invoice)):0;
                 return $minor!==null&&$minor>0&&$minor<$line
                     ?'Only '.\Paymenter\Extensions\Servers\Domains\Services\Storefront::money(\Paymenter\Extensions\Servers\Domains\Services\PricingRule::decimal($minor)).' was still held. The rest was lost to a dispute or already returned.':null;
             }
