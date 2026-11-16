@@ -58,6 +58,15 @@ same([true,100,null,null,null],[$evidence['pending']??false,$evidence['lost_mino
 DB::table('domains_obligation_alerts')->where('alert_key',DisputeRecoveries::key('dispute_recovery','synthetic_pending'))->update(['resolved_at'=>2]);
 $evidence=$holdEvidence->invoke(null,$pendingOp,$holdKey);
 same([false,0,0,0],[$evidence['pending']??false,$evidence['owed_minor'],$evidence['removed_minor'],$evidence['remainder_minor']],'Finished owed-zero recovery shows final amounts');
+// One open account hold is one entry in the domain's Billing: its notice with Release hold. No row repeats it, and staff see no dispute id.
+staffPanel();
+$holdPage=Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$pendingOp->domain_id])->assertSuccessful();
+$holdFacts=Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::for(Paymenter\Extensions\Servers\Domains\Models\Domain::findOrFail($pendingOp->domain_id));
+$holdRows=array_keys(array_filter($holdFacts,fn(array $f)=>($f['alert']??false)||$f===($holdFacts['Open alerts']??null)));
+same([],$holdRows,'No Billing row repeats the account hold');
+$holdDom=new DOMDocument;@$holdDom->loadHTML('<?xml encoding="utf-8"?>'.$holdPage->html());
+same(1,(new DOMXPath($holdDom))->query('//*[@id="'.Paymenter\Extensions\Servers\Domains\Admin\Support\AccountMoneyHoldActions::ANCHOR.'"]')->length,'The domain page has one account hold entry');
+expect(!str_contains($holdPage->html(),'synthetic_pending'),'Staff page text carries no dispute id');
 // The request's Payment row asks staff to look while the dispute's account hold is open, and settles once staff release it.
 $lostAct=static function()use($pendingOp,$staff):bool {
     Illuminate\Support\Facades\Auth::setUser($staff);

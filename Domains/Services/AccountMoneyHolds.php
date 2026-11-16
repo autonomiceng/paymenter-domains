@@ -8,21 +8,6 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
 /** Staff release is required because spent credit cannot distinguish fraud from a bank error. */
 final class AccountMoneyHolds
 {
-    public static function detail(Domain $d): string
-    {
-        $details=[];
-        foreach(DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code','account_money_hold')->whereNull('resolved_at')->get() as $alert){
-            $op=Operation::find($alert->operation_id);if(!$op){continue;}
-            try{
-                $e=self::evidence($op,$alert->alert_key);
-                if(!$e){throw new \DomainException('Dispute evidence missing.');}
-                if($e['pending']){$details[]='Dispute '.$e['dispute_id'].': lost $'.PricingRule::decimal($e['lost_minor']).'. Recovery is not finished, so owed, removed and remainder are not known yet.';continue;}
-                $details[]='Dispute '.$e['dispute_id'].': lost $'.PricingRule::decimal($e['lost_minor']).', owed $'.PricingRule::decimal($e['owed_minor'])
-                    .', removed $'.PricingRule::decimal($e['removed_minor']).', remainder $'.PricingRule::decimal($e['remainder_minor']).'.';
-            }catch(\Throwable){$details[]='Dispute evidence needs a check on invoice #'.$op->invoice_id.'.';}
-        }
-        return implode(' ',$details);
-    }
     /** The amount the dispute behind this hold took, or null when its evidence can't be read. */
     public static function lost(Operation $op,string $key): ?int
     { try{return isset(($a=self::amounts($op,$key))['lost_minor'])?(int)$a['lost_minor']:null;}catch(\Throwable){return null;} }

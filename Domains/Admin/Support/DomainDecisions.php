@@ -239,7 +239,7 @@ final class DomainDecisions
     }
     /** Safe cause text shared by the domain page and the list. Unknown saved kinds still need review. With the domain, a stopped sync names the control these staff have. */
     public static function alertCause(string $code, ?Domain $d=null): string
-    { if($code==='account_money_hold'&&$d){return ObligationAlerts::LABELS[$code].' '.\Paymenter\Extensions\Servers\Domains\Services\AccountMoneyHolds::detail($d);} if($code==='departure_review'&&$d){$a=\Paymenter\Extensions\Servers\Domains\Services\DepartureChecks::attention($d,app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp());return ($a['state']==='delayed'?'Delayed. ':'').'Check the departure. Not in our registrar account. Expires '.(\Paymenter\Extensions\Servers\Domains\Presentation\Fact::day($a['expiry'])?->text??'unknown').'.';} return $code==='observation_review'?'Sync stopped. '.self::stoppedStep($d):(ObligationAlerts::LABELS[$code]??'Domain alert needs review.'); }
+    { if($code==='departure_review'&&$d){$a=\Paymenter\Extensions\Servers\Domains\Services\DepartureChecks::attention($d,app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp());return ($a['state']==='delayed'?'Delayed. ':'').'Check the departure. Not in our registrar account. Expires '.(\Paymenter\Extensions\Servers\Domains\Presentation\Fact::day($a['expiry'])?->text??'unknown').'.';} return $code==='observation_review'?'Sync stopped. '.self::stoppedStep($d):(ObligationAlerts::LABELS[$code]??'Domain alert needs review.'); }
     /** Puts each cause under its row, collecting causes without a row on the Open alerts row. */
     private static function alerts(Domain $d, array $f, array|false|null $notice=false): array
     {
@@ -252,6 +252,8 @@ final class DomainDecisions
         foreach (array_unique(array_column($rows,'code')) as $code) {
             // Late payment already has a status reason and says so in the head.
             if ($code==='acquisition_late_money'||$code==='observation_review'&&self::unconfirmedRegistration($d)) { continue; }
+            // An open account hold is the Billing notice, with Release hold (AccountMoneyHoldActions), so no row repeats it.
+            if ($code==='account_money_hold') { continue; }
             [$row,$tone]=self::ALERTS[$code]??[null,'warning']; $cause=self::alertCause($code,$d);
             // The row sends staff to the same place the head would.
             $request=in_array($code,['operation_review','held_obligation'],true)?array_values(array_filter($rows,fn(array $a)=>$a['code']===$code&&$a['request']!==null))[0]['request']??null:null;
