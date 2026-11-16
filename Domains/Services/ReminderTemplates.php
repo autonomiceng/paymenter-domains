@@ -102,7 +102,7 @@ final class ReminderTemplates
                     ."@elseif(\$dns === 'hosting')\n<tr><td>DNS</td><td>DNS records on your hosting plan keep working while the plan is active.</td></tr>\n@endif\n"
                     ."@if(\$monitored)\n<tr><td>Monitoring</td><td>Monitored as an external domain.</td></tr>\n@endif\n</table>\n\n"
                     ."{{ \$deleted ? 'You can register it again from your domain page.' : 'You can transfer it back to '.(\$company ?: 'us').' any time from your domain page.' }}\n\n"
-                    ."{{ \$deleted ? 'If you did not expect this,' : 'If you did not move this domain,' }} @if(\$support_url)[contact support]({{ \$support_url }}).@else contact support.@endif\n\n"
+                    ."@if(\$deleted)If you didn't expect this,@else If you didn't move this domain,@endif @if(\$support_url)[contact support]({{ \$support_url }}).@else contact support.@endif\n\n"
                     .$button('domain_url','View domain')."\n\n"
                     ."<p class=\"domains-why\">@if(\$company){{ \$company }}. You get this email because {{ \$domain }} was on your {{ \$company }} account.@else You get this email because {{ \$domain }} was on your account.@endif</p>"]),
         ];
