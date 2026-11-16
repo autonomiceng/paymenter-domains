@@ -80,7 +80,11 @@ final class DomainSummaryContext
     private static function fields(array $ids): array
     {
         $morph=(new Service)->getMorphClass();$grammar=DB::connection()->getQueryGrammar();$key=$grammar->wrap('key');
-        $ranked=DB::table('properties')->where('model_type',$morph)->whereIn('model_id',$ids)->where(fn($q)=>$q->where('key','<>',WatchProducts::DOMAIN)->orWhereRaw('trim(coalesce('.$grammar->wrap('value').",'')) <> ''"))
+        // Only emptiness matters. HEX lets both drivers remove NUL, which SQLite REPLACE cannot match directly.
+        $nonblank='coalesce('.$grammar->wrap('value').', ?)';$bindings=[''];
+        foreach(str_split(" \t\n\r\v") as $blank){$nonblank='replace('.$nonblank.', ?, ?)';$bindings[]=$blank;$bindings[]='';}
+        $nonblank='replace(hex('.$nonblank.'), ?, ?)';$bindings[]='00';$bindings[]='';
+        $ranked=DB::table('properties')->where('model_type',$morph)->whereIn('model_id',$ids)->where(fn($q)=>$q->where('key','<>',WatchProducts::DOMAIN)->orWhereRaw($nonblank.' <> ?',[...$bindings,'']))
             ->selectRaw('id, row_number() over (partition by model_type,model_id,'.$key.' order by id) as position');
         return Property::where('model_type',$morph)->whereIn('model_id',$ids)->whereIn('key',WatchProducts::KEYS)->whereIn('id',DB::query()->fromSub($ranked,'bounded')->where('position','<=',2)->select('id'))->orderBy('id')->get()->groupBy('model_id')->all();
     }
