@@ -33,7 +33,8 @@ final class DepartedHistory
         }
         $rows = [...$rows, ...$credits, ['event' => 'Name released', 'sub' => 'The name is available to order.', 'status' => $done, 'by' => 'System']];
         if (isset(self::WATCH[$entry['watch']['state'] ?? ''])) { $rows[] = ['event' => 'Monitoring', 'sub' => self::WATCH[$entry['watch']['state']], 'status' => $done, 'by' => 'System']; }
+        // Above any registrar read saved in the same second, in this order.
         $count = count($rows);
-        return array_map(fn(array $row, int $i) => ['__key' => 'departed-'.$i, '__order' => $count - $i, 'time' => $at, ...$row], $rows, array_keys($rows));
+        return array_map(fn(array $row, int $i) => ['__key' => 'departed-'.$i, '__order' => 1000 + $count - $i, 'time' => $at, ...$row], $rows, array_keys($rows));
     }
 }
