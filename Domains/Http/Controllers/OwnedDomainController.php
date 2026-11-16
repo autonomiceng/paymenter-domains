@@ -59,6 +59,9 @@ final readonly class OwnedDomainController
         $holding=$this->owners->owned($request->user(),$id);
         $summary=$page==='show'?(new DomainSummaries())->one($request->user(),'managed',$id,now('UTC')->getTimestamp()):null;
         $domain=$this->owners->present($holding);
+        // A confirmed departure shows its saved record read-only (mocks 02, 02b, 02c); its outcomes lead History.
+        $departed=$page==='show'?\Paymenter\Extensions\Servers\Domains\Presentation\DepartedOwnerPage::of($holding,$summary):null;
+        if($departed){$domain=new \Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(...[...get_object_vars($domain),'progress'=>[...$departed['history'],...$domain->progress]]);}
         $recordFamilies=$holding->status==='active'&&!$domain->setupPending?\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::read($holding,app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()):null;
         if($recordFamilies){$domain=\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::owner($domain,$recordFamilies);}
         $renewalChoices=[];
@@ -72,6 +75,6 @@ final readonly class OwnedDomainController
         $recoveryContact=\Paymenter\Extensions\Servers\Domains\Services\ContactDetails::collect($request->user())['registrant'];
         $recoveryLimits=\Paymenter\Extensions\Servers\Domains\Services\ContactDetails::limits($holding->registrar_key);
         $recoveryStateRequired=$holding->registrar_key==='namesilo';
-        return view('domains::'.$page,compact('domain','summary','recordFamilies','renewalChoices','keys','recoveryContact','recoveryLimits','recoveryStateRequired'));
+        return view('domains::'.$page,compact('domain','summary','departed','recordFamilies','renewalChoices','keys','recoveryContact','recoveryLimits','recoveryStateRequired'));
     }
 }
