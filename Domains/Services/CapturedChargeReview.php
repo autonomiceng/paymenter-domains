@@ -64,7 +64,9 @@ final class CapturedChargeReview
         if(!is_array($reads)||!array_is_list($reads)||!$reads||!is_array($observations)||!array_is_list($observations)||!$observations){return false;}$read=end($reads);$seen=end($observations);
         $attempt=ReconciliationEvidence::attempt($op,$op->domain()->firstOrFail(),AccountBindings::binding(Account::where('server_id',$op->server_id)->sole()));
         return $read['resume']===count($p['renewal_resumptions']??[])&&$seen['key']===$read['key']&&$seen['attempt_hash']===self::identity($op)
-            &&self::sameProof($seen['proof'],$op->attempt['reconciliation']??null)&&self::supported($op,$attempt,app(Clock::class)->now())&&!isset($p['captured_charge_approval']);}catch(\Throwable){return false;}
+            &&self::sameProof($seen['proof'],$op->attempt['reconciliation']??null)&&self::supported($op,$attempt,app(Clock::class)->now())&&!isset($p['captured_charge_approval']);}
+        catch(\PDOException $e){throw $e;} // A database error is an error for staff, never "read again".
+        catch(\Throwable){return false;}
     }
     /** The same complete proof, or the same order read again after the registrar confirmed auto-renew Off. The frozen proof keeps its correction. */
     private static function sameProof(mixed $seen,mixed $frozen):bool
