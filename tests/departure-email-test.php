@@ -18,6 +18,13 @@ $confirm=static fn()=>$departure->confirm($staff,(int)$d->id,StaffHoldingReview:
 $sent=static fn()=>Mail::queued(DomainNotice::class)->count();
 $deliveries=static fn()=>DB::table('domains_reminder_deliveries')->where('domain_id',$d->id)->where('template','domains_domain_departed')->get();
 
+// Before confirming, staff see the Email job row while the departure email will send, and none once it is off.
+$template=\App\Models\NotificationTemplate::where('key','domains_domain_departed')->firstOrFail();
+expect((Paymenter\Extensions\Servers\Domains\Admin\Support\DepartureConfirm::rows($d->fresh())['email']??null)!==null,'Staff see the Email row while the departure email will send');
+$template->update(['enabled'=>false]);
+same(null,Paymenter\Extensions\Servers\Domains\Admin\Support\DepartureConfirm::rows($d->fresh())['email']??null,'No Email row while the departure email is off');
+$template->update(['enabled'=>true]);
+
 // A blocked confirmation rolls back, and its reserved email goes with it.
 $at=$clock->instant;$clock->instant=$clock->now()->modify('+25 hours');
 $blocked=$confirm();

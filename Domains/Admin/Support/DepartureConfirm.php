@@ -168,7 +168,7 @@ final class DepartureConfirm
             $facts['DNS records']['sub']=$sub instanceof Htmlable?new HtmlString($sub->toHtml().' '.e($add)):trim((string)$sub.' '.$add);}
         return $facts;
     }
-    /** The job rows after Public registry, and the Monitored domain row, for staff who may confirm. @return array{name:Row,watch:?Row} */
+    /** The job rows after Public registry, and the Monitored domain row, for staff who may confirm. @return array{name:Row,email:?Row,watch:?Row} */
     public static function rows(Domain $d): array
     {
         $fact=\Paymenter\Extensions\Servers\Domains\Presentation\Fact::class;$owner=self::owner($d)."'s monitored domain stays.";
@@ -178,7 +178,10 @@ final class DepartureConfirm
             'retired'=>Value::fact($fact::entered('Not monitored after confirm'),$owner.' Its sources are off.'),
             'hosting'=>Value::fact($fact::entered('Not monitored after confirm'),$owner),
             default=>null};
+        // Email: only when the departure email will send (its saved template is on), as the dialog line says.
+        $email=self::subject($d,null)===null?null:Row::make('Email',Value::fact($fact::entered('One email to '.self::owner($d).' on confirm'),
+            'Its subject follows the reason you pick.'.(DepartureChecks::dnsCase($d)==='registrar'?' It includes the step to set up DNS at the new host.':'')));
         return ['name'=>Row::make('Name',Value::fact($fact::entered('Released on confirm'),'The name becomes available to order. If the domain comes back, import it as a new domain.')),
-            'watch'=>$watch?Row::make('Monitored domain',$watch):null];
+            'email'=>$email,'watch'=>$watch?Row::make('Monitored domain',$watch):null];
     }
 }
