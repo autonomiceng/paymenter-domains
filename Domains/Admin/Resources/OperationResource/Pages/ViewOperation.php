@@ -169,14 +169,14 @@ class ViewOperation extends RecordDetailPage
         } elseif ($check!==null) { $rows[]=Row::make('Registrar reply',RequestRows::text(null,cause:DomainFacts::UNREADABLE))->actions($check); }
         return [Section::make('Details',$rows)];
     }
-    /** The rail: what happened, newest first. The newest step carries the request's state. */
+    /** The rail: what happened, newest first. Each step shows its own outcome; the request's state is in the page head. */
     protected function rail(): array
     {
         $op=$this->getRecord(); $rows=StaffReviewHistory::rows($op,Staff::requireView());
         if ($rows===null) { return [Section::make('History',[Row::notice('history',Value::state(State::CouldntRead,Reader::Staff,DomainFacts::UNREADABLE))])]; }
         $steps=array_reverse(StaffReviewHistory::timeline($op,$rows));
         if ($steps===[]) { return [Section::make('History',[],'No history yet.')]; }
-        return [Section::make('History',[RequestRows::trace($steps,RequestRows::state(RequestFacts::status($op,true,$op->domain),$op))])];
+        return [Section::make('History',[RequestRows::trace($steps)])];
     }
     /** Registrar reply before the registrar answered: none needed yet while a check is scheduled, then what the stopped checks found. */
     private static function noReply(Operation $op): Value

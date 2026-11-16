@@ -57,17 +57,25 @@ final class RequestRows
         if ($word === null || $name === null) { return self::text($name, $sub); }
         return Value::state($word, Reader::Staff, self::sentence(implode('. ', array_filter([$name, $sub]))));
     }
-    /** History rows, newest first, as rail steps. The newest step carries the request's own word; earlier ones have no state of their own.
+    /** History rows, newest first, as rail steps. A step shows only its own outcome, as an event named by a status word
+     * ("Completed"). The request's current word stays at the top of the page, never on its newest event.
      * @param list<array{time:?string,event:string,sub:?string,by:string}> $rows */
-    public static function trace(array $rows, State $state): Trace
+    public static function trace(array $rows): Trace
     {
         $trace = Trace::make(Reader::Staff);
-        foreach ($rows as $i => $r) {
+        foreach ($rows as $r) {
             $at = is_string($r['time'] ?? null) && ($t = strtotime($r['time'])) !== false ? $t : null;
             $reason = self::sentence($r['sub'] ?? null);
-            $trace->step((string) $r['event'], $i === 0 ? $state : null, $at, $r['by'] ?? null, $reason !== null && !Fact::isWord($reason) ? $reason : null);
+            $trace->step((string) $r['event'], self::own((string) $r['event']), $at, $r['by'] ?? null, $reason !== null && !Fact::isWord($reason) ? $reason : null);
         }
         return $trace;
+    }
+    /** The status word an event's name is, if it is one. */
+    private static function own(string $text): ?State
+    {
+        $text = mb_strtolower(rtrim(trim($text), '.'));
+        foreach (State::cases() as $case) { if (mb_strtolower($case->label()) === $text) { return $case; } }
+        return null;
     }
     private static function missing(?string $cause): Value
     {
