@@ -30,6 +30,7 @@ config(['app.url'=>'https://domains-tests.invalid']);
 App\Classes\Cart::get()->items()->delete();Illuminate\Support\Once::flush();
 DB::table('categories')->where('slug','domains')->update(['slug'=>'departed-domains','full_slug'=>'departed-domains']);
 extract(adoptionFixture(Environment::Live,registrars:['enom']));
+Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::reset();
 $newOwner=$owner;Credit::create(['user_id'=>$newOwner->id,'currency_code'=>'USD','amount'=>'2.00']);
 DB::table('roles')->where('id',$staff->role_id)->update(['permissions'=>json_encode(AdoptionCommit::PERMISSIONS)]);
 App\Models\Property::withoutEvents(fn()=>$property->update(['value'=>$d->domain]));
@@ -61,6 +62,11 @@ $proof=$d->fresh()->renewal_policy;$proof['departure']['identity']['name']='anot
 DB::table('domains_domains')->where('id',$d->id)->update(['renewal_policy'=>encrypt(json_encode($proof),false)]);
 $refuse('A mismatched frozen identity refuses adoption');
 DB::table('domains_domains')->where('id',$d->id)->update(['renewal_policy'=>$departed['renewal_policy']]);
+$rebound=$d->fresh();$rebound->service_id=$service->id;$proof=$rebound->renewal_policy;
+$proof['departure']['identity']=DepartureProof::identity($rebound);
+DB::table('domains_domains')->where('id',$d->id)->update(['service_id'=>$service->id,'renewal_policy'=>encrypt(json_encode($proof),false)]);
+$refuse('Even a matching departure proof cannot reuse the old service');
+DB::table('domains_domains')->where('id',$d->id)->update(['service_id'=>$departed['service_id'],'renewal_policy'=>$departed['renewal_policy']]);
 $terminalState=$renewal->fresh()->state;
 DB::table('domains_operations')->where('id',$renewal->id)->update(['state'=>'running']);
 same('competing_holding',$reader->preview($target,$context)->code,'A non-terminal old operation refuses preview');
@@ -69,13 +75,20 @@ DB::table('domains_operations')->where('id',$renewal->id)->update(['state'=>$ter
 
 // Two eligible histories must never hide a third live matching row beyond the former limit(2).
 $historical=$departed;unset($historical['id']);
-$historical['service_id']=$service->id+1000;
+$peerService=$oldService;unset($peerService['id']);
+$secondService=(int)DB::table('services')->insertGetId($peerService);
+$secondProperty=(int)DB::table('properties')->insertGetId(['model_type'=>$service->getMorphClass(),'model_id'=>$secondService,'key'=>'domain','value'=>$d->domain]);
+$historical['service_id']=$secondService;
 $secondId=(int)DB::table('domains_domains')->insertGetId($historical);
 $second=Domain::findOrFail($secondId);$p=$second->renewal_policy;$p['departure']['identity']=DepartureProof::identity($second);
 DB::table('domains_domains')->where('id',$secondId)->update(['renewal_policy'=>encrypt(json_encode($p),false)]);
+same('ready',$reader->preview($target,$context)->code,'Several verified departed histories are eligible');
+$refuse('Historical membership added since preview must be checked again');
 $liveId=(int)DB::table('domains_domains')->insertGetId([...$historical,'service_id'=>$service->id+1001,'status'=>'active']);
+same('competing_holding',$reader->preview($target,$context)->code,'A third live matching holding still refuses a fresh preview');
 $refuse('A third live matching holding is not hidden by departed histories');
 DB::table('domains_domains')->whereIn('id',[$secondId,$liveId])->delete();
+DB::table('properties')->where('id',$secondProperty)->delete();DB::table('services')->where('id',$secondService)->delete();
 
 $money=$nativeMoney();$new=$confirm();
 same($money,$nativeMoney(),'Adoption preserves every native invoice, payment and credit');
