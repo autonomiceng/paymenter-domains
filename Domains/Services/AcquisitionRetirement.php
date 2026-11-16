@@ -114,7 +114,7 @@ final readonly class AcquisitionRetirement
                 }elseif($raise){ObligationAlerts::record($locked,'acquisition_retirement_review',$this->clock->now()->getTimestamp());}
             });
             return;
-        }catch(\DomainException|\InvalidArgumentException|\TypeError|\ValueError){ /* Unproved identity, funding or send evidence keeps the review. */ }
+        }catch(\Illuminate\Contracts\Encryption\DecryptException|\DomainException|\InvalidArgumentException|\TypeError|\ValueError){ /* Unproved identity, funding or send evidence keeps the review. */ }
         if(!$raise){return;}
         DB::transaction(function()use($d):void { $locked=Domain::whereKey($d->id)->lockForUpdate()->firstOrFail();
             ObligationAlerts::record($locked,'acquisition_retirement_review',$this->clock->now()->getTimestamp()); });
