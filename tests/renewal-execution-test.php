@@ -41,6 +41,10 @@ $nativeBeforeReplay = nativeFinancialSnapshot($op);
 $engine->run($op->id, $writer); same(1, $state->writes, 'No replay after acknowledgement');
 same($nativeBeforeReplay, nativeFinancialSnapshot($op), 'Replay preserves native/financial state');
 $state->expiry = '2028-10-18'; $state->charge = '8.00';
+// A database error inside the completion capture rolls it back and reaches the caller; no earlier write commits.
+$broken = 1; $rowBefore = $op->fresh()->only(['state', 'safe_code', 'policy']);
+try { $completion->run($op->id); $thrown = null; } catch (Throwable $error) { $thrown = $error; }
+same([Illuminate\Database\QueryException::class, $rowBefore], [$thrown === null ? null : $thrown::class, $op->fresh()->only(['state', 'safe_code', 'policy'])], 'A completion read database error changes nothing');
 same('succeeded', $completion->run($op->id)->state, 'Unique original charge plus full term completes');
 same('2028-10-18', $d->fresh()->provider_expires_at->format('Y-m-d'), 'Confirmed provider expiry stored');
 same($op->operation_key, $d->fresh()->renewal_policy['billing_anchor']['operation_key'], 'Latest completed renewal anchor advances');
