@@ -114,11 +114,13 @@ final readonly class Refunds
                 if ($minor > 0) { $payment['payments'][] = ['id'=>$receiptId, 'amount_minor'=>$minor]; $left -= $minor; }
                 if ($left === 0) { break; }
             }
-            if (ReceiptReturns::reserve($op, $l, $payment, $money, $this->clock->now())) { $review?->record($l); return null; }
+            // Staff chose account credit for this answer, so the card return is skipped and the credit below applies.
+            $chosen = RegistrarAnswers::creditOnly($op, $l['domain']);
+            if (!$chosen && ReceiptReturns::reserve($op, $l, $payment, $money, $this->clock->now())) { $review?->record($l); return null; }
             $credit = $l['credit'] ?? new Credit(['user_id' => $l['user']->id, 'currency_code' => 'USD', 'amount' => '0.00']);
             $credit->amount = PricingRule::decimal(PricingRule::minor((string) $credit->amount) + PricingRule::minor($payment['amount']));
             $credit->save();
-            $refund = [...$payment, 'to' => 'account_credit', 'bridge_reason' => 'gateway_return_unavailable', 'credit_id' => (int) $credit->id,
+            $refund = [...$payment, 'to' => 'account_credit', 'bridge_reason' => $chosen ? 'account_credit_chosen' : 'gateway_return_unavailable', 'credit_id' => (int) $credit->id,
                 'at' => $this->clock->now()->format(DATE_ATOM), 'actor_id' => $approved['actor_id'] ?? null,
                 'reason' => $approved['reason'] ?? (RefundProof::transferTimeout($op, $l['domain']) ? 'transfer_code_timeout' : (RefundProof::retired($op, $l['domain']) || PrivacyRetirement::safe($op, $l['domain']) ? 'late_retired_payment' : (RegistrationRefusals::proved($op,$l['domain'])?RegistrationRefusals::CODE:'terminal_unsent')))];
             $op->update(['funding' => [...($op->funding ?? []), 'refund' => $refund]]);
