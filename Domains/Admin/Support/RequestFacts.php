@@ -502,6 +502,8 @@ final class RequestFacts
         }catch(\Throwable){return null;}
         if($money['ownerHold']){return 'Account on hold: a payment was lost to a bank dispute. The refund waits until the hold is released.';}
         if(array_filter($money['receipts'],fn($r)=>$r['hold'])){return 'A dispute or refund on this payment is still open. The refund waits until it settles. Automatic checks continue.';}
+        // A return still reserved, sending or pending, or a payment still processing, is not yet lost or returned.
+        if($money['pending']||array_filter($money['receipts'],fn($r)=>$r['reserved']>0)){return null;}
         return $money['held']===0?'Nothing left to return. The payment was lost to a dispute or already returned.':null;
     }
     /** What this request paid on its invoice: its own line, so one domain refunded in a cart reads as refunded. A line that

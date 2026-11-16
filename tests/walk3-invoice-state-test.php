@@ -57,6 +57,8 @@ ReceiptReturns::resume($op->id,$clock->now(),'refund_rejected');
 same('credited',$op->fresh()->funding['receipt_return_results'][$key]['state'],'A failed original payment refund becomes account credit');
 same(true,ReceiptReturns::settled($op->fresh()),'The account credit return settled');
 same('Paid',RequestFacts::for($op->fresh())['invoice_state'],'A return credited to the account stays Paid');
+// Request money follow-ups report every failing case before stopping.
+$followups=[];$want=static function(bool $ok,string $message)use(&$followups):void{if(!$ok){$followups[]=$message;echo 'FOLLOWUP_FAIL '.$message."\n";}};
 // Two card receipts on one request: one share was released with no credit after a lost dispute, the other was refunded.
 // Only part went back, so the invoice stays Paid and staff see the smaller return.
 $returnSetup=static function(string $name,\Closure $funding)use($held,$gateway):array {
@@ -76,7 +78,16 @@ App\Models\InvoiceTransaction::create(['invoice_id'=>$op->invoice_id,'amount'=>P
 App\Models\InvoiceTransaction::create(['invoice_id'=>$op->invoice_id,'amount'=>'-5.00','fee'=>'0.00','status'=>'succeeded','gateway_id'=>$gateway->id,'transaction_id'=>'synthetic-half-chargeback']);
 Illuminate\Support\Facades\Auth::setUser($staff);$facts=RequestFacts::for($op->fresh());$limit=RequestFacts::refundLimit($op->fresh(),false);
 same('Refunded',$facts['refund']??null,'The refunded share settled to the original payment');
-same('Paid',$facts['invoice_state'],'A request with only part of its line returned stays Paid');
-expect($limit!==null&&str_contains($limit,Paymenter\Extensions\Servers\Domains\Services\Storefront::money(Paymenter\Extensions\Servers\Domains\Services\PricingRule::decimal($gross-500)))
+$want('Paid'===$facts['invoice_state'],'A request with only part of its line returned stays Paid');
+$want($limit!==null&&str_contains($limit,Paymenter\Extensions\Servers\Domains\Services\Storefront::money(Paymenter\Extensions\Servers\Domains\Services\PricingRule::decimal($gross-500)))
     &&str_contains((string)($facts['refund_sub']??''),$limit),'Staff see the smaller amount actually returned');
+// A late payment on this request already has a gateway return in progress, so nothing is held yet nothing is lost:
+// staff see no reason until the return finishes.
+$op=$held('request-invoice-late-return-placeholder.com');$op->update(['state'=>'rejected']);$invoice=App\Models\Invoice::findOrFail($op->invoice_id);
+App\Models\InvoiceTransaction::where('invoice_id',$op->invoice_id)->update(['gateway_id'=>$gateway->id,'transaction_id'=>'synthetic-late-return']);
+MoneyReceiptGateway::automatic($invoice,'synthetic-late-return',Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)App\Models\InvoiceTransaction::where('invoice_id',$op->invoice_id)->sole()->amount),'pending');
+same(0,Paymenter\Extensions\Servers\Domains\Services\InvoiceMoney::project((int)$op->invoice_id)['held'],'The return in progress leaves nothing held');
+$facts=RequestFacts::for($op->fresh());
+$want(['No credit added',null]===[$facts['refund']??null,$facts['refund_sub']??null],'A return still in progress gives staff no lost or returned reason');
+expect($followups===[],'Request money follow-ups: '.json_encode($followups,JSON_THROW_ON_ERROR));
 $nativeSuccessful=true;
