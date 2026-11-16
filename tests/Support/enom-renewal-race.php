@@ -4,7 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/enom-wire.php';
 use Illuminate\Support\Facades\{Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
+use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,DomainBilling,NativeDomainGuard,RuntimePorts,RuntimeWork};
 $data=json_decode(file_get_contents($receipt.'.renewal'),true,512,JSON_THROW_ON_ERROR);$worker=(int)getenv('PACKAGE_RACE_WORKER');
 $clock=new class implements Clock {public string $day='2027-09-30';public function now():DateTimeImmutable{return new DateTimeImmutable($this->day.'T12:00:00Z');}};
@@ -12,10 +12,26 @@ app()->instance(Clock::class,$clock);config(['domains.enom_test_sends_per_day'=>
 $wait=static function(string $path):void{$until=microtime(true)+20;while(!is_file($path)&&microtime(true)<$until){usleep(25000);}expect(is_file($path),'Competing process reached its barrier');};
 if($phase==='enom-test-renewal-race-issue'){
     file_put_contents($receipt.'.issue-ready-'.$worker,'ready');$wait($receipt.'.issue-ready-'.(3-$worker));
-    $billing=new DomainBilling(app(AccountBindings::class),app(NativeDomainGuard::class),$clock,catalogue: $GLOBALS['caps']??null);$invoice=null;
+    $billing=new DomainBilling(app(AccountBindings::class),app(NativeDomainGuard::class),$clock,catalogue: $GLOBALS['caps']??null);$invoice=null;$deferred=false;
     // SQLite can refuse a competing deferred transaction's write upgrade. Retry only that local contention.
     for($i=0;$i<20;$i++){
-        try{$invoice=$billing->invoice($data['issuance_domain']);break;}
+        try{
+            if(!$deferred){
+                $invoice=$billing->invoice($data['issuance_domain']);
+                if($invoice===null){
+                    $domain=Domain::findOrFail($data['issuance_domain']);
+                    expect(DB::table('domains_money_work')->where('server_id',$domain->server_id)->where('kind',DomainBilling::KIND)->where('subject_id',$domain->id)->exists(),'Deferred issuance retains queued renewal work');
+                    $deferred=true;
+                }
+            }
+            // Exhausted money decisions resume through their queued account work.
+            if($deferred){
+                $billing->sweep(Account::where('server_id',$domain->server_id)->sole());
+                $invoice=App\Models\Invoice::find(Operation::where('domain_id',$domain->id)->where('action','renew')->value('invoice_id'));
+            }
+            if($invoice!==null){break;}
+            usleep(50000);
+        }
         catch(PDOException $e){if(!str_contains(strtolower($e->getMessage()),'locked')){throw $e;}usleep(50000);}
     }
     expect($invoice!==null,'Competing issuance resolves');file_put_contents($receipt.'.issue-'.$worker,(string)$invoice->id);
@@ -39,5 +55,9 @@ if($phase==='enom-test-renewal-race-issue'){
     same(13,count($commands),'One competing admission performs two assessments and the write');same(1,count(array_filter($commands,static fn($c)=>$c==='Extend')),'Overlapping admission sends one Extend');
     same('pending',Operation::findOrFail($data['race_operation'])->state,'One sealed outcome retained');
     same(1,Operation::where('domain_id',$data['issuance_domain'])->where('action','renew')->count(),'One retained issued cycle');
+    same(count($data['money'][0])+1,App\Models\Invoice::count(),'Overlapping issuance creates exactly one invoice');
+    same(0,DB::table('domains_money_work')->where('kind',DomainBilling::KIND)->where('subject_id',$data['issuance_domain'])->count(),'Deferred issuance work is swept');
+    same($data['money'][2],DB::table('invoice_transactions')->orderBy('id')->get()->map(static fn($row)=>(array)$row)->all(),'Competing issuance adds no payment transactions');
+    same($data['money'][3],DB::table('credits')->orderBy('id')->get()->map(static fn($row)=>(array)$row)->all(),'Competing issuance keeps credits unchanged');
     echo "Installed overlapping issuance/admission workers retain one obligation and one Extend.\n";
 }
