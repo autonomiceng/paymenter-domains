@@ -90,20 +90,44 @@ final class ObservationRecords
     /** Staff recovery is needed for either a record hold or stopped current scheduled reads. */
     public static function stopped(Domain $d): bool
     { return ObservationWork::stopped($d)||self::heldStopped($d); }
-    /** Batched stopped() for a page of domains: the ids, as keys. Only a held domain reads its own work row, and holds are rare. */
+    /** Batched stopped() for a page of domains: the ids, as keys. Held domains add at most three queries per page, never one per domain. */
     public static function stoppedIds(\Illuminate\Support\Collection $domains): array
     {
         $ids=ObservationWork::stoppedIds($domains);
-        foreach ($domains as $d) {
-            if (isset($ids[$d->id])) { continue; }
-            // Saved data that can't be read proves no hold: only stopped work counts. The domain page shows the unreadable notice.
-            try { if (self::heldStopped($d)) { $ids[$d->id]=true; } } catch (\Illuminate\Contracts\Encryption\DecryptException) {}
-        }
-        return $ids;
+        // Saved data that can't be read proves no hold: only stopped work counts. The domain page shows the unreadable notice.
+        $held=$domains->filter(function (Domain $d) use ($ids): bool {
+            try { return !isset($ids[$d->id])&&self::held($d); } catch (\Illuminate\Contracts\Encryption\DecryptException) { return false; }
+        });
+        return $ids+self::unscheduled($held);
     }
     /** A current-identity record hold with no next scheduled read, including a hold with no work row: only Sync now clears it. */
     private static function heldStopped(Domain $d): bool
-    { return self::held($d)&&HoldingReadRetry::status($d)['next_read']===null; }
+    { return self::held($d)&&self::unscheduled(collect([$d]))!==[]; }
+    /** Of these held domains, the ids, as keys, the scheduler won't read again: a status it skips, no current work row, current work stopped, or not in the account. */
+    private static function unscheduled(\Illuminate\Support\Collection $held): array
+    {
+        if ($held->isEmpty()) { return []; }
+        $pending=$held->whereIn('status',['registration_pending','transfer_pending']);
+        $operations=$pending->isEmpty()?collect():\Paymenter\Extensions\Servers\Domains\Models\Operation::whereIn('domain_id',$pending->pluck('id'))->whereIn('action',['register','transfer'])->get()->groupBy('domain_id');
+        $readable=$held->filter(fn(Domain $d)=>in_array($d->status,HoldingObservationWork::READ_STATUSES,true)&&!$d->adoptionPending()
+            &&ObservationEligibility::allows($d,$operations->get($d->id,collect())));
+        $rows=collect();$stopped=collect();
+        if ($readable->isNotEmpty()&&\Illuminate\Support\Facades\Schema::hasTable('domains_observation_work')) {
+            $work=fn()=>\Illuminate\Support\Facades\DB::table('domains_observation_work')->whereIn('domain_id',$readable->pluck('id'));
+            $rows=$work()->get(['id','domain_id','server_id','account_fingerprint','generation','phase'])->groupBy('domain_id');
+            $stopped=HoldingReadRetry::stoppedQuery($work())->pluck('id')->flip();
+        }
+        $ids=[];
+        foreach ($held as $d) {
+            if (!$readable->contains('id',$d->id)) { $ids[$d->id]=true; continue; }
+            try { $phase=HoldingObservationWork::phase($d); } catch (\Illuminate\Contracts\Encryption\DecryptException) { $phase=null; }
+            // HoldingReadRetry::status: the current job is this holding's work row; any stopped current row stops reads.
+            $current=$rows->get($d->id,collect())->filter(fn($r)=>(int)$r->server_id===(int)$d->server_id&&$r->account_fingerprint===$d->account_fingerprint
+                &&(int)$r->generation===(int)$d->authority_generation&&$r->phase===$phase);
+            if ($current->isEmpty()||$current->contains(fn($r)=>$stopped->has($r->id))||HoldingReadRetry::absent($d)) { $ids[$d->id]=true; }
+        }
+        return $ids;
+    }
     public static function held(Domain $d): bool
     { return ($d->observation['record_hold']['identity']??null)===self::identity($d); }
     /** Shared by the staff inbox, sync notice and Missing DNS row. */

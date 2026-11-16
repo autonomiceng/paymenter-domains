@@ -435,6 +435,16 @@ $work->update(['safe_code'=>'read_failed','tries'=>1,'due_at'=>time()+600]);Obli
 $sweep($d);expect(!$observation($d),'A failed read with its retry queued is not a stopped sync');
 $work->update(['safe_code'=>'records_incomplete','tries'=>0]);
 $sweep($d);expect($observation($d),'A stopped incomplete read is a stopped sync');
+// The list and the count read held domains in a fixed number of queries per page, never per domain.
+$records='Paymenter\\Extensions\\Servers\\Domains\\Services\\ObservationRecords';
+$heldPage=collect(range(1,3))->map(function()use($row,$records){$h=$row('active',null,null);$records::hold($h,'caa_unsupported',new DateTimeImmutable());return $h->fresh();});
+$queries=static function(Illuminate\Support\Collection $page)use($records):int{DB::enableQueryLog();DB::flushQueryLog();$records::stoppedIds($page);$n=count(DB::getQueryLog());DB::disableQueryLog();return $n;};
+same($queries($heldPage->take(1)),$queries($heldPage),'Three held domains read in the same number of queries as one');
+// A held grace domain with its retry queued is read again by the scheduler, so sync has not stopped.
+$d=$row('grace',null,null);Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::queueInitial($d,new DateTimeImmutable());
+Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::current($d)->update(['safe_code'=>'read_failed','tries'=>1,'due_at'=>time()+600]);
+$records::hold($d,'caa_unsupported',new DateTimeImmutable());$d=$d->fresh();
+expect(!$records::stopped($d)&&!isset($records::stoppedIds(collect([$d]))[$d->id]),'A held grace domain with its retry queued has not stopped sync');
 $d=$row('registration_pending','register','held','staff_review_required');
 expect(DomainQueries::alerting(Domain::whereKey($d->id))->exists(),'A visible staff task counts even before a saved alert is written');
 $table=Livewire::actingAs($viewer)->test(ListDomains::class)->instance()->getTable();

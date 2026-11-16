@@ -8,6 +8,8 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
 /** Shared bounded holding portion. Only its owner selects and advances account turns. */
 final class HoldingObservationWork
 {
+    /** Holding statuses the scheduler reads. */
+    public const READ_STATUSES=['active','grace','expired','registration_pending','transfer_pending'];
     /** Called under the holding locks when registration or transfer becomes active. Never replaces existing work. */
     public static function queueInitial(Domain $d, \DateTimeImmutable $now): void
     {
@@ -188,7 +190,7 @@ final class HoldingObservationWork
             $q=DB::table('domains_observation_queues')->where('id',$queue->id); $current=(clone $q)->lockForUpdate()->firstOrFail();
             $rows=Domain::where('server_id',$a->server_id)->where('id','>',$current->cursor)->orderBy('id')->limit(25)->get();
             foreach ($rows as $d) {
-                if ($d->adoptionPending() || !in_array($d->status,['active','grace','expired','registration_pending','transfer_pending'],true)||$d->account_fingerprint!==$a->account_fingerprint) { continue; }
+                if ($d->adoptionPending() || !in_array($d->status,self::READ_STATUSES,true)||$d->account_fingerprint!==$a->account_fingerprint) { continue; }
                 // Financial transfer reconciliation already reads status, history and ownership. Avoid a second automatic poller.
                 if(TransferPolling::ownsObservation($d)){
                     self::idle(self::current($d),$this->clock->now()->getTimestamp())->delete();continue;
@@ -246,7 +248,7 @@ final class HoldingObservationWork
             $job=(int)$oldest->due_at<$starved?$oldest:($due->first(fn($row)=>self::firstRecordRead($domains->get($row->domain_id))) ?? $oldest);
             $d=$domains->get($job->domain_id);
             if($d&&TransferPolling::ownsObservation($d)){DB::table('domains_observation_work')->where('id',$job->id)->delete();return null;}
-            if ($d && (!in_array($d->status,['active','grace','expired','registration_pending','transfer_pending'],true)||!ObservationEligibility::allows($d)||$d->account_fingerprint!==$job->account_fingerprint||$d->adoptionPending() || (int)$job->generation!==$d->authority_generation || $job->phase!==self::phase($d))) {
+            if ($d && (!in_array($d->status,self::READ_STATUSES,true)||!ObservationEligibility::allows($d)||$d->account_fingerprint!==$job->account_fingerprint||$d->adoptionPending() || (int)$job->generation!==$d->authority_generation || $job->phase!==self::phase($d))) {
                 DB::table('domains_observation_work')->where('id',$job->id)->update(['safe_code'=>'superseded']); return null;
             }
 
