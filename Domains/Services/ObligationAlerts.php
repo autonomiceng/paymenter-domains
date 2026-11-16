@@ -93,10 +93,13 @@ final class ObligationAlerts
     {
         $d=$l['domain'];$keys=[];
         if (($key=RenewalOwnership::review($d,$now))!==null) { $keys[]=$key; }
-        // Active records the alert; unknown keeps an open row as it is; clear lets finish() resolve it.
+        // Active records the alert; unknown keeps its open rows as they are, including rows keyed at an earlier expiry; clear lets finish() resolve them.
         $keep=static function(string $state,string $code,?int $operationId=null)use($d,$now,&$keys):void {
             if($state===self::ACTIVE){$keys[]=self::record($d,$code,$now,$operationId);}
-            elseif($state===self::UNKNOWN){$keys[]=self::key($d,$code,$operationId);}
+            elseif($state===self::UNKNOWN){
+                $open=DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code',$code)->whereNull('resolved_at');
+                array_push($keys,...($operationId===null?$open->whereNull('operation_id'):$open->where('operation_id',$operationId))->pluck('alert_key')->all());
+            }
         };
         foreach($l['operations'] as $op){
             if($op->account_fingerprint!==$d->account_fingerprint||$op->authority_generation!==$d->authority_generation){continue;}
