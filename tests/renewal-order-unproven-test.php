@@ -95,4 +95,15 @@ same(['rejected', 'account_credit', 0], [$op->state, $op->funding['refund']['to'
 same(number_format((float) $before + (float) $op->amount, 2, '.', ''), number_format((float) $credit(), 2, '.', ''), 'The card payment comes back once as account credit');
 $after = $credit(); app(\Paymenter\Extensions\Servers\Domains\Services\Refunds::class)->creditRejected($op->id); $engine->run($op->id, $writer);
 same([$after, 0, $writes], [$credit(), MoneyReceiptGateway::$sends, $state->writes], 'No second credit, no card refund, no second renewal');
+// 4. The order detail call itself fails while the domain reads succeed: those reads never checked the order, so none counts.
+$state->order = '9002';
+[$op, $engine, $writer, $completion] = $sent('renew-unproven-failed-order-placeholder.com', '2027-10-18');
+$state->fail = \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Order; $before = $credit();
+for ($i = 0; $i <= OperationReconciliation::POLL_LIMIT; $i++) { $completion->run($op->id); $clock->instant = $clock->now()->modify('+10 minutes'); }
+$op = $op->fresh();
+same([0, false], [$op->policy['renewal_polls'] ?? 0, isset($op->policy['order_unproven'])], 'A failed order detail read does not count and saves no evidence');
+expect(!RegistrarCheck::stopped($op) && !RegistrarAnswers::ready($op, $clock->now()), 'Checks continue and no answer is offered');
+same([null, $before], [$op->funding['refund_authorization'] ?? null, $credit()], 'No money moves');
+$state->fail = null; $completion->run($op->id);
+same(1, $op->fresh()->policy['renewal_polls'] ?? 0, 'Once the order detail read completes, the read counts');
 echo "A renewal with an order number stops its checks at the limit and each answer moves money once.\n"; $nativeSuccessful = true;

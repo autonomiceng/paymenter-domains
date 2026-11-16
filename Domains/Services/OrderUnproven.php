@@ -9,12 +9,13 @@ use Paymenter\Extensions\Servers\Domains\Models\Operation;
  * domain. Once checks stop staff record Enom support's answer. It never refunds, resends or completes anything by itself. */
 final class OrderUnproven
 {
-    /** What one in-time read saw of the domain, or null when it is not such a read or the domain read did not complete. */
+    /** What one in-time read saw of the domain, or null when it is not such a read or the order or domain read did not complete. */
     public static function observe(AttemptEvidence $attempt, Evidence $facts): ?array
     {
         $d = $facts->domain;
+        // Only a completed order detail read can say the order was not found. A failed one is a read failure, never a counted read.
         if ($attempt->binding->registrarKey !== 'enom' || $attempt->query->action !== Action::Renew || $attempt->executionFacts === null
-            || $attempt->providerReference === null || !$d || !$d->binding->matches($attempt->binding) || $d->name !== $attempt->query->name
+            || $attempt->providerReference === null || !$facts->orderRead || !$d || !$d->binding->matches($attempt->binding) || $d->name !== $attempt->query->name
             || ($d->owned === true && $d->expiry === null)) { return null; }
         return ['order_reference' => $attempt->providerReference, 'owned' => $d->owned, 'expiry' => $d->owned ? substr($d->expiry->value, 0, 10) : null,
             'expiry_reads' => $facts->expiryReads];
