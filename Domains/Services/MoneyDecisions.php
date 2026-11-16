@@ -23,7 +23,7 @@ final class MoneyDecisions
                     $value = DB::transaction(static function () use ($request, $decide, $scope) {
                         // End the guard after commit, before the decision's dispatch callbacks run.
                         DB::afterCommit(static function (): void { self::$running = false; });
-                        return $decide(HoldingLocks::take($request->seed, $request->staffId, released: $request->released, scope: $scope));
+                        return $decide(HoldingLocks::take($request->seed, $request->staffId, released: $request->released, scope: $scope, firstInvoice: $request->invoiceId));
                     });
                     return new MoneyResult($value === null ? MoneyOutcome::NoChange : MoneyOutcome::Applied, $value);
                 } catch (\Throwable $e) {

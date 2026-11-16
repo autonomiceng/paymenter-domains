@@ -150,7 +150,7 @@ same(false, MoneyDecisions::running(), 'The runner clears its active state after
 $thrown = MoneyDecisions::run(new MoneyRequest($op->domain, released: true), static fn() => throw new RuntimeException('Synthetic decision failure'));
 same([MoneyOutcome::Failed, false, 0], [$thrown->outcome, MoneyDecisions::running(), DB::transactionLevel()], 'A failed decision clears its active state after rollback');
 
-// Invoice scope: the same lock order, with only the request's invoice, its items and payments. Reuses the closed order above.
+// Invoice scope: native receipt invoice-first order, with only the request's invoice, its items and payments. Reuses the closed order above.
 $other = Operation::where('invoice_id', '!=', $op->invoice_id)->whereNotNull('invoice_id')->orderBy('id')->firstOrFail();
 $scoped = static fn(int $invoice) => new MoneyRequest($op->domain, 'refund_closed', $op->id, released: true, scope: MoneyScope::Invoice, invoiceId: $invoice);
 $tables = []; $tracing = false;
@@ -167,14 +167,17 @@ same(true, in_array((int)$other->invoice_id, $wide[0], true), 'Full scope still 
 same($wide[3], $narrow[3], 'Both scopes give the same invoice money');
 same(false, $wide[4] === $narrow[4], 'A scoped stamp never matches a full one');
 $at = static fn(string $t) => array_search($t, $tables, true);
-same([1, true, true], [count(array_keys($tables, 'invoices', true)), $at('credits') < $at('invoices'), $at('invoices') < $at('services')], 'Scoped locks keep the order: Credit, the one invoice, then services');
+same([1, true, true], [count(array_keys($tables, 'invoices', true)), $at('invoices') < $at('users') && $at('users') < $at('credits'), $at('invoices') < $at('services')], 'Scoped locks take the invoice before its owner, credit and services');
 same(false, in_array('invoices', array_slice($tables, (int)$at('services')), true), 'No invoice is locked after services');
 // The context ends with its transaction.
 try { DB::transaction(fn() => InvoiceMoney::load($narrow[5], (int)$op->invoice_id)); throw new RuntimeException('Expected an ended scope'); } catch (MoneyScopeChanged) {}
 // Reading another invoice or owner-wide billing reruns the decision once on the full scope, never as missing debt.
 foreach ([fn(array $l) => InvoiceMoney::load($l, (int)$other->invoice_id)['settled'], fn(array $l) => UnpaidAcquisitionProof::paid($l)] as $read) {
-    $scopes = [];
+    $scopes = []; $tables = []; $tracing = true;
     $result = MoneyDecisions::run($scoped((int)$op->invoice_id), function(array $l) use (&$scopes, $read) { $scopes[] = $l['scope']?->invoiceId; return [$read($l)]; });
+    $tracing = false;
+    $owners = array_keys($tables, 'users', true);
+    expect(count($owners) === 2 && $tables[0] === 'invoices' && $tables[$owners[1] - 1] === 'invoices', 'Both scoped and widened attempts lock the target invoice before the owner');
     same([MoneyOutcome::Applied, [(int)$op->invoice_id, null]], [$result->outcome, $scopes], 'A scope miss reruns on the full scope');
 }
 // An invoice that is not the owner's ends the scoped attempt before any later lock; the full attempt decides.
