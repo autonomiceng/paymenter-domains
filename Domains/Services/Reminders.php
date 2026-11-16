@@ -62,25 +62,33 @@ final readonly class Reminders
     }
     private static function recovery(array $l,\DateTimeImmutable $now,array &$alerts):?array
     {
+        // Every pending notice is checked for lateness; the first one found is the one to send.
+        $notice=null;$checked=[];
         foreach($l['operations'] as $op){
             $holds=\Paymenter\Extensions\Servers\Domains\Models\Operation::where('invoice_id',$op->invoice_id)->orderBy('id')->get()
                 ->flatMap(fn($peer)=>$peer->funding['dispute_holds']??[])->all();
             $ids=array_unique(array_column($holds,'dispute_id'));
             foreach($ids as $id){
                 $anchor=DB::table('domains_obligation_alerts')->where('alert_key',DisputeRecoveries::key('account_money_hold',$id))->first();
-                if(!$anchor||(int)$anchor->domain_id!==(int)$l['domain']->id){continue;}
-                $minor=0;$at=null;
-                foreach($holds as $hold){if($hold['dispute_id']===$id){$minor+=$hold['removed_minor'];$at=$hold['at'];}}
+                if(!$anchor||(int)$anchor->domain_id!==(int)$l['domain']->id||isset($checked[$id])){continue;}
+                $checked[$id]=true;
+                // The notice is due from the first removal on any peer. A later increment never restarts its overdue clock.
+                $minor=0;$at=null;$unreadable=false;
+                foreach($holds as $hold){
+                    if($hold['dispute_id']!==$id||$hold['removed_minor']<=0){continue;}
+                    $minor+=$hold['removed_minor'];$time=is_string($hold['at']??null)?strtotime($hold['at']):false;
+                    if($time===false||$time>$now->getTimestamp()){$unreadable=true;}else{$at=$at===null?$time:min($at,$time);}
+                }
                 if($minor===0){continue;}
                 $identity='recovery:'.$id;$key=hash('sha256',$l['domain']->id.':'.$identity);
                 if(HistoryRetention::replayed('reminder',$key)||DB::table('domains_reminder_deliveries')->where('delivery_key',$key)->exists()){continue;}
-                if(!$at||strtotime($at)>$now->getTimestamp()||strtotime($at)<$now->getTimestamp()-3600){$alerts[]=ObligationAlerts::record($l['domain'],'credit_notice_overdue',$now->getTimestamp(),(int)$op->id);}
+                if($unreadable||$at===null||$at<$now->getTimestamp()-3600){$alerts[]=ObligationAlerts::record($l['domain'],'credit_notice_overdue',$now->getTimestamp(),(int)$op->id);}
                 $invoice=$l['invoices']->firstWhere('id',$op->invoice_id);
-                return ['identity'=>$identity,'template'=>'domains_credit_removed','data'=>['amount'=>RenewalReminders::money(PricingRule::decimal($minor)),
+                $notice??=['identity'=>$identity,'template'=>'domains_credit_removed','data'=>['amount'=>RenewalReminders::money(PricingRule::decimal($minor)),
                     'invoice_number'=>$invoice?->number??$op->invoice_id,'domain_url'=>url('/domains/'.$l['domain']->id),'support_url'=>\Paymenter\Extensions\Servers\Domains\Presentation\Missing::supportUrl()??'']];
             }
         }
-        return null;
+        return $notice;
     }
     private static function refund(array $l,\DateTimeImmutable $now,array &$alerts):?array
     {
@@ -89,10 +97,13 @@ final readonly class Reminders
             if(ReceiptReturns::malformed($op)){continue;} // An unreadable return sends no credit notice until staff review it.
             // A closed order can credit more than once, and each credit gets its own notice.
             try{ReceiptReturns::effective($op);}catch(\DomainException){continue;}
-            $plans=[];$credits=[];
+            $plans=[];$credits=[];$removed=[];
             if(isset($op->funding['refund'])){$plans['refund:'.$op->id]=$op->funding['refund'];}
             foreach(array_values($op->funding['late_credits']??[]) as $i=>$late){$plans['refund:'.$op->id.':'.$i]=$late;}
+            if($plans){$removed=DisputeRecoveries::removedReceipts($op);}
             foreach($plans as $identity=>$plan){
+                // A lost dispute removed credit from this receipt, here or on a peer, so a notice saying the credit can be used would be wrong.
+                if(DisputeRecoveries::planRemoved($plan,$removed)){continue;}
                 $credits[$identity]=$plan;
                 // A released allocation commits after its plan's bridge and needs a separate delivery identity.
                 foreach($plan['allocations']??[] as $a){

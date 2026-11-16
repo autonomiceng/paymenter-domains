@@ -197,8 +197,12 @@ final class OperationActions
     public static function refundPending(?Operation $op,string $code): ?Notification
     {
         if($op?->state!=='rejected'||!isset($op->funding['refund_authorization'])){return null;}
-        try{if(ReceiptReturns::settled($op)&&!\Paymenter\Extensions\Servers\Domains\Services\InvoiceMoney::returnBlocked(\Paymenter\Extensions\Servers\Domains\Services\InvoiceMoney::project((int)$op->invoice_id))){return null;}}catch(\Throwable){}
+        try{$settled=ReceiptReturns::settled($op);}catch(\Throwable){$settled=false;}
+        try{if($settled&&!\Paymenter\Extensions\Servers\Domains\Services\InvoiceMoney::returnBlocked(\Paymenter\Extensions\Servers\Domains\Services\InvoiceMoney::project((int)$op->invoice_id))){return null;}}catch(\Throwable){}
         $ended=in_array($op->action,['register','transfer'],true)?'The order and its service are cancelled.':'The request is cancelled.';
+        // Retry refund is hidden once the return finished; the open question is the invoice money, not the refund.
+        if($settled){return Notification::make()->warning()->title('Refund finished, invoice needs a check')
+            ->body($ended.' The refund finished, but the invoice money is short or cannot be read, for example after a bank dispute. Check the invoice payments.');}
         $where=isset($op->funding['refund'])?" The payment provider hasn't confirmed the refund.":" The refund hasn't gone through (ref {$code}).";
         return Notification::make()->warning()->title('Cancelled, refund not finished')
             ->body($ended.$where.' Use Retry refund. It reuses this refund, so the customer is never refunded twice.');

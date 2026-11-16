@@ -16,13 +16,21 @@ final class AccountMoneyHolds
             try{
                 $e=self::evidence($op,$alert->alert_key);
                 if(!$e){throw new \DomainException('Dispute evidence missing.');}
+                if($e['pending']){$details[]='Dispute '.$e['dispute_id'].': lost $'.PricingRule::decimal($e['lost_minor']).'. Recovery is not finished, so owed, removed and remainder are not known yet.';continue;}
                 $details[]='Dispute '.$e['dispute_id'].': lost $'.PricingRule::decimal($e['lost_minor']).', owed $'.PricingRule::decimal($e['owed_minor'])
                     .', removed $'.PricingRule::decimal($e['removed_minor']).', remainder $'.PricingRule::decimal($e['remainder_minor']).'.';
             }catch(\Throwable){$details[]='Dispute evidence needs a check on invoice #'.$op->invoice_id.'.';}
         }
         return implode(' ',$details);
     }
+    /** Amounts are final only once recovery has finished; an open retry record leaves them unknown. */
     private static function evidence(Operation $op,string $key): ?array
+    {
+        $result=self::amounts($op,$key);if(!$result){return null;}
+        $pending=DB::table('domains_obligation_alerts')->where('alert_key',DisputeRecoveries::key('dispute_recovery',$result['dispute_id']))->whereNull('resolved_at')->exists();
+        return $pending?[...$result,'owed_minor'=>null,'removed_minor'=>null,'remainder_minor'=>null,'pending'=>true]:[...$result,'pending'=>false];
+    }
+    private static function amounts(Operation $op,string $key): ?array
     {
         $result=null;
         foreach(Operation::where('invoice_id',$op->invoice_id)->orderBy('id')->get() as $peer){foreach($peer->funding['dispute_holds']??[] as $h){

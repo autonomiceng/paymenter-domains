@@ -12,14 +12,24 @@ final readonly class DisputeRecoveries
 {
     public function __construct(private Clock $clock) {}
     public static function key(string $code,string $dispute): string { return hash('sha256',$code.':'.$dispute); }
-    private static function cursor()
-    { return Setting::where('settingable_type',self::class)->where('settingable_id',0)->where('key','domains_dispute_scan'); }
-    private static function advance(array $cursor): void
-    { Setting::updateOrCreate(['settingable_type'=>self::class,'settingable_id'=>0,'key'=>'domains_dispute_scan'],['value'=>json_encode($cursor,JSON_THROW_ON_ERROR),'type'=>'string','encrypted'=>false]); }
+    private static function cursor(string $key='domains_dispute_scan')
+    { return Setting::where('settingable_type',self::class)->where('settingable_id',0)->where('key',$key); }
+    private static function advance(array $cursor,string $key='domains_dispute_scan'): void
+    { Setting::updateOrCreate(['settingable_type'=>self::class,'settingable_id'=>0,'key'=>$key],['value'=>json_encode($cursor,JSON_THROW_ON_ERROR),'type'=>'string','encrypted'=>false]); }
+    /** Up to 25 open retry records after the last one tried, oldest first, then from the start again. */
+    private static function retries(): \Illuminate\Support\Collection
+    {
+        $open=fn()=>DB::table('domains_obligation_alerts')->where('code','dispute_recovery')->whereNull('resolved_at')->orderBy('id');
+        $after=(int)(json_decode(self::cursor('domains_dispute_retry')->value('value')??'{"id":0}',true,8,JSON_THROW_ON_ERROR)['id']??0);
+        $rows=$open()->where('id','>',$after)->limit(25)->get();
+        return $rows->count()<25?$rows->concat($open()->where('id','<=',$after)->limit(25-$rows->count())->get()):$rows;
+    }
     public function sweep(): void
     {
         OperationClaims::outside();
-        foreach(DB::table('domains_obligation_alerts')->where('code','dispute_recovery')->whereNull('resolved_at')->orderBy('first_seen')->orderBy('id')->limit(25)->get() as $alert){
+        foreach(self::retries() as $alert){
+            // Move past every tried record, so records that keep failing cannot hold back later ones.
+            try{self::advance(['id'=>(int)$alert->id],'domains_dispute_retry');}catch(\Throwable){}
             try{
                 $op=Operation::findOrFail($alert->operation_id);
                 $record=InvoiceMoney::project((int)$op->invoice_id);
@@ -76,6 +86,47 @@ final readonly class DisputeRecoveries
             'operation_id'=>$op->id,'code'=>$code,'first_seen'=>$now,'last_seen'=>$now]);
         if($code==='dispute_recovery'){DB::table('domains_obligation_alerts')->where('alert_key',$key)->update(['resolved_at'=>null,'last_seen'=>$now]);}
     }
+    /** Receipts a lost dispute removed credit from, keyed by payment id. A removal can be recorded on any peer that shares
+     * the invoice, so every peer is read; an operation without an invoice has only its own holds. */
+    public static function removedReceipts(Operation $op): array
+    {
+        $peers=$op->invoice_id===null?[$op]:Operation::where('invoice_id',$op->invoice_id)->get();$removed=[];
+        foreach($peers as $peer){foreach($peer->funding['dispute_holds']??[] as $hold){
+            if(($hold['removed_minor']??0)>0){$removed[(int)$hold['payment_id']]=true;}
+        }}
+        return $removed;
+    }
+    /** True when a return plan paid from or allocated against a receipt in $removed: credit from it may be gone. */
+    public static function planRemoved(array $plan,array $removed): bool
+    {
+        if(!$removed){return false;}
+        foreach([...(is_array($plan['payments']??null)?$plan['payments']:[]),...(is_array($plan['allocations']??null)?$plan['allocations']:[])] as $row){
+            $id=is_array($row)?($row['transaction_id']??$row['id']??null):null;
+            if(is_int($id)&&isset($removed[$id])){return true;}
+        }
+        return false;
+    }
+    /** True when a lost dispute removed credit from any receipt this operation returned, recorded on it or on a peer. */
+    public static function creditRemoved(Operation $op): bool
+    {
+        $funding=$op->funding??[];$plans=[...(isset($funding['refund'])?[$funding['refund']]:[]),...($funding['late_credits']??[])];
+        if(!$plans){return false;}
+        $removed=self::removedReceipts($op);
+        foreach($plans as $plan){if(is_array($plan)&&self::planRemoved($plan,$removed)){return true;}}
+        return false;
+    }
+    /** This dispute's total obligation on one receipt and the owed amount already recorded for it on any peer.
+     * Only completed returns and credit count; reserved and pending allocations never create recovery debt.
+     * Credit removed for this dispute is added back, so its own recovery never shrinks what it owes. */
+    public static function obligation(iterable $peers,string $id,int $receiptId,array $r,int $lost): array
+    {
+        $recorded=0;$own=0;
+        foreach($peers as $peer){foreach($peer->funding['dispute_holds']??[] as $hold){
+            if($hold['dispute_id']!==$id){continue;}
+            $recorded+=$hold['owed_minor'];if($hold['payment_id']===$receiptId){$own+=$hold['removed_minor'];}
+        }}
+        return [min($lost,max(0,$r['completed']+$r['credit']-($r['recovered']-$own)+$r['external']-$r['gross'])),$recorded];
+    }
     /** Reuses the caller's locks. No runner, remote sends or notices; load() uses this for a newly observed owed loss. */
     public static function locked(array $l,int $invoiceId,array $entry,\DateTimeImmutable $now,?array $money=null): void
     {
@@ -92,11 +143,10 @@ final readonly class DisputeRecoveries
         $receiptId=null;
         foreach($money['receipts'] as $pid=>$r){if($r['receipt']===$entry['payment_intent_id']&&$r['gateway_id']===$lost['gateway_id']){$receiptId=$pid;break;}}
         if($receiptId===null){throw new \DomainException('Dispute receipt missing.');}
-        $r=$money['receipts'][$receiptId];
-        $recorded=0;
-        foreach($peers as $peer){foreach($peer->funding['dispute_holds']??[] as $hold){if($hold['dispute_id']===$id){$recorded+=$hold['owed_minor'];}}}
-        // Only completed returns and credit count; reserved and pending allocations never create recovery debt.
-        $owed=min((int)$entry['amount_minor'],max(0,$r['completed']+$r['credit']-$r['recovered']+$r['external']-$r['gross']));
+        $r=$money['receipts'][$receiptId];[$owed,$recorded]=self::obligation($peers,$id,$receiptId,$r,(int)$entry['amount_minor']);
+        // Money still on the receipt after the loss, before any reservation. An unsent reservation is dropped without credit
+        // only when nothing is left; otherwise it stays, and the refund retry returns the undisputed part once the hold is released.
+        $free=$r['gross']-$r['completed']-$r['credit']-$r['external']+$r['recovered'];
         $left=max(0,$owed-$recorded);$credit=$l['credit'];$unused=$credit?PricingRule::minor($credit->amount):0;
         foreach($peers as $peer){
             $f=$peer->funding??[];$share=0;
@@ -109,7 +159,7 @@ final readonly class DisputeRecoveries
                     $e=collect($money['ledger'])->first(fn($e)=>$e['gateway_id']===$a['gateway_id']&&$e['payment_intent_id']===$a['receipt']&&$e['allocation_key']===($a['gateway_key']??$a['key']));
                     $state=$e['state']??$f['receipt_return_results'][$a['key']]['state']??'reserved';
                     if(in_array($state,['refunded','credited'],true)){$share+=$a['amount_minor'];}
-                    elseif($state==='reserved'&&!$e&&!isset($f['receipt_return_results'][$a['key']])){
+                    elseif($state==='reserved'&&!$e&&!isset($f['receipt_return_results'][$a['key']])&&$free<=0){
                         ReceiptReturns::release($peer,$a['key'],'recovery',[...$l,'operations'=>$peers]);
                         $peer->refresh();$f=$peer->funding;
                     }
@@ -122,7 +172,9 @@ final readonly class DisputeRecoveries
             $prior=0;foreach($f['dispute_holds']??[] as $hold){if($hold['dispute_id']===$id){$prior+=$hold['owed_minor'];}}
             $amount=min($left,max(0,$share-$prior));if($amount===0){continue;}
             $removed=min($amount,$unused);$unused-=$removed;$left-=$amount;
-            $hold=['dispute_id'=>$id,'payment_id'=>$receiptId,'lost_minor'=>(int)$entry['amount_minor'],'owed_minor'=>$amount,
+            // A later increment for the same dispute on this peer gets the next number, so retained history stays readable.
+            $increment=count(array_filter($f['dispute_holds']??[],fn($h)=>$h['dispute_id']===$id));
+            $hold=['dispute_id'=>$id,'increment'=>$increment,'payment_id'=>$receiptId,'lost_minor'=>(int)$entry['amount_minor'],'owed_minor'=>$amount,
                 'removed_minor'=>$removed,'remainder_minor'=>$amount-$removed,'credit_id'=>$credit?->id,'at'=>$now->format(DATE_ATOM)];
             $peer->update(['funding'=>[...$f,'dispute_holds'=>[...($f['dispute_holds']??[]),$hold]]]);
         }

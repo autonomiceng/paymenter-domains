@@ -526,7 +526,8 @@ AccountMoneyHolds::release($staff,(int)DB::table('domains_obligation_alerts')->w
 // Reserved money is not returned money. Only an unsent reservation can be released.
 foreach([false,true] as $gatewayOwned){
     $op=$new('recovery-reservation-'.(int)$gatewayOwned.'-placeholder.com');$entry=$loss($op,300,'synthetic_reserved_'.(int)$gatewayOwned);
-    $payment=InvoiceTransaction::where('invoice_id',$op->invoice_id)->sole();
+    // The loss takes the whole receipt, so nothing undisputed is left for the reservation.
+    $payment=InvoiceTransaction::where('invoice_id',$op->invoice_id)->sole();DB::table('invoice_transactions')->where('id',$payment->id)->update(['amount'=>'3.00']);
     $a=['transaction_id'=>(int)$payment->id,'gateway_id'=>(int)$creditGateway->id,'receipt'=>$payment->transaction_id,'key'=>'synthetic_reserved_'.(int)$gatewayOwned,'amount_minor'=>300];
     $op->update(['funding'=>['refund'=>['to'=>'original_payment','amount'=>'3.00','bridge_minor'=>0,'allocations'=>[$a],'payments'=>[['id'=>(int)$payment->id,'amount_minor'=>300]]]]]);
     if($gatewayOwned){InvariantReceiptGateway::$ledger[]=[...$entry,'allocation_key'=>$a['key'],'state'=>'sending'];}
@@ -545,6 +546,57 @@ $credit->refresh()->update(['amount'=>'1.00']);$notices=DB::table('domains_remin
 $record=DB::transaction(fn()=>InvoiceMoney::load(HoldingLocks::take($op->domain),(int)$op->invoice_id));
 same([0,0,$notices],[$balance(),$record['pool'],DB::table('domains_reminder_deliveries')->count()],'Locked fallback removes credit once and sends no notice inside the transaction');
 AccountMoneyHolds::release($staff,(int)DB::table('domains_obligation_alerts')->where('alert_key',DisputeRecoveries::key('account_money_hold','synthetic_fallback'))->value('id'));
+// Each regression reports on its own, so one failing case cannot hide another.
+$regressions=[];
+$regression=static function(string $item,callable $test)use(&$regressions,$clock):void{
+    try{$test();echo 'REGRESSION_PASS '.$item."\n";}
+    catch(\Throwable $e){$regressions[]=$item;echo 'REGRESSION_FAIL '.json_encode(['item'=>$item,'error'=>$e::class,'message'=>$e->getMessage()],JSON_THROW_ON_ERROR)."\n";}
+    finally{DB::table('domains_obligation_alerts')->whereIn('code',['account_money_hold','dispute_recovery'])->whereNull('resolved_at')->update(['resolved_at'=>$clock->now()->getTimestamp()]);}
+};
+// Two operations share one receipt. A credits first; B's credit completes after the first recovery.
+$sharedLoss=static function(string $name,int $gross,int $lost,int $first,int $unused)use($new,$loss,$credit):array{
+    $a=$new($name.'-a-placeholder.com');$payment=InvoiceTransaction::where('invoice_id',$a->invoice_id)->sole();
+    DB::table('invoice_transactions')->where('id',$payment->id)->update(['amount'=>PricingRule::decimal($gross)]);
+    $b=$new($name.'-b-placeholder.com');DB::table('domains_operations')->where('id',$b->id)->update(['invoice_id'=>$a->invoice_id]);
+    $a->update(['funding'=>['refund'=>['to'=>'account_credit','amount'=>PricingRule::decimal($first),'payments'=>[['id'=>(int)$payment->id,'amount_minor'=>$first]]]]]);
+    $credit->refresh()->update(['amount'=>PricingRule::decimal($unused)]);
+    return [$a,$b->fresh(),(int)$payment->id,$loss($a,$lost,'synthetic_'.$name)];
+};
+$later=static function($b,int $pid,int $minor,int $unused)use($credit):void{
+    $b->update(['funding'=>['refund'=>['to'=>'account_credit','amount'=>PricingRule::decimal($minor),'payments'=>[['id'=>$pid,'amount_minor'=>$minor]]]]]);
+    $credit->refresh()->update(['amount'=>PricingRule::decimal($unused)]);
+};
+$owedBy=static fn($op,string $field)=>array_column($op->fresh()->funding['dispute_holds']??[],$field);
+// G6: the first recovery's own removed credit must not shrink the dispute's later obligation.
+$regression('G6 own recovery counted once',static function()use($sharedLoss,$later,$recovery,$balance,$owedBy):void{
+    [$a,$b,$pid,$entry]=$sharedLoss('recovery-own-twice',100,100,40,40);
+    $recovery->recover($entry);
+    same([[40],[40]],[$owedBy($a,'owed_minor'),$owedBy($a,'removed_minor')],'First recovery removes the credited share');
+    $later($b,$pid,60,60);$recovery->recover($entry);
+    same([[60],[60],0],[$owedBy($b,'owed_minor'),$owedBy($b,'removed_minor'),$balance()],'Later completed credit is recovered in full');
+});
+// G7: a second increment on the same peer and dispute stays readable.
+$regression('G7 repeated increments readable',static function()use($sharedLoss,$later,$recovery,$balance,$owedBy):void{
+    [$a,$b,$pid,$entry]=$sharedLoss('recovery-increment',100,60,80,0);
+    $recovery->recover($entry);
+    same([40],$owedBy($a,'owed_minor'),'First recovery records the owed share with nothing removed');
+    $later($b,$pid,20,20);$recovery->recover($entry);
+    same([[40,20],[0,20],0],[$owedBy($a,'owed_minor'),$owedBy($a,'removed_minor'),$balance()],'The increment uses the headroom of the first peer');
+    same(20,InvoiceMoney::project((int)$a->invoice_id)['receipts'][$pid]['recovered'],'Retained increments project their removed credit');
+    $snapshot=[$a->fresh()->funding,$b->fresh()->funding,$balance()];$recovery->recover($entry);
+    same($snapshot,[$a->fresh()->funding,$b->fresh()->funding,$balance()],'Increment replay changes nothing');
+});
+// C2: a locked load recovers the increase of a dispute it has already recorded.
+$regression('C2 locked load recovers increase',static function()use($sharedLoss,$later,$recovery,$balance,$owedBy):void{
+    [$a,$b,$pid,$entry]=$sharedLoss('recovery-growth',100,100,40,40);
+    $recovery->recover($entry);
+    $later($b,$pid,60,60);
+    DB::transaction(fn()=>InvoiceMoney::load(HoldingLocks::take($a->domain),(int)$a->invoice_id));
+    same([[60],[60],0],[$owedBy($b,'owed_minor'),$owedBy($b,'removed_minor'),$balance()],'Locked load removes the newly owed credit');
+    $snapshot=[$b->fresh()->funding,$balance()];
+    DB::transaction(fn()=>InvoiceMoney::load(HoldingLocks::take($a->domain),(int)$a->invoice_id));
+    same($snapshot,[$b->fresh()->funding,$balance()],'Load replay changes nothing');
+});
 // Discovery finds history on its first sweep, retries failures before new pages and keeps its cursor atomic.
 class DiscoveryRecoveryGateway extends InvariantReceiptGateway {
     public function receiptLedger(Invoice $invoice,string $extension='InvariantReceipt'):array {
@@ -579,4 +631,56 @@ InvariantReceiptGateway::$ledger=[$entry];
 AccountMoneyHolds::release($staff,(int)DB::table('domains_obligation_alerts')->where('alert_key',DisputeRecoveries::key('account_money_hold','synthetic_historical'))->value('id'));
 $refunds->creditRejected((int)$otherOut->id);
 same($before+PricingRule::minor($otherOut->amount),$balance(),'Releasing the hold permits money out on other invoices');
+// G10: a smaller loss keeps the undisputed part of an unsent reservation for the customer after the hold is released.
+$regression('G10 undisputed reservation residual',static function()use($new,$loss,$recovery,$balance,$credit,$receiptGateway,$staff,$clock):void{
+    $op=$new('recovery-residual-placeholder.com');$entry=$loss($op,100,'synthetic_residual');
+    $payment=InvoiceTransaction::where('invoice_id',$op->invoice_id)->sole();
+    DB::table('invoice_transactions')->where('id',$payment->id)->update(['amount'=>'3.00','gateway_id'=>$receiptGateway->id]);
+    $a=['transaction_id'=>(int)$payment->id,'gateway_id'=>(int)$receiptGateway->id,'receipt'=>$payment->transaction_id,'key'=>'synthetic_residual_return','amount_minor'=>300];
+    $op->update(['funding'=>['refund'=>['to'=>'original_payment','amount'=>'3.00','bridge_minor'=>0,'allocations'=>[$a],'payments'=>[['id'=>(int)$payment->id,'amount_minor'=>300]]]]]);
+    $credit->refresh()->update(['amount'=>'0.00']);$sends=MoneyReceiptGateway::$sends;
+    $recovery->recover($entry);
+    same(0,$balance(),'No credit while the account is held');
+    AccountMoneyHolds::release($staff,(int)DB::table('domains_obligation_alerts')->where('alert_key',DisputeRecoveries::key('account_money_hold','synthetic_residual'))->value('id'));
+    \Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::resume((int)$op->id,$clock->now(),'refund_rejected');
+    \Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::resume((int)$op->id,$clock->now(),'refund_rejected');
+    same([200,$sends,[$a]],[$balance(),MoneyReceiptGateway::$sends,$op->fresh()->funding['refund']['allocations']],'Exactly the undisputed $2 is returned once, with no new allocation');
+});
+// A send decision that recovers a dispute increase keeps that recovery when it saves its own result.
+$regression('Send keeps a recovered increase',static function()use($new,$loss,$recovery,$balance,$credit,$receiptGateway,$staff,$clock):void{
+    $op=$new('recovery-send-increase-placeholder.com');$entry=$loss($op,100,'synthetic_send_increase');
+    $first=InvoiceTransaction::where('invoice_id',$op->invoice_id)->sole();
+    DB::table('invoice_transactions')->where('id',$first->id)->update(['amount'=>'1.00','gateway_id'=>$receiptGateway->id]);
+    $secondId=DB::table('invoice_transactions')->insertGetId(['invoice_id'=>$op->invoice_id,'amount'=>'1.00','fee'=>'0.00','status'=>'succeeded',
+        'gateway_id'=>$receiptGateway->id,'transaction_id'=>'synthetic_send_increase_second','created_at'=>now(),'updated_at'=>now()]);
+    $a1=['transaction_id'=>(int)$first->id,'gateway_id'=>(int)$receiptGateway->id,'receipt'=>$first->transaction_id,'key'=>'synthetic_send_increase_first','amount_minor'=>100];
+    $a2=['transaction_id'=>$secondId,'gateway_id'=>(int)$receiptGateway->id,'receipt'=>'synthetic_send_increase_second','key'=>'synthetic_send_increase_second','amount_minor'=>100];
+    $op->update(['funding'=>['refund'=>['to'=>'original_payment','amount'=>'2.00','bridge_minor'=>0,'allocations'=>[$a1,$a2],
+        'payments'=>[['id'=>(int)$first->id,'amount_minor'=>100],['id'=>$secondId,'amount_minor'=>100]]],
+        'receipt_return_results'=>[$a1['key']=>['state'=>'sending','amount_minor'=>100,'at'=>$clock->now()->format(DATE_ATOM)]]]]);
+    MoneyReceiptGateway::$returns=[];MoneyReceiptGateway::$lost=false;MoneyReceiptGateway::$outcome='refunded';MoneyReceiptGateway::$onStatus=null;MoneyReceiptGateway::$onAllocated=null;
+    $credit->refresh()->update(['amount'=>'2.00']);
+    // The first return is still sending, so nothing is owed yet; staff release the hold.
+    $recovery->recover($entry);
+    same([200,[]],[$balance(),$op->fresh()->funding['dispute_holds']??[]],'Nothing is owed while the first return is sending');
+    AccountMoneyHolds::release($staff,(int)DB::table('domains_obligation_alerts')->where('alert_key',DisputeRecoveries::key('account_money_hold','synthetic_send_increase'))->value('id'));
+    // The gateway finishes the first return; the next run records it and sends the second.
+    $invoice=Invoice::findOrFail($op->invoice_id);
+    MoneyReceiptGateway::$returns[$a1['key']]=['state'=>'refunded','amount_minor'=>100,'refund_id'=>'synthetic-return','key'=>'fixture-return:'.$a1['key']];
+    MoneyReceiptGateway::complete($invoice,$a1['key']);
+    \Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::resume((int)$op->id,$clock->now(),'refund_rejected');
+    $holds=$op->fresh()->funding['dispute_holds']??[];
+    same([[100],[100],100],[array_column($holds,'owed_minor'),array_column($holds,'removed_minor'),$balance()],'The dispute removes the returned $1 of credit once');
+});
+// G5: records that keep failing cannot take every retry turn from a later recoverable dispute.
+$regression('G5 retry turns rotate',static function()use($new,$loss,$recovery):void{
+    $op=$new('recovery-starved-placeholder.com');$entry=$loss($op,300,'synthetic_starved');InvariantReceiptGateway::$lostRows=[];
+    for($i=0;$i<25;$i++){DB::table('domains_obligation_alerts')->insert(['alert_key'=>hash('sha256','synthetic_stuck_'.$i),'domain_id'=>$op->domain_id,
+        'generation'=>$op->authority_generation,'operation_id'=>0,'code'=>'dispute_recovery','first_seen'=>1,'last_seen'=>1]);}
+    $retry=DB::table('domains_obligation_alerts')->insertGetId(['alert_key'=>DisputeRecoveries::key('dispute_recovery','synthetic_starved'),'domain_id'=>$op->domain_id,
+        'generation'=>$op->authority_generation,'operation_id'=>$op->id,'code'=>'dispute_recovery','first_seen'=>2,'last_seen'=>2]);
+    $recovery->sweep();$recovery->sweep();
+    expect(DB::table('domains_obligation_alerts')->where('id',$retry)->value('resolved_at')!==null,'A later sweep retries the recoverable dispute');
+});
+expect($regressions===[],'Regressions failed: '.implode(', ',$regressions));
 $nativeSuccessful = true;

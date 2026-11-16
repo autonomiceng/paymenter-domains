@@ -72,4 +72,15 @@ $staff->role->update(['permissions'=>['admin.domains.view','admin.domains.manage
 $reviews=new \Paymenter\Extensions\Servers\Domains\Services\AcquisitionPaymentReviews($clock);
 $reviews->review($staff,(int)$domain->id,$reviews->ticket($staff,(int)$domain->id),'Reviewed the same pending payment',true);
 $retirement->inspect($domain->id);same(0,$alerts()->count(),'Only an audited staff acknowledgement suppresses the same evidence');
+// G3: on a fully retired order, a receipt that grows after its credit is still uncovered money.
+DB::table('domains_obligation_alerts')->where('id',$hold)->update(['resolved_at'=>$clock->now()->getTimestamp()]); // The owner hold above refuses new domain carts.
+$retired=$new('recheck-retired-placeholder.com');$retiredPayment=InvoiceTransaction::where('invoice_id',$retired->invoice_id)->where('amount','>','0')->sole();
+DB::table('invoice_transactions')->where('id',$retiredPayment->id)->update(['amount'=>'1.00']);
+DB::table('domains_operations')->where('id',$retired->id)->update(['state'=>'rejected','safe_code'=>\Paymenter\Extensions\Servers\Domains\Services\UnpaidAcquisitionProof::CODE]);
+$retired->refresh()->update(['funding'=>['late_credits'=>[['to'=>'account_credit','amount'=>'1.00','currency'=>'USD','payments'=>[['id'=>(int)$retiredPayment->id,'amount_minor'=>100]]]]]]);
+$activity=new ReflectionMethod(AcquisitionRetirement::class,'activity');
+$retiredActivity=static fn()=>$activity->invoke(null,$retired->fresh(),'cancelled','cancelled',InvoiceTransaction::where('invoice_id',$retired->invoice_id)->orderBy('id')->get());
+same(false,$retiredActivity(),'A fully credited retired receipt needs no inspection');
+DB::table('invoice_transactions')->where('id',$retiredPayment->id)->update(['amount'=>'2.00']);
+same(true,$retiredActivity(),'The same receipt grown past its credit needs inspection');
 $nativeSuccessful=true;

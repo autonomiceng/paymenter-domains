@@ -307,8 +307,10 @@ final readonly class AcquisitionRetirement
             }
             if((isset($op->funding['refund'])||isset($op->funding['late_credits']))&&!ReceiptReturns::malformed($op)&&ReceiptReturns::outstanding($op)===0){
                 $credited=RefundPayment::lateCredited($op,$observedPeers);
-                // Kept peers retain their original receipt share. A new receipt still needs inspection.
-                foreach($money['receipts'] as $id=>$receipt){if($receipt['net']>0&&!isset($credited[$id])){return true;}}
+                // Kept peers retain their original receipt share. A new receipt still needs inspection, and so does a
+                // receipt that grew past its credit on a fully retired order, which returns every receipt in full.
+                $full=$op->safe_code===UnpaidAcquisitionProof::CODE;
+                foreach($money['receipts'] as $id=>$receipt){if($receipt['net']>0&&(!isset($credited[$id])||$full&&$credited[$id]<$receipt['gross'])){return true;}}
                 return false;
             }
             return !InvoiceMoney::settled($money);

@@ -199,6 +199,8 @@ final class ReceiptReturns
         if(!$states&&$bridge===0){return null;}
         if(array_intersect($states,['review'])){return self::REVIEW;}
         if(array_diff($states,['refunded','credited'])){return ['Refund processing','We are returning your payment and checking its progress automatically.'];}
+        // Words that say the return is account credit are wrong once a lost dispute removed credit from this order's receipt.
+        if(($bridge>0||in_array('credited',$states,true))&&DisputeRecoveries::creditRemoved($op)){return self::REVIEW;}
         if(in_array('refunded',$states,true)&&($bridge>0||in_array('credited',$states,true))){return ['Money returned','Part was refunded to your original payment method. The rest is account credit because it could not be refunded.'];}
         return in_array('refunded',$states,true)?['Refunded','Your payment was refunded to your original payment method.']:['Credit added','The payment could not be refunded. The returned amount is account credit.'];
     }
