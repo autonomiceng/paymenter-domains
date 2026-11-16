@@ -75,6 +75,8 @@ trait TldSalesPage
         if($s['invalid']||in_array($s['reason'],['Below cost','Price missing','Prices not published'],true)){return 'override';}
         return in_array($s['reason'],['No registrar selected','Not offered by this registrar'],true)||TldFacts::unsupported($s['reason'])?'seller':null;
     }
+    /** Browser tabs keep the account, so two accounts' pages for one TLD never share a title. */
+    protected function browserTitle(): ?string {$a=$this->account();return $a===null?null:'.'.$this->getRecord()->tld.' on '.$a;}
     /** The head: the TLD, its sales state, and the link that names where the reason is fixed. The reason itself is the
      * Sales notice, so the head says only the state. */
     protected function head(): Head

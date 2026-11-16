@@ -22,10 +22,12 @@ trait RendersType
      * 5 or 60; a record Detail page also takes 2 and 10, and true third keeps reading while the tab is hidden, for
      * the bounded time the page itself decides. Null for no refresh. @return ?array{0:string,1:int,2?:bool} */
     protected function poll(): ?array { return null; }
+    /** The browser title when it must say more than the head, such as the record's account. Null uses the head. */
+    protected function browserTitle(): ?string { return null; }
 
     final public function getTitle(): string|Htmlable
     {
-        $title = $this->head()->title;
+        $title = $this->browserTitle() ?? $this->head()->title;
         $active = array_values(array_filter($this->getSubNavigation(), static fn ($item): bool => $item->isActive()));
         return count($active) === 1 ? $active[0]->getLabel().' - '.$title : $title;
     }

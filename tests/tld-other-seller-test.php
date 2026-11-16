@@ -35,10 +35,10 @@ $ports->apply(Edit::seller($second, 'com', ['register', 'transfer']), $rev());
 $first = Tld::where('server_id', $binding->serverId)->where('tld', 'com')->sole();
 same('New orders go to Synthetic second account', $sales($first)['reason'], 'The first account row names the account that takes new orders');
 // Only the account that takes new orders is named in the TLD page head.
-$title = static fn (Tld $t): string => (string) Livewire::actingAs($staff)->test(ViewTld::class, ['record' => $t->id])->assertSuccessful()->instance()->getTitle();
+$heading = static fn (Tld $t): string => strip_tags(Livewire::actingAs($staff)->test(ViewTld::class, ['record' => $t->id])->assertSuccessful()->instance()->getHeading()->toHtml());
 $firstName = (string) App\Models\Server::whereKey($binding->serverId)->value('name');
-expect($firstName !== '' && !str_contains($title($first), $firstName), 'The other account row does not name its account as the registrar');
-expect(str_contains($title(Tld::where('server_id', $second->serverId)->where('tld', 'com')->sole()), 'Synthetic second account'), 'The selling account row names its account');
+expect($firstName !== '' && !str_contains($heading($first), $firstName), 'The other account row does not name its account as the registrar');
+expect(str_contains($heading(Tld::where('server_id', $second->serverId)->where('tld', 'com')->sole()), 'Synthetic second account'), 'The selling account row names its account');
 // The other account row's failed price read is not why it doesn't sell: another account takes new orders.
 DB::table('domains_prices')->where('server_id', $binding->serverId)->delete();
 DB::table('domains_observation_queues')->updateOrInsert(['server_id' => $binding->serverId, 'account_fingerprint' => $first->account_fingerprint],
