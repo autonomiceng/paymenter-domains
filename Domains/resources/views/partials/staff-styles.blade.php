@@ -148,6 +148,12 @@ td.domains-history-detail{min-width:20rem}
 .domains-page-notice:has(.domains-panel-st[data-domains-tone=warn]){--domains-edge:var(--panel-warn,var(--warning-500))}
 .domains-page-notice:has(.domains-panel-st[data-domains-tone=err]){--domains-edge:var(--panel-err,var(--danger-500))}
 .domains-page-notice .domains-panel-row[data-domains-row=notice]{border:0}
+/* Below 640px a notice's action goes under its sentence, from where the sentence starts, at full touch size (P-NTC-5).
+   Real specificity, so a skin's two-column row can't keep it beside the sentence. */
+@media(max-width:39.99rem){.domains-panel-row[data-domains-row=notice]{grid-template-columns:minmax(0,1fr);row-gap:10px}
+.domains-panel-row[data-domains-row=notice]>.domains-panel-row-a,.domains-panel-row[data-domains-row=notice]>.domains-panel-row-a .fi-ac{grid-column:1/-1;justify-content:flex-start;justify-self:start}
+.domains-panel-row[data-domains-row=notice]>.domains-panel-row-a .fi-ac>*{display:inline-flex;align-items:center;min-height:44px}
+:where(.domains-panel-row[data-domains-row=notice]:has(.domains-panel-st)>.domains-panel-row-a){padding-inline-start:21px}}
 /* A setting's switch sits right before its On or Off, and the line under them starts at the switch (Ilya, Nov 14, 2026).
    Real specificity: a skin that puts toggles in the action column must not pull it away from its word. */
 .domains-panel-row-v[data-domains-switch]{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;column-gap:10px;row-gap:2px}
