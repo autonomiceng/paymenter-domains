@@ -108,22 +108,22 @@ foreach(['split','returned','credited',null] as $index=>$expected){
     }
     if(in_array($expected,['split','returned'],true)){
         foreach($plan['allocations']as$allocation){MoneyReceiptGateway::complete(App\Models\Invoice::findOrFail($op->invoice_id),$allocation['key']);}
-        Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::resume($op->id,$clock->now());
+        Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::resume($op->id,$clock->now(),'refund_rejected');
         [$done,$completed]=$quiet(fn()=>[$done=$owners->present($saved->domain->fresh()),DomainPage::expires($done,null,null)],$action.':'.$index.': completed render');
         if(($completed['value']??null)!==($action==='transfer'?'Not transferred':'Not registered')){$failures[]=$action.':'.$index.': completed return loses rejection';}
         expect(!str_contains($completed['note']??'','returning what you paid'),'Completed expiry note does not describe an unfinished return');
         expect(str_contains($done->order['return']??'','refunded')&&!str_contains($done->order['return']??'','checking its progress'),'Completed gateway result uses completed return wording');
         $money=$nativeMoney();$allocations=$op->fresh()->funding;$sends=MoneyReceiptGateway::$sends;
-        Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::resume($op->id,$clock->now());$quiet(fn()=>$owners->present($saved->domain->fresh()),$action.':'.$index.': repeated completed render');
+        Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::resume($op->id,$clock->now(),'refund_rejected');$quiet(fn()=>$owners->present($saved->domain->fresh()),$action.':'.$index.': repeated completed render');
         same([$money,$allocations,$sends],[$nativeMoney(),$op->fresh()->funding,MoneyReceiptGateway::$sends],'Completed recovery and render preserve money and allocations');
         // After the gateway finished, a malformed bridge still keeps the order in review and a staff repair open.
         Illuminate\Support\Facades\Mail::fake();ReminderSchedules::enroll($op->server_id);$notices=new Reminders($clock,$bindings);
         $raw=$op->fresh()->getRawOriginal('funding');$repair=fn()=>DB::table('domains_obligation_alerts')->where('operation_id',$op->id)->where('code','refund_repair')->whereNull('resolved_at')->exists();
         foreach($malformed($plan,$bridge) as $kind=>[$bad,$late]){$label=$action.':'.$index.': completed '.$kind;
-            DB::table('domains_operations')->where('id',$op->id)->update(['funding'=>$raw]);ReceiptReturns::resume($op->id,$clock->now());
+            DB::table('domains_operations')->where('id',$op->id)->update(['funding'=>$raw]);ReceiptReturns::resume($op->id,$clock->now(),'refund_rejected');
             expect(!$repair(),$label.': a valid completed plan resolves its repair');
             $writePlan($op,$bad,$late);$before=$op->fresh()->funding;$money=$nativeMoney();$calls=[MoneyReceiptGateway::$statusCalls,MoneyReceiptGateway::$sends];
-            $refunds->creditRejected($op->id);ReceiptReturns::resume($op->id,$clock->now());
+            $refunds->creditRejected($op->id);ReceiptReturns::resume($op->id,$clock->now(),'refund_rejected');
             expect($repair(),$label.': automatic recovery keeps the staff repair open');
             same([$money,$before,$calls],[$nativeMoney(),$op->fresh()->funding,[MoneyReceiptGateway::$statusCalls,MoneyReceiptGateway::$sends]],$label.': recovery of a malformed plan moves no money and calls no gateway');
             $reviewed($op,$label);expect($repair(),$label.': rendering leaves the staff repair open');

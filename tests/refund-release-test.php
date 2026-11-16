@@ -287,6 +287,35 @@ $case('sending never releases',function()use($make,$refunds,$staff,$release,$equ
     $a=$op->fresh()->funding['refund']['allocations'][0];$before=$balance();$retained=$op->fresh()->funding;
     $release($op,$a);$equal($retained,$op->fresh()->funding,'Sending allocation is never released');$equal($before,$balance(),'Sending release attempt writes no credit');
 });
+// Resume phases are money decisions on the order's invoice: contention retries once, then queues the order with no send or repair.
+$busy=['armed'=>null,'fails'=>0,'tries'=>0];
+Operation::updating(static function($row)use(&$busy):void{
+    if($busy['armed']!==$row->id||!in_array('sending',array_column($row->funding['receipt_return_results']??[],'state'),true)){return;}
+    if(++$busy['tries']<=$busy['fails']){$cause=new PDOException('Synthetic deadlock');$cause->errorInfo=['40001',1213,'Synthetic'];throw new \Illuminate\Database\QueryException('sqlite','synthetic send intent',[],$cause);}
+});
+$invoiceReads=['on'=>false,'ids'=>[]];
+\Illuminate\Support\Facades\Event::listen('eloquent.retrieved: '.Invoice::class,static function($invoice)use(&$invoiceReads):void{if($invoiceReads['on']){$invoiceReads['ids'][(int)$invoice->id]=true;}});
+foreach([1,2] as $fails){$case('resume contention '.$fails,function()use($fails,$make,$reserve,$refunds,$equal,&$busy,&$invoiceReads):void{
+    \Paymenter\Extensions\Servers\Domains\Services\MoneyWorkSchema::install();
+    $op=$make('resume-busy-'.$fails);$a=$reserve($op);$sends=MoneyReceiptGateway::$sends;
+    $work=static fn()=>DB::table('domains_money_work')->where('subject_id',$op->id)->get(['kind','revision'])->map(fn($r)=>(array)$r)->all();
+    // The crash after the plan already opened a repair; a deferral leaves it exactly as it was, and the finished return resolves it.
+    $repair=static fn()=>DB::table('domains_obligation_alerts')->where('operation_id',$op->id)->where('code','refund_repair')->get()->map(fn($r)=>(array)$r)->all();
+    $repaired=static fn()=>DB::table('domains_obligation_alerts')->where('operation_id',$op->id)->where('code','refund_repair')->whereNull('resolved_at')->exists();$crashed=$repair();
+    $busy=['armed'=>$op->id,'fails'=>$fails,'tries'=>0];$invoiceReads=['on'=>$fails===1,'ids'=>[]];
+    try{$refunds->creditRejected($op->id);}finally{$busy['armed']=null;$invoiceReads['on']=false;}
+    $equal(2,$busy['tries'],'The send intent is retried once after contention: '.$fails);
+    if($fails===1){
+        $equal(['refunded',$sends+1,[],false],[$op->fresh()->funding['receipt_return_results'][$a['key']]['state']??null,MoneyReceiptGateway::$sends,$work(),$repaired()],'One contention: the retry sends once and queues nothing');
+        $equal([(int)$op->invoice_id],array_keys($invoiceReads['ids']),'Resume reads only the order invoice, not the owner\'s other invoices');
+        return;
+    }
+    $equal([null,$sends,[['kind'=>'refund_rejected','revision'=>1]],$crashed],[$op->fresh()->funding['receipt_return_results'][$a['key']]??null,MoneyReceiptGateway::$sends,$work(),$repair()],
+        'Two contentions: nothing is sent or saved, the order is queued under its kind and needs no repair');
+    $refunds->creditRejected($op->id);
+    $equal(['refunded',$sends+1,false],[$op->fresh()->funding['receipt_return_results'][$a['key']]['state']??null,MoneyReceiptGateway::$sends,$repaired()],'The queued resume sends once on its next run');
+    DB::table('domains_money_work')->where('subject_id',$op->id)->delete();
+});}
 foreach(['register','transfer'] as $action){$case('zero held '.$action,function()use($make,$action,$observe,$refunds,$equal,$balance):void{
     $op=$make('zero-'.$action,$action);$op->update(['state'=>'rejected','attempt'=>['seal'=>'absent','send_state'=>'definitely_unsent','disposition'=>'rejected',
         'rejection_basis'=>'definitely_unsent','terminal'=>['operation_key'=>$op->operation_key,'generation'=>$op->authority_generation]]]);

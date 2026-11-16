@@ -31,13 +31,13 @@ Illuminate\Support\Facades\DB::transaction(function()use($card,$clock):void {
     $domain=$card->domain->fresh();$l=HoldingLocks::take($domain,released:$domain->reservation_name===null);
     expect(ReceiptReturns::adoptClosed($l['operations']->firstWhere('id',$card->id),$l,$clock->now()),'The late receipt gets its own retained return plan');
 });
-ReceiptReturns::resume($card->id,$clock->now());
+ReceiptReturns::resume($card->id,$clock->now(),'refund_rejected');
 same(false,ReceiptReturns::settled($card->fresh()),'The late return is still pending for retry settlement');
 same('Refunded',$refundEvent($card)[0]['event']??null,'A pending late return retains the earlier completed refund');
 // Settle the later receipt as credit to prove it cannot change the earlier refund destination label.
 MoneyReceiptGateway::complete($invoice,'synthetic-late-activity:excess');
 MoneyReceiptGateway::credit($invoice,'synthetic-late-activity:excess');
-ReceiptReturns::resume($card->id,$clock->now());
+ReceiptReturns::resume($card->id,$clock->now(),'refund_rejected');
 same(true,ReceiptReturns::settled($card->fresh()),'The later return has settled');
 same('Refunded',$refundEvent($card)[0]['event']??null,'Later account credit cannot relabel the original payment refund');
 $nativeSuccessful=true;

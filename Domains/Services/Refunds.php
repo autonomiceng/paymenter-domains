@@ -60,7 +60,7 @@ final readonly class Refunds
         OperationClaims::outside(); $seen = Operation::findOrFail($id);
         if (ReceiptReturns::plans($seen)) {
             $review?->local(static fn()=>null);$review=null; // Consume the bound staff review before gateway recovery.
-            $returned = ReceiptReturns::resume($id, $this->clock->now());
+            $returned = ReceiptReturns::resume($id, $this->clock->now(), self::REJECTED);
             $seen->refresh();
             if (ReceiptReturns::malformed($seen) || ReceiptReturns::outstanding($seen)>0 || (!RefundProof::retired($seen, $seen->domain)&&!FundsWaits::closedRenewal($seen,$seen->domain))) { return $returned; }
         }
@@ -124,7 +124,7 @@ final readonly class Refunds
         try {
             if ($decision->error) { throw $decision->error; }
             $result = $decision->value;
-            if (ReceiptReturns::plans(Operation::findOrFail($id))) { return ReceiptReturns::resume($id, $this->clock->now()) ?? $result ?? ($returned ?? null); }
+            if (ReceiptReturns::plans(Operation::findOrFail($id))) { return ReceiptReturns::resume($id, $this->clock->now(), self::REJECTED) ?? $result ?? ($returned ?? null); }
             RefundRepairs::resolved($id, $this->clock->now()->getTimestamp()); return $result;
         } catch (\Throwable $e) { RefundRepairs::failed($id, $this->clock->now()->getTimestamp()); throw $e; }
     }
@@ -211,7 +211,7 @@ final readonly class Refunds
     }
     private function creditClosed(Operation $seen): ?array
     {
-        $returned=ReceiptReturns::plans($seen)?ReceiptReturns::resume((int)$seen->id, $this->clock->now()):null;
+        $returned=ReceiptReturns::plans($seen)?ReceiptReturns::resume((int)$seen->id, $this->clock->now(), self::CLOSED):null;
         $fresh=$seen->fresh();
         // An unreadable return stays with staff before any allocation arithmetic; resume() records a plan's repair itself.
         if (ReceiptReturns::malformed($fresh)) { RefundRepairs::failed((int)$seen->id, $this->clock->now()->getTimestamp()); return null; }
@@ -228,7 +228,7 @@ final readonly class Refunds
         if ($decision->outcome === MoneyOutcome::Deferred) { return $returned; }
         if ($decision->error) { throw $decision->error; }
         $result = $decision->value;
-        if (ReceiptReturns::plans($seen->fresh())) { return ReceiptReturns::resume((int)$seen->id, $this->clock->now()) ?? $result ?? $returned; }
+        if (ReceiptReturns::plans($seen->fresh())) { return ReceiptReturns::resume((int)$seen->id, $this->clock->now(), self::CLOSED) ?? $result ?? $returned; }
         return $result;
     }
     /** Automatic work locks only the order's invoice; a miss reruns on the full scope. Staff and orders with no invoice use the full scope. */
