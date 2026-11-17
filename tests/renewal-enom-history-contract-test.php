@@ -102,7 +102,7 @@ same([],$dense->forms,'An uncovered lost reply reads no history');
 \Paymenter\Extensions\Servers\Domains\Registrars\Enom\TestOrderHistory::upgrade(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$b2->serverId)->sole());
 same([2592000,0],[HistoryAcceptances::load($b2,\Paymenter\Extensions\Servers\Domains\Data\Action::Renew)->retentionSeconds,HistoryAcceptances::load($b2,\Paymenter\Extensions\Servers\Domains\Data\Action::Renew)->lagSeconds],'The saved TEST contract is raised to 30 days and keeps its delay');
 Cache::flush(); $first=$recover->run($stuck->id)->fresh();
-same(['uncertain',0,5,21],[$first->state,$first->policy['renewal_polls'],$first->policy['history_resumption']['prior_polls'],count($dense->forms)],'The new contract resumes the exhausted reads once and the first turn reads both pages and 19 orders');
+same(['uncertain',1,5,21],[$first->state,$first->policy['renewal_polls'],$first->policy['history_resumption']['prior_polls'],count($dense->forms)],'The new contract resumes the exhausted reads once; the first turn reads both pages and 19 orders and counts');
 same(['resolved'=>19,'complete'=>false],array_intersect_key($first->policy['history_scan']['state'],['resolved'=>1,'complete'=>1]),'Scan progress is saved in the operation policy');
 same($clock->now()->getTimestamp()+60,(int)\Illuminate\Support\Facades\DB::table('domains_runtime_operations')->where('operation_id',$stuck->id)->value('due_at'),'The scan continues on the next turn');
 $first->update(['policy'=>[...$first->policy,'renewal_polls'=>5]]); $dense->forms=[]; Cache::flush();
@@ -114,7 +114,7 @@ same('succeeded',$recover->run($stuck->id)->state,'A turn within the limit finis
 same(14,count($dense->forms),'Both pages, the 11 remaining orders and the saved match by its ID');
 same('accepted_history',$stuck->fresh()->attempt['reconciliation']['source'],'Completion comes from accepted history');
 same([$writes+1,$money],[$state->writes,$nativeMoney()],'Only the original lost Extend was sent; invoices, payments and credits are unchanged');
-// A stalled scan: one order detail stays unsupported. Reads that resolve nothing more count toward the read limit and then stop.
+// A stalled scan: one order detail stays unsupported. Every completed read counts, progressing or not, and reads then stop.
 config(['domains.enom_identity.environment'=>null]);
 [$stall,,$b3]=$makeRenewal(placeholderComFixtureName('renew-history-stalled-placeholder.com'));
 [$engine,$writer]=$compose($b3); $state->lost=true;
@@ -126,10 +126,10 @@ config(['domains.enom_identity.environment'=>'test']); $clock->instant=$dense->s
 $turns=[];
 foreach (range(1,11) as $n) { $dense->forms=[]; Cache::flush(); $op=$recover->run($stall->id)->fresh(); $turns[]=[$op->policy['renewal_polls'],count($dense->forms)]; }
 // The stalled scan never completes, so reads stop at the limit.
-same([[0,21],[0,14],[1,3],[2,3],[3,3],[4,3],[5,3],[5,0],[5,0],[5,0],[5,0]],$turns,'Two progressing turns are exempt; each later read that resolves nothing counts once; reads stop at the limit');
+same([[1,21],[2,14],[3,3],[4,3],[5,3],[5,0],[5,0],[5,0],[5,0],[5,0],[5,0]],$turns,'Every completed turn counts once, progressing or not; reads stop at the limit');
 $op=$stall->fresh();
 same(['uncertain',5,'poll_limit_reached',false],[$op->state,$op->policy['history_resumption']['prior_polls'],$op->policy['renewal_execution']['reason'],isset($op->attempt['reconciliation'])],'The resumption revision is used up without completing the renewal');
-same(7,$op->policy['history_scan']['state']['refusal_totals']['detail_unsupported'] ?? null,'Every read of the unsupported order is recorded');
+same(5,$op->policy['history_scan']['state']['refusal_totals']['detail_unsupported'] ?? null,'Every read of the unsupported order is recorded, one per counted turn');
 same([$writes,$money,null],[$state->writes,$nativeMoney(),$op->funding['refund'] ?? null],'No Extend, refund or money change while the scan is stalled');
 // A history read that returns past the 250-second deadline is used up once, like a stalled read; its facts are not acted on.
 config(['domains.enom_identity.environment'=>null]);
@@ -145,8 +145,8 @@ same(['uncertain',1,false],[$op->state,$op->policy['renewal_polls'] ?? 0,isset($
 expect(count($dense->forms)>0,'The late turn did read history');
 $turns=[];
 foreach (range(1,2) as $n) { $dense->forms=[]; Cache::flush(); $clock->instant=$clock->now()->modify('+120 seconds'); $op=$recover->run($late->id)->fresh(); $turns[]=[$op->state,$op->policy['renewal_polls'] ?? 0]; }
-// The progressing turn adds nothing for the late read; the completing turn counts once as every completing read does.
-same([['uncertain',1],['succeeded',2]],$turns,'The late read is counted only once and later on-time turns finish from history');
+// Each later turn counts once, the progressing one and the completing one.
+same([['uncertain',2],['succeeded',3]],$turns,'The late read counts once and each later on-time turn counts once');
 same([$writes,$money],[$state->writes,$nativeMoney()],'No Extend or money change from the late read');
 config(['domains.enom_identity.environment'=>null]);
 $nativeSuccessful=true; echo "Captured Enom history recovers a lost paid renewal without replay or money changes.\n";

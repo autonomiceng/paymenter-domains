@@ -110,10 +110,9 @@ final class OperationReconciliation
                     if(!$this->eligible($op)||self::stamp($op,$domain)!==$stamp){return $op;}
                     $policy=TransferPolling::finished($op->policy,$readStarted);
                     if($scan){$policy['history_scan']=$scan->saved();}
-                    // A scan that resolved more orders is progress, not a failed read; it continues on the next turn.
-                    if($historyRead&&$scan?->progressed){$check->continued=true;$policy['reconciliation']['reason']='original_attempt_unresolved';}
-                    elseif($historyRead){
-                        $policy['reconciliation']['polls']=($policy['reconciliation']['polls']??0)+1;$check->counted=true;
+                    // Every completed history read counts; a scan that resolved more orders runs its next check sooner.
+                    if($historyRead){
+                        $policy['reconciliation']['polls']=($policy['reconciliation']['polls']??0)+1;$check->counted=true;$check->continued=(bool)$scan?->progressed;
                         $limit=$policy['reconciliation']['polls']>=self::POLL_LIMIT;
                         $policy['reconciliation']['reason']=$limit?'poll_limit_reached':'original_attempt_unresolved';
                         if($limit){self::askRegistrar($check,$op,$attempt);}

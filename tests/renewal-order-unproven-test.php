@@ -33,6 +33,9 @@ $shapes = [
     'unreadable detail' => static function ($s) { $s->order = '9002'; $s->detail = '<OrderDetail>unreadable</OrderDetail>'; },
     'charge in another currency' => static function ($s) { $s->order = '9002'; $s->currency = 'EUR'; },
     'matching charge' => static function ($s) { $s->order = '9002'; },
+    // The domain info read shows the renewed expiry; the expiry read then fails or still shows the old date.
+    'later info, failed expiry read' => static function ($s) { $s->order = '7777'; $s->expiry = '10/18/2028 5:00:00 AM'; $s->fail = ReadCommand::Expiry; },
+    'later info, old expiry read' => static function ($s) { $s->order = '7777'; $s->expiry = '10/18/2028 5:00:00 AM'; },
 ];
 $reset = static function () use ($state): void { $state->order = '9002'; $state->fail = null; unset($state->detail, $state->currency); };
 $sent = static function (string $name, string $expiryAfter, string $shape, ?Closure $pay = null) use ($makeRenewal, $compose, $state, $clock, $shapes, $reset) {
@@ -80,13 +83,27 @@ app(\Paymenter\Extensions\Servers\Domains\Services\Refunds::class)->creditReject
 same([$after, $writes, 'rejected'], [$credit(), $state->writes, $op->fresh()->state], 'No second credit, no second renewal');
 
 // 3. Not processed is refused once a check saw a matching charge or an advanced expiry.
-foreach (['matching charge' => ['matching charge', '2027-10-18'], 'advanced expiry' => ['failed order read', '2028-10-18']] as $why => [$shape, $expiry]) {
-    [$op, , , $completion] = $sent('renew-proof-'.str_replace(' ', '-', $why).'-placeholder.com', $expiry, $shape);
-    $readUntilStopped($op, $completion, $why); $before = $credit();
-    expect($record($op, $full, 'not_processed') !== null, "Not processed is refused after a check saw a {$why}");
-    same([null, null, $before], [$op->fresh()->funding['refund_authorization'] ?? null, $op->fresh()->policy['enom_answer'] ?? null, $credit()], "{$why}: no money moves");
+// Every case is checked before one assert, so a failure names each case that was not refused.
+$refused = static function ($op) use ($record, $full, $credit): bool {
+    $before = $credit(); $error = $record($op, $full, 'not_processed'); $op = $op->fresh();
+    return $error !== null && [null, null, $before] === [$op->funding['refund_authorization'] ?? null, $op->policy['enom_answer'] ?? null, $credit()];
+};
+$seen = [];
+// A check that returns after its deadline still keeps the advanced expiry it saw; later checks see the old date.
+[$late, , , $completion] = $sent('renew-proof-late-placeholder.com', '2028-10-18', 'another order');
+$state->duringCommand = ReadCommand::Order; $state->during = static function () use ($clock) { $clock->instant = $clock->now()->modify('+300 seconds'); };
+$completion->run($late->id); $state->duringCommand = null; $state->after = '2027-10-18';
+same(1, $late->fresh()->policy['renewal_polls'] ?? 0, 'The late check counts');
+for ($i = 2; $i <= OperationReconciliation::POLL_LIMIT; $i++) { $clock->instant = $clock->now()->modify('+10 minutes'); $completion->run($late->id); }
+expect(RegistrarAnswers::ready($late->fresh(), $clock->now()), 'Checks stopped after the late check');
+$seen['an advanced expiry in a late check'] = $refused($late);
+foreach (['a matching charge' => ['matching charge', '2027-10-18'], 'an advanced expiry' => ['failed order read', '2028-10-18'],
+    'an advanced expiry before a failed expiry read' => ['later info, failed expiry read', '2027-10-18'],
+    'an advanced expiry before an old expiry read' => ['later info, old expiry read', '2027-10-18']] as $why => [$shape, $expiry]) {
+    [$op, , , $completion] = $sent('renew-proof-'.substr(md5($why), 0, 8).'-placeholder.com', $expiry, $shape);
+    $readUntilStopped($op, $completion, $why); $seen[$why] = $refused($op);
 }
-
+same(array_fill_keys(array_keys($seen), true), $seen, 'Not processed is refused and moves no money after a check saw proof: '.json_encode($seen));
 // 4. Processed still needs real proof: it restarts checks, and only a read with the charge and the new expiry completes it.
 $writes = $state->writes; $before = $credit();
 same(null, $record($op, $full, 'accepted', '9002'), 'Processed is recorded with the saved order number');
@@ -95,7 +112,7 @@ same(['9002', 0, $before], [$op->provider_order_id, $op->policy['renewal_polls']
 expect(!isset($op->funding['refund_authorization']), 'Processed authorizes no refund');
 expect($record($op, $full, 'not_processed') !== null && $record($op, $full, 'accepted', '9002') !== null, 'A second answer after Processed is refused');
 expect($completion->run($op->id)->state !== 'succeeded', 'A read without the charge does not complete it');
-$state->fail = null; $state->order = '9002'; $state->expiry = '2028-10-18'; $state->charge = '8.00';
+$state->fail = null; $state->order = '9002'; $state->expiry = '2028-10-18'; $state->after = '2028-10-18'; $state->charge = '8.00';
 same('succeeded', $completion->run($op->id)->state, 'The renewal completes through the existing read once Enom shows the order');
 same([$writes, $before], [$state->writes, $credit()], 'No second renewal and no refund');
 

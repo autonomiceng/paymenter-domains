@@ -302,7 +302,10 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         if ($domain === null && $identity[0]->code === 'domain_not_in_account' && in_array($attempt->query->action, [Action::Register, Action::Renew], true)) {
             $domain = new DomainSnapshot($this->binding(), $attempt->query->name, false);
         }
+        $seenExpiry = null;
         if ($domain?->owned === true) {
+            // The expiry read can fail or lag after the info read showed a renewed date; that date stays as evidence.
+            $seenExpiry = $domain->expiry;
             $expiry = $this->expiry($attempt->query->name, $context)->facts();
             $domain = new DomainSnapshot($this->binding(), $attempt->query->name, true,
                 ($expiry['provider_reference'] ?? null) === $domain->providerReference ? ($expiry['expiry'] ?? null) : null,
@@ -352,7 +355,7 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
             }
         }
         return new ReconciliationResult($attempt, new DriverResult($this->binding(), Disposition::Unknown,
-            SendState::PossiblySent, ResultReason::Unresolved, new Evidence(domain: $domain, candidates: $candidates, historyComplete: $complete, transfer: $transfer, transferReference: $attempt->transferReference, historyScan: $scan, billZoneSample: $sample)));
+            SendState::PossiblySent, ResultReason::Unresolved, new Evidence(domain: $domain, candidates: $candidates, historyComplete: $complete, transfer: $transfer, transferReference: $attempt->transferReference, historyScan: $scan, billZoneSample: $sample, seenExpiry: $seenExpiry)));
     }
     private static function readNameservers(ProtocolResult $reply, \DateTimeImmutable $observedAt): ?NameserverEvidence
     {

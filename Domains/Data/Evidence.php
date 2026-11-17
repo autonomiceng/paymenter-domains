@@ -12,7 +12,9 @@ final readonly class Evidence
         public ?bool $premium = null, public RenewalStatus $renewal = RenewalStatus::Unknown,
         array $candidates = [], public ?RegistrationEvidence $registration = null, public bool $historyComplete = false, public ?RenewalEvidence $renewalExecution = null, public TransferStatus $transfer = TransferStatus::Unknown, public ?string $transferReference = null,
         public ?\DateTimeImmutable $renewalUntil = null, public bool $transferPrivacyBlocked = false, public ?RegistrarReply $registrarReply = null, public ?RegistrationRefusal $registrationRefusal = null,
-        public ?HistoryScan $historyScan = null, public ?array $billZoneSample = null)
+        public ?HistoryScan $historyScan = null, public ?array $billZoneSample = null,
+        /** An expiry the domain info read reported in this check. Only used to refuse Not processed, never to complete. */
+        public ?DateEvidence $seenExpiry = null)
     {
         if ($billZoneSample !== null && (!in_array($billZoneSample['zone'] ?? null, ['America/Los_Angeles', 'America/Denver'], true)
             || !is_string($billZoneSample['order'] ?? null) || !preg_match('/^[1-9][0-9]{0,19}$/D', $billZoneSample['order']))) { throw new \InvalidArgumentException('Invalid bill zone sample.'); }

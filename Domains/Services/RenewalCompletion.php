@@ -50,11 +50,12 @@ final readonly class RenewalCompletion
         try {
             $ctx = $check->context = new RequestContext($attempt->binding, RequestOrigin::Background, $deadline, new RequestBudget(25), $this->clock, Runtime::limiter());
             $result = $this->bindings->reader($attempt->binding->serverId)->reconcile($attempt, $ctx); $result->requireAttempt($attempt);
-            $sample = $result->result()->evidence()->billZoneSample;
+            // Proof a check saw (a charge or a later expiry) is kept even from a late read or one that fails after this.
+            $seen = $result->result()->evidence(); $sample = $seen->billZoneSample;
             // Scan progress is reusable after the deadline; financial conclusions still require an in-time read.
-            $scan = $result->result()->evidence()->historyScan;
+            $scan = $seen->historyScan;
             if ($this->clock->now() < $ctx->deadline) {
-                $facts = $seen = $result->result()->evidence();
+                $facts = $seen;
                 $covered = $facts->domain?->owned === true && $facts->domain->expiry !== null
                     && ($facts->historyComplete || ($attempt->executionFacts && $attempt->providerReference !== null && count($facts->candidates) > 0));
                 $autoRenewUnconfirmed = $attempt->binding->registrarKey === 'namesilo'
@@ -79,10 +80,10 @@ final readonly class RenewalCompletion
             try { $this->bindings->requireReadableLocked($l['server'], $l['account']); RenewalFunding::requireCurrent($op, $l, true); }
             catch (\PDOException|RenewalBusy $e) { throw $e; } catch (\Throwable) { return $op; }
             if($financialRead){CapturedChargeReview::retain($op,$financialRead,$proof,$this->clock);return $op;}
-            // A history scan that resolved more orders continues without counting. Admission and call-cap deferrals never count.
-            $stalled = !$covered && !($scan?->progressed ?? false) && $ran;
-            $policy = $op->policy; $policy['renewal_polls'] = ($policy['renewal_polls'] ?? 0) + ($covered || $stalled ? 1 : 0); $check->counted = $covered || $stalled;
-            // Saved scan progress; a scan that resolved more orders continues on the next turn.
+            // Every completed check counts, a history scan that resolved more orders too. Admission and call-cap deferrals never count.
+            $check->counted = $covered || $ran;
+            $policy = $op->policy; $policy['renewal_polls'] = ($policy['renewal_polls'] ?? 0) + ($check->counted ? 1 : 0);
+            // Saved scan progress; a scan that resolved more orders runs its next check sooner.
             if ($scan) { $policy['history_scan'] = $scan->saved(); $check->continued = !$covered && $scan->progressed; }
             if ($seen) { $policy = RegistrarAnswers::sawProof($policy, $op, $attempt, $seen, $this->clock->now()); }
             if (!$proof) {

@@ -61,9 +61,10 @@ class RegistrarAnswers
             &&(int)($op->policy['renewal_polls']??0)>=OperationReconciliation::POLL_LIMIT;
     }
     /** A check of this renewal attempt saw a matching charge or a later expiry, or the domain already shows one. Not processed is then refused. */
-    public static function renewalProof(Operation $op,Domain $d,AttemptEvidence $attempt): bool
+    public static function renewalProof(Operation $op,Domain $d): bool
     {
-        $before=$attempt->beforeExpiry?substr($attempt->beforeExpiry->value,0,10):null;$seen=$op->policy['renewal_proof']??null;
+        // The attempt's before-expiry for a renewal is its base expiry (ReconciliationEvidence::attempt).
+        $before=$op->base_expires_at?->format('Y-m-d');$seen=$op->policy['renewal_proof']??null;
         return $before===null||isset($op->cost['actual'])||isset($op->attempt['reconciliation'])||$op->confirmed_expires_at!==null||RenewalCompletion::capturedChargeHeld($op)
             ||is_array($seen)&&is_string($seen['identity']??null)&&hash_equals(self::identity($op),$seen['identity'])
             ||($d->provider_expires_at!==null&&$d->provider_expires_at->format('Y-m-d')>$before);
@@ -72,7 +73,8 @@ class RegistrarAnswers
     public static function sawProof(array $policy,Operation $op,AttemptEvidence $attempt,\Paymenter\Extensions\Servers\Domains\Data\Evidence $facts,\DateTimeImmutable $now): array
     {
         $d=$facts->domain;$before=$attempt->beforeExpiry?substr($attempt->beforeExpiry->value,0,10):null;
-        $later=$d&&$d->binding->matches($attempt->binding)&&$d->name===$attempt->query->name&&$d->owned===true&&$d->expiry!==null&&$before!==null&&substr($d->expiry->value,0,10)>$before;
+        $later=$d&&$d->binding->matches($attempt->binding)&&$d->name===$attempt->query->name&&$d->owned===true&&$before!==null
+            &&collect([$d->expiry,$facts->seenExpiry])->filter()->contains(static fn($e)=>substr($e->value,0,10)>$before);
         if($facts->candidates!==[]||$later){$policy['renewal_proof']=['identity'=>self::identity($op),'at'=>$now->format(DATE_ATOM)];}
         return $policy;
     }
@@ -105,7 +107,7 @@ class RegistrarAnswers
                 ||($outcome!=='not_processed'?!preg_match('/^[1-9][0-9]{0,19}$/D',$reference):$reference!=='')){
                 throw new \DomainException('Record the registrar’s final answer for this account and attempt.');}
             // The one guard on Not processed: no check saw a charge or a renewal.
-            if($outcome==='not_processed'&&$op->action==='renew'&&self::renewalProof($op,$d,$attempt)){throw new \DomainException('A check saw a charge or a new expiry for this renewal, so it can’t be recorded as not processed.');}
+            if($outcome==='not_processed'&&$op->action==='renew'&&self::renewalProof($op,$d)){throw new \DomainException('A check saw a charge or a new expiry for this renewal, so it can’t be recorded as not processed.');}
             if(!$unproven&&$outcome==='not_processed'&&($op->provider_order_id!==null||(isset($op->attempt['registration'])||isset($op->attempt['renewal']))
                 ||isset($op->cost['actual'])||($op->attempt['execution']['send_state']??null)==='sent')){throw new \DomainException('This answer conflicts with the saved registrar result. Ask the registrar to check it.');}
             if($op->provider_order_id!==null&&!$credit&&$reference!==$op->provider_order_id){throw new \DomainException('Registrar order number differs from the saved result.');}
