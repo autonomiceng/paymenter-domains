@@ -577,6 +577,7 @@ final class OperationClaims
                 : \Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id', $route->server_id)->where('tld', $holding->tld)->lockForUpdate()->first();
             $domain = Domain::whereKey($route->domain_id)->lockForUpdate()->firstOrFail();
             $all = Operation::where('domain_id', $domain->id)->orderBy('id')->lockForUpdate()->get();
+            $funding->lockPayments();
             $op = $all->firstWhere('id', $route->id);
             if (!$op || $op->invoice_id !== $route->invoice_id || $op->server_id !== $route->server_id
                 || $domain->user_id !== $holding->user_id || $op->domain_id !== $domain->id) {

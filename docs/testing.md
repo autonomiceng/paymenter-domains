@@ -644,9 +644,10 @@ failure. `tests/test_schema_mariadb_guards.py` checks the harness refusals witho
 Lock order, as native checkout (Cart locks the customer before inserting its invoice):
 every writer locks the customer, then invoices, then what hangs off them. A native
 receipt locks only the invoice core already holds and what hangs off it, never the
-customer. It reads that invoice's payment rows last, after the shared product and
-server rows: that scan gap-locks `invoice_transactions`, and two receipts on
-neighbouring invoices would otherwise each hold the gap the other inserts into.
+customer. Every writer, receipts included, locks payment rows last, after its product,
+server, account, domain and operation rows (`HoldingNativeLocks::transactions`,
+`InvoiceFunding::lockPayments`). That scan gap-locks `invoice_transactions` and a receipt
+inserts into the gap, so any writer sharing a row with the receipt waits on that row first.
 Core runs `ProcessPaid` after the receipt commits (InvoiceObserver `afterCommit`),
 so it holds none of the receipt's locks when it takes the customer.
 
@@ -656,7 +657,11 @@ without a deadlock retry and retain the receipt and closed renewal. For paired
 red/green evidence in one run, `DOMAINS_TEST_RECEIPT_BASE` may name an exported
 buggy source tree. The paired full-scope writer and two-receipt cases must lose
 the non-lowest invoice receipt there and retain both receipts on the candidate,
-where no receipt locks a customer row. Both table prefixes are exercised.
+where no receipt locks a customer row. The `other` case pauses a receipt after its
+payment-row scan while another customer's full decision, whose invoice neighbours it,
+waits on the receipt; both must finish and the payment must record. Set
+`DOMAINS_TEST_RECEIPT_BASE_CASES=other` to run that case against the base tree. Both table
+prefixes are exercised.
 
 `tests/test_checkout_lock_order_mariadb.py` holds a real checkout on its locked
 customer row while Record answer (a full decision) and contact recovery start. Each

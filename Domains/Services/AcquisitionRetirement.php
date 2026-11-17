@@ -233,6 +233,7 @@ final readonly class AcquisitionRetirement
         DB::transaction(function()use($seed):void {
             $l=HoldingNativeLocks::take((int)$seed->user_id,(int)$seed->service_id,seed:$seed);
             $d=Domain::whereKey($seed->id)->lockForUpdate()->firstOrFail();$ops=$d->operations()->orderBy('id')->lockForUpdate()->get();
+            $l['transactions']=HoldingNativeLocks::transactions($l['invoices']->pluck('id'));
             $service=$l['service']->status;$cancelled=$l['cancel']->where('service_id',$d->service_id)->isNotEmpty();
             foreach($ops->whereIn('action',['register','transfer'])as$op){
                 $transactions=$l['transactions']->where('invoice_id',$op->invoice_id);$status=$l['invoices']->firstWhere('id',$op->invoice_id)?->status;

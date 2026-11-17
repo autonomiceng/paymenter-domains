@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Native receipts lock only their invoice and never the customer; money decisions lock the customer first."""
+"""Native receipts lock only their invoice and never the customer; money decisions lock the customer first;
+every writer locks payment rows last, so a receipt survives another customer's neighbouring decision."""
 # MIT, Copyright (c) 2026 Autonomic Engineering.
 import json
 import os
@@ -22,7 +23,9 @@ def exercise(command, php_args, env, scratch):
         revisions.insert(0, ('base', os.environ['DOMAINS_TEST_RECEIPT_BASE']))
     proofs = []
     for revision, runtime in revisions:
-        for case in (('full', 'receipts') if revision == 'base' else ('scoped', 'widened', 'full', 'receipts')):
+        # Base cases default to the ones that failed on the original revision; DOMAINS_TEST_RECEIPT_BASE_CASES picks others.
+        base_cases = tuple(os.environ.get('DOMAINS_TEST_RECEIPT_BASE_CASES', 'full receipts').split())
+        for case in (base_cases if revision == 'base' else ('scoped', 'widened', 'full', 'receipts', 'other')):
             name = revision+'-'+case
             cell = dict(env, RECEIPT_CASE=case, RECEIPT_NAME=name, RECEIPT_RUNTIME=runtime)
             command('receipt-reset-'+name, php_args+[script], env=dict(cell, RECEIPT_PHASE='reset'))
@@ -40,7 +43,7 @@ def exercise(command, php_args, env, scratch):
                             receipt.wait(timeout=5)
                         except subprocess.TimeoutExpired:
                             receipt.kill(); receipt.wait()
-            if case in ('full', 'receipts'):
+            if case in ('full', 'receipts', 'other'):
                 native = json.loads(next(line for line in (barriers/(name+'.stdout')).read_text().splitlines() if line.startswith('{')))
                 other = json.loads(next(line for line in result.stdout.decode().splitlines() if line.startswith('{')))
                 expected = revision != 'base'
@@ -51,9 +54,10 @@ def exercise(command, php_args, env, scratch):
                         or (expected and native['owner_locks'] != 0)
                         or (expected and case == 'receipts' and other['owner_locks'] != 0)):
                     raise AssertionError('Unexpected multi-invoice outcome for '+name+': '+str((native, other)))
-                wait = barriers/(name+'-invoice-wait')
-                if (case == 'full' or not expected) and (not wait.is_file() or wait.read_text() != 'proved'):
-                    raise AssertionError('The other connection did not wait on invoice B')
+                # The other customer's decision must have waited on the paused receipt.
+                wait = barriers/(name+('-other-wait' if case == 'other' else '-invoice-wait'))
+                if (case in ('full', 'other') or not expected) and (not wait.is_file() or wait.read_text() != 'proved'):
+                    raise AssertionError('The other connection did not wait on the receipt for '+name)
                 proofs.append(dict(native, revision=revision, other=other))
                 continue
             if (barriers/(name+'-invoice-wait')).read_text() != 'proved':

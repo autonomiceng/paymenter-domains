@@ -14,8 +14,9 @@ final class InvoiceFunding
 {
     private static ?\WeakMap $contexts = null;
     private bool $active = true;
+    private ?Collection $transactions = null;
     private function __construct(private readonly \Illuminate\Database\Connection $connection,
-        private readonly Invoice $invoice, private readonly Collection $items, private readonly Collection $transactions,
+        private readonly Invoice $invoice, private readonly Collection $items,
         private readonly Collection $orders, private readonly Collection $services, private readonly Collection $products,
         private readonly Collection $plans, private readonly Collection $cancellations) {}
 
@@ -42,7 +43,6 @@ final class InvoiceFunding
         }
         $invoice = Invoice::whereKey($invoiceId)->lockForUpdate()->firstOrFail();
         $items = $invoice->items()->orderBy('id')->lockForUpdate()->get();
-        $transactions = $invoice->transactions()->orderBy('id')->lockForUpdate()->get();
         $ids = $items->where('reference_type', (new Service)->getMorphClass())->pluck('reference_id')->unique();
         [$orders, $services] = HoldingNativeLocks::lockServices($ids->all());
         $orders = $orders->keyBy('id'); $services = $services->keyBy('id');
@@ -50,8 +50,15 @@ final class InvoiceFunding
         $plans = Plan::whereKey($services->pluck('plan_id')->unique())->orderBy('id')->lockForUpdate()->get()->keyBy('id');
         $cancellations = ServiceCancellation::whereIn('service_id', $services->keys())->orderBy('id')->lockForUpdate()->get();
         $cancellations = NativeCancellation::withIntents($cancellations, $services->keys()->all());
-        $context = new self(DB::connection(), $invoice, $items, $transactions, $orders, $services, $products, $plans, $cancellations);
+        $context = new self(DB::connection(), $invoice, $items, $orders, $services, $products, $plans, $cancellations);
         self::$contexts[$context] = true; return $context;
+    }
+
+    /** Lock the invoice's payment rows. Callers take this last, after their server, account, domain and operation rows,
+     * the same order as HoldingNativeLocks::transactions. A caller that locks nothing after the prefix gets them on first read. */
+    public function lockPayments(): void
+    {
+        $this->transactions ??= HoldingNativeLocks::transactions([$this->invoice->id]);
     }
 
     /** Acquisition lifecycle under the same native prefix; renewal/complimentary authority is separate. */
@@ -110,8 +117,10 @@ final class InvoiceFunding
         if(!$service){throw new \DomainException('Missing native service.');}
         return ['domain'=>$domain,'service'=>$service,'product'=>$this->products->get($service->product_id),
             'plan'=>$this->plans->get($service->plan_id),'orders'=>$this->orders,'cancel'=>$this->cancellations,
-            'invoices'=>collect([$this->invoice]),'items'=>$this->items,'transactions'=>$this->transactions];
+            'invoices'=>collect([$this->invoice]),'items'=>$this->items,'transactions'=>$this->payments()];
     }
+
+    private function payments(): Collection { $this->lockPayments(); return $this->transactions; }
 
     public static function requirePaidFacts(Operation $op,array $l): array
     {

@@ -7,7 +7,7 @@ use App\Models\{Invoice, InvoiceItem, InvoiceTransaction, Order, Plan, Product, 
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 
-/** Shared native prefix: owners, then invoices, then sorted orders and services. */
+/** Shared native prefix: owners, then invoices, then sorted orders and services. Payment rows are not in it: see transactions(). */
 final class HoldingNativeLocks
 {
     public static function take(int $ownerId, int $serviceId, ?int $staffId = null, bool $advisory = false,
@@ -43,10 +43,6 @@ final class HoldingNativeLocks
         // A current item read must cover discovery, even if an older read view hid a foreign invoice.
         // Missing invoice locks abort here, before any order/service/ledger locks; never acquire them late.
         if ($adoption && $items->pluck('invoice_id')->diff($ids)->isNotEmpty()) { throw new \DomainException('Adoption invoice coverage changed. Verify again.'); }
-        // A receipt's payment-row scan gap-locks invoice_transactions. Two receipts on neighbouring invoices share that gap,
-        // so a receipt takes it last (HoldingLocks), after the shared product and server rows that already order receipts.
-        $transactions = $nativeReceipt ? collect() : self::transactions($ids, $advisory);
-        if($advisory&&$transactions->count()>100){throw new \DomainException('Advisory payment history requires staff review.');}
         $serviceIds = $items->where('reference_type', (new Service)->getMorphClass())->pluck('reference_id')->push($serviceId)->merge($additionalServices)->unique();
         [$orders, $services] = self::lockServices($serviceIds->all(), $advisory, $expectedOrderId === null ? [] : [$expectedOrderId], $nativeReceipt);
         $products = Product::whereKey($services->pluck('product_id'))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
@@ -63,12 +59,17 @@ final class HoldingNativeLocks
         $upgrades = DB::table('product_upgrades')->where('product_id', $product->id)->orWhere('upgrade_id', $product->id)->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         $links = DB::table('config_option_products')->where('product_id', $product->id)->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         $tax = self::tax($user, $advisory);
-        return compact('user', 'staff', 'credit', 'invoices', 'items', 'transactions', 'orders', 'services', 'products', 'plans', 'service', 'product', 'plan', 'cancel', 'configs', 'properties', 'markers', 'upgrades', 'links', 'tax', 'opIds', 'relatedProperties');
+        return compact('user', 'staff', 'credit', 'invoices', 'items', 'orders', 'services', 'products', 'plans', 'service', 'product', 'plan', 'cancel', 'configs', 'properties', 'markers', 'upgrades', 'links', 'tax', 'opIds', 'relatedProperties');
     }
 
+    /** Payment rows, locked by every writer after all its other rows. The scan gap-locks invoice_transactions, and a
+     * receipt inserts into that gap; taking it last means writers that share any product, server, account or domain
+     * row wait there first, so no writer holds the gap while waiting on a row a receipt holds. */
     public static function transactions($invoiceIds, bool $advisory = false): \Illuminate\Support\Collection
     {
-        return InvoiceTransaction::whereIn('invoice_id', $invoiceIds)->when($advisory,fn($q)=>$q->limit(101))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
+        $rows = InvoiceTransaction::whereIn('invoice_id', $invoiceIds)->when($advisory,fn($q)=>$q->limit(101))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
+        if ($advisory && $rows->count() > 100) { throw new \DomainException('Advisory payment history requires staff review.'); }
+        return $rows;
     }
 
     /** Native Settings::tax selection, using current locked rows rather than a cached read view. */

@@ -53,7 +53,7 @@ final class AcquisitionPaymentReviews
     }
     private function snapshot(Domain $seed,User $actor,bool $advisory): array
     {
-        // Match retirement's native prefix, then domain, operations and alerts in ID order.
+        // Match retirement's native prefix, then domain, operations and alerts in ID order, then payment rows.
         $l=HoldingNativeLocks::take((int)$seed->user_id,(int)$seed->service_id,(int)$actor->id,$advisory,$seed,completeInvoices:true);
         if(!self::allowed($l['staff'])){throw new \DomainException('Current staff permissions required. Reload this page.');}
         $d=Domain::whereKey($seed->id)->when(!$advisory,fn($q)=>$q->lockForUpdate())->firstOrFail();
@@ -63,6 +63,7 @@ final class AcquisitionPaymentReviews
         $alerts=DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code','acquisition_late_money')->whereNull('resolved_at')
             ->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         if($alerts->isEmpty()){throw new \DomainException('No late payment alerts need review.');}
+        $l['transactions']=HoldingNativeLocks::transactions($l['invoices']->pluck('id'),$advisory);
         foreach($alerts as$a){
             $op=$ops->firstWhere('id',$a->operation_id);
             if(!$op||!in_array($op->action,['register','transfer'],true)||!$l['invoices']->contains('id',$op->invoice_id)){

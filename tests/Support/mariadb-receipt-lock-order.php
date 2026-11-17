@@ -36,13 +36,21 @@ if($phase==='seed'){
         DB::table('domains_operations')->where('id',$op->id)->update(['action'=>'renew','state'=>'awaiting_payment']);
         $ids[$kind]=(int)$op->id;
     }
+    // Another customer's retained renewal, checked out next so its invoice neighbours the widened one.
+    $other=commerceUser();$cart=commerceCart($other);commerceAdd($cart,$native->product($tlds[0],'register'),placeholderComFixtureName('receipt-other-placeholder.com'));
+    commerceCheckout($other,$cart)->assertHasNoErrors();
+    $op=Domain::where('domain',placeholderComFixtureName('receipt-other-placeholder.com'))->sole()->operations()->sole();
+    DB::table('invoice_items')->where('id',$op->invoice_item_id)->update(['reference_type'=>null,'reference_id'=>null,'price'=>$op->amount,'quantity'=>1]);
+    DB::table('domains_operations')->where('id',$op->id)->update(['action'=>'renew','state'=>'awaiting_payment']);
+    $ids['other']=(int)$op->id;
     file_put_contents($root.'/ids.json',json_encode($ids,JSON_THROW_ON_ERROR));
     echo "Seeded receipt lock fixtures.\n";$nativeSuccessful=true;return;
 }
 $ids=json_decode(file_get_contents($root.'/ids.json'),true,512,JSON_THROW_ON_ERROR);
-$op=Operation::findOrFail($ids[in_array($case,['full','receipts'],true)?'widened':$case]);$seed=$op->domain()->firstOrFail();
+$cycle=in_array($case,['full','receipts','other'],true);
+$op=Operation::findOrFail($ids[$cycle?'widened':$case]);$seed=$op->domain()->firstOrFail();
 if($phase==='reset'){
-    foreach(in_array($case,['full','receipts'],true)?$ids:[$op->id]as$id){
+    foreach($cycle?$ids:[$op->id]as$id){
         $row=Operation::findOrFail($id);
         DB::table('invoice_transactions')->where('invoice_id',$row->invoice_id)->delete();
         DB::table('invoices')->where('id',$row->invoice_id)->update(['status'=>'cancelled']);
@@ -60,7 +68,7 @@ $runtimePorts=new Paymenter\Extensions\Servers\Domains\Services\RuntimePorts;
 app()->instance(Paymenter\Extensions\Servers\Domains\Services\RuntimePorts::class,$runtimePorts);
 $runtimePorts->registerInitialManagedRecordObservations(Paymenter\Extensions\Servers\Domains\Services\Runtime::initialManagedRecordObservations(...));
 DB::statement('SET SESSION innodb_lock_wait_timeout=20');
-if(in_array($case,['full','receipts'],true)){require __DIR__.'/mariadb-receipt-cycles.php';return;}
+if($cycle){require __DIR__.'/mariadb-receipt-cycles.php';return;}
 if($phase==='receipt'){
     DB::beginTransaction();
     // Weight only this native transaction so a reversed-order runner is the deadlock victim.

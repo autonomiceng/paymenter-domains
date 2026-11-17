@@ -18,7 +18,7 @@ final class HoldingLocks
         $scope ??= $nativeReceipt ? new InvoiceScope($receiptInvoice) : null;
         if (!$advisory && ($nativeReceipt ? DB::transactionLevel() < 1 : DB::transactionLevel() !== 1)) { throw new \LogicException('Holding locks require the outer transaction.'); }
         ['user' => $user, 'staff' => $staff, 'credit' => $credit, 'invoices' => $invoices, 'items' => $items,
-            'transactions' => $transactions, 'orders' => $orders, 'services' => $services, 'products' => $products,
+            'orders' => $orders, 'services' => $services, 'products' => $products,
             'plans' => $plans, 'service' => $service, 'product' => $product, 'plan' => $plan, 'cancel' => $cancel,
             'configs' => $configs, 'properties' => $properties, 'markers' => $markers, 'tax' => $tax,
             'upgrades' => $upgrades, 'links' => $links, 'opIds' => $opIds]
@@ -38,7 +38,8 @@ final class HoldingLocks
         $domain = Domain::whereKey($seed->id)->when(!$advisory,fn($q)=>$q->lockForUpdate())->firstOrFail();
         $operations = Operation::where('domain_id', $seed->id)->when($advisory,fn($q)=>$q->whereIn('id',$opIds)->limit(100))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         $adoption = $domain->adoption_id === null ? null : Adoption::whereKey($domain->adoption_id)->when(!$advisory,fn($q)=>$q->lockForUpdate())->first();
-        if ($nativeReceipt) { $transactions = HoldingNativeLocks::transactions($invoices->pluck('id')); }
+        // Payment rows last, for receipts and every other writer alike (HoldingNativeLocks::transactions).
+        $transactions = HoldingNativeLocks::transactions($invoices->pluck('id'), $advisory);
         // A native receipt can wait behind departure with an older read snapshot. Decide release only after
         // the normal native/server/domain lock prefix; its caller must then verify the frozen departure proof.
         $released = $released || ($nativeReceipt && $domain->status === 'departed');
