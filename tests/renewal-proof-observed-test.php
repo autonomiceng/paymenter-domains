@@ -57,15 +57,15 @@ Cache::flush(); $completion->run($op->id); $fresh = $op->fresh();
 $deferred = [$atReply, $contend, DB::table(MoneyWorkSchema::TABLE)->where('subject_id', $op->id)->count(), isset($fresh->policy['renewal_check']),
     $polls($op), $fresh->policy['renewal_proof']['identity'] ?? null];
 
-// Takeover: once the claim expires, the next check (a lagging read) takes it over, counts its poll and clears it.
+// The deferred check ended its claim once its read and proof were saved. The next check (a lagging read) counts the last poll.
 $state->after = '2027-10-18'; $state->duringCommand = null; $clock->instant = $clock->now()->modify('+1 hour');
 $calls = count($state->calls); $check($op, $completion); $fresh = $op->fresh();
 $takeover = [count($state->calls) > $calls, $polls($op), isset($fresh->policy['renewal_check'])];
 $taken = [$record($op), $credit() - $before, $op->fresh()->state, $state->writes - $writes];
-same([true, 0, $priorState, 0], $taken, 'After deferral and takeover, lagging reads cannot record Not processed: '.json_encode($taken));
-same([$identity, 0, 1, true, OperationReconciliation::POLL_LIMIT - 1, $identity], $deferred,
+same([true, 0, $priorState, 0], $taken, 'After deferral and a later check, lagging reads cannot record Not processed: '.json_encode($taken));
+same([$identity, 0, 1, false, OperationReconciliation::POLL_LIMIT - 1, $identity], $deferred,
     'Proof is saved as the reply returns, and stays when the locked save defers: '.json_encode($deferred));
-same([true, OperationReconciliation::POLL_LIMIT, false], $takeover, 'The next check takes over the deferred check\'s claim');
+same([true, OperationReconciliation::POLL_LIMIT, false], $takeover, 'The next check runs and counts the last poll');
 
 // Resume: staff restart the reads; five more lagging checks reach the limit again, and the saved proof still refuses Not processed.
 $resume($op);
@@ -75,4 +75,4 @@ $fresh = $op->fresh();
 $resumed = [$polls($op), $fresh->policy['renewal_proof']['identity'] ?? null, $record($op), $credit() - $before, $op->fresh()->state, $state->writes - $writes];
 same([OperationReconciliation::POLL_LIMIT, $identity, true, 0, $priorState, 0], $resumed,
     'Proof survives a staff resume and later lagging checks: '.json_encode($resumed));
-echo "Renewal proof is saved as each read returns it and survives deferral, takeover and resume.\n"; $nativeSuccessful = true;
+echo "Renewal proof is saved as each read returns it and survives deferral, a later check and resume.\n"; $nativeSuccessful = true;

@@ -77,4 +77,7 @@ $actual = [$credit() - $before, $fresh->state, $fresh->funding['refund_authoriza
     $fresh->policy['enom_answer'] ?? null, $refused, is_array($proof) && ($proof['identity'] ?? null) === RegistrarAnswers::identity($fresh), $state->writes - $writes];
 same([0, 'uncertain', null, null, true, true, 0], $actual,
     'A matching history charge at the deadline remains proof and prevents returning its payment: '.json_encode($actual));
+$saved = $fresh->policy['renewal_proof'] ?? null;
+same([$proof, true], [$saved, is_array($saved) && is_string($saved['identity'] ?? null) && hash_equals(RegistrarAnswers::identity($fresh), $saved['identity'])],
+    'After the refused answer, the saved proof is unchanged and still names the current attempt');
 echo "Late matching history charge protects renewal money.\n"; $nativeSuccessful = true;

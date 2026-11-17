@@ -16,8 +16,8 @@
   ],
   "explicit": {
     "Domains/Services/HoldingLocks.php": ["tests/cli-renewal-resume-proof-test.php", "tests/renewal-proof-observed-test.php"],
-    "Domains/Services/RenewalProof.php": ["tests/renewal-proof-observed-test.php", "tests/renewal-check-claim-test.php", "tests/cli-renewal-concurrent-proof-test.php", "tests/renewal-answer-retained-proof-test.php"],
-    "Domains/Services/RegistrarCheck.php": ["tests/cli-renewal-resume-proof-test.php", "tests/cli-renewal-concurrent-proof-test.php"],
+    "Domains/Services/RenewalProof.php": ["tests/renewal-proof-observed-test.php", "tests/renewal-check-claim-test.php", "tests/cli-renewal-concurrent-proof-test.php", "tests/renewal-answer-retained-proof-test.php", "tests/renewal-proof-unresolved-test.php"],
+    "Domains/Services/RegistrarCheck.php": ["tests/cli-renewal-resume-proof-test.php", "tests/cli-renewal-concurrent-proof-test.php", "tests/renewal-proof-unresolved-test.php", "tests/renewal-check-claim-test.php"],
     "Domains/Services/InvoiceMoney.php": ["tests/cli-complimentary-external-refund-test.php"],
     "Domains/Services/RegistrarAnswers.php": [
       "tests/renewal-answer-fresh-expiry-test.php",
@@ -26,13 +26,14 @@
       "tests/cli-renewal-resume-proof-test.php",
       "tests/renewal-check-claim-test.php",
       "tests/cli-renewal-concurrent-proof-test.php",
-      "tests/cli-renewal-proof-takeover-test.php"
+      "tests/cli-renewal-proof-takeover-test.php",
+      "tests/renewal-proof-unresolved-test.php"
     ],
     "Domains/Registrars/Enom/History.php": ["tests/renewal-history-deadline-proof-test.php"],
     "Domains/Services/NativeDomainGuard.php": ["tests/complimentary-acquisition-receipt-test.php", "tests/complimentary-departed-receipt-test.php", "tests/complimentary-departed-owner-credit-test.php", "tests/complimentary-receipt-repair-test.php", "tests/cli-complimentary-external-refund-test.php"],
     "Domains/Services/Refunds.php": ["tests/complimentary-acquisition-receipt-test.php", "tests/complimentary-departed-receipt-test.php", "tests/complimentary-departed-owner-credit-test.php", "tests/complimentary-receipt-repair-test.php", "tests/complimentary-refunded-receipt-test.php", "tests/cli-complimentary-external-refund-test.php"],
     "Domains/Services/ComplimentaryInvoices.php": ["tests/complimentary-refunded-receipt-test.php", "tests/cli-complimentary-external-refund-test.php"],
-    "Domains/Services/RenewalCompletion.php": ["tests/renewal-resume-race-proof-test.php", "tests/cli-renewal-resume-proof-test.php", "tests/renewal-check-claim-test.php", "tests/cli-renewal-concurrent-proof-test.php", "tests/renewal-proof-observed-test.php", "tests/cli-renewal-proof-takeover-test.php"],
+    "Domains/Services/RenewalCompletion.php": ["tests/renewal-resume-race-proof-test.php", "tests/cli-renewal-resume-proof-test.php", "tests/renewal-check-claim-test.php", "tests/cli-renewal-concurrent-proof-test.php", "tests/renewal-proof-observed-test.php", "tests/cli-renewal-proof-takeover-test.php", "tests/renewal-proof-unresolved-test.php"],
     "Domains/Services/MoneyDecisions.php": ["tests/cli-renewal-proof-takeover-test.php", "tests/renewal-proof-observed-test.php"],
     "Domains/Services/HoldingDeparture.php": ["tests/complimentary-departed-receipt-test.php", "tests/complimentary-departed-owner-credit-test.php"],
     "tests/Support/staff-tld-filter-lookalikes.php": ["tests/staff-tld-page-test.php"],

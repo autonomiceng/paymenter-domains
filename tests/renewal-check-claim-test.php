@@ -64,7 +64,8 @@ $state->after = '2027-10-18';
 same([true, 0], [$record($op), $credit() - $before], 'Later lagging reads cannot record Not processed for the observed renewal');
 
 // A check that died after its Expiry reply showed the renewal: other checks wait while its claim is live, the proof saved with
-// that reply refuses Not processed once the claim expires, and the next check takes the claim over, counts its poll and clears it.
+// that reply refuses Not processed once the claim expires, and the next check takes the claim over and counts its poll. The claim
+// stays as an unresolved mark, so Not processed stays refused.
 [$op, $d, $b] = $makeRenewal(placeholderComFixtureName('check-claim-stale-placeholder.com'));
 [$engine, $writer, $completion] = $compose($b);
 same('pending', $engine->run($op->id, $writer)->state, 'The second renewal was sent once');
@@ -82,6 +83,7 @@ same([true, 0, OperationReconciliation::POLL_LIMIT - 1, true], $live, 'A live cl
 $clock->instant = $clock->now()->modify('+'.(OperationReconciliation::POLL_LIMIT * 600).' seconds'); $before = $credit();
 same([true, 0, 'pending'], [$record($op), $credit() - $before, $op->fresh()->state === 'rejected' ? 'rejected' : 'pending'], 'A lost check\'s saved proof refuses Not processed after its claim expires');
 $calls = count($state->calls); $check($op, $completion); $fresh = $op->fresh();
-same([true, OperationReconciliation::POLL_LIMIT, false], [count($state->calls) > $calls, $polls($op), isset($fresh->policy['renewal_check'])],
-    'The next check takes over the expired claim, counts its poll and clears it');
+same([true, OperationReconciliation::POLL_LIMIT, true, false, true], [count($state->calls) > $calls, $polls($op), $fresh->policy['renewal_check']['unresolved'] ?? null,
+    isset($fresh->policy['renewal_check']['token']), $record($op)],
+    'The next check takes over the expired claim and counts its poll; the lost check stays unresolved and Not processed refused');
 echo "One registrar check runs at a time per renewal attempt.\n"; $nativeSuccessful = true;
