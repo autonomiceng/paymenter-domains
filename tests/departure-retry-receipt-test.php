@@ -7,7 +7,7 @@ use App\Models\Credit;
 use Illuminate\Support\Facades\{Crypt,DB};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Services\{EnomAnswers,FundsWaits,HoldingDeparture,HoldingLocks,MoneyOutcome,PricingRule,Refunds,RenewalCycles,RenewalRetries,StaffHoldingReview};
+use Paymenter\Extensions\Servers\Domains\Services\{EnomAnswers,FundsWaits,HoldingDeparture,HoldingLocks,MoneyOutcome,PricingRule,Refunds,RenewalRetries,StaffHoldingReview};
 
 $nativeSuccessful=false;
 staffPanel();
@@ -35,17 +35,18 @@ $ticket=StaffHoldingReview::ticket((int)$staff->id,(int)$d->id,HoldingDeparture:
 $result=(new HoldingDeparture($clock))->confirm($staff,(int)$d->id,$ticket,'other_registrar','Checked the registrar account.');
 same([MoneyOutcome::Applied,null],[$result->outcome,$result->error?->getMessage()],'Settled retry history allows departure');
 $owner=(int)$d->user_id;$before=$cash($owner);
-$error=null;try{App\Helpers\ExtensionHelper::addPayment($invoice->fresh(),null,'1.20','0.00','departed-retry-late');}catch(Throwable $e){$error=$e;}
-same(null,$error?->getMessage(),'A late receipt accepts the resolved predecessor and closed retry child');
+app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
+App\Helpers\ExtensionHelper::addPayment($invoice->fresh(),null,'1.20','0.00','departed-retry-late');
+same('cancelled',$invoice->fresh()->status,'The late receipt is recorded and the invoice stays cancelled');
+same($before+120,$cash($owner),'The late receipt returns once to the owner after commit');
 (new Refunds($clock))->creditRejected((int)$child->id);
-same($before+120,$cash($owner),'The late receipt returns once to the owner');
-// Neither an open child nor a missing retry link grants admission.
+same($before+120,$cash($owner),'A second pass credits nothing more');
+// An unresolved retry chain still records the payment; nothing credits it automatically, so it stays with staff.
 foreach(['open','missing'] as $case){
-    DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'cancelled']);
-    $saved=$child->fresh()->getRawOriginal();
+    $saved=$child->fresh()->getRawOriginal();$before=$cash($owner);$rows=$invoice->transactions()->count();
     DB::table('domains_operations')->where('id',$child->id)->update($case==='open'?['state'=>'queued']:['operation_key'=>$childKey.':missing']);
-    $refused=false;try{RenewalCycles::beforePayment((int)$invoice->id,$clock);}catch(DomainException){$refused=true;}
-    same(true,$refused,'An unresolved retry chain refuses departed admission: '.$case);
+    App\Helpers\ExtensionHelper::addPayment($invoice->fresh(),null,'1.00','0.00','departed-unresolved-'.$case);
+    same([$rows+1,'cancelled',$before],[$invoice->transactions()->count(),$invoice->fresh()->status,$cash($owner)],'An unresolved retry chain records the receipt and credits nothing: '.$case);
     DB::table('domains_operations')->where('id',$child->id)->update($saved);
 }
 echo "A departed receipt follows resolved retry history to its closed child.\n";

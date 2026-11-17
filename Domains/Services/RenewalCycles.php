@@ -46,45 +46,6 @@ final readonly class RenewalCycles
         if ($invoice !== null) { InvoiceScope::cover($l, $invoice); }
         return $l['transactions']->contains(fn ($row) => (int) $row->invoice_id === $invoice && $row->status !== InvoiceTransactionStatus::Failed);
     }
-    /** Native receipts may make Cancelled invoices Paid. Close their unpaid authority before INSERT, not at Paid or a later sweep. */
-    public static function beforePayment(int $invoiceId, Clock $clock, ?int $receiptId = null): void
-    {
-        $open = ['awaiting_payment', 'queued', 'held'];
-        $domainId = Operation::where('invoice_id', $invoiceId)->where('action', 'renew')->first()?->domain_id;
-        if ($domainId === null) { return; }
-        // Retained membership survives an older snapshot; only the ordered, current locked scan decides state.
-        $write = static function () use ($domainId, $invoiceId, $clock, $open, $receiptId): void {
-            // Native updateOrCreate uses a savepoint; all locks still belong to the outer payment transaction.
-            if (Invoice::whereKey($invoiceId)->lockForUpdate()->value('status') !== 'cancelled') { return; }
-            $seed = Domain::find($domainId);
-            if (!$seed) { return; }
-            $l = HoldingLocks::take($seed, nativeReceipt: true, receiptInvoice: $invoiceId);
-            // Only the current locked holding decides routing; the discovery read can be an older payment snapshot.
-            if ($l['domain']->status === 'departed') { self::admitDeparted($l, $invoiceId); return; }
-            foreach ($l['operations']->where('invoice_id', $invoiceId)->where('action', 'renew')->whereIn('state', $open) as $op) {
-                if (!self::canRetireUnpaid($op, $l)) {
-                    $receipt=$l['transactions']->firstWhere('id',$receiptId);
-                    if(!$receipt||(int)$receipt->invoice_id!==$invoiceId||$receipt->status!==InvoiceTransactionStatus::Processing){throw new \DomainException('Cancelled renewal needs payment review before another receipt.');}
-                    try{FundsWaits::closeRenewal($op,$l,$clock->now(),$l['transactions']->where('invoice_id',$invoiceId)->pluck('id')->all());}
-                    catch(\DomainException){$op->update(['state'=>'held','safe_code'=>'renewal_funding_or_authority']);}
-                    // Accounting evidence must settle even when authority or an attempted send still needs review.
-                    continue;
-                }
-                self::retireLocked($op, $l, self::early($op, $clock->now()) !== null ? self::EARLY_REASON : 'Unpaid renewal cancelled', $clock);
-            }
-        };
-        if (DB::transactionLevel() === 0) { FreshTransaction::run($write); } else { $write(); }
-    }
-    /** A late receipt on a departed holding joins the payment transaction on the released row. It needs the frozen
-     * departure record and every renewal on the invoice closed unsent; it restores no reservation, service or renewal. */
-    private static function admitDeparted(array $l, int $invoiceId): void
-    {
-        $ops = $l['operations']->where('invoice_id', $invoiceId)->where('action', 'renew');
-        if (!DepartureProof::verified($l['domain']) || $ops->isEmpty() || $ops->contains(static fn ($op) => $op->state !== 'rejected'
-            || (!RefundProof::retired($op, $l['domain']) && !FundsWaits::closedRenewal($op, $l['domain']) && !RenewalRetries::resolved($op, $l['domain'], $l['operations'])))) {
-            throw new \DomainException('Departed renewal needs payment review before another receipt.');
-        }
-    }
     public function retireUnpaid(int $id): Operation
     {
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();

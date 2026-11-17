@@ -11,6 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account, Operation};
 final readonly class Refunds
 {
     private const REJECTED='refund_rejected', CLOSED='refund_closed';
+    private const OPEN = ['awaiting_payment', 'queued', 'held'];
     public function __construct(private Clock $clock) {}
     public function refundHeld(User $actor, int $id, string $reason, ?StaffOperationReview $review = null): ?array
     {
@@ -244,7 +245,80 @@ final readonly class Refunds
             if($inspect){try{app(AcquisitionRetirement::class)->inspectMany(array_keys($inspect));}
                 catch(\Throwable $e){$failure??=$e;}}
         }
+        // Renewal receipts run even when a closed order failed above.
+        try { $credited = [...$credited, ...$this->creditRenewalSweep($account)]; } catch (\Throwable $e) { $failure ??= $e; }
         if ($failure !== null) { throw $failure; }
+        return $credited;
+    }
+    /** After core commits a receipt on a renewal invoice: credit a cancelled renewal's or a complimentary receipt's money. */
+    public function creditRenewalReceipts(int $invoice): array
+    {
+        $credited = []; $failure = null;
+        // A retried renewal shares its invoice: one row needing staff does not stop the next from crediting.
+        foreach (Operation::where('invoice_id', $invoice)->where('action', 'renew')->orderBy('id')->pluck('id') as $id) {
+            try { if ($this->creditCancelledRenewal((int) $id) !== null) { $credited[] = (int) $id; } }
+            catch (\Throwable $e) { $failure ??= $e; }
+        }
+        if ($failure !== null) { throw $failure; }
+        return $credited;
+    }
+    /** A receipt on a cancelled renewal invoice is recorded and the invoice stays cancelled (NativeDomainGuard). Close the
+     * renewal unsent with its receipts, then return them once as account credit, keyed by payment row (creditLate). */
+    public function creditCancelledRenewal(int $id): ?array
+    {
+        OperationClaims::outside(); $seen = Operation::findOrFail($id);
+        if ($seen->action !== 'renew') { return null; }
+        if ($seen->funding_basis === 'complimentary') { return $this->creditComplimentary($seen); }
+        if (in_array($seen->state, self::OPEN, true)) {
+            $seed = $seen->domain()->firstOrFail();
+            FreshTransaction::run(function () use ($seed, $id): void {
+                $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
+                $receipts = $l['transactions']->where('invoice_id', $op?->invoice_id)->filter(static fn ($row) => $row->status !== InvoiceTransactionStatus::Failed);
+                if (!$op || !in_array($op->state, self::OPEN, true) || $l['invoices']->firstWhere('id', $op->invoice_id)?->status !== 'cancelled' || $receipts->isEmpty()) { return; }
+                try { FundsWaits::closeRenewal($op, $l, $this->clock->now(), $receipts->pluck('id')->values()->all()); }
+                // A renewal that may have reached the registrar keeps its money with staff.
+                catch (\DomainException) { $op->update(['state' => 'held', 'safe_code' => 'renewal_funding_or_authority']); }
+            });
+        }
+        $seen->refresh(); if ($seen->state !== 'rejected' || \App\Models\Invoice::whereKey($seen->invoice_id)->value('status') !== 'cancelled') { return null; }
+        return $this->creditRejected($id);
+    }
+    /** A complimentary renewal's receipt is a zero paid invoice; a payment on it returns as account credit, keyed by payment row. */
+    private function creditComplimentary(Operation $seen): ?array
+    {
+        $seed = $seen->domain()->firstOrFail();
+        return FreshTransaction::run(function () use ($seed, $seen): ?array {
+            $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $seen->id);
+            if (!$op || $op->funding_basis !== 'complimentary' || $op->invoice_id === null) { return null; }
+            $payments = ComplimentaryInvoices::uncredited($op, $l['transactions']->where('invoice_id', $op->invoice_id));
+            $minor = array_sum(array_column($payments, 'amount_minor'));
+            if ($minor <= 0) { return null; }
+            $credit = $l['credit'] ?? new Credit(['user_id' => $l['user']->id, 'currency_code' => 'USD', 'amount' => '0.00']);
+            $credit->amount = PricingRule::decimal(PricingRule::minor((string) $credit->amount) + $minor); $credit->save();
+            $late = ['payments' => $payments, 'amount' => PricingRule::decimal($minor), 'currency' => 'USD', 'to' => 'account_credit',
+                'credit_id' => (int) $credit->id, 'at' => $this->clock->now()->format(DATE_ATOM)];
+            $op->update(['funding' => [...($op->funding ?? []), 'late_credits' => [...($op->funding['late_credits'] ?? []), $late]]]);
+            return ['amount' => $late['amount'], 'currency' => 'USD'];
+        });
+    }
+    /** The sweep for receipts the after-commit credit missed: renewals on a cancelled or complimentary invoice with a
+     * succeeded payment. Credit is keyed by payment row, so a renewal already credited changes nothing.
+     * @return list<int> Domains that got credit. */
+    private function creditRenewalSweep(Account $account): array
+    {
+        $cursor = 'domains.renewal-receipt-cursor.'.$account->server_id; $from = (int) Cache::get($cursor, 0); $credited = [];
+        $rows = Operation::where('server_id', $account->server_id)->where('action', 'renew')->where('id', '>', $from)
+            ->where(fn ($q) => $q->where('funding_basis', 'complimentary')->orWhereIn('invoice_id', \App\Models\Invoice::select('id')->where('status', 'cancelled')))
+            ->whereIn('invoice_id', InvoiceTransaction::select('invoice_id')->where('status', InvoiceTransactionStatus::Succeeded))
+            ->orderBy('id')->limit(100)->get(['id', 'domain_id']);
+        foreach ($rows as $row) {
+            try { if ($this->creditCancelledRenewal((int) $row->id) !== null) { $credited[] = (int) $row->domain_id; } }
+            catch (\Throwable $e) {
+                try { logger()->warning('Domains renewal receipt credit stays with staff.', ['operation_id' => (int) $row->id, 'exception_class' => $e::class]); }
+                catch (\Throwable) { /* Logging cannot stop the remaining renewals. */ }
+            }
+        }
+        Cache::forever($cursor, $rows->count() === 100 ? (int) $rows->last()->id : 0);
         return $credited;
     }
     private function creditClosed(Operation $seen): ?array
