@@ -271,7 +271,7 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         if (!is_string($id) || !preg_match('/^[1-9][0-9]{0,19}$/D', $id)) { return $this->neutral(new ProtocolResult('unknown', 'order_unconfirmed')); }
         $order = $this->read(ReadCommand::Order, ['OrderID' => $id], $context);
         $candidate = OrderCharge::read($attempt, $execution, $order);
-        if (!$candidate) { return $this->neutral(new ProtocolResult('unknown', 'order_unconfirmed'), new Evidence(orderRead: $order->status === 'success', orderFound: OrderCharge::found($attempt, $order))); }
+        if (!$candidate) { return $this->neutral(new ProtocolResult('unknown', 'order_unconfirmed'), new Evidence(orderRead: OrderCharge::completedAbsence($attempt, $order), orderFound: OrderCharge::found($attempt, $order))); }
         $expected = $attempt->expectedCharge;
         $difference = $expected && ($expected->currency !== 'USD' || rtrim(rtrim($expected->amount, '0'), '.') !== rtrim(rtrim($candidate->charge->amount, '0'), '.'));
         return new DriverResult($this->binding(), $difference ? Disposition::AcceptedWithDiscrepancy : Disposition::Accepted,

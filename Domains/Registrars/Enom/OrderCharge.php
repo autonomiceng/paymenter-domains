@@ -79,6 +79,10 @@ final class OrderCharge
         }
         return false;
     }
+    /** A completed order detail read that shows no order of this attempt. A reply carrying the attempt's own order number
+     * whose detail is missing or unreadable is an incomplete read, never an absence. */
+    public static function completedAbsence(AttemptEvidence $attempt, ProtocolResult $order): bool
+    { return $order->status === 'success' && $attempt->providerReference !== null && $order->value('order.orderid') !== $attempt->providerReference; }
     /** Every parsed item must positively name a different canonical domain. */
     public static function unrelated(AttemptEvidence $attempt, ProtocolResult $order): bool
     {
