@@ -115,4 +115,14 @@ $op = $op->fresh();
 same(false, isset($op->policy['order_unproven']), 'A read that found the charged order saves no unproven evidence');
 expect($record($op, $full, 'not_processed') !== null, 'Not processed is refused for an order Enom shows as charged');
 same([null, $before], [$op->fresh()->funding['refund_authorization'] ?? null, $credit()], 'No money moves');
+// 6. Order detail shows the matching order but its charge is in another currency, so no charge is read from it: the order was
+// still found, so the read is not unproven and Not processed stays refused.
+$state->order = '9002';
+[$op, $engine, $writer, $completion] = $sent('renew-unproven-rejected-charge-placeholder.com', '2027-10-18');
+$state->order = '9002'; $state->currency = 'EUR'; $before = $credit();
+for ($i = 0; $i <= OperationReconciliation::POLL_LIMIT; $i++) { $completion->run($op->id); $clock->instant = $clock->now()->modify('+10 minutes'); }
+unset($state->currency); $op = $op->fresh();
+same([0, false], [$op->policy['renewal_polls'] ?? 0, isset($op->policy['order_unproven'])], 'A read that found the order with a rejected charge does not count and saves no unproven evidence');
+expect(!RegistrarAnswers::ready($op, $clock->now()) && $record($op, $full, 'not_processed') !== null, 'Not processed is refused for a found order whose charge could not be read');
+same([null, $before], [$op->fresh()->funding['refund_authorization'] ?? null, $credit()], 'No money moves');
 echo "A renewal with an order number stops its checks at the limit and each answer moves money once.\n"; $nativeSuccessful = true;

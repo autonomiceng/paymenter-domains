@@ -14,7 +14,9 @@ final readonly class Evidence
         public ?\DateTimeImmutable $renewalUntil = null, public bool $transferPrivacyBlocked = false, public ?RegistrarReply $registrarReply = null, public ?RegistrationRefusal $registrationRefusal = null,
         public ?HistoryScan $historyScan = null, public ?array $billZoneSample = null, public array $expiryReads = [],
         // The order detail read for the attempt's own order number completed, whether or not it found that order.
-        public bool $orderRead = false)
+        public bool $orderRead = false,
+        // That read returned the attempt's own order naming its domain, even when its charge facts were rejected.
+        public bool $orderFound = false)
     {
         if ($billZoneSample !== null && (!in_array($billZoneSample['zone'] ?? null, ['America/Los_Angeles', 'America/Denver'], true)
             || !is_string($billZoneSample['order'] ?? null) || !preg_match('/^[1-9][0-9]{0,19}$/D', $billZoneSample['order']))) { throw new \InvalidArgumentException('Invalid bill zone sample.'); }
