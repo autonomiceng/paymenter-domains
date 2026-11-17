@@ -644,8 +644,11 @@ failure. `tests/test_schema_mariadb_guards.py` checks the harness refusals witho
 Lock order, as native checkout (Cart locks the customer before inserting its invoice):
 every writer locks the customer, then invoices, then what hangs off them. A native
 receipt locks only the invoice core already holds and what hangs off it, never the
-customer. Core `ProcessPaid` still takes invoice then customer; InnoDB picks a
-deadlock victim there and the money runner retries.
+customer. It reads that invoice's payment rows last, after the shared product and
+server rows: that scan gap-locks `invoice_transactions`, and two receipts on
+neighbouring invoices would otherwise each hold the gap the other inserts into.
+Core runs `ProcessPaid` after the receipt commits (InvoiceObserver `afterCommit`),
+so it holds none of the receipt's locks when it takes the customer.
 
 `tests/test_receipt_lock_order_mariadb.py` pairs a native cancelled-renewal receipt
 with an invoice-scoped money decision, including its full-scope retry. Both finish

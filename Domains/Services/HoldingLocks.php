@@ -38,6 +38,7 @@ final class HoldingLocks
         $domain = Domain::whereKey($seed->id)->when(!$advisory,fn($q)=>$q->lockForUpdate())->firstOrFail();
         $operations = Operation::where('domain_id', $seed->id)->when($advisory,fn($q)=>$q->whereIn('id',$opIds)->limit(100))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         $adoption = $domain->adoption_id === null ? null : Adoption::whereKey($domain->adoption_id)->when(!$advisory,fn($q)=>$q->lockForUpdate())->first();
+        if ($nativeReceipt) { $transactions = HoldingNativeLocks::transactions($invoices->pluck('id')); }
         // A native receipt can wait behind departure with an older read snapshot. Decide release only after
         // the normal native/server/domain lock prefix; its caller must then verify the frozen departure proof.
         $released = $released || ($nativeReceipt && $domain->status === 'departed');

@@ -43,7 +43,9 @@ final class HoldingNativeLocks
         // A current item read must cover discovery, even if an older read view hid a foreign invoice.
         // Missing invoice locks abort here, before any order/service/ledger locks; never acquire them late.
         if ($adoption && $items->pluck('invoice_id')->diff($ids)->isNotEmpty()) { throw new \DomainException('Adoption invoice coverage changed. Verify again.'); }
-        $transactions = InvoiceTransaction::whereIn('invoice_id', $ids)->when($advisory,fn($q)=>$q->limit(101))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
+        // A receipt's payment-row scan gap-locks invoice_transactions. Two receipts on neighbouring invoices share that gap,
+        // so a receipt takes it last (HoldingLocks), after the shared product and server rows that already order receipts.
+        $transactions = $nativeReceipt ? collect() : self::transactions($ids, $advisory);
         if($advisory&&$transactions->count()>100){throw new \DomainException('Advisory payment history requires staff review.');}
         $serviceIds = $items->where('reference_type', (new Service)->getMorphClass())->pluck('reference_id')->push($serviceId)->merge($additionalServices)->unique();
         [$orders, $services] = self::lockServices($serviceIds->all(), $advisory, $expectedOrderId === null ? [] : [$expectedOrderId], $nativeReceipt);
@@ -62,6 +64,11 @@ final class HoldingNativeLocks
         $links = DB::table('config_option_products')->where('product_id', $product->id)->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         $tax = self::tax($user, $advisory);
         return compact('user', 'staff', 'credit', 'invoices', 'items', 'transactions', 'orders', 'services', 'products', 'plans', 'service', 'product', 'plan', 'cancel', 'configs', 'properties', 'markers', 'upgrades', 'links', 'tax', 'opIds', 'relatedProperties');
+    }
+
+    public static function transactions($invoiceIds, bool $advisory = false): \Illuminate\Support\Collection
+    {
+        return InvoiceTransaction::whereIn('invoice_id', $invoiceIds)->when($advisory,fn($q)=>$q->limit(101))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
     }
 
     /** Native Settings::tax selection, using current locked rows rather than a cached read view. */

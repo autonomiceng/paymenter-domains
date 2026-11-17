@@ -43,11 +43,12 @@ try{
                 // A full decision locks the customer, then invoice A, then waits on B.
                 $signal('runner-started');HoldingLocks::take($seed);
             }else{
-                // A second native receipt arrives owning its distinct invoice A and pauses inside its hook.
+                // A second native receipt arrives owning its distinct invoice A and pauses inside its hook
+                // after its payment-row scan, just before its own receipt insert.
                 Invoice::whereKey($first->invoice_id)->lockForUpdate()->firstOrFail();$signal('runner-started');
                 $armed=true;
                 DB::listen(static function($q)use(&$armed,$prefix,$signal,$wait):void{
-                    if($armed&&str_contains($q->sql,'from `'.$prefix.'domains_operations`')&&str_contains($q->sql,'for update')){
+                    if($armed&&str_contains($q->sql,'from `'.$prefix.'invoice_transactions`')&&str_contains($q->sql,'for update')){
                         $armed=false;$signal('second-hook');$wait('primary-started');
                     }
                 });
