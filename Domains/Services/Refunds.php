@@ -297,7 +297,8 @@ final readonly class Refunds
             $l = HoldingLocks::take($seed, released: $released); $op = $l['operations']->firstWhere('id', $seen->id);
             if ($released && !DepartureProof::verified($l['domain'])) { throw new \DomainException('Departed complimentary proof is unavailable.'); }
             if (!$op || $op->funding_basis !== 'complimentary' || $op->invoice_id === null) { return null; }
-            $payments = ComplimentaryInvoices::uncredited($op, $l['transactions']->where('invoice_id', $op->invoice_id));
+            // The invoice money ledger nets out earlier credit and gateway refunds or lost disputes, per receipt.
+            $payments = RefundPayment::lateUncredited($op, $l);
             $minor = array_sum(array_column($payments, 'amount_minor'));
             if ($minor <= 0) { return null; }
             $credit = $l['credit'] ?? new Credit(['user_id' => $l['user']->id, 'currency_code' => 'USD', 'amount' => '0.00']);

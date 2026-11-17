@@ -42,11 +42,11 @@ final readonly class RenewalCompletion
                 // Checks stop at the read limit.
                 if (($op->policy['renewal_polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT) { return null; }
                 $read=$financial?CapturedChargeReview::reserve($op,$this->clock):null;
-                return [$attempt, HoldingLocks::take($l['domain'])['stamp'],$read];
+                return [$attempt, HoldingLocks::take($l['domain'])['stamp'],$read,RegistrarAnswers::identity($op)];
             } catch (\PDOException|RenewalBusy $e) { throw $e; } catch (\Throwable) { return null; }
         }, $staff);
         if (!$capture) { return Operation::findOrFail($id); }
-        [$attempt, $stamp,$financialRead] = $capture; $proof = null; $covered = false; $autoRenewConfirmed = false; $autoRenewUnconfirmed = $attempt->binding->registrarKey === 'namesilo'; $scan = null; $sample = null; $seen = null;
+        [$attempt, $stamp,$financialRead,$identity] = $capture; $proof = null; $covered = false; $autoRenewConfirmed = false; $autoRenewUnconfirmed = $attempt->binding->registrarKey === 'namesilo'; $scan = null; $sample = null; $seen = null;
         try {
             $ctx = $check->context = new RequestContext($attempt->binding, RequestOrigin::Background, $deadline, new RequestBudget(25), $this->clock, Runtime::limiter());
             $result = $this->bindings->reader($attempt->binding->serverId)->reconcile($attempt, $ctx); $result->requireAttempt($attempt);
@@ -74,8 +74,15 @@ final readonly class RenewalCompletion
         // A bill zone sample is saved only after this turn's locked step: server settings are part of the holding stamp it compares.
         try {
         if (!$financialRead && !$covered && !$autoRenewUnconfirmed && !$autoRenewConfirmed && !$ran && !$seen) { return Operation::findOrFail($id); }
-        return $this->decide($seed, $id, function (array $l) use ($id, $stamp, $proof, $attempt, $covered, $autoRenewUnconfirmed, $autoRenewConfirmed,$financialRead,$check,$scan,$ran,$seen) {
+        return $this->decide($seed, $id, function (array $l) use ($id, $stamp, $proof, $attempt, $covered, $autoRenewUnconfirmed, $autoRenewConfirmed,$financialRead,$check,$scan,$ran,$seen,$identity) {
             $op = $l['operations']->firstWhere('id', $id); $d = $l['domain'];
+            // A concurrent check or staff resume changes the stamp, so this completion is stale. A charge or later expiry this
+            // read saw for the same attempt and binding is still kept, so a later lagging read cannot permit Not processed.
+            if ($op && $seen && $l['stamp'] !== $stamp && $this->eligible($op) && RegistrarAnswers::identity($op) === $identity
+                && AccountBindings::binding($l['account'])->matches($attempt->binding)) {
+                $kept = RegistrarAnswers::sawProof($op->policy ?? [], $op, $attempt, $seen, $this->clock->now());
+                if (($kept['renewal_proof'] ?? null) !== ($op->policy['renewal_proof'] ?? null)) { $op->update(['policy' => $kept]); }
+            }
             if (!$op || !$this->eligible($op) || $l['stamp'] !== $stamp || ($proof && $proof['provider_domain_id'] !== $d->provider_domain_id)) { return $op; }
             try { $this->bindings->requireReadableLocked($l['server'], $l['account']); RenewalFunding::requireCurrent($op, $l, true); }
             catch (\PDOException|RenewalBusy $e) { throw $e; } catch (\Throwable) { return $op; }
