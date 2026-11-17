@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Models\{Invoice,Order,Service,User};
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
 
@@ -10,6 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
 final class NativeUserDeletion
 {
     public const RETAINED='This customer cannot be deleted because Domains retains a domain, reservation or billing obligation for them.';
+    public const BUSY='This customer cannot be deleted while their billing is being updated. Try again in a moment.';
     public const PENDING='Domain checkout is unavailable because deletion was requested for this customer. Contact support to finish the deletion.';
     public static function boot(): void
     {
@@ -28,12 +30,12 @@ final class NativeUserDeletion
         $write=static function()use($user):void {
             $ids=array_values(array_unique(array_filter([$user->getRawOriginal('id'),$user->id])));sort($ids,SORT_NUMERIC);
             if(!Schema::hasTable(UserDeletionSchema::TABLE)){self::refuse($user,'Customer deletion is unavailable until the Domains update is finished.');}
-            // Current reads also protect a caller with an older repeatable-read snapshot.
-            $invoices=Invoice::whereIn('user_id',$ids)->orderBy('id')->lockForUpdate()->get(['id']);
+            // Owner first, as native checkout holds it before inserting its invoice. A new owner invoice then waits on this
+            // row through its foreign key, so the current read below sees every invoice under any isolation level and snapshot.
             User::whereKey($ids)->orderBy('id')->lockForUpdate()->get();
-            // Under READ COMMITTED the read above reserves no range, so an invoice committed before the owner lock shows only now.
-            // Recheck without a lock: no invoice lock is taken after the owner.
-            if($invoices->isEmpty()&&Invoice::whereIn('user_id',$ids)->exists()){self::refuse($user,self::RETAINED);}
+            // Receipts hold their invoice before the owner, so never wait on an invoice here: a held row refuses at once.
+            try{$invoices=Invoice::whereIn('user_id',$ids)->orderBy('id')->lock('for update nowait')->get(['id']);}
+            catch(QueryException $e){if(in_array((int)($e->errorInfo[1]??0),[1205,3572],true)||($e->errorInfo[0]??null)==='55P03'){self::refuse($user,self::BUSY);}throw $e;}
             $orders=Order::whereIn('user_id',$ids)->orderBy('id')->lockForUpdate()->get(['id']);
             $services=Service::where(fn($q)=>$q->whereIn('user_id',$ids)->orWhereIn('order_id',$orders->pluck('id')))->orderBy('id')->lockForUpdate()->get();
             $domains=Domain::where(fn($q)=>$q->whereIn('user_id',$ids)->orWhereIn('service_id',$services->pluck('id')))->orderBy('id')->lockForUpdate()->get(['id']);

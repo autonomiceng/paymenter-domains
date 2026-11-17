@@ -112,7 +112,7 @@ $trace=new class($connection) extends Illuminate\Database\Query\Grammars\SQLiteG
 $connection->setQueryGrammar($trace);
 try{$traceOwner->delete();}finally{$connection->setQueryGrammar($original);}
 $tables=array_column($trace->reads,'table');
-$prefix=['invoices','users','orders','services','domains_domains','domains_operations',UserDeletionSchema::TABLE];
+$prefix=['users','invoices','orders','services','domains_domains','domains_operations',UserDeletionSchema::TABLE];
 foreach($prefix as$index=>$table){
     $position=array_search($table,$tables,true);expect($position!==false,'Deletion requires current read: '.$table);
     if($index>0){expect(array_search($prefix[$index-1],$tables,true)<$position,'Deletion lock order: '.$table);}
@@ -138,18 +138,26 @@ $page=Livewire\Livewire::actingAs($staff)->test(App\Admin\Resources\UserResource
 $page->callAction('delete')->assertSuccessful()->assertActionNotMounted('delete')
     ->assertNotified(Filament\Notifications\Notification::make()->danger()->title('Customer could not be deleted')->body(NativeUserDeletion::RETAINED));
 same($before,$rows(),'Handled staff refusal changes nothing');
-// An invoice committed after the invoice read but before the owner lock (READ COMMITTED) still refuses deletion.
+// An invoice committed after deletion's first owner or invoice read still refuses deletion.
 $late=commerceUser();$armed=false;$fired=false;
 DB::beforeExecuting(static function(string $sql,array $bindings)use($late,&$armed,&$fired):void {
-    if(!$fired&&str_contains($sql,'from "invoices"')&&str_contains($sql,'"user_id" in')&&in_array($late->id,$bindings)){$armed=true;return;}
-    if($armed&&str_contains($sql,'from "users" where "users"."id" in ('.$late->id.')')){
-        $armed=false;$fired=true;Invoice::create(['user_id'=>$late->id,'currency_code'=>'USD','status'=>'pending','due_at'=>now()->addDay()]);
-    }
+    if($fired){return;}
+    if($armed){$fired=true;Invoice::create(['user_id'=>$late->id,'currency_code'=>'USD','status'=>'pending','due_at'=>now()->addDay()]);return;}
+    $armed=(str_contains($sql,'from "invoices"')&&str_contains($sql,'"user_id" in')&&in_array($late->id,$bindings))||str_contains($sql,'from "users" where "users"."id" in ('.$late->id.')');
 });
 $refused=false;try{$late->fresh()->delete();}catch(DomainException $e){$refused=$e->getMessage();}
-expect($fired,'The invoice was committed between the invoice read and the owner lock');
+expect($fired,'The invoice was committed after the first deletion read');
 same(NativeUserDeletion::RETAINED,$refused,'Deletion refuses when an invoice appears after the first read');
 expect(User::whereKey($late->id)->exists()&&!DB::table(UserDeletionSchema::TABLE)->where('user_id',$late->id)->exists(),'The customer is kept and no deletion intent is recorded');
+// A held invoice row (MariaDB NOWAIT error 1205) refuses at once instead of waiting after the owner lock.
+$held=commerceUser();$heldThrown=false;
+DB::beforeExecuting(static function(string $sql,array $bindings,$connection)use($held,&$heldThrown):void {
+    if($heldThrown||!str_contains($sql,'from "invoices"')||!in_array($held->id,$bindings)){return;}
+    $heldThrown=true;$pdo=new PDOException('Lock wait timeout exceeded; try restarting transaction');$pdo->errorInfo=['HY000',1205,'Lock wait timeout exceeded; try restarting transaction'];
+    throw new Illuminate\Database\QueryException($connection->getName(),$sql,$bindings,$pdo);
+});
+$before=$rows();$reject(fn()=>$held->fresh()->delete(),NativeUserDeletion::BUSY);
+expect($heldThrown,'The invoice read met a held row');same($before,$rows(),'A held invoice refusal changes nothing');
 // Native unrelated users still delete without an outer transaction.
 $unrelated->fresh()->delete();expect(!User::whereKey($unrelated->id)->exists(),'Unrelated customer deletion works');
 echo "User deletion intent, retained routes and obligations, retries, rollback, missing schema and staff refusal passed. SQLite interleaving only; no MariaDB lock-wait proof.\n";
