@@ -110,7 +110,7 @@ final class History
             if (($known[$row['orderid']] ?? null) !== $validated) { $added++; }
             $orders[$row['orderid']] = $validated;
             if ($row['open']) { $checked[$row['orderid']] = $validated; }
-            if ($candidate) { $candidates[] = $candidate; }
+            if ($candidate) { $candidates[] = $candidate; $context->sawCandidate($candidate); }
         }
         if ($complete && $context->budget->remaining() < count($stale)) { $complete = false; $refuse('read_budget'); }
         if ($complete) {
@@ -119,7 +119,7 @@ final class History
                 try { [$outcome, $candidate] = $this->detail($attempt, $context, $row); }
                 catch (RequestDeadlineReached) { $complete = false; $refuse('read_budget'); break; }
                 if ($context->now() >= $context->deadline) { $complete = false; $refuse('read_budget'); break; }
-                if ($candidate) { $candidates[] = $candidate; }
+                if ($candidate) { $candidates[] = $candidate; $context->sawCandidate($candidate); }
                 elseif ($outcome === 'n') { $orders[$row['orderid']] = ['n', $row['signature']]; }
                 else { unset($orders[$row['orderid']]); $complete = false; $refuse($outcome); }
             }

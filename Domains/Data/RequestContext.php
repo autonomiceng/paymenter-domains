@@ -29,9 +29,20 @@ final class RequestContext
     /** Physical exchanges entered, failed ones included. Reader construction, limiter and send refusals never count. */
     public function exchanges(): int { return $this->exchanges; }
     private ?DomainSnapshot $seenDomain = null;
-    /** The domain as a read in this check showed it, kept when a later read in the same check throws. */
-    public function sawDomain(DomainSnapshot $domain): void { $this->seenDomain = $domain; }
-    public function seenDomain(): ?DomainSnapshot { return $this->seenDomain; }
+    /** @var list<OrderEvidence> */
+    private array $seenCandidates = [];
+    /** Renewal proof sink: every registrar read reports here what it saw, before any later read in the check can fail. */
+    public function sawDomain(DomainSnapshot $domain): void
+    {
+        if ($domain->owned !== true || $domain->expiry === null) { return; }
+        if ($this->seenDomain === null || substr($domain->expiry->value, 0, 10) > substr($this->seenDomain->expiry->value, 0, 10)) { $this->seenDomain = $domain; }
+    }
+    public function sawCandidate(OrderEvidence $candidate): void { if (count($this->seenCandidates) < 200) { $this->seenCandidates[] = $candidate; } }
+    /** The highest expiry and every charge candidate this check saw, or null when it saw neither. */
+    public function seen(): ?Evidence
+    {
+        return $this->seenDomain === null && $this->seenCandidates === [] ? null : new Evidence(domain: $this->seenDomain, candidates: $this->seenCandidates);
+    }
     private int $failedExchanges = 0;
     /** Exchanges that got no registrar reply (transport failure or timeout). A registrar error reply is not one. */
     public function failedExchanges(): int { return $this->failedExchanges; }

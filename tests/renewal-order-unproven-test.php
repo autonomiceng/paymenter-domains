@@ -16,12 +16,17 @@ $staffWith = static function (array $permissions, string $name) {
 $answers = ['admin.domains.view', 'admin.domains.manage-policy', 'admin.domains.settings.enom_answer'];
 $full = $staffWith([...$answers, 'admin.domains.manage', 'admin.invoices.update'], 'Renewal answers and refunds');
 $answerOnly = $staffWith($answers, 'Renewal answers only');
-$record = static function ($op, $staff, string $outcome, string $order = '', string $case = '') use ($settings, $clock): ?DomainException {
+$recordWith = static function ($op, $staff, string $outcome, string $order = '', string $case = '') use ($settings, $clock): ?DomainException {
     $op = $op->fresh(); $review = new Review($staff->id, $op->server_id, null, 'enom_answer', Review::ticket($staff->id, $op->server_id, null, 'enom_answer', Review::stamp($op->server_id, null)), 'Record Enom support answer');
     try { $settings->run($review, ['operation_id' => $op->id, 'attempt_hash' => RegistrarAnswers::identity($op), 'outcome' => $outcome, 'order_reference' => $order,
         'case_reference' => $case, 'evidence' => 'Enom support checked this account and renewal order.', 'confirmed' => true], $clock->now()); }
     catch (DomainException $e) { return $e; }
     return null;
+};
+$record = static function ($op, $staff, string $outcome, string $order = '', string $case = '') use ($recordWith, $bindings, $renewBindings): ?DomainException {
+    // The answer's fresh registrar read uses the renewal registry, as in production.
+    app()->instance(AccountBindings::class, $renewBindings);
+    try { return $recordWith($op, $staff, $outcome, $order, $case); } finally { app()->instance(AccountBindings::class, $bindings); }
 };
 $credit = static fn () => (string) ($user->credits()->where('currency_code', 'USD')->first()?->amount ?? '0.00');
 // Enom accepted the renewal and returned order 9002. Each read then answers in the shape $shape sets up.
@@ -72,7 +77,7 @@ $before = $credit(); $writes = $state->writes;
 expect($record($op, $answerOnly, 'not_processed') !== null, 'Not processed needs refund permission');
 same([null, $before], [$op->fresh()->funding['refund_authorization'] ?? null, $credit()], 'A refused answer moves no money');
 expect($record($op, $full, 'accepted', '9003') !== null, 'Processed must name the saved order number');
-same(null, $record($op, $full, 'not_processed'), 'Not processed is recorded');
+same(null, $record($op, $full, 'not_processed')?->getMessage(), 'Not processed is recorded');
 $op = $op->fresh();
 same(['rejected', 'refund_approved', 'enom_not_processed'], [$op->state, $op->safe_code, $op->funding['refund_authorization']['reason'] ?? null], 'Staff authorize the refund');
 same(number_format((float) $before + (float) $op->amount, 2, '.', ''), number_format((float) $credit(), 2, '.', ''), 'The payment comes back once as account credit');
@@ -114,6 +119,38 @@ $state->expiry = '10/18/2027 5:00:00 AM';
 for ($i = 2; $i <= OperationReconciliation::POLL_LIMIT; $i++) { $clock->instant = $clock->now()->modify('+10 minutes'); $completion->run($thrown->id); }
 expect(RegistrarAnswers::ready($thrown->fresh(), $clock->now()), 'Checks stopped after the check that threw');
 $seen['an advanced expiry before a read that throws'] = $refused($thrown);
+// The second domain info read of one check shows the renewed expiry; the first info read and the expiry read show the old date.
+[$second, , , $completion] = $sent('renew-proof-second-info-placeholder.com', '2027-10-18', 'another order');
+$state->duringCommand = ReadCommand::Renewal; $state->during = static function () use ($state) { $state->expiry = '10/18/2028 5:00:00 AM'; };
+$completion->run($second->id); $state->duringCommand = null; $state->during = null; $state->expiry = '10/18/2027 5:00:00 AM';
+for ($i = 2; $i <= OperationReconciliation::POLL_LIMIT; $i++) { $clock->instant = $clock->now()->modify('+10 minutes'); $completion->run($second->id); }
+expect(RegistrarAnswers::ready($second->fresh(), $clock->now()), 'Checks stopped after the second info read');
+$seen['an advanced expiry in a second info read'] = $refused($second);
+// The info read shows the renewed expiry, then our read allowance defers the rest of the check; it does not count.
+[$deferred, , , $completion] = $sent('renew-proof-deferred-placeholder.com', '2027-10-18', 'later info, old expiry read');
+$deferring = new class implements Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter {
+    public bool $armed = false;
+    public function acquire($binding, $origin): string { if ($this->armed) { $this->armed = false; throw new Paymenter\Extensions\Servers\Domains\Services\ReadDeferred('Synthetic read allowance.'); } return 'read'; }
+    public function release($binding, $origin, string $token): void {}
+};
+app()->bind(Paymenter\Extensions\Servers\Domains\Services\Runtime::class, static fn () => throw new LogicException('Runtime is not resolved here.'));
+app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class, $deferring);
+$state->duringCommand = ReadCommand::Renewal; $state->during = static function () use ($deferring) { $deferring->armed = true; };
+$completion->run($deferred->id); $state->duringCommand = null;
+app()->offsetUnset(Paymenter\Extensions\Servers\Domains\Services\Runtime::class); app()->offsetUnset(Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class);
+same([0, false], [$deferred->fresh()->policy['renewal_polls'] ?? 0, $deferring->armed], 'The deferred check does not count');
+$state->expiry = '10/18/2027 5:00:00 AM';
+for ($i = 1; $i <= OperationReconciliation::POLL_LIMIT; $i++) { $clock->instant = $clock->now()->modify('+10 minutes'); $completion->run($deferred->id); }
+expect(RegistrarAnswers::ready($deferred->fresh(), $clock->now()), 'Checks stopped after the deferred check');
+$seen['an advanced expiry before a deferred read'] = $refused($deferred);
+// Every check saw the old date; the fresh read at answer time shows the renewed expiry, or fails.
+foreach (['a fresh expiry read showing the renewal' => static function ($s) { $s->after = '2028-10-18'; },
+    'a fresh info read showing the renewal' => static function ($s) { $s->expiry = '10/18/2028 5:00:00 AM'; },
+    'a failed fresh read' => static function ($s) { $s->fail = ReadCommand::Info; }] as $why => $answerTime) {
+    [$op, , , $completion] = $sent('renew-proof-'.substr(md5($why), 0, 8).'-placeholder.com', '2027-10-18', 'another order');
+    $readUntilStopped($op, $completion, $why); $answerTime($state);
+    $seen[$why] = $refused($op); $state->after = '2027-10-18'; $state->expiry = '10/18/2027 5:00:00 AM'; $state->fail = null;
+}
 foreach (['a matching charge' => ['matching charge', '2027-10-18'], 'an advanced expiry' => ['failed order read', '2028-10-18'],
     'an advanced expiry before a failed expiry read' => ['later info, failed expiry read', '2027-10-18'],
     'an advanced expiry before an old expiry read' => ['later info, old expiry read', '2027-10-18']] as $why => [$shape, $expiry]) {

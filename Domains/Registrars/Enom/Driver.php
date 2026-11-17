@@ -143,6 +143,7 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         $parts = $this->parts($name); $reply = $this->read(ReadCommand::Info, $parts, $context);
         if ($reply->status !== 'success') { return [$reply, $parts, null]; }
         $domain = Identity::read($this->binding(), $name, $parts, $reply);
+        if ($domain) { $context->sawDomain($domain); }
         return [$domain === null ? new ProtocolResult('unknown', 'invalid_payload') : $reply, $parts, $domain];
     }
 
@@ -185,6 +186,7 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         if ($domain?->owned !== true) { return $this->result(null); }
         $reply = $this->read(ReadCommand::Expiry, $parts, $context);
         $expiry = Expiry::read($reply);
+        if ($expiry !== null) { $context->sawDomain(new DomainSnapshot($this->binding(), $name, true, $expiry, providerReference: $domain->providerReference)); }
         return $this->result($expiry === null ? null : ['name' => $name, 'owned' => true, 'provider_reference' => $domain->providerReference, 'expiry' => $expiry]);
     }
     public function renewalInfo(string $name, #[\SensitiveParameter] RequestContext $context): ReadResult
@@ -269,6 +271,7 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         $order = $this->read(ReadCommand::Order, ['OrderID' => $id], $context);
         $candidate = OrderCharge::read($attempt, $execution, $order);
         if (!$candidate) { return $this->neutral(new ProtocolResult('unknown', 'order_unconfirmed')); }
+        $context->sawCandidate($candidate);
         $expected = $attempt->expectedCharge;
         $difference = $expected && ($expected->currency !== 'USD' || rtrim(rtrim($expected->amount, '0'), '.') !== rtrim(rtrim($candidate->charge->amount, '0'), '.'));
         return new DriverResult($this->binding(), $difference ? Disposition::AcceptedWithDiscrepancy : Disposition::Accepted,
@@ -302,10 +305,8 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         if ($domain === null && $identity[0]->code === 'domain_not_in_account' && in_array($attempt->query->action, [Action::Register, Action::Renew], true)) {
             $domain = new DomainSnapshot($this->binding(), $attempt->query->name, false);
         }
-        $seenExpiry = null;
         if ($domain?->owned === true) {
-            // The expiry read can fail or lag after the info read showed a renewed date; that date stays as evidence.
-            $seenExpiry = $domain->expiry; $context->sawDomain($domain);
+            // The expiry read can fail or lag after the info read showed a renewed date; the context keeps that date.
             $expiry = $this->expiry($attempt->query->name, $context)->facts();
             $domain = new DomainSnapshot($this->binding(), $attempt->query->name, true,
                 ($expiry['provider_reference'] ?? null) === $domain->providerReference ? ($expiry['expiry'] ?? null) : null,
@@ -355,7 +356,7 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
             }
         }
         return new ReconciliationResult($attempt, new DriverResult($this->binding(), Disposition::Unknown,
-            SendState::PossiblySent, ResultReason::Unresolved, new Evidence(domain: $domain, candidates: $candidates, historyComplete: $complete, transfer: $transfer, transferReference: $attempt->transferReference, historyScan: $scan, billZoneSample: $sample, seenExpiry: $seenExpiry)));
+            SendState::PossiblySent, ResultReason::Unresolved, new Evidence(domain: $domain, candidates: $candidates, historyComplete: $complete, transfer: $transfer, transferReference: $attempt->transferReference, historyScan: $scan, billZoneSample: $sample)));
     }
     private static function readNameservers(ProtocolResult $reply, \DateTimeImmutable $observedAt): ?NameserverEvidence
     {
