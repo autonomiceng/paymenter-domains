@@ -153,6 +153,9 @@ final class ReceiptReturns
      * has not: it stays under review. */
     public static function settled(Operation $op): bool
     { try{return isset($op->funding['refund'])&&!self::malformed($op)&&self::outstanding($op)===0;}catch(\DomainException){return false;} }
+    /** A released credit whose amount cannot be read. No retry can replace released evidence, so it stays under review. */
+    public static function releasedUnreadable(Operation $op): bool
+    { if(self::malformed($op)){return false;} try{self::outstanding($op);return false;}catch(\DomainException){return true;} }
     /** Pending allocations reserve funds; completed ones already have a signed native reversal from the gateway. */
     public static function outstanding(Operation $op): int
     {

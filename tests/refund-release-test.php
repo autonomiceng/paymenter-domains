@@ -5,7 +5,7 @@ require __DIR__.'/Support/operation-fixture.php';
 require __DIR__.'/Support/money-receipt.php';
 require __DIR__.'/Support/reminder-mail.php';
 use App\Models\{Credit,Gateway,Invoice,InvoiceTransaction,Role,Service};
-use Illuminate\Support\Facades\{DB,Mail};
+use Illuminate\Support\Facades\{Auth,DB,Mail};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\OperationActions;
 use Paymenter\Extensions\Servers\Domains\Mail\DomainNotice;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
@@ -42,6 +42,12 @@ class ReleaseGateway extends MoneyReceiptGateway
 class_alias(ReleaseGateway::class,'Paymenter\\Extensions\\Gateways\\Release\\Release');
 $gateway=Gateway::create(['extension'=>'Release','name'=>'Offline release','type'=>'gateway','enabled'=>true]);
 $staff=commerceUser();$staff->update(['role_id'=>Role::create(['name'=>'Release refunds','permissions'=>['admin.domains.manage','admin.invoices.update']])->id]);
+// Request actions read as a staff viewer; the money calls below run without one.
+$viewer=commerceUser();$viewer->update(['role_id'=>Role::create(['name'=>'Release viewer','permissions'=>['admin.domains.view']])->id]);
+$offers=static function(Operation $op)use($viewer):bool{
+    $prior=Auth::user();Auth::setUser($viewer);
+    try{return OperationActions::relevant('credit',$op);}finally{$prior?Auth::setUser($prior):Auth::forgetUser();}
+};
 $refunds=new Refunds($clock);MoneyReceiptGateway::$lost=false;MoneyReceiptGateway::$outcome='refunded';
 $balance=static fn()=>PricingRule::minor((string)(Credit::where('user_id',$user->id)->value('amount')??'0.00'));
 $failures=[];
@@ -70,7 +76,7 @@ $notice=static function(Operation $op)use($clock):?array{
     });
 };
 
-foreach(['full','split','bridge','invalid','zero'] as $mode){$case('released credit readers '.$mode,function()use($mode,$make,$reserve,$release,$refunds,$notice,$equal):void{
+foreach(['full','split','bridge','invalid','zero'] as $mode){$case('released credit readers '.$mode,function()use($mode,$make,$reserve,$release,$refunds,$notice,$equal,$offers):void{
     $op=$make('readers-'.$mode);$minor=PricingRule::minor($op->amount);
     if(in_array($mode,['split','bridge'],true)){
         DB::table('invoice_transactions')->where('invoice_id',$op->invoice_id)->update(['amount'=>PricingRule::decimal($minor-100)]);
@@ -81,6 +87,7 @@ foreach(['full','split','bridge','invalid','zero'] as $mode){$case('released cre
     $a=$reserve($op);$release($op,$a);
     if($mode==='split'){
         $pending=$op->fresh();
+        $equal(true,$offers($pending),'A readable unfinished return offers Retry refund');
         $equal('split',OwnedDomains::refundTo($pending->domain,$pending,[]),'An unfinished remaining allocation keeps its planned card return beside released credit');
         $refunds->creditRejected($op->id);
     }
@@ -105,6 +112,8 @@ foreach(['full','split','bridge','invalid','zero'] as $mode){$case('released cre
         $equal(ReceiptReturns::REVIEW,ReceiptReturns::summary($saved),'Invalid released credit summary is under review');
         // Staff request actions and History read it through settled.
         $equal(false,ReceiptReturns::settled($saved),'Invalid released credit is not settled');
+        // No retry can replace released evidence, so Retry refund would only fail.
+        $equal(false,$offers($saved),'Invalid released credit offers no Retry refund');
     }
 });}
 
