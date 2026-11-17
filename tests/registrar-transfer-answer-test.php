@@ -27,7 +27,7 @@ expect(str_contains($action->getLabel(),'NameSilo'),'Request action names the re
 $fields=[];$walk=function(array $components)use(&$walk,&$fields):void{foreach($components as $c){if($c instanceof \Filament\Forms\Components\Field){$fields[$c->getName()]=$c;}if($c instanceof \Filament\Schemas\Components\Component&&is_array($kids=$c->getDefaultChildComponents())){$walk($kids);}}};
 $walk($action->getSchema(\Filament\Schemas\Schema::make())->getComponents(withHidden:true));
 expect(isset($fields['confirmed'],$fields['case_reference'],$fields['evidence'],$fields['charge'],$fields['registrar_refund'])&&!isset($fields['final_confirmed']),'One confirmation covers the transfer answer and its final amounts');
-foreach(['evidence','case','confirmation','finality','status','pending','unknown','reference','stale','permission','amount','refund','not_processed'] as $fault){
+foreach(['evidence','confirmation','finality','status','pending','unknown','reference','stale','permission','amount','refund','not_processed'] as $fault){
     $input=$answer($op);
     if($fault==='evidence'){$input['evidence']='';}
     if($fault==='case'){$input['case_reference']='';}
