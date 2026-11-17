@@ -71,6 +71,11 @@ class Operation extends Model
             if(array_key_exists('renewal_replacement',$before)&&($after['renewal_replacement']??null)!==$before['renewal_replacement']){
                 throw new \DomainException('Renewal replacement review is retained.');
             }
+            // Saved renewal proof for the current attempt only ever stays (RenewalProof).
+            if(is_string($before['renewal_proof']['identity']??null)&&($after['renewal_proof']??null)!==$before['renewal_proof']
+                &&hash_equals(\Paymenter\Extensions\Servers\Domains\Services\RegistrarAnswers::identity($operation),$before['renewal_proof']['identity'])){
+                throw new \DomainException('Renewal proof is retained.');
+            }
             $history = $before['reconciliation_resumptions'] ?? []; $next = $after['reconciliation_resumptions'] ?? [];
             if (!is_array($history) || !is_array($next) || !array_is_list($next) || count($next) > 20
                 || count($next) < count($history) || array_slice($next, 0, count($history)) !== $history) { throw new \DomainException('Reconciliation resumptions are append-only.'); }

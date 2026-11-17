@@ -37,8 +37,9 @@ $polls = static fn ($op) => $op->fresh()->policy['renewal_polls'] ?? 0;
 $check = static function ($op, $completion) use ($clock): void { Cache::flush(); $completion->run($op->id); $clock->instant = $clock->now()->modify('+10 minutes'); };
 app()->instance(AccountBindings::class, $bindings);
 
-// Four lagging checks; the fifth sees the renewal. While its reply is on the way, a newer cron check, a staff check and
-// Not processed all arrive with lagging reads. Neither check reads, Not processed is refused, and the fifth check saves its poll and proof.
+// Four lagging checks; the fifth sees the renewal in its Expiry reply. While its last read is on the way, a newer cron check, a
+// staff check and Not processed all arrive with lagging reads. Neither check reads, the proof saved with that reply refuses Not
+// processed, and the fifth check saves its poll.
 [$op, $d, $b] = $makeRenewal(placeholderComFixtureName('check-claim-race-placeholder.com'));
 [$engine, $writer, $completion] = $compose($b);
 same('pending', $engine->run($op->id, $writer)->state, 'The renewal was sent once');
@@ -46,7 +47,7 @@ $state->after = '2027-10-18'; $state->fail = ReadCommand::Order; $clock->instant
 for ($i = 1; $i < OperationReconciliation::POLL_LIMIT; $i++) { $check($op, $completion); }
 same(OperationReconciliation::POLL_LIMIT - 1, $polls($op), 'Four lagging checks counted');
 $before = $credit(); $priorState = $op->fresh()->state; $inner = [];
-$state->after = '2028-10-18'; $state->duringCommand = ReadCommand::Info;
+$state->after = '2028-10-18'; $state->duringCommand = ReadCommand::Order;
 $state->during = static function () use ($op, $completion, $state, $record, $staffCheck, $polls, &$inner): void {
     $state->after = '2027-10-18'; $calls = count($state->calls);
     $completion->run($op->id); $inner['cron'] = [count($state->calls) - $calls, $polls($op)];
@@ -62,23 +63,24 @@ same([['cron' => [0, 4], 'staff' => true, 'not_processed_refused' => true], 5, t
 $state->after = '2027-10-18';
 same([true, 0], [$record($op), $credit() - $before], 'Later lagging reads cannot record Not processed for the observed renewal');
 
-// A check that died after taking its claim: other checks wait while it is live, an expired claim never permits Not processed,
-// and the next check takes it over, counts its poll and clears it.
+// A check that died after its Expiry reply showed the renewal: other checks wait while its claim is live, the proof saved with
+// that reply refuses Not processed once the claim expires, and the next check takes the claim over, counts its poll and clears it.
 [$op, $d, $b] = $makeRenewal(placeholderComFixtureName('check-claim-stale-placeholder.com'));
 [$engine, $writer, $completion] = $compose($b);
 same('pending', $engine->run($op->id, $writer)->state, 'The second renewal was sent once');
 $state->after = '2027-10-18'; $state->fail = ReadCommand::Order; $clock->instant = $clock->now()->modify('+25 hours');
 for ($i = 1; $i < OperationReconciliation::POLL_LIMIT; $i++) { $check($op, $completion); }
 // Fixture for a lost worker: the claim a real check took in its first locked step, restored after that check's save,
-// as if the worker had died during its read.
-$lost = null; $state->duringCommand = ReadCommand::Info; $state->during = static function () use ($op, &$lost) { $lost = $op->fresh()->policy['renewal_check'] ?? null; };
-$check($op, $completion);
+// as if the worker had died during its last read.
+$lost = null; $state->after = '2028-10-18'; $state->duringCommand = ReadCommand::Order;
+$state->during = static function () use ($op, &$lost) { $lost = $op->fresh()->policy['renewal_check'] ?? null; };
+$check($op, $completion); $state->after = '2027-10-18';
 $fresh = $op->fresh(); $fresh->update(['policy' => [...$fresh->policy, 'renewal_check' => $lost, 'renewal_polls' => OperationReconciliation::POLL_LIMIT - 1]]);
 $clock->instant = $clock->now()->modify('-10 minutes'); $calls = count($state->calls);
 Cache::flush(); $completion->run($op->id); $live = [is_array($lost), count($state->calls) - $calls, $polls($op), $staffCheck($op, $completion)];
 same([true, 0, OperationReconciliation::POLL_LIMIT - 1, true], $live, 'A live claim keeps the next checks from reading: '.json_encode($live));
 $clock->instant = $clock->now()->modify('+'.(OperationReconciliation::POLL_LIMIT * 600).' seconds'); $before = $credit();
-same([true, 0, 'pending'], [$record($op), $credit() - $before, $op->fresh()->state === 'rejected' ? 'rejected' : 'pending'], 'An expired claim does not permit Not processed');
+same([true, 0, 'pending'], [$record($op), $credit() - $before, $op->fresh()->state === 'rejected' ? 'rejected' : 'pending'], 'A lost check\'s saved proof refuses Not processed after its claim expires');
 $calls = count($state->calls); $check($op, $completion); $fresh = $op->fresh();
 same([true, OperationReconciliation::POLL_LIMIT, false], [count($state->calls) > $calls, $polls($op), isset($fresh->policy['renewal_check'])],
     'The next check takes over the expired claim, counts its poll and clears it');

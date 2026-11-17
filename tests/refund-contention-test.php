@@ -153,8 +153,14 @@ same([MoneyOutcome::Failed, false, 0], [$thrown->outcome, MoneyDecisions::runnin
 // Invoice scope: native receipt invoice-first order, with only the request's invoice, its items and payments. Reuses the closed order above.
 $other = Operation::where('invoice_id', '!=', $op->invoice_id)->whereNotNull('invoice_id')->orderBy('id')->firstOrFail();
 $scoped = static fn(int $invoice) => new MoneyRequest($op->domain, 'refund_closed', $op->id, released: true, scope: MoneyScope::Invoice, invoiceId: $invoice);
-$tables = []; $tracing = false;
-DB::listen(static function($q) use (&$tables, &$tracing): void { if ($tracing && preg_match('/^select .*? from "([a-z_]+)"/', $q->sql, $m)) { $tables[] = $m[1]; } });
+$tables = []; $tracing = false; $attempts = [];
+DB::listen(static function($q) use (&$tables, &$tracing, &$attempts): void {
+    if ($tracing && preg_match('/^select .*? from "([a-z_]+)"/', $q->sql, $m)) { $tables[] = $m[1]; if ($attempts !== []) { $attempts[array_key_last($attempts)][] = $m[1]; } }
+});
+// Each outer transaction the money runner opens is one attempt.
+Illuminate\Support\Facades\Event::listen(Illuminate\Database\Events\TransactionBeginning::class, static function() use (&$tracing, &$attempts): void {
+    if ($tracing && DB::transactionLevel() === 1) { $attempts[] = []; }
+});
 $view = static function(array $l) use ($op, &$tracing): array {
     $tracing = false;
     return [$l['invoices']->pluck('id')->all(), $l['items']->pluck('invoice_id')->unique()->values()->all(), $l['transactions']->pluck('invoice_id')->unique()->values()->all(),
@@ -173,12 +179,13 @@ same(false, in_array('invoices', array_slice($tables, (int)$at('services')), tru
 try { DB::transaction(fn() => InvoiceMoney::load($narrow[5], (int)$op->invoice_id)); throw new RuntimeException('Expected an ended scope'); } catch (MoneyScopeChanged) {}
 // Reading another invoice or owner-wide billing reruns the decision once on the full scope, never as missing debt.
 foreach ([fn(array $l) => InvoiceMoney::load($l, (int)$other->invoice_id)['settled'], fn(array $l) => UnpaidAcquisitionProof::paid($l)] as $read) {
-    $scopes = []; $tables = []; $tracing = true;
+    $scopes = []; $tables = []; $attempts = []; $tracing = true;
     $result = MoneyDecisions::run($scoped((int)$op->invoice_id), function(array $l) use (&$scopes, $read) { $scopes[] = $l['scope']?->invoiceId; return [$read($l)]; });
     $tracing = false;
-    $owners = array_keys($tables, 'users', true);
-    $attempts = count($owners) === 2 ? [array_slice($tables, 0, $owners[1]), array_slice($tables, $owners[1])] : [];
-    expect($attempts !== [] && array_filter($attempts, fn(array $t) => $t[0] !== 'users' || !in_array('invoices', $t, true)) === [], 'Both scoped and widened attempts lock the owner before the target invoice');
+    $ownerFirst = static fn(array $t): bool => ($owner = array_search('users', $t, true)) !== false && in_array('invoices', $t, true)
+        && array_filter(array_keys($t, 'invoices', true), static fn(int $i) => $i < $owner) === [];
+    expect(count($attempts) === 2 && array_filter($attempts, fn(array $t) => !$ownerFirst($t)) === [],
+        'Within each transaction, scoped and widened, the owner is locked before every invoice: '.json_encode($attempts));
     same([MoneyOutcome::Applied, [(int)$op->invoice_id, null]], [$result->outcome, $scopes], 'A scope miss reruns on the full scope');
 }
 // An invoice that is not the owner's ends the scoped attempt before any later lock; the full attempt decides.
