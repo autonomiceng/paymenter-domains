@@ -86,6 +86,7 @@
     "tests/test_user_deletion_mariadb.py",
     "tests/test_enom_send_limit_mariadb.py",
     "tests/test_template_locks_mariadb.py",
-    "tests/test_receipt_lock_order_mariadb.py"
+    "tests/test_receipt_lock_order_mariadb.py",
+    "tests/test_checkout_lock_order_mariadb.py"
   ]
 }

@@ -45,7 +45,7 @@ if($phase==='seed'){
         }
     }finally{DB::rollBack();}
 
-    foreach(['intent','checkout','snapshot']as$name){$ids[$name]=commerceUser()->id;}
+    foreach(['intent','checkout','snapshot','receipt']as$name){$ids[$name]=commerceUser()->id;}
     file_put_contents($root.'/owners.json',json_encode($ids,JSON_THROW_ON_ERROR));
     echo "Seeded real native MariaDB checkout fixtures.\n";$nativeSuccessful=true;return;
 }
@@ -75,6 +75,23 @@ if($phase==='checkout'){
         });
     }
     $page=commerceCheckout($user,$cart);
+    if($case==='receipt'){
+        // A native receipt holds the customer's invoice. It locks no customer row, so deletion waits on the invoice and then decides.
+        $invoice=(int)Domain::where('domain',$name)->sole()->operations()->sole()->invoice_id;
+        DB::beginTransaction();\App\Models\Invoice::whereKey($invoice)->lockForUpdate()->firstOrFail();$signal('invoice-locked');$wait('delete-start');
+        $deleter=(int)file_get_contents($root.'/'.$case.'-delete-connection');$end=microtime(true)+25;
+        $invoices='`'.DB::getDatabaseName().'`.`'.DB::getTablePrefix().'invoices`';
+        while((int)DB::selectOne('SELECT COUNT(*) AS n FROM information_schema.INNODB_LOCK_WAITS w'
+            .' JOIN information_schema.INNODB_TRX r ON r.trx_id=w.requesting_trx_id JOIN information_schema.INNODB_TRX b ON b.trx_id=w.blocking_trx_id'
+            .' JOIN information_schema.INNODB_LOCKS l ON l.lock_id=w.requested_lock_id'
+            .' WHERE r.trx_mysql_thread_id=? AND b.trx_mysql_thread_id=CONNECTION_ID() AND l.lock_table=?',[$deleter,$invoices])->n===0){
+            if(microtime(true)>$end){throw new RuntimeException('Native deletion did not wait on the receipt invoice.');}usleep(200000);
+        }
+        file_put_contents($root.'/'.$case.'-lock-wait','proved');
+        \App\Helpers\ExtensionHelper::addPayment($invoice,null,'1.00','0.00','userdel-receipt-'.$prefix);
+        DB::commit();
+        same(1,\App\Models\InvoiceTransaction::where('invoice_id',$invoice)->count(),'The receipt commits while deletion waits');
+    }
     if($case==='intent'){$page->assertDispatched('notify',fn($event,$params)=>$params[0]===['message'=>NativeUserDeletion::PENDING,'type'=>'error']);same(0,Domain::where('domain',$name)->count(),'Intent-first creates no holding');}
     else{same(1,Domain::where('domain',$name)->count(),'Checkout commits its retained holding');}
     $signal('checkout-done');
@@ -86,6 +103,7 @@ if($phase==='checkout'){
         same(0,Domain::where('user_id',$user->id)->count(),'Intent-first leaves no orphan');
     }else{
         if($case==='snapshot'){DB::beginTransaction();Domain::count();$signal('snapshot');$wait('checkout-done');}
+        elseif($case==='receipt'){$wait('invoice-locked');file_put_contents($root.'/'.$case.'-delete-connection',(string)DB::selectOne('SELECT CONNECTION_ID() AS id')->id);$signal('delete-start');}
         else{$wait('admitted');file_put_contents($root.'/'.$case.'-delete-connection',(string)DB::selectOne('SELECT CONNECTION_ID() AS id')->id);$signal('delete-start');$wait('baseline');}
         $refused=false;try{$user->delete();}catch(DomainException $e){same(NativeUserDeletion::RETAINED,$e->getMessage(),'Current retained-owner refusal');$refused=true;}
         expect($refused,'Checkout-first deletion refuses');

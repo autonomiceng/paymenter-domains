@@ -113,9 +113,12 @@ For an Enom registration or renewal with a lost reply older than 24 hours, the r
 account's **More > Record what Enom said** action requires its own permission and a
 current review. The system cannot settle a missing reply beyond its proved history
 window; staff must obtain Enom's final answer for that account and exact attempt.
-A processed order number unlocks exact readback only. A confirmed no-order/no-charge
-answer returns the original payment once. The encrypted request evidence and account
-audit retain who recorded the answer, its support case and the original attempt hash.
+A sent Enom renewal that kept its order number gets the same action once its checks
+stop at the read limit; every completed check counts, whatever the reply. A processed
+order number unlocks exact readback only. Not processed returns the original payment
+once as account credit, and is refused when a check already saw a matching charge or
+a later expiry. The case number is optional. The encrypted request evidence and account
+audit retain who recorded the answer and the original attempt hash.
 Neither answer authorizes resending the original request.
 
 Registration retail uses the first registration year plus the annual renewal retail for each additional year. Each annual input is rounded before summing; the independently quoted selected-term registrar cost still bounds the sale. Installation republishes older retail rules locally, preserving native plan and price identities, observation ages and issued invoices. Unpublished own rules stay closed; a failed TLD rolls back and defers its publication while healthy siblings and new-account installation continue. Normal guarded catalogue work can retry it. `domains:price-match --json` reports eligible catalogue terms and native price mismatches without repairs or registrar reads. Mismatched terms stay hidden; warning failures cannot withdraw healthy terms or fail a completed feed turn.

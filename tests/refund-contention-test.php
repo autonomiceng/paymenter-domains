@@ -167,7 +167,7 @@ same(true, in_array((int)$other->invoice_id, $wide[0], true), 'Full scope still 
 same($wide[3], $narrow[3], 'Both scopes give the same invoice money');
 same(false, $wide[4] === $narrow[4], 'A scoped stamp never matches a full one');
 $at = static fn(string $t) => array_search($t, $tables, true);
-same([1, true, true], [count(array_keys($tables, 'invoices', true)), $at('invoices') < $at('users') && $at('users') < $at('credits'), $at('invoices') < $at('services')], 'Scoped locks take the invoice before its owner, credit and services');
+same([1, true, true], [count(array_keys($tables, 'invoices', true)), $at('users') < $at('credits') && $at('credits') < $at('invoices'), $at('invoices') < $at('services')], 'Scoped locks take the owner and credit, then the invoice, then services');
 same(false, in_array('invoices', array_slice($tables, (int)$at('services')), true), 'No invoice is locked after services');
 // The context ends with its transaction.
 try { DB::transaction(fn() => InvoiceMoney::load($narrow[5], (int)$op->invoice_id)); throw new RuntimeException('Expected an ended scope'); } catch (MoneyScopeChanged) {}
@@ -177,7 +177,8 @@ foreach ([fn(array $l) => InvoiceMoney::load($l, (int)$other->invoice_id)['settl
     $result = MoneyDecisions::run($scoped((int)$op->invoice_id), function(array $l) use (&$scopes, $read) { $scopes[] = $l['scope']?->invoiceId; return [$read($l)]; });
     $tracing = false;
     $owners = array_keys($tables, 'users', true);
-    expect(count($owners) === 2 && $tables[0] === 'invoices' && $tables[$owners[1] - 1] === 'invoices', 'Both scoped and widened attempts lock the target invoice before the owner');
+    $attempts = count($owners) === 2 ? [array_slice($tables, 0, $owners[1]), array_slice($tables, $owners[1])] : [];
+    expect($attempts !== [] && array_filter($attempts, fn(array $t) => $t[0] !== 'users' || !in_array('invoices', $t, true)) === [], 'Both scoped and widened attempts lock the owner before the target invoice');
     same([MoneyOutcome::Applied, [(int)$op->invoice_id, null]], [$result->outcome, $scopes], 'A scope miss reruns on the full scope');
 }
 // An invoice that is not the owner's ends the scoped attempt before any later lock; the full attempt decides.

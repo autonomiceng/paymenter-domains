@@ -19,7 +19,9 @@ $waitForBlock=static function(int $requester,string $table)use($prefix):bool{
         .' JOIN information_schema.INNODB_LOCKS l ON l.lock_id=w.requested_lock_id'
         .' WHERE r.trx_mysql_thread_id=? AND b.trx_mysql_thread_id=CONNECTION_ID() AND l.lock_table=?',[$requester,$qualified])->n>0;
 };
-$error=null;$value=null;
+$error=null;$value=null;$ownerLocks=0;
+// Native receipts never lock the customer: only the invoice core holds and what hangs off it.
+DB::listen(static function($q)use(&$ownerLocks,$prefix):void{if(str_contains($q->sql,'from `'.$prefix.'users`')&&str_contains($q->sql,'for update')){$ownerLocks++;}});
 try{
     $value=DB::transaction(static function()use($phase,$case,$op,$first,$seed,$root,$name,$prefix,$signal,$wait,$ballast,$waitForBlock):bool{
         if($phase==='receipt'){
@@ -29,23 +31,24 @@ try{
             $end=microtime(true)+20;
             while(true){
                 if($waitForBlock($other,'invoices')){file_put_contents($root.'/'.$name.'-invoice-wait','proved');break;}
-                if($case==='receipts'&&is_file($root.'/'.$name.'-second-owner')){break;}
-                if(microtime(true)>$end){throw new RuntimeException('Neither the invoice wait nor receipt owner overlap was observed.');}usleep(200000);
+                if($case==='receipts'&&is_file($root.'/'.$name.'-second-hook')){break;}
+                if(microtime(true)>$end){throw new RuntimeException('Neither the invoice wait nor the receipt overlap was observed.');}usleep(200000);
             }
             $signal('primary-started');
             ExtensionHelper::addPayment((int)$op->invoice_id,null,'1.00','0.00','receipt-cycle-'.$name.'-b');
         }else{
             $wait('invoice-locked');$ballast();
-            // A full scan obtains A before B; a second native receipt also arrives owning its distinct invoice A.
-            Invoice::whereKey($first->invoice_id)->lockForUpdate()->firstOrFail();
-            file_put_contents($root.'/'.$name.'-connection',(string)DB::selectOne('SELECT CONNECTION_ID() AS id')->id);$signal('runner-started');
+            file_put_contents($root.'/'.$name.'-connection',(string)DB::selectOne('SELECT CONNECTION_ID() AS id')->id);
             if($case==='full'){
-                HoldingLocks::take($seed);
+                // A full decision locks the customer, then invoice A, then waits on B.
+                $signal('runner-started');HoldingLocks::take($seed);
             }else{
+                // A second native receipt arrives owning its distinct invoice A and pauses inside its hook.
+                Invoice::whereKey($first->invoice_id)->lockForUpdate()->firstOrFail();$signal('runner-started');
                 $armed=true;
                 DB::listen(static function($q)use(&$armed,$prefix,$signal,$wait):void{
-                    if($armed&&str_contains($q->sql,'from `'.$prefix.'users`')&&str_contains($q->sql,'for update')){
-                        $armed=false;$signal('second-owner');$wait('primary-started');
+                    if($armed&&str_contains($q->sql,'from `'.$prefix.'domains_operations`')&&str_contains($q->sql,'for update')){
+                        $armed=false;$signal('second-hook');$wait('primary-started');
                     }
                 });
                 ExtensionHelper::addPayment((int)$first->invoice_id,null,'1.00','0.00','receipt-cycle-'.$name.'-a');
@@ -64,5 +67,5 @@ $subject=$phase==='receipt'?$op:$first;
 $count=InvoiceTransaction::where('invoice_id',$subject->invoice_id)->count();
 $closed=$subject->fresh()->state==='rejected';
 $complete=$value===true&&$error===null&&DB::transactionLevel()===0&&($phase==='runner'&&$case==='full'||$count===1&&$closed);
-echo json_encode(['complete'=>$complete,'case'=>$case,'phase'=>$phase,'error'=>$error,'receipts'=>$count,'closed'=>$closed,'transaction_level'=>DB::transactionLevel()])."\n";
+echo json_encode(['complete'=>$complete,'case'=>$case,'phase'=>$phase,'error'=>$error,'owner_locks'=>$ownerLocks,'receipts'=>$count,'closed'=>$closed,'transaction_level'=>DB::transactionLevel()])."\n";
 expect($complete,'Concurrent native receipts and full invoice scans must preserve every payment');$nativeSuccessful=true;

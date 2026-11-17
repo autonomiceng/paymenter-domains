@@ -641,14 +641,25 @@ this explicit suite. Each harness owns one `dom-schema-` container labelled with
 owner, with no network, published ports or persistent volumes, and stops it after success or
 failure. `tests/test_schema_mariadb_guards.py` checks the harness refusals without Docker.
 
+Lock order, as native checkout (Cart locks the customer before inserting its invoice):
+every writer locks the customer, then invoices, then what hangs off them. A native
+receipt locks only the invoice core already holds and what hangs off it, never the
+customer. Core `ProcessPaid` still takes invoice then customer; InnoDB picks a
+deadlock victim there and the money runner retries.
+
 `tests/test_receipt_lock_order_mariadb.py` pairs a native cancelled-renewal receipt
 with an invoice-scoped money decision, including its full-scope retry. Both finish
 without a deadlock retry and retain the receipt and closed renewal. For paired
 red/green evidence in one run, `DOMAINS_TEST_RECEIPT_BASE` may name an exported
 buggy source tree. The paired full-scope writer and two-receipt cases must lose
-the non-lowest invoice receipt there and retain both receipts on the candidate.
-Both table prefixes are exercised. Native receipt contexts cover only their one
-invoice and keep the same owner, identity and renewal closure guards.
+the non-lowest invoice receipt there and retain both receipts on the candidate,
+where no receipt locks a customer row. Both table prefixes are exercised.
+
+`tests/test_checkout_lock_order_mariadb.py` holds a real checkout on its locked
+customer row while Record answer (a full decision) and contact recovery start. Each
+writer waits on that row, locks invoices after it and finishes without a deadlock.
+`tests/test_user_deletion_mariadb.py` also holds a native receipt's invoice: deletion
+waits on it, the receipt commits, and deletion then refuses the retained customer.
 
 This package has no converter. The one-time conversion and its MariaDB rehearsal run from a
 checkout of Domains bridge 0.1.0 at `891124421645`; see the
