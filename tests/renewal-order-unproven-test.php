@@ -125,4 +125,16 @@ unset($state->currency); $op = $op->fresh();
 same([0, false], [$op->policy['renewal_polls'] ?? 0, isset($op->policy['order_unproven'])], 'A read that found the order with a rejected charge does not count and saves no unproven evidence');
 expect(!RegistrarAnswers::ready($op, $clock->now()) && $record($op, $full, 'not_processed') !== null, 'Not processed is refused for a found order whose charge could not be read');
 same([null, $before], [$op->fresh()->funding['refund_authorization'] ?? null, $credit()], 'No money moves');
+// 7. A successful reply for the renewal's own order number with its order detail missing or unreadable is an incomplete read,
+// not an absence: none counts, no unproven evidence is saved and Not processed stays refused.
+foreach (['missing' => '', 'unreadable' => '<OrderDetail>unreadable</OrderDetail>'] as $kind => $detail) {
+    $state->order = '9002';
+    [$op, $engine, $writer, $completion] = $sent("renew-unproven-{$kind}-detail-placeholder.com", '2027-10-18');
+    $state->order = '9002'; $state->detail = $detail; $before = $credit();
+    for ($i = 0; $i <= OperationReconciliation::POLL_LIMIT; $i++) { $completion->run($op->id); $clock->instant = $clock->now()->modify('+10 minutes'); }
+    unset($state->detail); $op = $op->fresh();
+    same([0, false], [$op->policy['renewal_polls'] ?? 0, isset($op->policy['order_unproven'])], "A matching order reply with {$kind} detail does not count and saves no unproven evidence");
+    expect(!RegistrarAnswers::ready($op, $clock->now()) && $record($op, $full, 'not_processed') !== null, "Not processed is refused when the order detail is {$kind}");
+    same([null, $before], [$op->fresh()->funding['refund_authorization'] ?? null, $credit()], 'No money moves');
+}
 echo "A renewal with an order number stops its checks at the limit and each answer moves money once.\n"; $nativeSuccessful = true;

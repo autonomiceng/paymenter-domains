@@ -138,6 +138,18 @@ $page=Livewire\Livewire::actingAs($staff)->test(App\Admin\Resources\UserResource
 $page->callAction('delete')->assertSuccessful()->assertActionNotMounted('delete')
     ->assertNotified(Filament\Notifications\Notification::make()->danger()->title('Customer could not be deleted')->body(NativeUserDeletion::RETAINED));
 same($before,$rows(),'Handled staff refusal changes nothing');
+// An invoice committed after the invoice read but before the owner lock (READ COMMITTED) still refuses deletion.
+$late=commerceUser();$armed=false;$fired=false;
+DB::beforeExecuting(static function(string $sql,array $bindings)use($late,&$armed,&$fired):void {
+    if(!$fired&&str_contains($sql,'from "invoices"')&&str_contains($sql,'"user_id" in')&&in_array($late->id,$bindings)){$armed=true;return;}
+    if($armed&&str_contains($sql,'from "users" where "users"."id" in ('.$late->id.')')){
+        $armed=false;$fired=true;Invoice::create(['user_id'=>$late->id,'currency_code'=>'USD','status'=>'pending','due_at'=>now()->addDay()]);
+    }
+});
+$refused=false;try{$late->fresh()->delete();}catch(DomainException $e){$refused=$e->getMessage();}
+expect($fired,'The invoice was committed between the invoice read and the owner lock');
+same(NativeUserDeletion::RETAINED,$refused,'Deletion refuses when an invoice appears after the first read');
+expect(User::whereKey($late->id)->exists()&&!DB::table(UserDeletionSchema::TABLE)->where('user_id',$late->id)->exists(),'The customer is kept and no deletion intent is recorded');
 // Native unrelated users still delete without an outer transaction.
 $unrelated->fresh()->delete();expect(!User::whereKey($unrelated->id)->exists(),'Unrelated customer deletion works');
 echo "User deletion intent, retained routes and obligations, retries, rollback, missing schema and staff refusal passed. SQLite interleaving only; no MariaDB lock-wait proof.\n";
