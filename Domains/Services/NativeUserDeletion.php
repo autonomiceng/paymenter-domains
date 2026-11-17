@@ -31,6 +31,9 @@ final class NativeUserDeletion
             // Current reads also protect a caller with an older repeatable-read snapshot.
             $invoices=Invoice::whereIn('user_id',$ids)->orderBy('id')->lockForUpdate()->get(['id']);
             User::whereKey($ids)->orderBy('id')->lockForUpdate()->get();
+            // Under READ COMMITTED the read above reserves no range, so an invoice committed before the owner lock shows only now.
+            // Recheck without a lock: no invoice lock is taken after the owner.
+            if($invoices->isEmpty()&&Invoice::whereIn('user_id',$ids)->exists()){self::refuse($user,self::RETAINED);}
             $orders=Order::whereIn('user_id',$ids)->orderBy('id')->lockForUpdate()->get(['id']);
             $services=Service::where(fn($q)=>$q->whereIn('user_id',$ids)->orWhereIn('order_id',$orders->pluck('id')))->orderBy('id')->lockForUpdate()->get();
             $domains=Domain::where(fn($q)=>$q->whereIn('user_id',$ids)->orWhereIn('service_id',$services->pluck('id')))->orderBy('id')->lockForUpdate()->get(['id']);
