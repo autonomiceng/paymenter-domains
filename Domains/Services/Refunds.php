@@ -288,12 +288,14 @@ final readonly class Refunds
             || \App\Models\Invoice::whereKey($seen->invoice_id)->value('status') !== 'cancelled') { return null; }
         return $this->creditRejected($id);
     }
-    /** A complimentary order's receipt is a zero paid invoice; a payment on it returns as account credit, keyed by payment row. */
+    /** A complimentary order's receipt is a zero paid invoice; a payment on it returns as account credit, keyed by payment row.
+     * A departed holding's receipt returns to its old owner only on the verified released row, as departed renewals do. */
     private function creditComplimentary(Operation $seen): ?array
     {
-        $seed = $seen->domain()->firstOrFail();
-        return FreshTransaction::run(function () use ($seed, $seen): ?array {
-            $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $seen->id);
+        $seed = $seen->domain()->firstOrFail(); $released = $seed->status === 'departed';
+        return FreshTransaction::run(function () use ($seed, $seen, $released): ?array {
+            $l = HoldingLocks::take($seed, released: $released); $op = $l['operations']->firstWhere('id', $seen->id);
+            if ($released && !DepartureProof::verified($l['domain'])) { throw new \DomainException('Departed complimentary proof is unavailable.'); }
             if (!$op || $op->funding_basis !== 'complimentary' || $op->invoice_id === null) { return null; }
             $payments = ComplimentaryInvoices::uncredited($op, $l['transactions']->where('invoice_id', $op->invoice_id));
             $minor = array_sum(array_column($payments, 'amount_minor'));
@@ -303,6 +305,11 @@ final readonly class Refunds
             $late = ['payments' => $payments, 'amount' => PricingRule::decimal($minor), 'currency' => 'USD', 'to' => 'account_credit',
                 'credit_id' => (int) $credit->id, 'at' => $this->clock->now()->format(DATE_ATOM)];
             $op->update(['funding' => [...($op->funding ?? []), 'late_credits' => [...($op->funding['late_credits'] ?? []), $late]]]);
+            // A failed earlier attempt raised the money-return check; this credit settles it.
+            if (Schema::hasTable('domains_obligation_alerts')) {
+                DB::table('domains_obligation_alerts')->where('operation_id', $op->id)->where('code', 'refund_repair')->whereNull('resolved_at')
+                    ->update(['resolved_at' => $this->clock->now()->getTimestamp()]);
+            }
             return ['amount' => $late['amount'], 'currency' => 'USD'];
         });
     }
