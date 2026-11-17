@@ -146,11 +146,21 @@ $seen['an advanced expiry before a deferred read'] = $refused($deferred);
 // Every check saw the old date; the fresh read at answer time shows the renewed expiry, or fails.
 foreach (['a fresh expiry read showing the renewal' => static function ($s) { $s->after = '2028-10-18'; },
     'a fresh info read showing the renewal' => static function ($s) { $s->expiry = '10/18/2028 5:00:00 AM'; },
-    'a failed fresh read' => static function ($s) { $s->fail = ReadCommand::Info; }] as $why => $answerTime) {
+    'a failed fresh read' => static function ($s) { $s->fail = ReadCommand::Info; },
+    // The info read still shows the old date, but the expiry read must answer too, readably and in time.
+    'an old info read and a failed fresh expiry read' => static function ($s) { $s->fail = ReadCommand::Expiry; },
+    'an old info read and a malformed fresh expiry read' => static function ($s) { $s->after = 'not a date'; },
+    'an old info read and a late fresh expiry read' => static function ($s) use ($clock) { $s->duringCommand = ReadCommand::Expiry; $s->during = static function () use ($clock) { $clock->instant = $clock->now()->modify('+60 seconds'); }; }] as $why => $answerTime) {
     [$op, , , $completion] = $sent('renew-proof-'.substr(md5($why), 0, 8).'-placeholder.com', '2027-10-18', 'another order');
     $readUntilStopped($op, $completion, $why); $answerTime($state);
-    $seen[$why] = $refused($op); $state->after = '2027-10-18'; $state->expiry = '10/18/2027 5:00:00 AM'; $state->fail = null;
+    $seen[$why] = $refused($op); $state->after = '2027-10-18'; $state->expiry = '10/18/2027 5:00:00 AM'; $state->fail = null; $state->during = null; $state->duringCommand = null;
 }
+// A fresh info read shows the renewed expiry and the expiry read then fails: the proof stays on the attempt, so a retry
+// whose reads all lag again is still refused.
+[$op, , , $completion] = $sent('renew-proof-kept-placeholder.com', '2027-10-18', 'another order');
+$readUntilStopped($op, $completion, 'kept'); $state->expiry = '10/18/2028 5:00:00 AM'; $state->fail = ReadCommand::Expiry;
+$first = $refused($op); $kept = isset($op->fresh()->policy['renewal_proof']); $state->expiry = '10/18/2027 5:00:00 AM'; $state->fail = null;
+$seen['a fresh later expiry kept for a lagging retry'] = $first && $kept && $refused($op);
 foreach (['a matching charge' => ['matching charge', '2027-10-18'], 'an advanced expiry' => ['failed order read', '2028-10-18'],
     'an advanced expiry before a failed expiry read' => ['later info, failed expiry read', '2027-10-18'],
     'an advanced expiry before an old expiry read' => ['later info, old expiry read', '2027-10-18']] as $why => [$shape, $expiry]) {

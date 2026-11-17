@@ -100,6 +100,8 @@ final class History
                 if ($row['open'] ?? false) { $outcome = $this->otherDomain($attempt, $context, $row) ? 'n' : 'order_open'; $candidate = null; }
                 else { [$outcome, $candidate] = $this->detail($attempt, $context, $row); }
             } catch (RequestDeadlineReached) { $outcome = 'read_budget'; $candidate = null; }
+            // A validated matching charge is renewal proof even when its reply used up the deadline; it still completes nothing.
+            if ($outcome === 'c' && $candidate) { $context->sawCandidate($candidate); }
             // Keep earlier validated outcomes, but never accept a reply that used up the deadline.
             if ($outcome === 'read_budget' || $context->now() >= $context->deadline) {
                 if ($prior !== null) { $orders[$row['orderid']] = $prior; }
@@ -110,7 +112,7 @@ final class History
             if (($known[$row['orderid']] ?? null) !== $validated) { $added++; }
             $orders[$row['orderid']] = $validated;
             if ($row['open']) { $checked[$row['orderid']] = $validated; }
-            if ($candidate) { $candidates[] = $candidate; $context->sawCandidate($candidate); }
+            if ($candidate) { $candidates[] = $candidate; }
         }
         if ($complete && $context->budget->remaining() < count($stale)) { $complete = false; $refuse('read_budget'); }
         if ($complete) {
@@ -118,8 +120,9 @@ final class History
                 if ($context->now() >= $context->deadline) { $complete = false; $refuse('read_budget'); break; }
                 try { [$outcome, $candidate] = $this->detail($attempt, $context, $row); }
                 catch (RequestDeadlineReached) { $complete = false; $refuse('read_budget'); break; }
+                if ($outcome === 'c' && $candidate) { $context->sawCandidate($candidate); }
                 if ($context->now() >= $context->deadline) { $complete = false; $refuse('read_budget'); break; }
-                if ($candidate) { $candidates[] = $candidate; $context->sawCandidate($candidate); }
+                if ($candidate) { $candidates[] = $candidate; }
                 elseif ($outcome === 'n') { $orders[$row['orderid']] = ['n', $row['signature']]; }
                 else { unset($orders[$row['orderid']]); $complete = false; $refuse($outcome); }
             }

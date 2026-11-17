@@ -69,23 +69,41 @@ class RegistrarAnswers
             ||is_array($seen)&&is_string($seen['identity']??null)&&hash_equals(self::identity($op),$seen['identity'])
             ||($d->provider_expires_at!==null&&$d->provider_expires_at->format('Y-m-d')>$before);
     }
-    /** One fresh read, the higher of the domain info and expiry replies, never inside a lock. A later expiry refuses, and so
-     * does a read that fails or is deferred: Not processed returns money, so it needs a current answer from the registrar. */
-    private static function requireUnrenewed(Operation $op,Domain $d): void
+    /** One fresh read, the higher of the domain info and expiry replies, never inside a lock. Not processed returns money, so
+     * it needs a current answer: every read must succeed in time, Enom's Expiry included. A later expiry refuses, and that
+     * proof is kept on the attempt first, even when a later read in the same check failed. */
+    private static function requireUnrenewed(Operation $op,Domain $d,\DateTimeImmutable $now): void
     {
-        $before=$op->base_expires_at?->format('Y-m-d');$seen=null;
+        $before=$op->base_expires_at?->format('Y-m-d');$ctx=null;$binding=null;$confirmed=false;
         try{
             $binding=AccountBindings::binding(Account::where('server_id',$op->server_id)->sole());$clock=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class);
-            $ctx=new RequestContext($binding,RequestOrigin::Interactive,$clock->now()->modify('+30 seconds'),new RequestBudget(4),$clock,Runtime::limiter());
-            $reader=app(AccountBindings::class)->reader((int)$op->server_id);$reader->readRenewalDomain($d->domain,$ctx);
-            // Enom's expiry read can lag or lead its info read (961c40e8): take the higher of both.
-            if(method_exists($reader,'expiry')){$reader->expiry($d->domain,$ctx);}
-            $seen=$ctx->seen()?->domain;
-        }catch(\PDOException $e){throw $e;}catch(\Throwable){$seen=null;}
-        if($before===null||$seen===null||!$seen->binding->matches($binding)||$seen->name!==$d->domain){
+            $deadline=$clock->now()->modify('+30 seconds');
+            // Strict: a failed read throws instead of returning an unknown result.
+            $ctx=new RequestContext($binding,RequestOrigin::Interactive,$deadline,new RequestBudget(4),$clock,Runtime::limiter(),true);
+            $reader=app(AccountBindings::class)->reader((int)$op->server_id);$reader->readRenewalDomain($d->domain,$ctx);$info=$ctx->seen()?->domain;
+            // Enom's expiry read can lag or lead its info read (961c40e8): it must answer too, and the higher counts.
+            $expiry=method_exists($reader,'expiry')?$reader->expiry($d->domain,$ctx):null;
+            $confirmed=$info!==null&&($expiry===null||$expiry->status==='success'&&isset($expiry->facts()['expiry']))&&$clock->now()<$deadline;
+        }catch(\PDOException $e){throw $e;}catch(\Throwable){$confirmed=false;}
+        $seen=$ctx?->seen()?->domain;
+        $matches=$seen!==null&&$binding!==null&&$seen->binding->matches($binding)&&$seen->name===$d->domain;
+        if($before!==null&&$matches&&substr($seen->expiry->value,0,10)>$before){
+            self::keepProof($op,$d,$now);
+            throw new \DomainException('The registrar now shows a later expiry for this domain, so this renewal can’t be recorded as not processed.');
+        }
+        if($before===null||!$confirmed||!$matches){
             throw new \DomainException('The registrar could not confirm the domain’s expiry just now, so this can’t be recorded as not processed yet. Try again later.');
         }
-        if(substr($seen->expiry->value,0,10)>$before){throw new \DomainException('The registrar now shows a later expiry for this domain, so this renewal can’t be recorded as not processed.');}
+    }
+    /** Under the normal locks, the later expiry the fresh read saw stays on this attempt, so a lagging retry cannot return its money. */
+    private static function keepProof(Operation $chosen,Domain $seed,\DateTimeImmutable $now): void
+    {
+        $identity=self::identity($chosen);
+        FreshTransaction::run(static function()use($seed,$chosen,$identity,$now):void {
+            $l=HoldingLocks::take($seed);$op=$l['operations']->firstWhere('id',$chosen->id);
+            if(!$op||self::identity($op)!==$identity||($op->policy['renewal_proof']['identity']??null)===$identity){return;}
+            $op->update(['policy'=>[...($op->policy??[]),'renewal_proof'=>['identity'=>$identity,'at'=>$now->format(DATE_ATOM)]]]);
+        });
     }
     /** Called in a check's locked save: a matching charge or a later expiry this check saw stays on the attempt. */
     public static function sawProof(array $policy,Operation $op,AttemptEvidence $attempt,\Paymenter\Extensions\Servers\Domains\Data\Evidence $facts,\DateTimeImmutable $now): array
@@ -103,7 +121,7 @@ class RegistrarAnswers
         if($review->action!=='enom_answer'||$review->tldId!==null){throw new \DomainException('Registrar answer review required.');}
         $chosen=Operation::findOrFail((int)($input['operation_id']??0));$seed=$chosen->domain()->firstOrFail();
         // Not processed reads the registrar once more, before any lock: a renewal that went through shows a later expiry.
-        if(($input['outcome']??null)==='not_processed'&&$chosen->action==='renew'&&self::ready($chosen,$now)){self::requireUnrenewed($chosen,$seed);}
+        if(($input['outcome']??null)==='not_processed'&&$chosen->action==='renew'){self::requireUnrenewed($chosen,$seed,$now);}
         $id=FreshTransaction::run(function()use($review,$input,$now,$seed):int{
             $l=HoldingLocks::take($seed,$review->actorId);$review->lockActor();$review->check();
             $op=$l['operations']->firstWhere('id',(int)($input['operation_id']??0));$d=$l['domain'];
