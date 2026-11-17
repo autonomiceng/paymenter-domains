@@ -20,9 +20,12 @@ final readonly class RenewalCompletion
     private function runEntered(int $id, \DateTimeImmutable $deadline, RegistrarCheck $check, bool $staff): Operation
     {
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
-        $capture = $this->decide($seed, $id, function (array $l) use ($id, $check) {
+        $token = bin2hex(random_bytes(16));
+        $capture = $this->decide($seed, $id, function (array $l) use ($id, $check, $staff, $token, $deadline) {
             $op = $l['operations']->firstWhere('id', $id);
             if (!$op || !$this->eligible($op) || self::capturedChargeHeld($op)) { return null; }
+            // One registrar check at a time per attempt: another check (staff, cron or retry) waits while this one runs.
+            if (self::checkRunning($op, $this->clock->now())) { if ($staff) { throw new StaffReviewRefused(MoneyDecisions::BUSY); } return null; }
             $check->capture($op);
             $financial=CapturedChargeReview::hasProof($op);
             $policy = $op->policy; $policy['renewal_execution'] = ['staff_alert' => true, 'reason' => ($op->policy['renewal_polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT ? 'poll_limit_reached' : 'original_attempt_unresolved', 'refundable_later' => false];
@@ -42,6 +45,10 @@ final readonly class RenewalCompletion
                 // Checks stop at the read limit.
                 if (($op->policy['renewal_polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT) { return null; }
                 $read=$financial?CapturedChargeReview::reserve($op,$this->clock):null;
+                // The claim outlives the read deadline. An expired claim is only taken over by the next check; it still refuses
+                // Not processed (checkClaimed) until a check saves its poll and proof and clears it.
+                $op->update(['policy' => [...$op->policy, 'renewal_check' => ['identity' => RegistrarAnswers::identity($op), 'token' => $token,
+                    'until' => $deadline->getTimestamp() + self::CLAIM_GRACE_SECONDS]]]);
                 return [$attempt, HoldingLocks::take($l['domain'])['stamp'],$read,RegistrarAnswers::identity($op)];
             } catch (\PDOException|RenewalBusy $e) { throw $e; } catch (\Throwable) { return null; }
         }, $staff);
@@ -73,9 +80,14 @@ final readonly class RenewalCompletion
         $ran = $check->deferred === null && isset($ctx) && $ctx->exchanges() > 0;
         // A bill zone sample is saved only after this turn's locked step: server settings are part of the holding stamp it compares.
         try {
-        if (!$financialRead && !$covered && !$autoRenewUnconfirmed && !$autoRenewConfirmed && !$ran && !$seen) { return Operation::findOrFail($id); }
-        return $this->decide($seed, $id, function (array $l) use ($id, $stamp, $proof, $attempt, $covered, $autoRenewUnconfirmed, $autoRenewConfirmed,$financialRead,$check,$scan,$ran,$seen,$identity) {
+        $quiet = !$financialRead && !$covered && !$autoRenewUnconfirmed && !$autoRenewConfirmed && !$ran && !$seen;
+        return $this->decide($seed, $id, function (array $l) use ($id, $stamp, $proof, $attempt, $covered, $autoRenewUnconfirmed, $autoRenewConfirmed,$financialRead,$check,$scan,$ran,$seen,$identity,$token,$quiet) {
             $op = $l['operations']->firstWhere('id', $id); $d = $l['domain'];
+            // This check's claim ends in the same locked step that counts its poll and saves its proof.
+            if ($op && ($op->policy['renewal_check']['token'] ?? null) === $token) {
+                $policy = $op->policy; unset($policy['renewal_check']); $op->update(['policy' => $policy]);
+            }
+            if ($quiet) { return $op; }
             // A concurrent check or staff resume changes the stamp, so this completion is stale. A charge or later expiry this
             // read saw for the same attempt and binding is still kept, so a later lagging read cannot permit Not processed.
             if ($op && $seen && $l['stamp'] !== $stamp && $this->eligible($op) && RegistrarAnswers::identity($op) === $identity
@@ -163,6 +175,16 @@ final readonly class RenewalCompletion
         return in_array($op->safe_code, ['actual_charge_changed', 'actual_cost_overrun'], true)
             && is_array($op->attempt['reconciliation'] ?? null)
             && ($op->policy['renewal_execution']['reason'] ?? null) !== 'resumed';
+    }
+    public const CLAIM_GRACE_SECONDS = 300;
+    /** A live check claim for the current attempt. */
+    private static function checkRunning(Operation $op, \DateTimeImmutable $now): bool
+    { return self::checkClaimed($op) && (int) ($op->policy['renewal_check']['until'] ?? 0) > $now->getTimestamp(); }
+    /** Any check claim for the current attempt, live or expired: the check may have seen proof it has not saved. */
+    public static function checkClaimed(Operation $op): bool
+    {
+        $claim = $op->policy['renewal_check'] ?? null;
+        return is_array($claim) && is_string($claim['identity'] ?? null) && hash_equals(RegistrarAnswers::identity($op), $claim['identity']);
     }
     private function eligible(Operation $op): bool
     {

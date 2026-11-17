@@ -146,6 +146,8 @@ class RegistrarAnswers
                 throw new \DomainException('Record the registrar’s final answer for this account and attempt.');}
             // The one guard on Not processed: no check saw a charge or a renewal.
             if($outcome==='not_processed'&&$op->action==='renew'&&self::renewalProof($op,$d)){throw new \DomainException('A check saw a charge or a new expiry for this renewal, so it can’t be recorded as not processed.');}
+            // A check that is running, or stopped before saving, may hold proof that is not saved yet.
+            if($outcome==='not_processed'&&$op->action==='renew'&&RenewalCompletion::checkClaimed($op)){throw new \DomainException('A status check for this renewal has not finished. Try again once it finishes.');}
             if(!$unproven&&$outcome==='not_processed'&&($op->provider_order_id!==null||(isset($op->attempt['registration'])||isset($op->attempt['renewal']))
                 ||isset($op->cost['actual'])||($op->attempt['execution']['send_state']??null)==='sent')){throw new \DomainException('This answer conflicts with the saved registrar result. Ask the registrar to check it.');}
             if($op->provider_order_id!==null&&!$credit&&$reference!==$op->provider_order_id){throw new \DomainException('Registrar order number differs from the saved result.');}

@@ -45,9 +45,9 @@ $state->fail = null; $state->after = '2028-10-18';
 expect($record($op), 'The fresh advanced expiry refuses the first answer');
 $proof = $op->fresh()->policy['renewal_proof'] ?? null;
 $state->after = '2027-10-18';
-$refused = $record($op); $fresh = $op->fresh();
+$refused = $record($op); $fresh = $op->fresh(); $kept = $fresh->policy['renewal_proof'] ?? null;
 $actual = [$credit() - $before, $fresh->state, $fresh->funding['refund_authorization'] ?? null,
-    $fresh->policy['enom_answer'] ?? null, $refused, is_array($proof) && ($proof['identity'] ?? null) === RegistrarAnswers::identity($fresh), $state->writes - $writes];
+    $fresh->policy['enom_answer'] ?? null, $refused, is_array($proof) && $kept === $proof && ($kept['identity'] ?? null) === RegistrarAnswers::identity($fresh), $state->writes - $writes];
 same([0, $priorState, null, null, true, true, 0], $actual,
     'Fresh positive proof survives refusal and later lagging reads without returning the renewal payment: '.json_encode($actual));
 echo "A fresh advanced expiry protects later renewal answers.\n"; $nativeSuccessful = true;

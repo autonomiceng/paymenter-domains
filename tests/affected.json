@@ -17,20 +17,19 @@
   "explicit": {
     "Domains/Services/HoldingLocks.php": ["tests/cli-renewal-resume-proof-test.php"],
     "Domains/Services/RegistrarCheck.php": ["tests/cli-renewal-resume-proof-test.php"],
-    "Domains/Services/RenewalCompletion.php": ["tests/cli-renewal-resume-proof-test.php"],
     "Domains/Services/InvoiceMoney.php": ["tests/cli-complimentary-external-refund-test.php"],
-    "Domains/Services/ComplimentaryInvoices.php": ["tests/cli-complimentary-external-refund-test.php"],
     "Domains/Services/RegistrarAnswers.php": [
       "tests/renewal-answer-fresh-expiry-test.php",
       "tests/renewal-answer-retained-proof-test.php",
       "tests/renewal-history-deadline-proof-test.php",
-      "tests/cli-renewal-resume-proof-test.php"
+      "tests/cli-renewal-resume-proof-test.php",
+      "tests/renewal-check-claim-test.php"
     ],
     "Domains/Registrars/Enom/History.php": ["tests/renewal-history-deadline-proof-test.php"],
     "Domains/Services/NativeDomainGuard.php": ["tests/complimentary-acquisition-receipt-test.php", "tests/complimentary-departed-receipt-test.php", "tests/complimentary-departed-owner-credit-test.php", "tests/complimentary-receipt-repair-test.php", "tests/cli-complimentary-external-refund-test.php"],
     "Domains/Services/Refunds.php": ["tests/complimentary-acquisition-receipt-test.php", "tests/complimentary-departed-receipt-test.php", "tests/complimentary-departed-owner-credit-test.php", "tests/complimentary-receipt-repair-test.php", "tests/complimentary-refunded-receipt-test.php", "tests/cli-complimentary-external-refund-test.php"],
     "Domains/Services/ComplimentaryInvoices.php": ["tests/complimentary-refunded-receipt-test.php", "tests/cli-complimentary-external-refund-test.php"],
-    "Domains/Services/RenewalCompletion.php": ["tests/renewal-resume-race-proof-test.php", "tests/cli-renewal-resume-proof-test.php"],
+    "Domains/Services/RenewalCompletion.php": ["tests/renewal-resume-race-proof-test.php", "tests/cli-renewal-resume-proof-test.php", "tests/renewal-check-claim-test.php"],
     "Domains/Services/HoldingDeparture.php": ["tests/complimentary-departed-receipt-test.php", "tests/complimentary-departed-owner-credit-test.php"],
     "tests/Support/staff-tld-filter-lookalikes.php": ["tests/staff-tld-page-test.php"],
     "tests/Support/enom-renewal-*-cases.php": ["tests/test_installed_package_enom_renewal.py"],
