@@ -25,7 +25,7 @@ final class NativeDomainGuard
         // cancelled (Invoice::updating below), and the money returns as account credit after commit (Refunds::creditRenewalReceipts).
         InvoiceTransaction::saved(static function(InvoiceTransaction $payment):void {
             $invoice=(int)$payment->invoice_id;
-            if(!Operation::where('invoice_id',$invoice)->where('action','renew')->exists()){return;}
+            if(!Operation::where('invoice_id',$invoice)->where(static fn($q)=>$q->where('action','renew')->orWhere('funding_basis','complimentary'))->exists()){return;}
             DB::afterCommit(static function()use($invoice):void {
                 try{app(Refunds::class)->creditRenewalReceipts($invoice);}
                 catch(\Throwable $e){\Illuminate\Support\Facades\Log::warning('Domains renewal receipt credit deferred to scheduler.',['invoice_id'=>$invoice,'exception_class'=>$e::class]);}
@@ -100,8 +100,9 @@ final class NativeDomainGuard
             });
         }
         Invoice::updating(static function (Invoice $invoice): void {
-            // Marked Paid, core would run Paid and RenewalFunding would send this renewal. Its money becomes account credit instead.
-            if($invoice->status==='paid'&&$invoice->getRawOriginal('status')==='cancelled'&&Operation::whereIn('invoice_id',self::ids($invoice))->where('action','renew')->exists()){
+            // Marked Paid, core would run Paid and RenewalFunding would send this still-open renewal. Its money becomes account
+            // credit instead. A renewal closed before the payment keeps the native late path: the invoice turns paid, then returns.
+            if($invoice->status==='paid'&&$invoice->getRawOriginal('status')==='cancelled'&&Operation::whereIn('invoice_id',self::ids($invoice))->where('action','renew')->whereIn('state',Refunds::OPEN)->exists()){
                 $invoice->status='cancelled';NativeServiceRefusal::notifyClosedInvoice($invoice);
             }
             if($invoice->isDirty('status')&&Operation::whereIn('invoice_id',self::ids($invoice))->where('funding_basis','complimentary')->exists()){throw new \DomainException('Complimentary receipts stay paid.');}

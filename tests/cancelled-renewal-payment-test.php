@@ -37,7 +37,8 @@ same($before+PricingRule::minor($op->amount),$cash(),'A replay and a second pass
 same(0,$send($op,$b),'A cancelled renewal sends nothing');
 same('2027-10-18',$d->fresh()->provider_expires_at->format('Y-m-d'),'A cancelled renewal keeps its expiry');
 
-// Processing then settled parts: each settled part returns once; none revives the renewal.
+// Processing then settled parts: the processing receipt closes the renewal, so later parts take the native late path (the
+// invoice turns paid) and the refund sweep returns each settled part once; none revives the renewal.
 [$partial,$pd,$pb,$pi]=$makeRenewal(placeholderComFixtureName('cancelled-partial-payment-placeholder.com'),false);
 $pi->update(['status'=>'cancelled']);$before=$cash();
 ExtensionHelper::addProcessingPayment($pi,null,'1.00','0.00','cancelled-partial');
@@ -47,12 +48,13 @@ ExtensionHelper::addPayment($pi,null,'1.00','0.00','cancelled-partial');
 ExtensionHelper::addPayment($pi,null,PricingRule::decimal(PricingRule::minor($partial->amount)-100),'0.00','cancelled-rest');
 ExtensionHelper::addPayment($pi,null,'1.00','0.00','cancelled-partial');
 same(2,$pi->transactions()->count(),'A gateway replay keeps the two actual receipts');
-same(['cancelled',$before+PricingRule::minor($partial->amount)],[$pi->fresh()->status,$cash()],'Settled parts return once and the invoice stays cancelled');
+$returns=new Refunds($clock);$returns->retryPending();$returns->retryPending();
+same(['paid','rejected',$before+PricingRule::minor($partial->amount)],[$pi->fresh()->status,$partial->fresh()->state,$cash()],'Settled parts on the closed renewal return once');
 same(0,$send($partial,$pb),'Partial settlement never sends a cancelled renewal');
 
 // A still-pending invoice remains payable through the same native path.
 [$normal,$nd,$nb,$ni]=$makeRenewal(placeholderComFixtureName('pending-normal-payment-placeholder.com'),false);
-$reads=$userReads;ExtensionHelper::addPayment($ni,null,$normal->amount,'0.00','normal-renewal');
+$paid=[];$reads=$userReads;ExtensionHelper::addPayment($ni,null,$normal->amount,'0.00','normal-renewal');
 same($reads,$userReads,'An ordinary renewal receipt takes no customer lock in the payment transaction');
 same(['paid',[(int)$ni->id]],[$ni->fresh()->status,$paid],'An ordinary renewal invoice still becomes Paid');
 same(1,$send($normal,$nb),'A pending invoice payment still sends one renewal');

@@ -644,9 +644,9 @@ failure. `tests/test_schema_mariadb_guards.py` checks the harness refusals witho
 Lock order, as native checkout (Cart locks the customer before inserting its invoice):
 every Domains writer locks the customer, then invoices, then what hangs off them, and reads
 payment rows last (`HoldingNativeLocks::transactions`). Inside core's payment transaction
-Domains takes no row locks. A paid cancelled renewal invoice stays cancelled
-(`NativeDomainGuard`); after commit the payment returns as account credit
-(`Refunds::creditRenewalReceipts`, swept again by `Refunds::creditRetired`).
+Domains takes no row locks. A paid cancelled invoice with a still-sendable renewal stays cancelled
+(`NativeDomainGuard`); after commit that renewal closes and its payment, or a complimentary receipt's,
+returns as account credit (`Refunds::creditRenewalReceipts`, swept by `Refunds::creditRetired`).
 `tests/test_receipt_lock_order_mariadb.py` pauses a receipt inside core's transaction beside
 another customer's full decision and beside the same customer's checkout: both finish and
 the payment is recorded and credited once. `tests/test_checkout_lock_order_mariadb.py`

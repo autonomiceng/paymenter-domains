@@ -4,14 +4,15 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Enums\InvoiceTransactionStatus;
 use App\Models\{Credit, InvoiceTransaction, User};
-use Illuminate\Support\Facades\{Cache, DB};
+use Illuminate\Support\Facades\{Cache, DB, Schema};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Models\{Account, Operation};
+use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 /** Proved no-send returns. Commit credit or a receipt plan atomically, then let the gateway return its receipts. */
 final readonly class Refunds
 {
     private const REJECTED='refund_rejected', CLOSED='refund_closed';
-    private const OPEN = ['awaiting_payment', 'queued', 'held'];
+    /** Renewal states that could still be sent. */
+    public const OPEN = ['awaiting_payment', 'queued', 'held'];
     public function __construct(private Clock $clock) {}
     public function refundHeld(User $actor, int $id, string $reason, ?StaffOperationReview $review = null): ?array
     {
@@ -250,12 +251,12 @@ final readonly class Refunds
         if ($failure !== null) { throw $failure; }
         return $credited;
     }
-    /** After core commits a receipt on a renewal invoice: credit a cancelled renewal's or a complimentary receipt's money. */
+    /** After core commits a receipt on a renewal or complimentary invoice: credit a cancelled renewal's or a complimentary receipt's money. */
     public function creditRenewalReceipts(int $invoice): array
     {
         $credited = []; $failure = null;
         // A retried renewal shares its invoice: one row needing staff does not stop the next from crediting.
-        foreach (Operation::where('invoice_id', $invoice)->where('action', 'renew')->orderBy('id')->pluck('id') as $id) {
+        foreach (Operation::where('invoice_id', $invoice)->where(static fn ($q) => $q->where('action', 'renew')->orWhere('funding_basis', 'complimentary'))->orderBy('id')->pluck('id') as $id) {
             try { if ($this->creditCancelledRenewal((int) $id) !== null) { $credited[] = (int) $id; } }
             catch (\Throwable $e) { $failure ??= $e; }
         }
@@ -267,8 +268,9 @@ final readonly class Refunds
     public function creditCancelledRenewal(int $id): ?array
     {
         OperationClaims::outside(); $seen = Operation::findOrFail($id);
-        if ($seen->action !== 'renew') { return null; }
+        // Complimentary registrations, transfers and renewals all take payments on their zero paid receipt.
         if ($seen->funding_basis === 'complimentary') { return $this->creditComplimentary($seen); }
+        if ($seen->action !== 'renew') { return null; }
         if (in_array($seen->state, self::OPEN, true)) {
             $seed = $seen->domain()->firstOrFail();
             FreshTransaction::run(function () use ($seed, $id): void {
@@ -280,10 +282,13 @@ final readonly class Refunds
                 catch (\DomainException) { $op->update(['state' => 'held', 'safe_code' => 'renewal_funding_or_authority']); }
             });
         }
-        $seen->refresh(); if ($seen->state !== 'rejected' || \App\Models\Invoice::whereKey($seen->invoice_id)->value('status') !== 'cancelled') { return null; }
+        // Only a renewal closed with its receipts is credited here; one closed before any payment keeps the native late path.
+        $seen->refresh();
+        if ($seen->state !== 'rejected' || ($seen->attempt['terminal']['transactions'] ?? []) === []
+            || \App\Models\Invoice::whereKey($seen->invoice_id)->value('status') !== 'cancelled') { return null; }
         return $this->creditRejected($id);
     }
-    /** A complimentary renewal's receipt is a zero paid invoice; a payment on it returns as account credit, keyed by payment row. */
+    /** A complimentary order's receipt is a zero paid invoice; a payment on it returns as account credit, keyed by payment row. */
     private function creditComplimentary(Operation $seen): ?array
     {
         $seed = $seen->domain()->firstOrFail();
@@ -307,19 +312,31 @@ final readonly class Refunds
     private function creditRenewalSweep(Account $account): array
     {
         $cursor = 'domains.renewal-receipt-cursor.'.$account->server_id; $from = (int) Cache::get($cursor, 0); $credited = [];
-        $rows = Operation::where('server_id', $account->server_id)->where('action', 'renew')->where('id', '>', $from)
-            ->where(fn ($q) => $q->where('funding_basis', 'complimentary')->orWhereIn('invoice_id', \App\Models\Invoice::select('id')->where('status', 'cancelled')))
+        $rows = Operation::where('server_id', $account->server_id)->where('id', '>', $from)
+            ->where(fn ($q) => $q->where('funding_basis', 'complimentary')
+                ->orWhere(fn ($q) => $q->where('action', 'renew')->whereIn('invoice_id', \App\Models\Invoice::select('id')->where('status', 'cancelled'))))
             ->whereIn('invoice_id', InvoiceTransaction::select('invoice_id')->where('status', InvoiceTransactionStatus::Succeeded))
             ->orderBy('id')->limit(100)->get(['id', 'domain_id']);
         foreach ($rows as $row) {
             try { if ($this->creditCancelledRenewal((int) $row->id) !== null) { $credited[] = (int) $row->domain_id; } }
             catch (\Throwable $e) {
+                // The payment stays recorded; staff see the existing money-return check, and later sweeps keep trying.
+                try { $this->receiptNeedsStaff((int) $row->id); }
+                catch (\Throwable) { /* An alert that cannot be written cannot stop the remaining receipts. */ }
                 try { logger()->warning('Domains renewal receipt credit stays with staff.', ['operation_id' => (int) $row->id, 'exception_class' => $e::class]); }
                 catch (\Throwable) { /* Logging cannot stop the remaining renewals. */ }
             }
         }
         Cache::forever($cursor, $rows->count() === 100 ? (int) $rows->last()->id : 0);
         return $credited;
+    }
+    private function receiptNeedsStaff(int $id): void
+    {
+        if (!Schema::hasTable('domains_obligation_alerts')) { return; }
+        DB::transaction(function () use ($id): void {
+            $op = Operation::findOrFail($id); $d = Domain::whereKey($op->domain_id)->lockForUpdate()->firstOrFail();
+            ObligationAlerts::record($d, 'refund_repair', $this->clock->now()->getTimestamp(), $id);
+        });
     }
     private function creditClosed(Operation $seen): ?array
     {
