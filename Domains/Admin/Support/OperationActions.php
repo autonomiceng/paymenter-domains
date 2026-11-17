@@ -137,7 +137,7 @@ final class OperationActions
                 &&($op->safe_code!==\Paymenter\Extensions\Servers\Domains\Services\ContactProfileHold::CODE||\Paymenter\Extensions\Servers\Domains\Services\ContactProfileHold::unsent($op)),
             // A closed unpaid order released its name, so Refunds can never credit it. Late money goes through the payment review.
             // Complimentary orders have no payment for the refund sweep; retry only their unfinished closure.
-            'credit'=>$op->state==='rejected'&&!ReceiptReturns::settled($op)&&(($op->funding_basis==='paid_invoice'&&$op->safe_code!==UnpaidAcquisitionProof::CODE)
+            'credit'=>$op->state==='rejected'&&!ReceiptReturns::settled($op)&&!ReceiptReturns::releasedUnreadable($op)&&(($op->funding_basis==='paid_invoice'&&$op->safe_code!==UnpaidAcquisitionProof::CODE)
                 ||($op->funding_basis==='complimentary'&&in_array($op->action,['register','transfer'],true)&&($d=$op->domain)
                     &&!self::complimentaryCloseBlocked($op)&&($d->status!==($op->action==='register'?'registration_rejected':'transfer_rejected')||$d->service?->status!==\App\Models\Service::STATUS_CANCELLED))),
             'replacement'=>$op->action==='renew'&&$op->state==='rejected',

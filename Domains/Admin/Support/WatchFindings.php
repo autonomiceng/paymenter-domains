@@ -17,11 +17,25 @@ final class WatchFindings
     public const PROBLEMS=['staff.unavailable'=>"Can't read saved data",'watch.redemption'=>'Redemption','watch.expired'=>'Expired','watch.ns_changed'=>'Nameservers changed','staff.expiring'=>null,'watch.not_registered'=>'Not registered'];
     /** Why a stopped domain has no action; the page head says it, list rows show Stopped alone. */
     public const ENDED='Ended with its hosting service';
+    /** How a stopped domain starts again: discovery returns it when a monitored product's active service names it (WatchDiscovery). */
+    public const RESTART='Monitoring starts again when a monitored hosting product has an active service with this domain.';
+    /** The list's short form of RESTART. */
+    public const RESTART_SHORT='Starts with monitored hosting';
+    /** Staff paused it before it stopped, so discovery returns it paused (WatchDiscovery::staffPaused) and checks wait for Resume monitoring. */
+    public const RESTART_PAUSED='Staff paused it before it stopped, so it returns paused when a monitored hosting product has an active service with this domain. Then use Resume monitoring to start checks.';
+    /** The list's short form of RESTART_PAUSED. */
+    public const RESTART_PAUSED_SHORT='Returns paused with monitored hosting';
+    /** How this stopped domain starts again; $short is the list form. */
+    public static function restart(WatchName $watch, bool $short=false): string
+    {
+        $paused=WatchDiscovery::staffPaused($watch);
+        return $short?($paused?self::RESTART_PAUSED_SHORT:self::RESTART_SHORT):($paused?self::RESTART_PAUSED:self::RESTART);
+    }
     public static function stoppedReason(WatchName $watch): string
     {
         $event=\Paymenter\Extensions\Servers\Domains\Models\WatchAudit::where('subject_type','watch')->where('subject_id',$watch->id)
             ->whereIn('event',['discovery_retired','discovery_active','staff_retire','staff_stop'])->orderByDesc('id')->value('event');
-        return $event==='discovery_retired'?self::ENDED:'Monitoring has stopped';
+        return ($event==='discovery_retired'?self::ENDED.'. ':'').self::restart($watch);
     }
     public const HOSTING_SUSPENDED='The hosting service is suspended. Monitoring resumes when it is active again.';
     /** Staff paused it too, so the active hosting service alone does not resume it. */

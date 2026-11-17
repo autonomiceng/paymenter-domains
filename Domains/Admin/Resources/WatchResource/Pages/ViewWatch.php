@@ -29,7 +29,9 @@ class ViewWatch extends RecordDetailPage
                 return WatchRows::row($label, $rows[$label], $check);
             }, array_keys($rows));
             // The head shows the state; its reason opens the sheet, so the page has no banner repeating it.
-            if ($sections === [] && ($status['reason'] ?? null) !== null) { array_unshift($rows, WatchRows::notice($status['label'], $status['reason'])); }
+            // A stopped domain starts again from a monitored hosting product, so its notice links to that setting.
+            $settings = $this->getRecord()->state === 'retired' && MonitoringSettings::canAccess() ? Sheet::link('monitoring_settings', 'Monitoring settings', WatchResource::getUrl('settings')) : null;
+            if ($sections === [] && ($status['reason'] ?? null) !== null) { array_unshift($rows, WatchRows::notice($status['label'], $status['reason'], $settings)); }
             $sections[] = Section::make($title === 'Checks' ? 'Latest checks' : $title, $rows);
         }
         return $sections;

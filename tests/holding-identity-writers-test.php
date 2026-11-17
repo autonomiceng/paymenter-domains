@@ -72,6 +72,24 @@ foreach (['funding' => $fund, 'holding' => $holding, 'contact disposition' => $c
         same([['column' => 'id', 'direction' => 'asc']], $read['orders'], 'Sorted rows: '.$name.' '.$table);
     }
 }
+// These independent entry points must serialize on invoices before they can own the user.
+$recovery=$new(placeholderComFixtureName('invoice-first-contact-placeholder.com'),setup:false);
+$hold=static fn()=>ContactRecovery::hold((int)$recovery->id);
+$hold();
+$recover=static fn()=>ContactRecovery::replace($user,(int)$recovery->id,'Corrected synthetic contact details');
+\Paymenter\Extensions\Servers\Domains\Services\NativeUserDeletion::boot();
+foreach(['claim/reconciliation'=>static fn()=>$claims->locked((int)$op->id,static fn()=>null),
+    'contact hold'=>$hold,'contact recover'=>$recover,
+    'customer deletion'=>static fn()=>commerceReject(static fn()=>$user->fresh()->delete())]as$name=>$call){
+    $trace->reads=[];$connection->setQueryGrammar($trace);
+    try{$call();}finally{$connection->setQueryGrammar($original);}
+    $tables=array_column($trace->reads,'table');
+    expect(in_array('invoices',$tables,true)&&in_array('users',$tables,true),'Invoice and owner are locked: '.$name);
+    if($name!=='customer deletion'){expect(array_search('invoices',$tables,true)<array_search('users',$tables,true),'Invoice precedes owner: '.$name);continue;}
+    // Deletion holds the owner first, as native checkout does, so it must never wait on an invoice a receipt holds.
+    expect(array_search('users',$tables,true)<array_search('invoices',$tables,true),'Owner precedes invoice: '.$name);
+    same('for update nowait',$trace->reads[array_search('invoices',$tables,true)]['lock'],'Deletion never waits on an invoice');
+}
 // Funding evidence also cannot survive a reset without Laravel's rollback event.
 DB::beginTransaction(); $context = InvoiceFunding::lock($op->invoice_id); $pdo = $connection->getPdo(); DB::disconnect();
 if ($pdo->inTransaction()) { $pdo->rollBack(); } $connection->setPdo($pdo);

@@ -36,18 +36,20 @@ final class StaffDomainStatus
      * An open alert names the step unless the row already has a specific one (a held request, an import) or has ended.
      * With no alert, an open renewal says what happens next on a domain that is otherwise Active.
      * @param array{key:string,label:string,tone:string,reason:?string} $shared
-     * @param list<array{code:string,request:?int,failed?:bool}> $alerts
+     * @param list<array{code:string,request:?int,failed?:bool,money?:bool}> $alerts
      * @return array{key:string,label:string,tone:string,reason:?string,step:?string,request:?int,act:bool,alert:?string} $request is set when the step names one, $act when staff have a job here, $alert when the step is that open alert */
     public static function for(array $shared, string $state, Domain $d, ?Operation $op, array $alerts, ?Operation $renewal=null, ?Operation $waiting=null, bool $ordersOff=false, ?array $accounts=null, ?array $release=null): array
     {
-        if (in_array($state, ['departed', 'departed_deleted'], true)) {
-            $alerts = array_values(array_filter($alerts, static fn (array $alert) => !in_array($alert['code'], self::DEPARTED_STEPS, true)));
+        $departed = in_array($state, ['departed', 'departed_deleted'], true);
+        if ($departed) {
+            // An unreviewed charge is money staff still owe a decision on, so it outlives the registrar work.
+            $alerts = array_values(array_filter($alerts, static fn (array $alert) => ($alert['money'] ?? false) || !in_array($alert['code'], self::DEPARTED_STEPS, true)));
         }
         [$step, $specific, $request] = self::resolve($state, $d, $op, $accounts, $release);
         $act = $step !== null && !in_array($step, self::WAITING, true);
         $named = null;
         if (!$specific) {
-            if ($alerts) { $top = self::topAlert($alerts); [$step, $request] = self::alert($top, $d); $act = true; $named = $top['code']; }
+            if ($alerts) { $top = self::topAlert($alerts, $departed); [$step, $request] = self::alert($top, $d); $act = true; $named = $top['code']; }
             elseif ($renewal && in_array($state, ['active', 'renewal_off_expiring', 'expires_today'], true)) { [$step, $request, $act] = self::renewal($renewal, $accounts, $release); }
         }
         // A held or unconfirmed transfer, and a state this version doesn't know, only say a request is in the way.
@@ -148,8 +150,11 @@ final class StaffDomainStatus
     private static function ordersOrCheck(Operation $op, string $reason, ?array $accounts=null): string
     { return $op->state==='queued'&&OperationQueries::ordersOff($op,$accounts)?RequestFacts::ordersStep($reason):self::check($op->id); }
     /** A request to check leads, as in the domain page's head (DESIGN: the staff job reads Check request #N). Then the first danger alert, else the oldest. */
-    private static function topAlert(array $alerts): array
+    /** The alert the step names. Live, a request review leads. After a departure the registrar request is over, so money
+     * still moving (a refund repair, a funds review, a hold) leads, and a retained charge review follows. */
+    private static function topAlert(array $alerts, bool $departed = false): array
     {
+        if ($departed) { $alerts = array_values(array_filter($alerts, fn(array $a) => !($a['money'] ?? false))) ?: $alerts; }
         $requests = array_values(array_filter($alerts, fn(array $a) => ($a['request'] ?? null) !== null && in_array($a['code'], ['operation_review', 'held_obligation'], true)));
         $pool = $requests !== [] ? $requests : array_values($alerts);
         foreach ($pool as $alert) { if ((DomainFacts::ALERTS[$alert['code']][1] ?? null) === 'danger') { return $alert; } }

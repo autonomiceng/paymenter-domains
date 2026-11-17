@@ -31,7 +31,11 @@ final class RequestRows
         // Each part is made a sentence on its own, so a typed body never reaches the page as markup; a timed retry stays a time.
         $try = $notice['next_try'] ?? null;
         $line = self::sentence(implode(' ', array_filter([self::sentence($notice['title']), self::sentence($notice['body'] ?? null), $try === null ? null : 'Next try'])));
-        return Row::notice('request', Value::state($word, Reader::Staff, $line, null, $try === null ? null : Fact::date((int) $try, Reader::Staff)), $action);
+        $value = Value::state($word, Reader::Staff, $line, null, $try === null ? null : Fact::date((int) $try, Reader::Staff));
+        // Times and their step, when the notice has them, go on the staff line under the reason.
+        foreach ($notice['times'] ?? [] as $label => $at) { $value = $value->when((int) $at, (string) $label); }
+        if (isset($notice['note'])) { $value = $value->note((string) $notice['note']); }
+        return Row::notice('request', $value, $action);
     }
     /** The request's reason, when no notice gives one: the head shows the word, so the reason opens the sheet. */
     public static function reason(State $state, string $reason, string $record): Row
@@ -53,17 +57,25 @@ final class RequestRows
         if ($word === null || $name === null) { return self::text($name, $sub); }
         return Value::state($word, Reader::Staff, self::sentence(implode('. ', array_filter([$name, $sub]))));
     }
-    /** History rows, newest first, as rail steps. The newest step carries the request's own word; earlier ones have no state of their own.
+    /** History rows, newest first, as rail steps. A step shows only its own outcome, as an event named by a status word
+     * ("Completed"). The request's current word stays at the top of the page, never on its newest event.
      * @param list<array{time:?string,event:string,sub:?string,by:string}> $rows */
-    public static function trace(array $rows, State $state): Trace
+    public static function trace(array $rows): Trace
     {
         $trace = Trace::make(Reader::Staff);
-        foreach ($rows as $i => $r) {
+        foreach ($rows as $r) {
             $at = is_string($r['time'] ?? null) && ($t = strtotime($r['time'])) !== false ? $t : null;
             $reason = self::sentence($r['sub'] ?? null);
-            $trace->step((string) $r['event'], $i === 0 ? $state : null, $at, $r['by'] ?? null, $reason !== null && !Fact::isWord($reason) ? $reason : null);
+            $trace->step((string) $r['event'], self::own((string) $r['event']), $at, $r['by'] ?? null, $reason !== null && !Fact::isWord($reason) ? $reason : null);
         }
         return $trace;
+    }
+    /** The status word an event's name is, if it is one. */
+    private static function own(string $text): ?State
+    {
+        $text = mb_strtolower(rtrim(trim($text), '.'));
+        foreach (State::cases() as $case) { if (mb_strtolower($case->label()) === $text) { return $case; } }
+        return null;
     }
     private static function missing(?string $cause): Value
     {

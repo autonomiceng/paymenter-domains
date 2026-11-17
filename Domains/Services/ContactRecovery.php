@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
-use App\Models\{Product, Server, Service, User};
+use App\Models\{Invoice, Product, Server, Service, User};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
@@ -17,6 +17,7 @@ final class ContactRecovery
         $hint = Operation::findOrFail($operationId); $ownerId = Domain::findOrFail($hint->domain_id)->user_id;
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Contact hold owns its transaction.'); }
         return DB::transaction(static function () use ($hint, $ownerId): Operation {
+            Invoice::whereKey($hint->invoice_id)->lockForUpdate()->firstOrFail();
             User::whereKey($ownerId)->lockForUpdate()->firstOrFail();
             $funding = InvoiceFunding::lock($hint->invoice_id);
             [$domain, $operations] = self::lock($hint); $op = $operations->firstWhere('id', $hint->id);
@@ -69,6 +70,7 @@ final class ContactRecovery
         $hint = Operation::findOrFail($operationId); $ownerId = Domain::findOrFail($hint->domain_id)->user_id;
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Contact recovery owns its transaction.'); }
         return DB::transaction(static function () use ($actor, $hint, $ownerId, $reason, $review, $clock, $contact, $saveAccount, $automatic): Operation {
+            Invoice::whereKey($hint->invoice_id)->lockForUpdate()->firstOrFail();
             $users = User::whereKey([$actor->id, $ownerId])->orderBy('id')->lockForUpdate()->get()->keyBy('id');
             $currentActor = $users->get($actor->id); $owner = $users->get($ownerId);
             if (!$currentActor || !$owner || ((int) $actor->id !== (int) $ownerId && !$currentActor->hasPermission('admin.domains.manage'))) {

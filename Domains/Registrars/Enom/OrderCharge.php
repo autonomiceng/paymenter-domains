@@ -66,6 +66,23 @@ final class OrderCharge
     {
         return Pricing::cents(is_string($value) && str_starts_with($value, '$') ? substr($value, 1) : $value);
     }
+    /** A successful reply for the attempt's own order number with an item naming its domain, whatever its charge facts say.
+     * Such an order was found, so it is never evidence that the order is missing. */
+    public static function found(AttemptEvidence $attempt, ProtocolResult $order): bool
+    {
+        $items = $order->value('order.orderdetail');
+        if ($order->status !== 'success' || $attempt->providerReference === null || $order->value('order.orderid') !== $attempt->providerReference
+            || !is_array($items)) { return false; }
+        foreach (array_is_list($items) ? $items : [$items] as $item) {
+            try { if (is_array($item) && is_string($item['description'] ?? null) && CanonicalName::normalize($item['description']) === $attempt->query->name) { return true; } }
+            catch (\InvalidArgumentException|\TypeError) {}
+        }
+        return false;
+    }
+    /** A completed order detail read that shows no order of this attempt. A reply carrying the attempt's own order number
+     * whose detail is missing or unreadable is an incomplete read, never an absence. */
+    public static function completedAbsence(AttemptEvidence $attempt, ProtocolResult $order): bool
+    { return $order->status === 'success' && $attempt->providerReference !== null && $order->value('order.orderid') !== $attempt->providerReference; }
     /** Every parsed item must positively name a different canonical domain. */
     public static function unrelated(AttemptEvidence $attempt, ProtocolResult $order): bool
     {

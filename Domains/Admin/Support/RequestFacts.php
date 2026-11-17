@@ -256,6 +256,8 @@ final class RequestFacts
         if ($paid=self::paidWaiting($op,$accounts)) { [$status['label'],$status['tone']]=RequestStatus::SET['in_progress'];$status['reason']=$paid; }
         // A scheduled check still settles the result by itself: Checking inside the normal time, Delayed after it (P-STA-8).
         if (self::checking($op)) { $late=PaidUncertainty::waitState($op)===State::Delayed; [$status['label'],$status['tone']]=$late?['Delayed','warning']:['Checking','info']; }
+        // A renewal whose order no read could prove has stopped checking: it waits for staff to record Enom's answer.
+        try { if (\Paymenter\Extensions\Servers\Domains\Services\OrderUnproven::applies($op)&&RegistrarCheck::stopped($op)) { [$status['label'],$status['tone']]=['Needs review','warning']; } } catch (\Throwable) {}
         if (!self::heldAcquisition($op,$off)) { return $status; }
         [$status['label'],$status['tone']]=self::STATUSES['on_hold'];
         return $status;
@@ -277,7 +279,8 @@ final class RequestFacts
     {
         try {
             if (self::checking($op)) { return 'checking'; }
-            if ($op->state!=='uncertain'||!RegistrarCheck::stopped($op)) { return null; }
+            // A renewal whose order number no read could prove stays pending, but its checks have stopped the same way.
+            if (!RegistrarCheck::stopped($op)||$op->state!=='uncertain'&&!\Paymenter\Extensions\Servers\Domains\Services\OrderUnproven::applies($op)) { return null; }
             $now=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now();
             if (!\Paymenter\Extensions\Servers\Domains\Services\RegistrarAnswers::ready($op,$now)) { return null; }
             return \Paymenter\Extensions\Servers\Domains\Services\RegistrarAnswers::absence($op,$now)!==null?'no_order':'unclear';
@@ -499,9 +502,9 @@ final class RequestFacts
         $at=static fn(?int $t):?string=>$t===null?null:\Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at($t);
         $check=RegistrarCheck::status($op)??[]; $hold=$facts['auto_renew']??PaidUncertainty::holdSummary($op);
         if ($stand==='checking') {
-            $sent=$at(StaffReviewHistory::sentAt($op)?->getTimestamp());
-            $body=implode(' ',array_filter([$sent?'Sent '.$sent.'.':null,'Next automatic check '.$at((int)$check['next_at']).'.','Check status reads '.$history.' now instead of waiting.',$hold]));
-            return ['title'=>'Waiting for '.$who.' to confirm the '.$kind.'.','body'=>$body,'tone'=>PaidUncertainty::waitState($op)===State::Delayed?'warning':'info',
+            // The reason stays in the sentence; its times and the Check status step go on the staff line under it (mock).
+            $times=array_filter(['Sent'=>StaffReviewHistory::sentAt($op)?->getTimestamp(),'Next automatic check'=>(int)$check['next_at']],fn($t)=>$t!==null);
+            return ['title'=>'Waiting for '.$who.' to confirm the '.$kind.'.','body'=>$hold,'times'=>$times,'note'=>'Check status reads '.$history.' now instead of waiting.','tone'=>PaidUncertainty::waitState($op)===State::Delayed?'warning':'info',
                 'action'=>OperationActions::readLimit($op)?'resume_reads':'recheck'];
         }
         $stopped=isset($check['at'])?'Checks stopped '.$at((int)$check['at']).'.':null;

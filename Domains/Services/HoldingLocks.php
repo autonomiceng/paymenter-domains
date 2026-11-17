@@ -11,9 +11,11 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account, Adoption, Domain, Oper
 /** Internal billing/save prefix, joining exactly one caller-owned transaction. Never performs I/O. */
 final class HoldingLocks
 {
-    public static function take(Domain $seed, ?int $staffId = null, bool $advisory = false, array $additionalServices = [], bool $completeInvoices = false, bool $foreignInvoices = false, bool $released = false, bool $nativeReceipt = false, ?\Closure $beforeCatalogue = null, ?Capabilities $catalogue = null, ?InvoiceScope $scope = null): array
+    public static function take(Domain $seed, ?int $staffId = null, bool $advisory = false, array $additionalServices = [], bool $completeInvoices = false, bool $foreignInvoices = false, bool $released = false, bool $nativeReceipt = false, ?\Closure $beforeCatalogue = null, ?Capabilities $catalogue = null, ?InvoiceScope $scope = null, ?int $receiptInvoice = null): array
     {
         if ($scope && !MoneyDecisions::running()) { throw new \LogicException('Invoice scope is taken only by the money runner.'); }
+        if ($nativeReceipt !== ($receiptInvoice !== null)) { throw new \LogicException('A native receipt requires its one invoice.'); }
+        $scope ??= $nativeReceipt ? new InvoiceScope($receiptInvoice) : null;
         if (!$advisory && ($nativeReceipt ? DB::transactionLevel() < 1 : DB::transactionLevel() !== 1)) { throw new \LogicException('Holding locks require the outer transaction.'); }
         ['user' => $user, 'staff' => $staff, 'credit' => $credit, 'invoices' => $invoices, 'items' => $items,
             'transactions' => $transactions, 'orders' => $orders, 'services' => $services, 'products' => $products,
@@ -47,6 +49,12 @@ final class HoldingLocks
         }
         $nativeIdentity = HoldingNativeIdentity::capture($domain, $nativeLocks, $tld);
         $identity_source = HoldingIdentitySource::resolve($domain, $nativeIdentity, $adoption, $account, $cancel);
+        // A closed renewal grants no authority to revive; keep its real receipt even if invoice ownership changed.
+        if ($nativeReceipt && (int) $invoices->first()?->user_id !== (int) $user->id
+            && $operations->contains(static fn ($op) => (int) $op->invoice_id === $receiptInvoice && $op->action === 'renew'
+                && in_array($op->state, ['awaiting_payment', 'queued', 'held'], true))) {
+            throw new MoneyScopeChanged('The scoped invoice changed owner.');
+        }
         $service->setRelation('user', $user);
         $rows = [$user, ...$user->properties, ...$invoices, ...$items, ...$transactions, ...$orders, ...$services, ...$products, ...$plans, ...$cancel, ...$configs, ...$properties, ...$markers, $server, $account, ...$settings, $tld, ...$prices, $domain, ...($adoption ? [$adoption] : []), ...$operations, ...$upgrades, ...$links, ...($tax === 0 ? [] : [$tax])];
         // A scoped stamp covers fewer rows, so it never equals a full one; full stamps are unchanged.

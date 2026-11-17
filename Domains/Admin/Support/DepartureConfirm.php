@@ -74,14 +74,16 @@ final class DepartureConfirm
             // Muted, focusable and described by the Departure check row while a line blocks it.
             ->disabled(fn()=>self::preview($d)['block']!==null)
             ->tooltip(fn()=>($b=self::preview($d)['block'])?self::line($b,$d)[1]:null)
-            ->modalHeading(self::LABEL)->modalDescription($d->domain)->modalSubmitActionLabel(self::LABEL)->modalWidth('2xl')
+            ->modalHeading(self::LABEL)->modalDescription(fn()=>new HtmlString('<span class="domains-mono">'.e($d->domain).'</span> '.e('is not in our registrar account.')))->modalSubmitActionLabel(self::LABEL)->modalWidth('2xl')
+            // Cancel then Confirm, right-aligned from 640px; stacked on phones with Confirm on top (staff-styles, mock 06).
+            ->modalFooterActionsAlignment(\Filament\Support\Enums\Alignment::End)
             ->modalSubmitAction(fn(Action $action)=>$action->color('danger'))
             ->schema(fn()=>[
                 Hidden::make('review_key')->default(fn()=>StaffHoldingReview::ticket((int)Auth::id(),(int)$d->id,HoldingDeparture::ACTION,
                     StaffHoldingReview::stamp(HoldingLocks::take($d,advisory:true)),app(Clock::class))),
-                Radio::make('reason')->label('Reason')->required()->live()->options(array_map(fn($r)=>rtrim($r,'.'),HoldingDeparture::REASONS)),
+                Radio::make('reason')->label('Reason')->required()->markAsRequired(false)->live()->options(array_map(fn($r)=>rtrim($r,'.'),HoldingDeparture::REASONS)),
                 // The helper sits under the label, before the field, so it is read before typing (mock 06).
-                Textarea::make('note')->label('Staff note')->required()->minLength(5)->maxLength(500)->rows(2)
+                Textarea::make('note')->label('Staff note (required)')->required()->markAsRequired(false)->minLength(5)->maxLength(500)->rows(2)
                     ->extraInputAttributes(['aria-describedby'=>'domains-departure-note-help-'.$d->id])
                     ->belowLabel(Text::make('Only staff see it. Say how you know the domain moved.')->extraAttributes(['id'=>'domains-departure-note-help-'.$d->id]))
                     ->rules(['regex:'.StaffReason::SINGLE_LINE])->validationMessages(['regex'=>'Use one line.']),
@@ -106,24 +108,25 @@ final class DepartureConfirm
                 $action->halt();
             });
     }
-    /** What confirmation changes, from the read-only preview: each line is also on the page. */
+    /** What confirmation changes, from the read-only preview: one short list, each item also on the page, then the
+     * one warning. */
     private static function outcome(Domain $d,?string $reason=null): HtmlString
     {
-        $p=self::preview($d);$lines=[];$b=fn(string $s)=>'<strong>'.e($s).'</strong>';
+        $p=self::preview($d);$items=[];$b=fn(string $s)=>'<strong>'.e($s).'</strong>';
         foreach($p['close'] as $id){
             $op=$d->operations()->whereKey($id)->first();if(!$op){continue;}
-            $lines[]=$b(self::invoice((int)$op->invoice_id)).e(' is cancelled. It was an unpaid renewal of $'.number_format((float)$op->amount,2).'.');
+            $items[]=$b(self::invoice((int)$op->invoice_id)).e(' is cancelled, an unpaid renewal of $'.number_format((float)$op->amount,2).'.');
         }
-        foreach($p['credit_minor'] as $invoice=>$minor){$lines[]=$b(self::invoice((int)$invoice)).e(' is cancelled, with '.self::money($minor).' to account credit.');}
-        $lines[]=$b('Service #'.$d->service_id).e(' is cancelled.');
-        $lines[]=e('The name becomes available to order.');
-        $lines[]=e(trim("Confirm doesn't change DNS. ".(DepartureChecks::staffDnsCase($d)[1]??'')));
+        foreach($p['credit_minor'] as $invoice=>$minor){$items[]=$b(self::invoice((int)$invoice)).e(' is cancelled, with '.self::money($minor).' to account credit.');}
+        $items[]=$b('Service #'.$d->service_id).e(' is cancelled.');
+        $items[]=e('The name becomes available to order.');
+        $items[]=e(trim("Confirm doesn't change DNS. ".(DepartureChecks::staffDnsCase($d)[1]??'')));
         $owner=self::owner($d);
         $watch=match(WatchDiscovery::departurePreview($d)){'active'=>'as an external domain','paused'=>'paused','hosting','retired'=>'not monitored',default=>null};
-        if($watch!==null){$lines[]=e($owner."'s monitored domain stays, {$watch}.");}
-        if(($subject=self::subject($d,$reason))!==null){$lines[]=e($owner.' gets one email, “'.$subject.'”.');}
-        $lines[]=$b("This can't be undone.").e(' If the domain comes back, import it as a new domain.');
-        return new HtmlString(implode('',array_map(fn($l)=>'<p>'.$l.'</p>',$lines)));
+        if($watch!==null){$items[]=e($owner."'s monitored domain stays, {$watch}.");}
+        if(($subject=self::subject($d,$reason))!==null){$items[]=e($owner.' gets one email, “'.$subject.'”.');}
+        return new HtmlString('<ul class="domains-list">'.implode('',array_map(fn($l)=>'<li>'.$l.'</li>',$items)).'</ul>'
+            .'<p class="domains-space">'.$b("This can't be undone.").e(' If the domain comes back, import it as a new domain.').'</p>');
     }
     /** The departure email's subject for the picked reason, from its saved template; null when it won't send. */
     public static function subject(Domain $d,?string $reason): ?string
@@ -169,7 +172,8 @@ final class DepartureConfirm
             break;
         }
         if(isset($facts['Service'])&&($facts['Service']['value']??null)!==null){$facts['Service']['sub']='Service #'.$d->service_id.'. Cancelled on confirm.';}
-        if(isset($facts['DNS records'])){$sub=$facts['DNS records']['sub']??null;$add="Confirm doesn't change DNS.";
+        // Muted DNS records say it in their reason instead (ViewDomain::row).
+        if(isset($facts['DNS records'])&&DepartureChecks::dnsStopped($d)===null){$sub=$facts['DNS records']['sub']??null;$add="Confirm doesn't change DNS.";
             $facts['DNS records']['sub']=$sub instanceof Htmlable?new HtmlString($sub->toHtml().' '.e($add)):trim((string)$sub.' '.$add);}
         return $facts;
     }

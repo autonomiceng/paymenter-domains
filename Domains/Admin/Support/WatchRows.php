@@ -63,11 +63,11 @@ final class WatchRows
         return Value::state($state, Reader::Staff, $rest !== null && Fact::isWord($rest) ? null : $rest)->when($at);
     }
     /** The status reason as the sheet's first row. A one-word reason ("Expired") is the notice's own state word. */
-    public static function notice(string $label, mixed $reason): Row
+    public static function notice(string $label, mixed $reason, ?\Filament\Actions\Action $action = null): Row
     {
         $reason = self::sentence($reason);
-        if ($reason !== null && Fact::isWord($reason)) { return Row::notice('status', Value::state(State::tryFrom(strtolower(str_replace(' ', '_', $reason))) ?? self::state($label), Reader::Staff)); }
-        return Row::notice('status', Value::state(self::state($label), Reader::Staff, $reason));
+        if ($reason !== null && Fact::isWord($reason)) { return Row::notice('status', Value::state(State::tryFrom(strtolower(str_replace(' ', '_', $reason))) ?? self::state($label), Reader::Staff), $action); }
+        return Row::notice('status', Value::state(self::state($label), Reader::Staff, $reason), $action);
     }
     /** History rows, newest first, as rail steps. A monitoring change takes the state it left and a finished read
      * reads Completed; a note, a request or a template change has no state of its own, so it draws no mark. */
