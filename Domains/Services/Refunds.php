@@ -15,7 +15,7 @@ final readonly class Refunds
     public function refundHeld(User $actor, int $id, string $reason, ?StaffOperationReview $review = null): ?array
     {
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
-        DB::transaction(function () use ($seed, $actor, $id, $reason, $review): void {
+        FreshTransaction::run(function () use ($seed, $actor, $id, $reason, $review): void {
             $l = HoldingLocks::take($seed, (int) $actor->id); $review?->check($l); $staffId = StaffFinancialRights::require($l, $reason);
             $op = $l['operations']->firstWhere('id', $id);
             if (!$op) { throw new \DomainException('Missing refund obligation.'); }

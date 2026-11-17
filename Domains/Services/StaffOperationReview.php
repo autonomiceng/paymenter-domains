@@ -116,7 +116,7 @@ final class StaffOperationReview
     public function local(\Closure $write): mixed
     {
         OperationClaims::outside(); $seed=Domain::findOrFail($this->domainId);
-        return DB::transaction(function()use($seed,$write){$l=HoldingLocks::take($seed,$this->actorId);$this->check($l);
+        return FreshTransaction::run(function()use($seed,$write){$l=HoldingLocks::take($seed,$this->actorId);$this->check($l);
             $result=$write($l['operations']->firstWhere('id',$this->operationId),$l);$this->record($l,$this->action==='recheck'?'read_requested':'completed');return $result;});
     }
     public function read(\Closure $read): mixed

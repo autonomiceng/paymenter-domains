@@ -19,7 +19,7 @@ final readonly class OwnerAutoRenew
     public function set(User $actor,int $id,bool $enabled): void
     {
         OperationClaims::outside();$seed=Domain::findOrFail($id);
-        DB::transaction(function()use($actor,$seed,$enabled):void {
+        FreshTransaction::run(function()use($actor,$seed,$enabled):void {
             $l=HoldingLocks::take($seed);$d=$l['domain'];
             if((int)$actor->id!==(int)$l['user']->id || (int)$actor->id!==(int)$d->user_id) {
                 throw new \DomainException('Domain renewal is unavailable.');

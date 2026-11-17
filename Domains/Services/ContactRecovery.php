@@ -16,7 +16,7 @@ final class ContactRecovery
     {
         $hint = Operation::findOrFail($operationId); $ownerId = Domain::findOrFail($hint->domain_id)->user_id;
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Contact hold owns its transaction.'); }
-        return DB::transaction(static function () use ($hint, $ownerId): Operation {
+        return FreshTransaction::run(static function () use ($hint, $ownerId): Operation {
             User::whereKey($ownerId)->lockForUpdate()->firstOrFail();
             $funding = InvoiceFunding::lock($hint->invoice_id);
             [$domain, $operations] = self::lock($hint, $funding); $op = $operations->firstWhere('id', $hint->id);
@@ -68,7 +68,7 @@ final class ContactRecovery
         }
         $hint = Operation::findOrFail($operationId); $ownerId = Domain::findOrFail($hint->domain_id)->user_id;
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Contact recovery owns its transaction.'); }
-        return DB::transaction(static function () use ($actor, $hint, $ownerId, $reason, $review, $clock, $contact, $saveAccount, $automatic): Operation {
+        return FreshTransaction::run(static function () use ($actor, $hint, $ownerId, $reason, $review, $clock, $contact, $saveAccount, $automatic): Operation {
             $users = User::whereKey([$actor->id, $ownerId])->orderBy('id')->lockForUpdate()->get()->keyBy('id');
             $currentActor = $users->get($actor->id); $owner = $users->get($ownerId);
             if (!$currentActor || !$owner || ((int) $actor->id !== (int) $ownerId && !$currentActor->hasPermission('admin.domains.manage'))) {

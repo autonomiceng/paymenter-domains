@@ -44,7 +44,7 @@ final class HoldingReadRetry
     {
         if(!in_array($code,['refreshed','domain_not_in_account'],true)){throw new \InvalidArgumentException('Invalid manual read result.');}
         if(!\Illuminate\Support\Facades\Schema::hasTable('domains_observation_work')){return;}
-        \Illuminate\Support\Facades\DB::transaction(function()use($seed,$code,$claim):void {
+        FreshTransaction::run(function()use($seed,$code,$claim):void {
             $locked=HoldingLocks::take($seed);$d=$locked['domain'];
             if(ObservationRecords::identity($seed)!==ObservationRecords::identity($d)){return;}
             if($code==='domain_not_in_account'&&(($d->observation['record_failure']['identity']??null)!==ObservationRecords::identity($d)||($d->observation['record_failure']['code']??null)!==$code)){return;}

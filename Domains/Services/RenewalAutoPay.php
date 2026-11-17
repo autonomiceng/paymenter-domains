@@ -66,7 +66,7 @@ final readonly class RenewalAutoPay
             $ops=Operation::where('invoice_id',$invoiceId)->get();
             if($ops->count()!==1){return null;}
             $seed=$ops->first()->domain()->firstOrFail();
-            return DB::transaction(function()use($seed,$invoiceId):?array{
+            return FreshTransaction::run(function()use($seed,$invoiceId):?array{
                 $l=HoldingLocks::take($seed);$op=$l['operations']->firstWhere('invoice_id',$invoiceId);
                 return $op ? $this->context($op,$l,true) : null;
             });

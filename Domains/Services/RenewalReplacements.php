@@ -12,7 +12,7 @@ final class RenewalReplacements
     {
         OperationClaims::outside();
         if(!$seed->operations()->where('action','renew')->where('state','rejected')->where('safe_code','refund_approved')->exists()){return;}
-        \Illuminate\Support\Facades\DB::transaction(function()use($seed,$clock):void{
+        FreshTransaction::run(function()use($seed,$clock):void{
             $l=HoldingLocks::take($seed);
             foreach($l['operations'] as $op){self::recover($op,$l,$clock);}
         });

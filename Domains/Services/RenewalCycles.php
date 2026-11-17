@@ -73,7 +73,7 @@ final readonly class RenewalCycles
                 self::retireLocked($op, $l, self::early($op, $clock->now()) !== null ? self::EARLY_REASON : 'Unpaid renewal cancelled', $clock);
             }
         };
-        if (DB::transactionLevel() === 0) { DB::transaction($write); } else { $write(); }
+        if (DB::transactionLevel() === 0) { FreshTransaction::run($write); } else { $write(); }
     }
     /** A late receipt on a departed holding joins the payment transaction on the released row. It needs the frozen
      * departure record and every renewal on the invoice closed unsent; it restores no reservation, service or renewal. */
@@ -88,7 +88,7 @@ final readonly class RenewalCycles
     public function retireUnpaid(int $id): Operation
     {
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
-        return DB::transaction(function () use ($seed, $id): Operation {
+        return FreshTransaction::run(function () use ($seed, $id): Operation {
             $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
             if (!self::canRetireUnpaid($op, $l)) { throw new \DomainException('Unpaid terminal proof unavailable.'); }
             return self::retireLocked($op, $l, 'Unpaid renewal cancelled', $this->clock);
@@ -101,7 +101,7 @@ final readonly class RenewalCycles
         if (!DomainBilling::expired($seed, $this->clock->now())) { return; }
         // Expired holdings stay in the cursor; take row locks only when an unpaid renewal may remain.
         if (!$seed->operations()->where('action', 'renew')->whereIn('state', ['awaiting_payment', 'queued', 'held'])->exists()) { return; }
-        DB::transaction(function () use ($seed): void {
+        FreshTransaction::run(function () use ($seed): void {
             $l = HoldingLocks::take($seed);
             if (!DomainBilling::expired($l['domain'], $this->clock->now())) { return; }
             foreach ($l['operations'] as $op) {
@@ -121,7 +121,7 @@ final readonly class RenewalCycles
         // Every domain passes here each sweep; take row locks only when an old unpaid renewal exists.
         $closable = fn ($q) => $q->where('created_at', '<=', $cutoff)->orWhereIn('invoice_id', Invoice::where('status', 'cancelled')->select('id'));
         if (!$seed->operations()->where('action', 'renew')->where('state', 'awaiting_payment')->where($closable)->exists()) { return; }
-        DB::transaction(function () use ($seed, $now, $cutoff): void {
+        FreshTransaction::run(function () use ($seed, $now, $cutoff): void {
             $l = HoldingLocks::take($seed);
             foreach ($l['operations'] as $op) {
                 $cancelled = $l['invoices']->firstWhere('id', $op->invoice_id)?->status === 'cancelled';
@@ -194,7 +194,7 @@ final readonly class RenewalCycles
     public function complimentary(int $domainId, User $actor, int $years, Money $cap, string $reason): Operation
     {
         OperationClaims::outside(); $seed = Domain::findOrFail($domainId);
-        return DB::transaction(function () use ($seed, $actor, $years, $cap, $reason): Operation {
+        return FreshTransaction::run(function () use ($seed, $actor, $years, $cap, $reason): Operation {
             $l = HoldingLocks::take($seed, (int) $actor->id); $staff = $l['staff'];
             if (!$staff || !$staff->hasPermission('admin.domains.manage') || !$staff->hasPermission('admin.domains.fund')
                 || !preg_match('/^[a-z][a-z0-9_]{0,63}$/D', $reason) || $cap->currency !== 'USD' || WriteMoney::compare($cap->amount, '0.00') <= 0) {

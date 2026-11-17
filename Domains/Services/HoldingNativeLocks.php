@@ -39,7 +39,11 @@ final class HoldingNativeLocks
         $invoices = Invoice::when($invoice !== null, fn ($q) => $q->whereKey($invoice), fn ($q) => $q->where(fn ($q) => $q->where('user_id', $user->id)->when($adoption, fn ($q) => $q->orWhereIn('id', $related))))->when($advisory,fn($q)=>$q->whereIn('id',$invoiceIds->merge($related)))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get(); $ids = $invoices->pluck('id');
         // Native receipts check owner mismatch against current renewal membership in HoldingLocks.
         if ($invoice !== null && (!$nativeReceipt || $invoices->isEmpty()) && (int) $invoices->first()?->user_id !== (int) $user->id) { throw new MoneyScopeChanged('The scoped invoice changed owner.'); }
-        $items = InvoiceItem::where(fn ($q) => $q->whereIn('invoice_id', $ids)->when($adoption, fn ($q) => $q->orWhere(fn ($q) => $q->where('reference_type', (new Service)->getMorphClass())->where('reference_id', $serviceId))))->when($advisory&&!$completeInvoices,fn($q)=>$q->where(fn ($q) => $q->whereIn('id', $itemIds)->when($adoption, fn ($q) => $q->orWhere(fn ($q) => $q->where('reference_type', (new Service)->getMorphClass())->where('reference_id', $serviceId)))))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
+        // A receipt in core's outermost payment transaction reads its invoice's items plainly (current: see transactions())
+        // and locks them by key, so it holds no invoice_items gap that a new invoice's items would wait on.
+        $items = $nativeReceipt && !FreshTransaction::active() && DB::transactionLevel() === 1
+            ? InvoiceItem::whereKey(InvoiceItem::whereIn('invoice_id', $ids)->pluck('id'))->orderBy('id')->lockForUpdate()->get()
+            : InvoiceItem::where(fn ($q) => $q->whereIn('invoice_id', $ids)->when($adoption, fn ($q) => $q->orWhere(fn ($q) => $q->where('reference_type', (new Service)->getMorphClass())->where('reference_id', $serviceId))))->when($advisory&&!$completeInvoices,fn($q)=>$q->where(fn ($q) => $q->whereIn('id', $itemIds)->when($adoption, fn ($q) => $q->orWhere(fn ($q) => $q->where('reference_type', (new Service)->getMorphClass())->where('reference_id', $serviceId)))))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         // A current item read must cover discovery, even if an older read view hid a foreign invoice.
         // Missing invoice locks abort here, before any order/service/ledger locks; never acquire them late.
         if ($adoption && $items->pluck('invoice_id')->diff($ids)->isNotEmpty()) { throw new \DomainException('Adoption invoice coverage changed. Verify again.'); }
@@ -62,12 +66,15 @@ final class HoldingNativeLocks
         return compact('user', 'staff', 'credit', 'invoices', 'items', 'orders', 'services', 'products', 'plans', 'service', 'product', 'plan', 'cancel', 'configs', 'properties', 'markers', 'upgrades', 'links', 'tax', 'opIds', 'relatedProperties');
     }
 
-    /** Payment rows, locked by every writer after all its other rows. The scan gap-locks invoice_transactions, and a
-     * receipt inserts into that gap; taking it last means writers that share any product, server, account or domain
-     * row wait there first, so no writer holds the gap while waiting on a row a receipt holds. */
-    public static function transactions($invoiceIds, bool $advisory = false): \Illuminate\Support\Collection
+    /** Payment rows of invoices the caller already holds locked. Core inserts or settles a payment only under that
+     * invoice's row lock, so a current read needs no lock on invoice_transactions. A FreshTransaction reads them plainly
+     * (READ COMMITTED). So does a receipt in core's outermost payment transaction, whose first read comes after that
+     * invoice lock. Any other caller joins a core transaction, such as the cron's single run, whose read view can
+     * predate the invoice lock; only a locking read is current there, so it keeps one, taken last. */
+    public static function transactions($invoiceIds, bool $advisory = false, bool $nativeReceipt = false): \Illuminate\Support\Collection
     {
-        $rows = InvoiceTransaction::whereIn('invoice_id', $invoiceIds)->when($advisory,fn($q)=>$q->limit(101))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
+        $current = $advisory || FreshTransaction::active() || ($nativeReceipt && DB::transactionLevel() === 1);
+        $rows = InvoiceTransaction::whereIn('invoice_id', $invoiceIds)->when($advisory,fn($q)=>$q->limit(101))->orderBy('id')->when(!$current,fn($q)=>$q->lockForUpdate())->get();
         if ($advisory && $rows->count() > 100) { throw new \DomainException('Advisory payment history requires staff review.'); }
         return $rows;
     }

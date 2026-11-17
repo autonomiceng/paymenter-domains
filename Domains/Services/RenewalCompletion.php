@@ -140,7 +140,7 @@ final readonly class RenewalCompletion
     public function resume(int $id, StaffOperationReview $review): Operation
     {
         OperationClaims::outside(); $seed=Operation::findOrFail($id)->domain()->firstOrFail();
-        return DB::transaction(function()use($seed,$id,$review){
+        return FreshTransaction::run(function()use($seed,$id,$review){
             $l=HoldingLocks::take($seed,$review->actorId);$review->check($l);$op=$l['operations']->firstWhere('id',$id);
             if(!$op||!$this->eligible($op)){throw new \DomainException('No unresolved sealed renewal.');}
             $this->bindings->requireReadableLocked($l['server'],$l['account']);RenewalFunding::requireCurrent($op,$l,true);

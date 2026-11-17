@@ -28,7 +28,7 @@ final class AcquisitionPaymentReviews
     public function review(User $actor,int $domain,string $ticket,string $reason,bool $confirmed): void
     {
         OperationClaims::outside();$seed=Domain::findOrFail($domain);
-        DB::transaction(function()use($actor,$seed,$ticket,$reason,$confirmed):void {
+        FreshTransaction::run(function()use($actor,$seed,$ticket,$reason,$confirmed):void {
             $l=$this->snapshot($seed,$actor,false);$d=$l['domain'];StaffReason::require($reason);
             if(!$confirmed){throw new \DomainException('Confirm that you reviewed the invoice, payments and account credit.');}
             try{$t=json_decode(Crypt::decryptString($ticket),true,8,JSON_THROW_ON_ERROR);}catch(\Throwable){throw new \DomainException('Invalid review key. Reload this page.');}

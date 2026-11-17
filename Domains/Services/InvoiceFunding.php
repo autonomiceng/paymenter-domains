@@ -54,8 +54,8 @@ final class InvoiceFunding
         self::$contexts[$context] = true; return $context;
     }
 
-    /** Lock the invoice's payment rows. Callers take this last, after their server, account, domain and operation rows,
-     * the same order as HoldingNativeLocks::transactions. A caller that locks nothing after the prefix gets them on first read. */
+    /** Read the locked invoice's payment rows (HoldingNativeLocks::transactions). Callers take this last, after their
+     * server, account, domain and operation rows. A caller that locks nothing after the prefix gets them on first read. */
     public function lockPayments(): void
     {
         $this->transactions ??= HoldingNativeLocks::transactions([$this->invoice->id]);

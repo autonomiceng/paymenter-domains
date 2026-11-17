@@ -20,7 +20,7 @@ final class StaffManagedDnsSetup
         try{$t=json_decode(Crypt::decryptString($ticket),true,16,JSON_THROW_ON_ERROR);}catch(\Throwable){throw new \DomainException('Reload and try again.');}
         if(($t['actor']??null)!==(int)$actor->id || ($t['id']??null)!==$id || ($t['until']??0)<=time()
             || !in_array($expected,[null,'platform','external'],true)){throw new \DomainException('Reload and try again.');}
-        $owner=DB::transaction(function()use($actor,$id,$ticket,$profileId,$expected,$t):int {
+        $owner=FreshTransaction::run(function()use($actor,$id,$ticket,$profileId,$expected,$t):int {
             $seed=Domain::findOrFail($id);$l=HoldingLocks::take($seed,staffId:(int)$actor->id);HoldingAnchor::resolve($l);$d=$l['domain'];
             StaffWatchWrites::authorize($actor);
             if(!ManagedPublicTarget::valid($l,time()) || (int)$d->user_id!==$t['owner'] || (int)$d->authority_generation!==$t['generation']

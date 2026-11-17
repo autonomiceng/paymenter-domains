@@ -26,13 +26,14 @@ $error=null;$value=null;$ownerLocks=0;
 // Native receipts never lock the customer: only the invoice core holds and what hangs off it.
 DB::listen(static function($q)use(&$ownerLocks,$prefix):void{if(str_contains($q->sql,'from `'.$prefix.'users`')&&str_contains($q->sql,'for update')){$ownerLocks++;}});
 try{
-    $value=DB::transaction(static function()use($phase,$case,$op,$first,$seed,$otherSeed,$root,$name,$prefix,$signal,$wait,$ballast,$waitForBlock):bool{
+    $body=static function()use($phase,$case,$op,$first,$seed,$otherSeed,$root,$name,$prefix,$signal,$wait,$ballast,$waitForBlock):bool{
         if($phase==='receipt'&&$case==='other'){
-            // Core's receipt pauses right after its payment-row scan, its worst point, until the other customer's
-            // full decision waits on a row the receipt holds; then core inserts the payment.
+            // Core's receipt, in its own outermost payment transaction as from a gateway, pauses right after its
+            // payment-row read, its worst point, until the other customer's full decision waits on a row the receipt
+            // holds; then core inserts the payment. The read is the receipt's invoice_id scan, not core's lookup.
             $armed=true;
             DB::listen(static function($q)use(&$armed,$prefix,$signal,$wait,$root,$name,$waitForBlock):void{
-                if(!$armed||!str_contains($q->sql,'from `'.$prefix.'invoice_transactions`')||!str_contains($q->sql,'for update')){return;}
+                if(!$armed||!str_contains($q->sql,'from `'.$prefix.'invoice_transactions`')||!str_contains($q->sql,'`invoice_id` in')){return;}
                 $armed=false;$signal('receipt-scanned');$wait('runner-started');
                 $other=(int)file_get_contents($root.'/'.$name.'-connection');$end=microtime(true)+20;
                 while(!$waitForBlock($other)){if(microtime(true)>$end){throw new RuntimeException('The other decision did not wait on the receipt.');}usleep(200000);}
@@ -75,7 +76,11 @@ try{
             }
         }
         return true;
-    });
+    };
+    // The other case runs both sides as production does: core opens the receipt's transaction, and the decision runs
+    // in a Domains transaction (FreshTransaction where the revision has it).
+    $fresh='Paymenter\\Extensions\\Servers\\Domains\\Services\\FreshTransaction';
+    $value=$case!=='other'?DB::transaction($body):($phase==='receipt'?$body():(class_exists($fresh)?$fresh::run($body):DB::transaction($body)));
 }catch(Throwable $e){
     if(!MoneyDecisions::contention($e)){throw $e;}
     for($cause=$e;$cause!==null;$cause=$cause->getPrevious()){

@@ -26,7 +26,7 @@ final class OwnerSetup
     {
         OperationClaims::outside(); $seed=Domain::findOrFail($id);
         $port=$this->ports->forDomain($seed); $caps=$port->capabilities();
-        DB::transaction(function() use($actor,$seed,$input,$port,$caps):void {
+        FreshTransaction::run(function() use($actor,$seed,$input,$port,$caps):void {
             $l=HoldingLocks::take($seed); $d=$l['domain'];
             $op=OwnedDomains::acquisition($l['operations'],$d);
             if ((int)$actor->id!==(int)$l['user']->id || !$op || !$port->bindsTo(AccountBindings::binding($l['account']))

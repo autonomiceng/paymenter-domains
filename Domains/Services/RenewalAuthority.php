@@ -20,7 +20,7 @@ final readonly class RenewalAuthority
         OperationClaims::outside();
         try {
             $seed = Domain::findOrFail($request->domainId);
-            return DB::transaction(function () use ($seed, $request, $stamp, $accepted, $until): array {
+            return FreshTransaction::run(function () use ($seed, $request, $stamp, $accepted, $until): array {
                 $l = HoldingLocks::take($seed,catalogue:$this->offers); $domain = $l['domain'];
                 $binding = AccountBindings::binding($l['account']); $capabilityUntil = null;
                 try {

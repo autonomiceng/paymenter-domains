@@ -108,7 +108,7 @@ final class DepartureChecks
             $reader=$this->factory?($this->factory)($dns,$snapshot):new PublicRegistryReader($dns,$snapshot);
             $context=new RegistryContext($clock,fn($url)=>$quota->reserve($url,$clock()),fn($url,$r)=>$quota->complete($url,$r,$clock()));
             $result=$reader->read($seed->domain,$context);if($dns->saturated||($result['reason']??null)==='deferred'){return false;}
-            return DB::transaction(function()use($seed,$identity,$result,$clock):bool{
+            return FreshTransaction::run(function()use($seed,$identity,$result,$clock):bool{
                 $d=HoldingLocks::take($seed)['domain'];if(ObservationRecords::identity($d)!==$identity){return false;}
                 if(!self::suspected($d)){return true;}
                 $p=$d->observation??[];$p['departure_check']??=['identity'=>$identity,'at'=>$clock(),'rechecked'=>false];

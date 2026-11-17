@@ -21,7 +21,7 @@ final class RenewalRetries
     public static function recover(int $id,Clock $clock): Operation
     {
         OperationClaims::outside();$seed=Operation::findOrFail($id)->domain()->firstOrFail();
-        return DB::transaction(function()use($seed,$id,$clock):Operation{
+        return FreshTransaction::run(function()use($seed,$id,$clock):Operation{
             $l=HoldingLocks::take($seed);$op=$l['operations']->firstWhere('id',$id);
             $next=$op->policy['unsent_retry']['next_key']??null;
             if($next!==null){return $l['operations']->firstWhere('operation_key',$next)??$op;}

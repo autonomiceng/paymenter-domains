@@ -108,7 +108,7 @@ final class TransferInputs
     public function paymentAccepted(int $id): void
     {
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
-        DB::transaction(function () use ($seed, $id): void {
+        FreshTransaction::run(function () use ($seed, $id): void {
             $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
             self::open($op, $l); $this->payment($op, $l);
             if (isset($op->policy['paid_at']) && !self::validCode($op->payload['epp'] ?? null) && $op->state !== 'held') {
@@ -125,7 +125,7 @@ final class TransferInputs
             $code = $request->request->get('transfer_code');
             if (!self::validCode($code)) { throw new \DomainException; }
             $seed = Operation::findOrFail($id)->domain()->firstOrFail();
-            DB::transaction(function () use ($request, $id, $seed, $code): void {
+            FreshTransaction::run(function () use ($request, $id, $seed, $code): void {
                 $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
                 if ((int) $l['user']->id !== (int) $request->user()->id) { throw new \DomainException; }
                 self::open($op, $l); $this->payment($op, $l); self::requireEditable($op, $this->clock->now());
@@ -145,7 +145,7 @@ final class TransferInputs
     public function expireMissingCode(int $id): ?array
     {
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
-        $credit = DB::transaction(function () use ($seed, $id): bool {
+        $credit = FreshTransaction::run(function () use ($seed, $id): bool {
             $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
             if ($op->state === 'rejected') { return $op->safe_code === 'transfer_code_timeout' && $op->funding_basis !== 'complimentary'; }
             self::open($op, $l); $this->payment($op, $l);

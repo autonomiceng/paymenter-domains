@@ -16,7 +16,7 @@ final readonly class FinancialAdjustments
         OperationClaims::outside(); $seed = Operation::findOrFail($operationId)->domain()->firstOrFail();
         if (!preg_match('/^[a-z0-9_-]{8,64}$/D', $key) || !preg_match('/^-?(?:0|[1-9][0-9]{0,7})\.[0-9]{2}$/D', $amount)
             || PricingRule::minor($amount) === 0) { throw new \InvalidArgumentException('Exact nonzero adjustment and stable key required.'); }
-        return DB::transaction(function () use ($seed, $actor, $operationId, $key, $amount, $reason): InvoiceTransaction {
+        return FreshTransaction::run(function () use ($seed, $actor, $operationId, $key, $amount, $reason): InvoiceTransaction {
             $l = HoldingLocks::take($seed, (int) $actor->id); $staffId = StaffFinancialRights::require($l, $reason);
             if (!$l['staff']->hasPermission('admin.invoice_transactions.create')) { throw new \DomainException('Native transaction creation permission required.'); }
             $op = $l['operations']->firstWhere('id', $operationId);
