@@ -305,7 +305,7 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         $seenExpiry = null;
         if ($domain?->owned === true) {
             // The expiry read can fail or lag after the info read showed a renewed date; that date stays as evidence.
-            $seenExpiry = $domain->expiry;
+            $seenExpiry = $domain->expiry; $context->sawDomain($domain);
             $expiry = $this->expiry($attempt->query->name, $context)->facts();
             $domain = new DomainSnapshot($this->binding(), $attempt->query->name, true,
                 ($expiry['provider_reference'] ?? null) === $domain->providerReference ? ($expiry['expiry'] ?? null) : null,

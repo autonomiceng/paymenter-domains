@@ -28,6 +28,10 @@ final class RequestContext
     private int $exchanges = 0;
     /** Physical exchanges entered, failed ones included. Reader construction, limiter and send refusals never count. */
     public function exchanges(): int { return $this->exchanges; }
+    private ?DomainSnapshot $seenDomain = null;
+    /** The domain as a read in this check showed it, kept when a later read in the same check throws. */
+    public function sawDomain(DomainSnapshot $domain): void { $this->seenDomain = $domain; }
+    public function seenDomain(): ?DomainSnapshot { return $this->seenDomain; }
     private int $failedExchanges = 0;
     /** Exchanges that got no registrar reply (transport failure or timeout). A registrar error reply is not one. */
     public function failedExchanges(): int { return $this->failedExchanges; }

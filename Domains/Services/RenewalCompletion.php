@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Data\{RequestBudget, RequestContext, RequestOrigin};
+use Paymenter\Extensions\Servers\Domains\Data\{Evidence, RequestBudget, RequestContext, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 /** Bounded observation of the original sealed renewal. Never retries, refunds or invents expiry. */
 final readonly class RenewalCompletion
@@ -69,6 +69,8 @@ final readonly class RenewalCompletion
         } catch (ReadDeferred) { $check->deferred = 'read_limit';
         } catch (EnomTestCallLimit $error) { $check->deferred = $error->reason === 'send_guard' ? 'send_guard' : 'send_limit';
         } catch (\Throwable) {}
+        // A later read that threw still leaves the expiry the domain info read showed (RegistrarAnswers::sawProof).
+        if ($seen === null && isset($ctx) && ($info = $ctx->seenDomain()) !== null) { $seen = new Evidence(domain: $info, seenExpiry: $info->expiry); }
         // Every check that reached the registrar counts toward the read limit, whatever the reply looked like.
         $ran = $check->deferred === null && isset($ctx) && $ctx->exchanges() > 0;
         // A bill zone sample is saved only after this turn's locked step: server settings are part of the holding stamp it compares.

@@ -97,6 +97,23 @@ same(1, $late->fresh()->policy['renewal_polls'] ?? 0, 'The late check counts');
 for ($i = 2; $i <= OperationReconciliation::POLL_LIMIT; $i++) { $clock->instant = $clock->now()->modify('+10 minutes'); $completion->run($late->id); }
 expect(RegistrarAnswers::ready($late->fresh(), $clock->now()), 'Checks stopped after the late check');
 $seen['an advanced expiry in a late check'] = $refused($late);
+// The info read shows the renewed expiry, then the next read throws an unexpected error; that check counts and keeps the expiry.
+[$thrown, , , $completion] = $sent('renew-proof-thrown-placeholder.com', '2027-10-18', 'later info, old expiry read');
+$limiter = new class implements Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter {
+    public bool $armed = false;
+    public function acquire($binding, $origin): string { if ($this->armed) { $this->armed = false; throw new LogicException('Unexpected read failure.'); } return 'read'; }
+    public function release($binding, $origin, string $token): void {}
+};
+app()->bind(Paymenter\Extensions\Servers\Domains\Services\Runtime::class, static fn () => throw new LogicException('Runtime is not resolved here.'));
+app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class, $limiter);
+$state->duringCommand = ReadCommand::Renewal; $state->during = static function () use ($limiter) { $limiter->armed = true; };
+$completion->run($thrown->id); $state->duringCommand = null;
+app()->offsetUnset(Paymenter\Extensions\Servers\Domains\Services\Runtime::class); app()->offsetUnset(Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class);
+same([1, false], [$thrown->fresh()->policy['renewal_polls'] ?? 0, $limiter->armed], 'The check that threw after the info read counts');
+$state->expiry = '10/18/2027 5:00:00 AM';
+for ($i = 2; $i <= OperationReconciliation::POLL_LIMIT; $i++) { $clock->instant = $clock->now()->modify('+10 minutes'); $completion->run($thrown->id); }
+expect(RegistrarAnswers::ready($thrown->fresh(), $clock->now()), 'Checks stopped after the check that threw');
+$seen['an advanced expiry before a read that throws'] = $refused($thrown);
 foreach (['a matching charge' => ['matching charge', '2027-10-18'], 'an advanced expiry' => ['failed order read', '2028-10-18'],
     'an advanced expiry before a failed expiry read' => ['later info, failed expiry read', '2027-10-18'],
     'an advanced expiry before an old expiry read' => ['later info, old expiry read', '2027-10-18']] as $why => [$shape, $expiry]) {
