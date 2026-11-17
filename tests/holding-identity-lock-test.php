@@ -60,7 +60,7 @@ $tables = array_column($trace->reads, 'table');
 foreach (['users', 'invoices', 'invoice_items', 'invoice_transactions', 'orders', 'services', 'products', 'plans'] as $table) {
     expect(in_array($table, $tables, true), 'Missing current locking read: '.$table);
 }
-foreach ([['invoices', 'users'], ['invoices', 'orders'], ['invoice_items', 'orders'],
+foreach ([['users', 'invoices'], ['invoices', 'orders'], ['invoice_items', 'orders'],
     ['invoice_transactions', 'orders'], ['orders', 'services'], ['services', 'products'], ['products', 'plans']] as [$a, $b]) {
     expect(max(array_keys($tables, $a, true)) < min(array_keys($tables, $b, true)), 'Native lock order: '.$a.' before '.$b);
 }
