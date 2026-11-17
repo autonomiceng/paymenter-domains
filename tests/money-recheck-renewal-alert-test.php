@@ -47,7 +47,6 @@ HistoryAcceptances::save(new HistoryAcceptance($binding,'America/Los_Angeles',60
 $clock->instant=(new DateTimeImmutable($op->fresh()->attempt['dispatch_attempted_at']))->modify('+25 hours');Cache::flush();
 $state->after='2027-10-18';$state->lost=false;
 same('uncertain',(new RenewalCompletion($historyBindings,$clock))->run($op->id)->state,'No-order read alone does not settle the original outcome');
-expect(isset($op->fresh()->policy['enom_absence']),'Scheduled read corroborated no order and unchanged expiry');
 $op=$op->fresh();
 $review=new Review($staff->id,$op->server_id,null,'enom_answer',Review::ticket($staff->id,$op->server_id,null,'enom_answer',Review::stamp($op->server_id,null)),'Record synthetic no-order answer');
 $settings=new StaffSettingsWrites($native,$sellers,$bindings);
