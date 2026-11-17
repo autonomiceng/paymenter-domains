@@ -36,17 +36,20 @@ $result=(new HoldingDeparture($clock))->confirm($staff,(int)$d->id,$ticket,'othe
 same([MoneyOutcome::Applied,null],[$result->outcome,$result->error?->getMessage()],'Settled retry history allows departure');
 $owner=(int)$d->user_id;$before=$cash($owner);
 app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
+// Both attempts closed before this receipt, so it takes the native late path and the return sweep credits it.
 App\Helpers\ExtensionHelper::addPayment($invoice->fresh(),null,'1.20','0.00','departed-retry-late');
-same('cancelled',$invoice->fresh()->status,'The late receipt is recorded and the invoice stays cancelled');
-same($before+120,$cash($owner),'The late receipt returns once to the owner after commit');
+(new Refunds($clock))->creditRejected((int)$child->id);
+same($before+120,$cash($owner),'The late receipt returns once to the owner');
 (new Refunds($clock))->creditRejected((int)$child->id);
 same($before+120,$cash($owner),'A second pass credits nothing more');
 // An unresolved retry chain still records the payment; nothing credits it automatically, so it stays with staff.
 foreach(['open','missing'] as $case){
+    DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'cancelled']);
     $saved=$child->fresh()->getRawOriginal();$before=$cash($owner);$rows=$invoice->transactions()->count();
     DB::table('domains_operations')->where('id',$child->id)->update($case==='open'?['state'=>'queued']:['operation_key'=>$childKey.':missing']);
     App\Helpers\ExtensionHelper::addPayment($invoice->fresh(),null,'1.00','0.00','departed-unresolved-'.$case);
-    same([$rows+1,'cancelled',$before],[$invoice->transactions()->count(),$invoice->fresh()->status,$cash($owner)],'An unresolved retry chain records the receipt and credits nothing: '.$case);
+    $refused=false;try{(new Refunds($clock))->creditRejected((int)$child->id);}catch(DomainException){$refused=true;}
+    same([$rows+1,$before,true],[$invoice->transactions()->count(),$cash($owner),$refused],'An unresolved retry chain records the receipt and refuses credit: '.$case);
     DB::table('domains_operations')->where('id',$child->id)->update($saved);
 }
 echo "A departed receipt follows resolved retry history to its closed child.\n";

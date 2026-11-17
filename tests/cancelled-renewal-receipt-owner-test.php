@@ -17,10 +17,11 @@ foreach(['awaiting_payment','queued','held','rejected'] as $renewalState){
     DB::table('invoices')->where('id',$invoice->id)->update(['user_id'=>$foreign->id]);
     $before=$op->fresh()->getRawOriginal();$holding=$domain->fresh()->getRawOriginal();$writes=$state->writes;
     $cash=static fn($owner)=>(string)(App\Models\Credit::where('user_id',$owner)->where('currency_code','USD')->value('amount')??'0.00');$credits=[$cash($user->id),$cash($foreign->id)];
-    // The payment is always recorded; a damaged owner keeps the invoice cancelled and the money with staff.
+    // The payment is always recorded; a damaged owner keeps the money with staff.
     ExtensionHelper::addPayment($invoice,null,$op->amount,'0.00','receipt-owner-'.$renewalState);
     ExtensionHelper::addPayment($invoice->fresh(),null,$op->amount,'0.00','receipt-owner-'.$renewalState);
-    same(['succeeded','cancelled'],[$invoice->transactions()->sole()->status->value,$invoice->fresh()->status],'The receipt is recorded once and the invoice stays cancelled: '.$renewalState);
+    // A renewal closed before the payment keeps the native late path, so its invoice turns paid.
+    same(['succeeded',$renewalState==='rejected'?'paid':'cancelled'],[$invoice->transactions()->sole()->status->value,$invoice->fresh()->status],'The receipt is recorded once; an open renewal keeps the invoice cancelled: '.$renewalState);
     same($credits,[$cash($user->id),$cash($foreign->id)],'A mismatched owner gets no automatic credit: '.$renewalState);
     same($before,$op->fresh()->getRawOriginal(),'Payment never changes renewal authority: '.$renewalState);
     same($holding,$domain->fresh()->getRawOriginal(),'Payment never changes the holding: '.$renewalState);

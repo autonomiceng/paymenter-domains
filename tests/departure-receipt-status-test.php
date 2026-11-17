@@ -17,10 +17,12 @@ same(MoneyOutcome::Applied,$result->outcome,'The renewal invoice was cancelled b
 app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
 $balance=static fn()=>PricingRule::minor((string)(Credit::where('user_id',$d->user_id)->where('currency_code','USD')->value('amount')??'0.00'));
 $before=$balance();
-// A late receipt on the departed holding is recorded; after commit it returns to the owner once as account credit.
+// A late receipt on the departed holding is recorded. Departure closed the renewal before it, so the return sweep credits
+// it to the owner once, on the native late path.
 App\Helpers\ExtensionHelper::addPayment($invoice->fresh(),null,'1.20','0.00','departed-after-confirm');
-same(['succeeded','cancelled'],[$invoice->transactions()->sole()->status->value,$invoice->fresh()->status],'The departed receipt is recorded and the invoice stays cancelled');
-same($before+120,$balance(),'The departed receipt returns to the owner after commit');
+same(['succeeded','cancelled'],[$invoice->transactions()->sole()->status->value,$invoice->fresh()->status],'The departed receipt is recorded and the partly paid invoice stays cancelled');
+(new Refunds($clock))->creditRejected((int)$renewal->id);
+same($before+120,$balance(),'The departed receipt returns to the owner once');
 (new Refunds($clock))->creditRejected((int)$renewal->id);
 same($before+120,$balance(),'A second pass credits nothing more');
 same(['departed',null,true],[$d->fresh()->status,$d->fresh()->reservation_name,DepartureProof::verified($d->fresh())],'Receipt admission restores no holding authority');

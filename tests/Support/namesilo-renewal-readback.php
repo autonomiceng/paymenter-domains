@@ -36,6 +36,7 @@ foreach(['on','missing','invalid','outage','late'] as $case){
 Illuminate\Support\Facades\Auth::login(staffUser(['admin.domains.view']));
 $guidance='Turn off auto-renew at NameSilo, then check status.';
 $notice=RequestFacts::notice($held);
+same([$guidance,'recheck'],[RequestFacts::for($held)['auto_renew']??null,$notice['action']??null],'Staff notice names removal and a fresh check');
 expect(str_contains($notice['body']??'',$guidance),'Notice body carries the auto-renew instruction');
 $limit=clone $held;$policy=$limit->policy;$policy['renewal_execution']['reason']='poll_limit_reached';$policy['renewal_polls']=5;$limit->policy=$policy;
 $notice=RequestFacts::notice($limit);

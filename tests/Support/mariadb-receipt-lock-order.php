@@ -35,8 +35,7 @@ if($phase==='seed'){
         $cart=commerceCart($customer);commerceAdd($cart,$native->product($tlds[0],'register'),placeholderComFixtureName('receipt-'.$kind.'-placeholder.com'));
         commerceCheckout($customer,$cart)->assertHasNoErrors();
         $op=Domain::where('domain',placeholderComFixtureName('receipt-'.$kind.'-placeholder.com'))->sole()->operations()->sole();
-        DB::table('invoice_items')->where('id',$op->invoice_item_id)->update(['reference_type'=>null,'reference_id'=>null,'price'=>$op->amount,'quantity'=>1]);
-        DB::table('domains_operations')->where('id',$op->id)->update(['action'=>'renew','state'=>'awaiting_payment']);
+        require_once $runtime.'/tests/Support/receipt-renewal-seed.php';receiptRenewalSeed($op);
         $ids[$kind]=(int)$op->id;
     }
     file_put_contents($root.'/ids.json',json_encode($ids,JSON_THROW_ON_ERROR));
@@ -49,7 +48,8 @@ if($phase==='reset'){
         $row=Operation::findOrFail($id);
         DB::table('invoice_transactions')->where('invoice_id',$row->invoice_id)->delete();
         DB::table('invoices')->where('id',$row->invoice_id)->update(['status'=>'cancelled']);
-        DB::table('domains_operations')->where('id',$id)->update(['state'=>'awaiting_payment','safe_code'=>null,'attempt'=>null,'policy'=>null,'cost'=>null,'funding'=>null,'completed_at'=>null]);
+        // The renewal route and calendar stay: closing and crediting the renewal validate them.
+        DB::table('domains_operations')->where('id',$id)->update(['state'=>'awaiting_payment','safe_code'=>null,'attempt'=>null,'cost'=>null,'funding'=>null,'completed_at'=>null]);
     }
     echo "Reset retained unpaid renewals.\n";$nativeSuccessful=true;return;
 }

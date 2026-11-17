@@ -30,7 +30,6 @@ expect(isset($fields['confirmed'],$fields['case_reference'],$fields['evidence'],
 foreach(['evidence','confirmation','finality','status','pending','unknown','reference','stale','permission','amount','refund','not_processed'] as $fault){
     $input=$answer($op);
     if($fault==='evidence'){$input['evidence']='';}
-    if($fault==='case'){$input['case_reference']='';}
     if($fault==='confirmation'){$input['confirmed']=false;}
     if($fault==='finality'){$input['final_confirmed']=false;}
     if($fault==='status'){unset($input['transfer_status']);}
