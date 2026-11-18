@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
-use App\Models\{Invoice, Product, Server, Service, User};
+use App\Models\{Product, Server, Service, User};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
@@ -16,11 +16,10 @@ final class ContactRecovery
     {
         $hint = Operation::findOrFail($operationId); $ownerId = Domain::findOrFail($hint->domain_id)->user_id;
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Contact hold owns its transaction.'); }
-        return DB::transaction(static function () use ($hint, $ownerId): Operation {
-            Invoice::whereKey($hint->invoice_id)->lockForUpdate()->firstOrFail();
+        return FreshTransaction::run(static function () use ($hint, $ownerId): Operation {
             User::whereKey($ownerId)->lockForUpdate()->firstOrFail();
             $funding = InvoiceFunding::lock($hint->invoice_id);
-            [$domain, $operations] = self::lock($hint); $op = $operations->firstWhere('id', $hint->id);
+            [$domain, $operations] = self::lock($hint, $funding); $op = $operations->firstWhere('id', $hint->id);
             self::paidIdentity($funding, $op, $domain); self::unsent($op);
             if (!in_array($op->action, ['register', 'transfer'], true) || !in_array($op->state, ['awaiting_payment', 'awaiting_code', 'queued', 'held'], true)
                 || ($op->state === 'held' && !in_array($op->safe_code, ['contact_details_required', 'registry_details_unsupported'], true))
@@ -69,8 +68,7 @@ final class ContactRecovery
         }
         $hint = Operation::findOrFail($operationId); $ownerId = Domain::findOrFail($hint->domain_id)->user_id;
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Contact recovery owns its transaction.'); }
-        return DB::transaction(static function () use ($actor, $hint, $ownerId, $reason, $review, $clock, $contact, $saveAccount, $automatic): Operation {
-            Invoice::whereKey($hint->invoice_id)->lockForUpdate()->firstOrFail();
+        return FreshTransaction::run(static function () use ($actor, $hint, $ownerId, $reason, $review, $clock, $contact, $saveAccount, $automatic): Operation {
             $users = User::whereKey([$actor->id, $ownerId])->orderBy('id')->lockForUpdate()->get()->keyBy('id');
             $currentActor = $users->get($actor->id); $owner = $users->get($ownerId);
             if (!$currentActor || !$owner || ((int) $actor->id !== (int) $ownerId && !$currentActor->hasPermission('admin.domains.manage'))) {
@@ -78,7 +76,7 @@ final class ContactRecovery
             }
             if ($review) { $currentActor->setRelation('role', $currentActor->role()->lockForUpdate()->first()); }
             $funding = InvoiceFunding::lock($hint->invoice_id);
-            [$domain, $operations] = self::lock($hint);
+            [$domain, $operations] = self::lock($hint, $funding);
             $locked = ['staff' => $currentActor, 'domain' => $domain, 'operations' => $operations];
             $review?->check($locked);
             $op = $operations->firstWhere('id', $hint->id);
@@ -162,7 +160,7 @@ final class ContactRecovery
         ContactSetup::recoveryWrite(static fn () => $op->update($changes));
     }
 
-    private static function lock(Operation $hint): array
+    private static function lock(Operation $hint, ?InvoiceFunding $funding = null): array
     {
         $server = Server::whereKey($hint->server_id)->lockForUpdate()->firstOrFail();
         $account = Account::where('server_id', $server->id)->lockForUpdate()->firstOrFail();
@@ -171,6 +169,7 @@ final class ContactRecovery
         $domain = Domain::whereKey($hint->domain_id)->lockForUpdate()->firstOrFail();
         $operations = $domain->operations()->orderBy('id')->lockForUpdate()->get();
         foreach ($operations as $op) { $op->setRelation('domain', $domain); }
+        $funding?->lockPayments();
         return [$domain, $operations];
     }
 

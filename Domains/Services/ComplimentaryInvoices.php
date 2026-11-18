@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
-use App\Models\{Invoice,InvoiceItem};
+use App\Models\{Credit,Invoice,InvoiceItem,Service};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 /** Informational receipts, never native payment events or registrar funding grants. */
 final class ComplimentaryInvoices
@@ -26,21 +26,42 @@ final class ComplimentaryInvoices
         $invoice=$l['invoices']->firstWhere('id',$op->invoice_id);$item=$l['items']->firstWhere('id',$op->invoice_item_id);
         $items=$l['items']->where('invoice_id',$op->invoice_id);
         if($op->domain_id!==$l['domain']->id||$op->service_id!==$l['domain']->service_id||$op->server_id!==$l['domain']->server_id
-            ||$op->account_fingerprint!==$l['domain']->account_fingerprint||$op->authority_generation!==$l['domain']->authority_generation
+            ||$op->registrar_key!==$l['domain']->registrar_key||$op->account_fingerprint!==$l['domain']->account_fingerprint||$op->authority_generation!==$l['domain']->authority_generation
             ||$op->funding_basis!=='complimentary'||PricingRule::minor($op->amount)!==0||!$invoice||!$item||$invoice->status!=='paid'
             ||(int)$invoice->user_id!==(int)$l['domain']->user_id||$invoice->currency_code!=='USD'||(int)$item->invoice_id!==$op->invoice_id
-            ||!self::receipt($op,$invoice,$item,$items,$l['transactions']->where('invoice_id',$op->invoice_id))) {throw new \DomainException('Complimentary receipt authority changed.');}
+            ||!self::receipt($op,$invoice,$item,$items,$l['transactions']->where('invoice_id',$op->invoice_id),$l['credit']??null)) {throw new \DomainException('Complimentary receipt authority changed.');}
         return ['basis'=>'complimentary','authorization'=>$a,'invoice_id'=>$invoice->id,'invoice_item_id'=>$item->id];
     }
-    /** Exact informational receipt, including its confirmed charge/offset pair. Never accepts a payment. */
-    public static function receipt(Operation $op,Invoice $invoice,InvoiceItem $item,$items,$transactions):bool
+    /** Every payment on the receipt already returned, as credit or by a settled gateway refund or lost dispute; none processing. */
+    private static function returned(Operation $op, Invoice $invoice, $transactions, ?Credit $credit): bool
+    {
+        $history = ReceiptReturns::complimentaryCredits($op);
+        if ($history === null || $transactions->contains(fn ($row) => (int) $row->invoice_id !== (int) $invoice->id)) { return false; }
+        if ($transactions->isEmpty()) { return $history['payments'] === []; }
+        if (!ReceiptReturns::ownsCredits($invoice, $history['credits'], $credit)) { return false; }
+        // The dedicated zero receipt has one operation. Use the same funding for the audit and the ledger.
+        $money = InvoiceMoney::project($invoice, $transactions, [$op], false);
+        foreach ($history['payments'] as $id => $minor) {
+            if ($minor > ($money['receipts'][$id]['gross'] ?? 0)) { return false; }
+        }
+        return InvoiceMoney::settled($money) && !array_filter($money['receipts'], fn ($r) => $r['net'] !== 0);
+    }
+    /** Exact informational receipt, including its confirmed charge/offset pair. A payment on it counts once returned as credit. */
+    public static function receipt(Operation $op,Invoice $invoice,InvoiceItem $item,$items,$transactions,?Credit $credit=null):bool
     {
         try{
             $auth=$op->policy['account_complimentary']??[];ComplimentaryAccounts::require($auth,(int)$invoice->user_id);
             if($op->funding_basis!=='complimentary'||PricingRule::minor($op->amount)!==0||$op->currency!=='USD'
                 ||$invoice->id!==$op->invoice_id||$invoice->currency_code!=='USD'||$invoice->status!=='paid'
-                ||$item->id!==$op->invoice_item_id||(int)$item->invoice_id!==$invoice->id||$transactions->isNotEmpty()
-                ||$items->contains(fn($i)=>(string)$i->quantity!=='1')||$items->sum(fn($i)=>PricingRule::minor($i->price))!==0){return false;}
+                ||$item->id!==$op->invoice_item_id||(int)$item->invoice_id!==$invoice->id||!$items->contains('id',$item->id)
+                ||$items->contains(fn($i)=>(int)$i->invoice_id!==$invoice->id||(string)$i->quantity!=='1')
+                ||$items->sum(fn($i)=>PricingRule::minor($i->price))!==0){return false;}
+            $reference = match ($op->action) {
+                'register', 'transfer' => $item->reference_type === (new Service)->getMorphClass() && (int) $item->reference_id === $op->service_id,
+                'renew' => $item->reference_type === null && $item->reference_id === null,
+                default => false,
+            };
+            if (!$reference || !self::returned($op,$invoice,$transactions,$credit)) { return false; }
             if($items->count()===1){return PricingRule::minor($item->price)===0;}
             if($items->count()!==2||$op->state!=='succeeded'){return false;}
             $cost=$op->cost['actual']??null;
@@ -67,7 +88,7 @@ final class ComplimentaryInvoices
         // Native invoices store cents; retain the exact provider amount in the operation.
         $amount=self::nativeCharge($cost['amount']);
         if($invoice->items()->count()===2){return;}
-        if($invoice->status!=='paid'||(float)$invoice->total!==0.0||$invoice->items()->count()!==1||$invoice->transactions()->exists()){throw new \DomainException('Complimentary receipt changed.');}
+        if(!self::receipt($op,$invoice,$item,$invoice->items,$invoice->transactions()->get())){throw new \DomainException('Complimentary receipt changed.');}
         // Exact owned receipt only. Suppressing observers prevents Paid/InvoiceItem hooks from launching a second path.
         $item->forceFill(['price'=>$amount,'description'=>$description])->saveQuietly();
         $discount=new InvoiceItem(['invoice_id'=>$invoice->id,'price'=>'-'.$amount,'quantity'=>1,'description'=>'Complimentary','reference_type'=>null,'reference_id'=>null]);

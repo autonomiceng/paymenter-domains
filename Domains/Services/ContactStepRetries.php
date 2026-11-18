@@ -52,7 +52,7 @@ final class ContactStepRetries
      * queue when Orders are on, without spending a try. */
     private static function holdForOrders(int $id): void
     {
-        DB::transaction(static function()use($id):void {
+        FreshTransaction::run(static function()use($id):void {
             $seed=Operation::find($id);if(!$seed){return;}
             $l=HoldingLocks::take($seed->domain);$op=$l['operations']->firstWhere('id',$id);
             if(!$op||$op->safe_code==='processing'||!self::waitsForOrders($op,(bool)$l['account']?->processing_enabled)){return;}
@@ -66,7 +66,7 @@ final class ContactStepRetries
         if(self::waitsForOrders($seed)){if($seed->safe_code!=='processing'){self::holdForOrders($id);}return false;}
         if(!self::due($seed,$clock->now())
             ||!\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$seed->server_id)->value('processing_enabled')){return false;}
-        return DB::transaction(static function()use($seed,$clock):bool {
+        return FreshTransaction::run(static function()use($seed,$clock):bool {
             $l=HoldingLocks::take($seed->domain);$op=$l['operations']->firstWhere('id',$seed->id);$now=$clock->now();
             if(!$op||!self::candidate($op)||!$l['account']?->processing_enabled){return false;}
             $policy=self::released($op,(string)$op->safe_code,$now);

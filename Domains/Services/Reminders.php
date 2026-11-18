@@ -29,7 +29,7 @@ final readonly class Reminders
     {
         OperationClaims::outside();$now=$this->clock->now();$seed=Domain::findOrFail($id);
         if(!$seed->billing_managed||$seed->adoptionPending()){return false;}
-        $claim=DB::transaction(function()use($seed,$now):?array {
+        $claim=FreshTransaction::run(function()use($seed,$now):?array {
             $l=HoldingLocks::take($seed,released:$seed->reservation_name===null);$d=$l['domain'];
             $schedule=DB::table('domains_reminder_schedules')->where('server_id',$d->server_id)->lockForUpdate()->first();
             $deliver=$schedule&&$schedule->account_fingerprint===$d->account_fingerprint&&$l['server']->enabled;

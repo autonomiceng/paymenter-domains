@@ -392,7 +392,7 @@ final class OperationClaims
     /** Prior cap refusals or a released price hold retain strict negative proof through unsealed readmission. */
     public static function testCallRefusalUnsent(Operation $op): bool
     {
-        $a=$op->attempt??[];$f=$op->funding??[];$history=array_key_exists('test_call_refusals',$a)?$a['test_call_refusals']:[];
+        $a=$op->attempt??[];$f=FinancialAdjustments::registrarFunding($op);$history=array_key_exists('test_call_refusals',$a)?$a['test_call_refusals']:[];
         $priceHold=$op->state==='held'&&$op->safe_code==='registrar_price_increased';
         $priceRelease=$op->state==='queued'&&ExecutionWindow::priceReleased($op);
         $holdCodes=[...BalanceRetries::REVIEW_CODES,'enom_test_call_cap','enom_test_transfer_call_cap','pre_send_interrupted','seal_authority_invalid','claim_authority_invalid','nameservers_required',
@@ -563,9 +563,7 @@ final class OperationClaims
         self::outside();
         // Discovery is before the transaction, so it cannot establish an old repeatable-read view.
         $route = Operation::findOrFail($id); $holding = Domain::findOrFail($route->domain_id);
-        return DB::transaction(function () use ($route, $holding, $callback, $staffId) {
-            // Core receipts and money decisions acquire the invoice before its owner.
-            \App\Models\Invoice::whereKey($route->invoice_id)->lockForUpdate()->firstOrFail();
+        return FreshTransaction::run(function () use ($route, $holding, $callback, $staffId) {
             $users=User::whereKey(array_filter([$holding->user_id,$staffId]))->orderBy('id')->lockForUpdate()->get();
             if(!$users->firstWhere('id',$holding->user_id)){throw new \DomainException('Missing domain owner.');}
             $staff=$users->firstWhere('id',$staffId); if($staff){$staff->setRelation('role',$staff->role()->lockForUpdate()->first());}
@@ -579,6 +577,7 @@ final class OperationClaims
                 : \Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id', $route->server_id)->where('tld', $holding->tld)->lockForUpdate()->first();
             $domain = Domain::whereKey($route->domain_id)->lockForUpdate()->firstOrFail();
             $all = Operation::where('domain_id', $domain->id)->orderBy('id')->lockForUpdate()->get();
+            $funding->lockPayments();
             $op = $all->firstWhere('id', $route->id);
             if (!$op || $op->invoice_id !== $route->invoice_id || $op->server_id !== $route->server_id
                 || $domain->user_id !== $holding->user_id || $op->domain_id !== $domain->id) {

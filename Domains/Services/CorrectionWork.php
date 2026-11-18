@@ -16,7 +16,7 @@ final class CorrectionWork
     }
     public static function produce(Domain $seed,DomainManagement $engine,ManagementProtocol $driver): ?\Paymenter\Extensions\Servers\Domains\Models\Operation
     {
-        OperationClaims::outside();$plan=DB::transaction(function()use($seed,$driver):?array{
+        OperationClaims::outside();$plan=FreshTransaction::run(function()use($seed,$driver):?array{
             $l=HoldingLocks::take($seed);$d=$l['domain'];
             foreach($l['operations'] as $original){
                 $required=array_unique([...array_keys($original->attempt['corrections']??[]),

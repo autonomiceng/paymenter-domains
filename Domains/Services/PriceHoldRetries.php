@@ -32,7 +32,7 @@ final class PriceHoldRetries
     {
         OperationClaims::outside();$seed=Operation::find($id);
         if(!$seed||!self::candidate($seed)||!self::due($seed,$clock->now())){return false;}
-        return DB::transaction(static function()use($seed,$clock):bool {
+        return FreshTransaction::run(static function()use($seed,$clock):bool {
             $l=HoldingLocks::take($seed->domain);$op=$l['operations']->firstWhere('id',$seed->id);$now=$clock->now();
             if(!$op||!self::candidate($op)||!self::due($op,$now)){return false;}
             $policy=ContactStepRetries::released($op,'registrar_price_increased',$now);

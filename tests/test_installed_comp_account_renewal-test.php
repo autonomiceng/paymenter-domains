@@ -7,7 +7,8 @@ expect(is_file(__DIR__.'/../Domains/Services/ComplimentaryAccounts.php'),'Accoun
 require __DIR__.'/Support/renewal-execution.php';
 use App\Models\{Invoice,Role};
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Services\{ComplimentaryAccounts,ComplimentaryCosts,ComplimentaryInvoices,HoldingLocks,RenewalFunding};
+use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
+use Paymenter\Extensions\Servers\Domains\Services\{ComplimentaryAccounts,ComplimentaryCosts,HoldingLocks,PricingRule,Refunds,RenewalFunding};
 $staff=commerceUser();$role=Role::create(['name'=>'Complimentary funding','permissions'=>['admin.domains.manage','admin.domains.fund','admin.domains.costs']]);$staff->update(['role_id'=>$role->id]);
 $enable=fn()=>ComplimentaryAccounts::set($user->id,$staff,true,'Staff account gift',$clock);
 $disable=fn()=>ComplimentaryAccounts::set($user->id,$staff,false,'Gift ended',$clock);
@@ -16,8 +17,20 @@ same(['complimentary','queued','0.00','paid',0.0,0],[$op->funding_basis,$op->sta
 same($op->policy['calendar']['due'],$invoice->due_at->format('Y-m-d'),'The zero receipt keeps the frozen renewal due date');
 $before=Invoice::count();same($invoice->id,$billing->invoice($d->id)->id,'Scheduled billing returns the same funded term');same($before,Invoice::count(),'No second renewal invoice');
 $disable();same('standard',$d->fresh()->price_mode,'Switch off changes new terms');
+// A stray payment on the issued zero receipt returns as account credit before the registrar worker runs.
+app()->instance(Clock::class,$clock);
+$cash=static fn()=>PricingRule::minor((string)($user->credits()->where('currency_code','USD')->value('amount')??'0.00'));
+$before=$cash();
+App\Helpers\ExtensionHelper::addPayment($invoice->fresh(),null,'1.00','0.00','complimentary-late');
+same([1,'paid',$before+100],[$invoice->transactions()->count(),$invoice->fresh()->status,$cash()],'A zero receipt records a payment and returns it as account credit after commit');
+App\Helpers\ExtensionHelper::addPayment($invoice->fresh(),null,'1.00','0.00','complimentary-late');
+(new Refunds($clock))->creditRenewalReceipts((int)$invoice->id);
+same([1,$before+100,1],[$invoice->transactions()->count(),$cash(),count($op->fresh()->funding['late_credits'])],'Receipt replay and recovery leave one credit');
+// The account may have spent its credit by the time the worker checks the receipt.
+$user->credits()->where('currency_code','USD')->sole()->update(['amount'=>PricingRule::decimal($before)]);
 DB::transaction(function()use($op,$d){$l=HoldingLocks::take($d->fresh());same('complimentary',RenewalFunding::requireCurrent($op->fresh(),$l)['basis'],'Issued complimentary term survives switch off');});
-$writes=$state->writes;same('pending',$runRenewal($op,$b)->state,'Already funded complimentary renewal sends');same($writes+1,$state->writes,'One registrar send');
+$writes=$state->writes;same('pending',$runRenewal($op,$b)->state,'Credited complimentary renewal sends');same($writes+1,$state->writes,'One registrar send');
+$runRenewal($op,$b);same($writes+1,$state->writes,'Worker replay sends nothing further');
 [$engine,$writer,$completion]=$compose($b);$state->expiry='2028-10-18';$state->after='2028-10-18';$state->charge='8.00';
 same('succeeded',$completion->run($op->id)->state,'Complimentary renewal completes from actual charge');
 $invoice=$invoice->fresh();same(['8.00','-8.00'],$invoice->items->pluck('price')->all(),'Receipt shows registrar cost and exact complimentary offset');same(0.0,(float)$invoice->total,'Negative line totals to zero');
@@ -25,8 +38,11 @@ same('account-renew-placeholder.com renewal, 1 year',$invoice->items->first()->d
 $completion->run($op->id);same(2,$invoice->items()->count(),'Repeated confirmation cannot duplicate receipt lines');
 commerceReject(fn()=>$invoice->items()->orderByDesc('id')->first()->update(['price'=>'-7.99']));
 commerceReject(fn()=>$invoice->fresh()->update(['status'=>'pending']));
-commerceReject(fn()=>App\Helpers\ExtensionHelper::addPayment($invoice->fresh(),null,'0.00'));
-same(0,$invoice->transactions()->count(),'Zero receipts cannot accept a second funding or payment path');
+same($before,$cash(),'Confirmation does not recreate spent credit');
+App\Helpers\ExtensionHelper::addPayment($invoice->fresh(),null,'1.00','0.00','complimentary-after-success');
+(new Refunds($clock))->creditRenewalReceipts((int)$invoice->id);
+same([2,'paid',$before+100,2],[$invoice->transactions()->count(),$invoice->fresh()->status,$cash(),count($op->fresh()->funding['late_credits'])],'The completed charge and offset receipt still returns a new payment once');
+$runRenewal($op,$b);same($writes+1,$state->writes,'Completed work cannot send again after another returned receipt');
 $clock->instant=new DateTimeImmutable('2028-09-27T12:00:00Z');activeCommerceFacts($clock->now(),$clock->now()->modify('+30 days'),$ports);$observeRenewalCost($b);
 $next=$billing->invoice($d->id,$user);same('pending',$next->status,'After switch off the next term asks for payment');expect((float)$next->total>0,'Next term charges standard pricing');
 [$over,$heldDomain,$binding]=$makeRenewal(placeholderComFixtureName('account-cost-cap-placeholder.com'),false,1,false,$enable);

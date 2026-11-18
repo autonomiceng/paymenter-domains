@@ -43,7 +43,7 @@ final class DomainBilling
             // Issued debt keeps its calendar, term and amount through later configuration changes.
             $existing = $l['operations']->filter(fn ($op) => $op->operation_key === $key || str_starts_with($op->operation_key, $key.':replacement:'))->last();
             if($existing){RenewalReplacements::recover($existing,$l,$this->clock);}
-            if ($existing && $existing->safe_code !== 'renewal_cancelled_unpaid' && !RenewalReplacements::reviewed($existing,$d)) {
+            if ($existing && !RenewalCycles::replacementCandidate($existing, $d)) {
                 if ($actor && self::expired($d, $this->clock->now()) && (!isset($existing->policy['renewal']['late']) || RenewalCycles::expiredInvoice($existing, $this->clock->now()))) { throw new RuntimeIneligible(RuntimeReason::OutsideCalendar); }
                 return self::existingInvoice($existing, $l, $years);
             }
@@ -101,7 +101,7 @@ final class DomainBilling
             });
             return $invoice->fresh();
         };
-        if ($actor !== null) { return DB::transaction(fn () => $issue(HoldingLocks::take($seed, catalogue: $this->catalogue))); }
+        if ($actor !== null) { return FreshTransaction::run(fn () => $issue(HoldingLocks::take($seed, catalogue: $this->catalogue))); }
         $decision = MoneyDecisions::run(new MoneyRequest($seed, self::KIND, $domainId), function (array $l) use ($issue): ?Invoice {
             // An explicit composition reads the same already locked catalogue rows as the native entry point.
             if ($this->catalogue !== null) { $l['offer'] = $this->catalogue->holding(AccountBindings::binding($l['account']), $l['tld'], $l['prices']); }
@@ -133,13 +133,13 @@ final class DomainBilling
             $d=$l['domain'];
             if(!$manual&&RenewalStop::stopped($l)){return null;}
             // Existing payable debt keeps its frozen terms, even when the feature is switched off.
-            if($l['operations']->contains(fn($op)=>$op->action==='renew'&&$op->base_expires_at==$d->provider_expires_at&&$op->safe_code!=='renewal_cancelled_unpaid'&&!RenewalReplacements::reviewed($op,$d))){return null;}
+            if($l['operations']->contains(fn($op)=>$op->action==='renew'&&$op->base_expires_at==$d->provider_expires_at&&!RenewalCycles::replacementCandidate($op, $d))){return null;}
             $b=AccountBindings::binding($l['account']);
             if(!EnomLateRenewal::accepted($b)||($years!==null&&$years!==1)){throw new RuntimeIneligible(RuntimeReason::OutsideCalendar);}
             $this->requireRequest($l,$manual,1,true);
             return [$b,$l['stamp'],new \Paymenter\Extensions\Servers\Domains\Data\RenewalRequest($d->id,$d->authority_generation,$d->confirmed_revision,$d->provider_expires_at->format('Y-m-d'),$d->provider_domain_id,manual:$manual)];
         };
-        if($manual){$captured=DB::transaction(fn()=>$capture(HoldingLocks::take($d,catalogue:$this->catalogue)));}
+        if($manual){$captured=FreshTransaction::run(fn()=>$capture(HoldingLocks::take($d,catalogue:$this->catalogue)));}
         else{
             $decision=MoneyDecisions::run(new MoneyRequest($d,self::KIND,(int)$d->id),function(array $l)use($capture):?array{
                 if($this->catalogue!==null){$l['offer']=$this->catalogue->holding(AccountBindings::binding($l['account']),$l['tld'],$l['prices']);}

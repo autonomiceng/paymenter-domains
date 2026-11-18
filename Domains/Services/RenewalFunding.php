@@ -33,6 +33,10 @@ final class RenewalFunding
             || $l['operations']->contains(fn ($other) => $other->id !== $op->id && RenewalAuthority::blocksRenewal($other, $l))
             || array_key_exists('refund', $op->funding ?? [])) { throw new \DomainException('Renewal obligation authority changed.'); }
         foreach ($l['operations'] as $other) {
+            if (!$sent && $other->base_expires_at == $op->base_expires_at && $other->authority_generation === $op->authority_generation
+                && RenewalCycles::receiptRetired($other)) {
+                RenewalCycles::requireSettledReceiptRetirement($other, $l);
+            }
             if ($other->safe_code === 'renewal_cancelled_unpaid' && ($l['invoices']->firstWhere('id', $other->invoice_id)?->status !== 'cancelled'
                 || RenewalCycles::moneyMoved($l, $other->invoice_id)) && !RefundPayment::retiredSettled($other, $l)) { throw new \DomainException('Retired renewal received financial activity.'); }
         }

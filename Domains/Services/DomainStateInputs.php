@@ -58,7 +58,7 @@ final class DomainStateInputs
     private function prove(): void
     {
         $retired = $this->cycles->filter(fn ($op) => isset($this->domains[$op->domain_id])
-            && ($op->safe_code === 'renewal_cancelled_unpaid' || RenewalReplacements::reviewed($op, $this->domains[$op->domain_id])));
+            && RenewalCycles::replacementCandidate($op, $this->domains[$op->domain_id]));
         if ($retired->isEmpty()) { return; }
         $credits = Credit::whereIn('user_id', array_map(fn ($d) => $d->user_id, $this->domains))->where('currency_code', 'USD')->get()->keyBy('user_id');
         $ids = $retired->keys()->all();

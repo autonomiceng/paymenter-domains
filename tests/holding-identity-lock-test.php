@@ -57,11 +57,13 @@ $trace = new class($connection) extends Illuminate\Database\Query\Grammars\SQLit
 $connection->setQueryGrammar($trace);
 try { DB::transaction($lock); } finally { $connection->setQueryGrammar($original); }
 $tables = array_column($trace->reads, 'table');
-foreach (['users', 'invoices', 'invoice_items', 'invoice_transactions', 'orders', 'services', 'products', 'plans'] as $table) {
+foreach (['users', 'invoices', 'invoice_items', 'orders', 'services', 'products', 'plans'] as $table) {
     expect(in_array($table, $tables, true), 'Missing current locking read: '.$table);
 }
-foreach ([['invoices', 'users'], ['invoices', 'orders'], ['invoice_items', 'orders'],
-    ['invoice_transactions', 'orders'], ['orders', 'services'], ['services', 'products'], ['products', 'plans']] as [$a, $b]) {
+// Payment rows are not in the native prefix: writers read them last, after every other row (HoldingNativeLocks::transactions).
+expect(!in_array('invoice_transactions', $tables, true), 'The native prefix takes no payment-row lock');
+foreach ([['users', 'invoices'], ['invoices', 'orders'], ['invoice_items', 'orders'],
+    ['orders', 'services'], ['services', 'products'], ['products', 'plans']] as [$a, $b]) {
     expect(max(array_keys($tables, $a, true)) < min(array_keys($tables, $b, true)), 'Native lock order: '.$a.' before '.$b);
 }
 foreach (['orders', 'services'] as $table) {

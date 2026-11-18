@@ -70,7 +70,7 @@ final class RenewalExecution
             return $writer->withinReservation(Operation::findOrFail($id),fn()=>$reservedContext->withReservedWire(function()use($seed,$id,$binding,$name,$stamp,$ready,$until,$writer,$admissionClaim,$reservedContext,&$descriptor,&$context) {
             EnomTestWriteReservation::reserve($binding,'renewal',$ready->cost);
             $writer->reservePurchase($name,(int)Operation::findOrFail($id)->term,$ready->cost);
-            [$descriptor, $context] = DB::transaction(function () use ($seed, $id, $binding, $name, $stamp, $ready, $until, $writer, $admissionClaim,$reservedContext) {
+            [$descriptor, $context] = FreshTransaction::run(function () use ($seed, $id, $binding, $name, $stamp, $ready, $until, $writer, $admissionClaim,$reservedContext) {
                 $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id); $d = $l['domain'];
                 if ($l['stamp'] !== $stamp || !$op || ($op->policy['renewal_admission']['key'] ?? null) !== $admissionClaim
                     || new \DateTimeImmutable($op->policy['renewal_admission']['until']) <= $this->clock->now() || !RenewalCycles::registrarVirgin($op) || !in_array($op->state, ['awaiting_payment', 'queued'], true)) { throw new \DomainException('Renewal changed.'); }
@@ -163,7 +163,7 @@ final class RenewalExecution
     {
         OperationClaims::outside(); $grant = $this->grants[$op] ?? null; unset($this->grants[$op]);
         if (!$grant || $grant[0] !== $context || $grant[4] !== $writer) { throw new \DomainException('No live renewal grant.'); }
-        try { return DB::transaction(function () use ($op, $context, $grant, $writer) {
+        try { return FreshTransaction::run(function () use ($op, $context, $grant, $writer) {
             $row = Operation::findOrFail($grant[2]); $l = HoldingLocks::take($row->domain()->firstOrFail()); $row = $l['operations']->firstWhere('id', $row->id);
             $funding = $this->current($row, $l); $writer->requirePolicy($op->binding, $this->features, $this->accepted);
             if ($l['stamp'] !== $grant[1] || $row->state !== 'running' || ($row->attempt['seal'] ?? null) !== 'sealed'

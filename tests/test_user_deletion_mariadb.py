@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Opt-in paired native User deletion/checkout on the existing socket-only MariaDB harness."""
+"""Opt-in paired native User deletion against checkout and a native receipt on the socket-only MariaDB harness."""
 # MIT, Copyright (c) 2026 Autonomic Engineering.
 import json
 import os
@@ -15,7 +15,7 @@ def exercise(command, php_args, env, scratch):
     env = dict(env, USERDEL_BARRIERS=str(barriers))
     script = str(ROOT/'tests/Support/mariadb-user-deletion.php')
     command('user-deletion-seed', php_args+[script], env=dict(env, USERDEL_PHASE='seed'), timeout=180)
-    for case in ('intent', 'checkout', 'snapshot'):
+    for case in ('intent', 'checkout', 'snapshot', 'receipt'):
         child_env = dict(env, USERDEL_CASE=case, USERDEL_PHASE='checkout')
         with (barriers/(case+'.stdout')).open('wb') as stdout, (barriers/(case+'.stderr')).open('wb') as stderr:
             child = subprocess.Popen(php_args+[script], cwd=ROOT, env=child_env, stdout=stdout, stderr=stderr)
@@ -35,9 +35,11 @@ def exercise(command, php_args, env, scratch):
                         child.kill(); child.wait()
     if (barriers/'checkout-lock-wait').read_text() != 'proved':
         raise AssertionError('Real user row lock wait was not observed')
+    if (barriers/'receipt-lock-wait').read_text() != 'proved':
+        raise AssertionError('Deletion did not wait on the receipt invoice')
     refunds = refund_contention(command, php_args, env, scratch) if env['SCHEMA_PREFIX'] == '' else None
     return {'complete': True, 'prefix': env['SCHEMA_PREFIX'], 'intent_first': True,
-            'checkout_first_lock_wait': True, 'older_repeatable_read': True, 'refund_contention': refunds, 'real_provider_calls': 0}
+            'checkout_first_lock_wait': True, 'older_repeatable_read': True, 'receipt_invoice_wait': True, 'refund_contention': refunds, 'real_provider_calls': 0}
 
 
 def refund_contention(command, php_args, env, scratch):

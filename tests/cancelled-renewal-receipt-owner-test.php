@@ -5,7 +5,6 @@ require __DIR__.'/Support/renewal-execution.php';
 
 use App\Helpers\ExtensionHelper;
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Services\MoneyScopeChanged;
 
 app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
 $foreign=commerceUser();
@@ -17,17 +16,13 @@ foreach(['awaiting_payment','queued','held','rejected'] as $renewalState){
     // Model events forbid this routing change; simulate retained damage without changing native guards.
     DB::table('invoices')->where('id',$invoice->id)->update(['user_id'=>$foreign->id]);
     $before=$op->fresh()->getRawOriginal();$holding=$domain->fresh()->getRawOriginal();$writes=$state->writes;
-    $refused=false;
-    try{ExtensionHelper::addPayment($invoice,null,$op->amount,'0.00','receipt-owner-'.$renewalState);}
-    catch(MoneyScopeChanged){$refused=true;}
-    same($renewalState!=='rejected',$refused,'Only an open renewal refuses a mismatched invoice owner: '.$renewalState);
-    same($renewalState==='rejected'?1:0,$invoice->transactions()->count(),'Receipt commits only after renewal authority is closed: '.$renewalState);
-    same($renewalState==='rejected'?'paid':'cancelled',$invoice->fresh()->status,'Refusal rolls back native invoice settlement: '.$renewalState);
-    if($renewalState==='rejected'){
-        same('succeeded',$invoice->transactions()->sole()->status->value,'Closed renewal retains the actual payment');
-        ExtensionHelper::addPayment($invoice,null,$op->amount,'0.00','receipt-owner-'.$renewalState);
-        same(1,$invoice->transactions()->count(),'Gateway replay records a closed renewal payment once');
-    }
+    $cash=static fn($owner)=>(string)(App\Models\Credit::where('user_id',$owner)->where('currency_code','USD')->value('amount')??'0.00');$credits=[$cash($user->id),$cash($foreign->id)];
+    // The payment is always recorded; a damaged owner keeps the money with staff.
+    ExtensionHelper::addPayment($invoice,null,$op->amount,'0.00','receipt-owner-'.$renewalState);
+    ExtensionHelper::addPayment($invoice->fresh(),null,$op->amount,'0.00','receipt-owner-'.$renewalState);
+    // A renewal closed before the payment keeps the native late path, so its invoice turns paid.
+    same(['succeeded',$renewalState==='rejected'?'paid':'cancelled'],[$invoice->transactions()->sole()->status->value,$invoice->fresh()->status],'The receipt is recorded once; an open renewal keeps the invoice cancelled: '.$renewalState);
+    same($credits,[$cash($user->id),$cash($foreign->id)],'A mismatched owner gets no automatic credit: '.$renewalState);
     same($before,$op->fresh()->getRawOriginal(),'Payment never changes renewal authority: '.$renewalState);
     same($holding,$domain->fresh()->getRawOriginal(),'Payment never changes the holding: '.$renewalState);
     same($writes,$state->writes,'Owner mismatch never sends a renewal: '.$renewalState);

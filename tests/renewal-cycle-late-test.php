@@ -47,7 +47,9 @@ same([$words('$1.00')],$notes($lateDomain),'Readable coverage restores the credi
 [$twice,$twiceDomain,,$twiceInvoice]=$closed('renew-late-twice-placeholder.com');$amount=PricingRule::minor($twice->amount);
 foreach([1,2] as $n){$pay::addPayment($twiceInvoice->id,null,$twice->amount);$refunds->retryPending();same($n*$amount,$cash(),'Full payment '.$n.' on a closed invoice becomes credit');}
 same([$words(\Paymenter\Extensions\Servers\Domains\Services\RenewalReminders::money(PricingRule::decimal(2*$amount)))],$notes($twiceDomain),'The note adds up what was credited');
-[$frozen,,,$frozenInvoice]=$closed('renew-late-frozen-placeholder.com');$first=$pay::addPayment($frozenInvoice->id,null,$frozen->amount);
+// A retained refund record already covers the first payment; its after-commit credit never ran.
+[$frozen,,,$frozenInvoice]=$closed('renew-late-frozen-placeholder.com');app()->bind(\Paymenter\Extensions\Servers\Domains\Services\Refunds::class,static fn()=>throw new RuntimeException('Synthetic lost worker'));
+$first=$pay::addPayment($frozenInvoice->id,null,$frozen->amount);app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\Refunds::class);
 $refund=['amount'=>$frozen->amount,'payments'=>[['id'=>(int)$first->id,'amount_minor'=>PricingRule::minor($frozen->amount)]],'to'=>'account_credit'];$frozen=$frozen->fresh();$frozen->update(['funding'=>[...($frozen->funding??[]),'refund'=>$refund]]);
 $pay::addPayment($frozenInvoice->id,null,'2.00');$refunds->retryPending();
 same([200,$refund],[$cash(),$frozen->fresh()->funding['refund']],'A later payment is credited and the frozen credit stays as it was');
@@ -59,6 +61,8 @@ $clock->instant=$at('2027-09-27T12:00:00Z');$next=$billing->invoice($declinedDom
 [$good,$goodDomain,,$goodInvoice]=$closed('renew-late-good-placeholder.com');
 $pay::addFailedPayment($goodInvoice->id,null,$good->amount);$pay::addPayment($goodInvoice->id,null,$good->amount);$refunds->retryPending();same(PricingRule::minor($good->amount),$cash(),'The good payment becomes credit');
 $clock->instant=$at('2027-09-27T12:00:00Z');$next=$billing->invoice($goodDomain->id);same(['paid',0],[$next->status,$cash()],'The next renewal invoice uses the credit');
+same([], $good->fresh()->attempt['terminal']['transactions'], 'Recorded unpaid retirement keeps its empty evidence after the late return');
+same($next->id, $billing->invoice($goodDomain->id)->id, 'The scheduled replacement of an unpaid retirement is idempotent');
 // The replacement invoice was already open when the money landed. A checkout could be open on it, so the sweep leaves the credit to the customer.
 [$first,$openDomain,,$firstInvoice]=$closed('renew-late-open-placeholder.com');$open=$billing->invoice($openDomain->id,$user);same('pending',$open->status,'The replacement waits for payment');
 $pay::addPayment($firstInvoice->id,null,$first->amount);$refunds->retryPending();$kept=PricingRule::minor($first->amount);same($kept,$cash(),'The late money is credit');

@@ -49,7 +49,7 @@ final class AccountMoneyHolds
     {
         OperationClaims::outside();$alert=DB::table('domains_obligation_alerts')->find($alertId);
         $seed=Domain::findOrFail($alert?->domain_id);
-        DB::transaction(function()use($actor,$alertId,$seed):void {
+        FreshTransaction::run(function()use($actor,$alertId,$seed):void {
             $l=HoldingLocks::take($seed,(int)$actor->id,released:$seed->reservation_name===null);
             StaffOperationReview::requirePermission($l['staff'],'release',null);
             $alert=DB::table('domains_obligation_alerts')->where('id',$alertId)->where('domain_id',$seed->id)->where('code','account_money_hold')->lockForUpdate()->first();

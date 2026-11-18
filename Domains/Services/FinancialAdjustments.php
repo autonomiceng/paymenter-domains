@@ -16,7 +16,7 @@ final readonly class FinancialAdjustments
         OperationClaims::outside(); $seed = Operation::findOrFail($operationId)->domain()->firstOrFail();
         if (!preg_match('/^[a-z0-9_-]{8,64}$/D', $key) || !preg_match('/^-?(?:0|[1-9][0-9]{0,7})\.[0-9]{2}$/D', $amount)
             || PricingRule::minor($amount) === 0) { throw new \InvalidArgumentException('Exact nonzero adjustment and stable key required.'); }
-        return DB::transaction(function () use ($seed, $actor, $operationId, $key, $amount, $reason): InvoiceTransaction {
+        return FreshTransaction::run(function () use ($seed, $actor, $operationId, $key, $amount, $reason): InvoiceTransaction {
             $l = HoldingLocks::take($seed, (int) $actor->id); $staffId = StaffFinancialRights::require($l, $reason);
             if (!$l['staff']->hasPermission('admin.invoice_transactions.create')) { throw new \DomainException('Native transaction creation permission required.'); }
             $op = $l['operations']->firstWhere('id', $operationId);
@@ -56,13 +56,23 @@ final readonly class FinancialAdjustments
     {
         return RenewalAutoPay::unattempted($op) && self::registrarUnattemptedFunding($op);
     }
+    /** Screen registrar evidence without discarding receipt accounting. The native ledger still has to prove settlement. */
+    public static function registrarFunding(Operation $op): array
+    {
+        $funding = $op->funding ?? [];
+        if ($op->funding_basis === 'complimentary' && array_key_exists('late_credits', $funding)
+            && ReceiptReturns::complimentaryCredits($op) !== null) {
+            unset($funding['late_credits']);
+        }
+        return $funding;
+    }
     /** Collection is separate from registrar dispatch; callers must verify current native funding. */
     public static function registrarUnattemptedFunding(Operation $op): bool
     {
-        if (($op->funding ?? []) === []) { return true; }
+        $funding = self::registrarFunding($op);
+        if ($funding === []) { return true; }
         try {
             // Saved-method collection evidence grants no registrar attempt or funding authority.
-            $funding = $op->funding;
             if ($op->action === 'renew') { unset($funding['auto_pay'], $funding['auto_pay_result']); }
             if ($op->funding_basis !== 'paid_invoice' || ($funding !== [] && array_keys($funding) !== ['financial_adjustments'])) { return false; }
             self::history($op); return true;
