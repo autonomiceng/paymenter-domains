@@ -33,7 +33,12 @@ foreach (['address' => '1 Synthetic Street', 'city' => 'Seattle', 'state' => 'WA
     $user->properties()->create(['key' => $key, 'name' => $key, 'value' => $value]);
 }
 $product = $native->product($tlds[0], 'register');
-$new = static function (string $name, bool $paid = true, bool $setup = true, string $action = 'register', int $term = 1) use ($user, $product, $native, $tlds, $clock, $transfers): Operation {
+// Downstream registration matrices can skip cart rendering and request round trips.
+$readyRegistration = ($fixtureReadyRegistration ?? false) && !($installedFixture ?? false)
+    && $tlds[0]->registrar_key === 'enom'
+    && ($fixtureEnvironment ?? \Paymenter\Extensions\Servers\Domains\Data\Environment::Test) === \Paymenter\Extensions\Servers\Domains\Data\Environment::Test;
+if ($readyRegistration) { require_once __DIR__.'/ready-registration.php'; }
+$new = static function (string $name, bool $paid = true, bool $setup = true, string $action = 'register', int $term = 1) use ($user, $product, $native, $tlds, $clock, $transfers, $admission, $readyRegistration): Operation {
     // Checkout belongs to this explicit module composition; later physical-send probes keep their Runtime.
     $runtime=app()->bound(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class)?app(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class):null;
     app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class);
@@ -43,8 +48,12 @@ $new = static function (string $name, bool $paid = true, bool $setup = true, str
     // Retained invalid-contact scenarios predate the new checkout gate.
     try { \Paymenter\Extensions\Servers\Domains\Services\ContactDetails::validate('enom', \Paymenter\Extensions\Servers\Domains\Services\ContactDetails::collect($user)); $legacyContacts=false; }
     catch (\Paymenter\Extensions\Servers\Domains\Services\ContactValidation) { $legacyContacts=true; }
-    $checkout=$legacyContacts?commerceLegacyCheckout($user,$cart):commerceCheckout($user,$cart);
-    $checkout->assertHasNoErrors();
+    if ($readyRegistration && $action === 'register' && $term === 1 && $paid && $setup && !$legacyContacts) {
+        readyRegistrationCheckout($cart, $admission);
+    } else {
+        $checkout = $legacyContacts ? commerceLegacyCheckout($user, $cart) : commerceCheckout($user, $cart);
+        $checkout->assertHasNoErrors();
+    }
     $op = Domain::where('domain', $name)->sole()->operations()->sole();
     if (!$setup) { \Paymenter\Extensions\Servers\Domains\Services\ContactSetup::recoveryWrite(static fn () => $op->update(['payload' => array_replace($op->payload, ['setup_required' => true])])); }
     if ($paid) {

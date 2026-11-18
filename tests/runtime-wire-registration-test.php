@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+$fixtureReadyRegistration = true;
 require __DIR__.'/Support/registration-fixture.php';require __DIR__.'/Support/WireLimit.php';
 use Paymenter\Extensions\Servers\Domains\Services\{Runtime,WriteFeatures};
 PHPUnit\TextUI\Configuration\Registry::init((new PHPUnit\TextUI\CliArguments\Builder)->fromParameters([]),PHPUnit\TextUI\XmlConfiguration\DefaultConfiguration::create());

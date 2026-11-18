@@ -2,6 +2,7 @@
 // Synthetic slice18/19 integration; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require_once __DIR__.'/Support/reserved-fixtures.php';
+$fixtureReadyRegistration = true;
 require __DIR__.'/Support/operation-fixture.php';
 use App\Models\Role;
 use Illuminate\Support\Facades\{Crypt, DB};
