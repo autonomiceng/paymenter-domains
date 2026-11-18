@@ -1,11 +1,13 @@
 """Receipts separate cancelled tests from failures and record the tested Git tree."""
 # MIT, Copyright (c) 2026 Autonomic Engineering.
 import contextlib
+import hashlib
 import importlib.util
 import io
 import json
 import os
 from pathlib import Path
+import shutil
 import signal
 import subprocess
 import sys
@@ -22,6 +24,43 @@ spec.loader.exec_module(runner)
 
 
 class ReceiptTests(unittest.TestCase):
+    def test_offline_bootstrap_only_inspects_the_prepared_image(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            scripts = root/'scripts'
+            scripts.mkdir()
+            for name in ('bootstrap.py', 'php_suite.py', 'php-suite.Dockerfile'):
+                shutil.copyfile(ROOT/'scripts'/name, scripts/name)
+            archive = b'verified archive fixture'
+            lock = scripts/'php-runtime-packages.json'
+            lock.write_text(json.dumps([{'url': 'https://example.invalid/php-native.deb', 'native': True,
+                                         'sha256': hashlib.sha256(archive).hexdigest()}]))
+            cache = root/'.cache/php-runtime'
+            cache.mkdir(parents=True)
+            (cache/'php-native.deb').write_bytes(archive)
+            digest = hashlib.sha256((scripts/'php-suite.Dockerfile').read_bytes() + b'\0' + lock.read_bytes()).hexdigest()
+            docker = root/'docker'
+            docker.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$CALLS"\n'
+                              '[ "$1 $2 $3" = "image inspect --format" ] || exit 99\n'
+                              '[ "$IMAGE_READY" = 1 ] || exit 1\n'
+                              'printf "%s\\n" "sha256:prepared"\n')
+            docker.chmod(0o700)
+            calls = root/'calls'
+            for flags in ([], ['--native']):
+                for ready in (False, True):
+                    with self.subTest(flags=flags, ready=ready):
+                        calls.write_text('')
+                        env = dict(os.environ, PATH=str(root)+os.pathsep+os.environ['PATH'], CALLS=str(calls),
+                                   IMAGE_READY=str(int(ready)))
+                        result = subprocess.run([sys.executable, str(scripts/'bootstrap.py'), *flags], env=env,
+                                                capture_output=True, text=True, timeout=3)
+                        self.assertEqual(calls.read_text().splitlines(),
+                                         ['image inspect --format {{.Id}} domains-php-suite:'+digest])
+                        self.assertEqual(result.returncode == 0, ready)
+                        if not ready:
+                            self.assertIn('--download', result.stderr)
+                            self.assertFalse(result.stdout)
+
     def test_container_success_requires_a_complete_receipt_on_host(self):
         suite = runner.php_suite
         with tempfile.TemporaryDirectory() as directory:

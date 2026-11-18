@@ -79,8 +79,13 @@ def prepare(download=False, native=False):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--download', action='store_true')
-    parser.add_argument('--native', action='store_true')
+    parser.add_argument('--native', action='store_true', help='Accepted for compatibility. The image always includes native modules.')
     args = parser.parse_args()
     import php_suite
-    php_suite.build(archives(args.download, native=True))
+    if args.download:
+        php_suite.build(archives(download=True, native=True))
+    try:
+        php_suite.image_id()
+    except subprocess.CalledProcessError:
+        raise SystemExit('Pinned PHP suite image unavailable. Run scripts/bootstrap.py --download to prepare it.') from None
     print('PHP 8.4.27 suite image ready.')

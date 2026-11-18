@@ -41,14 +41,13 @@ Blade fixture with populated history. Screenshots beside the approved mock cover
 Set `DOMAINS_PANEL_SETUP` to a PHP file that configures `$panel` and returns its
 built theme to render with a host skin. The UI suite uses the image’s Node.js, Playwright 1.60.0 and matching Chromium headless shell.
 
-Run `python3 scripts/bootstrap.py --download` to build the PHP suite image, then run
-`scripts/test.py` offline. Local runs and native CI shards use the same entry point and
-selectors. The amd64 base image digest and dated Debian package repository are in
-`scripts/php-suite.Dockerfile`. PHP 8.4.27 and its extensions come from the SHA-256
-archives in `scripts/php-runtime-packages.json`. Set `PHP_RUNTIME_ARCHIVE_CACHE` to
-reuse local archives. Setup requires Docker. Execution requires Linux cgroup v2,
-rootless runc, user namespaces, GNU tar and a delegated memory scope. A direct
-invocation can request its own 2 GiB, zero-swap systemd user scope.
+Build the PHP suite image with `python3 scripts/bootstrap.py --download`, then run
+`scripts/test.py` offline. Bootstrap without `--download` checks the local image only.
+`scripts/php-suite.Dockerfile` pins the amd64 base and dated Debian repository.
+`scripts/php-runtime-packages.json` pins PHP 8.4.27 archives by SHA-256. Set
+`PHP_RUNTIME_ARCHIVE_CACHE` to reuse verified archives when building. Setup requires Docker.
+Execution requires Linux cgroup v2, rootless runc, user namespaces, GNU tar and a delegated
+memory scope. Direct invocation can request a 2 GiB, zero-swap systemd user scope.
 
 Each invocation exports the image by immutable ID into a temporary directory and starts one
 OCI container under the admitted controller. Tests share read-only PHP and vendor files.
@@ -87,14 +86,12 @@ guard failures preserve results. Laravel suites must mark completion: framework 
 
 ## Offline native fixture
 
-Provide an existing pristine development checkout with vendor, not an installed application:
+The same prepared image includes the native modules. Supply a pristine development checkout with vendor.
 
 ```sh
-PHP_RUNTIME_ARCHIVE_CACHE=/path/to/verified/php-archives \
 PAYMENTER_TEST_APP=/canonical/path/to/paymenter-1.5.9 scripts/test.py
 ```
 
-Seed native archives with `python3 scripts/bootstrap.py --native`; downloading requires the separate `--download` flag.
 The dependency guard pins Paymenter v1.5.9 commit `ee729f7d99ac18942625b79f3f93d8d8b21255e8` and lock SHA-256
 `fd6bdeb5557b3af0976d5688d92081abc6f7c3235806a6c4b77f4b8bca9186be`.
 It verifies every upstream tracked byte and installed package name/version/dist reference, rejecting .env/cached config/symlinks.
@@ -106,7 +103,7 @@ migrates an in-memory database, blocks stray HTTP and removes the copy afterward
 schema/model/transaction/HTTP guards, manually invoked Domains foundation migrations, standalone retained-schema
 verification, global reservation/rollback and synthetic account/site/credential binding guards. These fixture-only
 checks have no Domains entry point, billing, production registrar identity verifier or installed extension; SQLite cannot prove MariaDB locking, concurrent checkout or financial correctness.
-Locally, supply the dependency explicitly: `scripts/test.py` never checks out, downloads or bootstraps it.
+Supply the dependency explicitly. `scripts/test.py` uses the provided checkout.
 
 CI runs the native suite too: see [native tests in CI](native-ci.md).
 

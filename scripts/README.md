@@ -1,7 +1,7 @@
 # Development tools
 
-- `python3 scripts/bootstrap.py --download`: cache pinned PHP archives; network only on explicit bootstrap.
-- `python3 scripts/bootstrap.py --native`: verify/cache additional native modules, without downloading.
+- `python3 scripts/bootstrap.py --download` builds the pinned PHP suite image, including native modules.
+- `python3 scripts/bootstrap.py` (also accepts `--native`) checks for the prepared image offline.
 - `scripts/test.py`: registered offline suites and lint; optional `--suite`, private JSON receipts.
 - `scripts/php-test`: runner-only wrapper disabling network/process functions.
 - `scripts/affected.py`: tests a change affects and their CI shards, from `tests/affected.json`.
