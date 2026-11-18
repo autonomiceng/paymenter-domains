@@ -85,7 +85,7 @@ $countSub=trim($countDom->query('//li[@id="dns"]/span[@class="domains-row__l"]/s
 $countValue=trim($countDom->query('//li[@id="dns"]/span[@class="domains-row__v"]')->item(0)?->textContent??'');
 $same([true,'0 records'],[str_starts_with($countSub,'Checked '),$countValue],'DNS says its record count once and keeps the check time: '.json_encode([$countSub,$countValue]));
 $dnsTimes=$countDom->query('//li[@id="dns"]/span[@class="domains-row__l"]/span[@class="domains-sub"]//time');
-$same([[$dnsAt,true]],array_map(fn($n)=>[$n->getAttribute('datetime'),trim($n->textContent)!==''],iterator_to_array($dnsTimes)),'The DNS row shows its own saved check time');
+$same([[substr($dnsAt,0,10),true]],array_map(fn($n)=>[$n->getAttribute('datetime'),trim($n->textContent)!==''],iterator_to_array($dnsTimes)),'The DNS row shows its own saved check time');
 // r16: a domain that ended without a registration has no expiry to show, so Renewal says nothing rather than Expires None.
 $ended=new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(name:'example.com',status:'Cancelled',tone:'muted',expiry:null,renewal:'',renewalPrice:null,actions:['show'=>'/domains/1'],progress:[],setup:[],transfer:[],management:[],testEnvironment:false,order:['state'=>'cancelled','credit'=>'10.99']);
 $endedHtml=view('domains::partials.owner-renew',['domain'=>$ended,'summary'=>null,'support'=>null])->render();

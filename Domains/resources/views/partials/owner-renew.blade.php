@@ -16,7 +16,7 @@
     $renewalOn = $domain->autoRenew ? $domain->autoRenew['enabled'] : $domain->renewal !== 'Off';
     $complimentary = $domain->renewalPrice === \Paymenter\Extensions\Servers\Domains\Services\ComplimentaryAccounts::LABEL;
     $scheduledInvoice = $renewalRows && $renewalOn && !$complimentary && isset($domain->actions['autoPay'])
-        ? $payment::scheduledInvoice($domain, $summary ?? null, $renewalChoices['next_annual'] ?? null)
+        ? $payment::scheduledInvoice($domain, $summary ?? null, $renewalChoices['scheduled_annual'] ?? null)
         : null;
     if ($scheduledInvoice && isset($summary->renewalDueAt)) {
         $invoice = ['value' => 'Due '.$page::date($summary->renewalDueAt).'.'];

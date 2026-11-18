@@ -53,7 +53,12 @@ foreach([false,true] as $complimentary){
     expect(str_contains($html,'>Renew now</a>'),'Eligible '.($complimentary?'complimentary':'paid').' customer sees Renew now');
     expect(str_contains($html,'<option value="1"'),'Customer renewal offers its supported annual term');
     same([1],$ownerBilling->requestOptions($d->fresh())['terms'],'Advisory terms agree with the native page');
-    same($complimentary?'0.00':'10.40',$ownerBilling->renewalChoices($d->fresh())['next_annual'],'Customer sees the authorized renewal price');
+    $preview = $ownerBilling->renewalChoices($d->fresh());
+    same($complimentary?'0.00':'10.40',$preview['next_annual'],'Customer sees the authorized renewal price');
+    same(null,$preview['scheduled_annual'],'Manual renewal pricing cannot forecast a disabled scheduled invoice');
+    $server->settings()->updateOrCreate(['key'=>'domains_billing_enabled'],['value'=>true,'type'=>'boolean']);
+    same($preview['next_annual'],$ownerBilling->renewalChoices($d->fresh())['scheduled_annual'],'Scheduled renewal can forecast the annual invoice');
+    $server->settings()->where('key','domains_billing_enabled')->update(['value'=>false]);
     same($before,Invoice::count(),'Advisory page creates no invoice');
     $bindings->setProcessing($server->id,false);
     expect(!str_contains($render(),'>Renew now</a>'),'Processing off still hides customer renewal');

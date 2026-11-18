@@ -68,7 +68,7 @@
     $foldAdvanced = count($advanced) === 2 && !$domain->syncPaused && collect($advanced)->every(function ($cap) use ($domain) {
         $section = $domain->management[$cap];
         $family = $section['family'] ?? [];
-        $knownEmpty = ($family['state'] ?? null) === 'complete' || ($cap === 'glue' && ($family['limited'] ?? false));
+        $knownEmpty = ($family['state'] ?? null) === 'complete' && !($family['limited'] ?? false);
         return $knownEmpty && ($family['count'] ?? null) === 0 && empty($family['hosts'])
             && empty($section['records']) && empty($section['fixed']) && empty($section['actions'])
             && empty($section['progress']) && empty($section['waiting']) && empty($section['warnings'])
