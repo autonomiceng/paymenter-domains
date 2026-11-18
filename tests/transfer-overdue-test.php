@@ -84,6 +84,8 @@ $r = $restart->run($op->id);
 same(['TP_GetOrder'], $observe->calls, 'Overlapping staff and worker checks share the reserved read');
 $now = $clock->now()->getTimestamp();
 same($expected($now, 'pending', $now+86400, null), $view($r, $now), 'The worker records the winning read and its daily due time');
+same(false, Paymenter\Extensions\Servers\Domains\Admin\Support\OperationActions::readLimit($r),
+    'A scheduled daily read cannot be restarted through audited recovery');
 $clock->instant = $clock->now()->modify('+86399 seconds');
 $restart->run($op->id);
 same(['TP_GetOrder'], $observe->calls, 'Worker restart preserves daily pacing');

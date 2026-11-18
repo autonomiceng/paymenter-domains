@@ -180,8 +180,10 @@ final class OperationActions
             if($op->action==='renew'&&($op->attempt['seal']??null)==='sealed'
                 &&\Paymenter\Extensions\Servers\Domains\Services\RenewalCompletion::capturedChargeHeld($op)){return true;}
         } catch (\Throwable) { return false; }
+        $now = app(Clock::class)->now()->getTimestamp();
+        if (TransferPolling::followupScheduled($op, $now)) { return false; }
         if(($p['reconciliation']['reason']??null)==='transfer_deadline_passed'||($p['reconciliation']['final_check']??null)==='done'){return true;}
-        if (TransferPolling::applies($op) && app(Clock::class)->now()->getTimestamp() >= TransferPolling::cutoff($op)) { return true; }
+        if (TransferPolling::applies($op) && $now >= TransferPolling::cutoff($op)) { return true; }
         if(TransferPolling::expected($op)){return false;}
         return ($p['renewal_polls']??0)>=\Paymenter\Extensions\Servers\Domains\Services\OperationReconciliation::POLL_LIMIT||($p['reconciliation']['polls']??0)>=\Paymenter\Extensions\Servers\Domains\Services\OperationReconciliation::POLL_LIMIT;
     }

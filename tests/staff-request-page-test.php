@@ -400,6 +400,11 @@ Livewire::actingAs($manager)->test(ViewOperation::class, ['record'=>$transfer->i
 $transfer->update(['started_at'=>gmdate('Y-m-d H:i:s',$readNow-15*86400)]);
 $policy['reconciliation'] = ['reason'=>'transfer_pending', 'transfer_status'=>'pending', 'staff_alert'=>false];
 $transfer->update(['policy'=>$policy]);
+$transfer->forceFill(['started_at'=>gmdate('Y-m-d H:i:s',$readNow-8*86400)]);
+same(true,RequestFacts::transferChecks($transfer)['due'],'A missed day-seven read is due even if the saved deadline is in the past');
+$customerNotice = Paymenter\Extensions\Servers\Domains\Presentation\TransferNotice::for($transfer, $readNow);
+same(false,$customerNotice['contact']??true,'A missed day-seven read still due automatically does not send the customer to support');
+$transfer->refresh();
 $recovery = staffUser([Staff::VIEW, StaffOperationReview::permission('resume_reads')]);
 Livewire::actingAs($recovery)->test(ViewOperation::class, ['record'=>$transfer->id])->assertSuccessful()
     ->assertActionVisible('resume_reads')->assertSee('Check now');

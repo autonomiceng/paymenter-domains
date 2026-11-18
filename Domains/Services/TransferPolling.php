@@ -101,6 +101,11 @@ final class TransferPolling
         }
         return $view;
     }
+    public static function followupScheduled(Operation $op, int $now): bool
+    {
+        return self::expired($op, $now) && self::schedule($op, $now)['next_read_at'] !== null;
+    }
+
     public static function expired(Operation $op,int $now): bool { return self::applies($op)&&$now>=self::deadline($op); }
     public static function delay(int $checks): int { return min(43200,7200*(2**min(3,max(0,$checks-1)))); }
     /** Called under the operation locks before I/O, including failed/deferred attempts and worker restarts. */

@@ -51,7 +51,8 @@ final class AccountChecklist
         $rows=[$connection,$tlds,...self::pricing($a,$offers,$tlds['using_default']),self::prices($a,$binding),self::orders($a)];
         $gates=app(RuntimePorts::class)->acquisitionGates($a);
         $off=fn(?bool $gate)=>match(true){$gate===null=>'Not set up on this site yet. See System checks.',default=>self::siteOff($a)};
-        $rows[]=$gates['register']===true?self::row('Registrations',$a->processing_enabled?'On':'Off',null,self::REGISTRATIONS):self::unavailable('Registrations',$off($gates['register']));
+        $rows[]=$gates['register']===true?self::row('Registrations',$a->processing_enabled?'On':'Off',null,self::REGISTRATIONS,null,
+            'Lets customers register new domains with this registrar. The site manages this setting.'):self::unavailable('Registrations',$off($gates['register']));
         $rows[]=self::transfers($a,$binding,$gates['transfer'],$off);
         foreach(['renewal'=>['Renewals',EnomTestRenewal::class,self::RENEWALS],'management'=>['DNS, nameservers and contacts',EnomTestManagement::class,self::MANAGEMENT]] as $key=>[$label,$feature,$help]){
             if($key==='management'&&$a->registrar_key==='namesilo'){$help='Sends nameserver and contact changes to NameSilo. DNS records and DNSSEC are not offered for NameSilo.';}

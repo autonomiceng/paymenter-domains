@@ -120,7 +120,7 @@ class ViewOperation extends RecordDetailPage
         $action=isset($notice['action'])?$this->getAction($notice['action'],false):null; $acts=(bool)$action?->isVisible();
         $transferChecks=($notice['transfer_checks']??false)?RequestFacts::transferChecks($op):null;
         if ($transferChecks !== null && ($transferChecks['manual_queued'] || $transferChecks['checking']
-            || ($notice['action'] === 'recheck' && $transferChecks['next_at'] > app(Clock::class)->now()->getTimestamp()))) {
+            || ($notice['action'] === 'recheck' && $transferChecks['next_at'] !== null && !$transferChecks['due']))) {
             $acts = false;
         }
         $lead=$notice===null?null:($answers&&$transferChecks===null&&(($notice['primary']??null)==='enom_answer'||!$acts)?$answer:($acts?Sheet::button($action,$notice['action']==='refund'?'danger':'gray'):null));
@@ -220,12 +220,16 @@ class ViewOperation extends RecordDetailPage
             $checks['next_reason'] !== null => 'If the check cannot confirm the result, contact '.$who.'.',
             default => 'The system will check with '.$who.' again.',
         };
-        $guard = $action === null ? null : 'Check now reads the original transfer status. It does not send the transfer again.';
+        $guard = $action === null ? null : ($action->getName() === 'resume_reads'
+            ? 'Check now queues a status check for the original transfer.'
+            : 'Check now reads the status of the original transfer.');
         $last=$checks['last_at']===null
             ? ($checks['last_result']===null ? Value::state(State::NotReadYet,Reader::Staff,'No transfer result is recorded.') : RequestRows::text($checks['last_result']))
             : Value::fact(Fact::date($checks['last_at'],Reader::Staff),$checks['last_result']);
         $next = match (true) {
             $checks['checking'] => Value::state(State::Checking, Reader::Staff),
+            $checks['due'] => Value::state(State::Delayed, Reader::Staff, 'A registrar check is due.',
+                at: Fact::date($checks['next_at'],Reader::Staff)),
             $checks['next_at'] !== null => Value::fact(Fact::date($checks['next_at'], Reader::Staff)),
             default => RequestRows::text('None scheduled', $checks['next_reason']),
         };

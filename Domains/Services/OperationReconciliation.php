@@ -238,9 +238,13 @@ final class OperationReconciliation
             $l=['domain'=>$domain,'operations'=>$all,'staff'=>$staff]; $review?->check($l);
             if (!$this->eligible($op)) { throw new \DomainException('No unresolved attempt.'); }
             $this->authority($op, $domain, $all, $funding, $server, $account);
-            if (TransferPolling::reading($op, $this->clock->now()->getTimestamp())) { return $op; }
+            $now = $this->clock->now()->getTimestamp();
+            if (TransferPolling::reading($op, $now)) { return $op; }
             $policy = TransferFollowup::retain($op); $history = $policy['reconciliation_resumptions'] ?? [];
             if(TransferPolling::applies($op)&&($policy['reconciliation']['manual_check']??false)){return $op;}
+            if ($review !== null && TransferPolling::followupScheduled($op, $now)) {
+                throw new StaffReviewRefused('Automatic transfer checks are still scheduled.');
+            }
             if (count($history) >= 20) { throw new \DomainException('Resume audit is full.'); }
             $resumption=['reason' => $reason, 'at' => $this->clock->now()->format(DATE_ATOM), 'prior_polls' => $policy['reconciliation']['polls'] ?? 0];
             if(TransferPolling::applies($op)){$policy['reconciliation']['manual_check']=true;$policy['reconciliation']['manual_resumption']=$resumption;$policy['reconciliation']['next_at']=0;}

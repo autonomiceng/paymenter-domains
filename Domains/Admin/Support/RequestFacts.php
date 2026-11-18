@@ -514,7 +514,7 @@ final class RequestFacts
     }
     /**
      * Staff display of recorded transfer checks. The scheduler owns the next timestamp and when checks stop.
-     * @return array{last_at:?int,last_result:?string,next_at:?int,next_reason:?string,manual_queued:bool,checking:bool,customer_action:?string}
+     * @return array{last_at:?int,last_result:?string,next_at:?int,next_reason:?string,due:bool,manual_queued:bool,checking:bool,customer_action:?string}
      */
     public static function transferChecks(Operation $op): array
     {
@@ -545,7 +545,8 @@ final class RequestFacts
             default => 'The registrar did not confirm that automatic checks could continue.',
         };
         return ['last_at'=>$schedule['last_read_at'], 'last_result'=>$result, 'next_at'=>$schedule['next_read_at'],
-            'next_reason'=>$reason, 'manual_queued'=>($r['manual_check'] ?? false) === true,
+            'next_reason'=>$reason, 'due'=>$schedule['next_read_at'] !== null && $schedule['next_read_at'] <= $now,
+            'manual_queued'=>($r['manual_check'] ?? false) === true,
             'checking'=>TransferPolling::reading($op, $now), 'customer_action'=>$customerAction];
     }
     /** An unconfirmed registration or renewal by answerState(): while a check is scheduled, Check status is the one step; once
