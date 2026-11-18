@@ -31,6 +31,9 @@ final class RequestRows
         // Each part is made a sentence on its own, so a typed body never reaches the page as markup; a timed retry stays a time.
         $try = $notice['next_try'] ?? null;
         $line = self::sentence(implode(' ', array_filter([self::sentence($notice['title']), self::sentence($notice['body'] ?? null), $try === null ? null : 'Next try'])));
+        if ($word === $state && $try === null && empty($notice['times']) && !isset($notice['note']) && ($reason = Fact::entered($line)) !== null) {
+            return Row::noticeText('request', Value::fact($reason), $action);
+        }
         $value = Value::state($word, Reader::Staff, $line, null, $try === null ? null : Fact::date((int) $try, Reader::Staff));
         // Times and their step, when the notice has them, go on the staff line under the reason.
         foreach ($notice['times'] ?? [] as $label => $at) { $value = $value->when((int) $at, (string) $label); }
@@ -38,8 +41,8 @@ final class RequestRows
         return Row::notice('request', $value, $action);
     }
     /** The request's reason, when no notice gives one: the head shows the word, so the reason opens the sheet. */
-    public static function reason(State $state, string $reason, string $record): Row
-    { return Row::notice('request', Value::state($state, Reader::Staff, self::sentence($reason), $record)); }
+    public static function reason(string $reason): Row
+    { return Row::noticeText('request', self::text($reason)); }
     /** A text fact with its line, or the state its cause gives when it has no value. */
     public static function text(?string $value, ?string $sub = null, ?string $cause = null): Value
     {

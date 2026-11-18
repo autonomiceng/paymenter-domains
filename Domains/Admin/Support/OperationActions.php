@@ -29,7 +29,8 @@ final class OperationActions
             $complimentaryClosure=$name==='credit'&&$op->funding_basis==='complimentary';
             if($complimentaryClosure){$label='Close order';}
             $ticket=fn()=>StaffOperationReview::ticket((int)Auth::id(),(int)$op->domain_id,(int)$op->id,$name,$stamp,app(Clock::class));
-            $action=Action::make($name)->label($label)->color($name==='refund'?'danger':'gray')
+            $button=in_array($name,['recheck','resume_reads'],true)&&RequestFacts::delayedTransfer($op)?'Check now':$label;
+            $action=Action::make($name)->label($button)->color($name==='refund'?'danger':'gray')
                 ->visible(fn()=>Staff::can(StaffOperationReview::permission($name))&&self::relevant($name,$op));
             if(in_array($name,[...self::REASON,'disposition'],true)){
                 $action->requiresConfirmation()->modalHeading($name==='disposition'?$label:$label.'?')->modalSubmitActionLabel($label)->modalWidth('lg')
@@ -62,7 +63,8 @@ final class OperationActions
                     $check=$name!=='recheck'?null:(in_array($op->action,['register','transfer','renew'],true)?\Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::for($op->fresh()):ManagementCheck::words($op->fresh()));
                     $notification=Notification::make();
                     $check&&$check['title']!=='Registrar checked'?$notification->warning():$notification->success();
-                    $notification->title($check['title']??($contactRecovery?'Contact details updated':($complimentaryClosure?'Order closed':self::DONE[$name])))
+                    $queuedCheck=$name==='resume_reads'&&RequestFacts::delayedTransfer($op);
+                    $notification->title($check['title']??($queuedCheck?'Check requested':($contactRecovery?'Contact details updated':($complimentaryClosure?'Order closed':self::DONE[$name]))))
                         ->body($check['body']??($name==='resume_reads'?'The system will check again on its next turn.':($name==='recheck'?'Open this request for its current result and next step.':($sends===null?null:"The {$sends} goes to Enom within a few minutes."))))->send();
                 }catch(StaffReviewRefused $error){
                     ($error->getMessage()===StaffOperationReview::CHANGED?self::stale($name,$op->fresh()):Notification::make()->danger()->persistent()->title(self::FAILED)->body($error->getMessage()))->send();

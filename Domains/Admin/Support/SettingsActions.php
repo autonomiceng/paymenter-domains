@@ -455,7 +455,7 @@ final class SettingsActions
     {
         return match(true){$name==='late_renewal'=>'Late renewal',$name==='processing'=>'Orders',$name==='configure'=>$connected?'Edit API credentials':'Connect account',
             $name==='enroll_sandbox'=>'Connect NameSilo test account',$name==='probe'=>'Test connection',
-            $name==='renewal_billing'=>'Edit schedule',$name==='unpaid_hold'=>'Edit unpaid hold',$name==='default_pricing'=>'Default pricing',default=>Review::ACTIONS[$name]??$name};
+            $name==='renewal_billing'=>'Edit schedule',$name==='unpaid_hold'=>'Wait for payment',$name==='default_pricing'=>'Default pricing',default=>Review::ACTIONS[$name]??$name};
     }
     /** Dialog title: what the button does, as a question. */
     private static function setupHeading(string $name,bool $connected): string

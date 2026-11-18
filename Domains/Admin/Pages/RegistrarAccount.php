@@ -17,7 +17,7 @@ use Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain};
 use Paymenter\Extensions\Servers\Domains\Presentation\{AccountStatus, Fact, Reader, State};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, EnomLiveActivation, SiteDnsDefault};
-/** One registrar account (a Domains server): its own state in the head, then Account, Balance and usage, Sales,
+/** One registrar account (a Domains server): its own state in the head, then Account, Balance, Sales,
  * Renewals and Domain settings, with System checks on the rail. Reached from the Registrars list. Each switch sits with
  * what it controls; a link that came for a switch lands on it. A cause the head used to say opens the section it concerns. */
 class RegistrarAccount extends DetailPage
@@ -58,15 +58,18 @@ class RegistrarAccount extends DetailPage
         }
         $rows = [...$this->checklist($a), 'WHOIS privacy' => self::whois($a)];
         $pick = fn (string ...$labels) => array_values(array_filter(array_map(fn (string $label) => $rows[$label] ?? null, $labels)));
-        $funds = RegistrarFacts::connected($a, $this->status()) ? $this->balance($a)['funds'] : null;
-        $usage = Section::make('Balance and usage', [...$this->notice('usage'), ...$this->rows($this->usageRows($s, $a))], RegistrarFacts::connected($a, $this->status()) ? \Paymenter\Extensions\Servers\Domains\Presentation\Fact::IN_USD : null, 'usage');
+        $balance = RegistrarFacts::connected($a, $this->status())
+            ? Section::make('Balance', $this->rows($this->balanceRows($a)), Fact::IN_USD, 'usage')
+            : null;
+        if ($balance !== null && ($funds = $this->balance($a)['funds'])) { $balance = $balance->link(Sheet::link('add_funds', 'Add funds', $funds, external: true)); }
         return [
-            Section::make('Account', [...$this->notice('account'), ...$this->rows([...$this->accountRows($a), ...$pick('API connection')])], null, 'account'),
-            $funds ? $usage->link(Sheet::link('add_funds', 'Add funds', $funds, external: true)) : $usage,
-            // Live sales, Prices stay current for and the TLD term rows sit with the sales they govern.
+            ...array_map(Section::notice(...), $this->notice('paid-orders')),
+            Section::make('Account', [...$this->notice('account'), ...$this->rows([...$this->accountRows($a), ...$pick('API connection'), ...$this->activityRows($s, $a)])], null, 'account'),
+            ...($balance === null ? [] : [$balance]),
             Section::make('Sales', [...$this->notice('sales'), ...$this->rows($pick('Orders', 'Registrations', AccountChecklist::TRANSFER_LABEL, 'What you sell', 'TLD prices')),
-                ...$this->rows([$this->freshness($s, $a)]), ...$this->rows($pick('Customer pays', 'Card fee')), ...$this->liveSales($a)], null, 'sales'),
-            Section::make('Renewals', $this->rows($pick('Renewals', 'Late renewal', 'Customer can renew early', 'Invoice issued', 'Invoice due', 'Unpaid hold', 'Scheduled renewals', 'Selected TLD terms', 'Reminder emails', 'Reminder schedule')), null, 'renewal'),
+                ...$this->rows([$this->freshness($s, $a)]), ...$this->rows($pick('Customer pays', 'Card fee', 'Wait for payment')), ...$this->liveSales($a)], null, 'sales'),
+            Section::make('Renewals', $this->rows($pick('Renewals', 'Customer can renew early', 'Late renewal', 'Renews for', 'TLD terms read')), null, 'renewal'),
+            Section::make('Renewal invoices and reminders', $this->rows($pick('Reminder emails', 'Reminder schedule', 'Invoice issued', 'Invoice due')), null, 'renewal-invoices'),
             Section::make('Domain settings', [$this->newDomainsUse($a), ...$this->rows($pick('DNS, nameservers and contacts', 'WHOIS privacy'))], null, 'settings'),
         ];
     }
@@ -115,7 +118,7 @@ class RegistrarAccount extends DetailPage
         if ($section === ($a ? 'sales' : 'account')) {
             foreach (\Paymenter\Extensions\Servers\Domains\Admin\Support\CatalogueSalesNotice::lines() as $line) { $items[] = [State::NeedsReview, $line, null]; }
         }
-        if ($section === 'usage') {
+        if ($section === 'paid-orders') {
             foreach (PaidUncertainty::holds($this->account) as $h) {
                 $items[] = [$h['state'], PaidUncertainty::line($h), $h['url'] ? Sheet::link('paid_request_'.$h['server_id'], $h['label'], $h['url']) : null];
             }
@@ -157,12 +160,18 @@ class RegistrarAccount extends DetailPage
     {
         $canEdit = Staff::canEditDefaultDns() && RoutingProfileResource::canViewAny();$default = SiteDnsDefault::profile();$refusal = SiteDnsDefault::refusal($canEdit);
         $cause = $refusal ?? ($default
-            ? 'Nameservers: '.implode(', ', array_map('strval', (array) $default->nameservers)).'. New registrations use these nameservers unless the customer chooses others. Transfers keep the nameservers they already have.'
+            ? self::nameserverSummary((array) $default->nameservers)
             : 'New registrations have no site-default nameservers. '.($a->registrar_key === 'namesilo' ? 'NameSilo needs explicit nameservers before an order can be sent. ' : '').($canEdit ? 'Choose one in Domains > DNS templates.' : SiteDnsDefault::ASK));
         try { $url = $canEdit ? RoutingProfileResource::getUrl() : null; } catch (\Throwable) { $url = null; }
         // A saved template this registrar can't use is set, but staff must change it before orders can go out.
         $fact = $refusal ? [...self::fact('New domains use', $default?->name ?? State::NeedsReview->label(), $cause), 'state' => State::NeedsReview] : self::fact('New domains use', $default?->name, $cause);
         return RegistrarRows::row($fact, $url ? [Action::make('new_domains_use')->label('Change')->link()->size('sm')->url($url)] : []);
+    }
+    private static function nameserverSummary(array $nameservers): string
+    {
+        $first = reset($nameservers);
+        $more = count($nameservers) - 1;
+        return (is_string($first) && $first !== '' ? $first.($more > 0 ? ' and '.$more.' more' : '').'. ' : '').'Transfers keep their own nameservers.';
     }
     /** Enom charges for WHOIS privacy and this site does not sell it: Not for sale, with why. */
     private static function whois(Account $a): array
@@ -182,16 +191,19 @@ class RegistrarAccount extends DetailPage
         }
         return $rows;
     }
-    private function usageRows(Server $s, Account $a): array
+    private function balanceRows(Account $a): array
+    {
+        $b = $this->balance($a);
+        $checked = $b['value'] === null ? $b['cause'] : 'Checked '.\Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at((int) strtotime((string) $b['checked'])).'.';
+        return [
+            [...self::fact('Balance', $b['value'], $checked), 'state' => $b['low'] ? State::LowBalance : $b['missing'], 'buttons' => [$this->checkBalanceAction()]],
+            self::fact('Due in 30 days', $b['due'], RegistrarFacts::dueLine(RegistrarFacts::dueGap($a, $b)), RegistrarFacts::DUE_HELP),
+        ];
+    }
+    private function activityRows(Server $s, Account $a): array
     {
         $rows = [];
-        if (RegistrarFacts::connected($a, $this->status())) {
-            $b = $this->balance($a);
-            // The fix for an unread balance is the Check balance button on this row.
-            $checked = $b['value'] === null ? $b['cause'] : 'Checked '.\Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at((int) strtotime((string) $b['checked'])).'.';
-            $rows[] = [...self::fact('Balance', $b['value'], $checked), 'state' => $b['low'] ? State::LowBalance : $b['missing'], 'buttons' => [$this->checkBalanceAction()]];
-            $rows[] = self::fact('Due in 30 days', $b['due'], RegistrarFacts::dueLine(RegistrarFacts::dueGap($a, $b)), RegistrarFacts::DUE_HELP);
-        }
+        if ($calls = RegistrarFacts::calls($a)) { $rows[] = [...self::fact($a->environment === 'live' ? 'API calls, today (UTC)' : 'API calls, last 24 hours', $calls['value'], $calls['sub'], $calls['help']), 'tone' => $calls['tone'], 'edit' => true, 'buttons' => [ApiCallLimitAction::make($a, $this->reviewStamp)]]; }
         try { $domains = DomainResource::getUrl('index', ['filters' => ['server_id' => ['value' => (string) $s->id]]]); } catch (\Throwable) { $domains = null; }
         $rows[] = [...self::fact('Domains', (string) Domain::where('server_id', $s->id)->count()), 'buttons' => [Sheet::link('view_domains', 'View domains', $domains)]];
         // Keep one link so the value and its counts remain readable on phones.
@@ -199,18 +211,17 @@ class RegistrarAccount extends DetailPage
         $statuses = $requests['statuses'];
         $review = ($statuses['on_hold'] ?? 0) + ($statuses['under_review'] ?? 0);
         $parts = [];
-        foreach (['awaiting_payment' => 'awaiting payment', 'action_required' => 'action required', 'in_progress' => 'checking'] as $key => $label) {
+        foreach (['delayed' => 'delayed', 'awaiting_payment' => 'awaiting payment', 'action_required' => 'action required', 'in_progress' => 'checking'] as $key => $label) {
             if ($statuses[$key] ?? 0) { $parts[] = $statuses[$key].' '.$label; }
         }
         if ($review) { $parts[] = $review.' under review'; }
         $rows[] = [...self::fact('Registrar requests', $requests['open'].' open', $parts === [] ? null : ucfirst(implode(', ', $parts)).'.'),
             'buttons' => [Sheet::link('view_requests', 'View requests', RegistrarFacts::requestsUrl((int) $s->id, RegistrarFacts::OPEN_REQUESTS))]];
-        if ($calls = RegistrarFacts::calls($a)) { $rows[] = [...self::fact($a->environment === 'live' ? 'API calls, today (UTC)' : 'API calls, last 24 hours', $calls['value'], $calls['sub'], $calls['help']), 'tone' => $calls['tone'], 'edit' => true, 'buttons' => [ApiCallLimitAction::make($a, $this->reviewStamp)]]; }
         return $rows;
     }
     private function freshness(Server $s, Account $a): array
     {
-        return [...self::fact('Prices stay current for', CatalogueFreshness::forAccount((int) $s->id)->hours.' hours', null, 'Prices sync daily. Older prices stop new orders until checked again.'),
+        return [...self::fact(PriceFreshnessAction::LABEL, CatalogueFreshness::forAccount((int) $s->id)->hours.' hours', 'Older prices stop new orders until the next successful sync.', 'Prices sync daily.'),
             'edit' => true, 'buttons' => [PriceFreshnessAction::make($a, $this->reviewStamp)]];
     }
     /** Live sales, for staff who can activate: what activation does, its open causes, and Activate. The full summary is in its dialog. @return list<Row> */

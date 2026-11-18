@@ -5,6 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Illuminate\Database\Eloquent\Builder;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus;
+use Paymenter\Extensions\Servers\Domains\Presentation\State;
 final class OperationQueries
 {
     public static function bound(Builder $q): Builder
@@ -22,14 +23,22 @@ final class OperationQueries
     {
         if (!$keys) { return $q; }
         $in=fn(string $state)=>in_array(RequestStatus::key($state),$keys,true);
-        $automatic=[];
-        (clone $q)->reorder()->where('action','transfer')->whereIn('state',['pending','uncertain','running','held'])->chunkById(200,function($rows)use(&$automatic):void{
-            foreach($rows as $op){if(RequestFacts::automaticTransfer($op)){$automatic[]=(int)$op->id;}}
-        },'domains_operations.id','id');
-        return $q->where(function($query)use($automatic,$keys,$in,$ordersOff):void {
+        $automatic=[];$delayed=[];
+        (clone $q)->reorder()->where(fn($q)=>$q
+            ->where(fn($q)=>$q->where('action','transfer')->whereIn('state',['pending','uncertain','running','held']))
+            ->orWhere(fn($q)=>$q->whereIn('action',['register','renew'])->where('state','uncertain')))
+            ->chunkById(200,function($rows)use(&$automatic,&$delayed):void{
+                foreach ($rows as $op) {
+                    $check=RequestFacts::checkState($op);
+                    if ($check===State::Delayed || RequestFacts::delayedTransfer($op)) { $delayed[]=(int)$op->id; }
+                    elseif ($check===State::Checking || RequestFacts::automaticTransfer($op)) { $automatic[]=(int)$op->id; }
+                }
+            },'domains_operations.id','id');
+        return $q->where(function($query)use($automatic,$delayed,$keys,$in,$ordersOff):void {
         if(in_array('in_progress',$keys,true)){$query->orWhereIn('domains_operations.id',$automatic);}
-        $query->orWhere(function($q)use($automatic,$in,$keys,$ordersOff):void {
-        $q->whereNotIn('domains_operations.id',$automatic)->where(function($q) use ($in,$keys,$ordersOff) {
+        if(in_array('delayed',$keys,true)){$query->orWhereIn('domains_operations.id',$delayed);}
+        $query->orWhere(function($q)use($automatic,$delayed,$in,$keys,$ordersOff):void {
+        $q->whereNotIn('domains_operations.id',[...$automatic,...$delayed])->where(function($q) use ($in,$keys,$ordersOff) {
             if (in_array('on_hold',$keys,true)) { $q->orWhere(fn($held)=>self::heldAcquisition($held,$ordersOff)); }
             $q->orWhere(function($q) use ($in,$ordersOff) {
             $q->whereNot(fn($held)=>self::heldAcquisition($held,$ordersOff))->where(function($q) use ($in,$ordersOff) {
