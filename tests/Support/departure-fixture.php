@@ -30,7 +30,7 @@ $read=static function(string $fault='',?DomainObservation $reader=null)use($d,$o
 // Create the renewal while ownership is current, then save the registrar's definite absence.
 $issueDepartureRenewal=static function()use($read,$billing,$d):Invoice {
     if($read()!=='refreshed'){throw new RuntimeException('Departure fixture could not refresh the holding');}
-    $invoice=$billing->invoice($d->id);
+    $invoice=$billing->invoice($d->id)??throw new RuntimeException('Departure fixture could not issue a renewal invoice');
     if($read('absent')!=='domain_not_in_account'){throw new RuntimeException('Departure fixture could not establish registrar absence');}
     return $invoice;
 };

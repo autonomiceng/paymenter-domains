@@ -93,6 +93,7 @@ foreach($cases as $case){
         expect($default->instance()->getTableFilterState('for_sale')['isActive']??false,'For sale starts on');
         same(1,substr_count(html_entity_decode($default->html(),ENT_QUOTES),'Fix it in Default pricing at the top of this page.'),'For sale on still gives the shared fix, once: '.$cause);
         if($cause==='default_rule'){$default->assertSee('Prices left out for 3 TLDs')->assertSee("They are not shown on this page. Default pricing can't be read.");}
+        else{$default->assertCountTableRecords(0)->assertSee('Prices left out for 4 TLDs')->assertSee("The card fee can't be read.");}
     }
     same($settingsBefore,$rawSettings(),'Service, page and CSV preserve raw settings bytes, including corrupt ciphertext');
     same($before,DB::table('domains_prices')->orderBy('id')->get()->toJson(),'Each corrupt case preserves saved prices and revisions');
