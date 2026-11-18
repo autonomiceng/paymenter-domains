@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/renewal-execution.php';
-use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\{Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, OperationReconciliation, PricingRule, RegistrarAnswers, StaffSettingsReview as Review, StaffSettingsWrites};
@@ -32,9 +32,16 @@ $stop = static function ($op, $completion) use ($clock): void {
     expect(RegistrarAnswers::ready($op->fresh(), $clock->now()), 'The stopped renewal offers a staff answer');
 };
 
-// Old Info cannot authorize returning money when the dedicated Expiry reply fails, is malformed, or arrives late.
+// The fresh expiry reply must remain within its deadline through the final money decision.
+$delayFinalLock = false; $delayed = 0;
+DB::connection()->beforeExecuting(static function (string $sql) use ($clock, &$delayFinalLock, &$delayed): void {
+    if (!$delayFinalLock || DB::transactionLevel() !== 1 || !str_starts_with($sql, 'select')
+        || !str_contains($sql, 'from "domains_operations"')) { return; }
+    $delayFinalLock = false; $delayed++;
+    $clock->instant = $clock->now()->modify('+31 seconds');
+});
 $results = []; $expected = [];
-foreach (['failed', 'malformed', 'late'] as $fault) {
+foreach (['failed', 'malformed', 'late', 'lock-wait'] as $fault) {
     app()->instance(AccountBindings::class, $bindings);
     [$op, $d, $b] = $makeRenewal(placeholderComFixtureName('fresh-expiry-'.$fault.'-placeholder.com'));
     [$engine, $writer, $completion] = $compose($b);
@@ -48,10 +55,15 @@ foreach (['failed', 'malformed', 'late'] as $fault) {
         $state->duringCommand = ReadCommand::Expiry;
         $state->during = static function () use ($clock): void { $clock->instant = $clock->now()->modify('+31 seconds'); };
     }
+    if ($fault === 'lock-wait') {
+        $state->duringCommand = ReadCommand::Expiry;
+        $state->during = static function () use (&$delayFinalLock): void { $delayFinalLock = true; };
+    }
     $before = $credit(); $priorState = $op->fresh()->state; $refused = $record($op); $fresh = $op->fresh();
     $results[$fault] = [$credit() - $before, $fresh->state, $fresh->funding['refund_authorization'] ?? null, $fresh->policy['enom_answer'] ?? null, $refused];
     $expected[$fault] = [0, $priorState, null, null, true];
     $state->fail = null; $state->after = '2027-10-18'; $state->duringCommand = null; $state->during = null;
 }
+same(1, $delayed, 'The simulated lock wait begins after the successful expiry reply');
 same($expected, $results, 'Unconfirmed fresh expiry must refuse credit and preserve the unresolved renewal: '.json_encode($results));
 echo "Unconfirmed fresh expiry refuses renewal credit.\n"; $nativeSuccessful = true;

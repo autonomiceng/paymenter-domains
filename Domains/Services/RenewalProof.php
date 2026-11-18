@@ -16,7 +16,7 @@ final class RenewalProof
     private bool $superseded = false;
 
     private function __construct(private readonly int $operationId, private readonly string $identity, private readonly string $token,
-        private readonly AttemptEvidence $attempt, private readonly Clock $clock) {}
+        private readonly AttemptEvidence $attempt, private readonly \DateTimeImmutable $deadline, private readonly Clock $clock) {}
 
     private static function claim(Operation $op): ?array
     {
@@ -32,7 +32,7 @@ final class RenewalProof
     /** Call under the holding locks after admission. An expired claim may belong to a worker that saw unsaved proof. */
     public static function open(Operation $op, AttemptEvidence $attempt, \DateTimeImmutable $deadline, Clock $clock): self
     {
-        $read = new self((int) $op->id, RegistrarAnswers::identity($op), bin2hex(random_bytes(16)), $attempt, $clock);
+        $read = new self((int) $op->id, RegistrarAnswers::identity($op), bin2hex(random_bytes(16)), $attempt, $deadline, $clock);
         $op->policy = [...$op->policy, 'renewal_check' => ['identity' => $read->identity, 'token' => $read->token,
             'until' => $deadline->getTimestamp() + self::CLAIM_GRACE_SECONDS, 'unresolved' => self::claimed($op)]];
         if (!$op->save()) { throw new \RuntimeException('Renewal read claim could not be saved.'); }
@@ -53,12 +53,13 @@ final class RenewalProof
             && ($claim['token'] ?? null) === $this->token ? $claim : null;
     }
 
-    /** A refund requires the same live claim and account under the final holding locks. */
+    /** Recheck the registrar read deadline under the final holding locks. */
     public function allowsAnswer(Operation $op, AccountBinding $binding): bool
     {
         $claim = $this->ownedClaim($op);
+        $now = $this->clock->now();
         return $claim !== null && ($claim['unresolved'] ?? false) === false && $this->attempt->binding->matches($binding)
-            && (int) ($claim['until'] ?? 0) > $this->clock->now()->getTimestamp();
+            && $now < $this->deadline && (int) ($claim['until'] ?? 0) > $now->getTimestamp();
     }
 
     /** A stale finisher cannot clear a successor's claim. Keep uncertainty inherited from an earlier read. */
@@ -85,7 +86,7 @@ final class RenewalProof
         if ($this->saved || $this->superseded || !$seen->binding->matches($this->attempt->binding)) { return; }
         $name = $this->attempt->query->name;
         $before = $this->attempt->beforeExpiry?->value;
-        $positive = $seen instanceof OrderEvidence ? $seen->query->name === $name
+        $positive = $seen instanceof OrderEvidence ? $seen->query->name === $name && $seen->charge !== null
             : $seen->name === $name && $seen->owned === true && $before !== null && $seen->expiry !== null
                 && substr($seen->expiry->value, 0, 10) > substr($before, 0, 10);
         if ($positive) { $this->pending = true; $this->write(); }

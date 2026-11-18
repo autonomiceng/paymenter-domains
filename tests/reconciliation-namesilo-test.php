@@ -24,6 +24,7 @@ $wire = new class implements DeadlineTransport {
     public string $historyId = '901'; public string $historyAction = 'registration'; public string $historyDate = '2026-10-18 05:00:01';
     public string $expiry = '2027-10-18'; public string $auto = 'No'; public bool $quote = true;
     public string $balance = '100.00'; public string $price = '8.95'; public array $omit = []; public $during = null;
+    public array $orderCredit = [];
     public function send(WireEnvironment $e, WireContext $c, RegistrarRequest $r, string $key): TransportResponse { throw new LogicException; }
     public function sendWithin(WireEnvironment $e, WireContext $c, RegistrarRequest $r, string $key, int $ms): TransportResponse {
         same(0, Illuminate\Support\Facades\DB::transactionLevel(), 'No-ID reads outside locks'); $this->calls++; $this->commands[] = $r->command;
@@ -33,7 +34,7 @@ $wire = new class implements DeadlineTransport {
         $reply = match ($r->command) {
             'listOrders' => ['order' => [['order_number' => $this->historyId]]],
             'orderDetails' => ['order_number' => $this->historyId, 'order_date' => $this->historyDate, 'total' => '8.95',
-                'order_details' => [['description' => 'native-history-placeholder.com - '.$this->historyAction, 'years_qty' => '1', 'status' => 'Processed', 'subtotal' => '8.95']]],
+                'order_details' => [['description' => 'native-history-placeholder.com - '.$this->historyAction, 'years_qty' => '1', 'status' => 'Processed', 'subtotal' => '8.95'] + $this->orderCredit]],
             'getDomainInfo' => ['created' => '2026-10-18', 'expires' => $this->expiry, 'status' => $this->status, 'locked' => 'Yes', 'private' => 'No', 'auto_renew' => $this->auto],
             'getPrices' => [$this->quote ? 'com' : 'net' => ['registration' => '8.95', 'renew' => $this->price, 'transfer' => '8.95']],
             'getAccountBalance' => ['balance' => $this->balance],
