@@ -114,6 +114,82 @@ fi
             self.assertEqual(code, 23)
             self.assertEqual(list((root/'state').iterdir()), [])
 
+    def test_hosted_userns_checks_unshare_and_the_loaded_profiles(self):
+        # Model the hosted OS, ownership and kernel reads inside the offline suite.
+        helper = (ROOT/'scripts/hosted-php-userns.sh').read_text()
+        helper = (helper.replace('$EUID != 0', '1000 != 0')
+                  .replace('/etc/os-release', './os-release')
+                  .replace('/proc/sys/kernel/apparmor_restrict_unprivileged_userns', './userns')
+                  .replace('-f $executable && -x $executable', '-f ".$executable" && -x ".$executable"')
+                  .replace('! -w $executable && ! -w ${executable%/*} && ! -w /usr', '-n "$executable"'))
+        host = """\
+type() { printf '%s\\n' /usr/bin/runc; }
+realpath() {
+    local path
+    path=$(command realpath -e -- ".$2") || return
+    printf '%s\\n' "${path#"$PWD"}"
+}
+stat() { printf '0\\n'; }
+function /usr/bin/runc { :; }
+function /usr/bin/dpkg-query { :; }
+sudo() {
+    [[ $1 == -n ]] || return 99
+    case "$2" in
+        /usr/sbin/sysctl|/usr/bin/chmod) ;;
+        /usr/bin/mktemp) printf '%s\\n' /run/domains-php-fixture ;;
+        /usr/bin/install) shift 5; printf '%s\\n' "$@" > installed ;;
+        /usr/sbin/apparmor_parser) cat > submitted ;;
+        /usr/bin/cat) cat loaded ;;
+        *) return 99 ;;
+    esac
+}
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root/'os-release').write_text('ID=ubuntu\nVERSION_ID=24.04\n')
+            (root/'userns').write_text('1\n')
+            system_bin = root/'usr/bin'
+            system_bin.mkdir(parents=True)
+            for name in ('runc', 'other-unshare'):
+                (system_bin/name).touch(mode=0o700)
+            unshare = system_bin/'unshare'
+            unshare.symlink_to('other-unshare')
+            env = dict(PATH='/usr/bin:/bin', GITHUB_ACTIONS='true', RUNNER_ENVIRONMENT='github-hosted',
+                       RUNNER_OS='Linux')
+
+            def run(*args):
+                return subprocess.run(['/bin/bash', '-c', host+helper, 'hosted-php-userns', *args],
+                                      cwd=root, env=env, capture_output=True, text=True, timeout=3)
+
+            binary_dir = '/run/domains-php-fixture'
+            profiles = [binary_dir+'/runc', binary_dir+'/unshare']
+            loaded = root/'loaded'
+            loaded.write_text(''.join(profile+' (unconfined)\n' for profile in profiles))
+
+            for path in ('/usr/bin/other-unshare', '/usr/bin/unshare'):
+                with self.subTest(path=path):
+                    rejected = run('--unshare', path)
+                    self.assertEqual(rejected.returncode, 1, rejected.stderr)
+                    self.assertFalse(rejected.stdout)
+                    self.assertFalse((root/'installed').exists())
+
+            unshare.unlink()
+            unshare.touch(mode=0o700)
+            accepted = run('--unshare', '/usr/bin/unshare')
+            self.assertEqual(accepted.returncode, 0, accepted.stderr)
+            self.assertEqual(accepted.stdout.splitlines(), [binary_dir])
+            self.assertEqual((root/'installed').read_text().splitlines(),
+                             ['/usr/bin/runc', '/usr/bin/unshare', binary_dir+'/'])
+            submitted = (root/'submitted').read_text().splitlines()
+            self.assertEqual([line.split()[1:3] for line in submitted if line.startswith('profile ')],
+                             [[profile, 'flags=(unconfined)'] for profile in profiles])
+            self.assertEqual(sum(line.strip().removeprefix('audit ') == 'userns,' for line in submitted), len(profiles))
+
+            loaded.write_text(profiles[0]+' (unconfined)\n'+profiles[1]+'-other (unconfined)\n')
+            missing = run('--unshare', '/usr/bin/unshare')
+            self.assertEqual(missing.returncode, 1, missing.stderr)
+            self.assertFalse(missing.stdout)
+
     def test_container_success_requires_a_complete_receipt_on_host(self):
         suite = runner.php_suite
         with tempfile.TemporaryDirectory() as directory:
