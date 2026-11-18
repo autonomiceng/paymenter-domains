@@ -392,7 +392,7 @@ final class OperationClaims
     /** Prior cap refusals or a released price hold retain strict negative proof through unsealed readmission. */
     public static function testCallRefusalUnsent(Operation $op): bool
     {
-        $a=$op->attempt??[];$f=$op->funding??[];$history=array_key_exists('test_call_refusals',$a)?$a['test_call_refusals']:[];
+        $a=$op->attempt??[];$f=FinancialAdjustments::registrarFunding($op);$history=array_key_exists('test_call_refusals',$a)?$a['test_call_refusals']:[];
         $priceHold=$op->state==='held'&&$op->safe_code==='registrar_price_increased';
         $priceRelease=$op->state==='queued'&&ExecutionWindow::priceReleased($op);
         $holdCodes=[...BalanceRetries::REVIEW_CODES,'enom_test_call_cap','enom_test_transfer_call_cap','pre_send_interrupted','seal_authority_invalid','claim_authority_invalid','nameservers_required',

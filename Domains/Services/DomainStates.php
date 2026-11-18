@@ -72,9 +72,14 @@ final class DomainStates
         if (!$cycle) { return []; }
         $check = $in->check($cycle);
         $review = ['status' => 'review', ...(($check['tone'] ?? null) === 'info' ? ['check' => $check] : [])];
-        if ($cycle->safe_code === 'renewal_cancelled_unpaid' || RenewalReplacements::reviewed($cycle, $d)) {
+        $receiptRetired = RenewalCycles::receiptRetired($cycle);
+        if (RenewalCycles::replacementCandidate($cycle, $d) && (!$receiptRetired || !$in->unproven($d))) {
             // A retired or refunded invoice permits a replacement only when billing's proof holds.
             if ($in->unproven($d)) { return ['current' => ['status' => 'review']]; }
+            if ($receiptRetired) {
+                $returned = RenewalCycles::lateNote($cycle);
+                return ['retained' => $returned === null ? null : ['status' => 'returned', 'note' => $returned]];
+            }
             return ['retained' => RenewalCycles::closedEarly($cycle) ? null : ['status' => $cycle->safe_code === 'renewal_cancelled_unpaid' ? 'cancelled' : 'review']];
         }
         // A cancelled renewal whose payment return is recorded is settled: it reads as History does, never as under review.

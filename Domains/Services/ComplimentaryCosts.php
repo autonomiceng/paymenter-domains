@@ -29,7 +29,7 @@ final class ComplimentaryCosts
     /** Exact unsent acquisition claim retained by a completed cost approval, including NameSilo. */
     public static function readmitted(Operation $op):bool
     {
-        $a=$op->attempt??[];$f=$op->funding??[];
+        $a=$op->attempt??[];$f=FinancialAdjustments::registrarFunding($op);
         if(!isset($op->policy['account_complimentary'])||$op->state!=='queued'||$op->safe_code!==null||!ExecutionWindow::priceReleased($op)
             ||($a['seal']??null)!=='absent'||($a['send_state']??null)!=='definitely_unsent'||!isset($a['claim_key'],$f['claim'])
             ||array_diff(array_keys($a),['claim_key','seal','send_state','capacity_deferrals','test_call_refusals'])||array_diff(array_keys($f),['claim'])

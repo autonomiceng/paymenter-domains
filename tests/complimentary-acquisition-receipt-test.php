@@ -7,14 +7,15 @@ use App\Helpers\ExtensionHelper;
 use App\Models\{Credit, Gateway, Invoice, InvoiceTransaction, Role, Service};
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Paymenter\Extensions\Servers\Domains\Data\{Environment, Money};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Management;
-use Paymenter\Extensions\Servers\Domains\Services\{ComplimentaryAccounts, ComplimentaryInvoices, HolderPricing, HoldingLocks, NativeDomainGuard, OwnerPorts, OwnerSetup, PricingRule, Refunds, TransferInputs};
+use Paymenter\Extensions\Servers\Domains\Services\{ComplimentaryAccounts, ComplimentaryCosts, ComplimentaryInvoices, EnomTestSendLimit, EnomTestSendLimitSchema, FundsWaits, HolderPricing, HoldingLocks, NativeDomainGuard, OwnerPorts, OwnerSetup, PricingRule, Refunds, StaffOperationReview, StaffOperations, TransferInputs};
 (new NativeDomainGuard(new HolderPricing($prices), $clock))->boot();
 app()->instance(Clock::class, $clock); app()->instance(Refunds::class, new Refunds($clock));
 $staff = commerceUser();
-$staff->update(['role_id' => Role::create(['name' => 'Complimentary receipts', 'permissions' => ['admin.domains.fund']])->id]);
+$staff->update(['role_id' => Role::create(['name' => 'Complimentary receipts', 'permissions' => ['admin.domains.fund', 'admin.domains.view', 'admin.domains.manage', 'admin.domains.costs', 'admin.domains.operations.release']])->id]);
 ComplimentaryAccounts::set($user->id, $staff, true, 'Complimentary acquisition fixture', $clock);
 Carbon\Carbon::setTestNow($clock->now()); Carbon\CarbonImmutable::setTestNow($clock->now());
 $credit = static fn () => PricingRule::minor((string) ($user->credits()->where('currency_code', 'USD')->value('amount') ?? '0.00'));
@@ -131,4 +132,60 @@ try {
 }
 same([$before + 600, 1], [$credit(), count($split->fresh()->funding['late_credits'] ?? [])], 'Gateway settlement and replay leave the original credit in place');
 same([], $inputFailures, 'Complimentary receipt authority: '.json_encode($inputFailures));
+// Exercise the real TEST counter, staff release and price approval against returned zero receipts.
+EnomTestSendLimitSchema::install();
+config(['domains.enom_test_sends_per_day' => 1000, 'domains.enom_test_sends_per_minute' => 100000]);
+EnomTestSendLimit::admit(Environment::Test, 'account-enom', 'Check');
+$spent = DB::table(EnomTestSendLimitSchema::SENDS)->count();
+$retryFailures = [];
+foreach (['release', 'funds deadline', 'price'] as $case) {
+    $op = $new(placeholderComFixtureName('comp-receipt-retry-'.str_replace(' ', '-', $case).'-placeholder.com'), false);
+    $price = $case === 'price';
+    config(['domains.enom_test_sends_per_day' => $price ? 1000 : $spent]);
+    $preflight->during = $price
+        ? static fn ($op) => ComplimentaryCosts::require($op, new Money('8.01', 'USD'), '8.00')
+        : static fn () => EnomTestSendLimit::admit(Environment::Test, 'account-enom', 'Check');
+    $held = $engine->execute($op->id);
+    same($price ? 'registrar_price_increased' : 'enom_test_call_cap', $held->safe_code, 'The original preflight holds before purchase');
+    $before = $credit();
+    ExtensionHelper::addPayment($held->invoice_id, null, '1.00');
+    $audit = $held->fresh()->funding['late_credits'];
+    same($before + 100, $credit(), 'A stray payment is fully returned before retry: '.$case);
+    if ($case === 'funds deadline') {
+        $held->refresh()->update(['safe_code' => 'registrar_balance_insufficient', 'policy' => [...$held->policy, 'funds_wait_at' => $now->format(DATE_ATOM)]]);
+        FundsWaits::sweep(Account::where('server_id', $held->server_id)->sole(), $now->modify('+3 days'));
+        if ($held->fresh()->state !== 'rejected') {
+            $retryFailures[$case] = $held->fresh()->state;
+        }
+        same($audit, $held->fresh()->funding['late_credits'], 'Closure preserves the receipt return audit');
+        continue;
+    }
+    try {
+        if ($price) {
+            ComplimentaryCosts::approve($held->id, $staff, '8.01', 'Synthetic price approval', $clock);
+            if (!ComplimentaryCosts::readmitted($held->fresh())) {
+                $retryFailures[$case] = 'approved unsent claim was not readmitted';
+            }
+        } else {
+            config(['domains.enom_writes.registration' => true, 'domains.enom_identity.environment' => 'test', 'domains.enom_catalogue.enabled' => true]);
+            $held->refresh();
+            $stamp = StaffOperationReview::stamp($held, $held->domain);
+            $ticket = StaffOperationReview::ticket($staff->id, $held->domain_id, $held->id, 'release', $stamp, $clock);
+            (new StaffOperations($clock))->run($staff, $held->domain_id, $held->id, 'release', $ticket, 'Synthetic counter reset');
+        }
+        config(['domains.enom_test_sends_per_day' => 1000]);
+        $preflight->cost = $price ? '8.01' : '8.00';
+        $sends = $writer->calls;
+        $sent = $engine->execute($held->id);
+        $engine->execute($held->id);
+        if ($writer->calls !== $sends + 1) {
+            $retryFailures[$case] = $sent->safe_code;
+        }
+        same($audit, $sent->funding['late_credits'], 'Retry preserves the receipt return audit');
+        same($before + 100, $credit(), 'Retry does not credit the payment again');
+    } catch (DomainException $e) {
+        $retryFailures[$case] = $e->getMessage();
+    }
+}
+same([], $retryFailures, 'Complimentary retry authority: '.json_encode($retryFailures));
 echo "Complimentary acquisition receipts return once as credit.\n"; $nativeSuccessful = true;

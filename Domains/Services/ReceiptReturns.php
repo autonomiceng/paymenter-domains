@@ -150,7 +150,12 @@ final class ReceiptReturns
         $history = $funding['late_credits'];
         if ($op->funding_basis !== 'complimentary' || !in_array($op->action, ['register', 'transfer', 'renew'], true)
             || $op->invoice_id === null || $op->invoice_item_id === null
-            || !is_array($history) || !array_is_list($history) || $history === []) { return null; }
+            || !is_array($history) || $history === []) { return null; }
+        return self::accountCredits($history);
+    }
+    private static function accountCredits(array $history): ?array
+    {
+        if (!array_is_list($history)) { return null; }
         $credits = $payments = [];
         foreach ($history as $entry) {
             $amount = self::amount($entry);
@@ -173,6 +178,66 @@ final class ReceiptReturns
             if (array_sum($allocated) !== $amount) { return null; }
         }
         return ['credits' => array_keys($credits), 'payments' => $payments];
+    }
+    /** Corroborate the ownership and payment identities of incremental returns on a dedicated closed invoice. */
+    public static function requireClosedHistory(Operation $op, Invoice $invoice, array $money, ?Credit $credit): void
+    {
+        $funding = $op->funding ?? [];
+        $history = $funding['late_credits'] ?? [];
+        $results = $funding['receipt_return_results'] ?? [];
+        if (!is_array($history) || !array_is_list($history) || !is_array($results)) {
+            throw new \DomainException('Closed receipt return history requires review.');
+        }
+        $cash = $allocations = $releasedWallets = [];
+        foreach ($history as $plan) {
+            if (($plan['to'] ?? null) === 'account_credit') { $cash[] = $plan; continue; }
+            $minor = self::amount($plan);
+            if (($plan['to'] ?? null) !== 'original_payment' || ($plan['currency'] ?? null) !== 'USD'
+                || $minor === null || $minor <= 0 || self::bridge($plan) !== 0) {
+                throw new \DomainException('Unknown closed receipt return.');
+            }
+            $payments = array_column($plan['payments'], 'amount_minor', 'id');
+            foreach ($plan['allocations'] as $a) {
+                $id = $a['transaction_id'];
+                if (isset($allocations[$a['key']]) || ($payments[$id] ?? null) !== $a['amount_minor']) {
+                    throw new \DomainException('Closed receipt allocation changed.');
+                }
+                unset($payments[$id]);
+                $allocations[$a['key']] = true;
+                $result = $results[$a['key']] ?? [];
+                if (array_key_exists($a['key'], $results) && !self::validResult($result, $a['amount_minor'])) {
+                    throw new \DomainException('Closed receipt return outcome requires review.');
+                }
+                if (($result['state'] ?? null) === 'released' && ($result['credit_minor'] ?? 0) > 0) {
+                    $releasedWallets[] = $result['credit_id'] ?? null;
+                }
+            }
+            if ($payments || count($plan['payments']) !== count($plan['allocations'])) {
+                throw new \DomainException('Closed receipt allocation is incomplete.');
+            }
+        }
+        $account = self::accountCredits($cash);
+        if ($account === null || array_diff_key($results, $allocations)) {
+            throw new \DomainException('Closed receipt return history requires review.');
+        }
+        foreach ($account['payments'] as $id => $minor) {
+            if ($minor > ($money['receipts'][$id]['gross'] ?? 0)) {
+                throw new \DomainException('Closed receipt credit exceeds its payment.');
+            }
+        }
+        if (!self::ownsCredits($invoice, [...$account['credits'], ...$releasedWallets], $credit)) {
+            throw new \DomainException('Closed receipt credit owner changed.');
+        }
+    }
+    public static function ownsCredits(Invoice $invoice, array $ids, ?Credit $credit): bool
+    {
+        if (array_filter($ids, fn ($id) => !is_int($id) || $id < 1)) { return false; }
+        $ids = array_unique($ids);
+        // The balance may have changed since the return. Only its identity corroborates the audit.
+        if ($credit && (int) $credit->user_id === (int) $invoice->user_id && $credit->currency_code === $invoice->currency_code) {
+            $ids = array_diff($ids, [(int) $credit->id]);
+        }
+        return !$ids || Credit::whereKey($ids)->where('user_id', $invoice->user_id)->where('currency_code', $invoice->currency_code)->count() === count($ids);
     }
     /** Any retained return, refund or late credit, that cannot be read stays with staff: callers check this before any
      * amount, allocation or coverage arithmetic. */
@@ -279,9 +344,14 @@ final class ReceiptReturns
         }
         self::saveResult($op,$a,$result,$l);
     }
+    private static function validResult(mixed $result, int $minor): bool
+    {
+        return is_array($result) && ($result['amount_minor'] ?? null) === $minor
+            && in_array($result['state'] ?? null, ['reserved', 'sending', 'pending', 'review', 'refunded', 'credited', 'released'], true);
+    }
     private static function saveResult(Operation $op,array $a,array $result,array $l): void
     {
-        if(($result['amount_minor']??null)!==$a['amount_minor']||!in_array($result['state']??null,['reserved','sending','pending','review','refunded','credited','released'],true)){throw new \DomainException('Gateway return outcome needs review.');}
+        if (!self::validResult($result, $a['amount_minor'])) { throw new \DomainException('Gateway return outcome needs review.'); }
         $funding=[...$op->funding,'receipt_return_results'=>[...($op->funding['receipt_return_results']??[]),$a['key']=>$result]];
         $proof=clone $op;$proof->funding=$funding;self::completedMinor($proof,$l);$op->update(['funding'=>$funding]);
     }

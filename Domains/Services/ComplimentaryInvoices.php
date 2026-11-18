@@ -38,14 +38,7 @@ final class ComplimentaryInvoices
         $history = ReceiptReturns::complimentaryCredits($op);
         if ($history === null || $transactions->contains(fn ($row) => (int) $row->invoice_id !== (int) $invoice->id)) { return false; }
         if ($transactions->isEmpty()) { return $history['payments'] === []; }
-        $ids = $history['credits'];
-        // A wallet balance can change after the return. Only its identity corroborates the audit.
-        if ($credit && (int) $credit->user_id === (int) $invoice->user_id && $credit->currency_code === $invoice->currency_code) {
-            $ids = array_diff($ids, [(int) $credit->id]);
-        }
-        if ($ids && Credit::whereKey($ids)->where('user_id', $invoice->user_id)->where('currency_code', $invoice->currency_code)->count() !== count($ids)) {
-            return false;
-        }
+        if (!ReceiptReturns::ownsCredits($invoice, $history['credits'], $credit)) { return false; }
         // The dedicated zero receipt has one operation. Use the same funding for the audit and the ledger.
         $money = InvoiceMoney::project($invoice, $transactions, [$op], false);
         foreach ($history['payments'] as $id => $minor) {

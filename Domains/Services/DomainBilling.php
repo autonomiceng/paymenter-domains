@@ -43,7 +43,7 @@ final class DomainBilling
             // Issued debt keeps its calendar, term and amount through later configuration changes.
             $existing = $l['operations']->filter(fn ($op) => $op->operation_key === $key || str_starts_with($op->operation_key, $key.':replacement:'))->last();
             if($existing){RenewalReplacements::recover($existing,$l,$this->clock);}
-            if ($existing && $existing->safe_code !== 'renewal_cancelled_unpaid' && !RenewalReplacements::reviewed($existing,$d)) {
+            if ($existing && !RenewalCycles::replacementCandidate($existing, $d)) {
                 if ($actor && self::expired($d, $this->clock->now()) && (!isset($existing->policy['renewal']['late']) || RenewalCycles::expiredInvoice($existing, $this->clock->now()))) { throw new RuntimeIneligible(RuntimeReason::OutsideCalendar); }
                 return self::existingInvoice($existing, $l, $years);
             }
@@ -133,7 +133,7 @@ final class DomainBilling
             $d=$l['domain'];
             if(!$manual&&RenewalStop::stopped($l)){return null;}
             // Existing payable debt keeps its frozen terms, even when the feature is switched off.
-            if($l['operations']->contains(fn($op)=>$op->action==='renew'&&$op->base_expires_at==$d->provider_expires_at&&$op->safe_code!=='renewal_cancelled_unpaid'&&!RenewalReplacements::reviewed($op,$d))){return null;}
+            if($l['operations']->contains(fn($op)=>$op->action==='renew'&&$op->base_expires_at==$d->provider_expires_at&&!RenewalCycles::replacementCandidate($op, $d))){return null;}
             $b=AccountBindings::binding($l['account']);
             if(!EnomLateRenewal::accepted($b)||($years!==null&&$years!==1)){throw new RuntimeIneligible(RuntimeReason::OutsideCalendar);}
             $this->requireRequest($l,$manual,1,true);

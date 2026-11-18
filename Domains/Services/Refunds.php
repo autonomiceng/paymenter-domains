@@ -277,9 +277,17 @@ final readonly class Refunds
                 $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
                 $receipts = $l['transactions']->where('invoice_id', $op?->invoice_id)->filter(static fn ($row) => $row->status !== InvoiceTransactionStatus::Failed);
                 if (!$op || !in_array($op->state, self::OPEN, true) || $l['invoices']->firstWhere('id', $op->invoice_id)?->status !== 'cancelled' || $receipts->isEmpty()) { return; }
-                try { FundsWaits::closeRenewal($op, $l, $this->clock->now(), $receipts->pluck('id')->values()->all()); }
+                $now = $this->clock->now();
+                $early = RenewalCycles::early($op, $now) !== null && !isset($op->policy['renewal']['late']);
+                try { FundsWaits::closeRenewal($op, $l, $now, $receipts->pluck('id')->values()->all()); }
                 // A renewal that may have reached the registrar keeps its money with staff.
-                catch (\DomainException) { $op->update(['state' => 'held', 'safe_code' => 'renewal_funding_or_authority']); }
+                catch (\DomainException) { $op->update(['state' => 'held', 'safe_code' => 'renewal_funding_or_authority']); return; }
+                if ($early) {
+                    // Callback and sweep save the same locked observation with the actual terminal receipt list.
+                    $op->update(['policy' => [...$op->policy, 'early_receipt_retirement' => [
+                        'issue' => $op->policy['calendar']['issue'], 'at' => $now->format(DATE_ATOM),
+                    ]]]);
+                }
             });
         }
         // Only a renewal closed with its receipts is credited here; one closed before any payment keeps the native late path.

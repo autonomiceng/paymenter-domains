@@ -2,11 +2,11 @@
 // Native payment on a cancelled renewal is recorded, then returned as account credit; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/renewal-execution.php';
-use App\Models\{Credit,InvoiceTransaction};
+use App\Models\{Credit,Gateway,InvoiceTransaction};
 use App\Helpers\ExtensionHelper;
-use Illuminate\Support\Facades\{DB,Event};
+use Illuminate\Support\Facades\{Crypt,DB,Event};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{PricingRule,Refunds};
+use Paymenter\Extensions\Servers\Domains\Services\{HoldingLocks,OwnedDomains,OwnerPorts,PricingRule,Refunds,RenewalFunding};
 app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
 $cash=static fn()=>PricingRule::minor((string)(Credit::where('user_id',$user->id)->where('currency_code','USD')->value('amount')??'0.00'));
 $paid=[];Event::listen(\App\Events\Invoice\Paid::class,static function($event)use(&$paid):void {$paid[]=(int)$event->invoice->id;});
@@ -97,6 +97,93 @@ foreach(['failed','missed'] as $case){
     same(['rejected',$before+PricingRule::minor($late->amount)],[$late->fresh()->state,$cash()],'The sweep credits the payment exactly once: '.$case);
     same(0,$send($late,$lb),'The swept renewal sends nothing: '.$case);
 }
+
+// Early replacement uses the first locked observation of cancellation and the current settlement.
+require __DIR__.'/Support/money-receipt.php';
+Gateway::create(['extension'=>'MoneyReceipt','name'=>'Synthetic receipt ledger','type'=>'gateway','enabled'=>true]);
+$product->server->settings()->updateOrCreate(['key'=>'domains_billing_enabled'],['value'=>true,'type'=>'boolean']);
+require_once dirname(__DIR__).'/Domains/routes/owned.php';
+require_once dirname(__DIR__).'/Domains/routes/web.php';
+app('router')->getRoutes()->refreshNameLookups();
+$owned = new OwnedDomains($clock, new OwnerPorts, billing: $billing);
+$replacementFailures = [];
+foreach (['after-cancel', 'before-cancel', 'late-observation'] as $case) {
+    $earlyTime = new DateTimeImmutable('2027-09-26T12:00:00Z');
+    [$early, $holding, $binding, $original] = $makeRenewal(
+        placeholderComFixtureName('cancelled-early-'.$case.'-placeholder.com'),
+        false, 1, false, static function () use ($clock, $earlyTime): void { $clock->instant = $earlyTime; }
+    );
+    $clock->instant = $earlyTime;
+    $before = $cash();
+    $reference = 'early-cancel-'.$case;
+    if ($case === 'before-cancel') {
+        $receipt = ExtensionHelper::addPayment($original, 'MoneyReceipt', '1.00', '0.00', $reference);
+        same('pending', $original->fresh()->status, 'The partial payment precedes cancellation');
+    }
+    $original->refresh()->update(['status' => 'cancelled']);
+    if ($case === 'after-cancel') {
+        $receipt = ExtensionHelper::addPayment($original, null, '1.00', '0.00', $reference);
+    } elseif ($case === 'late-observation') {
+        $receipt = InvoiceTransaction::withoutEvents(
+            static fn () => ExtensionHelper::addPayment($original, null, '1.00', '0.00', $reference)
+        );
+        $clock->instant = new DateTimeImmutable('2027-09-27T12:00:00Z');
+    }
+    $sweep = new Refunds($clock);
+    $account = Account::where('server_id', $early->server_id)->sole();
+    if ($case === 'before-cancel') {
+        MoneyReceiptGateway::automatic($original, $reference, 100, 'pending');
+        $sweep->creditRetired($account);
+        commerceReject(fn () => $billing->requestOptions($holding));
+        commerceReject(fn () => $billing->invoice($holding->id, $user));
+        same(1, $holding->operations()->where('action', 'renew')->count(), 'A reservation cannot issue a replacement');
+        $clock->instant = new DateTimeImmutable('2027-09-27T12:00:00Z');
+        MoneyReceiptGateway::complete($original, $reference.':excess');
+    }
+    $sweep->creditRetired($account);
+    $sweep->creditRetired($account);
+    $closed = $early->fresh();
+    same(['cancelled', 'rejected', [(int) $receipt->id]], [
+        $original->fresh()->status, $closed->state, $closed->attempt['terminal']['transactions'],
+    ], 'Terminal closure retains the original payment identity: '.$case);
+    same($before + ($case === 'before-cancel' ? 0 : 100), $cash(), 'Settlement returns the partial amount once: '.$case);
+    if ($case === 'late-observation') {
+        commerceReject(fn () => $billing->requestOptions($holding));
+        commerceReject(fn () => $billing->invoice($holding->id, $user));
+        commerceReject(fn () => $billing->invoice($holding->id));
+        continue;
+    }
+    $tampered = [...$closed->funding, 'auto_pay' => [...$closed->funding['auto_pay'], 'status' => 'uncertain']];
+    $unknown = $closed->funding;
+    if ($case === 'after-cancel') {
+        $unknown['late_credits'][0]['credit_id'] = 99999999;
+    } else {
+        $key = array_key_first($unknown['receipt_return_results']);
+        $unknown['receipt_return_results'][$key]['state'] = 'unknown';
+    }
+    foreach ([$tampered, $unknown] as $unproved) {
+        DB::table($closed->getTable())->where('id', $closed->id)->update(['funding' => Crypt::encryptString(json_encode($unproved, JSON_THROW_ON_ERROR))]);
+        commerceReject(fn () => $billing->requestOptions($holding));
+        commerceReject(fn () => $billing->invoice($holding->id, $user));
+    }
+    DB::table($closed->getTable())->where('id', $closed->id)->update(['funding' => $closed->getRawOriginal('funding')]);
+    try {
+        expect(in_array(1, $billing->requestOptions($holding)['terms'], true), 'Settled early closure offers renewal');
+        expect(isset($owned->present($holding->fresh())->renewNow['url']), 'The owner can request the fresh invoice');
+        $replacement = $billing->invoice($holding->id, $case === 'after-cancel' ? $user : null);
+        same($replacement->id, $billing->invoice($holding->id, $user)->id, 'Replay keeps one replacement invoice');
+        same(2, $holding->operations()->where('action', 'renew')->count(), 'Exactly one new renewal request');
+        same($closed->attempt, $early->fresh()->attempt, 'Issuance preserves the closed request');
+        ExtensionHelper::addPayment($replacement, null, $replacement->total);
+        DB::transaction(function () use ($replacement, $holding): void {
+            $locks = HoldingLocks::take($holding);
+            RenewalFunding::requireCurrent($locks['operations']->firstWhere('invoice_id', $replacement->id), $locks);
+        });
+    } catch (DomainException $e) {
+        $replacementFailures[$case] = $e->getMessage();
+    }
+}
+same([], $replacementFailures, 'Settled early replacements: '.json_encode($replacementFailures));
 
 // Rejected receipt rerouting must not close the target invoice as a side effect.
 [$target,$td,$tb,$ti]=$makeRenewal(placeholderComFixtureName('cancelled-payment-rerouting-placeholder.com'),false);

@@ -14,9 +14,8 @@ final class RefundProof
     }
     public static function requireUnsent(Operation $op, Domain $d): void
     {
-        $a = $op->attempt ?? []; $f = $op->funding ?? []; $c = $op->cost ?? []; $closed = $op->safe_code === UnpaidAcquisitionProof::CODE;
-        $lateCredits = $op->funding_basis === 'complimentary'
-            ? ReceiptReturns::complimentaryCredits($op) !== null : $op->action === 'renew' || $closed;
+        $a = $op->attempt ?? []; $f = FinancialAdjustments::registrarFunding($op); $c = $op->cost ?? []; $closed = $op->safe_code === UnpaidAcquisitionProof::CODE;
+        $lateCredits = $op->funding_basis !== 'complimentary' && ($op->action === 'renew' || $closed);
         if (!in_array($op->action, ['register', 'renew', 'transfer', 'privacy_purchase', 'privacy_renew'], true) || $op->domain_id !== $d->id || $op->service_id !== $d->service_id
             || $op->server_id !== $d->server_id || $op->registrar_key !== $d->registrar_key || $op->account_fingerprint !== $d->account_fingerprint
             || $op->authority_generation < 1 || $op->authority_generation !== $d->authority_generation

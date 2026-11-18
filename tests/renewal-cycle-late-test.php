@@ -61,6 +61,8 @@ $clock->instant=$at('2027-09-27T12:00:00Z');$next=$billing->invoice($declinedDom
 [$good,$goodDomain,,$goodInvoice]=$closed('renew-late-good-placeholder.com');
 $pay::addFailedPayment($goodInvoice->id,null,$good->amount);$pay::addPayment($goodInvoice->id,null,$good->amount);$refunds->retryPending();same(PricingRule::minor($good->amount),$cash(),'The good payment becomes credit');
 $clock->instant=$at('2027-09-27T12:00:00Z');$next=$billing->invoice($goodDomain->id);same(['paid',0],[$next->status,$cash()],'The next renewal invoice uses the credit');
+same([], $good->fresh()->attempt['terminal']['transactions'], 'Recorded unpaid retirement keeps its empty evidence after the late return');
+same($next->id, $billing->invoice($goodDomain->id)->id, 'The scheduled replacement of an unpaid retirement is idempotent');
 // The replacement invoice was already open when the money landed. A checkout could be open on it, so the sweep leaves the credit to the customer.
 [$first,$openDomain,,$firstInvoice]=$closed('renew-late-open-placeholder.com');$open=$billing->invoice($openDomain->id,$user);same('pending',$open->status,'The replacement waits for payment');
 $pay::addPayment($firstInvoice->id,null,$first->amount);$refunds->retryPending();$kept=PricingRule::minor($first->amount);same($kept,$cash(),'The late money is credit');

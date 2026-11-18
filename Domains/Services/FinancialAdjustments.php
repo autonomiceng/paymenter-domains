@@ -56,14 +56,21 @@ final readonly class FinancialAdjustments
     {
         return RenewalAutoPay::unattempted($op) && self::registrarUnattemptedFunding($op);
     }
+    /** Screen registrar evidence without discarding receipt accounting. The native ledger still has to prove settlement. */
+    public static function registrarFunding(Operation $op): array
+    {
+        $funding = $op->funding ?? [];
+        if ($op->funding_basis === 'complimentary' && array_key_exists('late_credits', $funding)
+            && ReceiptReturns::complimentaryCredits($op) !== null) {
+            unset($funding['late_credits']);
+        }
+        return $funding;
+    }
     /** Collection is separate from registrar dispatch; callers must verify current native funding. */
     public static function registrarUnattemptedFunding(Operation $op): bool
     {
-        $funding = $op->funding ?? [];
+        $funding = self::registrarFunding($op);
         if ($funding === []) { return true; }
-        if ($op->funding_basis === 'complimentary') {
-            return array_keys($funding) === ['late_credits'] && ReceiptReturns::complimentaryCredits($op) !== null;
-        }
         try {
             // Saved-method collection evidence grants no registrar attempt or funding authority.
             if ($op->action === 'renew') { unset($funding['auto_pay'], $funding['auto_pay_result']); }

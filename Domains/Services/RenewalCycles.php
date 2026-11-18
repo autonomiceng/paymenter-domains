@@ -31,6 +31,7 @@ final readonly class RenewalCycles
         foreach ($cycle as $op) {
             if(RenewalRetries::resolved($op,$l['domain'])){FinancialAdjustments::requireHistory($op,$l);continue;}
             if (RenewalReplacements::reviewed($op,$l['domain'])) { RenewalReplacements::requireSettled($op,$l); continue; }
+            if (self::receiptRetired($op)) { self::requireSettledReceiptRetirement($op, $l); continue; }
             if ((!RenewalAutoPay::unattempted($op) && !RefundPayment::retiredSettled($op, $l))
                 || !OperationTerminalProof::safe($op, $l['domain']) || $op->safe_code !== 'renewal_cancelled_unpaid'
                 || (($l['invoices']->firstWhere('id', $op->invoice_id)?->status !== 'cancelled'
@@ -39,6 +40,70 @@ final readonly class RenewalCycles
             }
         }
         return $cycle->isEmpty() ? $key : $key.':replacement:'.$cycle->count();
+    }
+    /** A retained retirement can reach cycle selection; its current money proof is checked there. */
+    public static function replacementCandidate(Operation $op, Domain $d): bool
+    {
+        return $op->safe_code === 'renewal_cancelled_unpaid' || self::receiptRetired($op) || RenewalReplacements::reviewed($op, $d);
+    }
+    public static function receiptRetired(Operation $op): bool
+    {
+        return $op->action === 'renew' && $op->safe_code === FundsWaits::RENEWAL_CLOSED
+            && array_key_exists('early_receipt_retirement', $op->policy ?? []);
+    }
+    /** Shared proof for new debt and its pre-send funding check. The advisory ledger only reads local evidence. */
+    public static function requireSettledReceiptRetirement(Operation $op, array $l): void
+    {
+        $d = $l['domain'];
+        $policy = $op->policy;
+        $calendar = $policy['calendar'] ?? [];
+        $early = $policy['early_receipt_retirement'] ?? [];
+        $at = is_string($early['at'] ?? null) ? \DateTimeImmutable::createFromFormat(DATE_ATOM, $early['at']) : false;
+        $issue = $calendar['issue'] ?? null;
+        $date = is_string($issue) ? \DateTimeImmutable::createFromFormat('!Y-m-d', $issue) : false;
+        $funding = ($op->funding ?? []) + ['late_credits' => [], 'receipt_return_results' => [], 'dispute_holds' => []];
+        $ids = $op->attempt['terminal']['transactions'] ?? null;
+        if (!self::receiptRetired($op) || !FundsWaits::closedRenewal($op, $d)
+            || !is_array($early) || array_keys($early) !== ['issue', 'at']
+            || !$at || $at->format(DATE_ATOM) !== $early['at'] || $at->getTimestamp() !== $op->completed_at?->getTimestamp()
+            || !$date || $date->format('Y-m-d') !== $issue || $issue !== ($early['issue'] ?? null)
+            || $at->format('Y-m-d') >= $issue || !is_string($calendar['due'] ?? null) || $calendar['due'] <= $issue
+            || isset($policy['renewal']['late']) || $op->base_expires_at?->format('Y-m-d') !== $d->provider_expires_at?->format('Y-m-d')
+            || $op->started_at !== null || $op->request_fingerprint !== null || ($op->cost ?? []) !== []
+            || !RenewalAutoPay::unattempted($op)
+            || (array_key_exists('auto_pay', $funding) && ($funding['auto_pay']['invoice_id'] ?? null) !== $op->invoice_id)
+            || (array_key_exists('auto_pay_result', $funding) && !is_array($funding['auto_pay_result']))
+            || array_diff(array_keys($funding), ['auto_pay', 'auto_pay_result', 'late_credits', 'receipt_return_results', 'dispute_holds'])
+            || !is_array($funding['late_credits']) || !is_array($funding['receipt_return_results'])
+            || !is_array($funding['dispute_holds']) || !array_is_list($funding['dispute_holds'])
+            || !is_array($ids) || !array_is_list($ids) || !$ids || count($ids) !== count(array_unique($ids, SORT_REGULAR))
+            || $op->attempt !== ['seal' => 'absent', 'send_state' => 'definitely_unsent', 'disposition' => 'rejected',
+                'rejection_basis' => 'definitely_unsent', 'terminal' => ['operation_key' => $op->operation_key,
+                    'generation' => $op->authority_generation, 'invoice_id' => $op->invoice_id, 'transactions' => $ids]]) {
+            throw new \DomainException('Early renewal retirement requires review.');
+        }
+        RefundProof::requireUnsent($op, $d);
+        [$invoice] = RefundPayment::requireLine($op, $l);
+        if ($invoice->status !== 'cancelled' || ($calendar['expiry'] ?? null) !== $op->base_expires_at?->format('Y-m-d')
+            || $calendar['due'] > $calendar['expiry']) {
+            throw new \DomainException('Early renewal invoice changed.');
+        }
+        $rows = $l['transactions']->where('invoice_id', $invoice->id);
+        if (array_filter($ids, fn ($id) => !is_int($id) || $id <= 0) || array_diff($ids, $rows->pluck('id')->all())) {
+            throw new \DomainException('Early renewal receipt identity changed.');
+        }
+        $advisory = $l['advisory'] ?? true;
+        $peers = $advisory
+            ? ($l['invoice_peers'] ?? InvoiceMoney::peers([$invoice->id]))->where('invoice_id', $invoice->id)
+            : Operation::where('invoice_id', $invoice->id)->orderBy('id')->lockForUpdate()->get();
+        if ($peers->count() !== 1 || $peers->first()->id !== $op->id) {
+            throw new \DomainException('Early renewal invoice has another obligation.');
+        }
+        $money = $advisory ? InvoiceMoney::project($invoice, $rows, $peers) : InvoiceMoney::lockedRecord($l, $invoice->id, $peers);
+        if ($money['ownerHold'] || !InvoiceMoney::settled($money) || array_filter($money['receipts'], fn ($r) => $r['net'] !== 0)) {
+            throw new \DomainException('Early renewal receipts must be fully returned.');
+        }
+        ReceiptReturns::requireClosedHistory($op, $invoice, $money, $l['credit'] ?? null);
     }
     /** A declined card leaves a failed row and no money. */
     public static function moneyMoved(array $l, ?int $invoice): bool
