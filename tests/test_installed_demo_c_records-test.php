@@ -78,13 +78,14 @@ foreach(['never_read','wrong_identity','failed_read'] as $case){
 $partial=RecordFamilies::owner($editable,RecordFamilies::read($d,$now));$same([],$partial->management['contacts']['actions'],'A current partial contact read still holds whole-list editing');
 // A complete family shows its count once and retains the independent check time.
 // A later DNS readback has its own time, different from the whole read and from every other family.
-$dnsAt='2026-11-04T11:15:00+00:00';$timed=clone $d;$t=$timed->observation;$t['records']['families']['dns']['at']=$dnsAt;$t['records']['families']['glue']['at']='2026-11-04T10:20:00+00:00';$timed->observation=$t;
-$timedFacts=RecordFamilies::read($timed,$now);$same([$dnsAt,'2026-11-04T09:00:00+00:00','2026-11-04T10:20:00+00:00'],[$timedFacts['families']['dns']['at'],$timedFacts['at'],$timedFacts['families']['glue']['at']],'The fixture DNS time differs from the read and its siblings');
+$dnsAt='2026-11-05T11:15:00+00:00';$glueAt='2026-11-03T10:20:00+00:00';
+$timed=clone $d;$t=$timed->observation;$t['records']['families']['dns']['at']=$dnsAt;$t['records']['families']['glue']['at']=$glueAt;$timed->observation=$t;
+$timedFacts=RecordFamilies::read($timed,$now);$same([$dnsAt,$record['at'],$glueAt],[$timedFacts['families']['dns']['at'],$timedFacts['at'],$timedFacts['families']['glue']['at']],'The fixture DNS time differs from the read and its siblings');
 $countDom=storefrontDom(view('domains::partials.owner-management',['domain'=>RecordFamilies::owner($editable,$timedFacts),'caps'=>['dns'],'keys'=>['dns'=>str_repeat('b',64)]])->render());
 $countSub=trim($countDom->query('//li[@id="dns"]/span[@class="domains-row__l"]/span[@class="domains-sub"]')->item(0)?->textContent??'');
 $countValue=trim($countDom->query('//li[@id="dns"]/span[@class="domains-row__v"]')->item(0)?->textContent??'');
 $same([true,'0 records'],[str_starts_with($countSub,'Checked '),$countValue],'DNS says its record count once and keeps the check time: '.json_encode([$countSub,$countValue]));
-$dnsTimes=$countDom->query('//li[@id="dns"]/span[@class="domains-row__l"]/span[@class="domains-sub"]//time');
+$dnsTimes=$countDom->query('//*[@id="dns"]//time[@datetime]');
 $same([[substr($dnsAt,0,10),true]],array_map(fn($n)=>[(new DateTimeImmutable($n->getAttribute('datetime'),new DateTimeZone('UTC')))->format('Y-m-d'),trim($n->textContent)!==''],iterator_to_array($dnsTimes)),'The DNS row shows its own saved check time');
 // r16: a domain that ended without a registration has no expiry to show, so Renewal says nothing rather than Expires None.
 $ended=new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(name:'example.com',status:'Cancelled',tone:'muted',expiry:null,renewal:'',renewalPrice:null,actions:['show'=>'/domains/1'],progress:[],setup:[],transfer:[],management:[],testEnvironment:false,order:['state'=>'cancelled','credit'=>'10.99']);

@@ -23,6 +23,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{TransferInputs,RuntimeSchema,
 use Paymenter\Extensions\Servers\Domains\Data\RequestOrigin;
 use Paymenter\Extensions\Servers\Domains\Jobs\RunOperation;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{RequestFacts,OperationActions};
+use Paymenter\Extensions\Servers\Domains\Presentation\TransferNotice;
 app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
 RuntimeSchema::install(); Queue::fake();
 DB::table('domains_read_budgets')->delete();
@@ -87,6 +88,17 @@ $p=$r->policy;$p['reconciliation']['polls']=OperationReconciliation::POLL_LIMIT;
 Queue::fake();app(RuntimeDispatch::class)->enqueue($r->id);
 expect(!Queue::pushed(RunOperation::class)->contains(fn($job)=>$job->operationId===$r->id),'Stopped unexpected results do not queue every minute');
 expect(TransferPolling::due($r,TransferPolling::deadline($r)),'Unexpected poll stop still permits the single final check');
+$afterDeadline=TransferPolling::deadline($r)+86400;
+expect(TransferPolling::due($r,$afterDeadline),'A missed deadline leaves the final check due after a prior failure');
+$notice=TransferNotice::for($r,$afterDeadline);
+same(false,$notice['contact']??true,'Do not send the customer to support while the overdue automatic read is due');
+$needsAction=clone $r;
+$needsAction->policy=[...$r->policy,'reconciliation'=>[...$r->policy['reconciliation'],'transfer_status'=>'needs_action','transfer_privacy_blocked'=>true]];
+$notice=TransferNotice::for($needsAction,$afterDeadline);
+same(false,$notice['contact']??true,'A confirmed old-registrar task needs no support link');
+expect(str_contains($notice['body'],'WHOIS privacy'),'A failed read preserves the confirmed old-registrar task');
+$notice=TransferNotice::for($r,TransferPolling::cutoff($r));
+same(true,$notice['contact']??true,'Support is available when the automatic read window has closed');
 // A tighter configured background guard remains tighter than the transfer allowance.
 DB::table('domains_read_budgets')->delete();$narrow=new TransferReadBudget($clock,new AccountReadBudget($clock,1));
 $token=$narrow->acquire($binding,RequestOrigin::Background);$narrow->release($binding,RequestOrigin::Background,$token);
