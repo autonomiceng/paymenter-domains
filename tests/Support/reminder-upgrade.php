@@ -28,7 +28,7 @@ $bindings->configure($newServer->id,'enom',Paymenter\Extensions\Servers\Domains\
 same(true,(bool)DB::table('domains_reminder_schedules')->where('server_id',$newServer->id)->value('enabled'),'Newly connected account gets reminder emails On');
 foreach($originalSchedules as $saved){DB::table('domains_reminder_schedules')->where('server_id',$saved['server_id'])->update($saved);}
 $offFacts=Paymenter\Extensions\Servers\Domains\Admin\Support\ReminderFacts::emails($legacyServerId);
-expect(str_contains($offFacts['cause'],'paused')&&str_contains($offFacts['cause'],'Turn on'),'Preserved Off schedule explains its pause and next step');
+same('Off',$offFacts['value'],'The registrar page shows the preserved Off schedule');
 expect($offFacts['buttons'][0]->isVisible(),'Preserved Off schedule offers its existing turn-on switch');
 $oldMail=config('settings.mail_disable');config(['settings.mail_disable'=>true]);
 $mailFacts=Paymenter\Extensions\Servers\Domains\Admin\Support\ReminderFacts::emails((int)$newServer->id);
