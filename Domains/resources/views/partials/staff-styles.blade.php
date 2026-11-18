@@ -135,6 +135,7 @@ td.domains-history-detail{min-width:20rem}
 :where(.domains-panel-row){display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 16px;align-items:center;min-height:44px;padding:8px 0;border-top:1px solid var(--panel-line-soft,color-mix(in srgb,currentColor 20%,transparent))}
 :where(.domains-panel-row-k){grid-column:1/-1;min-width:0;color:var(--panel-fg-2,inherit)}
 :where(.domains-panel-row-v){min-width:0;overflow-wrap:anywhere}
+.domains-panel-row-v .domains-demo-tag{display:inline-block;margin-inline-start:8px;padding:0 5px;border-radius:4px;font-size:11px;font-weight:500;line-height:16px;white-space:nowrap;vertical-align:1px}
 :where(.domains-panel-row-a,.domains-panel-row-a .fi-ac){display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:12px}
 :where(.domains-panel-row-a:empty){display:none}
 /* Two actions on a phone: their own line under the value, from the left. Real specificity, so a skin's end alignment can't put them back beside the value. */
