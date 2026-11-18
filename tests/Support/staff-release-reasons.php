@@ -71,7 +71,7 @@ foreach([defined('STAFF_RELEASE_KIND')?STAFF_RELEASE_KIND:'register'] as $kind){
         $restore();
         $row = $op->fresh();
         $row->update(['safe_code'=>'future_hold']);
-        Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$row->id])->assertActionHidden('release');
+        Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$row->id])->assertActionHidden('release')->assertDontSee('Release hold');
         commerceReject(fn()=>$run($row->fresh(),'release'));
     }
 }

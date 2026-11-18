@@ -39,6 +39,7 @@ $cases=[
     ['domains_pricing_default_rule','unreadable','default_rule',[$t->id,$healthy->id,$second->id],"Default pricing can't be read",null],
     ['domains_pricing_default_rule',['mode'=>'unknown'],'default_rule',[$t->id,$healthy->id,$second->id],"Default pricing can't be read",null],
 ];
+$renderedWarnings=[];
 foreach($cases as $case){
     [$key,$value,$cause,$ids,$reason]=$case;$encrypted=$case[6]??false;
     $setting($key,$value,$encrypted);$settingsBefore=$rawSettings();$watch=true;
@@ -69,8 +70,11 @@ foreach($cases as $case){
         foreach([5,9,13] as $offset){same(['Left out','Left out','Left out','Left out: '.lcfirst($reason)],array_slice($record,$offset,4),'Omitted amounts never invent saved prices');}
         same(['Left out','Left out'],array_slice($record,17),'Unreadable formula and fee are explicit');
     }
-    // Render each repair warning with corrupt ciphertext. The service and CSV cover every malformed input above.
-    if($encrypted){
+    // Render each distinct warning for malformed plain settings and corrupt ciphertext.
+    // The service and CSV cover every malformed input above.
+    $encoding=$encrypted?'encrypted':'plain';
+    if(!isset($renderedWarnings[$cause][$encoding])){
+        $renderedWarnings[$cause][$encoding]=true;
         $page=Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful()->set('account',WhatYouSell::ALL)->filterTable('for_sale',false)->assertSee('Left out')->assertSee('so prices are left out for:')->assertDontSee('Some TLDs are left out')->assertSee('Fix it in Default pricing at the top of this page.');
         $html=$page->html();
         $dom=new DOMDocument;@$dom->loadHTML($html);$xpath=new DOMXPath($dom);
