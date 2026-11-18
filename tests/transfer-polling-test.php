@@ -62,7 +62,8 @@ same(null,$refunds->creditRejected($r->id),'Deadline never grants a refund');sam
 $calls=count($observe->calls);$clock->instant=$clock->now()->modify('+1 day');$r=$reconcile->run($r->id);same(['checkTransferStatus'],array_slice($observe->calls,$calls),'Overdue pending needs only the daily status read');
 foreach($reads as $start){expect(count(array_filter($reads,fn($at)=>$at>=$start&&$at<$start+86400))<=4,'At most four automatic passes per rolling day');}
 same(16,count($reads),'Seven-day watch has sixteen automatic passes');
-$notice=RequestFacts::notice($r,['unreadable'=>false]);expect(!empty($notice['body'])&&($notice['action']??null)==='resume_reads','Deadline gives staff a resolution route');
+$notice=RequestFacts::notice($r,['unreadable'=>false]);
+same([true,'recheck'],[$notice['transfer_checks']??false,$notice['action']??null],'Scheduled transfers show their checks and retain ordinary read permission');
 HistoryAcceptances::save(new HistoryAcceptance($binding,'America/Los_Angeles',0,9*86400,'namesilo_transfer_v1'));
 $reconcile->resume($r->id,'provider_facts_updated');$observe->status='Transfer Completed';$observe->fault='';
 same('succeeded',$reconcile->run($r->id)->state,'Explicit reviewed check can confirm a late success without extending the window');

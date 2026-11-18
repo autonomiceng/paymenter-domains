@@ -177,13 +177,15 @@
     });
     document.addEventListener('keydown', event => { if (event.key === 'Escape') helps.forEach(help => help.close()); });
     document.addEventListener('click', event => helps.forEach(help => { if (!help.contains(event.target)) help.close(); }));
-    const revealRecord = () => {
-        const row = document.getElementById(location.hash.slice(1));
-        const disclosure = row?.closest('[data-record-disclosure]');
-        if (disclosure && !disclosure.open) { disclosure.open = true; row.scrollIntoView(); }
-    };
-    window.addEventListener('hashchange', revealRecord);
-    revealRecord();
+    if (document.querySelectorAll('[data-record-disclosure]').length) {
+        const revealRecord = () => {
+            const row = document.getElementById(location.hash.slice(1));
+            const disclosure = row?.closest('[data-record-disclosure]');
+            if (disclosure && !disclosure.open) { disclosure.open = true; row.scrollIntoView(); }
+        };
+        window.addEventListener('hashchange', revealRecord);
+        revealRecord();
+    }
     document.querySelectorAll('[data-renewal-form]').forEach(form => {
         const select = form.querySelector('select[name="years"]');
         form.querySelectorAll('[data-renewal-summary]').forEach(row => { row.hidden = false; });

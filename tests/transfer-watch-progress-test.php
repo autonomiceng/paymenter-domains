@@ -18,7 +18,7 @@ HistoryAcceptances::save(new HistoryAcceptance($binding,'America/Los_Angeles',0,
 $clock->instant=new DateTimeImmutable('@'.TransferPolling::deadline($op));app()->instance(Runtime::class,new Runtime);app()->instance(ReadLimiter::class,new AccountReadBudget($clock,1));
 $r=$reconcile->run($op->id);$notice=TransferNotice::for($r,$clock->now()->getTimestamp());
 same(true,$r->policy['reconciliation']['staff_alert'],'Unresolved overdue capacity alerts staff while safe retries continue');
-expect(str_contains(strtolower($notice['body']),'support'),'Overdue capacity gives the owner and staff a resolution path');
+same(false,$notice['contact']??true,'Overdue capacity with an automatic retry needs no customer support step');
 expect(TransferPolling::due($r,$r->policy['reconciliation']['next_at']),'The overdue alert does not cancel automatic recovery');
 app()->instance(ReadLimiter::class,new AccountReadBudget($clock,48));
 echo "Full-budget terminal progress and overdue capacity escalation passed.\n";$nativeSuccessful=true;
