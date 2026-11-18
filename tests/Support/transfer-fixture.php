@@ -40,7 +40,7 @@ $admission->boot(); $invoiceBinding->boot();
 $user = commerceUser(); $user->update(['email'=>'transfer-owner@example.com']);
 foreach (['address'=>'1 Synthetic Street','city'=>'Seattle','state'=>'WA','zip'=>'98101','country'=>'US','phone'=>'(206) 555-0100'] as $key=>$value) { $user->properties()->create(['key'=>$key,'name'=>$key,'value'=>$value]); }
 $refunds = new Refunds($clock); $inputs = new TransferInputs($clock,$refunds);
-// Recovery tests start from historical Live debt, not a new sale without Activate. TEST still exercises checkout.
+// Build a retained native checkout when checkout itself is outside the case under test.
 $historicalTransfer = static function(string $name,int $i)use($user,$native,$prices,$tlds,$clock):Operation {
     return DB::transaction(static function()use($name,$i,$user,$native,$prices,$tlds,$clock):Operation {
         $t=$tlds[$i];$product=$native->product($t,'transfer');$plan=$native->annualPlan($product);
@@ -68,10 +68,11 @@ $historicalTransfer = static function(string $name,int $i)use($user,$native,$pri
         InvoiceBinding::requireIdentity($op,$domain,$service,$invoice,$item);return $op;
     });
 };
-$newTransfer = static function ($name, int $i=0, bool $paid=true, bool $code=true) use ($user,$native,$sellers,$tlds,$clock,$inputs,$state,$historicalTransfer): Operation {
+$startsWithRetainedTransfer = $fixtureRetainedTransfer ?? false;
+$newTransfer = static function ($name, int $i=0, bool $paid=true, bool $code=true) use ($user,$native,$sellers,$tlds,$clock,$inputs,$state,$historicalTransfer,$startsWithRetainedTransfer): Operation {
     $policy = DB::table('domains_sales_policies')->where('tld','com')->first();
     if ((int) $policy->server_id !== $tlds[$i]->server_id) { activeFixtureSeller($sellers,'com',$policy->revision,$tlds[$i]->server_id,true,true,$clock->now()); }
-    if(Account::where('server_id',$tlds[$i]->server_id)->sole()->environment==='live'){$op=$historicalTransfer($name,$i);}
+    if($startsWithRetainedTransfer||Account::where('server_id',$tlds[$i]->server_id)->sole()->environment==='live'){$op=$historicalTransfer($name,$i);}
     else{$cart = commerceCart($user); commerceAdd($cart,$native->product($tlds[$i],'transfer'),$name);
         // Synthetic retained transfers can have incomplete contacts from the former checkout.
         try { \Paymenter\Extensions\Servers\Domains\Services\ContactDetails::validate($tlds[$i]->registrar_key, \Paymenter\Extensions\Servers\Domains\Services\ContactDetails::collect($user)); $legacyContacts=false; }

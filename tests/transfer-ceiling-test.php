@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+$fixtureRetainedTransfer = true;
 // Native paid dispatch is needed to prove the hold, absent seal and unchanged invoice, not just an exception.
 require __DIR__.'/Support/transfer-fixture.php';
 \Paymenter\Extensions\Servers\Domains\Services\BalanceSchema::install();
