@@ -17,13 +17,9 @@
     @if (!$staff)
         {{-- Customers read State words: Checking while a read runs, otherwise Not read yet, and the note above the rows says why once. --}}
         @php
-            $word = match (true) {
-                ($family['read_checking'] ?? false) || ($family['initial_read_pending'] ?? false) => \Paymenter\Extensions\Servers\Domains\Presentation\State::Checking,
-                ($family['read_failed'] ?? false)
-                    && !\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::readHeldSaid($notice ?? null)
-                        => \Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead,
-                default => \Paymenter\Extensions\Servers\Domains\Presentation\State::NotReadYet,
-            };
+            $word = ($family['read_checking'] ?? false) || ($family['initial_read_pending'] ?? false)
+                ? \Paymenter\Extensions\Servers\Domains\Presentation\State::Checking
+                : \Paymenter\Extensions\Servers\Domains\Presentation\State::NotReadYet;
         @endphp
         {{ \Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Value::state($word, \Paymenter\Extensions\Servers\Domains\Presentation\Reader::Customer) }}
     @elseif ($family['read_checking'] ?? false)

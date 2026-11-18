@@ -276,10 +276,10 @@ $forecast=static function(array $choices)use($scheduled,$scheduledSummary,$card)
     $html=view('domains::show',['domain'=>$scheduled,'summary'=>$scheduledSummary,'renewalChoices'=>$choices])->render();
     return (string) $card(storefrontDom($html),'Auto Pay');
 };
-$quoted=$forecast(['next_annual'=>'18.40']);
+$quoted=$forecast(['scheduled_annual'=>'18.40']);
 $issue = \Paymenter\Extensions\Servers\Domains\Presentation\Fact::day($scheduledSummary->renewalIssueAt)->text;
 foreach (['$18.40',$issue,'4242'] as $fact) { expect(str_contains($quoted,$fact),'Auto Pay shows a verified billing fact: '.$fact); }
-expect(!str_contains($forecast([]),'$'),'The fallback service price is not an Auto Pay forecast');
+expect(!str_contains($forecast(['next_annual'=>'18.40']),'$'),'A manual quote is not an Auto Pay forecast');
 
 // An unlinked domain follows the account switch: Manage while Auto Pay is on for the account, Turn on while it is off.
 $link=static fn(DOMXPath $dom)=>trim((string)$dom->query('//section[@id="renewal"]//a[@href="/account/payment-methods"]')->item(0)?->textContent);
