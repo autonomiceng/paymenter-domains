@@ -13,6 +13,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{ManagedDnsSetup,SiteDnsDefaul
 /** Domains > DNS templates, a List page: the default nameservers for new domains on top, the templates they come from below. */
 class ListConfiguration extends RecordListPage
 {
+    protected const PAGE_CLASSES = [...parent::PAGE_CLASSES, 'domains-template-list'];
     protected static string $resource=RoutingProfileResource::class;
     protected ?array $marks = null;
     protected ?array $configuration = null;

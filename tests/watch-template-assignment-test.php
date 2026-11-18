@@ -72,5 +72,20 @@ $form->callMountedAction();
 same($before,$stored(),'Moving the default after preview cannot pin the old site choice');
 same($other->id, \Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::watchProfile(WatchName::findOrFail($id))->id, 'An inherited watch follows the next site choice');
 same($initialProviderState, $providerState(), 'Monitor assignment creates no registrar operation, observation or notice');
+// Only the ordinary monitoring worker can turn later, confirmed observations into an alert.
+$mount()->set('mountedActions.0.data.expected_dns','external')->callMountedAction();
+noticeDns($f, $now, 'external');
+noticeDns($f, $now+900, 'external');
+$planner->plan('watch',$id,$uid,$now+902);
+$alerts = fn () => DB::table('domains_watch_notices')->whereIn('kind',['ns_changed','ns_restored'])->count();
+same(0,$alerts(),'Confirmed different nameservers respect the saved external expectation');
+$mount()->set('mountedActions.0.data.assignment','deployment:'.$other->id.':'.$other->fresh()->revision)
+    ->set('mountedActions.0.data.expected_dns','platform')->callMountedAction()->assertHasNoActionErrors();
+noticeDns($f, $now+1800, 'external');
+$planner->plan('watch',$id,$uid,$now+1802);
+same(0,$alerts(),'A new matching assignment starts a fresh comparison');
+noticeDns($f, $now+2700, 'external');
+$planner->plan('watch',$id,$uid,$now+2702);
+same(1,$alerts(),'Two confirmed differences on the new assignment create one ordinary mismatch alert');
 $nativeSuccessful = true;
 echo "Watch template assignments passed\n";

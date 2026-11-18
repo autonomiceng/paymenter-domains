@@ -186,6 +186,12 @@ td.domains-history-detail{min-width:20rem}
 /* The search field has its own clear button, so hide the native one. */
 .domains-hp-dlg input[type=search]::-webkit-search-cancel-button,.domains-hp-dlg input[type=search]::-webkit-search-decoration{-webkit-appearance:none;appearance:none;display:none}
 .domains-hp-clr{display:grid;place-items:center;min-width:44px;min-height:44px}.domains-hp-none{padding:12px 0}
+.domains-template-editor{padding:clamp(1rem,2vw,1.5rem)}
+.domains-template-editor .domains-template-editor-footer{justify-content:flex-end;margin-block-start:1.5rem}
+/* The shared table pins its first cell. Leave room on a phone for the cells scrolling past it. */
+@media(max-width:39.99rem){
+  .domains-template-list .fi-ta-row>td:first-child .domains-panel-val{max-width:9rem;white-space:normal;overflow-wrap:anywhere}
+}
 /* Template usage and save effects have full sentences within a narrow rail. */
 .domains-template-detail .domains-rail .domains-panel-row{grid-template-columns:minmax(0,1fr) auto}
 .domains-template-detail .domains-rail .domains-panel-row-k{grid-column:1/-1}

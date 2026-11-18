@@ -15,9 +15,15 @@ use Paymenter\Extensions\Servers\Domains\Models\WatchProfile;
 $off = DB::transaction(fn () => WatchProfile::create(['name'=>'Previous hosting template','nameservers'=>['ns1.old.test','ns2.old.test'],
     'website_endpoints'=>[],'email_endpoints'=>[],'edited_by'=>$manager->id,'reason'=>'Synthetic former template']));
 DB::table('domains_watch_names')->where('id',$id)->update(['ns_profile_id'=>$off->id,'profile_revision'=>1,'expected_dns'=>null]);
-DB::table('domains_watch_work')->where('watch_id',$id)->where('kind','expiry')->update(['safe_code'=>'expiry_unknown']);
+$at = app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp()-1800;
+DB::table('domains_watch_work')->where('watch_id',$id)->where('kind','expiry')->update(['due_at'=>$at,'backoff_until'=>null]);
+$ticket = $registry->begin($id,$uid,$at);
+expect($ticket && $registry->finish($ticket,['result'=>'unknown','reason'=>'endpoint_failed','safe_code'=>'expiry_unknown'],str_repeat('c',64),$at+1),'Synthetic failed registry read');
 config(['domains.site_dns_default.nameservers'=>$profile->nameservers]);
 siteDnsFixture($profile->id);
+$manager->role->update(['permissions'=>[...$manager->role->permissions,\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::POLICY,
+    \Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::MANAGE]]);
+\Paymenter\Extensions\Servers\Domains\Admin\Support\DialogFooter::boot();
 panelTheme(getenv('PAYMENTER_TEST_FIXTURE'));
 foreach (['watch'=>[ViewWatch::class,$id], 'assignment'=>[ViewWatch::class,$id], 'templates'=>[ListConfiguration::class,null], 'template'=>[ViewConfiguration::class,$off->id],
     'edit'=>[EditConfiguration::class,$off->id]] as $name=>[$class,$record]) {

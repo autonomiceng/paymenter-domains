@@ -177,8 +177,16 @@ final class WatchFacts
         } elseif ($at && $w->state === 'active' && array_filter($fresh, fn($f) => $f['stale'])) {
             $sub = 'Some results are waiting for the next check.';
         }
+        $failedAt = null;
+        if ($failure && $at) {
+            // A different family can have a newer successful read. Only date a failure that supplied Last check.
+            if ((int) $w->registry?->started_at === $at && $w->registry->reason === 'endpoint_failed') { $failedAt = $at; }
+            foreach (['delegation','points'] as $kind) {
+                if (self::dnsFailed($w,$kind) && (int) $w->{$kind}?->started_at === $at && $w->{$kind}->result !== 'complete') { $failedAt = $at; }
+            }
+        }
         return [...self::fact($at ? self::date($at) : null, $sub, tone:$failure ? 'danger' : null, cause:self::missingCause($w)),
-            'failure'=>$failure, 'at'=>$at ?: null, 'from'=>array_keys(array_filter($fresh, fn($f) => $at && (int)$f['checkedAt']===$at))];
+            'failedAt'=>$failedAt, 'at'=>$at ?: null, 'from'=>array_keys(array_filter($fresh, fn($f) => $at && (int)$f['checkedAt']===$at))];
     }
     public static function expires(?DomainSummary $s,array $keys,bool $active,?WatchName $watch=null): array
     {

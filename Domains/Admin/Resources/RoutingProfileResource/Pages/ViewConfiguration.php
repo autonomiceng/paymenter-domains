@@ -61,7 +61,7 @@ class ViewConfiguration extends RecordDetailPage
         $refusal = DnsTemplateUsage::refusal($r->id);
         $reason = $r->enabled ? $refusal : null;
         $monitor = Row::make('Monitoring', Value::plain($r->enabled ? Plain::On : Plain::Off,
-            $reason ?? ($profile ? 'Checks compare domains against this template.' : WatchFacts::TEMPLATE_UNAVAILABLE)))
+            $reason ?? (!$profile ? WatchFacts::TEMPLATE_UNAVAILABLE : ($r->enabled ? 'Checks compare domains against this template.' : 'Checks wait while this template is off.'))))
             ->actions($this->enableAction(), $this->disableAction());
         $controls = [$monitor];
         if ($refusal && $this->deleteAction()->isVisible()) {

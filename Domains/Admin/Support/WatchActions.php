@@ -87,6 +87,7 @@ final class WatchActions
     {
         return self::action('watch',(int)$w->id,$revision,'profile','Change')
             ->modalHeading('Change DNS template')->modalWidth(Width::Medium)
+            ->modalFooterActionsAlignment(\Filament\Support\Enums\Alignment::End)
             ->modalDescription('Checks compare '.$w->canonical_name.' with this template. Saving leaves live nameservers and DNS records unchanged.')
             ->modalSubmitActionLabel('Save')->schema(fn () => self::assignmentFields($w))
             ->visible(fn()=>in_array($w->state,['active','paused'],true) && Staff::can(Writes::VIEW) && Staff::can(Writes::MANAGE));

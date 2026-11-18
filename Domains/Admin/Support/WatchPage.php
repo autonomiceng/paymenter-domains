@@ -63,7 +63,9 @@ trait WatchPage
                 + (int) (\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::watchExpected($w) === null);
             $last = $facts['Checks']['Last check'] ?? [];
             $summary = $review ? [$review === 1 ? 'One setting needs review.' : "$review settings need review."] : [];
-            if ($last['failure'] ?? null) { $summary[] = $last['failure']; }
+            if (($last['tone'] ?? null) === 'danger') {
+                $summary[] = ($last['failedAt'] ?? null) ? 'Last check failed '.WatchFacts::date($last['failedAt']).'.' : 'A check failed.';
+            }
             if ($summary) { $head->note(implode(' ', $summary)); }
         }
         return $head;
