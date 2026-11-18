@@ -63,7 +63,7 @@ trait WatchPage
                 + (int) (\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::watchExpected($w) === null);
             $last = $facts['Checks']['Last check'] ?? [];
             $summary = $review ? [$review === 1 ? 'One setting needs review.' : "$review settings need review."] : [];
-            if (($last['tone'] ?? null) === 'danger') { $summary[] = 'Last check failed.'; }
+            if (($last['tone'] ?? null) === 'danger') { $summary[] = 'Checks need review.'; }
             if ($summary) { $head->note(implode(' ', $summary)); }
         }
         return $head;

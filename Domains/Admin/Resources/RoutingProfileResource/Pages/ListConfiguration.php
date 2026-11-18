@@ -3,14 +3,13 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource\Pages;
 use Filament\Actions\Action;
-use Livewire\Attributes\Locked;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{DefaultNameservers,Sheet,Staff,StaffTabs,WatchActions,WatchFacts};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Head,Row,SettingsRow,Value};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{DefaultNameservers,Staff,StaffTabs,WatchActions,WatchFacts};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Head,Row,Value};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\{Column,RecordListPage,Section};
 use Paymenter\Extensions\Servers\Domains\Models\WatchProfile;
 use Paymenter\Extensions\Servers\Domains\Presentation\{Fact,Plain,Reader,State};
-use Paymenter\Extensions\Servers\Domains\Services\{SiteDnsDefault,StaffWatchWrites as Writes};
+use Paymenter\Extensions\Servers\Domains\Services\{ManagedDnsSetup,SiteDnsDefault};
 /** Domains > DNS templates, a List page: the default nameservers for new domains on top, the templates they come from below. */
 class ListConfiguration extends RecordListPage
 {
@@ -29,7 +28,6 @@ class ListConfiguration extends RecordListPage
         unset($this->cachedSchemas['content']);
     }
     public function siteDefaultAction(): Action{return DefaultNameservers::choose(fn()=>$this->refreshTemplate());}
-    /** The nameservers new domains get and the template they come from, with the two ways to change them. */
     protected function summary(): array
     {
         $default = SiteDnsDefault::profile();
@@ -50,7 +48,7 @@ class ListConfiguration extends RecordListPage
 
     private function assigned(int $id): int
     {
-        $this->configuration ??= \Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::configuration();
+        $this->configuration ??= ManagedDnsSetup::configuration();
         return $this->counts[$id] ??= WatchFacts::usedBy($id, $this->configuration);
     }
     private function mark(int $id): ?string{$this->marks??=SiteDnsDefault::marks();return $this->marks[$id]??null;}
@@ -61,7 +59,7 @@ class ListConfiguration extends RecordListPage
         return [
             Column::value('name','Template',fn(WatchProfile $p): Value=>Value::fact(Fact::names([$p->name]),$this->mark((int)$p->id)))->fill(),
             // A retained template the editor would refuse reads Couldn't read, the same check as its detail page.
-            Column::value('nameservers','Nameservers',fn(WatchProfile $p): Value=>($r=$p->readProfile())&&($lines=Fact::names([self::nameservers($r->nameservers)]))?Value::fact($lines):Value::state(State::CouldntRead,Reader::Staff)),
+            Column::value('nameservers','Nameservers',fn(WatchProfile $p): Value=>($r=$p->readProfile())?Value::fact(Fact::names([self::nameservers($r->nameservers)])):Value::state(State::CouldntRead,Reader::Staff)),
             Column::text('assigned','Monitored domains',fn(WatchProfile $p) => (string) $this->assigned((int) $p->id))->end()
                 ->link(fn(WatchProfile $p) => RoutingProfileResource::getUrl('assigned',['record'=>$p])),
             Column::value('enabled','Monitoring',fn(WatchProfile $p): Value=>Value::plain($p->enabled?Plain::On:Plain::Off)),

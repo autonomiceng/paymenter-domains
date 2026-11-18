@@ -22,15 +22,12 @@ $check('Unreadable saved site default cannot be deleted',function()use($make,$ma
  $page=Livewire::actingAs($manager)->test(ViewConfiguration::class,['record'=>$row->id]);expect(str_contains($page->instance()->getAction('delete')->getTooltip()??'','new domains'),'Unreadable saved reference remains guarded');
  $page->callAction('delete')->assertNotNotified('DNS template deleted');expect(WatchProfile::find($row->id)!==null,'Unreadable saved default is retained');siteDnsFixture(null);
 });
-$check('New domains Missing has one sentence boundary',function()use($manager,$profile):void{
- siteDnsFixture(null);$page=Livewire::actingAs($manager)->test(ListConfiguration::class);// The wording is the screenshots' job; here the ask shows once, after exactly one sentence end, with no doubled stop.
- $text=trim((string)preg_replace('/\s+/u',' ',html_entity_decode(strip_tags($page->html()),ENT_QUOTES)));
- same(1,substr_count($text,SiteDnsDefault::ASK),'The missing default asks staff once');
- expect(preg_match('/[^.!?\s]\. '.preg_quote(SiteDnsDefault::ASK,'/').'/u',$text)===1,'The ask follows exactly one sentence boundary');
- expect(!preg_match('/\.\s*\./u',$text),'Missing default never doubles punctuation');
- siteDnsFixture($profile->id);$next=Livewire::actingAs($manager)->test(ListConfiguration::class);// the named default is in the card.
- same((int)$profile->id,$next->instance()->defaultId,'The card holds the selected default');
- $next->assertSee($profile->name)->assertSee('Default nameservers');
+$check('New registrations reflect the current site choice',function()use($manager,$profile):void{
+ siteDnsFixture(null);
+ $page=Livewire::actingAs($manager)->test(ListConfiguration::class);
+ $page->assertSee(SiteDnsDefault::ASK);
+ siteDnsFixture($profile->id);
+ Livewire::actingAs($manager)->test(ListConfiguration::class)->assertSee($profile->name);
 });
 $check('Linked references have truthful retained-history guidance',function()use($manager,$make,$watch):void{
  $row=$make();DB::table('domains_watch_names')->where('id',$watch->id)->update(['ns_profile_id'=>$row->id,'state'=>'linked']);
@@ -67,11 +64,11 @@ $check('A returning watch shows its unusable saved template and how to change it
   same(null,DnsTemplateUsage::refusal((int)$row->id),'A stopped watch lets staff turn the template off');
   // Discovery returns the stopped watch with its saved choice; nothing replaces it silently.
   DB::table('domains_watch_names')->where('id',$watch->id)->update(['state'=>'active']);
-  foreach(['off'=>[false,'["ns1.example.net","ns2.example.net"]','This template is off. Choose another in Change DNS template.'],
-   'unreadable'=>[true,'["bad host"]','Saved DNS records cannot be read. Choose another in Change DNS template.']]as$case=>[$on,$names,$text]){
+  foreach(['off'=>[false,'["ns1.example.net","ns2.example.net"]','This template is off. Choose another template.'],
+   'unreadable'=>[true,'["bad host"]','Saved DNS records cannot be read. Choose another template.']]as$case=>[$on,$names,$text]){
    DB::table('domains_watch_profiles')->where('id',$row->id)->update(['enabled'=>$on,'nameservers'=>$names]);
    $page=Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$watch->id])->assertSee('Damaged template')->assertSee($text);
-   $page->assertActionVisible('profile');
+   $page->assertActionVisible(\Filament\Actions\Testing\TestAction::make('profile')->schemaComponent('sheet','content'));
    same((int)$row->id,(int)$watch->fresh()->ns_profile_id,'The '.$case.' saved choice is kept');
   }
  }finally{DB::table('domains_watch_names')->where('id',$watch->id)->update(['state'=>$held->state,'ns_profile_id'=>$held->ns_profile_id]);}

@@ -31,6 +31,7 @@ class ViewWatch extends RecordDetailPage
             if ($title === 'Checks' && $failed) {
                 $rows[] = Row::notice('failed-check', Value::state(State::Failed, Reader::Staff, $checks['Last check']['sub']), $this->checkAction());
                 $entries['Last check']['tone'] = $entries['Last check']['sub'] = null;
+                if (!$entries['Last check']['value']) { unset($entries['Last check']); }
             }
             foreach ($entries as $label => $fact) {
                 $row = WatchRows::row($label, $fact, null);

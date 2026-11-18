@@ -12,7 +12,10 @@ use Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault;
 config(['domains.site_dns_default.nameservers'=>['ns1.deployment.test','ns2.deployment.test']]);
 extract(dnsFixture());
 staffPanel();$panel=\Filament\Facades\Filament::getCurrentPanel();
-\Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(fn()=>\Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource::registerRoutes($panel));app('router')->getRoutes()->refreshNameLookups();
+\Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(function () use ($panel) {
+    \Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource::registerRoutes($panel);
+    \Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource::registerRoutes($panel);
+});app('router')->getRoutes()->refreshNameLookups();
 $manager=staffUser(['admin.domains.view','admin.domains.manage-policy','admin.domains.settings.new_domain_dns','admin.domains.watch.view','admin.domains.watch.manage']);
 Auth::setUser($manager);
 $default=SiteDnsDefault::profile();

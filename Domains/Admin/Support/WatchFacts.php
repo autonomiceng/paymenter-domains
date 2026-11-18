@@ -85,10 +85,10 @@ final class WatchFacts
                 ? self::fact('Registered', 'Previously observed '.self::date($previous['checkedAt']).'.')
                 : self::fact(null, cause:self::missingCause($w, 'expiry'));
         }
-        foreach (['Nameservers' => 'dns', 'DNS records' => 'website'] as $label => $axis) {
-            if ($active && $checks[$label]['value'] === null && !ManagedDnsSetup::usable($profile)) {
-                $checks[$label]['cause'] = 'Waits for a DNS template that is on.';
-            }
+        foreach (['Nameservers' => 'delegation', 'DNS records' => 'points'] as $label => $kind) {
+            if (!$active || $checks[$label]['value'] !== null) { continue; }
+            if (!ManagedDnsSetup::usable($profile)) { $checks[$label]['cause'] = 'Waits for a DNS template that is on.'; }
+            elseif (self::dnsFailed($w, $kind)) { $checks[$label]['state'] = State::CouldntRead; }
         }
         // Registrar records exist only for a domain we register. The Domain section says their state once.
         if($w->managed_domain_id!==null){
@@ -126,26 +126,49 @@ final class WatchFacts
     private const EXPIRY_OK=['ready','rotation','no_coverage','not_registered','rate_limited','budget_exhausted','target_changed'];
     private static function registryFailed(WatchName $w): bool
     { $code=$w->work->firstWhere('kind','expiry')?->safe_code; return $code!==null && !in_array($code,self::EXPIRY_OK,true); }
-    /** The last check failed in whole or in part, by the rule Last check uses for its red line. The status never reads healthy beside it. */
-    public static function lastCheckFailed(WatchName $w,?DomainSummary $s): bool
+    private static function dnsFailed(WatchName $w, string $kind): bool
     {
-        if(!$s){return false;}
-        $running=$w->state==='active';
-        return self::registryFailed($w)||array_filter($s->freshness??[],fn($f)=>$f['checkedAt']!==null && $f['partial'] && (!$f['stale']||!$running))!==[];
+        $code = $w->work->firstWhere('kind', $kind)?->safe_code;
+        return in_array($code, ['resolver_failed', 'invalid_answer', 'ambiguous_empty', 'read_unavailable', 'deadline', 'clock_reversal'], true);
     }
-    /** The latest check across nameservers, records and registry; 'from' names the checks made at that instant. Only failed checks are red; waiting or old evidence explains its next step. */
+
+    private static function failure(WatchName $w, ?DomainSummary $s): ?string
+    {
+        $registry = self::registryFailed($w);
+        $dns = self::dnsFailed($w, 'delegation') || self::dnsFailed($w, 'points');
+        if ($registry && $dns) { return 'Registry and DNS checks failed.'; }
+        if ($registry) { return 'Registry lookup failed.'; }
+        if ($dns) { return 'DNS lookup failed.'; }
+        foreach ($s?->freshness ?? [] as $kind => $f) {
+            if ($f['checkedAt'] !== null && $f['partial'] && (!$f['stale'] || $w->state !== 'active')) {
+                $code = $w->work->firstWhere('kind', $kind)?->safe_code;
+                if (!in_array($code, ['budget_exhausted', 'rotation', 'nameservers_missing'], true)) { return 'Some checks failed.'; }
+            }
+        }
+        return null;
+    }
+    public static function lastCheckFailed(WatchName $w,?DomainSummary $s): bool
+    { return self::failure($w, $s) !== null; }
+
+    /** Last check time across all families. A failure can exist before any observation is saved. */
     public static function lastCheck(WatchName $w,?DomainSummary $s): array
     {
-        $fresh=$s?->freshness??[];$at=max([0,...array_map(fn($f)=>(int)$f['checkedAt'],$fresh)]);
-        if(!$s){$at=max((int)$w->delegation?->started_at,(int)$w->registry?->started_at);return [...self::fact($at?self::date($at):($w->state==='active'?null:''),cause:'No monitoring summary saved. Check the customer and domain records.'),'at'=>$at,'from'=>[]];}
-        if(!$at){return self::fact(null,cause:self::missingCause($w));}
-        $failed=self::registryFailed($w);
-        // A paused or stopped name reads as stale in every summary, so its saved failure still counts and it has no next check.
-        $running=$w->state==='active';
-        $partial=array_filter($fresh,fn($f)=>$f['checkedAt']!==null && $f['partial'] && (!$f['stale']||!$running));
-        $stale=$running?array_filter($fresh,fn($f)=>$f['stale']):[];
-        $retry=$running?' Checks retry automatically.':($w->state==='paused'?(\Paymenter\Extensions\Servers\Domains\Services\WatchDiscovery::canResume($w)?' Resume monitoring to check again.':' Checks start again when the hosting service is active.'):'');
-        return [...self::fact(self::date($at),$failed?'Registry lookup failed.'.$retry:($partial?'Some checks failed.'.$retry:($stale?'Some results are waiting for the next check.':null)),tone:$failed||$partial?'danger':null),'at'=>$at,'from'=>array_keys(array_filter($fresh,fn($f)=>(int)$f['checkedAt']===$at))];
+        $fresh = $s?->freshness ?? [];
+        $at = $s ? max([0,...array_map(fn($f)=>(int)$f['checkedAt'],$fresh)])
+            : max((int)$w->delegation?->started_at,(int)$w->points?->started_at,(int)$w->registry?->started_at);
+        $failure = self::failure($w, $s);
+        $sub = null;
+        if ($failure !== null) {
+            $sub = $failure.match ($w->state) {
+                'active' => ' Checks retry automatically.',
+                'paused' => \Paymenter\Extensions\Servers\Domains\Services\WatchDiscovery::canResume($w) ? ' Resume monitoring to check again.' : ' Checks start again when the hosting service is active.',
+                default => '',
+            };
+        } elseif ($at && $w->state === 'active' && array_filter($fresh, fn($f) => $f['stale'])) {
+            $sub = 'Some results are waiting for the next check.';
+        }
+        return [...self::fact($at ? self::date($at) : null, $sub, tone:$failure ? 'danger' : null, cause:self::missingCause($w)),
+            'at'=>$at ?: null, 'from'=>array_keys(array_filter($fresh, fn($f) => $at && (int)$f['checkedAt']===$at))];
     }
     public static function expires(?DomainSummary $s,array $keys,bool $active,?WatchName $watch=null): array
     {
@@ -160,9 +183,14 @@ final class WatchFacts
     /** The nameservers the last delegation check found, compared with the expected ones. */
     private static function nameservers(WatchName $w,?DomainSummary $s): array
     {
-        $o=$w->delegation;if(!$o?->dns){return self::fact(null,cause:self::missingCause($w,'delegation'));}
+        $o = $w->delegation;
+        if (!$o?->dns && $o) {
+            $o = \Paymenter\Extensions\Servers\Domains\Models\WatchDnsObservation::where('watch_id', $w->id)->where('user_id', $w->user_id)
+                ->where('check_kind', 'delegation')->whereNotNull('dns')->latest('id')->first();
+        }
+        if (!$o?->dns) { return self::fact(null, cause:self::missingCause($w,'delegation')); }
         $found=[];foreach($o->facts['queries']??[] as $q){if(($q['name']??null)===$w->canonical_name && ($q['type']??null)==='NS' && ($q['state']??null)==='rrset'){$found=array_values(array_filter(array_column($q['records']??[],'value'),'is_string'));}}
-        if ($s && ($s->lastKnown['dns']['stale'] ?? true)) {
+        if ($o->id !== $w->delegation?->id || self::dnsFailed($w, 'delegation') || ($s && ($s->lastKnown['dns']['stale'] ?? true))) {
             return self::fact($found ? implode(', ', $found) : WatchFindings::who($o->dns), 'Previously observed '.self::date($o->started_at).'.');
         }
         $expected=\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::watchExpected($w);
