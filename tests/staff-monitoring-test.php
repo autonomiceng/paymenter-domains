@@ -96,4 +96,34 @@ DB::table('domains_watch_registry')->where('id',$registryId)->delete();
 $facts = WatchFacts::for(WatchName::findOrFail($id));
 same(State::CouldntRead, $facts['Domain']['Expires']['state'], 'A failed registry read without prior facts has no observed expiry');
 
+// An authoritative absence supersedes an earlier expiry even after another failed lookup.
+$readRegistry = function (int $at, array $answer) use ($f, $id, $uid): void {
+    DB::table('domains_watch_work')->where('watch_id',$id)->where('kind','expiry')->update(['due_at'=>$at,'backoff_until'=>null]);
+    $ticket = $f['registry']->begin($id,$uid,$at);
+    expect($ticket && $f['registry']->finish($ticket,$answer,str_repeat('c',64),$at+1), 'Registry observation saved');
+};
+noticeRegistry($f,$attemptAt+60);
+$absentAt = $attemptAt+120;
+$readRegistry($absentAt,['result'=>'not_registered','reason'=>'not_registered','safe_code'=>'not_registered']);
+$readRegistry($absentAt+60,['result'=>'unknown','reason'=>'endpoint_failed','safe_code'=>'expiry_unknown']);
+$facts = WatchFacts::for(WatchName::findOrFail($id));
+same('Not registered', $facts['Checks']['Registry']['value'], 'The latest definitive registration status survives a failure');
+expect(str_contains($facts['Checks']['Registry']['sub'], WatchFacts::date($absentAt)), 'The absence retains its observation time');
+same(null, $facts['Domain']['Expires']['value'] ?? null, 'A superseded expiry cannot return');
+
+$pointsWork = DB::table('domains_watch_work')->where('watch_id',$id)->where('kind','points');
+$addressAt = $absentAt+180;
+$query = new \Paymenter\Extensions\Servers\Domains\Dns\DnsQuery($watch->canonical_name,'A');
+$answer = \Paymenter\Extensions\Servers\Domains\Dns\DnsAnswer::rrset($query,[['host'=>$query->name,'class'=>'IN','type'=>'A','ttl'=>60,'ip'=>'192.0.2.39']]);
+foreach ([$addressAt=>new \Paymenter\Extensions\Servers\Domains\Dns\DnsReading('points',website:true,email:false,queries:[$answer]),
+    $addressAt+60=>new \Paymenter\Extensions\Servers\Domains\Dns\DnsReading('points')] as $when=>$reading) {
+    $pointsWork->update(['due_at'=>$when,'backoff_until'=>null]);
+    $ticket = $dns->begin($id,$uid,'points',$when);
+    expect($ticket && $dns->finish($ticket,$reading,$when+1), 'Points observation saved');
+}
+$facts = WatchFacts::for(WatchName::findOrFail($id));
+same('A @ → 192.0.2.39', $facts['Evidence']['Public DNS']['value'], 'A failed refresh keeps the last public address');
+same([gmdate('c',$addressAt)], $times($facts['Evidence']['Public DNS']['sub']), 'The retained address keeps its own read time');
+same($addressAt+60, $facts['Checks']['Last check']['at'], 'The failure has a separate attempt time');
+
 $nativeSuccessful=true;echo "Staff monitoring list and details passed\n";

@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Presentation;
-use Paymenter\Extensions\Servers\Domains\Models\{Domain,ManagedPublicObservation,PublicDnsObservation,WatchName};
+use Paymenter\Extensions\Servers\Domains\Models\{Domain,ManagedPublicObservation,PublicDnsObservation,WatchDnsObservation,WatchName};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Value;
 /** Read-only evidence: public answers never certify registrar mutations or billing. */
@@ -12,6 +12,41 @@ final class MonitoringEvidence
     {
         return $w->managed_domain_id===null?null:Domain::whereKey($w->managed_domain_id)->where('user_id',$w->user_id)->where('domain',$w->canonical_name)->first();
     }
+    /** A failed points attempt leaves the last definitive address answer and its own timestamp visible. */
+    public static function forWatch(WatchName $watch): array
+    {
+        $attempt = $watch->points;
+        $name = $watch->canonical_name;
+        $evidence = self::read(self::domain($watch), $attempt, $name);
+        if (!$attempt || $attempt->result === 'complete' || $evidence['public_read'] !== 'unknown') { return $evidence; }
+        $stamp = \Paymenter\Extensions\Servers\Domains\Services\DomainSummaryContext::evidence('watch', (int)$watch->id, (int)$watch->user_id);
+        if (!$stamp) { return $evidence; }
+        $history = WatchDnsObservation::where('watch_id',$watch->id)->where('user_id',$watch->user_id)
+            ->where('watch_revision',$watch->revision)->where('check_kind','points')->where('id','<',$attempt->id);
+        foreach ($history->lazyByIdDesc(32) as $prior) {
+            try {
+                if (($prior->facts['presentation_stamp'] ?? null) !== $stamp) { continue; }
+            } catch (\Illuminate\Contracts\Encryption\DecryptException) { continue; }
+            [$answers,$read] = self::addresses($prior, $name);
+            if ($read === 'unknown') { continue; }
+            return [...$evidence,'public'=>$answers,'public_read'=>$read,'public_at'=>$prior->started_at,'public_stale'=>true];
+        }
+        return $evidence;
+    }
+
+    private static function addresses(?PublicDnsObservation $public, ?string $name): array
+    {
+        // How the public read ended: answered, a confirmed negative (every A/AAAA query got a valid negative reply), or
+        // unknown (a resolver failure, timeout or no address query), so an empty result never reads as confirmed absence.
+        $answers=[];$asked=[];
+        try{foreach($public?->facts['queries']??[] as $q){if(($q['name']??null)!==$name||!in_array($q['type']??null,['A','AAAA'],true)){continue;}
+            $asked[]=$q['state']??null;
+            foreach($q['records']??[] as $r){if(is_string($r['value']??null)&&filter_var($r['value'],FILTER_VALIDATE_IP)){$answers[]=$q['type'].' @ → '.$r['value'];}}}}
+        catch(\Illuminate\Contracts\Encryption\DecryptException){$answers=[];$asked=[];}
+        $publicRead=$public===null?null:($answers!==[]?'answered':($asked!==[]&&array_unique($asked)===['negative']?'negative':'unknown'));
+        return [$answers,$publicRead];
+    }
+
     public static function read(?Domain $d,?PublicDnsObservation $public=null,?string $name=null): array
     {
         $name??=$d?->domain;
@@ -21,14 +56,7 @@ final class MonitoringEvidence
         $state=!$states?'Unknown':(count(array_unique($states))===1&&$states[0]==='complete'?'Complete':(array_intersect($states,['complete','partial'])?'Partial':'Unknown'));
         $registrar=[];
         foreach($families['families']['dns']['records']??[] as $r){if(in_array($r['type']??null,['A','AAAA'],true)){$registrar[]=$r['type'].' '.($r['name']?:'@').' → '.$r['address'];}}
-        // How the public read ended: answered, a confirmed negative (every A/AAAA query got a valid negative reply), or
-        // unknown (a resolver failure, timeout or no address query), so an empty result never reads as confirmed absence.
-        $answers=[];$asked=[];
-        try{foreach($public?->facts['queries']??[] as $q){if(($q['name']??null)!==$name||!in_array($q['type']??null,['A','AAAA'],true)){continue;}
-            $asked[]=$q['state']??null;
-            foreach($q['records']??[] as $r){if(is_string($r['value']??null)&&filter_var($r['value'],FILTER_VALIDATE_IP)){$answers[]=$q['type'].' @ → '.$r['value'];}}}}
-        catch(\Illuminate\Contracts\Encryption\DecryptException){$answers=[];$asked=[];}
-        $publicRead=$public===null?null:($answers!==[]?'answered':($asked!==[]&&array_unique($asked)===['negative']?'negative':'unknown'));
+        [$answers,$publicRead] = self::addresses($public, $name);
         $registrarAt=$families['families']['dns']['at']??null;$failedAt=$families['read_failed_at']??null;
         if($failedAt!==null&&($registrarAt===null||strtotime($failedAt)>strtotime($registrarAt))){$registrarAt=$failedAt;}
         // Retained family values do not turn a failed registrar attempt into a complete read.

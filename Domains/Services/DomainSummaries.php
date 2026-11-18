@@ -36,7 +36,7 @@ final class DomainSummaries
         $group=[$column];if ($model!==WatchRegistryObservation::class) { $group[]='check_kind'; }
         $ids=(clone $q)->selectRaw('max(id)')->groupBy(...$group);
         foreach ($model===WatchRegistryObservation::class?['result']:['dns','website','email'] as $axis) {
-            $good=(clone $q)->when($axis==='result',fn($q)=>$q->where('result','facts'),fn($q)=>$q->whereNotNull($axis));
+            $good=(clone $q)->when($axis==='result',fn($q)=>$q->whereIn('result',['facts','not_registered']),fn($q)=>$q->whereNotNull($axis));
             $ids->union($good->selectRaw('max(id)')->groupBy(...$group));
         }
         return $model::whereIn('id',$ids)->orderByDesc('id')->get()->groupBy($column)->all();
@@ -128,10 +128,10 @@ final class DomainSummaries
                 $keys=DnsSignalLabels::projection($signals);$states=[];
                 if($kind==='managed' && in_array($id,$setupIds,true)){$states[]='domain.dns.not_configured';}$expiry=null;$precision=null;$source=null;$order=[];$due=null;$price=null;$off=false;$reminderOff=false;$projected=false;$invoiceMissing=false;$invoiceOverdue=false;$invoicePaid=false;$invoiceReview=false;$renewalClosed=false;$goes=null;$issue=null;$waits=null;
                 if ($kind==='watch') {
-                    $registryRows=$registry[$id]??collect();$r=$registryRows->first();$good=$registryRows->firstWhere('result','facts');$j=$jobs->firstWhere('kind','expiry');$match=$r && ($registryStamp=$c->stamp($kind,$id,'registry')) && hash_equals($registryStamp,$r->facts['presentation_stamp']??'');
+                    $registryRows=$registry[$id]??collect();$r=$registryRows->first();$good=$registryRows->first(fn($r)=>in_array($r->result,['facts','not_registered'],true));$j=$jobs->firstWhere('kind','expiry');$match=$r && ($registryStamp=$c->stamp($kind,$id,'registry')) && hash_equals($registryStamp,$r->facts['presentation_stamp']??'');
                     $until=$r?->valid_until;if ($r && WatchRegistryChecks::urgent($r->facts['expiry']??null,$now)) { $until=min((int)$until,$r->started_at+43200); }
                     $fresh['registry']=['checkedAt'=>$r?->started_at,'stale'=>!($match && $r->result==='facts' && $now>=$r->started_at && $now<$until && $j && in_array($j->safe_code,[null,'budget_exhausted'],true)),'partial'=>false,'nextCheck'=>$j?->due_at];
-                    if ($good) { $expiry=$good->facts['expiry']??null;$precision=$good->facts['precision']??null;$source='Public registry';$lastKnown['registry']=['value'=>$expiry,'checkedAt'=>$good->started_at,'stale'=>$fresh['registry']['stale'],'partial'=>false,'inScope'=>(bool)($good && $registryStamp && hash_equals($registryStamp,$good->facts['presentation_stamp']??''))]; }
+                    if ($good) { $expiry=$good->facts['expiry']??null;$precision=$good->facts['precision']??null;$source='Public registry';$lastKnown['registry']=['result'=>$good->result,'value'=>$expiry,'checkedAt'=>$good->started_at,'stale'=>$fresh['registry']['stale'],'partial'=>false,'inScope'=>(bool)($good && $registryStamp && hash_equals($registryStamp,$good->facts['presentation_stamp']??''))]; }
                     if ($t->state!=='active') { $states[]='watch.'.$t->state; }
                     $factsCurrent=!$fresh['registry']['stale'];
                     $semanticCurrent=$match && $j && $now>=$r->started_at && $now<$r->started_at+($r->reason==='no_coverage'?604800:172800) && !in_array($j->safe_code,['target_changed','expiry_unknown','deadline'],true) && in_array($r->reason,['not_registered','no_coverage'],true);

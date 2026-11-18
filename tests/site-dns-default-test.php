@@ -82,6 +82,11 @@ $settings->callAction('siteDefault',['profile'=>$default->id])->assertHasNoActio
 same($default->id,SiteDnsDefault::profile()->id,'Site settings save a single global reference');
 $edit = fn ($template) => \Livewire\Livewire::actingAs($manager)->test(
     \Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource\Pages\EditConfiguration::class, ['record'=>$template->id]);
+$draft = $edit($default)->set('data.website_endpoints','web.preview.test');
+same('No', panelRowValue($draft->html(),'New registrations'), 'Editing only a website target preserves registration defaults');
+expect(str_contains(panelRowValue($draft->html(),'Pending edits') ?? '', 'web.preview.test'), 'Preview identifies the unsaved hostname');
+$draft->set('data.nameservers',"ns1.preview.test\nns2.preview.test");
+same('Yes', panelRowValue($draft->html(),'New registrations'), 'Editing the default nameservers affects new registrations');
 $edit($default)->set('data.nameservers', "ns1.edited.test\nns2.edited.test")->call('save')->assertHasNoErrors();
 same(['ns1.edited.test','ns2.edited.test'],SiteDnsDefault::profile()->nameservers,'Editing the selected default changes its nameservers');
 $stale = $edit($default)->set('data.nameservers', "ns1.stale.test\nns2.stale.test");

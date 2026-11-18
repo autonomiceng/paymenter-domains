@@ -41,7 +41,8 @@ final class WatchActions
                 }
                 if($action==='read'){
                     $livewire->waitForCheck();
-                    Notification::make()->success()->title('Check requested')
+                    $retry = $arguments['retryKind'] ?? null;
+                    Notification::make()->success()->title($retry ? Writes::checkLabel($retry).' requested' : 'Check requested')
                         ->body('This takes up to about six minutes. This page updates by itself.')->persistent()->send();
                     return;
                 }
@@ -146,8 +147,8 @@ final class WatchActions
         ];
     }
     /** "Check now" for Missing check-time hints; hidden unless the domain is monitored. */
-    public static function check(WatchName $w,int $revision): Action
-    {return self::action('watch',(int)$w->id,$revision,'read','Check now')->visible(fn()=>$w->state==='active' && Staff::can(Writes::VIEW)&&Staff::can(Writes::MANAGE));}
+    public static function check(WatchName $w,int $revision,?string $retryKind=null): Action
+    {return self::action('watch',(int)$w->id,$revision,'read','Check now')->arguments($retryKind ? ['retryKind'=>$retryKind] : [])->visible(fn()=>$w->state==='active' && Staff::can(Writes::VIEW)&&Staff::can(Writes::MANAGE));}
     public static function enable(WatchProfile $row,int $revision): Action
     {
         return self::templateGuard(self::action('profile',(int)$row->id,$revision,'enable','Turn on')->view('domains::admin.template-switch')

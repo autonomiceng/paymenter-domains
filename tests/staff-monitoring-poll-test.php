@@ -89,6 +89,40 @@ $reload->call('pollCheck')->assertDontSee('wire:poll.5s',false)->assertSee('wire
 Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id])->assertDontSee('wire:poll.5s',false)->assertSee('wire:poll.60s="refreshFacts"',false)->assertNotified('Check is taking longer');
 \Carbon\Carbon::setTestNow();
 
+// A failure notice retries the registry. DNS work cannot acknowledge the request, even after a reload.
+$expiryWork = DB::table('domains_watch_work')->where('watch_id',$id)->where('kind','expiry');
+$failRegistry = function(int $when) use ($id,$uid,$f,$expiryWork): void {
+    $expiryWork->update(['due_at'=>$when,'backoff_until'=>null]);
+    $ticket = $f['registry']->begin($id,$uid,$when);
+    expect($ticket && $f['registry']->finish($ticket,['result'=>'unknown','reason'=>'endpoint_failed','safe_code'=>'expiry_unknown'],
+        str_repeat('c',64),$when+1), 'Failed registry observation saved');
+};
+$failRegistry(time()-30);
+$clearCooldown = fn()=>DB::table('domains_watch_staff_claims')->where('subject_id',$id)->where('action','read')->update(['created_at'=>time()-301]);
+$clearCooldown();
+$future = time()+86400;
+$dnsWork = DB::table('domains_watch_work')->where('watch_id',$id)->whereIn('kind',['delegation','points']);
+$dnsWork->update(['due_at'=>$future]);
+$retry = Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id]);
+$read = \Filament\Actions\Testing\TestAction::make('read')->schemaComponent('sheet','content');
+$retry->callAction($read);
+same($future,(int)$dnsWork->min('due_at'),'Registry backoff leaves healthy DNS checks alone');
+$expiryWork->update(['due_at'=>$future,'backoff_until'=>time()-1]);
+$retry->callAction($read);
+expect($expiryWork->value('due_at')<$future && $retry->get('pendingCheck'), 'The retry advances the failed registry kind after backoff');
+noticeDns($f,time()+2);
+$retry=Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id])->call('pollCheck');
+expect((bool)$retry->get('pendingCheck'), 'A newer unrelated DNS result leaves the registry request pending');
+$failRegistry(time()+4);
+$retry->call('pollCheck')->assertNotified(\Filament\Notifications\Notification::make()->warning()->title('Registry lookup failed'));
+same([], $retry->get('pendingCheck'), 'A failed retry finishes with a warning');
+$clearCooldown();
+$expiryWork->update(['backoff_until'=>time()-1]);
+$retry->callAction($read);
+noticeRegistry($f,time()+6);
+$retry->call('pollCheck')->assertNotified(\Filament\Notifications\Notification::make()->success()->title('Registry lookup finished'));
+same([], $retry->get('pendingCheck'), 'A new registry result completes its retry');
+
 // Staff have no Stop: Pause is the supported way to halt checks, and the page then reads Paused.
 Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id])->assertActionDoesNotExist('retire')->callAction('pause')->assertNotified('Monitoring paused');same('paused',WatchName::find($id)->state,'Pause saves');
 same('Paused',WatchFindings::status(WatchName::find($id),[])['label'],'Paused status');

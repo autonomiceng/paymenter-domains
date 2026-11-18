@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use App\Models\User;
+use Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence;
 use Paymenter\Extensions\Servers\Domains\Presentation\State;
 use Paymenter\Extensions\Servers\Domains\Services\{SiteDnsDefault, ManagedDnsSetup, WatchTemplateAssignment};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource;
@@ -58,9 +59,9 @@ final class WatchFacts
         $checks['Monitoring alerts']=self::fact($on&&$active?'On':'Off',implode(' · ',array_filter([$on&&$active?null:$off,$failed['text']??null]))?:null,tone:$failed['tone']??null);
         // An empty string does not apply here and stays hidden; null is Missing.
         $shown=fn(array $facts)=>array_filter($facts,fn($f)=>$f['value']!=='');
-        $e=\Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence::read(\Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence::domain($w),$w->points,$w->canonical_name);
+        $e=MonitoringEvidence::forWatch($w);
         // Comparison needs a template; saved public answers do not. Never label retained evidence Missing.
-        if($w->points && $s?->website===null && $s?->email===null && $e['public']){
+        if($w->points && $s?->website===null && $s?->email===null && $e['public'] && !self::dnsFailed($w,'points')){
             $at=$e['public_at'];
             $checks['DNS records']=self::fact(implode('; ',$e['public']),
                 new \Illuminate\Support\HtmlString(($e['public_stale']?'Not current. ':'').($at&&($when=$checked($at,true))!==null?$when.'. ':'').
@@ -79,6 +80,8 @@ final class WatchFacts
         if (self::registryFailed($w)) {
             $prior = $s?->lastKnown['registry'] ?? [];
             $observed = ($prior['inScope'] ?? false) ? 'Previously observed '.self::date($prior['checkedAt']).'.' : null;
+            $absent = ($prior['result'] ?? null) === 'not_registered';
+            if ($observed && $absent) { unset($domain['Expires']); }
             if (isset($domain['Expires']) && $observed && $prior['value']) {
                 $domain['Expires'] = self::fact(\Carbon\CarbonImmutable::parse($prior['value'])->format('M j, Y'), $observed);
             }
@@ -87,12 +90,12 @@ final class WatchFacts
                 if (empty($domain[$label]['value'])) { $domain[$label]['state'] = State::CouldntRead; }
             }
             if (isset($checks['Registry'])) {
-                $checks['Registry'] = $observed ? self::fact('Registered', $observed) : [...self::fact(null), 'state' => State::CouldntRead];
+                $checks['Registry'] = $observed ? self::fact($absent ? 'Not registered' : 'Registered', $observed) : [...self::fact(null), 'state' => State::CouldntRead];
             }
         } elseif (isset($checks['Registry']) && ($s?->freshness['registry']['stale'] ?? true) && $checks['Registry']['value'] === 'Registered') {
             $previous = $s?->lastKnown['registry'] ?? [];
             $checks['Registry'] = ($previous['inScope'] ?? false)
-                ? self::fact('Registered', 'Previously observed '.self::date($previous['checkedAt']).'.')
+                ? self::fact($previous['result'] === 'not_registered' ? 'Not registered' : 'Registered', 'Previously observed '.self::date($previous['checkedAt']).'.')
                 : self::fact(null, cause:self::missingCause($w, 'expiry'));
         }
         foreach (['Nameservers' => 'delegation', 'DNS records' => 'points'] as $label => $kind) {
@@ -115,9 +118,9 @@ final class WatchFacts
             if($at&&$key==='registrar'&&$e['registrar_read']!=='complete'){
                 $time=Sheet::moment(is_int($at)?$at:(int)strtotime($at),'Last tried')->toHtml();
             }
-            $sub=$at?rtrim(($key==='public'&&$e['public_stale']?'Not current. ':'').(!$e[$key]&&$time!==null?'No answers were saved. ':'').$time):'No saved observation.';
-            $evidence[$label]=[...self::fact($e[$key]?implode('; ',$e[$key]):'Unknown',$at?($sub===''?null:new \Illuminate\Support\HtmlString($sub)):$sub),
-                'state'=>$key==='public'&&!$e[$key]&&$e['public_read']==='unknown'?\Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead:null];}
+            $sub=$at?rtrim(($key==='public'&&$e['public_stale']?'Not current. ':'').(!$e[$key]&&$time!==null&&($key!=='public'||$e['public_read']!=='negative')?'No answers were saved. ':'').$time):'No saved observation.';
+            $evidence[$label]=[...self::fact($e[$key]?implode('; ',$e[$key]):($key==='public' && $e['public_read']==='negative' ? 'None' : 'Unknown'),$at?($sub===''?null:new \Illuminate\Support\HtmlString($sub)):$sub),
+                'state'=>$key==='public'&&!$e[$key]&&$e['public_read']==='unknown'?State::CouldntRead:null];}
         return array_filter(['Domain'=>$shown($domain),'Checks'=>$shown($checks),'Evidence'=>$evidence]);
     }
     /** A saved choice is never replaced automatically, including on a watch that returns after its template was turned off. */
@@ -142,23 +145,23 @@ final class WatchFacts
         return in_array($code, ['resolver_failed', 'invalid_answer', 'ambiguous_empty', 'read_unavailable', 'deadline', 'clock_reversal'], true);
     }
 
-    private static function failure(WatchName $w, ?DomainSummary $s): ?string
+    private static function failedKinds(WatchName $w, ?DomainSummary $s): array
     {
-        $registry = self::registryFailed($w);
-        $dns = self::dnsFailed($w, 'delegation') || self::dnsFailed($w, 'points');
-        if ($registry && $dns) { return 'Registry and DNS checks failed.'; }
-        if ($registry) { return 'Registry lookup failed.'; }
-        if ($dns) { return 'DNS lookup failed.'; }
-        foreach ($s?->freshness ?? [] as $kind => $f) {
-            if ($f['checkedAt'] !== null && $f['partial'] && (!$f['stale'] || $w->state !== 'active')) {
-                $code = $w->work->firstWhere('kind', $kind)?->safe_code;
-                if (!in_array($code, ['budget_exhausted', 'rotation', 'nameservers_missing'], true)) { return 'Some checks failed.'; }
+        $kinds = [];
+        if (self::registryFailed($w)) { $kinds[] = 'expiry'; }
+        foreach (['delegation','points'] as $kind) {
+            $f = $s?->freshness[$kind] ?? null;
+            $partial = $f && $f['checkedAt'] !== null && $f['partial'] && (!$f['stale'] || $w->state !== 'active');
+            $code = $w->work->firstWhere('kind', $kind)?->safe_code;
+            if (self::dnsFailed($w, $kind) || ($partial && !in_array($code, ['budget_exhausted','rotation','nameservers_missing'],true))) {
+                $kinds[] = $kind;
             }
         }
-        return null;
+        return $kinds;
     }
+
     public static function lastCheckFailed(WatchName $w,?DomainSummary $s): bool
-    { return self::failure($w, $s) !== null; }
+    { return self::failedKinds($w, $s) !== []; }
 
     /** Last check time across all families. A failure can exist before any observation is saved. */
     public static function lastCheck(WatchName $w,?DomainSummary $s): array
@@ -166,7 +169,18 @@ final class WatchFacts
         $fresh = $s?->freshness ?? [];
         $at = $s ? max([0,...array_map(fn($f)=>(int)$f['checkedAt'],$fresh)])
             : max((int)$w->delegation?->started_at,(int)$w->points?->started_at,(int)$w->registry?->started_at);
-        $failure = self::failure($w, $s);
+        $failed = self::failedKinds($w, $s);
+        $retryKind = $failed[0] ?? null;
+        foreach ($failed as $kind) {
+            $work = $w->work->firstWhere('kind',$kind);
+            if ($work && !$work->claim && $work->backoff_until <= time() && $work->lease_until <= time()) { $retryKind = $kind; break; }
+        }
+        $failure = match (true) {
+            !$failed => null,
+            count($failed) > 1 && in_array('expiry',$failed,true) => 'Registry and DNS checks failed.',
+            $retryKind === 'expiry' => 'Registry lookup failed.',
+            default => 'DNS lookup failed.',
+        };
         $sub = null;
         if ($failure !== null) {
             $sub = $failure.match ($w->state) {
@@ -186,7 +200,7 @@ final class WatchFacts
             }
         }
         return [...self::fact($at ? self::date($at) : null, $sub, tone:$failure ? 'danger' : null, cause:self::missingCause($w)),
-            'failedAt'=>$failedAt, 'at'=>$at ?: null, 'from'=>array_keys(array_filter($fresh, fn($f) => $at && (int)$f['checkedAt']===$at))];
+            'retryKind'=>$retryKind, 'failedAt'=>$failedAt, 'at'=>$at ?: null, 'from'=>array_keys(array_filter($fresh, fn($f) => $at && (int)$f['checkedAt']===$at))];
     }
     public static function expires(?DomainSummary $s,array $keys,bool $active,?WatchName $watch=null): array
     {

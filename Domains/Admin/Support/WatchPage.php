@@ -6,6 +6,7 @@ use Filament\Actions\Action;
 use Filament\Navigation\NavigationItem;
 use Filament\Notifications\Notification;
 use Livewire\Attributes\Locked;
+use Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites as Writes;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\WatchHistory;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Head;
@@ -23,21 +24,55 @@ trait WatchPage
     public function mount(int|string $record): void { parent::mount($record); $this->revision = (int) $this->getRecord()->revision; $this->waitForCheck(); }
     public function waitForCheck(): void
     {
-        $w = $this->getRecord();$at = WatchAudit::where('subject_type', 'watch')->where('subject_id', $w->id)->where('event', 'staff_read_requested')->orderByDesc('id')->first(['created_at', 'time_zone'])?->created_at?->getTimestamp();
-        $this->pendingCheck = [];if ($w->state !== 'active' || !$at) { return; }
+        $w = $this->getRecord();
+        $request = WatchAudit::where('subject_type','watch')->where('subject_id',$w->id)
+            ->where('event','staff_read_requested')->latest('id')->first(['created_at','time_zone','data']);
+        $this->pendingCheck = [];
+        if ($w->state !== 'active' || !$request) { return; }
+        $at = $request->created_at->getTimestamp();
+        try { $data = $request->data; }
+        catch (\Illuminate\Contracts\Encryption\DecryptException) { return; }
+        if (isset($data['retry_kind'])) {
+            $this->pendingCheck = [$at+360, $data['after_id'], $data['retry_kind'], $data['backoff_until']];
+            if ($this->retryOutcome() !== null) { $this->pendingCheck = []; }
+            elseif (now()->timestamp >= $at+360) { $this->pollCheck(); }
+            return;
+        }
         $before = max((int) WatchDnsObservation::where('watch_id', $w->id)->where('completed_at', '<', $at)->max('started_at'),
             (int) WatchRegistryObservation::where('watch_id', $w->id)->where('completed_at', '<', $at)->max('started_at'));
         if ($this->checkTime() <= $before) { $this->pendingCheck = [$at + 360, $before]; }
         if ($this->pendingCheck && now()->timestamp >= $this->pendingCheck[0]) { $this->pollCheck(); }
     }
     private function checkTime(): int { $w = $this->getRecord(); return max((int) $w->delegation?->started_at, (int) $w->points?->started_at, (int) $w->registry?->started_at); }
+    /** A targeted retry finishes only on evidence from its own work row or observation stream. */
+    private function retryOutcome(): ?bool
+    {
+        [, $after, $kind, $backoff] = $this->pendingCheck;
+        $w = $this->getRecord();
+        $observation = $w->{$kind === 'expiry' ? 'registry' : $kind};
+        $work = $w->work->firstWhere('kind',$kind);
+        if (($work?->backoff_until ?? 0) > $backoff && $work->backoff_until > now()->timestamp) { return false; }
+        if (!$observation || $observation->id <= $after) { return null; }
+        return $kind === 'expiry'
+            ? in_array($observation->result,['facts','not_registered'],true) || $observation->reason === 'no_coverage'
+            : $observation->result === 'complete' || $observation->safe_code === 'nameservers_missing';
+    }
     /** Refresh saved facts only. Keep the mounted revision so stale actions still refuse. */
     public function refreshFacts(): void { $this->getRecord()->refresh(); $this->resolved = null; }
     public function pollCheck(): void
     {
         if (!$this->pendingCheck) { return; }
         $this->refreshFacts();[$until, $before] = $this->pendingCheck;
-        if ($this->checkTime() > $before) { Notification::make()->success()->title('Check finished')->send(); }
+        $kind = $this->pendingCheck[2] ?? null;
+        if ($kind !== null) {
+            $outcome = $this->retryOutcome();
+            $label = Writes::checkLabel($kind);
+            if ($outcome === true) { Notification::make()->success()->title($label.' finished')->send(); }
+            elseif ($outcome === false) { Notification::make()->warning()->title($label.' failed')->send(); }
+            elseif (now()->timestamp >= $until) { Notification::make()->warning()->title($label.' is taking longer')->send(); }
+            else { return; }
+        }
+        elseif ($this->checkTime() > $before) { Notification::make()->success()->title('Check finished')->send(); }
         elseif (now()->timestamp >= $until) { Notification::make()->warning()->title('Check is taking longer')->body('Last check has not changed. Checks keep retrying. Open Registrars and check the background worker.')->persistent()->send(); }
         else { return; }
         $this->pendingCheck = [];
@@ -87,5 +122,5 @@ trait WatchPage
     }
     public function getBreadcrumbs(): array { return [WatchResource::getUrl() => 'Monitored domains', $this->getRecord()->canonical_name]; }
     /** Check now next to a check time that isn't saved yet; mounted as a page action. */
-    public function checkAction(): Action { return WatchActions::check($this->getRecord(), $this->revision); }
+    public function checkAction(): Action { return WatchActions::check($this->getRecord(), $this->revision, $this->watchFacts()['facts']['Checks']['Last check']['retryKind'] ?? null); }
 }

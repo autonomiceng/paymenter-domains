@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Models\User;
+use Paymenter\Extensions\Servers\Domains\Dns\RoutingProfile;
 use Illuminate\Support\Facades\{Crypt,DB};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Models\{WatchName,WatchAudit,WatchProfile,WatchProductMap};
@@ -64,9 +65,24 @@ final class StaffWatchWrites
                     // Enqueue eligibility only: ordinary dispatcher performs the read outside this transaction. A missing-nameserver answer is a successful check.
                     $q=DB::table('domains_watch_work')->where('watch_id',$id);
                     if(!(clone$q)->exists()){throw new \DomainException('This watch has no scheduled checks yet.');}
-                    $count=$q->whereNull('claim')->where(fn($q)=>$q->whereNull('backoff_until')->orWhere('backoff_until','<=',time()))->where(fn($q)=>$q->whereNull('safe_code')->orWhereIn('safe_code',['ready','rotation','nameservers_missing']))->update(['due_at'=>time()]);
-                    // Nothing to advance: refuse, so the rollback keeps the five-minute cooldown free.
-                    if($count===0){throw new \DomainException(self::BUSY);}$data=['eligible_rows'=>$count];
+                    $retryKind = $input['retryKind'] ?? null;
+                    if ($retryKind !== null) {
+                        $label = self::checkLabel($retryKind);
+                        $work = (clone $q)->where('kind',$retryKind)->lockForUpdate()->first();
+                        if (!$work || $work->claim !== null || $work->lease_until > time() || $work->backoff_until > time()) {
+                            throw new \DomainException($label.' is running or waiting for its automatic retry.');
+                        }
+                        if (!in_array($work->safe_code, ['expiry_unknown','resolver_failed','invalid_answer','ambiguous_empty','read_unavailable','deadline','clock_reversal'], true)) {
+                            throw new \DomainException($label.' changed. Refresh the page to see its latest result.');
+                        }
+                        $observation = $row->{$retryKind === 'expiry' ? 'registry' : $retryKind};
+                        $data = ['retry_kind'=>$retryKind, 'after_id'=>(int)$observation?->id, 'backoff_until'=>(int)$work->backoff_until];
+                        $q->where('id',$work->id)->update(['due_at'=>time()]);
+                    } else {
+                        $count=$q->whereNull('claim')->where(fn($q)=>$q->whereNull('backoff_until')->orWhere('backoff_until','<=',time()))->where(fn($q)=>$q->whereNull('safe_code')->orWhereIn('safe_code',['ready','rotation','nameservers_missing']))->update(['due_at'=>time()]);
+                        // Refusing rolls back the claim and leaves the cooldown free.
+                        if($count===0){throw new \DomainException(self::BUSY);}$data=['eligible_rows'=>$count];
+                    }
                 }elseif($action!=='note'){throw new \DomainException('The watch state changed. Reload and try again.');}
             }elseif($kind==='mapping' && $action==='enable'){
                 $row=(new WatchMappings())->enable($actor,$id,$before,$reason);
@@ -90,8 +106,10 @@ final class StaffWatchWrites
                 // Hosting products have no field to save: the field is always the order's domain, else hostname.
                 $row->edited_by=$actor->id;$row->reason=$reason;
                 $row->name=(string)($input['name']??'');self::requireUniqueName($row->name,$row->exists?(int)$row->id:null);
-                $row->nameservers=self::lines($input['nameservers']??'');
-                foreach(['website_endpoints','email_endpoints'] as $field){$row->$field=['exact'=>self::lines($input[$field]??''),'ips'=>self::lines($input[$field.'_ips']??''),'suffix'=>self::lines($input[$field.'_suffix']??'')];}
+                $records = self::routingProfile($input);
+                $row->nameservers = $records->nameservers;
+                $row->website_endpoints = $records->website;
+                $row->email_endpoints = $records->email;
             }else{throw new \DomainException('Reload and try again.');}
             if(!($kind==='watch' && in_array($action,['read','note'],true)) && !($kind==='mapping' && in_array($action,['enable','disable'],true))){$row->revision=$before+1;$row->save();}self::authorize($actor);
             if($kind==='watch'){WatchAudit::create(['subject_type'=>$kind,'subject_id'=>$row->id,'user_id'=>$kind==='watch'?$row->user_id:null,'actor_id'=>$actor->id,
@@ -113,6 +131,19 @@ final class StaffWatchWrites
         $folded=class_exists(\Normalizer::class)?(\Normalizer::normalize($name,\Normalizer::FORM_KC)?:$name):$name;
         $visible=preg_replace('/\p{Cf}+/u','',$folded)??$folded;
         return mb_strtolower(trim(preg_replace('/\s+/u',' ',$visible)??$visible));
+    }
+    public static function checkLabel(string $kind): string
+    {
+        return match ($kind) {
+            'expiry'=>'Registry lookup', 'points'=>'DNS records check', 'delegation'=>'Nameserver check',
+            default=>throw new \DomainException('Unknown check. Reload the page and try again.'),
+        };
+    }
+    public static function routingProfile(array $input): RoutingProfile
+    {
+        $rules = static fn(string $key): array => ['exact'=>self::lines($input[$key] ?? ''),
+            'suffix'=>self::lines($input[$key.'_suffix'] ?? ''), 'ips'=>self::lines($input[$key.'_ips'] ?? '')];
+        return new RoutingProfile(self::lines($input['nameservers'] ?? ''), $rules('website_endpoints'), $rules('email_endpoints'));
     }
     private static function lines(mixed $value): array
     { if(!is_string($value) || strlen($value)>8192){throw new \DomainException('Enter one DNS target per line.');}return array_values(array_filter(array_map('trim',preg_split('/\R/',$value)))); }

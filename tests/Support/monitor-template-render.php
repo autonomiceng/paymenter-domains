@@ -26,19 +26,20 @@ $manager->role->update(['permissions'=>[...$manager->role->permissions,\Paymente
 \Paymenter\Extensions\Servers\Domains\Admin\Support\DialogFooter::boot();
 panelTheme(getenv('PAYMENTER_TEST_FIXTURE'));
 foreach (['watch'=>[ViewWatch::class,$id], 'assignment'=>[ViewWatch::class,$id], 'templates'=>[ListConfiguration::class,null], 'template'=>[ViewConfiguration::class,$off->id],
-    'assigned'=>[AssignedDomains::class,$off->id], 'edit'=>[EditConfiguration::class,$off->id]] as $name=>[$class,$record]) {
+    'assigned'=>[AssignedDomains::class,$off->id], 'edit'=>[EditConfiguration::class,$profile->id]] as $name=>[$class,$record]) {
     $page = Livewire::actingAs($manager)->test($class, $record ? ['record'=>$record] : []);
     if ($name === 'assignment') {
         $page->mountAction(TestAction::make('profile')->schemaComponent('sheet','content'));
     }
+    if ($name === 'edit') { $page->set('data.website_endpoints','www.preview.example'); }
     $path = $argv[1].'/'.$name.'.html';
     writePanelPage($path, $page, implode('', $page->effects['partials'] ?? []));
     if ($name === 'edit') {
         // skin-render has no Livewire runtime. Show the native editor's prefilled form state.
         $state = $page->get('data');
-        $html = preg_replace_callback('~<input\b[^>]*wire:model="data\.name"[^>]*>~s',
+        $html = preg_replace_callback('~<input\b[^>]*wire:model[^=\s]*="data\.name"[^>]*>~s',
             fn($m) => preg_replace('~\s*/?>$~',' value="'.e($state['name']).'">',$m[0]), file_get_contents($path));
-        $html = preg_replace_callback('~(<textarea\b[^>]*wire:model="data\.([\w]+)"[^>]*>).*?(</textarea>)~s',
+        $html = preg_replace_callback('~(<textarea\b[^>]*wire:model[^=\s]*="data\.([\w]+)"[^>]*>).*?(</textarea>)~s',
             fn($m) => $m[1].e($state[$m[2]] ?? '').$m[3], $html);
         writeRenderArtifact($path,$html);
     } elseif ($name === 'assignment') {

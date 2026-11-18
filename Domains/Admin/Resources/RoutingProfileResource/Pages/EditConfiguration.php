@@ -45,27 +45,53 @@ class EditConfiguration extends RecordDetailPage
     }
     public function form(Schema $schema): Schema
     {
-        return $schema->statePath('data')->components(WatchActions::templateFields($this->getRecord()));
+        return $schema->statePath('data')->live(debounce: 300)->components(WatchActions::templateFields($this->getRecord()));
     }
     protected function sections(): array
     {
         return [Section::make('Template', [Partial::make('domains::admin.template-editor', [
-            'editor' => $this, 'cancelUrl' => $this->detailUrl(),
+            'editor' => $this,
         ])])];
     }
     protected function rail(): array
     {
         $profile = $this->getRecord();
-        $count = WatchFacts::usedBy($profile->id);
-        $default = SiteDnsDefault::profile();
-        $registration = $this->defaultId ? 'New registrations using the default get the saved nameservers. Transfers keep their own.'
-            : ($default ? 'New registrations use '.$default->name.'.' : 'No template is selected for new registrations.');
-        return [Section::make('What saving changes', [
-            Row::make('New registrations', Value::plain($this->defaultId ? Plain::Yes : Plain::No, $registration)),
-            Row::make('Monitored domains', Value::fact(Fact::count($count), $profile->enabled
-                ? 'Future checks use the saved records when monitoring runs.' : 'Checks wait while this template is off.')),
-            Row::make('Live DNS', Value::plain(Plain::No, 'Existing domains keep their live nameservers and records.')),
-        ])];
+        $rows = [];
+        try {
+            $draft = Writes::routingProfile($this->data);
+            $saved = $profile->profile();
+            $changes = [];
+            $checks = [];
+            $name = trim((string) ($this->data['name'] ?? ''));
+            if ($name !== $profile->name) { $changes[] = 'Name changes to '.$name.'.'; }
+            $compare = static function (string $label, array $before, array $after) use (&$changes): void {
+                foreach (array_diff($before, $after) as $value) { $changes[] = 'Remove '.$label.' '.$value; }
+                foreach (array_diff($after, $before) as $value) { $changes[] = 'Add '.$label.' '.$value; }
+            };
+            $compare('nameserver', $saved->nameservers, $draft->nameservers);
+            $nsChanged = $saved->nameservers !== $draft->nameservers;
+            if ($nsChanged) { $checks[] = 'nameservers'; }
+            foreach (['website', 'email'] as $axis) {
+                if ($saved->$axis === $draft->$axis) { continue; }
+                $checks[] = $axis.' records';
+                foreach (['exact'=>'hostname', 'suffix'=>'hostname suffix', 'ips'=>'IP address'] as $key=>$label) {
+                    $compare($axis.' '.$label, $saved->{$axis}[$key], $draft->{$axis}[$key]);
+                }
+            }
+            $rows[] = Row::make('Pending edits', $changes ? Value::fact(Fact::lines($changes)) : Value::plain(Plain::None));
+            $registration = $nsChanged && $this->defaultId;
+            $rows[] = Row::make('New registrations', Value::plain($registration ? Plain::Yes : Plain::No,
+                $registration ? 'New registrations use the edited nameservers.' : 'Registration nameservers stay the same.'));
+            $monitor = $checks ? 'Future checks use the edited '.\Illuminate\Support\Arr::join($checks, ', ', ' and ').'.'
+                : 'Checks keep their current nameserver and record settings.';
+            $rows[] = Row::make('Monitored domains', Value::fact(Fact::count(WatchFacts::usedBy($profile->id)),
+                $profile->enabled ? $monitor : 'Checks wait while this template is off.'));
+        } catch (\InvalidArgumentException|\DomainException) {
+            $rows[] = Row::make('Pending edits', Value::plain(Plain::None, 'Enter valid DNS targets to preview the changes.'));
+        }
+        $rows[] = Row::make('Live DNS', Value::plain(Plain::No, 'Existing domains keep their live nameservers and records.'));
+        $rows[] = Partial::make('domains::admin.template-editor-actions', ['cancelUrl'=>$this->detailUrl()]);
+        return [Section::make('What saving changes', $rows)];
     }
     public function save(): void
     {
