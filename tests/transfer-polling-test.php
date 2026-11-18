@@ -50,7 +50,7 @@ $clock->instant=$now;activeFixtureRepublish($bindings,$tlds[1]);
 // No customer or staff event extends the original window, and a deadline is never negative proof.
 DB::table('domains_read_budgets')->delete();
 $op=$prepare('deadline');HistoryAcceptances::save(new HistoryAcceptance($binding,'America/Los_Angeles',0,8*86400,'namesilo_transfer_v1'));
-$observe->status='Pending at Registry';$reads=[];
+$observe->status='Pending at Registry';$observe->fault='reject';$reads=[];
 while($clock->now()->getTimestamp()<TransferPolling::deadline($op)){
     $reads[]=$clock->now()->getTimestamp();$r=$reconcile->run($op->id);
     $r=$op->fresh();$calls=count($observe->calls);$reconcile->run($op->id);same($calls,count($observe->calls),'Early duplicate does no I/O');
@@ -59,12 +59,12 @@ while($clock->now()->getTimestamp()<TransferPolling::deadline($op)){
 $calls=count($observe->calls);$r=$reconcile->run($op->id);expect(count($observe->calls)>$calls,'Expiry performs a final bounded check');same('transfer_deadline_passed',$r->policy['reconciliation']['reason'],'Original seven-day deadline surfaces one exception');
 same(true,$r->policy['reconciliation']['staff_alert'],'Deadline is visible');same(null,$r->completed_at,'Timeout never invents finality');
 same(null,$refunds->creditRejected($r->id),'Deadline never grants a refund');same(null,$r->attempt['transfer_terminal']??null,'Deadline is not negative proof');
-$calls=count($observe->calls);$clock->instant=$clock->now()->modify('+1 day');$reconcile->run($r->id);same($calls,count($observe->calls),'After deadline no automatic registrar reads');
+$calls=count($observe->calls);$clock->instant=$clock->now()->modify('+1 day');$r=$reconcile->run($r->id);same(['checkTransferStatus'],array_slice($observe->calls,$calls),'Overdue pending needs only the daily status read');
 foreach($reads as $start){expect(count(array_filter($reads,fn($at)=>$at>=$start&&$at<$start+86400))<=4,'At most four automatic passes per rolling day');}
 same(16,count($reads),'Seven-day watch has sixteen automatic passes');
 $notice=RequestFacts::notice($r,['unreadable'=>false]);expect(!empty($notice['body'])&&($notice['action']??null)==='resume_reads','Deadline gives staff a resolution route');
 HistoryAcceptances::save(new HistoryAcceptance($binding,'America/Los_Angeles',0,9*86400,'namesilo_transfer_v1'));
-$reconcile->resume($r->id,'provider_facts_updated');$observe->status='Transfer Completed';
+$reconcile->resume($r->id,'provider_facts_updated');$observe->status='Transfer Completed';$observe->fault='';
 same('succeeded',$reconcile->run($r->id)->state,'Explicit reviewed check can confirm a late success without extending the window');
 // Our shared account guard defers ordinary waits, then retries without staff readmission.
 DB::table('domains_read_budgets')->delete();$op=$prepare('guard-recovery');$observe->status='Pending at Registry';

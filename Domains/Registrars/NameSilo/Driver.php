@@ -6,7 +6,7 @@ namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 use Paymenter\Extensions\Servers\Domains\Contracts\{Clock, RegistrarDriver};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AttemptEvidence, Capabilities, CostUnit, DateEvidence, Disposition,
     DomainSnapshot, DriverResult, Evidence, ExpiryPrecision, Money, NameserverEvidence, PrivacyMode, Query, QuoteEvidence, ReconciliationResult,
-    RejectionBasis, RenewalStatus, RequestContext, ResultReason, SendState, SystemClock};
+    RejectionBasis, RenewalStatus, RequestContext, ResultReason, SendState, SystemClock, TransferStatus};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DomainName, Outcome, RegistrarRequest as Request, RegistrarResult};
 
 /** Named reads only. Construction/quotes do not prove provider identity, sale eligibility or renewal safety. */
@@ -169,12 +169,12 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
     }
     public function reconcile(AttemptEvidence $attempt, #[\SensitiveParameter] RequestContext $context): ReconciliationResult
     { return $this->reconcileAttempt($attempt,$context,false); }
-    public function pollTransfer(AttemptEvidence $attempt, #[\SensitiveParameter] RequestContext $context): ReconciliationResult
-    { return $this->reconcileAttempt($attempt,$context,true); }
-    private function reconcileAttempt(AttemptEvidence $attempt,RequestContext $context,bool $pendingOnly): ReconciliationResult
+    public function pollTransfer(AttemptEvidence $attempt, #[\SensitiveParameter] RequestContext $context, bool $overdue = false): ReconciliationResult
+    { return $this->reconcileAttempt($attempt,$context,true,$overdue); }
+    private function reconcileAttempt(AttemptEvidence $attempt,RequestContext $context,bool $pendingOnly, bool $overdue = false): ReconciliationResult
     {
         $this->binding()->requireMatch($context->binding); $this->binding()->requireMatch($attempt->binding);
-        $transfer = \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Unknown; $privacyBlocked = false;
+        $transfer = TransferStatus::Unknown; $privacyBlocked = false;
         if ($attempt->query->action === Action::Transfer) {
             $status = $this->read(Request::transferStatus($attempt->query->name), $context);
             if ($status->outcome === Outcome::Success) {
@@ -182,18 +182,18 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
                 $privacyBlocked = $status->value('status') === 'Domain is Private';
             }
         }
-        if($pendingOnly&&$transfer===\Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Pending){
+        if ($pendingOnly && ($transfer === TransferStatus::Pending || ($overdue && $transfer === TransferStatus::Unknown))) {
             return new ReconciliationResult($attempt,new DriverResult($this->binding(),Disposition::Unknown,SendState::PossiblySent,
                 ResultReason::Unresolved,new Evidence(transfer:$transfer)));
         }
         $history = (new Correlation($this->client))->inspect($attempt, $context);
         $domain = $this->readDomain($attempt->query->name, $context)->evidence()->domain;
-        if ($transfer === \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Completed
+        if ($transfer === TransferStatus::Completed
             && array_key_exists('expiration', $status->catalogueRows())) {
             try {
                 $expiry = new DateEvidence($status->value('expiration'), ExpiryPrecision::Date, 'namesilo_transfer_status');
-                if ($expiry->value !== $domain?->expiry?->value) { $transfer = \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Unknown; }
-            } catch (\InvalidArgumentException | \TypeError) { $transfer = \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Unknown; }
+                if ($expiry->value !== $domain?->expiry?->value) { $transfer = TransferStatus::Unknown; }
+            } catch (\InvalidArgumentException | \TypeError) { $transfer = TransferStatus::Unknown; }
         }
         return new ReconciliationResult($attempt, new DriverResult($this->binding(), Disposition::Unknown, SendState::PossiblySent,
             ResultReason::Unresolved, new Evidence(domain: $domain, candidates: $history->candidates, historyComplete: $history->historyComplete, transfer: $transfer, transferPrivacyBlocked: $privacyBlocked)));

@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom;
 
 use Paymenter\Extensions\Servers\Domains\Contracts\RegistrarDriver;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AttemptEvidence, CanonicalName, Capabilities, CatalogueRate, CostUnit, Discrepancy, Disposition, DomainSnapshot,
-    DriverResult, Evidence, ExpiryPrecision, Money, NameserverEvidence, PrivacyMode, Query, QuoteEvidence, ReconciliationResult, RejectionBasis, RequestContext, ResultReason, SendState};
+    DriverResult, Evidence, ExpiryPrecision, Money, NameserverEvidence, PrivacyMode, Query, QuoteEvidence, ReconciliationResult, TransferStatus, RejectionBasis, RequestContext, ResultReason, SendState};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ProtocolResult, ReadCommand};
 use Paymenter\Extensions\Servers\Domains\Services\ReconciliationEvidence;
 
@@ -280,20 +280,20 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
     }
     public function reconcile(AttemptEvidence $attempt, #[\SensitiveParameter] RequestContext $context): ReconciliationResult
     { return $this->reconcileAttempt($attempt,$context,false); }
-    public function pollTransfer(AttemptEvidence $attempt, #[\SensitiveParameter] RequestContext $context): ReconciliationResult
-    { return $this->reconcileAttempt($attempt,$context,true); }
-    private function transferStatus(AttemptEvidence $attempt,RequestContext $context): \Paymenter\Extensions\Servers\Domains\Data\TransferStatus
+    public function pollTransfer(AttemptEvidence $attempt, #[\SensitiveParameter] RequestContext $context, bool $overdue = false): ReconciliationResult
+    { return $this->reconcileAttempt($attempt,$context,true,$overdue); }
+    private function transferStatus(AttemptEvidence $attempt,RequestContext $context): TransferStatus
     {
         if($attempt->query->action===Action::Transfer && is_string($attempt->transferReference) && preg_match('/^[1-9][0-9]{0,19}$/D',$attempt->transferReference)){
             return TransferState::read($attempt,$this->read(ReadCommand::Transfer,['TransferOrderID'=>$attempt->transferReference],$context));
         }
-        return \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Unknown;
+        return TransferStatus::Unknown;
     }
-    private function reconcileAttempt(AttemptEvidence $attempt,RequestContext $context,bool $pendingOnly): ReconciliationResult
+    private function reconcileAttempt(AttemptEvidence $attempt,RequestContext $context,bool $pendingOnly, bool $overdue = false): ReconciliationResult
     {
         $this->binding()->requireMatch($context->binding); $this->binding()->requireMatch($attempt->binding);
         $transfer=$pendingOnly?$this->transferStatus($attempt,$context):null;
-        if($transfer===\Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Pending){
+        if ($pendingOnly && ($transfer === TransferStatus::Pending || ($overdue && $transfer === TransferStatus::Unknown))) {
             return new ReconciliationResult($attempt,new DriverResult($this->binding(),Disposition::Unknown,SendState::PossiblySent,
                 ResultReason::Unresolved,new Evidence(transfer:$transfer,transferReference:$attempt->transferReference)));
         }
@@ -329,7 +329,7 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
             transfer: $transfer, transferReference: $attempt->transferReference);
         if (ReconciliationEvidence::completion($attempt, $proofFacts, $context->now()) !== null
             && ($attempt->query->action === Action::Register
-                || ($attempt->query->action === Action::Transfer && $transfer === \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Completed))
+                || ($attempt->query->action === Action::Transfer && $transfer === TransferStatus::Completed))
             && $domain?->owned === true) {
             $reply = null;
             try {

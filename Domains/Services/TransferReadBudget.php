@@ -11,8 +11,6 @@ final class TransferReadBudget implements ReadLimiter
 {
     private readonly AccountReadBudget $minute;
     private readonly ?ReadLimiter $runtime;
-    private int $admissions=0;
-    public function admissions(): int { return $this->admissions; }
     public function __construct(Clock $clock,?ReadLimiter $runtime=null)
     {
         $this->minute=$runtime instanceof AccountReadBudget?$runtime->restricted(25):new AccountReadBudget($clock,25);
@@ -32,7 +30,7 @@ final class TransferReadBudget implements ReadLimiter
             if($used>=intdiv($cap,2)){throw new ReadDeferred('Our daily transfer read allowance is unavailable.');}
         }
         $token=$this->minute->acquire($binding,$origin);
-        try{$reserved=json_encode([$token,$this->runtime?->acquire($binding,$origin)],JSON_THROW_ON_ERROR);$this->admissions++;return $reserved;}
+        try{return json_encode([$token,$this->runtime?->acquire($binding,$origin)],JSON_THROW_ON_ERROR);}
         catch(\Throwable $e){$this->minute->release($binding,$origin,$token);throw $e;}
     }
     /** The precheck avoids wasting minute admission; the physical guard repeats it atomically against concurrent sends. */

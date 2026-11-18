@@ -640,7 +640,7 @@ final class OperationClaims
     }
     public static function payloadDigest(Operation $op): string { return hash('sha256', json_encode($op->payload, JSON_THROW_ON_ERROR)); }
     public static function query(Operation $op, Domain $domain): Query { return new Query($domain->domain, Action::from($op->action), (int) $op->term); }
-    private static function digest(Operation $op, Domain $domain): string
+    public static function digest(Operation $op, Domain $domain): string
     {
         return hash('sha256', json_encode([$op->operation_key, $domain->domain, $op->action, $op->term, $op->account_fingerprint,
             $op->authority_generation, self::payloadDigest($op)], JSON_THROW_ON_ERROR));

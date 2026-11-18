@@ -17,7 +17,7 @@ final readonly class EnomTestReconciliationReader implements \Paymenter\Extensio
     public function readRenewalDomain(string $name,RequestContext $c):DriverResult{return \Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::enabled($this->binding())?$this->reconciler->readRenewalDomain($name,$c):$this->preview->readRenewalDomain($name,$c);}
     public function expiry(string $name,RequestContext $c):ReadResult{if(!\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::enabled($this->binding())){throw new \DomainException('Renewal reads are closed.');}return $this->reconciler->expiry($name,$c);}
     public function renewalAssessment(Query $q,RequestContext $c):DriverResult{return \Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::enabled($this->binding())?$this->reconciler->renewalAssessment($q,$c):$this->preview->renewalAssessment($q,$c);}
-    public function reconcile(AttemptEvidence $attempt,RequestContext $c):ReconciliationResult
+    public function reconcile(AttemptEvidence $attempt,RequestContext $c, bool $overdue = false):ReconciliationResult
     {
         $renewal=$attempt->query->action===Action::Renew&&\Paymenter\Extensions\Servers\Domains\Services\TestCatalogue::enabled($this->binding());
         $transfer=$attempt->query->action===Action::Transfer&&(\Paymenter\Extensions\Servers\Domains\Services\EnomTestTransfer::enabled($this->binding())||\Paymenter\Extensions\Servers\Domains\Services\EnomLive::enabled($this->binding(),'catalogue'))&&is_string($attempt->transferReference)&&preg_match('/^[1-9][0-9]{0,19}$/D',$attempt->transferReference);
@@ -30,6 +30,10 @@ final readonly class EnomTestReconciliationReader implements \Paymenter\Extensio
             throw new \DomainException($renewal?'Captured TEST order or accepted renewal history is required.':'Captured TEST Purchase OrderID is required.');
         }
         $attempt->executionFacts?->requireAttempt($attempt);
+        if ($overdue) {
+            if (!$transfer || !$observation) { throw new \DomainException('A sealed transfer reference is required.'); }
+            return $this->reconciler->pollTransfer($attempt, $c, overdue: true);
+        }
         return $this->reconciler->reconcile($attempt,$c);
     }
     public function catalogue(RequestContext $c):ReadResult{return $this->preview->catalogue($c);}
