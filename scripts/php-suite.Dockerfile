@@ -19,3 +19,14 @@ PY
 RUN mkdir /opt/php-suite/runtime && for archive in /opt/php-suite/archives/*.deb; do \
         dpkg-deb -x "$archive" /opt/php-suite/runtime; done && \
     /opt/php-suite/runtime/usr/bin/php8.4 -n -r 'exit(PHP_VERSION === "8.4.27" ? 0 : 1);'
+
+# Install the JS driver and its matching Chromium revision at build time.
+ADD --checksum=sha256:a3b87b237e26894c869b7ae8e47e93addc7547c1b161429b4c110f0badd5bd61 https://registry.npmjs.org/playwright/-/playwright-1.60.0.tgz /opt/playwright.tgz
+ADD --checksum=sha256:8b1df81ba75e90a41eb5c996350ea7ecc1c915ea643ec55138f91c949c5a25bf https://registry.npmjs.org/playwright-core/-/playwright-core-1.60.0.tgz /opt/playwright-core.tgz
+RUN for pkg in playwright playwright-core; do \
+        mkdir -p /opt/php-suite/node_modules/$pkg && \
+        tar -xf /opt/$pkg.tgz -C /opt/php-suite/node_modules/$pkg --strip-components=1 || exit 1; done && \
+    apt-get update && apt-get install -y --no-install-recommends nodejs && \
+    PLAYWRIGHT_BROWSERS_PATH=/opt/php-suite/browsers node /opt/php-suite/node_modules/playwright/cli.js \
+        install --with-deps --only-shell chromium && \
+    rm -rf /var/lib/apt/lists/*

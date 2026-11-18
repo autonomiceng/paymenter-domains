@@ -107,12 +107,13 @@ def configure(bundle, rootfs, argv, cwd, env, mounts, writable, temporary):
     config['linux']['cgroupsPath'] = str(membership()/name)
     config['linux']['namespaces'] = [n for n in config['linux']['namespaces'] if n['type'] != 'cgroup']
     config['linux']['namespaces'].append({'type': 'network'})
-    for dest, src in mounts.items():
-        config['mounts'].append({'destination': str(dest), 'source': str(src), 'type': 'bind',
-                                 'options': ['rbind', 'nosuid', 'nodev', 'rw' if dest in writable else 'ro']})
-    for dest in temporary:
-        config['mounts'].append({'destination': str(dest), 'source': 'tmpfs', 'type': 'tmpfs',
-                                 'options': ['nosuid', 'nodev', 'mode=1777']})
+    # Parent mounts must precede their children, including output binds under /tmp.
+    extra = [{'destination': str(dest), 'source': str(src), 'type': 'bind',
+              'options': ['rbind', 'nosuid', 'nodev', 'rw' if dest in writable else 'ro']}
+             for dest, src in mounts.items()]
+    extra.extend({'destination': str(dest), 'source': 'tmpfs', 'type': 'tmpfs',
+                  'options': ['nosuid', 'nodev', 'mode=1777']} for dest in temporary)
+    config['mounts'].extend(sorted(extra, key=lambda mount: len(Path(mount['destination']).parts)))
     # Mask local credential files when a developer runs from their ordinary checkout.
     blank = bundle/'empty'
     blank.mkdir()
@@ -188,20 +189,13 @@ def domains(root, arguments, *, history=None):
             raise ValueError('Use a canonical pristine development dependency.')
         mounts.update({p: p for p in [app, *git_inputs(app)]})
         env['PAYMENTER_TEST_APP'] = source
-    if node := shutil.which('node'):
-        mounts[Path('/usr/local/bin/node')] = Path(node).resolve(strict=True)
     for key in ('DOMAINS_TEST_JOBS', 'DOMAINS_UPGRADE_FROM'):
         if key in os.environ:
             env[key] = os.environ[key]
     if history:
         history = Path(history).resolve(strict=True)
         mounts[history] = history
-    for key in ('NODE_PATH', 'PLAYWRIGHT_BROWSERS_PATH', 'CHROME_BIN'):
-        if os.environ.get(key):
-            for name in os.environ[key].split(os.pathsep):
-                path = Path(name).absolute()
-                mounts[path] = path.resolve(strict=True)
-            env[key] = os.environ[key]
+    env.update(NODE_PATH='/opt/php-suite/node_modules', PLAYWRIGHT_BROWSERS_PATH='/opt/php-suite/browsers')
     (root/'.cache').mkdir(exist_ok=True)
     try:
         with tempfile.TemporaryDirectory(prefix='php-bundle-') as name:
@@ -209,8 +203,12 @@ def domains(root, arguments, *, history=None):
             with image_root(bundle) as (rootfs, image):
                 env['PHP_SUITE_IMAGE'] = image
                 env['PHP_SUITE_OUTPUT'] = str(output)
-                return run_bundle(bundle, rootfs, ['python3', str(root/'scripts/test.py'), *arguments],
+                code = run_bundle(bundle, rootfs, ['python3', str(root/'scripts/test.py'), *arguments],
                                   root, env, mounts, writable=(output, group, receipts), temporary=('/tmp', root/'.cache'))
+        receipt = output/'receipt.json'
+        if not code and (not receipt.is_file() or json.loads(receipt.read_text()).get('complete') is not True):
+            raise RuntimeError('Container exited successfully without a complete suite receipt: '+str(receipt))
+        return code
     finally:
         receipt = output/'receipt.json'
         if not receipt.exists():
@@ -219,7 +217,7 @@ def domains(root, arguments, *, history=None):
 
 
 @contextmanager
-def session(cwd, mounts, *, writable=(), temporary=()):
+def session(cwd, mounts, *, writable=(), temporary=(), pass_env=()):
     """Keep one image namespace for commands admitted in separate host cgroups."""
     with tempfile.TemporaryDirectory(prefix='php-session-') as directory:
         bundle = Path(directory)
@@ -232,7 +230,7 @@ def session(cwd, mounts, *, writable=(), temporary=()):
                 proc = Path('/proc')/str(pid)
                 descriptor = bundle/'session.json'
                 descriptor.write_text(json.dumps({'pid': pid, 'namespace': (proc/'ns/mnt').stat().st_ino,
-                                                  'image': image}))
+                                                  'image': image, 'pass_env': list(pass_env)}))
                 yield descriptor, image
             finally:
                 if (bundle/'state'/name).exists():
@@ -255,7 +253,10 @@ def enter(descriptor, argv):
                 '--root='+str(target/'root'), '--wdns='+os.getcwd(), '--',
                 '/usr/bin/setpriv', '--no-new-privs', '--bounding-set=-all',
                 '--inh-caps=-all', '--ambient-caps=-all', '--', *argv]
-        return subprocess.run(args).returncode
+        env = {key: os.environ[key] for key in record['pass_env'] if key in os.environ}
+        env.update(PATH='/usr/local/bin:/usr/bin:/bin', HOME='/tmp', LANG='C.UTF-8',
+                   PYTHONDONTWRITEBYTECODE='1', GIT_OPTIONAL_LOCKS='0')
+        return subprocess.run(args, env=env).returncode
     finally:
         os.close(proc)
 

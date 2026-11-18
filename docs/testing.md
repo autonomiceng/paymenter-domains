@@ -16,7 +16,7 @@ screenshots and a receipt. It does not establish installed-theme or live activat
 
 ## Explicit offline button layout check
 
-Optional browser checks are separate from the native runner; ordinary CI needs no browser. They use existing
+These standalone render checks use existing
 Node.js, Playwright (tested with 1.60.0) and Chromium/Chrome, downloading nothing. Set `NODE_PATH` to external
 installed `node_modules` if needed, and `CHROME_BIN` to an existing browser executable. Use the pinned
 native/PHP environment below and a fresh output directory under `TMPDIR`:
@@ -39,7 +39,7 @@ It compares Register/Transfer/Retry geometry with prior inline-flex/normal-wrap/
 at desktop and phone widths. `tests/test_domain_page_artifact.py` covers the customer heading in the invoice-due
 Blade fixture with populated history. Screenshots beside the approved mock cover visual presentation.
 Set `DOMAINS_PANEL_SETUP` to a PHP file that configures `$panel` and returns its
-built theme to render with a host skin. The UI suite needs installed Playwright (`NODE_PATH`) and Chromium (`CHROME_BIN`).
+built theme to render with a host skin. The UI suite uses the image’s Node.js, Playwright 1.60.0 and matching Chromium headless shell.
 
 Run `python3 scripts/bootstrap.py --download` to build the PHP suite image, then run
 `scripts/test.py` offline. Local runs and native CI shards use the same entry point and

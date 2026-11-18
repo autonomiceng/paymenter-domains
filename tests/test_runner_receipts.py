@@ -4,6 +4,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import signal
 import subprocess
@@ -21,6 +22,26 @@ spec.loader.exec_module(runner)
 
 
 class ReceiptTests(unittest.TestCase):
+    def test_container_success_requires_a_complete_receipt_on_host(self):
+        suite = runner.php_suite
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            group = root/'cgroup'/'scope'
+            group.mkdir(parents=True)
+            (group/'cgroup.subtree_control').write_text('memory')
+            def no_receipt(bundle, rootfs, argv, cwd, env, mounts, **options):
+                return 0
+            with mock.patch.dict(os.environ, {}, clear=True), mock.patch.object(suite, 'CGROUP', group.parent), \
+                 mock.patch.object(suite, 'grant_scope', return_value=group), \
+                 mock.patch.object(suite, 'membership', return_value=Path('/scope')), \
+                 mock.patch.object(tempfile, 'tempdir', directory), \
+                 mock.patch.object(suite, 'image_root', return_value=contextlib.nullcontext((root, 'image'))), \
+                 mock.patch.object(suite, 'run_bundle', no_receipt), contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(RuntimeError):
+                    suite.domains(root, [])
+            receipt, = root.glob('domains-tests-*/receipt.json')
+            self.assertFalse(json.loads(receipt.read_text())['complete'])
+
     def test_fail_fast_cancelled_sibling_is_not_a_failure(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp); (root/'Domains').mkdir(); output = root/'output'; output.mkdir()
