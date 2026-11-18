@@ -80,10 +80,16 @@ jobs:
           path: .cache/php-runtime/*.deb
           key: domains-php-${{ runner.os }}-${{ hashFiles('scripts/php-runtime-packages.json') }}
       - run: python3 scripts/bootstrap.py --download
-      - run: |
+      - name: Run offline tests
+        shell: bash
+        run: |
+          bin_dir=$(bash scripts/hosted-php-userns.sh)
           sudo systemd-run --wait --pipe --collect --uid="$(id -un)" -p Delegate=yes \
             -p MemoryMax=2G -p MemorySwapMax=0 --working-directory="$PWD" \
-            --setenv="PATH=$PATH" python3 scripts/test.py
+            --setenv="PATH=${bin_dir:+$bin_dir:}$PATH" python3 scripts/test.py
+      - name: Show namespace denials
+        if: failure()
+        run: sudo journalctl -k -b --no-pager -n 30 --grep='apparmor="DENIED".*comm="(runc(:[^"]*)?|unshare)"' || true
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:

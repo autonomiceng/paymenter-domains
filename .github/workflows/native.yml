@@ -120,6 +120,8 @@ jobs:
           TESTS: ${{ toJSON(matrix.tests) }}
         # Up to four workers, never more than tests: each worker copies the whole fixture first.
         run: |
+          bin_dir=$(bash scripts/hosted-php-userns.sh)
+          export PATH="${bin_dir:+$bin_dir:}$PATH"
           python3 - <<'EOF'
           import json, os, pwd, sys
           tests = json.loads(os.environ['TESTS'])
@@ -130,6 +132,9 @@ jobs:
               *['--setenv='+key+'='+os.environ[key] for key in ('PAYMENTER_TEST_APP', 'DOMAINS_TEST_JOBS', 'PATH')],
               sys.executable, 'scripts/test.py', '--memory-mib', '8192', '--only', *tests])
           EOF
+      - name: Show namespace denials
+        if: failure()
+        run: sudo journalctl -k -b --no-pager -n 30 --grep='apparmor="DENIED".*comm="(runc(:[^"]*)?|unshare)"' || true
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:

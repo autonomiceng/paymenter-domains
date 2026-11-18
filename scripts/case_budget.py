@@ -1,6 +1,5 @@
 """Limit one test's process tree in the suite's delegated cgroup v2 subtree."""
 import argparse
-import errno
 import json
 import os
 from pathlib import Path
@@ -9,6 +8,17 @@ import subprocess
 import sys
 import time
 import uuid
+
+
+def drain(group):
+    (group/'cgroup.kill').write_text('1')
+    # The outer command timeout gives cleanup two seconds beyond the test limit.
+    deadline = time.monotonic() + 1
+    while 'populated 0' not in (group/'cgroup.events').read_text().splitlines():
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError(f'Test cgroup did not drain: {group}')
+        time.sleep(min(0.01, remaining))
 
 
 def main():
@@ -29,6 +39,7 @@ def main():
         parser.error('Invalid test limits or command')
     group = Path(os.environ['DOMAINS_TEST_CGROUP'])/('test-'+uuid.uuid4().hex)
     group.mkdir()
+    result = None
     try:
         (group/'memory.max').write_text(str(args.memory))
         (group/'memory.swap.max').write_text('0')
@@ -36,26 +47,25 @@ def main():
         started = time.monotonic()
         result = subprocess.run(['timeout', '--kill-after=0.2s', str(args.wall), sys.executable,
                                  __file__, '--enter', str(group), *args.command[1:]])
-        (group/'cgroup.kill').write_text('1')
         elapsed = time.monotonic()-started
-        peak = int((group/'memory.peak').read_text())
-        events = {k: int(v) for k, v in (line.split() for line in (group/'memory.events').read_text().splitlines())}
-        cpu = dict(line.split() for line in (group/'cpu.stat').read_text().splitlines())
-        rss = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss*1024
-        code = result.returncode or int(bool(events['oom_kill']) or elapsed > args.wall or max(rss, peak) > args.memory)
-        data = dict(exit=code, process_exit=result.returncode, wall_seconds=elapsed, memory_bytes=peak,
-                    memory_method='per_test_cgroup', peak_rss_bytes=rss, memory_events=events,
-                    oom_kill=events['oom_kill'], cpu_seconds=int(cpu['usage_usec'])/1e6,
-                    limits=dict(wall_seconds=args.wall, memory_bytes=args.memory))
-        args.receipt.write_text(json.dumps(data)+'\n')
-        return code
     finally:
-        (group/'cgroup.kill').write_text('1')
+        drain(group)
         try:
+            if result is not None:
+                peak = int((group/'memory.peak').read_text())
+                events = {k: int(v) for k, v in (line.split() for line in (group/'memory.events').read_text().splitlines())}
+                cpu = dict(line.split() for line in (group/'cpu.stat').read_text().splitlines())
+        finally:
             group.rmdir()
-        except OSError as error:
-            if error.errno not in (errno.EBUSY, errno.ENOTEMPTY):
-                raise
+
+    rss = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss*1024
+    code = result.returncode or int(bool(events['oom_kill']) or elapsed > args.wall or max(rss, peak) > args.memory)
+    data = dict(exit=code, process_exit=result.returncode, wall_seconds=elapsed, memory_bytes=peak,
+                memory_method='per_test_cgroup', peak_rss_bytes=rss, memory_events=events,
+                oom_kill=events['oom_kill'], cpu_seconds=int(cpu['usage_usec'])/1e6,
+                limits=dict(wall_seconds=args.wall, memory_bytes=args.memory))
+    args.receipt.write_text(json.dumps(data)+'\n')
+    return code
 
 
 if __name__ == '__main__':

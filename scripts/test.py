@@ -642,10 +642,32 @@ def main(*, launch=False):
     args = parser.parse_args()
     if args.lint_base is not None and args.suite != ['lint']:
         parser.error('--lint-base requires --suite lint alone.')
+    os.umask(0o077)
+    checkout = git_tree()
+    selected = args.suite or []
+    timings = {}
+
+    def setup_output():
+        return Path(os.environ['PHP_SUITE_OUTPUT']) if 'PHP_SUITE_OUTPUT' in os.environ else Path(tempfile.mkdtemp(prefix='domains-tests-'))
+
+    def setup_failure(output, error):
+        receipt = output/'receipt.json'
+        if not receipt.exists():
+            # Setup can change the checkout too, so recheck it as a completed run does.
+            tree, tree_error = unchanged_tree(checkout)
+            receipt.write_text(json.dumps({'complete': False, 'phase': 'setup', 'error_type': type(error).__name__, 'selected_suites': selected,
+                                           'git_tree': tree, 'git_tree_error': tree_error,
+                                           'only_tests': args.only or [], 'lint_base': args.lint_base, 'timings': timings})+'\n')
+            print('Setup failed; receipt: '+str(receipt), file=sys.stderr)
+
+    try:
+        suites = manifest()
+    except BaseException as error:
+        setup_failure(setup_output(), error)
+        raise
     if launch and not php_suite.IMAGE_ARCHIVES.is_dir():
         # MariaDB has its own pinned driver, service and receipt.
-        maria = manifest()['mariadb']
-        maria_only = args.suite == ['mariadb'] or (args.only and set(args.only) <= set(maria))
+        maria_only = args.suite == ['mariadb'] or (args.only and set(args.only) <= set(suites['mariadb']))
         if not maria_only:
             return php_suite.domains(ROOT, sys.argv[1:], history=args.timings_from)
     jobs_explicit = args.jobs is not None or 'DOMAINS_TEST_JOBS' in os.environ
@@ -654,15 +676,10 @@ def main(*, launch=False):
             args.jobs = positive_integer(os.environ['DOMAINS_TEST_JOBS']) if 'DOMAINS_TEST_JOBS' in os.environ else max(1, min(4, (os.cpu_count() or 1)//2))
         except (ValueError, argparse.ArgumentTypeError) as error:
             parser.error(str(error))
-    os.umask(0o077)
-    checkout = git_tree()
-    output = Path(os.environ['PHP_SUITE_OUTPUT']) if 'PHP_SUITE_OUTPUT' in os.environ else Path(tempfile.mkdtemp(prefix='domains-tests-'))
-    selected = args.suite or []
+    output = setup_output()
     runtime = fixture = None
     workers = None
-    timings = {}
     try:
-        suites = manifest()
         previous = history(args.timings_from)
         Path(f'/proc/{os.getpid()}/task/{os.getpid()}/children').read_text()
         if not Path('/usr/bin/time').is_file():
@@ -745,13 +762,7 @@ def main(*, launch=False):
                    timings=timings, only=args.only, fail_fast=args.fail_fast, requested_jobs=args.jobs, memory_mib=args.memory_mib,
                    jobs_explicit=jobs_explicit, lint_base=args.lint_base, checkout=checkout)
     except BaseException as error:
-        if not (output/'receipt.json').exists():
-            # Setup can change the checkout too, so recheck it as a completed run does.
-            tree, tree_error = unchanged_tree(checkout)
-            (output/'receipt.json').write_text(json.dumps({'complete': False, 'phase': 'setup', 'error_type': type(error).__name__, 'selected_suites': selected,
-                                                          'git_tree': tree, 'git_tree_error': tree_error,
-                                                          'only_tests': args.only or [], 'lint_base': args.lint_base, 'timings': timings})+'\n')
-            print('Setup failed; receipt: '+str(output/'receipt.json'), file=sys.stderr)
+        setup_failure(output, error)
         raise
     finally:
         shutil.rmtree(output/'workers', ignore_errors=True)

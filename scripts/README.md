@@ -10,3 +10,13 @@
 
 See [verification](../docs/testing.md) for native dependency selection, checksum provenance and
 coverage limits. Package tests are not native installation acceptance.
+
+## Hosted Ubuntu PHP suites
+
+On GitHub-hosted Ubuntu 24.04, run `bin_dir=$(bash scripts/hosted-php-userns.sh)` before
+starting the delegated service. Use `--unshare /usr/bin/unshare` if startup also calls
+util-linux `unshare`. The runner user needs passwordless sudo and the system `apparmor_parser`
+when Ubuntu restricts unprivileged user namespaces. The helper loads executable profiles for
+root-owned copies under `/run` and prints that directory, or prints nothing when the restriction
+is off. Pass `--setenv="PATH=${bin_dir:+$bin_dir:}$PATH"` to `systemd-run` and invoke the binaries
+by name. AppArmor attaches each profile by path.

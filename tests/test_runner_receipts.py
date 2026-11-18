@@ -4,6 +4,7 @@ import contextlib
 import hashlib
 import importlib.util
 import io
+import itertools
 import json
 import os
 from pathlib import Path
@@ -18,6 +19,8 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'scripts'))
+import case_budget
+
 spec = importlib.util.spec_from_file_location('receipt_runner', ROOT/'scripts/test.py')
 runner = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(runner)
@@ -33,7 +36,7 @@ class ReceiptTests(unittest.TestCase):
                 shutil.copyfile(ROOT/'scripts'/name, scripts/name)
             archive = b'verified archive fixture'
             lock = scripts/'php-runtime-packages.json'
-            lock.write_text(json.dumps([{'url': 'https://example.invalid/php-native.deb', 'native': True,
+            lock.write_text(json.dumps([{'url': 'https://example.test/php-native.deb', 'native': True,
                                          'sha256': hashlib.sha256(archive).hexdigest()}]))
             cache = root/'.cache/php-runtime'
             cache.mkdir(parents=True)
@@ -146,17 +149,66 @@ class ReceiptTests(unittest.TestCase):
             self.assertEqual((receipt['git_tree'], receipt['git_tree_error']), (None, 'not recorded'))
 
     def test_setup_failure_receipt_records_the_checkout_tree(self):
-        with tempfile.TemporaryDirectory() as temp:
-            output = Path(temp)
-            with mock.patch.object(runner, 'git_tree', return_value=('a'*40, None)), \
-                 mock.patch.object(runner, 'manifest', side_effect=ValueError('bad manifest')), \
-                 mock.patch.object(runner.tempfile, 'mkdtemp', return_value=str(output)), \
-                 mock.patch.object(runner.sys, 'argv', ['test.py']), contextlib.redirect_stderr(io.StringIO()), \
-                 self.assertRaises(ValueError):
-                runner.main()
-            receipt = json.loads((output/'receipt.json').read_text())
-            self.assertFalse(receipt['complete'])
-            self.assertEqual((receipt['git_tree'], receipt['git_tree_error']), ('a'*40, None))
+        for launch in (False, True):
+            with self.subTest(launch=launch), tempfile.TemporaryDirectory() as temp:
+                output = Path(temp)
+                with mock.patch.object(runner, 'git_tree', return_value=('a'*40, None)), \
+                     mock.patch.object(runner, 'manifest', side_effect=ValueError('bad manifest')), \
+                     mock.patch.object(runner.php_suite, 'IMAGE_ARCHIVES', output/'missing-archives'), \
+                     mock.patch.object(runner.tempfile, 'mkdtemp', return_value=str(output)), \
+                     mock.patch.dict(os.environ, {}, clear=True), \
+                     mock.patch.object(runner.sys, 'argv', ['test.py']), contextlib.redirect_stderr(io.StringIO()), \
+                     self.assertRaises(ValueError):
+                    runner.main(launch=launch)
+                receipt = json.loads((output/'receipt.json').read_text())
+                self.assertFalse(receipt['complete'])
+                self.assertEqual((receipt['phase'], receipt['git_tree'], receipt['git_tree_error']), ('setup', 'a'*40, None))
+
+    def test_resources_are_recorded_only_after_the_cgroup_drains(self):
+        for drained in (True, False):
+            with self.subTest(drained=drained), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                receipt = root/'case.json'
+                args = ['case_budget.py', '--name', 'probe', '--test-scope', '--wall', '10',
+                        '--memory', '1048576', '--receipt', str(receipt), '--', 'probe']
+                event_reads = []
+                read_text = Path.read_text
+
+                def execute(*args):
+                    group, = root.glob('test-*')
+                    (group/'memory.peak').write_text('4096')
+                    (group/'memory.events').write_text('oom_kill 0\n')
+                    (group/'cpu.stat').write_text('usage_usec 25000\n')
+                    return subprocess.CompletedProcess(args, 0)
+
+                def read(path, *args, **kwargs):
+                    if path.name == 'cgroup.events':
+                        self.assertEqual((path.parent/'cgroup.kill').read_text(), '1')
+                        event_reads.append(path)
+                        return 'populated 0\n' if drained and len(event_reads) > 1 else 'populated 1\n'
+                    if path.name == 'memory.peak':
+                        self.assertGreaterEqual(len(event_reads), 2)
+                    return read_text(path, *args, **kwargs)
+
+                def remove(group):
+                    self.assertTrue(drained)
+                    self.assertGreaterEqual(len(event_reads), 2)
+                    self.assertFalse(receipt.exists())
+
+                with mock.patch.object(sys, 'argv', args), mock.patch.dict(os.environ, DOMAINS_TEST_CGROUP=temp), \
+                     mock.patch.object(case_budget, 'time', mock.Mock(monotonic=itertools.count(step=0.25).__next__)), \
+                     mock.patch.object(case_budget.subprocess, 'run', side_effect=execute), \
+                     mock.patch.object(case_budget.resource, 'getrusage', return_value=mock.Mock(ru_maxrss=8)), \
+                     mock.patch.object(Path, 'read_text', read), mock.patch.object(Path, 'rmdir', remove):
+                    if drained:
+                        self.assertEqual(case_budget.main(), 0)
+                    else:
+                        with self.assertRaises(TimeoutError):
+                            case_budget.main()
+                self.assertEqual(receipt.exists(), drained)
+                if drained:
+                    data = json.loads(receipt.read_text())
+                    self.assertEqual((data['wall_seconds'], data['memory_bytes'], data['cpu_seconds']), (0.25, 4096, 0.025))
 
     def test_setup_failure_receipt_rechecks_the_checkout_tree(self):
         def git(repo, *args):
