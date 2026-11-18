@@ -122,8 +122,11 @@ class ViewOperation extends RecordDetailPage
         $accountUrl=$link==='registrars'?Facts::url(fn()=>RegistrarFacts::accountUrl((int)$op->server_id,RequestFacts::SWITCH_LINKS[$notice['link_label']??'Open account']??null)):Facts::url(fn()=>RegistrarFacts::accountUrl((int)$op->server_id));
         $invoiceUrl=$op->invoice_id?Facts::invoiceUrl((int)$op->invoice_id):null;
         $domainValue = RequestRows::text($domain?->domain, cause: 'Domain not found.');
-        if ($domain && DomainFacts::test($domain)) {
-            $domainValue = $domainValue->tagged(DemoData::tag(test: true));
+        if ($domain !== null) {
+            $tag = DemoData::label(DemoData::is($domain), DomainFacts::test($domain), inline: true);
+            if ($tag->toHtml() !== '') {
+                $domainValue = $domainValue->tagged($tag);
+            }
         }
         $rows[]=self::linked(Row::make('Domain', $domainValue),'Open domain',$domainUrl);
         $rows[]=Row::make('Type',RequestRows::text(Labels::action($op->action)));
