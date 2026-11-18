@@ -30,6 +30,15 @@ final class RecordFamilies
         // storedFlag() already requires current identity proof, including a confirmed management readback.
         return new OwnedDomain(...[...get_object_vars($page),'management'=>$management]);
     }
+    public static function dnsInventory(array $section): array
+    {
+        $records = array_values(array_filter($section['inventory'] ?? [], fn ($record) => ($record['type'] ?? null) !== 'CAA'));
+        foreach ($section['caa'] ?? [] as $caa) {
+            $records[] = ['name' => $caa['name'], 'type' => 'CAA', 'address' => $caa['value'], 'ttl' => $caa['ttl']];
+        }
+        return $records;
+    }
+
     public static function read(Domain $d,\DateTimeImmutable $now): array
     {
         $readable=true;
@@ -91,7 +100,9 @@ final class RecordFamilies
                     // A finished check of the known hosts is all this registrar allows, so staff have nothing to review.
                     $rows[$index]['limited']=!$failedGlue;
                     // Enom checks named hosts only: the row lists the ones we know, and support handles one not shown. Customers never see the registrar name.
-                    $rows[$index]['customer']=(($f['read_failed']??false)?'Our last check didn’t finish. ':'')."The registrar can’t return a full list, so only the ones we know are shown.";
+                    $rows[$index]['customer']=$failedGlue
+                        ? 'Our last check of the known hosts didn’t finish.'
+                        : 'The registrar can’t list every glue record.';
                     $rows[$index]['support']=true;
                 }
                 // A full list shows its hosts, so only an empty one needs words.

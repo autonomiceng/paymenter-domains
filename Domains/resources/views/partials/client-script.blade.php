@@ -172,20 +172,35 @@
         button.addEventListener('click', () => { pinned = !pinned || !help.hasAttribute('data-open'); show(pinned); });
         help.addEventListener('keydown', event => {
             if (event.key !== 'Escape' || !help.hasAttribute('data-open')) return;
-            event.stopPropagation(); show(false); refocus = true; button.focus(); refocus = false;
+            event.preventDefault(); event.stopPropagation(); show(false); refocus = true; button.focus(); refocus = false;
         });
     });
     document.addEventListener('keydown', event => { if (event.key === 'Escape') helps.forEach(help => help.close()); });
     document.addEventListener('click', event => helps.forEach(help => { if (!help.contains(event.target)) help.close(); }));
+    const revealRecord = () => {
+        const row = document.getElementById(location.hash.slice(1));
+        const disclosure = row?.closest('[data-record-disclosure]');
+        if (disclosure && !disclosure.open) { disclosure.open = true; row.scrollIntoView(); }
+    };
+    window.addEventListener('hashchange', revealRecord);
+    revealRecord();
     document.querySelectorAll('[data-renewal-form]').forEach(form => {
+        const select = form.querySelector('select[name="years"]');
         form.querySelectorAll('[data-renewal-summary]').forEach(row => { row.hidden = false; });
         const updateRenewal = () => {
-            const option = form.querySelector('select').selectedOptions[0];
-            form.querySelector('[data-renewal-expiry]').textContent = option.dataset.expiry || 'Confirmed at payment';
-            form.querySelector('[data-renewal-breakdown]').textContent = option.dataset.breakdown || '';
-            form.querySelector('[data-renewal-total]').textContent = option.dataset.total || 'Confirmed at payment';
+            const option = select.selectedOptions[0];
+            if (!option) return;
+            form.querySelector('[data-renewal-expiry]').textContent = option.dataset.expiry;
+            form.querySelector('[data-renewal-breakdown]').textContent = option.dataset.breakdown;
+            form.querySelector('[data-renewal-total]').textContent = option.dataset.total;
         };
-        form.querySelector('select').addEventListener('change', updateRenewal);
+        select.addEventListener('change', updateRenewal);
+        const dialog = form.closest('dialog');
+        dialog.addEventListener('close', () => {
+            if (dialog.open) return;
+            select.selectedIndex = 0;
+            updateRenewal();
+        });
         updateRenewal();
     });
     document.querySelectorAll('[data-domains-results]').forEach(list => {

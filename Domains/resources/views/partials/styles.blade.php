@@ -171,6 +171,7 @@
 .domains .domains-panel-fact[data-domains-fact="money"], .domains .domains-panel-fact[data-domains-fact="count"] { font-variant-numeric: tabular-nums; }
 /* Page head: crumbs or back link, the title with the page's actions, then the one status line. */
 .domains .domains-head--page { display: block; }
+@media (max-width: 639px) { .domains .domains-head--page .domains-title { font-size: 1.5rem; line-height: 2rem; } }
 .domains .domains-head-main { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 1rem; }
 .domains .domains-head-back { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
 .domains .domains-head-line { margin-top: .375rem; }
@@ -210,6 +211,10 @@
     background-repeat: no-repeat; background-position: right .5rem center; background-size: 1.25rem; }
 .domains .domains-input::placeholder { color: var(--e-muted); opacity: .8; }
 .domains .domains-input:focus { outline: none; border-color: var(--e-accent); box-shadow: 0 0 0 3px hsl(var(--color-primary) / .18); }
+.domains .domains-input:focus-visible { outline: 2px solid var(--e-accent); outline-offset: 2px; }
+@media (pointer: coarse), (max-width: 639px) {
+    .domains .domains-edit .domains-input { min-height: 2.75rem; }
+}
 .domains .domains-input[aria-invalid="true"] { border-color: var(--e-bad); }
 .domains .domains-input:disabled { opacity: .55; }
 .domains .domains-hint { font-size: .75rem; line-height: 1.125rem; color: var(--e-muted); margin-top: .375rem; }
@@ -268,13 +273,7 @@
     .domains .domains-stackable td[data-label]::before { content: attr(data-label) " "; color: var(--e-muted); font-size: .75rem; }
     .domains .domains-stackable .domains-cell-wide { grid-column: 1 / -1; }
     .domains .domains-stackable .domains-end { text-align: left; }
-    .domains .domains-dns-inventory td { min-width: 0; overflow-wrap: anywhere; }
-    .domains .domains-dns-inventory td[data-label] { display: grid; grid-template-columns: 4rem minmax(0, 1fr); gap: .75rem; text-align: right; }
-    .domains .domains-dns-inventory td[data-label]::before { grid-column: 1; text-align: left; }
     /* The host keeps its label like Type and Value: a bare "*" or "@" alone says nothing on a phone. */
-    .domains .domains-dns-inventory td[data-label="Host"] { font-weight: 600; }
-    .domains .domains-dns-inventory td[data-label="Host"]::before { font-weight: 400; }
-    .domains .domains-dns-inventory tr { grid-template-columns: minmax(0, 1fr); background: var(--e-panel); }
     .domains .domains-head-actions { flex-wrap: nowrap; gap: .5rem; }
     .domains .domains-head-actions .domains-btn { min-width: 0; padding-inline: .625rem; font-size: .8125rem; }
     .domains .domains-list td[data-label] { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: .5rem; }
@@ -586,11 +585,12 @@
 .domains .domains-confirm__facts dd { margin: .125rem 0 0; }
 .domains .domains-confirm__facts dd span { display: block; font-weight: 600; }
 .domains .domains-confirm .domains-buttons { margin-top: 1.25rem; justify-content:flex-end; }
-.domains .domains-dialog-sheet { padding:0; border-radius:.375rem; }
-.domains .domains-dialog-sheet > h3 { padding:1rem 1.25rem; border-bottom:1px solid var(--e-line); }
-.domains .domains-dialog-sheet .domains-card>div { padding:.75rem 1.25rem; }
+.domains .domains-dialog-sheet { padding: 0; border-radius: .5rem; }
+.domains .domains-dialog-sheet > .domains-owner-form { gap: 0; margin: 0; max-width: none; }
+.domains .domains-dialog-sheet > h3 { padding: 1rem 1.25rem; font-family: var(--font-display, inherit); overflow-wrap: anywhere; }
+
 .domains .domains-dialog-sheet form > .domains-hint { margin:.75rem 0 0; padding:0 1.25rem; }
-.domains .domains-dialog-sheet .domains-buttons { padding:1rem 1.25rem; border-top:1px solid var(--e-line); }
+
 @media (prefers-reduced-motion: no-preference) { .domains .domains-confirm:modal { animation: domains-confirm-in .15s ease-out; } }
 @keyframes domains-confirm-in { from { opacity: 0; transform: translateY(.5rem); } }
 /* Help popovers and the help page */
@@ -677,7 +677,15 @@
 .domains .domains-row__l > .domains-sub { flex-basis: 100%; margin-top: 0; overflow-wrap: anywhere; }
 .domains .domains-row__v { min-width: 0; font-weight: 500; overflow-wrap: anywhere; }
 .domains .domains-rows > .domains-row > .domains-row__full { grid-column: 1 / -1; margin-top: .5rem; }
-@media (min-width: 720px) { .domains .domains-dns-inventory td:not(.domains-cell-wide) { white-space: nowrap; } }
+.domains .domains-dns-inventory :is(th, td) { padding: .5rem .75rem; text-align: left; }
+.domains .domains-dns-inventory td { overflow-wrap: anywhere; }
+.domains .domains-tablewrap:has(.domains-dns-inventory):focus-visible { outline: 2px solid var(--e-accent); outline-offset: 2px; }
+.domains .domains-disclosure > summary { padding: .5rem 1.5rem; min-height: 2.75rem; border-top: 1px solid var(--e-line); cursor: pointer; }
+.domains .domains-disclosure > summary .domains-sub { margin-inline-start: 1rem; }
+@media (max-width: 639px) {
+    .domains .domains-dns-inventory :is(th, td) { padding-inline: .375rem; }
+    .domains .domains-disclosure > summary { padding-inline: 1rem; }
+}
 .domains .domains-row__a { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: .75rem; font-size: .8125rem; font-weight: 500; }
 /* Row actions are small outlined buttons; a link stays a link only when it leaves the page. */
 .domains .domains-row__a .domains-a { display: inline-flex; align-items: center; min-height: 2rem; padding: 0 .75rem; border: 1px solid var(--e-line); border-radius: .375rem; color: var(--e-fg); white-space: nowrap; }
@@ -710,11 +718,14 @@
 .domains .domains-edit { width: min(40rem, calc(100vw - 2rem)); }
 .domains .domains-edit:not(:modal) { max-width: none; }
 .domains .domains-edit__close { display: flex; justify-content: flex-end; margin-top: .75rem; }
-/* One button row in every edit dialog: Cancel then the primary on the right, a quieter third choice apart on the left (P-COH-1).
-   In an open dialog that scrolls (a long contact form on a phone) the row stays at the bottom of the view. */
+/* Cancel and the primary stay in view at the bottom of a scrolling dialog. */
 .domains .domains-edit .domains-edit__buttons { justify-content: flex-end; margin-top: 1.25rem; }
-.domains .domains-edit .domains-edit__aside { margin-right: auto; }
 .domains .domains-edit:modal .domains-edit__buttons { position: sticky; bottom: -1.5rem; z-index: 1; margin: 1.25rem -1.5rem -1.5rem; padding: .875rem 1.5rem; border-top: 1px solid var(--e-line); background: var(--e-panel); }
+.domains .domains-edit .domains-edit__note { flex-basis: 100%; text-align: right; }
+.domains .domains-edit.domains-dialog-sheet .domains-edit__buttons { bottom: 0; margin: 0; padding: .875rem 1.25rem; border-top: 1px solid var(--e-line); }
+.domains .domains-dialog-sheet .domains-card > div { padding: .5rem 1.25rem; }
+.domains .domains-dialog-sheet form > .domains-hint:last-of-type { margin-bottom: .75rem; }
+.domains .domains-dialog-sheet .domains-sub:empty { display: none; }
 /* A record grid gets the room its columns need on a wide screen; below 720px it stacks, one record per block. */
 .domains .domains-edit:has(.domains-record-form) { width: min(64rem, calc(100vw - 2rem)); }
 @media (max-width: 719px) {
@@ -755,7 +766,7 @@
 .domains .domains-result:has(.domains-term-rows) .domains-btn{justify-self:end;width:auto}
 @media(max-width:639px){
     .domains .domains-dialog-sheet .domains-card>div{display:grid;grid-template-columns:minmax(0,1fr);gap:.25rem}
-    .domains .domains-dialog-sheet .domains-card dd{text-align:left}
+    .domains .domains-dialog-sheet .domains-card dd { grid-template-columns: minmax(0, 1fr); text-align: left; }
 }
 </style>
 @endonce

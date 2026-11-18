@@ -11,7 +11,7 @@
 @elseif ($recordFamilies['read_checking'] ?? false)
 <p class="domains-hint">{{ \Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Value::state(\Paymenter\Extensions\Servers\Domains\Presentation\State::Checking, $staff ? \Paymenter\Extensions\Servers\Domains\Presentation\Reader::Staff : \Paymenter\Extensions\Servers\Domains\Presentation\Reader::Customer) }}</p>
 @elseif (!$staff && ($recordFamilies['next_read'] ?? null) && !($recordFamilies['read_cause'] ?? null) && !($recordFamilies['read_code'] ?? null) && !($recordFamilies['records_paused'] ?? false))
-<p class="domains-hint">Registrar read queued for @include('domains::partials.moment', ['at' => gmdate(DATE_ATOM, (int) $recordFamilies['next_read'])]).</p>
+<p class="domains-hint">Registrar read queued for @include('domains::partials.moment', ['at' => gmdate(DATE_ATOM, (int) $recordFamilies['next_read']), 'dateOnly' => true]).</p>
 {{-- Paused or not set up is the account's state, which staff check. Customers get the plain note, never a reason that may not be theirs. --}}
 @elseif (($recordFamilies['records_paused'] ?? false) && $staff)
 <p class="domains-hint">Record checks are paused or not set up for this registrar account.@if ($staff) Check the DNS, nameservers and contacts row on the registrar account page.@endif</p>

@@ -16,8 +16,12 @@ use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement,ObservationP
 // The installed adapter keeps DNS closed, and the page says so instead of hiding the row.
 $setup('dns-form-off',[$a],false);
 same([],$section()['actions']??null,'Dormant NameSilo DNS offers no change');
-$row=$page()->query('//li[@id="dns"]')->item(0);
-expect(str_contains($text($row),'Not supported You can’t change DNS records here yet. Contact support for a change.'),'Owner row says DNS is not available and what to do');
+$support='https://example.test/dns-support';
+config(['settings.tickets_disabled'=>true,'domains.support_url'=>$support]);
+$dom=$page();
+$row=$dom->query('//li[@id="dns"]')->item(0);
+expect(str_contains($text($row),'Not supported'),'Customer sees the unsupported DNS capability');
+same(1,$dom->query('.//a[@href="'.$support.'"]',$row)->length,'Customer can reach support for a DNS change');
 same(0,$page()->query('//li[@id="dns"]//form')->length,'No records form while the capability is off');
 expect(str_contains(html_entity_decode($staffPage()->html(),ENT_QUOTES|ENT_HTML5),$off),'Staff sees the same reason and next step');
 // The opt-in editor needs observed default delegation, even with a complete saved inventory.
