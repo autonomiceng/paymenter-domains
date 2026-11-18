@@ -17,12 +17,18 @@ $watchQuery->update(['ns_profile_id'=>null, 'profile_revision'=>0, 'expected_dns
 $mount = fn () => Livewire::actingAs($manager)->test(ViewWatch::class, ['record'=>$id])
     ->mountAction(TestAction::make('profile')->schemaComponent('sheet','content'));
 $stored = fn () => array_values((array) (clone $watchQuery)->first(['ns_profile_id', 'profile_revision', 'expected_dns', 'revision']));
-$before = $stored();
+$providerState = fn () => [
+    DB::table('domains_operations')->count(),
+    DB::table('domains_watch_notices')->count(),
+    DB::table('domains_watch_observations')->count(),
+];
+$initialProviderState = $providerState();
 $consent = WatchNoticePreferences::read($uid, $watch->canonical_name);
+$before = $stored();
 $form = $mount();
 $form->callMountedAction()->assertHasNoActionErrors();
 same($before, $stored(), 'Saving the inherited choice preserves the null reference, intent and observation revision');
-$pin = 'pin:'.$profile->id.':'.$profile->revision;
+$pin = 'deployment:'.$profile->id.':'.$profile->revision;
 $form = $mount()->set('mountedActions.0.data.assignment', $pin);
 same('platform', $form->get('mountedActions.0.data.expected_dns'), 'Deliberately pinning the configured host set suggests matching');
 $form->callMountedAction()->assertHasNoActionErrors();
@@ -39,10 +45,11 @@ same($consent, WatchNoticePreferences::read($uid, $watch->canonical_name), 'Staf
 
 $other = DB::transaction(fn () => WatchProfile::create(['name'=>'Other deployment', 'enabled'=>true, 'nameservers'=>['ns.other.test'],
     'website_endpoints'=>[], 'email_endpoints'=>[], 'edited_by'=>$manager->id, 'reason'=>'Synthetic other template']));
+DB::table('domains_watch_profiles')->where('id', $other->id)->update(['nameservers'=>json_encode($profile->nameservers)]);
 $otherKey = 'pin:'.$other->id.':'.$other->revision;
 $watchQuery->update(['expected_dns'=>null]);
 $form = $mount()->set('mountedActions.0.data.assignment', $otherKey);
-same(null, $form->get('mountedActions.0.data.expected_dns'), 'Other host sets need an explicit expectation');
+same(null, $form->get('mountedActions.0.data.expected_dns'), 'A non-default template needs explicit intent even when it lists the deployment hosts');
 $form->callMountedAction()->assertHasActionErrors(['expected_dns']);
 $form->set('mountedActions.0.data.expected_dns','external');
 $before = $stored();
@@ -53,5 +60,6 @@ $mount()->set('mountedActions.0.data.assignment', 'site:'.$profile->id.':'.$prof
 same([null,0,null], array_slice($stored(),0,3),'Returning to the site default restores inheritance');
 siteDnsFixture($other->id);
 same($other->id, \Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::watchProfile(WatchName::findOrFail($id))->id, 'An inherited watch follows the next site choice');
+same($initialProviderState, $providerState(), 'Monitor assignment creates no registrar operation, observation or notice');
 $nativeSuccessful = true;
 echo "Watch template assignments passed\n";

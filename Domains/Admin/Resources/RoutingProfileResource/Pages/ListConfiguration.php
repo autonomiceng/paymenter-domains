@@ -65,10 +65,10 @@ class ListConfiguration extends RecordListPage
             Column::value('enabled','Monitoring',fn(WatchProfile $p): Value=>Value::plain($p->enabled?Plain::On:Plain::Off)),
         ];
     }
-    public function getTableRecords(): \Illuminate\Database\Eloquent\Collection|\Illuminate\Contracts\Pagination\Paginator|\Illuminate\Contracts\Pagination\CursorPaginator
+    public function getTableRecords(): \Illuminate\Support\Collection|\Illuminate\Contracts\Pagination\Paginator|\Illuminate\Contracts\Pagination\CursorPaginator
     {
         $records = parent::getTableRecords();
-        return $records instanceof \Illuminate\Pagination\LengthAwarePaginator && $records->total() <= 25 && $records->currentPage() === 1
+        return $records instanceof \Illuminate\Pagination\LengthAwarePaginator && $records->onFirstPage() && !$records->hasMorePages()
             ? $records->getCollection() : $records;
     }
     protected function emptyLine(): array{return ['No DNS templates','Add one with Add DNS template.','No DNS templates match'];}

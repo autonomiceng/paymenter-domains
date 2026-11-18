@@ -106,14 +106,14 @@ final class WatchActions
             if ($watch->ns_profile_id === null) { $selected = $key; }
         }
         foreach ($profiles as $profile) {
-            $key = WatchTemplateAssignment::choice($profile);
+            $key = WatchTemplateAssignment::choice($profile, verified:WatchTemplateAssignment::verified($profile, $default));
             $choices[$key] = $profile;
             $labels[$key] = $profile->name;
             if ((int) $watch->ns_profile_id === (int) $profile->id) { $selected = $key; }
         }
         $replacement = $selected === null && $watch->ns_profile_id !== null;
-        if ($replacement && $profiles->count() === 1) { $selected = WatchTemplateAssignment::choice($profiles->first()); }
-        $suggest = fn ($key) => isset($choices[$key]) ? WatchTemplateAssignment::suggested($watch, $choices[$key], str_starts_with($key, 'site:')) : null;
+        if ($replacement && $profiles->count() === 1) { $selected = array_key_last($choices); }
+        $suggest = fn ($key) => isset($choices[$key]) ? WatchTemplateAssignment::suggested($watch, $choices[$key], str_starts_with($key, 'site:'), str_starts_with($key, 'deployment:')) : null;
         $intents = ['platform' => "Use this template's nameservers", 'external' => 'Uses different nameservers',
             'inherit' => 'Follow site expectation', 'unset' => 'Keep expectation unset'];
         return [

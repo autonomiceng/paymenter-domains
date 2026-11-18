@@ -18,7 +18,7 @@ final class WatchFacts
     public const DECRYPT="Can't read saved data. Ask your site admin.";
     public const TEMPLATE_UNAVAILABLE='Saved DNS records cannot be read. Ask your site admin to restore this template.';
     private static function gate(): void{abort_unless(Staff::can(Writes::VIEW),403);}
-    private static function fact(mixed $value,string|\Illuminate\Support\HtmlString|null $sub=null,?string $url=null,?string $tone=null,?string $cause=null,bool $check=false): array{return compact('value','sub','tone','url','cause','check');}
+    private static function fact(mixed $value,string|\Illuminate\Support\HtmlString|null $sub=null,?string $url=null,?string $tone=null,?string $cause=null): array{return compact('value','sub','tone','url','cause');}
     /** @return array{Domain:array<string,array>,Checks:array<string,array>} */
     public static function for(WatchName $w,?array $row=null): array
     {
@@ -44,7 +44,7 @@ final class WatchFacts
         if($service){$domain['Hosting service']=self::fact($service->product?->name??'Service #'.$service->id,'Service #'.$service->id,url:Staff::can('admin.services.update')?\App\Admin\Resources\ServiceResource::getUrl('edit',['record'=>$service->id]):null);}
         $checks=['Nameservers'=>self::nameservers($w,$s),'DNS records'=>self::records($s,$active,$missing)];
         if(!in_array('watch.no_coverage',$keys,true)){$checks['Registry']=in_array('watch.not_registered',$keys,true)?self::fact('Not registered',tone:'warning'):self::fact(($s?->freshness['registry']['checkedAt']??null)?'Registered':null,cause:self::missingCause($w,'expiry'));}
-        $last=self::lastCheck($w,$s);$last['check']=$active && $last['value']===null;$checks['Last check']=$last;
+        $last=self::lastCheck($w,$s);$checks['Last check']=$last;
         // Last check already says when. Only the saved DNS answer that Last check describes drops its second Checked time;
         // another check in the same minute keeps its own.
         $lastPoints=($lastAt=(int)($last['at']??0))>0&&is_string($last['value'])&&$last['value']!==''&&in_array('points',$last['from']??[],true);
@@ -173,12 +173,12 @@ final class WatchFacts
     public static function expires(?DomainSummary $s,array $keys,bool $active,?WatchName $watch=null): array
     {
         if($s?->expiry){$soon=in_array('staff.expiring',$keys,true)||in_array('watch.expired',$keys,true);return self::fact(\Carbon\CarbonImmutable::parse($s->expiry)->format('M j, Y'),$soon?WatchFindings::expires($s->expiry):null,tone:$soon?'warning':null);}
-        return self::fact($active?null:'',cause:$watch?self::missingCause($watch,'expiry'):'No expiry result saved. Check the monitoring schedule.',check:$active);
+        return self::fact($active?null:'',cause:$watch?self::missingCause($watch,'expiry'):'No expiry result saved. Check the monitoring schedule.');
     }
     private static function nextCheck(WatchName $w): array
     {
         $work=$w->work()->get();if($work->contains(fn($r)=>$r->lease_until>app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp())){return self::fact('Checking now');}
-        $due=$work->min('due_at');return [...self::fact($due?self::date((int)$due):null,cause:'No check scheduled. Open Registrars and check the background worker.',check:true),'at'=>$due?(int)$due:null];
+        $due=$work->min('due_at');return [...self::fact($due?self::date((int)$due):null,cause:'No check scheduled. Open Registrars and check the background worker.'),'at'=>$due?(int)$due:null];
     }
     /** The nameservers the last delegation check found, compared with the expected ones. */
     private static function nameservers(WatchName $w,?DomainSummary $s): array
@@ -190,13 +190,20 @@ final class WatchFacts
         }
         if (!$o?->dns) { return self::fact(null, cause:self::missingCause($w,'delegation')); }
         $found=[];foreach($o->facts['queries']??[] as $q){if(($q['name']??null)===$w->canonical_name && ($q['type']??null)==='NS' && ($q['state']??null)==='rrset'){$found=array_values(array_filter(array_column($q['records']??[],'value'),'is_string'));}}
+        $configured = ManagedDnsSetup::usable(SiteDnsDefault::watchProfile($w));
         if ($o->id !== $w->delegation?->id || self::dnsFailed($w, 'delegation') || ($s && ($s->lastKnown['dns']['stale'] ?? true))) {
-            return self::fact($found ? implode(', ', $found) : WatchFindings::who($o->dns), 'Previously observed '.self::date($o->started_at).'.');
+            return self::fact($found ? implode(', ', $found) : WatchFindings::who($o->dns), 'Previously observed '.self::date($o->started_at).'.'.($configured ? '' : ' Choose an enabled DNS template to compare nameservers.'));
         }
         $expected=\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::watchExpected($w);
-        if(!\Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::usable(\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::watchProfile($w)) || !$expected){return self::fact($found?implode(', ',$found):WatchFindings::who($o->dns),'Choose a DNS template to compare nameservers.');}
+        if(!$configured || !$expected){return self::fact($found?implode(', ',$found):WatchFindings::who($o->dns),'Choose a DNS template to compare nameservers.');}
+        if ($expected === 'external') {
+            $different = $o->dns === 'external';
+            return self::fact($found ? implode(', ', $found) : WatchFindings::who($o->dns),
+                $different ? 'Different nameservers were expected.' : 'Matches the template, but different nameservers were expected.',
+                tone:$different ? null : 'warning');
+        }
         $same=$o->dns===$expected;
-        return self::fact($found?implode(', ',$found):WatchFindings::who($o->dns),$same?'Matches template':($expected==='platform'?$w->canonical_name.' does not use '.\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::nameservers().'.':'Does not match template'),tone:$same?null:'warning');
+        return self::fact($found?implode(', ',$found):WatchFindings::who($o->dns),$same?'Matches template':$w->canonical_name.' does not use '.\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::nameservers().'.',tone:$same?null:'warning');
     }
     private static function records(?DomainSummary $s,bool $active,string $missing): array
     {
@@ -224,7 +231,7 @@ final class WatchFacts
         $live = $setup['default'] === $id;
         $watches = WatchName::whereIn('state', ['active', 'paused'])
             ->where(fn ($q) => $q->where('ns_profile_id', $id)->when($live, fn ($q) => $q->orWhereNull('ns_profile_id')))
-            ->selectRaw("id, canonical_name as domain, 'watch' as kind, case when ns_profile_id is null then 1 else 0 end as inherited");
+            ->selectRaw("id, canonical_name as domain, 'watch' as kind, case when state = 'paused' then 1 else 0 end as paused, case when ns_profile_id is null then 1 else 0 end as inherited");
         if (in_array($id, $setup['usable'], true)) {
             $domains = ManagedDnsSetup::eligible(app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp())
                 ->whereNotExists(fn ($q) => $q->selectRaw('1')->from('domains_watch_names as w')
@@ -234,7 +241,7 @@ final class WatchFacts
                 $managed = ManagedDnsSetup::configured(clone $domains, 'domains_domains.id', 'domains_domains.user_id',
                     profile: $id, inherited: $inherited, configuration: $setup);
                 // Negative list keys distinguish native domains from external watches with the same numeric ID.
-                $watches->unionAll($managed->selectRaw("-cast(domains_domains.id as signed) as id, domain, 'registered' as kind, ? as inherited", [(int) $inherited]));
+                $watches->unionAll($managed->selectRaw("-cast(domains_domains.id as signed) as id, domain, 'registered' as kind, 0 as paused, ? as inherited", [(int) $inherited]));
             }
         }
         return \Illuminate\Support\Facades\DB::query()->fromSub($watches, 'assigned');
@@ -248,18 +255,19 @@ final class WatchFacts
     public static function usage(int $id): array
     {
         $setup = ManagedDnsSetup::configuration();
-        $counts = self::assignments($id, $setup)->selectRaw('count(*) as assigned, sum(inherited) as inherited')->first();
-        $usable = in_array($id, $setup['usable'], true);
-        return ['checked' => $usable ? (int) $counts->assigned : 0, 'inherited' => (int) $counts->inherited,
-            'unchecked' => $usable ? 0 : (int) $counts->assigned];
+        $counts = self::assignments($id, $setup)->selectRaw('count(*) as assigned, sum(inherited) as inherited, sum(paused) as paused')->first();
+        return ['assigned' => (int) $counts->assigned, 'inherited' => (int) $counts->inherited, 'paused' => (int) $counts->paused];
     }
-    /** The Monitored domains note: why the count moves with the site DNS default, or why chosen domains are not checked. */
-    public static function usageNote(array $u): ?string
+
+    public static function usageNote(array $usage, WatchProfile $profile): ?string
     {
-        $n=fn(int $count,string $one,string $many)=>$count.' '.($count===1?$one:$many);
-        if($u['unchecked']>0){return $n($u['unchecked'],'domain uses','domains use').' this template and '.($u['unchecked']===1?'is':'are').' not checked while it is off. Turn it on or choose another template for '.($u['unchecked']===1?'it':'them').'.';}
-        if($u['inherited']>0){return $n($u['inherited'],'domain has','domains have').' no template of '.($u['inherited']===1?'its':'their').' own and '.($u['inherited']===1?'follows':'follow').' the site DNS default. '.($u['inherited']===1?'It moves':'They move').' to the new default when it changes.';}
-        return null;
+        if (!$usage['assigned']) { return null; }
+        if (!$profile->enabled) { return 'Checks wait while this template is off.'; }
+        if (!$profile->readProfile()) { return 'Checks wait until the template can be read.'; }
+        $notes = [];
+        if ($n = $usage['inherited']) { $notes[] = $n.($n === 1 ? ' domain follows' : ' domains follow').' the site default.'; }
+        if ($n = $usage['paused']) { $notes[] = 'Monitoring is paused for '.$n.($n === 1 ? ' domain.' : ' domains.'); }
+        return $notes ? implode(' ', $notes) : null;
     }
     /** For plain text. The watch page shows the same instants in the viewer's zone through each fact's 'at'. */
     public static function date(?int $at): string{return $at?\Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at($at):Missing::LABEL;}

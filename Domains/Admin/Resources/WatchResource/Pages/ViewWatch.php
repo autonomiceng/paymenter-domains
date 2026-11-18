@@ -34,13 +34,8 @@ class ViewWatch extends RecordDetailPage
                 if (!$entries['Last check']['value']) { unset($entries['Last check']); }
             }
             foreach ($entries as $label => $fact) {
-                $row = WatchRows::row($label, $fact, null);
-                if ($label === 'DNS template') {
-                    $actions = [WatchActions::changeTemplate($this->getRecord(), $this->revision)];
-                    if ($fact['url']) { $actions[] = Sheet::link('open_template', 'Open', $fact['url']); }
-                    $row->actions(...$actions);
-                }
-                $rows[] = $row;
+                $change = $label === 'DNS template' ? WatchActions::changeTemplate($this->getRecord(), $this->revision) : null;
+                $rows[] = WatchRows::row($label, $fact, $change);
             }
             // The head shows the state; its reason opens the sheet, so the page has no banner repeating it.
             // A stopped domain starts again from a monitored hosting product, so its notice links to that setting.

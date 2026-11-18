@@ -80,7 +80,7 @@ class ViewConfiguration extends RecordDetailPage
             $trace->step($event->event === 'deployment_dns_default' ? 'Deployment template added' : 'Template saved', null, $event->created_at);
         }
         return [Section::make('Used by', [$new,
-            Row::make('Monitored domains', Value::fact(Fact::count($usage['checked'] + $usage['unchecked']), WatchFacts::usageNote($usage)))
+            Row::make('Monitored domains', Value::fact(Fact::count($usage['assigned']), WatchFacts::usageNote($usage, $r)))
                 ->actions(Sheet::link('assigned', 'View domains', RoutingProfileResource::getUrl('assigned', ['record' => $r])))]),
             Section::make('History', $events->isEmpty() ? [] : [$trace], $events->isEmpty() ? 'No history yet.' : null)];
     }

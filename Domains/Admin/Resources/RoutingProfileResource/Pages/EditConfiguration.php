@@ -49,7 +49,7 @@ class EditConfiguration extends RecordDetailPage
     protected function sections(): array
     {
         return [Section::make('Template', [Partial::make('domains::admin.template-editor', [
-            'form' => $this->form, 'cancelUrl' => $this->detailUrl(),
+            'editor' => $this, 'cancelUrl' => $this->detailUrl(),
         ])])];
     }
     protected function rail(): array
