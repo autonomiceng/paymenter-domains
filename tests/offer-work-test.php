@@ -1,11 +1,11 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require_once __DIR__.'/OfferFixture.php';
-require dirname(__DIR__).'/native-app.php';
-require __DIR__.'/commerce.php';
-require __DIR__.'/native-commerce.php';
-require __DIR__.'/accounts.php';
+require_once __DIR__.'/Support/OfferFixture.php';
+require __DIR__.'/native-app.php';
+require __DIR__.'/Support/commerce.php';
+require __DIR__.'/Support/native-commerce.php';
+require __DIR__.'/Support/accounts.php';
 
 use Illuminate\Support\Facades\{DB, Schema};
 use Paymenter\Extensions\Servers\Domains\Catalogue\{Context, Edit, FeedObserved, Intent, OfferWork, Projection, Query, Writer};
@@ -20,7 +20,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget, ClosureCur
 
 // Real SQLite queue/writer/projection is needed for durable claims, restart and scoped publication.
 // Only the wire and clock are fake; no provider runtime or active scheduler is registered.
-expect(is_file(dirname(__DIR__, 2).'/Domains/Catalogue/OfferWork.php'), 'One dormant offer worker coalesces feed and lazy facts in the existing queue');
+expect(is_file(dirname(__DIR__).'/Domains/Catalogue/OfferWork.php'), 'One dormant offer worker coalesces feed and lazy facts in the existing queue');
 (new Installation)->install();
 extract(commerceFixture(active:true));
 $b = \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id', $tlds[0]->server_id)->sole());
