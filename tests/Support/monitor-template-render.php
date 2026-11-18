@@ -6,6 +6,7 @@ require __DIR__.'/staff-monitoring.php';
 require_once __DIR__.'/site-dns-default.php';
 require_once __DIR__.'/panel-render.php';
 require_once __DIR__.'/render-artifacts.php';
+use Filament\Actions\Testing\TestAction;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource\Pages\{EditConfiguration, ListConfiguration, ViewConfiguration};
@@ -15,11 +16,33 @@ $off = DB::transaction(fn () => WatchProfile::create(['name'=>'Previous hosting 
     'website_endpoints'=>[],'email_endpoints'=>[],'edited_by'=>$manager->id,'reason'=>'Synthetic former template']));
 DB::table('domains_watch_names')->where('id',$id)->update(['ns_profile_id'=>$off->id,'profile_revision'=>1,'expected_dns'=>null]);
 DB::table('domains_watch_work')->where('watch_id',$id)->where('kind','expiry')->update(['safe_code'=>'expiry_unknown']);
+config(['domains.site_dns_default.nameservers'=>$profile->nameservers]);
 siteDnsFixture($profile->id);
 panelTheme(getenv('PAYMENTER_TEST_FIXTURE'));
-foreach (['watch'=>[ViewWatch::class,$id], 'templates'=>[ListConfiguration::class,null], 'template'=>[ViewConfiguration::class,$off->id],
+foreach (['watch'=>[ViewWatch::class,$id], 'assignment'=>[ViewWatch::class,$id], 'templates'=>[ListConfiguration::class,null], 'template'=>[ViewConfiguration::class,$off->id],
     'edit'=>[EditConfiguration::class,$off->id]] as $name=>[$class,$record]) {
     $page = Livewire::actingAs($manager)->test($class, $record ? ['record'=>$record] : []);
-    writePanelPage($argv[1].'/'.$name.'.html', $page);
+    if ($name === 'assignment') {
+        $page->mountAction(TestAction::make('profile')->schemaComponent('sheet','content'));
+    }
+    $path = $argv[1].'/'.$name.'.html';
+    writePanelPage($path, $page, implode('', $page->effects['partials'] ?? []));
+    if ($name === 'edit') {
+        // skin-render has no Livewire runtime. Show the native editor's prefilled form state.
+        $state = $page->get('data');
+        $html = preg_replace_callback('~<input\b[^>]*wire:model="data\.name"[^>]*>~s',
+            fn($m) => preg_replace('~\s*/?>$~',' value="'.e($state['name']).'">',$m[0]), file_get_contents($path));
+        $html = preg_replace_callback('~(<textarea\b[^>]*wire:model="data\.([\w]+)"[^>]*>).*?(</textarea>)~s',
+            fn($m) => $m[1].e($state[$m[2]] ?? '').$m[3], $html);
+        writeRenderArtifact($path,$html);
+    } elseif ($name === 'assignment') {
+        $html = file_get_contents($path);
+        // Freeze the mounted action and its native select in the open state Alpine would display.
+        $html = str_replace('class="fi-modal fi-absolute-positioning-context"', 'class="fi-modal fi-modal-open fi-absolute-positioning-context"', $html);
+        $html = preg_replace('/x-cloak\s+x-show="isOpen"/','',$html);
+        $selected = e($page->get('mountedActions.0.data.assignment'));
+        $html = str_replace('value="'.$selected.'"', 'selected value="'.$selected.'"', $html);
+        writeRenderArtifact($path,$html);
+    }
 }
 $nativeSuccessful = true;

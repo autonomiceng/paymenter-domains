@@ -81,4 +81,19 @@ same('A @ → 192.0.2.10',$records['value'],'Saved answers fill DNS records with
 same([gmdate('c',$minute+17)],$times($records['sub']),'DNS records keeps the saved answer time');
 DB::table('domains_watch_names')->where('id',$id)->update(['ns_profile_id'=>$template]);$saved($lastAt);
 
+// A newer failed registry attempt retains the separately dated, in-scope observation.
+$attemptAt = $minute + 120;
+DB::table('domains_watch_work')->where('watch_id',$id)->where('kind','expiry')->update(['due_at'=>$attemptAt,'backoff_until'=>null]);
+$ticket = $f['registry']->begin($id,$uid,$attemptAt);
+expect($ticket !== null && $f['registry']->finish($ticket, ['result'=>'unknown','reason'=>'endpoint_failed','safe_code'=>'expiry_unknown'],
+    str_repeat('c',64), $attemptAt+1), 'A local failed read is recorded');
+$facts = WatchFacts::for(WatchName::findOrFail($id));
+same($attemptAt, $facts['Checks']['Last check']['at'], 'Last check uses the failed attempt time');
+same('danger', $facts['Checks']['Last check']['tone'], 'The latest failed read is grouped as a failure');
+same(\Carbon\CarbonImmutable::parse($expiry)->format('M j, Y'), $facts['Domain']['Expires']['value'], 'The earlier observed expiry survives the failed read');
+expect(str_contains($facts['Domain']['Expires']['sub'],WatchFacts::date($minute+40)), 'The earlier expiry carries its own observation time');
+DB::table('domains_watch_registry')->where('id',$registryId)->delete();
+$facts = WatchFacts::for(WatchName::findOrFail($id));
+same(State::CouldntRead, $facts['Domain']['Expires']['state'], 'A failed registry read without prior facts has no observed expiry');
+
 $nativeSuccessful=true;echo "Staff monitoring list and details passed\n";

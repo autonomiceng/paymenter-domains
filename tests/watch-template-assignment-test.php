@@ -31,7 +31,10 @@ same($before, $stored(), 'Saving the inherited choice preserves the null referen
 $pin = 'deployment:'.$profile->id.':'.$profile->revision;
 $form = $mount()->set('mountedActions.0.data.assignment', $pin);
 same('platform', $form->get('mountedActions.0.data.expected_dns'), 'Deliberately pinning the configured host set suggests matching');
+$preview = $form->html().implode('', $form->effects['partials'] ?? []);
+foreach ($profile->readProfile()->nameservers as $host) { expect(str_contains($preview, $host),'The assignment previews each exact nameserver'); }
 $form->callMountedAction()->assertHasNoActionErrors();
+same(true, WatchNoticeTarget::capture('watch', $id, $uid, $now, false)['expected'], 'Mismatch confirmation applies after an explicit matching assignment');
 same([$profile->id, $profile->revision, 'platform', $before[3]+1], $stored(), 'Saving the explicit platform choice pins the previewed revision');
 $mount()->set('mountedActions.0.data.expected_dns','external')->callMountedAction();
 $before = $stored();
@@ -47,6 +50,10 @@ $other = DB::transaction(fn () => WatchProfile::create(['name'=>'Other deploymen
     'website_endpoints'=>[], 'email_endpoints'=>[], 'edited_by'=>$manager->id, 'reason'=>'Synthetic other template']));
 DB::table('domains_watch_profiles')->where('id', $other->id)->update(['nameservers'=>json_encode($profile->nameservers)]);
 $otherKey = 'pin:'.$other->id.':'.$other->revision;
+$form = $mount()->set('mountedActions.0.data.assignment',$otherKey);
+same('external',$form->get('mountedActions.0.data.expected_dns'), 'Changing to another template keeps the saved external override');
+$form->call('unmountAction');
+same($before,$stored(),'Closing the assignment form does not replace the saved template');
 $watchQuery->update(['expected_dns'=>null]);
 $form = $mount()->set('mountedActions.0.data.assignment', $otherKey);
 same(null, $form->get('mountedActions.0.data.expected_dns'), 'A non-default template needs explicit intent even when it lists the deployment hosts');
@@ -58,7 +65,11 @@ $form->callMountedAction();
 same($before, $stored(), 'A template edited after preview cannot be assigned');
 $mount()->set('mountedActions.0.data.assignment', 'site:'.$profile->id.':'.$profile->revision)->callMountedAction();
 same([null,0,null], array_slice($stored(),0,3),'Returning to the site default restores inheritance');
+$form = $mount();
+$before = $stored();
 siteDnsFixture($other->id);
+$form->callMountedAction();
+same($before,$stored(),'Moving the default after preview cannot pin the old site choice');
 same($other->id, \Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::watchProfile(WatchName::findOrFail($id))->id, 'An inherited watch follows the next site choice');
 same($initialProviderState, $providerState(), 'Monitor assignment creates no registrar operation, observation or notice');
 $nativeSuccessful = true;

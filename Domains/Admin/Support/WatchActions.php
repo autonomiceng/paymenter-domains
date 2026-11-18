@@ -123,7 +123,7 @@ final class WatchActions
             TextEntry::make('preview')->label('Nameservers')->listWithLineBreaks()
                 ->state(fn (Get $get) => ($choices[$get('assignment')] ?? null)?->readProfile()?->nameservers ?? []),
             TextEntry::make('expectation')->label('Expected nameservers')
-                ->state(fn (Get $get) => $intents[$get('expected_dns')] ?? 'Choose an expectation below.'),
+                ->state(fn (Get $get) => $intents[$get('expected_dns')] ?? 'Open Advanced and choose what checks should expect.'),
             Section::make('Advanced')->collapsible()->collapsed(fn (Get $get) => in_array($get('expected_dns'), ['inherit', 'platform'], true))
                 ->schema([Select::make('expected_dns')->label('Expected nameservers')->live()->required()
                     ->options(function (Get $get) use ($intents, $suggest) {

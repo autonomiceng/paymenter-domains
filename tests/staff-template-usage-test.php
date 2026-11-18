@@ -28,7 +28,7 @@ same(1, WatchFacts::usage($default->id)['inherited'], 'The default identifies th
 SiteDnsDefault::save($manager,$other->id);
 same([0,1],[WatchFacts::usedBy($default->id),WatchFacts::usedBy($other->id)],'Changing the default moves the inherited domain to the new default, not to nothing');
 same(0, WatchFacts::usage($default->id)['inherited'], 'The former default has no inherited assignments');
-// A monitored name that chose a template that is now off is not checked, so it is not counted as monitored.
+// A paused watch keeps its assignment even when its template is off.
 DB::table('domains_watch_names')->where('id',$watch->id)->update(['ns_profile_id'=>$profile->id,'profile_revision'=>1,'expected_dns'=>'platform','state'=>'paused']);
 DB::table('domains_watch_profiles')->where('id',$profile->id)->update(['enabled'=>false]);
 same(['assigned'=>1,'inherited'=>0,'paused'=>1],WatchFacts::usage($profile->id),'An off template checks nothing and names the domain that still uses it');

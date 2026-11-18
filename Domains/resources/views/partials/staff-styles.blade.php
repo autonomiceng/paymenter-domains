@@ -186,5 +186,9 @@ td.domains-history-detail{min-width:20rem}
 /* The search field has its own clear button, so hide the native one. */
 .domains-hp-dlg input[type=search]::-webkit-search-cancel-button,.domains-hp-dlg input[type=search]::-webkit-search-decoration{-webkit-appearance:none;appearance:none;display:none}
 .domains-hp-clr{display:grid;place-items:center;min-width:44px;min-height:44px}.domains-hp-none{padding:12px 0}
+/* Template usage and save effects have full sentences within a narrow rail. */
+.domains-template-detail .domains-rail .domains-panel-row{grid-template-columns:minmax(0,1fr) auto}
+.domains-template-detail .domains-rail .domains-panel-row-k{grid-column:1/-1}
+.domains-template-detail .domains-rail .domains-panel-row-v{min-width:0;overflow-wrap:anywhere}
 </style>
 @include('domains::partials.domain-name-styles')

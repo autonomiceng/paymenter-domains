@@ -17,6 +17,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{DnsTemplateUsage,SiteDnsDefau
  * the page's native header actions. */
 class ViewConfiguration extends RecordDetailPage
 {
+    protected const PAGE_CLASSES = [...parent::PAGE_CLASSES, 'domains-template-detail'];
     protected static string $resource=RoutingProfileResource::class;
     /** The revision this page shows; writes from a stale page are refused. */
     #[Locked] public int $revision=0;
@@ -57,11 +58,16 @@ class ViewConfiguration extends RecordDetailPage
                 Row::make('Nameservers',$unreadable),Row::make('Website records',$unreadable),Row::make('Email records',$unreadable)]
             :[Row::make('Nameservers',self::list($profile->nameservers)),Row::make('Website records',self::list(self::records($profile->website))),
                 Row::make('Email records',self::list(self::records($profile->email)))];
-        $reason = $r->enabled ? DnsTemplateUsage::refusal($r->id) : null;
+        $refusal = DnsTemplateUsage::refusal($r->id);
+        $reason = $r->enabled ? $refusal : null;
         $monitor = Row::make('Monitoring', Value::plain($r->enabled ? Plain::On : Plain::Off,
             $reason ?? ($profile ? 'Checks compare domains against this template.' : WatchFacts::TEMPLATE_UNAVAILABLE)))
             ->actions($this->enableAction(), $this->disableAction());
-        return [Section::make('Records', [...$records, $monitor])];
+        $controls = [$monitor];
+        if ($refusal && $this->deleteAction()->isVisible()) {
+            $controls[] = Row::make('Can delete', Value::plain(Plain::No, $refusal));
+        }
+        return [Section::make('Records', $records), Section::make('Monitoring', $controls)];
     }
     protected function rail(): array
     {

@@ -15,6 +15,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{SiteDnsDefault, StaffWatchWri
 
 class EditConfiguration extends RecordDetailPage
 {
+    protected const PAGE_CLASSES = [...parent::PAGE_CLASSES, 'domains-template-detail'];
     protected static string $resource = RoutingProfileResource::class;
     public array $data = [];
     #[Locked] public int $revision;

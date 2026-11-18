@@ -66,6 +66,16 @@ final class WatchFacts
                 new \Illuminate\Support\HtmlString(($e['public_stale']?'Not current. ':'').($at&&($when=$checked($at,true))!==null?$when.'. ':'').
                 ($profile?'DNS template comparison is unavailable for these saved records.':'Choose a DNS template to compare these records.')));
         }
+        if ($active && self::dnsFailed($w, 'points') && $checks['DNS records']['value'] === null) {
+            $previous = [];
+            foreach (['website'=>'Website', 'email'=>'Email'] as $axis => $label) {
+                $prior = $s?->lastKnown[$axis] ?? [];
+                if (($prior['inScope'] ?? false) && is_bool($prior['value'])) {
+                    $previous[] = $label.($prior['value'] ? ' matched' : ' differed from').' the template on '.self::date($prior['checkedAt']).'.';
+                }
+            }
+            if ($previous) { $checks['DNS records'] = self::fact($previous, 'Previously observed.'); }
+        }
         if (self::registryFailed($w)) {
             $prior = $s?->lastKnown['registry'] ?? [];
             $observed = ($prior['inScope'] ?? false) ? 'Previously observed '.self::date($prior['checkedAt']).'.' : null;
@@ -168,7 +178,7 @@ final class WatchFacts
             $sub = 'Some results are waiting for the next check.';
         }
         return [...self::fact($at ? self::date($at) : null, $sub, tone:$failure ? 'danger' : null, cause:self::missingCause($w)),
-            'at'=>$at ?: null, 'from'=>array_keys(array_filter($fresh, fn($f) => $at && (int)$f['checkedAt']===$at))];
+            'failure'=>$failure, 'at'=>$at ?: null, 'from'=>array_keys(array_filter($fresh, fn($f) => $at && (int)$f['checkedAt']===$at))];
     }
     public static function expires(?DomainSummary $s,array $keys,bool $active,?WatchName $watch=null): array
     {
@@ -190,20 +200,23 @@ final class WatchFacts
         }
         if (!$o?->dns) { return self::fact(null, cause:self::missingCause($w,'delegation')); }
         $found=[];foreach($o->facts['queries']??[] as $q){if(($q['name']??null)===$w->canonical_name && ($q['type']??null)==='NS' && ($q['state']??null)==='rrset'){$found=array_values(array_filter(array_column($q['records']??[],'value'),'is_string'));}}
+        $observed = $found ? implode(', ', $found) : ($o->dns === 'platform' ? 'Matched the template' : 'Different nameservers');
         $configured = ManagedDnsSetup::usable(SiteDnsDefault::watchProfile($w));
         if ($o->id !== $w->delegation?->id || self::dnsFailed($w, 'delegation') || ($s && ($s->lastKnown['dns']['stale'] ?? true))) {
-            return self::fact($found ? implode(', ', $found) : WatchFindings::who($o->dns), 'Previously observed '.self::date($o->started_at).'.'.($configured ? '' : ' Choose an enabled DNS template to compare nameservers.'));
+            return self::fact($observed, 'Previously observed '.self::date($o->started_at).'.'.($configured ? '' : ' Choose an enabled DNS template to compare nameservers.'));
         }
         $expected=\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::watchExpected($w);
-        if(!$configured || !$expected){return self::fact($found?implode(', ',$found):WatchFindings::who($o->dns),'Choose a DNS template to compare nameservers.');}
+        if (!$configured || !$expected) {
+            return self::fact($observed, $configured ? 'Choose what nameservers checks should expect.' : 'Choose an enabled DNS template to compare nameservers.');
+        }
         if ($expected === 'external') {
             $different = $o->dns === 'external';
-            return self::fact($found ? implode(', ', $found) : WatchFindings::who($o->dns),
+            return self::fact($observed,
                 $different ? 'Different nameservers were expected.' : 'Matches the template, but different nameservers were expected.',
                 tone:$different ? null : 'warning');
         }
         $same=$o->dns===$expected;
-        return self::fact($found?implode(', ',$found):WatchFindings::who($o->dns),$same?'Matches template':$w->canonical_name.' does not use '.\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::nameservers().'.',tone:$same?null:'warning');
+        return self::fact($observed,$same?'Matches template':'The observed nameservers differ from this template.',tone:$same?null:'warning');
     }
     private static function records(?DomainSummary $s,bool $active,string $missing): array
     {

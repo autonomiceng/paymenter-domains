@@ -54,7 +54,7 @@ final class StaffWatchWrites
                         if (!ManagedDnsSetup::usable($profile)) { throw new \DomainException('Choose an enabled DNS template.'); }
                         $row->ns_profile_id = $profile->id;
                         $row->profile_revision = $profile->revision;
-                        $row->expected_dns = $input['expected_dns'] ?? null;
+                        $row->expected_dns = in_array($input['expected_dns'] ?? null, ['platform', 'external'], true) ? $input['expected_dns'] : null;
                     }
                     if (!$row->isDirty(['ns_profile_id', 'profile_revision', 'expected_dns'])) { return; }
                 }elseif($action==='read' && $row->state==='active'){
