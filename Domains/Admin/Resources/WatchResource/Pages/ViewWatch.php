@@ -17,17 +17,30 @@ class ViewWatch extends RecordDetailPage
     protected function sections(): array
     {
         ['facts' => $facts, 'status' => $status] = $this->watchFacts();
-        // Each check time that isn't saved yet gets its own Check now.
-        $check = $this->getAction('check', false)?->isVisible() ? fn () => WatchActions::check($this->getRecord(), $this->revision) : null;
+        $checks = $facts['Checks'];
+        $facts['Checks'] = [];
+        foreach (['Last check', 'Next check', 'Registry', 'Nameservers', 'DNS records'] as $label) {
+            if (isset($checks[$label])) { $facts['Checks'][$label] = $checks[$label]; }
+        }
+        $facts['Checks'] += ($facts['Evidence'] ?? []) + $checks;
+        unset($facts['Evidence']);
+        $failed = ($checks['Last check']['tone'] ?? null) === 'danger';
         $sections = [];
-        foreach ($facts as $title => $rows) {
-            $rows = array_map(function (string $label) use ($rows, $check): Row {
-                if ($label === 'Expected nameservers' && $rows[$label]['value'] === null) {
-                    return Row::make($label, Value::state(State::NotSet, Reader::Staff))
-                        ->actions(WatchActions::changeTemplate($this->getRecord(), $this->revision, expected: true)->name('changeExpectedNameservers')->label('Change')->link());
+        foreach ($facts as $title => $entries) {
+            $rows = [];
+            if ($title === 'Checks' && $failed) {
+                $rows[] = Row::notice('failed-check', Value::state(State::Failed, Reader::Staff, $checks['Last check']['sub']), $this->checkAction());
+                $entries['Last check']['tone'] = $entries['Last check']['sub'] = null;
+            }
+            foreach ($entries as $label => $fact) {
+                $row = WatchRows::row($label, $fact, null);
+                if ($label === 'DNS template') {
+                    $actions = [WatchActions::changeTemplate($this->getRecord(), $this->revision)];
+                    if ($fact['url']) { $actions[] = Sheet::link('open_template', 'Open', $fact['url']); }
+                    $row->actions(...$actions);
                 }
-                return WatchRows::row($label, $rows[$label], $check);
-            }, array_keys($rows));
+                $rows[] = $row;
+            }
             // The head shows the state; its reason opens the sheet, so the page has no banner repeating it.
             // A stopped domain starts again from a monitored hosting product, so its notice links to that setting.
             $settings = $this->getRecord()->state === 'retired' && MonitoringSettings::canAccess() ? Sheet::link('monitoring_settings', 'Monitoring settings', WatchResource::getUrl('settings')) : null;

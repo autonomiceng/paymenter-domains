@@ -33,7 +33,7 @@ final class StaffWatchWrites
             $row=$id?$class::whereKey($id)->lockForUpdate()->firstOrFail():new $class;
             if(($row->exists?(int)$row->revision:0)!==($t['revision']??null)){throw new \DomainException('The saved details changed. Reload and try again.');}
             if($kind==='profile' && $action==='save'){
-                if(($t['defaultId']??null)!==null && ($id!==$t['defaultId'] || SiteDnsDefault::profile(true)?->id!==$t['defaultId'])){throw new \DomainException('The default nameservers changed. Reload the page and try again.');}
+                if(($t['defaultId']??null)!==null && (SiteDnsDefault::uses($id,true) ? $id : 0) !== $t['defaultId']){throw new \DomainException('The default nameservers changed. Reload the page and try again.');}
                 if(SiteDnsDefault::uses($id,true)){SiteDnsDefault::authorize($actor);}
             }
             if($kind==='profile'&&$row->exists&&$row->readProfile()===null&&$action!=='delete'){throw new \DomainException(self::UNREADABLE);}
@@ -47,9 +47,16 @@ final class StaffWatchWrites
                     if(WatchDiscovery::hostingActive($id)){$row->state='active';}else{$data=['hosting'=>'suspended'];}
                 }
                 elseif($action==='profile' && in_array($row->state,['active','paused'],true)){
-                    $profile=WatchProfile::whereKey((int)($input['profile']??0))->where('enabled',true)->lockForUpdate()->firstOrFail();
-                    $row->ns_profile_id=$profile->id;$row->profile_revision=$profile->revision;
-                    $row->expected_dns=in_array($input['expected_dns']??null,['platform','external'],true)?$input['expected_dns']:null;
+                    if (array_key_exists('assignment', $input)) {
+                        WatchTemplateAssignment::apply($row, (string) $input['assignment'], $input['expected_dns'] ?? null);
+                    } else {
+                        $profile = WatchProfile::whereKey((int) ($input['profile'] ?? 0))->lockForUpdate()->first();
+                        if (!ManagedDnsSetup::usable($profile)) { throw new \DomainException('Choose an enabled DNS template.'); }
+                        $row->ns_profile_id = $profile->id;
+                        $row->profile_revision = $profile->revision;
+                        $row->expected_dns = $input['expected_dns'] ?? null;
+                    }
+                    if (!$row->isDirty(['ns_profile_id', 'profile_revision', 'expected_dns'])) { return; }
                 }elseif($action==='read' && $row->state==='active'){
                     $latest=DB::table('domains_watch_staff_claims')->where('subject_type','watch')->where('subject_id',$id)->where('action','read')->where('claim','<>',$claim)->orderByDesc('created_at')->lockForUpdate()->first()?->created_at;
                     if($latest && $latest>time()-300){throw new \DomainException('A check was recently requested. Try again later.');}

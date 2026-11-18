@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Resources;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\WatchReadResource;
 use Paymenter\Extensions\Servers\Domains\Models\WatchProfile;
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource\Pages\{ListConfiguration,ViewConfiguration};
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource\Pages\{AssignedDomains,EditConfiguration,ListConfiguration,ViewConfiguration};
 class RoutingProfileResource extends WatchReadResource
 {
     protected static ?string $model=WatchProfile::class;
@@ -15,5 +15,5 @@ class RoutingProfileResource extends WatchReadResource
     protected static ?string $pluralModelLabel='DNS templates';
     protected static ?string $breadcrumb='DNS templates';
     protected static ?string $slug='dns-templates';
-    public static function getPages(): array{return ['index'=>ListConfiguration::route('/'),'view'=>ViewConfiguration::route('/{record}')];}
+    public static function getPages(): array{return ['index'=>ListConfiguration::route('/'),'view'=>ViewConfiguration::route('/{record}'),'edit'=>EditConfiguration::route('/{record}/edit'),'assigned'=>AssignedDomains::route('/{record}/domains')];}
 }

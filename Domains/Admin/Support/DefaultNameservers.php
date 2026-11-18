@@ -53,7 +53,7 @@ final class DefaultNameservers
     /** Use another template. $saved runs after a save so the page can show the new default. */
     public static function choose(\Closure $saved): Action
     {
-        return Sheet::button(Action::make('siteDefault')->label('Use another template'))->modalHeading(self::TITLE)
+        return Sheet::button(Action::make('siteDefault')->label('Change'))->modalHeading('Change template for new domains')
             ->modalDescription('New registrations get the nameservers of the template you choose. Transfers keep their own.')
             ->modalSubmitActionLabel('Save')
             ->schema([Select::make('profile')->label('DNS template')->required()
@@ -65,22 +65,5 @@ final class DefaultNameservers
                 catch(\DomainException $e){Notification::make()->warning()->title($e->getMessage())->send();$action->halt();return;}
                 $saved();Notification::make()->title('Default nameservers saved')->success()->send();
             });
-    }
-    /** The card: the nameservers new domains get, the template they come from, and the two ways to change them.
-     * $edit edits the default template in place; it is null when there is no usable default to edit. */
-    public static function card(?WatchProfile $default,?Action $edit,Action $choose): Group
-    {
-        $canEdit=Staff::canEditDefaultDns();$refusal=SiteDnsDefault::refusal($canEdit);
-        $problem=$refusal??($default?null:($canEdit?SiteDnsDefault::MISSING:'Default nameservers are missing. New domains have no nameservers to use. '.SiteDnsDefault::ASK));
-        // A default a registrar refuses still shows its nameservers and Edit, which is one of its two fixes.
-        $names=TextEntry::make('default_nameservers')->label('Nameservers')->state($default?$default->nameservers:Missing::LABEL)
-            ->listWithLineBreaks()->fontFamily($default?FontFamily::Mono:null)->extraAttributes(['class'=>'domains-wrap'])
-            ->belowContent($default&&!$refusal?'New registrations get these. Transfers keep their own. Monitored domains without a template of their own are checked against them.':null);
-        $template=TextEntry::make('default_template')->label('From template')->state($default?->name??Missing::LABEL)
-            ->url($default?RoutingProfileResource::getUrl('view',['record'=>$default]):null);
-        return Sheet::single([
-            ...($problem?[Callout::make($problem)->status('danger')->columnSpanFull()]:[]),
-            Sheet::section(self::TITLE,[Sheet::row(MissingEntry::apply($names,cause:$problem,causeShown:true),$edit&&$default?[$edit]:[]),Sheet::row(MissingEntry::apply($template,cause:$problem,causeShown:true),[$choose])]),
-        ],'default-nameservers');
     }
 }

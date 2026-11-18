@@ -56,9 +56,25 @@ trait WatchPage
     protected function head(): Head
     {
         $w = $this->getRecord();
-        return Head::make($w->canonical_name, Reader::Staff)->domain()->tag(DemoData::is($w), false)->state(match ($w->state) { 'active' => State::Monitored, 'paused' => State::Paused, default => State::Stopped }, 'watch-'.$w->id);
+        $head = Head::make($w->canonical_name, Reader::Staff)->domain()->tag(DemoData::is($w), false)->state(match ($w->state) { 'active' => State::Monitored, 'paused' => State::Paused, default => State::Stopped }, 'watch-'.$w->id);
+        if ($w->state === 'active') {
+            $facts = $this->watchFacts()['facts'];
+            $review = (int) (($facts['Domain']['DNS template']['tone'] ?? null) === 'warning' || $facts['Domain']['DNS template']['value'] === null)
+                + (int) (\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::watchExpected($w) === null);
+            $last = $facts['Checks']['Last check'] ?? [];
+            $summary = $review ? [$review === 1 ? 'One setting needs review.' : "$review settings need review."] : [];
+            if (($last['tone'] ?? null) === 'danger') { $summary[] = 'Last check failed.'; }
+            if ($summary) { $head->note(implode(' ', $summary)); }
+        }
+        return $head;
     }
-    protected function actions(): array { return WatchActions::watch($this->getRecord(), $this->revision); }
+    protected function actions(): array {
+        $actions = WatchActions::watch($this->getRecord(), $this->revision);
+        if ($this instanceof WatchHistory || ($this->watchFacts()['facts']['Checks']['Last check']['tone'] ?? null) !== 'danger') {
+            array_unshift($actions, $this->checkAction());
+        }
+        return $actions;
+    }
     protected function poll(): ?array { return $this->pendingCheck ? ['pollCheck', 5] : ($this->getRecord()->state === 'active' ? ['refreshFacts', 60] : null); }
     /** @return list<NavigationItem> */
     public function getSubNavigation(): array

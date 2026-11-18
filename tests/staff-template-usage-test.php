@@ -31,6 +31,8 @@ expect(!str_contains($note($default->id),'follows the site DNS default'),'The ol
 DB::table('domains_watch_names')->where('id',$watch->id)->update(['ns_profile_id'=>$profile->id,'profile_revision'=>1,'expected_dns'=>'platform']);
 DB::table('domains_watch_profiles')->where('id',$profile->id)->update(['enabled'=>false]);
 same(['checked'=>0,'inherited'=>0,'unchecked'=>1],WatchFacts::usage($profile->id),'An off template checks nothing and names the domain that still uses it');
-same(0,WatchFacts::usedBy($profile->id),'An off template counts no monitored domains');
+same(1,WatchFacts::usedBy($profile->id),'An off template counts its paused assignments');
+$assigned = Livewire::actingAs($manager)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource\Pages\AssignedDomains::class, ['record'=>$profile->id]);
+same([$watch->canonical_name],$assigned->instance()->getTableRecords()->pluck('domain')->all(),'The count opens the domains assigned to the selected template');
 expect(str_contains($note($profile->id),'1 domain uses this template and is not checked while it is off. Turn it on or choose another template for it.'),'The off template says why its domain is not counted');
 $nativeSuccessful=true;echo "Staff template usage passed\n";

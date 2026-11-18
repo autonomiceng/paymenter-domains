@@ -50,8 +50,8 @@ same($before,[WatchProfile::count(),\Paymenter\Extensions\Servers\Domains\Models
 $other=DB::transaction(fn()=>WatchProfile::create(['name'=>'Other template','nameservers'=>['ns1.other.test'],'website_endpoints'=>[],'email_endpoints'=>[],'edited_by'=>$manager->id,'reason'=>'Synthetic other']));
 $refused=false;try{Writes::requireUniqueName($other->name,(int)$profile->id);}catch(DomainException){$refused=true;}
 expect($refused,'Editing to another template name is refused while excluding the current ID');
-Livewire::actingAs($manager)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource\Pages\ViewConfiguration::class,['record'=>$profile->id])
-    ->mountAction('save')->setActionData(['name'=>$other->name,'nameservers'=>'ns1.new.test'])->callMountedAction()->assertHasActionErrors(['name'])->assertActionMounted('save');
+Livewire::actingAs($manager)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource\Pages\EditConfiguration::class,['record'=>$profile->id])
+    ->set('data.name',$other->name)->call('save')->assertHasErrors(['data.name']);
 // RoutingProfile admits up to 100 raw hosts and at most 13 normalized distinct nameservers.
 $duplicates=implode("\n",array_fill(0,100,'NS1.new.test.'));
 Livewire::actingAs($manager)->test(ListTemplates::class)->callAction('save',['name'=>'Normalized template','nameservers'=>$duplicates,'website_endpoints'=>$duplicates,'website_endpoints_ips'=>implode("\n",array_fill(0,100,'192.0.2.1'))])->assertHasNoActionErrors();

@@ -51,6 +51,6 @@ final class Trace extends Component implements HasEmbeddedView
     private static function word(array $step): ?string
     {
         $word = $step['state']?->label();
-        return $word !== null && strcasecmp(rtrim(trim($step['label']), '.'), $word) === 0 ? null : $word;
+        return $word !== null && preg_match('/(?:^|\s)'.preg_quote($word, '/').'[.]?$/iu', trim($step['label'])) ? null : $word;
     }
 }
