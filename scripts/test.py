@@ -715,7 +715,8 @@ def main():
         batch = 32 if env.get('DOMAINS_TEST_CGROUP') else 1
         commands = [('lint', [php, '-l', *php_files[index:index+batch]])
                     for index in range(0, len(php_files), batch)]
-        if 'lint' in selected:
+        # The runner suite already includes this exact scan.
+        if 'lint' in selected and 'runner' not in selected:
             commands.append(('lint', [php, 'tests/php83-compatibility-test.php']))
         for kind, paths in suites.items():
             if kind in selected:

@@ -774,7 +774,6 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual([(kind, argv[-1]) for kind, argv in commands if kind != 'lint'], expected)
         lint = [[str(ROOT/'scripts/php-test'), '-l', str(path.relative_to(ROOT))]
                 for area in ['Domains', 'tests'] for path in sorted((ROOT/area).rglob('*.php'))]
-        lint.append([str(ROOT/'scripts/php-test'), 'tests/php83-compatibility-test.php'])
         self.assertEqual([argv for kind, argv in commands if kind == 'lint'], lint)
         self.assertIsNone(run.call_args.kwargs['only'])
 
