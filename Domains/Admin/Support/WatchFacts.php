@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use App\Models\User;
 use Paymenter\Extensions\Servers\Domains\Presentation\State;
-use Paymenter\Extensions\Servers\Domains\Services\{SiteDnsDefault, ManagedDnsSetup};
+use Paymenter\Extensions\Servers\Domains\Services\{SiteDnsDefault, ManagedDnsSetup, WatchTemplateAssignment};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource;
 use Paymenter\Extensions\Servers\Domains\Models\{WatchName,WatchAudit,WatchProfile};
 use Paymenter\Extensions\Servers\Domains\Presentation\{DomainSummary,Missing};
@@ -42,7 +42,7 @@ final class WatchFacts
         if(!in_array('watch.no_coverage',$keys,true)){$domain['Expires']=self::expires($s,$keys,$active,$w);}
         $sid=$w->sources()->where('user_id',$w->user_id)->where('state','watch')->orderBy('id')->value('service_id');$service=$sid?\App\Models\Service::with('product')->find($sid):null;
         if($service){$domain['Hosting service']=self::fact($service->product?->name??'Service #'.$service->id,'Service #'.$service->id,url:Staff::can('admin.services.update')?\App\Admin\Resources\ServiceResource::getUrl('edit',['record'=>$service->id]):null);}
-        $checks=['Nameservers'=>self::nameservers($w,$s),'DNS records'=>self::records($s,$active,$missing)];
+        $checks=['Nameservers'=>self::nameservers($w,$s,$profile),'DNS records'=>self::records($s,$active,$missing)];
         if(!in_array('watch.no_coverage',$keys,true)){$checks['Registry']=in_array('watch.not_registered',$keys,true)?self::fact('Not registered',tone:'warning'):self::fact(($s?->freshness['registry']['checkedAt']??null)?'Registered':null,cause:self::missingCause($w,'expiry'));}
         $last=self::lastCheck($w,$s);$checks['Last check']=$last;
         // Last check already says when. Only the saved DNS answer that Last check describes drops its second Checked time;
@@ -199,7 +199,7 @@ final class WatchFacts
         $due=$work->min('due_at');return [...self::fact($due?self::date((int)$due):null,cause:'No check scheduled. Open Registrars and check the background worker.'),'at'=>$due?(int)$due:null];
     }
     /** The nameservers the last delegation check found, compared with the expected ones. */
-    private static function nameservers(WatchName $w,?DomainSummary $s): array
+    private static function nameservers(WatchName $w,?DomainSummary $s,?WatchProfile $profile): array
     {
         $o = $w->delegation;
         if (!$o?->dns && $o) {
@@ -209,7 +209,7 @@ final class WatchFacts
         if (!$o?->dns) { return self::fact(null, cause:self::missingCause($w,'delegation')); }
         $found=[];foreach($o->facts['queries']??[] as $q){if(($q['name']??null)===$w->canonical_name && ($q['type']??null)==='NS' && ($q['state']??null)==='rrset'){$found=array_values(array_filter(array_column($q['records']??[],'value'),'is_string'));}}
         $observed = $found ? implode(', ', $found) : ($o->dns === 'platform' ? 'Matched the template' : 'Different nameservers');
-        $configured = ManagedDnsSetup::usable(SiteDnsDefault::watchProfile($w));
+        $configured = ManagedDnsSetup::usable($profile);
         if ($o->id !== $w->delegation?->id || self::dnsFailed($w, 'delegation') || ($s && ($s->lastKnown['dns']['stale'] ?? true))) {
             return self::fact($observed, 'Previously observed '.self::date($o->started_at).'.'.($configured ? '' : ' Choose an enabled DNS template to compare nameservers.'));
         }
@@ -223,8 +223,11 @@ final class WatchFacts
                 $different ? 'Different nameservers were expected.' : 'Matches the template, but different nameservers were expected.',
                 tone:$different ? null : 'warning');
         }
-        $same=$o->dns===$expected;
-        return self::fact($observed,$same?'Matches template':'The observed nameservers differ from this template.',tone:$same?null:'warning');
+        if ($o->dns === $expected) { return self::fact($observed, 'Matches template'); }
+        $site = $w->ns_profile_id === null ? $profile : SiteDnsDefault::profile();
+        $expectedNames = WatchTemplateAssignment::verified($profile, $site) ? \Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::nameservers()
+            : 'the nameservers in '.$profile->name;
+        return self::fact($observed, $w->canonical_name.' does not use '.$expectedNames.'.', tone:'warning');
     }
     private static function records(?DomainSummary $s,bool $active,string $missing): array
     {

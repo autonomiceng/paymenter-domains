@@ -29,7 +29,7 @@ final class WatchTemplateAssignment
         $hosts = config('domains.site_dns_default.nameservers');
         if (!is_array($hosts) || !$hosts) { return false; }
         try { $deployment = new RoutingProfile($hosts, [], []); }
-        catch (\InvalidArgumentException) { return false; }
+        catch (\InvalidArgumentException|\TypeError) { return false; }
         return $profile->readProfile()?->nameservers === $deployment->nameservers;
     }
 
