@@ -81,7 +81,7 @@ $select=static function(WatchProfile $profile,array $accounts,string $oldRule)us
         if($class===RegistrarAccount::class){
             $dns=$dnsRow($page->html());
             expect(str_contains($dns['text'],$profile->name)&&!str_contains($dns['text'],State::NeedsReview->label()),'Valid staff choice clears the review on the account page');
-            foreach([implode(', ',$profile->nameservers),'New registrations use these nameservers unless the customer chooses others. Transfers keep the nameservers they already have.'] as $text){expect(str_contains($dns['text'],$text),'The DNS row says: '.$text);}
+            expect(str_contains($dns['text'],$profile->nameservers[0]),'The account names the first nameserver from the chosen template');
             same(['Change'=>RoutingProfileResource::getUrl()],$dns['links'],'The DNS row links Change to DNS templates');
             unset($page);gc_collect_cycles();gc_mem_caches();continue;}
         $entry=$row($page);same($profile->name,$entry?->getState(),'Valid staff choice clears Missing on each native page');

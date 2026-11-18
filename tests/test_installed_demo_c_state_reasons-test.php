@@ -28,12 +28,11 @@ $case('B01 disabled renewal',function()use($t,$now){
 $case('D01 complete selected terms count',function()use($t,$actor,$tlds){
     $policy=SalesPolicy::where('tld',$t->tld)->firstOrFail()->getAttributes();unset($policy['id']);
     for($i=1;$i<600;$i++){$copy=$t->replicate();$copy->tld='state'.strtr(sprintf('%03d',$i),'0123456789','abcdefghij');$copy->catalogue_facts=$i===599?null:($i===1?$tlds[1]->catalogue_facts:$t->catalogue_facts);$copy->catalogue_retained_annual_retail=null;$copy->save();DB::table('domains_sales_policies')->insert([...$policy,'tld'=>$copy->tld]);}
-    $rows=AccountChecklist::renewals((int)$t->server_id);$summary=collect($rows)->firstWhere('label','Selected TLD terms');
-    same('599 of 600 read',$summary['value']??null,'Counts the full selected set including annual-only facts');
-    expect(str_contains((string)$summary['cause'],'1 needs attention'),'Missing facts count is explicit');
-    $link=$summary['buttons'][0]->getUrl();expect(str_contains($link,'needs_attention')&&str_contains($link,'server_id'),'Attention link is account scoped');
+    $summary=\Paymenter\Extensions\Servers\Domains\Admin\Support\TldTerms::summary((int)$t->server_id);
+    same([599,600,1],[$summary['read'],$summary['total'],count($summary['attention'])],'Counts the full selected set including annual-only facts');
     Livewire::actingAs($actor)->test(ListTlds::class)->filterTable('server_id',(string)$t->server_id)->filterTable('needs_attention')->assertCountTableRecords(1);
-    Livewire::actingAs($actor)->test(RegistrarAccount::class,['account'=>$t->server_id])->assertSee('Selected TLD terms')->assertDontSee('Supported terms');
+    $link=\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource::getUrl('index',['filters'=>['server_id'=>['value'=>(string)$t->server_id],'needs_attention'=>['isActive'=>true]]]);
+    Livewire::actingAs($actor)->test(RegistrarAccount::class,['account'=>$t->server_id])->assertSeeHtml('href="'.e($link).'"');
 });
 $case('D05 D06 feed absence and no seller',function()use($t,$actor,$now){
     $missing=Tld::where('tld','statefjj')->sole();

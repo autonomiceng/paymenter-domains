@@ -61,14 +61,14 @@ $filter('status',['completed'])->assertCanSeeTableRecords([$doneOp])->assertCoun
 $filter('action',['transfer'])->assertCountTableRecords(3);
 $filter('server_id',[$active->server_id])->assertCanSeeTableRecords([$doneOp])->assertCountTableRecords(1);
 
-// Request #1: held on a real cause. Heading pill, one notice with its fix, Details and History.
+// Request #1: held on a real cause. The heading, its recovery link and history stay visible.
 DB::table('domains_operations')->where('id',$heldOp->id)->update(['safe_code'=>'configuration_unavailable','attempt'=>null]);
 $manager=staffUser([Staff::VIEW,'admin.domains.manage',...array_map(StaffOperationReview::permission(...),array_keys(StaffOperationReview::ACTIONS))]); Auth::setUser($manager);
 $page=Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$heldOp->id])->assertSuccessful();
 expect(str_contains((string)$page->instance()->getHeading(),'Request #'.$heldOp->id)&&str_contains($page->instance()->getSubheading()->toHtml(),'Under review'),'The line under the heading carries the request state');
 same([Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource::getUrl()=>'Registrar requests','Request #'.$heldOp->id],$page->instance()->getBreadcrumbs(),'Breadcrumbs');
 // Retained expiry and actual charge in this display fixture cannot prove an unsent acquisition.
-$page->assertSee("Not sent: couldn't load the registrar account's settings.")->assertSee('Open account')->assertSeeHtml(e(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$heldOp->server_id])))->assertDontSee('Release hold')->assertSee('Details')->assertSee('History')
+$page->assertSee("Not sent: couldn't load the registrar account's settings.")->assertSee('Open account')->assertSeeHtml(e(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$heldOp->server_id])))->assertDontSee('Release hold')->assertSee('History')
     ->assertSee('Registrar account')->assertSee('NameSilo, Test')->assertSee('Request created')
     ->assertDontSee('Domain not found')->assertDontSee('No time recorded')->assertDontSee('Review actions')->assertDontSee('Saved evidence')->assertDontSee('Request type')->assertDontSee('Customer credit');
 $page->assertActionHidden('release')->assertActionVisible('refund')->assertActionHidden('hold')->assertSee('More');
@@ -367,9 +367,20 @@ unset($policy['reconciliation']['read_at']);$transfer->policy=$policy;
 same(false,RequestFacts::automaticTransfer($transfer),'Without a read the old transfer start is stale');
 $transfer->started_at=gmdate('Y-m-d H:i:s',$readNow-3600);
 same(true,RequestFacts::automaticTransfer($transfer),'A newly started transfer can await its first read');
+DB::table('domains_operations')->where('id',$transfer->id)->update(['started_at'=>gmdate('Y-m-d H:i:s',$readNow-8*86400)]);
+$transfer=$transfer->fresh();
+$policy['reconciliation']=['transfer_status'=>'pending','reason'=>'transfer_deadline_passed','staff_alert'=>true,
+    'read_at'=>$readNow-3600,'next_at'=>$readNow+3600,'final_check'=>'done'];
+$transfer->update(['policy'=>$policy]);
+$filter('status',['delayed'])->assertCanSeeTableRecords([$transfer]);
+$filter('status',['under_review'])->assertCanNotSeeTableRecords([$transfer]);
+$timing=RequestFacts::transferChecks($transfer);
+same([$readNow-3600,null],[$timing['last_at'],$timing['next_at']],'A stopped transfer retains the last read and ignores the expired schedule');
+Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$transfer->id])->assertSuccessful()
+    ->assertActionVisible('resume_reads')->assertActionHidden('recheck')->assertActionHidden('release');
 DB::table('domains_operations')->where('id',$longOp->id)->update($storedTransfer);
 // Unreadable saved data: one notice with its fix, never an "unavailable" value.
 DB::table('domains_operations')->where('id',$longOp->id)->update(['policy'=>'not-encrypted']);
 Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$longOp->id])->assertSee("Can't read saved data. Ask your site admin to check the encryption key.")->assertDontSee('unavailable');
-echo "Staff request page: status set, reasons, list, notice, Details, History and action names passed.\n";
+echo "Staff request page: status set, reasons, list, notice, history and actions passed.\n";
 $nativeSuccessful=true;

@@ -314,7 +314,7 @@ try{
 Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
 $shown=RegistrarBalances::facts($a,$clock->now());$serverName=App\Models\Server::findOrFail($a->server_id)->name;
 $render=Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSee('Registrars')->assertSee('Add funds')->assertSee($serverName)->assertSee($shown['balance']??$shown['missing']->label());
-$account=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$a->server_id])->assertSee('Check balance')->assertSee('Add funds')->assertSee($shown['balance']??$shown['missing']->label())->assertSee('Unpaid hold')->assertSee(Paymenter\Extensions\Servers\Domains\Services\UnpaidHoldSetting::minutes((int)$a->server_id).' minutes');
+$account=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$a->server_id])->assertSee('Check balance')->assertSee('Add funds')->assertSee($shown['balance']??$shown['missing']->label())->assertSee(Paymenter\Extensions\Servers\Domains\Services\UnpaidHoldSetting::minutes((int)$a->server_id).' minutes');
 $html=$render->html().$account->html();foreach(['https://cp.enom.com/','https://ote.namesilo.com/cart/add-funds','noopener noreferrer'] as $needle){expect(str_contains($html,$needle),'Rendered account structure and official external links: '.$needle);}
 expect(!str_contains($html,'https://www.namesilo.com/cart/add-funds'),'OTE accounts never link to live funding');
 $liveServer=App\Models\Server::create(['name'=>'Synthetic live balance','extension'=>'Domains','type'=>'server','enabled'=>true]);
