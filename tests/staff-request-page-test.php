@@ -65,6 +65,12 @@ $filter('server_id',[$active->server_id])->assertCanSeeTableRecords([$doneOp])->
 DB::table('domains_operations')->where('id',$heldOp->id)->update(['safe_code'=>'configuration_unavailable','attempt'=>null]);
 $manager=staffUser([Staff::VIEW,'admin.domains.manage',...array_map(StaffOperationReview::permission(...),array_keys(StaffOperationReview::ACTIONS))]); Auth::setUser($manager);
 $page=Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$heldOp->id])->assertSuccessful();
+$customer = $heldOp->domain->user;
+$page->assertSee('Customer #'.$customer->id)->assertDontSee($customer->email)->assertDontSee('Open customer');
+$customerReader = staffUser([Staff::VIEW, 'admin.users.view']);
+Livewire::actingAs($customerReader)->test(ViewOperation::class, ['record'=>$heldOp->id])
+    ->assertSee($customer->email)->assertDontSee('Open customer');
+Auth::setUser($manager);
 expect(str_contains((string)$page->instance()->getHeading(),'Request #'.$heldOp->id)&&str_contains($page->instance()->getSubheading()->toHtml(),'Under review'),'The line under the heading carries the request state');
 same([Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource::getUrl()=>'Registrar requests','Request #'.$heldOp->id],$page->instance()->getBreadcrumbs(),'Breadcrumbs');
 // Retained expiry and actual charge in this display fixture cannot prove an unsent acquisition.
@@ -371,6 +377,7 @@ DB::table('domains_operations')->where('id',$transfer->id)->update(['started_at'
 $transfer=$transfer->fresh();
 $policy['reconciliation']=['transfer_status'=>'pending','reason'=>'transfer_deadline_passed','staff_alert'=>true,
     'read_at'=>$readNow-3600,'next_at'=>$readNow+3600,'final_check'=>'done'];
+$policy = Paymenter\Extensions\Servers\Domains\Services\TransferFollowup::record($transfer, $policy, $readNow-3600, 'pending');
 $transfer->update(['policy'=>$policy]);
 $filter('status',['delayed'])->assertCanSeeTableRecords([$transfer]);
 $filter('status',['under_review'])->assertCanNotSeeTableRecords([$transfer]);
@@ -382,6 +389,20 @@ $policy['reconciliation']['manual_check']=true;
 $policy['status_check']=['outcome'=>'scheduled','at'=>$readNow,'next_at'=>$readNow];
 $transfer->update(['policy'=>$policy]);
 same($readNow+3600,RequestFacts::transferChecks($transfer)['next_at'],'A manual check deferred by the registrar limit uses the recorded retry time');
+$policy['reconciliation'] = ['reason'=>'transfer_pending', 'transfer_status'=>'pending', 'staff_alert'=>false,
+    'final_check'=>'running', 'reading_until'=>$readNow+120, 'next_at'=>$readNow+3600];
+$transfer->update(['policy'=>$policy]);
+Livewire::actingAs($manager)->test(ViewOperation::class, ['record'=>$transfer->id])->assertSuccessful()
+    ->assertDontSee('Check now');
+$transfer->update(['started_at'=>gmdate('Y-m-d H:i:s',$readNow-15*86400)]);
+$policy['reconciliation'] = ['reason'=>'transfer_pending', 'transfer_status'=>'pending', 'staff_alert'=>false];
+$transfer->update(['policy'=>$policy]);
+$recovery = staffUser([Staff::VIEW, StaffOperationReview::permission('resume_reads')]);
+Livewire::actingAs($recovery)->test(ViewOperation::class, ['record'=>$transfer->id])->assertSuccessful()
+    ->assertActionVisible('resume_reads')->assertSee('Check now');
+Livewire::actingAs($viewer)->test(ViewOperation::class, ['record'=>$transfer->id])->assertSuccessful()
+    ->assertActionHidden('resume_reads')->assertDontSee('Check now');
+Auth::setUser($manager);
 DB::table('domains_operations')->where('id',$longOp->id)->update($storedTransfer);
 // Unreadable saved data: one notice with its fix, never an "unavailable" value.
 DB::table('domains_operations')->where('id',$longOp->id)->update(['policy'=>'not-encrypted']);

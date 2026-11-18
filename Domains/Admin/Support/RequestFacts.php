@@ -2,7 +2,8 @@
 // Adapted from Enom 444f31c staff activity; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
-use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
+use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, TransferPolling};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\{RequestStatus,State};
 use Paymenter\Extensions\Servers\Domains\Services\{BalanceRetries, ComplimentaryCosts, ContactProfileHold, ContactStepRetries, EnomTestManagement, EnomTestRegistration, ManagementEvidence, ManagementProgress, OperationClaims, RegistrarCheck, RegistrationDns, RenewalCycles, RenewalReplacements, StaffOperationWrites, UnpaidAcquisitionProof, WriteHeld};
@@ -513,31 +514,40 @@ final class RequestFacts
     }
     /**
      * Staff display of recorded transfer checks. The scheduler owns the next timestamp and when checks stop.
-     * @return array{last_at:?int,last_result:?string,next_at:?int,next_reason:string,manual_queued:bool,stopped:bool}
+     * @return array{last_at:?int,last_result:?string,next_at:?int,next_reason:?string,manual_queued:bool,checking:bool,customer_action:?string}
      */
     public static function transferChecks(Operation $op): array
     {
         $r = $op->policy['reconciliation'] ?? [];
-        $check = RegistrarCheck::status($op) ?? [];
-        $lastAt = self::recordedAt($r['read_at'] ?? null);
-        $result = match ($r['transfer_status'] ?? null) {
+        $now = app(Clock::class)->now()->getTimestamp();
+        $schedule = TransferPolling::schedule($op, $now);
+        $result = match ($schedule['last_result']) {
             'pending' => 'Transfer pending.',
             'needs_action' => 'Old registrar needs an update.',
-            'unknown' => 'Transfer status could not be checked.',
+            'completed' => 'Transfer reported complete.',
+            'rejected' => 'Transfer reported rejected.',
+            'unknown', 'unavailable', 'incomplete' => 'Transfer status could not be confirmed.',
             default => null,
         };
-        $failedAt = ($check['outcome'] ?? null) === 'unavailable' ? self::recordedAt($check['at'] ?? null) : null;
-        if ($failedAt !== null && ($lastAt === null || $failedAt >= $lastAt)) {
-            [$lastAt, $result] = [$failedAt, 'Transfer status could not be checked.'];
+        $customerAction = $schedule['last_result'] === 'needs_action'
+            ? 'Ask the customer to check approval, the domain lock and the auth code with their old registrar.'
+            : null;
+        if ($customerAction !== null && ($r['transfer_privacy_blocked'] ?? false) === true) {
+            $customerAction .= ' Ask them to turn off WHOIS privacy there.';
         }
-        $manual = ($r['manual_check'] ?? false) === true;
-        $stopped = !$manual && ($r['final_check'] ?? null) === 'done';
-        $nextAt = $stopped ? null : (self::recordedAt($r['next_at'] ?? null) ?? ($manual ? self::recordedAt($check['next_at'] ?? null) : null));
-        return ['last_at'=>$result === null ? null : $lastAt, 'last_result'=>$result, 'next_at'=>$nextAt,
-            'next_reason'=>$stopped ? 'Automatic checks ended at the transfer deadline.' : 'No time recorded',
-            'manual_queued'=>$manual, 'stopped'=>$stopped];
+        $reason = match ($schedule['stop_reason']) {
+            null => null,
+            'transfer_followup_expired' => 'The 14-day check window ended.',
+            'transfer_followup_window_complete' => 'The next daily check would fall after the 14-day window.',
+            'transfer_status_unavailable' => 'The last check could not confirm the transfer status.',
+            'transfer_needs_action' => 'The old registrar needs an update.',
+            'transfer_authority_changed' => 'The saved transfer details changed.',
+            default => 'The registrar did not confirm that automatic checks could continue.',
+        };
+        return ['last_at'=>$schedule['last_read_at'], 'last_result'=>$result, 'next_at'=>$schedule['next_read_at'],
+            'next_reason'=>$reason, 'manual_queued'=>($r['manual_check'] ?? false) === true,
+            'checking'=>TransferPolling::reading($op, $now), 'customer_action'=>$customerAction];
     }
-    private static function recordedAt(mixed $at): ?int { return is_int($at) && $at > 0 ? $at : null; }
     /** An unconfirmed registration or renewal by answerState(): while a check is scheduled, Check status is the one step; once
      * checks stop, recording the answer is. */
     private static function answerNotice(Operation $op, string $stand, array $facts): array

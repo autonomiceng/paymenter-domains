@@ -227,7 +227,7 @@ final class AccountChecklist
     private static function priceAge(Account $account,int $updatedAt): string
     {
         $age=app(Clock::class)->now()->getTimestamp()-$updatedAt;
-        return $age<CatalogueFreshness::forAccount((int)$account->server_id)->maxAge()?'Up to date':'Out of date';
+        return $age<CatalogueFreshness::forAccount((int)$account->server_id)->maxAge()?'Ready':'Out of date';
     }
     /** Sync covers every TLD of the account at once. Staff who can't sync can still open the TLD list. */
     private static function priceButtons(Account $a): array
@@ -243,7 +243,7 @@ final class AccountChecklist
         foreach(['issue_days'=>['Invoice issued','How long before expiry the renewal invoice goes out.'],'due_days'=>['Invoice due','How long before expiry the customer must pay.']] as $key=>[$label,$help]){
             $rows[]=$billing[$key]===null?self::row($label,null,null,'Saved invoice days are invalid. New renewal invoices wait.','renewal_billing',$help):self::row($label,$billing[$key].' days before expiry',null,null,'renewal_billing',$help);
         }
-        $rows[]=self::row('Wait for payment',UnpaidHoldSetting::minutes($server).' minutes',null,'An unpaid new order keeps the domain name for this long.','unpaid_hold',SettingsActions::details('unpaid_hold'));
+        $rows[]=self::row('Unpaid hold',UnpaidHoldSetting::minutes($server).' minutes',null,'An unpaid new order keeps the domain name for this long.','unpaid_hold',SettingsActions::details('unpaid_hold'));
         $rows[]=self::renewEarly($server);
         try{$a=Account::where('server_id',$server)->sole();$binding=AccountBindings::binding($a);
             // Use the same effective sales projection as What you sell; don't fill the preview with unsold catalogue entries.
@@ -269,11 +269,11 @@ final class AccountChecklist
         $terms=TldTerms::summary($server);$attention=count($terms['attention']);
         try{$url=TldResource::getUrl('index',['filters'=>['server_id'=>['value'=>(string)$server],'needs_attention'=>['isActive'=>true]]]);}catch(\Throwable){$url=null;}
         // Nothing to do when every selected TLD has its terms: no instruction and no link to an empty list.
-        $rows[]=[...self::row('TLD terms read',$terms['read'].' of '.$terms['total'],$attention?'danger':null,
+        $rows[]=[...self::row('Selected TLD terms',$terms['read'].' of '.$terms['total'].' read',$attention?'danger':null,
             $attention?$attention.' '.($attention===1?'needs':'need').' attention. Review current registrar terms on the TLD list.':null,null,
             'Whether the current registrar renewal terms are saved for each TLD you sell. They refresh on a schedule.'),
             'buttons'=>$attention?[Sheet::link('selected_terms','View TLDs needing attention',$url)]:[]];
-        $rows[]=self::row('Renews for','1 year',null,'Applies to scheduled renewals.');
+        $rows[]=self::row('Scheduled renewals','1 year',null,null,null,'Scheduled renewal invoices remain annual.');
         $rows[]=ReminderFacts::emails($server);
         if(($schedule=ReminderFacts::scheduleRow($server))!==null){$rows[]=$schedule;}
         return $rows;

@@ -119,7 +119,10 @@ class ViewOperation extends RecordDetailPage
         $link=$notice===null?null:($notice['link']??null);
         $action=isset($notice['action'])?$this->getAction($notice['action'],false):null; $acts=(bool)$action?->isVisible();
         $transferChecks=($notice['transfer_checks']??false)?RequestFacts::transferChecks($op):null;
-        if ($transferChecks['manual_queued']??false) { $acts=false; }
+        if ($transferChecks !== null && ($transferChecks['manual_queued'] || $transferChecks['checking']
+            || ($notice['action'] === 'recheck' && $transferChecks['next_at'] > app(Clock::class)->now()->getTimestamp()))) {
+            $acts = false;
+        }
         $lead=$notice===null?null:($answers&&$transferChecks===null&&(($notice['primary']??null)==='enom_answer'||!$acts)?$answer:($acts?Sheet::button($action,$notice['action']==='refund'?'danger':'gray'):null));
         // When the answer leads, the notice's own action (Check status, a read before a manual answer) sits on Registrar reply.
         $check=null;
@@ -130,7 +133,7 @@ class ViewOperation extends RecordDetailPage
         elseif ($status['reason']!==null&&($reason=RequestRows::sentence($status['reason']))!==null) { $review[]=RequestRows::reason($reason); }
         $account=RequestFacts::account($op);
         $domain = $op->domain;
-        $customer = $domain?->user;
+        $customer = Staff::can('admin.users.view') ? $domain?->user : null;
         $email = $customer?->email;
         $customerUrl = $customer && UserResource::canEdit($customer)
             ? Facts::url(fn () => UserResource::getUrl('edit', ['record' => $customer])) : null;
@@ -150,7 +153,8 @@ class ViewOperation extends RecordDetailPage
         }
         $request[]=Row::make('Type',RequestRows::text(Labels::action($op->action)));
         $request[]=self::linked(Row::make('Domain', $domainValue),'Open domain',$domainUrl);
-        $name = $customer ? (trim($customer->first_name.' '.$customer->last_name) ?: $email) : null;
+        $name = $customer ? (trim($customer->first_name.' '.$customer->last_name) ?: $email)
+            : ($domain?->user_id ? 'Customer #'.$domain->user_id : null);
         $request[]=self::linked(Row::make('Customer',RequestRows::text($name,$name===$email?null:$email,'Customer account not found.')),'Open customer',$customerUrl);
         $request[]=self::linked(Row::make('Registrar account',RequestRows::text($account['value'],$account['sub'])),$link==='registrars'?($notice['link_label']??'Open account'):'Open account',$accountUrl);
         // History opens with Request created and its time, so the sheet says it only when History can't be read.
@@ -208,22 +212,23 @@ class ViewOperation extends RecordDetailPage
     private static function transferReview(Operation $op,array $checks,?Action $action): array
     {
         $who=PaidUncertainty::registrar($op);
-        $followUp=$checks['last_result']==='Old registrar needs an update.'
-            ? 'Email the customer if their old registrar needs them to act.'
-            : 'If checks end without confirming the result, contact '.$who.'.';
-        if ($action!==null) {
-            $plan=$checks['stopped']?'Check now queues one full check. '.$followUp:$followUp;
-            $guard='This checks the original transfer without sending it again.';
-        } else {
-            $plan=$checks['manual_queued']?'A manual check is queued. '.$followUp:$followUp;
-            $guard=null;
-        }
+        $plan = match (true) {
+            $checks['checking'] => 'A registrar check is in progress.',
+            $checks['manual_queued'] => 'A manual check is queued.',
+            $checks['customer_action'] !== null => $checks['customer_action'],
+            $checks['next_reason'] !== null && $action === null => 'Contact '.$who.' to confirm the result.',
+            $checks['next_reason'] !== null => 'If the check cannot confirm the result, contact '.$who.'.',
+            default => 'The system will check with '.$who.' again.',
+        };
+        $guard = $action === null ? null : 'Check now reads the original transfer status. It does not send the transfer again.';
         $last=$checks['last_at']===null
             ? ($checks['last_result']===null ? Value::state(State::NotReadYet,Reader::Staff,'No transfer result is recorded.') : RequestRows::text($checks['last_result']))
             : Value::fact(Fact::date($checks['last_at'],Reader::Staff),$checks['last_result']);
-        $next=$checks['next_at']===null
-            ? RequestRows::text($checks['stopped']?'None scheduled':$checks['next_reason'],$checks['stopped']?$checks['next_reason']:null)
-            : Value::fact(Fact::date($checks['next_at'],Reader::Staff));
+        $next = match (true) {
+            $checks['checking'] => Value::state(State::Checking, Reader::Staff),
+            $checks['next_at'] !== null => Value::fact(Fact::date($checks['next_at'], Reader::Staff)),
+            default => RequestRows::text('None scheduled', $checks['next_reason']),
+        };
         return [
             Row::noticeText('request',RequestRows::text($plan,$guard),$action),
             Row::make('Last check',$last),

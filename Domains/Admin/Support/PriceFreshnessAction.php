@@ -13,7 +13,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{StaffReason,StaffSettingsRevi
 /** Uses the neighbouring call-limit row's permission, review ticket, audit and Filament form. */
 final class PriceFreshnessAction
 {
-    public const LABEL = 'Price age limit';
+    public const LABEL = 'Prices stay current for';
     public static function make(Account $account,string $stamp): Action
     {
         $server=(int)$account->server_id;

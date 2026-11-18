@@ -67,9 +67,9 @@ class RegistrarAccount extends DetailPage
             Section::make('Account', [...$this->notice('account'), ...$this->rows([...$this->accountRows($a), ...$pick('API connection'), ...$this->activityRows($s, $a)])], null, 'account'),
             ...($balance === null ? [] : [$balance]),
             Section::make('Sales', [...$this->notice('sales'), ...$this->rows($pick('Orders', 'Registrations', AccountChecklist::TRANSFER_LABEL, 'What you sell', 'TLD prices')),
-                ...$this->rows([$this->freshness($s, $a)]), ...$this->rows($pick('Customer pays', 'Card fee', 'Wait for payment')), ...$this->liveSales($a)], null, 'sales'),
-            Section::make('Renewals', $this->rows($pick('Renewals', 'Customer can renew early', 'Late renewal', 'Renews for', 'TLD terms read')), null, 'renewal'),
-            Section::make('Renewal invoices and reminders', $this->rows($pick('Reminder emails', 'Reminder schedule', 'Invoice issued', 'Invoice due')), null, 'renewal-invoices'),
+                ...$this->rows([$this->freshness($s, $a)]), ...$this->rows($pick('Customer pays', 'Card fee')), ...$this->liveSales($a)], null, 'sales'),
+            Section::make('Renewals', $this->rows($pick('Renewals', 'Customer can renew early', 'Late renewal', 'Scheduled renewals', 'Selected TLD terms')), null, 'renewal'),
+            Section::make('Renewal invoices and reminders', $this->rows($pick('Reminder emails', 'Reminder schedule', 'Invoice issued', 'Invoice due', 'Unpaid hold')), null, 'renewal-invoices'),
             Section::make('Domain settings', [$this->newDomainsUse($a), ...$this->rows($pick('DNS, nameservers and contacts', 'WHOIS privacy'))], null, 'settings'),
         ];
     }
