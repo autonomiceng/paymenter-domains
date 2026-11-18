@@ -117,10 +117,15 @@ class ViewOperation extends RecordDetailPage
         if ($notice) { $rows[]=RequestRows::notice($notice,$state,$lead); }
         elseif ($status['reason']!==null&&($reason=RequestRows::sentence($status['reason']))!==null) { $rows[]=RequestRows::reason($state,$reason,'request-'.$op->id); }
         $account=RequestFacts::account($op);
-        $domainUrl=$op->domain?Facts::url(fn()=>DomainResource::getUrl('view',['record'=>$op->domain_id])):null;
+        $domain = $op->domain;
+        $domainUrl=$domain?Facts::url(fn()=>DomainResource::getUrl('view',['record'=>$op->domain_id])):null;
         $accountUrl=$link==='registrars'?Facts::url(fn()=>RegistrarFacts::accountUrl((int)$op->server_id,RequestFacts::SWITCH_LINKS[$notice['link_label']??'Open account']??null)):Facts::url(fn()=>RegistrarFacts::accountUrl((int)$op->server_id));
         $invoiceUrl=$op->invoice_id?Facts::invoiceUrl((int)$op->invoice_id):null;
-        $rows[]=self::linked(Row::make('Domain',RequestRows::text($op->domain?->domain,cause:'Domain not found.')),'Open domain',$domainUrl);
+        $domainValue = RequestRows::text($domain?->domain, cause: 'Domain not found.');
+        if ($domain && DomainFacts::test($domain)) {
+            $domainValue = $domainValue->tagged(DemoData::tag(test: true));
+        }
+        $rows[]=self::linked(Row::make('Domain', $domainValue),'Open domain',$domainUrl);
         $rows[]=Row::make('Type',RequestRows::text(Labels::action($op->action)));
         $rows[]=self::linked(Row::make('Registrar account',RequestRows::text($account['value'],$account['sub'])),$link==='registrars'?($notice['link_label']??'Open account'):'Open account',$accountUrl);
         // History opens with Request created and its time, so Details says it only when History can't be read.
