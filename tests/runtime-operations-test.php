@@ -1,7 +1,7 @@
 <?php
 // Offline operations-only runtime regression.
 declare(strict_types=1);
-require __DIR__.'/runtime-presenter-test.php';
+require __DIR__.'/Support/runtime-native-holdings.php';
 $nativeSuccessful=false;
 use Illuminate\Support\Facades\{DB,Queue};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};

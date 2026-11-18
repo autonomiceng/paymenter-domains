@@ -2,7 +2,7 @@
 // A request names its bill the way the invoice list does and says when the gateway took money back.
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require __DIR__.'/Support/staff-operation-fixture.php';
+require __DIR__.'/staff-operation-fixture.php';
 use App\Models\InvoiceTransaction;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;

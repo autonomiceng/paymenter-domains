@@ -682,9 +682,9 @@ class RunnerTests(unittest.TestCase):
                  (['tests/offer-reader-batch-test.php', 'tests/native-fixture-test.php'], ['native'], True),
                  (['tests/offer-cutover-test.php'], ['native'], True),
                  (['tests/offer-writer-test.php'], ['native'], True),
-                 (['tests/offer-work-test.php'], ['native'], True),
+                 (['tests/offer-runtime-work-test.php'], ['native'], True),
                  (['tests/offer-frozen-renewal-test.php'], ['native'], True),
-                 (['tests/offer-work-test.php', 'tests/native-fixture-test.php'], ['native'], True)]
+                 (['tests/offer-runtime-work-test.php', 'tests/native-fixture-test.php'], ['native'], True)]
         b2_checks = ['tests/namesilo-runtime-read-test.php',
                      'tests/namesilo-settings-test.php',
                      'tests/native-server-settings-test.php', 'tests/transfer-polling-test.php',

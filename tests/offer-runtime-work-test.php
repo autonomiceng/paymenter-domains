@@ -1,7 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require __DIR__.'/offer-work-test.php';
+require __DIR__.'/Support/offer-work-cases.php';
 $nativeSuccessful = false;
 
 use Illuminate\Support\Facades\DB;
