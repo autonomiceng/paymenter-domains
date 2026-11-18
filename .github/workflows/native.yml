@@ -135,7 +135,7 @@ jobs:
           EOF
       - name: Show namespace audit records
         if: ${{ !cancelled() && steps.suite.outcome != 'skipped' }}
-        run: sudo journalctl -k -b --no-pager -n 30 --grep='apparmor="(?:DENIED|AUDIT|ALLOWED)".*comm="(runc(:[^"]*)?|unshare)"' || true
+        run: sudo journalctl -k -b --no-pager --grep='apparmor="(?:DENIED|AUDIT|ALLOWED)".*(comm="(runc(:[^"]*)?|unshare)"|/usr/lib/domains-php-)' || true
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:

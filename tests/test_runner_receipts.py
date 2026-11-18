@@ -177,6 +177,7 @@ fi
         helper = (ROOT/'scripts/hosted-php-userns.sh').read_text()
         helper = (helper.replace('$EUID != 0', '1000 != 0')
                   .replace('/etc/os-release', './os-release')
+                  .replace('/proc/self/attr/apparmor/current', './label')
                   .replace('/proc/sys/kernel/apparmor_restrict_unprivileged_userns', './userns')
                   .replace('-f $executable && -x $executable', '-f ".$executable" && -x ".$executable"')
                   .replace('! -w $executable && ! -w ${executable%/*} && ! -w /usr', '-n "$executable"'))
@@ -188,16 +189,36 @@ realpath() {
     printf '%s\\n' "${path#"$PWD"}"
 }
 stat() { printf '0\\n'; }
+findmnt() {
+    if [[ ${!#} == /run ]]; then echo rw,noexec; else echo "$MOUNT_OPTIONS"; fi
+}
+find() {
+    local args=("$@")
+    if [[ -n ${PARENT_TO_CHECK:-} ]]; then
+        args[2]=$PARENT_TO_CHECK
+    fi
+    command find "${args[@]}"
+}
 function /usr/bin/runc { :; }
 function /usr/bin/dpkg-query { :; }
 sudo() {
     [[ $1 == -n ]] || return 99
     case "$2" in
         /usr/sbin/sysctl|/usr/bin/chmod) ;;
-        /usr/bin/mktemp) printf '%s\\n' /run/domains-php-fixture ;;
-        /usr/bin/install) shift 5; printf '%s\\n' "$@" > installed ;;
+        /usr/bin/mktemp)
+            local dir="$PWD${4%XXXXXXXX}fixture"
+            mkdir -p "$dir" && echo "$dir" ;;
+        /usr/bin/install)
+            shift 5
+            printf '%s\\n' "$@" > installed
+            local src dest=${!#}
+            for src in "${@:1:$#-1}"; do
+                /usr/bin/install -m 0755 ".$src" "$dest" || return
+            done
+            if [[ -n ${DENY_EXEC:-} ]]; then chmod 0644 "$dest/$DENY_EXEC"; fi ;;
         /usr/sbin/apparmor_parser) cat > submitted ;;
-        /usr/bin/cat) cat loaded ;;
+        /usr/bin/cat)
+            if [[ -f loaded ]]; then cat loaded; else awk '$1 == "profile" {print $2, "(unconfined)"}' submitted; fi ;;
         *) return 99 ;;
     esac
 }
@@ -206,23 +227,28 @@ sudo() {
             root = Path(directory)
             (root/'os-release').write_text('ID=ubuntu\nVERSION_ID=24.04\n')
             (root/'userns').write_text('1\n')
+            (root/'label').write_text('unconfined')
             system_bin = root/'usr/bin'
             system_bin.mkdir(parents=True)
+
+            def executable(path):
+                path.write_text('#!/bin/sh\nprintf "%s %s\\n" "$0" "$*" >> probes\n')
+                path.chmod(0o755)
+
             for name in ('runc', 'other-unshare'):
-                (system_bin/name).touch(mode=0o700)
+                executable(system_bin/name)
             unshare = system_bin/'unshare'
             unshare.symlink_to('other-unshare')
             env = dict(PATH='/usr/bin:/bin', GITHUB_ACTIONS='true', RUNNER_ENVIRONMENT='github-hosted',
-                       RUNNER_OS='Linux')
+                       RUNNER_OS='Linux', MOUNT_OPTIONS='rw,relatime')
 
-            def run(*args):
+            def run(*args, **settings):
                 return subprocess.run(['/bin/bash', '-c', host+helper, 'hosted-php-userns', *args],
-                                      cwd=root, env=env, capture_output=True, text=True, timeout=3)
+                                      cwd=root, env=dict(env, **settings), capture_output=True, text=True, timeout=3)
 
-            binary_dir = '/run/domains-php-fixture'
+            binary_dir = str(root/'usr/lib/domains-php-fixture')
             profiles = [binary_dir+'/runc', binary_dir+'/unshare']
             loaded = root/'loaded'
-            loaded.write_text(''.join(profile+' (unconfined)\n' for profile in profiles))
 
             for path in ('/usr/bin/other-unshare', '/usr/bin/unshare'):
                 with self.subTest(path=path):
@@ -232,10 +258,26 @@ sudo() {
                     self.assertFalse((root/'installed').exists())
 
             unshare.unlink()
-            unshare.touch(mode=0o700)
+            executable(unshare)
+            writable = root/'writable'
+            writable.mkdir()
+            writable.chmod(0o777)
+            for settings in ({'MOUNT_OPTIONS': 'rw,noexec,relatime'}, {'PARENT_TO_CHECK': str(writable)}):
+                with self.subTest(settings=settings):
+                    rejected = run('--unshare', '/usr/bin/unshare', **settings)
+                    self.assertNotEqual(rejected.returncode, 0, rejected.stderr)
+                    self.assertFalse(rejected.stdout)
+                    self.assertFalse((root/'installed').exists())
+
+            denied = run('--unshare', '/usr/bin/unshare', DENY_EXEC='unshare')
+            self.assertNotEqual(denied.returncode, 0, denied.stderr)
+            self.assertFalse(denied.stdout)
+            (root/'probes').write_text('')
+
             accepted = run('--unshare', '/usr/bin/unshare')
             self.assertEqual(accepted.returncode, 0, accepted.stderr)
             self.assertEqual(accepted.stdout.splitlines(), [binary_dir])
+            self.assertEqual((root/'probes').read_text().splitlines(), [p+' --version' for p in profiles])
             self.assertEqual((root/'installed').read_text().splitlines(),
                              ['/usr/bin/runc', '/usr/bin/unshare', binary_dir+'/'])
             submitted = (root/'submitted').read_text().splitlines()

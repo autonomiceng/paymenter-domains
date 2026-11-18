@@ -41,7 +41,15 @@ esac
 sudo -n /usr/sbin/sysctl -e kernel.apparmor_restrict_unprivileged_unconfined \
     kernel.apparmor_restrict_unprivileged_userns_force kernel.apparmor_restrict_unprivileged_userns_complain >&2
 # Use private copies to avoid overriding a distro profile or changing Docker's runtime.
-bin_dir=$(sudo -n /usr/bin/mktemp -d /run/domains-php-XXXXXXXX)
+exec_parent=/usr/lib
+unsafe=$(find / /usr "$exec_parent" -maxdepth 0 \( ! -type d -o ! -uid 0 -o -perm /022 \) -print)
+[[ -z $unsafe ]] || fail "Unprotected hosted executable parent: $unsafe"
+printf '/run mount (target, type, VFS options): ' >&2
+findmnt -n -o TARGET,FSTYPE,VFS-OPTIONS --target /run >&2
+options=$(findmnt -n -o VFS-OPTIONS --target "$exec_parent")
+printf 'Hosted executable parent: %s VFS options: %s\n' "$exec_parent" "$options" >&2
+[[ -n $options && ,$options, != *,noexec,* ]] || fail "Expected an executable mount at $exec_parent"
+bin_dir=$(sudo -n /usr/bin/mktemp -d "$exec_parent/domains-php-XXXXXXXX")
 sudo -n /usr/bin/install -m 0755 -- "${executables[@]}" "$bin_dir/"
 {
     printf 'abi <abi/4.0>,\n'
@@ -56,5 +64,11 @@ for executable in "${executables[@]}"; do
         '$1 == profile { print; found = 1 } END { exit !found }' >&2 || fail "Missing AppArmor profile: $profile"
 done
 sudo -n /usr/bin/chmod 0755 "$bin_dir"
+printf 'Hosted preflight uid=%s caller_profile=%s\n' "$EUID" "$(< /proc/self/attr/apparmor/current)" >&2
+for executable in "${executables[@]}"; do
+    copy="$bin_dir/${executable##*/}"
+    printf 'Executing %s --version\n' "$copy" >&2
+    "$copy" --version >&2 || fail "Runner cannot execute $copy --version"
+done
 printf 'Hosted executable directory: %s\n' "$bin_dir" >&2
 printf '%s\n' "$bin_dir"
