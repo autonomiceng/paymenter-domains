@@ -19,7 +19,9 @@
         @php
             $word = match (true) {
                 ($family['read_checking'] ?? false) || ($family['initial_read_pending'] ?? false) => \Paymenter\Extensions\Servers\Domains\Presentation\State::Checking,
-                (bool) ($family['read_failed'] ?? false) => \Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead,
+                ($family['read_failed'] ?? false)
+                    && !\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::readHeldSaid($notice ?? null)
+                        => \Paymenter\Extensions\Servers\Domains\Presentation\State::CouldntRead,
                 default => \Paymenter\Extensions\Servers\Domains\Presentation\State::NotReadYet,
             };
         @endphp
