@@ -102,7 +102,6 @@ class ViewOperation extends RecordDetailPage
         $who=$op->registrar_key==='namesilo'?'NameSilo':'Enom';
         $notice=RequestFacts::notice($op,$facts)??($answers?['title'=>$who.' didn’t confirm this order.','body'=>'Open a ticket with '.$who.' support, then record their answer.','tone'=>'warning']:null);
         // Support needs the request's facts for the ticket, so whoever can record the answer can copy them.
-        // Enom's no-order read needs no support ticket, so nothing is copied for one.
         $copy=$answers&&($notice['copy']??true)?SupportDetails::action($op)->label('Copy details')->extraAttributes(['aria-label'=>SupportDetails::LABEL],merge:true):null;
         $fail=$this->getAction('mark_failed',false); $fail=$fail?->isVisible()?Sheet::button($fail):null;
         // The notice keeps its own action; staff who may close the change also learn when to use the button on Registrar reply.
@@ -186,7 +185,6 @@ class ViewOperation extends RecordDetailPage
         $history=$op->registrar_key==='enom'?'Enom’s order history':'the registrar';
         return match (RequestFacts::answerState($op)) {
             'checking'=>RequestRows::text('None yet','Needed only if checks stop without a clear answer.'),
-            'no_order'=>RequestRows::text('No '.($op->action==='renew'?'renewal':'registration').' order',$last?'From '.$history.', read '.$last.'.':null),
             'unclear'=>RequestRows::text('No clear answer',trim(($n=(int)($op->action==='renew'?($op->policy['renewal_polls']??0):($op->policy['reconciliation']['polls']??0)))>0
                 ?$n.' '.($n===1?'check':'checks').' of '.$history.'.':'').($last?' Last read '.$last.'.':'')),
             default=>Value::state(State::NotReadYet,Reader::Staff,'Waiting for the registrar\'s answer.'),

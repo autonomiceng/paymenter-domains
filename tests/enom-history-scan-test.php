@@ -125,4 +125,20 @@ same([false, true, 1, ['read_budget'=>1]], [$race->historyComplete, $race->histo
 same(['9003'], array_map('strval', array_keys($race->historyScan->state['orders'])), 'Only the validated order is saved');
 same([3, 3], [count($wire->requests), $raceContext->exchanges()], 'The refused claim never enters the transport');
 same(null, $complete($race), 'Deadline progress cannot authorize completion');
+// The lost renewal's valid detail arrives as the deadline expires: its charge still reaches the renewal proof sink, so
+// Not processed is refused later, but the scan stays incomplete and completes nothing.
+$raceClock->time = $clock->now();
+$lateWire = new class($wire, $raceClock, $deadline) implements Transport {
+    public function __construct(private Transport $wire, private Clock $clock, private DateTimeImmutable $deadline) {}
+    public function send(Environment $e, ReadCommand $command, array $p, string $uid, string $token, int $ms): string {
+        $reply = $this->wire->send($e, $command, $p, $uid, $token, $ms);
+        if ($command === ReadCommand::Order && ($p['OrderID'] ?? null) === '9020') { $this->clock->time = $this->deadline; }
+        return $reply;
+    }
+};
+$lateContext = new RequestContext($binding, RequestOrigin::Background, $deadline, new RequestBudget(40), $raceClock);
+$late = (new History(new Client($binding, 'offline', 'token', $lateWire)))->inspect($attempt(null), $lateContext);
+same([false, ['9020']], [$late->historyComplete, array_map(static fn ($c) => $c->providerReference, $lateContext->seen()?->candidates ?? [])],
+    'A matching charge read as the deadline expires still reaches the proof sink');
+same(null, $complete($late), 'A deadline-late charge cannot authorize completion');
 echo "Dense Enom history scans continue across reads and complete only after every order is resolved\n";

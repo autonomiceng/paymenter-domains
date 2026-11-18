@@ -17,6 +17,8 @@ final class RegistrarCheck
     public bool $counted = false;
     /** Set when an order history scan resolved more orders and has more to read: the next turn comes soon. */
     public bool $continued = false;
+    /** The renewal check claim this check took (RenewalCompletion). */
+    public ?string $claimToken = null;
     public function __construct(private readonly Clock $clock) {}
     private ?string $identity = null;
     private ?array $seen = null;
@@ -47,6 +49,14 @@ final class RegistrarCheck
         return DB::transaction(function () use ($result): Operation {
             Domain::whereKey($result->domain_id)->lockForUpdate()->firstOrFail();
             $op = Operation::whereKey($result->id)->lockForUpdate()->firstOrFail();
+            // This check's claim ends once its read and any proof it saw are saved. A claim taken over from a check that never
+            // got here stays as an unresolved mark: that check may have seen proof it could not save.
+            $claim = $op->policy['renewal_check'] ?? null;
+            if ($this->claimToken !== null && is_array($claim) && ($claim['token'] ?? null) === $this->claimToken) {
+                $policy = $op->policy; unset($policy['renewal_check']);
+                if (($claim['unresolved'] ?? false) === true) { $policy['renewal_check'] = ['identity' => $claim['identity'], 'unresolved' => true]; }
+                $op->update(['policy' => $policy]);
+            }
             if ($this->identity===null || !hash_equals($this->identity,RegistrarAnswers::identity($op))) { return $op; }
             // A check, resume or answer saved after this check began is newer. This result must not replace it.
             $stored=$op->policy['status_check']??null;

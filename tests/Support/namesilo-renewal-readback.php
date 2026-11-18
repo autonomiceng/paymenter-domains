@@ -6,6 +6,8 @@ use Paymenter\Extensions\Servers\Domains\Services\RenewalAdmission;
 require_once __DIR__.'/staff-panel.php';
 $financial=nativeFinancialSnapshot($renewal);$originalAttempt=$renewal->fresh()->attempt;
 foreach(['on','missing','invalid','outage','late'] as $case){
+    // Every check counts toward the read limit; each case is the first check, so staff can still ask for a fresh one.
+    $fresh=$renewal->fresh();$fresh->update(['policy'=>array_diff_key($fresh->policy,['renewal_polls'=>true])]);
     $wire->auto=$case==='on'?'Yes':($case==='invalid'?'unknown':'No');
     $wire->omit=$case==='missing'?['auto_renew']:[];
     if($case==='outage'){

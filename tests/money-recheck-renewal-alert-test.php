@@ -47,12 +47,14 @@ HistoryAcceptances::save(new HistoryAcceptance($binding,'America/Los_Angeles',60
 $clock->instant=(new DateTimeImmutable($op->fresh()->attempt['dispatch_attempted_at']))->modify('+25 hours');Cache::flush();
 $state->after='2027-10-18';$state->lost=false;
 same('uncertain',(new RenewalCompletion($historyBindings,$clock))->run($op->id)->state,'No-order read alone does not settle the original outcome');
-expect(isset($op->fresh()->policy['enom_absence']),'Scheduled read corroborated no order and unchanged expiry');
 $op=$op->fresh();
 $review=new Review($staff->id,$op->server_id,null,'enom_answer',Review::ticket($staff->id,$op->server_id,null,'enom_answer',Review::stamp($op->server_id,null)),'Record synthetic no-order answer');
 $settings=new StaffSettingsWrites($native,$sellers,$bindings);
+// The answer's fresh registrar read uses the renewal registry, as in production.
+app()->instance(AccountBindings::class,$historyBindings);
 $settings->run($review,['operation_id'=>$op->id,'attempt_hash'=>EnomAnswers::identity($op),'outcome'=>'not_processed','order_reference'=>'','case_reference'=>'',
     'evidence'=>'Complete history has no order and the registrar expiry is unchanged.','confirmed'=>true],$clock->now());
+app()->instance(AccountBindings::class,$bindings);
 $op=$op->fresh();
 same(['rejected','refund_approved',true],[$op->state,$op->safe_code,EnomAnswers::unprocessed($op,$domain->fresh())],'Audited final no-order answer closes renewal');
 same(true,OperationTerminalProof::safe($op,$domain->fresh()),'Terminal proof independently accepts the final answer');

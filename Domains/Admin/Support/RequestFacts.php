@@ -256,8 +256,8 @@ final class RequestFacts
         if ($paid=self::paidWaiting($op,$accounts)) { [$status['label'],$status['tone']]=RequestStatus::SET['in_progress'];$status['reason']=$paid; }
         // A scheduled check still settles the result by itself: Checking inside the normal time, Delayed after it (P-STA-8).
         if (self::checking($op)) { $late=PaidUncertainty::waitState($op)===State::Delayed; [$status['label'],$status['tone']]=$late?['Delayed','warning']:['Checking','info']; }
-        // A renewal whose order no read could prove has stopped checking: it waits for staff to record Enom's answer.
-        try { if (\Paymenter\Extensions\Servers\Domains\Services\OrderUnproven::applies($op)&&RegistrarCheck::stopped($op)) { [$status['label'],$status['tone']]=['Needs review','warning']; } } catch (\Throwable) {}
+        // A renewal with Enom's order number has stopped checking: it waits for staff to record Enom's answer.
+        try { if (\Paymenter\Extensions\Servers\Domains\Services\RegistrarAnswers::stoppedOrder($op)&&RegistrarCheck::stopped($op)) { [$status['label'],$status['tone']]=['Needs review','warning']; } } catch (\Throwable) {}
         if (!self::heldAcquisition($op,$off)) { return $status; }
         [$status['label'],$status['tone']]=self::STATUSES['on_hold'];
         return $status;
@@ -274,20 +274,18 @@ final class RequestFacts
     public static function checking(Operation $op): bool
     { try { return $op->state==='uncertain'&&RegistrarCheck::scheduled($op); } catch (\Throwable) { return false; } }
     /** Where an unconfirmed registration or renewal stands for staff: 'checking' while a check is scheduled, then, once checks
-     * stop and the answer can be recorded, 'no_order' when Enom's order history shows no order, else 'unclear'. Null otherwise. */
+     * stop and the answer can be recorded, 'unclear'. Null otherwise. */
     public static function answerState(Operation $op): ?string
     {
         try {
             if (self::checking($op)) { return 'checking'; }
-            // A renewal whose order number no read could prove stays pending, but its checks have stopped the same way.
-            if (!RegistrarCheck::stopped($op)||$op->state!=='uncertain'&&!\Paymenter\Extensions\Servers\Domains\Services\OrderUnproven::applies($op)) { return null; }
-            $now=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now();
-            if (!\Paymenter\Extensions\Servers\Domains\Services\RegistrarAnswers::ready($op,$now)) { return null; }
-            return \Paymenter\Extensions\Servers\Domains\Services\RegistrarAnswers::absence($op,$now)!==null?'no_order':'unclear';
+            // A renewal with Enom's order number stays pending, but its checks have stopped the same way.
+            if (!RegistrarCheck::stopped($op)||$op->state!=='uncertain'&&!\Paymenter\Extensions\Servers\Domains\Services\RegistrarAnswers::stoppedOrder($op)) { return null; }
+            return \Paymenter\Extensions\Servers\Domains\Services\RegistrarAnswers::ready($op,app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now())?'unclear':null;
         } catch (\Throwable) { return null; }
     }
     /** What the authorized cost becomes, by answerState(). */
-    private const COST_NEXT=['checking'=>'Final when %s confirms the %s.','no_order'=>'Not charged once the answer is recorded.','unclear'=>'Final when %s support answers.'];
+    private const COST_NEXT=['checking'=>'Final when %s confirms the %s.','unclear'=>'Final when %s support answers.'];
     /** Lists and history preload invoices once; detail callers may read their single invoice directly. */
     private static function invoiceStatus(Operation $op): ?string
     { return $op->relationLoaded('invoice')?$op->invoice?->status:\App\Models\Invoice::whereKey($op->invoice_id)->value('status'); }
@@ -494,23 +492,17 @@ final class RequestFacts
         return null;
     }
     /** An unconfirmed registration or renewal by answerState(): while a check is scheduled, Check status is the one step; once
-     * checks stop, recording the answer is (no support ticket when Enom's order history shows no order). */
+     * checks stop, recording the answer is. */
     private static function answerNotice(Operation $op, string $stand, array $facts): array
     {
         $who=PaidUncertainty::registrar($op); $kind=$op->action==='renew'?'renewal':'registration';
         $history=$op->registrar_key==='enom'?'Enom’s order history':'the registrar';
-        $at=static fn(?int $t):?string=>$t===null?null:\Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at($t);
         $check=RegistrarCheck::status($op)??[]; $hold=$facts['auto_renew']??PaidUncertainty::holdSummary($op);
         if ($stand==='checking') {
             // The reason stays in the sentence; its times and the Check status step go on the staff line under it (mock).
             $times=array_filter(['Sent'=>StaffReviewHistory::sentAt($op)?->getTimestamp(),'Next automatic check'=>(int)$check['next_at']],fn($t)=>$t!==null);
             return ['title'=>'Waiting for '.$who.' to confirm the '.$kind.'.','body'=>$hold,'times'=>$times,'note'=>'Check status reads '.$history.' now instead of waiting.','tone'=>PaidUncertainty::waitState($op)===State::Delayed?'warning':'info',
                 'action'=>OperationActions::readLimit($op)?'resume_reads':'recheck'];
-        }
-        $stopped=isset($check['at'])?'Checks stopped '.$at((int)$check['at']).'.':null;
-        if ($stand==='no_order') {
-            return ['title'=>$who.'’s order history shows no '.$kind.' order, and the domain is unchanged.','tone'=>'warning','primary'=>'enom_answer','copy'=>false,
-                'body'=>implode(' ',array_filter([$stopped,'Record the answer as Not processed. No support ticket or case number is needed.',$hold]))];
         }
         return ['title'=>ucfirst($history).' gave no clear answer, so checks have stopped.','tone'=>'warning','primary'=>'enom_answer',
             'body'=>implode(' ',array_filter(['Ask '.$who.' support whether they made the '.$kind.'. Use Copy details on Registrar reply, then record their answer.',$hold]))];
