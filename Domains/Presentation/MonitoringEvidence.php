@@ -19,17 +19,23 @@ final class MonitoringEvidence
         $name = $watch->canonical_name;
         $evidence = self::read(self::domain($watch), $attempt, $name);
         if (!$attempt || $attempt->result === 'complete' || $evidence['public_read'] !== 'unknown') { return $evidence; }
-        $stamp = \Paymenter\Extensions\Servers\Domains\Services\DomainSummaryContext::evidence('watch', (int)$watch->id, (int)$watch->user_id);
-        if (!$stamp) { return $evidence; }
+        try { $stamp = $attempt->facts['presentation_stamp'] ?? null; }
+        catch (\Illuminate\Contracts\Encryption\DecryptException) { return $evidence; }
+        // Compare with the attempted read. A later pause does not erase the history of that target.
         $history = WatchDnsObservation::where('watch_id',$watch->id)->where('user_id',$watch->user_id)
-            ->where('watch_revision',$watch->revision)->where('check_kind','points')->where('id','<',$attempt->id);
+            ->where('watch_revision',$attempt->watch_revision)->where('profile_id',$attempt->profile_id)
+            ->where('profile_revision',$attempt->profile_revision)->where('check_kind','points')->where('id','<',$attempt->id);
         foreach ($history->lazyByIdDesc(32) as $prior) {
-            try {
-                if (($prior->facts['presentation_stamp'] ?? null) !== $stamp) { continue; }
-            } catch (\Illuminate\Contracts\Encryption\DecryptException) { continue; }
+            // Older observations still carry the worker's source digest. The presentation stamp also covers rotating sources.
+            if (!$attempt->source_digest || $prior->source_digest !== $attempt->source_digest) {
+                if (!$stamp) { continue; }
+                try { $priorStamp = $prior->facts['presentation_stamp'] ?? null; }
+                catch (\Illuminate\Contracts\Encryption\DecryptException) { continue; }
+                if ($priorStamp !== $stamp) { continue; }
+            }
             [$answers,$read] = self::addresses($prior, $name);
             if ($read === 'unknown') { continue; }
-            return [...$evidence,'public'=>$answers,'public_read'=>$read,'public_at'=>$prior->started_at,'public_stale'=>true];
+            return [...$evidence,'public'=>$answers,'public_read'=>$read,'public_at'=>$prior->started_at,'public_stale'=>true,'public_retained'=>true];
         }
         return $evidence;
     }

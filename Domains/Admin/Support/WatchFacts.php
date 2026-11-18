@@ -114,7 +114,7 @@ final class WatchFacts
         $evidence=[];foreach(['public'=>'Public DNS','registrar'=>'Registrar records'] as $key=>$label){
             if(!$e[$key]&&($key==='registrar'||(!$active&&$e['public_at']===null))){continue;}
             // A check that saved no answers says so, so Not read yet beside its Checked time reads as one fact.
-            $at=$e[$key.'_at'];$time=$at?$checked($at,$key==='public'):null;
+            $at=$e[$key.'_at'];$time=$at?$checked($at,$key==='public' && empty($e['public_retained'])):null;
             if($at&&$key==='registrar'&&$e['registrar_read']!=='complete'){
                 $time=Sheet::moment(is_int($at)?$at:(int)strtotime($at),'Last tried')->toHtml();
             }
@@ -145,23 +145,26 @@ final class WatchFacts
         return in_array($code, ['resolver_failed', 'invalid_answer', 'ambiguous_empty', 'read_unavailable', 'deadline', 'clock_reversal'], true);
     }
 
-    private static function failedKinds(WatchName $w, ?DomainSummary $s): array
+    private static function failedChecks(WatchName $w, ?DomainSummary $s): array
     {
-        $kinds = [];
-        if (self::registryFailed($w)) { $kinds[] = 'expiry'; }
-        foreach (['delegation','points'] as $kind) {
-            $f = $s?->freshness[$kind] ?? null;
-            $partial = $f && $f['checkedAt'] !== null && $f['partial'] && (!$f['stale'] || $w->state !== 'active');
-            $code = $w->work->firstWhere('kind', $kind)?->safe_code;
-            if (self::dnsFailed($w, $kind) || ($partial && !in_array($code, ['budget_exhausted','rotation','nameservers_missing'],true))) {
-                $kinds[] = $kind;
-            }
+        $registry = self::registryFailed($w);
+        $dns = array_values(array_filter(['delegation','points'], fn($kind)=>self::dnsFailed($w, $kind)));
+        if ($registry || $dns) {
+            $message = $registry ? ($dns ? 'Registry and DNS checks failed.' : 'Registry lookup failed.') : 'DNS lookup failed.';
+            return [$message, $registry ? ['expiry', ...$dns] : $dns];
         }
-        return $kinds;
+        $partial = [];
+        foreach ($s?->freshness ?? [] as $family => $f) {
+            $kind = $family === 'registry' ? 'expiry' : $family;
+            $code = $w->work->firstWhere('kind',$kind)?->safe_code;
+            if ($f['checkedAt'] !== null && $f['partial'] && (!$f['stale'] || $w->state !== 'active')
+                && !in_array($code,['budget_exhausted','rotation','nameservers_missing'],true)) { $partial[] = $kind; }
+        }
+        return [$partial ? 'Some checks failed.' : null, $partial];
     }
 
     public static function lastCheckFailed(WatchName $w,?DomainSummary $s): bool
-    { return self::failedKinds($w, $s) !== []; }
+    { return self::failedChecks($w, $s)[0] !== null; }
 
     /** Last check time across all families. A failure can exist before any observation is saved. */
     public static function lastCheck(WatchName $w,?DomainSummary $s): array
@@ -169,18 +172,12 @@ final class WatchFacts
         $fresh = $s?->freshness ?? [];
         $at = $s ? max([0,...array_map(fn($f)=>(int)$f['checkedAt'],$fresh)])
             : max((int)$w->delegation?->started_at,(int)$w->points?->started_at,(int)$w->registry?->started_at);
-        $failed = self::failedKinds($w, $s);
+        [$failure, $failed] = self::failedChecks($w, $s);
         $retryKind = $failed[0] ?? null;
         foreach ($failed as $kind) {
             $work = $w->work->firstWhere('kind',$kind);
             if ($work && !$work->claim && $work->backoff_until <= time() && $work->lease_until <= time()) { $retryKind = $kind; break; }
         }
-        $failure = match (true) {
-            !$failed => null,
-            count($failed) > 1 && in_array('expiry',$failed,true) => 'Registry and DNS checks failed.',
-            $retryKind === 'expiry' => 'Registry lookup failed.',
-            default => 'DNS lookup failed.',
-        };
         $sub = null;
         if ($failure !== null) {
             $sub = $failure.match ($w->state) {

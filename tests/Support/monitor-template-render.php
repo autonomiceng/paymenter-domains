@@ -16,9 +16,14 @@ $off = DB::transaction(fn () => WatchProfile::create(['name'=>'Previous hosting 
     'website_endpoints'=>[],'email_endpoints'=>[],'edited_by'=>$manager->id,'reason'=>'Synthetic former template']));
 DB::table('domains_watch_names')->where('id',$id)->update(['ns_profile_id'=>$off->id,'profile_revision'=>1,'expected_dns'=>null]);
 $at = app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp()-1800;
-DB::table('domains_watch_work')->where('watch_id',$id)->where('kind','expiry')->update(['due_at'=>$at,'backoff_until'=>null]);
-$ticket = $registry->begin($id,$uid,$at);
-expect($ticket && $registry->finish($ticket,['result'=>'unknown','reason'=>'endpoint_failed','safe_code'=>'expiry_unknown'],str_repeat('c',64),$at+1),'Synthetic failed registry read');
+foreach (['not_registered','endpoint_failed'] as $reason) {
+    DB::table('domains_watch_work')->where('watch_id',$id)->where('kind','expiry')->update(['due_at'=>$at,'backoff_until'=>null]);
+    $ticket = $registry->begin($id,$uid,$at);
+    $absent = $reason === 'not_registered';
+    expect($ticket && $registry->finish($ticket,['result'=>$absent ? 'not_registered' : 'unknown','reason'=>$reason,
+        'safe_code'=>$absent ? 'not_registered' : 'expiry_unknown'],str_repeat('c',64),$at+1),'Synthetic registry observation');
+    $at += 600;
+}
 config(['domains.site_dns_default.nameservers'=>$profile->nameservers]);
 siteDnsFixture($profile->id);
 $manager->role->update(['permissions'=>[...$manager->role->permissions,\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::POLICY,

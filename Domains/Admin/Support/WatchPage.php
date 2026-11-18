@@ -22,7 +22,7 @@ trait WatchPage
     #[Locked] public array $pendingCheck = [];
     protected ?array $resolved = null;
     public function mount(int|string $record): void { parent::mount($record); $this->revision = (int) $this->getRecord()->revision; $this->waitForCheck(); }
-    public function waitForCheck(): void
+    public function waitForCheck(?string $retryKind = null): void
     {
         $w = $this->getRecord();
         $request = WatchAudit::where('subject_type','watch')->where('subject_id',$w->id)
@@ -32,6 +32,7 @@ trait WatchPage
         $at = $request->created_at->getTimestamp();
         try { $data = $request->data; }
         catch (\Illuminate\Contracts\Encryption\DecryptException) { return; }
+        if ($retryKind !== null && ($data['retry_kind'] ?? null) !== $retryKind) { return; }
         if (isset($data['retry_kind'])) {
             $this->pendingCheck = [$at+360, $data['after_id'], $data['retry_kind'], $data['backoff_until']];
             if ($this->retryOutcome() !== null) { $this->pendingCheck = []; }
@@ -51,7 +52,7 @@ trait WatchPage
         $w = $this->getRecord();
         $observation = $w->{$kind === 'expiry' ? 'registry' : $kind};
         $work = $w->work->firstWhere('kind',$kind);
-        if (($work?->backoff_until ?? 0) > $backoff && $work->backoff_until > now()->timestamp) { return false; }
+        if (($work?->backoff_until ?? 0) > $backoff) { return false; }
         if (!$observation || $observation->id <= $after) { return null; }
         return $kind === 'expiry'
             ? in_array($observation->result,['facts','not_registered'],true) || $observation->reason === 'no_coverage'

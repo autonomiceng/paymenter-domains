@@ -128,4 +128,11 @@ $facts=WatchFacts::for($candidate,['summary'=>null,'keys'=>[]]);
 if(($facts['Checks']['DNS records']['value']??null)==='A @ → 192.0.2.10'){$dnsFailures[]='Latest checks must not borrow managed public DNS';}
 same('A @ → 192.0.2.10',$facts['Evidence']['Public DNS']['value'],'Managed answers remain available under Evidence');
 expect($dnsFailures===[],implode('; ',$dnsFailures));
+// A retained watch read from before presentation stamps still has its worker scope and read time.
+$attempt = $public->replicate()->fill(['result'=>'unknown','partial'=>true,'valid_until'=>null,'started_at'=>$at->getTimestamp(),
+    'completed_at'=>$at->getTimestamp()+1,'facts'=>['version'=>1,'queries'=>[]],'safe_code'=>'resolver_failed']);
+DB::transaction(fn()=>$attempt->save());
+$retained = WatchFacts::for($watch->fresh(),['summary'=>null,'keys'=>[]])['Evidence']['Public DNS'];
+same('A @ → 192.0.2.10',$retained['value'],'A failed watch refresh preserves the original public address');
+same([$public->started_at],$instants((string)$retained['sub']),'The address stays dated to the earlier watch observation');
 $nativeSuccessful=true;echo "Demo C monitoring evidence passed.\n";

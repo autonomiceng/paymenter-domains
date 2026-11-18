@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{WatchActions, WatchFacts};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\{Head, Partial, Row, Value};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Panel\Page\{RecordDetailPage, Section};
-use Paymenter\Extensions\Servers\Domains\Presentation\{Fact, Plain, Reader};
+use Paymenter\Extensions\Servers\Domains\Presentation\{Fact, Plain, Reader, State};
 use Paymenter\Extensions\Servers\Domains\Services\{SiteDnsDefault, StaffWatchWrites as Writes};
 
 class EditConfiguration extends RecordDetailPage
@@ -87,7 +87,7 @@ class EditConfiguration extends RecordDetailPage
             $rows[] = Row::make('Monitored domains', Value::fact(Fact::count(WatchFacts::usedBy($profile->id)),
                 $profile->enabled ? $monitor : 'Checks wait while this template is off.'));
         } catch (\InvalidArgumentException|\DomainException) {
-            $rows[] = Row::make('Pending edits', Value::plain(Plain::None, 'Enter valid DNS targets to preview the changes.'));
+            $rows[] = Row::make('Pending edits', Value::state(State::NeedsReview, Reader::Staff, 'Enter valid DNS targets to preview the changes.'));
         }
         $rows[] = Row::make('Live DNS', Value::plain(Plain::No, 'Existing domains keep their live nameservers and records.'));
         $rows[] = Partial::make('domains::admin.template-editor-actions', ['cancelUrl'=>$this->detailUrl()]);

@@ -99,12 +99,14 @@ $failRegistry = function(int $when) use ($id,$uid,$f,$expiryWork): void {
 };
 $failRegistry(time()-30);
 $clearCooldown = fn()=>DB::table('domains_watch_staff_claims')->where('subject_id',$id)->where('action','read')->update(['created_at'=>time()-301]);
-$clearCooldown();
 $future = time()+86400;
 $dnsWork = DB::table('domains_watch_work')->where('watch_id',$id)->whereIn('kind',['delegation','points']);
 $dnsWork->update(['due_at'=>$future]);
 $retry = Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id]);
 $read = \Filament\Actions\Testing\TestAction::make('read')->schemaComponent('sheet','content');
+$retry->callAction($read);
+same([], $retry->get('pendingCheck'), 'A throttled registry retry cannot join a different request');
+$clearCooldown();
 $retry->callAction($read);
 same($future,(int)$dnsWork->min('due_at'),'Registry backoff leaves healthy DNS checks alone');
 $expiryWork->update(['due_at'=>$future,'backoff_until'=>time()-1]);

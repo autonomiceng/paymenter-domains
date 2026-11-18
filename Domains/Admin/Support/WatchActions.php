@@ -33,7 +33,16 @@ final class WatchActions
                 $reason=match($action){'note'=>(string)($data['note']??''),'save'=>'DNS template saved','enable'=>'DNS template turned on','disable'=>'DNS template turned off','delete'=>'DNS template deleted',default=>self::REASONS[$action]};
                 try{(new Writes())->run(Auth::user(),$kind,$id,$action,Writes::ticket((int)Auth::id(),$kind,$id,$revision,$action,$defaultId),$reason,$data+$arguments);}
                 catch(\DomainException|\InvalidArgumentException|\Illuminate\Database\QueryException|\Illuminate\Database\Eloquent\ModelNotFoundException $e){
-                    if($action==='read' && $e instanceof \DomainException && $e->getMessage()==='A check was recently requested. Try again later.'){$livewire->waitForCheck();}
+                    if($action==='read' && $e instanceof \DomainException && $e->getMessage()==='A check was recently requested. Try again later.'){
+                        $retry = $arguments['retryKind'] ?? null;
+                        $livewire->waitForCheck($retry);
+                        if ($retry) {
+                            $label = Writes::checkLabel($retry);
+                            Notification::make()->warning()->title($livewire->pendingCheck ? $label.' already requested'
+                                : 'Try the '.strtolower($label).' again in a few minutes.')->send();
+                            return;
+                        }
+                    }
                     Notification::make()->warning()->title(self::error($kind,$e))->send();
                     // A refused template save keeps the dialog open with what was typed.
                     if(($kind==='profile'&&$action==='save') || $action==='profile'){throw new \Filament\Support\Exceptions\Halt();}

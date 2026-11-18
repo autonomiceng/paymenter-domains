@@ -29,7 +29,15 @@ class ViewWatch extends RecordDetailPage
         foreach ($facts as $title => $entries) {
             $rows = [];
             if ($title === 'Checks' && $failed) {
-                $rows[] = Row::notice('failed-check', Value::state(State::Failed, Reader::Staff, $checks['Last check']['sub']), $this->checkAction());
+                $reason = $checks['Last check']['sub'];
+                $kind = $checks['Last check']['retryKind'];
+                $work = $this->getRecord()->work->firstWhere('kind',$kind);
+                if ($this->getRecord()->state === 'active' && $work) {
+                    $label = \Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites::checkLabel($kind);
+                    if ($work->backoff_until > time()) { $reason .= ' '.$label.' can retry after '.WatchFacts::date($work->backoff_until).'.'; }
+                    elseif ($work->claim) { $reason .= ' '.$label.' is already running.'; }
+                }
+                $rows[] = Row::notice('failed-check', Value::state(State::Failed, Reader::Staff, $reason), $this->checkAction());
                 $entries['Last check']['tone'] = $entries['Last check']['sub'] = null;
                 if (!$entries['Last check']['value']) { unset($entries['Last check']); }
             }

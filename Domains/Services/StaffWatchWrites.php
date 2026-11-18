@@ -65,19 +65,8 @@ final class StaffWatchWrites
                     // Enqueue eligibility only: ordinary dispatcher performs the read outside this transaction. A missing-nameserver answer is a successful check.
                     $q=DB::table('domains_watch_work')->where('watch_id',$id);
                     if(!(clone$q)->exists()){throw new \DomainException('This watch has no scheduled checks yet.');}
-                    $retryKind = $input['retryKind'] ?? null;
-                    if ($retryKind !== null) {
-                        $label = self::checkLabel($retryKind);
-                        $work = (clone $q)->where('kind',$retryKind)->lockForUpdate()->first();
-                        if (!$work || $work->claim !== null || $work->lease_until > time() || $work->backoff_until > time()) {
-                            throw new \DomainException($label.' is running or waiting for its automatic retry.');
-                        }
-                        if (!in_array($work->safe_code, ['expiry_unknown','resolver_failed','invalid_answer','ambiguous_empty','read_unavailable','deadline','clock_reversal'], true)) {
-                            throw new \DomainException($label.' changed. Refresh the page to see its latest result.');
-                        }
-                        $observation = $row->{$retryKind === 'expiry' ? 'registry' : $retryKind};
-                        $data = ['retry_kind'=>$retryKind, 'after_id'=>(int)$observation?->id, 'backoff_until'=>(int)$work->backoff_until];
-                        $q->where('id',$work->id)->update(['due_at'=>time()]);
+                    if (isset($input['retryKind'])) {
+                        $data = self::requestRetry($row, $input['retryKind']);
                     } else {
                         $count=$q->whereNull('claim')->where(fn($q)=>$q->whereNull('backoff_until')->orWhere('backoff_until','<=',time()))->where(fn($q)=>$q->whereNull('safe_code')->orWhereIn('safe_code',['ready','rotation','nameservers_missing']))->update(['due_at'=>time()]);
                         // Refusing rolls back the claim and leaves the cooldown free.
@@ -132,7 +121,24 @@ final class StaffWatchWrites
         $visible=preg_replace('/\p{Cf}+/u','',$folded)??$folded;
         return mb_strtolower(trim(preg_replace('/\s+/u',' ',$visible)??$visible));
     }
-    public static function checkLabel(string $kind): string
+    private static function requestRetry(WatchName $watch, mixed $kind): array
+    {
+        $label = self::checkLabel($kind);
+        $query = DB::table('domains_watch_work')->where('watch_id',$watch->id)->where('kind',$kind);
+        $work = $query->lockForUpdate()->first();
+        $now = time();
+        if (!$work || $work->claim !== null || $work->lease_until > $now || $work->backoff_until > $now) {
+            throw new \DomainException($label.' is running or waiting for its automatic retry.');
+        }
+        $observation = $watch->{$kind === 'expiry' ? 'registry' : $kind};
+        $failed = in_array($work->safe_code, ['expiry_unknown','resolver_failed','invalid_answer','ambiguous_empty','read_unavailable','deadline','clock_reversal'], true);
+        $partial = $observation?->partial && in_array($work->safe_code, [null,'ready'], true);
+        if (!$failed && !$partial) { throw new \DomainException($label.' changed. Refresh the page to see its latest result.'); }
+        $query->update(['due_at'=>$now]);
+        return ['retry_kind'=>$kind, 'after_id'=>(int)$observation?->id, 'backoff_until'=>(int)$work->backoff_until];
+    }
+
+    public static function checkLabel(mixed $kind): string
     {
         return match ($kind) {
             'expiry'=>'Registry lookup', 'points'=>'DNS records check', 'delegation'=>'Nameserver check',
