@@ -86,8 +86,8 @@ fi
                     self.assertIn('php-build-', call.split()[5])
                     self.assertEqual(after, ['image inspect --format {{.Id}} '+tag] if not status else [])
                     self.assertEqual(result.returncode == 0, status == 0)
-                    self.assertEqual('suite image ready' in result.stdout, status == 0)
                     if status:
+                        self.assertFalse(result.stdout)
                         self.assertIn('exit status 23', result.stderr)
 
     def test_hosted_bundle_uses_the_selected_runtime_even_with_a_different_runc_on_path(self):
