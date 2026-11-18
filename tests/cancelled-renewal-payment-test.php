@@ -107,7 +107,7 @@ require_once dirname(__DIR__).'/Domains/routes/web.php';
 app('router')->getRoutes()->refreshNameLookups();
 $owned = new OwnedDomains($clock, new OwnerPorts, billing: $billing);
 $replacementFailures = [];
-foreach (['after-cancel', 'before-cancel', 'late-observation'] as $case) {
+foreach (['after-cancel', 'before-cancel', 'late-observation', 'full-after-closure', 'processing-before-cancel'] as $case) {
     $earlyTime = new DateTimeImmutable('2027-09-26T12:00:00Z');
     [$early, $holding, $binding, $original] = $makeRenewal(
         placeholderComFixtureName('cancelled-early-'.$case.'-placeholder.com'),
@@ -116,9 +116,13 @@ foreach (['after-cancel', 'before-cancel', 'late-observation'] as $case) {
     $clock->instant = $earlyTime;
     $before = $cash();
     $reference = 'early-cancel-'.$case;
+    $amount = $case === 'full-after-closure' ? $early->amount : '1.00';
     if ($case === 'before-cancel') {
         $receipt = ExtensionHelper::addPayment($original, 'MoneyReceipt', '1.00', '0.00', $reference);
         same('pending', $original->fresh()->status, 'The partial payment precedes cancellation');
+    }
+    if ($case === 'processing-before-cancel') {
+        $receipt = ExtensionHelper::addProcessingPayment($original, null, $amount, '0.00', $reference);
     }
     $original->refresh()->update(['status' => 'cancelled']);
     if ($case === 'after-cancel') {
@@ -128,6 +132,8 @@ foreach (['after-cancel', 'before-cancel', 'late-observation'] as $case) {
             static fn () => ExtensionHelper::addPayment($original, null, '1.00', '0.00', $reference)
         );
         $clock->instant = new DateTimeImmutable('2027-09-27T12:00:00Z');
+    } elseif ($case === 'full-after-closure') {
+        $receipt = ExtensionHelper::addProcessingPayment($original, null, $amount, '0.00', $reference);
     }
     $sweep = new Refunds($clock);
     $account = Account::where('server_id', $early->server_id)->sole();
@@ -140,13 +146,24 @@ foreach (['after-cancel', 'before-cancel', 'late-observation'] as $case) {
         $clock->instant = new DateTimeImmutable('2027-09-27T12:00:00Z');
         MoneyReceiptGateway::complete($original, $reference.':excess');
     }
+    if (in_array($case, ['full-after-closure', 'processing-before-cancel'], true)) {
+        $sweep->creditRetired($account);
+        commerceReject(fn () => $billing->invoice($holding->id, $user));
+        same($before, $cash(), 'Processing payment neither funds a replacement nor creates credit');
+        $clock->instant = new DateTimeImmutable('2027-09-27T12:00:00Z');
+        ExtensionHelper::addPayment($original, null, $amount, '0.00', $reference);
+    }
     $sweep->creditRetired($account);
     $sweep->creditRetired($account);
     $closed = $early->fresh();
-    same(['cancelled', 'rejected', [(int) $receipt->id]], [
+    $terminal = [
         $original->fresh()->status, $closed->state, $closed->attempt['terminal']['transactions'],
-    ], 'Terminal closure retains the original payment identity: '.$case);
-    same($before + ($case === 'before-cancel' ? 0 : 100), $cash(), 'Settlement returns the partial amount once: '.$case);
+    ];
+    if ($terminal !== ['cancelled', 'rejected', [(int) $receipt->id]]) {
+        $replacementFailures[$case] = 'Closure lost its cancellation or payment identity: '.json_encode($terminal);
+        continue;
+    }
+    same($before + ($case === 'before-cancel' ? 0 : PricingRule::minor($amount)), $cash(), 'Settlement returns the receipt once: '.$case);
     if ($case === 'late-observation') {
         commerceReject(fn () => $billing->requestOptions($holding));
         commerceReject(fn () => $billing->invoice($holding->id, $user));
@@ -155,11 +172,11 @@ foreach (['after-cancel', 'before-cancel', 'late-observation'] as $case) {
     }
     $tampered = [...$closed->funding, 'auto_pay' => [...$closed->funding['auto_pay'], 'status' => 'uncertain']];
     $unknown = $closed->funding;
-    if ($case === 'after-cancel') {
-        $unknown['late_credits'][0]['credit_id'] = 99999999;
-    } else {
+    if ($case === 'before-cancel') {
         $key = array_key_first($unknown['receipt_return_results']);
         $unknown['receipt_return_results'][$key]['state'] = 'unknown';
+    } else {
+        $unknown['late_credits'][0]['credit_id'] = 99999999;
     }
     foreach ([$tampered, $unknown] as $unproved) {
         DB::table($closed->getTable())->where('id', $closed->id)->update(['funding' => Crypt::encryptString(json_encode($unproved, JSON_THROW_ON_ERROR))]);

@@ -322,8 +322,8 @@ final readonly class Refunds
             return ['amount' => $late['amount'], 'currency' => 'USD'];
         });
     }
-    /** The sweep for receipts the after-commit credit missed: renewals on a cancelled or complimentary invoice with a
-     * succeeded payment. Credit is keyed by payment row, so a renewal already credited changes nothing.
+    /** The sweep for receipts the after-commit credit missed. A processing receipt can establish the time of an
+     * early cancellation while it waits to settle. Credit is keyed by payment row.
      * @return list<int> Domains that got credit. */
     private function creditRenewalSweep(Account $account): array
     {
@@ -331,7 +331,10 @@ final readonly class Refunds
         $rows = Operation::where('server_id', $account->server_id)->where('id', '>', $from)
             ->where(fn ($q) => $q->where('funding_basis', 'complimentary')
                 ->orWhere(fn ($q) => $q->where('action', 'renew')->whereIn('invoice_id', \App\Models\Invoice::select('id')->where('status', 'cancelled'))))
-            ->whereIn('invoice_id', InvoiceTransaction::select('invoice_id')->where('status', InvoiceTransactionStatus::Succeeded))
+            ->whereIn('invoice_id', InvoiceTransaction::select('invoice_id')->where(fn ($q) => $q
+                ->where('status', InvoiceTransactionStatus::Succeeded)
+                ->orWhere(fn ($q) => $q->where('status', InvoiceTransactionStatus::Processing)
+                    ->where('domains_operations.action', 'renew')->where('domains_operations.state', 'awaiting_payment'))))
             ->orderBy('id')->limit(100)->get(['id', 'domain_id']);
         foreach ($rows as $row) {
             try { if ($this->creditCancelledRenewal((int) $row->id) !== null) { $credited[] = (int) $row->domain_id; } }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
 use App\Models\{Invoice, InvoiceItem, InvoiceTransaction, Order, Plan, Product, Service, ServiceConfig, User};
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
@@ -100,9 +101,8 @@ final class NativeDomainGuard
             });
         }
         Invoice::updating(static function (Invoice $invoice): void {
-            // Marked Paid, core would run Paid and RenewalFunding would send this still-open renewal. Its money becomes account
-            // credit instead. A renewal closed before the payment keeps the native late path: the invoice turns paid, then returns.
-            if($invoice->status==='paid'&&$invoice->getRawOriginal('status')==='cancelled'&&Operation::whereIn('invoice_id',self::ids($invoice))->where('action','renew')->whereIn('state',Refunds::OPEN)->exists()){
+            // Keep cancellation while receipts settle. The legacy unpaid retirement still uses native late payment.
+            if ($invoice->status === 'paid' && $invoice->getRawOriginal('status') === 'cancelled' && self::keepsCancelledRenewal($invoice)) {
                 $invoice->status='cancelled';NativeServiceRefusal::notifyClosedInvoice($invoice);
             }
             if($invoice->isDirty('status')&&Operation::whereIn('invoice_id',self::ids($invoice))->where('funding_basis','complimentary')->exists()){throw new \DomainException('Complimentary receipts stay paid.');}
@@ -113,6 +113,17 @@ final class NativeDomainGuard
         Invoice::deleting(static function (Invoice $invoice): void {
             if (Operation::whereIn('invoice_id', self::ids($invoice))->exists()) { throw new \DomainException('Issued domain invoices are retained.'); }
         });
+    }
+
+    private static function keepsCancelledRenewal(Invoice $invoice): bool
+    {
+        $operations = Operation::whereIn('invoice_id', self::ids($invoice))->where('action', 'renew');
+        if ((clone $operations)->whereIn('state', Refunds::OPEN)->exists()) { return true; }
+        return $operations->where('state', 'rejected')->where('safe_code', FundsWaits::RENEWAL_CLOSED)
+            ->get(['action', 'safe_code', 'policy'])->contains(static function (Operation $op): bool {
+                try { return RenewalCycles::receiptRetired($op); }
+                catch (DecryptException) { return false; } // An unreadable policy must not prevent recording a native payment.
+            });
     }
 
     /** Eloquent deletion targets the original primary key even if the in-memory key was changed. */
