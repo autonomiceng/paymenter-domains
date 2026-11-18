@@ -81,8 +81,10 @@ final class TransferPolling
             if ($view['stop_reason'] === null) {
                 // An old final check's backoff was inoperative. Only a real read, an active reservation
                 // (including a crashed worker) or a capacity retry can pace the second week.
-                $retry = isset($r['reading_until']) || isset($r['capacity_wait_since']) ? $next : 0;
-                $view['next_read_at'] = max($retry, $deadline, $read['at'] + TransferFollowup::DAY);
+                $retry = isset($r['capacity_wait_since']) ? $next : 0;
+                // An unfinished check could have entered the wire any time before its saved deadline.
+                $lastPossibleRead = max($read['at'], $r['reading_until'] ?? 0);
+                $view['next_read_at'] = max($retry, $deadline, $lastPossibleRead + TransferFollowup::DAY);
             }
         } elseif (!isset($r['final_check']) && ($now >= $deadline
             || ($r['polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT && !self::expected($op))) {

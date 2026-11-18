@@ -3,6 +3,8 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api;
 
+use Paymenter\Extensions\Servers\Domains\Services\LiveReservationLimit;
+
 final class RegistrarClient implements \JsonSerializable
 {
     private readonly \SensitiveParameterValue $credential;
@@ -18,7 +20,8 @@ final class RegistrarClient implements \JsonSerializable
         $this->transport = new \SensitiveParameterValue($transport);
     }
 
-    public function execute(RegistrarRequest $request, RequestContext $context, ?int $timeoutMs = null): RegistrarResult
+    public function execute(RegistrarRequest $request, RequestContext $context, ?int $timeoutMs = null,
+        bool $deferOnReservationLimit = false): RegistrarResult
     {
         try {
             $key = $this->credential->getValue();
@@ -30,6 +33,10 @@ final class RegistrarClient implements \JsonSerializable
                 return new RegistrarResult(Outcome::Unknown);
             }
             return (new ResponseParser)->parse($response->body(), $request, $key);
+        } catch (LiveReservationLimit) {
+            // Transfer polling accounts for this refusal outside the physical read scope.
+            if ($deferOnReservationLimit) { throw new LiveReservationLimit; }
+            return new RegistrarResult(Outcome::Unknown);
         } catch (\Throwable) {
             // Do not retain/chain errors, raw response, URL or transport diagnostic text.
             return new RegistrarResult(Outcome::Unknown);

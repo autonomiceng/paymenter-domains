@@ -101,8 +101,13 @@ same(false,TransferPolling::due($r,$clock->now()->getTimestamp()),'Surfaced dead
 $op=$prepare('read-outage');expect(TransferPolling::due($op,$clock->now()->getTimestamp()),'Outage transfer is due');
 $outage=new class implements Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\DeadlineTransport {
     public int $calls=0;
+    public bool $capped=false;
     public function send($e,$c,$r,string $k):Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\TransportResponse{throw new LogicException;}
-    public function sendWithin($e,$c,$r,string $k,int $t):Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\TransportResponse{$this->calls++;throw new RuntimeException('Synthetic registrar outage');}
+    public function sendWithin($e,$c,$r,string $k,int $t):Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\TransportResponse{
+        $this->calls++;
+        if ($this->capped) { throw new \Paymenter\Extensions\Servers\Domains\Services\LiveReservationLimit; }
+        throw new RuntimeException('Synthetic registrar outage');
+    }
 };
 $failureRegistry=new Paymenter\Extensions\Servers\Domains\Services\RegistrarRegistry;
 $failureRegistry->register('namesilo',['token'],$verifier,fn($b,$c)=>new Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Driver(new Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Client($b,$c['token'],$outage),['renew'],$clock),authenticator:$verifier);
@@ -114,4 +119,22 @@ same('Cannot check registrar',Paymenter\Extensions\Servers\Domains\Services\Regi
 same('unavailable',$r->policy['status_check']['outcome'],'No successful reply remains unavailable');
 same(null,$r->policy['status_check']['reason'],'A future reservation is not a scheduled deferral');
 expect($r->policy['reconciliation']['next_at']>$clock->now()->getTimestamp(),'Existing future retry remains reserved');
+
+$op = $prepare('daily-cap-refusal');
+HistoryAcceptances::save(new HistoryAcceptance($binding,'America/Los_Angeles',0,16*86400,'namesilo_transfer_v1'));
+$observe->status = 'Pending at Registry';
+$observe->fault = 'reject';
+$clock->instant = new DateTimeImmutable('@'.TransferPolling::deadline($op));
+$op = $reconcile->run($op->id);
+$clock->instant = $clock->now()->modify('+1 day');
+$nowDue = $clock->now()->getTimestamp();
+$previous = TransferPolling::schedule($op, $nowDue);
+$outage->capped = true;
+$r = $failureReconcile->run($op->id);
+same($op->policy['reconciliation']['checks'], $r->policy['reconciliation']['checks'], 'A NameSilo pre-wire refusal spends no transfer check');
+same([...$previous, 'next_read_at' => $nowDue + 60], TransferPolling::schedule($r, $nowDue), 'Account capacity defers the same observed transfer');
+$observe->calls = [];
+$clock->instant = $clock->now()->modify('+60 seconds');
+$reconcile->run($op->id);
+same(['checkTransferStatus'], $observe->calls, 'Returning capacity admits one status read');
 echo "Automatic transfer pacing, held runtime dispatch, deadline, guard recovery, outages and late read-only completion passed.\n"; $nativeSuccessful=true;

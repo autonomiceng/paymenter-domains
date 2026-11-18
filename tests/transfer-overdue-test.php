@@ -156,5 +156,25 @@ $r = $restart->run($op->id);
 expect(in_array('GetDomainInfo', $observe->calls, true), 'An explicit check after cutoff keeps full reconciliation');
 same(1, count($r->policy['reconciliation_resumptions']), 'Explicit post-cutoff read is audited once');
 same(null, $view($r, $clock->now()->getTimestamp())['next_read_at'], 'A staff check cannot extend the timer');
+
+// Leave the locked reservation in storage, as if the worker died after a delayed wire.
+$op = $pending('overdue-crash');
+$reservedAt = $clock->now()->getTimestamp();
+$claims->locked($op->id, fn($row) => TransferPolling::reserve($row, $reservedAt));
+$wireDeadline = $op->fresh()->policy['reconciliation']['reading_until'];
+$clock->instant = new DateTimeImmutable('@'.($wireDeadline - 1));
+$attempt = \Paymenter\Extensions\Servers\Domains\Services\ReconciliationEvidence::attempt($op, $op->domain, $binding);
+$context = new \Paymenter\Extensions\Servers\Domains\Data\RequestContext($binding, RequestOrigin::Background,
+    new DateTimeImmutable('@'.$wireDeadline), new \Paymenter\Extensions\Servers\Domains\Data\RequestBudget(25), $clock);
+$readBindings->reader($op->server_id)->reconcile($attempt, $context, overdue: true);
+$clock->instant = new DateTimeImmutable('@'.($reservedAt + 86400));
+$restart = new OperationReconciliation($claims, $readBindings, $clock);
+$restart->run($op->id);
+same(['TP_GetOrder'], $observe->calls, 'A day from reservation is too early after a delayed physical read');
+$next = TransferPolling::schedule($op->fresh(), $clock->now()->getTimestamp())['next_read_at'];
+expect($next >= $wireDeadline - 1 + 86400 && $next <= $wireDeadline + 86400, 'Restart waits a full day from the last possible admission');
+$clock->instant = new DateTimeImmutable('@'.$next);
+$restart->run($op->id);
+same(['TP_GetOrder','TP_GetOrder'], $observe->calls, 'The abandoned check can run again at its safe due time');
 echo "Bounded overdue transfer checks passed.\n";
 $nativeSuccessful = true;

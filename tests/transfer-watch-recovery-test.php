@@ -23,4 +23,28 @@ $r=$reconcile->run($op->id);same('succeeded',$r->state,'Authorized recovery comp
 same(false,$r->policy['reconciliation']['manual_check'],'Completed recovery consumes its authorization');
 same(1,count($r->policy['reconciliation_resumptions']),'Partial retries do not consume another resumption');
 same($deadline,TransferPolling::deadline($r),'Manual recovery and its capacity retries never move the sealed window');
+
+// Workers missed the entire automatic window, including the final check.
+require_once __DIR__.'/Support/staff-panel.php';
+use Paymenter\Extensions\Servers\Domains\Admin\Support\OperationActions;
+use Paymenter\Extensions\Servers\Domains\Services\{OperationReconciliation,StaffOperationReview,StaffOperations};
+app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class, $clock);
+app()->instance(OperationReconciliation::class, $reconcile);
+$op = $prepare('missed-final-check');
+$staff = staffUser(['admin.domains.view', 'admin.domains.operations.resume_reads']);
+Illuminate\Support\Facades\Auth::setUser($staff);
+$clock->instant = new DateTimeImmutable('@'.TransferPolling::cutoff($op));
+$r = $reconcile->run($op->id);
+same([], $observe->calls, 'Restart at cutoff cannot backfill a missed final check');
+same([false, true], [OperationActions::relevant('recheck', $r), OperationActions::relevant('resume_reads', $r)],
+    'Staff can request an audited read after the automatic window expires');
+$ticket = StaffOperationReview::ticket($staff->id, $r->domain_id, $r->id, 'resume_reads', StaffOperationReview::stamp($r, $r->domain), $clock);
+(new StaffOperations($clock))->run($staff, $r->domain_id, $r->id, 'resume_reads', $ticket, 'Review overdue transfer');
+$observe->status = 'Pending at Registry';
+$observe->fault = 'reject';
+$r = $reconcile->run($r->id);
+expect(in_array('checkTransferStatus', $observe->calls, true), 'The authorized read reaches the registrar');
+same('resume_reads', $r->policy['staff_actions'][0]['action'], 'The staff action was recorded');
+same(1, count($r->policy['reconciliation_resumptions']), 'The staff read consumes one resumption');
+same(null, TransferPolling::schedule($r, $clock->now()->getTimestamp())['next_read_at'], 'Manual recovery leaves the automatic window closed');
 echo "Manual recovery survives capacity refusals without spending unused resumptions.\n";$nativeSuccessful=true;

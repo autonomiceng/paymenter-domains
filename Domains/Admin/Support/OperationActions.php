@@ -9,7 +9,7 @@ use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\{Auth,Log};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement,EnomTestRegistration,ManagementEvidence,ObservationRecords,ObservationWork,OperationFailure,OperationTerminalProof,ReceiptReturns,StaffOperationReview,StaffOperations,StaffOperationWrites,StaffReviewRefused,StaffSyncReview,TransferInputs,UnpaidAcquisitionProof};
+use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement,EnomTestRegistration,ManagementEvidence,ObservationRecords,ObservationWork,OperationFailure,OperationTerminalProof,ReceiptReturns,StaffOperationReview,StaffOperations,StaffOperationWrites,StaffReviewRefused,StaffSyncReview,TransferInputs,TransferPolling,UnpaidAcquisitionProof};
 final class OperationActions
 {
     /** Toast titles, named for the action. */
@@ -179,7 +179,8 @@ final class OperationActions
                 &&\Paymenter\Extensions\Servers\Domains\Services\RenewalCompletion::capturedChargeHeld($op)){return true;}
         } catch (\Throwable) { return false; }
         if(($p['reconciliation']['reason']??null)==='transfer_deadline_passed'||($p['reconciliation']['final_check']??null)==='done'){return true;}
-        if(\Paymenter\Extensions\Servers\Domains\Services\TransferPolling::expected($op)){return false;}
+        if (TransferPolling::applies($op) && app(Clock::class)->now()->getTimestamp() >= TransferPolling::cutoff($op)) { return true; }
+        if(TransferPolling::expected($op)){return false;}
         return ($p['renewal_polls']??0)>=\Paymenter\Extensions\Servers\Domains\Services\OperationReconciliation::POLL_LIMIT||($p['reconciliation']['polls']??0)>=\Paymenter\Extensions\Servers\Domains\Services\OperationReconciliation::POLL_LIMIT;
     }
     /** Cancel and refund names the amount and where it goes before staff confirm. A new order and its service end first. */

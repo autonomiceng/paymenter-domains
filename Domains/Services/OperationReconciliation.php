@@ -58,7 +58,10 @@ final class OperationReconciliation
                     catch (\Throwable) { /* Invalid submitted data is not a nameserver fact. */ }
                 }
                 $until = $op->policy['reconciliation']['reading_until'] ?? null;
-                if ($followup) { $until = min($until, TransferPolling::cutoff($op)); }
+                if ($watch && !$manual) {
+                    $cutoff = TransferPolling::cutoff($op);
+                    $until = min($until ?? $cutoff, $cutoff);
+                }
                 return [$attempt, self::stamp($op, $domain), self::contract($attempt), $requestedNameservers, $watch, $watch&&TransferPolling::light($op,$now), $followup, $until];
             } catch (\Throwable) {
                 if($watch){$p=$op->policy;$p['reconciliation']['staff_alert']=true;$p['reconciliation']['reason']='transfer_authority_changed';if(TransferPolling::expired($op,$now)){$p['reconciliation']['final_check']='done';}$op->update(['policy'=>$p]);}
@@ -70,8 +73,9 @@ final class OperationReconciliation
         $callCapBlocked = false; $pendingAnomaly = false; $privacyBlocked = false; $scan = null;
         $limiter=$watch?new TransferReadBudget($this->clock,Runtime::limiter()):null;
         try {
-            $deadline = $until === null ? $this->clock->now()->modify('+'.self::READ_SECONDS.' seconds') : new \DateTimeImmutable('@'.$until);
-            $context = $check->context = new RequestContext($attempt->binding, RequestOrigin::Background, $deadline, new RequestBudget(25), $this->clock, $limiter ?? Runtime::limiter());
+            $deadline = $this->clock->now()->modify('+'.self::READ_SECONDS.' seconds');
+            if ($until !== null) { $deadline = min($deadline, new \DateTimeImmutable('@'.$until)); }
+            $context = $check->context = new RequestContext($attempt->binding, RequestOrigin::Background, $deadline, new RequestBudget(25), $this->clock, $limiter ?? Runtime::limiter(), deferOnReservationLimit: $watch);
             $read=function()use($attempt,$context,$light,$followup){
                 $reader=$this->bindings->reader($attempt->binding->serverId);
                 if ($followup) {
@@ -107,7 +111,7 @@ final class OperationReconciliation
                 $proof = $followup && $pendingAnomaly ? null : ReconciliationEvidence::completion($attempt, $facts, $this->clock->now());
                 $check->observe($attempt,$facts,$proof!==null);
             }
-        } catch (ReadDeferred) {
+        } catch (ReadDeferred|LiveReservationLimit) {
             $check->deferred = 'read_limit';
             return $watch?$this->deferred($id,$stamp,($check->context?->exchanges() ?? 0) === 0, $followup):Operation::findOrFail($id);
         } catch (EnomTestCallLimit $error) {
