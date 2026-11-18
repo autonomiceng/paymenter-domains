@@ -47,6 +47,11 @@ $colors=':root{--color-primary:229 100% 64%;--color-neutral:220 25% 85%;--color-
     .'.dark{--color-neutral:0 0% 17%;--color-base:100 100% 100%;--color-muted:220 0% 53%;--color-background:240 18% 9%;--color-background-secondary:240 13% 11%}';
 foreach($cases as $case=>[$d,$more]){
     $html=view('domains::show',['domain'=>$d,'summary'=>$summary($d,$more)])->render();
+    if ($case === 'invoice-due') {
+        $headings = storefrontDom($html)->query('//h1');
+        same(1, $headings->length, 'The invoice-due domain has one main heading');
+        expect(str_contains($headings->item(0)->textContent, $d->name), 'The heading names its domain');
+    }
     foreach(['enom','namesilo']as$registrar){expect(!str_contains(strtolower(strip_tags(preg_replace('~<(style|script)\b[^>]*>.*?</\1>~si','',$html))),$registrar),'No registrar names: '.$case);}
     expect(!str_contains($html,'—'),'No em dashes: '.$case);
     foreach(['dark','light']as$mode){

@@ -280,8 +280,6 @@ $off=$domain(['renewal'=>'Off','renewalOff'=>'owner','autoRenew'=>['url'=>'/doma
 same(0,$autoPay(storefrontDom($render($off,$summary($off)))),'No Auto Pay link while Auto-renew is off');
 $d=$domain();same('Issues Feb 1, 2027. Due Feb 8, 2027.',$card(storefrontDom($render($d,$summary($d,['renewalDueAt'=>'2027-02-08','renewalIssueAt'=>'2027-02-01']))),'Next invoice'),'Planned invoice says when it is issued and when it is due');
 $d=$domain(['renewalDue'=>'2027-02-01','renewNow'=>['invoice'=>'/invoices/9']]);$dom=storefrontDom($render($d,$summary($d)));
-same(1,$dom->query('//h1')->length,'An invoice-due page has one main heading');
-same(1,$dom->query('//h1[starts-with(normalize-space(.),"'.$name.'")]')->length,'The invoice-due heading names its domain');
 same('Due Feb 1, 2027 Pay invoice',$card($dom,'Next invoice'),'Due invoice');
 same(0,$dom->query('//a[.="Renew now"]')->length,'No Renew now while an invoice is due');
 // After a failed charge (Auto Pay or a card), the row says it failed and what to do, not only that the invoice is ready.
