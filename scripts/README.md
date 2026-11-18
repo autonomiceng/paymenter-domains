@@ -19,4 +19,6 @@ util-linux `unshare`. The runner user needs passwordless sudo and the system `ap
 when Ubuntu restricts unprivileged user namespaces. The helper loads executable profiles for
 root-owned copies under `/run` and prints that directory, or prints nothing when the restriction
 is off. Pass `--setenv="PATH=${bin_dir:+$bin_dir:}$PATH"` to `systemd-run` and invoke the binaries
-by name. AppArmor attaches each profile by path.
+by name. Domains passes the absolute profiled binary as `DOMAINS_HOSTED_RUNC` to its service.
+The job logs identify the kernel, the parent runc executable and its AppArmor label. The
+kernel journal records user namespace transitions or denials for the init child.

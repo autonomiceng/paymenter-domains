@@ -97,7 +97,8 @@ def membership():
 
 def configure(bundle, rootfs, argv, cwd, env, mounts, writable, temporary):
     name = 'php-' + uuid.uuid4().hex
-    subprocess.run(['runc', 'spec', '--rootless'], cwd=bundle, check=True)
+    runc = os.environ.get('DOMAINS_HOSTED_RUNC') or 'runc'
+    subprocess.run([runc, 'spec', '--rootless'], cwd=bundle, check=True)
     path = bundle/'config.json'
     config = json.loads(path.read_text())
     config['root'] = {'path': str(rootfs), 'readonly': True}
@@ -124,13 +125,36 @@ def configure(bundle, rootfs, argv, cwd, env, mounts, writable, temporary):
             config['mounts'].append({'destination': str(private), 'source': str(blank if private.is_dir() else blank_file),
                                      'type': 'bind', 'options': ['bind', 'ro', 'nosuid', 'nodev', 'noexec']})
     path.write_text(json.dumps(config))
-    return ['runc', '--root', str(bundle/'state'), '--rootless=true'], name
+    return [runc, '--root', str(bundle/'state'), '--rootless=true'], name
+
+
+def log_runc_attachment(pid):
+    # The parent has crossed exec. The kernel journal records its child's namespace transition.
+    proc = Path('/proc')/str(pid)
+    try:
+        attr = 'attr/apparmor/current'
+        service_label = (Path('/proc/self')/attr).read_text().strip()
+        label = (proc/attr).read_text().strip()
+        executable = (proc/'exe').readlink()
+        print(f'Hosted runc pid={pid} uid={os.geteuid()} exe={executable} profile={label} '
+              f'service_profile={service_label}', file=sys.stderr, flush=True)
+    except OSError as error:
+        print(f'Cannot inspect hosted runc pid={pid}: {error}', file=sys.stderr)
 
 
 def run_bundle(bundle, rootfs, argv, cwd, env, mounts, *, writable=(), temporary=()):
     cli, name = configure(bundle, rootfs, argv, cwd, env, mounts, writable, temporary)
     try:
-        return subprocess.run([*cli, 'run', '--bundle', str(bundle), name]).returncode
+        command = [*cli, 'run', '--bundle', str(bundle), name]
+        if not os.environ.get('DOMAINS_HOSTED_RUNC'):
+            return subprocess.run(command).returncode
+        with subprocess.Popen(command) as process:
+            try:
+                log_runc_attachment(process.pid)
+                return process.wait()
+            except BaseException:
+                process.kill()
+                raise
     finally:
         if (bundle/'state'/name).exists():
             subprocess.run([*cli, 'delete', '--force', name], check=True)

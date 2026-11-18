@@ -64,6 +64,30 @@ class ReceiptTests(unittest.TestCase):
                             self.assertIn('--download', result.stderr)
                             self.assertFalse(result.stdout)
 
+    def test_hosted_bundle_uses_the_selected_runtime_even_with_a_different_runc_on_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            selected = root/'profiled-runc'
+            selected.write_text("""#!/bin/sh
+if [ "$1" = spec ]; then
+    printf '%s' '{"linux":{"namespaces":[]},"process":{},"mounts":[]}' > config.json
+elif [ "$4" = run ]; then
+    mkdir -p "$2/$7" && exit 23
+elif [ "$4" = delete ]; then
+    rmdir "$2/$6"
+else
+    exit 99
+fi
+""")
+            selected.chmod(0o700)
+            shadow = root/'runc'
+            shadow.write_text('#!/bin/sh\nexit 92\n')
+            shadow.chmod(0o700)
+            with mock.patch.dict(os.environ, DOMAINS_HOSTED_RUNC=str(selected), PATH=str(root)+':'+os.environ['PATH']):
+                code = runner.php_suite.run_bundle(root, root/'rootfs', ['/bin/true'], root, {}, {})
+            self.assertEqual(code, 23)
+            self.assertEqual(list((root/'state').iterdir()), [])
+
     def test_container_success_requires_a_complete_receipt_on_host(self):
         suite = runner.php_suite
         with tempfile.TemporaryDirectory() as directory:

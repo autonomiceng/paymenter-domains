@@ -29,6 +29,7 @@ done
 
 read -r restricted < /proc/sys/kernel/apparmor_restrict_unprivileged_userns
 printf 'AppArmor unprivileged userns restriction: %s. System runc: %s\n' "$restricted" "$runc_path" >&2
+printf 'Kernel: %s\n' "$(uname -r)" >&2
 "$runc_path" --version >&2
 case "$restricted" in
     0) exit 0 ;;
@@ -36,15 +37,24 @@ case "$restricted" in
     *) fail "Unexpected AppArmor user namespace setting: $restricted" ;;
 esac
 
+/usr/bin/dpkg-query -W -f='AppArmor package: ${Version}\n' apparmor >&2
+sudo -n /usr/sbin/sysctl -e kernel.apparmor_restrict_unprivileged_unconfined \
+    kernel.apparmor_restrict_unprivileged_userns_force kernel.apparmor_restrict_unprivileged_userns_complain >&2
 # Use private copies to avoid overriding a distro profile or changing Docker's runtime.
-# AppArmor attaches the profiles by executable path, including runc's namespace setup.
 bin_dir=$(sudo -n /usr/bin/mktemp -d /run/domains-php-XXXXXXXX)
 sudo -n /usr/bin/install -m 0755 -- "${executables[@]}" "$bin_dir/"
 {
     printf 'abi <abi/4.0>,\n'
     for executable in "${executables[@]}"; do
-        printf 'profile %s/%s flags=(unconfined) {\n  userns,\n}\n' "$bin_dir" "${executable##*/}"
+        printf 'profile %s/%s flags=(unconfined) {\n  audit userns,\n}\n' "$bin_dir" "${executable##*/}"
     done
 } | sudo -n /usr/sbin/apparmor_parser --add --skip-cache >&2
+# Check the kernel's list, including the mode compiled for this runner.
+for executable in "${executables[@]}"; do
+    profile="$bin_dir/${executable##*/}"
+    sudo -n /usr/bin/cat /sys/kernel/security/apparmor/profiles | awk -v profile="$profile" \
+        '$1 == profile { print; found = 1 } END { exit !found }' >&2 || fail "Missing AppArmor profile: $profile"
+done
 sudo -n /usr/bin/chmod 0755 "$bin_dir"
+printf 'Hosted executable directory: %s\n' "$bin_dir" >&2
 printf '%s\n' "$bin_dir"

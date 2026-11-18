@@ -116,12 +116,13 @@ jobs:
           key: domains-php-native-${{ runner.os }}-${{ hashFiles('scripts/php-runtime-packages.json') }}
       - run: python3 scripts/bootstrap.py --download --native
       - name: Run native tests
+        id: suite
         env:
           TESTS: ${{ toJSON(matrix.tests) }}
         # Up to four workers, never more than tests: each worker copies the whole fixture first.
         run: |
           bin_dir=$(bash scripts/hosted-php-userns.sh)
-          export PATH="${bin_dir:+$bin_dir:}$PATH"
+          export DOMAINS_HOSTED_RUNC="${bin_dir:+$bin_dir/runc}"
           python3 - <<'EOF'
           import json, os, pwd, sys
           tests = json.loads(os.environ['TESTS'])
@@ -129,12 +130,12 @@ jobs:
           os.execvp('sudo', ['sudo', 'systemd-run', '--wait', '--pipe', '--collect',
               '--uid='+pwd.getpwuid(os.getuid()).pw_name, '-p', 'Delegate=yes',
               '-p', 'MemoryMax=8G', '-p', 'MemorySwapMax=0', '--working-directory='+os.getcwd(),
-              *['--setenv='+key+'='+os.environ[key] for key in ('PAYMENTER_TEST_APP', 'DOMAINS_TEST_JOBS', 'PATH')],
+              *['--setenv='+key+'='+os.environ[key] for key in ('PAYMENTER_TEST_APP', 'DOMAINS_TEST_JOBS', 'PATH', 'DOMAINS_HOSTED_RUNC')],
               sys.executable, 'scripts/test.py', '--memory-mib', '8192', '--only', *tests])
           EOF
-      - name: Show namespace denials
-        if: failure()
-        run: sudo journalctl -k -b --no-pager -n 30 --grep='apparmor="DENIED".*comm="(runc(:[^"]*)?|unshare)"' || true
+      - name: Show namespace audit records
+        if: ${{ !cancelled() && steps.suite.outcome != 'skipped' }}
+        run: sudo journalctl -k -b --no-pager -n 30 --grep='apparmor="(?:DENIED|AUDIT|ALLOWED)".*comm="(runc(:[^"]*)?|unshare)"' || true
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
