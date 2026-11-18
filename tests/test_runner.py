@@ -697,9 +697,11 @@ class RunnerTests(unittest.TestCase):
         cases += [([path, 'tests/native-fixture-test.php'], ['native'], True, 1) for path in b2_checks]
         cases += [(['tests/offer-commerce-test.php', 'tests/test_runner.py'], ['native', 'runner'], False, 1),
                   (['tests/checkout-refresh-test.php'], ['native'], False, 2)]
+        # The receipt tests own the Git checks. These cases vary selection and fixture setup.
         for requested, selected, shared, jobs in cases:
             with self.subTest(requested=requested), tempfile.TemporaryDirectory() as temp, \
                  mock.patch.dict(os.environ, {'PAYMENTER_TEST_APP': 'pristine'}), \
+                 mock.patch.object(runner, 'git_tree', return_value=(None, 'fixture')), \
                  mock.patch.object(runner.tempfile, 'mkdtemp', return_value=temp), \
                  mock.patch.object(runner.sys, 'argv', ['test.py', '--jobs', str(jobs), '--only', *requested]), \
                  mock.patch.object(runner, 'available_memory_mib', return_value=4096), \

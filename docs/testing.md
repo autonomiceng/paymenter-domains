@@ -16,7 +16,7 @@ screenshots and a receipt. It does not establish installed-theme or live activat
 
 ## Explicit offline button layout check
 
-Optional browser checks are separate from the native runner; ordinary CI needs no browser. They use existing
+These standalone render checks use existing
 Node.js, Playwright (tested with 1.60.0) and Chromium/Chrome, downloading nothing. Set `NODE_PATH` to external
 installed `node_modules` if needed, and `CHROME_BIN` to an existing browser executable. Use the pinned
 native/PHP environment below and a fresh output directory under `TMPDIR`:
@@ -39,19 +39,21 @@ It compares Register/Transfer/Retry geometry with prior inline-flex/normal-wrap/
 at desktop and phone widths. `tests/test_domain_page_artifact.py` covers the customer heading in the invoice-due
 Blade fixture with populated history. Screenshots beside the approved mock cover visual presentation.
 Set `DOMAINS_PANEL_SETUP` to a PHP file that configures `$panel` and returns its
-built theme to render with a host skin. The UI suite needs installed Playwright (`NODE_PATH`) and Chromium (`CHROME_BIN`).
+built theme to render with a host skin. The UI suite uses the image’s Node.js, Playwright 1.60.0 and matching Chromium headless shell.
 
-Run `python3 scripts/bootstrap.py --download` once, then `scripts/test.py` fully offline.
-PHP **8.4.27** (Debian `8.4.27-1~deb13u1`, Linux x86_64) is pinned by archive SHA-256;
-hashes came from Debian security downloads on 2026-10-22. ICU `76.1-4` was re-downloaded
-and verified against its unchanged pin/hash. libzip `1.11.3-2` (Debian trixie, `libzip.so.5` for the zip
-extension) is bundled for hosts without it; its hash matches the trixie package index (2026-11-09).
-Native runs load gd and bcmath; GD needs host
-`libgd3` (`libgd.so.3`) and dependencies, which are not bundled. Native bootstrap verifies
-GD loads and retains loader errors; provider-only bootstrap neither loads nor requires GD.
-Every run verifies/re-extracts archives; missing/corrupt caches fail without downloading.
-`PHP_RUNTIME_ARCHIVE_CACHE` copies verified archives without changing the source cache.
-Python 3, dpkg-deb and compatible system libraries are required; system PHP/Composer never run.
+Build the PHP suite image with `python3 scripts/bootstrap.py --download`, then run
+`scripts/test.py` offline. Bootstrap without `--download` checks the local image only.
+`scripts/php-suite.Dockerfile` pins the amd64 base and dated Debian repository.
+`scripts/php-runtime-packages.json` pins PHP 8.4.27 archives by SHA-256. Set
+`PHP_RUNTIME_ARCHIVE_CACHE` to reuse verified archives when building. Setup requires Docker.
+Execution requires Linux cgroup v2, rootless runc, user namespaces, GNU tar and a delegated
+memory scope. Direct invocation can request a 2 GiB, zero-swap systemd user scope.
+
+Each invocation exports the image by immutable ID into a temporary directory and starts one
+OCI container under the admitted controller. Tests share read-only PHP and vendor files.
+Each native case receives its own application and database. The runner reaps each process
+tree and records file limits, peak memory and exit status. The receipt binds the image ID
+and the checkout tree. The separate MariaDB boundary keeps its existing service and driver.
 
 ## Suites and receipts
 
@@ -84,14 +86,12 @@ guard failures preserve results. Laravel suites must mark completion: framework 
 
 ## Offline native fixture
 
-Provide an existing pristine development checkout with vendor, not an installed application:
+The same prepared image includes the native modules. Supply a pristine development checkout with vendor.
 
 ```sh
-PHP_RUNTIME_ARCHIVE_CACHE=/path/to/verified/php-archives \
 PAYMENTER_TEST_APP=/canonical/path/to/paymenter-1.5.9 scripts/test.py
 ```
 
-Seed native archives with `python3 scripts/bootstrap.py --native`; downloading requires the separate `--download` flag.
 The dependency guard pins Paymenter v1.5.9 commit `ee729f7d99ac18942625b79f3f93d8d8b21255e8` and lock SHA-256
 `fd6bdeb5557b3af0976d5688d92081abc6f7c3235806a6c4b77f4b8bca9186be`.
 It verifies every upstream tracked byte and installed package name/version/dist reference, rejecting .env/cached config/symlinks.
@@ -103,7 +103,7 @@ migrates an in-memory database, blocks stray HTTP and removes the copy afterward
 schema/model/transaction/HTTP guards, manually invoked Domains foundation migrations, standalone retained-schema
 verification, global reservation/rollback and synthetic account/site/credential binding guards. These fixture-only
 checks have no Domains entry point, billing, production registrar identity verifier or installed extension; SQLite cannot prove MariaDB locking, concurrent checkout or financial correctness.
-Locally, supply the dependency explicitly: `scripts/test.py` never checks out, downloads or bootstraps it.
+Supply the dependency explicitly. `scripts/test.py` uses the provided checkout.
 
 CI runs the native suite too: see [native tests in CI](native-ci.md).
 
@@ -631,8 +631,8 @@ Operation clock regressions cover elapsed fall-back boundaries and native dateti
 
 ## Opt-in MariaDB suite
 
-The required suites always omit `mariadb`. Run it explicitly through the local suite limiter:
-set `TMPDIR` to a private scratch root, `PAYMENTER_TEST_APP` to the pristine pinned 1.5.9
+Run MariaDB separately through the local suite limiter, by suite name or exact MariaDB test paths.
+Set `TMPDIR` to a private scratch root, `PAYMENTER_TEST_APP` to the pristine pinned 1.5.9
 checkout and `CONVERSION_MARIADB_PHP` to a supported host PHP with `pdo_mysql`; then run
 `python3 scripts/test.py --suite mariadb`. No installed application or provider is used.
 Docker or the existing `mariadb:11.4.5` image being absent produces a clear skip receipt;
@@ -692,7 +692,7 @@ With it set, at most two installed lifecycles run concurrently (one with two wor
 Command `started_seconds` and `finished_seconds` are monotonic offsets from run start;
 the finish includes the integrity check, so receipts can verify that commands did not overlap.
 The first failure stops new work; running commands finish by default. `--fail-fast`
-cancels those peers. Runs that include MariaDB run serially.
+cancels those peers. The standalone MariaDB suite runs serially.
 In parallel runs, writes to `Domains/`, even when restored, fail.
 
 Public registry expiry tests use synthetic bootstrap/HTTP bodies, endpoint DNS and clocks.

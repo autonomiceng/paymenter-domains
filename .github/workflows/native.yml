@@ -85,12 +85,11 @@ jobs:
     env:
       PAYMENTER_TEST_APP: ${{ github.workspace }}/../paymenter-1.5.9
     steps:
-      # Upgrade tests package earlier revisions with git archive; older file contents download on demand.
+      # The offline container needs earlier blobs for upgrade tests.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
-          filter: blob:none
       - id: pin
         name: Read the pinned Paymenter release
         run: |
@@ -115,28 +114,28 @@ jobs:
         with:
           path: .cache/php-runtime/*.deb
           key: domains-php-native-${{ runner.os }}-${{ hashFiles('scripts/php-runtime-packages.json') }}
-      - name: Install runtime system libraries
-        run: |
-          missing=()
-          for library in libxml2.so.2 libargon2.so.1 libsodium.so.23 libcurl.so.4 libgd.so.3; do
-            ldconfig -p | grep -q "$library" || missing+=("$library")
-          done
-          if (( ${#missing[@]} )); then
-            echo "Installing for: ${missing[*]}"
-            sudo apt-get update && sudo apt-get install -y libxml2 libargon2-1 libsodium23 libcurl4t64 libgd3
-          fi
       - run: python3 scripts/bootstrap.py --download --native
       - name: Run native tests
+        id: suite
         env:
           TESTS: ${{ toJSON(matrix.tests) }}
         # Up to four workers, never more than tests: each worker copies the whole fixture first.
         run: |
+          bin_dir=$(bash scripts/hosted-php-userns.sh)
+          export DOMAINS_HOSTED_RUNC="${bin_dir:+$bin_dir/runc}"
           python3 - <<'EOF'
-          import json, os, sys
+          import json, os, pwd, sys
           tests = json.loads(os.environ['TESTS'])
           os.environ['DOMAINS_TEST_JOBS'] = str(min(4, len(tests)))
-          os.execv(sys.executable, [sys.executable, 'scripts/test.py', '--memory-mib', '8192', '--only', *tests])
+          os.execvp('sudo', ['sudo', 'systemd-run', '--wait', '--pipe', '--collect',
+              '--uid='+pwd.getpwuid(os.getuid()).pw_name, '-p', 'Delegate=yes',
+              '-p', 'MemoryMax=8G', '-p', 'MemorySwapMax=0', '--working-directory='+os.getcwd(),
+              *['--setenv='+key+'='+os.environ[key] for key in ('PAYMENTER_TEST_APP', 'DOMAINS_TEST_JOBS', 'PATH', 'DOMAINS_HOSTED_RUNC')],
+              sys.executable, 'scripts/test.py', '--memory-mib', '8192', '--only', *tests])
           EOF
+      - name: Show namespace audit records
+        if: ${{ !cancelled() && steps.suite.outcome != 'skipped' }}
+        run: sudo journalctl -k -b --no-pager --grep='apparmor="(?:DENIED|AUDIT|ALLOWED)".*(comm="(runc(:[^"]*)?|unshare)"|/usr/lib/domains-php-)' || true
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:

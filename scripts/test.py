@@ -17,7 +17,8 @@ import sys
 import tempfile
 import threading
 import time
-from bootstrap import prepare
+import php_suite
+from php_suite import runtime as prepare
 import native
 import test_workers
 import test_scheduling
@@ -372,6 +373,8 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         # Browser cases run alone and include Chromium, Node and the PHP server.
         test_limits = dict(wall_seconds=60 if Path(argv[-1]).name in {'native-paid-baseline-test.php', 'renewal-safety-test.php', 'staff-release-parity-test.php', 'staff-transfer-release-parity-test.php'} else 30 if kind in ('ui', 'native') else 10,
                            memory_bytes=(768 if kind == 'ui' else 256)*1024**2)
+        if bounded and env.get('DOMAINS_TEST_BUDGET') == str(ROOT/'scripts/case_budget.py'):
+            test_limits = dict(wall_seconds=min(65, timeout), memory_bytes=512*1024**2)
         syntax_lint = kind == 'lint' and len(argv) >= 3 and argv[1] == '-l'
         rss_path = None if syntax_lint else output/f'{index:03d}.rss.txt'
         interrupted = None
@@ -532,7 +535,7 @@ def run(commands, env, output, selected, suites, dependency=None, *, jobs=1, wor
         first_failure = failures[0] if failures else next(iter(failed_indexes), None)
         timings['run'] = time.monotonic() - started_run
         planned = {argv[-1] for kind, argv in commands if kind != 'lint'}
-        receipt = {'runner_error': runner_error, 'runner_error_detail': runner_error_detail, 'final_guard_complete': final_guard_complete,
+        receipt = {'php_suite_image': os.environ.get('PHP_SUITE_IMAGE'), 'runner_error': runner_error, 'runner_error_detail': runner_error_detail, 'final_guard_complete': final_guard_complete,
                    'final_guard_error': final_guard_error, 'timings': timings, 'only_tests': sorted(set(only or [])),
                    'lint_base': lint_base,
                    'git_tree': tree, 'git_tree_error': tree_error,
@@ -623,8 +626,11 @@ def lint_files(base=None):
     return sorted({os.fsdecode(p) for p in (changed+untracked).split(b'\0') if p
                    and os.fsdecode(p).endswith('.php') and (ROOT/os.fsdecode(p)).is_file()})
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+def main(*, launch=False):
+    # The timing receipt is the only argument the host must mount and rewrite.
+    timing_option = argparse.ArgumentParser(add_help=False)
+    timing_option.add_argument('--timings-from', metavar='RECEIPT', help='Prioritize previously failing and faster commands within each category.')
+    parser = argparse.ArgumentParser(description=__doc__, parents=[timing_option])
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument('--suite', choices=CATEGORIES, action='append')
     selection.add_argument('--only', nargs='+', action='extend', metavar='TEST_PATH',
@@ -635,36 +641,57 @@ def main():
     parser.add_argument('--memory-mib', type=positive_integer, default=2048,
                         help='Worker memory reservation budget; one GiB per parallel worker.')
     parser.add_argument('--fail-fast', action='store_true', help='Kill in-flight process trees on the first failure.')
-    parser.add_argument('--timings-from', metavar='RECEIPT', help='Prioritize previously failing and faster commands within each category.')
     args = parser.parse_args()
     if args.lint_base is not None and args.suite != ['lint']:
         parser.error('--lint-base requires --suite lint alone.')
-    jobs_explicit = args.jobs is not None or 'DOMAINS_TEST_JOBS' in os.environ
-    if args.jobs is None:
-        try:
-            args.jobs = positive_integer(os.environ['DOMAINS_TEST_JOBS']) if 'DOMAINS_TEST_JOBS' in os.environ else max(1, min(4, (os.cpu_count() or 1)//2))
-        except (ValueError, argparse.ArgumentTypeError) as error:
-            parser.error(str(error))
     os.umask(0o077)
     checkout = git_tree()
-    output = Path(tempfile.mkdtemp(prefix='domains-tests-'))
     selected = args.suite or []
-    runtime = fixture = None
-    vendor_sealed = runtime_sealed = False
-    workers = None
     timings = {}
+
+    def setup_output():
+        return Path(os.environ['PHP_SUITE_OUTPUT']) if 'PHP_SUITE_OUTPUT' in os.environ else Path(tempfile.mkdtemp(prefix='domains-tests-'))
+
+    def setup_failure(output, error):
+        receipt = output/'receipt.json'
+        if not receipt.exists():
+            # Setup can change the checkout too, so recheck it as a completed run does.
+            tree, tree_error = unchanged_tree(checkout)
+            receipt.write_text(json.dumps({'complete': False, 'phase': 'setup', 'error_type': type(error).__name__, 'selected_suites': selected,
+                                           'git_tree': tree, 'git_tree_error': tree_error,
+                                           'only_tests': args.only or [], 'lint_base': args.lint_base, 'timings': timings})+'\n')
+            print('Setup failed; receipt: '+str(receipt), file=sys.stderr)
+
     try:
         suites = manifest()
-        previous = history(args.timings_from)
-        Path(f'/proc/{os.getpid()}/task/{os.getpid()}/children').read_text()
-        if not Path('/usr/bin/time').is_file():
-            raise ValueError('GNU time (/usr/bin/time) is required for per-command peak RSS.')
         requested = set(args.only or [])
         unknown = requested - {path for paths in suites.values() for path in paths}
         if unknown:
             raise ValueError('Unregistered test path: '+', '.join(sorted(unknown)))
         selected = ([kind for kind, paths in suites.items() if requested.intersection(paths)] if args.only
                     else list(dict.fromkeys(args.suite or default_suites())))
+        if 'mariadb' in selected and len(selected) > 1:
+            raise ValueError('Run MariaDB separately from the pinned PHP suites.')
+    except BaseException as error:
+        setup_failure(setup_output(), error)
+        raise
+    if launch and selected != ['mariadb'] and not php_suite.IMAGE_ARCHIVES.is_dir():
+        _, arguments = timing_option.parse_known_args()
+        return php_suite.domains(ROOT, arguments, history=args.timings_from)
+    jobs_explicit = args.jobs is not None or 'DOMAINS_TEST_JOBS' in os.environ
+    if args.jobs is None:
+        try:
+            args.jobs = positive_integer(os.environ['DOMAINS_TEST_JOBS']) if 'DOMAINS_TEST_JOBS' in os.environ else max(1, min(4, (os.cpu_count() or 1)//2))
+        except (ValueError, argparse.ArgumentTypeError) as error:
+            parser.error(str(error))
+    output = setup_output()
+    runtime = fixture = None
+    workers = None
+    try:
+        previous = history(args.timings_from)
+        Path(f'/proc/{os.getpid()}/task/{os.getpid()}/children').read_text()
+        if not Path('/usr/bin/time').is_file():
+            raise ValueError('GNU time (/usr/bin/time) is required for per-command peak RSS.')
         for name in selected:
             if name != 'lint' and not suites[name]:
                 if args.suite:
@@ -679,21 +706,20 @@ def main():
                 raise ValueError('Native and UI suites require PAYMENTER_TEST_APP.')
             fixture = output/'paymenter'
             with timing("native_fixture", timings):
-                # Focused serial native or ui selections share the verified vendor tree instead of
-                # copying 27,000 files. Full runs, parallel workers and mixed selections keep a copy.
-                shared = args.jobs == 1 and bool(requested) and requested <= set(suites['native']) | set(suites['ui'])
+                # Read-only mounted inputs can be shared even across workers.
+                mounted = Path(source).is_dir() and bool(os.statvfs(source).f_flag & os.ST_RDONLY)
+                shared = mounted or (args.jobs == 1 and bool(requested)
+                                     and requested <= set(suites['native']) | set(suites['ui']))
                 snapshot = native.prepare(source, fixture, share_vendor=shared)
-            test_workers.seal_vendor(fixture)
-            vendor_sealed = os.environ.get('DOMAINS_TEST_OVERLAY') == '1'
             dependency = (source, snapshot)
         binary = extension = None
         if selected != ['mariadb']:
             with timing('php_runtime', timings):
                 runtime, binary, extension = prepare(native=needs_fixture)
-            test_workers.seal_path(runtime)
-            runtime_sealed = os.environ.get('DOMAINS_TEST_OVERLAY') == '1'
         env = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8',
                'PHPRC': '', 'PHP_INI_SCAN_DIR': '', 'TMPDIR': str(output), 'PYTHONDONTWRITEBYTECODE': '1'}
+        if php_suite.IMAGE_ARCHIVES.is_dir():
+            env['PHP_RUNTIME_ARCHIVE_CACHE'] = str(php_suite.IMAGE_ARCHIVES)
         env.update({key: value for key, value in os.environ.items() if key.startswith('DOMAINS_TEST_')})
         if 'DOMAINS_UPGRADE_FROM' in os.environ:
             env['DOMAINS_UPGRADE_FROM'] = os.environ['DOMAINS_UPGRADE_FROM']
@@ -738,22 +764,10 @@ def main():
                    timings=timings, only=args.only, fail_fast=args.fail_fast, requested_jobs=args.jobs, memory_mib=args.memory_mib,
                    jobs_explicit=jobs_explicit, lint_base=args.lint_base, checkout=checkout)
     except BaseException as error:
-        if not (output/'receipt.json').exists():
-            # Setup can change the checkout too, so recheck it as a completed run does.
-            tree, tree_error = unchanged_tree(checkout)
-            (output/'receipt.json').write_text(json.dumps({'complete': False, 'phase': 'setup', 'error_type': type(error).__name__, 'selected_suites': selected,
-                                                          'git_tree': tree, 'git_tree_error': tree_error,
-                                                          'only_tests': args.only or [], 'lint_base': args.lint_base, 'timings': timings})+'\n')
-            print('Setup failed; receipt: '+str(output/'receipt.json'), file=sys.stderr)
+        setup_failure(output, error)
         raise
     finally:
         shutil.rmtree(output/'workers', ignore_errors=True)
-        if vendor_sealed:
-            test_workers.seal_vendor(fixture, release=True)
-        if runtime:
-            if runtime_sealed:
-                test_workers.seal_path(runtime, release=True)
-            shutil.rmtree(runtime)
         if fixture:
             shutil.rmtree(fixture, ignore_errors=True)
 
@@ -767,4 +781,4 @@ def interrupted(signum, frame):
 if __name__ == '__main__':
     signal.signal(signal.SIGTERM, interrupted)
     signal.signal(signal.SIGINT, interrupted)
-    raise SystemExit(main())
+    raise SystemExit(main(launch=True))
