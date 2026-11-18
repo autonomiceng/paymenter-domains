@@ -85,7 +85,14 @@ $edit = fn ($template) => \Livewire\Livewire::actingAs($manager)->test(
 $draft = $edit($default)->set('data.website_endpoints','web.preview.test');
 same('No', panelRowValue($draft->html(),'New registrations'), 'Editing only a website target preserves registration defaults');
 expect(str_contains(panelRowValue($draft->html(),'Pending edits') ?? '', 'web.preview.test'), 'Preview identifies the unsaved hostname');
-$draft->set('data.nameservers',"ns1.preview.test\nns2.preview.test");
+$document = new DOMDocument;
+@$document->loadHTML($draft->html());
+$xpath = new DOMXPath($document);
+$button = $xpath->query('//button[@type="submit" and normalize-space(.)="Save"]')->item(0);
+$form = $button?->hasAttribute('form') ? $document->getElementById($button->getAttribute('form'))
+    : ($button ? $xpath->query('ancestor::form[1]', $button)->item(0) : null);
+same('save', $form?->getAttribute('wire:submit'), 'The visible submit button submits the editor form');
+$draft->set('data.nameservers', "ns1.preview.test\nns2.preview.test");
 same('Yes', panelRowValue($draft->html(),'New registrations'), 'Editing the default nameservers affects new registrations');
 $edit($default)->set('data.nameservers', "ns1.edited.test\nns2.edited.test")->call('save')->assertHasNoErrors();
 same(['ns1.edited.test','ns2.edited.test'],SiteDnsDefault::profile()->nameservers,'Editing the selected default changes its nameservers');
