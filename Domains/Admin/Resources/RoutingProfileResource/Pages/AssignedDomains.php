@@ -35,5 +35,6 @@ class AssignedDomains extends RecordListPage
         if ($record->kind === 'watch') { return WatchResource::getUrl('view', ['record' => $record->id]); }
         return DomainResource::canViewAny() ? DomainResource::getUrl('view', ['record' => abs($record->id)]) : null;
     }
+    protected function searchLabel(): ?string { return 'Search domains'; }
     protected function emptyLine(): array { return ['No domains assigned', 'Domains appear here when they use this template.']; }
 }

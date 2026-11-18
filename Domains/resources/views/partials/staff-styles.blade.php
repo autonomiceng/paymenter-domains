@@ -186,6 +186,7 @@ td.domains-history-detail{min-width:20rem}
 /* The search field has its own clear button, so hide the native one. */
 .domains-hp-dlg input[type=search]::-webkit-search-cancel-button,.domains-hp-dlg input[type=search]::-webkit-search-decoration{-webkit-appearance:none;appearance:none;display:none}
 .domains-hp-clr{display:grid;place-items:center;min-width:44px;min-height:44px}.domains-hp-none{padding:12px 0}
+.fi-modal-window.domains-template-dialog{width:100%;max-width:30rem}
 .domains-template-editor{padding:clamp(1rem,2vw,1.5rem)}
 .domains-template-editor .domains-template-editor-footer{justify-content:flex-end;margin-block-start:1.5rem}
 /* The shared table pins its first cell. Leave room on a phone for the cells scrolling past it. */

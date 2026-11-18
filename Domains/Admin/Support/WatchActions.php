@@ -86,7 +86,7 @@ final class WatchActions
     public static function changeTemplate(WatchName $w, int $revision): Action
     {
         return self::action('watch',(int)$w->id,$revision,'profile','Change')
-            ->modalHeading('Change DNS template')->modalWidth(Width::Medium)
+            ->modalHeading('Change DNS template')->modalWidth('domains-template-dialog')
             ->modalFooterActionsAlignment(Alignment::End)
             ->modalDescription('Checks compare '.$w->canonical_name.' with this template. Saving leaves live nameservers and DNS records unchanged.')
             ->modalSubmitActionLabel('Save')->schema(fn () => self::assignmentFields($w))
@@ -124,7 +124,14 @@ final class WatchActions
                 ->afterStateUpdated(fn ($state, Set $set) => $set('expected_dns', $suggest($state))),
             TextEntry::make('preview')->label(fn (Get $get) => isset($choices[$get('assignment')]) ? 'Nameservers in '.$choices[$get('assignment')]->name : 'Nameservers')
                 ->fontFamily(FontFamily::Mono)->listWithLineBreaks()
-                ->state(fn (Get $get) => ($choices[$get('assignment')] ?? null)?->readProfile()?->nameservers ?? []),
+                ->state(fn (Get $get) => ($choices[$get('assignment')] ?? null)?->readProfile()?->nameservers ?? [])
+                ->belowContent(function (Get $get) use ($choices): ?string {
+                    $template = ($choices[$get('assignment')] ?? null)?->readProfile();
+                    if (!$template) { return null; }
+                    $web = array_sum(array_map('count', $template->website));
+                    $mail = array_sum(array_map('count', $template->email));
+                    return 'Website records: '.($web ?: 'none').'. Email records: '.($mail ?: 'none').'.';
+                }),
             TextEntry::make('expectation')->label('Expected nameservers')
                 ->state(fn (Get $get) => $intents[$get('expected_dns')] ?? 'Open Advanced and choose what checks should expect.'),
             Section::make('Advanced')->collapsible()->collapsed(fn (Get $get) => in_array($get('expected_dns'), ['inherit', 'platform'], true))
