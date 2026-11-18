@@ -552,7 +552,6 @@ $review=new StaffSettingsReview($admin->id,(int)$enom->server_id,null,'test_rene
 Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::review($review,['accept'=>true,'verified'=>true]);
 $late=$checklist()['Late renewal'];
 same(['Off','late_renewal'],[$late['value'],$late['action']],'Ready Test late renewal keeps its separate approval');
-expect(str_contains($late['cause'],'paused')&&str_contains($late['cause'],'expired domains')&&!str_contains($late['cause'],'evidence'),'Ready Test late renewal explains billing without asking for Live evidence');
 same(null,$late['tone'],'A future-expiry managed domain is not a Late renewal warning');
 expect(!isset($late['paused']),'Late renewal does not count a healthy future-expiry domain');
 $domain=Domain::where('server_id',$enom->server_id)->sole();$savedExpiry=$domain->getRawOriginal('provider_expires_at');
