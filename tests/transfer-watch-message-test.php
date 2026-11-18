@@ -10,6 +10,9 @@ foreach([
     ['held','transfer_needs_action','transfer_needs_action','needs_action','old registrar'],
     ['uncertain','reconciliation_required','transfer_deadline_passed','pending','support'],
 ] as [$stateName,$safe,$reason,$status,$words]){
+    if ($reason === 'transfer_deadline_passed') {
+        $clock->instant = new DateTimeImmutable('@'.Paymenter\Extensions\Servers\Domains\Services\TransferPolling::deadline($op));
+    }
     $op->update(['state'=>$stateName,'safe_code'=>$safe,'policy'=>[...$op->policy,'reconciliation'=>['reason'=>$reason,'transfer_status'=>$status,'staff_alert'=>$reason!=='transfer_pending','final_check'=>$reason==='transfer_deadline_passed'?'done':null]]]);
     $dto=$owners->present($op->domain->fresh(),false);$staffNotice=RequestFacts::notice($op,['unreadable'=>false]);
     $html=view('domains::partials.transfer-code',['domain'=>$dto,'keys'=>[]])->render();
