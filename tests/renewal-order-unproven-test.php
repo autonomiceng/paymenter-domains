@@ -2,6 +2,7 @@
 // A sent Enom renewal with an order number that no read proves; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require_once __DIR__.'/Support/synthetic-invoice-attachment.php';
+$reuseRenewalHolding = true;
 require __DIR__.'/Support/renewal-execution.php';
 use Illuminate\Support\Facades\Cache;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts;
