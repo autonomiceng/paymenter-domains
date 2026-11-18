@@ -378,6 +378,10 @@ $timing=RequestFacts::transferChecks($transfer);
 same([$readNow-3600,null],[$timing['last_at'],$timing['next_at']],'A stopped transfer retains the last read and ignores the expired schedule');
 Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$transfer->id])->assertSuccessful()
     ->assertActionVisible('resume_reads')->assertActionHidden('recheck')->assertActionHidden('release');
+$policy['reconciliation']['manual_check']=true;
+$policy['status_check']=['outcome'=>'scheduled','at'=>$readNow,'next_at'=>$readNow];
+$transfer->update(['policy'=>$policy]);
+same($readNow+3600,RequestFacts::transferChecks($transfer)['next_at'],'A manual check deferred by the registrar limit uses the recorded retry time');
 DB::table('domains_operations')->where('id',$longOp->id)->update($storedTransfer);
 // Unreadable saved data: one notice with its fix, never an "unavailable" value.
 DB::table('domains_operations')->where('id',$longOp->id)->update(['policy'=>'not-encrypted']);

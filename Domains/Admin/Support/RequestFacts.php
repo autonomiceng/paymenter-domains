@@ -532,7 +532,7 @@ final class RequestFacts
         }
         $manual = ($r['manual_check'] ?? false) === true;
         $stopped = !$manual && ($r['final_check'] ?? null) === 'done';
-        $nextAt = $stopped ? null : self::recordedAt($manual ? ($check['next_at'] ?? null) : ($r['next_at'] ?? null));
+        $nextAt = $stopped ? null : (self::recordedAt($r['next_at'] ?? null) ?? ($manual ? self::recordedAt($check['next_at'] ?? null) : null));
         return ['last_at'=>$result === null ? null : $lastAt, 'last_result'=>$result, 'next_at'=>$nextAt,
             'next_reason'=>$stopped ? 'Automatic checks ended at the transfer deadline.' : 'No time recorded',
             'manual_queued'=>$manual, 'stopped'=>$stopped];
