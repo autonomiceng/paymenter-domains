@@ -3,6 +3,7 @@
 declare(strict_types=1);
 require_once __DIR__.'/Support/reserved-fixtures.php';
 // These cases exercise only Enom; cross-registrar fencing has its own renewal tests.
+$reuseRenewalHolding = true;
 $fixtureRegistrars = ['enom'];
 require __DIR__.'/Support/renewal-execution.php';
 use App\Models\{InvoiceTransaction, ServiceCancellation};

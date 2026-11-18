@@ -3,6 +3,7 @@
 // cancels the order and its service, then refunds once. Both are refused once anything went to NameSilo.
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/synthetic-invoice-attachment.php';
 require __DIR__.'/Support/namesilo-registration-fixture.php';
 require_once __DIR__.'/Support/staff-panel.php';
 require __DIR__.'/Support/money-receipt.php';

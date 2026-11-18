@@ -53,7 +53,6 @@
     "tests/test_staff_table_preferences.py",
     "tests/test_rendered_layout.py",
     "tests/test_rendered_watch_lists.py",
-    "tests/test_rendered_domain_heading.py",
     "tests/test_rendered_managed_dns.py",
     "tests/test_staff_refund_browser.py",
     "tests/test_staff_refund_refusals_browser.py"

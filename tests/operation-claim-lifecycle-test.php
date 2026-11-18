@@ -2,6 +2,7 @@
 // Synthetic Enom 444f31c claim/seal regressions; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require_once __DIR__.'/Support/reserved-fixtures.php';
+$fixtureReadyRegistration = true;
 require __DIR__.'/Support/operation-fixture.php';
 use Illuminate\Support\Facades\DB;
 

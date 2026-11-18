@@ -39,6 +39,7 @@ $cases=[
     ['domains_pricing_default_rule','unreadable','default_rule',[$t->id,$healthy->id,$second->id],"Default pricing can't be read",null],
     ['domains_pricing_default_rule',['mode'=>'unknown'],'default_rule',[$t->id,$healthy->id,$second->id],"Default pricing can't be read",null],
 ];
+$renderedWarnings=[];
 foreach($cases as $case){
     [$key,$value,$cause,$ids,$reason]=$case;$encrypted=$case[6]??false;
     $setting($key,$value,$encrypted);$settingsBefore=$rawSettings();$watch=true;
@@ -69,24 +70,30 @@ foreach($cases as $case){
         foreach([5,9,13] as $offset){same(['Left out','Left out','Left out','Left out: '.lcfirst($reason)],array_slice($record,$offset,4),'Omitted amounts never invent saved prices');}
         same(['Left out','Left out'],array_slice($record,17),'Unreadable formula and fee are explicit');
     }
-    $page=Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful()->set('account',WhatYouSell::ALL)->filterTable('for_sale',false)->assertSee('Left out')->assertSee('so prices are left out for:')->assertDontSee('Some TLDs are left out')->assertSee('Fix it in Default pricing at the top of this page.');
-    $html=$page->html();
-    $dom=new DOMDocument;@$dom->loadHTML($html);$xpath=new DOMXPath($dom);
-    $warningText=$xpath->evaluate('normalize-space(//*[@data-price-omission])');
-    $labels=array_values(array_unique(array_column($matrix['skipped'],'tld')));
-    same(($cause==='card_fee'?"The card fee can't be read":$reason).', so prices are left out for: '.implode(', ',$labels).'. Fix it in Default pricing at the top of this page.',$warningText,'Warning names the cause, every grouped TLD and repair location');
-    same(count($labels),(int)$xpath->evaluate('count(//*[@data-price-omission]//*[@data-omitted-tld])'),'Page identifies every omitted TLD once');
-    $page->assertCountTableRecords(count($matrix['rows'])+count($matrix['skipped']));
-    expect((int)$xpath->evaluate('count(//*[@data-price-omission]/ancestor::*[contains(concat(" ",normalize-space(@class)," ")," fi-sc-callout ") and contains(@class,"fi-color-warning")])')===1,'Unreadable prices appear in an amber callout');
-    expect((int)$xpath->evaluate('count(//*[@data-price-omission]/following::*[contains(concat(" ",normalize-space(@class)," ")," fi-ta-header-toolbar ")])')>0,'Omission alert is above the toolbar');
-    expect(!str_contains($html,'Prices in USD for')&&!str_contains($html,'Saved prices in USD for'),'No repeated currency/years note between toolbar and rows');
-    $page->set('account',$t->server_id)->filterTable('show','default')->assertSee('No prices to show. Some TLDs are left out.')
-        ->assertSee(($cause==='card_fee'?"The card fee can't be read.":"Default pricing can't be read.").' Fix it in Default pricing at the top of this page.');
-    // For sale is on when staff open the page. It drops the rows that can't be priced, but never their warning.
-    $default=Livewire::actingAs($u)->test(WhatYouSell::class,['account'=>WhatYouSell::ALL])->assertSuccessful();
-    expect($default->instance()->getTableFilterState('for_sale')['isActive']??false,'For sale starts on');
-    same(1,substr_count(html_entity_decode($default->html(),ENT_QUOTES),'Fix it in Default pricing at the top of this page.'),'For sale on still gives the shared fix, once: '.$cause);
-    if($cause==='default_rule'){$default->assertSee('Prices left out for 3 TLDs')->assertSee("They are not shown on this page. Default pricing can't be read.");}
+    // Render each distinct warning for malformed plain settings and corrupt ciphertext.
+    // The service and CSV cover every malformed input above.
+    $encoding=$encrypted?'encrypted':'plain';
+    if(!isset($renderedWarnings[$cause][$encoding])){
+        $renderedWarnings[$cause][$encoding]=true;
+        $page=Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful()->set('account',WhatYouSell::ALL)->filterTable('for_sale',false)->assertSee('Left out')->assertSee('so prices are left out for:')->assertDontSee('Some TLDs are left out')->assertSee('Fix it in Default pricing at the top of this page.');
+        $html=$page->html();
+        $dom=new DOMDocument;@$dom->loadHTML($html);$xpath=new DOMXPath($dom);
+        $warningText=$xpath->evaluate('normalize-space(//*[@data-price-omission])');
+        $labels=array_values(array_unique(array_column($matrix['skipped'],'tld')));
+        same(($cause==='card_fee'?"The card fee can't be read":$reason).', so prices are left out for: '.implode(', ',$labels).'. Fix it in Default pricing at the top of this page.',$warningText,'Warning names the cause, every grouped TLD and repair location');
+        same(count($labels),(int)$xpath->evaluate('count(//*[@data-price-omission]//*[@data-omitted-tld])'),'Page identifies every omitted TLD once');
+        $page->assertCountTableRecords(count($matrix['rows'])+count($matrix['skipped']));
+        expect((int)$xpath->evaluate('count(//*[@data-price-omission]/ancestor::*[contains(concat(" ",normalize-space(@class)," ")," fi-sc-callout ") and contains(@class,"fi-color-warning")])')===1,'Unreadable prices appear in an amber callout');
+        expect((int)$xpath->evaluate('count(//*[@data-price-omission]/following::*[contains(concat(" ",normalize-space(@class)," ")," fi-ta-header-toolbar ")])')>0,'Omission alert is above the toolbar');
+        expect(!str_contains($html,'Prices in USD for')&&!str_contains($html,'Saved prices in USD for'),'No repeated currency/years note between toolbar and rows');
+        $page->set('account',$t->server_id)->filterTable('show','default')->assertSee('No prices to show. Some TLDs are left out.')
+            ->assertSee(($cause==='card_fee'?"The card fee can't be read.":"Default pricing can't be read.").' Fix it in Default pricing at the top of this page.');
+        // For sale is on when staff open the page. It drops the rows that can't be priced, but never their warning.
+        $default=Livewire::actingAs($u)->test(WhatYouSell::class,['account'=>WhatYouSell::ALL])->assertSuccessful();
+        expect($default->instance()->getTableFilterState('for_sale')['isActive']??false,'For sale starts on');
+        same(1,substr_count(html_entity_decode($default->html(),ENT_QUOTES),'Fix it in Default pricing at the top of this page.'),'For sale on still gives the shared fix, once: '.$cause);
+        if($cause==='default_rule'){$default->assertSee('Prices left out for 3 TLDs')->assertSee("They are not shown on this page. Default pricing can't be read.");}
+    }
     same($settingsBefore,$rawSettings(),'Service, page and CSV preserve raw settings bytes, including corrupt ciphertext');
     same($before,DB::table('domains_prices')->orderBy('id')->get()->toJson(),'Each corrupt case preserves saved prices and revisions');
     $watch=false;fixtureClearBusinessChoice($key);if($key===PricingRules::KEY){saveDefaultRule(PricingRule::DEFAULT);}

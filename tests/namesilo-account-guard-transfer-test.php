@@ -1,6 +1,7 @@
 <?php
 // Funded locally enrolled transfer; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+$fixtureRetainedTransfer = true;
 require __DIR__.'/Support/transfer-fixture.php';
 require_once __DIR__.'/Support/namesilo-local-acquisition.php';
 $guard=(object)['email'=>'expected@example.com','id'=>'900','default'=>'1','mode'=>'singleton','reads'=>0];

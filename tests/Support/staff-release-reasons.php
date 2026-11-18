@@ -66,9 +66,14 @@ foreach([defined('STAFF_RELEASE_KIND')?STAFF_RELEASE_KIND:'register'] as $kind){
         if($kind==='renew'){expect(!in_array($required,$offered[$kind]['enabled']??[],true),'Renewal cannot use acquisition recovery: '.$required);}
         else{expect(in_array($required,$offered[$kind]['enabled']??[],true),'Enabled recovery coverage: '.$kind.':'.$required);}
     }}
-    $restore();$row=$op->fresh();$row->update(['safe_code'=>'future_hold']);
-    Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$row->id])->assertActionHidden('release')->assertDontSee('Release hold');
-    commerceReject(fn()=>$run($row->fresh(),'release'));
+    // The general group checks unknown reasons for each operation and deployment setting.
+    if (STAFF_RELEASE_REASON_GROUP === 'general') {
+        $restore();
+        $row = $op->fresh();
+        $row->update(['safe_code'=>'future_hold']);
+        Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$row->id])->assertActionHidden('release')->assertDontSee('Release hold');
+        commerceReject(fn()=>$run($row->fresh(),'release'));
+    }
 }
 same(0,$state->writes,'Local recovery never sends');
 echo 'Staff release parity passed: '.json_encode($offered)."\n";

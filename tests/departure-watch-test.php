@@ -2,7 +2,8 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering. Registrar and payment transports are synthetic.
 declare(strict_types=1);
 $watchCase??='active';
-require __DIR__.'/transfer-out-not-found-test.php';
+require __DIR__.'/Support/departure-fixture.php';
+$invoice=$issueDepartureRenewal();
 require_once __DIR__.'/Support/staff-panel.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;

@@ -1,6 +1,7 @@
 <?php
 // Enom 444f31c request-gates/provider-disposition/transfer-codes; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+$fixtureRetainedTransfer = true;
 require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/transfer-dispatch-fixture.php';
 // Simulate an auth-code commit between the dispatch snapshot and its locked runtime-row read.

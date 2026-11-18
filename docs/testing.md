@@ -35,9 +35,10 @@ It compares Register/Transfer/Retry geometry with prior inline-flex/normal-wrap/
 ## Rendered data and links (UI suite)
 
 `tests/test_rendered_layout.py` and `tests/test_rendered_managed_dns.py` render real Blade and use
-`scripts/check-name-and-heading.cjs` in Chromium. They guard full domain/customer data, native record links and the
-customer record heading at desktop and phone widths. Presentation is reviewed with screenshots beside the approved
-mock, not CSS or geometry assertions. Set `DOMAINS_PANEL_SETUP` to a PHP file that configures `$panel` and returns its
+`scripts/check-name-and-heading.cjs` in Chromium. They guard full domain and customer data and native record links
+at desktop and phone widths. `tests/test_domain_page_artifact.py` covers the customer heading in the invoice-due
+Blade fixture with populated history. Screenshots beside the approved mock cover visual presentation.
+Set `DOMAINS_PANEL_SETUP` to a PHP file that configures `$panel` and returns its
 built theme to render with a host skin. The UI suite needs installed Playwright (`NODE_PATH`) and Chromium (`CHROME_BIN`).
 
 Run `python3 scripts/bootstrap.py --download` once, then `scripts/test.py` fully offline.

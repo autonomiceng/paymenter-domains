@@ -1,7 +1,8 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering. Synthetic unsent card allocation only.
 declare(strict_types=1);
-require __DIR__.'/transfer-out-not-found-test.php';
+require __DIR__.'/Support/departure-fixture.php';
+$invoice=$issueDepartureRenewal();
 require_once __DIR__.'/Support/staff-panel.php';
 require __DIR__.'/Support/money-receipt.php';
 use App\Models\{Credit,Gateway};

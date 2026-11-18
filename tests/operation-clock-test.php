@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 $fixtureEnding = 'example.com';
+$fixtureReadyRegistration = true;
 require __DIR__.'/Support/operation-fixture.php';
 require_once __DIR__.'/Support/reserved-fixtures.php';
 $createOperation = $new;

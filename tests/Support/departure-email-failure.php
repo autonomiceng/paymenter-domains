@@ -3,7 +3,8 @@
 declare(strict_types=1);
 // Shared departure email failure check. The caller sets $emailFault (breaks the email, may return a restore closure),
 // $emailAlert (the staff alert code) and $emailDeliveries (delivery row states left behind), then requires this file.
-require dirname(__DIR__).'/transfer-out-not-found-test.php';
+require __DIR__.'/departure-fixture.php';
+$invoice=$issueDepartureRenewal();
 require_once __DIR__.'/staff-panel.php';
 require __DIR__.'/reminder-mail.php';
 use Illuminate\Support\Facades\{DB,Mail};
