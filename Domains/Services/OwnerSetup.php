@@ -32,6 +32,7 @@ final class OwnerSetup
             if ((int)$actor->id!==(int)$l['user']->id || !$op || !$port->bindsTo(AccountBindings::binding($l['account']))
                 || !in_array($op->state,['awaiting_payment','awaiting_code','queued','held'],true) || ($op->attempt??[])!==[]
                 || $op->completed_at!==null || $l['cancel']->contains('service_id',$d->service_id) || !in_array($l['service']->status,['pending','active'],true)
+                || ($op->funding_basis==='complimentary' && array_intersect(['refund','refund_authorization'],array_keys($op->funding??[])))
                 || $op->state==='held'&&!in_array($op->safe_code,['contact_details_required','transfer_setup_review_required','nameservers_required'],true)) {
                 throw new \DomainException('Setup unavailable.');
             }

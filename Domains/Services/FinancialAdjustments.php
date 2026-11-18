@@ -59,10 +59,13 @@ final readonly class FinancialAdjustments
     /** Collection is separate from registrar dispatch; callers must verify current native funding. */
     public static function registrarUnattemptedFunding(Operation $op): bool
     {
-        if (($op->funding ?? []) === []) { return true; }
+        $funding = $op->funding ?? [];
+        if ($funding === []) { return true; }
+        if ($op->funding_basis === 'complimentary') {
+            return array_keys($funding) === ['late_credits'] && ReceiptReturns::complimentaryCredits($op) !== null;
+        }
         try {
             // Saved-method collection evidence grants no registrar attempt or funding authority.
-            $funding = $op->funding;
             if ($op->action === 'renew') { unset($funding['auto_pay'], $funding['auto_pay_result']); }
             if ($op->funding_basis !== 'paid_invoice' || ($funding !== [] && array_keys($funding) !== ['financial_adjustments'])) { return false; }
             self::history($op); return true;

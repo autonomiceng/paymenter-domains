@@ -142,6 +142,38 @@ final class ReceiptReturns
         if(($return['to']??null)==='original_payment'&&self::bridge($return)===null){return null;}
         try{return PricingRule::minor($return['amount']??null);}catch(\Throwable){return null;}
     }
+    /** Shape check for retained complimentary receipt credits. Settlement still needs the native receipt and credit rows. */
+    public static function complimentaryCredits(Operation $op): ?array
+    {
+        $funding = $op->funding ?? [];
+        if (!array_key_exists('late_credits', $funding)) { return ['credits' => [], 'payments' => []]; }
+        $history = $funding['late_credits'];
+        if ($op->funding_basis !== 'complimentary' || !in_array($op->action, ['register', 'transfer', 'renew'], true)
+            || $op->invoice_id === null || $op->invoice_item_id === null
+            || !is_array($history) || !array_is_list($history) || $history === []) { return null; }
+        $credits = $payments = [];
+        foreach ($history as $entry) {
+            $amount = self::amount($entry);
+            if ($amount === null || $amount <= 0 || PricingRule::decimal($amount) !== $entry['amount']
+                || ($entry['to'] ?? null) !== 'account_credit' || ($entry['currency'] ?? null) !== 'USD'
+                || array_diff(array_keys($entry), ['payments', 'amount', 'currency', 'to', 'credit_id', 'at'])
+                || !is_int($entry['credit_id'] ?? null) || $entry['credit_id'] <= 0
+                || !is_string($entry['at'] ?? null) || !preg_match('/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d[+-]\d\d:\d\d$/D', $entry['at'])
+                || !array_is_list($entry['payments'])) { return null; }
+            $credits[$entry['credit_id']] = true;
+            $allocated = [];
+            foreach ($entry['payments'] as $payment) {
+                $id = $payment['id']; $minor = $payment['amount_minor'];
+                if ($id <= 0 || $minor <= 0 || isset($allocated[$id]) || array_diff(array_keys($payment), ['id', 'amount_minor'])) { return null; }
+                $allocated[$id] = $minor;
+                $total = ($payments[$id] ?? 0) + $minor;
+                if (!is_int($total)) { return null; }
+                $payments[$id] = $total;
+            }
+            if (array_sum($allocated) !== $amount) { return null; }
+        }
+        return ['credits' => array_keys($credits), 'payments' => $payments];
+    }
     /** Any retained return, refund or late credit, that cannot be read stays with staff: callers check this before any
      * amount, allocation or coverage arithmetic. */
     public static function malformed(Operation $op): bool

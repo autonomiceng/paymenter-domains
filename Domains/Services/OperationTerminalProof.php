@@ -8,9 +8,10 @@ final class OperationTerminalProof
 {
     public static function encode(OperationClaims $claims, int $id): Operation
     {
-        return $claims->locked($id, static function ($op, $domain, $all): Operation {
+        return $claims->locked($id, static function ($op, $domain, $all, InvoiceFunding $funding): Operation {
             if (!self::unsentClaim($op, $domain, $all)) { throw new \DomainException('No definitely-unsent terminal proof.'); }
             RefundProof::requireUnsent($op, $domain);
+            if ($op->funding_basis === 'complimentary' && isset($op->funding['late_credits'])) { $funding->requireInitial($op, $domain); }
             $op->update(['state' => 'rejected', 'attempt' => self::rejectedAttempt($op,$domain)]);
             if (!self::safe($op, $domain)) { throw new \DomainException('Terminal identity mismatch.'); }
             $domain->update(['status' => $op->action === 'transfer' ? 'transfer_rejected' : 'registration_rejected']); return $op;
